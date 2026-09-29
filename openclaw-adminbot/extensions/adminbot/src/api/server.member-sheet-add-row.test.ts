@@ -3,7 +3,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import { AdminBotService } from "../kernel/service.js";
-import { addMemberSheetRow, type MemberSheetSource } from "./server.member-sheet.js";
+import { onboardNewMember } from "./server.member-onboarding.js";
+import {
+  addMemberSheetRow,
+  type MemberSheetAddRowRequest,
+  type MemberSheetSource,
+} from "./server.member-sheet.js";
 
 const HEADER = [
   "Name",
@@ -37,6 +42,25 @@ function harness(fail: Partial<Record<string, string>> = {}) {
   return { service, executed };
 }
 
+/** Add row as the route wires it: the shared onboarding, approved by the clicking admin. */
+function addRow(
+  service: AdminBotService,
+  sheet: MemberSheetSource,
+  request: MemberSheetAddRowRequest,
+) {
+  return addMemberSheetRow(service, sheet, request, ADMIN, "andrew-kim", (input) =>
+    onboardNewMember(
+      { service, approver: ADMIN, actor: "andrew-kim", recordAudit: () => {} },
+      input,
+      {
+        origin: { source: "admin", actor: "andrew-kim" },
+        guide: "send",
+        skipSheet: "the row was just added to the sheet",
+      },
+    ),
+  );
+}
+
 const ADA = {
   name: "Ada Lovelace",
   member_type: "full",
@@ -48,7 +72,7 @@ const ADA = {
 describe("addMemberSheetRow", () => {
   it("appends the row, creates the member and sends the guide, all approved by the admin", async () => {
     const { service, executed } = harness();
-    const result = await addMemberSheetRow(service, source(), ADA, ADMIN, "andrew-kim");
+    const result = await addRow(service, source(), ADA);
 
     if ("error" in result) {
       throw new Error(result.error.message);
@@ -58,17 +82,21 @@ describe("addMemberSheetRow", () => {
     expect(result.member.status).toBe("done");
     expect(result.onboarding).toMatchObject({ status: "done", template_id: "member" });
 
+    // A full member is owed the lab calendar, granted through the gate like the rest. (The Monday
+    // meeting step needs a calendar this harness does not have, and reports that.)
     expect(executed.map((proposal) => proposal.type)).toEqual([
       "sheet.append_rows",
+      "calendar.grant_lab_calendar",
       "onboarding.send_guide",
     ]);
+    expect(result.member_type_change?.privilege_level.to).toBe("member");
     // The row is written in the sheet's own column order, quoted tab, trailing blanks dropped.
     expect(executed[0]?.proposed_payload).toEqual({
       spreadsheet_id: "sheet-1",
       range: "'Full Slack Member List'!A:ZZ",
       rows: [["Ada Lovelace", "full", "PhD", "ada@cs.toronto.edu", "ada@gmail.com"]],
     });
-    expect(executed[1]?.proposed_payload).toMatchObject({
+    expect(executed[2]?.proposed_payload).toMatchObject({
       email: "ada@cs.toronto.edu",
       member_id: "ada-lovelace",
     });
@@ -86,7 +114,7 @@ describe("addMemberSheetRow", () => {
     const { service, executed } = harness({
       "sheet.append_rows": "You are trying to edit a protected cell or object.",
     });
-    const result = await addMemberSheetRow(service, source(), ADA, ADMIN, "andrew-kim");
+    const result = await addRow(service, source(), ADA);
 
     if ("error" in result) {
       throw new Error(result.error.message);
@@ -95,35 +123,36 @@ describe("addMemberSheetRow", () => {
     expect(result.sheet.status === "failed" && result.sheet.reason).toContain("protected");
     expect(result.member.status).toBe("done");
     expect(result.onboarding.status).toBe("done");
-    expect(executed.map((proposal) => proposal.type)).toEqual(["onboarding.send_guide"]);
+    expect(executed.map((proposal) => proposal.type)).toEqual([
+      "calendar.grant_lab_calendar",
+      "onboarding.send_guide",
+    ]);
   });
 
   it("skips the mail for a Member Type whose onboarding is access alone", async () => {
     const { service, executed } = harness();
-    const result = await addMemberSheetRow(
-      service,
-      source(),
-      { ...ADA, member_type: "acquaintance" },
-      ADMIN,
-      "andrew-kim",
-    );
+    const result = await addRow(service, source(), { ...ADA, member_type: "acquaintance" });
 
     if ("error" in result) {
       throw new Error(result.error.message);
     }
     expect(result.member.status).toBe("done");
     expect(result.onboarding.status).toBe("skipped");
-    expect(executed.map((proposal) => proposal.type)).toEqual(["sheet.append_rows"]);
+    // No guide mints their Slack Connect invite, so enrollment files it on its own -- the one
+    // thing the access design gives an acquaintance that AdminBot can do.
+    expect(executed.map((proposal) => proposal.type)).toEqual([
+      "sheet.append_rows",
+      "slack.connect_invite",
+    ]);
+    expect(result.member_type_change?.privilege_level.to).toBe("external_collaborator");
   });
 
   it("refuses somebody already on the sheet, and writes nothing", async () => {
     const { service, executed } = harness();
-    const result = await addMemberSheetRow(
+    const result = await addRow(
       service,
       source([HEADER, ["Ada L.", "full", "", "", "ADA@gmail.com"]]),
       ADA,
-      ADMIN,
-      "andrew-kim",
     );
 
     expect("error" in result && result.error.status).toBe(409);
@@ -139,7 +168,7 @@ describe("addMemberSheetRow", () => {
     } as never);
     expect(created.ok).toBe(true);
 
-    const result = await addMemberSheetRow(service, source(), ADA, ADMIN, "andrew-kim");
+    const result = await addRow(service, source(), ADA);
     expect("error" in result && result.error.status).toBe(409);
     expect(executed).toEqual([]);
   });
@@ -151,7 +180,7 @@ describe("addMemberSheetRow", () => {
     [{ ...ADA, slack_email: "nope" }, "slack_email"],
   ])("rejects a malformed request (%#)", async (request, field) => {
     const { service, executed } = harness();
-    const result = await addMemberSheetRow(service, source(), request, ADMIN, "andrew-kim");
+    const result = await addRow(service, source(), request);
     expect("error" in result && result.error.status).toBe(400);
     expect("error" in result && result.error.message).toContain(field);
     expect(executed).toEqual([]);
@@ -159,13 +188,7 @@ describe("addMemberSheetRow", () => {
 
   it("422s a sheet with no Member Type column", async () => {
     const { service } = harness();
-    const result = await addMemberSheetRow(
-      service,
-      source([["Name", "Slack email"]]),
-      ADA,
-      ADMIN,
-      "andrew-kim",
-    );
+    const result = await addRow(service, source([["Name", "Slack email"]]), ADA);
     expect("error" in result && result.error.status).toBe(422);
   });
 });

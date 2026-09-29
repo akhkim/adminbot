@@ -236,11 +236,17 @@ describe("access levels with no onboarding mail at all", () => {
     const without = adminBotExternalCollaboratorSubgroups.filter(
       (subgroup) => !findOnboardingTemplate(subgroup),
     );
-    // These three are reachable only by hand today. Two of them -- coauthor_discussant_designer and
-    // external_prof -- are granted a Slack Connect invite by the matrix and have no send that mints
-    // one, which is the gap this list exists to keep visible.
+    // These are onboarded without a mail. The matrix still grants each of them the Slack Connect
+    // channel, which enrollment files as its own `slack.connect_invite` since no guide mints it
+    // (api/server.member-type-change.ts).
     expect(without.toSorted()).toEqual(
-      ["acquaintance", "coauthor_discussant_designer", "external_prof"].toSorted(),
+      [
+        "acquaintance",
+        "benefit_direct_relative",
+        "benefit_partner",
+        "coauthor_discussant_designer",
+        "external_prof",
+      ].toSorted(),
     );
   });
 });

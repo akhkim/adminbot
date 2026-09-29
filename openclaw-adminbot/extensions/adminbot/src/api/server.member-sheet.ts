@@ -10,10 +10,12 @@
  */
 import type {
   AdminBotLabMember,
+  AdminBotLabMemberInput,
   AdminBotSheetValueRange,
   AdminBotStoredProposal,
 } from "../contracts/actions.js";
-import type { AdminBotService } from "../kernel/service.js";
+import type { AdminBotService, AdminBotServiceResponse } from "../kernel/service.js";
+import { subgroupForMemberType } from "../workflows/members/collaborator-subgroups.js";
 import {
   planSheetEdits,
   type SheetCellEdit,
@@ -29,6 +31,8 @@ import {
 import { composeOnboardingGuide } from "../workflows/onboarding/guide.js";
 import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
 import { memberIdForRow } from "../workflows/onboarding/onboarding-sweep.js";
+import type { NewMemberGuideStep, NewMemberOnboardingResult } from "./server.member-onboarding.js";
+import type { MemberTypeChangeResult } from "./server.member-type-change.js";
 
 export type MemberSheetSource = {
   spreadsheetId: string;
@@ -246,6 +250,12 @@ export type MemberSheetOnboardRequest = {
 
 export type MemberSheetOnboardResult = {
   created: { sheet_row: number; email: string; template_id: string; proposal_id: string }[];
+  /**
+   * Rows not yet on the roster, now created and given the access their Member Type grants -- the
+   * same enrollment every other way onto the roster runs, including the no-mail types whose whole
+   * onboarding this is.
+   */
+  enrolled: { sheet_row: number; member_id: string; member_type_change: MemberTypeChangeResult }[];
   /** `missing` names the template values the tab should collect before asking again. */
   skipped: { sheet_row: number; reason: string; missing?: string[] }[];
 };
@@ -267,14 +277,25 @@ export type PlannedOnboardEmail = {
   sheet_row: number;
   name: string;
   email: string;
+  member_type: string;
   template_id: string;
   subject: string;
   body: string;
   reply_to: string;
 };
 
+/** A row whose Member Type the access design onboards without a mail. */
+export type PlannedAccessOnly = {
+  sheet_row: number;
+  name: string;
+  email: string;
+  member_type: string;
+  reason: string;
+};
+
 export type MemberSheetOnboardPreview = {
   planned: PlannedOnboardEmail[];
+  access_only: PlannedAccessOnly[];
   skipped: MemberSheetOnboardResult["skipped"];
 };
 
@@ -309,6 +330,7 @@ async function planOnboardFromMemberSheet(
   }
 
   const planned: PlannedOnboardEmail[] = [];
+  const accessOnly: PlannedAccessOnly[] = [];
   const skipped: MemberSheetOnboardResult["skipped"] = [];
   const overrides = request.addresses ?? {};
 
@@ -317,12 +339,7 @@ async function planOnboardFromMemberSheet(
       continue;
     }
     wanted.delete(row.sheetRow);
-    const memberType = row.cells[typeAt] ?? "";
-    const template = templateForMemberType(memberType);
-    if (!template.ok) {
-      skipped.push({ sheet_row: row.sheetRow, reason: template.reason });
-      continue;
-    }
+    const memberType = (row.cells[typeAt] ?? "").trim();
     const email =
       overrides[String(row.sheetRow)]?.trim() ||
       firstAddress(corrAt >= 0 ? row.cells[corrAt] : undefined) ||
@@ -332,10 +349,30 @@ async function planOnboardFromMemberSheet(
       continue;
     }
     const name = (row.cells[nameAt] ?? "").trim();
+    const template = templateForMemberType(memberType);
+    if (!template.ok) {
+      // A type the design onboards without a mail is still onboarded: its access is the whole of it.
+      if (subgroupForMemberType(memberType)) {
+        accessOnly.push({
+          sheet_row: row.sheetRow,
+          name,
+          email,
+          member_type: memberType,
+          reason: template.reason,
+        });
+      } else {
+        skipped.push({ sheet_row: row.sheetRow, reason: template.reason });
+      }
+      continue;
+    }
+    // The Drive folder and the Slack Connect link are provisioned when the guide is sent, so they
+    // stand in for themselves here, as they do in the sender's own preview.
     const composed = composeOnboardingGuide(
       template.templateId,
       {
         first_name: name.split(/\s+/u)[0] ?? "",
+        drive_folder_link: "{drive_folder_link}",
+        slack_connect_link: "{slack_connect_link}",
         ...request.values?.[String(row.sheetRow)],
       },
       env,
@@ -354,6 +391,7 @@ async function planOnboardFromMemberSheet(
       sheet_row: row.sheetRow,
       name,
       email,
+      member_type: memberType,
       template_id: template.templateId,
       subject: composed.guide.subject ?? "",
       body: composed.guide.body,
@@ -365,7 +403,7 @@ async function planOnboardFromMemberSheet(
   for (const missing of wanted) {
     skipped.push({ sheet_row: missing, reason: "no such row in the sheet" });
   }
-  return { planned, skipped };
+  return { planned, access_only: accessOnly, skipped };
 }
 
 /**
@@ -394,7 +432,17 @@ export async function onboardFromMemberSheet(
   service: AdminBotService,
   source: MemberSheetSource,
   request: MemberSheetOnboardRequest,
-  actor: string,
+  onboarding: {
+    /** Steps 1-2 of the shared onboarding for a row not yet on the roster. */
+    enroll: (
+      input: AdminBotLabMemberInput,
+    ) => Promise<AdminBotServiceResponse<NewMemberOnboardingResult>>;
+    /** Step 3, queued for approval: this tab has always put mail in front of an approver. */
+    queueGuide: (
+      memberId: string,
+      options: { email: string; values?: Record<string, string> },
+    ) => Promise<NewMemberGuideStep>;
+  },
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<MemberSheetOnboardResult | { error: { status: number; message: string } }> {
   const plan = await planOnboardFromMemberSheet(source, request, env);
@@ -403,30 +451,72 @@ export async function onboardFromMemberSheet(
   }
 
   const created: MemberSheetOnboardResult["created"] = [];
+  const enrolled: MemberSheetOnboardResult["enrolled"] = [];
   const skipped = [...plan.skipped];
-  for (const mail of plan.planned) {
-    const proposal = service.createProposal({
-      type: "email.send",
-      summary: `${actor}: onboard ${mail.name || mail.email} (${mail.template_id}) from the member roster`,
-      proposed_payload: {
-        to: mail.email,
-        subject: mail.subject,
-        body: mail.body,
-        reply_to: mail.reply_to,
-      },
-    });
-    if (!proposal.ok) {
-      skipped.push({ sheet_row: mail.sheet_row, reason: proposal.error.message });
+  const roster = service.listLabMembers();
+  const members = roster.ok ? roster.payload.members : [];
+  // Matched on any address the record carries, and on the id Add row and the sweep would give
+  // the row, so somebody already on the roster is mailed rather than created a second time.
+  const findMember = (name: string, email: string) => {
+    const address = email.trim().toLowerCase();
+    const id = memberIdForRow(name);
+    return members.find(
+      (member) =>
+        (id && member.id === id) ||
+        [member.email, member.correspondence_email, member.calendar_email].some(
+          (candidate) => candidate?.trim().toLowerCase() === address,
+        ),
+    );
+  };
+
+  for (const row of [...plan.planned, ...plan.access_only]) {
+    let memberId = findMember(row.name, row.email)?.id;
+    if (!memberId) {
+      const id = memberIdForRow(row.name);
+      if (!id) {
+        skipped.push({
+          sheet_row: row.sheet_row,
+          reason: "the name has no letters or digits to make an id from",
+        });
+        continue;
+      }
+      const onboarded = await onboarding.enroll({
+        id,
+        name: row.name,
+        email: row.email,
+        member_type: row.member_type,
+      });
+      if (!onboarded.ok) {
+        skipped.push({ sheet_row: row.sheet_row, reason: onboarded.error.message });
+        continue;
+      }
+      memberId = onboarded.payload.member.id;
+      enrolled.push({
+        sheet_row: row.sheet_row,
+        member_id: memberId,
+        member_type_change: onboarded.payload.member_type_change,
+      });
+    }
+    if (!("template_id" in row)) {
       continue;
     }
-    created.push({
-      sheet_row: mail.sheet_row,
-      email: mail.email,
-      template_id: mail.template_id,
-      proposal_id: proposal.payload.id,
+    const values = request.values?.[String(row.sheet_row)];
+    const guide = await onboarding.queueGuide(memberId, {
+      email: row.email,
+      ...(values ? { values } : {}),
     });
+    if (guide.status === "queued" || guide.status === "done") {
+      created.push({
+        sheet_row: row.sheet_row,
+        email: row.email,
+        template_id: guide.template_id,
+        proposal_id: guide.proposal_id,
+      });
+    } else {
+      skipped.push({ sheet_row: row.sheet_row, reason: guide.reason });
+    }
   }
-  return { created, skipped };
+  return { created, enrolled, skipped };
 }
 
 export type MemberSheetAddRowRequest = {
@@ -448,6 +538,8 @@ export type MemberSheetAddRowResult = {
   member_id: string;
   sheet: MemberSheetAddRowStep;
   member: MemberSheetAddRowStep;
+  /** The rooms, meetings and calendar access the new member's type grants. */
+  member_type_change?: MemberTypeChangeResult;
   onboarding: MemberSheetAddRowStep;
 };
 
@@ -483,7 +575,14 @@ export async function approveAndExecute(
     dry_run: false,
     idempotency_key: `add-row-${proposal.id}`,
   });
-  return executed.ok ? { ok: true } : { ok: false, reason: executed.error.message };
+  if (!executed.ok) {
+    return { ok: false, reason: executed.error.message };
+  }
+  // A connector that recognized the action but did not perform it answers `simulated`: nothing
+  // reached the outside world, so the step must not be reported as done.
+  return executed.payload.status === "executed"
+    ? { ok: true }
+    : { ok: false, reason: "approved, but the connector did not carry it out; see the audit log" };
 }
 
 function hasAddress(cell: string | undefined, addresses: ReadonlySet<string>): boolean {
@@ -515,6 +614,9 @@ export async function addMemberSheetRow(
   request: MemberSheetAddRowRequest,
   approver: MemberSheetApprover,
   actor: string,
+  onboard: (
+    input: AdminBotLabMemberInput,
+  ) => Promise<AdminBotServiceResponse<NewMemberOnboardingResult>>,
 ): Promise<MemberSheetAddRowResult | { error: { status: number; message: string } }> {
   const name = String(request.name ?? "").trim();
   const memberType = String(request.member_type ?? "").trim();
@@ -623,59 +725,34 @@ export async function addMemberSheetRow(
       : { status: "failed", reason: ran.reason, proposal_id: appended.payload.id };
   }
 
-  const saved = service.upsertLabMember(
-    { id: memberId, name, email, member_type: memberType },
-    { source: "admin", actor },
-  );
-  if (!saved.ok) {
+  // Steps 2 and 3 are the shared onboarding every way onto the roster runs
+  // (server.member-onboarding.ts): the record with the level its type implies, the access design's
+  // rooms and invites, and the guide -- approved by this admin's click, like the row above.
+  const onboarded = await onboard({ id: memberId, name, email, member_type: memberType });
+  if (!onboarded.ok) {
     return {
       member_id: memberId,
       sheet,
-      member: { status: "failed", reason: saved.error.message },
+      member: { status: "failed", reason: onboarded.error.message },
       onboarding: { status: "skipped", reason: "the member was not created" },
     };
   }
-  const member: MemberSheetAddRowStep = { status: "done" };
-
-  const template = templateForMemberType(memberType);
-  if (!template.ok) {
-    return {
-      member_id: memberId,
-      sheet,
-      member,
-      onboarding: { status: "skipped", reason: template.reason },
-    };
-  }
-  const queued = service.queueOnboardingGuideForMember({ memberId, actor });
-  if (!queued.ok) {
-    return {
-      member_id: memberId,
-      sheet,
-      member,
-      onboarding: { status: "failed", reason: queued.error.message },
-    };
-  }
-  const guide = service.getProposal(queued.payload.proposal_id);
-  const sent = guide
-    ? await approveAndExecute(service, guide, approver)
-    : { ok: false as const, reason: `proposal ${queued.payload.proposal_id} vanished` };
+  const guide = onboarded.payload.onboarding;
   return {
     member_id: memberId,
     sheet,
-    member,
-    onboarding: sent.ok
-      ? {
-          status: "done",
-          proposal_id: queued.payload.proposal_id,
-          template_id: queued.payload.template_id,
-          detail: `sent to ${queued.payload.email}`,
-        }
-      : {
-          status: "failed",
-          reason: sent.reason,
-          proposal_id: queued.payload.proposal_id,
-          template_id: queued.payload.template_id,
-        },
+    member: { status: "done" },
+    member_type_change: onboarded.payload.member_type_change,
+    onboarding: !guide
+      ? { status: "skipped", reason: "no onboarding guide step ran" }
+      : guide.status === "done" || guide.status === "queued"
+        ? {
+            status: "done",
+            proposal_id: guide.proposal_id,
+            template_id: guide.template_id,
+            detail: guide.detail,
+          }
+        : guide,
   };
 }
 

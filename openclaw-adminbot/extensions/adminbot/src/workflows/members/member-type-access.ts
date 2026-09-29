@@ -22,6 +22,7 @@ import {
   adminBotMemberTypeTokens,
   type AdminBotExternalCollaboratorSubgroup,
   type AdminBotLabMember,
+  type AdminBotLabMemberInput,
   type AdminBotPrivilegeLevel,
 } from "../../contracts/actions.js";
 import {
@@ -290,6 +291,33 @@ export function privilegeForMemberTypeChange(
   return member.privilege_level === "admin"
     ? { privilege_level: "external_collaborator" }
     : undefined;
+}
+
+/**
+ * The record to create, with the access level its Member Type implies.
+ *
+ * An explicit `privilege_level` in the input is an admin's choice and wins. Otherwise the type
+ * decides, graded from the least-privileged level: a new person has held nothing yet, so a type
+ * that implies no level (blank, `mailing-list`) leaves them at `external_collaborator`.
+ */
+export function newMemberRecord(input: AdminBotLabMemberInput): AdminBotLabMemberInput {
+  if (input.privilege_level !== undefined) {
+    return input;
+  }
+  const implied = privilegeForMemberTypeChange(
+    { privilege_level: "external_collaborator" },
+    input.member_type,
+  );
+  if (!implied) {
+    return input;
+  }
+  return {
+    ...input,
+    privilege_level: implied.privilege_level,
+    ...(input.collaborator_subgroup === undefined && implied.collaborator_subgroup
+      ? { collaborator_subgroup: implied.collaborator_subgroup }
+      : {}),
+  };
 }
 
 /** Whether a delta is worth telling anybody about. */

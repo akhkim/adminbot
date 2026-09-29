@@ -65,7 +65,10 @@ const SHEET_ROW_TO_ITEM: ReadonlyArray<[string, AdminBotCollaboratorAccessItemId
   ],
   ["Add them to #jinesis-active and #random-active both channels", "active_channels"],
   ["Slack-guest-chat with Zhijing & interviewer", "slack_guest_chat_zhijing"],
-  ["Add to #discussion-xxx for joining the discussions on this broad topic", "discussion_channel"],
+  [
+    "Add to #discussion-xxx for joining the discussions on any related broad topic",
+    "discussion_channel",
+  ],
   [
     "Add to #proj-xxx channel so we can chat with this person on this specific project",
     "project_channel",
@@ -74,12 +77,9 @@ const SHEET_ROW_TO_ITEM: ReadonlyArray<[string, AdminBotCollaboratorAccessItemId
     "Has access to our project-related google drive folder (Or create it if not exist)",
     "project_drive_folder",
   ],
-  // New in the (2)/(3) revision of the sheet, and deliberately unmapped. This row is the two
-  // standing invites -- the lab calendar and the Monday group meeting -- which are reconciled by
-  // workflows/members/surface-membership.ts against `privilege_level` and the `coauthor_major`
-  // subgroup, not by the collaborator access matrix. Adding a matrix row for it would give the
-  // same decision two owners; `belongsOnSurface` is the one that already sends the invites.
-  ["View access to lab calendar + invite to Monday Group Meeting", null],
+  // The two standing invites. `belongsOnSurface` reads this matrix row for external collaborators,
+  // so the row is the one owner of who is on the lab calendar and the Monday meeting.
+  ["View access to lab calendar + invite to Monday Group Meeting", "lab_calendar_group_meeting"],
   [
     "Add to slack channel #meeting-xxx for the weekly themed meeting, and also Wed themed meeting’s calendar invite. (Slack + calendar)\n\nWhoever that is on our calendar invite will be repeatedly reminded to use the Google Calendar app interface with alert, and ignore calendar related emails, due to all the complex time zones and spontaneous move of meetings.",
     "weekly_meeting",
@@ -104,10 +104,14 @@ const SHEET_ROW_TO_ITEM: ReadonlyArray<[string, AdminBotCollaboratorAccessItemId
     "auto share with Daniel the list of our “coauthor-major” and “full members” as a constantly updating spreadsheet with only each person’s name and UToronto email (or professional email address).\n\nIn this way, we suggest Daniel to look up the users in our spreadsheet whenever he needs to decide whether to extend or to remove our user.",
     "vector_roster_share",
   ],
-  ["city-based dinner or team building invite", "city_dinner_invite"],
+  ["city-based meal or team building invite", "city_dinner_invite"],
   [
     "Rec letter button on their profile (allowed only for those with a major-coauthor status or own-pace-advisee for over 3 months at any historical point)",
     "rec_letter_button",
+  ],
+  [
+    "Access to our physical office locations (e.g., Vector Member onboarding and fob access; ETH OAT building access if the person has an ETH card; MPI guest contract)",
+    "physical_office_access",
   ],
 ];
 
@@ -150,7 +154,7 @@ function codeMatrix(): Map<string, Map<string, string>> {
 
 describe("collaborator access matrix vs the lab's spreadsheet", () => {
   it("reads the same subgroup vocabulary as the contract", () => {
-    // The sheet's ten columns and the contract's ten subgroups are the same ten, or every cell
+    // The sheet's columns and the contract's subgroups are the same set, or every cell
     // comparison below is comparing the wrong pairs.
     expect([...CONTACT_SHEET_SUBGROUPS].toSorted()).toEqual(
       [...adminBotExternalCollaboratorSubgroups].toSorted(),

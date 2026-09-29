@@ -26,6 +26,12 @@ export const adminBotActionTypes = [
   // approval card show what the event will look like afterwards, which is the thing worth reading
   // before saying yes to uninviting somebody.
   "calendar.remove_attendees",
+  // Read-only access to the lab's shared calendar for one member. Its own type because it is not an
+  // event write: it adds an ACL entry to the calendar itself, silently (Google's "shared a calendar
+  // with you" mail is suppressed). Typed so an onboarding that no admin is present for -- the
+  // weekly sheet sweep -- can queue the grant for approval like every other step, instead of either
+  // skipping it or granting access with nobody having said yes.
+  "calendar.grant_lab_calendar",
   "calendar.reschedule",
   "calendar.cancel",
   "email.draft",
@@ -40,6 +46,11 @@ export const adminBotActionTypes = [
   // recipient and lets the sender compose, rather than carrying a body an approver could edit into
   // something the provisioning no longer matches.
   "onboarding.send_guide",
+  // Sets a sheet joiner's access level from their Member Type and enrolls them in what that level
+  // grants (api/server.member-onboarding.ts). Its own action because the weekly sweep that creates
+  // them runs unattended, and a spreadsheet row is not an authorization: the member is created at
+  // the least-privileged level and an admin approving this is what raises it.
+  "lab_member.enroll",
   // The finished reimbursement package, mailed to the funder's office with the forms attached.
   //
   // Its own type rather than `email.send` for two reasons. The recipient is resolved from settings
@@ -116,6 +127,11 @@ export const adminBotActionTypes = [
   // because the two carry different risk: an unwanted invite is noise, an unwanted removal is
   // somebody losing a conversation they were part of.
   "slack.remove_from_channel",
+  // A Slack Connect invitation to the lab's #friends-and-collaborators channel for somebody who is
+  // not in the workspace, so has no user id `slack.invite_to_channel` could name. Slack mails them
+  // the invitation. The onboarding guide mints the same invite for the Member Types it mails; this
+  // is for the types the access design onboards without a mail but still gives the channel.
+  "slack.connect_invite",
   // Opens one project channel. Its own type because creating a room is a decision about the shape
   // of the workspace, not a membership change, and the audit log has to be able to answer "who
   // opened this, and why" -- which for a `proj-` channel is "a project was created with that alias".
@@ -187,6 +203,8 @@ export const adminBotMemberTypes = [
   "acquaintance",
   "coauthor-discussant-or-designer",
   "external-prof",
+  "benefit-partner",
+  "benefit-direct-relative",
   // Operational tags rather than collaboration shapes.
   "adminbot-admin",
   "adminbot-developer",
@@ -209,6 +227,10 @@ export const adminBotExternalCollaboratorSubgroups = [
   "coauthor_discussant_designer",
   "disappearing_coauthor",
   "external_prof",
+  // Not collaborators on the work: a partner organisation (office access, e.g. Vector) and a
+  // member's direct relative. The access design gives both follows and Slack Connect, no portal.
+  "benefit_partner",
+  "benefit_direct_relative",
 ] as const;
 
 export type AdminBotExternalCollaboratorSubgroup =
@@ -407,6 +429,8 @@ export const adminBotNoPortalAccessMemberTypes = [
   "disappearing-coauthor",
   "external-prof",
   "coauthor-discussant-or-designer",
+  "benefit-partner",
+  "benefit-direct-relative",
 ] as const;
 
 /**

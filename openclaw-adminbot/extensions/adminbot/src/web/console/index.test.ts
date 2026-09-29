@@ -361,9 +361,9 @@ describe("renderAdminBotWebUi", () => {
   it("offers the collaborator subgroup on the member editor, gated on the privilege select", () => {
     expect(html).toContain('id="member-subgroup-field" hidden');
     expect(html).toContain('<select name="collaborator_subgroup" id="member-subgroup">');
-    // All ten subgroups reach the page, labeled through the same humanize() the roster uses.
+    // Every subgroup reaches the page, labeled through the same humanize() the roster uses.
     expect(html).toContain(
-      '["interviewee","slightly_better_than_emails","acquaintance","alumni","own_pace_advisee","coauthor_minor","coauthor_major","coauthor_discussant_designer","disappearing_coauthor","external_prof"]',
+      '["interviewee","slightly_better_than_emails","acquaintance","alumni","own_pace_advisee","coauthor_minor","coauthor_major","coauthor_discussant_designer","disappearing_coauthor","external_prof","benefit_partner","benefit_direct_relative"]',
     );
     expect(html).toContain("collaboratorSubgroups,");
     expect(html).toContain('"Not set",');

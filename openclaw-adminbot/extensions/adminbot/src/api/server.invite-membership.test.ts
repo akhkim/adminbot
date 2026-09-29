@@ -152,13 +152,14 @@ describe("POST /meetings/invite-membership/run", () => {
     expect(proposal?.proposed_payload.event_id).not.toBe(SERIES);
   });
 
-  it("drops the major coauthor when the surface is the lab calendar", async () => {
+  // The access design seats major coauthors on the lab calendar as well as the Monday meeting.
+  it("keeps the major coauthor when the surface is the lab calendar", async () => {
     const baseUrl = await startService(async () => [
       occurrence(["full@cs.toronto.edu", "major@other.test"]),
     ]);
     const response = await post(baseUrl, { surface: "lab_calendar" });
     const body = (await response.json()) as { remove: Array<{ member_id: string }> };
-    expect(body.remove.map((entry) => entry.member_id)).toEqual(["major"]);
+    expect(body.remove).toEqual([]);
   });
 
   it("reports a calendar it cannot read rather than planning an empty invite", async () => {

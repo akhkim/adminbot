@@ -31,6 +31,7 @@ import type {
   AdminBotActionProposal,
   AdminBotCvScanResult,
   AdminBotApprovalRequest,
+  AdminBotAuditEvent,
   AdminBotExecutionRequest,
   AdminBotLabMemberInput,
   AdminBotMeetingAttendee,
@@ -42,6 +43,7 @@ import type {
   AdminBotRegistrationStatus,
   AdminBotRemovePendingRequest,
   AdminBotSettingsInput,
+  AdminBotStoredProposal,
 } from "../contracts/actions.js";
 import {
   adminBotBadgeNominationStatuses,
@@ -82,6 +84,7 @@ import {
   AdminBotMemoryStore,
   AdminBotService,
   type AdminBotActionExecutor,
+  type AdminBotExecutorOutcome,
   type AdminBotListPage,
   type AdminBotServiceOptions,
   type AdminBotServiceResponse,
@@ -135,6 +138,7 @@ import { createDcsRosterSheetRecorder } from "../workflows/onboarding/dcs-roster
 import { createDriveWorkspaceProvisioner } from "../workflows/onboarding/drive-workspace.js";
 import {
   createAdminBotOnboardingSender,
+  createSlackConnectOnboardingInviter,
   type AdminBotOnboardingSender,
   type AdminBotOnboardingSenderOptions,
   type AdminBotOnboardingSendRequest,
@@ -197,6 +201,13 @@ import {
 } from "./server.http.js";
 import { handleLabSharingRoute } from "./server.lab-sharing.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
+import {
+  enrollNewMember,
+  type NewMemberOnboardingDeps,
+  executeMemberEnrollment,
+  onboardNewMember,
+  queueNewMemberGuide,
+} from "./server.member-onboarding.js";
 import {
   addMemberSheetRow,
   type MemberSheetAddRowRequest,
@@ -664,8 +675,17 @@ function warnIfLabCalendarUnconfigured(injected: unknown): void {
   );
 }
 
+/** Mints the #friends-and-collaborators Slack Connect invite on its own; see guide-sender.ts. */
+type SlackConnectOnboardingInviter = ReturnType<typeof createSlackConnectOnboardingInviter>;
+
+/** What the `calendar.grant_lab_calendar` arm needs, resolved at execute time. */
+type LabCalendarGrant = {
+  invite: CalendarInviteRunner;
+  recordAudit: (event: Pick<AdminBotAuditEvent, "type" | "actor" | "details">) => void;
+};
+
 /**
- * The executor arm for `onboarding.send_guide`.
+ * The executor arms for `onboarding.send_guide` and `calendar.grant_lab_calendar`.
  *
  * Wraps whatever connector the launcher injected and answers this one type in-process, because the
  * work is not a CLI call: the sender mints a Slack Connect invite, provisions the Drive folder,
@@ -679,9 +699,36 @@ function warnIfLabCalendarUnconfigured(injected: unknown): void {
 function executorWithOnboardingGuide(
   inner: AdminBotActionExecutor | undefined,
   sender: () => AdminBotOnboardingSender | undefined,
+  labCalendar: () => LabCalendarGrant | undefined,
+  slackConnect: () => SlackConnectOnboardingInviter | undefined,
+  enroll: () =>
+    | ((proposal: AdminBotStoredProposal) => Promise<AdminBotExecutorOutcome>)
+    | undefined,
 ): AdminBotActionExecutor {
   return {
     async execute(proposal) {
+      if (proposal.type === "lab_member.enroll") {
+        const run = enroll();
+        return run ? run(proposal) : { handled: false, reason: "enrollment is not wired" };
+      }
+      if (proposal.type === "calendar.grant_lab_calendar") {
+        return grantLabCalendar(proposal, labCalendar());
+      }
+      if (proposal.type === "slack.connect_invite") {
+        const invite = slackConnect();
+        if (!invite) {
+          return { handled: false, reason: "no Slack Connect inviter is configured" };
+        }
+        const payload = (proposal.proposed_payload ?? {}) as Record<string, unknown>;
+        const result = await invite(typeof payload.email === "string" ? payload.email : "");
+        return result.ok
+          ? {
+              handled: true,
+              delivered: true,
+              artifacts: { channel_id: result.channel_id, reused: String(result.reused) },
+            }
+          : { handled: true, delivered: false, reason: result.reason };
+      }
       if (proposal.type !== "onboarding.send_guide") {
         return inner ? inner.execute(proposal) : { handled: false };
       }
@@ -706,6 +753,15 @@ function executorWithOnboardingGuide(
         ...(typeof payload.add_dcs_roster_row === "boolean"
           ? { add_dcs_roster_row: payload.add_dcs_roster_row }
           : {}),
+        // The project channels an admin picked on the Members tab. Dropping them here is how
+        // every approved guide used to go out with no #proj-xxx invite at all.
+        ...(Array.isArray(payload.slack_project_channels)
+          ? {
+              slack_project_channels: payload.slack_project_channels.filter(
+                (channel): channel is string => typeof channel === "string",
+              ),
+            }
+          : {}),
       });
       if (!result.ok) {
         // Refused rather than thrown: an unfilled placeholder or a missing value is a fixable
@@ -721,6 +777,45 @@ function executorWithOnboardingGuide(
   };
 }
 
+/**
+ * Read access to the lab calendar, as an approved action.
+ *
+ * Audited as `auth.calendar_invite_sent` / `_failed`, the rows the calendar backfill keys on, so a
+ * member granted here is not granted again by the backfill and a failure is visible to it.
+ */
+async function grantLabCalendar(
+  proposal: AdminBotStoredProposal,
+  grant: LabCalendarGrant | undefined,
+): Promise<AdminBotExecutorOutcome> {
+  if (!grant) {
+    return { handled: false, reason: "no lab calendar invite runner is configured" };
+  }
+  const payload = (proposal.proposed_payload ?? {}) as Record<string, unknown>;
+  const email = typeof payload.email === "string" ? payload.email.trim() : "";
+  const memberId = typeof payload.member_id === "string" ? payload.member_id : undefined;
+  if (!email) {
+    return { handled: false, reason: "email is required" };
+  }
+  const actor = proposal.approvals.at(-1)?.approver_id ?? "adminbot";
+  try {
+    await grant.invite(email);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    grant.recordAudit({
+      type: "auth.calendar_invite_failed",
+      actor,
+      details: { ...(memberId ? { member_id: memberId } : {}), email, error: message },
+    });
+    return { handled: true, delivered: false, reason: message };
+  }
+  grant.recordAudit({
+    type: "auth.calendar_invite_sent",
+    actor,
+    details: { ...(memberId ? { member_id: memberId } : {}), email },
+  });
+  return { handled: true, delivered: true, artifacts: { email } };
+}
+
 export function createAdminBotMockService(options: AdminBotMockServiceOptions = {}) {
   warnIfLabCalendarUnconfigured(options.calendarInviteRunner);
   let store: AdminBotServiceStore;
@@ -732,8 +827,20 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // construction having to move.
   let referenceScans: ReferenceScans;
   let onboardingSenderRef: AdminBotOnboardingSender | undefined;
+  // The two arms onboarding added, bound further down for the same reason as the sender.
+  const onboardingArms: {
+    labCalendar?: LabCalendarGrant;
+    slackConnect?: SlackConnectOnboardingInviter;
+    enroll?: (proposal: AdminBotStoredProposal) => Promise<AdminBotExecutorOutcome>;
+  } = {};
   const withOnboarding = (executor: AdminBotActionExecutor | undefined) =>
-    executorWithOnboardingGuide(executor, () => onboardingSenderRef);
+    executorWithOnboardingGuide(
+      executor,
+      () => onboardingSenderRef,
+      () => onboardingArms.labCalendar,
+      () => onboardingArms.slackConnect,
+      () => onboardingArms.enroll,
+    );
   const baseOptions = serviceOptions(options);
   const wiredOptions: AdminBotServiceOptions = {
     ...baseOptions,
@@ -794,6 +901,15 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       DEFAULT_ALLOWED_ORIGINS,
   );
   const calendarInviteRunner = options.calendarInviteRunner ?? createCalendarInviteRunner();
+  onboardingArms.labCalendar = {
+    invite: calendarInviteRunner,
+    recordAudit: (event) =>
+      store.recordAudit({
+        id: `aud_${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        ...event,
+      }),
+  };
   const auth = new AdminBotAuthService({
     store,
     // Prepare the governed profile without writing; approval commits the member, credential, and
@@ -917,6 +1033,13 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // Close the late binding opened above: from here, an approved `onboarding.send_guide` executes
   // through exactly the sender the Onboarding tab uses.
   onboardingSenderRef = onboardingSender;
+  onboardingArms.slackConnect = createSlackConnectOnboardingInviter({
+    ...(options.inviteToSlackConnect ? { inviteToSlackConnect: options.inviteToSlackConnect } : {}),
+    slackConnectInviteCache: {
+      get: (email, channelId) => service.getSlackConnectInvite(email, channelId),
+      save: (invite) => service.saveSlackConnectInvite(invite),
+    },
+  });
   const sensitiveInfo =
     options.sensitiveInfoDocument ??
     createAdminBotSensitiveInfoDocument({
@@ -1013,6 +1136,23 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     trustProxyHeaders:
       options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
   };
+  // Needs the route context -- the member sheet, the Monday meeting reader -- so it is bound last.
+  onboardingArms.enroll = (proposal) =>
+    executeMemberEnrollment(
+      {
+        ...memberEnrollmentContext(ctx),
+        getMember: (memberId) => store.getLabMember(memberId),
+        alreadyEnrolled: (memberId) =>
+          store
+            .listAuditEvents()
+            .some(
+              (event) =>
+                event.type === "lab_member.member_type_applied" &&
+                (event.details as { member_id?: unknown } | undefined)?.member_id === memberId,
+            ),
+      },
+      proposal,
+    );
   const slackChannelNamingSweepIntervalMs = options.slackChannelNamingSweepIntervalMs;
   const slackChannelNamingSweepTimer =
     typeof slackChannelNamingSweepIntervalMs === "number" && slackChannelNamingSweepIntervalMs > 0
@@ -1413,11 +1553,36 @@ async function handleRegistrationRoute(
     if (!requireMemberPrivileged(res, principal)) {
       return;
     }
-    sendAuthResult(
-      res,
-      await ctx.auth.approveRegistration(decodeURIComponent(approve[1]), decidedBy),
-      requestIsSecure(req, ctx.trustProxyHeaders),
-    );
+    const approved = await ctx.auth.approveRegistration(decodeURIComponent(approve[1]), decidedBy);
+    // A sign-up that created a member is onboarded like every other new member: the access its
+    // level grants, approved by this admin, and its guide queued. A claim of an existing roster
+    // row created nobody, and was onboarded by whichever path added that row.
+    const member =
+      approved.ok && approved.payload.member_created
+        ? ctx.store.getLabMember(approved.payload.member_id)
+        : undefined;
+    if (member) {
+      const deps = memberOnboardingDeps(ctx, principal, approverIdentityFor(principal));
+      // The account is already approved and committed; a failed step is audited by the step itself
+      // and must not turn that into an error response.
+      // The account address, when the record has none: a sign-up's login email lives on its
+      // credential, and it is the address every step here has to reach.
+      const email = member.email?.trim() || (approved.ok ? approved.payload.email : "");
+      try {
+        await enrollNewMember(deps, { ...member, email });
+        await queueNewMemberGuide(deps, member.id, { email });
+      } catch (error) {
+        deps.recordAudit({
+          type: "lab_member.member_type_applied",
+          actor: decidedBy,
+          details: {
+            member_id: member.id,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+      }
+    }
+    sendAuthResult(res, approved, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   const reject = /^\/auth\/registrations\/([^/]+)\/reject$/u.exec(url.pathname);
@@ -4369,7 +4534,7 @@ async function handleAuthenticatedRoute(
       sendJson(res, 409, { error: { message: identity.error } });
       return;
     }
-    const saved = await saveLabMemberAsAdmin(ctx, principal, identity.id!, body, true);
+    const saved = await saveLabMemberAsAdmin(ctx, principal, identity.id!, body);
     sendJson(res, saved.status, saved.body);
     return;
   }
@@ -5215,12 +5380,18 @@ async function handleAuthenticatedRoute(
     const onboardBody = (await readJson(req)) as MemberSheetOnboardRequest;
     let onboardResult;
     try {
-      onboardResult = await onboardFromMemberSheet(
-        service,
-        ctx.memberSheet,
-        onboardBody,
-        principalActor(principal),
-      );
+      // The admin's click approves enrollment, as on the Members tab; the mail itself still waits
+      // in Pending Actions, which is what this tab has always done with it.
+      const onboardDeps = memberOnboardingDeps(ctx, principal, approverIdentityFor(principal));
+      onboardResult = await onboardFromMemberSheet(service, ctx.memberSheet, onboardBody, {
+        enroll: (input) =>
+          onboardNewMember(onboardDeps, input, {
+            origin: { source: "admin", actor: principalActor(principal) },
+            guide: "none",
+            skipSheet: "the row is already on the sheet",
+          }),
+        queueGuide: (memberId, options) => queueNewMemberGuide(onboardDeps, memberId, options),
+      });
     } catch (error) {
       sendJson(res, 502, {
         error: { message: describeMemberSheetReadFailure(error, ctx.memberSheet) },
@@ -5266,6 +5437,12 @@ async function handleAuthenticatedRoute(
         addBody,
         approver,
         principalActor(principal),
+        (input) =>
+          onboardNewMember(memberOnboardingDeps(ctx, principal, approver), input, {
+            origin: { source: "admin", actor: principalActor(principal) },
+            guide: "send",
+            skipSheet: "the row was just added to the sheet",
+          }),
       );
     } catch (error) {
       sendJson(res, 502, {
@@ -5322,14 +5499,37 @@ async function handleAuthenticatedRoute(
       sendJson(res, sweepSheet.error.status, { error: { message: sweepSheet.error.message } });
       return;
     }
-    sendServiceResult(
-      res,
-      service.sweepOnboardingMail({
-        sheet: sweepSheet.parsed,
-        actor: principalActor(principal),
-        dryRun: sweepBody.dry_run === true,
-      }),
-    );
+    const swept = service.sweepOnboardingMail({
+      sheet: sweepSheet.parsed,
+      actor: principalActor(principal),
+      dryRun: sweepBody.dry_run === true,
+    });
+    if (!swept.ok || sweepBody.dry_run === true) {
+      sendServiceResult(res, swept);
+      return;
+    }
+    // The sweep created them at the least-privileged level. Enrolling them -- the level their
+    // Member Type implies and everything it grants -- waits for an admin, beside their guide.
+    const enrollments: Array<{ member_id: string; proposal_id?: string; error?: string }> = [];
+    for (const memberId of swept.payload.created) {
+      const member = ctx.store.getLabMember(memberId);
+      if (!member) {
+        continue;
+      }
+      const filed = service.createProposal({
+        type: "lab_member.enroll",
+        summary: `Enroll ${member.name || member.id} as ${member.member_type || "no Member Type"}: their access level and what it grants -- joined on the member sheet`,
+        target: { service: "adminbot", channel: "roster", target: member.id },
+        proposed_payload: { member_id: member.id, member_type: member.member_type ?? "" },
+        undo_plan: "Change their Member Type on the Members tab; that re-applies their access.",
+      });
+      enrollments.push(
+        filed.ok
+          ? { member_id: memberId, proposal_id: filed.payload.id }
+          : { member_id: memberId, error: filed.error.message },
+      );
+    }
+    sendJson(res, swept.status, { ...swept.payload, enrollments });
     return;
   }
   if (req.method === "POST" && url.pathname === "/members/roster-sync") {
@@ -6377,6 +6577,36 @@ async function handleMemberRequestRoute(
   sendJson(res, 404, { error: { message: "not found" } });
 }
 
+/** What the shared onboarding steps need from a request, approved by `approver` when given. */
+function memberOnboardingDeps(
+  ctx: AdminBotRouteContext,
+  principal: AdminBotPrincipal,
+  approver: { approver_role: string; approver_id: string } | undefined,
+): NewMemberOnboardingDeps {
+  return {
+    ...memberEnrollmentContext(ctx),
+    ...(approver ? { approver } : {}),
+    actor: principalActor(principal),
+  };
+}
+
+/** The parts of the onboarding deps that come from the deployment rather than the request. */
+function memberEnrollmentContext(
+  ctx: AdminBotRouteContext,
+): Omit<NewMemberOnboardingDeps, "approver" | "actor"> {
+  return {
+    service: ctx.service,
+    ...(ctx.memberSheet ? { memberSheet: ctx.memberSheet } : {}),
+    readGroupMeeting: () => readGroupMeetingSeries(ctx, ctx.labCalendar.id),
+    recordAudit: (event) =>
+      ctx.store.recordAudit({
+        id: `aud_${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        ...event,
+      }),
+  };
+}
+
 /**
  * The admin's write of one roster record: the Add member and Edit member forms, and the approval of
  * a member request, which is the same save made on the requester's behalf. One function so that
@@ -6388,7 +6618,6 @@ async function saveLabMemberAsAdmin(
   principal: AdminBotMemberPrincipal,
   memberId: string,
   body: Record<string, unknown>,
-  enrollNew = false,
 ): Promise<{ status: number; body: unknown }> {
   const { service } = ctx;
   const existing = ctx.store.getLabMember(memberId);
@@ -6461,12 +6690,13 @@ async function saveLabMemberAsAdmin(
     { source: "admin", actor: principalActor(principal) },
   );
   const approver = approverIdentityFor(principal);
-  if (!saved.ok || !approver || (!(typeChanged && (existing || enrollNew)) && !selectedMeetings)) {
+  // A new record is always enrolled, typed or not: the access design's consequences of holding its
+  // level are the same whichever door the person came in by (server.member-onboarding.ts).
+  if (!saved.ok || !approver || (!(typeChanged || !existing) && !selectedMeetings)) {
     return saved.ok
       ? { status: saved.status, body: saved.payload }
       : { status: saved.status, body: { error: saved.error } };
   }
-  const actor = principalActor(principal);
   const standing = selectedMeetings ? await readStandingMeetings(ctx) : undefined;
   // The Monday meeting has two possible sources in one save: the type, and its checkbox. The
   // checkbox wins only when the admin actually changed it; otherwise the type decides and the
@@ -6480,29 +6710,19 @@ async function saveLabMemberAsAdmin(
     (selectedMeetings ?? []).includes(groupMeeting.id) !==
       memberAttends(groupMeeting, existing ?? saved.payload);
   const response: Record<string, unknown> = { ...saved.payload };
-  if (typeChanged && (existing || enrollNew)) {
+  if (!existing) {
+    response.member_type_change = await enrollNewMember(
+      memberOnboardingDeps(ctx, principal, approver),
+      saved.payload,
+      { skipGroupMeeting: groupMeetingExplicit },
+    );
+  } else if (typeChanged) {
     response.member_type_change = await applyMemberTypeChange(
       {
-        service,
-        approver,
-        actor,
-        ...(ctx.memberSheet ? { memberSheet: ctx.memberSheet } : {}),
-        readGroupMeeting: () => readGroupMeetingSeries(ctx, ctx.labCalendar.id),
-        inviteToLabCalendar: ctx.inviteToLabCalendar,
+        ...memberOnboardingDeps(ctx, principal, approver),
         skipGroupMeeting: groupMeetingExplicit,
-        recordAudit: (event) =>
-          ctx.store.recordAudit({
-            id: `aud_${randomUUID()}`,
-            timestamp: new Date().toISOString(),
-            ...event,
-          }),
       },
-      existing ?? {
-        ...saved.payload,
-        member_type: "",
-        privilege_level: "external_collaborator",
-        collaborator_subgroup: undefined,
-      },
+      existing,
       saved.payload,
     );
   }

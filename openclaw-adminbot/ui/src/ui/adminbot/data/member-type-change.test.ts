@@ -24,6 +24,20 @@ describe("describeMemberTypeChange", () => {
     expect(notice.text).toContain("Skipped: lab calendar (no address on file)");
   });
 
+  // The weekly sweep has nobody to approve its steps, so they wait in Pending Actions.
+  it("names the steps left waiting for approval without turning red", () => {
+    const notice = describeMemberTypeChange("ada", {
+      from: "",
+      to: "full",
+      privilege_level: { from: "external_collaborator", to: "member" },
+      collaborator_subgroup: {},
+      steps: [{ step: "lab_calendar", target: "ada@lab.test", status: "queued" }],
+    });
+
+    expect(notice.kind).toBe("success");
+    expect(notice.text).toContain("Waiting for approval: lab calendar ada@lab.test");
+  });
+
   it("turns red when a step failed, and names it", () => {
     const notice = describeMemberTypeChange("cora", {
       from: "coauthor-minor",

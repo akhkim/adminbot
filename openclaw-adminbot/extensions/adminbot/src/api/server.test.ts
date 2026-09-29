@@ -411,6 +411,15 @@ describe("AdminBot mock service", () => {
         invited.push(email);
       },
     });
+    // The route is what onboards the new member; the auth service alone only commits the account.
+    seedMember(baseUrl, "approver", {
+      name: "Approver",
+      email: "approver@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    await approveClaim(baseUrl, "approver", "approver@cs.toronto.edu");
+    const adminSession = await loginToken(baseUrl, "approver@cs.toronto.edu");
+    invited.length = 0;
     const signup = await fetch(`${baseUrl}/auth/signup`, {
       method: "POST",
       headers: jsonHeaders(),
@@ -423,11 +432,15 @@ describe("AdminBot mock service", () => {
     expect(signup.status).toBe(200);
 
     const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
-    const approveBody = await approveRegistration(baseUrl, registration!.id);
+    const approved = await fetch(`${baseUrl}/auth/registrations/${registration!.id}/approve`, {
+      method: "POST",
+      headers: { ...jsonHeaders(), Authorization: `Bearer ${adminSession}` },
+    });
+    expect(approved.status).toBe(200);
+    const approveBody = (await approved.json()) as { member_id: string };
 
-    // Fire-and-forget: flush microtasks so the injected runner's resolution is observable.
-    await Promise.resolve();
-    await Promise.resolve();
+    // Granted through the typed `calendar.grant_lab_calendar` action, approved by the admin who
+    // approved the account, like every other new member's.
     expect(invited).toEqual(["calendar-person@cs.toronto.edu"]);
 
     const members = (await (
@@ -572,6 +585,8 @@ describe("AdminBot mock service", () => {
     expect(await approveRegistration(baseUrl, registration!.id)).toEqual({
       status: "approved",
       member_id: "mk",
+      member_created: false,
+      email: "mk@cs.toronto.edu",
     });
     expect(await loginToken(baseUrl, "mk@cs.toronto.edu")).toBeTruthy();
   });
@@ -594,7 +609,12 @@ describe("AdminBot mock service", () => {
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "rk");
     const approveBody = await approveRegistration(baseUrl, registration!.id);
-    expect(approveBody).toEqual({ status: "approved", member_id: "rk" });
+    expect(approveBody).toEqual({
+      status: "approved",
+      member_id: "rk",
+      member_created: false,
+      email: "rk@cs.toronto.edu",
+    });
     expect(await loginToken(baseUrl, "rk@cs.toronto.edu")).toBeTruthy();
   });
 

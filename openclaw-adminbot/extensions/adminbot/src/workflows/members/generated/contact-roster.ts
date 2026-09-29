@@ -1,4 +1,4 @@
-// Generated from 'Jinesis Contact_Paper list with Zhijing (3).xlsx' by scripts/adminbot-contact-roster-collect.py.
+// Generated from 'Jinesis Contact_Paper list with Zhijing (3).xlsx + Jinesis Contact_Paper list with Zhijing - External Collab Access Design.csv' by scripts/adminbot-contact-roster-collect.py.
 // Do not hand-edit; regenerate instead.
 //
 // The lab's contact list and access policy as the spreadsheet states them. This file is the
@@ -12,6 +12,8 @@
 export const CONTACT_SHEET_SUBGROUPS = [
   "acquaintance",
   "alumni",
+  "benefit_direct_relative",
+  "benefit_partner",
   "coauthor_discussant_designer",
   "coauthor_major",
   "coauthor_minor",
@@ -43,6 +45,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "yes",
       external_prof: "yes",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -58,6 +62,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -74,6 +80,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "yes",
       external_prof: "yes",
       coauthor_discussant_designer: "yes",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -89,6 +97,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "no",
+      benefit_partner: "yes",
+      benefit_direct_relative: "yes",
     },
   },
   {
@@ -104,6 +114,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "yes",
+      benefit_partner: "yes",
+      benefit_direct_relative: "yes",
     },
   },
   {
@@ -120,6 +132,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "yes",
       external_prof: "no",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -135,6 +149,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -150,6 +166,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -166,6 +184,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "yes",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -181,6 +201,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "yes",
       external_prof: "yes",
       coauthor_discussant_designer: "yes",
+      benefit_partner: "yes",
+      benefit_direct_relative: "yes",
     },
   },
   {
@@ -196,6 +218,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -211,10 +235,12 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
-    label: "Add to #discussion-xxx for joining the discussions on this broad topic",
+    label: "Add to #discussion-xxx for joining the discussions on any related broad topic",
     cells: {
       slightly_better_than_emails: "no",
       acquaintance: "no",
@@ -226,6 +252,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "yes",
+      benefit_partner: "yes",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -241,6 +269,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "yes",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -256,6 +286,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "yes",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -271,6 +303,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -287,6 +321,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -303,6 +339,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "yes",
       external_prof: "no",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -319,6 +357,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "yes",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -334,6 +374,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -350,6 +392,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "yes",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -366,10 +410,12 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
-    label: "city-based dinner or team building invite",
+    label: "city-based meal or team building invite",
     cells: {
       slightly_better_than_emails: "no",
       acquaintance: "yes",
@@ -381,6 +427,8 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "no",
       external_prof: "no",
       coauthor_discussant_designer: "yes",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
     },
   },
   {
@@ -397,6 +445,26 @@ export const CONTACT_ACCESS_MATRIX: readonly ContactSheetAccessItem[] = [
       disappearing_coauthor: "auto_decline",
       external_prof: "no",
       coauthor_discussant_designer: "no",
+      benefit_partner: "no",
+      benefit_direct_relative: "no",
+    },
+  },
+  {
+    label:
+      "Access to our physical office locations (e.g., Vector Member onboarding and fob access; ETH OAT building access if the person has an ETH card; MPI guest contract)",
+    cells: {
+      slightly_better_than_emails: "no",
+      acquaintance: "no",
+      alumni: "no",
+      interviewee: "no",
+      own_pace_advisee: "no",
+      coauthor_minor: "no",
+      coauthor_major: "no",
+      disappearing_coauthor: "no",
+      external_prof: "no",
+      coauthor_discussant_designer: "no",
+      benefit_partner: "yes",
+      benefit_direct_relative: "no",
     },
   },
 ];

@@ -7,7 +7,7 @@
  * is the one whose onboarding covers the others. Someone who is `full, coauthor-major` needs the
  * full-member setup, which already includes everything the coauthor mail would have said.
  *
- * Three roles send no mail at all. Their onboarding is the access-level algorithm granting the
+ * These roles send no mail at all. Their onboarding is the access-level algorithm granting the
  * subgroup's access items in the backend (collaborator-subgroups.ts), which is why `acquaintance`
  * and `external_prof` no longer have templates and `coauthor_discussant_designer` never did. A row
  * carrying only those is refused here rather than silently mailed something close enough.
@@ -37,6 +37,8 @@ export const NO_MAIL_MEMBER_TYPES: readonly AdminBotMemberType[] = [
   "acquaintance",
   "coauthor-discussant-or-designer",
   "external-prof",
+  "benefit-partner",
+  "benefit-direct-relative",
 ];
 
 export function memberTypeTokens(memberType: string | undefined): string[] {
@@ -69,8 +71,8 @@ export function templateForMemberType(memberType: string | undefined): MemberTyp
     return {
       ok: false,
       reason:
-        `${noMail.join(", ")} sends no onboarding mail; the access-level algorithm grants the `
-        + "subgroup's access items in the backend and that is the whole onboarding",
+        `${noMail.join(", ")} sends no onboarding mail; the access-level algorithm grants the ` +
+        "subgroup's access items in the backend and that is the whole onboarding",
     };
   }
   return { ok: false, reason: `no onboarding template for member type "${tokens.join(", ")}"` };

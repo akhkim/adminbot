@@ -131,7 +131,7 @@ describe("the roster grid", () => {
 
     const panel = text(host);
     expect(panel).toContain("Review before onboarding");
-    expect(panel).toContain("Nothing is sent until an admin approves them there.");
+    expect(panel).toContain("nothing is sent until an admin approves them there.");
     expect(panel).toContain("Yuen Chen");
     expect(panel).toContain("alumni → yuen@example.org");
     expect(panel).toContain("Welcome back");
@@ -139,6 +139,38 @@ describe("the roster grid", () => {
     expect(panel).toContain("Row 3: no email address on this row");
 
     host.querySelector<HTMLButtonElement>('[data-testid="onboard-confirm"]')?.click();
+    expect(onboardSelectedMemberRows).toHaveBeenCalledOnce();
+  });
+
+  // A no-mail Member Type is onboarded by its access alone; the panel says so rather than listing
+  // the row as skipped, and the button still has something to do.
+  it("lists access-only rows and lets them be onboarded without an email", () => {
+    const onboardSelectedMemberRows = vi.fn(async () => {});
+    const state: Partial<AppViewState> = {
+      memberSheet: SHEET,
+      onboardSelectedMemberRows,
+      memberSheetOnboardPreview: {
+        planned: [],
+        access_only: [
+          {
+            sheet_row: 4,
+            name: "Rauno Arike",
+            email: "rauno@example.org",
+            member_type: "coauthor-discussant-or-designer",
+            reason: "sends no onboarding mail",
+          },
+        ],
+        skipped: [],
+      },
+    };
+    const host = draw(state);
+    const panel = text(host);
+    expect(panel).toContain("Onboarded by their access alone, with no email:");
+    expect(panel).toContain("Row 4 · Rauno Arike (coauthor-discussant-or-designer)");
+    const confirm = host.querySelector<HTMLButtonElement>('[data-testid="onboard-confirm"]');
+    expect(confirm?.disabled).toBe(false);
+    expect(confirm?.textContent).toContain("Onboard 1 person");
+    confirm?.click();
     expect(onboardSelectedMemberRows).toHaveBeenCalledOnce();
   });
 

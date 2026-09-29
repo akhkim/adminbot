@@ -31,10 +31,19 @@ const ROSTER: AdminBotLabMember[] = [
 ];
 
 describe("belongsOnSurface", () => {
-  it("seats major coauthors at the group meeting but not on the lab calendar", () => {
+  it("seats major coauthors and own-pace advisees on both, as the access design's row says", () => {
     const major = ROSTER.find((entry) => entry.id === "major")!;
     expect(belongsOnSurface(major, "group_meeting")).toBe(true);
-    expect(belongsOnSurface(major, "lab_calendar")).toBe(false);
+    expect(belongsOnSurface(major, "lab_calendar")).toBe(true);
+    const advisee = member({
+      id: "advisee",
+      privilege_level: "external_collaborator",
+      member_type: "own-pace-advisee",
+    });
+    expect(belongsOnSurface(advisee, "group_meeting")).toBe(true);
+    expect(belongsOnSurface(advisee, "lab_calendar")).toBe(true);
+    // An alumnus keeps the subgroup on the record but has left, and leaving wins.
+    expect(belongsOnSurface({ ...advisee, status: "alumni" }, "lab_calendar")).toBe(false);
   });
 
   it("keeps full members on both, and everyone else on neither", () => {
@@ -69,15 +78,14 @@ describe("surfaceMembershipPlan", () => {
     "alum@lab.test",
   ];
 
-  it("drops non-full people from the lab calendar, major coauthors included", () => {
+  it("keeps major coauthors on the lab calendar and drops the rest", () => {
     const plan = surfaceMembershipPlan({ members: ROSTER, attendees, surface: "lab_calendar" });
     expect(plan.remove.map((entry) => entry.member_id).toSorted()).toEqual([
       "alum",
-      "major",
       "minor",
       "trial",
     ]);
-    expect(plan.keep).toEqual(["full@lab.test"]);
+    expect(plan.keep.toSorted()).toEqual(["full@lab.test", "major@other.test"]);
   });
 
   it("keeps major coauthors in the group meeting and drops the rest", () => {
@@ -89,7 +97,7 @@ describe("surfaceMembershipPlan", () => {
     ]);
     expect(plan.keep.toSorted()).toEqual(["full@lab.test", "major@other.test"]);
     expect(plan.remove.find((entry) => entry.member_id === "minor")?.reason).toContain(
-      "not a major coauthor",
+      "not an own-pace advisee or major coauthor",
     );
   });
 

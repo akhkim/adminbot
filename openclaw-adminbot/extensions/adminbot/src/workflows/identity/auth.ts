@@ -997,7 +997,15 @@ export class AdminBotAuthService {
   async approveRegistration(
     id: string,
     decidedBy: string,
-  ): Promise<AdminBotAuthResponse<{ status: "approved"; member_id: string }>> {
+  ): Promise<
+    AdminBotAuthResponse<{
+      status: "approved";
+      member_id: string;
+      member_created: boolean;
+      /** The account's address, which a signed-up member's roster record may not carry. */
+      email: string;
+    }>
+  > {
     if (this.registrationDecisionsInFlight.has(id)) {
       return authError(409, "registration decision in progress");
     }
@@ -1039,9 +1047,21 @@ export class AdminBotAuthService {
         member_id: memberId,
         ...(memberHookError ? { member_hook_error: memberHookError } : {}),
       });
-      this.inviteNewMemberToLabCalendar(registration.email, memberId, decidedBy);
+      // Lab calendar access, the Monday meeting and the rest of onboarding are no longer granted
+      // here: the route runs the shared onboarding for a member this approval created
+      // (api/server.member-onboarding.ts), so a sign-up gets exactly what its access level gives
+      // and nothing a person added any other way would not.
       void this.notifyAccountApproved(registration.email, memberId, decidedBy).catch(() => {});
-      return { ok: true, status: 200, payload: { status: "approved", member_id: memberId } };
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          status: "approved",
+          member_id: memberId,
+          member_created: Boolean(preparedMember),
+          email: registration.email,
+        },
+      };
     } finally {
       this.registrationDecisionsInFlight.delete(id);
     }
@@ -1212,25 +1232,6 @@ export class AdminBotAuthService {
         dry_run: dryRun,
       },
     };
-  }
-
-  // Fire-and-forget: never blocks or fails approval on an external Google Calendar call. Success
-  // and failure are both audited so a failed invite can be retried/investigated later.
-  private inviteNewMemberToLabCalendar(email: string, memberId: string, decidedBy: string): void {
-    if (!this.inviteToLabCalendar) {
-      return;
-    }
-    void this.inviteToLabCalendar(email)
-      .then(
-        () => this.audit("auth.calendar_invite_sent", decidedBy, { member_id: memberId, email }),
-        (error: unknown) =>
-          this.audit("auth.calendar_invite_failed", decidedBy, {
-            member_id: memberId,
-            email,
-            error: error instanceof Error ? error.message : String(error),
-          }),
-      )
-      .catch(() => {});
   }
 
   async rejectRegistration(

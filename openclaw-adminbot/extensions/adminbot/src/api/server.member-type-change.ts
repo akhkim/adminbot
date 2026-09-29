@@ -25,11 +25,11 @@ import {
   memberAddresses,
   planMeetingMembership,
 } from "../workflows/calendar/standing-meetings.js";
+import { ADMINBOT_FRIENDS_CHANNELS } from "../workflows/members/access-audit.js";
 import {
   hasAccessConsequences,
   memberAccessDelta,
 } from "../workflows/members/member-type-access.js";
-import type { CalendarInviteRunner } from "../workflows/onboarding/calendar-invite.js";
 import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
 import {
   approveAndExecute,
@@ -42,7 +42,8 @@ export type MemberTypeChangeStep = {
   step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "alumni_mail" | "meeting";
   /** The channel, series or address the step was about. */
   target?: string;
-  status: "done" | "skipped" | "failed";
+  /** `queued`: filed for an admin to approve in Pending Actions, because nobody approved it here. */
+  status: "done" | "queued" | "skipped" | "failed";
   detail?: string;
   proposal_id?: string;
 };
@@ -57,7 +58,11 @@ export type MemberTypeChangeResult = {
 
 export type MemberTypeChangeDeps = {
   service: AdminBotService;
-  approver: MemberSheetApprover;
+  /**
+   * The admin whose click approves every step. Absent when nobody is present to approve -- the
+   * weekly sheet sweep -- and then each step is filed as a proposal and left pending instead.
+   */
+  approver?: MemberSheetApprover;
   actor: string;
   memberSheet?: MemberSheetSource;
   /** The live Monday series, or why it could not be read. */
@@ -65,12 +70,20 @@ export type MemberTypeChangeDeps = {
     | { calendarId: string; seriesId: string; targets: string[] }
     | { error: { status: number; message: string } }
   >;
-  inviteToLabCalendar?: CalendarInviteRunner;
   /**
    * Leave the Monday meeting to the Meetings checkboxes: the admin ticked or unticked it in the
    * same save, and that explicit answer outranks what the type would have implied.
    */
   skipGroupMeeting?: boolean;
+  /** Why the sheet step does not apply, e.g. the row was just written or was read from the sheet. */
+  skipSheet?: string;
+  /** New members get their guide from the onboarding step, so the alumni mail here would repeat it. */
+  skipAlumniMail?: boolean;
+  /**
+   * The onboarding guide this person is about to be sent mints their Slack Connect invite, so this
+   * change must not file a second one.
+   */
+  guideSendsSlackConnect?: boolean;
   /** Writes one audit row; the id and timestamp are the caller's to stamp. */
   recordAudit: (event: Pick<AdminBotAuditEvent, "type" | "actor" | "details">) => void;
 };
@@ -91,6 +104,9 @@ async function runAction(
   const created = deps.service.createProposal(proposal);
   if (!created.ok) {
     return { step, target, status: "failed", detail: created.error.message };
+  }
+  if (!deps.approver) {
+    return { step, target, status: "queued", proposal_id: created.payload.id };
   }
   const ran = await approveAndExecute(deps.service, created.payload, deps.approver);
   return ran.ok
@@ -117,8 +133,16 @@ export async function applyMemberTypeChange(
   }`;
 
   // 1. The sheet, first: until it agrees, the nightly roster sync would put the old type back.
-  if (!deps.memberSheet) {
+  if (deps.skipSheet) {
+    steps.push({ step: "sheet", status: "skipped", detail: deps.skipSheet });
+  } else if (!deps.memberSheet) {
     steps.push({ step: "sheet", status: "skipped", detail: "no member spreadsheet configured" });
+  } else if (!deps.approver) {
+    steps.push({
+      step: "sheet",
+      status: "skipped",
+      detail: "a sheet write needs an admin to approve it",
+    });
   } else {
     try {
       const written = await writeMemberTypeToSheet(
@@ -160,6 +184,29 @@ export async function applyMemberTypeChange(
     ...delta.slack_channels_to_add.map((channel) => ({ channel, remove: false })),
   ];
   const slackUserId = after.slack_user_id?.trim();
+  // Somebody outside the workspace has no user id to add, but the #friends-and-collaborators row
+  // is reached through Slack Connect, which needs only their address.
+  const gainsFriendsChannel = delta.slack_channels_to_add.some((channel) =>
+    ADMINBOT_FRIENDS_CHANNELS.includes(channel),
+  );
+  const connectAddress = calendarAddress(after);
+  if (!slackUserId && gainsFriendsChannel && !deps.guideSendsSlackConnect) {
+    steps.push(
+      connectAddress
+        ? await runAction(deps, "slack", "#friends-and-collaborators", {
+            type: "slack.connect_invite",
+            summary: `Invite ${label} to #friends-and-collaborators through Slack Connect (${typeNote})`,
+            target: { service: "slack", channel: "slack", target: connectAddress },
+            proposed_payload: { email: connectAddress, member_id: after.id },
+            undo_plan: "Revoke the invitation in the channel's Slack Connect settings.",
+          })
+        : {
+            step: "slack",
+            status: "skipped",
+            detail: "no address to send a Slack Connect invite to",
+          },
+    );
+  }
   if (channelMoves.length > 0 && !slackUserId) {
     steps.push({
       step: "slack",
@@ -235,33 +282,22 @@ export async function applyMemberTypeChange(
     }
   }
 
-  // 4. Read access to the lab calendar. Granted silently; there is no typed action that revokes a
-  //    calendar share, so a loss is reported for somebody to act on rather than guessed at.
+  // 4. Read access to the lab calendar, as a typed action like every other step. There is no typed
+  //    action that revokes a calendar share, so a loss is reported for somebody to act on.
   if (delta.lab_calendar === "gained") {
     const address = calendarAddress(after);
-    if (!address || !deps.inviteToLabCalendar) {
-      steps.push({
-        step: "lab_calendar",
-        status: "skipped",
-        detail: address ? "the lab calendar is not configured" : "no address on file",
-      });
+    if (!address) {
+      steps.push({ step: "lab_calendar", status: "skipped", detail: "no address on file" });
     } else {
-      try {
-        await deps.inviteToLabCalendar(address);
-        deps.recordAudit({
-          type: "auth.calendar_invite_sent",
-          actor: deps.actor,
-          details: { member_id: after.id, email: address, reason: typeNote },
-        });
-        steps.push({ step: "lab_calendar", target: address, status: "done" });
-      } catch (error) {
-        steps.push({
-          step: "lab_calendar",
-          target: address,
-          status: "failed",
-          detail: error instanceof Error ? error.message : String(error),
-        });
-      }
+      steps.push(
+        await runAction(deps, "lab_calendar", address, {
+          type: "calendar.grant_lab_calendar",
+          summary: `Give ${label} view access to the lab calendar (${typeNote})`,
+          target: { service: "calendar", channel: "calendar", target: address },
+          proposed_payload: { email: address, member_id: after.id },
+          undo_plan: "Remove the address in the lab calendar's sharing settings.",
+        }),
+      );
     }
   } else if (delta.lab_calendar === "lost") {
     steps.push({
@@ -274,7 +310,11 @@ export async function applyMemberTypeChange(
 
   // 5. The one mail: moving into alumni. Only when alumni is what decides their template -- a row
   //    that is also `full` would otherwise be sent the alumni farewell while still in the lab.
-  if (!adminBotIsAlumniType(before.member_type) && adminBotIsAlumniType(after.member_type)) {
+  if (
+    !deps.skipAlumniMail &&
+    !adminBotIsAlumniType(before.member_type) &&
+    adminBotIsAlumniType(after.member_type)
+  ) {
     const template = templateForMemberType(after.member_type);
     if (!template.ok || template.templateId !== "alumni") {
       steps.push({
@@ -293,24 +333,33 @@ export async function applyMemberTypeChange(
         steps.push({ step: "alumni_mail", status: "failed", detail: queued.error.message });
       } else {
         const guide = deps.service.getProposal(queued.payload.proposal_id);
-        const sent = guide
-          ? await approveAndExecute(deps.service, guide, deps.approver)
-          : { ok: false as const, reason: `proposal ${queued.payload.proposal_id} vanished` };
+        const sent = !deps.approver
+          ? ({ ok: "queued" } as const)
+          : guide
+            ? await approveAndExecute(deps.service, guide, deps.approver)
+            : { ok: false as const, reason: `proposal ${queued.payload.proposal_id} vanished` };
         steps.push(
-          sent.ok
+          sent.ok === "queued"
             ? {
                 step: "alumni_mail",
                 target: queued.payload.email,
-                status: "done",
+                status: "queued",
                 proposal_id: queued.payload.proposal_id,
               }
-            : {
-                step: "alumni_mail",
-                target: queued.payload.email,
-                status: "failed",
-                detail: sent.reason,
-                proposal_id: queued.payload.proposal_id,
-              },
+            : sent.ok
+              ? {
+                  step: "alumni_mail",
+                  target: queued.payload.email,
+                  status: "done",
+                  proposal_id: queued.payload.proposal_id,
+                }
+              : {
+                  step: "alumni_mail",
+                  target: queued.payload.email,
+                  status: "failed",
+                  detail: sent.reason,
+                  proposal_id: queued.payload.proposal_id,
+                },
         );
       }
     }

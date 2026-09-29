@@ -190,7 +190,9 @@ describe("memberAccessDelta", () => {
     // coauthor_major's matrix rows are gone, but a full member is entitled to more than any row.
     expect(delta.revoked.length).toBeGreaterThan(0);
     expect(delta.slack_channels_to_remove).toEqual([]);
-    expect(delta.lab_calendar).toBe("gained");
+    // A major coauthor already held the lab calendar through the access design's standing-invites
+    // row, so becoming full changes nothing there.
+    expect(delta.lab_calendar).toBe("unchanged");
   });
 
   it("follows a subgroup that moved with the type, which the type-only diff cannot see", () => {
