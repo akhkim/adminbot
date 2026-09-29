@@ -1,6 +1,8 @@
 // oxlint-disable max-lines -- grandfathered at 3976 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
+import "./adminbot/views/reference-checker.ts";
+import "./adminbot/views/openreview-citation-checks.ts";
 import { guard } from "lit/directives/guard.js";
 import "./adminbot/views/reference-checker.ts";
 import "./adminbot/views/openreview-citation-checks.ts";
