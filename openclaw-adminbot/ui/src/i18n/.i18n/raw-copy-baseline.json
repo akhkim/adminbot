@@ -4211,13 +4211,6 @@
     {
       "count": 1,
       "kind": "html-attribute",
-      "name": "aria-label",
-      "path": "ui/src/ui/adminbot/views/deadline-parent-conference-select.ts",
-      "text": "Parent conference"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/deadline-parent-conference-select.ts",
       "text": "Choose or enter a conference"
@@ -4528,13 +4521,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
-      "text": "Choose a time zone"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "choose the CFP's non-archival route if the paper may be submitted elsewhere."
     },
     {
@@ -4769,7 +4755,7 @@
       "text": "OpenReview URL"
     },
     {
-      "count": 7,
+      "count": 8,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
@@ -4900,6 +4886,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Time zone"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Time zone unknown"
     },
     {
       "count": 1,

@@ -6910,6 +6910,7 @@ function requireMemberPrivileged(res: ServerResponse, principal: AdminBotPrincip
 
 function deadlineProposalInput(body: Record<string, unknown>): DeadlineProposalInput {
   return {
+    ...(body.stage !== undefined ? { stage: body.stage as DeadlineProposalInput["stage"] } : {}),
     name: asString(body.name),
     parentConference: asString(body.parentConference),
     parentYear: asString(body.parentYear),

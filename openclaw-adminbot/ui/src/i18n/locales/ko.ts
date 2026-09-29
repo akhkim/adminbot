@@ -3,6 +3,27 @@
 import type { TranslationMap } from "../lib/types.ts";
 
 export const ko: TranslationMap = {
+  deadlineStageProposal: {
+    chooseVenue:
+      "Select a conference or workshop from the list, or choose New conference or workshop.",
+    venue: "Conference or workshop",
+    newVenue: "New conference or workshop",
+    stage: "Stage",
+    stageName: "Stage name",
+    original: "Original date",
+    correct: "Suggest deadline correction",
+    timeUnknown: "Time unknown",
+    kinds: {
+      submission: "Paper submission",
+      abstract: "Abstract registration",
+      notification: "Decisions",
+      camera_ready: "Camera-ready",
+      author_response: "Author response",
+      registration: "Registration",
+      conference: "Conference",
+      other: "Other",
+    },
+  },
   deadlineStageFilter: {
     label: "Filter by stage",
     all: "All stages",

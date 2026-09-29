@@ -735,7 +735,7 @@ describe("renderDeadlines", () => {
     parentConference.dispatchEvent(new Event("input", { bubbles: true }));
     expect(
       (form.elements.namedItem("timezone") as HTMLSelectElement).selectedOptions[0]?.textContent,
-    ).toContain("AoE — Anywhere on Earth (UTC−12)");
+    ).toContain("Time zone unknown");
     const values = proposalInput();
     for (const [name, value] of Object.entries(values)) {
       if (name === "parentConference") {
@@ -2312,4 +2312,132 @@ it("uses the earliest upcoming stage by default for main conferences as well as 
   } as DeadlineVenue;
   const rows = entriesForDeadlinePeriod(buildDeadlineBoardEntries([venue]), Date.now(), "upcoming");
   expect(rows[0]?.stage?.label).toBe("Decisions");
+});
+
+it("proposes a single stage for an existing past venue without entering venue details again", async () => {
+  const store = new TestProposalStore();
+  const past = {
+    ...DEADLINE_VENUES[0],
+    id: "past",
+    deadline_id: "past",
+    name: "Past Example Conference",
+    deadline_aoe: "2025-01-01 23:59:00",
+    deadline_at: "2025-01-02T11:59:00Z",
+    schedule: [],
+    notification_aoe: "",
+    homepage_url: "https://example.org",
+  };
+  store.listPublished = async () => [past];
+  const submit = vi.spyOn(store, "submit");
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(
+    renderDeadlines({ proposalStore: store, role: "member", memberId: "member-1" }),
+    container,
+  );
+  await settle(container);
+  buttonNamed(container, "Propose a new deadline").click();
+  await settle(container);
+  const picker = container.querySelector(
+    "adminbot-deadline-parent-conference-select",
+  ) as HTMLElement & { options: string[] };
+  picker.dispatchEvent(
+    new CustomEvent("selection-change", {
+      detail: picker.options.find((x) => x.includes("Past Example Conference")),
+      bubbles: true,
+    }),
+  );
+  await settle(container);
+  const kind = container.querySelector<HTMLSelectElement>('select[name="stageKind"]')!;
+  kind.value = "camera_ready";
+  kind.dispatchEvent(new Event("change"));
+  await settle(container);
+  const form = container.querySelector<HTMLFormElement>(".deadline-proposal__form")!;
+  (form.elements.namedItem("deadlineDate") as HTMLInputElement).value = "2026-10-01";
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await settle(container);
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      deadlineDate: "2026-10-01",
+      deadlineTime: "",
+      stage: {
+        milestone: "camera_ready",
+        label: "Camera-ready",
+        operation: "add",
+        venueId: "past",
+      },
+    }),
+    expect.any(String),
+    undefined,
+  );
+});
+it("opens a correction from a specific stage ellipsis and submits only that stage", async () => {
+  const store = new TestProposalStore();
+  store.listPublished = async () => [
+    {
+      ...DEADLINE_VENUES[0],
+      id: "stage-venue",
+      deadline_id: "stage-venue",
+      name: "Stage Example",
+      venue_type: "workshop",
+      deadline_aoe: "2026-09-01 23:59:00",
+      deadline_at: "2026-09-02T11:59:00Z",
+      notification_aoe: "",
+      abstract_deadline_id: undefined,
+      schedule: [
+        { milestone: "camera_ready", label: "Camera-ready", kind: "date", date: "2026-10-01" },
+      ],
+    },
+  ];
+  const submit = vi.spyOn(store, "submit");
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(
+    renderDeadlines({ proposalStore: store, role: "member", memberId: "member-1" }),
+    container,
+  );
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  container.querySelector<HTMLButtonElement>('[aria-label="Schedule for Stage Example"]')!.click();
+  await settle(container);
+  const panel = container.querySelector<HTMLElement>(
+    '[aria-label="Deadline details for Stage Example: Camera-ready"]',
+  )!;
+  expect(panel).not.toBeNull();
+  buttonNamed(panel, "Suggest deadline correction").click();
+  await settle(container);
+  const form = container.querySelector<HTMLFormElement>(".deadline-proposal__form")!;
+  expect((form.elements.namedItem("deadlineDate") as HTMLInputElement).value).toBe("2026-10-01");
+  expect(form.elements.namedItem("stageKind")).toBeNull();
+  expect(
+    (
+      form.elements.namedItem("correctionStage") as HTMLSelectElement
+    ).selectedOptions[0].textContent?.trim(),
+  ).toBe("Camera-ready");
+  const stageSelect = form.elements.namedItem("correctionStage") as HTMLSelectElement;
+  stageSelect.value = "primary";
+  stageSelect.dispatchEvent(new Event("change"));
+  await settle(container);
+  expect((form.elements.namedItem("deadlineDate") as HTMLInputElement).value).toBe("2026-09-01");
+  stageSelect.value = "0";
+  stageSelect.dispatchEvent(new Event("change"));
+  await settle(container);
+  expect((form.elements.namedItem("deadlineDate") as HTMLInputElement).value).toBe("2026-10-01");
+  (form.elements.namedItem("deadlineDate") as HTMLInputElement).value = "2026-10-03";
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await settle(container);
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      deadlineDate: "2026-10-03",
+      stage: expect.objectContaining({
+        milestone: "camera_ready",
+        operation: "correct",
+        venueId: "stage-venue",
+        previous: expect.any(String),
+      }),
+    }),
+    expect.any(String),
+    "stage-venue",
+  );
 });

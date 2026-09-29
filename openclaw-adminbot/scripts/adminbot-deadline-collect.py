@@ -1945,7 +1945,7 @@ def write_outputs(items):
                 "  /** Set for kind \"deadline\" and \"date\". */\n"
                 "  date?: string;\n"
                 "  /** Both set for kind \"period\". */\n"
-                "  starts?: string;\n  ends?: string;\n};\n\n"
+                "  starts?: string;\n  ends?: string;\n  timezone?: string;\n  planning_at?: string;\n};\n\n"
                 "export type DeadlineVenue = {\n"
                 "  notification_policy?: DeadlineMilestone & { status: string; checked_at?: string; evidence?: string };\n"
                 "  notification_status?: string;\n  notification_previous_aoe?: string;\n  notification_issues?: string[];\n"

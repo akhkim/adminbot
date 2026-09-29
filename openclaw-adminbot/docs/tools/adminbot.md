@@ -1637,3 +1637,11 @@ Register the two deadline jobs explicitly after deployment using the [deadline c
 The deadlines board defaults to following the next published stage. Selecting a stage, such as Decisions or Camera-ready, restricts the board to venues with a known date for that stage. Dates, countdowns, ordering, and the Upcoming/Past split follow the selection in Groups, Cards, and Table. Shared organizer notification requirements are not decision dates. When a stage occurs more than once, Upcoming shows its next occurrence and Past its most recent completed occurrence.
 
 Adding a selected stage to a member's timeline saves that stage, preserving date-only announcements without inventing a time. Expanding the schedule still shows the venue's other stages.
+
+### Propose and correct individual stages
+
+Propose a new deadline can add one stage to an existing conference or workshop, including past venues, or create a new venue. Choose a standard stage or name a custom one, enter its date, and supply a source. Leave the time blank when the source gives only a date.
+
+Each dated stage has a details menu. Signed-in members can use Suggest deadline correction there; the form targets that stage only. Adding a stage does not replace the submission date or the rest of the schedule. An existing stage must be corrected through its details instead of added again.
+
+Proposals use the administrator approval queue. Approval is bound to the proposed stage and date. If a stage changes before its correction is published, the correction must be submitted again against the current date.

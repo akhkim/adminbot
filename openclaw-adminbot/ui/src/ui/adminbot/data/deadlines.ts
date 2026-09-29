@@ -26,6 +26,8 @@ export type DeadlineMilestone = {
   /** Both set for kind "period". */
   starts?: string;
   ends?: string;
+  timezone?: string;
+  planning_at?: string;
 };
 
 export type DeadlineVenue = {

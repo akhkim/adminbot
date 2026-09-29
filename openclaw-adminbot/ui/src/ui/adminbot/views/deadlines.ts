@@ -1,14 +1,8 @@
-import { html, nothing, LitElement } from "lit";
-// Native rendering for every Control UI deadline surface.
-//
-// The service also exposes a self-contained version at GET /deadlines. Both surfaces read the
-// generated deadline dataset and present the same board: period, type and archival filters,
-// search, venue groups, source links, history, and card/group/table views. This renderer stays in
-// app's document flow so the containing page owns one ordinary vertical scroll.
+import { html, nothing, LitElement, type TemplateResult } from "lit";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
-import "./deadlines.recommendation.ts";
 import type { UiSettings } from "../../storage.ts";
+import "./deadlines.recommendation.ts";
 import type { AccessRole } from "../access.ts";
 import { resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
@@ -62,6 +56,19 @@ import {
   renderAbstractMilestoneDate,
   type AbstractMilestone,
 } from "./deadlines.abstract.ts";
+// Native rendering for every Control UI deadline surface.
+//
+// The service also exposes a self-contained version at GET /deadlines. Both surfaces read the
+// generated deadline dataset and present the same board: period, type and archival filters,
+// search, venue groups, source links, history, and card/group/table views. This renderer stays in
+// app's document flow so the containing page owns one ordinary vertical scroll.
+import {
+  proposalVenueLabel,
+  proposalDateFields,
+  stageCorrection,
+  renderStageDetails,
+  deadlineStageKinds,
+} from "./deadlines.proposal-stage.ts";
 import {
   stageKey,
   chooseStage,
@@ -296,6 +303,12 @@ export function milestoneDateLabel(entry: DeadlineMilestone, displayZone?: strin
   if (entry.kind === "period") {
     return dateRangeLabel(entry.starts ?? "", entry.ends ?? "");
   }
+  if (entry.kind === "deadline" && /(?:Z|[+-]\d{2}:\d{2})$/u.test(entry.date || "")) {
+    return zonedDeadlineLabel(
+      Date.parse(entry.date!),
+      displayTimezone(displayZone ?? "original", entry.timezone || "UTC"),
+    );
+  }
   if (displayZone && entry.kind === "deadline" && /[ T]\d{2}:\d{2}/u.test(entry.date || "")) {
     return zonedDeadlineLabel(aoeInstantMs(entry.date || ""), displayTimezone(displayZone, "AoE"));
   }
@@ -314,6 +327,12 @@ export function milestoneDateLabel(entry: DeadlineMilestone, displayZone?: strin
  * does -- a conference running through Friday is still happening on Friday.
  */
 export function milestoneEndInstant(milestone: DeadlineMilestone): number {
+  if (milestone.planning_at) {
+    return Date.parse(milestone.planning_at);
+  }
+  if (/(?:Z|[+-]\d{2}:\d{2})$/u.test(milestone.date ?? "")) {
+    return Date.parse(milestone.date!);
+  }
   const value =
     milestone.kind === "period"
       ? (milestone.ends ?? milestone.starts ?? "")
@@ -1192,7 +1211,9 @@ class AdminbotDeadlinesView extends LitElement {
     }, 1000);
     this.datasetRefreshTimer = window.setInterval(
       () => {
-        if (document.visibilityState !== "hidden") void this.loadPublishedDeadlines();
+        if (document.visibilityState !== "hidden") {
+          void this.loadPublishedDeadlines();
+        }
       },
       5 * 60 * 1000,
     );
@@ -1353,9 +1374,21 @@ class AdminbotDeadlinesView extends LitElement {
   }
 
   private correctionTarget?: DeadlineVenue;
+  private correctionStage?: DeadlineMilestone;
+  private correctionContext?: DeadlineVenue;
+  private correctionChoice = "primary";
+  private proposalVenue?: DeadlineVenue;
+  private proposalStageKind = "submission";
 
   private openProposalForm(): void {
     this.correctionTarget = undefined;
+    this.correctionStage = undefined;
+    this.correctionContext = undefined;
+    this.correctionChoice = "primary";
+    this.proposalVenue = undefined;
+    this.proposalStageKind = "submission";
+    this.proposalErrors = {};
+    this.proposalSubmissionKey = "";
     this.proposalFormOpen = true;
     this.proposalReviewOpen = false;
     this.editingProposalId = "";
@@ -1371,6 +1404,18 @@ class AdminbotDeadlinesView extends LitElement {
     }
     const form = event.currentTarget as HTMLFormElement;
     const data = new FormData(form);
+    const venueSearch = form.querySelector<HTMLInputElement>('input[name="stageVenue"]');
+    if (
+      venueSearch &&
+      venueSearch.value !==
+        (this.proposalVenue
+          ? proposalVenueLabel(this.proposalVenue)
+          : t("deadlineStageProposal.newVenue"))
+    ) {
+      this.proposalFailure = t("deadlineStageProposal.chooseVenue");
+      this.requestUpdate();
+      return;
+    }
     const input: DeadlineProposalInput = {
       name: String(data.get("name") ?? ""),
       parentConference: String(data.get("parentConference") ?? ""),
@@ -1384,6 +1429,28 @@ class AdminbotDeadlinesView extends LitElement {
       openReviewUrl: String(data.get("openReviewUrl") ?? ""),
       note: String(data.get("note") ?? ""),
     };
+    const editing = this.proposals.find((p) => p.id === this.editingProposalId);
+    if (editing?.deadline.stage) {
+      input.stage = editing.deadline.stage;
+    } else if (this.correctionTarget && this.correctionStage) {
+      input.stage = stageCorrection(this.correctionTarget, this.correctionStage);
+    } else if (!this.correctionTarget) {
+      const kindValue = data.get("stageKind");
+      const kind = typeof kindValue === "string" ? kindValue : "submission";
+      const label =
+        kind === "other"
+          ? (typeof data.get("stageLabel") === "string"
+              ? (data.get("stageLabel") as string)
+              : ""
+            ).trim()
+          : deadlineStageKinds.find(([key]) => key === kind)?.[1] || kind;
+      input.stage = {
+        milestone: kind === "other" ? `custom:${label}` : kind,
+        label,
+        operation: "add",
+        ...(this.proposalVenue ? { venueId: this.proposalVenue.id } : {}),
+      };
+    }
     const validation = validateDeadlineProposal(input);
     if (!validation.ok) {
       this.proposalErrors = validation.errors;
@@ -1460,6 +1527,10 @@ class AdminbotDeadlinesView extends LitElement {
 
   private editProposal(proposal: DeadlineProposal): void {
     this.correctionTarget = undefined;
+    this.correctionStage = undefined;
+    this.correctionContext = undefined;
+    this.correctionChoice = "primary";
+    this.proposalVenue = undefined;
     this.editingProposalId = proposal.id;
     this.proposalFormOpen = true;
     this.proposalReviewOpen = false;
@@ -1485,7 +1556,10 @@ class AdminbotDeadlinesView extends LitElement {
       return nothing;
     }
     const editing = this.proposals.find((proposal) => proposal.id === this.editingProposalId);
-    const target = this.correctionTarget;
+    const target =
+      this.correctionTarget ??
+      this.proposalVenue ??
+      this.venues.find((v) => v.id === editing?.deadline.stage?.venueId);
     const value =
       editing?.deadline ??
       (target
@@ -1494,26 +1568,21 @@ class AdminbotDeadlinesView extends LitElement {
             entryType: target.entry_type,
             parentConference: target.venue_family ?? "",
             parentYear: "",
-            deadlineDate:
-              target.deadline_time_precision === "date_only"
-                ? (target.deadline_date ?? "")
-                : target.deadline_aoe.slice(0, 10),
-            deadlineTime:
-              target.deadline_time_precision === "date_only"
-                ? ""
-                : target.deadline_aoe.slice(11, 16),
-            timezone:
-              target.deadline_time_precision === "date_only"
-                ? target.deadline_timezone === "AoE"
-                  ? AOE_TIMEZONE
-                  : (target.deadline_timezone ?? "")
-                : AOE_TIMEZONE,
+            ...(this.correctionTarget
+              ? proposalDateFields(target, this.correctionStage)
+              : { deadlineDate: "", deadlineTime: "", timezone: "" }),
             homepageUrl: target.homepage_url || target.link || "",
             cfpUrl: target.cfp_url || "",
             openReviewUrl: target.openreview_url || "",
             note: "",
           }
         : undefined);
+    const correctionContext = this.correctionContext ?? this.correctionTarget;
+    const correctionChoices = correctionContext
+      ? venueSchedule(correctionContext, { venues: this.venues }).filter(
+          (stage) => stage.kind !== "period" && stage.milestone !== "notification_by",
+        )
+      : [];
     const parentConferences = parentConferenceOptions(this.venues);
     const parentConference = value?.parentConference ?? "";
     return html`
@@ -1526,8 +1595,8 @@ class AdminbotDeadlinesView extends LitElement {
             <h2 id="deadline-proposal-drawer-title">
               ${editing
                 ? "Revise deadline proposal"
-                : target
-                  ? `Correct ${target.name}: ${capitalize(target.deadline_label)}`
+                : this.correctionTarget
+                  ? `Correct ${target!.name}: ${this.correctionStage?.label ?? capitalize(target!.deadline_label)}`
                   : "Propose a new deadline"}
             </h2>
           </div>
@@ -1552,6 +1621,90 @@ class AdminbotDeadlinesView extends LitElement {
                 </label>
               `
             : nothing}
+          ${!editing && !this.correctionTarget
+            ? html`<label class="deadline-proposal__wide">
+                <span>${t("deadlineStageProposal.venue")}</span>
+                <adminbot-deadline-parent-conference-select
+                  .options=${[
+                    t("deadlineStageProposal.newVenue"),
+                    ...this.venues.map(proposalVenueLabel),
+                  ]}
+                  .value=${target
+                    ? proposalVenueLabel(target)
+                    : t("deadlineStageProposal.newVenue")}
+                  .fieldName=${"stageVenue"}
+                  .fieldLabel=${t("deadlineStageProposal.venue")}
+                  @selection-change=${(event: CustomEvent<string>) => {
+                    this.proposalVenue = this.venues.find(
+                      (v) => proposalVenueLabel(v) === event.detail,
+                    );
+                    this.proposalSubmissionKey = "";
+                    this.requestUpdate();
+                  }}
+                ></adminbot-deadline-parent-conference-select>
+              </label>`
+            : nothing}
+          ${this.correctionTarget && !editing && correctionContext
+            ? html`<label class="deadline-proposal__wide">
+                <span>${t("deadlineStageProposal.stage")}</span>
+                <select
+                  name="correctionStage"
+                  .value=${this.correctionChoice}
+                  @change=${(event: Event) => {
+                    this.correctionChoice = (event.target as HTMLSelectElement).value;
+                    const stage = correctionChoices[Number(this.correctionChoice)];
+                    this.correctionContext = correctionContext;
+                    this.correctionTarget = stage?.abstractVenue ?? correctionContext;
+                    this.correctionStage = stage?.abstractVenue ? undefined : stage;
+                    this.proposalSubmissionKey = "";
+                    this.proposalErrors = {};
+                    this.proposalFailure = "";
+                    this.requestUpdate();
+                  }}
+                >
+                  <option value="primary" ?selected=${this.correctionChoice === "primary"}>
+                    ${capitalize(correctionContext.deadline_label)}
+                  </option>
+                  ${correctionChoices.map(
+                    (stage, index) =>
+                      html`<option
+                        value=${String(index)}
+                        ?selected=${this.correctionChoice === String(index)}
+                      >
+                        ${stage.label}
+                      </option>`,
+                  )}
+                </select>
+              </label>`
+            : nothing}
+          ${!this.correctionTarget && !editing
+            ? html`<label class="deadline-proposal__wide">
+                  <span>${t("deadlineStageProposal.stage")}</span>
+                  <select
+                    name="stageKind"
+                    .value=${this.proposalStageKind}
+                    @change=${(event: Event) => {
+                      this.proposalStageKind = (event.target as HTMLSelectElement).value;
+                      this.requestUpdate();
+                    }}
+                  >
+                    ${deadlineStageKinds.map(
+                      ([key]) =>
+                        html`<option value=${key}>
+                          ${t(`deadlineStageProposal.kinds.${key}`)}
+                        </option>`,
+                    )}</select
+                  >${this.renderProposalFieldError("stage")}
+                </label>
+                ${this.proposalStageKind === "other"
+                  ? html`<label class="deadline-proposal__wide"
+                      ><span>${t("deadlineStageProposal.stageName")}</span
+                      ><input name="stageLabel" required maxlength="120"
+                    /></label>`
+                  : nothing}`
+            : editing?.deadline.stage
+              ? html`<p class="deadline-proposal__wide">${editing.deadline.stage.label}</p>`
+              : nothing}
           <label ?hidden=${Boolean(target)}>
             <span>Conference or workshop name</span>
             <input
@@ -1609,32 +1762,25 @@ class AdminbotDeadlinesView extends LitElement {
               ${this.renderProposalFieldError("deadlineDate")}
             </label>
             <label>
-              <span>Deadline time</span>
+              <span>Deadline time <small>optional</small></span>
               <input
                 name="deadlineTime"
                 type="time"
-                .value=${value?.deadlineTime ?? "23:59"}
-                required
+                .value=${value?.deadlineTime ?? ""}
                 aria-invalid=${String(Boolean(this.proposalErrors.deadlineTime))}
               />
               ${this.renderProposalFieldError("deadlineTime")}
             </label>
             <label>
               <span>Time zone</span>
-              <select
-                name="timezone"
-                required
-                aria-invalid=${String(Boolean(this.proposalErrors.timezone))}
-              >
-                <option value="" disabled ?selected=${value?.timezone === ""}>
-                  Choose a time zone
-                </option>
+              <select name="timezone" aria-invalid=${String(Boolean(this.proposalErrors.timezone))}>
+                <option value="" ?selected=${!value?.timezone}>Time zone unknown</option>
                 ${timezoneOptions(AOE_TIMEZONE).map(
                   (group) => html`<optgroup label=${group.label}>
                     ${group.options.map(
                       (option) => html`<option
                         value=${option.zone}
-                        ?selected=${option.zone === (value?.timezone ?? AOE_TIMEZONE)}
+                        ?selected=${option.zone === value?.timezone}
                       >
                         ${option.label}
                       </option>`,
@@ -1735,7 +1881,16 @@ class AdminbotDeadlinesView extends LitElement {
           </div>
           <div class="deadline-proposal-row__heading">
             <h3>${deadline.name}</h3>
-            <span>${deadline.deadlineDate} · ${deadline.deadlineTime} · ${deadline.timezone}</span>
+            <span
+              >${[
+                deadline.stage?.label,
+                deadline.deadlineDate,
+                deadline.deadlineTime || t("deadlineStageProposal.timeUnknown"),
+                deadline.timezone,
+              ]
+                .filter(Boolean)
+                .join(" · ")}</span
+            >
           </div>
           <p>
             ${ENTRY_TYPE_LABELS[deadline.entryType]}
@@ -2146,7 +2301,58 @@ class AdminbotDeadlinesView extends LitElement {
     `;
   }
 
-  private renderHistory(venue: DeadlineVenue, placement: "hero" | "card" | "group" | "table") {
+  private renderStageHistory(
+    venue: DeadlineVenue,
+    stage: DeadlineMilestone & { abstractVenue?: DeadlineVenue },
+    placement: string,
+  ): TemplateResult | typeof nothing {
+    if (stage.abstractVenue) {
+      return this.renderHistory(stage.abstractVenue, `${placement}-abstract`, true);
+    }
+    if (
+      stage.milestone === "submission" &&
+      stage.date ===
+        (venue.deadline_time_precision === "date_only" ? venue.deadline_date : venue.deadline_aoe)
+    ) {
+      return this.renderHistory(venue, `${placement}-submission`, true);
+    }
+    if (stage.milestone === "notification_by") {
+      return nothing;
+    }
+    return renderStageDetails({
+      venue,
+      stage,
+      placement,
+      dateLabel: milestoneDateLabel(stage, this.displayZone),
+      canCorrect: Boolean(this.memberId && this.accessRole !== "anonymous"),
+      correct: () => {
+        this.openProposalForm();
+        this.correctionTarget = venue;
+        this.correctionStage = stage;
+        this.correctionContext = venue;
+        this.correctionChoice = String(
+          venueSchedule(venue, { venues: this.venues })
+            .filter((row) => row.kind !== "period" && row.milestone !== "notification_by")
+            .findIndex((row) => row.milestone === stage.milestone && row.label === stage.label),
+        );
+        this.requestUpdate();
+      },
+    });
+  }
+
+  private renderHistory(
+    venue: DeadlineVenue,
+    placement: string,
+    primary = false,
+  ): TemplateResult | typeof nothing {
+    const selected =
+      this.selectedStage(venue) ??
+      (venue.venue_type === "workshop" && this.period === "upcoming"
+        ? nextVenueStage(venue, this.now, this.displayZone)
+        : undefined);
+    if (!primary && selected?.milestone && !selected.submission) {
+      return this.renderStageHistory(venue, selected.milestone, placement);
+    }
     const previous = priorDeadlineRevisions(venue);
     const change = deadlineChangeSummary(venue);
     const extended = venue.deadline_extended || change?.kind === "extended";
@@ -2179,7 +2385,6 @@ class AdminbotDeadlinesView extends LitElement {
           <strong>${venue.name}</strong>
           <p>${capitalize(venue.deadline_label)}</p>
           <div>${renderDeadlineDate(venue, this.displayZone, true)}</div>
-          ${this.renderSchedule(venue)}
           ${renderAbstractRequirement(venue, this.venues, this.displayZone, this.now, true)}
           ${venue.deadline_time_precision === "date_only"
             ? html`<p>
@@ -2301,10 +2506,12 @@ class AdminbotDeadlinesView extends LitElement {
         )}
       >
         <span class="deadline-card__milestone-label">${capitalize(entry.label)}</span>
-        <span class="deadline-card__milestone-date"
-          >${entry.abstractVenue
-            ? renderAbstractMilestoneDate(entry.abstractVenue, this.displayZone, this.now)
-            : milestoneDateLabel(entry, this.displayZone)}</span
+        <span class="deadline-stage-date"
+          ><span class="deadline-card__milestone-date"
+            >${entry.abstractVenue
+              ? renderAbstractMilestoneDate(entry.abstractVenue, this.displayZone, this.now)
+              : milestoneDateLabel(entry, this.displayZone)} </span
+          >${this.renderStageHistory(venue, entry, "schedule")}</span
         >
       </li>`,
     );
@@ -2883,7 +3090,7 @@ class AdminbotDeadlinesView extends LitElement {
                   this.now,
                 )
               : milestoneDateLabel(item.milestone, this.displayZone)}</span
-          >
+          >${this.renderStageHistory(item.venue, item.milestone, "timeline")}
         </span>
         <div class="deadline-group__row-main">
           <p class="deadline-group__row-name">${item.label}</p>

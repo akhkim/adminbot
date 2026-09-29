@@ -141,6 +141,7 @@ import {
   type DeadlinePublicationPayload,
   type PublishedDeadlineRecord,
 } from "../contracts/deadline-proposals.js";
+import { stageProposalConflict } from "../contracts/deadline-proposals.stage.js";
 import type { DeadlineRecommendationInput } from "../contracts/deadline-recommendations.js";
 import { adminBotDriveFileId, type AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type {
@@ -2079,24 +2080,41 @@ export class AdminBotService {
     if (!contact.ok) {
       return serviceError(400, contact.error);
     }
+    const replay = this.store
+      .listProposalsByType("deadline.publish")
+      .find((action) => action.idempotency_key === `deadline-submit:${memberId}:${key}`);
+    if (replay) {
+      const view = this.deadlineProposalViewForAction(replay);
+      if (view) {
+        return { ok: true, status: 200, payload: view };
+      }
+    }
+    const stage = validation.value.stage;
+    if (stage?.venueId) {
+      if (targetDeadlineId && targetDeadlineId !== stage.venueId) {
+        return serviceError(400, "Stage and venue targets do not match.");
+      }
+    }
+    const targetId = stage?.venueId ?? targetDeadlineId;
     const proposalId = `dlp_${randomUUID()}`;
-    const target = targetDeadlineId
+    const target = targetId
       ? this.deadlineReadModel(existingDeadlines).find(
-          (row) => deadlineBoardEntryId(row) === targetDeadlineId,
+          (row) => deadlineBoardEntryId(row) === targetId,
         )
       : undefined;
-    if (targetDeadlineId && (!target || memberId.startsWith("visitor:deadline:"))) {
+    if (targetId && (!target || (!stage && memberId.startsWith("visitor:deadline:")))) {
       return serviceError(400, "a correction requires a member and an existing deadline");
     }
-    const deadlineId = targetDeadlineId || `community_${randomUUID()}`;
-    const previousDeadline = target
-      ? String((target as Record<string, unknown>).deadline_aoe)
-      : undefined;
-    const duplicateIds = this.findDeadlineDuplicates(
-      validation.value,
-      existingDeadlines,
-      targetDeadlineId,
-    );
+    if (stage) {
+      const conflict = stageProposalConflict(stage, target as Record<string, unknown> | undefined);
+      if (conflict) {
+        return serviceError(409, conflict);
+      }
+    }
+    const deadlineId = targetId || `community_${randomUUID()}`;
+    const previousDeadline =
+      target && !stage ? String((target as Record<string, unknown>).deadline_aoe) : undefined;
+    const duplicateIds = this.findDeadlineDuplicates(validation.value, existingDeadlines, targetId);
     const action = this.prepareDeadlinePublication({
       proposalId,
       deadlineId,
@@ -2154,6 +2172,9 @@ export class AdminBotService {
     const validation = validateDeadlineProposalInput(input);
     if (!validation.ok) {
       return serviceError(400, firstDeadlineValidationError(validation.errors));
+    }
+    if (JSON.stringify(validation.value.stage) !== JSON.stringify(currentPayload.deadline.stage)) {
+      return serviceError(409, "A revision cannot change which stage the proposal targets.");
     }
     const duplicateIds = this.findDeadlineDuplicates(
       validation.value,
@@ -2637,6 +2658,16 @@ export class AdminBotService {
       const publishedBy = proposal.approvals.at(-1)?.approver_id;
       if (!publishedBy) {
         return this.executionFailure(proposal, 409, "deadline publication has no named approver");
+      }
+      if (publication.deadline.stage) {
+        const stage = publication.deadline.stage;
+        const target = this.deadlineReadModel(DEADLINE_VENUES).find(
+          (row) => deadlineBoardEntryId(row) === stage.venueId,
+        ) as Record<string, unknown> | undefined;
+        const conflict = stageProposalConflict(stage, target);
+        if (conflict) {
+          return this.executionFailure(proposal, 409, conflict);
+        }
       }
       if (publication.previous_deadline_aoe) {
         const target = this.deadlineReadModel(DEADLINE_VENUES).find(
@@ -14795,9 +14826,12 @@ function validateSocialUrl(value: unknown, spec: SocialUrlFieldSpec): string | u
     return undefined;
   }
   if (spec.freeText) {
-    if (trimmed.length > 2000) return `${spec.label} cannot exceed 2000 characters`;
-    if (/^(?:javascript|data|vbscript):/iu.test(trimmed))
+    if (trimmed.length > 2000) {
+      return `${spec.label} cannot exceed 2000 characters`;
+    }
+    if (/^(?:javascript|data|vbscript):/iu.test(trimmed)) {
       return `${spec.label} contains an unsafe URL scheme`;
+    }
     return undefined;
   }
   if (trimmed.startsWith("data:")) {

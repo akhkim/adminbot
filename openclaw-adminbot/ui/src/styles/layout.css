@@ -4648,8 +4648,8 @@ adminbot-deadlines-view {
 .deadline-proposal-drawer {
   position: fixed;
   inset: 0 0 0 auto;
-  width: min(46rem, 100vw);
-  max-width: 100vw;
+  width: min(46rem, 100%);
+  max-width: 100%;
   height: 100dvh;
   max-height: 100dvh;
   margin: 0 0 0 auto;
@@ -6083,7 +6083,7 @@ adminbot-deadline-timezone {
   }
 
   .deadline-proposal-drawer {
-    width: 100vw;
+    width: 100%;
     border-left: 0;
   }
 
@@ -11060,4 +11060,11 @@ adminbot-paper-visibility {
 }
 .deadline-group__date-stage {
   margin-inline-start: var(--space-2);
+}
+
+.deadline-stage-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
