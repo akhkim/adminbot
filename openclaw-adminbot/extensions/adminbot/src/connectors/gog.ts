@@ -824,8 +824,8 @@ function buildCalendarDeleteArgs(proposal: AdminBotStoredProposal): string[] {
  *
  * Never throws. A probe is a question the lab asks about its own records, and the answer "I could
  * not tell" has to be available to the caller as an answer rather than as a stack trace: a paper
- * must not stall because a network blinked. The three outcomes are the contract's own, and only
- * `missing` is Google actually saying the file is not there.
+ * must not stall because a network blinked. Google returns 404 both when a file is absent and
+ * when this account cannot read it; callers must not claim that a 404 proves deletion.
  */
 export function createGogDriveProbe(
   options: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {},
@@ -844,7 +844,7 @@ export function createGogDriveProbe(
       "get",
       fileId,
       "--fields",
-      "id,name,trashed",
+      "id,name,mimeType,trashed,capabilities(canEdit,canAddChildren)",
     ];
     try {
       const { stdout } = await execFile(command, args, {
@@ -855,16 +855,24 @@ export function createGogDriveProbe(
       const payload = JSON.parse(stdout) as Record<string, unknown>;
       const file = (payload.result ?? payload) as Record<string, unknown>;
       const name = typeof file.name === "string" ? file.name : undefined;
+      const capabilities = file.capabilities as Record<string, unknown> | undefined;
+      const editable =
+        file.mimeType === "application/vnd.google-apps.folder"
+          ? typeof capabilities?.canEdit === "boolean" &&
+            typeof capabilities.canAddChildren === "boolean"
+            ? capabilities.canEdit && capabilities.canAddChildren
+            : undefined
+          : capabilities?.canEdit;
       return {
         status: "found",
         ...(name ? { name } : {}),
         ...(file.trashed === true ? { trashed: true } : {}),
+        ...(typeof editable === "boolean" ? { canEdit: editable } : {}),
       };
     } catch (error) {
       const text = `${(error as { stderr?: string }).stderr ?? ""} ${(error as Error).message ?? ""}`;
-      // Google's own "there is no such file" and "you cannot see it" are different sentences, and
-      // only the first is evidence about the artifact. Anything else -- no account, a timeout, a
-      // gog that is not installed -- is the lab failing to ask, not the file failing to exist.
+      // A 404 also covers files hidden from this account. Anything else -- no account, a timeout,
+      // a gog that is not installed -- is the lab failing to ask, not the file failing to exist.
       return /not ?found|404|does not exist/iu.test(text)
         ? { status: "missing" }
         : { status: "unreadable", reason: firstLine(text) };

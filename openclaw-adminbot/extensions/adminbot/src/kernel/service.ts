@@ -6266,13 +6266,10 @@ export class AdminBotService {
    *
    *   - Found: the row is stamped `verified_by` / `verified_at`, and the stage audit can say which
    *     of the evidence a machine confirmed rather than implying it confirmed all of it.
-   *   - Missing: Google says there is no such file. That is a contradiction of the evidence, so the
-   *     row goes `invalid` with a reason -- the same state a value that never parsed lands in, and
-   *     it re-opens the nudge with the reason attached rather than inventing a new mechanism.
-   *   - Unreadable: no account configured, a network that blinked, a file shared with a person and
-   *     not with the lab's account. Nothing is written. A paper must never stall because the lab
-   *     failed to ask, and the commonest cause of "cannot open" is a sharing setting rather than a
-   *     wrong link.
+   *   - Missing: Google returned 404. The file may be absent or hidden from the lab account, so
+   *     the row goes `invalid` with a reason to check the URL and sharing, not a claim of deletion.
+   *   - Unreadable: no account configured or a network that blinked. Nothing is written. A paper
+   *     must never stall because the lab failed to ask.
    *
    * A deployment with no probe wired verifies nothing and reports as much, which is the honest
    * answer for a lab whose Google account this service has never been given.
@@ -6303,12 +6300,23 @@ export class AdminBotService {
         continue;
       }
       for (const row of this.store.listPaperSlots(paper.id)) {
+        const retryInvalidDrive =
+          row.status === "invalid" && adminBotPaperSlotVerifier[row.slot] === "google_drive";
+        const refreshDrive =
+          adminBotPaperSlotVerifier[row.slot] === "google_drive" &&
+          (retryInvalidDrive ||
+            !row.verified_at ||
+            Date.parse(nowIso) - Date.parse(row.verified_at) >= 86_400_000);
         const refreshOpenReview =
           row.verified_by === "openreview" &&
           (!row.verified_title ||
             !row.identity_review ||
             Date.parse(nowIso) - Date.parse(row.verified_at ?? "") >= 86_400_000);
-        if (row.status !== "provided" || (row.verified_at && !refreshOpenReview) || !row.url) {
+        if (
+          (row.status !== "provided" && !retryInvalidDrive) ||
+          (row.verified_at && !refreshOpenReview && !refreshDrive) ||
+          !row.url
+        ) {
           continue;
         }
         const check = this.paperEvidenceCheck(row.slot, row.url);
@@ -6338,8 +6346,34 @@ export class AdminBotService {
           continue;
         }
         if (result.status === "found") {
+          if (check.verifier === "google_drive") {
+            if (!("canEdit" in result) || typeof result.canEdit !== "boolean") {
+              unreadable.push({
+                paper_id: paper.id,
+                slot: row.slot,
+                reason: "AdminBot could not confirm edit access to this Drive file",
+              });
+              continue;
+            }
+            if (!result.canEdit) {
+              this.store.savePaperSlot({
+                ...row,
+                status: "invalid",
+                invalid_reason:
+                  "Share this Drive file with Jinesis.adminbot@gmail.com as Editor; general access may stay restricted",
+                validated_at: undefined,
+                verified_by: undefined,
+                verified_at: undefined,
+              });
+              invalidated.push({ paper_id: paper.id, slot: row.slot });
+              continue;
+            }
+          }
           this.store.savePaperSlot({
             ...row,
+            ...(retryInvalidDrive
+              ? { status: "provided" as const, invalid_reason: undefined, validated_at: nowIso }
+              : {}),
             verified_by: check.verifier,
             verified_at: nowIso,
             verified_title: result.title,
@@ -6362,6 +6396,8 @@ export class AdminBotService {
             status: "invalid",
             invalid_reason: check.missingReason,
             validated_at: undefined,
+            verified_by: undefined,
+            verified_at: undefined,
           });
           invalidated.push({ paper_id: paper.id, slot: row.slot });
           continue;
@@ -6385,6 +6421,67 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: { verified, invalidated, unreadable, mismatched, checked },
+    };
+  }
+
+  /** A read-only check of a pasted Drive link using AdminBot's own Google account. */
+  async checkDriveEditAccess(
+    url: string,
+  ): Promise<
+    AdminBotServiceResponse<{ status: "editable" | "not_editable" | "unverified"; message: string }>
+  > {
+    const id = adminBotDriveFileId(url);
+    if (!id) {
+      return serviceError(400, "Enter a Google Drive file or folder link.");
+    }
+    if (!this.options.driveProbe) {
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          status: "unverified",
+          message: "AdminBot's Google Drive account is not connected.",
+        },
+      };
+    }
+    const result = await this.options.driveProbe(id);
+    if (result.status === "found" && !result.trashed && result.canEdit === true) {
+      return {
+        ok: true,
+        status: 200,
+        payload: { status: "editable", message: "AdminBot can edit this file." },
+      };
+    }
+    if (result.status === "missing") {
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          status: "not_editable",
+          message:
+            "AdminBot cannot open this file. Check the link or share it with Jinesis.adminbot@gmail.com as Editor; general access may stay restricted.",
+        },
+      };
+    }
+    if (result.status === "found" && result.canEdit === false) {
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          status: "not_editable",
+          message:
+            "Share this file with Jinesis.adminbot@gmail.com as Editor. You can keep general access restricted.",
+        },
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        status: "unverified",
+        message:
+          "AdminBot could not confirm edit access. Check the link and share it with Jinesis.adminbot@gmail.com as Editor.",
+      },
     };
   }
 
@@ -6418,7 +6515,7 @@ export class AdminBotService {
               ...(adminBotDriveFileId(url) ? { id: adminBotDriveFileId(url) } : {}),
               reason: "no Drive file id in the link",
               missingReason:
-                "Google has no file at this link — check the URL, or that the lab account can see it",
+                "AdminBot cannot access this Drive file — check the link or share it with Jinesis.adminbot@gmail.com as Editor",
             }
           : undefined;
       }

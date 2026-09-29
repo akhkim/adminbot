@@ -12,6 +12,7 @@
 // whitelist drops governance fields. Nothing here can write privilege_level, status, or email.
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { ref } from "lit/directives/ref.js";
 import {
   adminBotMemberFieldVisibility,
   adminBotSlackActivityOf,
@@ -24,6 +25,7 @@ import {
   ADMINBOT_BADGE_DESCRIPTION_MAX,
   ADMINBOT_BADGE_RATIONALE_MAX,
 } from "../../../../../extensions/adminbot/src/contracts/badges.js";
+import { adminBotDriveFileId } from "../../../../../extensions/adminbot/src/contracts/drive-links.js";
 import {
   MEMBER_CITY_OPTIONS,
   MEMBER_AFFILIATION_OPTIONS,
@@ -38,12 +40,15 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
-import type {
-  AssignedBadge,
-  BadgeDefinition,
-  BadgeSuggestionInput,
-  LabMember,
-  MemberProfileUpdate,
+import {
+  checkDriveEditAccess,
+  loadStoredMemberSession,
+  resolveAdminBotBaseUrl,
+  type AssignedBadge,
+  type BadgeDefinition,
+  type BadgeSuggestionInput,
+  type LabMember,
+  type MemberProfileUpdate,
 } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
@@ -155,10 +160,7 @@ function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
       continue;
     }
     // Already answered for this exact value, and not still in flight.
-    if (
-      accountCheckedValues.get(field) === value &&
-      state.profileAccountChecks[field]?.status !== "checking"
-    ) {
+    if (accountCheckedValues.get(field) === value && state.profileAccountChecks[field]) {
       continue;
     }
     accountCheckAborts.get(field)?.abort();
@@ -176,10 +178,69 @@ function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
       state.profileAccountChecks = { ...state.profileAccountChecks, [field]: result };
     });
   }
+  runDriveChecks(form, state);
+}
+
+function runDriveChecks(form: HTMLFormElement, state: AppViewState): void {
+  const data = new FormData(form);
+  const session = loadStoredMemberSession();
+  if (!session) {
+    return;
+  }
+  for (const field of ["cv_url", "one_on_one_folder_url", "availability_doc_url"] as const) {
+    if (!data.has(field)) {
+      continue;
+    }
+    const value = String(data.get(field) ?? "").trim();
+    if (!adminBotDriveFileId(value)) {
+      accountCheckAborts.get(field)?.abort();
+      accountCheckedValues.delete(field);
+      if (state.profileAccountChecks[field]) {
+        const next = { ...state.profileAccountChecks };
+        delete next[field];
+        state.profileAccountChecks = next;
+      }
+      continue;
+    }
+    if (accountCheckedValues.get(field) === value && state.profileAccountChecks[field]) {
+      continue;
+    }
+    accountCheckAborts.get(field)?.abort();
+    const controller = new AbortController();
+    accountCheckAborts.set(field, controller);
+    accountCheckedValues.set(field, value);
+    state.profileAccountChecks = { ...state.profileAccountChecks, [field]: { status: "checking" } };
+    void checkDriveEditAccess(
+      value,
+      session.sessionToken,
+      resolveAdminBotBaseUrl(state.settings),
+      controller.signal,
+    ).then((result) => {
+      if (controller.signal.aborted) {
+        return;
+      }
+      state.profileAccountChecks = {
+        ...state.profileAccountChecks,
+        [field]: result.ok
+          ? {
+              status: result.value.status === "editable" ? "verified" : "warning",
+              message: result.value.message,
+            }
+          : {
+              status: "warning",
+              message:
+                "Could not check Drive access. Make sure Jinesis.adminbot@gmail.com can edit this file.",
+            },
+      };
+    });
+  }
 }
 
 function renderAccountCheckStatus(state: AppViewState, field: EditableField) {
-  if (!isCheckableField(field.key)) {
+  if (
+    !isCheckableField(field.key) &&
+    !["cv_url", "one_on_one_folder_url", "availability_doc_url"].includes(field.key)
+  ) {
     return nothing;
   }
   const check = state.profileAccountChecks[field.key];
@@ -194,7 +255,7 @@ function renderAccountCheckStatus(state: AppViewState, field: EditableField) {
       ${check.status === "checking"
         ? t("profile.accountCheck.checking")
         : check.status === "verified"
-          ? t("profile.accountCheck.verified")
+          ? (check.message ?? t("profile.accountCheck.verified"))
           : check.message}
     </span>
   `;
@@ -923,6 +984,15 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
       </div>
       <form
         class="profile__form"
+        ${ref((element) => {
+          if (element instanceof HTMLFormElement) {
+            queueMicrotask(() => {
+              if (element.isConnected) {
+                runDriveChecks(element, state);
+              }
+            });
+          }
+        })}
         @submit=${(event: SubmitEvent) => event.preventDefault()}
         @input=${(event: Event) => {
           const form = event.currentTarget as HTMLFormElement;

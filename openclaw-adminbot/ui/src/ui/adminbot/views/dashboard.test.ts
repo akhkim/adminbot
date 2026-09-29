@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { render } from "lit";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { adminBotAdminOwnedProfileFields } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AccessRole } from "../access.ts";
@@ -729,6 +729,9 @@ describe("the lab-wide broadcast", () => {
 });
 
 describe("one-off Drive PDF notice", () => {
+  beforeEach(() => vi.useFakeTimers({ now: new Date("2026-09-27T12:00:00Z") }));
+  afterEach(() => vi.useRealTimers());
+
   const NOTICE = '[data-testid="dashboard-one-off-notice"]';
   const members = [
     { id: "oscar", name: "Oscar Yasunaga" },
@@ -788,7 +791,6 @@ describe("one-off Drive PDF notice", () => {
       vi.useFakeTimers({ now: new Date("2026-09-28T04:00:00Z") });
       expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).toBeNull();
     } finally {
-      vi.useRealTimers();
       if (originalStorage) {
         Object.defineProperty(window, "localStorage", originalStorage);
       } else {

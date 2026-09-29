@@ -754,7 +754,7 @@ describe("the Drive probe", () => {
       commandArgsPrefix: [
         "-e",
         // Stands in for gog: records nothing, answers the metadata shape.
-        'process.stdout.write(JSON.stringify({ result: { id: "x", name: "Paper.pdf" } }))',
+        'process.stdout.write(JSON.stringify({ result: { id: "x", name: "Paper.pdf", capabilities: { canEdit: false } } }))',
         "--",
       ],
     });
@@ -762,10 +762,38 @@ describe("the Drive probe", () => {
     await expect(probe("1PdF9xAbCdEfGhIjKlMnOpQrStUv")).resolves.toEqual({
       status: "found",
       name: "Paper.pdf",
+      canEdit: false,
     });
   });
 
-  it("reads Google's own not-found as evidence, and everything else as not knowing", async () => {
+  it("requires both edit and add-file rights for a folder", async () => {
+    const probe = createGogDriveProbe({
+      command: process.execPath,
+      commandArgsPrefix: [
+        "-e",
+        'process.stdout.write(JSON.stringify({ result: { mimeType: "application/vnd.google-apps.folder", capabilities: { canEdit: true, canAddChildren: false } } }))',
+        "--",
+      ],
+    });
+    await expect(probe("1PdF9xAbCdEfGhIjKlMnOpQrStUv")).resolves.toMatchObject({
+      status: "found",
+      canEdit: false,
+    });
+    const cannotEdit = createGogDriveProbe({
+      command: process.execPath,
+      commandArgsPrefix: [
+        "-e",
+        'process.stdout.write(JSON.stringify({ result: { mimeType: "application/vnd.google-apps.folder", capabilities: { canEdit: false, canAddChildren: true } } }))',
+        "--",
+      ],
+    });
+    await expect(cannotEdit("1PdF9xAbCdEfGhIjKlMnOpQrStUv")).resolves.toMatchObject({
+      status: "found",
+      canEdit: false,
+    });
+  });
+
+  it("keeps Google's ambiguous 404 separate from probe failures", async () => {
     const missing = createGogDriveProbe({
       command: process.execPath,
       commandArgsPrefix: [

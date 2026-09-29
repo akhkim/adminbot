@@ -3702,6 +3702,10 @@
   color: var(--danger-muted, var(--muted));
 }
 
+.profile__account-check--warning {
+  color: var(--danger, var(--text));
+}
+
 .profile__project-chips {
   display: flex;
   flex-wrap: wrap;

@@ -1902,6 +1902,15 @@ async function handleAuthenticatedRoute(
     return;
   }
   const { service, privacyBroker, sensitiveInfo } = ctx;
+  if (req.method === "POST" && url.pathname === "/drive/check-edit-access") {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(res, await service.checkDriveEditAccess(asString(body.url)));
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/reference-check/pdf") {
     if (!requireMemberPrivileged(res, principal)) {
       return;
