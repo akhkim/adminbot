@@ -1,4 +1,3 @@
-// Control UI module implements app behavior.
 import { LitElement } from "lit";
 import { state } from "lit/decorators.js";
 import { i18n, I18nController, isSupportedLocale, t } from "../i18n/index.ts";
@@ -119,6 +118,11 @@ import {
   type MeetingRequestRow,
   type RecommendationSchool,
 } from "./adminbot/data/logistics-draft.ts";
+// Control UI module implements app behavior.
+import {
+  DEFAULT_LOGISTICS_QUEUE_OPTIONS,
+  type LogisticsQueueOptions,
+} from "./adminbot/data/logistics-queue.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
@@ -703,6 +707,9 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLogisticsSavedAt: number | null = null;
   @state() adminBotLogisticsSaveError: string | null = null;
   // Admins land on the same page members do; reading everyone's requests is a deliberate step.
+  @state() adminBotLogisticsQueueOptions: LogisticsQueueOptions = {
+    ...DEFAULT_LOGISTICS_QUEUE_OPTIONS,
+  };
   @state() adminBotLogisticsMode: LogisticsMode = "make";
   @state() adminBotLogisticsRequests: LogisticsRequest[] = [];
   @state() adminBotLogisticsRequestsLoading = false;

@@ -21,6 +21,7 @@ import type {
   MeetingRequestRow,
   RecommendationSchool,
 } from "./adminbot/data/logistics-draft.ts";
+import type { LogisticsQueueOptions } from "./adminbot/data/logistics-queue.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
@@ -602,6 +603,7 @@ export type AppViewState = {
   // What an admin has typed to go with the signed document they are about to send.
   adminBotLogisticsSignedNote: string;
   // Whether the admin queue is showing only what is still outstanding, or everything.
+  adminBotLogisticsQueueOptions: LogisticsQueueOptions;
   adminBotLogisticsShowSettled: boolean;
   // Whose drafts are currently on screen. Drafts are per-member (IndexedDB is per-origin, not per
   // account), so this is what tells the render pass that the signed-in member changed and the

@@ -845,6 +845,12 @@ is the next piece of UI work, not something the sweep should fake by clearing a 
 
 ## Recommendation letter deadlines
 
+Each school requires a letter deadline on submission or edit; application deadlines do not count.
+Blank timezone defaults to **AoE (UTC−12)** and blank time to **23:59**. The queue shows the earliest
+letter deadline in its entered timezone, including for older requests; missing letter dates show no
+deadline. Sort by submission, user, deadline, or status; filter by name/school, request type, or status.
+Open the member's name for request details and documents.
+
 The one mail AdminBot sends the head professor. Every nudge pipeline refuses that address on
 purpose -- the lab does not chase its PI, and the escalation path runs _towards_ her -- so this is a
 typed action of its own, `logistics.rec_letter_reminder`, rather than a member nudge with the guard
@@ -857,8 +863,8 @@ separate reminders in one morning is the desk being nagged, and the letters are 
 sitting anyway. The mail names each member, the deadline, how far off it is and the schools on the
 request, and links to the requests themselves.
 
-The window is read off the request's own `deadline_at`, the same field My Desk's letter queue sorts
-on, so the mail and the queue can never disagree about which letter is next. Whole days are
+The window uses the same letter-only deadline resolver as the request queue, including for older
+requests with a cached application deadline. The reminder displays the entered clock and zone. Whole days are
 **floored** rather than rounded up: the reminder fires on the first morning fewer than four whole
 days are left, which for the end-of-day deadlines the form produces is the calendar day three days
 before. My Desk rounds the same gap the other way for its badge, which is right for a list read at a

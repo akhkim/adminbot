@@ -844,9 +844,7 @@
   font-size: var(--control-ui-text-sm);
 }
 
-/* The admin queue: a spreadsheet, not a list of cards.
-   Dense on purpose -- somebody working through everyone's requests reads across a row, and the two
-   things they do (take the document, give it back signed) are the last two columns. */
+/* Keep deadlines and actions together while the member's name opens the full request. */
 
 .logistics-queue__heading {
   display: flex;
@@ -870,8 +868,7 @@
   max-width: 42rem;
 }
 
-/* Eight columns do not fit a laptop and squeezing them makes every cell unreadable, so the table
-   keeps its width and this wrapper scrolls -- same decision as the schools table. */
+/* Scroll on narrow screens so the status and signed-document controls stay usable. */
 .logistics-queue__scroll {
   overflow-x: auto;
   margin-top: var(--space-4);
@@ -916,44 +913,8 @@
   vertical-align: top;
 }
 
-/* The one column that is prose. Capped so a long explanation cannot push the actions off screen. */
-.logistics-queue__cell--context {
-  max-width: 22rem;
-  min-width: 12rem;
-}
-
-.logistics-queue__cell--documents {
-  min-width: 12rem;
-}
-
 .logistics-queue__cell--sign {
   white-space: nowrap;
-}
-
-.logistics-queue__files {
-  display: grid;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.logistics-queue__file {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--accent);
-  word-break: break-word;
-}
-
-.logistics-queue__file.muted {
-  color: var(--muted);
-}
-
-.logistics-queue__size {
-  margin-left: var(--space-2);
-  color: var(--muted);
-  font-size: var(--control-ui-text-xs);
 }
 
 .logistics-queue__status {
@@ -1888,4 +1849,26 @@
   margin: var(--space-3) 0 0;
   color: var(--danger);
   font-size: var(--control-ui-text-sm);
+}
+
+.logistics-queue__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-block: var(--space-4);
+}
+
+.logistics-queue__sort {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.logistics-queue__sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
 }
