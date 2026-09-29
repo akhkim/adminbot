@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
 
-from adminbot_deadline_time import AOE, UTC, timing_fields
+from adminbot_deadline_time import AOE, UTC, timing_fields, planning_timestamp
 from adminbot_workshop_deadlines import _all_dates, MONTHS
 
 VERSION = 3
@@ -331,5 +331,5 @@ def project_milestone(entry):
         if not entry['time']:
             row['kind'] = 'date'
     if entry['kind'] == 'deadline' or (entry['kind'] == 'period' and entry['milestone'] != 'conference'):
-        row['planning_at'] = entry['deadline_planning_at']
+        row['planning_at'] = planning_timestamp(entry)
     return row

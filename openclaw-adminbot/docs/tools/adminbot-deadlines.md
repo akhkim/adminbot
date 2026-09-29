@@ -339,4 +339,10 @@ Publication-policy labels open a short explanation by click, tap, or keyboard. T
 
 On phones, filters use two columns when space permits and one column on narrow screens. Search remains full-width, venue chips scroll horizontally, and search and filters use 32px heights, while venue chips and view switches use 28px heights with spacing between separate controls. These compact sizes also apply on desktop.
 
-The frontend temporarily falls back to `/deadlines/venues.json` when `/deadlines` is missing or returns the legacy HTML page instead of a dataset. Empty current datasets remain valid, and authentication or server errors are not hidden by the fallback. Remove this compatibility read after the backend serves JSON at `/deadlines`.
+### Workshop snapshot upgrades
+
+The bundled snapshot already separates unverified historical notification values from individual workshop decisions. Collection reads that representation directly; loading, refreshing, and rewriting outputs do not run historical data migrations. New workshops obtain shared notification requirements only from the organizer source. A failed first extraction leaves the requirement undated; a failed later extraction retains the saved policy and its evidence.
+
+A separate abstract deadline links the two stages but does not establish a mandatory registration requirement. Requirement labels come from source evidence.
+
+The frontend reads deadline data only from `/deadlines` and rejects malformed dataset responses. Deploy the backend that serves this JSON route before deploying the frontend.

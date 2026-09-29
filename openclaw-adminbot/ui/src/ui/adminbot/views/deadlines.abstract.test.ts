@@ -122,7 +122,6 @@ describe("abstract prerequisite", () => {
           deadline_at: "",
           deadline_time_precision: "date_only",
           deadline_date: "2035-09-20",
-          deadline_planning_at: "2035-09-20T12:00:00Z",
         },
         "Europe/Zurich",
         Date.parse("2035-09-23T12:00:00Z"),

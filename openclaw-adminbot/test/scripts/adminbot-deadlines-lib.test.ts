@@ -992,30 +992,29 @@ describe("deadline time precision", () => {
 print(json.dumps(timing_fields('2035-02-01 23:59:59')))`),
     ).toMatchObject({
       deadline_at: "2035-02-02T11:59:59Z",
-      deadline_planning_at: "2035-02-02T11:59:59Z",
       deadline_time_precision: "exact",
     });
   });
 
   it("uses the start of the stated day in its known zone, or UTC+14 when unknown", () => {
     expect(
-      runPython(`from adminbot_deadline_time import timing_fields
-print(json.dumps([timing_fields('2035-02-01', date_only=True, timezone=zone) for zone in ['AoE', 'UTC', '']]))`),
+      runPython(`from adminbot_deadline_time import timing_fields, planning_timestamp
+print(json.dumps([dict(timing_fields('2035-02-01', date_only=True, timezone=zone), calculated=planning_timestamp(timing_fields('2035-02-01', date_only=True, timezone=zone))) for zone in ['AoE', 'UTC', '']]))`),
     ).toMatchObject([
       {
         deadline_date: "2035-02-01",
         deadline_at: "",
-        deadline_planning_at: "2035-02-01T12:00:00Z",
+        calculated: "2035-02-01T12:00:00Z",
       },
       {
         deadline_date: "2035-02-01",
         deadline_at: "",
-        deadline_planning_at: "2035-02-01T00:00:00Z",
+        calculated: "2035-02-01T00:00:00Z",
       },
       {
         deadline_date: "2035-02-01",
         deadline_at: "",
-        deadline_planning_at: "2035-01-31T10:00:00Z",
+        calculated: "2035-01-31T10:00:00Z",
       },
     ]);
   });
@@ -1074,11 +1073,12 @@ print(json.dumps(True))`),
 
 it("does not preserve an invented end-of-day time from cached date-only evidence", () => {
   expect(
-    runPython(`from adminbot_workshop_deadlines import deadline_candidates_from_text, reconcile_deadline_candidates
+    runPython(`from adminbot_deadline_time import planning_timestamp
+from adminbot_workshop_deadlines import deadline_candidates_from_text, reconcile_deadline_candidates
 candidates = deadline_candidates_from_text('Paper submission deadline: September 25, 2035 AoE.', 'https://example.test', 2035)
 for candidate in candidates: candidate['stamp'] = candidate['date'] + ' 23:59:00'
 result = reconcile_deadline_candidates(candidates, '', '', 2035)
-print(json.dumps([result['deadline_at'], result['deadline_time_precision'], result['deadline_planning_at']]))`),
+print(json.dumps([result['deadline_at'], result['deadline_time_precision'], planning_timestamp(result)]))`),
   ).toEqual(["", "date_only", "2035-09-25T12:00:00Z"]);
 });
 
@@ -1316,4 +1316,18 @@ old=m.merge_history(m.classify(dict(id='example',name='Example',venue_type='work
 new=m.merge_history(dict(old,deadline_aoe='2035-09-25 23:59:00'), old)
 print(json.dumps([old['deadline_aoe'],old['deadline_id']==new['deadline_id'],new['deadline_extended']]))`),
   ).toEqual(["", true, false]);
+});
+
+it("derives planning cutoffs for seasonal and fixed zones without persisting them", () => {
+  expect(
+    runPython(`from adminbot_deadline_time import timing_fields, planning_timestamp
+rows = [timing_fields(day, date_only=True, timezone=zone) for day, zone in [('2035-01-15', 'America/Toronto'), ('2035-07-15', 'America/Toronto'), ('2035-07-15', 'GMT+2'), ('2035-07-15', 'UTC-03:30')]]
+assert all('deadline_planning_at' not in row for row in rows)
+print(json.dumps([planning_timestamp(row) for row in rows]))`),
+  ).toEqual([
+    "2035-01-15T05:00:00Z",
+    "2035-07-15T04:00:00Z",
+    "2035-07-14T22:00:00Z",
+    "2035-07-15T03:30:00Z",
+  ]);
 });

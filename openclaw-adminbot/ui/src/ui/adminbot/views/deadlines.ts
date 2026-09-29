@@ -2612,7 +2612,6 @@ class AdminbotDeadlinesView extends LitElement {
       deadline_label: stage.label,
       deadline_aoe: aoe,
       deadline_at: new Date(stage.instant).toISOString(),
-      deadline_planning_at: new Date(stage.instant).toISOString(),
       deadline_time_precision: "exact",
     };
   }

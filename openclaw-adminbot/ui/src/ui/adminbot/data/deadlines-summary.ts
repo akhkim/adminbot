@@ -23,8 +23,7 @@ export type DeadlineSummaryVenue = Pick<DeadlineVenue,
   "deadline_at" |
   "deadline_date" |
   "deadline_timezone" |
-  "deadline_time_precision" |
-  "deadline_planning_at">;
+  "deadline_time_precision">;
 
 export const DEADLINE_SUMMARIES: DeadlineSummaryVenue[] = [
   {"id": "arr_2026_may","deadline_id": "arr_2026_may","venue_id": "arr_2026_may","venue_aliases": ["arr_2026_may"],"name": "ARR — May 2026 cycle (direct submission)","venue_type": "conference","venue_group": "ARR May 2026","entry_type": "arr_direct_submission","archival_status": "unknown","archival": false,"milestone": "direct_submission","schedule": [{"milestone": "reviews","label": "Reviews due","date": "2026-07-02","kind": "date"},{"milestone": "rebuttal","label": "Author response","starts": "2026-07-08","ends": "2026-07-14","kind": "period"},{"milestone": "notification","label": "Meta-reviews released","date": "2026-07-30","kind": "date"},{"milestone": "cycle_end","label": "Cycle ends","date": "2026-08-02","kind": "date"}],"deadline_label": "ARR submission","deadline_aoe": "2026-05-25 23:59:00","notification_aoe": "","link": "https://2026.aaclnet.org/calls/main_conference_papers/"},
