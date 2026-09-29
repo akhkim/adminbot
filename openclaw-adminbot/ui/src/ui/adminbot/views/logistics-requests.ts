@@ -19,6 +19,7 @@ import type {
   LogisticsRequestStatus,
   LogisticsSchool,
 } from "../auth/session.ts";
+import { logisticsDeadlineText } from "../data/logistics-queue.ts";
 import { attachmentDataUrl, formatFileSize } from "../data/logistics-requests.ts";
 import { SCHOOL_FIELDS, TEMPLATE_FOLDER_URL, type SchoolField } from "./logistics-fields.ts";
 import { logisticsStatusLabel } from "./logistics-status.ts";
@@ -68,17 +69,6 @@ function formatInstant(instant: string): string {
     : parsed.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
-function formatDay(instant: string): string {
-  const parsed = new Date(instant);
-  return Number.isNaN(parsed.getTime())
-    ? instant
-    : parsed.toLocaleDateString([], {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-}
-
 function renderStatusPill(kind: LogisticsRequest["kind"], status: LogisticsRequestStatus) {
   return html`
     <span class="logistics-status logistics-status--${status}">
@@ -88,8 +78,9 @@ function renderStatusPill(kind: LogisticsRequest["kind"], status: LogisticsReque
 }
 
 function renderDeadlineCell(request: LogisticsRequest) {
-  return request.deadline_at
-    ? html`<span class="ab-num">${formatDay(request.deadline_at)}</span>`
+  const deadline = logisticsDeadlineText(request);
+  return deadline
+    ? html`<span class="ab-num">${deadline}</span>`
     : html`<span class="muted">${t("logistics.requests.noDeadline")}</span>`;
 }
 
@@ -160,7 +151,7 @@ function renderRequestsList(props: AdminBotLogisticsRequestsProps) {
                         ${t("logistics.requests.type")}
                       </th>
                       <th scope="col" class="logistics-requests__head">
-                        ${t("logistics.requests.deadline")}
+                        ${t("logistics.requests.earliestDeadline")}
                       </th>
                       <th scope="col" class="logistics-requests__head">
                         ${t("logistics.requests.statusColumn")}
@@ -262,6 +253,9 @@ function schoolCellValue(school: LogisticsSchool, field: SchoolField): string {
     programLink: "program_link",
     notes: "notes",
   };
+  if (field.key === "deadlineTimezone") {
+    return school.deadline_timezone?.trim() || "AoE";
+  }
   return school[wire[field.key]] ?? "";
 }
 
@@ -506,9 +500,9 @@ function renderRequestDetail(props: AdminBotLogisticsRequestsProps, request: Log
           saved: formatInstant(request.submitted_at),
         })}
         ·
-        ${request.deadline_at
-          ? t("logistics.requests.detailDeadline", {
-              date: formatInstant(request.deadline_at),
+        ${logisticsDeadlineText(request)
+          ? t("logistics.requests.detailEarliestDeadline", {
+              date: logisticsDeadlineText(request),
             })
           : t("logistics.requests.noDeadline")}
       </p>

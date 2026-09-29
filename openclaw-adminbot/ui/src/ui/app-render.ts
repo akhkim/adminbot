@@ -80,7 +80,6 @@ import {
 } from "./adminbot/controllers/admin.ts";
 import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
 import {
-  downloadAdminBotLogisticsDocument,
   loadAdminBotLogisticsRequests,
   openAdminBotLogisticsRequest,
   sendAdminBotSignedDocuments,
@@ -3799,6 +3798,13 @@ export function renderApp(state: AppViewState) {
                 },
               },
               queue: {
+                options: state.adminBotLogisticsQueueOptions,
+                onOptionsChange: (patch) => {
+                  state.adminBotLogisticsQueueOptions = {
+                    ...state.adminBotLogisticsQueueOptions,
+                    ...patch,
+                  };
+                },
                 requests: state.adminBotLogisticsRequests,
                 loading: state.adminBotLogisticsRequestsLoading,
                 error: state.adminBotLogisticsRequestsError,
@@ -3807,12 +3813,6 @@ export function renderApp(state: AppViewState) {
                   state.adminBotLogisticsShowSettled = showSettled;
                 },
                 signingId: state.adminBotLogisticsSigningId,
-                downloadingId: state.adminBotLogisticsDownloadingId,
-                onDownload: (requestId, fileName) => {
-                  void downloadAdminBotLogisticsDocument(state, requestId, fileName).finally(() =>
-                    requestHostUpdate?.(),
-                  );
-                },
                 signedNote: state.adminBotLogisticsSignedNote,
                 onSignedNoteChange: (note) => {
                   state.adminBotLogisticsSignedNote = note;

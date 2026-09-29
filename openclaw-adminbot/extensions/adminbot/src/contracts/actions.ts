@@ -3048,13 +3048,14 @@ export type AdminBotLogisticsAttachment = {
 /** One school on a recommendation letters request, as the member filled the row in. */
 export type AdminBotLogisticsSchool = {
   school: string;
-  /** yyyy-mm-dd. Both deadlines are optional: a member often knows one before the other. */
+  /** yyyy-mm-dd. Application deadlines are informational and do not determine the letter deadline. */
   application_deadline?: string;
   /** HH:mm, in `deadline_timezone`. A date with no time is treated as end of that day. */
   application_deadline_time?: string;
+  /** Required for new submissions/edits; optional here to allow reading legacy records. */
   letter_deadline?: string;
   letter_deadline_time?: string;
-  /** IANA zone both times on this row are read in. Blank means the dates are whole-day. */
+  /** IANA zone or AoE. Letter deadlines default to AoE (UTC−12), with a blank time due at 23:59. */
   deadline_timezone?: string;
   application_status?: string;
   letter_status?: string;
@@ -3138,8 +3139,9 @@ export type AdminBotLogisticsRequest = AdminBotLogisticsRequestInput & {
   updated_at: string;
   /**
    * RFC3339 instant of the soonest thing this request is working towards, or absent when it names
-   * none. Derived on write from the dates, times and zones the member gave, so every reader sorts
-   * the same way and no client has to re-implement "which of these is soonest".
+   * none. Letters use only the earliest letter deadline. This comparison instant never replaces
+   * the entered wall-clock date, time, or timezone shown to the user. Recomputed on letter reads
+   * so legacy records cannot retain an application-based deadline.
    */
   deadline_at?: string;
   /**

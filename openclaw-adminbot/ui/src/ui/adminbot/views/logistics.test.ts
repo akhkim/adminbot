@@ -9,6 +9,7 @@ import {
   type MeetingRequestRow,
   type RecommendationSchool,
 } from "../data/logistics-draft.ts";
+import { DEFAULT_LOGISTICS_QUEUE_OPTIONS } from "../data/logistics-queue.ts";
 import type { LogisticsRequest, LogisticsRequestStatus } from "../data/logistics-requests.ts";
 import {
   renderAdminBotLogistics,
@@ -144,7 +145,6 @@ function draw(options: DrawOptions = {}): Drawn {
   const settledToggles: boolean[] = [];
   const signedNoteChanges: string[] = [];
   const signedUploads: { id: string; files: File[] }[] = [];
-  const downloads: { id: string; name: string }[] = [];
   const answers: {
     id: string;
     status: LogisticsRequestStatus;
@@ -166,14 +166,14 @@ function draw(options: DrawOptions = {}): Drawn {
       mode: options.mode ?? "make",
       onModeChange: (next) => modeChanges.push(next),
       queue: {
+        options: { ...DEFAULT_LOGISTICS_QUEUE_OPTIONS },
+        onOptionsChange: () => {},
         requests: options.requests ?? [],
         loading: options.requestsLoading ?? false,
         error: options.requestsError ?? null,
         showSettled: options.showSettled ?? false,
         onShowSettledChange: (next) => settledToggles.push(next),
         signingId: options.signingId ?? null,
-        downloadingId: null,
-        onDownload: (id, name) => downloads.push({ id, name }),
         signedNote: options.signedNote ?? "",
         onSignedNoteChange: (next) => signedNoteChanges.push(next),
         onSendSigned: (id, files) => signedUploads.push({ id, files }),
@@ -854,8 +854,8 @@ describe("list of schools", () => {
     const { container } = drawLetters();
     const hints = [...schoolsTable(container).querySelectorAll(".logistics-schools__head-hint")];
     expect(hints.map((hint) => hint.textContent?.trim())).toEqual([
-      "if different",
-      "for both times on this row",
+      "Required",
+      "AoE (UTC−12) by default",
       "If it is not a regular program, what it looks for.",
     ]);
   });
@@ -1135,7 +1135,7 @@ describe("request modes", () => {
       [...container.querySelectorAll(".logistics-requests__head")].map((head) =>
         head.textContent?.trim(),
       ),
-    ).toEqual(["Type of Request", "Most Recent Deadline", "Status"]);
+    ).toEqual(["Type of Request", "Earliest deadline", "Status"]);
   });
 
   it("offers an admin the two modes above the templates", () => {
@@ -1188,7 +1188,7 @@ describe("request modes", () => {
     const headings = [...container.querySelectorAll(".logistics-requests__head")];
     expect(headings.map((heading) => heading.textContent?.trim())).toEqual([
       "Type of Request",
-      "Most Recent Deadline",
+      "Earliest deadline",
       "Status",
     ]);
     const rows = [...container.querySelectorAll(".logistics-requests__row")];
@@ -1196,10 +1196,10 @@ describe("request modes", () => {
       // All three are stored as the same `submitted`/`in_progress`, and the letter row is the one
       // that must not read "Submitted": the request has been sent, the letter has not. The other
       // two kinds are the thing being asked for, so they still say it. See logistics-status.ts.
-      "Recommendation Letters Dec 1, 2026 To submit",
+      "Recommendation Letters No deadline To submit",
       // A signature request names no date, so it says so rather than inventing one.
       "Document Signature No deadline In progress",
-      "Book Meeting Sep 1, 2026 Submitted",
+      "Book Meeting Sep 1, 2026, 14:00 America/Toronto Submitted",
     ]);
   });
 
@@ -1702,4 +1702,19 @@ describe("recommendation letter Guidebook guidance", () => {
       expect(container.querySelector("[data-testid='logistics-letters-guide']")).toBeNull();
     }
   });
+});
+
+it("makes letter deadline required and defaults a new school to AoE", () => {
+  const { container } = draw({
+    template: "recommendationLetters",
+    schools: [createSchoolRow({ school: "Example" })],
+  });
+  expect(
+    container.querySelector<HTMLInputElement>(".logistics-schools__cell--letterDeadline input")
+      ?.required,
+  ).toBe(true);
+  expect(
+    container.querySelector<HTMLInputElement>(".logistics-schools__cell--deadlineTimezone input")
+      ?.value,
+  ).toBe("AoE");
 });

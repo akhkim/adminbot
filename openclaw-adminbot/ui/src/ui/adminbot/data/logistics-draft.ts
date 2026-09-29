@@ -68,15 +68,7 @@ export type RecommendationSchool = {
   applicationDeadlineTime: string;
   letterDeadline: string;
   letterDeadlineTime: string;
-  /**
-   * The zone both times on this row are read in, as an IANA name.
-   *
-   * One zone per row rather than one per deadline: a school states both its cutoffs on its own
-   * clock, and two zone pickers on one row would be two chances to disagree about the same
-   * campus. Blank means the dates are whole-day, which is how every row read before the times
-   * existed -- and a time typed with no zone is exactly the ambiguity that makes a member submit
-   * a day late from another country, so the form asks for it as soon as a time appears.
-   */
+  /** Zone entered for the school's deadlines; a blank or new value defaults to AoE (UTC−12). */
   deadlineTimezone: string;
   applicationStatus: string;
   letterStatus: string;
@@ -176,7 +168,7 @@ const EMPTY_SCHOOL: Omit<RecommendationSchool, "id"> = {
   applicationDeadlineTime: "",
   letterDeadline: "",
   letterDeadlineTime: "",
-  deadlineTimezone: "",
+  deadlineTimezone: "AoE",
   applicationStatus: "",
   letterStatus: "",
   program: "",
@@ -193,11 +185,16 @@ let schoolRowCount = 0;
 export function createSchoolRow(fields: Partial<RecommendationSchool> = {}): RecommendationSchool {
   schoolRowCount += 1;
   // Id assigned last so copying an existing row's fields cannot copy its identity too.
-  return { ...EMPTY_SCHOOL, ...fields, id: `school-${schoolRowCount}` };
+  return {
+    ...EMPTY_SCHOOL,
+    ...fields,
+    deadlineTimezone: fields.deadlineTimezone?.trim() || "AoE",
+    id: `school-${schoolRowCount}`,
+  };
 }
 
 export function isEmptySchoolRow(row: RecommendationSchool): boolean {
-  return SCHOOL_FIELD_KEYS.every((key) => !row[key].trim());
+  return SCHOOL_FIELD_KEYS.every((key) => key === "deadlineTimezone" || !row[key].trim());
 }
 
 function parseSchoolRow(value: unknown): RecommendationSchool | null {

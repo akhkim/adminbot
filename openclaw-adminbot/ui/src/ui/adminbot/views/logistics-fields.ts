@@ -17,6 +17,7 @@ export type SchoolField = {
   labelKey: string;
   // Second line under the column name, for a heading that needs a qualifier to be understood.
   hintKey?: string;
+  required?: boolean;
   control: "text" | "date" | "time" | "url" | "suggest" | "notes";
   placeholderKey?: string;
   // Only for "suggest": the datalist this column's input reads its offered words from.
@@ -72,7 +73,8 @@ export const SCHOOL_FIELDS: SchoolField[] = [
   {
     key: "letterDeadline",
     labelKey: "logistics.schools.letterDeadline",
-    hintKey: "logistics.schools.letterDeadlineHint",
+    hintKey: "logistics.schools.letterDeadlineRequired",
+    required: true,
     control: "date",
   },
   { key: "letterDeadlineTime", labelKey: "logistics.schools.letterDeadlineTime", control: "time" },
@@ -81,10 +83,10 @@ export const SCHOOL_FIELDS: SchoolField[] = [
     // clock, so a zone per deadline would be two chances to disagree about the same campus.
     key: "deadlineTimezone",
     labelKey: "logistics.schools.deadlineTimezone",
-    hintKey: "logistics.schools.deadlineTimezoneHint",
+    hintKey: "logistics.schools.aoeHint",
     control: "suggest",
     listId: TIMEZONE_LIST_ID,
-    placeholderKey: "logistics.schools.deadlineTimezonePlaceholder",
+    placeholderKey: "logistics.schools.aoePlaceholder",
   },
   {
     key: "applicationStatus",

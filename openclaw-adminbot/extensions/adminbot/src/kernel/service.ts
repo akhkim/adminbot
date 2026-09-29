@@ -274,6 +274,7 @@ import {
   byUrgency,
   prepareLogisticsRequest,
   withoutAttachmentBytes,
+  withCurrentLogisticsDeadline,
 } from "../workflows/logistics/requests.js";
 import {
   clearSettledRequestFiles,
@@ -9243,7 +9244,7 @@ export class AdminBotService {
     if (!request || (!viewer.is_admin && request.member_id !== viewer.member_id)) {
       return serviceError(404, `unknown logistics request ${requestId}`);
     }
-    return { ok: true, status: 200, payload: request };
+    return { ok: true, status: 200, payload: withCurrentLogisticsDeadline(request) };
   }
 
   /**
@@ -12433,7 +12434,7 @@ export class AdminBotService {
       type: "logistics.rec_letter_reminder",
       summary:
         due.length === 1
-          ? `Remind ${headProfessor.name}: ${due[0]?.member_name}'s letter is due ${due[0]?.deadline_at.slice(0, 10)}`
+          ? `Remind ${headProfessor.name}: ${due[0]?.member_name}'s letter is due ${due[0]?.deadline_label ?? due[0]?.deadline_at.slice(0, 10)}`
           : `Remind ${headProfessor.name} of ${due.length} letters due within ${adminBotRecLetterReminderLeadDays} days`,
       target: { service: "email", channel: "email", target: recipient },
       proposed_payload: {
