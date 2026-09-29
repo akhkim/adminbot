@@ -34,6 +34,7 @@ import {
   type AdminBotCollaboratorAccessItemId,
   type AdminBotCollaboratorGrantedCell,
   adminBotCollaboratorAccessItems,
+  subgroupForMemberType,
 } from "./collaborator-subgroups.js";
 import { belongsOnSurface } from "./surface-membership.js";
 
@@ -130,42 +131,9 @@ export function resolveSubgroup(member: AdminBotLabMember): {
   return subgroup ? { subgroup, source: "member_type" } : { source: "unknown" };
 }
 
-/**
- * The subgroup a Member Type maps to, ignoring any subgroup already on the record.
- *
- * `resolveSubgroup` lets a stored `collaborator_subgroup` win, which is right for grading. A type
- * change is the case where the stored value is the stale one, so it asks the column directly.
- * Undefined for `full` (a full member has no subgroup) and for types no subgroup covers.
- */
-export function subgroupForMemberType(
-  memberType: string | undefined,
-): AdminBotExternalCollaboratorSubgroup | undefined {
-  const tokens = new Set(
-    (memberType ?? "")
-      .split(",")
-      .map((part) => part.trim().toLowerCase())
-      .filter(Boolean),
-  );
-  if (tokens.has("full")) {
-    return undefined;
-  }
-  return SUBGROUP_BY_TOKEN.find(([token]) => tokens.has(token))?.[1];
-}
-
-// The member-type tokens the onboarding sheet uses, and the subgroup row each grades against.
-// Ordered most-committed first for the same reason TEMPLATE_BY_TYPE is.
-const SUBGROUP_BY_TOKEN: readonly (readonly [string, AdminBotExternalCollaboratorSubgroup])[] = [
-  ["coauthor-major", "coauthor_major"],
-  ["own-pace-advisee", "own_pace_advisee"],
-  ["coauthor-minor", "coauthor_minor"],
-  ["coauthor-discussant-or-designer", "coauthor_discussant_designer"],
-  ["disappearing-coauthor", "disappearing_coauthor"],
-  ["external-prof", "external_prof"],
-  ["alumni", "alumni"],
-  ["interviewee", "interviewee"],
-  ["slightly-better-than-emails", "slightly_better_than_emails"],
-  ["acquaintance", "acquaintance"],
-];
+// Re-exported: callers have always found it here, and the lookup moved only so surface-membership
+// can read it without an import cycle through this file.
+export { subgroupForMemberType };
 
 /**
  * The Slack Connect room the matrix calls #friends-and-collaborators, as the export names it.
@@ -369,6 +337,12 @@ const CHECKS: Record<AdminBotCollaboratorAccessItemId, AccessItemCheck> = {
     kind: "unverifiable",
     reason: "needs a live Drive permissions read; not in the roster or the Slack export",
   },
+  // The calendar half is the grant's own audit row; the Monday meeting's guest list is not in the
+  // evidence this audit loads, and the invite reconciliation owns that half.
+  lab_calendar_group_meeting: attemptCheck(
+    (evidence) => evidence.calendar_invite,
+    "lab calendar invite",
+  ),
   weekly_meeting: slackCheck("a #meeting- channel", (channels) => {
     const found = matching(channels, "meeting-");
     return {
@@ -437,6 +411,10 @@ const CHECKS: Record<AdminBotCollaboratorAccessItemId, AccessItemCheck> = {
       detail: found.length > 0 ? `in ${found.length} group channel(s)` : "in no #group- channel",
     };
   }),
+  physical_office_access: {
+    kind: "unverifiable",
+    reason: "fobs, building access and guest contracts are issued outside AdminBot",
+  },
 };
 
 /**
@@ -479,8 +457,8 @@ const BASELINE_ITEMS = [
   {
     id: "baseline_calendar_invite" as const,
     label: "Lab calendar reader invite",
-    // `belongsOnSurface` is what the invite sweep itself asks: the lab calendar is the lab's own
-    // people. Major coauthors get the group meeting, not the calendar.
+    // `belongsOnSurface` is what the invite sweep itself asks: the lab's own people, and the
+    // external subgroups the access design seats on the calendar and the Monday meeting.
     applies: (member: AdminBotLabMember) => belongsOnSurface(member, "lab_calendar"),
     check: attemptCheck((evidence) => evidence.calendar_invite, "lab calendar invite"),
   },

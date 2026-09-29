@@ -235,7 +235,10 @@ export async function onboardSelectedMemberRows(host: AdminBotMemberSheetHost): 
     host.memberSheetOnboardPreview = null;
     // Only clear the rows that produced something; a skipped row stays selected so its reason
     // stays next to it and a second press after filling a gap does not need re-selecting.
-    const created = new Set(result.value.created.map((entry) => entry.sheet_row));
+    const created = new Set([
+      ...result.value.created.map((entry) => entry.sheet_row),
+      ...(result.value.enrolled ?? []).map((entry) => entry.sheet_row),
+    ]);
     host.memberSheetSelection = rows.filter((row) => !created.has(row));
   } finally {
     if (sameSession(stored.sessionToken)) {

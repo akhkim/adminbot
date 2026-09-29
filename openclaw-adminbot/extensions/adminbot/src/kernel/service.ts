@@ -1133,6 +1133,10 @@ const DEFAULT_ACTION_POLICIES = {
   // Uninviting somebody is visible to them and reads as a judgement about whether they belong, so
   // it sits with the other T3 calendar writes behind an admin approval and never runs unattended.
   "calendar.remove_attendees": approvalPolicy("T3", ["admin"]),
+  // Same tier as adding somebody to an event: it shows them every event on the lab's calendar, and
+  // an admin says yes before that happens. The admin-driven onboarding paths approve it on the
+  // click that started them; the weekly sweep leaves it in Pending Actions.
+  "calendar.grant_lab_calendar": approvalPolicy("T3", ["admin"]),
   "calendar.reschedule": approvalPolicy("T3", ["admin"]),
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
@@ -1144,6 +1148,9 @@ const DEFAULT_ACTION_POLICIES = {
   // CS account request. Those are not things to undo.
   "reference.scan": approvalPolicy("T3", ["admin"]),
   "onboarding.send_guide": approvalPolicy("T3", ["admin"]),
+  // Raises a member's access level and grants what it brings, so an admin approves it; the
+  // approving admin is also who approves each step it runs.
+  "lab_member.enroll": approvalPolicy("T3", ["admin"]),
   // Auto (T1), on the same reasoning as `slack.invite_to_channel`: nothing about where this goes
   // came from a caller. The recipient is the funder's office address from settings, the
   // attachments are the forms the service just generated, and the send only happens once every
@@ -1214,6 +1221,9 @@ const DEFAULT_ACTION_POLICIES = {
   // roster and the city threshold, so nothing about who goes where comes from a caller. T1 for the
   // mechanical reason -- resolvePolicy only honors auto_allowed below T2.
   "slack.invite_to_channel": autoPolicy("T1"),
+  // T3, not T1 like an in-workspace invite: this one mails somebody outside the lab an invitation
+  // they did not ask for, from the lab's workspace, so an admin says yes first.
+  "slack.connect_invite": approvalPolicy("T3", ["admin"]),
   // Not auto-approved, unlike the invite above, and the asymmetry is the point. An unwanted invite
   // is noise somebody can leave; an unwanted removal takes a conversation away from someone who was
   // part of it, and they find out by noticing a room is gone. The sweep that drives this reads a
@@ -11799,6 +11809,9 @@ export class AdminBotService {
         // Name and email only. Privilege, status and access are governance fields and the sheet is
         // not an authorization surface -- the same rule adminbot-member-sheet-poller states and the
         // service principal enforces again.
+        // Created at the least-privileged level: the sheet is not an authorization surface. The
+        // route files a `lab_member.enroll` for each, and an admin approving that is what sets the
+        // level the Member Type implies.
         const saved = this.upsertLabMember(
           { id: row.member_id, name: row.name, email: row.email, member_type: row.member_type },
           { source: "import", actor: params.actor },
@@ -11867,12 +11880,16 @@ export class AdminBotService {
     memberId: string;
     actor: string;
     slackChannels?: readonly string[];
+    /** The Onboarding tab's per-row address override; the record's email otherwise. */
+    email?: string;
+    /** Template values the sheet does not hold, collected by the Onboarding tab. */
+    values?: Record<string, string>;
   }): AdminBotServiceResponse<{ proposal_id: string; template_id: string; email: string }> {
     const member = this.store.getLabMember(params.memberId);
     if (!member) {
       return serviceError(404, `no member ${params.memberId}`);
     }
-    const email = member.email?.trim() ?? "";
+    const email = params.email?.trim() || member.email?.trim() || "";
     if (!email) {
       return serviceError(
         422,
@@ -11934,6 +11951,9 @@ export class AdminBotService {
         name: member.name,
         email,
         member_id: member.id,
+        ...(params.values && Object.keys(params.values).length > 0
+          ? { values: params.values }
+          : {}),
         ...(params.slackChannels?.length
           ? {
               slack_project_channels: [

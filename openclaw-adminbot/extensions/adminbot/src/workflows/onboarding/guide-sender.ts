@@ -272,6 +272,63 @@ export function resolveActiveChannels(env: NodeJS.ProcessEnv): string[] {
  */
 const ACTIVE_CHANNELS_ACCESS_ITEM = "active_channels";
 
+/**
+ * Mints the #friends-and-collaborators Slack Connect invite on its own, without a mail around it.
+ *
+ * The same channel, invite and reuse window as the guide's `{slack_connect_link}`, so somebody
+ * reached by both is invited once: a fresh cached invite is reported as reused rather than minted
+ * again. For the Member Types the access design gives the channel but no onboarding mail.
+ */
+export function createSlackConnectOnboardingInviter(
+  options: Pick<
+    AdminBotOnboardingSenderOptions,
+    "inviteToSlackConnect" | "slackConnectInviteCache" | "defaultSlackChannelId" | "now"
+  >,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  return async (
+    email: string,
+  ): Promise<
+    { ok: true; channel_id: string; url: string; reused: boolean } | { ok: false; reason: string }
+  > => {
+    const address = email.trim();
+    if (!address) {
+      return { ok: false, reason: "no address to invite" };
+    }
+    if (!options.inviteToSlackConnect) {
+      return { ok: false, reason: "Slack Connect invites are not configured" };
+    }
+    const channelId =
+      options.defaultSlackChannelId?.trim() ||
+      configuredEnvValue(env[ADMINBOT_ONBOARDING_CHANNEL_ENV]);
+    if (!channelId) {
+      return {
+        ok: false,
+        reason: `Slack Connect invites need a channel: set ${ADMINBOT_ONBOARDING_CHANNEL_ENV}`,
+      };
+    }
+    const now = options.now?.() ?? new Date();
+    const cached = options.slackConnectInviteCache?.get(address, channelId);
+    if (cached?.url && adminBotSlackConnectInviteIsFresh(cached, now)) {
+      return { ok: true, channel_id: channelId, url: cached.url, reused: true };
+    }
+    try {
+      const invite = await options.inviteToSlackConnect({ email: address, channelId });
+      if (invite.url) {
+        options.slackConnectInviteCache?.save({
+          email: address,
+          channel_id: channelId,
+          url: invite.url,
+          created_at: now.toISOString(),
+        });
+      }
+      return { ok: true, channel_id: channelId, url: invite.url, reused: false };
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+  };
+}
+
 /** The production email sender, exported so a caller can wrap it and still report what it did. */
 export function gogEmailSender(env: NodeJS.ProcessEnv = process.env) {
   const gog = resolveGogExecutable(env);

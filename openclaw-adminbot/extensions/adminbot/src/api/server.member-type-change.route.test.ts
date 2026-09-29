@@ -190,7 +190,12 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     expect(body.member_type).toBe("alumni");
     expect(body.collaborator_subgroup).toBe("alumni");
     const steps = body.member_type_change?.steps ?? [];
-    expect(steps.every((step) => step.status === "done")).toBe(true);
+    // A major coauthor held the lab calendar; alumni do not, and a calendar share is never revoked
+    // automatically -- it is reported for somebody to remove by hand.
+    expect(steps.find((step) => step.step === "lab_calendar")).toMatchObject({ status: "skipped" });
+    expect(
+      steps.filter((step) => step.step !== "lab_calendar").every((step) => step.status === "done"),
+    ).toBe(true);
 
     // Every external step ran through the gate, approved by the admin who saved.
     const types = executed.map((proposal) => proposal.type);
@@ -230,10 +235,9 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     expect(executed.map((proposal) => proposal.type)).not.toContain("slack.remove_from_channel");
     // Already on the Monday meeting as a major coauthor, so nothing to do there.
     expect(executed.map((proposal) => proposal.type)).not.toContain("calendar.add_attendees");
-    // The admin's own sign-up shared the calendar with them too; only Cora's share is this change's.
-    expect(calendarShares.filter((email) => email !== "admin@cs.toronto.edu")).toEqual([
-      "cora@lab.test",
-    ]);
+    // A major coauthor already holds the lab calendar through the access design's standing-invites
+    // row, so becoming full shares nothing new.
+    expect(calendarShares.filter((email) => email !== "admin@cs.toronto.edu")).toEqual([]);
     expect(mailed).toEqual([]);
   });
 
@@ -285,8 +289,11 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     ).json()) as ChangeBody;
 
     expect(created.privilege_level).toBe("member");
-    // A new record is onboarded through Add member, not re-onboarded here.
-    expect(created.member_type_change).toBeUndefined();
+    // Every way a record comes into being is enrolled the same way: a full member is owed the lab
+    // calendar and the Monday meeting.
+    const steps = created.member_type_change?.steps ?? [];
+    expect(steps.find((step) => step.step === "lab_calendar")?.status).toBe("done");
+    expect(steps.some((step) => step.step === "group_meeting")).toBe(true);
   });
 
   it("does nothing outside the database when the type did not change", async () => {

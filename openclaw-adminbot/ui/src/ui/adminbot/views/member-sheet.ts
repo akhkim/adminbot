@@ -19,6 +19,7 @@ import { html, nothing } from "lit";
 import { adminBotMemberTypes } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import { memberSheetCellKey } from "../controllers/member-sheet.ts";
+import { describeMemberTypeChange } from "../data/member-type-change.ts";
 import { startSheetPan } from "./sheet-pan.ts";
 
 /** Columns worth showing first; the rest follow in sheet order. */
@@ -194,8 +195,17 @@ function renderOnboardResult(state: AppViewState) {
   if (!result) {
     return nothing;
   }
+  const enrolled = result.enrolled ?? [];
   return html`
-    <div class="callout ${result.created.length > 0 ? "success" : "warning"}">
+    <div
+      class="callout ${result.created.length > 0 || enrolled.length > 0 ? "success" : "warning"}"
+    >
+      ${enrolled.length > 0
+        ? html`<p>
+            Added ${enrolled.length} ${enrolled.length === 1 ? "person" : "people"} to the roster
+            with the access their Member Type grants.
+          </p>`
+        : nothing}
       ${result.created.length > 0
         ? html`<p>
             Queued ${result.created.length} ${result.created.length === 1 ? "email" : "emails"} in
@@ -318,7 +328,10 @@ function renderAddRowResult(state: AppViewState) {
     key,
     step: result[key],
   }));
-  const failed = steps.some(({ step }) => step.status === "failed");
+  const access = result.member_type_change
+    ? describeMemberTypeChange(result.member_id, result.member_type_change)
+    : undefined;
+  const failed = steps.some(({ step }) => step.status === "failed") || access?.kind === "error";
   return html`
     <div
       class="callout ${failed ? "warning" : "success"}"
@@ -336,6 +349,7 @@ function renderAddRowResult(state: AppViewState) {
           }
           return html`<li><strong>${label}: failed</strong> — ${step.reason}</li>`;
         })}
+        ${access ? html`<li>Access: ${access.text}</li>` : nothing}
       </ul>
     </div>
   `;
@@ -357,16 +371,22 @@ function renderOnboardPreview(state: AppViewState) {
   }
   const busy = Boolean(state.memberSheetBusy);
   const planned = preview.planned;
+  const accessOnly = preview.access_only ?? [];
+  const actionable = planned.length + accessOnly.length;
   return html`
     <section class="adminbot-onboard-preview" data-testid="onboard-preview">
       <div class="adminbot-onboard-preview__head">
         <strong>Review before onboarding</strong>
         <span>
-          ${planned.length === 0
+          ${actionable === 0
             ? "Nothing would be queued for this selection."
-            : `Confirming queues ${planned.length} email ${
-                planned.length === 1 ? "proposal" : "proposals"
-              } in Pending Actions. Nothing is sent until an admin approves them there.`}
+            : `Anyone not yet on the roster is added with the access their Member Type grants.${
+                planned.length === 0
+                  ? ""
+                  : ` ${planned.length} email ${
+                      planned.length === 1 ? "proposal is" : "proposals are"
+                    } queued in Pending Actions; nothing is sent until an admin approves them there.`
+              }`}
         </span>
       </div>
       ${planned.map(
@@ -392,6 +412,21 @@ function renderOnboardPreview(state: AppViewState) {
           </details>
         `,
       )}
+      ${accessOnly.length > 0
+        ? html`
+            <div class="callout" data-testid="onboard-access-only">
+              <p>Onboarded by their access alone, with no email:</p>
+              <ul>
+                ${accessOnly.map(
+                  (row) =>
+                    html`<li>
+                      Row ${row.sheet_row} · ${row.name || row.email} (${row.member_type})
+                    </li>`,
+                )}
+              </ul>
+            </div>
+          `
+        : nothing}
       ${preview.skipped.length > 0
         ? html`
             <div class="callout warning">
@@ -412,12 +447,14 @@ function renderOnboardPreview(state: AppViewState) {
           class="btn primary"
           type="button"
           data-testid="onboard-confirm"
-          ?disabled=${busy || planned.length === 0}
+          ?disabled=${busy || actionable === 0}
           @click=${() => void state.onboardSelectedMemberRows?.()}
         >
-          ${planned.length === 0
+          ${actionable === 0
             ? "Nothing to queue"
-            : `Queue ${planned.length} ${planned.length === 1 ? "email" : "emails"} for approval`}
+            : planned.length === 0
+              ? `Onboard ${accessOnly.length} ${accessOnly.length === 1 ? "person" : "people"}`
+              : `Queue ${planned.length} ${planned.length === 1 ? "email" : "emails"} for approval`}
         </button>
         <button
           class="btn"

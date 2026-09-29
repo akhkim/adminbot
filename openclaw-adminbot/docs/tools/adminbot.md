@@ -441,6 +441,32 @@ has expired. A `404` from the route itself is reported as what it is: the Contro
 Vercel and the service from Aurora, so a Membership tab that reports no member-sheet route is
 talking to a service that predates it and needs a deploy, not a broken spreadsheet.
 
+### One onboarding, every way in
+
+A person can reach the roster six ways: **Add member** on the Members tab, approving a **member
+request**, the Onboarding section's **Add row** and **onboard selected rows**, the weekly
+**sheet sweep** (`POST /onboarding/sheet-sweep/run`), and approving a portal **sign-up**. All six
+run the same three steps (`api/server.member-onboarding.ts`):
+
+1. **The record**, at the access level its Member Type implies (below). A type that implies none
+   leaves a new person at `external_collaborator`; an explicit admin choice wins.
+2. **Enrollment** -- what holding that type grants under the External Collab Access Design, applied
+   as the move from holding nothing: Slack rooms, a `slack.connect_invite` to
+   #friends-and-collaborators for the no-mail types (the guide carries that invite for everyone
+   else), the Monday group meeting, and lab calendar read access (`calendar.grant_lab_calendar`).
+   Full members, own-pace advisees and major coauthors hold the calendar and the Monday meeting --
+   the access design's "View access to lab calendar + invite to Monday Group Meeting" row, read by
+   `belongsOnSurface`.
+3. **The guide** (`onboarding.send_guide`) for the types the access design mails.
+
+Only who approves differs. An admin's click approves each step on the spot (Add member, request
+and sign-up approval, Add row, and enrollment from onboard selected rows, whose mails still wait in
+Pending Actions). The sweep runs with nobody present, and a spreadsheet row is not an
+authorization, so it creates each joiner at `external_collaborator` and files one
+`lab_member.enroll` per joiner. Approving that card sets the level the Member Type implies and runs
+step 2, each step approved by that admin; it refuses if the Member Type changed after the card was
+filed, or if the member has since been enrolled another way.
+
 ### Adding a member from the Members tab
 
 **Add member** on the Members tab creates the roster record and, unless the admin unticks **Start
@@ -452,9 +478,10 @@ mints the Slack Connect invite, provisions the Drive folder, files the DCS accou
 sends the mail.
 
 Which guide somebody gets is decided by **Member type** on the form, through the same
-most-committed-role rule the sheet rows use: `full, coauthor-major` gets the full-member mail. Three
-types send no mail at all -- `acquaintance`, `coauthor-discussant-or-designer` and `external-prof`
--- because their onboarding is the backend access grant.
+most-committed-role rule the sheet rows use: `full, coauthor-major` gets the full-member mail. Five
+types send no mail at all -- `acquaintance`, `coauthor-discussant-or-designer`, `external-prof`,
+`benefit-partner` and `benefit-direct-relative` -- because their onboarding is the backend access
+grant.
 
 The save and the guide are reported together, and a refused guide never undoes the save. The
 reasons an admin will see are all fixable: the record has no email address, its Member Type sends no
@@ -486,8 +513,10 @@ genuine admin session and only when the type actually changes (compared token-wi
   `slack.remove_from_channel`). Becoming `full` never removes anyone from the lab's rooms.
 - **The Monday group meeting** gains or loses them on every live series (`calendar.add_attendees` /
   `calendar.remove_attendees`, both `--send-updates none`).
-- **Lab calendar** read access is granted silently when they gain it. No action revokes a calendar
-  share, so a loss is reported in the notice for someone to handle by hand.
+- **Lab calendar** read access is granted silently when they gain it
+  (`calendar.grant_lab_calendar`, recorded as `auth.calendar_invite_sent` like the backfill). No
+  action revokes a calendar share, so a loss is reported in the notice for someone to handle by
+  hand.
 - **One email, in one case:** somebody moving *into* alumni gets the `alumni` guide
   (`onboarding.send_guide`). Every other change sends nothing.
 

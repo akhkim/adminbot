@@ -23,9 +23,12 @@ afterEach(async () => {
 });
 
 async function startService() {
+  const calendarShares: string[] = [];
   const mock = createAdminBotMockService({
     serviceToken: SERVICE_TOKEN,
-    calendarInviteRunner: async () => {},
+    calendarInviteRunner: async (email: string) => {
+      calendarShares.push(email);
+    },
     accountApprovedEmailRunner: async () => {},
     dcsFormRunner: async () => {},
   });
@@ -41,7 +44,7 @@ async function startService() {
     throw new Error("missing mock service address");
   }
   running.push(mock);
-  return { baseUrl: `http://127.0.0.1:${address.port}`, mock };
+  return { baseUrl: `http://127.0.0.1:${address.port}`, mock, calendarShares };
 }
 
 function jsonHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -107,7 +110,7 @@ type RequestView = {
 };
 
 async function lab() {
-  const { baseUrl, mock } = await startService();
+  const { baseUrl, mock, calendarShares } = await startService();
   seedMember(mock, {
     id: "admin",
     name: "Admin",
@@ -137,7 +140,7 @@ async function lab() {
     });
   const list = async (token: string, query = "") =>
     ((await (await call(token, query)).json()) as { requests: RequestView[] }).requests;
-  return { baseUrl, mock, admin, pat, sam, call, list };
+  return { baseUrl, mock, admin, pat, sam, call, list, calendarShares };
 }
 
 const ADA = {
@@ -187,6 +190,24 @@ describe("member requests", () => {
     const again = await call(admin, `/${request.id}/approve`, "POST", {});
     expect(again.status).toBe(409);
     expect(roster(mock).filter((m) => m.email === "ada@example.org")).toHaveLength(1);
+  });
+
+  // Approving a request used to create the record and stop: the enrollment Add member runs --
+  // calendar, Monday meeting, rooms -- was skipped because the save was not flagged as new.
+  it("enrolls the approved member exactly as Add member does", async () => {
+    const { admin, pat, call, calendarShares } = await lab();
+    const { request } = (await (await call(pat, "", "POST", ADA)).json()) as {
+      request: RequestView;
+    };
+    calendarShares.length = 0;
+    const approved = (await (await call(admin, `/${request.id}/approve`, "POST", {})).json()) as {
+      member: {
+        member_type_change?: { steps: Array<{ step: string; status: string }> };
+      };
+    };
+    const steps = approved.member.member_type_change?.steps ?? [];
+    expect(steps.find((step) => step.step === "lab_calendar")?.status).toBe("done");
+    expect(calendarShares).toEqual(["ada@example.org"]);
   });
 
   it("lets anyone signed in propose, and shows each requester only their own", async () => {

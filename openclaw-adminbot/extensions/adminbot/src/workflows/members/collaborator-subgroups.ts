@@ -76,6 +76,8 @@ const ACCESS_ITEMS = [
       own_pace_advisee: "yes",
       coauthor_minor: "yes",
       coauthor_major: "yes",
+      benefit_partner: "yes",
+      benefit_direct_relative: "yes",
     },
   },
   {
@@ -88,6 +90,8 @@ const ACCESS_ITEMS = [
       coauthor_minor: "yes",
       coauthor_major: "yes",
       coauthor_discussant_designer: "yes",
+      benefit_partner: "yes",
+      benefit_direct_relative: "yes",
     },
   },
   {
@@ -138,6 +142,8 @@ const ACCESS_ITEMS = [
       coauthor_discussant_designer: "yes",
       disappearing_coauthor: "yes",
       external_prof: "yes",
+      benefit_partner: "yes",
+      benefit_direct_relative: "yes",
     },
   },
   {
@@ -161,12 +167,13 @@ const ACCESS_ITEMS = [
   {
     id: "discussion_channel",
     label: "#discussion-xxx topic channel",
-    detail: "Add to #discussion-xxx for joining the discussions on this broad topic.",
+    detail: "Add to #discussion-xxx for joining the discussions on any related broad topic.",
     cells: {
       own_pace_advisee: "yes",
       coauthor_minor: "yes",
       coauthor_major: "yes",
       coauthor_discussant_designer: "yes",
+      benefit_partner: "yes",
     },
   },
   {
@@ -196,6 +203,15 @@ const ACCESS_ITEMS = [
       coauthor_major: "yes",
       coauthor_discussant_designer: "yes",
     },
+  },
+  {
+    // The two standing invites. `belongsOnSurface` (surface-membership.ts) reads this row for
+    // external collaborators, so granting it here is what puts somebody on the lab calendar and the
+    // Monday meeting -- there is no second list of who belongs.
+    id: "lab_calendar_group_meeting",
+    label: "Lab calendar and Monday Group Meeting",
+    detail: "View access to the lab calendar and an invite to the Monday Group Meeting.",
+    cells: { own_pace_advisee: "yes", coauthor_major: "yes" },
   },
   {
     id: "weekly_meeting",
@@ -287,7 +303,7 @@ const ACCESS_ITEMS = [
   {
     id: "city_dinner_invite",
     label: "City-based dinner or team building invite",
-    detail: "Invite to city-based dinners and team building events.",
+    detail: "Invite to city-based meals and team building events.",
     cells: {
       interviewee: "yes",
       acquaintance: "yes",
@@ -297,6 +313,15 @@ const ACCESS_ITEMS = [
       coauthor_major: "yes",
       coauthor_discussant_designer: "yes",
     },
+  },
+  {
+    // Nothing in AdminBot can issue a fob or a guest contract, so this row is a checklist item for
+    // a person, not something an onboarding step executes.
+    id: "physical_office_access",
+    label: "Physical office access",
+    detail:
+      "Access to our physical office locations (e.g., Vector member onboarding and fob access; ETH OAT building access if they have an ETH card; MPI guest contract).",
+    cells: { benefit_partner: "yes" },
   },
 ] as const satisfies readonly AccessItemDefinition[];
 
@@ -340,6 +365,53 @@ export function collaboratorSubgroupAccess(
     }
   }
   return grants;
+}
+
+// The member-type tokens the onboarding sheet uses, and the subgroup row each grades against.
+// Ordered most-committed first for the same reason TEMPLATE_BY_TYPE is.
+const SUBGROUP_BY_TOKEN: readonly (readonly [string, AdminBotExternalCollaboratorSubgroup])[] = [
+  ["coauthor-major", "coauthor_major"],
+  ["own-pace-advisee", "own_pace_advisee"],
+  ["coauthor-minor", "coauthor_minor"],
+  ["coauthor-discussant-or-designer", "coauthor_discussant_designer"],
+  ["disappearing-coauthor", "disappearing_coauthor"],
+  ["external-prof", "external_prof"],
+  ["alumni", "alumni"],
+  ["interviewee", "interviewee"],
+  ["slightly-better-than-emails", "slightly_better_than_emails"],
+  ["acquaintance", "acquaintance"],
+  ["benefit-partner", "benefit_partner"],
+  ["benefit-direct-relative", "benefit_direct_relative"],
+];
+
+/**
+ * The subgroup a Member Type maps to, ignoring any subgroup already on the record.
+ *
+ * `resolveSubgroup` (access-audit.ts) lets a stored `collaborator_subgroup` win, which is right for
+ * grading. A type change is the case where the stored value is the stale one, so it asks the column
+ * directly. Undefined for `full` (a full member has no subgroup) and for types no subgroup covers.
+ */
+export function subgroupForMemberType(
+  memberType: string | undefined,
+): AdminBotExternalCollaboratorSubgroup | undefined {
+  const tokens = new Set(
+    (memberType ?? "")
+      .split(",")
+      .map((part) => part.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (tokens.has("full")) {
+    return undefined;
+  }
+  return SUBGROUP_BY_TOKEN.find(([token]) => tokens.has(token))?.[1];
+}
+
+/** Whether a subgroup's row of the matrix grants this item. */
+export function subgroupHoldsAccessItem(
+  subgroup: AdminBotExternalCollaboratorSubgroup,
+  item: AdminBotCollaboratorAccessItemId,
+): boolean {
+  return collaboratorSubgroupAccess(subgroup).some((grant) => grant.item === item);
 }
 
 /**

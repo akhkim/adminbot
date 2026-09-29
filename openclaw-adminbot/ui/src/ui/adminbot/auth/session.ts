@@ -208,7 +208,8 @@ export type MemberTypeChangeSummary = {
   steps: Array<{
     step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "alumni_mail" | "meeting";
     target?: string;
-    status: "done" | "skipped" | "failed";
+    /** `queued`: filed in Pending Actions because nobody approved it on the spot. */
+    status: "done" | "queued" | "skipped" | "failed";
     detail?: string;
     proposal_id?: string;
   }>;
@@ -1435,6 +1436,12 @@ export type MemberSheetEditResult = {
 
 export type MemberSheetOnboardResult = {
   created: { sheet_row: number; email: string; template_id: string; proposal_id: string }[];
+  /** Rows not yet on the roster, added with the access their Member Type grants. */
+  enrolled?: {
+    sheet_row: number;
+    member_id: string;
+    member_type_change?: MemberTypeChangeSummary;
+  }[];
   skipped: { sheet_row: number; reason: string; missing?: string[] }[];
 };
 
@@ -1520,8 +1527,19 @@ export type PlannedOnboardEmail = {
   reply_to: string;
 };
 
+/** A row whose Member Type is onboarded by its access alone, with no email. */
+export type PlannedAccessOnly = {
+  sheet_row: number;
+  name: string;
+  email: string;
+  member_type: string;
+  reason: string;
+};
+
 export type MemberSheetOnboardPreview = {
   planned: PlannedOnboardEmail[];
+  /** Absent from a service older than the shared onboarding. */
+  access_only?: PlannedAccessOnly[];
   skipped: MemberSheetOnboardResult["skipped"];
 };
 
@@ -1595,6 +1613,8 @@ export type MemberSheetAddRowResult = {
   member_id: string;
   sheet: MemberSheetAddRowStep;
   member: MemberSheetAddRowStep;
+  /** The rooms, meetings and calendar access the new member's type grants. */
+  member_type_change?: MemberTypeChangeSummary;
   onboarding: MemberSheetAddRowStep;
 };
 

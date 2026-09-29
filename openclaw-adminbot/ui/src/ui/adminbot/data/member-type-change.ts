@@ -38,10 +38,14 @@ export function describeMemberTypeChange(
   }
   const steps = [...(change?.steps ?? []), ...meetingSteps];
   const done = steps.filter((step) => step.status === "done");
+  const queued = steps.filter((step) => step.status === "queued");
   const skipped = steps.filter((step) => step.status === "skipped");
   const failed = steps.filter((step) => step.status === "failed");
   if (done.length > 0) {
     parts.push(`Done: ${done.map(describeStep).join("; ")}.`);
+  }
+  if (queued.length > 0) {
+    parts.push(`Waiting for approval: ${queued.map(describeStep).join("; ")}.`);
   }
   if (skipped.length > 0) {
     parts.push(`Skipped: ${skipped.map(describeStep).join("; ")}.`);

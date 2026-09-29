@@ -77,7 +77,8 @@ describe("planInviteMembership", () => {
     });
   });
 
-  it("drops the major coauthor too when the surface is the lab calendar", () => {
+  // The access design seats major coauthors on the lab calendar as well as the Monday meeting.
+  it("keeps the major coauthor on the lab calendar too", () => {
     const { service } = seededService();
     const result = unwrap(
       service.planInviteMembership({
@@ -87,11 +88,7 @@ describe("planInviteMembership", () => {
         actor: "cron",
       }),
     );
-    expect(result.remove.map((entry) => entry.member_id).toSorted()).toEqual([
-      "alum",
-      "major",
-      "trial",
-    ]);
+    expect(result.remove.map((entry) => entry.member_id).toSorted()).toEqual(["alum", "trial"]);
   });
 
   it("proposes nothing when the invite is already correct", () => {
