@@ -2,6 +2,19 @@
 import type { TranslationMap } from "../lib/types.ts";
 
 export const en: TranslationMap = {
+  deadlineStageFilter: {
+    label: "Filter by stage",
+    all: "All stages",
+    submission: "Submission",
+    abstract: "Abstract registration",
+    notification: "Decisions",
+    author_response: "Author response",
+    camera_ready: "Camera-ready",
+    conference: "Conference",
+    commitment: "Commitment",
+    registration: "Registration",
+    discussion: "Discussion",
+  },
   common: {
     health: "Health",
     ok: "OK",

@@ -3,6 +3,19 @@
 import type { TranslationMap } from "../lib/types.ts";
 
 export const zh_CN: TranslationMap = {
+  deadlineStageFilter: {
+    label: "Filter by stage",
+    all: "All stages",
+    submission: "Submission",
+    abstract: "Abstract registration",
+    notification: "Decisions",
+    author_response: "Author response",
+    camera_ready: "Camera-ready",
+    conference: "Conference",
+    commitment: "Commitment",
+    registration: "Registration",
+    discussion: "Discussion",
+  },
   common: {
     health: "健康状况",
     ok: "正常",

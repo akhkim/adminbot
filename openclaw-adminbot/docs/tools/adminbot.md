@@ -1631,3 +1631,9 @@ Explicit abstract and full-paper dates are retained separately. A matched OpenRe
 ### Deadline jobs after Aurora deployment
 
 Register the two deadline jobs explicitly after deployment using the [deadline cron setup](adminbot-deadline-cron-setup.md) procedure. Normal service starts and restarts do not change cron registration.
+
+### Selecting a deadline stage
+
+The deadlines board defaults to following the next published stage. Selecting a stage, such as Decisions or Camera-ready, restricts the board to venues with a known date for that stage. Dates, countdowns, ordering, and the Upcoming/Past split follow the selection in Groups, Cards, and Table. Shared organizer notification requirements are not decision dates. When a stage occurs more than once, Upcoming shows its next occurrence and Past its most recent completed occurrence.
+
+Adding a selected stage to a member's timeline saves that stage, preserving date-only announcements without inventing a time. Expanding the schedule still shows the venue's other stages.

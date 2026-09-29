@@ -1,14 +1,13 @@
+import { html, nothing, LitElement } from "lit";
 // Native rendering for every Control UI deadline surface.
 //
 // The service also exposes a self-contained version at GET /deadlines. Both surfaces read the
 // generated deadline dataset and present the same board: period, type and archival filters,
 // search, venue groups, source links, history, and card/group/table views. This renderer stays in
 // app's document flow so the containing page owns one ordinary vertical scroll.
-
-import { html, nothing, LitElement } from "lit";
 import { t } from "../../../i18n/index.ts";
-import "./deadlines.recommendation.ts";
 import { icons } from "../../icons.ts";
+import "./deadlines.recommendation.ts";
 import type { UiSettings } from "../../storage.ts";
 import type { AccessRole } from "../access.ts";
 import { resolveAdminBotBaseUrl } from "../auth/session.ts";
@@ -63,6 +62,12 @@ import {
   renderAbstractMilestoneDate,
   type AbstractMilestone,
 } from "./deadlines.abstract.ts";
+import {
+  stageKey,
+  chooseStage,
+  stageFilterOptions,
+  renderStageFilter,
+} from "./deadlines.stage-filter.ts";
 import { renderDeadlineTimezone } from "./deadlines.timezone.ts";
 import {
   workshopNotificationMilestones,
@@ -72,7 +77,12 @@ import {
 
 const DEFAULT_DEADLINE_PROPOSAL_STORE = new AdminBotDeadlineProposalStore();
 
-export type DeadlineBoardEntry = { venue: DeadlineVenue; instant: number };
+export type DeadlineBoardEntry = {
+  venue: DeadlineVenue;
+  instant: number;
+  stage?: DeadlineStage;
+  stageFiltered?: boolean;
+};
 type DeadlineGroupKind = "archival" | "nonArchival" | "mixed" | "unknown" | "other";
 /**
  * One dated row of a conference's timeline: either a submission the board counts down to, or a
@@ -317,6 +327,8 @@ export function milestoneEndInstant(milestone: DeadlineMilestone): number {
 
 /** One dated stage of a venue, as the board counts down to it. */
 export type DeadlineStage = {
+  key: string;
+  milestone?: DeadlineMilestone & { abstractVenue?: DeadlineVenue };
   instant: number;
   /** What the venue calls it: its own submission label, or the milestone's. */
   label: string;
@@ -337,11 +349,16 @@ export type DeadlineStage = {
  * due, and the conference itself still has to be travelled to -- so a venue belongs under
  * "Upcoming" until every stage it published is behind us.
  */
-export function venueStages(venue: DeadlineVenue, displayZone?: string): DeadlineStage[] {
+export function venueStages(
+  venue: DeadlineVenue,
+  displayZone?: string,
+  venues: readonly DeadlineVenue[] = [],
+): DeadlineStage[] {
   const stages: DeadlineStage[] = [];
   const submission = deadlineInstantMs(venue);
   if (Number.isFinite(submission)) {
     stages.push({
+      key: stageKey(venue.milestone ?? "submission"),
       instant: submission,
       label: capitaliseFirst(venue.deadline_label?.trim() || "Submission"),
       dateLabel: deadlineDateTimeLabel(venue),
@@ -349,12 +366,17 @@ export function venueStages(venue: DeadlineVenue, displayZone?: string): Deadlin
       submission: true,
     });
   }
-  for (const milestone of venueSchedule(venue)) {
+  for (const milestone of venueSchedule(venue, { venues })) {
+    if (milestone.milestone === "notification_by") {
+      continue;
+    }
     const instant = milestoneEndInstant(milestone);
     if (!Number.isFinite(instant)) {
       continue;
     }
     stages.push({
+      key: stageKey(milestone.milestone),
+      milestone,
       instant,
       label: milestone.label,
       dateLabel: milestoneDateLabel(milestone, displayZone),
@@ -430,10 +452,16 @@ export function conferenceTimeline(
 ): DeadlineTimelineItem[] {
   const items: DeadlineTimelineItem[] = entries.map((entry) => ({
     kind: "entry",
-    day: entry.venue.deadline_aoe.slice(0, 10),
+    day: (entry.stageFiltered
+      ? (entry.stage?.day ?? entry.venue.deadline_aoe)
+      : entry.venue.deadline_aoe
+    ).slice(0, 10),
     rank: -1,
-    entry,
+    entry: entry.stageFiltered ? entry : { ...entry, stage: undefined },
   }));
+  if (entries.some((entry) => entry.stageFiltered)) {
+    return items;
+  }
   const seen = new Set<string>();
   for (const entry of entries) {
     for (const milestone of venueSchedule(entry.venue, { venues })) {
@@ -512,7 +540,48 @@ export function entriesForDeadlinePeriod(
   entries: readonly DeadlineBoardEntry[],
   now: number,
   period: DeadlineBoardPeriod,
+  selectedStage = "",
+  displayZone?: string,
+  venues: readonly DeadlineVenue[] = [],
 ): DeadlineBoardEntry[] {
+  if (selectedStage) {
+    const selected = entries.flatMap((entry) => {
+      const stage = chooseStage(
+        venueStages(entry.venue, displayZone, venues),
+        selectedStage,
+        now,
+        period,
+      );
+      return stage ? [{ ...entry, stage, stageFiltered: true, instant: stage.instant }] : [];
+    });
+    const seen = new Set<string>();
+    return selected
+      .filter((entry) => {
+        const key = JSON.stringify([
+          entry.venue.venue_id || entry.venue.id,
+          entry.venue.track || "",
+          entry.venue.submission_type || "",
+          entry.stage.key,
+          entry.stage.label,
+          entry.instant,
+        ]);
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      })
+      .filter(
+        (entry) =>
+          !entry.stage?.milestone?.abstractVenue ||
+          !selected.some((other) => other.venue.id === entry.stage?.milestone?.abstractVenue?.id),
+      )
+      .toSorted(
+        (a, b) =>
+          (period === "past" ? b.instant - a.instant : a.instant - b.instant) ||
+          a.venue.name.localeCompare(b.venue.name),
+      );
+  }
   if (period === "past") {
     return entries
       .filter((entry) => !nextVenueStage(entry.venue, now))
@@ -523,17 +592,24 @@ export function entriesForDeadlinePeriod(
   }
   const pending = new Map<DeadlineBoardEntry, number>();
   for (const entry of entries) {
-    const stage = nextVenueStage(entry.venue, now);
+    const stage = venueStages(entry.venue, displayZone, venues).find(
+      (stage) => stage.instant > now,
+    );
     if (stage) {
       pending.set(entry, stage.instant);
     }
   }
-  return [...pending.keys()].toSorted(
-    (left, right) =>
-      (pending.get(left) ?? left.instant) - (pending.get(right) ?? right.instant) ||
-      left.instant - right.instant ||
-      left.venue.name.localeCompare(right.venue.name),
-  );
+  return [...pending.keys()]
+    .toSorted(
+      (left, right) =>
+        (pending.get(left) ?? left.instant) - (pending.get(right) ?? right.instant) ||
+        left.instant - right.instant ||
+        left.venue.name.localeCompare(right.venue.name),
+    )
+    .map((entry) => ({
+      ...entry,
+      stage: venueStages(entry.venue, displayZone, venues).find((stage) => stage.instant > now),
+    }));
 }
 
 export function filterDeadlineBoardEntries(
@@ -923,7 +999,7 @@ const ARCHIVAL_STATUS_OPTIONS: ReadonlyArray<{
  * notification or conference has not.
  */
 function countdownTarget(entry: DeadlineBoardEntry, now: number): number {
-  return nextVenueStage(entry.venue, now)?.instant ?? entry.instant;
+  return entry.stage?.instant ?? nextVenueStage(entry.venue, now)?.instant ?? entry.instant;
 }
 
 function urgency(entry: DeadlineBoardEntry, now: number): DeadlineUrgency {
@@ -936,10 +1012,10 @@ function urgency(entry: DeadlineBoardEntry, now: number): DeadlineUrgency {
  * left" printed next to a deadline that passed last month otherwise reads as a broken clock.
  */
 function stageCountdownLabel(entry: DeadlineBoardEntry, now: number): string {
-  if (entry.venue.deadline_time_precision === "date_only") {
+  if (!entry.stage && entry.venue.deadline_time_precision === "date_only") {
     return entry.instant <= now ? "Check source" : daysLeftLabel(entry.instant, now);
   }
-  const stage = nextVenueStage(entry.venue, now);
+  const stage = entry.stage ?? nextVenueStage(entry.venue, now);
   const left = daysLeftLabel(stage?.instant ?? entry.instant, now);
   return stage && !stage.submission ? `${stage.label} · ${left}` : left;
 }
@@ -1071,6 +1147,22 @@ class AdminbotDeadlinesView extends LitElement {
   private entryType: DeadlineBoardEntryType = "all";
   private archivalStatus: DeadlineBoardArchivalStatus = "all";
   private location = "";
+  private stageFilter = "";
+
+  private selectedStage(venue: DeadlineVenue): DeadlineStage | undefined {
+    return this.stageFilter
+      ? chooseStage(
+          venueStages(venue, this.displayZone, this.venues),
+          this.stageFilter,
+          this.now,
+          this.period,
+        )
+      : this.period === "upcoming"
+        ? venueStages(venue, this.displayZone, this.venues).find(
+            (stage) => stage.instant > this.now,
+          )
+        : undefined;
+  }
   private period: DeadlineBoardPeriod = "upcoming";
   private view: DeadlineBoardView = "groups";
   private displayZone = loadDeadlineTimezone();
@@ -1786,7 +1878,7 @@ class AdminbotDeadlinesView extends LitElement {
         </section>
       `;
     }
-    const stage = nextVenueStage(entry.venue, this.now);
+    const stage = entry.stage ?? nextVenueStage(entry.venue, this.now);
     const pendingStage = stage && !stage.submission ? stage : undefined;
     const parts = countdownParts(countdownTarget(entry, this.now) - this.now);
     return html`
@@ -1817,7 +1909,9 @@ class AdminbotDeadlinesView extends LitElement {
           </div>
         </div>
         ${renderAbstractRequirement(entry.venue, this.venues, this.displayZone, this.now)}
-        ${entry.venue.deadline_time_precision === "date_only" && entry.instant <= this.now
+        ${!entry.stage &&
+        entry.venue.deadline_time_precision === "date_only" &&
+        entry.instant <= this.now
           ? html`<p>${planningCountdownLabel(entry.venue, this.now)}</p>`
           : this.period === "upcoming"
             ? html`<div
@@ -1967,6 +2061,30 @@ class AdminbotDeadlinesView extends LitElement {
           <span class="country-select__chevron" aria-hidden="true">${icons.chevronDown}</span>
         </label>
 
+        ${renderStageFilter(
+          this.stageFilter,
+          stageFilterOptions(
+            this.venues.flatMap((venue) => venueStages(venue, this.displayZone, this.venues)),
+          ),
+          (stage) => {
+            this.stageFilter = stage;
+            this.requestUpdate();
+          },
+          (stage) =>
+            filterDeadlineBoardEntries(
+              entriesForDeadlinePeriod(
+                buildDeadlineBoardEntries(this.venues),
+                this.now,
+                this.period,
+                stage,
+                this.displayZone,
+                this.venues,
+              ),
+              "",
+              this.query,
+              filters,
+            ).length,
+        )}
         ${renderDeadlineTimezone(this.displayZone, (zone) => {
           this.displayZone = zone;
           saveDeadlineTimezone(zone);
@@ -2177,7 +2295,10 @@ class AdminbotDeadlinesView extends LitElement {
       (entry) => html`<li
         class="deadline-card__milestone"
         data-milestone=${entry.milestone}
-        data-next=${String(nextVenueStage(venue, this.now)?.instant === milestoneEndInstant(entry))}
+        data-next=${String(
+          (this.selectedStage(venue) ?? nextVenueStage(venue, this.now))?.instant ===
+            milestoneEndInstant(entry),
+        )}
       >
         <span class="deadline-card__milestone-label">${capitalize(entry.label)}</span>
         <span class="deadline-card__milestone-date"
@@ -2218,11 +2339,12 @@ class AdminbotDeadlinesView extends LitElement {
   private renderCard(entry: DeadlineBoardEntry) {
     const { venue } = entry;
     const stage =
-      venue.venue_type === "workshop" &&
+      entry.stage ??
+      (venue.venue_type === "workshop" &&
       this.period === "upcoming" &&
       Number.isFinite(entry.instant)
         ? nextVenueStage(venue, this.now, this.displayZone)
-        : undefined;
+        : undefined);
     const displayedInstant = stage?.instant ?? entry.instant;
     return html`
       <article
@@ -2268,7 +2390,9 @@ class AdminbotDeadlinesView extends LitElement {
         ${Number.isFinite(displayedInstant)
           ? html`<p class="deadline-card__countdown">
               ${stage && !stage.submission
-                ? countdownLabel(stage.instant - this.now)
+                ? stage.instant <= this.now
+                  ? "passed"
+                  : countdownLabel(stage.instant - this.now)
                 : venue.deadline_time_precision === "date_only"
                   ? planningCountdownLabel(venue, this.now)
                   : displayedInstant <= this.now
@@ -2282,7 +2406,30 @@ class AdminbotDeadlinesView extends LitElement {
     `;
   }
 
-  private async addToTimeline(venue: DeadlineVenue): Promise<void> {
+  private timelineVenue(venue: DeadlineVenue): DeadlineVenue {
+    if (venue.deadline_id.includes(":stage:")) {
+      return venue;
+    }
+    const stage = this.selectedStage(venue);
+    if (!stage || stage.submission) {
+      return venue;
+    }
+    const aoe = new Date(stage.instant - 12 * 3600000).toISOString().replace("T", " ").slice(0, 19);
+    return {
+      ...venue,
+      deadline_id: `${venue.deadline_id}:stage:${stage.key}:${stage.day}`,
+      name: `${venue.name} — ${stage.label}`,
+      deadline_label: stage.label,
+      deadline_aoe: aoe,
+      deadline_at: new Date(stage.instant).toISOString(),
+      deadline_planning_at: new Date(stage.instant).toISOString(),
+      deadline_time_precision: "exact",
+    };
+  }
+
+  private async addToTimeline(sourceVenue: DeadlineVenue): Promise<void> {
+    const selected = this.selectedStage(sourceVenue);
+    const venue = this.timelineVenue(sourceVenue);
     const milestones = this.timelineMilestones;
     if (!milestones || !this.onSaveTimeline || this.timelineBusyId) {
       return;
@@ -2291,7 +2438,19 @@ class AdminbotDeadlinesView extends LitElement {
     this.timelineFailedId = "";
     this.requestUpdate();
     try {
-      const saved = await this.onSaveTimeline([...milestones, deadlineMilestoneRow(venue)]);
+      const milestone = selected?.milestone;
+      const plainDate =
+        milestone &&
+        !/[ T]\d{2}:\d{2}/u.test(milestone.ends || milestone.date || milestone.starts || "");
+      const row = plainDate
+        ? {
+            deadline_id: venue.deadline_id,
+            label: venue.name,
+            date: (milestone.ends || milestone.date || milestone.starts || "").slice(0, 10),
+            ...(sourceVenue.link ? { link: sourceVenue.link } : {}),
+          }
+        : deadlineMilestoneRow(venue);
+      const saved = await this.onSaveTimeline([...milestones, row]);
       if (!saved) {
         this.timelineFailedId = venue.deadline_id;
       }
@@ -2311,7 +2470,8 @@ class AdminbotDeadlinesView extends LitElement {
    * a button that could be pressed before the list arrived would replace every milestone the member
    * already had with this one. Past deadlines get no button: there is nothing left to plan back from.
    */
-  private renderTimelineAction(venue: DeadlineVenue) {
+  private renderTimelineAction(sourceVenue: DeadlineVenue) {
+    const venue = this.timelineVenue(sourceVenue);
     const milestones = this.timelineMilestones;
     if (
       !milestones ||
@@ -2334,7 +2494,7 @@ class AdminbotDeadlinesView extends LitElement {
         data-testid="deadline-add-to-timeline"
         aria-label=${`Add to my timeline: ${venue.name} ${venue.deadline_label}`}
         ?disabled=${Boolean(this.timelineBusyId)}
-        @click=${() => void this.addToTimeline(venue)}
+        @click=${() => void this.addToTimeline(sourceVenue)}
       >
         ${busy ? "Adding…" : "Add to my timeline"}
       </button>
@@ -2426,11 +2586,12 @@ class AdminbotDeadlinesView extends LitElement {
           <tbody>
             ${entries.map((entry) => {
               const stage =
-                entry.venue.venue_type === "workshop" &&
+                entry.stage ??
+                (entry.venue.venue_type === "workshop" &&
                 this.period === "upcoming" &&
                 Number.isFinite(entry.instant)
                   ? nextVenueStage(entry.venue, this.now, this.displayZone)
-                  : undefined;
+                  : undefined);
               const displayedInstant = stage?.instant ?? entry.instant;
               const schedule = venueSchedule(entry.venue, {
                 includeSubmission: true,
@@ -2458,7 +2619,9 @@ class AdminbotDeadlinesView extends LitElement {
                     ${!Number.isFinite(displayedInstant)
                       ? nothing
                       : stage && !stage.submission
-                        ? countdownLabel(stage.instant - this.now)
+                        ? stage.instant <= this.now
+                          ? "passed"
+                          : countdownLabel(stage.instant - this.now)
                         : entry.venue.deadline_time_precision === "date_only"
                           ? planningCountdownLabel(entry.venue, this.now)
                           : displayedInstant <= this.now
@@ -2526,7 +2689,7 @@ class AdminbotDeadlinesView extends LitElement {
                         class="deadline-table__schedule-row"
                         data-urgency=${parentUrgency}
                         data-next=${String(
-                          nextVenueStage(entry.venue, this.now)?.instant ===
+                          (entry.stage ?? nextVenueStage(entry.venue, this.now))?.instant ===
                             milestoneEndInstant(milestone),
                         )}
                       >
@@ -2566,19 +2729,30 @@ class AdminbotDeadlinesView extends LitElement {
     showLocation = false,
   ) {
     const { venue } = entry;
-    const title = groupRowTitle(venue, conference, groupKind);
+    const baseTitle = groupRowTitle(venue, conference, groupKind);
+    const title =
+      entry.stage && venue.venue_type !== "workshop"
+        ? {
+            name: entry.stage.label,
+            stage: [baseTitle.name === entry.stage.label ? "" : baseTitle.name, baseTitle.stage]
+              .filter(Boolean)
+              .join(" · "),
+          }
+        : baseTitle;
     const change = deadlineChangeSummary(venue);
     const workshop = venue.venue_type === "workshop";
     const stage =
-      workshop && this.period === "upcoming" && Number.isFinite(entry.instant)
+      entry.stage ??
+      (workshop && this.period === "upcoming" && Number.isFinite(entry.instant)
         ? nextVenueStage(venue, this.now, this.displayZone)
-        : undefined;
+        : undefined);
     const displayedInstant = stage?.instant ?? entry.instant;
-    const schedule = workshop
-      ? venueSchedule(venue, { includeSubmission: true, venues: this.venues }).filter(
-          (item) => item.milestone !== "notification_by",
-        )
-      : [];
+    const schedule =
+      workshop || entry.stage
+        ? venueSchedule(venue, { includeSubmission: true, venues: this.venues }).filter(
+            (item) => item.milestone !== "notification_by",
+          )
+        : [];
     const scheduleOpen = this.expandedSchedules.has(venue.id);
     const note = [
       workshop ? "" : title.stage,
@@ -2602,7 +2776,9 @@ class AdminbotDeadlinesView extends LitElement {
       >
         <span class="deadline-group__row-countdown">
           ${stage && !stage.submission
-            ? countdownLabel(stage.instant - this.now)
+            ? stage.instant <= this.now
+              ? "passed"
+              : countdownLabel(stage.instant - this.now)
             : venue.deadline_time_precision === "date_only"
               ? planningCountdownLabel(venue, this.now)
               : entry.instant <= this.now
@@ -2766,7 +2942,9 @@ class AdminbotDeadlinesView extends LitElement {
         // ordered by that stage, so the lead entry carries it -- and for a conference the lab has
         // already submitted to, the stage is its notification or the conference itself rather
         // than the deadline it closed weeks ago.
-        const leadStage = nextVenueStage(group.entries[0].venue, this.now, this.displayZone);
+        const leadStage =
+          group.entries[0].stage ??
+          nextVenueStage(group.entries[0].venue, this.now, this.displayZone);
         const leadPending = leadStage && !leadStage.submission ? leadStage : undefined;
         const notificationPolicy =
           group.kind === "workshops"
@@ -2807,7 +2985,8 @@ class AdminbotDeadlinesView extends LitElement {
             >
               <span class="deadline-group__chevron" aria-hidden="true">›</span>
               <span class="deadline-group__summary-countdown"
-                >${group.entries[0].venue.deadline_time_precision === "date_only"
+                >${!group.entries[0].stage &&
+                group.entries[0].venue.deadline_time_precision === "date_only"
                   ? planningCountdownLabel(group.entries[0].venue, this.now)
                   : this.period === "past"
                     ? "passed"
@@ -2893,7 +3072,14 @@ class AdminbotDeadlinesView extends LitElement {
       </section>`;
     }
     const all = buildDeadlineBoardEntries(this.venues);
-    const periodEntries = entriesForDeadlinePeriod(all, this.now, this.period);
+    const periodEntries = entriesForDeadlinePeriod(
+      all,
+      this.now,
+      this.period,
+      this.stageFilter,
+      this.displayZone,
+      this.venues,
+    );
     const filters: DeadlineBoardFilters = {
       entryType: this.entryType,
       archivalStatus: this.archivalStatus,
