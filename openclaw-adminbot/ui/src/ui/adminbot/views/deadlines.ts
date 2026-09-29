@@ -804,7 +804,7 @@ function groupOptions(entries: readonly DeadlineBoardEntry[]) {
 export function workshopSourceLinks(venue: DeadlineVenue): {
   titleUrl: string;
   sourceUrl: string;
-  sourceLabel: "Call for papers" | "Official site" | "";
+  sourceLabel: "CFP" | "Website" | "";
   openReviewUrl: string;
 } | null {
   if (venue.entry_type !== "workshop") {
@@ -815,7 +815,7 @@ export function workshopSourceLinks(venue: DeadlineVenue): {
   return {
     titleUrl: homepageUrl,
     sourceUrl: cfpUrl || homepageUrl,
-    sourceLabel: cfpUrl ? "Call for papers" : homepageUrl ? "Official site" : "",
+    sourceLabel: cfpUrl ? "CFP" : homepageUrl ? "Website" : "",
     openReviewUrl: venue.openreview_url?.trim() || "",
   };
 }
@@ -1790,7 +1790,7 @@ class AdminbotDeadlinesView extends LitElement {
             ${this.renderProposalFieldError("homepageUrl")}
           </label>
           <label class="deadline-proposal__wide">
-            <span>Call for papers URL <small>optional</small></span>
+            <span>CFP URL <small>optional</small></span>
             <input
               name="cfpUrl"
               type="url"
@@ -1904,7 +1904,7 @@ class AdminbotDeadlinesView extends LitElement {
           <div class="deadline-proposal-row__links">
             <a href=${deadline.homepageUrl} target="_blank" rel="noopener noreferrer">Homepage</a>
             ${deadline.cfpUrl
-              ? html`<a href=${deadline.cfpUrl} target="_blank" rel="noopener noreferrer">Call for papers</a>`
+              ? html`<a href=${deadline.cfpUrl} target="_blank" rel="noopener noreferrer">CFP</a>`
               : nothing}
             ${deadline.openReviewUrl
               ? html`<a href=${deadline.openReviewUrl} target="_blank" rel="noopener noreferrer"
@@ -2671,20 +2671,23 @@ class AdminbotDeadlinesView extends LitElement {
         class="deadline-card__timeline-status"
         role="status"
         data-testid="deadline-on-timeline"
-        >✓ On your timeline</span
+        data-tooltip="On your timeline"
+        ><span aria-hidden="true">${icons.check}</span
+        ><span class="sr-only">On your timeline</span></span
       >`;
     }
     const busy = this.timelineBusyId === venue.deadline_id;
     return html`<button
         type="button"
-        class="btn btn--sm deadline-card__source--button deadline-card__timeline-button"
+        class="btn btn--icon deadline-card__timeline-button"
+        title=${busy ? "Adding to my timeline…" : "Add to my timeline"}
         data-testid="deadline-add-to-timeline"
         aria-busy=${busy}
         aria-label=${`Add to my timeline: ${venue.name} ${venue.deadline_label}`}
         ?disabled=${Boolean(this.timelineBusyId)}
         @click=${() => void this.addToTimeline(sourceVenue)}
       >
-        ${busy ? "Adding…" : "Add to my timeline"}
+        <span aria-hidden="true">${icons.clockPlus}</span>
       </button>
       ${this.timelineFailedId === venue.deadline_id
         ? html`<span class="deadline-card__timeline-error" role="alert"
@@ -2727,8 +2730,8 @@ class AdminbotDeadlinesView extends LitElement {
                   href=${venue.link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label=${`Official site for ${venue.name}`}
-                  >Official site ↗</a
+                  aria-label=${`Website for ${venue.name}`}
+                  >Website ↗</a
                 >`
               : nothing}
           </span>`
@@ -2757,7 +2760,7 @@ class AdminbotDeadlinesView extends LitElement {
             aria-label=${`${workshop.sourceLabel} for ${venue.name}`}
             >${workshop.sourceLabel} ↗</a
           >`
-        : html`<span class="deadline-card__missing">Call for papers not found yet</span>`}
+        : html`<span class="deadline-card__missing">CFP not found yet</span>`}
     </span>`;
   }
 

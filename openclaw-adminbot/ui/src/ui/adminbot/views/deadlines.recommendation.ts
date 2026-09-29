@@ -482,12 +482,14 @@ export class DeadlineRecommendation extends LitElement {
         : nothing}
       <button
         type="button"
+        part="deadline-action"
         aria-label=${`Recommend ${this.venueName} to a member`}
         title=${`Recommend ${this.venueName} to a member`}
         @click=${() => this.openForm()}
       >
         <svg
           class="recommend-icon"
+          part="deadline-action-icon"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"

@@ -168,13 +168,13 @@ describe("deadline board model", () => {
     expect(workshopSourceLinks(workshop)).toEqual({
       titleUrl: "https://workshop.example",
       sourceUrl: "https://workshop.example/cfp",
-      sourceLabel: "Call for papers",
+      sourceLabel: "CFP",
       openReviewUrl: "https://openreview.net/group?id=Example/Workshop",
     });
     expect(workshopSourceLinks({ ...workshop, cfp_url: "", openreview_url: "" })).toEqual({
       titleUrl: "https://workshop.example",
       sourceUrl: "https://workshop.example",
-      sourceLabel: "Official site",
+      sourceLabel: "Website",
       openReviewUrl: "",
     });
   });
@@ -1395,7 +1395,7 @@ describe("renderDeadlines", () => {
     const actions = [
       ...workshop.querySelectorAll<HTMLAnchorElement>(".deadline-card__source--button"),
     ];
-    const source = actions.find((link) => /Call for papers|Official site/u.test(link.textContent || ""))!;
+    const source = actions.find((link) => /CFP|Website/u.test(link.textContent || ""))!;
     const review = actions.find((link) => link.textContent?.includes("OpenReview"))!;
     expect(title.href).toBe(venue.homepage_url);
     expect(source.href).toBe(venue.cfp_url);
@@ -1731,7 +1731,7 @@ describe("add to my timeline", () => {
       await settle(container);
       expect(button.getAttribute("aria-busy")).toBe("true");
       expect(addButtons(container).every((action) => action.disabled)).toBe(true);
-      expect(container.querySelector('a[aria-label^="Official site"]')).not.toBeNull();
+      expect(container.querySelector('a[aria-label^="Website"]')).not.toBeNull();
       button.click();
       expect(onSaveTimeline).toHaveBeenCalledTimes(1);
       finish(false);
