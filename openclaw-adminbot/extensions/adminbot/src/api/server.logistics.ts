@@ -69,6 +69,17 @@ export async function handleLogisticsRoute(
   }
   if (req.method === "POST" && url.pathname === "/logistics/requests") {
     const body = (await readJson(req, LOGISTICS_BODY_LIMIT_BYTES)) as AdminBotLogisticsRequestInput;
+    if (body.kind === "recommendation_letters" && body.drive_folder_url?.trim()) {
+      const access = await service.checkDriveEditAccess(body.drive_folder_url);
+      if (!access.ok) {
+        sendServiceResult(res, access);
+        return;
+      }
+      if (access.payload.status === "not_editable") {
+        sendJson(res, 422, { error: { message: access.payload.message } });
+        return;
+      }
+    }
     const submitted = service.submitLogisticsRequest(member.id, body);
     // A meeting request is answered by a row on the call sheet, so it is proposed here rather than
     // waiting for somebody to remember to run the queue push. The request is saved either way:

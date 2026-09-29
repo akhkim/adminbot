@@ -6,7 +6,12 @@ import {
   ADMINBOT_ELEVATOR_PITCH_MAX,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
-import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
+import {
+  clearStoredMemberSession,
+  saveStoredMemberSession,
+  type LabMember,
+  type MemberProfileUpdate,
+} from "../auth/session.ts";
 import {
   blankFields,
   renderProfile,
@@ -416,6 +421,47 @@ describe("renderProfile autosave", () => {
 
       expect(state.profileAccountChecks.github_url?.status).toBe("verified");
     } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("warns when AdminBot cannot edit a saved Drive folder", async () => {
+    saveStoredMemberSession({ sessionToken: "test-session", expiresAt: "" });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "not_editable",
+          message: "Share with Jinesis.adminbot@gmail.com as Editor.",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const member = createMember({
+        one_on_one_folder_url:
+          "https://drive.google.com/drive/folders/1PdF9xAbCdEfGhIjKlMnOpQrStUv",
+      });
+      const state = createState(member);
+      const container = document.createElement("div");
+      document.body.append(container);
+      render(renderProfile(state, { onSave: vi.fn() }), container);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/drive/check-edit-access"),
+        expect.objectContaining({ method: "POST", credentials: "omit" }),
+      );
+      expect(state.profileAccountChecks.one_on_one_folder_url).toMatchObject({ status: "warning" });
+      render(renderProfile(state, { onSave: vi.fn() }), container);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(
+        container.querySelector('[data-testid="profile-account-check-one_on_one_folder_url"]')
+          ?.textContent,
+      ).toContain("Jinesis.adminbot@gmail.com");
+    } finally {
+      document.body.replaceChildren();
+      clearStoredMemberSession();
       vi.unstubAllGlobals();
     }
   });

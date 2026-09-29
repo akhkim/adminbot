@@ -57,7 +57,9 @@ const folderSlot = (service: AdminBotService) =>
 
 describe("verifyPaperEvidence", () => {
   it("stamps a link Google can open, so the row says who confirmed it and when", async () => {
-    const service = lab(probeReturning({ status: "found", name: "Causal Garden brainstorm" }));
+    const service = lab(
+      probeReturning({ status: "found", name: "Causal Garden brainstorm", canEdit: true }),
+    );
 
     const result = unwrap(
       await service.verifyPaperEvidence("cron", { nowIso: "2026-09-13T09:00:00.000Z" }),
@@ -83,9 +85,30 @@ describe("verifyPaperEvidence", () => {
     expect(result.invalidated).toEqual([{ paper_id: "p1", slot: "project_folder" }]);
     const slot = folderSlot(service);
     expect(slot?.status).toBe("invalid");
-    expect(slot?.invalid_reason).toContain("Google has no file at this link");
+    expect(slot?.invalid_reason).toContain("AdminBot cannot access this Drive file");
     // Un-settled, so the paper stops advancing on it and the nudge carries the reason.
     expect(slot?.verified_at).toBeUndefined();
+  });
+
+  it("warns the author when AdminBot can see but cannot edit a Drive link", async () => {
+    const service = lab(probeReturning({ status: "found", canEdit: false }));
+    const result = unwrap(await service.verifyPaperEvidence("cron"));
+    expect(result.invalidated).toEqual([{ paper_id: "p1", slot: "project_folder" }]);
+    expect(folderSlot(service)).toMatchObject({
+      status: "invalid",
+      invalid_reason: expect.stringContaining("Jinesis.adminbot@gmail.com"),
+    });
+  });
+
+  it("clears the warning after the owner grants edit access without changing the URL", async () => {
+    const service = lab(
+      probeReturning({ status: "found", canEdit: false }, { status: "found", canEdit: true }),
+    );
+    unwrap(await service.verifyPaperEvidence("cron"));
+    expect(folderSlot(service)?.status).toBe("invalid");
+    unwrap(await service.verifyPaperEvidence("cron"));
+    expect(folderSlot(service)).toMatchObject({ status: "provided", verified_by: "google_drive" });
+    expect(folderSlot(service)?.invalid_reason).toBeUndefined();
   });
 
   // The case that must never be mistaken for the one above: a file shared with a person but not
@@ -115,7 +138,7 @@ describe("verifyPaperEvidence", () => {
     let calls = 0;
     const service = lab(async () => {
       calls += 1;
-      return { status: "found" };
+      return { status: "found", canEdit: true };
     });
 
     unwrap(await service.verifyPaperEvidence("cron"));
@@ -127,7 +150,7 @@ describe("verifyPaperEvidence", () => {
   // The point of recording it: a paper advanced on four ticked boxes should not read the same as
   // one advanced on three ticks and a file Google confirmed.
   it("names which of the evidence a machine confirmed when a paper advances", async () => {
-    const service = lab(probeReturning({ status: "found" }));
+    const service = lab(probeReturning({ status: "found", canEdit: true }));
     const give = (slot: string, input: Record<string, unknown>) =>
       unwrap(
         service.setPaperSlot({

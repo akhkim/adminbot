@@ -4827,6 +4827,32 @@ export async function submitReimbursementPackage(
   return { ok: true, value: result.body as { proposal_id: string; to: string; reply_to: string } };
 }
 
+export async function checkDriveEditAccess(
+  url: string,
+  sessionToken: string,
+  baseUrl: string,
+  signal?: AbortSignal,
+): Promise<AuthResult<{ status: "editable" | "not_editable" | "unverified"; message: string }>> {
+  const result = await authedJson(
+    baseUrl,
+    "/drive/check-edit-access",
+    "POST",
+    sessionToken,
+    { url },
+    signal,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return {
+    ok: true,
+    value: result.body as { status: "editable" | "not_editable" | "unverified"; message: string },
+  };
+}
+
 /** One row of the recent-edits feed. Mirrors AdminBotRecentUpdate in contracts/activity-log.ts. */
 export type RecentUpdateRow = {
   id: string;
