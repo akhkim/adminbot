@@ -57,6 +57,8 @@ export const SUBGROUP_BY_TOKEN: Record<string, AdminBotExternalCollaboratorSubgr
   "coauthor-discussant-or-designer": "coauthor_discussant_designer",
   "disappearing-coauthor": "disappearing_coauthor",
   "external-prof": "external_prof",
+  "benefit-partner": "benefit_partner",
+  "benefit-direct-relative": "benefit_direct_relative",
 };
 
 // Where a row names more than one subgroup, the earliest entry here wins: the most engaged
@@ -83,6 +85,9 @@ const SUBGROUP_PRECEDENCE: readonly AdminBotExternalCollaboratorSubgroup[] = [
   "interviewee",
   "disappearing_coauthor",
   "alumni",
+  // Not collaborators on the work, so any collaboration the row also names outranks them.
+  "benefit_partner",
+  "benefit_direct_relative",
 ];
 
 /**
