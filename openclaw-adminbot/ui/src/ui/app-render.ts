@@ -2,9 +2,9 @@
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
 import { guard } from "lit/directives/guard.js";
+import { styleMap } from "lit/directives/style-map.js";
 import "./adminbot/views/reference-checker.ts";
 import "./adminbot/views/openreview-citation-checks.ts";
-import { styleMap } from "lit/directives/style-map.js";
 import { i18n, t } from "../i18n/index.ts";
 import {
   canAccessTab,
@@ -17,7 +17,6 @@ import {
   type AccessRole,
 } from "./adminbot/access.ts";
 import {
-  fetchMemberResource,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   submitFeedback,
@@ -80,6 +79,7 @@ import {
   toggleAdminBotNudgeRecipient,
 } from "./adminbot/controllers/admin.ts";
 import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
+import { loadCollaboratorSchedules } from "./adminbot/controllers/collaborator-schedules.ts";
 import {
   loadAdminBotLogisticsRequests,
   openAdminBotLogisticsRequest,
@@ -3996,44 +3996,7 @@ export function renderApp(state: AppViewState) {
                   : [],
               collaboratorsLoading: state.adminBotCollaboratorSchedulesLoading,
               collaboratorsError: state.adminBotCollaboratorSchedulesError,
-              onLoadCollaborators: async () => {
-                const session = loadStoredMemberSession();
-                if (!session || state.adminBotCollaboratorSchedulesLoading) {
-                  return;
-                }
-                state.adminBotCollaboratorSchedulesLoading = true;
-                state.adminBotCollaboratorSchedulesError = null;
-                state.adminBotCollaboratorSchedules = [];
-                state.adminBotCollaboratorSchedulesSession = session.sessionToken;
-                try {
-                  const result = await fetchMemberResource(
-                    "/lab/members/collaborator-schedules",
-                    session.sessionToken,
-                    resolveAdminBotBaseUrl(state.settings),
-                  );
-                  if (loadStoredMemberSession()?.sessionToken !== session.sessionToken) {
-                    return;
-                  }
-                  if (!result.ok) {
-                    throw new Error(
-                      "Collaborator schedules could not be loaded. Please try again.",
-                    );
-                  }
-                  const value = result.value as {
-                    members: typeof state.adminBotCollaboratorSchedules;
-                  };
-                  if (!Array.isArray(value.members)) {
-                    throw new Error("Invalid collaborator schedule response. Please try again.");
-                  }
-                  state.adminBotCollaboratorSchedules = value.members;
-                } catch (error) {
-                  if (loadStoredMemberSession()?.sessionToken === session.sessionToken) {
-                    state.adminBotCollaboratorSchedulesError = String(error);
-                  }
-                } finally {
-                  state.adminBotCollaboratorSchedulesLoading = false;
-                }
-              },
+              onLoadCollaborators: () => void loadCollaboratorSchedules(state),
               members: state.adminBotData.members ?? [],
               loading: state.adminBotLoading,
               error: state.adminBotError,
