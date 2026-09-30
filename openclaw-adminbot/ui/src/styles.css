@@ -30,3 +30,18 @@
   --cm-success: var(--ok);
   --cm-danger: var(--danger);
 }
+
+/* Phone controls need a full touch target even when desktop variants are compact. */
+@media (max-width: 600px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
+  :root {
+    --control-h-sm: 44px;
+    --control-h-md: 44px;
+    --control-h-lg: 44px;
+  }
+
+  .content .input,
+  .content .adminbot-multiselect__summary,
+  .content .btn {
+    min-height: 44px;
+  }
+}

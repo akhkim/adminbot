@@ -418,9 +418,16 @@ function TimeAllocationTooltip({
   const awayDays = Number(segment?.awayDays ?? 0);
   const dayCount = Number(segment?.dayCount ?? 0);
   const awayRanges = segment?.awayRanges ?? [];
-  return createElement(
+  const mobile =
+    typeof window !== "undefined" &&
+    window.matchMedia?.(
+      "(max-width: 600px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape)",
+    ).matches;
+  const tooltip = createElement(
     "div",
-    { className: "adminbot-time-chart__tooltip" },
+    {
+      className: `adminbot-time-chart__tooltip${mobile ? " adminbot-time-chart__tooltip--mobile" : ""}`,
+    },
     createElement("div", { className: "adminbot-time-chart__tooltip-label" }, label),
     ...jinesisAllocations.map((entry) =>
       createElement(
@@ -539,6 +546,8 @@ function TimeAllocationTooltip({
       ),
     ),
   );
+  // The plot scrolls on phones; its overflow must not crop the selected period details.
+  return mobile ? createPortal(tooltip, document.body) : tooltip;
 }
 
 function ChartPageButton({
@@ -897,6 +906,7 @@ function EffortStackChart({
         "div",
         {
           className: "adminbot-time-chart__plot",
+          tabIndex: 0,
           role: "img",
           "aria-label": t("adminbotTimeAvailability.chartAria", { member: memberName }),
         },

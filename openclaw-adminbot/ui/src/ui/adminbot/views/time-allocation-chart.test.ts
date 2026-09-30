@@ -60,6 +60,7 @@ describe("the time allocation chart element", () => {
     // React renders unconditionally is proof the root mounted and the component ran.
     expect(chart.querySelector(".adminbot-time-chart__pager")).not.toBeNull();
     expect(chart.querySelectorAll(".adminbot-time-chart__page-button").length).toBe(2);
+    expect(chart.querySelector(".adminbot-time-chart__plot")?.getAttribute("tabindex")).toBe("0");
   });
 
   it("reads back the properties the view set on it", () => {
