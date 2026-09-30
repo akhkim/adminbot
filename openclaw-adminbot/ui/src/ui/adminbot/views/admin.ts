@@ -1,7 +1,7 @@
-import "./member-guide-status.ts";
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
+import "./member-guide-status.ts";
 import { ifDefined } from "lit/directives/if-defined.js";
 import {
   adminBotIsAlumniMember,
@@ -78,6 +78,7 @@ import {
   type PreRegistrationVenue,
   type VenueTarget,
 } from "../venue-targets.ts";
+import { renderMemberBadgeSymbols } from "./badge-symbols.ts";
 import {
   MEMBER_REQUEST_POPOVER_ID,
   type MemberRequestsProps,
@@ -1823,7 +1824,9 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 data-conferences=${[...new Set(memberPapers.map(paperConference))].join("|")}
               >
                 <td>
-                  <strong>${member.name}</strong><small>${member.id}</small>
+                  <strong>${member.name}</strong>${renderMemberBadgeSymbols(
+                    member.assigned_badges,
+                  )}<small>${member.id}</small>
                   ${memberPapers.length
                     ? html`<span
                         class="adminbot-member-sheet__papers"
@@ -3694,7 +3697,11 @@ function renderAnnouncementRecipients(
                     @change=${() => props.onNudgeToggleRecipient(member.id)}
                   />
                 </td>
-                <td><strong>${member.name}</strong><small>${member.id}</small></td>
+                <td>
+                  <strong>${member.name}</strong>${renderMemberBadgeSymbols(
+                    member.assigned_badges,
+                  )}<small>${member.id}</small>
+                </td>
                 <td>
                   ${channel === "slack"
                     ? (member.slack_user_id ??
