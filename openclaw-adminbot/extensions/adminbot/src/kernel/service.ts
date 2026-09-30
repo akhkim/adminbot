@@ -2282,7 +2282,7 @@ export class AdminBotService {
    * `deadlineDataset` re-reads and re-validates a file on every call so a re-collection lands
    * without a rebuild, and it throws on anything it does not recognise -- a missing file, an empty
    * `items`, a duplicate id, an impossible date (workflows/deadlines/runtime-dataset.ts). That
-   * throw must not reach the caller. `GET /deadlines/venues.json` is public and login-free and the
+   * throw must not reach the caller. `GET /deadlines` is public and login-free and the
    * board ships no bundled copy of its own, so an exception here does not degrade the page -- it
    * empties it, for every visitor at once. Worse, the constructor reconciles every member's
    * milestones through this same path, so a bad file stopped the service from starting at all.

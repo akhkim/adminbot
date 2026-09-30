@@ -7,7 +7,7 @@ import { readDeadlineDataset } from "./runtime-dataset.js";
 describe("runtime deadline dataset", () => {
   it("reads an atomically replaced snapshot without restarting and fails on invalid data", () => {
     const directory = mkdtempSync(join(tmpdir(), "deadline-test-"));
-    const file = join(directory, "venues.json");
+    const file = join(directory, "deadlines.json");
     const row = { id: "example", name: "Example", deadline_aoe: "2026-09-14 23:59:00" };
     try {
       writeFileSync(file, JSON.stringify({ items: [row] }));

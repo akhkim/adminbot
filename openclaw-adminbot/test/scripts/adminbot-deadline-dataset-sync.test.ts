@@ -8,7 +8,7 @@ import {
   type DeadlineVenue,
 } from "../../ui/src/ui/adminbot/data/deadlines.js";
 
-// venues.json is the source of truth; both TS modules are generated from it by
+// deadlines.json is the source of truth; both TS modules are generated from it by
 // scripts/adminbot-deadline-collect.py. They drifted once already — the plugin dataset sat at 78
 // venues while the collector's own output had 106 — and nothing failed, because no test compared
 // them. Regenerate with `python3 scripts/adminbot-deadline-collect.py` rather than hand-editing.
@@ -16,13 +16,13 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 
 const venuesDoc = JSON.parse(
   fs.readFileSync(
-    path.join(repoRoot, "extensions", "adminbot", "content", "deadlines", "venues.json"),
+    path.join(repoRoot, "extensions", "adminbot", "content", "deadlines", "deadlines.json"),
     "utf8",
   ),
 ) as { history_version: number; count: number; items: DeadlineVenue[] };
 
 describe("AdminBot deadline dataset generation", () => {
-  it("keeps venues.json self-consistent", () => {
+  it("keeps deadlines.json self-consistent", () => {
     expect(venuesDoc.history_version).toBe(4);
     expect(venuesDoc.items).not.toHaveLength(0);
     expect(venuesDoc.count).toBe(venuesDoc.items.length);
@@ -156,7 +156,7 @@ describe("AdminBot deadline dataset generation", () => {
     }
   });
 
-  it("keeps both generated datasets in step with venues.json", () => {
+  it("keeps both generated datasets in step with deadlines.json", () => {
     expect(pluginVenues.map((venue) => venue.id)).toEqual(venuesDoc.items.map((item) => item.id));
     expect(controlUiVenues.map((venue) => venue.id)).toEqual(
       venuesDoc.items.map((item) => item.id),

@@ -2,7 +2,7 @@
 """
 Publish tracked submission deadlines to the Jinesis Lab Google Calendar.
 
-Reads the same `venues.json` the deadline board and reminders use, and writes one final-hour event
+Reads the same `deadlines.json` the deadline board and reminders use, and writes one final-hour event
 per venue deadline to the lab calendar named by `ADMINBOT_DEADLINE_CALENDAR_ID`.
 
 Two things make this safe to run repeatedly:
@@ -35,7 +35,7 @@ from adminbot_deadlines import AoEClock, DeadlineDataset
 from adminbot_deadline_time import deadline_label
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VENUES = os.path.join(HERE, "..", "extensions", "adminbot", "content", "deadlines", "venues.json")
+VENUES = os.path.join(HERE, "..", "extensions", "adminbot", "content", "deadlines", "deadlines.json")
 
 
 def _require_env(*names):
@@ -94,7 +94,7 @@ def build_event(item):
         lines.append(f"Notification: {item['notification_aoe']} AoE")
     if item.get("link"):
         lines.append(item["link"])
-    lines += ["", "Maintained by AdminBot from venues.json. Edits here are overwritten.", marker_for(item["id"])]
+    lines += ["", "Maintained by AdminBot from deadlines.json. Edits here are overwritten.", marker_for(item["id"])]
     return {
         "summary": summary[:200],
         "start": (end - datetime.timedelta(hours=1)).isoformat(),

@@ -1,9 +1,9 @@
 # AdminBot Deadline Tracker (operator guide)
 
 Collects the lab's conference/workshop deadlines, retains expired history, and drives reminders.
-Three outputs share one dataset (`extensions/adminbot/content/deadlines/venues.json`):
+Three outputs share one dataset (`extensions/adminbot/content/deadlines`):
 
-- **Output 0** — a live countdown **board** (`deadlines-board.html`).
+- **Output 0** — a live countdown **board** in the Control UI at `/deadlines`.
 - **Output 1** — a periodic digest posted to **#jinesis-active** (see below).
 - **Output 2** — per-author **Slack DM reminders** on a 30/15/7/3/2/1-day
   cadence, stopping when the paper is submitted, else escalating to Zhijing.
@@ -11,7 +11,7 @@ Three outputs share one dataset (`extensions/adminbot/content/deadlines/venues.j
 ## 1. Refresh the data
 
 ```bash
-python3 scripts/adminbot-deadline-collect.py          # -> venues.json
+python3 scripts/adminbot-deadline-collect.py          # -> deadlines.json
 python3 scripts/adminbot-deadline-collect.py --force-refresh
 python3 scripts/adminbot-deadline-match.py \           # -> matches.json
     --ongoing-csv /path/Paper_submissions.csv \
@@ -109,10 +109,10 @@ papers escalate to Zhijing at the deadline. Also set
 
 ## 3. Board (Output 0) surfaces
 
-The Deadline Tracker has two delivery contexts and one generated dataset and interaction model:
-
-- the AdminBot service's zero-setup page at `GET /deadlines`; and
-- the public and signed-in Control UI route at `/deadlines`.
+The public and signed-in Control UI routes share one deadline board at `/deadlines`.
+The AdminBot service's `GET /deadlines` endpoint returns JSON for the board and scheduled consumers.
+The operator console links directly to the Control UI board using `ADMINBOT_CONTROL_UI_URL`
+(or `ADMINBOT_DASHBOARD_URL`, then the built-in Control UI address).
 
 The Vercel build pre-renders the existing Control UI route at the canonical public URL
 `https://jinesis-admin.vercel.app/deadlines`. Its response contains sanitized deadline
@@ -121,9 +121,8 @@ when the application mounts. `robots.txt` allows that exact route, and `sitemap.
 Private paper matches, proposal queues, member timelines, and nudge proposals are not rendered into
 the public response.
 
-Both show the next deadline, aggregate counts, venue filters, search, and card, grouped, and table
-views. The Control UI renders the board natively in its normal document flow; it does not embed the served
-page, so desktop and mobile retain one vertical scrolling surface.
+The board shows the next deadline, aggregate counts, venue filters, search, and card, grouped, and table
+views. The board stays in the normal document flow, with one vertical scrolling surface on desktop and mobile.
 
 In the Control UI, every deadline date has the same compact history-icon position in the featured
 deadline panel and the card, grouped, and table views. The icon is disabled and gray when no history
@@ -131,19 +130,10 @@ exists. An extended deadline uses a blue icon; opening it shows every recovered 
 sequence, or explains that the source did not expose the earlier value. The current date and time
 keep their normal text color.
 
-The served page is implemented by:
-
-- `extensions/adminbot/src/workflows/deadlines/board.ts` — `renderDeadlinesWebUi(items)`
-  returns the self-contained board (generated from `content/deadlines/deadlines-board.html`).
-- `extensions/adminbot/src/workflows/deadlines/generated/dataset.ts` — `DEADLINE_VENUES`
-  (generated from `content/deadlines/venues.json`).
-- `extensions/adminbot/src/api/server.ts` — `GET /deadlines` (HTML board) and
-  `GET /deadlines/venues.json` (JSON), next to `GET /adminbot`.
-
-It is reachable the same way as the `/adminbot` console (loopback or SSH forwarding on the service
-host). The first-class Lit view lives in `ui/src/ui/adminbot/views/deadlines.ts`; anonymous visitors
-receive the same view inside the public Control UI shell. `adminbot-deadline-collect.py` regenerates
-the server and UI dataset projections together so their labels and classifications stay aligned.
+The board is implemented in `ui/src/ui/adminbot/views/deadlines.ts`. Anonymous visitors receive
+that same view in the public Control UI shell. The operator console links to it.
+`GET /deadlines` remains a public service endpoint for current dates and approved
+corrections. The collector regenerates the service and UI dataset projections together. Update explicit `ADMINBOT_DEADLINE_DATASET_PATH` overrides to the renamed dataset when deploying. Deploy the updated UI and cron readers with the service because the API path changes together.
 
 ### Deadline proposals
 
@@ -164,15 +154,12 @@ model. The public HTML, JSON endpoint, and Control UI merge those records with t
 dataset at read time. Pending and rejected proposals, submitter identities, and administrator notes
 never enter the public projection.
 
-The standalone service board cannot hold a member session. Its proposal action links to the
-configured Control UI `/deadlines` route, where authentication and the proposal form live.
-
 Run `pnpm ui:build` and `pnpm ui:i18n:check` after changing the Control UI surface.
 
 ## 4. Output 1 (channel digest)
 
 `scripts/adminbot-deadline-channel-digest.py` renders a short upcoming-deadline
-summary from `venues.json`. It is dry-run by default; `--send` posts to
+summary from `deadlines.json`. It is dry-run by default; `--send` posts to
 `ADMINBOT_ACTIVE_CHANNEL` (default `#jinesis-active`). No weekly task is
 activated by this repository change; an operator must add that schedule.
 

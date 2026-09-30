@@ -1,7 +1,7 @@
 // Opportunities the lab wants members to hear about: PhD programs, internships, grants and
 // awards, and Rising Stars workshops.
 //
-// Hand-maintained, unlike `deadlines-data.ts` which is generated from venues.json. These are
+// Hand-maintained, unlike `deadlines-data.ts` which is generated from deadlines.json. These are
 // annual programs whose dates are announced by the host institution rather than scraped, so an
 // admin edits this file and the Opportunities tab picks it up on the next UI build.
 //

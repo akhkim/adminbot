@@ -24,4 +24,4 @@ The venue job runs daily at 05:50 and matching at 06:20 in the gateway timezone.
 bash scripts/adminbot-deadline-cron.sh refresh-venues
 ```
 
-Check the served `/deadlines/venues.json`, including per-record source-check timestamps and failure status. Registration success does not establish source freshness. Live collection and served-data verification require access to the deployed host.
+Check the served `/deadlines`, including per-record source-check timestamps and failure status. Registration success does not establish source freshness. Live collection and served-data verification require access to the deployed host.

@@ -2,7 +2,7 @@
 """
 AdminBot deadline matcher (Output 2, step 1).
 
-Maps lab papers to the UPCOMING deadlines in venues.json:
+Maps lab papers to the UPCOMING deadlines in deadlines.json:
 
   ONGOING papers ("Paper submissions" tab)  -> target venue via the `Venue`
       column (freeform, e.g. "EMNLP 100%", "NeurIPS 100%", "90% ARR Aug",
@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from adminbot_deadlines import DeadlineDataset, AoEClock, DEADLINES_DIR as DDIR
 
-# ongoing Venue-string -> venue_group key used in venues.json
+# ongoing Venue-string -> venue_group key used in deadlines.json
 TARGET_TO_GROUP = {
     "EMNLP 2026 (commitment)": "EMNLP 2026",
     "NeurIPS 2026 (rebuttal)": "NeurIPS 2026",
@@ -103,7 +103,7 @@ TOPIC_THRESHOLD = 3.0
 
 
 def build_workshop_registry(clock=None):
-    # Every upcoming workshop across venues.json, keyed by the code after "_ws_".
+    # Every upcoming workshop across deadlines.json, keyed by the code after "_ws_".
     # The dataset retains expired records for the Past view; matching must not suggest them.
     clock = clock or AoEClock.resolve()
     items = DeadlineDataset(DDIR).venues()

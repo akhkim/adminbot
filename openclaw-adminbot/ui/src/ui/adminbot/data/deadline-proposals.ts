@@ -61,7 +61,7 @@ export class AdminBotDeadlineProposalStore implements DeadlineProposalStore {
   }
 
   async listPublished(): Promise<DeadlineVenue[]> {
-    const body = await this.request("/deadlines/venues.json", { method: "GET" });
+    const body = await this.request("/deadlines", { method: "GET" });
     return (body as { items?: DeadlineVenue[] }).items ?? [];
   }
 
