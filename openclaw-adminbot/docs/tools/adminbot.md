@@ -441,6 +441,32 @@ has expired. A `404` from the route itself is reported as what it is: the Contro
 Vercel and the service from Aurora, so a Membership tab that reports no member-sheet route is
 talking to a service that predates it and needs a deploy, not a broken spreadsheet.
 
+### One onboarding, every way in
+
+A person can reach the roster six ways: **Add member** on the Members tab, approving a **member
+request**, the Onboarding section's **Add row** and **onboard selected rows**, the weekly
+**sheet sweep** (`POST /onboarding/sheet-sweep/run`), and approving a portal **sign-up**. All six
+run the same three steps (`api/server.member-onboarding.ts`):
+
+1. **The record**, at the access level its Member Type implies (below). A type that implies none
+   leaves a new person at `external_collaborator`; an explicit admin choice wins.
+2. **Enrollment** -- what holding that type grants under the External Collab Access Design, applied
+   as the move from holding nothing: Slack rooms, a `slack.connect_invite` to
+   #friends-and-collaborators for the no-mail types (the guide carries that invite for everyone
+   else), the Monday group meeting, and lab calendar read access (`calendar.grant_lab_calendar`).
+   Full members, own-pace advisees and major coauthors hold the calendar and the Monday meeting --
+   the access design's "View access to lab calendar + invite to Monday Group Meeting" row, read by
+   `belongsOnSurface`.
+3. **The guide** (`onboarding.send_guide`) for the types the access design mails.
+
+Only who approves differs. An admin's click approves each step on the spot (Add member, request
+and sign-up approval, Add row, and enrollment from onboard selected rows, whose mails still wait in
+Pending Actions). The sweep runs with nobody present, and a spreadsheet row is not an
+authorization, so it creates each joiner at `external_collaborator` and files one
+`lab_member.enroll` per joiner. Approving that card sets the level the Member Type implies and runs
+step 2, each step approved by that admin; it refuses if the Member Type changed after the card was
+filed, or if the member has since been enrolled another way.
+
 ### Adding a member from the Members tab
 
 **Add member** on the Members tab creates the roster record and, unless the admin unticks **Start
@@ -452,9 +478,10 @@ mints the Slack Connect invite, provisions the Drive folder, files the DCS accou
 sends the mail.
 
 Which guide somebody gets is decided by **Member type** on the form, through the same
-most-committed-role rule the sheet rows use: `full, coauthor-major` gets the full-member mail. Three
-types send no mail at all -- `acquaintance`, `coauthor-discussant-or-designer` and `external-prof`
--- because their onboarding is the backend access grant.
+most-committed-role rule the sheet rows use: `full, coauthor-major` gets the full-member mail. Five
+types send no mail at all -- `acquaintance`, `coauthor-discussant-or-designer`, `external-prof`,
+`benefit-partner` and `benefit-direct-relative` -- because their onboarding is the backend access
+grant.
 
 The save and the guide are reported together, and a refused guide never undoes the save. The
 reasons an admin will see are all fixable: the record has no email address, its Member Type sends no
@@ -462,6 +489,52 @@ mail (or is blank), or that guide has already been sent to the address or is alr
 approver -- which is what pressing **Add member** twice on one id produces. Onboarding needs a real
 admin sign-in; over break-glass gateway access the record still saves and the notice says the guide
 was not queued.
+
+### Changing a Member Type
+
+Changing **Member type** on an existing member on the Lab Members tab re-onboards them, without
+the welcome mail, and applies it on the spot. The admin's save is the approval: each external
+step is still a typed proposal, approved by that admin, executed and audited, the same way Add
+row works. None of them waits in Pending Actions. `PUT /lab/members/{id}` does this only for a
+genuine admin session and only when the type actually changes (compared token-wise, so
+`Coauthor-Major ` is not a change). The service token still cannot set the field.
+
+- **Access level follows the type.** The form has no Privilege or Collaborator subgroup field;
+  Member type is a set of checkboxes and decides both. `adminbot-admin` (or the legacy `admin`) is
+  admin. `full` is `member`, or stays `trial`. Any collaboration type is `external_collaborator`
+  with that type's subgroup, and the most-committed token wins. Removing the admin tag demotes, but
+  **an admin cannot remove their own**: the service answers `409`, so nobody locks themselves out.
+  An admin whose type predates the tag has it pre-ticked, so saving keeps their access. New
+  members also get their access level from the type.
+- **The sheet row is updated.** Member Type is written back to the person's row on the member
+  sheet, so the 06:10 roster sync does not put the old type back. It is guarded against concurrent
+  edits like a grid edit.
+- **Slack rooms** named by the access matrix are joined or left (`slack.invite_to_channel` /
+  `slack.remove_from_channel`). Becoming `full` never removes anyone from the lab's rooms.
+- **The Monday group meeting** gains or loses them on every live series (`calendar.add_attendees` /
+  `calendar.remove_attendees`, both `--send-updates none`).
+- **Lab calendar** read access is granted silently when they gain it
+  (`calendar.grant_lab_calendar`, recorded as `auth.calendar_invite_sent` like the backfill). No
+  action revokes a calendar share, so a loss is reported in the notice for someone to handle by
+  hand.
+- **One email, in one case:** somebody moving *into* alumni gets the `alumni` guide
+  (`onboarding.send_guide`). Every other change sends nothing.
+
+**Meetings** is a second checkbox field listing the lab calendar's standing meetings: the Monday
+group meeting and every recurring `Theme:` and `Proj:` series (`GET /lab/meetings`, admin only).
+A box is ticked when any of the member's addresses is on that meeting's guest list. Saving adds
+the member to newly ticked meetings and removes them from unticked ones, silently, on every live
+series. If the list could not be read, the field is left out of the save entirely, so a failed
+read is never taken as "on no meetings". A Monday box the admin actually changed wins over what
+the type would imply; an unchanged box leaves the Monday meeting to the type.
+
+Member type and Meetings are never autosaved. The editor autosaves other fields as they are
+typed, but these two apply only when **Save member** is pressed, so a half-ticked set of boxes
+never moves anybody.
+
+Each step is reported separately in the save notice. A failed step does not undo the save or stop
+the others, and it turns the notice red. The whole change is recorded as
+`lab_member.member_type_applied` in the audit log.
 
 ### Roster sync
 
@@ -801,6 +874,12 @@ is the next piece of UI work, not something the sweep should fake by clearing a 
 
 ## Recommendation letter deadlines
 
+Each school requires a letter deadline on submission or edit; application deadlines do not count.
+Blank timezone defaults to **AoE (UTC−12)** and blank time to **23:59**. The queue shows the earliest
+letter deadline in its entered timezone, including for older requests; missing letter dates show no
+deadline. Sort by submission, user, deadline, or status; filter by name/school, request type, or status.
+Open the member's name for request details and documents.
+
 The one mail AdminBot sends the head professor. Every nudge pipeline refuses that address on
 purpose -- the lab does not chase its PI, and the escalation path runs _towards_ her -- so this is a
 typed action of its own, `logistics.rec_letter_reminder`, rather than a member nudge with the guard
@@ -813,8 +892,8 @@ separate reminders in one morning is the desk being nagged, and the letters are 
 sitting anyway. The mail names each member, the deadline, how far off it is and the schools on the
 request, and links to the requests themselves.
 
-The window is read off the request's own `deadline_at`, the same field My Desk's letter queue sorts
-on, so the mail and the queue can never disagree about which letter is next. Whole days are
+The window uses the same letter-only deadline resolver as the request queue, including for older
+requests with a cached application deadline. The reminder displays the entered clock and zone. Whole days are
 **floored** rather than rounded up: the reminder fires on the first morning fewer than four whole
 days are left, which for the end-of-day deadlines the form produces is the calendar day three days
 before. My Desk rounds the same gap the other way for its badge, which is right for a list read at a
@@ -1067,6 +1146,8 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | ----------------------------------- | -------------------- | ---------------------------------------------------------------------------- |
 | `adminbot-email`                    | `5 * * * *`          | Hourly inbound email triage pass                                             |
 | `adminbot-openreview`               | `15 0,6,12,18 * * *` | Reviewing-cycle pass, four times a day                                       |
+| `adminbot-citation-checks`          | `25,55 * * * *`      | Check the citations of each new OpenReview submission version                |
+| `adminbot-iclr-integrity`           | `12 * * * *`         | Pangram AI-text score of new ICLR versions; Slack alert on AI text/citations |
 | `adminbot-meeting-artifacts`        | `20 * * * *`         | Meeting artifact drop-folder pass                                            |
 | `adminbot-member-directory`         | `40 5 * * *`         | Daily Slack timezone/directory sync                                          |
 | `adminbot-slack-directory`          | `45 5 * * *`         | Daily Slack channel directory refresh                                        |
@@ -1539,9 +1620,9 @@ Requests are subject to the origin allowlist, a 16 KiB body limit, and field val
 
 Signed-in members can choose **Suggest deadline correction** from the menu beside an existing deadline. The existing publication proposal flow records the target and its prior date in the immutable payload. Administrators review the before/after dates and approve the exact payload hash. Publication replaces the target by stable ID, retains its milestone and history, and refuses a stale correction when the accepted date has changed in the meantime. Visitors can propose new deadlines but cannot correct existing ones.
 
-The service reads `extensions/adminbot/content/deadlines/venues.json` on each deadline request; set `ADMINBOT_DEADLINE_DATASET_PATH` for a different location. The collector honors the same dataset-path variable and replaces that file atomically. The deadline page starts empty and loads only server data, matching the member timeline convention. Visible pages reload every five minutes. Initial failures show an error and Retry button; failed refreshes retain the last successful server response with an explicit error. Bundled data is never substituted. Collection therefore does not require a service rebuild or restart. A missing or malformed runtime dataset fails the request instead of silently serving the compiled snapshot. Deploying code still requires the normal build and restart.
+The service reads `extensions/adminbot/content/deadlines` on each deadline request; set `ADMINBOT_DEADLINE_DATASET_PATH` for a different location. The collector honors the same dataset-path variable and replaces that file atomically. The deadline page starts empty and loads only server data, matching the member timeline convention. Visible pages reload every five minutes. Initial failures show an error and Retry button; failed refreshes retain the last successful server response with an explicit error. Bundled data is never substituted. Collection therefore does not require a service rebuild or restart. A missing or malformed runtime dataset fails the request instead of silently serving the compiled snapshot. Deploying code still requires the normal build and restart.
 
-Cron consumers read the accepted `/deadlines/venues.json` projection, including approved corrections, using `ADMINBOT_DEADLINE_READ_URL` (default `http://127.0.0.1:8765/deadlines/venues.json` in the cron wrapper). Standalone Python invocations without that variable use the local dataset. Matching stores the stable deadline ID; reminders resolve its current date before computing cadence. Regenerate legacy matches before enabling reminders: entries without a resolvable ID are skipped. Calendar corrections appear on the next configured calendar sync. Approved corrections remain authoritative if later collection disagrees and require another reviewed correction to change them.
+Cron consumers read the accepted `/deadlines` projection, including approved corrections, using `ADMINBOT_DEADLINE_READ_URL` (default `http://127.0.0.1:8765/deadlines` in the cron wrapper). Standalone Python invocations without that variable use the local dataset. Matching stores the stable deadline ID; reminders resolve its current date before computing cadence. Regenerate legacy matches before enabling reminders: entries without a resolvable ID are skipped. Calendar corrections appear on the next configured calendar sync. Approved corrections remain authoritative if later collection disagrees and require another reviewed correction to change them.
 
 The collector checks eligible sources daily from fourteen days before through seven days after their deadline, weekly for other workshops, and fortnightly for other tracked OpenReview conferences. ICLR 2027 abstract/full-paper and EACL 2027 demo milestones have exact invitation mappings and refresh on the same cadence. ARR cycles and AACL, EMNLP, EACL, and NAACL submission/commitment rows are refreshed from exact labeled official-table rows; missing or ambiguous rows preserve the previous date with uncertainty. The historical NeurIPS rebuttal constant remains a manually checked source. The daily `adminbot-deadline-refresh-venues` job already exists in `config/adminbot-cron.json`; inspect and synchronize that job with `scripts/adminbot-cron-sync.sh --dry-run --only adminbot-deadline-refresh-venues` and then the same command without `--dry-run`. Do not create a duplicate job or enable unrelated delivery jobs during setup.
 
@@ -1550,3 +1631,17 @@ Explicit abstract and full-paper dates are retained separately. A matched OpenRe
 ### Deadline jobs after Aurora deployment
 
 Register the two deadline jobs explicitly after deployment using the [deadline cron setup](adminbot-deadline-cron-setup.md) procedure. Normal service starts and restarts do not change cron registration.
+
+### Selecting a deadline stage
+
+The deadlines board defaults to following the next published stage. Selecting a stage, such as Decisions or Camera-ready, restricts the board to venues with a known date for that stage. Dates, countdowns, ordering, and the Upcoming/Past split follow the selection in Groups, Cards, and Table. Shared organizer notification requirements are not decision dates. When a stage occurs more than once, Upcoming shows its next occurrence and Past its most recent completed occurrence.
+
+Adding a selected stage to a member's timeline saves that stage, preserving date-only announcements without inventing a time. Expanding the schedule still shows the venue's other stages.
+
+### Propose and correct individual stages
+
+Propose a new deadline can add one stage to an existing conference or workshop, including past venues, or create a new venue. Choose a standard stage or name a custom one, enter its date, and supply a source. Leave the time blank when the source gives only a date.
+
+Each dated stage has a details menu. Signed-in members can use Suggest deadline correction there; the form targets that stage only. Adding a stage does not replace the submission date or the rest of the schedule. An existing stage must be corrected through its details instead of added again.
+
+Proposals use the administrator approval queue. Approval is bound to the proposed stage and date. If a stage changes before its correction is published, the correction must be submitted again against the current date.

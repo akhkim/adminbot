@@ -110,6 +110,25 @@ describe("GET /venue-papers/sources", () => {
   });
 });
 
+describe("GET /venue-papers/categories", () => {
+  it("lists the selected conference's categories with counts", async () => {
+    const oral = { ...TRANSPORT, venue: "ICLR 2025 oral" };
+    const { baseUrl } = await withVenue([SAFETY, oral]);
+    await fetch(`${baseUrl}/venue-papers/index`, { method: "POST", headers: headers() });
+    const response = await fetch(
+      `${baseUrl}/venue-papers/categories?venue_id=${encodeURIComponent("ICLR.cc/2025/Conference")}`,
+    );
+    expect(response.status).toBe(200);
+    expect((await response.json()) as unknown).toEqual({
+      venue_id: "ICLR.cc/2025/Conference",
+      categories: [
+        { id: "oral", label: "Oral", paper_count: 1 },
+        { id: "poster", label: "Poster", paper_count: 1 },
+      ],
+    });
+  });
+});
+
 describe("POST /venue-papers/index", () => {
   it("fetches, embeds and stores every configured venue", async () => {
     const { baseUrl } = await withVenue();
@@ -204,9 +223,7 @@ describe("POST /venue-papers/index", () => {
       // Still not out the next morning: read again, nothing changed, nothing embedded.
       const quiet = await index(true);
       expect(quiet.built).toEqual([]);
-      expect(quiet.skipped).toEqual([
-        { venue_id: "NeurIPS.cc/2026/Conference", paper_count: 0 },
-      ]);
+      expect(quiet.skipped).toEqual([{ venue_id: "NeurIPS.cc/2026/Conference", paper_count: 0 }]);
       expect(embed.mock.calls).toHaveLength(embedCallsBeforeResults);
 
       // Results land.
@@ -297,6 +314,48 @@ describe("POST /venue-papers/search", () => {
     expect(body.results[0]?.matched_keywords).toEqual(["AI safety"]);
     expect(body.results[0]?.relevance).toBeCloseTo(1);
     expect(body.nothing_relevant).toBe(false);
+  });
+
+  it("ranks only papers in the selected category", async () => {
+    const oral = { ...TRANSPORT, venue: "ICLR 2025 oral" };
+    const { baseUrl } = await withVenue([SAFETY, oral]);
+    await fetch(`${baseUrl}/venue-papers/index`, { method: "POST", headers: headers() });
+    const response = await fetch(`${baseUrl}/venue-papers/search`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        venue_id: "ICLR.cc/2025/Conference",
+        category_id: "oral",
+        interests: "optimal transport",
+      }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      searched: number;
+      category?: string;
+      results: Array<{ paper: { id: string } }>;
+    };
+    expect(body.searched).toBe(1);
+    expect(body.category).toBe("Oral");
+    expect(body.results[0]?.paper.id).toBe("p-ot");
+  });
+
+  it("rejects a category that does not belong to the selected conference", async () => {
+    const { baseUrl } = await withVenue([SAFETY]);
+    await fetch(`${baseUrl}/venue-papers/index`, { method: "POST", headers: headers() });
+    const response = await fetch(`${baseUrl}/venue-papers/search`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        venue_id: "ICLR.cc/2025/Conference",
+        category_id: "oral",
+        interests: "AI safety",
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect((await response.json()) as unknown).toEqual({
+      error: { message: "that category is not available for this conference" },
+    });
   });
 
   // The index is the thing that takes minutes; searching an unbuilt venue has to say so rather

@@ -11,6 +11,7 @@ import {
   type AdminBotVenuePapersState,
 } from "../controllers/admin.ts";
 import {
+  formatVenueLabel,
   renderConferencePapers,
   type ConferencePapersProps,
   type ConferencePapersTab,
@@ -65,6 +66,7 @@ function draw(
       ...state,
     },
     onVenueChange: vi.fn(),
+    onCategoryChange: vi.fn(),
     onInterestsChange: vi.fn(),
     onSearch: vi.fn(),
     onToggleAbstract: vi.fn(),
@@ -85,6 +87,42 @@ describe("renderConferencePapers", () => {
       "NeurIPS 2025",
     ]);
     expect(select?.value).toBe("ICLR.cc/2025/Conference");
+  });
+
+  it("offers categories from the selected conference, including All", () => {
+    const onCategoryChange = vi.fn();
+    const { container } = draw(
+      {
+        categories: [
+          { id: "regular", label: "Regular", paper_count: 32 },
+          { id: "spotlight", label: "Spotlight", paper_count: 500 },
+        ],
+        categoryId: "spotlight",
+      },
+      { onCategoryChange },
+    );
+    const select = container.querySelector<HTMLSelectElement>(
+      '[data-testid="conference-papers-category"]',
+    )!;
+    expect([...select.options].map((option) => option.textContent?.trim())).toEqual([
+      "All",
+      "Regular (32)",
+      "Spotlight (500)",
+    ]);
+    expect(select.value).toBe("spotlight");
+    expect(text(container)).toContain("500 accepted papers");
+    select.value = "regular";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(onCategoryChange).toHaveBeenCalledWith("regular");
+  });
+
+  it("disables the category selector while its conference categories load", () => {
+    const { container } = draw({ loadingCategories: true });
+    expect(
+      container.querySelector<HTMLSelectElement>('[data-testid="conference-papers-category"]')
+        ?.disabled,
+    ).toBe(true);
+    expect(container.textContent).toContain("Loading categories");
   });
 
   it("will not search with an empty interests box", () => {
@@ -162,6 +200,16 @@ describe("renderConferencePapers", () => {
       );
       expect(row?.textContent).toContain("ICLR 2025 Oral");
       expect(row?.innerHTML).toContain("https://openreview.net/pdf/p1.pdf");
+    });
+
+    it("capitalizes a lower-case OpenReview category", () => {
+      const { container } = drawn({
+        paper: { ...hit().paper, venue: "ICLR 2025 spotlight" },
+      });
+      expect(container.querySelector(".conference-papers__meta")?.textContent).toContain(
+        "ICLR 2025 Spotlight",
+      );
+      expect(formatVenueLabel("ICML 2026 regular", "ICML 2026")).toBe("ICML 2026 Regular");
     });
 
     // The row explaining itself: which of the member's own interests this paper echoes.

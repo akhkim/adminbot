@@ -78,8 +78,24 @@ export function readRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+/**
+ * The status a JSON response goes out with: 502 and 504 leave as 500.
+ *
+ * The service answers 502 when a connector refuses -- Google rejecting a protected cell, gog's
+ * token expired -- and the message it carries is the whole diagnosis. But the Control UI reaches
+ * the service through a Cloudflare tunnel, and Cloudflare replaces an origin 502 or 504 with its
+ * own error page. That page has none of this service's CORS headers, so the browser's fetch
+ * rejects outright and the console reports "Couldn't reach the AdminBot service" for a service
+ * that answered in milliseconds. 500 passes through the tunnel untouched. The service results,
+ * audit rows and callers inside this process keep 502; only the wire changes, and nothing
+ * client-side distinguishes 502 from any other 5xx.
+ */
+export function wireStatus(status: number): number {
+  return status === 502 || status === 504 ? 500 : status;
+}
+
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.statusCode = status;
+  res.statusCode = wireStatus(status);
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   // Every JSON response here reflects live, mutable state (roster, sessions, map places...);
   // without this a browser can silently serve a stale GET from its disk cache instead of

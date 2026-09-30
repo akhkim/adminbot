@@ -47,6 +47,21 @@ before it reaches the CLI — including one a wrongly-classified or spoofed-look
 A wrong event is a line somebody deletes by hand; a wrong deletion is a meeting nobody knows they
 have lost.
 
+### Which calendar
+
+Two calendars take events. The lab calendar (`ADMINBOT_LAB_EMAIL`) is readable by every member.
+Zhijing's personal calendar (`ADMINBOT_PERSONAL_CALENDAR_ID`, "Jin Trips and Advising Meetings",
+with a hardcoded default in the script) is where her flights and other travel go. The extractor
+picks `personal` for travel and for requests that ask for "my" or the personal calendar, or say not
+to use the lab one; `lab` otherwise. Only a configured sender may target the personal calendar —
+anyone else asking for it is held for review rather than moved onto the lab calendar, where an
+itinerary would be visible to the whole lab.
+
+The extractor reads image attachments as well as text, on the same local model, because these
+requests are often one line and a screenshot. One request can produce several events (a round trip
+is two flights), each with its own start and end time zone; a zone name the runtime does not
+recognize is dropped and the event keeps its RFC3339 offsets.
+
 Everything else a trusted sender can ask for — reimbursement forms, a CV talk entry, an onboarding
 decision — keeps the confidence threshold. Those write to forms, a CV, and people's accounts, where
 a low-confidence read is worth a human's glance.

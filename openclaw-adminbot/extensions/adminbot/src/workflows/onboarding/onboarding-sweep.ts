@@ -23,6 +23,7 @@
 // above will legitimately report the same person twice -- once live, once from the audit row the
 // sync wrote the next morning.
 import type { AdminBotLabMember } from "../../contracts/actions.js";
+import { subgroupForMemberType } from "../members/collaborator-subgroups.js";
 import type { RosterAddition, RosterSyncPlan } from "../members/roster-sync.js";
 import { templateForMemberType } from "./member-type-template.js";
 
@@ -122,7 +123,20 @@ export function planOnboardingSweep(params: {
       continue;
     }
     if (!template.ok) {
-      out.skipped.push({ name: row.name, reason: template.reason });
+      // A type the access design onboards without a mail is still a joiner: created, so the
+      // enrollment the route runs next can file the access it grants. Only a type no subgroup or
+      // template covers is left for a person.
+      if (subgroupForMemberType(row.member_type)) {
+        out.create.push({
+          sheet_row: row.sheet_row,
+          name: row.name,
+          email,
+          member_type: row.member_type,
+          member_id: memberId,
+        });
+      } else {
+        out.skipped.push({ name: row.name, reason: template.reason });
+      }
       continue;
     }
     const key = `${email}:${template.templateId}`;

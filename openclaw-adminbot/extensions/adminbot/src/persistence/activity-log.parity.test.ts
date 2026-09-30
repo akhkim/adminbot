@@ -71,6 +71,31 @@ describe.each(stores)("%s store: activity log", (_name, makeStore) => {
     expect(store.listLoginEvents("ada").map((event) => event.id)).toEqual(["b", "a"]);
   });
 
+  it("attaches a partial login location without erasing known fields", () => {
+    const store = makeStore();
+    store.appendLoginEvent({
+      id: "located",
+      member_id: "ada",
+      at: "2026-08-03T00:00:00.000Z",
+    });
+    store.attachLoginEventLocation("located", { country: "Canada", city: "Toronto" });
+    store.attachLoginEventLocation("located", { continent: "North America", city: "" });
+    store.attachLoginEventLocation("missing", { country: "France" });
+    expect(store.listLoginEvents("ada")).toEqual([
+      {
+        id: "located",
+        member_id: "ada",
+        at: "2026-08-03T00:00:00.000Z",
+        country: "Canada",
+        continent: "North America",
+        city: "Toronto",
+      },
+    ]);
+    expect(store.listLoginEventsSince("2026-08-01T00:00:00.000Z")).toEqual(
+      store.listLoginEvents("ada"),
+    );
+  });
+
   it("honors a limit and keeps the newest rows, not the first ones written", () => {
     const store = makeStore();
     store.appendLoginEvent({
@@ -206,10 +231,19 @@ describe("sqlite store: activity log durability", () => {
       member_id: "ada",
       at: "2026-08-26T10:00:00.000Z",
     });
+    first.attachLoginEventLocation("login", { city: "Toronto", country: "Canada" });
     first.appendUpdateEvent(updateEvent({ id: "update" }));
 
     const second = sqliteStore(databasePath);
-    expect(second.listLoginEvents("ada").map((event) => event.id)).toEqual(["login"]);
+    expect(second.listLoginEvents("ada")).toEqual([
+      {
+        id: "login",
+        member_id: "ada",
+        at: "2026-08-26T10:00:00.000Z",
+        city: "Toronto",
+        country: "Canada",
+      },
+    ]);
     expect(second.listUpdateEventsByMember("ada").map((event) => event.id)).toEqual(["update"]);
   });
 });

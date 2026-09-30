@@ -11,6 +11,7 @@ STATE_DIR=""
 GATEWAY_PORT="18789"
 ADMINBOT_PORT="8765"
 START_MODE="no"
+WRITER_LOCK_TOKEN=""
 
 usage() {
   cat <<'EOF'
@@ -22,6 +23,8 @@ Options:
   --adminbot-port <port> Default: 8765
   --start                Validate environment and enable/start services
   --no-start             Install/enable unit files without starting (default)
+  --writer-lock-token <token>
+                         Use the account lock held by aurora-adminbot-host.sh
 EOF
 }
 
@@ -60,6 +63,11 @@ while (($# > 0)); do
       START_MODE="no"
       shift
       ;;
+    --writer-lock-token)
+      (($# >= 2)) || die "--writer-lock-token requires a value"
+      WRITER_LOCK_TOKEN="$2"
+      shift 2
+      ;;
     -h | --help)
       usage
       exit 0
@@ -83,6 +91,46 @@ STATE_DIR="${STATE_DIR:-$HOME/.openclaw/state}"
 [[ "$STATE_DIR" == /* ]] || die "--state must be an absolute path: $STATE_DIR"
 [[ "$GATEWAY_PORT" =~ ^[0-9]+$ ]] || die "gateway port must be numeric"
 [[ "$ADMINBOT_PORT" =~ ^[0-9]+$ ]] || die "AdminBot port must be numeric"
+
+# A direct installer joins the same account lock as the host wrapper. A wrapper run passes its
+# token so the nested installer can verify ownership without trying to acquire the lock twice.
+lock_dir="$HOME/.config/jinesis-adminbot/.writer.lock"
+if [[ -n "$WRITER_LOCK_TOKEN" ]]; then
+  [[ -f "$lock_dir/owner" && "$(cat "$lock_dir/owner")" == "$WRITER_LOCK_TOKEN" ]] ||
+    die "installer does not own the AdminBot writer lock"
+else
+  mkdir -p -- "$(dirname -- "$lock_dir")"
+  mkdir -m 700 -- "$lock_dir" 2>/dev/null || die "another AdminBot writer operation holds the account lock"
+  WRITER_LOCK_TOKEN="installer-$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
+  release_writer_lock() {
+    status=$?
+    trap - EXIT
+    if [[ -f "$lock_dir/owner" && "$(cat "$lock_dir/owner")" == "$WRITER_LOCK_TOKEN" ]]; then
+      rm -- "$lock_dir/owner"
+      rmdir -- "$lock_dir"
+    else
+      echo 'Warning: installer lock needs operator review.' >&2
+      status=1
+    fi
+    exit "$status"
+  }
+  trap release_writer_lock EXIT
+  printf '%s\n' "$WRITER_LOCK_TOKEN" >"$lock_dir/owner"
+fi
+
+# Rewriting units while old-root writers are active can switch their release on a later restart.
+assert_writers_stopped() {
+  systemctl --user show-environment >/dev/null || die "user systemd is unavailable"
+  for unit in jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service \
+    jinesis-adminbot-email.timer jinesis-adminbot-email.service \
+    jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service \
+    jinesis-openclaw-gateway.service jinesis-adminbot.service; do
+    state="$(systemctl --user show "$unit" -p ActiveState --value)" || die "cannot inspect $unit"
+    [[ "$state" == inactive || "$state" == failed ]] ||
+      die "refusing to rewrite units while $unit is $state; stop writers first"
+  done
+}
+assert_writers_stopped
 
 NODE_BIN="$(command -v node || true)"
 OLLAMA_BIN="${OLLAMA_BIN:-$(command -v ollama || true)}"
@@ -158,6 +206,7 @@ else
   chmod 600 "$ENV_FILE"
 fi
 
+assert_writers_stopped
 cat >"$UNIT_DIR/jinesis-ollama.service" <<EOF
 [Unit]
 Description=Jinesis Ollama (guidebook embeddings)
@@ -265,6 +314,7 @@ poller_args=(
   --root "$ROOT"
   --env-file "$ENV_FILE"
   --adminbot-port "$ADMINBOT_PORT"
+  --writer-lock-token "$WRITER_LOCK_TOKEN"
   --no-start
 )
 "$ROOT/deploy/aurora/install-member-sheet-poller.sh" "${poller_args[@]}"
@@ -322,6 +372,7 @@ if [[ "$START_MODE" == "yes" ]]; then
     --root "$ROOT" \
     --env-file "$ENV_FILE" \
     --adminbot-port "$ADMINBOT_PORT" \
+    --writer-lock-token "$WRITER_LOCK_TOKEN" \
     --start
   # The reviewing-cycle pass is scheduled as an OpenClaw cron job, not a systemd timer,
   # so it shows up in the Control UI with its run history. Warn when its inputs are

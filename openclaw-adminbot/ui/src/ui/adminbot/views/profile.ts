@@ -12,6 +12,7 @@
 // whitelist drops governance fields. Nothing here can write privilege_level, status, or email.
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { ref } from "lit/directives/ref.js";
 import {
   adminBotMemberFieldVisibility,
   adminBotSlackActivityOf,
@@ -21,9 +22,15 @@ import {
   isAdminBotFullMember,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import {
+  adminBotBadgeEmoji,
   ADMINBOT_BADGE_DESCRIPTION_MAX,
   ADMINBOT_BADGE_RATIONALE_MAX,
 } from "../../../../../extensions/adminbot/src/contracts/badges.js";
+import { adminBotDriveFileId } from "../../../../../extensions/adminbot/src/contracts/drive-links.js";
+import {
+  MEMBER_CITY_OPTIONS,
+  MEMBER_AFFILIATION_OPTIONS,
+} from "../../../../../extensions/adminbot/src/contracts/member-profile-values.js";
 import {
   formatAdminBotMemberRoles,
   parseAdminBotMemberRoles,
@@ -34,13 +41,15 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
-import type {
-  AssignedBadge,
-  BadgeDefinition,
-  BadgeNominationView,
-  BadgeSuggestionInput,
-  LabMember,
-  MemberProfileUpdate,
+import {
+  checkDriveEditAccess,
+  loadStoredMemberSession,
+  resolveAdminBotBaseUrl,
+  type AssignedBadge,
+  type BadgeDefinition,
+  type BadgeSuggestionInput,
+  type LabMember,
+  type MemberProfileUpdate,
 } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
@@ -58,6 +67,7 @@ import {
   type ProfileFieldGroup,
 } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
+import { renderMemberBadgeSymbols, badgeCountLabel } from "./badge-symbols.ts";
 import { renderCountrySelect } from "./country-select.ts";
 import { renderMemberSelect } from "./member-select.ts";
 import { ownPapers } from "./my-work.ts";
@@ -73,6 +83,7 @@ export type ProfileProps = {
   /** `memberId` is who the badge is for; omitted means the viewer themselves. */
   onSubmitBadgeNomination?: (badgeId: string, evidence: string, memberId?: string) => void;
   onPickBadgeNominee?: (memberId: string) => void;
+  onOpenBadgeNominee?: () => void;
   /** Propose a badge the catalogue does not have. An admin decides whether it joins. */
   onSubmitBadgeSuggestion?: (input: BadgeSuggestionInput) => void;
   onToggleBadgeSuggestForm?: (open: boolean) => void;
@@ -151,10 +162,7 @@ function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
       continue;
     }
     // Already answered for this exact value, and not still in flight.
-    if (
-      accountCheckedValues.get(field) === value &&
-      state.profileAccountChecks[field]?.status !== "checking"
-    ) {
+    if (accountCheckedValues.get(field) === value && state.profileAccountChecks[field]) {
       continue;
     }
     accountCheckAborts.get(field)?.abort();
@@ -172,10 +180,69 @@ function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
       state.profileAccountChecks = { ...state.profileAccountChecks, [field]: result };
     });
   }
+  runDriveChecks(form, state);
+}
+
+function runDriveChecks(form: HTMLFormElement, state: AppViewState): void {
+  const data = new FormData(form);
+  const session = loadStoredMemberSession();
+  if (!session) {
+    return;
+  }
+  for (const field of ["cv_url", "one_on_one_folder_url", "availability_doc_url"] as const) {
+    if (!data.has(field)) {
+      continue;
+    }
+    const value = String(data.get(field) ?? "").trim();
+    if (!adminBotDriveFileId(value)) {
+      accountCheckAborts.get(field)?.abort();
+      accountCheckedValues.delete(field);
+      if (state.profileAccountChecks[field]) {
+        const next = { ...state.profileAccountChecks };
+        delete next[field];
+        state.profileAccountChecks = next;
+      }
+      continue;
+    }
+    if (accountCheckedValues.get(field) === value && state.profileAccountChecks[field]) {
+      continue;
+    }
+    accountCheckAborts.get(field)?.abort();
+    const controller = new AbortController();
+    accountCheckAborts.set(field, controller);
+    accountCheckedValues.set(field, value);
+    state.profileAccountChecks = { ...state.profileAccountChecks, [field]: { status: "checking" } };
+    void checkDriveEditAccess(
+      value,
+      session.sessionToken,
+      resolveAdminBotBaseUrl(state.settings),
+      controller.signal,
+    ).then((result) => {
+      if (controller.signal.aborted) {
+        return;
+      }
+      state.profileAccountChecks = {
+        ...state.profileAccountChecks,
+        [field]: result.ok
+          ? {
+              status: result.value.status === "editable" ? "verified" : "warning",
+              message: result.value.message,
+            }
+          : {
+              status: "warning",
+              message:
+                "Could not check Drive access. Make sure Jinesis.adminbot@gmail.com can edit this file.",
+            },
+      };
+    });
+  }
 }
 
 function renderAccountCheckStatus(state: AppViewState, field: EditableField) {
-  if (!isCheckableField(field.key)) {
+  if (
+    !isCheckableField(field.key) &&
+    !["cv_url", "one_on_one_folder_url", "availability_doc_url"].includes(field.key)
+  ) {
     return nothing;
   }
   const check = state.profileAccountChecks[field.key];
@@ -190,7 +257,7 @@ function renderAccountCheckStatus(state: AppViewState, field: EditableField) {
       ${check.status === "checking"
         ? t("profile.accountCheck.checking")
         : check.status === "verified"
-          ? t("profile.accountCheck.verified")
+          ? (check.message ?? t("profile.accountCheck.verified"))
           : check.message}
     </span>
   `;
@@ -493,12 +560,6 @@ export function badgesFor(state: AppViewState, member: LabMember): string[] {
 
 function assignedBadgeLabel(badge: Pick<AssignedBadge, "name" | "tier">): string {
   return badge.tier ? `${badge.name} · ${badge.tier}` : badge.name;
-}
-
-function nominationBadgeLabel(nomination: BadgeNominationView): string {
-  return nomination.badge_tier
-    ? `${nomination.badge_name} · ${nomination.badge_tier}`
-    : nomination.badge_name;
 }
 
 /**
@@ -843,12 +904,30 @@ function renderFieldInput(field: EditableField, currentValue: string) {
         <input
           class="input"
           name=${field.key}
+          list=${ifDefined(
+            field.key === "location"
+              ? "profile-city-options"
+              : field.key === "affiliation"
+                ? "profile-affiliation-options"
+                : undefined,
+          )}
           type="text"
           maxlength=${SHORT_TEXT_MAX_LENGTH}
           placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
           autocomplete="off"
         />
+        ${field.key === "location"
+          ? html`<datalist id="profile-city-options">
+              ${MEMBER_CITY_OPTIONS.map((option) => html`<option value=${option}></option>`)}
+            </datalist>`
+          : field.key === "affiliation"
+            ? html`<datalist id="profile-affiliation-options">
+                ${MEMBER_AFFILIATION_OPTIONS.map(
+                  (option) => html`<option value=${option}></option>`,
+                )}
+              </datalist>`
+            : nothing}
       `;
   }
 }
@@ -907,6 +986,15 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
       </div>
       <form
         class="profile__form"
+        ${ref((element) => {
+          if (element instanceof HTMLFormElement) {
+            queueMicrotask(() => {
+              if (element.isConnected) {
+                runDriveChecks(element, state);
+              }
+            });
+          }
+        })}
         @submit=${(event: SubmitEvent) => event.preventDefault()}
         @input=${(event: Event) => {
           const form = event.currentTarget as HTMLFormElement;
@@ -1153,8 +1241,10 @@ function renderBadges(state: AppViewState, member: LabMember) {
     <div class="profile__badges" data-testid="profile-badges">
       ${assigned.map(
         (badge) => html`<span class="profile-badge profile-badge--managed" tabindex="0">
-          <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
-          <span>${assignedBadgeLabel(badge)}</span>
+          <span class="profile-badge__icon" aria-hidden="true"
+            >${adminBotBadgeEmoji(badge.name)}</span
+          >
+          <span>${badgeCountLabel(badge)}</span>
           <span class="profile-badge__popover" role="tooltip">
             <strong>${badge.category}</strong>
             <span>${badge.description}</span>
@@ -1172,7 +1262,9 @@ function renderBadges(state: AppViewState, member: LabMember) {
       )}
       ${computed.map(
         (badge) => html`<span class="profile-badge">
-          <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
+          <span class="profile-badge__icon" aria-hidden="true"
+            >${adminBotBadgeEmoji(badge.split(" · ")[0])}</span
+          >
           ${badge}
         </span>`,
       )}
@@ -1302,9 +1394,7 @@ function renderBadgeSuggestion(state: AppViewState, props: ProfileProps) {
                    needs a new category is exactly the kind this form exists for. -->
               <datalist id="profile-badge-categories">
                 ${[
-                  ...new Set(
-                    (state.adminBotBadgeDefinitions ?? []).map((badge) => badge.category),
-                  ),
+                  ...new Set((state.adminBotBadgeDefinitions ?? []).map((badge) => badge.category)),
                 ]
                   .toSorted()
                   .map((category) => html`<option value=${category}></option>`)}
@@ -1417,7 +1507,7 @@ function nominationMeta(labelKey: "submittedAt" | "decidedAt", value: string | u
 }
 
 /**
- * The nomination form, and the nominations this viewer can see.
+ * The nomination form. Past and pending nominations are not listed on the profile.
  *
  * It used to be self-only, which quietly made the board a record of what people were willing to
  * claim about themselves. Most of what these badges recognise is somebody else's to notice -- the
@@ -1430,7 +1520,6 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
   const forSelf = nominee.id === member.id;
   const nomineeName = nominee.name ?? nominee.id ?? "";
   const available = availableBadgeDefinitions(state, nominee);
-  const nominations = state.profileBadgeNominations ?? [];
   // Alumni are on the roster and can absolutely be nominated for something they did; only the
   // viewer is filtered out, because they are already the default and a picker that lists you twice
   // is a picker that reads as broken.
@@ -1464,10 +1553,25 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
             value: forSelf ? "" : (nominee.id ?? ""),
             placeholder: t("profile.badges.nominateSearch"),
             label: t("profile.badges.nominateWho"),
-            disabled: state.profileBadgeBusy || rosterOptions.length === 0,
+            disabled: state.profileBadgeBusy,
             onPick: (memberId: string) => props.onPickBadgeNominee?.(memberId),
+            onOpen: () => props.onOpenBadgeNominee?.(),
           })}
         </div>
+        ${state.adminBotRosterLoading
+          ? html`<p class="profile__section-subtitle" role="status">Loading lab members…</p>`
+          : state.adminBotRosterError
+            ? html`<p class="profile__section-subtitle" role="alert">
+                Could not load lab members.
+                <button
+                  class="btn btn--sm"
+                  type="button"
+                  @click=${() => props.onOpenBadgeNominee?.()}
+                >
+                  Try again
+                </button>
+              </p>`
+            : nothing}
         ${forSelf
           ? nothing
           : html`<p class="profile__section-subtitle" data-testid="profile-badge-nominee-name">
@@ -1549,60 +1653,6 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
               ? t("profile.badges.nominateNoneAvailable")
               : t("profile.badges.nominateNoneAvailableFor", { name: nomineeName })}
           </p>`}
-      <div class="profile-badge-nominations">
-        <h3 class="profile__group-title">${t("profile.badges.nominationsTitle")}</h3>
-        ${nominations.length
-          ? html`<ul class="profile-badge-nominations__list">
-              ${nominations.map(
-                (nomination) => html`<li class="profile-badge-nominations__item">
-                  <div class="profile-badge-nominations__head">
-                    <span class="profile-badge">
-                      <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
-                      ${nominationBadgeLabel(nomination)}
-                    </span>
-                    <span class=${`ab-chip ab-chip--${nomination.status}`}>
-                      ${t(`profile.badges.status.${nomination.status}`)}
-                    </span>
-                  </div>
-                  <!-- The list now holds both directions, so every row that is not the plain
-                       self-nomination says which one it is. -->
-                  ${nomination.member_id !== member.id
-                    ? html`<p
-                        class="profile-badge-nominations__who"
-                        data-testid="profile-badge-nomination-sent"
-                      >
-                        ${t("profile.badges.nominationFor", {
-                          name: nomination.member_name || nomination.member_id,
-                        })}
-                      </p>`
-                    : nomination.nominated_by
-                      ? html`<p
-                          class="profile-badge-nominations__who"
-                          data-testid="profile-badge-nomination-received"
-                        >
-                          ${t("profile.badges.nominationBy", {
-                            name: nomination.nominator_name ?? nomination.nominated_by,
-                          })}
-                        </p>`
-                      : nothing}
-                  <p class="profile-badge-nominations__description">
-                    ${nomination.badge_description}
-                  </p>
-                  ${nomination.evidence
-                    ? html`<p class="profile-badge-nominations__description">
-                        <strong>${t("adminbotBadges.field.evidence")}:</strong>
-                        ${nomination.evidence}
-                      </p>`
-                    : nothing}
-                  <div class="profile-badge-nominations__meta">
-                    ${nominationMeta("submittedAt", nomination.created_at)}
-                    ${nominationMeta("decidedAt", nomination.decided_at)}
-                  </div>
-                </li>`,
-              )}
-            </ul>`
-          : html`<p class="profile__badges-empty">${t("adminbotBadges.emptyNominations")}</p>`}
-      </div>
     </section>
   `;
 }
@@ -1834,6 +1884,24 @@ const SAVE_TOAST_MS = 2600;
 let toastNoticeText: string | null = null;
 let toastDismissTimer: ReturnType<typeof setTimeout> | undefined;
 
+export function resetProfileSessionState(): void {
+  if (basicsSaveTimer) {
+    clearTimeout(basicsSaveTimer);
+    basicsSaveTimer = undefined;
+  }
+  for (const controller of accountCheckAborts.values()) {
+    controller.abort();
+  }
+  accountCheckAborts.clear();
+  accountCheckedValues.clear();
+  pendingFocusFieldKey = null;
+  if (toastDismissTimer) {
+    clearTimeout(toastDismissTimer);
+    toastDismissTimer = undefined;
+  }
+  toastNoticeText = null;
+}
+
 function renderSaveToast(state: AppViewState) {
   const notice = state.adminBotNotice;
   if (!notice) {
@@ -1885,6 +1953,7 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         <div class="profile__identity-copy">
           <div class="profile__identity-top">
             <span class="profile__name">${name}</span>
+            ${renderMemberBadgeSymbols(member.assigned_badges ?? [])}
             <!-- One pill per role. Somebody who is both a PhD student and the lab manager reads as
                  two facts about them, where a single pill holding "PhD Student, Lab Manager" reads
                  as one oddly punctuated job title. -->

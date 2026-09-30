@@ -66,9 +66,11 @@ For live gog execution, put an object in `proposedPayload`:
 - Reschedule: `event_id`, `from`, and `to`, plus any optional create fields.
 - Cancel: `event_id`; optionally `calendar_id` and `account`.
 
-Use RFC3339 timestamps with an explicit offset. AdminBot chooses gog's
-`--send-updates` policy from the action type: `none` for tentative holds and
-`all` for invitations, reschedules, and cancellations.
+Use RFC3339 timestamps with an explicit offset. Calendar writes are silent:
+AdminBot always passes gog `--send-updates none`, so guests see the change on
+their calendar but Google emails nobody. Don't tell people they will get an
+invite email; if someone needs a heads-up, propose an `email.send` or Slack
+message separately.
 
 ## Email
 

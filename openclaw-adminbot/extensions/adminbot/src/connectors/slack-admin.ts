@@ -69,7 +69,36 @@ export function createAdminBotSlackAdminExecutor(
         await removeFromSlackChannel(token, payload.channel, payload.user_id, fetchImpl);
         return { handled: true };
       }
-      if (proposal.type === "member_nudge.escalate") {
+      if (proposal.type === "deadline.recommend") {
+        const payload = readGroupDmPayload(proposal);
+        if (
+          payload.user_ids.length !== 2 ||
+          !payload.user_ids.every((id) => /^[UW][A-Z0-9]+$/u.test(id))
+        ) {
+          throw new Error("deadline.recommend requires two distinct Slack users");
+        }
+        const token = resolveSlackBotToken(env);
+        await notifySlackOwner(
+          token,
+          payload.user_ids.join(","),
+          payload.message,
+          fetchImpl,
+          proposal.id,
+        );
+        return { handled: true };
+      }
+      // The hourly digest can instead live in a channel as one message, edited each hour.
+      if (proposal.type === "paper_integrity.report" && readChannelTarget(proposal)) {
+        const target = readChannelTarget(proposal)!;
+        const token = resolveSlackBotToken(env);
+        const ts = await postOrUpdateChannelMessage(token, target, fetchImpl);
+        return { handled: true, artifacts: { slack_channel: target.channel_id, slack_ts: ts } };
+      }
+      if (
+        proposal.type === "member_nudge.escalate" ||
+        proposal.type === "paper_integrity.alert" ||
+        proposal.type === "paper_integrity.report"
+      ) {
         const payload = readGroupDmPayload(proposal);
         const token = resolveSlackBotToken(env);
         await notifySlackOwner(token, payload.user_ids.join(","), payload.message, fetchImpl);
@@ -346,7 +375,7 @@ function readGroupDmPayload(proposal: AdminBotStoredProposal): {
 } {
   const payload = proposal.proposed_payload;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("member_nudge.escalate requires an object proposed_payload");
+    throw new Error(`${proposal.type} requires an object proposed_payload`);
   }
   const raw = (payload as Record<string, unknown>).user_ids;
   const userIds = Array.isArray(raw)
@@ -358,7 +387,7 @@ function readGroupDmPayload(proposal: AdminBotStoredProposal): {
   // escalation queue on their own page -- so the only person this can reach is the member it is
   // about, which is the direction the old rule was protecting.
   if (userIds.length < 1) {
-    throw new Error("member_nudge.escalate requires at least one Slack user id");
+    throw new Error(`${proposal.type} requires at least one Slack user id`);
   }
   return {
     user_ids: userIds,
@@ -408,11 +437,85 @@ function requireString(payload: Record<string, unknown>, key: string): string {
   return value.trim();
 }
 
+type ChannelTarget = { channel_id: string; message: string; update_ts?: string };
+
+/** A `channel_id` payload: a channel message, optionally replacing the one at `update_ts`. */
+function readChannelTarget(proposal: AdminBotStoredProposal): ChannelTarget | undefined {
+  const payload = proposal.proposed_payload as Record<string, unknown> | undefined;
+  const channelId = typeof payload?.channel_id === "string" ? payload.channel_id.trim() : "";
+  if (!payload || !channelId) {
+    return undefined;
+  }
+  if (!/^[CG][A-Z0-9]{2,}$/u.test(channelId)) {
+    throw new Error(`${proposal.type} channel_id must be a Slack channel id`);
+  }
+  const updateTs = typeof payload.update_ts === "string" ? payload.update_ts.trim() : "";
+  return {
+    channel_id: channelId,
+    message: requireString(payload, "message"),
+    ...(/^\d+\.\d+$/u.test(updateTs) ? { update_ts: updateTs } : {}),
+  };
+}
+
+// Slack's answers for "that message cannot be edited": deleted by a person, or otherwise gone.
+// Posting a fresh one is the right recovery; anything else is a real failure.
+const REPLACEABLE_UPDATE_ERRORS = new Set([
+  "message_not_found",
+  "cant_update_message",
+  "edit_window_closed",
+]);
+
+/** Edits the message at `update_ts`, or posts a new one; returns the ts of the message shown. */
+async function postOrUpdateChannelMessage(
+  token: string,
+  target: ChannelTarget,
+  fetchImpl: SlackAdminFetch,
+): Promise<string> {
+  const call = async (method: string, body: Record<string, unknown>) => {
+    const response = await fetchImpl(`https://slack.com/api/${method}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify(body),
+    });
+    return {
+      response,
+      payload: parseSlackJson<{ ok?: boolean; ts?: string; error?: string }>(await response.text()),
+    };
+  };
+  if (target.update_ts) {
+    const updated = await call("chat.update", {
+      channel: target.channel_id,
+      ts: target.update_ts,
+      text: target.message,
+    });
+    if (updated.response.ok && updated.payload?.ok) {
+      return updated.payload.ts || target.update_ts;
+    }
+    const error = updated.payload?.error?.trim() || updated.response.statusText || "unknown error";
+    if (!REPLACEABLE_UPDATE_ERRORS.has(error)) {
+      throw new Error(`Slack message update failed ${updated.response.status}: ${error}`);
+    }
+  }
+  const posted = await call("chat.postMessage", {
+    channel: target.channel_id,
+    text: target.message,
+  });
+  if (!posted.response.ok || !posted.payload?.ok || !posted.payload.ts) {
+    const error = posted.payload?.error?.trim() || posted.response.statusText || "unknown error";
+    throw new Error(`Slack channel post failed ${posted.response.status}: ${error}`);
+  }
+  return posted.payload.ts;
+}
+
 async function notifySlackOwner(
   token: string,
   ownerUserId: string,
   message: string,
   fetchImpl: SlackAdminFetch,
+  messageId?: string,
 ): Promise<void> {
   const openResponse = await fetchImpl("https://slack.com/api/conversations.open", {
     method: "POST",
@@ -433,7 +536,19 @@ async function notifySlackOwner(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json; charset=utf-8",
     },
-    body: JSON.stringify({ channel: openPayload.channel.id, text: message }),
+    body: JSON.stringify({
+      channel: openPayload.channel.id,
+      text: message,
+      ...(messageId
+        ? {
+            client_msg_id: messageId.replace(/^act_/u, ""),
+            mrkdwn: false,
+            parse: "none",
+            unfurl_links: false,
+            unfurl_media: false,
+          }
+        : {}),
+    }),
   });
   const postPayload = parseSlackJson<SlackRenameResponse>(await postResponse.text());
   if (!postResponse.ok || !postPayload?.ok) {

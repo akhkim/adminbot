@@ -1,4 +1,5 @@
-﻿/* ===========================================
+﻿/* ====================================}
+
    Shell Layout
    =========================================== */
 
@@ -66,7 +67,8 @@
   padding-top: 0;
 }
 
-/* ===========================================
+/* ====================================}
+
    Topbar
    =========================================== */
 
@@ -406,7 +408,8 @@
   display: none !important;
 }
 
-/* ===========================================
+/* ====================================}
+
    Navigation Sidebar
    =========================================== */
 
@@ -911,7 +914,8 @@
   opacity: 0.5;
 }
 
-/* ===========================================
+/* ====================================}
+
    Content Area
    =========================================== */
 
@@ -1147,7 +1151,8 @@
   white-space: nowrap;
 }
 
-/* ===========================================
+/* ====================================}
+
    Grid Utilities
    =========================================== */
 
@@ -1195,7 +1200,8 @@
   align-items: center;
 }
 
-/* ===========================================
+/* ====================================}
+
    Responsive - Tablet
    =========================================== */
 
@@ -1250,9 +1256,11 @@
   display: none;
 }
 
-/* ===========================================
+/* ====================================}
+
    Signed-out header (landing + sign-in gate)
-   ===========================================
+   ====================================}
+
    In flow rather than floating, so both hosts lay out as a column and the thing below centres in
    whatever height the bar leaves behind â€” no magic offset to keep in sync. Sticky on top of that,
    because the sign-up form is long enough to scroll and the way back out has to stay reachable from
@@ -1333,9 +1341,11 @@
   }
 }
 
-/* ===========================================
+/* ====================================}
+
    Dashboard (home, signed in)
-   ===========================================
+   ====================================}
+
    Two bands: what is waiting on you, then where to go. The attention stack is the loud one, so the
    shortcut grid below it stays deliberately flat -- no cards competing with cards. */
 
@@ -2364,7 +2374,8 @@
   color: var(--muted);
 }
 
-/* ===========================================
+/* ====================================}
+
    My Profile
    =========================================== */
 
@@ -2404,7 +2415,8 @@
   min-width: 0;
 }
 
-/* ===========================================
+/* ====================================}
+
    Identity card
    =========================================== */
 
@@ -3062,7 +3074,8 @@
   }
 }
 
-/* ===========================================
+/* ====================================}
+
    Section cards
    =========================================== */
 
@@ -3096,7 +3109,8 @@
   font-size: var(--control-ui-text-sm);
 }
 
-/* ===========================================
+/* ====================================}
+
    Field groups -- shared by the read-only view and both forms
    =========================================== */
 
@@ -3418,7 +3432,8 @@
   background: var(--danger);
 }
 
-/* ===========================================
+/* ====================================}
+
    Suggestions
    =========================================== */
 
@@ -3538,7 +3553,8 @@
   stroke-width: 1.5px;
 }
 
-/* ===========================================
+/* ====================================}
+
    My Projects & Papers
    =========================================== */
 
@@ -3702,6 +3718,10 @@
   color: var(--danger-muted, var(--muted));
 }
 
+.profile__account-check--warning {
+  color: var(--danger, var(--text));
+}
+
 .profile__project-chips {
   display: flex;
   flex-wrap: wrap;
@@ -3719,7 +3739,9 @@
   color: var(--text);
   font-size: var(--control-ui-text-sm);
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
   white-space: nowrap;
 }
 
@@ -4148,9 +4170,11 @@
   }
 }
 
-/* ===========================================
+/* ====================================}
+
    Landing (visitor, no session)
-   ===========================================
+   ====================================}
+
    The one place in the app that gets to breathe. Everything else here is a dense operations
    dashboard, so the landing earns its weight from space and type rather than from new colour: the
    wordmark is the whole hero, and the ruled backdrop echoes the ledgers the lab actually runs on
@@ -4363,9 +4387,11 @@
   }
 }
 
-/* ===========================================
+/* ====================================}
+
    Public shell (no session)
-   ===========================================
+   ====================================}
+
    A visitor gets the same sidebar language as the signed-in shell, plus a slim topbar carrying the
    sign-in action, but a plain flex layout rather than the dashboard grid: none of the grid's other
    areas (chat rail, status) exist without a gateway behind them. */
@@ -4546,12 +4572,13 @@
   }
 }
 
-/* ===========================================
+/* ====================================}
+
    Deadline board
    =========================================== */
 
-/* Urgency is one variable resolved per row, so every part of a row -- countdown, dot, lead panel
-   edge -- speaks with one voice and the scale lives in the token set rather than in each rule. */
+/* Urgency is one variable resolved per row, so every part of a row -- countdown and
+   badge -- speaks with one voice and the scale lives in the token set rather than in each rule. */
 [data-urgency="critical"] {
   --deadline-urgency: var(--danger);
   --deadline-urgency-subtle: var(--danger-subtle);
@@ -4577,6 +4604,7 @@
   --deadline-urgency-subtle: transparent;
 }
 
+[data-urgency="unknown"],
 [data-urgency="passed"] {
   --deadline-urgency: var(--muted);
   --deadline-urgency-subtle: transparent;
@@ -4642,8 +4670,8 @@ adminbot-deadlines-view {
 .deadline-proposal-drawer {
   position: fixed;
   inset: 0 0 0 auto;
-  width: min(46rem, 100vw);
-  max-width: 100vw;
+  width: min(46rem, 100%);
+  max-width: 100%;
   height: 100dvh;
   max-height: 100dvh;
   margin: 0 0 0 auto;
@@ -4928,36 +4956,25 @@ adminbot-deadlines-view {
 .deadline-board__eyebrow {
   margin: 0 0 var(--space-2);
   color: var(--muted);
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-family: inherit;
+  font-size: var(--control-ui-text-sm);
 }
 
 .deadline-board__overview {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-4);
 }
 
 .deadline-board__hero {
   position: relative;
   min-width: 0;
-  padding: var(--space-6);
+  padding: var(--space-5);
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-xl);
   background: linear-gradient(155deg, var(--bg-elevated), var(--card));
-}
-
-.deadline-board__hero::before,
-.deadline-card::before {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--deadline-urgency);
-  content: "";
 }
 
 .deadline-board__hero-name {
@@ -4990,60 +5007,52 @@ adminbot-deadlines-view {
   color: var(--deadline-urgency);
 }
 
-.deadline-board__hero-countdown {
-  display: flex;
-  align-items: flex-end;
-  gap: clamp(var(--space-2), 2vw, var(--space-4));
-  margin-top: var(--space-5);
-  color: var(--border-strong);
+.deadline-board__hero-clock {
+  margin-top: var(--space-3);
+}
+
+.deadline-board__hero-date {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
 
-.deadline-board__countdown-unit {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.deadline-board__countdown-unit strong {
+.deadline-board__hero-countdown {
   color: var(--deadline-urgency);
-  font-size: clamp(1.65rem, 5vw, 2.75rem);
-  font-weight: 600;
-  line-height: 1;
-}
-
-.deadline-board__countdown-unit small {
-  color: var(--muted);
   font-family: var(--mono);
-  font-size: 0.625rem;
+  font-size: clamp(1.5rem, 4vw, 2.25rem);
   font-weight: 400;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .deadline-board__controls {
   display: grid;
-  grid-template-columns: minmax(17rem, 1fr) minmax(0, 9.25rem) minmax(0, 14rem) minmax(0, 10.5rem);
-  gap: var(--space-3);
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, max(10.5rem, calc((100% - 4 * var(--space-2)) / 5))), 1fr)
+  );
+  gap: var(--space-2);
   margin-bottom: var(--space-5);
 }
 
 .deadline-board__search {
+  grid-column: 1 / -1;
   min-width: 0;
 }
 
 .deadline-board__search input,
-.deadline-board__facet select {
+.deadline-board__facet select,
+.deadline-board__timezone input {
   width: 100%;
-  min-height: var(--control-h-md);
-  padding: 0 var(--space-3);
+  min-height: 32px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
   color: var(--text);
   font: inherit;
+  font-size: 12px;
 }
 
 .deadline-board__search input::placeholder {
@@ -5051,13 +5060,32 @@ adminbot-deadlines-view {
 }
 
 .deadline-board__search input:focus-visible,
-.deadline-board__facet select:focus-visible {
+.deadline-board__facet select:focus-visible,
+.deadline-board__timezone input:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
-.deadline-board__facet {
+.deadline-board__facet,
+adminbot-deadline-timezone {
   min-width: 0;
+}
+
+.deadline-board__facet select,
+.deadline-board__timezone input {
+  padding-right: 26px;
+}
+
+.deadline-board__facet {
+  position: relative;
+}
+
+.deadline-board__facet select {
+  appearance: none;
+}
+
+.deadline-board__timezone .country-select__option {
+  overflow-wrap: anywhere;
 }
 
 .deadline-board__groups {
@@ -5071,14 +5099,14 @@ adminbot-deadlines-view {
 .deadline-board__groups button,
 .deadline-board__period button,
 .deadline-board__view button {
-  min-height: var(--control-h-md);
-  padding: 0 var(--space-4);
+  min-height: 28px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-strong);
   background: var(--bg-elevated);
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  font-size: var(--control-ui-text-sm);
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -5115,7 +5143,7 @@ adminbot-deadlines-view {
   margin-left: var(--space-1);
   color: var(--muted);
   font-family: var(--mono);
-  font-size: var(--control-ui-text-sm);
+  font-size: 12px;
 }
 
 .deadline-board__period,
@@ -5150,13 +5178,14 @@ adminbot-deadlines-view {
 
 .deadline-board__grid {
   display: grid;
+  align-items: stretch;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 .deadline-board__group-list {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .deadline-group {
@@ -5164,16 +5193,16 @@ adminbot-deadlines-view {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-xl);
   background: var(--card);
-  box-shadow: inset 3px 0 var(--deadline-urgency);
 }
 
 .deadline-group__summary {
   display: grid;
-  grid-template-columns: 1rem 9.5rem minmax(0, 1fr) auto;
+  position: relative;
+  grid-template-columns: 7.75rem minmax(0, 1fr) 15rem 14rem;
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  padding: 14px 18px;
+  padding: 10px var(--space-4) 10px 36px;
   border: 0;
   background: transparent;
   color: var(--text);
@@ -5191,6 +5220,10 @@ adminbot-deadlines-view {
 }
 
 .deadline-group__chevron {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  translate: 0 -50%;
   color: var(--muted);
   font-size: var(--control-ui-text-xl);
   line-height: 1;
@@ -5198,6 +5231,10 @@ adminbot-deadlines-view {
 }
 
 .deadline-group[data-open] .deadline-group__chevron {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  translate: 0 -50%;
   transform: rotate(90deg);
 }
 
@@ -5213,7 +5250,7 @@ adminbot-deadlines-view {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 3px;
+  gap: 0;
 }
 
 .deadline-group__heading strong {
@@ -5232,10 +5269,11 @@ adminbot-deadlines-view {
 }
 
 .deadline-group__count {
-  padding: 2px var(--space-2);
-  border: 1px solid var(--border-strong);
+  white-space: normal;
+  text-align: right;
+  padding: 0;
+  border: 0;
   border-radius: var(--radius-full);
-  white-space: nowrap;
 }
 
 /* Which stage the collapsed row is counting down to, so folding a conference cannot hide it. */
@@ -5252,6 +5290,22 @@ adminbot-deadlines-view {
   display: none;
 }
 
+.deadline-group__shared-policy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-1) var(--space-4) var(--space-1) 36px;
+  border-bottom: 1px solid var(--border-strong);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.deadline-group__shared-policy span::before {
+  content: "\00b7";
+  margin-right: var(--space-1);
+}
+
 .deadline-group__section + .deadline-group__section {
   border-top: 1px solid var(--border-strong);
 }
@@ -5261,7 +5315,7 @@ adminbot-deadlines-view {
   align-items: baseline;
   gap: var(--space-2);
   margin: 0;
-  padding: var(--space-2) var(--space-5);
+  padding: var(--space-1) var(--space-4) var(--space-1) 36px;
   background: var(--bg-muted);
   color: var(--muted);
   font-family: var(--mono);
@@ -5275,11 +5329,11 @@ adminbot-deadlines-view {
 
 .deadline-group__row {
   display: grid;
-  grid-template-columns: 7.75rem 15rem minmax(0, 1fr) auto;
-  grid-template-areas: "countdown date main source";
+  grid-template-columns: 7.75rem minmax(0, 1fr) 15rem 14rem;
+  grid-template-areas: "countdown main date source";
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-2) var(--space-4) var(--space-2) 36px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -5301,7 +5355,8 @@ adminbot-deadlines-view {
 
 /* A conference span ("Apr 26 – Apr 30, 2027") is longer than any AoE cutoff and must wrap rather
    than push the name column off the row. */
-.deadline-group__row--milestone .deadline-group__row-date {
+.deadline-group__row--milestone .deadline-group__summary-date,
+.deadline-group__row-date {
   color: var(--muted);
   white-space: normal;
 }
@@ -5350,7 +5405,8 @@ adminbot-deadlines-view {
 }
 
 .deadline-group__row-date-wrap {
-  display: inline-flex;
+  min-width: 0;
+  display: block;
   grid-area: date;
   align-items: center;
   gap: 2px;
@@ -5379,28 +5435,36 @@ adminbot-deadlines-view {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 13.5rem;
-  padding: 12px 12px 12px 15px;
+  padding: var(--space-4);
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-xl);
   background: var(--card);
 }
 
-.deadline-card:hover {
-  border-color: color-mix(in srgb, var(--deadline-urgency) 50%, var(--border-strong));
-}
-
 .deadline-card__topline {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-1) var(--space-2);
+}
+
+.deadline-card__topline > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.deadline-card__topline .deadline-card__urgency {
+  margin-left: auto;
+  white-space: normal;
+  text-align: right;
 }
 
 .deadline-card__urgency {
   padding: 2px var(--space-2);
-  font-family: var(--mono);
+  font-family: inherit;
   font-size: 0.6875rem;
   white-space: nowrap;
 }
@@ -5415,8 +5479,8 @@ adminbot-deadlines-view {
   border-radius: var(--radius-sm);
   font-family: var(--mono);
   font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-weight: 500;
+  letter-spacing: 0.02em;
   line-height: 1.2;
   text-transform: uppercase;
   white-space: nowrap;
@@ -5490,12 +5554,17 @@ adminbot-deadlines-view {
 }
 
 .deadline-archival {
-  background: var(--bg-muted);
+  cursor: pointer;
+  padding: 0;
+  border: 0;
+  font-family: inherit;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  gap: var(--space-1);
+  background: transparent;
   color: var(--muted-strong);
-}
-
-.deadline-board__hero-meta .deadline-classification {
-  margin-left: var(--space-1);
 }
 
 .deadline-card__urgency {
@@ -5523,7 +5592,7 @@ adminbot-deadlines-view {
 }
 
 .deadline-card__name {
-  margin: var(--space-3) 0 var(--space-1);
+  margin: var(--space-2) 0 var(--space-1);
   color: var(--text-strong);
   font-size: 0.9375rem;
   font-weight: 600;
@@ -5540,7 +5609,7 @@ adminbot-deadlines-view {
 .deadline-group__row-name a,
 .deadline-table__name a {
   color: inherit;
-  text-decoration-color: var(--border-strong);
+  text-decoration: none;
   text-underline-offset: 3px;
 }
 
@@ -5553,7 +5622,7 @@ adminbot-deadlines-view {
 .deadline-table__name a:hover,
 .deadline-table__name a:focus-visible {
   color: inherit;
-  text-decoration-color: currentcolor;
+  text-decoration: underline;
 }
 
 .deadline-card__group,
@@ -5565,6 +5634,10 @@ adminbot-deadlines-view {
   line-height: 1.45;
 }
 
+.deadline-card__note {
+  margin-block-start: var(--space-2);
+}
+
 .deadline-card__group {
   display: flex;
   align-items: baseline;
@@ -5573,7 +5646,11 @@ adminbot-deadlines-view {
   white-space: nowrap;
 }
 
-.deadline-card > .deadline-classification {
+.deadline-card__context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
   margin-top: var(--space-1);
 }
 
@@ -5584,7 +5661,9 @@ adminbot-deadlines-view {
 }
 
 .deadline-card__stage {
-  flex: 0 0 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .deadline-card__date {
@@ -5597,7 +5676,8 @@ adminbot-deadlines-view {
    countdown, so it never competes with the submission date above it. */
 .deadline-card__schedule {
   display: grid;
-  grid-template-columns: 1fr auto;
+  align-items: first baseline;
+  grid-template-columns: minmax(4.5rem, 1fr) minmax(0, auto);
   gap: 2px var(--space-2);
   margin: var(--space-1) 0 0;
   padding: 0;
@@ -5619,10 +5699,15 @@ adminbot-deadlines-view {
 }
 
 .deadline-card__milestone-date {
+  min-width: 0;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
-  white-space: nowrap;
+  white-space: normal;
+}
+
+.deadline-card__milestone-date > span {
+  display: inline-block;
 }
 
 .deadline-card__schedule-details {
@@ -5643,7 +5728,6 @@ adminbot-deadlines-view {
 .deadline-card__schedule-details .deadline-card__schedule {
   margin-top: 0;
 }
-
 
 .deadline-card__date-row,
 .deadline-table__date-row {
@@ -5675,10 +5759,11 @@ adminbot-deadlines-view {
 .deadline-card__actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: var(--space-1);
   margin-top: auto;
-  padding-top: var(--space-3);
+  padding-top: var(--space-2);
 }
 
 .deadline-card__history {
@@ -5723,11 +5808,11 @@ adminbot-deadlines-view {
   color: var(--accent-hover);
 }
 
-
 .deadline-card__history-panel[popover] {
   position: fixed;
   position-area: block-start span-inline-end;
-  width: 320px;
+  position-try-fallbacks: flip-block, flip-inline;
+  width: 380px;
   max-width: calc(100vw - 2 * var(--space-4));
   max-height: min(24rem, calc(100vh - 2 * var(--space-4)));
   margin: 0 0 var(--space-2);
@@ -5780,11 +5865,13 @@ adminbot-deadlines-view {
 }
 
 .deadline-details__footer > .btn {
+  justify-self: stretch;
+  white-space: nowrap;
   justify-content: center;
   min-height: 36px;
 }
 
-.deadline-card__history-panel ul {
+.deadline-details__history ul {
   margin: var(--space-2) 0 0;
   padding-left: var(--space-5);
 }
@@ -5834,6 +5921,8 @@ adminbot-deadlines-view {
 }
 
 .deadline-table-wrap {
+  position: relative;
+  min-width: 0;
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--border-strong);
@@ -5875,13 +5964,92 @@ adminbot-deadlines-view {
   border-bottom: 0;
 }
 
-.deadline-table tbody tr:hover td {
+.deadline-table tbody tr:hover {
   background: var(--bg-muted);
 }
 
-.deadline-table tr[data-entry-type="workshop"] td {
+.deadline-table tr[data-entry-type="workshop"] {
   background: color-mix(in srgb, var(--card) 88%, var(--bg-muted));
   color: var(--muted);
+}
+
+/* Opaque padding-box fill keeps the border gradient out of the card interior. */
+:is(.deadline-card, .deadline-board__hero, .deadline-group)[data-urgency] {
+  --deadline-surface: var(--card);
+  --deadline-edge: var(--border-strong);
+  border-color: transparent;
+  background:
+    linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--deadline-urgency, transparent) 5%, var(--deadline-surface)),
+        var(--deadline-surface) 65%
+      )
+      padding-box,
+    linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--deadline-urgency, var(--deadline-edge)) 65%, var(--deadline-edge)),
+        var(--deadline-edge) 65%
+      )
+      border-box;
+}
+
+:is(.deadline-card, .deadline-board__hero)[data-entry-type="workshop"] {
+  --deadline-surface: color-mix(in srgb, var(--card) 88%, var(--bg-muted));
+}
+
+.deadline-group__row[data-entry-type],
+.deadline-table tbody tr[data-entry-type],
+.deadline-group__summary:hover,
+.deadline-group__row:hover,
+.deadline-table tbody tr:hover {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--deadline-urgency, transparent) 5%, transparent),
+    transparent 65%
+  );
+}
+
+/* Mark the left edge once per row; only rounded outer containers curve the stripe. */
+:is(.deadline-card, .deadline-board__hero, .deadline-group__row):is(
+  [data-urgency="critical"],
+  [data-urgency="soon"],
+  [data-urgency="planned"],
+  [data-urgency="distant"]
+),
+.deadline-group:is(
+    [data-urgency="critical"],
+    [data-urgency="soon"],
+    [data-urgency="planned"],
+    [data-urgency="distant"]
+  )
+  > .deadline-group__summary,
+.deadline-table
+  tbody
+  tr:is(
+    [data-urgency="critical"],
+    [data-urgency="soon"],
+    [data-urgency="planned"],
+    [data-urgency="distant"]
+  )
+  > td:first-child {
+  box-shadow: inset 2px 0 0 var(--deadline-urgency);
+}
+
+.deadline-group__summary {
+  border-top-left-radius: var(--radius-xl);
+  border-bottom-left-radius: var(--radius-xl);
+}
+
+.deadline-group > .deadline-group__row:first-child {
+  border-top-left-radius: var(--radius-xl);
+}
+
+.deadline-group > .deadline-group__row:last-child {
+  border-bottom-left-radius: var(--radius-xl);
+}
+
+.deadline-group[data-open] > .deadline-group__summary {
+  border-bottom-left-radius: 0;
 }
 
 .deadline-table__countdown {
@@ -5937,6 +6105,13 @@ adminbot-deadlines-view {
 
 .deadline-table .deadline-card__labels {
   flex-wrap: nowrap;
+  width: max-content;
+  max-width: none;
+}
+.deadline-table .deadline-card__labels > *,
+.deadline-table .deadline-archival {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .deadline-table .deadline-card__source--button {
@@ -5957,68 +6132,87 @@ adminbot-deadlines-view {
   text-align: center;
 }
 
-.deadline-board__foot {
-  margin: var(--space-6) 0 0;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-xs);
+/* Personal actions participate in the same wrapping row as source links. */
+.deadline-card__personal-actions {
+  display: contents;
+}
+.deadline-board .deadline-card__timeline-button,
+.deadline-board .deadline-card__timeline-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.deadline-board .deadline-card__timeline-button {
+  background: transparent;
+  color: inherit;
+}
+.deadline-card__timeline-error {
+  flex-basis: 100%;
+  order: 1;
+  color: var(--danger);
+  font-size: 12px;
+  white-space: normal;
+  text-align: end;
 }
 
-.deadline-board__guide {
-  margin: calc(-1 * var(--space-2)) 0 var(--space-5);
-  color: var(--muted);
+.deadline-archival__explanation[popover] {
+  position: fixed;
+  position-area: block-end span-inline-end;
+  position-try-fallbacks: flip-block, flip-inline;
+  width: 280px;
+  max-width: calc(100vw - 2 * var(--space-4));
+  margin: var(--space-2) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-md);
   font-size: var(--control-ui-text-sm);
+  white-space: normal;
 }
 
-.deadline-board__guide summary {
-  width: max-content;
-  color: var(--text);
-  cursor: pointer;
+.deadline-archival__explanation strong {
+  display: block;
+  margin-bottom: var(--space-1);
 }
 
-.deadline-board__guide dl {
-  display: grid;
-  gap: var(--space-2);
-  max-width: 46rem;
-  margin: var(--space-3) 0 0;
-  padding-left: var(--space-4);
-  border-left: 2px solid var(--border-strong);
-}
-
-.deadline-board__guide dl > div {
-  display: grid;
-  grid-template-columns: 7rem minmax(0, 1fr);
-  gap: var(--space-3);
-}
-
-.deadline-board__guide dt {
-  color: var(--text-strong);
-  font-weight: 600;
-}
-
-.deadline-board__guide dd {
-  margin: 0;
-}
-
-@container deadline-board (max-width: 43em) {
+@container deadline-board (max-width: 64em) {
   .deadline-group__summary {
-    grid-template-columns: 1rem minmax(0, 1fr);
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--space-1) var(--space-2);
   }
 
   .deadline-group__summary-countdown {
-    grid-row: 2;
-    grid-column: 2;
+    grid-row: 3;
+    grid-column: 1;
   }
 
   .deadline-group__heading {
     grid-row: 1;
-    grid-column: 2;
+    grid-column: 1 / -1;
+  }
+
+  .deadline-group__summary-date {
+    grid-row: 2;
+    grid-column: 1 / -1;
   }
 
   .deadline-group__count {
     grid-row: 3;
     grid-column: 2;
-    justify-self: start;
+    max-width: 10rem;
+    text-align: right;
+    justify-self: end;
   }
 }
 
@@ -6042,7 +6236,7 @@ adminbot-deadlines-view {
   }
 
   .deadline-proposal-drawer {
-    width: 100vw;
+    width: 100%;
     border-left: 0;
   }
 
@@ -6058,12 +6252,8 @@ adminbot-deadlines-view {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .deadline-board__controls {
-    grid-template-columns: 1fr;
-  }
-
   .deadline-board__groups {
-    grid-column: 1;
+    grid-column: 1 / -1;
   }
 
   .deadline-board__facet {
@@ -6081,13 +6271,13 @@ adminbot-deadlines-view {
   }
 
   .deadline-card__schedule {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(4.5rem, 1fr) minmax(0, auto);
+    align-items: baseline;
   }
 
-  .deadline-card__milestone-label,
-  .deadline-card__milestone-date {
-    white-space: normal;
-    overflow-wrap: anywhere;
+  .deadline-card__milestone-label {
+    white-space: nowrap;
+    overflow-wrap: normal;
   }
 
   .deadline-board__hero-countdown,
@@ -6102,7 +6292,6 @@ adminbot-deadlines-view {
     max-width: 100%;
   }
 
-  .deadline-board__guide summary,
   .deadline-board__header-actions button,
   .deadline-board__groups button,
   .deadline-board__period button,
@@ -6158,37 +6347,71 @@ adminbot-deadlines-view {
 }
 
 @container deadline-board (max-width: 64em) {
+  .deadline-group__summary-countdown,
+  .deadline-group__row-countdown {
+    white-space: nowrap;
+  }
+
   .deadline-group__row {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-      "countdown"
-      "date"
-      "main"
-      "source";
-    gap: var(--space-2) var(--space-4);
-  }
-
-  .deadline-group__row .deadline-card__source {
-    justify-self: start;
-  }
-
-  .deadline-group__row .deadline-card__actions {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
+      "main main"
+      "date date"
+      "countdown source";
+    gap: var(--space-1) var(--space-3);
   }
 }
 
 @container deadline-board (max-width: 34em) {
+  .deadline-group__row {
+    grid-template-columns: max-content minmax(0, 1fr);
+    grid-template-areas:
+      "main main"
+      "date date"
+      "countdown source";
+  }
+
+  .deadline-group__row--milestone {
+    grid-template-areas: "main main" "date date";
+  }
+}
+
+/* Keep personal actions clear of the countdown on narrow phones. */
+@container deadline-board (max-width: 21em) {
+  .deadline-group__row:has(.deadline-card__personal-actions) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "main" "date" "countdown" "source";
+  }
+}
+
+/* Enlarged text needs a full row when parallel fields no longer fit. */
+@container deadline-board (max-width: 12em) {
+  .deadline-group__row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "main" "date" "countdown" "source";
+  }
+  .deadline-group__row--milestone {
+    grid-template-areas: "main" "date";
+  }
+  .deadline-group__row-countdown {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+@container deadline-board (max-width: 34em) {
+  .deadline-board__hero-countdown {
+    font-size: 1.375rem;
+  }
+
   .deadline-board__grid {
     grid-template-columns: 1fr;
   }
 
-  .deadline-board__guide dl > div {
-    grid-template-columns: 1fr;
-    gap: 0;
+  .deadline-board__hero {
+    padding: var(--space-5);
   }
 
-  .deadline-board__hero,
   .deadline-card {
     padding: var(--space-4);
   }
@@ -6196,15 +6419,13 @@ adminbot-deadlines-view {
   .deadline-board__hero-countdown {
     gap: var(--space-2);
   }
-
-  .deadline-board__countdown-unit strong {
-    font-size: 1.5rem;
-  }
 }
 
-/* ===========================================
+/* ====================================}
+
    AdminBot primitives
-   ===========================================
+   ====================================}
+
 
    One vocabulary for the lab's own surfaces. Before this, each AdminBot view invented its own
    label, chip, row and empty state, so thirteen pages of one product read as thirteen products.
@@ -6738,7 +6959,8 @@ adminbot-deadlines-view {
   line-height: 1.5;
 }
 
-/* ===========================================
+/* ====================================}
+
    Lab Sharing
    =========================================== */
 
@@ -10238,8 +10460,8 @@ adminbot-deadlines-view {
 }
 
 /* Inside a deck every card shares one transparency; state still reads via the status pill. */
-.my-work-item .paper-slot-deck .paper-slot,
-.my-work-item .paper-slot-deck .paper-slot--blocked {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slot-deck .paper-slot,
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slot-deck .paper-slot--blocked {
   opacity: 1;
   background: color-mix(in srgb, var(--branch-accent) 1%, transparent);
 }
@@ -10329,7 +10551,7 @@ adminbot-deadlines-view {
    groups so open/closed behavior and surfaces are indistinguishable. Block flow, not the
    flex+gap paper-slots.css gives these -- otherwise every child gets an even 12px gap and the
    rhythm stops matching the branches. */
-.my-work-item details.paper-cycle__group {
+:is(.my-work-item, .paper-legacy__card-parts) details.paper-cycle__group {
   display: block;
   gap: 0;
   margin-top: var(--space-4);
@@ -10340,7 +10562,7 @@ adminbot-deadlines-view {
   background: var(--branch-accent-subtle);
 }
 
-.my-work-item details.paper-cycle__group[open] {
+:is(.my-work-item, .paper-legacy__card-parts) details.paper-cycle__group[open] {
   padding-bottom: var(--space-4);
 }
 
@@ -10383,7 +10605,7 @@ adminbot-deadlines-view {
 
 /* The panels sat flush under the note and against each other; give each its own air so the
    section breathes like the checklist grids. */
-.my-work-item details.paper-cycle__group .paper-cycle__draft {
+:is(.my-work-item, .paper-legacy__card-parts) details.paper-cycle__group .paper-cycle__draft {
   margin-top: var(--space-3);
 }
 
@@ -10391,7 +10613,7 @@ adminbot-deadlines-view {
    Scoped to .my-work-item (not .paper-slots): the Social Drafts block reuses these title
    classes from OUTSIDE the checklist container, and paper-slots.css (imported last) ships
    quieter defaults for exactly these selectors. Subtle bumps only. */
-.my-work-item .paper-slots__group-title {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__group-title {
   margin: 0;
   /* Explicit scale, not em: 1.05em inherited the card's body size and ballooned. Sentence case,
      too -- paper-slots.css uppercases this heading and nothing had unset it. */
@@ -10407,7 +10629,7 @@ adminbot-deadlines-view {
 
 /* Icon badges center their glyph instead of faking it with padding arithmetic. Fixed pixels --
    em here kept inheriting whatever the surrounding section's type scale was. */
-.my-work-item .paper-slots__group-icon {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__group-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -10417,25 +10639,25 @@ adminbot-deadlines-view {
   padding: 0;
 }
 
-.my-work-item .paper-slots__group-icon svg {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__group-icon svg {
   width: 15px;
   height: 15px;
 }
 
 /* The globe glyph fills its viewBox edge-to-edge, so at the shared size it out-punches the
    other icons -- give the cycle sections' badges a smaller frame. */
-.my-work-item .paper-cycle .paper-slots__group-icon {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-cycle .paper-slots__group-icon {
   width: 22px;
   height: 22px;
 }
 
-.my-work-item .paper-cycle .paper-slots__group-icon svg {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-cycle .paper-slots__group-icon svg {
   width: 12px;
   height: 12px;
 }
 
 /* The disclosure header row: whole strip is the click target, chevron flips on open. */
-.my-work-item .paper-slots__group-head {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__group-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -10447,11 +10669,11 @@ adminbot-deadlines-view {
   margin-inline: calc(-1 * var(--space-2));
 }
 
-.my-work-item .paper-slots__group-head::-webkit-details-marker {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__group-head::-webkit-details-marker {
   display: none;
 }
 
-.my-work-item .paper-slots__group-chevron {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__group-chevron {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -10462,14 +10684,14 @@ adminbot-deadlines-view {
   transition: transform var(--duration-fast) var(--ease-out);
 }
 
-.my-work-item .paper-slots__group-chevron svg {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__group-chevron svg {
   width: 14px;
   height: 14px;
   stroke: currentColor;
   fill: none;
 }
 
-.my-work-item details[open] > .paper-slots__group-head {
+:is(.my-work-item, .paper-legacy__card-parts) details[open] > .paper-slots__group-head {
   margin-bottom: var(--space-3);
 }
 
@@ -10532,50 +10754,56 @@ adminbot-deadlines-view {
 
 /* The active card owns the row: full width, natural height (the old grid forced a tall
    minimum on every card whether it needed it or not). */
-.my-work-item .paper-slot-deck .paper-slot {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slot-deck .paper-slot {
   width: 100%;
   min-height: 0;
 }
 
 /* Branch blurbs ride up under the header with a negative top margin; the cycle section's
    first line is a .paper-slot__note with none, so mirror it or the gap reads bigger. */
-.my-work-item details.paper-cycle__group > .paper-slots__group-head + .paper-slot__note {
+:is(.my-work-item, .paper-legacy__card-parts)
+  details.paper-cycle__group
+  > .paper-slots__group-head
+  + .paper-slot__note {
   margin-top: calc(-1 * var(--space-2));
 }
 
-.my-work-item details[open] > .paper-slots__group-head .paper-slots__group-chevron {
+:is(.my-work-item, .paper-legacy__card-parts)
+  details[open]
+  > .paper-slots__group-head
+  .paper-slots__group-chevron {
   transform: rotate(180deg);
 }
 
 /* Closed sections collapse to a thin strip; open ones keep room for the body. Same paddings on
    every section so all strips share one height. */
-.my-work-item details.paper-slots__group,
-.my-work-item details.paper-cycle__group {
+:is(.my-work-item, .paper-legacy__card-parts) details.paper-slots__group,
+:is(.my-work-item, .paper-legacy__card-parts) details.paper-cycle__group {
   padding: var(--space-2) var(--space-4);
 }
 
-.my-work-item details.paper-slots__group[open],
-.my-work-item details.paper-cycle__group[open] {
+:is(.my-work-item, .paper-legacy__card-parts) details.paper-slots__group[open],
+:is(.my-work-item, .paper-legacy__card-parts) details.paper-cycle__group[open] {
   padding-bottom: var(--space-4);
 }
 
 /* Open state: the header gets air before the blurb/body starts. */
-.my-work-item .paper-slots__group-blurb {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__group-blurb {
   margin-top: var(--space-3);
 }
 
-.my-work-item .paper-slots__group-icon {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__group-icon {
   width: 1.7em;
   height: 1.7em;
   padding: 0.3em;
 }
 
-.my-work-item .paper-slots__group-icon svg {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__group-icon svg {
   width: 15px;
   height: 15px;
 }
 
-.my-work-item .paper-slots__group-blurb {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__group-blurb {
   font-style: normal;
   opacity: 1;
   font-size: 0.85em;
@@ -10622,7 +10850,7 @@ adminbot-deadlines-view {
 /* Native option popups need an explicit, themed foreground and background. */
 select.target__select option,
 select.target__select optgroup,
-.my-work-item select.input option {
+:is(.my-work-item, .paper-legacy__card-parts) select.input option {
   background: var(--bg-elevated);
   color: var(--text);
 }
@@ -10739,7 +10967,7 @@ select.target__select optgroup {
 /* â”€â”€ Venue decision: same section treatment, venue blue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    One --vd-text drives the whole component: heading, field captions, and the controls
    themselves (text, border, ground) all read the current state's hue. */
-.my-work-item .paper-acceptance {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-acceptance {
   --vd-text: #9db2c6;
   border: 1px solid rgba(135, 177, 217, 0.16);
   border-top: 3px solid rgba(78, 134, 186, 0.35);
@@ -10748,7 +10976,7 @@ select.target__select optgroup {
   padding: var(--space-3);
 }
 
-.my-work-item .paper-acceptance::before {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-acceptance::before {
   content: "Venue Decision";
   grid-column: 1 / -1;
   margin-bottom: var(--space-2);
@@ -10759,21 +10987,24 @@ select.target__select optgroup {
 }
 
 /* The section heading already says it; the first field's own caption is a duplicate. */
-.my-work-item .paper-acceptance .paper-acceptance__field:first-of-type > .register__label {
+:is(.my-work-item, .paper-legacy__card-parts)
+  .paper-acceptance
+  .paper-acceptance__field:first-of-type
+  > .register__label {
   display: none;
 }
 
-.my-work-item .paper-acceptance .register__label {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-acceptance .register__label {
   color: var(--vd-text);
 }
 
-.my-work-item .paper-acceptance .input {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-acceptance .input {
   color: var(--vd-text);
   border-color: color-mix(in srgb, var(--vd-text) 30%, transparent);
   background: color-mix(in srgb, var(--vd-text) 3%, var(--bg));
 }
 
-.my-work-item .paper-acceptance select.input {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-acceptance select.input {
   appearance: none;
   -webkit-appearance: none;
   padding-right: 2.2em;
@@ -10786,12 +11017,12 @@ select.target__select optgroup {
 /* The open dropdown paints its own surface, so the state hue has to be restated for its
    options -- --vd-text inherits this far, the flat dark-option rule further up does not win.
    The background mixes a visible share of the state hue; text matches. */
-.my-work-item .paper-acceptance select option {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-acceptance select option {
   background: color-mix(in srgb, var(--vd-text) 14%, #141417);
   color: var(--vd-text);
 }
 
-.my-work-item .paper-acceptance select option:checked {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-acceptance select option:checked {
   background: color-mix(in srgb, var(--vd-text) 24%, #141417);
 }
 
@@ -10799,14 +11030,14 @@ select.target__select optgroup {
    as data-decision (attribute selectors work in every browser, unlike :has()), and --vd-text
    carries the hue into the heading, captions, controls, and the open dropdown's options.
    Pending keeps the neutral-blue base above. */
-.my-work-item .paper-acceptance[data-decision="accept"] {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-acceptance[data-decision="accept"] {
   --vd-text: #8fc7a4;
   border-color: rgba(47, 158, 91, 0.18);
   border-top-color: rgba(47, 158, 91, 0.3);
   background: color-mix(in srgb, #2f9e5b 1%, var(--bg));
 }
 
-.my-work-item .paper-acceptance[data-decision="reject"] {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-acceptance[data-decision="reject"] {
   --vd-text: #d9a8a2;
   border-color: rgba(209, 69, 59, 0.16);
   border-top-color: rgba(209, 69, 59, 0.3);
@@ -10815,7 +11046,7 @@ select.target__select optgroup {
 
 /* Completion row: hint on the left edge, action button on the right edge. The DOM order is
    [button, hint] (or [done-note, reopen]), so reverse the axis and split the free space. */
-.my-work-item .paper-completion {
+:is(.my-work-item, .paper-legacy__card-parts) .paper-completion {
   flex-direction: row-reverse;
   justify-content: space-between;
 }
@@ -10884,16 +11115,44 @@ select.target__select optgroup {
 }
 
 /* Keep bulk visibility controls in the document flow, including on narrow screens. */
-.paper-visibility__panel { padding: var(--space-3); max-width: min(520px, 100%); }
-.paper-visibility__list { max-height: 280px; overflow: auto; margin-block: var(--space-3); }
-.paper-visibility__list label { display: flex; align-items: start; gap: var(--space-2); margin-block: var(--space-2); overflow-wrap: anywhere; }
-.paper-visibility__panel > label { display: grid; gap: var(--space-2); margin-block: var(--space-2); }
-adminbot-paper-visibility { display: block; min-width: 0; margin-bottom: var(--space-3); }
+.paper-visibility__panel {
+  padding: var(--space-3);
+  max-width: min(520px, 100%);
+}
+.paper-visibility__list {
+  max-height: 280px;
+  overflow: auto;
+  margin-block: var(--space-3);
+}
+.paper-visibility__list label {
+  display: flex;
+  align-items: start;
+  gap: var(--space-2);
+  margin-block: var(--space-2);
+  overflow-wrap: anywhere;
+}
+.paper-visibility__panel > label {
+  display: grid;
+  gap: var(--space-2);
+  margin-block: var(--space-2);
+}
+adminbot-paper-visibility {
+  display: block;
+  min-width: 0;
+  margin-bottom: var(--space-3);
+}
 
 @media (max-width: 600px) {
-  .decision-banner__row > .decision-banner__label { flex-basis: 100%; }
-  .my-work__section-head { flex-direction: column; align-items: stretch; }
-  .my-work .my-work__section-actions { justify-content: flex-start; }
+  .decision-banner__row > .decision-banner__label {
+    flex-basis: 100%;
+  }
+  .my-work__section-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .my-work .my-work__section-actions {
+    justify-content: flex-start;
+  }
 }
 
 /* "Zhijing's updates": the archive under the current broadcast. A plain list rather than cards --
@@ -10926,4 +11185,1135 @@ adminbot-paper-visibility { display: block; min-width: 0; margin-bottom: var(--s
 
 .lab-sharing-status__retracted {
   font-style: italic;
+}
+
+@container deadline-board (max-width: 34em) {
+  .deadline-board__controls {
+    margin-bottom: var(--space-3);
+  }
+
+  .deadline-board__search input,
+  .deadline-board__facet select,
+  .deadline-board__timezone input,
+  .deadline-board__groups button,
+  .deadline-board__period button,
+  .deadline-board__view button {
+    min-height: 32px;
+    padding-inline: 8px;
+  }
+
+  .deadline-board__search input,
+  .deadline-board__facet select,
+  .deadline-board__timezone input {
+    font-size: 12px;
+  }
+
+  .deadline-board__facet select,
+  .deadline-board__timezone input {
+    padding-right: 24px;
+  }
+
+  .deadline-board__groups {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 2px;
+    scroll-padding-inline: 2px;
+  }
+
+  .deadline-board__groups button,
+  .deadline-board__period button,
+  .deadline-board__view button {
+    min-height: 28px;
+  }
+
+  .deadline-board__groups button {
+    flex: 0 0 auto;
+  }
+
+  .deadline-board__modes {
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+
+  .deadline-board__period button,
+  .deadline-board__view button {
+    padding-inline: var(--space-2);
+    min-width: 28px;
+  }
+}
+
+@container deadline-board (max-width: 21em) {
+  .deadline-board__controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Shared urgency accents and typography across deadline presentations. */
+.deadline-board [data-urgency] {
+  --deadline-glow-stripe: var(--deadline-urgency);
+  --deadline-glow-edge: color-mix(in srgb, var(--deadline-urgency) 65%, var(--deadline-edge));
+  --deadline-glow-clock: var(--deadline-urgency);
+}
+.deadline-board :is([data-entry-type="workshop"], [data-group-kind="workshops"]) {
+  --text: var(--muted);
+}
+.deadline-board [data-entry-type]:not([data-entry-type="workshop"]) {
+  --muted: color-mix(in srgb, var(--text-strong) 94%, var(--card));
+  --muted-strong: color-mix(in srgb, var(--text-strong) 96%, var(--card));
+}
+/* Only the outer surface owns the rounded illuminated edge. */
+.deadline-board :is(.deadline-card, .deadline-board__hero, .deadline-group)[data-urgency] {
+  background:
+    linear-gradient(var(--deadline-surface), var(--deadline-surface)) padding-box,
+    linear-gradient(90deg, var(--deadline-glow-edge), var(--deadline-edge) 108px) border-box;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow:
+    inset 2px 0 0 var(--deadline-glow-stripe),
+    var(--deadline-glow-edge-glow);
+}
+.deadline-board :is(.deadline-group__row, .deadline-group__summary, .deadline-table tbody tr) {
+  background-image: none;
+}
+.deadline-board .deadline-group[data-urgency] > .deadline-group__summary {
+  box-shadow: none;
+}
+.deadline-board .deadline-group__row,
+.deadline-board .deadline-table tbody tr > td:first-child {
+  box-shadow: inset 2px 0 0 var(--deadline-glow-stripe);
+}
+.deadline-board .deadline-group--standalone > .deadline-group__row {
+  box-shadow: none;
+}
+.deadline-board
+  :is(
+    .deadline-card,
+    .deadline-board__hero,
+    .deadline-group,
+    .deadline-group__row
+  )[data-urgency="unknown"],
+.deadline-board
+  :is(
+    .deadline-card,
+    .deadline-board__hero,
+    .deadline-group,
+    .deadline-group__row
+  )[data-urgency="passed"] {
+  box-shadow: none;
+  background: var(--deadline-surface);
+}
+/* Countdown typography is explicit; metadata never inherits it from a button. */
+.deadline-board
+  :is(
+    .deadline-board__hero-countdown,
+    .deadline-card__countdown,
+    .deadline-group__summary-countdown,
+    .deadline-group__row-countdown,
+    .deadline-table__countdown
+  ) {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--deadline-glow-clock) !important;
+  text-shadow: var(--deadline-glow-clock-glow);
+}
+.deadline-board
+  :is(
+    .deadline-card__date,
+    .deadline-board__hero-date,
+    .deadline-card__milestone-date,
+    .deadline-group__row-date,
+    .deadline-group__summary-date,
+    .deadline-table__date,
+    .deadline-card__type,
+    .deadline-card__source,
+    .deadline-card__source--button,
+    .deadline-date,
+    .deadline-time,
+    .deadline-group__section-head
+  ) {
+  font-family: inherit;
+}
+.deadline-board :is(.deadline-date, .deadline-time, .deadline-card__milestone-date) {
+  color: var(--muted);
+}
+.deadline-board
+  :is([data-testid="deadline-my-proposals"], [data-testid^="deadline-group-"])
+  > span {
+  font-family: inherit;
+}
+/* Pills reflect the same emphasis as the deadline they belong to. */
+.deadline-board .deadline-card__urgency {
+  color: var(--deadline-glow-clock);
+  background: color-mix(in srgb, var(--deadline-urgency) 9%, var(--card));
+}
+
+.deadline-board [data-urgency="passed"] .deadline-card__urgency {
+  box-shadow: none;
+}
+.deadline-location + .deadline-classification {
+  gap: 4px;
+}
+.deadline-meta-separator[hidden] {
+  display: none;
+}
+.deadline-board
+  [data-entry-type="workshop"]
+  :is(.btn, .deadline-card__source, .deadline-card__actions, deadline-recommendation) {
+  color: var(--muted);
+}
+.deadline-board [data-entry-type="workshop"] :is(.btn, .deadline-card__source):hover {
+  color: var(--text-strong);
+}
+.deadline-board .deadline-group[data-group-kind="workshops"] .deadline-group__heading strong {
+  color: var(--muted);
+}
+/* A compact type scale, independent of conference/workshop emphasis. */
+.deadline-board .deadline-card__name {
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  margin-block: 6px 3px;
+}
+.deadline-board .deadline-board__hero-name {
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  margin-top: 4px;
+}
+.deadline-board
+  :is(
+    .deadline-card__date,
+    .deadline-board__hero-date,
+    .deadline-group__row-date,
+    .deadline-group__summary-date,
+    .deadline-table__date
+  ) {
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 500;
+}
+.deadline-board
+  :is(.deadline-card__group, .deadline-card__schedule, .deadline-location, .deadline-archival) {
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 400;
+}
+.deadline-board :is(.deadline-card__type, .deadline-card__urgency) {
+  font-size: 11px;
+  line-height: 1.3;
+  font-weight: 500;
+}
+.deadline-board .deadline-card__type {
+  letter-spacing: 0.045em;
+}
+.deadline-board .deadline-card__countdown {
+  font-size: 22px;
+  line-height: 1.2;
+}
+.deadline-board .deadline-card__source {
+  font-size: 11px;
+  line-height: 1.3;
+}
+.deadline-board .deadline-group__heading strong {
+  font-weight: 600;
+}
+.deadline-board .deadline-group__row-name {
+  font-weight: 600;
+}
+.deadline-board .deadline-card__milestone-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+.deadline-board .deadline-board__eyebrow {
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--text-strong);
+  margin-bottom: 4px;
+}
+html[data-theme="light"] .deadline-board [data-urgency] {
+  --deadline-glow-clock-glow: none;
+}
+
+/* Table rows need their own edge tokens rather than card-only variables. */
+.deadline-board .deadline-table tbody tr[data-urgency] {
+  --deadline-surface: var(--card);
+  --deadline-edge: var(--border-strong);
+}
+.deadline-board
+  .deadline-table
+  tbody
+  tr:is([data-urgency="unknown"], [data-urgency="passed"])
+  > td:first-child {
+  box-shadow: none;
+}
+.deadline-board .deadline-group[data-group-kind="workshops"] .deadline-group__heading small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.deadline-board
+  .deadline-group[data-group-kind="workshops"]
+  .deadline-group__heading
+  small::before {
+  content: "Workshop";
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--muted) 55%, var(--border-strong));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  color: var(--muted);
+  font: 500 11px/1.3 inherit;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+/* The outer footer owns spacing, even when it wraps multiple action groups. */
+.deadline-board .deadline-card > .deadline-recommendation-actions {
+  margin-top: auto;
+  padding-top: 12px;
+}
+.deadline-board .deadline-card > .deadline-recommendation-actions > .deadline-card__actions {
+  margin-top: 0;
+  padding-top: 0;
+}
+/* Shared urgency glow, independent of venue type. */
+.deadline-board [data-urgency] {
+  --deadline-glow-clock-glow: 0 0 7px color-mix(in srgb, var(--deadline-urgency) 32%, transparent);
+  --deadline-glow-pill-glow: 0 0 8px color-mix(in srgb, var(--deadline-urgency) 24%, transparent);
+}
+
+.deadline-board .deadline-card__urgency {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--deadline-urgency) 65%, transparent),
+    var(--deadline-glow-pill-glow);
+}
+
+/* One edge treatment per surface; nested rows never inherit a second glow. */
+.deadline-board [data-urgency] {
+  --deadline-glow-glow-strength: 90%;
+  --deadline-glow-edge-glow: inset 5px 0 5px -4px
+    color-mix(in srgb, var(--deadline-glow-stripe) var(--deadline-glow-glow-strength), transparent);
+}
+.deadline-board [data-urgency="unknown"] {
+  --deadline-urgency: var(--muted);
+  --deadline-glow-stripe: var(--muted);
+  --deadline-glow-edge: color-mix(in srgb, var(--muted) 65%, var(--border-strong));
+}
+.deadline-board
+  :is(.deadline-card, .deadline-board__hero, .deadline-group)[data-urgency="unknown"] {
+  background:
+    linear-gradient(var(--deadline-surface), var(--deadline-surface)) padding-box,
+    linear-gradient(90deg, var(--deadline-glow-edge), var(--border-strong) 108px) border-box;
+  border-color: transparent;
+  box-shadow:
+    inset 2px 0 0 var(--deadline-glow-stripe),
+    var(--deadline-glow-edge-glow);
+}
+.deadline-board .deadline-group[data-open] {
+  box-shadow: none;
+}
+.deadline-board .deadline-group[data-open] > .deadline-group__summary {
+  box-shadow:
+    inset 2px 0 0 var(--deadline-glow-stripe),
+    var(--deadline-glow-edge-glow);
+}
+.deadline-board .deadline-group__section {
+  position: relative;
+}
+.deadline-board .deadline-group__shared-policy,
+.deadline-board .deadline-group__section-head {
+  position: relative;
+  --deadline-glow-stripe: var(--muted);
+  --deadline-glow-edge-glow: inset 5px 0 5px -4px
+    color-mix(in srgb, var(--deadline-glow-stripe) 65%, transparent);
+  box-shadow: var(--deadline-glow-edge-glow);
+}
+.deadline-board
+  :is(.deadline-group__section, .deadline-workshop-schedule)
+  > .deadline-group__row[data-urgency],
+.deadline-board .deadline-table tbody tr[data-urgency] > td:first-child {
+  position: relative;
+  box-shadow: var(--deadline-glow-edge-glow);
+}
+.deadline-board .deadline-group__shared-policy::before,
+.deadline-board .deadline-group__section-head::before,
+.deadline-board
+  :is(.deadline-group__section, .deadline-workshop-schedule)
+  > .deadline-group__row[data-urgency]::before,
+.deadline-board .deadline-table tbody tr[data-urgency] > td:first-child::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  background: var(--deadline-glow-stripe);
+  pointer-events: none;
+}
+.deadline-board
+  :is(
+    .deadline-card,
+    .deadline-board__hero,
+    .deadline-group,
+    .deadline-group__row,
+    .deadline-group__summary,
+    .deadline-table td
+  ) {
+  transition:
+    box-shadow 150ms ease,
+    background-color 150ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .deadline-board
+    :is(.deadline-card, .deadline-board__hero, .deadline-group--standalone)[data-urgency]:hover {
+    --deadline-glow-glow-strength: 100%;
+    box-shadow:
+      inset 2px 0 0 var(--deadline-glow-stripe),
+      var(--deadline-glow-edge-glow);
+  }
+  .deadline-board
+    :is(.deadline-group__section, .deadline-workshop-schedule)
+    > .deadline-group__row[data-urgency]:hover,
+  .deadline-board .deadline-table tbody tr[data-urgency]:hover {
+    --deadline-glow-glow-strength: 100%;
+  }
+  .deadline-board
+    :is(.deadline-group__row, .deadline-group__summary, .deadline-table tbody tr):hover {
+    background-color: color-mix(in srgb, var(--text-strong) 3%, transparent);
+    background-image: none;
+  }
+}
+.deadline-board
+  :is(
+    .deadline-card,
+    .deadline-board__hero,
+    .deadline-group--standalone,
+    .deadline-group__row,
+    .deadline-table tbody tr
+  )[data-urgency]:has(:focus-visible) {
+  --deadline-glow-glow-strength: 100%;
+}
+.deadline-board .deadline-group__date-stage {
+  margin-inline-start: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+.deadline-board :is(.deadline-group__date-stage, .deadline-table__stage) {
+  font-family: inherit;
+}
+.deadline-board .deadline-table__stage {
+  color: var(--muted);
+}
+.deadline-board .deadline-schedule-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+.deadline-board .deadline-schedule-toggle span {
+  display: inline-flex;
+}
+.deadline-board .deadline-schedule-toggle svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 150ms ease;
+}
+.deadline-board .deadline-schedule-toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+.deadline-board .deadline-schedule-toggle:hover {
+  background: var(--bg-muted);
+  color: var(--text-strong);
+}
+.deadline-board .deadline-workshop-schedule {
+  background: var(--bg-muted);
+}
+.deadline-board .deadline-table th {
+  font-family: inherit;
+}
+@media (pointer: coarse) {
+  .deadline-board .deadline-schedule-toggle {
+    width: 36px;
+    height: 36px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .deadline-board
+    :is(
+      .deadline-card,
+      .deadline-board__hero,
+      .deadline-group,
+      .deadline-group__row,
+      .deadline-group__summary,
+      .deadline-table td,
+      .deadline-schedule-toggle svg
+    ) {
+    transition: none;
+  }
+}
+/* Straight child edges glow sideways, without lighting horizontal row separators. */
+.deadline-board .deadline-schedule-toggle svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.deadline-board .deadline-group[data-open] > .deadline-group__summary {
+  border-bottom-left-radius: 0;
+  border-top-left-radius: inherit;
+}
+/* Stage labels remain readable; expanded milestones sit below the venue title. */
+.deadline-board :is(.deadline-group__date-stage, .deadline-table__stage) {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.deadline-board .deadline-workshop-schedule .deadline-group__row-name {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.deadline-board .deadline-workshop-schedule .deadline-group__row-date {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* Dense rows keep venue hierarchy without inflating dates or controls. */
+.deadline-board .deadline-group__heading strong {
+  font-size: 14px;
+}
+.deadline-board .deadline-group__row-name {
+  font-size: 13px;
+}
+.deadline-board
+  :is(.deadline-group__row-date, .deadline-group__summary-date, .deadline-group__date-stage) {
+  font-size: 12px;
+}
+.deadline-board
+  .deadline-workshop-schedule
+  :is(.deadline-group__row-name, .deadline-group__row-date) {
+  font-size: 12px;
+  font-weight: 400;
+}
+.deadline-board .deadline-group__section-head {
+  font-size: 11px;
+}
+.deadline-board .deadline-table__date-row {
+  display: inline-flex;
+  vertical-align: middle;
+}
+.deadline-board .deadline-table__stage {
+  display: inline;
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.deadline-board .deadline-table__date {
+  white-space: nowrap;
+}
+.deadline-board .deadline-table .deadline-recommendation-actions {
+  flex-wrap: wrap;
+  width: max-content;
+  max-width: min(360px, calc(100cqw - 32px));
+}
+
+/* Details actions share one compact size while source links stay right-aligned. */
+.deadline-board .deadline-details__footer > .btn,
+.deadline-board .deadline-details__footer .deadline-card__source--button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  width: auto;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+}
+.deadline-board .deadline-details__footer > .btn {
+  justify-self: end;
+}
+
+/* Date text and controls share a centered line in every presentation. */
+.deadline-board
+  :is(
+    .deadline-group__date-line,
+    .deadline-card__date-row,
+    .deadline-table__date-row,
+    .deadline-group__date-stage
+  ) {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  gap: 2px;
+}
+.deadline-board .deadline-group__date-stage {
+  display: flex;
+}
+.deadline-board .deadline-card__history {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-block: 0;
+}
+.deadline-board .deadline-schedule-toggle {
+  flex-shrink: 0;
+  line-height: 1;
+}
+/* The same narrow glow belongs to each surface, including straight child rows. */
+.deadline-board .deadline-group__shared-policy,
+.deadline-board .deadline-group__section-head,
+.deadline-board
+  :is(.deadline-group__section, .deadline-workshop-schedule)
+  > .deadline-group__row[data-urgency],
+.deadline-board .deadline-table tbody tr[data-urgency] > td:first-child {
+  --deadline-glow-edge-glow: inset 5px 0 5px -4px
+    color-mix(
+      in srgb,
+      var(--deadline-glow-stripe) var(--deadline-glow-glow-strength, 90%),
+      transparent
+    );
+  box-shadow: var(--deadline-glow-edge-glow);
+}
+.deadline-board .deadline-group__shared-policy::before,
+.deadline-board .deadline-group__section-head::before,
+.deadline-board
+  :is(.deadline-group__section, .deadline-workshop-schedule)
+  > .deadline-group__row[data-urgency]::before,
+.deadline-board .deadline-table tbody tr[data-urgency] > td:first-child::before {
+  box-shadow: none;
+}
+/* Keep paired text lines together when adjacent actions need more height. */
+@container deadline-board (min-width: 64.001em) {
+  .deadline-board .deadline-group__row:not(.deadline-group__row--milestone) {
+    grid-template-areas: "countdown main date source" "countdown main date source";
+    grid-template-rows: auto auto;
+  }
+  .deadline-board
+    .deadline-group__row:not(.deadline-group__row--milestone)
+    > :is(.deadline-group__row-main, .deadline-group__row-date-wrap) {
+    display: grid;
+    grid-template-rows: minmax(var(--deadline-row-line), max-content) minmax(
+        var(--deadline-row-line),
+        max-content
+      );
+    row-gap: var(--deadline-row-gap);
+    align-content: center;
+    align-self: stretch;
+    align-items: center;
+  }
+  .deadline-board .deadline-group__row-name,
+  .deadline-board .deadline-group__date-line {
+    grid-row: 1;
+  }
+  .deadline-board .deadline-group__row-note,
+  .deadline-board .deadline-group__date-stage {
+    grid-row: 2;
+    margin-block: 0;
+  }
+  .deadline-board .deadline-group__row-date-wrap:not(:has(.deadline-group__date-stage)) > * {
+    grid-row: 1 / -1;
+  }
+}
+/* Controls keep their hit areas without increasing the text-line spacing. */
+.deadline-board .deadline-group__date-line,
+.deadline-board .deadline-group__date-stage {
+  min-height: 20px;
+  line-height: 20px;
+}
+.deadline-board .deadline-group__date-line > .deadline-card__history,
+.deadline-board .deadline-group__date-stage > .deadline-schedule-toggle {
+  position: relative;
+  width: 28px;
+  height: 20px;
+  min-height: 0;
+}
+.deadline-board .deadline-group__date-line .deadline-card__history-trigger {
+  height: 20px;
+  min-height: 0;
+  padding-block: 0;
+}
+@container deadline-board (min-width: 64.001em) {
+}
+.deadline-board .deadline-group__date-line .deadline-card__history-trigger,
+.deadline-board .deadline-group__date-stage > .deadline-schedule-toggle {
+  position: relative;
+}
+.deadline-board .deadline-group__date-line .deadline-card__history-trigger::after,
+.deadline-board .deadline-group__date-stage > .deadline-schedule-toggle::after {
+  content: "";
+  position: absolute;
+  inset: -4px 0;
+}
+/* The final edge turns into the rounded container corner. */
+.deadline-board .deadline-group__section:last-child > .deadline-group__row:last-child,
+.deadline-board .deadline-table tbody tr:last-child > td:first-child {
+  border-bottom-left-radius: var(--radius-lg);
+}
+.deadline-board .deadline-group__section:last-child > .deadline-group__row:last-child::before,
+.deadline-board .deadline-table tbody tr:last-child > td:first-child::before {
+  bottom: -1px;
+  width: 108px;
+  box-sizing: border-box;
+  background: transparent;
+  border-left: 2px solid var(--deadline-glow-stripe);
+  border-bottom: 1px solid var(--deadline-glow-stripe);
+  border-bottom-left-radius: var(--radius-lg);
+  mask-image: linear-gradient(90deg, black, transparent 108px);
+}
+
+/* Supporting stages keep the shared date column without competing with the parent. */
+.deadline-board .deadline-group__row--milestone {
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+}
+.deadline-board
+  .deadline-group__row--milestone[data-stage-state="next"]
+  :is(.deadline-group__row-name, .deadline-group__row-date) {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+.deadline-board
+  .deadline-group__row--milestone[data-stage-state="past"]
+  :is(.deadline-group__row-name, .deadline-group__row-date) {
+  color: var(--muted);
+}
+
+/* One continuous parent accent surrounds its supporting schedule. */
+.deadline-board .deadline-workshop-schedule {
+  position: relative;
+  box-shadow:
+    inset 2px 0 0 var(--deadline-glow-stripe),
+    var(--deadline-glow-edge-glow);
+}
+.deadline-board .deadline-group__section:last-child > .deadline-workshop-schedule:last-child {
+  border-bottom-left-radius: var(--radius-lg);
+}
+.deadline-board
+  .deadline-group__section:last-child
+  > .deadline-workshop-schedule:last-child
+  > .deadline-group__row:last-child {
+  border-bottom: 0;
+}
+
+/* SVG geometry centers the chevron independently of font metrics. */
+.deadline-board .deadline-group__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  line-height: 1;
+}
+.deadline-board .deadline-group__chevron svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Table accents stay inside cells so horizontal scrolling adds no vertical overflow. */
+.deadline-board .deadline-table tbody tr[data-urgency] > td:first-child::before {
+  top: 0;
+  bottom: 0;
+}
+
+.deadline-board td.deadline-table__stage {
+  display: table-cell;
+  white-space: nowrap;
+}
+.deadline-board .deadline-table__stage::before {
+  content: none;
+}
+/* Bridge internal row separators, but stop at the table's outer bounds. */
+.deadline-board .deadline-table tbody tr[data-urgency]:not(:last-child) > td:first-child::before {
+  bottom: -1px;
+}
+
+/* Standalone entries and group headings occupy the same hierarchy level. */
+.deadline-board .deadline-group--standalone > .deadline-group__row .deadline-group__row-name,
+.deadline-board .deadline-group__heading strong {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* A left-only gradient cannot cast a horizontal shadow across table cells. */
+.deadline-board .deadline-table tbody tr[data-urgency] > td:first-child {
+  box-shadow: none;
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--deadline-glow-stripe) 30%, transparent),
+    transparent 6px
+  );
+  background-repeat: no-repeat;
+}
+.deadline-board .deadline-table__stage-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.deadline-board
+  .deadline-card__schedule-details
+  > :is(.deadline-schedule-toggle, .deadline-card__stage) {
+  font-size: 12px;
+  font-weight: 500;
+}
+.deadline-board .deadline-card__schedule-details > .deadline-schedule-toggle {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  gap: 4px;
+  font-family: inherit;
+  justify-content: flex-start;
+}
+.deadline-board .deadline-table__schedule-row td {
+  color: var(--muted);
+  font-size: 12px;
+  padding-block: 6px;
+}
+.deadline-board .deadline-table__schedule-row[data-next="true"] td,
+.deadline-board .deadline-card__milestone[data-next="true"] > span {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+/* Keep the date and its details control together; separate the following stage. */
+.deadline-group__date-line,
+.deadline-group__date-stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.deadline-group__date-line {
+  white-space: nowrap;
+}
+.deadline-group__date-stage {
+  margin-inline-start: var(--space-2);
+}
+
+/* One outline action treatment, independent of the venue's text emphasis. */
+.deadline-board .deadline-card__source--button,
+.deadline-board .deadline-details__footer > .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 18px;
+  min-height: 28px;
+  border-color: var(--border-strong);
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
+}
+.deadline-board .deadline-card__source--button:is(:hover, :focus-visible),
+.deadline-board .deadline-details__footer > .btn:is(:hover, :focus-visible) {
+  border-color: color-mix(in srgb, var(--text-strong) 30%, var(--border-strong));
+  background-color: var(--bg-muted);
+  color: var(--text-strong);
+}
+@media (prefers-reduced-motion: reduce) {
+  .deadline-board .deadline-card__source--button,
+  .deadline-board .deadline-details__footer > .btn {
+    transition: none;
+  }
+}
+/* Schedule emphasis is independent of the parent venue's brighter typography. */
+.deadline-board .deadline-card__milestone > span,
+.deadline-board
+  .deadline-group__row--milestone
+  :is(.deadline-group__row-name, .deadline-group__row-date),
+.deadline-board
+  .deadline-group__row--milestone[data-stage-state="past"]
+  :is(.deadline-group__row-name, .deadline-group__row-date),
+.deadline-board .deadline-table__schedule-row td {
+  color: color-mix(in srgb, var(--text-strong) 55%, var(--card));
+  font-weight: 400;
+}
+.deadline-board .deadline-card__milestone[data-next="true"] > span,
+.deadline-board
+  .deadline-group__row--milestone[data-stage-state="next"]
+  :is(.deadline-group__row-name, .deadline-group__row-date),
+.deadline-board .deadline-table__schedule-row[data-next="true"] td {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+/* Date formatting must not override the schedule row's state-based emphasis. */
+.deadline-board
+  :is(.deadline-card__milestone, .deadline-group__row--milestone, .deadline-table__schedule-row)
+  :is(.deadline-date, .deadline-time) {
+  color: inherit;
+  font-weight: inherit;
+}
+/* Main datetimes share one weight across presentations. */
+.deadline-board .deadline-card__date,
+.deadline-board .deadline-table__date,
+.deadline-board .deadline-group__row:not(.deadline-group__row--milestone) .deadline-group__row-date,
+.deadline-board .deadline-group__summary-date {
+  font-weight: 500;
+}
+/* Card hover needs surface feedback as well as the small edge-glow change. */
+@media (hover: hover) and (pointer: fine) {
+  .deadline-board .deadline-card[data-urgency]:hover {
+    --deadline-surface: color-mix(in srgb, var(--text-strong) 4%, var(--card));
+  }
+}
+.deadline-board .deadline-card[data-urgency]:has(:focus-visible) {
+  --deadline-surface: color-mix(in srgb, var(--text-strong) 4%, var(--card));
+}
+
+.deadline-board .deadline-board__hero[data-entry-type="workshop"] .deadline-board__eyebrow {
+  color: var(--muted);
+}
+.deadline-board .deadline-group__heading {
+  display: grid;
+  gap: 4px;
+}
+.deadline-board .deadline-group__heading > strong,
+.deadline-board .deadline-group__heading > small {
+  min-height: 20px;
+  line-height: 20px;
+  margin: 0;
+}
+/* Popovers are independent surfaces, not another line of the parent row. */
+.deadline-board .deadline-card__history-panel[popover] {
+  font-family: var(--font-body, inherit);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  color: var(--popover-foreground);
+  padding: 16px;
+  height: auto;
+  width: min(360px, calc(100vw - 32px));
+}
+.deadline-board .deadline-details__header {
+  gap: 4px;
+}
+.deadline-board .deadline-details__header > strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.deadline-board .deadline-details__facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 12px 0 0;
+}
+.deadline-board .deadline-details__facts dt {
+  color: var(--muted);
+  font-weight: 400;
+}
+.deadline-board .deadline-details__facts dd {
+  margin: 0;
+  color: var(--popover-foreground);
+}
+.deadline-board .deadline-details__footer {
+  margin-top: 12px;
+  padding-top: 12px;
+  gap: 8px;
+  justify-items: end;
+}
+
+.deadline-board .deadline-group__summary,
+.deadline-board .deadline-group__row:not(.deadline-group__row--milestone) {
+  padding-block: 8px;
+}
+.deadline-board .deadline-group__heading > small {
+  font-size: 12px;
+}
+.deadline-board .deadline-details__footer > *,
+.deadline-board .deadline-details__footer .deadline-card__actions {
+  grid-area: auto;
+  justify-self: end;
+}
+
+/* Both group headings and two-line entries use the same compact row rhythm. */
+.deadline-board {
+  --deadline-row-line: 20px;
+  --deadline-row-gap: 2px;
+  --deadline-row-padding: 8px;
+}
+.deadline-board .deadline-group__summary,
+.deadline-board .deadline-group__row:not(.deadline-group__row--milestone) {
+  padding-block: var(--deadline-row-padding);
+  min-height: calc(
+    2 * var(--deadline-row-line) + var(--deadline-row-gap) + 2 * var(--deadline-row-padding)
+  );
+  box-sizing: border-box;
+}
+.deadline-board .deadline-group__heading {
+  gap: var(--deadline-row-gap);
+}
+.deadline-board .deadline-group__heading > strong,
+.deadline-board .deadline-group__heading > small {
+  min-height: var(--deadline-row-line);
+}
+.deadline-board
+  .deadline-group[data-group-kind="workshops"]
+  .deadline-group__heading
+  small::before {
+  line-height: 14px;
+}
+@container deadline-board (min-width: 64.001em) {
+  .deadline-board .deadline-group__row:not(.deadline-group__row--milestone) {
+    grid-template-rows: minmax(var(--deadline-row-line), auto) minmax(
+        var(--deadline-row-line),
+        auto
+      );
+    row-gap: var(--deadline-row-gap);
+  }
+}
+
+.deadline-board__hero-date-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.deadline-stage-date {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.deadline-board .deadline-group__row-note {
+  margin-top: var(--deadline-row-gap);
+}
+@container deadline-board (min-width: 64.001em) {
+  .deadline-board .deadline-group__row-note {
+    margin-top: 0;
+  }
+}
+
+/* Wrapped actions follow the same vertical rhythm as paired text lines. */
+.deadline-board :is(.deadline-recommendation-actions, .deadline-card__actions) {
+  column-gap: 4px;
+  row-gap: var(--deadline-row-gap);
+}
+
+/* Align the first text line, even when a date wraps beside a details button. */
+.deadline-board .deadline-group__row--milestone {
+  align-items: first baseline;
+}
+.deadline-board .deadline-group__row--milestone .deadline-group__row-date-wrap {
+  display: flex;
+  align-items: baseline;
+}
+.deadline-board .deadline-table__schedule-row > td {
+  vertical-align: baseline;
+}
+
+/* Share dimensions across available and saved timeline actions. */
+.deadline-board :is(.deadline-card__timeline-button, .deadline-card__timeline-status) svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Share action styling across the board and recommendation shadow root. */
+.deadline-board .deadline-card__timeline-button,
+.deadline-board deadline-recommendation::part(deadline-action) {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: none;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+.deadline-board .deadline-card__timeline-button:hover,
+.deadline-board deadline-recommendation::part(deadline-action):hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.deadline-board .deadline-card__timeline-button:focus-visible,
+.deadline-board deadline-recommendation::part(deadline-action):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.deadline-board .deadline-card__timeline-button:disabled,
+.deadline-board deadline-recommendation::part(deadline-action):disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.deadline-board :is(.deadline-card__timeline-button, .deadline-card__timeline-status) svg,
+.deadline-board deadline-recommendation::part(deadline-action-icon) {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@media (pointer: coarse) {
+  .deadline-board .deadline-card__timeline-button,
+  .deadline-board deadline-recommendation::part(deadline-action) {
+    height: 32px;
+    min-height: 32px;
+  }
+}
+
+.adminbot-member-badge-symbols {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-inline: 6px;
+  vertical-align: middle;
+}
+.adminbot-member-badge-symbols > span {
+  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.adminbot-member-badge-symbols small {
+  color: var(--text);
+  font-size: 0.75em;
 }

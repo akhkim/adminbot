@@ -104,7 +104,7 @@ async function startLab(): Promise<Lab> {
     if (!claim) {
       throw new Error(`no pending claim for ${id}`);
     }
-    const approved = mock.auth.approveRegistration(claim.id, "test-admin");
+    const approved = await mock.auth.approveRegistration(claim.id, "test-admin");
     if (!approved.ok) {
       throw new Error(approved.error.message);
     }

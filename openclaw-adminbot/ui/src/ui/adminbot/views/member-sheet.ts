@@ -19,6 +19,7 @@ import { html, nothing } from "lit";
 import { adminBotMemberTypes } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import { memberSheetCellKey } from "../controllers/member-sheet.ts";
+import { describeMemberTypeChange } from "../data/member-type-change.ts";
 import { startSheetPan } from "./sheet-pan.ts";
 
 /** Columns worth showing first; the rest follow in sheet order. */
@@ -133,7 +134,12 @@ function columnWidth(
   return Math.min(420, Math.max(120, longest * 7 + 24));
 }
 
-function cellValue(state: AppViewState, sheetRow: number, column: number, original: string): string {
+function cellValue(
+  state: AppViewState,
+  sheetRow: number,
+  column: number,
+  original: string,
+): string {
   return state.memberSheetEdits?.[memberSheetCellKey(sheetRow, column)] ?? original;
 }
 
@@ -189,25 +195,162 @@ function renderOnboardResult(state: AppViewState) {
   if (!result) {
     return nothing;
   }
+  const enrolled = result.enrolled ?? [];
   return html`
-    <div class="callout ${result.created.length > 0 ? "success" : "warning"}">
+    <div
+      class="callout ${result.created.length > 0 || enrolled.length > 0 ? "success" : "warning"}"
+    >
+      ${enrolled.length > 0
+        ? html`<p>
+            Added ${enrolled.length} ${enrolled.length === 1 ? "person" : "people"} to the roster
+            with the access their Member Type grants.
+          </p>`
+        : nothing}
       ${result.created.length > 0
         ? html`<p>
-            Queued ${result.created.length}
-            ${result.created.length === 1 ? "email" : "emails"} in Pending Actions. Nothing has been
-            sent yet — approve them there.
+            Queued ${result.created.length} ${result.created.length === 1 ? "email" : "emails"} in
+            Pending Actions. Nothing has been sent yet — approve them there.
           </p>`
         : nothing}
       ${result.skipped.length > 0
         ? html`
             <p>${result.skipped.length} not queued:</p>
             <ul>
-              ${result.skipped.map(
-                (skip) => html`<li>Row ${skip.sheet_row}: ${skip.reason}</li>`,
-              )}
+              ${result.skipped.map((skip) => html`<li>Row ${skip.sheet_row}: ${skip.reason}</li>`)}
             </ul>
           `
         : nothing}
+    </div>
+  `;
+}
+
+const ADD_ROW_POPOVER = "adminbot-add-sheet-row";
+
+/**
+ * The Add row form: a new person onto the roster, onboarded as soon as it is submitted.
+ *
+ * The form says in plain words that submitting sends mail, because unlike every other control on
+ * this tab it does not stop at a proposal: the admin's click is the approval. Field names carry a
+ * `row_` prefix so they cannot be mistaken for the old free-form onboarding form this tab dropped.
+ */
+function renderAddRowForm(state: AppViewState, memberTypes: string[]) {
+  const submit = async (event: Event) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const data = new FormData(form);
+    const text = (key: string) => String(data.get(key) ?? "").trim();
+    const slack = text("row_slack_email");
+    const attributes = text("row_member_attributes");
+    const accepted = await state.addMemberSheetRow?.({
+      name: text("row_name"),
+      member_type: text("row_member_type"),
+      email: text("row_email"),
+      ...(slack ? { slack_email: slack } : {}),
+      ...(attributes ? { member_attributes: attributes } : {}),
+    });
+    if (accepted) {
+      form.reset();
+      form.closest<HTMLElement>("[popover]")?.hidePopover?.();
+    }
+  };
+  return html`
+    <article
+      class="adminbot-editor-card adminbot-popover"
+      id=${ADD_ROW_POPOVER}
+      popover
+      data-testid="member-sheet-add-row"
+    >
+      <button
+        class="btn btn--sm adminbot-popover__close"
+        type="button"
+        popovertarget=${ADD_ROW_POPOVER}
+        popovertargetaction="hide"
+      >
+        Close
+      </button>
+      <div class="card-title">Add row</div>
+      <div class="card-sub">
+        Adds them to the roster sheet, creates their AdminBot record with the access their Member
+        Type grants, and sends their onboarding guide — all as soon as you press Add. Nothing waits
+        in Pending Actions; you are the approver.
+      </div>
+      <form class="adminbot-form" @submit=${submit}>
+        <div class="form-grid adminbot-form__grid">
+          <label class="adminbot-form__field"
+            ><span>Name</span><input name="row_name" required autocomplete="off"
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Member Type</span
+            ><select name="row_member_type" required>
+              <option value="" selected disabled>Choose…</option>
+              ${memberTypes.map((type) => html`<option value=${type}>${type}</option>`)}
+            </select></label
+          >
+          <label class="adminbot-form__field"
+            ><span>Email for correspondence</span
+            ><input name="row_email" type="email" required autocomplete="off"
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Slack email</span><input name="row_slack_email" type="email" autocomplete="off"
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Member Attributes</span><input name="row_member_attributes" autocomplete="off"
+          /></label>
+        </div>
+        <div class="adminbot-form__actions">
+          <button
+            class="btn btn--sm primary"
+            type="submit"
+            data-testid="member-sheet-add-row-submit"
+            ?disabled=${Boolean(state.memberSheetBusy)}
+          >
+            ${state.memberSheetBusy ? "Adding…" : "Add and onboard"}
+          </button>
+        </div>
+      </form>
+    </article>
+  `;
+}
+
+const ADD_ROW_STEP_LABELS = {
+  sheet: "Roster sheet row",
+  member: "AdminBot record and access",
+  onboarding: "Onboarding guide",
+} as const;
+
+/** What the last Add row did, one line per step, so a partial success says which part failed. */
+function renderAddRowResult(state: AppViewState) {
+  const result = state.memberSheetAddRowResult;
+  if (!result) {
+    return nothing;
+  }
+  const steps = (["sheet", "member", "onboarding"] as const).map((key) => ({
+    key,
+    step: result[key],
+  }));
+  const access = result.member_type_change
+    ? describeMemberTypeChange(result.member_id, result.member_type_change)
+    : undefined;
+  const failed = steps.some(({ step }) => step.status === "failed") || access?.kind === "error";
+  return html`
+    <div
+      class="callout ${failed ? "warning" : "success"}"
+      data-testid="member-sheet-add-row-result"
+    >
+      <p>Added ${result.member_id}${failed ? ", with a step that did not go through:" : "."}</p>
+      <ul>
+        ${steps.map(({ key, step }) => {
+          const label = ADD_ROW_STEP_LABELS[key];
+          if (step.status === "done") {
+            return html`<li>${label}: done${step.detail ? ` — ${step.detail}` : ""}</li>`;
+          }
+          if (step.status === "skipped") {
+            return html`<li>${label}: skipped — ${step.reason}</li>`;
+          }
+          return html`<li><strong>${label}: failed</strong> — ${step.reason}</li>`;
+        })}
+        ${access ? html`<li>Access: ${access.text}</li>` : nothing}
+      </ul>
     </div>
   `;
 }
@@ -228,16 +371,22 @@ function renderOnboardPreview(state: AppViewState) {
   }
   const busy = Boolean(state.memberSheetBusy);
   const planned = preview.planned;
+  const accessOnly = preview.access_only ?? [];
+  const actionable = planned.length + accessOnly.length;
   return html`
     <section class="adminbot-onboard-preview" data-testid="onboard-preview">
       <div class="adminbot-onboard-preview__head">
         <strong>Review before onboarding</strong>
         <span>
-          ${planned.length === 0
+          ${actionable === 0
             ? "Nothing would be queued for this selection."
-            : `Confirming queues ${planned.length} email ${
-                planned.length === 1 ? "proposal" : "proposals"
-              } in Pending Actions. Nothing is sent until an admin approves them there.`}
+            : `Anyone not yet on the roster is added with the access their Member Type grants.${
+                planned.length === 0
+                  ? ""
+                  : ` ${planned.length} email ${
+                      planned.length === 1 ? "proposal is" : "proposals are"
+                    } queued in Pending Actions; nothing is sent until an admin approves them there.`
+              }`}
         </span>
       </div>
       ${planned.map(
@@ -247,7 +396,9 @@ function renderOnboardPreview(state: AppViewState) {
               <span class="adminbot-onboard-preview__who">
                 Row ${mail.sheet_row} · ${mail.name || mail.email}
               </span>
-              <span class="adminbot-onboard-preview__meta">${mail.template_id} → ${mail.email}</span>
+              <span class="adminbot-onboard-preview__meta"
+                >${mail.template_id} → ${mail.email}</span
+              >
             </summary>
             <dl class="adminbot-onboard-preview__fields">
               <dt>To</dt>
@@ -261,6 +412,21 @@ function renderOnboardPreview(state: AppViewState) {
           </details>
         `,
       )}
+      ${accessOnly.length > 0
+        ? html`
+            <div class="callout" data-testid="onboard-access-only">
+              <p>Onboarded by their access alone, with no email:</p>
+              <ul>
+                ${accessOnly.map(
+                  (row) =>
+                    html`<li>
+                      Row ${row.sheet_row} · ${row.name || row.email} (${row.member_type})
+                    </li>`,
+                )}
+              </ul>
+            </div>
+          `
+        : nothing}
       ${preview.skipped.length > 0
         ? html`
             <div class="callout warning">
@@ -281,12 +447,14 @@ function renderOnboardPreview(state: AppViewState) {
           class="btn primary"
           type="button"
           data-testid="onboard-confirm"
-          ?disabled=${busy || planned.length === 0}
+          ?disabled=${busy || actionable === 0}
           @click=${() => void state.onboardSelectedMemberRows?.()}
         >
-          ${planned.length === 0
+          ${actionable === 0
             ? "Nothing to queue"
-            : `Queue ${planned.length} ${planned.length === 1 ? "email" : "emails"} for approval`}
+            : planned.length === 0
+              ? `Onboard ${accessOnly.length} ${accessOnly.length === 1 ? "person" : "people"}`
+              : `Queue ${planned.length} ${planned.length === 1 ? "email" : "emails"} for approval`}
         </button>
         <button
           class="btn"
@@ -342,7 +510,9 @@ export function renderMemberSheet(state: AppViewState) {
   const order = columnOrder(sheet.header);
   const name = nameColumn(sheet.header);
   const memberTypes = memberTypeColumn(sheet.header);
-  const widths = new Map(order.map((column) => [column, columnWidth(sheet.header, sheet.rows, column)]));
+  const widths = new Map(
+    order.map((column) => [column, columnWidth(sheet.header, sheet.rows, column)]),
+  );
   const visible = filterRows(sheet.rows, state.memberSheetFilter, state.memberSheetEdits);
   const filtered = visible.length !== sheet.rows.length;
   const visibleSelected = visible.filter((row) => selection.includes(row.sheet_row)).length;
@@ -385,20 +555,29 @@ export function renderMemberSheet(state: AppViewState) {
             ?disabled=${busy || selection.length === 0}
             @click=${() => void state.previewOnboardSelectedRows?.()}
           >
-            ${selection.length === 0
-              ? "Onboard…"
-              : `Preview onboarding (${selection.length})`}
+            ${selection.length === 0 ? "Onboard…" : `Preview onboarding (${selection.length})`}
+          </button>
+          <button
+            class="btn primary"
+            type="button"
+            data-testid="member-sheet-add-row-open"
+            popovertarget=${ADD_ROW_POPOVER}
+            ?disabled=${busy}
+          >
+            Add row
           </button>
         </div>
       </header>
-
+      ${renderAddRowForm(state, memberTypeOptions(sheet.rows, memberTypes, ""))}
       ${state.memberSheetError
         ? html`<div class="callout danger" role="alert">${state.memberSheetError}</div>`
         : nothing}
-      ${renderConflicts(state)} ${renderOnboardResult(state)} ${renderOnboardPreview(state)}
+      ${renderAddRowResult(state)} ${renderConflicts(state)} ${renderOnboardResult(state)}
+      ${renderOnboardPreview(state)}
       ${state.memberSheetSaveResult?.proposal
         ? html`<div class="callout success">
-            Queued as a proposal in Pending Actions${state.memberSheetSaveResult.touches_access
+            Queued as a proposal in Pending
+            Actions${state.memberSheetSaveResult.touches_access
               ? ", including an access column — an admin has to approve it before it reaches the sheet."
               : ". Nothing is written until it is approved."}
           </div>`
@@ -429,9 +608,7 @@ export function renderMemberSheet(state: AppViewState) {
           <colgroup>
             <col class="adminbot-member-roster__col-pick" />
             <col class="adminbot-member-roster__col-row" />
-            ${order.map(
-              (column) => html`<col style=${`width: ${widths.get(column)}px`} />`,
-            )}
+            ${order.map((column) => html`<col style=${`width: ${widths.get(column)}px`} />`)}
           </colgroup>
           <thead>
             <tr>
@@ -495,9 +672,8 @@ export function renderMemberSheet(state: AppViewState) {
                   <th scope="row" class="adminbot-member-roster__row">${row.sheet_row}</th>
                   ${order.map((column) => {
                     const original = row.cells[column] ?? "";
-                    const edited = state.memberSheetEdits?.[
-                      memberSheetCellKey(row.sheet_row, column)
-                    ];
+                    const edited =
+                      state.memberSheetEdits?.[memberSheetCellKey(row.sheet_row, column)];
                     const classes = [
                       column === name ? "adminbot-member-roster__name" : "",
                       edited === undefined ? "" : "is-edited",

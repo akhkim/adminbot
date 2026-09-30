@@ -97,7 +97,7 @@ async function approveClaim(
   if (!registration) {
     throw new Error(`no pending registration for ${memberId}`);
   }
-  const approved = mock.auth.approveRegistration(registration.id, "seed-admin");
+  const approved = await mock.auth.approveRegistration(registration.id, "seed-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }
@@ -227,12 +227,30 @@ describe("AdminBot badge routes", () => {
     const assign = await fetch(`${baseUrl}/badges/assignments`, {
       method: "POST",
       headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
-      body: JSON.stringify({ member_id: "pat", badge_id: badge.id, evidence: "Shipped the guide." }),
+      body: JSON.stringify({
+        member_id: "pat",
+        badge_id: badge.id,
+        evidence: "Shipped the guide.",
+        count: 2,
+      }),
     });
     expect(assign.status).toBe(200);
     await expect(assign.json()).resolves.toMatchObject({
-      assignment: expect.objectContaining({ evidence: "Shipped the guide." }),
+      assignment: expect.objectContaining({ evidence: "Shipped the guide.", count: 2 }),
     });
+
+    for (const [token, count, status] of [
+      [memberToken, 2, 403],
+      [adminToken, "2", 400],
+      [adminToken, 0, 400],
+    ] as const) {
+      const invalid = await fetch(`${baseUrl}/badges/assignments`, {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+        body: JSON.stringify({ member_id: "pat", badge_id: badge.id, count }),
+      });
+      expect(invalid.status).toBe(status);
+    }
 
     const noEvidence = await fetch(`${baseUrl}/badges/nominations`, {
       method: "POST",

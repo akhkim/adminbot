@@ -102,7 +102,7 @@ async function approveClaim(
   if (!registration) {
     throw new Error(`no pending registration for ${memberId}`);
   }
-  const approved = mock.auth.approveRegistration(registration.id, "seed-admin");
+  const approved = await mock.auth.approveRegistration(registration.id, "seed-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }

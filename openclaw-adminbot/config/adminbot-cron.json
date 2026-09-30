@@ -27,6 +27,20 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-citation-checks",
+      "description": "Check the citations of each new OpenReview submission version, every half hour",
+      "cron": "25,55 * * * *",
+      "argv": ["bash", "scripts/adminbot-citation-check-cron.sh"],
+      "timeoutSeconds": 300
+    },
+    {
+      "name": "adminbot-iclr-integrity",
+      "description": "Score each new ICLR submission version with Pangram and alert Slack on AI text or hallucinated citations, hourly",
+      "cron": "12 * * * *",
+      "argv": ["bash", "scripts/adminbot-iclr-integrity-cron.sh"],
+      "timeoutSeconds": 300
+    },
+    {
       "name": "adminbot-meeting-artifacts",
       "description": "Meeting artifact drop-folder pass",
       "cron": "20 * * * *",
@@ -293,7 +307,7 @@
     {
       "name": "adminbot-rec-letter-channel",
       "description": "Keep #help-rec-letter-request in step with open letter requests",
-      "cron": "20 10 * * 1-5",
+      "cron": "20 * * * *",
       "argv": [
         "bash",
         "scripts/adminbot-rec-letter-channel-cron.sh"

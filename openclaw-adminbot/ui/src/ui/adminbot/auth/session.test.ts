@@ -197,6 +197,13 @@ describe("fetchRoster", () => {
     expect(result).toEqual({ ok: true, value: members });
   });
 
+  it("sends a search query without credentials", async () => {
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, { members: [] }));
+    await fetchRoster(BASE_URL, "Ada Δ");
+    expect(spy.mock.calls[0]?.[0]).toBe(`${BASE_URL}/auth/roster?q=Ada%20%CE%94`);
+    expect(spy.mock.calls[0]?.[1]?.credentials).toBe("omit");
+  });
+
   it("defaults to an empty list when members are absent", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, {}));
     const result = await fetchRoster(BASE_URL);

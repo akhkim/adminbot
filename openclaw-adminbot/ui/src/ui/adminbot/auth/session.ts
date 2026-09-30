@@ -86,6 +86,7 @@ export type AssignedBadge = {
   awarded_at: string;
   awarded_by: string;
   source: "admin" | "nomination";
+  count?: number;
   nomination_id?: string;
   evidence?: string;
   category: string;
@@ -164,6 +165,57 @@ export type BadgeNominationView = {
 
 // Lab member record returned by the AdminBot service. Extra fields beyond these
 // are preserved but not consumed by the UI.
+/**
+ * One of the lab calendar's standing meetings (Monday, `Theme:`, `Proj:`) and who is on it.
+ * Mirrors `AdminBotStandingMeeting` (extensions/adminbot/src/workflows/calendar/standing-meetings.ts).
+ */
+export type StandingMeeting = {
+  id: string;
+  title: string;
+  kind: "group" | "theme" | "project";
+  event_ids: string[];
+  /** Lowercased addresses. */
+  attendees: string[];
+};
+
+/** The Meetings checkboxes' options. Admin session only; a failed read is an error, not []. */
+export async function fetchStandingMeetings(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<StandingMeeting[]>> {
+  const result = await authedJson(baseUrl, "/lab/meetings", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const meetings = (result.body as { meetings?: unknown }).meetings;
+  return { ok: true, value: Array.isArray(meetings) ? (meetings as StandingMeeting[]) : [] };
+}
+
+/**
+ * What a Member Type change on the Lab Members tab did, step by step. Mirrors the service's
+ * `MemberTypeChangeResult` (extensions/adminbot/src/api/server.member-type-change.ts).
+ */
+export type MemberTypeChangeSummary = {
+  from?: string;
+  to?: string;
+  privilege_level: { from: string; to: string };
+  collaborator_subgroup: { from?: string; to?: string };
+  steps: Array<{
+    step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "alumni_mail" | "meeting";
+    target?: string;
+    /** `queued`: filed in Pending Actions because nobody approved it on the spot. */
+    status: "done" | "queued" | "skipped" | "failed";
+    detail?: string;
+    proposal_id?: string;
+  }>;
+};
+
 export type LabMember = {
   id?: string;
   name?: string | null;
@@ -255,6 +307,11 @@ export type ProfilePhotoPolishResult = {
 // member self-edit), so this type being permissive here is not itself a trust
 // boundary.
 export type AdminLabMemberUpdate = {
+  /**
+   * Ids of the standing meetings to be on, from the Meetings checkboxes. Applied to the calendar,
+   * never stored on the record; sent only when the list was loaded.
+   */
+  meetings?: string[];
   name?: string;
   email?: string;
   slack_user_id?: string;
@@ -474,12 +531,14 @@ async function authedJson(
   // malformed credential, and the service would be right to treat it as one.
   token: string | null,
   payload?: unknown,
+  signal?: AbortSignal,
 ): Promise<{ response: Response; body: unknown } | { unreachable: true }> {
   let response: Response;
   try {
     response = await fetch(`${baseUrl}${path}`, {
       method,
       credentials: "omit",
+      ...(signal ? { signal } : {}),
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
@@ -656,13 +715,21 @@ export async function upsertLabMemberAsAdmin(
   fields: AdminLabMemberUpdate,
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<LabMember>> {
+  create = false,
+): Promise<
+  AuthResult<
+    LabMember & {
+      member_type_change?: MemberTypeChangeSummary;
+      meeting_changes?: MemberTypeChangeSummary["steps"];
+    }
+  >
+> {
   const result = await authedJson(
     baseUrl,
-    `/lab/members/${encodeURIComponent(memberId)}`,
-    "PUT",
+    create ? "/lab/members" : `/lab/members/${encodeURIComponent(memberId)}`,
+    create ? "POST" : "PUT",
     sessionToken,
-    fields,
+    create ? { ...fields, ...(memberId ? { id: memberId } : {}) } : fields,
   );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -676,7 +743,13 @@ export async function upsertLabMemberAsAdmin(
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  return { ok: true, value: result.body as LabMember };
+  return {
+    ok: true,
+    value: result.body as LabMember & {
+      member_type_change?: MemberTypeChangeSummary;
+      meeting_changes?: MemberTypeChangeSummary["steps"];
+    },
+  };
 }
 
 /**
@@ -1046,13 +1119,14 @@ export async function queueMemberOnboardingGuide(
   memberId: string,
   sessionToken: string,
   baseUrl: string,
+  slackChannels?: string[],
 ): Promise<AuthResult<MemberOnboardingGuideQueued>> {
   const result = await authedJson(
     baseUrl,
     `/lab/members/${encodeURIComponent(memberId)}/onboarding/guide`,
     "POST",
     sessionToken,
-    {},
+    slackChannels?.length ? { slack_project_channels: slackChannels } : {},
   );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -1069,6 +1143,156 @@ export async function queueMemberOnboardingGuide(
     };
   }
   return { ok: true, value: result.body as MemberOnboardingGuideQueued };
+}
+
+/**
+ * A request to add somebody to the roster, as GET /lab/members/requests returns it. Mirrors
+ * `AdminBotMemberRequest` (extensions/adminbot/src/contracts/member-requests.ts) plus the two
+ * fields the route adds for the reader.
+ */
+export type MemberRequestView = {
+  id: string;
+  status: "pending" | "approved" | "rejected";
+  requested_by: string;
+  requested_by_name?: string;
+  profile: {
+    name: string;
+    email: string;
+    member_type?: string;
+    affiliation?: string;
+    research_topics?: string;
+    personal_website?: string;
+  };
+  meetings?: string[];
+  note?: string;
+  created_at: string;
+  updated_at?: string;
+  decided_at?: string;
+  decided_by?: string;
+  decision_note?: string;
+  member_id?: string;
+  /** The access level approving would grant, worked out from the requested Member Type. */
+  access_level?: string;
+};
+
+export type MemberRequestInput = MemberRequestView["profile"] & { note?: string };
+
+/**
+ * One call to /lab/members/requests. Every refusal the service makes here names the problem --
+ * "already on the roster", "already waiting for review", "this request was already approved" --
+ * so its sentence is passed through whatever the status, as queueMemberOnboardingGuide does.
+ */
+async function memberRequestCall<T>(
+  baseUrl: string,
+  path: string,
+  method: "GET" | "POST" | "DELETE",
+  sessionToken: string,
+  body?: unknown,
+): Promise<AuthResult<T>> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/requests${path}`,
+    method,
+    sessionToken,
+    body,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const refusal = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    const message = typeof refusal === "string" && refusal.trim() ? refusal.trim() : undefined;
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden", ...(message ? { message } : {}) };
+    }
+    return {
+      ok: false,
+      ...mapErrorResponse(result.response, result.body, { weakOn400: false }),
+      ...(message ? { message } : {}),
+    };
+  }
+  return { ok: true, value: result.body as T };
+}
+
+export async function fetchMemberRequests(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberRequestView[]>> {
+  const result = await memberRequestCall<{ requests?: MemberRequestView[] }>(
+    baseUrl,
+    "",
+    "GET",
+    sessionToken,
+  );
+  return result.ok
+    ? { ok: true, value: Array.isArray(result.value.requests) ? result.value.requests : [] }
+    : result;
+}
+
+export async function submitMemberRequest(
+  input: MemberRequestInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView }>> {
+  return await memberRequestCall(baseUrl, "", "POST", sessionToken, input);
+}
+
+export async function editMemberRequest(
+  request: MemberRequestView,
+  input: MemberRequestInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(request.id)}/edit`,
+    "POST",
+    sessionToken,
+    { ...input, expected_updated_at: request.updated_at ?? request.created_at },
+  );
+}
+
+export async function approveMemberRequest(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+  expectedUpdatedAt?: string,
+): Promise<AuthResult<{ request: MemberRequestView; member: LabMember }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(requestId)}/approve`,
+    "POST",
+    sessionToken,
+    { expected_updated_at: expectedUpdatedAt },
+  );
+}
+
+export async function rejectMemberRequest(
+  requestId: string,
+  note: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(requestId)}/reject`,
+    "POST",
+    sessionToken,
+    note ? { note } : {},
+  );
+}
+
+export async function withdrawMemberRequest(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ withdrawn: true }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(requestId)}`,
+    "DELETE",
+    sessionToken,
+  );
 }
 
 // Approvals go over the member session rather than the gateway tool: the service records the
@@ -1129,7 +1353,22 @@ async function privilegedActionCall<T>(
     if (result.response.status === 403) {
       return { ok: false, kind: "forbidden" };
     }
-    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+    const mapped = mapErrorResponse(result.response, result.body, { weakOn400: false });
+    // A refused execute is almost always the connector's own sentence -- "You are trying to edit a
+    // protected cell", "gog: token expired" -- and a conflict names what changed under the
+    // approval. mapErrorResponse keeps a message only for a 400, which left the operator with
+    // "Couldn't record this approval" and nothing to act on. The route is privileged, so the
+    // service's text is safe to show.
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (
+      !mapped.message &&
+      (result.response.status === 409 || result.response.status >= 500) &&
+      typeof message === "string" &&
+      message.trim()
+    ) {
+      return { ok: false, ...mapped, message: message.trim() };
+    }
+    return { ok: false, ...mapped };
   }
   return { ok: true, value: result.body as T };
 }
@@ -1215,6 +1454,12 @@ export type MemberSheetEditResult = {
 
 export type MemberSheetOnboardResult = {
   created: { sheet_row: number; email: string; template_id: string; proposal_id: string }[];
+  /** Rows not yet on the roster, added with the access their Member Type grants. */
+  enrolled?: {
+    sheet_row: number;
+    member_id: string;
+    member_type_change?: MemberTypeChangeSummary;
+  }[];
   skipped: { sheet_row: number; reason: string; missing?: string[] }[];
 };
 
@@ -1300,8 +1545,19 @@ export type PlannedOnboardEmail = {
   reply_to: string;
 };
 
+/** A row whose Member Type is onboarded by its access alone, with no email. */
+export type PlannedAccessOnly = {
+  sheet_row: number;
+  name: string;
+  email: string;
+  member_type: string;
+  reason: string;
+};
+
 export type MemberSheetOnboardPreview = {
   planned: PlannedOnboardEmail[];
+  /** Absent from a service older than the shared onboarding. */
+  access_only?: PlannedAccessOnly[];
   skipped: MemberSheetOnboardResult["skipped"];
 };
 
@@ -1355,6 +1611,48 @@ export async function onboardFromMemberSheet(
     return memberSheetFailure(result.response, result.body);
   }
   return { ok: true, value: result.body as MemberSheetOnboardResult };
+}
+
+export type MemberSheetAddRowInput = {
+  name: string;
+  member_type: string;
+  email: string;
+  slack_email?: string;
+  member_attributes?: string;
+};
+
+/** How one of Add row's three steps went. Mirrors the service's `MemberSheetAddRowStep`. */
+export type MemberSheetAddRowStep =
+  | { status: "done"; proposal_id?: string; detail?: string; template_id?: string }
+  | { status: "skipped"; reason: string }
+  | { status: "failed"; reason: string; proposal_id?: string; template_id?: string };
+
+export type MemberSheetAddRowResult = {
+  member_id: string;
+  sheet: MemberSheetAddRowStep;
+  member: MemberSheetAddRowStep;
+  /** The rooms, meetings and calendar access the new member's type grants. */
+  member_type_change?: MemberTypeChangeSummary;
+  onboarding: MemberSheetAddRowStep;
+};
+
+/**
+ * Adds a person to the roster and onboards them, now: the service appends the row, creates the
+ * member and sends the guide, each approved as the signed-in admin.
+ */
+export async function addMemberSheetRow(
+  input: MemberSheetAddRowInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberSheetAddRowResult>> {
+  const result = await authedJson(baseUrl, "/membership/sheet/rows", "POST", sessionToken, input);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return memberSheetFailure(result.response, result.body);
+  }
+  return { ok: true, value: result.body as MemberSheetAddRowResult };
 }
 
 export type MemberNudgeChannel = "slack" | "email";
@@ -1791,6 +2089,37 @@ async function calendarWrite(
   return { ok: true, value: (result.body ?? {}) as CalendarActionResult };
 }
 
+/** Dedicated local route: never the gateway agent or privacy broker. */
+export async function sendLocalChat(
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  sessionToken: string,
+  baseUrl: string,
+  signal?: AbortSignal,
+): Promise<AuthResult<{ output: string; model: string; route: "local" }>> {
+  const result = await authedJson(
+    baseUrl,
+    "/local-chat",
+    "POST",
+    sessionToken,
+    { messages },
+    signal,
+  );
+  if ("unreachable" in result) return { ok: false, kind: "unreachable" };
+  const body = result.body as { output?: unknown; model?: unknown; route?: unknown } | null;
+  if (
+    !result.response.ok ||
+    typeof body?.output !== "string" ||
+    typeof body.model !== "string" ||
+    body.route !== "local"
+  )
+    return {
+      ok: false,
+      kind: "draft-failed",
+      message: "Local chat could not answer. No external model was used.",
+    };
+  return { ok: true, value: { output: body.output, model: body.model, route: "local" } };
+}
+
 export async function fetchMemberResource(
   path: string,
   sessionToken: string,
@@ -1824,6 +2153,54 @@ export async function fetchVenueSources(
   return { ok: true, value: result.body };
 }
 
+export type VenuePaperCategory = { id: string; label: string; paper_count: number };
+
+export async function fetchVenueCategories(
+  venueId: string,
+  sessionToken: string | null,
+  baseUrl: string,
+): Promise<AuthResult<{ venue_id: string; categories: VenuePaperCategory[] }>> {
+  const query = new URLSearchParams({ venue_id: venueId });
+  const result = await authedJson(
+    baseUrl,
+    `/venue-papers/categories?${query.toString()}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { venue_id?: unknown; categories?: unknown } | null;
+  if (typeof body?.venue_id !== "string" || !Array.isArray(body.categories)) {
+    return { ok: false, kind: "draft-failed", message: "The category list was malformed." };
+  }
+  const categories = body.categories.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return [];
+    }
+    const category = entry as Record<string, unknown>;
+    return typeof category.id === "string" &&
+      category.id.trim().length > 0 &&
+      typeof category.label === "string" &&
+      category.label.trim().length > 0 &&
+      typeof category.paper_count === "number" &&
+      Number.isInteger(category.paper_count) &&
+      category.paper_count >= 0
+      ? [
+          {
+            id: category.id.trim(),
+            label: category.label.trim(),
+            paper_count: category.paper_count,
+          },
+        ]
+      : [];
+  });
+  return { ok: true, value: { venue_id: body.venue_id, categories } };
+}
+
 /**
  * Ranks one conference's accepted papers against what the member says they work on.
  *
@@ -1832,13 +2209,14 @@ export async function fetchVenueSources(
  * reader can act on, and the generic copy would throw them away.
  */
 export async function searchVenuePapers(
-  params: { venueId: string; interests: string },
+  params: { venueId: string; interests: string; categoryId?: string },
   sessionToken: string | null,
   baseUrl: string,
 ): Promise<AuthResult<unknown>> {
   const result = await authedJson(baseUrl, "/venue-papers/search", "POST", sessionToken, {
     venue_id: params.venueId,
     interests: params.interests,
+    ...(params.categoryId ? { category_id: params.categoryId } : {}),
   });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -2484,10 +2862,12 @@ export async function assignBadgeToMember(
   sessionToken: string,
   baseUrl: string,
   evidence?: string,
+  count?: number,
 ): Promise<AuthResult<AssignedBadge>> {
   const result = await authedJson(baseUrl, "/badges/assignments", "POST", sessionToken, {
     member_id: memberId,
     badge_id: badgeId,
+    ...(count !== undefined ? { count } : {}),
     ...(evidence ? { evidence } : {}),
   });
   if ("unreachable" in result) {
@@ -2894,14 +3274,20 @@ export async function signupMember(
 }
 
 // Public roster of unclaimed members backing the claim picker (no auth).
-export async function fetchRoster(baseUrl: string): Promise<AuthResult<RosterMember[]>> {
+export async function fetchRoster(
+  baseUrl: string,
+  query = "",
+): Promise<AuthResult<RosterMember[]>> {
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/auth/roster`, {
-      method: "GET",
-      credentials: "omit",
-      headers: { Accept: "application/json" },
-    });
+    response = await fetch(
+      `${baseUrl}/auth/roster${query ? `?q=${encodeURIComponent(query)}` : ""}`,
+      {
+        method: "GET",
+        credentials: "omit",
+        headers: { Accept: "application/json" },
+      },
+    );
   } catch {
     return { ok: false, kind: "unreachable" };
   }
@@ -3135,19 +3521,43 @@ export type MeetingRecord = {
   notes?: string;
 };
 
+export type MeetingCursor = Pick<MeetingRecord, "started_at" | "id">;
+
+export type MeetingPage = { meetings: MeetingRecord[]; next_cursor?: MeetingCursor };
+
 export async function fetchMeetings(
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<MeetingRecord[]>> {
-  const result = await authedJson(baseUrl, "/meetings", "GET", sessionToken);
+  page?: { limit: number; before?: MeetingCursor },
+): Promise<AuthResult<MeetingPage>> {
+  const params = new URLSearchParams();
+  if (page) {
+    params.set("limit", String(page.limit));
+    if (page.before) {
+      params.set("before_started_at", page.before.started_at);
+      params.set("before_id", page.before.id);
+    }
+  }
+  const result = await authedJson(
+    baseUrl,
+    `/meetings${page ? `?${params}` : ""}`,
+    "GET",
+    sessionToken,
+  );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as { meetings?: MeetingRecord[] } | null;
-  return { ok: true, value: body?.meetings ?? [] };
+  const body = result.body as MeetingPage | null;
+  return {
+    ok: true,
+    value: {
+      meetings: body?.meetings ?? [],
+      ...(body?.next_cursor ? { next_cursor: body.next_cursor } : {}),
+    },
+  };
 }
 
 export async function saveMeetingAttendance(
@@ -4455,6 +4865,32 @@ export async function submitReimbursementPackage(
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   return { ok: true, value: result.body as { proposal_id: string; to: string; reply_to: string } };
+}
+
+export async function checkDriveEditAccess(
+  url: string,
+  sessionToken: string,
+  baseUrl: string,
+  signal?: AbortSignal,
+): Promise<AuthResult<{ status: "editable" | "not_editable" | "unverified"; message: string }>> {
+  const result = await authedJson(
+    baseUrl,
+    "/drive/check-edit-access",
+    "POST",
+    sessionToken,
+    { url },
+    signal,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return {
+    ok: true,
+    value: result.body as { status: "editable" | "not_editable" | "unverified"; message: string },
+  };
 }
 
 /** One row of the recent-edits feed. Mirrors AdminBotRecentUpdate in contracts/activity-log.ts. */

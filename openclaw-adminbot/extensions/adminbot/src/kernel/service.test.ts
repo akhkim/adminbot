@@ -2304,6 +2304,43 @@ describe("AdminBotService", () => {
       // And the invite really did go, so the asymmetry is between the two and not a dead sweep.
       expect(store.listProposalsByType("slack.invite_to_channel")[0]?.status).toBe("executed");
     });
+
+    // The sweep runs hourly. The roster is rebuilt from the request log rather than from who is in
+    // the channel, so without this every run re-invited Ada and filed another removal card for Mei.
+    it("files each move once, however often it runs", async () => {
+      const { service, store } = labWithLetters([{ status: "submitted", updated_at: iso(-1) }]);
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "mei",
+          name: "Mei Chen",
+          privilege_level: "member",
+          slack_user_id: "U-MEI",
+        } as never),
+      );
+      store.saveLogisticsRequest({
+        id: "logreq_old",
+        kind: "recommendation_letters",
+        member_id: "mei",
+        member_name: "Mei Chen",
+        status: "completed",
+        submitted_at: iso(-260),
+        updated_at: iso(-200),
+      } as never);
+
+      unwrap(await service.syncRecLetterChannel("cron"));
+      const again = unwrap(await service.syncRecLetterChannel("cron"));
+      expect(again.invited).toEqual([]);
+      expect(again.removal_proposals).toEqual([]);
+      expect(store.listProposalsByType("slack.invite_to_channel")).toHaveLength(1);
+      expect(store.listProposalsByType("slack.remove_from_channel")).toHaveLength(1);
+
+      // An admin who turns the removal down has answered; the next run does not ask again.
+      const removal = store.listProposalsByType("slack.remove_from_channel")[0]!;
+      unwrap(service.removePending(removal.id, { actor: "admin" }));
+      const afterReject = unwrap(await service.syncRecLetterChannel("cron"));
+      expect(afterReject.removal_proposals).toEqual([]);
+    });
   });
 
   // The alias becomes the project's Slack channel `proj-<alias>`, so it is stored in the shape that

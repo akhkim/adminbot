@@ -2,8 +2,7 @@
 // loud, and what the mail about them says.
 //
 // The queue itself is the one on My Desk -- open recommendation-letter requests, soonest first --
-// and this reads the same `deadline_at` the desk sorts on rather than re-deriving a date from the
-// schools table. Two readings of one deadline is how a letter gets written against the wrong one.
+// and uses the same letter-only deadline resolver as the queue, including for legacy records.
 //
 // Pure: the requests and the instant arrive as arguments and the result is a decision. The service
 // resolves the recipient and does the sending, which is what lets the window be tested without a
@@ -12,6 +11,7 @@ import {
   adminBotLogisticsSettledStatuses,
   type AdminBotLogisticsRequest,
 } from "../../contracts/actions.js";
+import { requestDeadlineDetails } from "./requests.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -33,8 +33,10 @@ export type RecLetterReminderDue = {
   request_id: string;
   member_id: string;
   member_name: string;
-  /** RFC3339, straight off the request: the soonest thing it is working towards. */
+  /** RFC3339 comparison instant resolved from the earliest letter deadline. */
   deadline_at: string;
+  /** Original wall-clock deadline, for the human reading the reminder. */
+  deadline_label?: string;
   /** Whole days left before that instant. 0 is "some time today". */
   days_until: number;
   /** The schools on the request, in the order the member listed them. */
@@ -63,7 +65,8 @@ export function recLetterRemindersDue(
   return requests
     .filter((request) => request.kind === "recommendation_letters" && !SETTLED.has(request.status))
     .flatMap((request) => {
-      const deadlineAt = request.deadline_at;
+      const deadline = requestDeadlineDetails(request);
+      const deadlineAt = deadline?.at;
       const deadlineMs = deadlineAt ? Date.parse(deadlineAt) : Number.NaN;
       // A request with no deadline on file is a real state, not a zero: the member has asked for
       // the letter without filling in a date. There is nothing to count down to, so it waits on
@@ -81,6 +84,7 @@ export function recLetterRemindersDue(
           member_id: request.member_id,
           member_name: request.member_name,
           deadline_at: deadlineAt,
+          deadline_label: `${deadline.date} ${deadline.time} ${deadline.timezone}`,
           days_until: daysUntil,
           schools: (request.schools ?? [])
             .map((school) => school.school.trim())
@@ -148,7 +152,7 @@ export function recLetterReminderBody(
     "",
     ...due.map((entry) => {
       const schools = describeSchools(entry.schools);
-      return `• ${entry.member_name} — due ${entry.deadline_at.slice(0, 10)} (${recLetterReminderWhen(entry.days_until)})${schools ? ` — ${schools}` : ""}`;
+      return `• ${entry.member_name} — due ${entry.deadline_label ?? entry.deadline_at.slice(0, 10)} (${recLetterReminderWhen(entry.days_until)})${schools ? ` — ${schools}` : ""}`;
     }),
     "",
     `The requests, with the schools table and what each member sent in: ${portalUrl}`,

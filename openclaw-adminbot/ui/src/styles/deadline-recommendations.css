@@ -1,0 +1,29 @@
+.deadline-recommendation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  margin-top: auto;
+}
+.deadline-recommendation-actions > .deadline-card__actions {
+  display: contents;
+}
+
+.deadline-group__row > .deadline-recommendation-actions {
+  grid-area: source;
+  margin-top: 0;
+}
+
+.deadline-recommendation-details {
+  display: none;
+}
+@container deadline-board (max-width: 21em) {
+  .deadline-recommendation-actions > deadline-recommendation {
+    display: none;
+  }
+  .deadline-recommendation-details {
+    display: inline-flex;
+  }
+}

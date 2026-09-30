@@ -30,6 +30,7 @@ import {
   type EmailReplyPurpose,
   type ModelClassification,
   type ModelEmailDraft,
+  type ModelImage,
   type PaperflowCandidate,
 } from "./adminbot-email-model.js";
 import { isMainModule } from "./lib/is-main-module.mjs";
@@ -53,6 +54,19 @@ function requireEnv(name: string): string {
 const botEmail = () => requireEnv("ADMINBOT_BOT_EMAIL");
 /** The shared lab calendar events are written to and read access is granted on. */
 const jinesisCalendar = () => requireEnv("ADMINBOT_LAB_EMAIL");
+/**
+ * Zhijing's personal calendar ("Jin Trips and Advising Meetings"), where her flights and other
+ * travel go -- never the lab calendar. The bot account has writer access to it.
+ *
+ * The id is not a secret, so it is written down here as well as read from the environment: the
+ * point of a default is that a deployment missing the variable still puts a flight on the right
+ * calendar rather than on the lab's, which every member can read.
+ */
+export const PERSONAL_CALENDAR_DEFAULT =
+  "a716d3228cbb947fbf5716598420b8a2ee5e05df9d2505cadcc6455881a985f9@group.calendar.google.com";
+const personalCalendar = () =>
+  process.env.ADMINBOT_PERSONAL_CALENDAR_ID?.trim() ||
+  PERSONAL_CALENDAR_DEFAULT;
 /** Where reimbursement and error reports go; the first configured contact address. */
 const adminRecipient = () =>
   addressList("ADMINBOT_CONTACT_EMAILS")[0] ??
@@ -134,7 +148,7 @@ export type EmailMessage = {
   internalDate?: string;
 };
 
-type OnboardingDecision = "trial" | "direct" | "decline";
+export type OnboardingDecision = "trial" | "direct" | "decline";
 
 type Classification = ModelClassification;
 
@@ -145,6 +159,8 @@ type CalendarEvent = {
   allDay: boolean;
   description?: string;
   location?: string;
+  startTimeZone?: string;
+  endTimeZone?: string;
 };
 
 type TalkEntry = {
@@ -566,14 +582,11 @@ export class StateStore {
    * must not rewind the mailbox.
    */
   markScannedThrough(at: Date): void {
-    const current = this.scannedThrough();
-    if (current && current.getTime() >= at.getTime()) {
-      return;
-    }
     this.db
       .prepare(
         `INSERT INTO adminbot_email_scan (id, scanned_through) VALUES (1, ?)
-         ON CONFLICT(id) DO UPDATE SET scanned_through=excluded.scanned_through`,
+         ON CONFLICT(id) DO UPDATE SET scanned_through=excluded.scanned_through
+         WHERE excluded.scanned_through > adminbot_email_scan.scanned_through`,
       )
       .run(at.toISOString());
   }
@@ -583,19 +596,26 @@ export class StateStore {
    *
    * Asked before the classifier rather than only inside `begin`, which is where the same question
    * used to be settled: the window can now overlap by design, so a message already dealt with must
-   * cost a row lookup and not a 122B model call. `processing` and `failed` are deliberately not
-   * settled -- both are retried, exactly as `begin` has always allowed.
+   * cost a row lookup and not a 122B model call. `failed` can be retried; `processing` needs
+   * reconciliation before a replay because its external effect may already have happened.
    */
   isSettled(messageId: string): boolean {
-    const row = this.db
-      .prepare(
-        "SELECT status FROM adminbot_email_messages WHERE message_id = ?",
-      )
-      .get(messageId) as { status?: string } | undefined;
+    const status = this.status(messageId);
     return (
-      row?.status === "completed" ||
-      row?.status === "needs_review" ||
-      row?.status === "reviewed"
+      status === "completed" ||
+      status === "needs_review" ||
+      status === "reviewed"
+    );
+  }
+
+  status(messageId: string): string | undefined {
+    return (this.db.prepare("SELECT status FROM adminbot_email_messages WHERE message_id = ?")
+      .get(messageId) as { status?: string } | undefined)?.status;
+  }
+
+  hasInProgressMessages(): boolean {
+    return Boolean(
+      this.db.prepare("SELECT 1 FROM adminbot_email_messages WHERE status = 'processing' LIMIT 1").get(),
     );
   }
 
@@ -640,19 +660,7 @@ export class StateStore {
     message: EmailMessage,
     classification: { category: string; reason: string },
   ): boolean {
-    const existing = this.db
-      .prepare(
-        "SELECT status FROM adminbot_email_messages WHERE message_id = ?",
-      )
-      .get(message.id) as { status?: string } | undefined;
-    if (
-      existing?.status === "completed" ||
-      existing?.status === "needs_review" ||
-      existing?.status === "reviewed" ||
-      existing?.status === "processing"
-    )
-      return false;
-    this.db
+    const claimed = this.db
       .prepare(
         `INSERT INTO adminbot_email_messages
       (message_id, thread_id, sender, subject, category, status, reason, attempts, received_at,
@@ -662,7 +670,9 @@ export class StateStore {
         thread_id=excluded.thread_id, sender=excluded.sender, subject=excluded.subject,
         reason=excluded.reason, received_at=COALESCE(excluded.received_at, received_at),
         attempts=adminbot_email_messages.attempts + 1, last_error=NULL,
-        resolved_at=NULL, resolved_by=NULL, resolution=NULL, updated_at=excluded.updated_at`,
+        resolved_at=NULL, resolved_by=NULL, resolution=NULL, updated_at=excluded.updated_at
+      WHERE adminbot_email_messages.status NOT IN
+        ('completed', 'needs_review', 'reviewed', 'processing')`,
       )
       .run(
         message.id,
@@ -675,8 +685,8 @@ export class StateStore {
           ? new Date(Number(message.internalDate)).toISOString()
           : null,
         new Date().toISOString(),
-      );
-    return true;
+      ).changes;
+    return claimed === 1;
   }
 
   finish(
@@ -696,26 +706,29 @@ export class StateStore {
     key: string,
     operation: () => Promise<T>,
   ): Promise<T | undefined> {
-    const existing = this.db
+    const claimed = this.db
       .prepare(
-        "SELECT status, result_json FROM adminbot_email_effects WHERE message_id=? AND effect_key=?",
+        `INSERT INTO adminbot_email_effects(message_id,effect_key,status,updated_at)
+      VALUES (?,?,'started',?) ON CONFLICT(message_id,effect_key) DO NOTHING`,
       )
-      .get(messageId, key) as
-      { status: string; result_json?: string } | undefined;
-    if (existing?.status === "completed")
-      return existing.result_json
-        ? (JSON.parse(existing.result_json) as T)
-        : undefined;
-    if (existing?.status === "started")
+      .run(messageId, key, new Date().toISOString()).changes;
+    if (claimed !== 1) {
+      const existing = this.db
+        .prepare(
+          "SELECT status, result_json FROM adminbot_email_effects WHERE message_id=? AND effect_key=?",
+        )
+        .get(messageId, key) as
+        | { status: string; result_json?: string }
+        | undefined;
+      if (existing?.status === "completed") {
+        return existing.result_json
+          ? (JSON.parse(existing.result_json) as T)
+          : undefined;
+      }
       throw new Error(
         `effect ${key} was started previously; manual review prevents a duplicate`,
       );
-    this.db
-      .prepare(
-        `INSERT INTO adminbot_email_effects(message_id,effect_key,status,updated_at)
-      VALUES (?,?,'started',?) ON CONFLICT(message_id,effect_key) DO UPDATE SET status='started',updated_at=excluded.updated_at`,
-      )
-      .run(messageId, key, new Date().toISOString());
+    }
     const result = await operation();
     this.db
       .prepare(
@@ -877,19 +890,27 @@ class GoogleClient {
     );
   }
 
-  async createEvent(event: CalendarEvent): Promise<unknown> {
+  async createEvent(
+    event: CalendarEvent,
+    calendarId: string,
+  ): Promise<unknown> {
     const args = [
       "calendar",
       "create",
-      jinesisCalendar(),
+      calendarId,
       "--summary",
       event.summary,
       "--from",
       event.start,
       "--to",
       event.end,
-      "--timezone",
-      DEFAULT_TIMEZONE,
+      "--start-timezone",
+      event.startTimeZone ?? DEFAULT_TIMEZONE,
+      "--end-timezone",
+      event.endTimeZone ?? event.startTimeZone ?? DEFAULT_TIMEZONE,
+      // Silent: AdminBot's calendar writes never email anyone (connectors/gog.ts).
+      "--send-updates",
+      "none",
     ];
     if (event.allDay) args.push("--all-day");
     if (event.description) args.push("--description", event.description);
@@ -906,9 +927,10 @@ class GoogleClient {
         "acl",
         "insert",
         "--params",
+        // Silent: AdminBot's calendar writes never email anyone (connectors/gog.ts).
         JSON.stringify({
           calendarId: jinesisCalendar(),
-          sendNotifications: true,
+          sendNotifications: false,
         }),
         "--json",
         JSON.stringify({
@@ -919,6 +941,50 @@ class GoogleClient {
       { timeout: 45_000 },
     );
     return parseJson(result.stdout);
+  }
+
+  /**
+   * The mail's image attachments, read into memory for the local model.
+   *
+   * Bounded because they go into one request: a handful of screenshots is what a calendar request
+   * carries, and a 40 MB photo dump is not one. Anything over the bounds is skipped rather than
+   * failing the message -- the text may still be enough.
+   */
+  async imageAttachments(message: EmailMessage): Promise<ModelImage[]> {
+    const raw = await this.raw(message.id);
+    const parts = collectAttachmentParts(raw)
+      .filter((part) => IMAGE_MIME_TYPES.has(part.mimeType))
+      .filter((part) => part.size <= MAX_IMAGE_BYTES)
+      .slice(0, MAX_IMAGES);
+    if (parts.length === 0) return [];
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "adminbot-images-"),
+    );
+    try {
+      const images: ModelImage[] = [];
+      for (const [index, part] of parts.entries()) {
+        const destination = path.join(directory, `image-${index + 1}`);
+        await command(
+          GOG,
+          this.args([
+            "gmail",
+            "attachment",
+            message.id,
+            part.attachmentId,
+            "--out",
+            destination,
+          ]),
+          { timeout: 60_000 },
+        );
+        images.push({
+          mimeType: part.mimeType,
+          base64: fs.readFileSync(destination).toString("base64"),
+        });
+      }
+      return images;
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   }
 
   async downloadAttachments(
@@ -982,17 +1048,41 @@ function headerValue(row: Record<string, unknown>, name: string): unknown {
   )?.value;
 }
 
+const IMAGE_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_IMAGES = 4;
+
+type AttachmentPart = {
+  filename: string;
+  attachmentId: string;
+  mimeType: string;
+  size: number;
+};
+
 function collectAttachmentParts(
   raw: Record<string, unknown>,
-): Array<{ filename: string; attachmentId: string }> {
-  const result: Array<{ filename: string; attachmentId: string }> = [];
+): AttachmentPart[] {
+  const result: AttachmentPart[] = [];
   const visit = (part: unknown): void => {
     if (!part || typeof part !== "object") return;
     const item = part as Record<string, unknown>;
-    const attachmentId = (item.body as { attachmentId?: string } | undefined)
-      ?.attachmentId;
+    const body = item.body as
+      | { attachmentId?: string; size?: number }
+      | undefined;
+    const attachmentId = body?.attachmentId;
     const filename = String(item.filename ?? "");
-    if (attachmentId) result.push({ filename, attachmentId });
+    if (attachmentId)
+      result.push({
+        filename,
+        attachmentId,
+        mimeType: String(item.mimeType ?? "").toLowerCase(),
+        size: Number(body?.size ?? 0),
+      });
     for (const child of (item.parts as unknown[] | undefined) ?? [])
       visit(child);
   };
@@ -1000,17 +1090,65 @@ function collectAttachmentParts(
   return result;
 }
 
-async function extractCalendarEvent(
+/**
+ * The zone name if the runtime knows it, otherwise undefined.
+ *
+ * The model names zones from its own knowledge and sometimes invents one -- "Europe/Frankfurt" for
+ * a Frankfurt departure. Passed through, that is an event Google rejects or labels wrongly. The
+ * RFC3339 offset already fixes the instant, so dropping a bad name costs only the label.
+ */
+export function validTimeZone(zone: string | null | undefined): string | undefined {
+  if (!zone) return undefined;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return zone;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Which calendar a request may write to.
+ *
+ * The personal calendar is one person's, so only the configured lab senders may put something on
+ * it; anybody else asking for it is held for a person rather than quietly moved onto the lab
+ * calendar, which every member can read -- a flight itinerary landing there is the leak this
+ * whole split exists to prevent.
+ */
+export function resolveCalendarTarget(
+  sender: string,
+  requested: "personal" | "lab",
+  privileged: ReadonlySet<string> = privilegedSenders(),
+): "personal" | "lab" {
+  const address = normalizeAddress(sender);
+  if (requested === "personal" && !privileged.has(address)) {
+    throw new Error(
+      `personal-calendar request from ${address}, who is not a configured sender; queued for review`,
+    );
+  }
+  return requested;
+}
+
+async function extractCalendarRequest(
   message: EmailMessage,
   model: AdminBotEmailModel,
-): Promise<CalendarEvent | undefined> {
-  const event = await model.calendar(message);
-  if (!event.summary || !event.start || !event.end) return undefined;
-  return {
-    ...event,
-    description: event.description ?? undefined,
-    location: event.location ?? undefined,
-  };
+  google: GoogleClient,
+): Promise<{ calendar: "personal" | "lab"; events: CalendarEvent[] }> {
+  const images = await google.imageAttachments(message);
+  const request = await model.calendar(message, images);
+  const events = request.events
+    .filter((event) => event.summary && event.start && event.end)
+    .map((event) => ({
+      summary: event.summary,
+      start: event.start,
+      end: event.end,
+      allDay: event.allDay,
+      description: event.description ?? undefined,
+      location: event.location ?? undefined,
+      startTimeZone: validTimeZone(event.startTimeZone),
+      endTimeZone: validTimeZone(event.endTimeZone),
+    }));
+  return { calendar: request.calendar, events };
 }
 
 async function extractTalk(
@@ -1347,10 +1485,10 @@ async function processMessage(
   model: AdminBotEmailModel,
   databasePath: string,
 ): Promise<boolean> {
-  if (!state.begin(message, classification)) return false;
+  if (!(await state.begin(message, classification))) return false;
   try {
     if (classification.category === "unknown") {
-      state.finish(message.id, "needs_review", classification.reason);
+      await state.finish(message.id, "needs_review", classification.reason);
       return true;
     }
     if (classification.category === "student_reachout") {
@@ -1408,7 +1546,7 @@ async function processMessage(
           google.send(email, draft.subject, draft.body),
         );
         const threadId = extractResultThreadId(sent) ?? message.threadId;
-        state.saveOnboarding(threadId, email, "direct", message.id);
+        await state.saveOnboarding(threadId, email, "direct", message.id);
         await state.effect(message.id, "calendar_reader", () =>
           google.addCalendarReader(email),
         );
@@ -1473,14 +1611,23 @@ async function processMessage(
         );
       }
     } else if (classification.category === "calendar_event") {
-      const event = await extractCalendarEvent(message, model);
-      if (!event)
+      const request = await extractCalendarRequest(message, model, google);
+      if (request.events.length === 0)
         throw new Error(
           "calendar request is missing a parseable event title or date",
         );
-      await state.effect(message.id, "calendar_create", () =>
-        google.createEvent(event),
-      );
+      const target = resolveCalendarTarget(message.from, request.calendar);
+      const calendarId =
+        target === "personal" ? personalCalendar() : jinesisCalendar();
+      // One effect per event. The first keeps the old key, so a message that was mid-retry across
+      // this change is not created twice; the rest are numbered after it.
+      for (const [index, event] of request.events.entries()) {
+        await state.effect(
+          message.id,
+          index === 0 ? "calendar_create" : `calendar_create_${index + 1}`,
+          () => google.createEvent(event, calendarId),
+        );
+      }
     } else if (classification.category === "talk_entry") {
       if (!privilegedSenders().has(normalizeAddress(message.from))) {
         throw new Error(
@@ -1544,11 +1691,11 @@ async function processMessage(
     await state.effect(message.id, "mark_read", () =>
       google.markRead(message.id),
     );
-    state.finish(message.id, "completed");
+    await state.finish(message.id, "completed");
     return true;
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    state.finish(
+    await state.finish(
       message.id,
       reason.includes("manual review") || reason.includes("queued for review")
         ? "needs_review"
@@ -1569,11 +1716,11 @@ async function processMessage(
  * Returns false when the mail turns out not to be a notice after all, so the caller falls through
  * to the normal path rather than swallowing the message.
  */
-function fileRecordingNotice(
+async function fileRecordingNotice(
   message: EmailMessage,
   state: StateStore,
   databasePath: string,
-): boolean {
+): Promise<boolean> {
   const meeting = noticeToMeeting({
     id: message.id,
     subject: message.subject,
@@ -1586,17 +1733,17 @@ function fileRecordingNotice(
     return false;
   }
   if (
-    !state.begin(message, {
+    !(await state.begin(message, {
       category: "meeting_recording",
       reason: "Zoom cloud recording notice",
-    })
+    }))
   ) {
     return true;
   }
   const { service, close } = createAdminBotSqliteService({ databasePath });
   try {
     const result = service.upsertMeeting(meeting);
-    state.finish(
+    await state.finish(
       message.id,
       result.ok ? "completed" : "needs_review",
       result.ok ? undefined : result.error.message,
@@ -1627,10 +1774,10 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   const runStart = new Date();
   // Where this pass starts reading: the watermark when there is one, an hour back when there is
   // not. gmailScanQuery clamps how far back a long outage may reach.
-  const since =
-    state.scannedThrough() ??
-    new Date(runStart.getTime() - GMAIL_SCAN_DEFAULT_LOOKBACK_MS);
   try {
+    const since =
+      (await state.scannedThrough()) ??
+      new Date(runStart.getTime() - GMAIL_SCAN_DEFAULT_LOOKBACK_MS);
     const messages = await google.search(since);
     summary.found = messages.length;
     summary.scanned_since = since.toISOString();
@@ -1662,7 +1809,7 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
       // common case for most of what a resumed scan returns -- and it has to cost a row lookup
       // rather than a classification, or a catching-up pass would re-bill the model for a week of
       // settled mail.
-      if (state.isSettled(message.id)) {
+      if (await state.isSettled(message.id)) {
         summary.skipped += 1;
         continue;
       }
@@ -1670,13 +1817,8 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
       // the classifier, which would file it as unknown and park it for a human.
       if (looksLikeZoomRecordingNotice(message.subject, message.body)) {
         try {
-          if (fileRecordingNotice(message, state, databasePath)) {
-            const outcome = state.db
-              .prepare(
-                "SELECT status FROM adminbot_email_messages WHERE message_id=?",
-              )
-              .get(message.id) as { status?: string } | undefined;
-            if (outcome?.status === "needs_review") {
+          if (await fileRecordingNotice(message, state, databasePath)) {
+            if ((await state.status(message.id)) === "needs_review") {
               summary.needs_review += 1;
               await file(message.id, "needs_review");
             } else {
@@ -1695,8 +1837,8 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
         }
       }
       const onboarding =
-        state.getOnboarding(message.threadId) ??
-        state.getOnboarding(normalizeAddress(message.from));
+        (await state.getOnboarding(message.threadId)) ??
+        (await state.getOnboarding(normalizeAddress(message.from)));
       try {
         const modelClassification = await model.classify(
           message,
@@ -1722,26 +1864,17 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
           summary.skipped += 1;
           continue;
         }
-        const status = state.db
-          .prepare(
-            "SELECT status FROM adminbot_email_messages WHERE message_id=?",
-          )
-          .get(message.id) as { status?: string } | undefined;
-        if (status?.status === "completed") {
+        const status = await state.status(message.id);
+        if (status === "completed") {
           summary.completed += 1;
           await file(message.id, "completed");
         }
-        if (status?.status === "needs_review") {
+        if (status === "needs_review") {
           summary.needs_review += 1;
           await file(message.id, "needs_review");
         }
       } catch (error) {
-        const status = state.db
-          .prepare(
-            "SELECT status FROM adminbot_email_messages WHERE message_id=?",
-          )
-          .get(message.id) as { status?: string } | undefined;
-        if (status?.status === "needs_review") {
+        if ((await state.status(message.id)) === "needs_review") {
           summary.needs_review += 1;
           await file(message.id, "needs_review");
         } else {
@@ -1757,8 +1890,14 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
     // window is a message that still has to be seen again, and advancing past it is exactly the
     // silent drop this is here to stop. The mark is the moment the scan *started*, so mail that
     // landed while the pass was running is read by the next one rather than skipped.
+    // A crashed pass can leave a message in processing. begin() refuses to replay it because its
+    // external effect may have happened, so keep the scan window open for manual reconciliation.
+    if (await state.hasInProgressMessages()) {
+      summary.failed += 1;
+      summary.errors.push("an email remains in processing; review its effects before retrying");
+    }
     if (summary.failed === 0) {
-      state.markScannedThrough(runStart);
+      await state.markScannedThrough(runStart);
       summary.scanned_through = runStart.toISOString();
     }
   } finally {

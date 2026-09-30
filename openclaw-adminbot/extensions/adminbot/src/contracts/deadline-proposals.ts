@@ -1,4 +1,5 @@
 import { normalizeCalendarTimezone, toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
+import { validateProposalStage, type DeadlineProposalStage } from "./deadline-proposals.stage.js";
 
 export const deadlineProposalEntryTypes = [
   "main_conference",
@@ -13,6 +14,7 @@ export const deadlineProposalEntryTypes = [
 export type DeadlineProposalEntryType = (typeof deadlineProposalEntryTypes)[number];
 
 export type DeadlineProposalInput = {
+  stage?: DeadlineProposalStage;
   name: string;
   parentConference: string;
   parentYear: string;
@@ -162,9 +164,17 @@ export function validateDeadlineProposalInput(
     note: input.note.trim(),
   };
   const errors: Partial<Record<keyof DeadlineProposalInput, string>> = {};
+  if (input.stage !== undefined) {
+    const stage = validateProposalStage(input.stage);
+    if (stage) {
+      value.stage = stage;
+    } else {
+      errors.stage = "Choose a valid stage and correction target.";
+    }
+  }
   for (const field of Object.keys(value) as Array<keyof DeadlineProposalInput>) {
     const limit = field === "note" ? 2000 : field.endsWith("Url") ? 2048 : 200;
-    if (value[field].length > limit) {
+    if (typeof value[field] === "string" && value[field].length > limit) {
       errors[field] = `Use at most ${limit} characters.`;
     }
   }
@@ -180,10 +190,13 @@ export function validateDeadlineProposalInput(
   if (!validDate(value.deadlineDate)) {
     errors.deadlineDate = "Enter a valid date.";
   }
-  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(value.deadlineTime)) {
+  if (value.deadlineTime && !/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(value.deadlineTime)) {
     errors.deadlineTime = "Enter a valid 24-hour time.";
   }
-  if (!value.timezone || !validTimezone(value.timezone)) {
+  if (
+    (value.deadlineTime || value.timezone) &&
+    (!value.timezone || !validTimezone(value.timezone))
+  ) {
     errors.timezone = "Choose a valid time zone.";
   }
   if (!validWebUrl(value.homepageUrl)) {
@@ -197,8 +210,29 @@ export function validateDeadlineProposalInput(
   }
   const instant =
     Object.keys(errors).length === 0
-      ? toAbsoluteRfc3339(`${value.deadlineDate}T${value.deadlineTime}`, value.timezone)
+      ? toAbsoluteRfc3339(
+          `${value.deadlineDate}T${value.deadlineTime || "00:00"}`,
+          value.timezone || "Pacific/Kiritimati",
+        )
       : undefined;
+  if (instant && value.deadlineTime) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: value.timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(instant));
+    const part = (kind: string) => parts.find((p) => p.type === kind)?.value;
+    if (
+      `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}` !==
+      `${value.deadlineDate}T${value.deadlineTime}`
+    ) {
+      errors.deadlineTime = "This local time does not exist on that date.";
+    }
+  }
   if (!instant) {
     errors.deadlineTime = errors.deadlineTime ?? "This local time does not resolve in that zone.";
   }

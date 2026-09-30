@@ -6,8 +6,18 @@ import {
   ADMINBOT_ELEVATOR_PITCH_MAX,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
-import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
-import { blankFields, renderProfile, type ProfileProps } from "./profile.ts";
+import {
+  clearStoredMemberSession,
+  saveStoredMemberSession,
+  type LabMember,
+  type MemberProfileUpdate,
+} from "../auth/session.ts";
+import {
+  blankFields,
+  renderProfile,
+  resetProfileSessionState,
+  type ProfileProps,
+} from "./profile.ts";
 
 function createMember(overrides: Partial<LabMember> = {}): LabMember {
   return {
@@ -80,7 +90,22 @@ describe("renderProfile autosave", () => {
   });
 
   afterEach(() => {
+    resetProfileSessionState();
     vi.useRealTimers();
+  });
+
+  it("cancels a pending profile save when the signed-in member changes", () => {
+    const member = createMember();
+    const onSave = vi.fn();
+    const container = renderPage(createState(member), onSave);
+    const name = container.querySelector<HTMLInputElement>('input[name="name"]')!;
+    name.value = "Pat's private draft";
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+
+    resetProfileSessionState();
+    vi.advanceTimersByTime(1_000);
+
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   // The paragraph the research-topic tags cannot be, and the reason it is a field rather than a
@@ -396,6 +421,47 @@ describe("renderProfile autosave", () => {
 
       expect(state.profileAccountChecks.github_url?.status).toBe("verified");
     } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("warns when AdminBot cannot edit a saved Drive folder", async () => {
+    saveStoredMemberSession({ sessionToken: "test-session", expiresAt: "" });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "not_editable",
+          message: "Share with Jinesis.adminbot@gmail.com as Editor.",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const member = createMember({
+        one_on_one_folder_url:
+          "https://drive.google.com/drive/folders/1PdF9xAbCdEfGhIjKlMnOpQrStUv",
+      });
+      const state = createState(member);
+      const container = document.createElement("div");
+      document.body.append(container);
+      render(renderProfile(state, { onSave: vi.fn() }), container);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/drive/check-edit-access"),
+        expect.objectContaining({ method: "POST", credentials: "omit" }),
+      );
+      expect(state.profileAccountChecks.one_on_one_folder_url).toMatchObject({ status: "warning" });
+      render(renderProfile(state, { onSave: vi.fn() }), container);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(
+        container.querySelector('[data-testid="profile-account-check-one_on_one_folder_url"]')
+          ?.textContent,
+      ).toContain("Jinesis.adminbot@gmail.com");
+    } finally {
+      document.body.replaceChildren();
+      clearStoredMemberSession();
       vi.unstubAllGlobals();
     }
   });
@@ -975,7 +1041,9 @@ describe("renderProfile field types", () => {
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
-    expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe("text");
+    expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe(
+      "text",
+    );
     // Weekly capacity is the denominator the Time Availability chart reads every commitment
     // against, so the page has to ask for it. Bounded to the range the service accepts, so an
     // impossible week is refused by the control rather than by a rejected save.
@@ -1308,7 +1376,7 @@ describe("renderProfile visual structure", () => {
       expect(container.textContent).toContain("Mei Chen already holds");
     });
 
-    it("says which way round each nomination in the list runs", () => {
+    it("keeps the nomination form but shows no nomination record", () => {
       const { state } = lab({
         profileBadgeNominations: [
           {
@@ -1341,12 +1409,13 @@ describe("renderProfile visual structure", () => {
       } as unknown as Partial<AppViewState>);
       const container = renderPage(state, vi.fn());
 
+      // The form stays; the list of past and pending nominations is not part of the profile.
+      expect(container.querySelector('[data-testid="profile-badge-nominee"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="profile-badge-nomination-sent"]')).toBeNull();
       expect(
-        container.querySelector('[data-testid="profile-badge-nomination-sent"]')?.textContent,
-      ).toContain("You nominated Mei Chen");
-      expect(
-        container.querySelector('[data-testid="profile-badge-nomination-received"]')?.textContent,
-      ).toContain("Nominated by Mei Chen");
+        container.querySelector('[data-testid="profile-badge-nomination-received"]'),
+      ).toBeNull();
+      expect(container.querySelector(".profile-badge-nominations__item")).toBeNull();
     });
   });
 
@@ -1461,7 +1530,8 @@ it("saves the missing-form checkbox and clears it when a link is supplied", () =
   const button = container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!;
   button.click();
   expect(save.mock.calls.at(-1)?.[1].intake_form_unavailable).toBe(true);
-  container.querySelector<HTMLInputElement>('[name="intake_form_url"]')!.value = "https://docs.google.com/forms/d/e/test/viewform";
+  container.querySelector<HTMLInputElement>('[name="intake_form_url"]')!.value =
+    "https://docs.google.com/forms/d/e/test/viewform";
   button.click();
   expect(save.mock.calls.at(-1)?.[1].intake_form_unavailable).toBe(false);
 });

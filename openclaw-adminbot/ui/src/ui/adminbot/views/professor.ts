@@ -1,3 +1,4 @@
+import "./local-chat.ts";
 // The professor's morning page: the things that are hers to do, on one screen.
 //
 // Everything here is already somewhere else -- the rec-letter queue is on Requests, the adoption
@@ -36,6 +37,7 @@ import type {
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 
 export type ProfessorViewProps = {
+  localChatSessionToken?: string;
   requests: LogisticsRequest[];
   requestsLoading: boolean;
   papers: AdminBotPaperRecord[];
@@ -888,6 +890,10 @@ export function renderProfessorView(props: ProfessorViewProps) {
   // depending on how her week is going.
   return html`
     <div class="professor">
+      <adminbot-local-chat
+        style="display: block; grid-column: 1 / -1"
+        .sessionToken=${props.localChatSessionToken ?? ""}
+      ></adminbot-local-chat>
       ${broadcastBox(props)}
       ${sections
         .toSorted(

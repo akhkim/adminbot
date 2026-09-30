@@ -1,5 +1,7 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import path from "node:path";
 import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
@@ -8,6 +10,18 @@ import {
   createOpenReviewForumProbe,
   createOpenReviewNotesReader,
 } from "../connectors/openreview-notes.js";
+import { createOpenReviewSubmissionReader } from "../connectors/openreview-submissions.js";
+import { createPangramScorer } from "../connectors/pangram.js";
+import {
+  createPdfReferenceChecker,
+  extractPdfFullText,
+  requiredDatabasesPausedUntil,
+  type PdfReferenceChecker,
+} from "../connectors/reference-check.js";
+import {
+  createGptZeroBibliographyScanner,
+  createPublicOpenReviewPdfReader,
+} from "../connectors/reference-scan.js";
 import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
 import {
   adminBotRegistrationStatuses,
@@ -17,6 +31,7 @@ import type {
   AdminBotActionProposal,
   AdminBotCvScanResult,
   AdminBotApprovalRequest,
+  AdminBotAuditEvent,
   AdminBotExecutionRequest,
   AdminBotLabMemberInput,
   AdminBotMeetingAttendee,
@@ -28,6 +43,7 @@ import type {
   AdminBotRegistrationStatus,
   AdminBotRemovePendingRequest,
   AdminBotSettingsInput,
+  AdminBotStoredProposal,
 } from "../contracts/actions.js";
 import {
   adminBotBadgeNominationStatuses,
@@ -42,13 +58,20 @@ import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import { groupMeetingSeriesId, resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
 import type { GroupMeetingSchedule } from "../contracts/group-meeting.js";
 import {
+  adminBotMemberRequestStatuses,
+  type AdminBotMemberRequestStatus,
+} from "../contracts/member-requests.js";
+import type { OpenReviewSubmissionReader } from "../contracts/openreview-citation-checks.js";
+import {
   isAdminBotOpportunityCategory,
   type AdminBotOpportunityInput,
 } from "../contracts/opportunities.js";
 import type { AdminBotArtifactProbe } from "../contracts/paper-artifact-links.js";
 import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../contracts/paper-cycle.js";
+import type { AiTextScorer } from "../contracts/paper-integrity-checks.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
 import { parsePaperMentorRunInput } from "../contracts/papermentor.js";
+import type { ReferenceScanDependencies } from "../contracts/reference-scans.js";
 import {
   buildNewsletterDraft,
   draftMemberBlurb,
@@ -56,10 +79,13 @@ import {
   type AdminBotCvScanDeps,
 } from "../cv-scan.js";
 import { askGuidebook } from "../guidebook/ask.js";
+import { ReferenceScans } from "../kernel/reference-scans.js";
 import {
   AdminBotMemoryStore,
   AdminBotService,
   type AdminBotActionExecutor,
+  type AdminBotExecutorOutcome,
+  type AdminBotListPage,
   type AdminBotServiceOptions,
   type AdminBotServiceResponse,
   type AdminBotServiceStore,
@@ -67,6 +93,7 @@ import {
 } from "../kernel/service.js";
 import { createAdminBotSqliteService } from "../persistence/sqlite.js";
 import { createAdminBotPrivacyBroker, type AdminBotPrivacyBroker } from "../privacy/broker.js";
+import { createLocalChat, localChatMessages } from "../privacy/local-chat.js";
 import {
   createAdminBotSensitiveInfoDocument,
   type AdminBotSensitiveInfoDocument,
@@ -77,9 +104,13 @@ import { renderVenuePickerWebUi } from "../web/venue-picker/index.js";
 import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
 import { createCalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import {
+  type AdminBotStandingMeeting,
+  memberAttends,
+  standingMeetings,
+} from "../workflows/calendar/standing-meetings.js";
 import { normalizeCalendarTimezone, toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
 import { renderCvDigestDocument } from "../workflows/cv/digest-doc.js";
-import { renderDeadlinesWebUi } from "../workflows/deadlines/board.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { readDeadlineDataset } from "../workflows/deadlines/runtime-dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
@@ -93,20 +124,26 @@ import { createPasswordResetEmailRunner } from "../workflows/identity/password-r
 import { groupMeetingInviteEmails } from "../workflows/meetings/attendance-nudge.js";
 import type { AdminBotWriteOrigin } from "../workflows/members/adoption.js";
 import { toPublicMemberMapSummary } from "../workflows/members/member-map.js";
+import { privilegeForMemberTypeChange } from "../workflows/members/member-type-access.js";
+import { sameMemberType } from "../workflows/members/roster-sync.js";
 import { isTravelHistorySubject } from "../workflows/members/travel-history.js";
 import {
   ADMINBOT_LAB_EMAIL_ENV,
   adminBotLabCalendarId,
+  type CalendarInviteRunner,
   createCalendarInviteRunner,
 } from "../workflows/onboarding/calendar-invite.js";
 import { createDcsRosterSheetRecorder } from "../workflows/onboarding/dcs-roster-sheet.js";
 import { createDriveWorkspaceProvisioner } from "../workflows/onboarding/drive-workspace.js";
 import {
   createAdminBotOnboardingSender,
+  createSlackConnectOnboardingInviter,
   type AdminBotOnboardingSender,
   type AdminBotOnboardingSenderOptions,
   type AdminBotOnboardingSendRequest,
 } from "../workflows/onboarding/guide-sender.js";
+import { memberGuideStatus } from "../workflows/onboarding/guide-status.js";
+import { IclrIntegrityWatch } from "../workflows/papers/iclr-integrity-watch.js";
 import {
   createImportColumnMapper,
   type ImportColumnMapper,
@@ -116,6 +153,7 @@ import {
   type PublicationMailingRunner,
   createPublicationMailingRunner,
 } from "../workflows/papers/mailing-list-email.js";
+import { OpenReviewCitationWatch } from "../workflows/papers/openreview-citation-watch.js";
 import {
   createAdminBotOpenReviewWorkflow,
   type AdminBotOpenReviewWorkflow,
@@ -125,6 +163,8 @@ import {
   buildVenueIndex,
   refreshVenueIndexIfChanged,
   searchVenue,
+  venuePaperCategories,
+  venuePaperCategoryId,
 } from "../workflows/papers/venue-index.js";
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
 // The error class is a runtime value (the generate route catches it), so it cannot ride on the
@@ -135,17 +175,20 @@ import type {
   AdminBotReimbursementWorkflow,
 } from "../workflows/reimbursements/workflow.js";
 import { type CallSheetSource, defaultCallSheet } from "./call-sheet-config.js";
+import { newMemberIdentity } from "./member-create.js";
 import {
   describeMemberSheetReadFailure,
   memberSheetSource,
   resolveMemberSheetConfig,
 } from "./member-sheet-config.js";
 import { createNotificationDraftHandler } from "./notification-drafts.js";
+import { createPdfReferenceCheckHandler } from "./pdf-reference-check.js";
 import {
   previewCallSheetPush,
   proposeCallSheetPush,
   queueCallSheetRow,
 } from "./server.call-sheet.js";
+import { handleDeadlineRecommendationRoute } from "./server.deadline-recommendations.js";
 import {
   PayloadTooLargeError,
   asString,
@@ -160,6 +203,15 @@ import {
 import { handleLabSharingRoute } from "./server.lab-sharing.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
 import {
+  enrollNewMember,
+  type NewMemberOnboardingDeps,
+  executeMemberEnrollment,
+  onboardNewMember,
+  queueNewMemberGuide,
+} from "./server.member-onboarding.js";
+import {
+  addMemberSheetRow,
+  type MemberSheetAddRowRequest,
   type MemberSheetEditRequest,
   type MemberSheetOnboardRequest,
   type MemberSheetSource,
@@ -169,6 +221,7 @@ import {
   readMemberSheet,
   readRosterSheet,
 } from "./server.member-sheet.js";
+import { applyMeetingSelection, applyMemberTypeChange } from "./server.member-type-change.js";
 import {
   createPublicDeadlineLimiter,
   handlePublicDeadlineProposal,
@@ -227,6 +280,7 @@ export type AdminBotMockServiceOptions = {
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
   privacyBroker?: AdminBotPrivacyBroker;
+  localChat?: ReturnType<typeof createLocalChat>;
   sensitiveInfoPath?: string;
   sensitiveInfoDocument?: AdminBotSensitiveInfoDocument;
   emailAutomationRunner?: () => Promise<unknown>;
@@ -242,6 +296,17 @@ export type AdminBotMockServiceOptions = {
   // socket address. Only safe when this process is only reachable through a proxy that sets that
   // header itself (Render, Fly, etc.) — falls back to process.env.ADMINBOT_TRUST_PROXY === "1".
   trustProxyHeaders?: boolean;
+  referenceScanDependencies?: ReferenceScanDependencies;
+  pdfReferenceChecker?: PdfReferenceChecker;
+  // Automatic citation checks of the OpenReview account's own submissions. Injecting a reader
+  // enables them; otherwise they need ADMINBOT_OPENREVIEW_CITATION_CHECKS=1 plus credentials.
+  openReviewSubmissionReader?: OpenReviewSubmissionReader;
+  citationWatchChecker?: PdfReferenceChecker;
+  citationWatchNotifyEmail?: string;
+  // The ICLR pre-deadline integrity check. Injecting a scorer enables it (with the reader above);
+  // otherwise it needs ADMINBOT_ICLR_INTEGRITY_CHECKS=1, PANGRAM_API_KEY and OpenReview credentials.
+  aiTextScorer?: AiTextScorer;
+  integrityTextExtractor?: (pdf: Uint8Array) => Promise<string>;
   // Injected so the composition root owns the Slack dependency: the invite needs the Slack
   // extension's write client, and a bundled plugin importing another plugin is what the
   // extensions boundary forbids.
@@ -438,6 +503,7 @@ const ANONYMOUS_ROUTES = new Set([
   // the reimbursement pair is capped. Indexing a venue stays privileged: it is the expensive half
   // and the only one that writes.
   "GET /venue-papers/sources",
+  "GET /venue-papers/categories",
   "POST /venue-papers/search",
   // The Opportunities board, which the Control UI shows to visitors alongside Deadlines. Only
   // approved entries reach an anonymous caller; the handler resolves that from the principal, so
@@ -525,6 +591,7 @@ type AdminBotRouteContext = {
   store: AdminBotServiceStore;
   auth: AdminBotAuthService;
   privacyBroker: AdminBotPrivacyBroker;
+  localChat: ReturnType<typeof createLocalChat>;
   sensitiveInfo: AdminBotSensitiveInfoDocument;
   runEmailAutomation?: () => Promise<unknown>;
   reimbursementWorkflow?: AdminBotReimbursementWorkflow;
@@ -568,9 +635,15 @@ type AdminBotRouteContext = {
   /** Resolved switch: does a submitted meeting request propose its own call-sheet row? */
   autoQueueMeetingRequests: boolean;
   labCalendar: import("../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;
+  /** Grants lab-calendar read access, silently. Shared with auth so both use one runner. */
+  inviteToLabCalendar: CalendarInviteRunner;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
   deviceTokenIssuer?: DeviceTokenIssuer;
+  referenceScans: ReferenceScans;
+  checkUploadedPdf: ReturnType<typeof createPdfReferenceCheckHandler>;
+  openReviewCitationWatch?: OpenReviewCitationWatch;
+  iclrIntegrityWatch?: IclrIntegrityWatch;
   onboardingSender: AdminBotOnboardingSender;
   allowedOrigins: Set<string>;
   refusedOrigins: Set<string>;
@@ -605,8 +678,17 @@ function warnIfLabCalendarUnconfigured(injected: unknown): void {
   );
 }
 
+/** Mints the #friends-and-collaborators Slack Connect invite on its own; see guide-sender.ts. */
+type SlackConnectOnboardingInviter = ReturnType<typeof createSlackConnectOnboardingInviter>;
+
+/** What the `calendar.grant_lab_calendar` arm needs, resolved at execute time. */
+type LabCalendarGrant = {
+  invite: CalendarInviteRunner;
+  recordAudit: (event: Pick<AdminBotAuditEvent, "type" | "actor" | "details">) => void;
+};
+
 /**
- * The executor arm for `onboarding.send_guide`.
+ * The executor arms for `onboarding.send_guide` and `calendar.grant_lab_calendar`.
  *
  * Wraps whatever connector the launcher injected and answers this one type in-process, because the
  * work is not a CLI call: the sender mints a Slack Connect invite, provisions the Drive folder,
@@ -620,9 +702,36 @@ function warnIfLabCalendarUnconfigured(injected: unknown): void {
 function executorWithOnboardingGuide(
   inner: AdminBotActionExecutor | undefined,
   sender: () => AdminBotOnboardingSender | undefined,
+  labCalendar: () => LabCalendarGrant | undefined,
+  slackConnect: () => SlackConnectOnboardingInviter | undefined,
+  enroll: () =>
+    | ((proposal: AdminBotStoredProposal) => Promise<AdminBotExecutorOutcome>)
+    | undefined,
 ): AdminBotActionExecutor {
   return {
     async execute(proposal) {
+      if (proposal.type === "lab_member.enroll") {
+        const run = enroll();
+        return run ? run(proposal) : { handled: false, reason: "enrollment is not wired" };
+      }
+      if (proposal.type === "calendar.grant_lab_calendar") {
+        return grantLabCalendar(proposal, labCalendar());
+      }
+      if (proposal.type === "slack.connect_invite") {
+        const invite = slackConnect();
+        if (!invite) {
+          return { handled: false, reason: "no Slack Connect inviter is configured" };
+        }
+        const payload = (proposal.proposed_payload ?? {}) as Record<string, unknown>;
+        const result = await invite(typeof payload.email === "string" ? payload.email : "");
+        return result.ok
+          ? {
+              handled: true,
+              delivered: true,
+              artifacts: { channel_id: result.channel_id, reused: String(result.reused) },
+            }
+          : { handled: true, delivered: false, reason: result.reason };
+      }
       if (proposal.type !== "onboarding.send_guide") {
         return inner ? inner.execute(proposal) : { handled: false };
       }
@@ -647,6 +756,15 @@ function executorWithOnboardingGuide(
         ...(typeof payload.add_dcs_roster_row === "boolean"
           ? { add_dcs_roster_row: payload.add_dcs_roster_row }
           : {}),
+        // The project channels an admin picked on the Members tab. Dropping them here is how
+        // every approved guide used to go out with no #proj-xxx invite at all.
+        ...(Array.isArray(payload.slack_project_channels)
+          ? {
+              slack_project_channels: payload.slack_project_channels.filter(
+                (channel): channel is string => typeof channel === "string",
+              ),
+            }
+          : {}),
       });
       if (!result.ok) {
         // Refused rather than thrown: an unfilled placeholder or a missing value is a fixable
@@ -662,6 +780,45 @@ function executorWithOnboardingGuide(
   };
 }
 
+/**
+ * Read access to the lab calendar, as an approved action.
+ *
+ * Audited as `auth.calendar_invite_sent` / `_failed`, the rows the calendar backfill keys on, so a
+ * member granted here is not granted again by the backfill and a failure is visible to it.
+ */
+async function grantLabCalendar(
+  proposal: AdminBotStoredProposal,
+  grant: LabCalendarGrant | undefined,
+): Promise<AdminBotExecutorOutcome> {
+  if (!grant) {
+    return { handled: false, reason: "no lab calendar invite runner is configured" };
+  }
+  const payload = (proposal.proposed_payload ?? {}) as Record<string, unknown>;
+  const email = typeof payload.email === "string" ? payload.email.trim() : "";
+  const memberId = typeof payload.member_id === "string" ? payload.member_id : undefined;
+  if (!email) {
+    return { handled: false, reason: "email is required" };
+  }
+  const actor = proposal.approvals.at(-1)?.approver_id ?? "adminbot";
+  try {
+    await grant.invite(email);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    grant.recordAudit({
+      type: "auth.calendar_invite_failed",
+      actor,
+      details: { ...(memberId ? { member_id: memberId } : {}), email, error: message },
+    });
+    return { handled: true, delivered: false, reason: message };
+  }
+  grant.recordAudit({
+    type: "auth.calendar_invite_sent",
+    actor,
+    details: { ...(memberId ? { member_id: memberId } : {}), email },
+  });
+  return { handled: true, delivered: true, artifacts: { email } };
+}
+
 export function createAdminBotMockService(options: AdminBotMockServiceOptions = {}) {
   warnIfLabCalendarUnconfigured(options.calendarInviteRunner);
   let store: AdminBotServiceStore;
@@ -671,16 +828,32 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // off `service`, and the executor has to be handed to `service` before that. A holder resolved
   // at execute time is what lets one arm of the executor reach forward to it without either
   // construction having to move.
+  let referenceScans: ReferenceScans;
   let onboardingSenderRef: AdminBotOnboardingSender | undefined;
+  // The two arms onboarding added, bound further down for the same reason as the sender.
+  const onboardingArms: {
+    labCalendar?: LabCalendarGrant;
+    slackConnect?: SlackConnectOnboardingInviter;
+    enroll?: (proposal: AdminBotStoredProposal) => Promise<AdminBotExecutorOutcome>;
+  } = {};
   const withOnboarding = (executor: AdminBotActionExecutor | undefined) =>
-    executorWithOnboardingGuide(executor, () => onboardingSenderRef);
+    executorWithOnboardingGuide(
+      executor,
+      () => onboardingSenderRef,
+      () => onboardingArms.labCalendar,
+      () => onboardingArms.slackConnect,
+      () => onboardingArms.enroll,
+    );
   const baseOptions = serviceOptions(options);
   const wiredOptions: AdminBotServiceOptions = {
     ...baseOptions,
     // The arm is installed whether or not a connector was injected: `onboarding.send_guide` is
     // executed in-process by the sender, not by the CLI connector, so a deployment with no
     // executor at all still executes this one.
-    executor: withOnboarding(baseOptions.executor),
+    executor: {
+      execute: (proposal) =>
+        referenceScans.executor(withOnboarding(baseOptions.executor)).execute(proposal),
+    },
   };
   if (options.databasePath) {
     const durable = createAdminBotSqliteService({
@@ -694,6 +867,25 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store = new AdminBotMemoryStore();
     service = new AdminBotService(store, wiredOptions);
   }
+  const referenceDependencies = options.referenceScanDependencies ?? {
+    readPdf: createPublicOpenReviewPdfReader(),
+    scanPdf: createGptZeroBibliographyScanner(),
+  };
+  referenceScans = new ReferenceScans(store, service, referenceDependencies);
+  const checkUploadedPdf = createPdfReferenceCheckHandler(
+    options.pdfReferenceChecker,
+    referenceDependencies.scanPdf,
+    ({ actor, ...details }) =>
+      store.recordAudit({
+        id: `aud_${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        type: "reference_check.pdf_checked",
+        actor,
+        details,
+      }),
+  );
+  const openReviewCitationWatch = createOpenReviewCitationWatch(options, store, service);
+  const iclrIntegrityWatch = createIclrIntegrityWatch(options, store, service);
   // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
   // handing it to a remote member replaced their working gateway URL with a dead one. Left unset,
   // the client keeps the URL it already connects with.
@@ -711,21 +903,32 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       parseOrigins(process.env.ADMINBOT_ALLOWED_ORIGINS) ??
       DEFAULT_ALLOWED_ORIGINS,
   );
+  const calendarInviteRunner = options.calendarInviteRunner ?? createCalendarInviteRunner();
+  onboardingArms.labCalendar = {
+    invite: calendarInviteRunner,
+    recordAudit: (event) =>
+      store.recordAudit({
+        id: `aud_${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        ...event,
+      }),
+  };
   const auth = new AdminBotAuthService({
     store,
-    // Signup approval mints a roster member through the same governed path as any admin edit so
-    // access grants and validation stay identical.
-    createMember: (input) => {
-      const result = service.upsertLabMember(input);
+    // Prepare the governed profile without writing; approval commits the member, credential, and
+    // decision together before the profile hooks run.
+    prepareMember: (input) => {
+      const result = service.prepareLabMember(input);
       if (!result.ok) {
         throw new Error(result.error.message);
       }
       return result.payload;
     },
+    afterMemberCreated: (member) => service.afterMemberCreated(member),
     // Warned about at startup rather than left to fail per approval. See adminbotLabCalendarWarning
     // below: the runner is still installed when unconfigured, because a failure that is audited is
     // better than a side effect that is silently skipped.
-    inviteToLabCalendar: options.calendarInviteRunner ?? createCalendarInviteRunner(),
+    inviteToLabCalendar: calendarInviteRunner,
     sendAccountApprovedEmail:
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
     sendPasswordResetEmail: options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
@@ -833,6 +1036,13 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // Close the late binding opened above: from here, an approved `onboarding.send_guide` executes
   // through exactly the sender the Onboarding tab uses.
   onboardingSenderRef = onboardingSender;
+  onboardingArms.slackConnect = createSlackConnectOnboardingInviter({
+    ...(options.inviteToSlackConnect ? { inviteToSlackConnect: options.inviteToSlackConnect } : {}),
+    slackConnectInviteCache: {
+      get: (email, channelId) => service.getSlackConnectInvite(email, channelId),
+      save: (invite) => service.saveSlackConnectInvite(invite),
+    },
+  });
   const sensitiveInfo =
     options.sensitiveInfoDocument ??
     createAdminBotSensitiveInfoDocument({
@@ -871,7 +1081,12 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store,
     auth,
     privacyBroker,
+    localChat: options.localChat ?? createLocalChat(),
     sensitiveInfo,
+    referenceScans,
+    checkUploadedPdf,
+    ...(openReviewCitationWatch ? { openReviewCitationWatch } : {}),
+    ...(iclrIntegrityWatch ? { iclrIntegrityWatch } : {}),
     onboardingSender,
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
@@ -911,6 +1126,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // Calendar tab asks. The drafter defaults to the same broker `adminbot_reason` uses.
     readCalendarEvents: options.calendarEventsReader ?? createCalendarEventsReader(),
     labCalendar: resolveLabCalendar(),
+    inviteToLabCalendar: calendarInviteRunner,
     draftCalendarEvent:
       options.calendarEventDrafter ??
       createEventDraftRunner((request) => privacyBroker.handle(request)),
@@ -926,6 +1142,23 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     trustProxyHeaders:
       options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
   };
+  // Needs the route context -- the member sheet, the Monday meeting reader -- so it is bound last.
+  onboardingArms.enroll = (proposal) =>
+    executeMemberEnrollment(
+      {
+        ...memberEnrollmentContext(ctx),
+        getMember: (memberId) => store.getLabMember(memberId),
+        alreadyEnrolled: (memberId) =>
+          store
+            .listAuditEvents()
+            .some(
+              (event) =>
+                event.type === "lab_member.member_type_applied" &&
+                (event.details as { member_id?: unknown } | undefined)?.member_id === memberId,
+            ),
+      },
+      proposal,
+    );
   const slackChannelNamingSweepIntervalMs = options.slackChannelNamingSweepIntervalMs;
   const slackChannelNamingSweepTimer =
     typeof slackChannelNamingSweepIntervalMs === "number" && slackChannelNamingSweepIntervalMs > 0
@@ -1029,16 +1262,6 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     return;
   }
   if (req.method === "GET" && url.pathname === "/deadlines") {
-    sendHtml(
-      res,
-      200,
-      renderDeadlinesWebUi(ctx.service.deadlineReadModel(DEADLINE_VENUES), {
-        proposalUrl: `${resolveAdminBotControlUiUrl()}/deadlines`,
-      }),
-    );
-    return;
-  }
-  if (req.method === "GET" && url.pathname === "/deadlines/venues.json") {
     sendJson(res, 200, { items: ctx.service.deadlineReadModel(DEADLINE_VENUES) });
     return;
   }
@@ -1070,7 +1293,7 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     return;
   }
 
-  const principal = resolvePrincipal(req, ctx);
+  const principal = await resolvePrincipal(req, ctx);
   if (!principal) {
     if (!isAnonymousRoute(req.method, url.pathname)) {
       sendJson(res, 401, { error: { message: "authentication required" } });
@@ -1109,13 +1332,18 @@ async function handleAuthRoute(
   url: URL,
 ): Promise<void> {
   if (req.method === "GET" && url.pathname === "/auth/roster") {
-    sendJson(res, 200, { members: ctx.auth.listRoster() });
+    const query = (url.searchParams.get("q") ?? "").trim();
+    if (query.length > 80) {
+      sendJson(res, 400, { error: { message: "roster search is too long" } });
+      return;
+    }
+    sendJson(res, 200, { members: await ctx.auth.listRoster(query) });
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/claim") {
     const body = readRecord(await readJson(req));
     const ip = remoteIp(req, ctx.trustProxyHeaders);
-    const result = ctx.auth.claim({
+    const result = await ctx.auth.claim({
       member_id: asString(body.member_id),
       email: asString(body.email),
       password: asString(body.password),
@@ -1127,7 +1355,7 @@ async function handleAuthRoute(
   if (req.method === "POST" && url.pathname === "/auth/signup") {
     const body = readRecord(await readJson(req));
     const ip = remoteIp(req, ctx.trustProxyHeaders);
-    const result = ctx.auth.signup({
+    const result = await ctx.auth.signup({
       profile: readRecord(body.profile),
       email: asString(body.email),
       password: asString(body.password),
@@ -1139,7 +1367,7 @@ async function handleAuthRoute(
   if (req.method === "POST" && url.pathname === "/auth/login") {
     const body = readRecord(await readJson(req));
     const ip = remoteIp(req, ctx.trustProxyHeaders);
-    const result = ctx.auth.login({
+    const result = await ctx.auth.login({
       email: asString(body.email),
       password: asString(body.password),
       ...(ip ? { remoteIp: ip } : {}),
@@ -1157,7 +1385,7 @@ async function handleAuthRoute(
     return;
   }
   if (req.method === "GET" && url.pathname === "/auth/session") {
-    const principal = resolvePrincipal(req, ctx);
+    const principal = await resolvePrincipal(req, ctx);
     if (!principal || principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
@@ -1169,7 +1397,7 @@ async function handleAuthRoute(
   // requirePrivileged: the admin check lives in the auth service, which is also where the
   // no-nesting and not-yourself rules are, so all four refusals are stated in one place.
   if (req.method === "POST" && url.pathname === "/auth/impersonate") {
-    const principal = resolvePrincipal(req, ctx);
+    const principal = await resolvePrincipal(req, ctx);
     if (!principal || principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
@@ -1177,7 +1405,7 @@ async function handleAuthRoute(
     const body = readRecord(await readJson(req));
     sendAuthResult(
       res,
-      ctx.auth.startImpersonation({ admin: principal, memberId: asString(body.member_id) }),
+      await ctx.auth.startImpersonation({ admin: principal, memberId: asString(body.member_id) }),
       requestIsSecure(req, ctx.trustProxyHeaders),
     );
     return;
@@ -1192,7 +1420,7 @@ async function handleAuthRoute(
     // be closable, and the auth service refuses anything that is not an impersonation row anyway.
     sendAuthResult(
       res,
-      ctx.auth.endImpersonation(token),
+      await ctx.auth.endImpersonation(token),
       requestIsSecure(req, ctx.trustProxyHeaders),
     );
     return;
@@ -1206,14 +1434,14 @@ async function handleAuthRoute(
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/logout") {
-    const principal = resolvePrincipal(req, ctx);
+    const principal = await resolvePrincipal(req, ctx);
     if (!principal || principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
     const token = bearerToken(req) ?? cookieToken(req);
     if (token) {
-      ctx.auth.logout(token);
+      await ctx.auth.logout(token);
     }
     clearSessionCookie(res, requestIsSecure(req, ctx.trustProxyHeaders));
     sendJson(res, 200, { logged_out: true });
@@ -1224,7 +1452,7 @@ async function handleAuthRoute(
   // unknown addresses, so neither leaks roster membership.
   if (req.method === "POST" && url.pathname === "/auth/password-reset") {
     const body = readRecord(await readJson(req));
-    const result = ctx.auth.requestPasswordReset({
+    const result = await ctx.auth.requestPasswordReset({
       email: asString(body.email),
       ...(() => {
         const ip = remoteIp(req, ctx.trustProxyHeaders);
@@ -1236,7 +1464,7 @@ async function handleAuthRoute(
   }
   if (req.method === "POST" && url.pathname === "/auth/password-reset/confirm") {
     const body = readRecord(await readJson(req));
-    const result = ctx.auth.resetPassword({
+    const result = await ctx.auth.resetPassword({
       token: asString(body.token),
       newPassword: asString(body.new_password),
     });
@@ -1244,7 +1472,7 @@ async function handleAuthRoute(
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/password") {
-    const principal = resolvePrincipal(req, ctx);
+    const principal = await resolvePrincipal(req, ctx);
     if (!principal || principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
@@ -1253,7 +1481,7 @@ async function handleAuthRoute(
       return;
     }
     const body = readRecord(await readJson(req));
-    const result = ctx.auth.changePassword(
+    const result = await ctx.auth.changePassword(
       principal.member.id,
       asString(body.current_password),
       asString(body.new_password),
@@ -1265,7 +1493,7 @@ async function handleAuthRoute(
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/email") {
-    const principal = resolvePrincipal(req, ctx);
+    const principal = await resolvePrincipal(req, ctx);
     if (!principal) {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
@@ -1279,7 +1507,7 @@ async function handleAuthRoute(
       return;
     }
     const body = readRecord(await readJson(req));
-    const result = ctx.auth.changeEmail(
+    const result = await ctx.auth.changeEmail(
       principal.member.id,
       asString(body.new_email),
       asString(body.current_password),
@@ -1299,7 +1527,7 @@ async function handleRegistrationRoute(
   ctx: AdminBotRouteContext,
   url: URL,
 ): Promise<void> {
-  const principal = resolvePrincipal(req, ctx);
+  const principal = await resolvePrincipal(req, ctx);
   if (!principal) {
     sendJson(res, 401, { error: { message: "authentication required" } });
     return;
@@ -1313,7 +1541,7 @@ async function handleRegistrationRoute(
     const status = adminBotRegistrationStatuses.includes(raw as AdminBotRegistrationStatus)
       ? (raw as AdminBotRegistrationStatus)
       : "pending";
-    sendJson(res, 200, { registrations: ctx.auth.listRegistrations(status) });
+    sendJson(res, 200, { registrations: await ctx.auth.listRegistrations(status) });
     return;
   }
   const approve = /^\/auth\/registrations\/([^/]+)\/approve$/u.exec(url.pathname);
@@ -1321,11 +1549,36 @@ async function handleRegistrationRoute(
     if (!requireMemberPrivileged(res, principal)) {
       return;
     }
-    sendAuthResult(
-      res,
-      ctx.auth.approveRegistration(decodeURIComponent(approve[1]), decidedBy),
-      requestIsSecure(req, ctx.trustProxyHeaders),
-    );
+    const approved = await ctx.auth.approveRegistration(decodeURIComponent(approve[1]), decidedBy);
+    // A sign-up that created a member is onboarded like every other new member: the access its
+    // level grants, approved by this admin, and its guide queued. A claim of an existing roster
+    // row created nobody, and was onboarded by whichever path added that row.
+    const member =
+      approved.ok && approved.payload.member_created
+        ? ctx.store.getLabMember(approved.payload.member_id)
+        : undefined;
+    if (member) {
+      const deps = memberOnboardingDeps(ctx, principal, approverIdentityFor(principal));
+      // The account is already approved and committed; a failed step is audited by the step itself
+      // and must not turn that into an error response.
+      // The account address, when the record has none: a sign-up's login email lives on its
+      // credential, and it is the address every step here has to reach.
+      const email = member.email?.trim() || (approved.ok ? approved.payload.email : "");
+      try {
+        await enrollNewMember(deps, { ...member, email });
+        await queueNewMemberGuide(deps, member.id, { email });
+      } catch (error) {
+        deps.recordAudit({
+          type: "lab_member.member_type_applied",
+          actor: decidedBy,
+          details: {
+            member_id: member.id,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+      }
+    }
+    sendAuthResult(res, approved, requestIsSecure(req, ctx.trustProxyHeaders));
     return;
   }
   const reject = /^\/auth\/registrations\/([^/]+)\/reject$/u.exec(url.pathname);
@@ -1335,7 +1588,7 @@ async function handleRegistrationRoute(
     }
     sendAuthResult(
       res,
-      ctx.auth.rejectRegistration(decodeURIComponent(reject[1]), decidedBy),
+      await ctx.auth.rejectRegistration(decodeURIComponent(reject[1]), decidedBy),
       requestIsSecure(req, ctx.trustProxyHeaders),
     );
     return;
@@ -1412,7 +1665,7 @@ async function handlePairDeviceRoute(
   res: ServerResponse,
   ctx: AdminBotRouteContext,
 ): Promise<void> {
-  const principal = resolvePrincipal(req, ctx);
+  const principal = await resolvePrincipal(req, ctx);
   if (!principal || principal.kind !== "member") {
     sendJson(res, 401, { error: { message: "member session required" } });
     return;
@@ -1462,7 +1715,7 @@ async function handleDeviceTokenRoute(
   res: ServerResponse,
   ctx: AdminBotRouteContext,
 ): Promise<void> {
-  const principal = resolvePrincipal(req, ctx);
+  const principal = await resolvePrincipal(req, ctx);
   if (!principal || principal.kind !== "member") {
     sendJson(res, 401, { error: { message: "member session required" } });
     return;
@@ -1503,6 +1756,98 @@ async function handleDeviceTokenRoute(
 
 // An approval must name a real person, so the shared service principal (which every agent tool
 // call authenticates as) cannot supply one.
+/**
+ * The Monday group meeting as it stands: every live series id and the union of their guests.
+ *
+ * Shared by the membership sweep and a Lab Members type change, so both write to the same series.
+ * A recurring meeting comes back as dated occurrences (`<series>_<instant>`). Every one ahead is
+ * kept, not just the first: once somebody edits the meeting "this and following" in Google, the
+ * later Mondays belong to a new `<series>_R<instant>` series and the configured id names a series
+ * that has already ended. Writing to that id is what used to happen -- it re-sent the dead series
+ * to everyone on it and left the live meeting untouched, so the same removals were proposed again
+ * the next morning.
+ */
+async function readGroupMeetingSeries(
+  ctx: AdminBotRouteContext,
+  calendarId: string,
+  eventId?: string,
+): Promise<
+  | { calendarId: string; seriesId: string; targets: string[]; attendees: string[] }
+  | { error: { status: number; message: string } }
+> {
+  if (!ctx.readCalendarEvents) {
+    return { error: { status: 503, message: "calendar reading is not configured" } };
+  }
+  const seriesId = groupMeetingSeriesId(eventId || resolveGroupMeetingEventId());
+  let events: Awaited<ReturnType<NonNullable<typeof ctx.readCalendarEvents>>>;
+  try {
+    events = await ctx.readCalendarEvents({ calendarId, max: 250 });
+  } catch (error) {
+    // Plans are computed from this read. A failed read must not become "the meeting has no
+    // attendees", which is a proposal to empty it.
+    return {
+      error: {
+        status: 502,
+        message: `could not read the calendar: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      },
+    };
+  }
+  const occurrences = events.filter((candidate) => groupMeetingSeriesId(candidate.id) === seriesId);
+  if (occurrences.length === 0) {
+    return {
+      error: {
+        status: 404,
+        message: `no event ${seriesId} on calendar ${calendarId} in the read window`,
+      },
+    };
+  }
+  const targets = [
+    ...new Set(occurrences.map((occurrence) => occurrence.recurring_event_id ?? occurrence.id)),
+  ];
+  // The union, so somebody who is only on a later split still gets reconciled.
+  const attendees = [
+    ...new Map(
+      occurrences
+        .flatMap((occurrence) => occurrence.attendees ?? [])
+        .map((email) => [email.trim().toLowerCase(), email.trim()] as const),
+    ).values(),
+  ];
+  return { calendarId, seriesId, targets, attendees };
+}
+
+/**
+ * The lab calendar's standing meetings (Monday, `Theme:`, `Proj:`) with who is on each.
+ *
+ * What the Lab Members form's Meetings checkboxes offer. A failed read is an error, never an empty
+ * list: an empty list would read as "on no meetings" and a save would then remove them from all.
+ */
+async function readStandingMeetings(
+  ctx: AdminBotRouteContext,
+): Promise<
+  | { calendarId: string; meetings: AdminBotStandingMeeting[] }
+  | { error: { status: number; message: string } }
+> {
+  if (!ctx.readCalendarEvents) {
+    return { error: { status: 503, message: "calendar reading is not configured" } };
+  }
+  const calendarId = ctx.labCalendar.id;
+  try {
+    const events = await ctx.readCalendarEvents({ calendarId, max: 250 });
+    return { calendarId, meetings: standingMeetings(events, resolveGroupMeetingEventId()) };
+  } catch (error) {
+    return {
+      error: {
+        status: 502,
+        message: `could not read the calendar: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      },
+    };
+  }
+}
+
 function approverIdentityFor(
   principal: AdminBotPrincipal,
 ): { approver_role: string; approver_id: string } | undefined {
@@ -1558,6 +1903,142 @@ async function handleAuthenticatedRoute(
       return;
     }
     await ctx.notificationDrafts(req, res);
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/drive/check-edit-access") {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(res, await service.checkDriveEditAccess(asString(body.url)));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/reference-check/pdf") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    await ctx.checkUploadedPdf(req, res, principalActor(principal));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/openreview/citation-checks") {
+    // Restricted manuscripts' bibliographies: admins (or the service token) only.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const watch = ctx.openReviewCitationWatch;
+    sendJson(res, 200, {
+      enabled: Boolean(watch),
+      ...(watch ? watch.status() : { running: false }),
+      checks: ctx.store.listOpenReviewCitationChecks(),
+    });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/openreview/citation-checks/run") {
+    // Started by the scheduled job; safe to call repeatedly -- a running sweep is not restarted,
+    // and a version already checked is never checked again.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const watch = ctx.openReviewCitationWatch;
+    if (!watch) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "OpenReview citation checks are off — set ADMINBOT_OPENREVIEW_CITATION_CHECKS=1, OPENREVIEW_USERNAME and OPENREVIEW_PASSWORD",
+        },
+      });
+      return;
+    }
+    try {
+      sendJson(res, 202, await watch.start());
+    } catch (error) {
+      sendJson(res, 502, {
+        error: {
+          message: error instanceof Error ? error.message : "could not list OpenReview submissions",
+        },
+      });
+    }
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/openreview/integrity-checks") {
+    // AI-text scores of restricted manuscripts: admins (or the service token) only.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const watch = ctx.iclrIntegrityWatch;
+    sendJson(res, 200, {
+      enabled: Boolean(watch),
+      ...(watch ? watch.status() : { running: false }),
+      checks: ctx.store.listPaperAiTextChecks(),
+    });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/openreview/integrity-checks/run") {
+    // Started by the hourly job; safe to call repeatedly, like the citation run above -- a running
+    // sweep is not restarted, a version is scored once, and each alert is raised once.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const watch = ctx.iclrIntegrityWatch;
+    if (!watch) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "ICLR integrity checks are off — set ADMINBOT_ICLR_INTEGRITY_CHECKS=1, PANGRAM_API_KEY, OPENREVIEW_USERNAME and OPENREVIEW_PASSWORD",
+        },
+      });
+      return;
+    }
+    try {
+      sendJson(res, 202, await watch.start());
+    } catch (error) {
+      sendJson(res, 502, {
+        error: {
+          message: error instanceof Error ? error.message : "could not list OpenReview submissions",
+        },
+      });
+    }
+    return;
+  }
+  if (url.pathname === "/reference-scans" && (req.method === "GET" || req.method === "POST")) {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (req.method === "GET") {
+      const scan = ctx.referenceScans.get(
+        url.searchParams.get("submission_id") ?? "",
+        url.searchParams.get("pdf_sha256") ?? "",
+      );
+      sendJson(res, scan ? 200 : 404, scan ?? { error: { message: "scan not found" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    if (typeof body.submission_id !== "string" || typeof body.notify_email !== "string") {
+      sendJson(res, 400, { error: { message: "submission_id and notify_email are required" } });
+      return;
+    }
+    try {
+      const result = await ctx.referenceScans.propose(body.submission_id, body.notify_email);
+      sendJson(res, 200, result);
+    } catch (error) {
+      sendJson(res, 422, {
+        error: { message: error instanceof Error ? error.message : "scan proposal failed" },
+      });
+    }
+    return;
+  }
+  if (
+    url.pathname === "/deadline-recommendations" ||
+    url.pathname.startsWith("/deadline-recommendations/")
+  ) {
+    if (principal.kind !== "member" || principal.impersonator) {
+      sendJson(res, 403, {
+        error: { message: "Use your own member session to recommend a deadline." },
+      });
+      return;
+    }
+    await handleDeadlineRecommendationRoute(req, res, url, service, principal.member.id);
     return;
   }
 
@@ -1702,12 +2183,30 @@ async function handleAuthenticatedRoute(
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/venue-papers/categories") {
+    const venueId = url.searchParams.get("venue_id")?.trim() ?? "";
+    const settings = service.getSettings();
+    const source = (settings.ok ? (settings.payload.venue_sources ?? []) : []).find(
+      (entry) => entry.id === venueId,
+    );
+    if (!source) {
+      sendJson(res, 404, { error: { message: "that conference is not on the list" } });
+      return;
+    }
+    sendJson(res, 200, {
+      venue_id: venueId,
+      categories: venuePaperCategories(ctx.store.listVenuePapers(venueId), source.label),
+    });
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/venue-papers/search") {
     // Open to visitors: see ANONYMOUS_ROUTES. The gate above admits anonymous callers only for the
     // routes named there, and applies the per-IP rate limit on the way through.
     const body = readRecord(await readJson(req));
     const venueId = asString(body.venue_id)?.trim() ?? "";
     const interests = asString(body.interests)?.trim() ?? "";
+    const categoryId = asString(body.category_id)?.trim().toLowerCase() ?? "";
     if (!venueId) {
       sendJson(res, 400, { error: { message: "venue_id is required" } });
       return;
@@ -1735,12 +2234,24 @@ async function handleAuthenticatedRoute(
       });
       return;
     }
+    const categories = venuePaperCategories(rows, source.label);
+    const category = categoryId ? categories.find((entry) => entry.id === categoryId) : undefined;
+    if (categoryId && !category) {
+      sendJson(res, 400, {
+        error: { message: "that category is not available for this conference" },
+      });
+      return;
+    }
+    const selectedRows = categoryId
+      ? rows.filter((row) => venuePaperCategoryId(row.venue, source.label) === categoryId)
+      : rows;
     try {
-      const ranking = await searchVenue({ rows, interests, embed: ctx.embedder });
+      const ranking = await searchVenue({ rows: selectedRows, interests, embed: ctx.embedder });
       sendJson(res, 200, {
         venue_id: venueId,
         label: source.label,
-        searched: rows.length,
+        ...(category ? { category: category.label } : {}),
+        searched: selectedRows.length,
         ...ranking,
       });
     } catch (error) {
@@ -2820,6 +3331,7 @@ async function handleAuthenticatedRoute(
         asString(body.badge_id),
         principal.member.id,
         asString(body.evidence) || undefined,
+        body.count,
       ),
     );
     return;
@@ -3180,6 +3692,44 @@ async function handleAuthenticatedRoute(
     await handleLabSharingRoute(req, res, url, service, principal.member.id);
     return;
   }
+  // Member requests: anyone signed in may propose adding somebody; only an admin decides. Ahead of
+  // every /lab/members/:id pattern so "requests" is never read as a member id. A member session
+  // throughout -- the service principal speaks for whoever is chatting, so it can neither file a
+  // request in a real member's name nor approve one.
+  if (
+    url.pathname === "/lab/members/requests" ||
+    url.pathname.startsWith("/lab/members/requests/")
+  ) {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "member session required" } });
+      return;
+    }
+    await handleMemberRequestRoute(req, res, ctx, url, principal);
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/lab/members/self") {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "member session required" } });
+      return;
+    }
+    const result = service.getLabMemberView(principal.member.id);
+    sendServiceResult(
+      res,
+      result.ok
+        ? {
+            ...result,
+            payload: {
+              member: redactConfidentialMemberFields(result.payload.member, {
+                memberId: principal.member.id,
+                isAdmin: principal.member.privilege_level === "admin",
+                isMemberSession: true,
+              }),
+            },
+          }
+        : result,
+    );
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/lab/members") {
     // The roster is lab-internal but not confidential, with two exceptions. What a member discloses
     // about their health or family is written for one reader, and this response goes to all of
@@ -3192,13 +3742,50 @@ async function handleAuthenticatedRoute(
       isAdmin: principal.kind === "member" && principal.member.privilege_level === "admin",
       isMemberSession: principal.kind === "member",
     };
-    const result = service.listLabMembers();
+    const view = url.searchParams.get("view");
+    if (view !== null && view !== "summary") {
+      sendJson(res, 400, { error: { message: "invalid member view" } });
+      return;
+    }
+    const page = readListPage(url);
+    if (page === "invalid") {
+      sendJson(res, 400, { error: { message: "invalid list pagination or search" } });
+      return;
+    }
+    if (view === "summary") {
+      if (page) {
+        sendJson(res, 400, { error: { message: "summary view cannot be paginated" } });
+        return;
+      }
+      const result = service.listLabMemberSummaries(
+        principal.kind === "member" ? principal.member.id : undefined,
+      );
+      sendServiceResult(
+        res,
+        result.ok
+          ? {
+              ...result,
+              payload: {
+                members: result.payload.members.map((member) =>
+                  redactConfidentialMemberFields(member, viewer),
+                ),
+                ...(result.payload.self
+                  ? { self: redactConfidentialMemberFields(result.payload.self, viewer) }
+                  : {}),
+              },
+            }
+          : result,
+      );
+      return;
+    }
+    const result = service.listLabMembers(page);
     sendServiceResult(
       res,
       result.ok
         ? {
             ...result,
             payload: {
+              ...result.payload,
               members: result.payload.members.map((member) =>
                 redactConfidentialMemberFields(member, viewer),
               ),
@@ -3206,6 +3793,21 @@ async function handleAuthenticatedRoute(
           }
         : result,
     );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/lab/meetings") {
+    // The Lab Members form's Meetings checkboxes. Guest lists name real people's addresses, so
+    // this is for an admin session only, like the form that uses it.
+    if (principal.kind !== "member" || principal.member.privilege_level !== "admin") {
+      sendJson(res, 403, { error: { message: "the meeting list needs an admin session" } });
+      return;
+    }
+    const standing = await readStandingMeetings(ctx);
+    if ("error" in standing) {
+      sendJson(res, standing.error.status, { error: { message: standing.error.message } });
+      return;
+    }
+    sendJson(res, 200, { meetings: standing.meetings });
     return;
   }
   if (req.method === "GET" && url.pathname === "/lab/members/duplicates") {
@@ -3229,6 +3831,58 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, service.listRecentUpdatesForMember(memberId, updateLimit(url)));
+    return;
+  }
+  if (url.pathname === "/local-chat" && (req.method === "GET" || req.method === "POST")) {
+    const settings = service.getSettings();
+    if (
+      principal.kind !== "member" ||
+      principal.impersonator ||
+      principal.member.privilege_level !== "admin" ||
+      !settings.ok ||
+      !isTravelHistorySubject(principal.member.id, settings.payload)
+    ) {
+      sendJson(res, 404, { error: { message: "Local chat is not available for this account." } });
+      return;
+    }
+    if (req.method === "GET") {
+      sendJson(res, 200, {
+        model: ctx.localChat.model,
+        route: "local",
+        history: "not_saved",
+        tools: false,
+      });
+      return;
+    }
+    const messages = localChatMessages(await readJson(req));
+    if (!messages) {
+      sendJson(res, 400, {
+        error: {
+          message:
+            "Use up to 23 alternating messages, 8000 characters each and 32000 in total, ending with your question.",
+        },
+      });
+      return;
+    }
+    const abort = new AbortController();
+    const disconnect = () => abort.abort();
+    res.once("close", disconnect);
+    if (res.destroyed) disconnect();
+    try {
+      const output = await ctx.localChat.complete(messages, abort.signal);
+      sendJson(res, 200, { output, model: ctx.localChat.model, route: "local" });
+    } catch (error) {
+      const busy = error instanceof Error && error.message === "local chat busy";
+      sendJson(res, busy ? 429 : 503, {
+        error: {
+          message: busy
+            ? "Local chat is busy. Retry shortly."
+            : "The local model could not answer. No external model was used. Retry or contact the operator.",
+        },
+      });
+    } finally {
+      res.off("close", disconnect);
+    }
     return;
   }
   const memberTravel = /^\/lab\/members\/([^/]+)\/travel$/u.exec(url.pathname);
@@ -3754,18 +4408,50 @@ async function handleAuthenticatedRoute(
   }
   if (req.method === "GET" && url.pathname === "/meetings") {
     // Two audiences, one route. A member gets their own attendance and a headcount; the roster is
-    // personal data about everyone else and stays with the admins. The service principal reads as
-    // a member would -- it drives agent tool calls on behalf of whoever is chatting, so it is not
-    // entitled to a roster its caller could not see.
-    if (principal.kind === "member" && principal.member.privilege_level === "admin") {
-      sendServiceResult(res, service.listMeetings());
-      return;
-    }
+    // personal data about everyone else and stays with the admins. Only member sessions may read
+    // recordings, so the service principal cannot use this route to bypass that split.
     if (principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "member session required" } });
       return;
     }
-    sendServiceResult(res, service.listMeetingsForMember(principal.member.id));
+    const isAdmin = principal.member.privilege_level === "admin";
+    const limitText = url.searchParams.get("limit");
+    if (limitText === null) {
+      if (url.searchParams.has("before_started_at") || url.searchParams.has("before_id")) {
+        sendJson(res, 400, { error: { message: "invalid meetings page" } });
+        return;
+      }
+      sendServiceResult(
+        res,
+        isAdmin ? service.listMeetings() : service.listMeetingsForMember(principal.member.id),
+      );
+      return;
+    }
+    const beforeStartedAt = url.searchParams.get("before_started_at");
+    const beforeId = url.searchParams.get("before_id");
+    const limit = Number(limitText);
+    if (
+      !/^[1-9]\d*$/u.test(limitText) ||
+      limit > 50 ||
+      (beforeStartedAt === null) !== (beforeId === null) ||
+      (beforeStartedAt !== null &&
+        (beforeStartedAt.length > 100 || !beforeId?.trim() || beforeId.length > 512))
+    ) {
+      sendJson(res, 400, { error: { message: "invalid meetings page" } });
+      return;
+    }
+    const page = {
+      limit,
+      ...(beforeStartedAt !== null && beforeId !== null
+        ? { before: { started_at: beforeStartedAt, id: beforeId } }
+        : {}),
+    };
+    sendServiceResult(
+      res,
+      isAdmin
+        ? service.listMeetingsPage(page)
+        : service.listMeetingsPageForMember(principal.member.id, page),
+    );
     return;
   }
   if (req.method === "POST" && url.pathname === "/meetings") {
@@ -3864,6 +4550,21 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listPapersRelevantToMember(principal.member.id));
     return;
   }
+  if (req.method === "POST" && url.pathname === "/lab/members") {
+    if (principal.kind !== "member" || principal.member.privilege_level !== "admin") {
+      sendJson(res, 403, { error: { message: "An admin member session is required." } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const identity = newMemberIdentity(body, ctx.store.listLabMembers());
+    if (identity.error) {
+      sendJson(res, 409, { error: { message: identity.error } });
+      return;
+    }
+    const saved = await saveLabMemberAsAdmin(ctx, principal, identity.id!, body);
+    sendJson(res, saved.status, saved.body);
+    return;
+  }
   const labMember = /^\/lab\/members\/([^/]+)$/u.exec(url.pathname);
   if (req.method === "PUT" && labMember?.[1]) {
     const memberId = decodeURIComponent(labMember[1]);
@@ -3887,17 +4588,8 @@ async function handleAuthenticatedRoute(
     // from SELF_PROFILE_EDITABLE_FIELDS on this path only; the scripts that sync it write straight
     // to the database and do not come through here.
     if (principal.kind === "member" && principal.member.privilege_level === "admin") {
-      sendServiceResult(
-        res,
-        service.upsertLabMember(
-          { ...(body as AdminBotLabMemberInput), id: memberId },
-          // An admin correcting somebody's record is not that member adopting the tool, so this is
-          // stamped `admin` and does not count toward their adoption rate. The actor is recorded so
-          // "who typed this" has an answer either way -- and comes from principalActor so that an
-          // admin doing this while viewing as another admin is still recorded as themselves.
-          { source: "admin", actor: principalActor(principal) },
-        ),
-      );
+      const saved = await saveLabMemberAsAdmin(ctx, principal, memberId, body);
+      sendJson(res, saved.status, saved.body);
       return;
     }
     if (principal.kind === "service") {
@@ -3918,7 +4610,12 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers") {
-    sendServiceResult(res, service.listPapers());
+    const page = readListPage(url);
+    if (page === "invalid") {
+      sendJson(res, 400, { error: { message: "invalid list pagination or search" } });
+      return;
+    }
+    sendServiceResult(res, service.listPapers(page));
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers/slot-overview") {
@@ -4048,48 +4745,27 @@ async function handleAuthenticatedRoute(
     if (!requirePrivileged(res, principal)) {
       return;
     }
-    if (!ctx.readCalendarEvents) {
-      sendJson(res, 503, { error: { message: "calendar reading is not configured" } });
-      return;
-    }
     const body = readRecord(await readJsonOrEmpty(req));
     const surface = asString(body.surface) === "lab_calendar" ? "lab_calendar" : "group_meeting";
-    const calendarId = asString(body.calendar_id) || ctx.labCalendar.id;
-    const seriesId = groupMeetingSeriesId(asString(body.event_id) || resolveGroupMeetingEventId());
-
-    let events: Awaited<ReturnType<NonNullable<typeof ctx.readCalendarEvents>>>;
-    try {
-      events = await ctx.readCalendarEvents({ calendarId, max: 250 });
-    } catch (error) {
-      // The plan is computed from this read. A failed read must not become "the meeting has no
-      // attendees", which is a proposal to empty it.
-      sendJson(res, 502, {
-        error: {
-          message: `could not read the calendar: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        },
-      });
+    const meeting = await readGroupMeetingSeries(
+      ctx,
+      asString(body.calendar_id) || ctx.labCalendar.id,
+      asString(body.event_id) || undefined,
+    );
+    if ("error" in meeting) {
+      sendJson(res, meeting.error.status, { error: { message: meeting.error.message } });
       return;
     }
-
-    // A recurring meeting comes back as dated occurrences (`<series>_<instant>`); any of them
-    // carries the series' attendee list, so the first match is enough.
-    const event = events.find((candidate) => groupMeetingSeriesId(candidate.id) === seriesId);
-    if (!event) {
-      sendJson(res, 404, {
-        error: { message: `no event ${seriesId} on calendar ${calendarId} in the read window` },
-      });
-      return;
-    }
+    const { calendarId, seriesId, targets, attendees } = meeting;
 
     sendServiceResult(
       res,
       service.planInviteMembership({
         surface,
         eventId: seriesId,
+        eventIds: targets,
         calendarId,
-        attendees: event.attendees ?? [],
+        attendees,
         actor: principalActor(principal),
       }),
     );
@@ -4518,8 +5194,41 @@ async function handleAuthenticatedRoute(
   // authenticates every agent tool call regardless of who is chatting, so accepting it here
   // would let anyone talking to AdminBot put an onboarding mail in the approval queue.
   const memberOnboardingGuide = /^\/lab\/members\/([^/]+)\/onboarding\/guide$/u.exec(url.pathname);
+  if (req.method === "GET" && memberOnboardingGuide?.[1]) {
+    if (principal.kind !== "member" || principal.member.privilege_level !== "admin") {
+      sendJson(res, 403, { error: { message: "An admin member session is required." } });
+      return;
+    }
+    const member = ctx.store.getLabMember(decodeURIComponent(memberOnboardingGuide[1]));
+    if (!member) {
+      sendJson(res, 404, { error: { message: "Member not found." } });
+      return;
+    }
+    sendJson(
+      res,
+      200,
+      memberGuideStatus(
+        member,
+        ctx.store.listAuditEvents(),
+        ctx.store.listProposalsByType("onboarding.send_guide"),
+      ),
+    );
+    return;
+  }
   if (req.method === "POST" && memberOnboardingGuide?.[1]) {
     if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    if (
+      body.slack_project_channels !== undefined &&
+      (!Array.isArray(body.slack_project_channels) ||
+        body.slack_project_channels.length > 20 ||
+        body.slack_project_channels.some(
+          (channel) => typeof channel !== "string" || !channel.trim() || channel.length > 128,
+        ))
+    ) {
+      sendJson(res, 400, { error: { message: "Use up to 20 Slack channel names or IDs." } });
       return;
     }
     sendServiceResult(
@@ -4527,6 +5236,7 @@ async function handleAuthenticatedRoute(
       service.queueOnboardingGuideForMember({
         memberId: decodeURIComponent(memberOnboardingGuide[1]),
         actor: principalActor(principal),
+        slackChannels: body.slack_project_channels as string[] | undefined,
       }),
     );
     return;
@@ -4697,12 +5407,18 @@ async function handleAuthenticatedRoute(
     const onboardBody = (await readJson(req)) as MemberSheetOnboardRequest;
     let onboardResult;
     try {
-      onboardResult = await onboardFromMemberSheet(
-        service,
-        ctx.memberSheet,
-        onboardBody,
-        principalActor(principal),
-      );
+      // The admin's click approves enrollment, as on the Members tab; the mail itself still waits
+      // in Pending Actions, which is what this tab has always done with it.
+      const onboardDeps = memberOnboardingDeps(ctx, principal, approverIdentityFor(principal));
+      onboardResult = await onboardFromMemberSheet(service, ctx.memberSheet, onboardBody, {
+        enroll: (input) =>
+          onboardNewMember(onboardDeps, input, {
+            origin: { source: "admin", actor: principalActor(principal) },
+            guide: "none",
+            skipSheet: "the row is already on the sheet",
+          }),
+        queueGuide: (memberId, options) => queueNewMemberGuide(onboardDeps, memberId, options),
+      });
     } catch (error) {
       sendJson(res, 502, {
         error: { message: describeMemberSheetReadFailure(error, ctx.memberSheet) },
@@ -4716,6 +5432,56 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendJson(res, 200, onboardResult);
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/membership/sheet/rows") {
+    // Writes the roster, creates a member and mails them, each approved on the spot by the admin
+    // who clicked -- so it takes a genuine admin member session, whose identity is the approver,
+    // and never the shared service principal.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const approver = approverIdentityFor(principal);
+    if (!approver) {
+      sendJson(res, 403, { error: { message: "Add row needs a signed-in admin" } });
+      return;
+    }
+    if (!ctx.memberSheet) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "this deployment has no member spreadsheet configured; set ADMINBOT_MEMBER_SHEET_ID",
+        },
+      });
+      return;
+    }
+    const addBody = readRecord(await readJson(req)) as MemberSheetAddRowRequest;
+    let addResult;
+    try {
+      addResult = await addMemberSheetRow(
+        service,
+        ctx.memberSheet,
+        addBody,
+        approver,
+        principalActor(principal),
+        (input) =>
+          onboardNewMember(memberOnboardingDeps(ctx, principal, approver), input, {
+            origin: { source: "admin", actor: principalActor(principal) },
+            guide: "send",
+            skipSheet: "the row was just added to the sheet",
+          }),
+      );
+    } catch (error) {
+      sendJson(res, 502, {
+        error: { message: describeMemberSheetReadFailure(error, ctx.memberSheet) },
+      });
+      return;
+    }
+    if ("error" in addResult) {
+      sendJson(res, addResult.error.status, { error: { message: addResult.error.message } });
+      return;
+    }
+    sendJson(res, 200, addResult);
     return;
   }
   // The nightly reconciliation of the roster against the lab's spreadsheet.
@@ -4760,14 +5526,37 @@ async function handleAuthenticatedRoute(
       sendJson(res, sweepSheet.error.status, { error: { message: sweepSheet.error.message } });
       return;
     }
-    sendServiceResult(
-      res,
-      service.sweepOnboardingMail({
-        sheet: sweepSheet.parsed,
-        actor: principalActor(principal),
-        dryRun: sweepBody.dry_run === true,
-      }),
-    );
+    const swept = service.sweepOnboardingMail({
+      sheet: sweepSheet.parsed,
+      actor: principalActor(principal),
+      dryRun: sweepBody.dry_run === true,
+    });
+    if (!swept.ok || sweepBody.dry_run === true) {
+      sendServiceResult(res, swept);
+      return;
+    }
+    // The sweep created them at the least-privileged level. Enrolling them -- the level their
+    // Member Type implies and everything it grants -- waits for an admin, beside their guide.
+    const enrollments: Array<{ member_id: string; proposal_id?: string; error?: string }> = [];
+    for (const memberId of swept.payload.created) {
+      const member = ctx.store.getLabMember(memberId);
+      if (!member) {
+        continue;
+      }
+      const filed = service.createProposal({
+        type: "lab_member.enroll",
+        summary: `Enroll ${member.name || member.id} as ${member.member_type || "no Member Type"}: their access level and what it grants -- joined on the member sheet`,
+        target: { service: "adminbot", channel: "roster", target: member.id },
+        proposed_payload: { member_id: member.id, member_type: member.member_type ?? "" },
+        undo_plan: "Change their Member Type on the Members tab; that re-applies their access.",
+      });
+      enrollments.push(
+        filed.ok
+          ? { member_id: memberId, proposal_id: filed.payload.id }
+          : { member_id: memberId, error: filed.error.message },
+      );
+    }
+    sendJson(res, swept.status, { ...swept.payload, enrollments });
     return;
   }
   if (req.method === "POST" && url.pathname === "/members/roster-sync") {
@@ -5426,6 +6215,25 @@ function isPrivileged(principal: AdminBotPrincipal): boolean {
   return level === "admin";
 }
 
+function readListPage(url: URL): AdminBotListPage | "invalid" | undefined {
+  const params = url.searchParams;
+  if (!["limit", "offset", "q"].some((key) => params.has(key))) {
+    return undefined;
+  }
+  const rawLimit = params.get("limit") ?? "50";
+  const rawOffset = params.get("offset") ?? "0";
+  const q = (params.get("q") ?? "").trim();
+  if (!/^[1-9]\d*$/u.test(rawLimit) || !/^\d+$/u.test(rawOffset) || q.length > 120) {
+    return "invalid";
+  }
+  const limit = Number(rawLimit);
+  const offset = Number(rawOffset);
+  if (!Number.isSafeInteger(limit) || limit > 100 || !Number.isSafeInteger(offset)) {
+    return "invalid";
+  }
+  return { limit, offset, ...(q ? { q } : {}) };
+}
+
 /** `?limit=` for the edit-history reads, or nothing and let the service pick its default. */
 function updateLimit(url: URL): number | undefined {
   const raw = Number(url.searchParams.get("limit") ?? "");
@@ -5652,6 +6460,464 @@ async function runCalendarAction(
 // every agent tool call regardless of which member is chatting, so treating it as admin here would
 // let any signed-in member perform these actions through the agent. Require an admin member
 // Bearer session and deny the service principal outright.
+/**
+ * The sweep is opt-in at deployment: it sends the extracted bibliographies of restricted
+ * submissions to public scholarly databases, which the operator has to have agreed to.
+ */
+function createOpenReviewCitationWatch(
+  options: AdminBotMockServiceOptions,
+  store: AdminBotServiceStore,
+  service: AdminBotService,
+): OpenReviewCitationWatch | undefined {
+  const reader =
+    options.openReviewSubmissionReader ??
+    (process.env.ADMINBOT_OPENREVIEW_CITATION_CHECKS?.trim() === "1"
+      ? createOpenReviewSubmissionReader()
+      : undefined);
+  if (!reader) {
+    return undefined;
+  }
+  const notifyEmail =
+    options.citationWatchNotifyEmail ??
+    (process.env.ADMINBOT_CITATION_CHECK_NOTIFY?.trim() ||
+      process.env.ADMINBOT_CONTACT_EMAILS?.split(",")[0]?.trim() ||
+      undefined);
+  // One back-off state for the process: every check the sweep runs honors the same 429s.
+  const cooldowns = new Map<string, number>();
+  return new OpenReviewCitationWatch({
+    store,
+    service,
+    reader,
+    pausedUntil: () => requiredDatabasesPausedUntil(cooldowns),
+    pauseBetweenMs: options.citationWatchChecker ? 0 : 60_000,
+    maxPauseWaitMs: options.citationWatchChecker ? 0 : 90_000,
+    check:
+      options.citationWatchChecker ??
+      createPdfReferenceChecker({
+        maxReferences: 300,
+        requireAllDatabases: true,
+        allowOversized: true,
+        cooldowns,
+        // Unattended: a minute's wait for Crossref or DBLP beats a paper left half-checked.
+        maxCooldownWaitMs: 90_000,
+        ...(process.env.OPENALEX_API_KEY?.trim()
+          ? { openAlexApiKey: process.env.OPENALEX_API_KEY.trim() }
+          : {}),
+      }),
+    ...(notifyEmail ? { notifyEmail } : {}),
+  });
+}
+
+async function handleMemberRequestRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: AdminBotRouteContext,
+  url: URL,
+  principal: AdminBotMemberPrincipal,
+): Promise<void> {
+  const { service } = ctx;
+  const isAdmin = principal.member.privilege_level === "admin";
+  if (req.method === "GET" && url.pathname === "/lab/members/requests") {
+    const status = url.searchParams.get("status");
+    const result = service.listMemberRequests({
+      memberId: principal.member.id,
+      isAdmin,
+      ...(adminBotMemberRequestStatuses.includes(status as AdminBotMemberRequestStatus)
+        ? { status: status as AdminBotMemberRequestStatus }
+        : {}),
+    });
+    if (!result.ok) {
+      sendServiceResult(res, result);
+      return;
+    }
+    // What approving would grant, worked out the same way the save will work it out, so the admin
+    // reads "this makes them an admin" on the card rather than finding out afterwards.
+    sendJson(res, 200, {
+      requests: result.payload.requests.map((request) => ({
+        ...request,
+        requested_by_name: ctx.store.getLabMember(request.requested_by)?.name,
+        access_level:
+          privilegeForMemberTypeChange(
+            { privilege_level: "external_collaborator" },
+            request.profile.member_type,
+          )?.privilege_level ?? "external_collaborator",
+      })),
+    });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/lab/members/requests") {
+    sendServiceResult(
+      res,
+      service.submitMemberRequest(principal.member.id, readRecord(await readJson(req))),
+    );
+    return;
+  }
+  const edit = /^\/lab\/members\/requests\/([^/]+)\/edit$/u.exec(url.pathname);
+  if (req.method === "POST" && edit?.[1]) {
+    if (!isAdmin) {
+      sendJson(res, 403, { error: { message: "only an admin can edit a member request" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.editMemberRequest(
+        decodeURIComponent(edit[1]),
+        principal.member.id,
+        readRecord(await readJson(req)),
+      ),
+    );
+    return;
+  }
+  const decision = /^\/lab\/members\/requests\/([^/]+)\/(approve|reject)$/u.exec(url.pathname);
+  if (req.method === "POST" && decision?.[1] && decision[2]) {
+    if (!isAdmin) {
+      sendJson(res, 403, { error: { message: "only an admin can decide a member request" } });
+      return;
+    }
+    const requestId = decodeURIComponent(decision[1]);
+    const body = readRecord(await readJson(req));
+    if (decision[2] === "reject") {
+      const note = typeof body.note === "string" ? body.note : undefined;
+      sendServiceResult(res, service.rejectMemberRequest(requestId, principal.member.id, note));
+      return;
+    }
+    const claimed = service.claimMemberRequest(
+      requestId,
+      principal.member.id,
+      typeof body.expected_updated_at === "string" ? body.expected_updated_at : undefined,
+    );
+    if (!claimed.ok) {
+      sendServiceResult(res, claimed);
+      return;
+    }
+    const request = claimed.payload.request;
+    // The same id scheme self-signup uses: the requester never picks one, so there is nothing to
+    // collide with an existing member's.
+    const memberId = `mem_${randomUUID()}`;
+    let saved: { status: number; body: unknown };
+    try {
+      saved = await saveLabMemberAsAdmin(ctx, principal, memberId, {
+        ...request.profile,
+        ...(request.meetings ? { meetings: request.meetings } : {}),
+      });
+    } catch (error) {
+      service.settleMemberRequestApproval(request, { failed: true });
+      throw error;
+    }
+    if (saved.status >= 400) {
+      service.settleMemberRequestApproval(request, { failed: true });
+      sendJson(res, saved.status, saved.body);
+      return;
+    }
+    const approved = service.settleMemberRequestApproval(request, { memberId });
+    sendJson(res, 200, { request: approved, member: saved.body });
+    return;
+  }
+  const withdraw = /^\/lab\/members\/requests\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "DELETE" && withdraw?.[1]) {
+    sendServiceResult(
+      res,
+      service.withdrawMemberRequest(decodeURIComponent(withdraw[1]), principal.member.id),
+    );
+    return;
+  }
+  sendJson(res, 404, { error: { message: "not found" } });
+}
+
+/** What the shared onboarding steps need from a request, approved by `approver` when given. */
+function memberOnboardingDeps(
+  ctx: AdminBotRouteContext,
+  principal: AdminBotPrincipal,
+  approver: { approver_role: string; approver_id: string } | undefined,
+): NewMemberOnboardingDeps {
+  return {
+    ...memberEnrollmentContext(ctx),
+    ...(approver ? { approver } : {}),
+    actor: principalActor(principal),
+  };
+}
+
+/** The parts of the onboarding deps that come from the deployment rather than the request. */
+function memberEnrollmentContext(
+  ctx: AdminBotRouteContext,
+): Omit<NewMemberOnboardingDeps, "approver" | "actor"> {
+  return {
+    service: ctx.service,
+    ...(ctx.memberSheet ? { memberSheet: ctx.memberSheet } : {}),
+    readGroupMeeting: () => readGroupMeetingSeries(ctx, ctx.labCalendar.id),
+    recordAudit: (event) =>
+      ctx.store.recordAudit({
+        id: `aud_${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        ...event,
+      }),
+  };
+}
+
+/**
+ * The admin's write of one roster record: the Add member and Edit member forms, and the approval of
+ * a member request, which is the same save made on the requester's behalf. One function so that
+ * approving a request can never do less (or more) than an admin typing the record in themselves --
+ * Member Type still sets the access level, and the Meetings boxes still reach the calendar.
+ */
+async function saveLabMemberAsAdmin(
+  ctx: AdminBotRouteContext,
+  principal: AdminBotMemberPrincipal,
+  memberId: string,
+  body: Record<string, unknown>,
+): Promise<{ status: number; body: unknown }> {
+  const { service } = ctx;
+  const existing = ctx.store.getLabMember(memberId);
+  // `meetings` is not a field on the record: it is the Meetings checkboxes, applied to the
+  // calendar below, and must not be stored on the member.
+  const { meetings: meetingField, ...fields } = body;
+  const input = fields as AdminBotLabMemberInput;
+  const selectedMeetings = Array.isArray(meetingField)
+    ? meetingField.filter((value): value is string => typeof value === "string")
+    : undefined;
+  // Member Type decides the access level: the form has no separate Privilege field. A change is
+  // re-onboarding without the welcome mail -- the rooms, meeting and sheet row are brought into
+  // line below, approved by this admin's click. A new record takes its level from the type too.
+  const typeChanged =
+    typeof input.member_type === "string" &&
+    (existing
+      ? !sameMemberType(existing.member_type, input.member_type)
+      : input.member_type.trim() !== "");
+  const implied = typeChanged
+    ? privilegeForMemberTypeChange(
+        existing ?? { privilege_level: "external_collaborator" },
+        input.member_type,
+      )
+    : undefined;
+  const explicitPrivilege =
+    input.privilege_level !== undefined && input.privilege_level !== existing?.privilege_level;
+  const explicitSubgroup =
+    input.collaborator_subgroup !== undefined &&
+    input.collaborator_subgroup !== existing?.collaborator_subgroup;
+  const nextPrivilege =
+    implied && !explicitPrivilege
+      ? implied.privilege_level
+      : (input.privilege_level ?? existing?.privilege_level);
+  // An admin cannot take away their own admin access: done by mistake, nobody is left signed in
+  // who can put it back. Another admin can.
+  if (
+    memberId === principal.member.id &&
+    existing?.privilege_level === "admin" &&
+    nextPrivilege !== "admin"
+  ) {
+    return {
+      status: 409,
+      body: {
+        error: {
+          message: "You can't remove your own admin access. Ask another admin to change it.",
+        },
+      },
+    };
+  }
+  const saved = service.upsertLabMember(
+    {
+      ...input,
+      ...(implied && !explicitPrivilege
+        ? {
+            privilege_level: implied.privilege_level,
+            ...(explicitSubgroup || !implied.collaborator_subgroup
+              ? {}
+              : { collaborator_subgroup: implied.collaborator_subgroup }),
+          }
+        : {}),
+      id: memberId,
+      ...(!existing && !input.joined_month
+        ? { joined_month: new Date().toISOString().slice(0, 7) }
+        : {}),
+    },
+    // An admin correcting somebody's record is not that member adopting the tool, so this is
+    // stamped `admin` and does not count toward their adoption rate. The actor is recorded so
+    // "who typed this" has an answer either way -- and comes from principalActor so that an
+    // admin doing this while viewing as another admin is still recorded as themselves.
+    { source: "admin", actor: principalActor(principal) },
+  );
+  const approver = approverIdentityFor(principal);
+  // A new record is always enrolled, typed or not: the access design's consequences of holding its
+  // level are the same whichever door the person came in by (server.member-onboarding.ts).
+  if (!saved.ok || !approver || (!(typeChanged || !existing) && !selectedMeetings)) {
+    return saved.ok
+      ? { status: saved.status, body: saved.payload }
+      : { status: saved.status, body: { error: saved.error } };
+  }
+  const standing = selectedMeetings ? await readStandingMeetings(ctx) : undefined;
+  // The Monday meeting has two possible sources in one save: the type, and its checkbox. The
+  // checkbox wins only when the admin actually changed it; otherwise the type decides and the
+  // unchanged tick must not undo that.
+  const groupMeeting =
+    standing && !("error" in standing)
+      ? standing.meetings.find((meeting) => meeting.kind === "group")
+      : undefined;
+  const groupMeetingExplicit =
+    groupMeeting !== undefined &&
+    (selectedMeetings ?? []).includes(groupMeeting.id) !==
+      memberAttends(groupMeeting, existing ?? saved.payload);
+  const response: Record<string, unknown> = { ...saved.payload };
+  if (!existing) {
+    response.member_type_change = await enrollNewMember(
+      memberOnboardingDeps(ctx, principal, approver),
+      saved.payload,
+      { skipGroupMeeting: groupMeetingExplicit },
+    );
+  } else if (typeChanged) {
+    response.member_type_change = await applyMemberTypeChange(
+      {
+        ...memberOnboardingDeps(ctx, principal, approver),
+        skipGroupMeeting: groupMeetingExplicit,
+      },
+      existing,
+      saved.payload,
+    );
+  }
+  if (selectedMeetings && standing) {
+    response.meeting_changes =
+      "error" in standing
+        ? [{ step: "meeting", status: "failed", detail: standing.error.message }]
+        : await applyMeetingSelection(
+            { service, approver },
+            saved.payload,
+            standing.calendarId,
+            standing.meetings.filter((meeting) => meeting.kind !== "group" || groupMeetingExplicit),
+            selectedMeetings,
+          );
+  }
+  return { status: 200, body: response };
+}
+
+/**
+ * Opt-in on its own flag, separate from the citation checks: it sends the main text of restricted
+ * ICLR submissions to Pangram, a third-party AI-text detector, which the operator has to have
+ * agreed to on top of the citation lookups.
+ */
+function createIclrIntegrityWatch(
+  options: AdminBotMockServiceOptions,
+  store: AdminBotServiceStore,
+  service: AdminBotService,
+): IclrIntegrityWatch | undefined {
+  const enabled = process.env.ADMINBOT_ICLR_INTEGRITY_CHECKS?.trim() === "1";
+  const apiKey = process.env.PANGRAM_API_KEY?.trim();
+  const score =
+    options.aiTextScorer ?? (enabled && apiKey ? createPangramScorer({ apiKey }) : undefined);
+  const reader =
+    options.openReviewSubmissionReader ?? (score ? createOpenReviewSubmissionReader() : undefined);
+  if (!score || !reader) {
+    return undefined;
+  }
+  const threshold = Number(process.env.ADMINBOT_ICLR_AI_THRESHOLD);
+  // The ICLR 2027 run ends at 08:00 Toronto time on 26 September 2026. A default rather than only an
+  // env line, so a host that never had the line set still stops; the env reopens it for a later cycle.
+  const until = new Date(
+    process.env.ADMINBOT_ICLR_INTEGRITY_UNTIL?.trim() || DEFAULT_ICLR_INTEGRITY_UNTIL,
+  );
+  return new IclrIntegrityWatch({
+    store,
+    service,
+    reader,
+    score,
+    extractText: options.integrityTextExtractor ?? ((pdf) => extractPdfFullText(pdf)),
+    ...(threshold > 0 && threshold < 1 ? { threshold } : {}),
+    // An unparseable date ends the check now rather than letting it run forever.
+    until: Number.isNaN(until.getTime()) ? new Date(0) : until,
+    // Operator Slack ids for the hourly digest. Anything that is not a user id is dropped rather
+    // than handed to Slack.
+    reportTo: (process.env.ADMINBOT_ICLR_INTEGRITY_REPORT_SLACK_USERS ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter((id) => /^[UW][A-Z0-9]{2,}$/u.test(id)),
+    ...integritySheet(),
+    ...integrityDigestChannel(options.databasePath),
+    // Operator Slack ids for confirmed hallucinated citations, filtered the same way.
+    citationReportTo: (process.env.ADMINBOT_ICLR_CITATION_REPORT_SLACK_USERS ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter((id) => /^[UW][A-Z0-9]{2,}$/u.test(id)),
+  });
+}
+
+const DEFAULT_ICLR_INTEGRITY_UNTIL = "2026-09-26T08:00:00-04:00";
+
+/**
+ * The channel the hourly digest lives in, as one message edited each sweep. Which message that is
+ * is kept in a small file beside the database, so a restart edits it rather than starting another;
+ * without a database (tests, a memory store) it is remembered for the life of the process only.
+ */
+function integrityDigestChannel(databasePath: string | undefined):
+  | {
+      reportChannel: {
+        channelId: string;
+        message: { load: () => string | undefined; save: (ts: string) => void };
+      };
+    }
+  | Record<string, never> {
+  const channelId = process.env.ADMINBOT_ICLR_INTEGRITY_REPORT_SLACK_CHANNEL?.trim();
+  if (!channelId || !/^[CG][A-Z0-9]{2,}$/u.test(channelId)) {
+    return {};
+  }
+  const file = databasePath
+    ? path.join(path.dirname(databasePath), "iclr-integrity-digest.json")
+    : undefined;
+  let remembered: string | undefined;
+  return {
+    reportChannel: {
+      channelId,
+      message: {
+        load: () => {
+          if (remembered || !file) {
+            return remembered;
+          }
+          try {
+            const saved = JSON.parse(fs.readFileSync(file, "utf8")) as {
+              channel?: string;
+              ts?: string;
+            };
+            // A digest moved to another channel starts a new message there.
+            remembered = saved.channel === channelId ? saved.ts : undefined;
+          } catch {
+            remembered = undefined;
+          }
+          return remembered;
+        },
+        save: (ts) => {
+          remembered = ts;
+          if (file) {
+            try {
+              fs.writeFileSync(file, JSON.stringify({ channel: channelId, ts }));
+            } catch {
+              // Remembered in memory regardless; the worst case after a restart is one new message.
+            }
+          }
+        },
+      },
+    },
+  };
+}
+
+/**
+ * The lab's paper sheet the integrity sweep writes scores into, when one is configured. The tab
+ * defaults to the one the lab keeps its ICLR papers on.
+ */
+function integritySheet():
+  | { sheet: { spreadsheetId: string; tab: string; read: () => Promise<string[][]> } }
+  | Record<string, never> {
+  const spreadsheetId = process.env.ADMINBOT_ICLR_INTEGRITY_SHEET_ID?.trim();
+  if (!spreadsheetId || !/^[A-Za-z0-9_-]{20,}$/u.test(spreadsheetId)) {
+    return {};
+  }
+  const tab = process.env.ADMINBOT_ICLR_INTEGRITY_SHEET_TAB?.trim() || "Papers-iclr-feedback";
+  return {
+    sheet: {
+      spreadsheetId,
+      tab,
+      read: () =>
+        readGogSheetRows(spreadsheetId, { range: `'${tab.replace(/'/gu, "''")}'!A1:Z1000` }),
+    },
+  };
+}
+
 function requireMemberPrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {
   if (principal.kind === "service") {
     sendJson(res, 403, {
@@ -5667,6 +6933,7 @@ function requireMemberPrivileged(res: ServerResponse, principal: AdminBotPrincip
 
 function deadlineProposalInput(body: Record<string, unknown>): DeadlineProposalInput {
   return {
+    ...(body.stage !== undefined ? { stage: body.stage as DeadlineProposalInput["stage"] } : {}),
     name: asString(body.name),
     parentConference: asString(body.parentConference),
     parentYear: asString(body.parentYear),
@@ -5681,10 +6948,10 @@ function deadlineProposalInput(body: Record<string, unknown>): DeadlineProposalI
   };
 }
 
-function resolvePrincipal(
+async function resolvePrincipal(
   req: IncomingMessage,
   ctx: AdminBotRouteContext,
-): AdminBotPrincipal | undefined {
+): Promise<AdminBotPrincipal | undefined> {
   const bearer = bearerToken(req);
   if (bearer) {
     // Service-principal check first with a constant-time compare. If the env token is unset the
@@ -5692,7 +6959,7 @@ function resolvePrincipal(
     if (ctx.serviceToken && constantTimeEqual(bearer, ctx.serviceToken)) {
       return { kind: "service" };
     }
-    const member = ctx.auth.resolveSession(bearer);
+    const member = await ctx.auth.resolveSession(bearer);
     if (member) {
       // Every authenticated request lands here, which is what makes it the place to notice an
       // account being used from somewhere new. noteAccountUse is a no-op unless the address
@@ -5703,7 +6970,7 @@ function resolvePrincipal(
   }
   const cookie = cookieToken(req);
   if (cookie) {
-    const member = ctx.auth.resolveSession(cookie);
+    const member = await ctx.auth.resolveSession(cookie);
     if (member) {
       ctx.auth.noteAccountUse(member, remoteIp(req, ctx.trustProxyHeaders));
       return member;

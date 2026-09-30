@@ -2,6 +2,40 @@
 import type { TranslationMap } from "../lib/types.ts";
 
 export const en: TranslationMap = {
+  deadlineStageProposal: {
+    chooseVenue:
+      "Select a conference or workshop from the list, or choose New conference or workshop.",
+    venue: "Conference or workshop",
+    newVenue: "New conference or workshop",
+    stage: "Stage",
+    stageName: "Stage name",
+    original: "Original date",
+    correct: "Suggest deadline correction",
+    timeUnknown: "Time unknown",
+    kinds: {
+      submission: "Paper submission",
+      abstract: "Abstract registration",
+      notification: "Decisions",
+      camera_ready: "Camera-ready",
+      author_response: "Author response",
+      registration: "Registration",
+      conference: "Conference",
+      other: "Other",
+    },
+  },
+  deadlineStageFilter: {
+    label: "Filter by stage",
+    all: "All stages",
+    submission: "Submission",
+    abstract: "Abstract registration",
+    notification: "Decisions",
+    author_response: "Author response",
+    camera_ready: "Camera-ready",
+    conference: "Conference",
+    commitment: "Commitment",
+    registration: "Registration",
+    discussion: "Discussion",
+  },
   common: {
     health: "Health",
     ok: "OK",
@@ -578,6 +612,7 @@ export const en: TranslationMap = {
     adminbotWorkshopNudges: "Workshop Matches",
     adminbotAnnouncements: "Announcements",
     adminbotConferencePapers: "Find Interesting Papers",
+    adminbotReferenceChecker: "PDF Reference Checker",
     adminbotCalendar: "Calendar",
     adminbotGrantReport: "Grant Report",
     adminbotMailingList: "Mailing List",
@@ -634,6 +669,7 @@ export const en: TranslationMap = {
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
+    adminbotReferenceChecker: "Check PDF references against scholarly databases.",
     adminbotConferencePapers:
       "Search a conference's accepted papers, ranked against what you work on.",
     adminbotCalendar: "Draft an event, and invite the people the roster can describe.",
@@ -1221,6 +1257,7 @@ export const en: TranslationMap = {
       description: "Description",
       criteriaUrl: "Criteria link",
       evidence: "Evidence",
+      count: "Count (total awards)",
       assignEvidence: "Evidence (optional)",
       submittedBy: "Submitted by",
       submittedAt: "Submitted",
@@ -1793,14 +1830,14 @@ export const en: TranslationMap = {
       mineEmpty: "You have not sent a request yet.",
       user: "User",
       type: "Type of Request",
-      deadline: "Most Recent Deadline",
+      earliestDeadline: "Earliest deadline",
       statusColumn: "Status",
       noDeadline: "No deadline",
       noSchools: "No schools listed.",
       none: "None",
       back: "All requests",
       detailSub: "{type} · sent {saved}",
-      detailDeadline: "most recent deadline {date}",
+      detailEarliestDeadline: "earliest deadline {date}",
       documents: "Documents to sign",
       withdraw: "Withdraw this request",
       edit: "Correct this request",
@@ -1836,7 +1873,13 @@ export const en: TranslationMap = {
     },
     queue: {
       title: "Request Queue",
-      sub: "Everything the lab has been asked for, soonest deadline first. Download what needs signing, upload it back signed, and the member is emailed automatically.",
+      searchPlaceholder: "Name or school",
+      allTypes: "All request types",
+      allStatuses: "All statuses",
+      awaitingAction: "Awaiting action",
+      noMatches: "No requests match these filters.",
+      instructions:
+        "Letters use the earliest letter deadline, in the entered timezone. Click a column heading to sort or a name to open the full request.",
       submitted: "Submitted",
       context: "What it is for",
       signed: "Signed Document",
@@ -1887,6 +1930,24 @@ export const en: TranslationMap = {
       remove: "Remove {name}",
       clear: "Remove all",
     },
+    lettersGuide: {
+      title: "Before requesting a recommendation letter",
+      sub: "Please follow the Guidebook's preparation steps before submitting this request.",
+      open: "Open the Guidebook: How to ask for Rec Letters",
+      folder:
+        "Create grad_app_[yourname] with edit access for your letter writer, ideally also linked from your shared Zhijing-[yourname] folder.",
+      schools:
+        "Prepare a school/program spreadsheet sorted by the earliest deadline, including application and letter deadlines, statuses, program links, and any special requirements.",
+      materials:
+        "Include your transcript, editable CV, Statement of Purpose, information about your other letter writers, and any supporting materials you want to highlight.",
+      facts:
+        "Prepare concrete facts about your project contributions and a factual first draft of the letter, following the Guidebook's letter-writing guidance.",
+      reminders:
+        "The section also covers reminder emails with deadline times and time zones, a presentation when needed, and optional Interfolio use subject to university rules.",
+      portal:
+        "For Zhijing's application-portal invitations, use zjin.admin@cs.toronto.edu. Her main email does not handle letter requests.",
+      portalLink: "Check the Guidebook's recommender details",
+    },
     schools: {
       title: "List of Schools",
       sub: "Every school this request covers, and where each one stands.",
@@ -1896,10 +1957,11 @@ export const en: TranslationMap = {
       applicationDeadlineTime: "Time",
       letterDeadline: "Letter deadline",
       letterDeadlineHint: "if different",
+      letterDeadlineRequired: "Required",
       letterDeadlineTime: "Time",
       deadlineTimezone: "Time zone",
-      deadlineTimezoneHint: "for both times on this row",
-      deadlineTimezonePlaceholder: "ex. America/New_York",
+      aoeHint: "AoE (UTC−12) by default",
+      aoePlaceholder: "AoE or America/New_York",
       applicationStatus: "Application status",
       applicationStatusPlaceholder: "ex. submitted",
       letterStatus: "Letter status",
@@ -1985,6 +2047,8 @@ export const en: TranslationMap = {
       discard: "Discard",
       blocked: {
         empty: "Fill the request in before sending it.",
+        letterDeadline:
+          "Every school needs a valid letter deadline. Check the date, time, and timezone (AoE by default).",
         noName: "Every school needs its name filled in.",
         noPurpose: "Every meeting needs a purpose.",
         noDocPrep:
@@ -2239,7 +2303,7 @@ export const en: TranslationMap = {
       name: "Name",
       preferredName: "Preferred name",
       email: "Email (@cs.toronto.edu)",
-      role: "Role",
+      role: "Career stage / lab role",
       calendarEmail: "Calendar email",
       affiliation: "Main affiliation",
       location: "Resident location",
@@ -2513,7 +2577,7 @@ export const en: TranslationMap = {
       signup: {
         name: "Name",
         namePlaceholder: "Your full name",
-        role: "Role",
+        role: "Career stage / lab role",
         rolePlaceholder: "e.g. PhD student (optional)",
         affiliation: "Affiliation",
         affiliationPlaceholder: "Lab, department, or organization (optional)",

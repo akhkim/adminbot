@@ -37,18 +37,34 @@ jobs:
     - name: Create random commit to trigger Vercel build
       if: steps.check_commit.outputs.is_my_commit == 'false'
       run: |
-        # Generate random content for the x file
-        RANDOM_CONTENT=$(date +"%Y-%m-%d %H:%M:%S")-$(openssl rand -hex 4)
-        echo "$RANDOM_CONTENT" > x
-
         # Configure git
         git config --global user.email "akhkim@users.noreply.github.com"
         git config --global user.name "akhkim"
 
-        # Add, commit and push
-        git add x
-        git commit -m "Auto trigger Vercel build - $(date +"%Y-%m-%d %H:%M:%S")"
-        git push
+        # main can move while this job runs (another merge, or a concurrent run's
+        # trigger commit), which rejects the push. Rebuild the trigger commit on
+        # the latest main and retry instead of failing and skipping the deploy.
+        for attempt in 1 2 3 4 5; do
+          git fetch origin main
+          git reset --hard origin/main
+
+          # Generate random content for the x file
+          RANDOM_CONTENT=$(date +"%Y-%m-%d %H:%M:%S")-$(openssl rand -hex 4)
+          echo "$RANDOM_CONTENT" > x
+
+          # Add, commit and push
+          git add x
+          git commit -m "Auto trigger Vercel build - $(date +"%Y-%m-%d %H:%M:%S")"
+          if git push origin HEAD:main; then
+            exit 0
+          fi
+
+          echo "Push rejected (attempt $attempt), retrying on the latest main"
+          sleep $((attempt * 3))
+        done
+
+        echo "Failed to push the trigger commit after 5 attempts"
+        exit 1
 
     - name: Skip trigger (last commit is from me)
       if: steps.check_commit.outputs.is_my_commit == 'true'

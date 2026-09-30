@@ -1,6 +1,6 @@
 // Find Interesting Papers: which accepted papers at a conference are worth this member's time.
 //
-// One question, asked with two controls. Everything else on screen is the answer, because the
+// One question, asked with a few controls. Everything else on screen is the answer, because the
 // interesting part of this tool is the ranking and the ranking is invisible -- a member has no way
 // to check it except by reading the papers it picked. So each row carries its own evidence: how
 // strongly it matched relative to everything else in the conference, which of their own interests
@@ -22,6 +22,7 @@ export type ConferencePapersTab = "conference" | "lab";
 export type ConferencePapersProps = {
   state: AdminBotVenuePapersState;
   onVenueChange: (venueId: string) => void;
+  onCategoryChange: (categoryId: string) => void;
   onInterestsChange: (interests: string) => void;
   onSearch: () => void;
   onToggleAbstract: (paperId: string) => void;
@@ -87,9 +88,9 @@ function renderConferenceTab(props: ConferencePapersProps, canSearch: boolean) {
     <div class="card adminbot-card adminbot-card--wide">
       <div class="card-title">Papers worth your time</div>
       <div class="card-sub">
-        Ranks everything accepted at a conference against what you work on, and shows the closest
-        matches. Nothing here is filtered by keyword — a paper can match because it is about the
-        same thing in different words.
+        Ranks the selected accepted papers against what you work on, and shows the closest matches.
+        Nothing here is filtered by keyword: a paper can match because it is about the same thing in
+        different words.
       </div>
       ${renderControls(props, canSearch)}
     </div>
@@ -126,6 +127,28 @@ function renderControls(props: ConferencePapersProps, canSearch: boolean) {
             `,
           )}
         </select>
+      </label>
+
+      <label class="adminbot-form__field conference-papers__category">
+        <span>Category</span>
+        <select
+          data-testid="conference-papers-category"
+          ?disabled=${!state.venueId || state.loadingCategories}
+          @change=${(event: Event) =>
+            props.onCategoryChange((event.target as HTMLSelectElement).value)}
+        >
+          <option value="" ?selected=${state.categoryId === ""}>All</option>
+          ${state.categories.map(
+            (category) => html`
+              <option value=${category.id} ?selected=${category.id === state.categoryId}>
+                ${category.label} (${category.paper_count.toLocaleString()})
+              </option>
+            `,
+          )}
+        </select>
+        ${state.loadingCategories
+          ? html`<small class="muted">Loading categories…</small>`
+          : nothing}
       </label>
 
       <label class="adminbot-form__field conference-papers__interests">
@@ -189,8 +212,10 @@ function renderIndexNote(
       >Not indexed yet — an admin can build it from the Cron tab.</span
     >`;
   }
+  const selectedCategory = state.categories.find((category) => category.id === state.categoryId);
+  const paperCount = selectedCategory?.paper_count ?? chosen.paper_count;
   return html`<span class="muted"
-    >${chosen.paper_count.toLocaleString()} accepted
+    >${paperCount.toLocaleString()} accepted
     papers${chosen.indexed_at
       ? html` · indexed ${formatRelativeTimestamp(Date.parse(chosen.indexed_at))}`
       : nothing}</span
@@ -202,13 +227,14 @@ function renderResults(props: ConferencePapersProps) {
   if (!result) {
     return nothing;
   }
+  const selectionLabel = `${result.label}${result.category ? ` ${result.category}` : ""}`;
   if (result.nothing_relevant) {
     return html`
       <div class="card adminbot-card adminbot-card--wide" data-testid="conference-papers-none">
-        <div class="card-title">Nothing close at ${result.label}</div>
+        <div class="card-title">Nothing close at ${selectionLabel}</div>
         <div class="card-sub">
           None of the ${result.searched.toLocaleString()} accepted papers is near what you
-          described. That is an answer about this conference, not about your interests — try another
+          described. That is an answer about this selection, not about your interests. Try another
           one, or widen what you typed.
         </div>
       </div>
@@ -220,9 +246,9 @@ function renderResults(props: ConferencePapersProps) {
   return html`
     <div class="card adminbot-card adminbot-card--wide">
       <div class="card-title">
-        ${result.results.length} of ${result.searched.toLocaleString()} papers at ${result.label}
+        ${result.results.length} of ${result.searched.toLocaleString()} papers at ${selectionLabel}
       </div>
-      <div class="card-sub">Closest first. Match strength is relative to this conference.</div>
+      <div class="card-sub">Closest first. Match strength is relative to this selection.</div>
       <ol class="conference-papers__list" data-testid="conference-papers-results">
         ${result.results.map((hit) => renderHit(hit, props))}
       </ol>
@@ -237,7 +263,7 @@ function renderHit(hit: AdminBotVenuePaperHit, props: ConferencePapersProps) {
     <li class="conference-papers__hit" data-testid=${`conference-paper-${hit.paper.id}`}>
       <div
         class="conference-papers__match"
-        title=${`Match strength ${percent}% within this conference`}
+        title=${`Match strength ${percent}% within this selection`}
       >
         <span class="conference-papers__match-bar" style=${`--match: ${percent}%`}></span>
         <span class="conference-papers__match-value">${percent}%</span>
@@ -251,7 +277,7 @@ function renderHit(hit: AdminBotVenuePaperHit, props: ConferencePapersProps) {
           >${hit.paper.title}</a
         >
         <div class="conference-papers__meta muted">
-          ${hit.paper.venue}
+          ${formatVenueLabel(hit.paper.venue, props.state.result?.label ?? "")}
           ${hit.paper.pdf_url
             ? html` ·
                 <a href=${hit.paper.pdf_url} target="_blank" rel="noreferrer noopener">PDF</a>`
@@ -290,4 +316,21 @@ function renderHit(hit: AdminBotVenuePaperHit, props: ConferencePapersProps) {
       </div>
     </li>
   `;
+}
+
+/** OpenReview track labels are often lower-case even though they are displayed as proper names. */
+export function formatVenueLabel(venue: string, conferenceLabel: string): string {
+  const normalized = venue.trim().replace(/\s+/g, " ");
+  const prefix = conferenceLabel.trim().replace(/\s+/g, " ");
+  const lowerVenue = normalized.toLowerCase();
+  const lowerPrefix = prefix.toLowerCase();
+  if (!prefix || (lowerVenue !== lowerPrefix && !lowerVenue.startsWith(`${lowerPrefix} `))) {
+    return normalized;
+  }
+  const category = normalized.slice(prefix.length).trim();
+  if (!category) {
+    return prefix;
+  }
+  const label = category.toLowerCase().replace(/(^|[\s/-])\p{L}/gu, (match) => match.toUpperCase());
+  return `${prefix} ${label}`;
 }

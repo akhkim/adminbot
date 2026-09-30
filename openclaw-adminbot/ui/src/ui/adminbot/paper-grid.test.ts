@@ -185,7 +185,7 @@ describe("threshold", () => {
 
 describe("change history", () => {
   // The jsdom stub here exposes a localStorage object whose methods are missing, so the real
-  // one is replaced with a working in-memory store to exercise the persistence path.
+  // one is replaced with a working in-memory store to verify the old history key is purged.
   beforeAll(() => {
     const store = new Map<string, string>();
     Object.defineProperty(globalThis, "localStorage", {
@@ -239,6 +239,46 @@ describe("change history", () => {
     const state = emptyPaperGridState();
     applyPaste(state, [stored], 0, columnIndexOf("arxiv_url"), "junk");
     expect(diffForHistory(state, [stored])).toEqual([]);
+  });
+
+  it("never records paper passwords", () => {
+    const state = emptyPaperGridState();
+    state.edits.set("p1", new Map([["arxiv_paper_password", "new123"]]));
+    expect(diffForHistory(state, [paper("p1", { arxiv_paper_password: "old123" })])).toEqual([]);
+
+    clearHistory();
+    recordHistory([
+      {
+        at: new Date().toISOString(),
+        paperTitle: "Paper p1",
+        column: "arXiv paper password",
+        from: "old123",
+        to: "new123",
+        kind: "changed",
+      },
+    ]);
+    expect(loadHistory()).toEqual([]);
+  });
+
+  it("purges old browser history and keeps new entries in memory only", () => {
+    clearHistory();
+    const key = "openclaw.adminbot.papergrid.history.v1";
+    const entry = {
+      at: new Date().toISOString(),
+      paperTitle: "Paper p1",
+      column: "Poster",
+      from: "",
+      to: "new poster",
+      kind: "added" as const,
+    };
+    localStorage.setItem(key, JSON.stringify([entry]));
+
+    expect(loadHistory()).toEqual([]);
+    expect(localStorage.getItem(key)).toBeNull();
+    expect(recordHistory([entry])).toEqual([entry]);
+    expect(localStorage.getItem(key)).toBeNull();
+    clearHistory();
+    expect(loadHistory()).toEqual([]);
   });
 
   it("keeps only the most recent 30, newest first", () => {

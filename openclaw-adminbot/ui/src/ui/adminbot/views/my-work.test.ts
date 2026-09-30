@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
+import { loadHistory, recordHistory } from "../paper-grid.ts";
 import {
   renderMyWork,
+  resetMyWorkSessionState,
   resetMyWorkViewModeForTest,
   resetPaperSheetChoice,
   showMyWorkCardsForTest,
@@ -77,6 +79,8 @@ type DrawOptions = {
   viewerIsAdmin?: boolean;
   /** Reuse a state object across two draws, for the controls that keep a draft in view state. */
   state?: AppViewState;
+  /** Wires the trip handlers, which is what makes the card draw the reader's own trip. */
+  trip?: boolean;
 };
 
 function draw(options: DrawOptions = {}) {
@@ -147,6 +151,9 @@ function draw(options: DrawOptions = {}) {
     onConsent: () => {},
     onSetAttendee: () => {},
     onSetReimbursement: () => {},
+    ...(options.trip
+      ? { onEditTrip: () => {}, onSaveTrip: () => {}, onWithdrawTrip: () => {} }
+      : {}),
   };
   const container = document.createElement("div");
   document.body.append(container);
@@ -1532,6 +1539,16 @@ describe("project details autosave", () => {
     expect(saved.at(-1)).toMatchObject({ id: "p1", title: "A better title" });
   });
 
+  it("does not save an old member's pending edit after the session changes", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-title-p1", "Private draft", rerender);
+
+    resetMyWorkSessionState();
+    vi.advanceTimersByTime(1000);
+
+    expect(saved).toHaveLength(0);
+  });
+
   it("restarts the timer on every keystroke rather than saving mid-word", () => {
     const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
     for (const value of ["A", "Ab", "Abc"]) {
@@ -1543,6 +1560,27 @@ describe("project details autosave", () => {
     vi.advanceTimersByTime(900);
     expect(saved).toHaveLength(1);
     expect(saved.at(-1)).toMatchObject({ title: "Abc" });
+  });
+
+  it("keeps the focused editor when a saved paper updates the cached list", () => {
+    const { container, state, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-title-p1"]',
+    )!;
+    input.focus();
+    input.value = "A better title";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    state.adminBotData = {
+      ...state.adminBotData,
+      papers: [paper({ title: "A better title" })],
+    };
+    rerender();
+
+    expect(input.isConnected).toBe(true);
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe("A better title");
   });
 
   it("holds a draft it cannot write instead of firing a doomed request", () => {
@@ -1622,6 +1660,101 @@ describe("the flat view", () => {
   // otherwise leave every later spec looking at it.
   afterEach(() => {
     resetMyWorkViewModeForTest();
+  });
+
+  it("drops an old member's flat-form draft and pending autosave on session reset", () => {
+    vi.useFakeTimers();
+    try {
+      resetMyWorkViewModeForTest();
+      const first = draw();
+      const title = first.container.querySelector<HTMLInputElement>(
+        '[data-testid="paper-legacy-p1-title"]',
+      )!;
+      title.value = "Private draft";
+      title.dispatchEvent(new Event("input", { bubbles: true }));
+      first.rerender();
+      expect(title.value).toBe("Private draft");
+      recordHistory([
+        {
+          at: new Date().toISOString(),
+          paperTitle: "Private paper",
+          column: "Title",
+          from: "",
+          to: "Private draft",
+          kind: "added",
+        },
+      ]);
+
+      resetMyWorkSessionState();
+      vi.advanceTimersByTime(1000);
+      expect(first.saved).toHaveLength(0);
+      expect(loadHistory()).toEqual([]);
+
+      const second = draw();
+      expect(
+        second.container.querySelector<HTMLInputElement>('[data-testid="paper-legacy-p1-title"]')
+          ?.value,
+      ).toBe("Causal abstraction");
+    } finally {
+      resetMyWorkSessionState();
+      vi.useRealTimers();
+    }
+  });
+
+  // The flat view is where the page opens, so anything only the card draws is something a member
+  // never sees. The conference branch is the one that mattered: an accepted paper's attendance,
+  // trip and aid request, and reimbursements lived on the card alone.
+  it("carries the card's conference branch once a paper is accepted", () => {
+    resetMyWorkViewModeForTest();
+    const accepted = paper({
+      venue_decision: "accept",
+      accepted_venue: "EMNLP",
+      accepted_year: 2026,
+      is_archival: true,
+      presentation_type: "poster",
+    });
+    const cycle = {
+      slots: [],
+      stages: [],
+      drafts: [],
+      consents: [],
+      attendees: [],
+      reimbursements: [],
+      weeklyUpdates: [],
+      cycleClosed: false,
+      missingAcceptanceDetails: [],
+      conferenceKey: "emnlp-2026",
+    } as PaperCycle;
+    const { container } = draw({ papers: [accepted], slots: { p1: cycle }, trip: true });
+    expect(container.querySelector('[data-testid="paper-legacy"]')).not.toBeNull();
+    const extras = container.querySelector('[data-testid="paper-legacy-extras-p1"]');
+    expect(extras?.querySelector('[data-testid="paper-attendee-add-p1"]')).not.toBeNull();
+    expect(extras?.querySelector('[data-testid="paper-trip-intent-p1"]')).not.toBeNull();
+    expect(extras?.querySelector('[data-testid="paper-completion-p1"]')).not.toBeNull();
+    // The step picker is already a legacy row; the card's second copy of it stays off this page.
+    expect(container.querySelector('[data-testid="my-work-step-p1"]')).toBeNull();
+    expect(container.querySelector('[data-testid="my-work-map-p1"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-legacy-report-p1"]')).not.toBeNull();
+  });
+
+  it("keeps the conference branch shut until the paper is accepted", () => {
+    resetMyWorkViewModeForTest();
+    const cycle = {
+      slots: [],
+      stages: [],
+      drafts: [],
+      consents: [],
+      attendees: [],
+      reimbursements: [],
+      weeklyUpdates: [],
+      cycleClosed: false,
+      missingAcceptanceDetails: [],
+      conferenceKey: "emnlp-2026",
+    } as PaperCycle;
+    const { container } = draw({ slots: { p1: cycle }, trip: true });
+    expect(container.querySelector('[data-testid="paper-cycle-p1"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-attendee-add-p1"]')).toBeNull();
+    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
   });
 
   it("offers the button beside the spreadsheet one", () => {

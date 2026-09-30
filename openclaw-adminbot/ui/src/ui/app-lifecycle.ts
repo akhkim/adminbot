@@ -96,6 +96,7 @@ type LifecycleHost = {
   authGateVisible?: boolean;
   guestReimbursements?: boolean;
   topbarObserver: ResizeObserver | null;
+  requestUpdate?: () => void;
 };
 
 export function handleConnected(host: LifecycleHost) {
@@ -131,19 +132,22 @@ export function handleConnected(host: LifecycleHost) {
     const memberHost = host as unknown as MemberAuthHost;
     const gatewayTokenPresent = Boolean(memberHost.settings?.token?.trim());
     if (!gatewayTokenPresent && hasStoredMemberSession()) {
-      void Promise.resolve(host.controlUiBootstrapReady)
-        .then(() => {
+      // The bootstrap read only configures the gateway UI. Session verification reads the
+      // AdminBot URL from settings already resolved above, so run both requests in parallel.
+      void resumeMemberSession(memberHost, () => host.connectGeneration === connectGeneration).then(
+        (outcome) => {
           if (host.connectGeneration !== connectGeneration) {
-            return "no-session";
+            return;
           }
-          return resumeMemberSession(memberHost);
-        })
-        .then((outcome) => {
           // A rejected session returns to the gate; an unreachable service retains the login.
-          if (outcome === "cleared" && host.connectGeneration === connectGeneration) {
+          if (outcome === "cleared") {
             connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
           }
-        });
+          // Clearing the browser token is not reactive; repaint so the pending view can become
+          // the sign-in gate even if the gateway has not emitted an event yet.
+          host.requestUpdate?.();
+        },
+      );
     } else {
       // Gateway token already present (break-glass/URL-param or same-tab reload):
       // the full resume is skipped, so eagerly load privilege from any stored

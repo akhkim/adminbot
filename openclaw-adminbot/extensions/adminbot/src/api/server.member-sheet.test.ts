@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AdminBotService } from "../kernel/service.js";
+import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import { AdminBotService } from "../kernel/service.js";
 import {
   describeMemberSheetReadFailure,
   memberSheetSource,
@@ -7,7 +8,9 @@ import {
   resolveMemberSheetConfig,
 } from "./member-sheet-config.js";
 import { defaultMemberSheet } from "./server.js";
+import { onboardNewMember, queueNewMemberGuide } from "./server.member-onboarding.js";
 import {
+  type MemberSheetOnboardRequest,
   type MemberSheetSource,
   onboardFromMemberSheet,
   previewOnboardFromMemberSheet,
@@ -166,9 +169,11 @@ describe("editing the roster", () => {
 
   it("rejects an empty edit set and a row the sheet does not have", async () => {
     const { service } = fakeService();
-    expect(await proposeMemberSheetEdits(service, source(), { edits: [] }, "andrew")).toMatchObject({
-      error: { status: 400 },
-    });
+    expect(await proposeMemberSheetEdits(service, source(), { edits: [] }, "andrew")).toMatchObject(
+      {
+        error: { status: 400 },
+      },
+    );
     expect(
       await proposeMemberSheetEdits(
         service,
@@ -180,22 +185,64 @@ describe("editing the roster", () => {
   });
 });
 
+/** A real service whose executor records what ran, so approvals and pending proposals are real. */
+function realService() {
+  const executed: AdminBotStoredProposal[] = [];
+  const service = new AdminBotService(undefined, {
+    executor: {
+      execute: async (proposal) => {
+        executed.push(proposal);
+        return { handled: true };
+      },
+    },
+  });
+  const pending = () => {
+    const listed = service.listPending();
+    return listed.ok ? listed.payload.proposals : [];
+  };
+  return { service, executed, pending };
+}
+
+const ADMIN = { approver_role: "admin", approver_id: "andrew" };
+
+/** "Onboard selected rows" as the route wires it: enrollment on the admin's click, mail queued. */
+function onboardRows(
+  service: AdminBotService,
+  sheet: MemberSheetSource,
+  request: MemberSheetOnboardRequest,
+  env: NodeJS.ProcessEnv,
+) {
+  const deps = { service, approver: ADMIN, actor: "andrew", recordAudit: () => {} };
+  return onboardFromMemberSheet(
+    service,
+    sheet,
+    request,
+    {
+      enroll: (input) =>
+        onboardNewMember(deps, input, {
+          origin: { source: "admin", actor: "andrew" },
+          guide: "none",
+          skipSheet: "the row is already on the sheet",
+        }),
+      queueGuide: (memberId, options) => queueNewMemberGuide(deps, memberId, options),
+    },
+    env,
+  );
+}
+
 describe("previewing an onboarding", () => {
   const env = { ADMINBOT_SLACK_INVITE_URL: "https://join.slack.example" } as NodeJS.ProcessEnv;
 
   // The preview is the mail, not a summary of it: both routes run the same plan over the same
-  // sheet, so what the admin read in the panel is byte-for-byte what confirming queues.
+  // sheet, so what the admin read in the panel is what confirming queues.
   it("composes the same mails onboarding would queue, and queues none of them", async () => {
-    const { service, proposals } = fakeService();
-    const request = {
-      sheet_rows: [2, 3],
-      values: { "2": { slack_connect_link: "https://slack.example/x" } },
-    };
+    const { service, pending } = realService();
+    const request = { sheet_rows: [2, 3] };
     const preview = await previewOnboardFromMemberSheet(source(), request, env);
     if ("error" in preview) {
       throw new Error(preview.error.message);
     }
-    expect(proposals).toHaveLength(0);
+    expect(pending()).toHaveLength(0);
 
     expect(preview.planned).toHaveLength(1);
     const mail = preview.planned[0]!;
@@ -207,18 +254,15 @@ describe("previewing an onboarding", () => {
       reply_to: "akim@cs.toronto.edu",
     });
     expect(mail.body.length).toBeGreaterThan(0);
-    expect(preview.skipped[0]!.reason).toContain("sends no onboarding mail");
+    // A no-mail type is not skipped: its onboarding is the access its type grants.
+    expect(preview.access_only).toMatchObject([{ sheet_row: 3, name: "Rauno Arike" }]);
 
-    const executed = await onboardFromMemberSheet(service, source(), request, "andrew", env);
+    const executed = await onboardRows(service, source(), request, env);
     if ("error" in executed) {
       throw new Error(executed.error.message);
     }
-    expect(proposals[0]!.payload).toMatchObject({
-      to: mail.email,
-      subject: mail.subject,
-      body: mail.body,
-      reply_to: mail.reply_to,
-    });
+    const guide = pending().find((proposal) => proposal.type === "onboarding.send_guide");
+    expect(guide?.proposed_payload).toMatchObject({ email: mail.email, template_id: "alumni" });
   });
 
   it("refuses an empty selection the way executing does", async () => {
@@ -230,15 +274,9 @@ describe("previewing an onboarding", () => {
 describe("onboarding from the roster", () => {
   const env = { ADMINBOT_SLACK_INVITE_URL: "https://join.slack.example" } as NodeJS.ProcessEnv;
 
-  it("queues one email proposal per selected row, addressed and templated from the sheet", async () => {
-    const { service, proposals } = fakeService();
-    const result = await onboardFromMemberSheet(
-      service,
-      source(),
-      { sheet_rows: [2], values: { "2": { slack_connect_link: "https://slack.example/x" } } },
-      "andrew",
-      env,
-    );
+  it("creates the member and queues their guide, the same steps as every other path", async () => {
+    const { service, pending } = realService();
+    const result = await onboardRows(service, source(), { sheet_rows: [2] }, env);
     if ("error" in result) {
       throw new Error(result.error.message);
     }
@@ -247,37 +285,63 @@ describe("onboarding from the roster", () => {
         sheet_row: 2,
         email: "yuenc2@illinois.edu",
         template_id: "alumni",
-        proposal_id: "act_1",
+        proposal_id: expect.any(String),
       },
     ]);
-    expect(proposals[0]!.type).toBe("email.send");
-    expect(proposals[0]!.payload).toMatchObject({
-      to: "yuenc2@illinois.edu",
-      reply_to: "akim@cs.toronto.edu",
+    // An onboarding.send_guide, not a pre-rendered email.send: the send is what provisions the
+    // Slack invite and the Drive folder the mail promises.
+    expect(pending().map((proposal) => proposal.type)).toEqual(["onboarding.send_guide"]);
+    expect(result.enrolled.map((entry) => entry.member_id)).toEqual(["yuen-chen"]);
+    const roster = service.listLabMembers();
+    const yuen = roster.ok && roster.payload.members.find((member) => member.id === "yuen-chen");
+    expect(yuen).toMatchObject({
+      privilege_level: "external_collaborator",
+      collaborator_subgroup: "alumni",
     });
   });
 
-  // The whole reason these three types exist: their onboarding is the backend access grant.
-  it("skips a row whose member type sends no mail, and says why", async () => {
-    const { service, proposals } = fakeService();
-    const result = await onboardFromMemberSheet(
-      service,
-      source(),
-      { sheet_rows: [3] },
-      "andrew",
-      env,
-    );
+  it("mails an existing roster member without creating them again", async () => {
+    const { service, pending } = realService();
+    service.upsertLabMember({
+      id: "yc",
+      name: "Yuen C.",
+      email: "yuenc2@illinois.edu",
+      member_type: "alumni",
+    } as never);
+    const result = await onboardRows(service, source(), { sheet_rows: [2] }, env);
+    if ("error" in result) {
+      throw new Error(result.error.message);
+    }
+    expect(result.enrolled).toEqual([]);
+    expect(pending()[0]?.proposed_payload).toMatchObject({ member_id: "yc" });
+
+    // A second run finds the guide already waiting and does not queue another copy.
+    const again = await onboardRows(service, source(), { sheet_rows: [2] }, env);
+    if ("error" in again) {
+      throw new Error(again.error.message);
+    }
+    expect(again.created).toEqual([]);
+    expect(again.skipped[0]!.reason).toContain("already waiting");
+  });
+
+  // Their onboarding is the backend access grant, so they are enrolled rather than skipped.
+  it("enrolls a row whose member type sends no mail, and mails nothing", async () => {
+    const { service, executed, pending } = realService();
+    const result = await onboardRows(service, source(), { sheet_rows: [3] }, env);
     if ("error" in result) {
       throw new Error(result.error.message);
     }
     expect(result.created).toEqual([]);
-    expect(result.skipped[0]!.reason).toContain("sends no onboarding mail");
-    expect(proposals).toHaveLength(0);
+    expect(result.skipped).toEqual([]);
+    expect(result.enrolled.map((entry) => entry.member_id)).toEqual(["rauno-arike"]);
+    // The #friends-and-collaborators row, which no guide will mint for them.
+    expect(executed.map((proposal) => proposal.type)).toEqual(["slack.connect_invite"]);
+    expect(pending()).toEqual([]);
   });
 
   it("falls back to the Slack address when the correspondence column is empty", async () => {
-    const { service } = fakeService();
-    const result = await onboardFromMemberSheet(
+    const { service } = realService();
+    const result = await onboardRows(
       service,
       source(),
       // `what_to_expect_link` rides along because coauthor_minor now requires it: the 2026-08-07
@@ -292,7 +356,6 @@ describe("onboarding from the roster", () => {
           },
         },
       },
-      "andrew",
       env,
     );
     if ("error" in result) {
@@ -301,34 +364,23 @@ describe("onboarding from the roster", () => {
     expect(result.created[0]).toMatchObject({ email: "korinna@cmu.edu" });
   });
 
-  // The alumni mail needs a Slack Connect invite, which is provisioned at send time and is not on
-  // the roster. Half-rendering it around the gap would mail a literal placeholder.
+  // Half-rendering the mail around a value only a human can give would mail a literal placeholder,
+  // so the row is skipped whole -- nobody is created -- and the token is named for the tab to ask.
   it("skips a row missing a send-time value and names the token to collect", async () => {
-    const { service, proposals } = fakeService();
-    const result = await onboardFromMemberSheet(
-      service,
-      source(),
-      { sheet_rows: [5] },
-      "andrew",
-      env,
-    );
+    const { service, pending } = realService();
+    const result = await onboardRows(service, source(), { sheet_rows: [5] }, env);
     if ("error" in result) {
       throw new Error(result.error.message);
     }
     expect(result.created).toEqual([]);
+    expect(result.enrolled).toEqual([]);
     expect(result.skipped[0]!.missing).toContain("project_or_context");
-    expect(proposals).toHaveLength(0);
+    expect(pending()).toHaveLength(0);
   });
 
   it("names a selected row the sheet does not have rather than silently dropping it", async () => {
-    const { service } = fakeService();
-    const result = await onboardFromMemberSheet(
-      service,
-      source(),
-      { sheet_rows: [999] },
-      "andrew",
-      env,
-    );
+    const { service } = realService();
+    const result = await onboardRows(service, source(), { sheet_rows: [999] }, env);
     if ("error" in result) {
       throw new Error(result.error.message);
     }
@@ -336,22 +388,21 @@ describe("onboarding from the roster", () => {
   });
 
   it("refuses a sheet with no Member Type column rather than guessing a template", async () => {
-    const { service } = fakeService();
-    const result = await onboardFromMemberSheet(
+    const { service } = realService();
+    const result = await onboardRows(
       service,
       source([["Name"], ["Yuen Chen"]]),
       { sheet_rows: [2] },
-      "andrew",
       env,
     );
     expect(result).toMatchObject({ error: { status: 422 } });
   });
 
   it("rejects an empty selection", async () => {
-    const { service } = fakeService();
-    expect(
-      await onboardFromMemberSheet(service, source(), { sheet_rows: [] }, "andrew", env),
-    ).toMatchObject({ error: { status: 400 } });
+    const { service } = realService();
+    expect(await onboardRows(service, source(), { sheet_rows: [] }, env)).toMatchObject({
+      error: { status: 400 },
+    });
   });
 });
 
@@ -365,8 +416,9 @@ describe("defaultMemberSheet", () => {
   });
 
   it("takes the tab from the poller's range, which deployments already set", () => {
-    expect(resolveMemberSheetConfig({ ADMINBOT_MEMBER_SHEET_RANGE: "'Full Slack Member List'!A:Z" }).tab)
-      .toBe("Full Slack Member List");
+    expect(
+      resolveMemberSheetConfig({ ADMINBOT_MEMBER_SHEET_RANGE: "'Full Slack Member List'!A:Z" }).tab,
+    ).toBe("Full Slack Member List");
     expect(resolveMemberSheetConfig({ ADMINBOT_MEMBER_SHEET_RANGE: "Members!A:Z" }).tab).toBe(
       "Members",
     );
@@ -409,16 +461,18 @@ describe("resolveMemberSheetConfig", () => {
   });
 
   it("takes the gid out of a share-dialog URL, which carries it in the query", () => {
-    expect(parseSheetUrl("https://docs.google.com/spreadsheets/d/abc123/edit?usp=sharing&gid=42")).toEqual(
-      { spreadsheetId: "abc123", gid: 42 },
-    );
+    expect(
+      parseSheetUrl("https://docs.google.com/spreadsheets/d/abc123/edit?usp=sharing&gid=42"),
+    ).toEqual({ spreadsheetId: "abc123", gid: 42 });
     expect(parseSheetUrl("not a url at all")).toEqual({});
   });
 
   it("does not carry the lab's gid onto somebody else's spreadsheet", () => {
     // A gid identifies a tab within one file; against another file it would silently name whatever
     // tab happened to be created in the same order.
-    expect(resolveMemberSheetConfig({ ADMINBOT_MEMBER_SHEET_ID: "other-sheet" }).gid).toBeUndefined();
+    expect(
+      resolveMemberSheetConfig({ ADMINBOT_MEMBER_SHEET_ID: "other-sheet" }).gid,
+    ).toBeUndefined();
   });
 
   it("lets an explicitly named tab win over the default gid, but not over a configured one", () => {

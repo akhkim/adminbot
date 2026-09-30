@@ -30,6 +30,7 @@ function paper(overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecor
 
 function state(overrides: Partial<AppViewState> = {}): AppViewState {
   return {
+    adminBotRosterLoadedAt: Date.now(),
     adminBotData: {
       members: [member()],
       papers: [paper()],
@@ -112,6 +113,15 @@ describe("the draft panel", () => {
     );
     expect(container.textContent).toContain("the draft ends before it starts");
   });
+});
+
+it("shows the calendar while the roster loads, then enables audience planning", () => {
+  const pending = renderToDiv(state({ adminBotRosterLoadedAt: null }));
+  expect(pending.querySelector('[data-testid="calendar-grid"]')).toBeTruthy();
+  expect(pending.querySelector('[data-testid="calendar-invite-panel"]')).toBeNull();
+
+  const ready = renderToDiv(state());
+  expect(ready.querySelector('[data-testid="calendar-invite-panel"]')).toBeTruthy();
 });
 
 describe("the invite panel", () => {
@@ -1026,6 +1036,36 @@ describe("trips on the calendar", () => {
     city: "Berlin",
     timezone: "Europe/Berlin",
   };
+
+  it("waits for the full roster before showing travel markers", () => {
+    const partial = renderToDiv(
+      state({
+        calendarMonth: "2026-09-01",
+        adminBotRosterLoadedAt: null,
+        adminBotData: {
+          ...state().adminBotData,
+          members: [member({ trips: [berlin] })],
+        },
+      } as Partial<AppViewState>),
+    );
+    expect(partial.querySelector('[data-testid="calendar-trips-2026-09-15"]')).toBeNull();
+
+    const ready = renderToDiv(
+      state({
+        calendarMonth: "2026-09-01",
+        adminBotData: {
+          ...state().adminBotData,
+          members: [
+            member({ trips: [berlin] }),
+            member({ id: "m2", name: "Mei Chen", trips: [berlin] }),
+          ],
+        },
+      } as Partial<AppViewState>),
+    );
+    expect(ready.querySelector('[data-testid="calendar-trips-2026-09-15"]')?.textContent).toContain(
+      "2 away",
+    );
+  });
 
   it("marks the days a member is away, naming them when it is only one", () => {
     const container = renderToDiv(

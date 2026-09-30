@@ -3,6 +3,7 @@
 import { html, render } from "lit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "../i18n/index.ts";
+import { createEmptyAdminBotDashboardData } from "./adminbot/controllers/admin.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import type { ChatProps } from "./views/chat.ts";
 import type { QuickSettingsProps } from "./views/config-quick.ts";
@@ -726,5 +727,33 @@ describe("renderApp assistant avatar routing", () => {
       (node) => node.textContent?.trim(),
     );
     expect(labels).toEqual(["Main old", "Work new"]);
+  });
+});
+
+describe("Time Availability roster loading", () => {
+  it("shows the signed-in schedule while the admin roster is still loading", () => {
+    const container = document.createElement("div");
+    const state = createState({
+      tab: "adminbotTimeAvailability",
+      memberId: "self",
+      memberPrivilegeLevel: "admin",
+      adminBotData: {
+        ...createEmptyAdminBotDashboardData(),
+        members: [{ id: "self", name: "Self", hours_per_week: 40 }],
+        loadedAt: Date.now(),
+      } as AppViewState["adminBotData"],
+      adminBotLoading: false,
+      adminBotError: null,
+      adminBotRosterLoadedAt: null,
+      adminBotRosterLoading: true,
+      adminBotRosterError: null,
+      adminBotTimeAvailabilityMemberId: "",
+      adminBotTimeAvailabilityRange: "month",
+    });
+
+    render(renderApp(state), container);
+
+    expect(container.querySelector(".adminbot-time-availability")?.textContent).toContain("Self");
+    expect(container.querySelector("[data-testid=adminbot-roster-state]")).toBeNull();
   });
 });

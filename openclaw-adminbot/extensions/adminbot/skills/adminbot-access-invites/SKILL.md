@@ -29,9 +29,12 @@ access proposals.
    invites itself -- no connector implements one -- so the decision and the
    drafted email are the deliverable, not a proposal.
 
-The one invite the service does send is the Slack Connect invite that goes out
-with the onboarding guide (`workflows/onboarding/guide-sender.ts`), which is
-triggered by sending a member their onboarding guide rather than by an action.
+The one invite the service does send is the Slack Connect invite to
+#friends-and-collaborators. It goes out with the onboarding guide
+(`workflows/onboarding/guide-sender.ts`), or, for the subgroups the access
+design onboards without a mail, as its own approved `slack.connect_invite` when
+the member is added. Both are part of onboarding a new member, not something to
+propose by hand.
 
 ## External Collaborator Subgroups
 
@@ -59,15 +62,26 @@ guessing. Ordered least to most engaged:
   practice guide and "What to Expect" stories sent separately (Separate
   Practices Doc template below), city dinner and team building invites. Rec
   letters are case-by-case on their own proactive request, not by default.
+- `own_pace_advisee` — full spreadsheet profile plus WhatsApp/personal email,
+  all follow welcomes, AdminBot portal access, the guest-space check, Slack
+  Connect, #jinesis-active/#random-active, #discussion-xxx, project Drive folder,
+  lab calendar view access and the Monday Group Meeting, "What to Expect" stories
+  sent separately, city dinner and team building invites, rec letter button.
 - `coauthor_major` (20-40 h/week) — everything `coauthor_minor` gets, plus
-  AdminBot portal access, the weekly #meeting-xxx channel and Wednesday themed
-  meeting invite, a place on the Vector sponsor roster (below), and rec letters
-  straightforwardly.
+  AdminBot portal access, lab calendar view access and the Monday Group Meeting,
+  the weekly #meeting-xxx channel and Wednesday themed meeting invite, a place on
+  the Vector sponsor roster (below), and rec letters straightforwardly.
 - `disappearing_coauthor` — basic spreadsheet entry plus WhatsApp/personal
   email, time-plan confirmation emails, Slack Connect. Rec letter requests get
   an auto-decline reply (Recommendation Letter Decline template below).
 - `external_prof` — basic spreadsheet entry, Slack Connect, and back-end email
   triggers for paper submission/resubmission and social media draft sharing.
+- `benefit_partner` — a partner organisation rather than a collaborator: follow
+  and newsletter welcomes, Slack Connect, #discussion-xxx, and physical office
+  access (Vector fob, ETH OAT building, MPI guest contract), which a person
+  arranges outside AdminBot. No onboarding email, no portal.
+- `benefit_direct_relative` — a member's direct relative: follow and newsletter
+  welcomes and Slack Connect. No onboarding email, no portal.
 
 ## Vector Sponsor Roster
 

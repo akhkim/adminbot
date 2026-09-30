@@ -47,6 +47,7 @@ export const TAB_GROUPS = [
       "adminbotOpportunities",
       "adminbotNotificationDrafts",
       "adminbotConferencePapers",
+      "adminbotReferenceChecker",
     ],
   },
   // Only the landing tab of each multi-tab page is listed (see TAB_PAGES): the sidebar names the
@@ -225,6 +226,7 @@ export type Tab =
   | "adminbotWorkshopNudges"
   | "adminbotAnnouncements"
   | "adminbotConferencePapers"
+  | "adminbotReferenceChecker"
   | "adminbotCalendar"
   | "adminbotGrantReport"
   | "adminbotMailingList"
@@ -315,6 +317,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotWorkshopNudges: "/workshop-nudges",
   adminbotAnnouncements: "/announcements",
   adminbotConferencePapers: "/conference-papers",
+  adminbotReferenceChecker: "/reference-checker",
   adminbotCalendar: "/calendar",
   adminbotGrantReport: "/grant-report",
   adminbotMailingList: "/mailing-list",
@@ -575,6 +578,7 @@ export function iconForTab(tab: Tab): IconName {
     case "adminbotAnnouncements":
       return "send";
     case "adminbotConferencePapers":
+    case "adminbotReferenceChecker":
       return "fileText";
     case "adminbotCalendar":
       return "clock";

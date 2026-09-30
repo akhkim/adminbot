@@ -106,7 +106,7 @@ async function adminHeaders(baseUrl: string, mock: ReturnType<typeof createAdmin
   if (!pending) {
     throw new Error("missing pending admin claim");
   }
-  const approved = mock.auth.approveRegistration(pending.id, "test-admin");
+  const approved = await mock.auth.approveRegistration(pending.id, "test-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }

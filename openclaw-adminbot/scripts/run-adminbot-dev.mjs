@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Owns the local process group lifecycle; the existing scripts own seeding and service startup.
 import { spawn } from "node:child_process";
+// Owns the local process group lifecycle; the existing scripts own seeding and service startup.
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import net from "node:net";
 import path from "node:path";
@@ -47,6 +48,8 @@ export function devConfig(env = process.env) {
       ADMINBOT_DEV_PASSWORD: password,
       ADMINBOT_DEV_ACCOUNT_PICKER: "1",
       ADMINBOT_DEV_DATABASE: env.ADMINBOT_DEV_DATABASE?.trim() || "state/adminbot-dev.sqlite",
+      ADMINBOT_GATEWAY_WS_URL: env.ADMINBOT_GATEWAY_WS_URL?.trim() || "ws://127.0.0.1:18789",
+      ADMINBOT_CONTROL_UI_URL: uiOrigin,
       // Exact loopback origins only; this launcher must not inherit a remote UI's CORS settings.
       ADMINBOT_ALLOWED_ORIGINS: `${uiOrigin},http://localhost:${uiPort}`,
     },
@@ -90,6 +93,10 @@ export async function main() {
   }
   if (process.argv.length > 2) {
     throw new Error("Unknown argument; use --help for configuration");
+  }
+  const gptZeroEnv = path.join(repoRoot, ".env.gptzero");
+  if (existsSync(gptZeroEnv)) {
+    process.loadEnvFile(gptZeroEnv);
   }
   const config = devConfig();
   await assertPortFree(config.backendPort);
@@ -214,6 +221,7 @@ export async function main() {
     if (stopping) {
       return;
     }
+    await runNode(["--import", "tsx", "scripts/adminbot-dev-gateway.ts"], "Gateway check");
     await runNode(["--import", "tsx", "scripts/seed-adminbot-dev.ts"], "Fixture seeding");
     if (stopping) {
       return;

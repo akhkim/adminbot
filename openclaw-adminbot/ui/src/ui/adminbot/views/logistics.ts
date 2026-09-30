@@ -52,6 +52,7 @@ export type SubmitBlock = {
   reason:
     | "empty"
     | "no-name"
+    | "letter-deadline"
     | "no-purpose"
     | "no-doc-prep"
     | "file-too-big"
@@ -393,6 +394,9 @@ function submitBlockText(block: SubmitBlock): string {
   if (block.reason === "no-name") {
     return t("logistics.request.blocked.noName");
   }
+  if (block.reason === "letter-deadline") {
+    return t("logistics.request.blocked.letterDeadline");
+  }
   if (block.reason === "no-purpose") {
     return t("logistics.request.blocked.noPurpose");
   }
@@ -560,6 +564,7 @@ function renderSchoolCell(
                   : field.control === "url"
                     ? "url"
                     : "text"}
+              ?required=${field.required ?? false}
               list=${field.listId ?? nothing}
               aria-label=${label}
               placeholder=${placeholder}
@@ -601,7 +606,7 @@ function renderSchoolsSection(props: LettersProps) {
 
       ${renderStatusOptions(APPLICATION_STATUS_LIST_ID, APPLICATION_STATUS_SUGGESTIONS)}
       ${renderStatusOptions(LETTER_STATUS_LIST_ID, LETTER_STATUS_SUGGESTIONS)}
-      ${renderStatusOptions(TIMEZONE_LIST_ID, timezoneSuggestions())}
+      ${renderStatusOptions(TIMEZONE_LIST_ID, ["AoE", ...timezoneSuggestions()])}
 
       <!-- Eight columns do not fit a laptop, and squeezing them would leave every field too narrow
            to read what was typed in it. The table keeps its width and this wrapper scrolls. -->
@@ -1214,6 +1219,42 @@ function renderLettersRequest(props: LettersProps) {
       class="card adminbot-card adminbot-card--wide logistics-request"
       data-testid="logistics-letters"
     >
+      <section
+        class="logistics-request__section"
+        aria-labelledby="logistics-letters-guide-title"
+        data-testid="logistics-letters-guide"
+      >
+        <h3 class="card-title" id="logistics-letters-guide-title">
+          ${t("logistics.lettersGuide.title")}
+        </h3>
+        <p class="card-sub">${t("logistics.lettersGuide.sub")}</p>
+        <p>
+          <a
+            href="https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.7kpgc8qat88o"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            ${t("logistics.lettersGuide.open")}
+          </a>
+        </p>
+        <ul>
+          <li>${t("logistics.lettersGuide.folder")}</li>
+          <li>${t("logistics.lettersGuide.schools")}</li>
+          <li>${t("logistics.lettersGuide.materials")}</li>
+          <li>${t("logistics.lettersGuide.facts")}</li>
+        </ul>
+        <p class="card-sub">${t("logistics.lettersGuide.reminders")}</p>
+        <p>
+          ${t("logistics.lettersGuide.portal")}
+          <a
+            href="https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.ypvr8psn5zdy"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            ${t("logistics.lettersGuide.portalLink")}
+          </a>
+        </p>
+      </section>
       ${renderSchoolsSection(props)} ${renderFactsSection(props)} ${renderCvOverleafSection(props)}
       ${renderDriveFolderSection(props)} ${renderRequestActions(props)}
     </div>

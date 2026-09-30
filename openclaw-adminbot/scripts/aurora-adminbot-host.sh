@@ -31,6 +31,9 @@ MIN_DEPLOY_FREE_INODES="${AURORA_MIN_DEPLOY_FREE_INODES:-200000}"
 # Where a *new* deployment root gets its databases from, named explicitly. Only consulted when the
 # root has no state directory yet; see the seeding block in `deploy`.
 SEED_STATE="${AURORA_SEED_STATE:-}"
+INIT_EMPTY_STATE="0"
+CONFIRM_SOURCE_QUIESCED="0"
+CONFIRM_DB_REPLACEMENT="0"
 REF="HEAD"
 GATEWAY_PORT="18789"
 ADMINBOT_PORT="8765"
@@ -54,9 +57,13 @@ Options:
   --root <path>          Deployment root on Aurora: releases, current and state
                           (default: /mfs1/u/<cs-user>/jinesis-adminbot, or
                           $AURORA_DEPLOY_ROOT if set)
-  --seed-state <dir>     Remote directory to copy the databases from when the root has no
-                          state/ yet. Required when moving to a new root over a host that
-                          already holds databases.
+  --seed-state <dir>     Remote state directory to snapshot after stopping its writers,
+                          only when the new root has no state/ yet.
+  --confirm-source-quiesced
+                        Confirm no other process can write the source during seeding or sync
+  --confirm-db-replacement
+                        Confirm the local database is authoritative before sync-adminbot-data
+  --init-empty-state     Explicitly initialize a new, empty state on approved local storage
   --ref <git-ref>        Committed revision to deploy (default: HEAD)
   --gateway-port <port>  Local and remote Gateway port (default: 18789)
   --adminbot-port <port> Local and remote AdminBot port (default: 8765)
@@ -79,7 +86,7 @@ Commands:
   upload-env <file>      Install a secrets env file with mode 0600
   sync-slack-env <file>  Merge only Slack tokens into the remote env and restart Gateway
   sync-cron-jobs [db]    Sync local OpenClaw cron jobs into Aurora via Gateway RPC
-  sync-adminbot-data [db] Safely replace Aurora's AdminBot database and restart services
+  sync-adminbot-data [db] Stage a verified replacement database; leave writers stopped
   upload-config <file>   Install openclaw.json with mode 0600
   auth-gog               Run gog's remote/manual OAuth flow on Aurora
   install-services       Regenerate user-systemd units without starting them
@@ -119,6 +126,18 @@ while (($# > 0)); do
       (($# >= 2)) || die "--seed-state requires a value"
       SEED_STATE="$2"
       shift 2
+      ;;
+    --init-empty-state)
+      INIT_EMPTY_STATE="1"
+      shift
+      ;;
+    --confirm-source-quiesced)
+      CONFIRM_SOURCE_QUIESCED="1"
+      shift
+      ;;
+    --confirm-db-replacement)
+      CONFIRM_DB_REPLACEMENT="1"
+      shift
       ;;
     --ref)
       (($# >= 2)) || die "--ref requires a value"
@@ -178,6 +197,8 @@ DEPLOY_ROOT="${DEPLOY_ROOT%/}"
 [[ "$DEPLOY_ROOT" != *".."* ]] || die "--root must not contain '..': $DEPLOY_ROOT"
 SEED_STATE="${SEED_STATE%/}"
 [[ -z "$SEED_STATE" || "$SEED_STATE" == /* ]] || die "--seed-state must be an absolute remote path: $SEED_STATE"
+[[ -z "$SEED_STATE" || "$INIT_EMPTY_STATE" != "1" ]] || \
+  die "--seed-state and --init-empty-state cannot be combined"
 
 TARGET="${CS_USER}@${HOST}"
 REMOTE_BASE="$DEPLOY_ROOT"
@@ -190,17 +211,22 @@ REMOTE_STATE="${REMOTE_BASE}/state"
 REMOTE_HOME="/h/405/${CS_USER}"
 REMOTE_ENV="${REMOTE_HOME}/.config/jinesis-adminbot/adminbot.env"
 REMOTE_CONFIG="${REMOTE_HOME}/.openclaw/openclaw.json"
-# SSHPASS_PREFIX stays empty (today's interactive-prompt behavior) unless AURORA_SSH_PASSWORD
-# is set; every ssh/scp invocation below is prefixed with it so one password entry covers the
-# whole flow.
-SSHPASS_PREFIX=()
+# An unset password keeps today's interactive-prompt behavior. Build the arrays before optional
+# sshpass wrapping: macOS's Bash 3 treats expansion of an empty array as unbound under set -u.
+SSH=(ssh -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" "$TARGET")
+SCP=(scp -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}")
+SSH_TTY=(ssh -t -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" "$TARGET")
+SSH_TUNNEL=(ssh -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" \
+  -L "${GATEWAY_PORT}:127.0.0.1:${GATEWAY_PORT}" \
+  -L "${ADMINBOT_PORT}:127.0.0.1:${ADMINBOT_PORT}" "$TARGET")
 if [[ -n "$SSH_PASSWORD" ]]; then
   command -v sshpass >/dev/null || die "sshpass is required when AURORA_SSH_PASSWORD is set"
   export SSHPASS="$SSH_PASSWORD"
-  SSHPASS_PREFIX=(sshpass -e)
+  SSH=(sshpass -e "${SSH[@]}")
+  SCP=(sshpass -e "${SCP[@]}")
+  SSH_TTY=(sshpass -e "${SSH_TTY[@]}")
+  SSH_TUNNEL=(sshpass -e "${SSH_TUNNEL[@]}")
 fi
-SSH=("${SSHPASS_PREFIX[@]}" ssh -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" "$TARGET")
-SCP=("${SSHPASS_PREFIX[@]}" scp -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}")
 
 check_local_tools() {
   command -v git >/dev/null || die "git is required locally"
@@ -211,6 +237,144 @@ check_local_tools() {
 remote_install_script() {
   printf '%s/deploy/aurora/install-user-services.sh' "$REMOTE_CURRENT"
 }
+
+local_cleanup_file=""
+remote_cleanup_file=""
+remote_lock_token=""
+sync_writers_stopped="0"
+cleanup_mutation() {
+  status=$?
+  trap - EXIT
+  if ((status != 0)) && [[ "$sync_writers_stopped" == "1" ]]; then
+    echo 'Database sync failed after stopping writers; inspect state and backup before starting services.' >&2
+  fi
+  if [[ -n "$remote_lock_token" ]]; then
+    if [[ -n "$remote_cleanup_file" ]]; then
+      "${SSH[@]}" rm -f -- "$remote_cleanup_file" || {
+        echo 'Warning: a staged remote upload needs operator cleanup.' >&2
+        status=1
+      }
+    fi
+    if ! "${SSH[@]}" bash -s -- "$REMOTE_BASE" "$remote_lock_token" <<'REMOTE_DEPLOY_UNLOCK'
+set -euo pipefail
+lock_dir="$HOME/.config/jinesis-adminbot/.writer.lock"
+token="$2"
+[[ -d "$lock_dir" && -f "$lock_dir/owner" && "$(cat "$lock_dir/owner")" == "$token" ]] || {
+  echo 'Refusing to remove a writer lock owned by another run.' >&2
+  exit 1
+}
+rm -- "$lock_dir/owner"
+rmdir -- "$lock_dir"
+REMOTE_DEPLOY_UNLOCK
+    then
+      echo 'Warning: writer lock could not be released; operator review is required.' >&2
+      status=1
+    fi
+  fi
+  if [[ -n "$local_cleanup_file" ]]; then
+    rm -f -- "$local_cleanup_file"
+  fi
+  exit "$status"
+}
+
+acquire_writer_lock() {
+  command -v ssh >/dev/null || die "ssh is required locally"
+  new_lock_token="${COMMAND}-$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
+  "${SSH[@]}" bash -s -- "$REMOTE_BASE" "$new_lock_token" <<'REMOTE_DEPLOY_LOCK'
+set -euo pipefail
+token="$2"
+config_dir="$HOME/.config/jinesis-adminbot"
+mkdir -p -- "$config_dir"
+lock_dir="$config_dir/.writer.lock"
+mkdir -m 700 -- "$lock_dir" 2>/dev/null || {
+  echo 'Refusing command: another AdminBot writer operation holds the account lock.' >&2
+  exit 1
+}
+trap 'rm -f -- "$lock_dir/owner"; rmdir -- "$lock_dir"' EXIT
+printf '%s\n' "$token" >"$lock_dir/owner"
+trap - EXIT
+REMOTE_DEPLOY_LOCK
+  remote_lock_token="$new_lock_token"
+  trap cleanup_mutation EXIT
+}
+
+assert_remote_state_ready() {
+  "${SSH[@]}" bash -s -- "$REMOTE_STATE" <<'REMOTE_STATE_READY'
+set -euo pipefail
+state_dir="$1"
+database="$state_dir/adminbot.sqlite"
+[[ -d "$state_dir" && ! -L "$state_dir" && -f "$database" && ! -L "$database" ]] || {
+  echo 'Refusing to start writers: AdminBot state is missing.' >&2
+  exit 1
+}
+for marker in .adminbot-seed-pending .adminbot-sync-pending; do
+  [[ ! -e "$state_dir/$marker" && ! -L "$state_dir/$marker" ]] || {
+    echo 'Refusing to start writers: an incomplete database operation needs operator review.' >&2
+    exit 1
+  }
+done
+for location in "$state_dir" "$database"; do
+  filesystem="$(stat -f -c %T -- "$location")" || exit 1
+  case "$filesystem" in
+    ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+    *)
+      printf 'Refusing to start SQLite writers on unsupported %s filesystem.\n' "$filesystem" >&2
+      exit 1
+      ;;
+  esac
+done
+REMOTE_STATE_READY
+}
+
+assert_remote_units_match_root() {
+  "${SSH[@]}" bash -s -- "$REMOTE_CURRENT" <<'REMOTE_UNITS_MATCH_ROOT'
+set -euo pipefail
+expected="$(readlink -f -- "$1")" || exit 1
+[[ -n "$expected" && -d "$expected" ]] || {
+  echo 'Refusing to use writer units: current release is missing.' >&2
+  exit 1
+}
+for unit in jinesis-adminbot.service jinesis-openclaw-gateway.service; do
+  actual="$(systemctl --user show "$unit" -p WorkingDirectory --value)" || exit 1
+  [[ "$actual" == "$expected" ]] || {
+    printf 'Refusing to use %s: it points to a different release.\n' "$unit" >&2
+    exit 1
+  }
+done
+REMOTE_UNITS_MATCH_ROOT
+}
+
+assert_remote_writers_stopped() {
+  "${SSH[@]}" bash -s <<'REMOTE_WRITERS_STOPPED'
+set -euo pipefail
+systemctl --user show-environment >/dev/null || {
+  echo 'Refusing to rewrite units: user systemd is unavailable.' >&2
+  exit 1
+}
+for unit in jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service \
+  jinesis-adminbot-email.timer jinesis-adminbot-email.service \
+  jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service \
+  jinesis-openclaw-gateway.service jinesis-adminbot.service; do
+  state="$(systemctl --user show "$unit" -p ActiveState --value)" || exit 1
+  [[ "$state" == inactive || "$state" == failed ]] || {
+    printf 'Refusing to rewrite units while %s is %s. Stop writers first.\n' "$unit" "$state" >&2
+    exit 1
+  }
+done
+REMOTE_WRITERS_STOPPED
+}
+
+# All commands that can alter the live configuration, database, or writer lifecycle share one
+# account-wide lock. `deploy` runs for different roots on the same account cannot race each other.
+case "$COMMAND" in
+  upload-env | sync-slack-env | sync-cron-jobs | sync-adminbot-data | upload-config | auth-gog | install-services | start | stop | restart)
+    if [[ "$COMMAND" == sync-adminbot-data ]]; then
+      [[ "$CONFIRM_DB_REPLACEMENT" == "1" && "$CONFIRM_SOURCE_QUIESCED" == "1" ]] ||
+        die "sync-adminbot-data requires --confirm-db-replacement and --confirm-source-quiesced"
+    fi
+    acquire_writer_lock
+    ;;
+esac
 
 case "$COMMAND" in
   check)
@@ -249,15 +413,15 @@ REMOTE
 
   connect)
     check_local_tools
-    exec "${SSHPASS_PREFIX[@]}" ssh \
-      -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" \
-      -L "${GATEWAY_PORT}:127.0.0.1:${GATEWAY_PORT}" \
-      -L "${ADMINBOT_PORT}:127.0.0.1:${ADMINBOT_PORT}" \
-      "$TARGET"
+    exec "${SSH_TUNNEL[@]}"
     ;;
 
   deploy)
     check_local_tools
+    [[ -z "$SEED_STATE" || "$CONFIRM_SOURCE_QUIESCED" == "1" ]] || \
+      die "--seed-state requires --confirm-source-quiesced after verifying no external source writers"
+    [[ "$CONFIRM_SOURCE_QUIESCED" != "1" || -n "$SEED_STATE" ]] || \
+      die "--confirm-source-quiesced requires --seed-state"
     # Fetch before anything is resolved, and resolve each side exactly once.
     #
     # Ordering is the whole correctness argument here. This used to fetch in the middle and write
@@ -313,85 +477,13 @@ REMOTE
     release_id="${sha}-$(date -u +%Y%m%dT%H%M%SZ)"
     remote_release="${REMOTE_BASE}/releases/${release_id}"
     archive="$(mktemp "${TMPDIR:-/tmp}/jinesis-adminbot.XXXXXX.tar")"
-    trap 'rm -f -- "$archive"' EXIT
+    local_cleanup_file="$archive"
+    trap cleanup_mutation EXIT
 
     if [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]]; then
       printf 'note: the worktree is dirty; deploy uses committed ref %s only\n' "$REF" >&2
     fi
     git -C "$REPO_ROOT" archive --format=tar --output="$archive" "$REF"
-    # Stop services, unlink `current`, and prune to the newest KEEP_RELEASES release
-    # directories -- NOT a full wipe. Whatever `current` pointed to (the release actually
-    # running before this deploy) is resolved first and printed as the only line on stdout,
-    # captured below, so the build step can hardlink-copy its node_modules instead of every
-    # deploy installing all workspace packages from nothing. Every other command in this
-    # block is redirected to stderr so that marker line is the only thing on stdout.
-    prior_release="$("${SSH[@]}" bash -s -- "$REMOTE_BASE" "$REMOTE_CURRENT" "$KEEP_RELEASES" <<'REMOTE_CLEAN'
-set -euo pipefail
-base="$1"
-current="$2"
-keep="$3"
-# This block removes directories, so the root it was handed is checked before anything goes.
-#
-# It used to compare against one hardcoded literal, which stopped working the moment the root
-# became configurable (--root / $AURORA_DEPLOY_ROOT) -- and a guard that has to be passed the
-# thing it is guarding against is no guard at all. What makes a cleanup safe is the shape of the
-# path, so that is what is checked: absolute, no traversal, at least two levels deep, and not the
-# home directory itself. /w/406/adminbot passes; /w, /w/406 and $HOME do not. Everything removed
-# below is under "$base/releases", which is re-derived here rather than taken on trust.
-[[ "$base" == /* ]] || {
-  printf 'Refusing cleanup: deployment root is not an absolute path: %s\n' "$base" >&2
-  exit 1
-}
-[[ "$base" != *".."* ]] || {
-  printf 'Refusing cleanup: deployment root contains a traversal: %s\n' "$base" >&2
-  exit 1
-}
-[[ "$base" != "/" && "$base" != "$HOME" ]] || {
-  printf 'Refusing cleanup: deployment root is a filesystem or home root: %s\n' "$base" >&2
-  exit 1
-}
-depth="${base#/}"
-depth="${depth//[!\/]/}"
-((${#depth} >= 2)) || {
-  printf 'Refusing cleanup: deployment root is too shallow to prune safely: %s\n' "$base" >&2
-  exit 1
-}
-{
-  systemctl --user stop \
-    jinesis-adminbot-sheet-poller.timer \
-    jinesis-adminbot-sheet-poller.service \
-    jinesis-adminbot-email.timer \
-    jinesis-adminbot-email.service \
-    jinesis-openclaw-gateway.service \
-    jinesis-adminbot.service 2>/dev/null || true
-} >&2
-prior=""
-if [[ -L "$current" ]]; then
-  prior="$(basename -- "$(readlink -f -- "$current")")"
-  rm -f -- "$current"
-elif [[ -e "$current" ]]; then
-  printf 'Refusing to delete non-symlink current path: %s\n' "$current" >&2
-  exit 1
-fi
-releases="$base/releases"
-mkdir -p "$releases"
-{
-  cd "$releases"
-  # Belt and braces after the shape checks above: prune only from the directory this actually
-  # landed in, so a symlinked or substituted `releases` cannot redirect the removals.
-  [[ "$PWD" == "$releases" ]] || {
-    printf 'Refusing cleanup: %s resolved to %s\n' "$releases" "$PWD" >&2
-    exit 1
-  }
-  # Newest-mtime-first; each release directory is created once by `deploy` and never
-  # touched again by anything else, so mtime order matches deploy order.
-  ls -1t 2>/dev/null | tail -n "+$((keep + 1))" | while IFS= read -r old; do
-    rm -rf -- "$old"
-  done
-} >&2
-printf '%s\n' "$prior"
-REMOTE_CLEAN
-    )"
     # Before anything is uploaded: does the target volume actually have room? /w/406 filled up
     # silently once, and the first anyone knew of it was the Control UI telling a roster of people
     # with correct passwords that their password was wrong -- SQLite answers "disk I/O error" for
@@ -426,6 +518,180 @@ if [[ "$free_inodes" =~ ^[0-9]+$ ]] && ((free_inodes < min_inodes)); then
 fi
 REMOTE_SPACE
 
+    acquire_writer_lock
+
+    # Check state before stopping services, then prune to the newest KEEP_RELEASES release
+    # directories -- NOT a full wipe. Whatever `current` pointed to (the release actually
+    # running before this deploy) is resolved first and printed as the only line on stdout,
+    # captured below, so the build step can hardlink-copy its node_modules instead of every
+    # deploy installing all workspace packages from nothing. Every other command in this
+    # block is redirected to stderr so that marker line is the only thing on stdout.
+    prior_release="$("${SSH[@]}" bash -s -- "$REMOTE_BASE" "$REMOTE_CURRENT" "$KEEP_RELEASES" "$REMOTE_STATE" "seed=$SEED_STATE" "$INIT_EMPTY_STATE" <<'REMOTE_CLEAN'
+set -euo pipefail
+base="$1"
+current="$2"
+keep="$3"
+state_dir="$4"
+seed_state="${5#seed=}"
+init_empty="$6"
+# This block removes directories, so the root it was handed is checked before anything goes.
+#
+# It used to compare against one hardcoded literal, which stopped working the moment the root
+# became configurable (--root / $AURORA_DEPLOY_ROOT) -- and a guard that has to be passed the
+# thing it is guarding against is no guard at all. What makes a cleanup safe is the shape of the
+# path, so that is what is checked: absolute, no traversal, at least two levels deep, and not the
+# home directory itself. /w/406/adminbot passes; /w, /w/406 and $HOME do not. Everything removed
+# below is under "$base/releases", which is re-derived here rather than taken on trust.
+[[ "$base" == /* ]] || {
+  printf 'Refusing cleanup: deployment root is not an absolute path: %s\n' "$base" >&2
+  exit 1
+}
+[[ "$base" != *".."* ]] || {
+  printf 'Refusing cleanup: deployment root contains a traversal: %s\n' "$base" >&2
+  exit 1
+}
+[[ "$base" != "/" && "$base" != "$HOME" ]] || {
+  printf 'Refusing cleanup: deployment root is a filesystem or home root: %s\n' "$base" >&2
+  exit 1
+}
+depth="${base#/}"
+depth="${depth//[!\/]/}"
+((${#depth} >= 2)) || {
+  printf 'Refusing cleanup: deployment root is too shallow to prune safely: %s\n' "$base" >&2
+  exit 1
+}
+# A missing or half-seeded state must never silently turn into an empty or stale database.
+pending_marker="$state_dir/.adminbot-seed-pending"
+[[ ! -L "$state_dir" && ! -e "$pending_marker" && ! -L "$pending_marker" ]] || {
+  echo 'Refusing deploy: state is a symlink or an incomplete seed needs operator review.' >&2
+  exit 1
+}
+[[ ! -L "$state_dir/adminbot.sqlite" ]] || {
+  echo 'Refusing deploy: AdminBot database must be a regular file in state.' >&2
+  exit 1
+}
+if [[ -d "$state_dir" ]]; then
+  [[ -z "$seed_state" ]] || {
+    echo 'Refusing seed: target state already exists.' >&2
+    exit 1
+  }
+  [[ -f "$state_dir/adminbot.sqlite" || "$init_empty" == "1" ]] || {
+    echo 'Refusing deploy: state has no AdminBot database; explicitly initialize a fresh state.' >&2
+    exit 1
+  }
+  [[ "$init_empty" != "1" || ! -f "$state_dir/adminbot.sqlite" ]] || {
+    echo 'Refusing fresh initialization: state already has an AdminBot database.' >&2
+    exit 1
+  }
+else
+  [[ ! -e "$state_dir" ]] || {
+    echo 'Refusing deploy: state path is not a directory.' >&2
+    exit 1
+  }
+  [[ -n "$seed_state" || "$init_empty" == "1" ]] || {
+    echo 'Refusing deploy: missing state requires --seed-state or --init-empty-state.' >&2
+    exit 1
+  }
+fi
+destination="$state_dir"
+while [[ ! -e "$destination" && "$destination" != / ]]; do
+  destination="${destination%/*}"
+  [[ -n "$destination" ]] || destination=/
+done
+filesystem="$(stat -f -c %T -- "$destination")" || exit 1
+case "$filesystem" in
+  ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+  *)
+    printf 'Refusing SQLite state on unsupported %s filesystem.\n' "$filesystem" >&2
+    exit 1
+    ;;
+esac
+if [[ -f "$state_dir/adminbot.sqlite" ]]; then
+  filesystem="$(stat -f -c %T -- "$state_dir/adminbot.sqlite")" || exit 1
+  case "$filesystem" in
+    ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+    *)
+      printf 'Refusing SQLite state on unsupported %s filesystem.\n' "$filesystem" >&2
+      exit 1
+      ;;
+  esac
+fi
+if [[ -n "$seed_state" ]]; then
+  [[ -d "$seed_state" && -f "$seed_state/adminbot.sqlite" && ! -L "$seed_state/adminbot.sqlite" ]] || {
+    echo 'Refusing seed: source database is missing.' >&2
+    exit 1
+  }
+  [[ "$(stat -c %u -- "$seed_state/adminbot.sqlite")" == "$(id -u)" ]] || {
+    echo 'Refusing seed: the deploying account does not own the source database.' >&2
+    exit 1
+  }
+  for location in "$seed_state" "$seed_state/adminbot.sqlite"; do
+    filesystem="$(stat -f -c %T -- "$location")" || exit 1
+    case "$filesystem" in
+      ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+      *)
+        printf 'Refusing SQLite seed from unsupported %s filesystem.\n' "$filesystem" >&2
+        exit 1
+        ;;
+    esac
+  done
+fi
+systemctl --user show-environment >/dev/null || {
+  echo 'Refusing deploy: user systemd is unavailable; cannot stop database writers.' >&2
+  exit 1
+}
+{
+  systemctl --user stop \
+    jinesis-adminbot-sheet-poller.timer \
+    jinesis-adminbot-sheet-poller.service \
+    jinesis-adminbot-email.timer \
+    jinesis-adminbot-email.service \
+    jinesis-adminbot-openreview.timer \
+    jinesis-adminbot-openreview.service \
+    jinesis-openclaw-gateway.service \
+    jinesis-adminbot.service 2>/dev/null || true
+} >&2
+for unit in jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service \
+  jinesis-adminbot-email.timer jinesis-adminbot-email.service \
+  jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service \
+  jinesis-openclaw-gateway.service jinesis-adminbot.service; do
+  state="$(systemctl --user show "$unit" -p ActiveState --value)" || exit 1
+  [[ "$state" == inactive || "$state" == failed ]] || {
+    printf 'Refusing deploy: %s is still %s.\n' "$unit" "$state" >&2
+    exit 1
+  }
+done
+prior=""
+if [[ -L "$current" ]]; then
+  prior="$(basename -- "$(readlink -f -- "$current")")"
+elif [[ -e "$current" ]]; then
+  printf 'Refusing non-symlink current path: %s\n' "$current" >&2
+  exit 1
+fi
+releases="$base/releases"
+mkdir -p "$releases"
+{
+  cd "$releases"
+  # Belt and braces after the shape checks above: prune only from the directory this actually
+  # landed in, so a symlinked or substituted `releases` cannot redirect the removals.
+  [[ "$PWD" == "$releases" ]] || {
+    printf 'Refusing cleanup: %s resolved to %s\n' "$releases" "$PWD" >&2
+    exit 1
+  }
+  # Newest-mtime-first; each release directory is created once by `deploy` and never
+  # touched again by anything else, so mtime order matches deploy order.
+  kept=0
+  while IFS= read -r old; do
+    [[ -n "$old" ]] || continue
+    [[ "$old" == "$prior" ]] && continue
+    kept=$((kept + 1))
+    ((kept < keep)) || rm -rf -- "$old"
+  done < <(ls -1t 2>/dev/null)
+} >&2
+printf '%s\n' "$prior"
+REMOTE_CLEAN
+    )"
+
     "${SSH[@]}" mkdir -p "$remote_release"
     "${SCP[@]}" "$archive" "${TARGET}:${remote_release}/source.tar"
 
@@ -437,7 +703,7 @@ REMOTE_SPACE
     # the release's state at it. An earlier revision dodged this by keeping the single optional value
     # last; two of them cannot both be last, so they carry a prefix that is stripped on arrival and
     # keeps them non-empty on the wire.
-    "${SSH[@]}" bash -s -- "$remote_release" "$REMOTE_CURRENT" "$GATEWAY_PORT" "$ADMINBOT_PORT" "$REMOTE_STATE" "$REMOTE_BASE" "prior=$prior_release" "seed=$SEED_STATE" <<'REMOTE'
+    "${SSH[@]}" bash -s -- "$remote_release" "$REMOTE_CURRENT" "$GATEWAY_PORT" "$ADMINBOT_PORT" "$REMOTE_STATE" "$REMOTE_BASE" "prior=$prior_release" "seed=$SEED_STATE" "$INIT_EMPTY_STATE" "$remote_lock_token" <<'REMOTE'
 set -euo pipefail
 export PATH=$HOME/.local/bin:$PATH
 release="$1"
@@ -449,40 +715,44 @@ base="$6"
 # Prefixed at the call site so neither can be empty on the wire; see the note there.
 prior_release="${7#prior=}"
 seed_state="${8#seed=}"
+init_empty="$9"
+lock_token="${10}"
 cd "$release"
 tar -xf source.tar
 rm -f source.tar
 
-# Where a new state directory gets its databases from: what the operator named, else what the
-# previously live release in this same root was using. There is deliberately no automatic fallback
-# to ~/.openclaw/state. That fallback was safe exactly once, before state had ever moved; it is a
-# months-old copy now, and seeding from it would roll the lab back to that snapshot while looking
-# like a clean deploy -- a failure that surfaces days later as missing members and lost approvals.
-seed_from=""
+# The first remote preflight ran before services stopped. Recheck after the build, since another
+# deploy may have created state in the meantime. An incomplete snapshot marker always blocks.
+pending_marker="$state_dir/.adminbot-seed-pending"
+[[ ! -L "$state_dir" && ! -e "$pending_marker" && ! -L "$pending_marker" ]] || {
+  echo 'Refusing deploy: state is a symlink or an incomplete seed needs operator review.' >&2
+  exit 1
+}
+[[ ! -L "$state_dir/adminbot.sqlite" ]] || {
+  echo 'Refusing deploy: AdminBot database must be a regular file in state.' >&2
+  exit 1
+}
 if [[ -n "$seed_state" ]]; then
-  # Named by the operator, so it is taken as given -- but it has to exist, or the deploy would
-  # come up on an empty database having been told exactly where the real one was.
-  [[ -d "$seed_state" ]] || {
-    printf 'Refusing to deploy: --seed-state %s is not a directory on this host.\n' "$seed_state" >&2
+  [[ ! -e "$state_dir" && -d "$seed_state" ]] || {
+    echo 'Refusing seed: source is missing or target state appeared during the build.' >&2
     exit 1
   }
-  seed_from="$seed_state"
-elif [[ -n "$prior_release" ]]; then
-  prior_state="$(dirname -- "$release")/$prior_release/state"
-  if [[ -e "$prior_state" ]]; then
-    seed_from="$(readlink -f -- "$prior_state")"
-  fi
+elif [[ -e "$state_dir" ]]; then
+  [[ -f "$state_dir/adminbot.sqlite" || "$init_empty" == "1" ]] || {
+    echo 'Refusing deploy: target state has no AdminBot database.' >&2
+    exit 1
+  }
+  [[ "$init_empty" != "1" || ! -f "$state_dir/adminbot.sqlite" ]] || {
+    echo 'Refusing fresh initialization: state gained an AdminBot database during the build.' >&2
+    exit 1
+  }
+else
+  [[ "$init_empty" == "1" ]] || {
+    echo 'Refusing deploy: missing state requires --seed-state or --init-empty-state.' >&2
+    exit 1
+  }
 fi
-# A new root, nothing to inherit from, and databases already on the host: refuse rather than guess,
-# and name what is actually here so the right --seed-state is one copy-paste away.
-if [[ ! -e "$state_dir" && -z "$seed_from" && -f "$HOME/.openclaw/state/adminbot.sqlite" ]]; then
-  printf 'Refusing to deploy: %s has no state/ and there is no prior release to seed it from,\n' "$base" >&2
-  printf 'but this host already holds databases. Name the source explicitly:\n' >&2
-  printf '  --seed-state <dir>   (e.g. the state/ of the root you are moving away from)\n' >&2
-  printf 'Databases on this host:\n' >&2
-  find "$HOME" /w /mfs1 -maxdepth 6 -name adminbot.sqlite -not -path '*/node_modules/*' 2>/dev/null | sed 's/^/  /' >&2
-  exit 1
-fi
+seed_from="$seed_state"
 
 command -v node >/dev/null || {
   echo "Node.js is missing. Install Node 22.19+ in your CS account or load a CSLab /w/pkgs toolchain." >&2
@@ -530,19 +800,82 @@ else
   exit 1
 fi
 
-# The databases used to live at ~/.openclaw/state and now live under the deployment root. A
-# first deploy after that move would otherwise point the symlink at an empty directory and bring
-# AdminBot up with no data, which looks exactly like a wiped database. Seed the new location from
-# the old one instead -- copied, not moved, so the home copy stays as a fallback and a rollback to
-# an older release has something to go back to. Only when the new location does not exist yet, so
-# this happens once and never overwrites a live database.
-if [[ ! -e "$state_dir" && -n "$seed_from" && -d "$seed_from" && "$(readlink -f -- "$seed_from")" != "$state_dir" ]]; then
-  echo "Seeding $state_dir from $seed_from (one-time; the source is left in place)"
-  mkdir -p "$state_dir"
-  # The live databases only. The historical snapshots beside them -- adminbot.sqlite.backup-*,
-  # .bak-*, .before-*, .empty-* -- were half a gigabyte last time and are what a plain `cp -a`
-  # carried onto a volume that then had no room for the database to grow into. They stay at the
-  # source, which this does not touch, so nothing is lost by leaving them behind.
+# Even an existing database cannot safely keep using SQLite WAL on a network mount.
+target_probe="$state_dir"
+while [[ ! -e "$target_probe" && "$target_probe" != / ]]; do
+  target_probe="${target_probe%/*}"
+  [[ -n "$target_probe" ]] || target_probe=/
+done
+filesystem="$(stat -f -c %T -- "$target_probe")" || exit 1
+case "$filesystem" in
+  ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+  *)
+    printf 'Refusing SQLite state on unsupported %s filesystem.\n' "$filesystem" >&2
+    exit 1
+    ;;
+esac
+if [[ -f "$state_dir/adminbot.sqlite" ]]; then
+  filesystem="$(stat -f -c %T -- "$state_dir/adminbot.sqlite")" || exit 1
+  case "$filesystem" in
+    ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+    *)
+      printf 'Refusing SQLite state on unsupported %s filesystem.\n' "$filesystem" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+# Seed only a new state directory. A raw copy of a WAL database can pair a database file with
+# WAL frames from a different moment, losing committed writes. The old state stays untouched.
+seeded_state=0
+if [[ -n "$seed_from" ]]; then
+  [[ ! -e "$state_dir" && -d "$seed_from" && "$(readlink -f -- "$seed_from")" != "$state_dir" ]] || {
+    echo 'Refusing seed: target state exists or source is unavailable.' >&2
+    exit 1
+  }
+  assert_seed_writers_stopped() {
+    for unit in jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service \
+      jinesis-adminbot-email.timer jinesis-adminbot-email.service \
+      jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service \
+      jinesis-openclaw-gateway.service jinesis-adminbot.service; do
+      state="$(systemctl --user show "$unit" -p ActiveState --value)" || return 1
+      [[ "$state" == inactive || "$state" == failed ]] || {
+        printf 'Refusing seed: %s became %s during deployment.\n' "$unit" "$state" >&2
+        return 1
+      }
+    done
+  }
+  assert_seed_writers_stopped
+  [[ -f "$seed_from/adminbot.sqlite" ]] || {
+    echo "Refusing seed: $seed_from has no adminbot.sqlite" >&2
+    exit 1
+  }
+  [[ "$(stat -c %u -- "$seed_from/adminbot.sqlite")" == "$(id -u)" ]] || {
+    echo 'Refusing seed: the deploying account does not own the source database and cannot stop its writers.' >&2
+    exit 1
+  }
+  # WAL is unsupported on network filesystems. A snapshot is consistent, but placing the next
+  # live WAL database on NFS/FUSE would preserve the same storage hazard under a new pathname.
+  for location in "$seed_from" "$seed_from/adminbot.sqlite" "$base"; do
+    filesystem="$(stat -f -c %T -- "$location")" || exit 1
+    case "$filesystem" in
+      ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+      *)
+        printf 'Refusing seed: %s uses %s; SQLite WAL needs approved local storage.\n' \
+          "$location" "$filesystem" >&2
+        exit 1
+        ;;
+    esac
+  done
+  echo "Snapshotting $seed_from into $state_dir (one-time; source retained)"
+  stage="${state_dir}.seed.$$"
+  [[ ! -e "$stage" ]] || {
+    printf 'Refusing seed: staging path already exists: %s\n' "$stage" >&2
+    exit 1
+  }
+  mkdir -m 700 -- "$stage"
+  trap 'rm -rf -- "$stage"' EXIT
+  printf 'Seed pending release cutover; inspect before retrying.\n' >"$stage/.adminbot-seed-pending"
   seeded=0
   left=0
   for entry in "$seed_from"/*; do
@@ -552,11 +885,40 @@ if [[ ! -e "$state_dir" && -n "$seed_from" && -d "$seed_from" && "$(readlink -f 
         left=$((left + 1))
         continue
         ;;
+      *.sqlite-wal | *.sqlite-shm)
+        continue
+        ;;
+      *.sqlite)
+        [[ -f "$entry" && ! -L "$entry" ]] || {
+          printf 'Refusing seed: SQLite source is not a regular file: %s\n' "$entry" >&2
+          exit 1
+        }
+        node "$release/scripts/snapshot-sqlite.mjs" "$entry" "$stage/$(basename -- "$entry")" --verify
+        ;;
+      *)
+        cp -a -- "$entry" "$stage/"
+        ;;
     esac
-    cp -a -- "$entry" "$state_dir/"
     seeded=$((seeded + 1))
   done
-  printf 'Seeded %s file(s); left %s historical snapshot(s) at %s\n' "$seeded" "$left" "$seed_from"
+  [[ -f "$stage/adminbot.sqlite" ]] || {
+    echo 'Refusing seed: verified AdminBot snapshot is missing.' >&2
+    exit 1
+  }
+  assert_seed_writers_stopped
+  [[ ! -e "$state_dir" ]] || {
+    echo 'Refusing seed: target state appeared during snapshot.' >&2
+    exit 1
+  }
+  # No-clobber closes the gap between the existence check and rename if another deploy raced us.
+  mv -Tn -- "$stage" "$state_dir"
+  [[ ! -e "$stage" ]] || {
+    echo 'Refusing seed: target state appeared during snapshot.' >&2
+    exit 1
+  }
+  trap - EXIT
+  seeded_state=1
+  printf 'Seeded %s verified file(s); left %s historical snapshot(s) at %s\n' "$seeded" "$left" "$seed_from"
 fi
 mkdir -p "$state_dir"
 if [[ -e "$release/state" && ! -L "$release/state" ]]; then
@@ -566,13 +928,66 @@ if [[ -e "$release/state" && ! -L "$release/state" ]]; then
   }
 fi
 ln -sfn "$state_dir" "$release/state"
-ln -sfn "$release" "$current"
-"$current/deploy/aurora/install-user-services.sh" \
-  --root "$current" \
+# Installing user units changes files outside the release. Save only the units this installer
+# touches so a failed install leaves the previous release's definitions available for rollback.
+unit_dir="$HOME/.config/systemd/user"
+unit_backup="$(mktemp -d "$base/.units.rollback.XXXXXX")"
+units=(
+  jinesis-ollama.service
+  jinesis-adminbot.service
+  jinesis-openclaw-gateway.service
+  jinesis-adminbot-email.service
+  jinesis-adminbot-email.timer
+  jinesis-adminbot-openreview.service
+  jinesis-adminbot-openreview.timer
+  jinesis-adminbot-sheet-poller.service
+  jinesis-adminbot-sheet-poller.timer
+)
+for unit in "${units[@]}"; do
+  [[ ! -e "$unit_dir/$unit" && ! -L "$unit_dir/$unit" ]] || cp -a -- "$unit_dir/$unit" "$unit_backup/"
+done
+for timer in jinesis-adminbot-email.timer jinesis-adminbot-openreview.timer \
+  jinesis-adminbot-sheet-poller.timer; do
+  if systemctl --user is-enabled --quiet "$timer"; then
+    printf '%s\n' "$timer" >>"$unit_backup/enabled-timers"
+  fi
+done
+restore_units_on_failure() {
+  status=$?
+  if ((status != 0)); then
+    for unit in "${units[@]}"; do
+      rm -f -- "$unit_dir/$unit"
+      [[ ! -e "$unit_backup/$unit" && ! -L "$unit_backup/$unit" ]] || \
+        cp -a -- "$unit_backup/$unit" "$unit_dir/"
+    done
+    systemctl --user daemon-reload || true
+    if [[ -f "$unit_backup/enabled-timers" ]]; then
+      while IFS= read -r timer; do
+        systemctl --user enable "$timer" || true
+      done <"$unit_backup/enabled-timers"
+    fi
+    echo 'Deploy failed; previous release and user-unit definitions remain available. Services are stopped.' >&2
+  fi
+  rm -rf -- "$unit_backup"
+}
+trap restore_units_on_failure EXIT
+"$release/deploy/aurora/install-user-services.sh" \
+  --root "$release" \
   --state "$state_dir" \
   --gateway-port "$gateway_port" \
   --adminbot-port "$adminbot_port" \
+  --writer-lock-token "$lock_token" \
   --no-start
+# Keep the old release addressable until its replacement is built, the state is verified, and
+# service definitions are installed. Rename a fresh symlink so readers never see a missing current.
+next_current="${current}.next.$$"
+ln -s "$release" "$next_current"
+mv -Tf -- "$next_current" "$current"
+trap - EXIT
+if ((seeded_state)); then
+  rm -- "$pending_marker"
+fi
+rm -rf -- "$unit_backup"
 printf 'deployed_release=%s\n' "$release"
 REMOTE
     printf 'Deployment installed but not started.\n'
@@ -593,8 +1008,10 @@ REMOTE
     (($# == 1)) || die "sync-slack-env requires exactly one env file"
     [[ -f "$1" ]] || die "env file not found: $1"
     check_local_tools
+    assert_remote_state_ready
+    assert_remote_units_match_root
     slack_env="$(mktemp "${TMPDIR:-/tmp}/jinesis-slack-env.XXXXXX")"
-    trap 'rm -f -- "$slack_env"' EXIT
+    local_cleanup_file="$slack_env"
     awk '
       /^SLACK_(BOT|APP|USER)_TOKEN=/ {
         key = $0
@@ -640,6 +1057,8 @@ REMOTE_SLACK
   sync-cron-jobs)
     (($# <= 1)) || die "sync-cron-jobs accepts at most one SQLite database path"
     check_local_tools
+    assert_remote_state_ready
+    assert_remote_units_match_root
     command -v node >/dev/null || die "node is required locally"
     local_database="${1:-$HOME/.openclaw/state/openclaw.sqlite}"
     [[ -f "$local_database" ]] || die "OpenClaw state database not found: $local_database"
@@ -647,7 +1066,7 @@ REMOTE_SLACK
     importer="$REPO_ROOT/scripts/import-openclaw-cron-jobs.mjs"
     [[ -f "$exporter" && -f "$importer" ]] || die "cron migration helpers are missing"
     cron_bundle="$(mktemp "${TMPDIR:-/tmp}/jinesis-cron-jobs.XXXXXX.json")"
-    trap 'rm -f -- "$cron_bundle"' EXIT
+    local_cleanup_file="$cron_bundle"
     node "$exporter" "$local_database" "$REPO_ROOT" "$REMOTE_CURRENT" >"$cron_bundle"
     chmod 600 "$cron_bundle"
 
@@ -697,60 +1116,145 @@ REMOTE_CRON
     check_local_tools
     command -v node >/dev/null || die "node is required locally"
     local_database="${1:-$REPO_ROOT/state/adminbot.sqlite}"
-    [[ -f "$local_database" ]] || die "AdminBot database not found: $local_database"
+    [[ -f "$local_database" && ! -L "$local_database" ]] ||
+      die "AdminBot source database must be a regular file: $local_database"
     snapshot_helper="$REPO_ROOT/scripts/snapshot-sqlite.mjs"
     [[ -f "$snapshot_helper" ]] || die "SQLite snapshot helper is missing"
+    assert_remote_units_match_root
+
+    # Reject unsupported storage and stop every managed writer before taking the replacement
+    # snapshot. Any failure from this point leaves writers stopped for operator review.
+    "${SSH[@]}" bash -s -- "$REMOTE_STATE" <<'REMOTE_ADMINBOT_PREPARE'
+set -euo pipefail
+state_dir="$1"
+database="$state_dir/adminbot.sqlite"
+[[ -d "$state_dir" && ! -L "$state_dir" && -f "$database" && ! -L "$database" ]] || {
+  echo 'Refusing database replacement: destination state or database is missing.' >&2
+  exit 1
+}
+for marker in .adminbot-seed-pending .adminbot-sync-pending; do
+  [[ ! -e "$state_dir/$marker" && ! -L "$state_dir/$marker" ]] || {
+    echo 'Refusing database replacement: an incomplete database operation needs review.' >&2
+    exit 1
+  }
+done
+for location in "$state_dir" "$database"; do
+  filesystem="$(stat -f -c %T -- "$location")" || exit 1
+  case "$filesystem" in
+    ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+    *)
+      printf 'Refusing database replacement on unsupported %s filesystem.\n' "$filesystem" >&2
+      exit 1
+      ;;
+  esac
+done
+systemctl --user show-environment >/dev/null || exit 1
+{
+  systemctl --user stop \
+    jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service \
+    jinesis-adminbot-email.timer jinesis-adminbot-email.service \
+    jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service \
+    jinesis-openclaw-gateway.service jinesis-adminbot.service 2>/dev/null || true
+} >&2
+for unit in jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service \
+  jinesis-adminbot-email.timer jinesis-adminbot-email.service \
+  jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service \
+  jinesis-openclaw-gateway.service jinesis-adminbot.service; do
+  state="$(systemctl --user show "$unit" -p ActiveState --value)" || exit 1
+  [[ "$state" == inactive || "$state" == failed ]] || {
+    printf 'Refusing database replacement: %s is still %s.\n' "$unit" "$state" >&2
+    exit 1
+  }
+done
+REMOTE_ADMINBOT_PREPARE
+    sync_writers_stopped="1"
+
     database_snapshot="$(mktemp "${TMPDIR:-/tmp}/jinesis-adminbot.XXXXXX.sqlite")"
     rm -f -- "$database_snapshot"
-    trap 'rm -f -- "$database_snapshot"' EXIT
-    node "$snapshot_helper" "$local_database" "$database_snapshot"
-
-    # Staged inside the state directory rather than next to openclaw.json in the home directory:
-    # the snapshot is the size of the database, and landing it on the home volume is the thing
-    # moving state off /h was meant to stop.
-    remote_upload="${REMOTE_STATE}/.adminbot-db-upload.$$"
-    remote_database="${REMOTE_STATE}/adminbot.sqlite"
-    "${SSH[@]}" mkdir -p "$REMOTE_STATE"
-    "${SCP[@]}" "$database_snapshot" "${TARGET}:${remote_upload}"
-    "${SSH[@]}" bash -s -- "$remote_upload" "$remote_database" <<'REMOTE_ADMINBOT_DATA'
+    local_cleanup_file="$database_snapshot"
+    node "$snapshot_helper" "$local_database" "$database_snapshot" --verify
+    remote_upload="${REMOTE_STATE}/.adminbot-db-upload-${remote_lock_token}.sqlite"
+    remote_cleanup_file="$remote_upload"
+    "${SCP[@]}" -p "$database_snapshot" "${TARGET}:${remote_upload}"
+    "${SSH[@]}" bash -s -- \
+      "$remote_upload" \
+      "$REMOTE_STATE/adminbot.sqlite" \
+      "$REMOTE_CURRENT/scripts/snapshot-sqlite.mjs" \
+      "$remote_lock_token" <<'REMOTE_ADMINBOT_DATA'
 set -euo pipefail
+export PATH=$HOME/.local/bin:$PATH
 upload="$1"
 database="$2"
-database_new="${database}.new"
-timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-adminbot_stopped=0
+helper="$3"
+token="$4"
+state_dir="$(dirname -- "$database")"
+marker="$state_dir/.adminbot-sync-pending"
+backup="${database}.backup-${token}"
+database_new="${database}.new-${token}"
+retired_sidecars="${database}.retired-sidecars-${token}"
 cleanup() {
   status=$?
+  trap - EXIT
+  set +e
   rm -f -- "$upload" "$database_new"
-  if ((adminbot_stopped)); then
-    systemctl --user start jinesis-adminbot.service >/dev/null 2>&1 || true
+  if ((status != 0)); then
+    echo 'Database replacement incomplete; writer services remain stopped for operator review.' >&2
   fi
   exit "$status"
 }
 trap cleanup EXIT
-[[ -f "$upload" ]] || {
-  printf 'AdminBot database upload is missing: %s\n' "$upload" >&2
+[[ -f "$upload" && ! -L "$upload" && -f "$helper" && -f "$database" && ! -L "$database" ]] || {
+  echo 'Refusing database replacement: upload, helper, or destination is missing.' >&2
   exit 1
 }
-mkdir -p "$(dirname "$database")"
-chmod 600 "$upload"
-systemctl --user stop jinesis-adminbot.service
-adminbot_stopped=1
-if [[ -f "$database" ]]; then
-  cp -p -- "$database" "${database}.backup-${timestamp}"
-fi
-rm -f -- "${database}-wal" "${database}-shm"
-install -m 600 "$upload" "$database_new"
+[[ ! -e "$marker" && ! -L "$marker" ]] || {
+  echo 'Refusing database replacement: an earlier sync is incomplete.' >&2
+  exit 1
+}
+[[ ! -e "$state_dir/.adminbot-seed-pending" && ! -L "$state_dir/.adminbot-seed-pending" ]] || {
+  echo 'Refusing database replacement: an earlier seed is incomplete.' >&2
+  exit 1
+}
+for location in "$state_dir" "$database"; do
+  filesystem="$(stat -f -c %T -- "$location")" || exit 1
+  case "$filesystem" in
+    ext2 | ext3 | ext4 | xfs | btrfs | zfs | f2fs) ;;
+    *)
+      printf 'Refusing database replacement on unsupported %s filesystem.\n' "$filesystem" >&2
+      exit 1
+      ;;
+  esac
+done
+for unit in jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service \
+  jinesis-adminbot-email.timer jinesis-adminbot-email.service \
+  jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service \
+  jinesis-openclaw-gateway.service jinesis-adminbot.service; do
+  state="$(systemctl --user show "$unit" -p ActiveState --value)" || exit 1
+  [[ "$state" == inactive || "$state" == failed ]] || {
+    printf 'Refusing database replacement: %s restarted during snapshot.\n' "$unit" >&2
+    exit 1
+  }
+done
+node "$helper" "$database" "$backup" --verify
+node "$helper" "$upload" "$database_new" --verify
+for suffix in wal shm; do
+  [[ ! -L "${database}-${suffix}" && ! -e "${retired_sidecars}.${suffix}" && ! -L "${retired_sidecars}.${suffix}" ]] || {
+    echo 'Refusing database replacement: a sidecar path is unsafe or already exists.' >&2
+    exit 1
+  }
+done
+printf 'Database replacement pending operator review if interrupted.\n' >"$marker"
+for suffix in wal shm; do
+  if [[ -e "${database}-${suffix}" ]]; then
+    mv -- "${database}-${suffix}" "${retired_sidecars}.${suffix}"
+  fi
+done
 mv -f -- "$database_new" "$database"
-systemctl --user restart \
-  jinesis-adminbot.service \
-  jinesis-openclaw-gateway.service
-adminbot_stopped=0
-systemctl --user --no-pager --full status \
-  jinesis-adminbot.service \
-  jinesis-openclaw-gateway.service
+rm -- "$marker"
+printf 'verified_database=%s backup=%s writers=stopped\n' "$database" "$backup"
 REMOTE_ADMINBOT_DATA
-    printf 'AdminBot database synced; AdminBot and Gateway restarted.\n'
+    remote_cleanup_file=""
+    printf 'AdminBot database replaced from a verified snapshot; writers remain stopped. Review the result, then run start.\n'
     ;;
 
   upload-config)
@@ -765,41 +1269,60 @@ REMOTE_ADMINBOT_DATA
 
   auth-gog)
     (($# == 0)) || die "auth-gog takes no arguments"
-    "${SSHPASS_PREFIX[@]}" ssh -t -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" "$TARGET" \
+    "${SSH_TTY[@]}" \
       "set -euo pipefail; set -a; . $REMOTE_ENV; set +a; ${REMOTE_HOME}/.local/bin/gog auth add \"\$GOG_ACCOUNT\" --remote --force-consent --services gmail,calendar,drive,docs,sheets,contacts"
     ;;
 
   install-services)
     (($# == 0)) || die "install-services takes no arguments"
+    assert_remote_writers_stopped
     "${SSH[@]}" "$(remote_install_script)" \
       --root "$REMOTE_CURRENT" \
       --state "$REMOTE_STATE" \
       --gateway-port "$GATEWAY_PORT" \
       --adminbot-port "$ADMINBOT_PORT" \
+      --writer-lock-token "$remote_lock_token" \
       --no-start
     ;;
 
   start)
     (($# == 0)) || die "start takes no arguments"
+    assert_remote_state_ready
+    assert_remote_writers_stopped
     "${SSH[@]}" "$(remote_install_script)" \
       --root "$REMOTE_CURRENT" \
       --state "$REMOTE_STATE" \
       --gateway-port "$GATEWAY_PORT" \
       --adminbot-port "$ADMINBOT_PORT" \
+      --writer-lock-token "$remote_lock_token" \
       --start
     ;;
 
   stop)
     (($# == 0)) || die "stop takes no arguments"
-    "${SSH[@]}" systemctl --user stop \
-      jinesis-adminbot-sheet-poller.timer \
-      jinesis-adminbot-sheet-poller.service \
-      jinesis-openclaw-gateway.service \
-      jinesis-adminbot.service
+    "${SSH[@]}" bash -s <<'REMOTE_STOP'
+set -euo pipefail
+units=(
+  jinesis-adminbot-sheet-poller.timer jinesis-adminbot-sheet-poller.service
+  jinesis-adminbot-email.timer jinesis-adminbot-email.service
+  jinesis-adminbot-openreview.timer jinesis-adminbot-openreview.service
+  jinesis-openclaw-gateway.service jinesis-adminbot.service
+)
+systemctl --user stop "${units[@]}" 2>/dev/null || true
+for unit in "${units[@]}"; do
+  state="$(systemctl --user show "$unit" -p ActiveState --value)" || exit 1
+  [[ "$state" == inactive || "$state" == failed ]] || {
+    printf 'Refusing to continue: %s is still %s.\n' "$unit" "$state" >&2
+    exit 1
+  }
+done
+REMOTE_STOP
     ;;
 
   restart)
     (($# == 0)) || die "restart takes no arguments"
+    assert_remote_state_ready
+    assert_remote_units_match_root
     "${SSH[@]}" systemctl --user restart \
       jinesis-adminbot.service \
       jinesis-openclaw-gateway.service
@@ -822,7 +1345,7 @@ REMOTE_ADMINBOT_DATA
       sheet-poller) systemd_unit="jinesis-adminbot-sheet-poller.service" ;;
       *) die "logs unit must be adminbot, gateway, email, or sheet-poller" ;;
     esac
-    exec "${SSHPASS_PREFIX[@]}" ssh -t "$TARGET" journalctl --user -u "$systemd_unit" -f
+    exec "${SSH_TTY[@]}" journalctl --user -u "$systemd_unit" -f
     ;;
 
   *)

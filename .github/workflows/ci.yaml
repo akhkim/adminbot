@@ -58,16 +58,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      # The two deadline-board specs are excluded, and that is a real gap rather than a tidy-up:
-      # they assert behaviour the Control UI has and the standalone board never got -- workshop
-      # groups rendered as standalone cards, and the removal of the priority facet. Three of their
-      # eleven tests fail on `main` today. Delete these two lines once the board is brought level;
-      # until then everything else in the suite is gated.
       - name: AdminBot suite
         run: >
           pnpm exec vitest run --config test/vitest/vitest.node.config.ts extensions/adminbot
-          --exclude '**/workflows/deadlines/board.test.ts'
-          --exclude '**/workflows/deadlines/board.base.test.ts'
 
   test-ui:
     name: Tests (ui)

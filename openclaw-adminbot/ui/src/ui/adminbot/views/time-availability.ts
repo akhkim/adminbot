@@ -254,6 +254,7 @@ export type AdminBotTimeAvailabilityProps = {
   members: AdminBotLabMember[];
   loading: boolean;
   error: string | null;
+  onRefresh?: () => void;
   selectedMemberId: string;
   onMemberChange: (memberId: string) => void;
   range: TimeAvailabilityRange;
@@ -2036,6 +2037,16 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
               ${t("adminbotTimeAvailability.ownScheduleOnly")}
             </p>`}
         ${renderRangeSwitch(props)}
+        ${props.onRefresh
+          ? html`<button
+              class="btn btn--sm adminbot-time-availability__refresh"
+              type="button"
+              ?disabled=${props.loading}
+              @click=${props.onRefresh}
+            >
+              ${props.loading ? "Refreshing…" : "Refresh schedules"}
+            </button>`
+          : nothing}
       </div>
       ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
       ${selectedMember

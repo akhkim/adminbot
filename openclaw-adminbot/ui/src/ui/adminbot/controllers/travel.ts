@@ -84,17 +84,24 @@ export async function loadAdminBotTravel(
     patch({ history: null, loading: false, error: t("adminbotTravel.error.signIn") });
     return;
   }
+  const memberId = host.memberId;
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   // The old history stays on screen while a wider range loads. Blanking it would flash the page
   // empty on every range change, which reads as "no travel found" for as long as the request takes.
   patch({ loading: true, error: null });
   const from = rangeStart(range);
   const result = await fetchMemberTravelHistory(
-    host.memberId,
+    memberId,
     stored.sessionToken,
     baseUrl,
     from ? { fromIso: from } : undefined,
   );
+  if (
+    loadStoredMemberSession()?.sessionToken !== stored.sessionToken ||
+    host.memberId !== memberId
+  ) {
+    return;
+  }
   patch(
     result.ok
       ? { history: result.value, loading: false, error: null }

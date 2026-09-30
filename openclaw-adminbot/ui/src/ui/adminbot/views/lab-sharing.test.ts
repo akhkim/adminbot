@@ -4,7 +4,10 @@ import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { LabSharingSnapshot } from "../data/lab-sharing.ts";
-import { renderLabSharing } from "./lab-sharing.ts";
+import { renderLabSharing, resetLabSharingSessionState } from "./lab-sharing.ts";
+
+// jsdom omits the browser scrolling API used when the compose dialog opens.
+HTMLElement.prototype.scrollIntoView ??= () => undefined;
 
 // The rows the service would have answered with. Seeded on the state rather than faked at the
 // network, because what these tests are about is the panels: given this snapshot, what is on the
@@ -111,6 +114,22 @@ function input(container: HTMLElement, selector: string, value: string): void {
 }
 
 describe("renderLabSharing", () => {
+  it("drops a previous member's unsent announcement on account switch", () => {
+    const { container, draw } = renderView();
+    click(container, '[data-testid="lab-sharing-announcement-add"]');
+    input(container, '[data-testid="lab-sharing-announcement-compose"] textarea', "Private draft");
+
+    resetLabSharingSessionState();
+    draw();
+
+    expect(container.querySelector('[data-testid="lab-sharing-announcement-compose"]')).toBeNull();
+    click(container, '[data-testid="lab-sharing-announcement-add"]');
+    expect(
+      container.querySelector<HTMLTextAreaElement>(
+        '[data-testid="lab-sharing-announcement-compose"] textarea',
+      )?.value,
+    ).toBe("");
+  });
   it("renders every panel on the page", () => {
     const { container } = renderView();
     for (const testId of [

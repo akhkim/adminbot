@@ -4,10 +4,10 @@
  * Brought across from the lab branch `luke/time-allocation` (commit a4c560bd), where it was added
  * alongside the time-availability tab so that surface could be driven without the real service.
  * The mock service moved to `extensions/adminbot/src/api/server.ts` in the restructuring; that
- * import is the only change from the original.
+ * launcher now shares the normal host’s device authentication helpers.
  *
  * Distinct from `start-adminbot.mjs`, which runs the real service against the real database. This
- * one deliberately stubs the calendar and email connectors, so nothing it does leaves the machine.
+ * one stubs calendar and email invitations. Explicit PDF checks can still use GPTZero when configured.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -64,9 +64,9 @@ const app = createAdminBotMockService({
   accountApprovedEmailRunner: async () => {},
 });
 
-let login = app.auth.login({ email, password });
+let login = await app.auth.login({ email, password });
 if (!login.ok) {
-  const signup = app.auth.signup({
+  const signup = await app.auth.signup({
     email,
     password,
     profile: { name, role: "Lab Manager" },
@@ -78,19 +78,19 @@ if (!login.ok) {
     );
   }
 
-  const registration = app.auth
-    .listRegistrations("pending")
-    .find((candidate) => candidate.email === email);
+  const registration = (await app.auth.listRegistrations("pending")).find(
+    (candidate) => candidate.email === email,
+  );
   if (!registration) {
     throw new Error("Local account registration was not persisted");
   }
 
-  const approval = app.auth.approveRegistration(registration.id, "local-dev-bootstrap");
+  const approval = await app.auth.approveRegistration(registration.id, "local-dev-bootstrap");
   if (!approval.ok) {
     throw new Error(`Could not approve the local account: ${approval.error.message}`);
   }
 
-  login = app.auth.login({ email, password });
+  login = await app.auth.login({ email, password });
 }
 
 if (!login.ok) {

@@ -1,10 +1,11 @@
 /* @vitest-environment jsdom */
 
 import { render } from "lit";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { adminBotAdminOwnedProfileFields } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AccessRole } from "../access.ts";
+import { createEmptyAdminBotDashboardData } from "../controllers/admin.ts";
 import * as deadlineTime from "../data/deadline-time.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { renderDashboard } from "./dashboard.ts";
@@ -35,6 +36,54 @@ function attentionIds(container: HTMLElement): string[] {
 }
 
 describe("renderDashboard", () => {
+  it("shows loading instead of empty work while the first read is pending", () => {
+    const container = renderPage(
+      createState({ adminBotData: createEmptyAdminBotDashboardData(), adminBotLoading: true }),
+    );
+    expect(container.querySelector('[data-testid="dashboard-loading"]')).not.toBeNull();
+    expect(container.querySelector(".dashboard__empty")).toBeNull();
+    expect(container.querySelector('[data-testid="dashboard-summary-myWork"]')).toBeNull();
+  });
+
+  it("shows the member's profile action while papers are still loading", () => {
+    const container = renderPage(
+      createState({
+        memberId: "m1",
+        adminBotData: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [{ id: "m1", name: "Ada" }],
+        },
+        adminBotLoading: true,
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
+    expect(
+      container.querySelector('[data-testid="dashboard-attention-mandatoryFields"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("Loading your papers");
+    expect(container.querySelector('[data-testid="dashboard-summary-myWork"]')).toBeNull();
+  });
+
+  it("shows a retryable failure instead of zero work after the first read fails", () => {
+    const onRetry = vi.fn();
+    const container = document.createElement("div");
+    render(
+      renderDashboard(
+        createState({
+          adminBotData: createEmptyAdminBotDashboardData(),
+          adminBotError: "Service unavailable",
+        }),
+        "admin",
+        onRetry,
+      ),
+      container,
+    );
+    expect(container.querySelector('[data-testid="dashboard-load-error"]')).not.toBeNull();
+    expect(container.querySelector(".dashboard__empty")).toBeNull();
+    container.querySelector<HTMLButtonElement>("button")?.click();
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it("says nothing is waiting when nothing is", () => {
     const container = renderPage(createState());
     expect(attentionIds(container)).toEqual([]);
@@ -649,8 +698,10 @@ describe("the lab-wide broadcast", () => {
 
   it("shows nothing when there is no broadcast", () => {
     expect(
-      renderPage(createState({ adminBotBroadcast: null } as Partial<AppViewState>), "member")
-        .querySelector('[data-testid="dashboard-broadcast"]'),
+      renderPage(
+        createState({ adminBotBroadcast: null } as Partial<AppViewState>),
+        "member",
+      ).querySelector('[data-testid="dashboard-broadcast"]'),
     ).toBeNull();
   });
 
@@ -674,5 +725,77 @@ describe("the lab-wide broadcast", () => {
       "member",
     );
     expect(container.querySelector('[data-testid="dashboard-broadcast"]')).toBeNull();
+  });
+});
+
+describe("one-off Drive PDF notice", () => {
+  beforeEach(() => vi.useFakeTimers({ now: new Date("2026-09-27T12:00:00Z") }));
+  afterEach(() => vi.useRealTimers());
+
+  const NOTICE = '[data-testid="dashboard-one-off-notice"]';
+  const members = [
+    { id: "oscar", name: "Oscar Yasunaga" },
+    { id: "terry", name: "Terry Jingchen Zhang" },
+    { id: "zhijing-jin", name: "Zhijing Jin" },
+  ];
+  const signedInAs = (memberId: string, extra: Partial<AppViewState> = {}) =>
+    createState({
+      memberId,
+      adminBotData: { ...createEmptyAdminBotDashboardData(), members },
+      ...extra,
+    } as unknown as Partial<AppViewState>);
+
+  it("shows only to Oscar", () => {
+    expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).not.toBeNull();
+    for (const other of ["terry", "zhijing-jin"]) {
+      expect(renderPage(signedInAs(other), "member").querySelector(NOTICE)).toBeNull();
+      expect(renderPage(signedInAs(other), "admin").querySelector(NOTICE)).toBeNull();
+    }
+    expect(renderPage(createState(), "anonymous").querySelector(NOTICE)).toBeNull();
+  });
+
+  it("ignores a typed sign-up name and an admin viewing as Oscar", () => {
+    expect(
+      renderPage(
+        signedInAs("terry", { memberName: "Oscar Yasunaga" } as Partial<AppViewState>),
+        "member",
+      ).querySelector(NOTICE),
+    ).toBeNull();
+    expect(
+      renderPage(
+        signedInAs("oscar", {
+          memberImpersonatedBy: { id: "zhijing-jin", name: "Zhijing Jin" },
+        } as Partial<AppViewState>),
+        "admin",
+      ).querySelector(NOTICE),
+    ).toBeNull();
+  });
+
+  it("is gone once dismissed or expired", () => {
+    // This file's jsdom has no localStorage; the notice needs one to remember the dismissal.
+    const stored = new Map<string, string>();
+    const originalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => stored.get(key) ?? null,
+        setItem: (key: string, value: string) => stored.set(key, value),
+      },
+    });
+    try {
+      const page = renderPage(signedInAs("oscar"), "member");
+      page.querySelectorAll<HTMLButtonElement>(`${NOTICE} button`)[1]?.click();
+      expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).toBeNull();
+      stored.clear();
+
+      vi.useFakeTimers({ now: new Date("2026-09-28T04:00:00Z") });
+      expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).toBeNull();
+    } finally {
+      if (originalStorage) {
+        Object.defineProperty(window, "localStorage", originalStorage);
+      } else {
+        Reflect.deleteProperty(window, "localStorage");
+      }
+    }
   });
 });

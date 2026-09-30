@@ -3,6 +3,7 @@ export const adminBotRiskTiers = ["T0", "T1", "T2", "T3", "T4"] as const;
 export type AdminBotRiskTier = (typeof adminBotRiskTiers)[number];
 
 export const adminBotActionTypes = [
+  "reference.scan",
   "slack.send_message",
   "slack.profile_photo_update",
   "slack.channel_naming_notify_owner",
@@ -25,6 +26,12 @@ export const adminBotActionTypes = [
   // approval card show what the event will look like afterwards, which is the thing worth reading
   // before saying yes to uninviting somebody.
   "calendar.remove_attendees",
+  // Read-only access to the lab's shared calendar for one member. Its own type because it is not an
+  // event write: it adds an ACL entry to the calendar itself, silently (Google's "shared a calendar
+  // with you" mail is suppressed). Typed so an onboarding that no admin is present for -- the
+  // weekly sheet sweep -- can queue the grant for approval like every other step, instead of either
+  // skipping it or granting access with nobody having said yes.
+  "calendar.grant_lab_calendar",
   "calendar.reschedule",
   "calendar.cancel",
   "email.draft",
@@ -39,6 +46,11 @@ export const adminBotActionTypes = [
   // recipient and lets the sender compose, rather than carrying a body an approver could edit into
   // something the provisioning no longer matches.
   "onboarding.send_guide",
+  // Sets a sheet joiner's access level from their Member Type and enrolls them in what that level
+  // grants (api/server.member-onboarding.ts). Its own action because the weekly sweep that creates
+  // them runs unattended, and a spreadsheet row is not an authorization: the member is created at
+  // the least-privileged level and an admin approving this is what raises it.
+  "lab_member.enroll",
   // The finished reimbursement package, mailed to the funder's office with the forms attached.
   //
   // Its own type rather than `email.send` for two reasons. The recipient is resolved from settings
@@ -90,6 +102,21 @@ export const adminBotActionTypes = [
   // answer "when did we last pull the professor in", and a shape that opens a group conversation
   // is a different external effect from one that DMs a person.
   "member_nudge.escalate",
+  // The Slack group DM -- the head professor and a paper's first two full / coauthor-major lab
+  // authors -- raised when an ICLR submission's AI-text score or citation check trips before the
+  // deadline. Its own type because "when did AdminBot tell a PI a paper read as AI-written, and on
+  // what evidence" is a question the audit log has to answer on its own row.
+  "paper_integrity.alert",
+  // A Slack DM, after every hourly integrity sweep, listing each ICLR submission's current AI-text
+  // score and citation status -- to the operators named in ADMINBOT_ICLR_INTEGRITY_REPORT_SLACK_USERS,
+  // never to authors. Its own type so a routine digest and a warning about one paper are never the
+  // same row in the audit log.
+  "paper_integrity.report",
+  // Writes each ICLR submission's AI-text score into one column of the lab's paper sheet
+  // (ADMINBOT_ICLR_INTEGRITY_SHEET_ID). Its own type, rather than sheet.update_cells, because it is
+  // auto-approved -- and the executor enforces what makes that safe: single cells, in the one
+  // column the payload names, nothing else.
+  "paper_integrity.sheet_scores",
   // Adds one member to one public channel. Its own type rather than a generic Slack call because
   // the audit log has to be able to answer "who did AdminBot put where, and when" -- which is the
   // question somebody asks after finding themselves in a room they did not join.
@@ -100,6 +127,11 @@ export const adminBotActionTypes = [
   // because the two carry different risk: an unwanted invite is noise, an unwanted removal is
   // somebody losing a conversation they were part of.
   "slack.remove_from_channel",
+  // A Slack Connect invitation to the lab's #friends-and-collaborators channel for somebody who is
+  // not in the workspace, so has no user id `slack.invite_to_channel` could name. Slack mails them
+  // the invitation. The onboarding guide mints the same invite for the Member Types it mails; this
+  // is for the types the access design onboards without a mail but still gives the channel.
+  "slack.connect_invite",
   // Opens one project channel. Its own type because creating a room is a decision about the shape
   // of the workspace, not a membership change, and the audit log has to be able to answer "who
   // opened this, and why" -- which for a `proj-` channel is "a project was created with that alias".
@@ -107,6 +139,7 @@ export const adminBotActionTypes = [
   "openreview.nudge",
   "openreview.warning",
   "deadline.publish",
+  "deadline.recommend",
   // Writing cells back to the lab's member spreadsheet from the Membership tab's grid. A typed
   // action rather than a call out of the service for the usual reason -- it reaches Google and
   // changes a document several people read -- and for one specific to this sheet: the roster is
@@ -114,6 +147,11 @@ export const adminBotActionTypes = [
   // payload carries the exact ranges that will be written, so the approval card shows the cells
   // rather than a diff the approver has to reconstruct.
   "sheet.update_cells",
+  // A new row at the bottom of the member roster, from the Onboarding tab's Add row. Separate from
+  // `sheet.update_cells` because an append names no cells -- Sheets finds the first empty row -- so
+  // it cannot overwrite anything, and the approval card reads as "adds Ada" rather than as a range
+  // the approver has to locate.
+  "sheet.append_rows",
 ] as const;
 
 export type AdminBotActionType = (typeof adminBotActionTypes)[number];
@@ -166,6 +204,8 @@ export const adminBotMemberTypes = [
   "acquaintance",
   "coauthor-discussant-or-designer",
   "external-prof",
+  "benefit-partner",
+  "benefit-direct-relative",
   // Operational tags rather than collaboration shapes.
   "adminbot-admin",
   "adminbot-developer",
@@ -188,6 +228,10 @@ export const adminBotExternalCollaboratorSubgroups = [
   "coauthor_discussant_designer",
   "disappearing_coauthor",
   "external_prof",
+  // Not collaborators on the work: a partner organisation (office access, e.g. Vector) and a
+  // member's direct relative. The access design gives both follows and Slack Connect, no portal.
+  "benefit_partner",
+  "benefit_direct_relative",
 ] as const;
 
 export type AdminBotExternalCollaboratorSubgroup =
@@ -386,6 +430,8 @@ export const adminBotNoPortalAccessMemberTypes = [
   "disappearing-coauthor",
   "external-prof",
   "coauthor-discussant-or-designer",
+  "benefit-partner",
+  "benefit-direct-relative",
 ] as const;
 
 /**
@@ -2369,6 +2415,8 @@ export type AdminBotExecutionResult = {
   dry_run: boolean;
   idempotency_key?: string;
   executed_at: string;
+  /** What the connector reported creating (see AdminBotExecutorOutcome.artifacts). */
+  artifacts?: Record<string, string>;
 };
 
 export type AdminBotAuditEvent = {
@@ -2393,6 +2441,8 @@ export type AdminBotAuditEvent = {
     | "deadline_proposal.revised"
     | "deadline_proposal.published"
     | "lab_member.upserted"
+    // A Lab Members type change applied on the spot: access level, sheet, Slack, meeting, mail.
+    | "lab_member.member_type_applied"
     | "lab_member.notes_migrated"
     | "nudge_list.seeded"
     // One pass of a standing local event's guest list against where people actually are.
@@ -2403,6 +2453,11 @@ export type AdminBotAuditEvent = {
     | "lab_member.merged"
     | "lab_member.deleted"
     | "lab_members.purged_without_email"
+    | "lab_member_request.submitted"
+    | "lab_member_request.edited"
+    | "lab_member_request.approved"
+    | "lab_member_request.rejected"
+    | "lab_member_request.withdrawn"
     | "paper.upserted"
     | "paper_slot.updated"
     | "paper_slot.waived"
@@ -2423,6 +2478,9 @@ export type AdminBotAuditEvent = {
     | "paper_weekly_updates.nudged"
     | "alumni_slack_invites.swept"
     | "rec_letter_channel.swept"
+    // One PDF sent from the Reference Checker page to references-validation or GPTZero: checker,
+    // hash, admin and outcome only. The PDF and its findings are deliberately never stored.
+    | "reference_check.pdf_checked"
     // The three-day letter warning to the head professor's inbox. One row per pass that actually
     // sent, naming the address it went to: this is the one mail AdminBot sends that desk, so "did
     // she hear about this letter, and when" has an answer that does not depend on her mailbox.
@@ -2992,13 +3050,14 @@ export type AdminBotLogisticsAttachment = {
 /** One school on a recommendation letters request, as the member filled the row in. */
 export type AdminBotLogisticsSchool = {
   school: string;
-  /** yyyy-mm-dd. Both deadlines are optional: a member often knows one before the other. */
+  /** yyyy-mm-dd. Application deadlines are informational and do not determine the letter deadline. */
   application_deadline?: string;
   /** HH:mm, in `deadline_timezone`. A date with no time is treated as end of that day. */
   application_deadline_time?: string;
+  /** Required for new submissions/edits; optional here to allow reading legacy records. */
   letter_deadline?: string;
   letter_deadline_time?: string;
-  /** IANA zone both times on this row are read in. Blank means the dates are whole-day. */
+  /** IANA zone or AoE. Letter deadlines default to AoE (UTC−12), with a blank time due at 23:59. */
   deadline_timezone?: string;
   application_status?: string;
   letter_status?: string;
@@ -3082,8 +3141,9 @@ export type AdminBotLogisticsRequest = AdminBotLogisticsRequestInput & {
   updated_at: string;
   /**
    * RFC3339 instant of the soonest thing this request is working towards, or absent when it names
-   * none. Derived on write from the dates, times and zones the member gave, so every reader sorts
-   * the same way and no client has to re-implement "which of these is soonest".
+   * none. Letters use only the earliest letter deadline. This comparison instant never replaces
+   * the entered wall-clock date, time, or timezone shown to the user. Recomputed on letter reads
+   * so legacy records cannot retain an application-based deadline.
    */
   deadline_at?: string;
   /**

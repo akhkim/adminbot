@@ -114,7 +114,7 @@ export function milestoneRows(value: unknown): MilestoneRow[] {
 
 type DeadlineMilestoneSource = Pick<
   DeadlineVenue,
-  "deadline_id" | "name" | "deadline_aoe" | "link"
+  "deadline_id" | "name" | "deadline_aoe" | "link" | "deadline_time_precision"
 >;
 
 /**
@@ -129,7 +129,10 @@ export function deadlineMilestoneRow(venue: DeadlineMilestoneSource): MilestoneR
   return {
     deadline_id: venue.deadline_id,
     date: venue.deadline_aoe.slice(0, 10),
-    label: venue.name,
+    label:
+      venue.deadline_time_precision === "date_only"
+        ? `${venue.name} — planning cutoff (time unknown)`
+        : venue.name,
     time: venue.deadline_aoe.slice(11, 16),
     timezone: AOE_TIMEZONE,
     ...(venue.link ? { link: venue.link } : {}),
@@ -296,8 +299,7 @@ export function whereBins(
 
 function spanMs(segment: WhereSegment): number {
   return (
-    Date.parse(`${segment.end}T00:00:00Z`) - Date.parse(`${segment.start}T00:00:00Z`) +
-    WHERE_DAY_MS
+    Date.parse(`${segment.end}T00:00:00Z`) - Date.parse(`${segment.start}T00:00:00Z`) + WHERE_DAY_MS
   );
 }
 

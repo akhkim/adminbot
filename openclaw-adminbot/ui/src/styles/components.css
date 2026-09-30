@@ -182,6 +182,7 @@
 }
 
 .login-gate__spinner {
+  display: inline-block;
   width: 14px;
   height: 14px;
   margin-right: var(--space-2);
@@ -1026,6 +1027,10 @@
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
+}
+
+.adminbot-form__field--wide {
+  grid-column: 1 / -1;
 }
 
 .adminbot-form__field span {
@@ -2001,6 +2006,22 @@
   gap: var(--space-2);
 }
 
+.adminbot-member-filters__search {
+  display: flex;
+  align-items: end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.adminbot-member-filters__search label {
+  flex: 1;
+}
+
+.adminbot-member-sheet > nav.adminbot-form__actions {
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
 .adminbot-member-filters label,
 .adminbot-paper-filters label {
   display: grid;
@@ -2950,8 +2971,14 @@
 
 .adminbot-nudge-recipients__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin: var(--space-3) 0;
+}
+
+.adminbot-nudge-recipients > nav.adminbot-form__actions {
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
 }
 
 .adminbot-nudge-recipients__missing {
@@ -3050,6 +3077,12 @@
 }
 
 @media (max-width: 640px) {
+  .adminbot-member-sheet :is(th, td):first-child {
+    /* Keep the pinned name and its actions inside the sheet's mobile viewport. */
+    width: min(280px, calc(100vw - 96px));
+    max-width: 280px;
+  }
+
   .adminbot-member-filters,
   .adminbot-paper-filters {
     grid-template-columns: 1fr;
@@ -4316,6 +4349,10 @@
 
 .conference-papers__controls .adminbot-form__field:first-child {
   flex: 0 0 16rem;
+}
+
+.conference-papers__controls .adminbot-form__field.conference-papers__category {
+  flex: 0 0 14rem;
 }
 
 .conference-papers__controls .adminbot-form__field.conference-papers__interests {
@@ -10163,6 +10200,10 @@ details[open] > .ov-expandable-toggle::after {
   max-width: 520px;
 }
 
+.adminbot-time-availability__refresh {
+  justify-self: start;
+}
+
 .adminbot-time-availability__report {
   display: grid;
   gap: var(--space-4);
@@ -11784,6 +11825,61 @@ select.input:focus {
   text-align: center;
 }
 
+/* Member requests above the Lab Members roster: an admin's review queue, or a member's own
+   requests. One card per person, laid out like the duplicate-records panel below it, so the two
+   roster-wide lists on the tab read as the same kind of thing. */
+.adminbot-member-requests-panel {
+  margin-block: var(--space-4);
+}
+
+.adminbot-member-requests {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+.adminbot-member-request {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.adminbot-member-request__note {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.adminbot-member-request .adminbot-form__actions {
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
+}
+
+.adminbot-member-request .adminbot-form__field--check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.adminbot-member-request__reason {
+  flex: 1 1 18rem;
+  min-width: 12rem;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-strong);
+  font: inherit;
+}
+
 /* Possible duplicate roster records.
    The lab's roster is written down two paths that do not know about each other -- the Quick-Start
    survey and the Slack member export -- so one person can be two half-records. The panel is a
@@ -11796,6 +11892,21 @@ select.input:focus {
   list-style: none;
   margin: var(--space-3) 0 0;
   padding: 0;
+}
+
+.adminbot-duplicates > nav {
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+.adminbot-duplicates > nav label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.adminbot-duplicates > nav input {
+  width: 5rem;
 }
 
 .adminbot-duplicate {

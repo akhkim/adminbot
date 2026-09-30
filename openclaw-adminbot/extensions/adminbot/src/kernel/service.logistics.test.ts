@@ -3,7 +3,7 @@
 // whose request, who may answer one, and what a withdrawal leaves behind.
 import { describe, expect, it } from "vitest";
 import type { AdminBotLogisticsRequestInput } from "../contracts/actions.js";
-import { AdminBotService } from "./service.js";
+import { AdminBotService, AdminBotMemoryStore } from "./service.js";
 
 function unwrap<T>(
   result: { ok: true; payload: T } | { ok: false; error: { message: string } },
@@ -478,4 +478,46 @@ describe("settling a request without a signed document", () => {
     );
     expect(stored.documents?.[0]?.data_base64).toBeTruthy();
   });
+});
+
+it("recalculates legacy letter deadlines on both list and detail reads", () => {
+  const store = new AdminBotMemoryStore();
+  const service = new AdminBotService(store);
+  const legacy = {
+    id: "legacy",
+    member_id: "ada",
+    member_name: "Ada",
+    kind: "recommendation_letters" as const,
+    status: "submitted" as const,
+    submitted_at: "2026-09-01T00:00:00Z",
+    updated_at: "2026-09-01T00:00:00Z",
+    deadline_at: "2026-09-01T23:59:00Z",
+    schools: [
+      { school: "Example", application_deadline: "2026-09-01", letter_deadline: "2026-12-01" },
+    ],
+  };
+  store.saveLogisticsRequest(legacy);
+  expect(unwrap(service.listLogisticsRequests("ada")).requests[0].deadline_at).toBe(
+    "2026-12-02T11:59:00.000Z",
+  );
+  expect(
+    unwrap(service.getLogisticsRequest("legacy", { member_id: "ada", is_admin: false }))
+      .deadline_at,
+  ).toBe("2026-12-02T11:59:00.000Z");
+  expect(store.getLogisticsRequest("legacy")?.deadline_at).toBe(legacy.deadline_at);
+});
+
+it("refuses to remove a letter deadline while editing a submitted request", () => {
+  const service = serviceWithMembers();
+  const request = unwrap(service.submitLogisticsRequest("ada", LETTERS));
+  expect(
+    service.updateLogisticsRequest(request.id, "ada", {
+      kind: "recommendation_letters",
+      schools: [{ school: "Example", application_deadline: "2026-12-01" }],
+    }),
+  ).toMatchObject({ ok: false, status: 400 });
+  expect(
+    unwrap(service.getLogisticsRequest(request.id, { member_id: "ada", is_admin: false }))
+      .schools?.[0].letter_deadline,
+  ).toBe("2026-12-01");
 });

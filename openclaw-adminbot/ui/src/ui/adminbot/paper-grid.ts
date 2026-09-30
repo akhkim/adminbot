@@ -708,14 +708,12 @@ export function pendingSaves(
 
 // ── change history ───────────────────────────────────────────────────────────────────────
 //
-// Kept in localStorage rather than on the record, because there is no audit surface for paper
-// artifacts yet -- the service stores the current value and nothing about how it got there.
-// That makes this a per-browser log, not a lab-wide one, and it is labelled as such in the UI
-// so nobody mistakes it for the audit trail. When the backend grows a slot history (see
-// `provided_by_member_id` / `provided_at` in fields_update.md) this should read from there.
+// Kept only for the current sign-in. The entries include unpublished titles and links, so a
+// browser-wide persistent history would expose one member's work to the next member who signs in.
 
 const HISTORY_KEY = "openclaw.adminbot.papergrid.history.v1";
 const HISTORY_LIMIT = 30;
+let sessionHistory: PaperGridHistoryEntry[] = [];
 
 export type PaperGridHistoryEntry = {
   at: string;
@@ -726,46 +724,34 @@ export type PaperGridHistoryEntry = {
   kind: "added" | "changed" | "cleared";
 };
 
-function safeStorage(): Storage | null {
+function purgeLegacyHistory(): void {
   try {
-    // Presence is not enough: test environments and some embedded browsers expose a
-    // `localStorage` object whose methods are missing, so the methods are checked too.
-    const storage = typeof localStorage === "undefined" ? null : localStorage;
-    return typeof storage?.setItem === "function" && typeof storage.getItem === "function"
-      ? storage
-      : null;
+    globalThis.localStorage?.removeItem?.(HISTORY_KEY);
   } catch {
-    return null; // Safari private mode throws on access rather than returning null
+    // Storage can be unavailable; the old contents are never read into the app.
   }
 }
 
+purgeLegacyHistory();
+
 export function loadHistory(): PaperGridHistoryEntry[] {
-  try {
-    const raw = safeStorage()?.getItem(HISTORY_KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(parsed) ? (parsed as PaperGridHistoryEntry[]).slice(0, HISTORY_LIMIT) : [];
-  } catch {
-    return [];
-  }
+  purgeLegacyHistory();
+  return [...sessionHistory];
 }
 
 /** Newest first, capped. Returns the stored list so the caller can render without re-reading. */
 export function recordHistory(entries: PaperGridHistoryEntry[]): PaperGridHistoryEntry[] {
-  const merged = [...entries, ...loadHistory()].slice(0, HISTORY_LIMIT);
-  try {
-    safeStorage()?.setItem(HISTORY_KEY, JSON.stringify(merged));
-  } catch {
-    // A full or unavailable storage must not cost the user their save.
-  }
-  return merged;
+  purgeLegacyHistory();
+  sessionHistory = [
+    ...entries.filter((entry) => entry.column !== "arXiv paper password"),
+    ...sessionHistory,
+  ].slice(0, HISTORY_LIMIT);
+  return [...sessionHistory];
 }
 
 export function clearHistory(): void {
-  try {
-    safeStorage()?.removeItem(HISTORY_KEY);
-  } catch {
-    // ignore
-  }
+  sessionHistory = [];
+  purgeLegacyHistory();
 }
 
 /**
@@ -786,7 +772,7 @@ export function diffForHistory(
       continue;
     }
     for (const column of COLUMNS) {
-      if (!isWritable(column)) {
+      if (!isWritable(column) || column.key === "arxiv_paper_password") {
         continue;
       }
       const typed = row.get(String(column.key));
@@ -1357,7 +1343,7 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
         ? html`<div class="paper-grid__history">
             <div class="paper-grid__history-head">
               <strong>Recent changes</strong>
-              <span class="paper-grid__muted">last ${HISTORY_LIMIT}, this browser only</span>
+              <span class="paper-grid__muted">last ${HISTORY_LIMIT}, this sign-in only</span>
               <button
                 type="button"
                 class="btn btn--sm"

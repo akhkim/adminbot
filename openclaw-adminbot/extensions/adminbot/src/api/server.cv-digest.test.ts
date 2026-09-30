@@ -159,7 +159,7 @@ describe("POST /cv/publish-digest", () => {
     expect(publish.mock.calls[1]?.[0] as unknown as string).toContain("NVIDIA");
   });
 
-  it("reports a failed write as 502 and does not claim the document changed", async () => {
+  it("reports a failed write as a 500 and does not claim the document changed", async () => {
     const publish = vi.fn(async () => {
       throw new Error("gog exited with code 1");
     });
@@ -173,7 +173,7 @@ describe("POST /cv/publish-digest", () => {
       method: "POST",
       headers: headers(),
     });
-    expect(response.status).toBe(502);
+    expect(response.status).toBe(500);
     const body = (await response.json()) as { error: { message: string } };
     expect(body.error.message).toContain("gog exited with code 1");
 

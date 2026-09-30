@@ -6,10 +6,13 @@ import type {
   MeetingAttendanceNudgeResult,
   MeetingAttendee,
   MeetingRecord,
+  MeetingCursor,
   MemberNotification,
 } from "./adminbot/auth/session.ts";
 import type {
   AdminBotDashboardData,
+  AdminBotMemberListState,
+  AdminBotStandingMeetingsState,
   AdminBotMemberNudgeState,
   AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
@@ -18,6 +21,7 @@ import type {
   MeetingRequestRow,
   RecommendationSchool,
 } from "./adminbot/data/logistics-draft.ts";
+import type { LogisticsQueueOptions } from "./adminbot/data/logistics-queue.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
@@ -122,6 +126,11 @@ export type AppViewState = {
   saveMemberSheetEdits?: () => void | Promise<void>;
   onboardSelectedMemberRows?: () => void | Promise<void>;
   previewOnboardSelectedRows?: () => void | Promise<void>;
+  memberSheetAddRowResult?: import("./adminbot/auth/session.ts").MemberSheetAddRowResult | null;
+  /** Resolves true when the service took the request, so the form can close. */
+  addMemberSheetRow?: (
+    input: import("./adminbot/auth/session.ts").MemberSheetAddRowInput,
+  ) => Promise<boolean>;
   editMemberSheetCell?: (sheetRow: number, column: number, value: string) => void;
   // Calendar tab. Two halves that share the roster the tab already has: a prompt that drafts an
   // event, and a picker that turns member facets into an invite list. Both end in a proposal.
@@ -153,6 +162,7 @@ export type AppViewState = {
   calendarBusy?: boolean;
   loadCalendarEvents?: () => Promise<void>;
   loadMeetings?: () => Promise<void>;
+  loadMoreMeetings?: () => Promise<void>;
   toggleMeetingAttendance?: (meetingId: string, attendee: MeetingAttendee) => Promise<void>;
   fileMeeting?: (draft: {
     topic: string;
@@ -241,6 +251,7 @@ export type AppViewState = {
   beginViewAs: (memberId: string) => Promise<void>;
   endViewAs: () => Promise<void>;
   loadRoster: () => Promise<void>;
+  scheduleRosterSearch: () => void;
   tab: Tab;
   /**
    * This visit arrived on the root and has not been navigated since, so `tab` is a default nobody
@@ -435,6 +446,13 @@ export type AppViewState = {
   adminBotLoading: boolean;
   adminBotError: string | null;
   adminBotData: AdminBotDashboardData;
+  adminBotRosterLoadedAt: number | null;
+  adminBotRosterLoading: boolean;
+  adminBotRosterError: string | null;
+  adminBotRosterRequestId: number;
+  adminBotMemberList: AdminBotMemberListState;
+  adminBotStandingMeetings: AdminBotStandingMeetingsState;
+  adminBotMemberRequests: import("./adminbot/controllers/member-requests.ts").AdminBotMemberRequestsState;
   // Lab Sharing tab: the project the member is asking for help on, and the draft of their request. The
   // search query for finding other members' requests, and the list of members invited to help on
   // the member's own request. The list of requests the member has already responded to, and the
@@ -472,8 +490,9 @@ export type AppViewState = {
   // (the roster reloading underneath, a notice appearing) does not wipe half-typed input.
   // Where the lab is, for the dashboard card. Null until the first load; the card renders nothing
   // rather than an empty map.
-  adminBotMemberMap: MemberMap | null;
+  adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
+  adminBotMemberMapRequestId: number;
   adminBotTimeAvailabilityMemberId: string;
   // Meeting Recordings tab. The list as the service returned it -- already redacted for a member,
   // full for an admin -- plus the two flags the view needs to distinguish "still loading" from
@@ -526,6 +545,9 @@ export type AppViewState = {
   loadLocationDrifts?: () => Promise<void>;
   answerLocationPrompt?: (answer: { current_city?: string; timezone?: string }) => Promise<void>;
   adminBotMeetingsLoading: boolean;
+  adminBotMeetingsLoadingMore: boolean;
+  adminBotMeetingsNextCursor: MeetingCursor | null;
+  adminBotMeetingsVisibleCount: number;
   adminBotMeetingsSaving: boolean;
   adminBotMeetingsError: string | null;
   // Documents picked for a signature request, held here rather than in the view so a re-render
@@ -581,6 +603,7 @@ export type AppViewState = {
   // What an admin has typed to go with the signed document they are about to send.
   adminBotLogisticsSignedNote: string;
   // Whether the admin queue is showing only what is still outstanding, or everything.
+  adminBotLogisticsQueueOptions: LogisticsQueueOptions;
   adminBotLogisticsShowSettled: boolean;
   // Whose drafts are currently on screen. Drafts are per-member (IndexedDB is per-origin, not per
   // account), so this is what tells the render pass that the signed-in member changed and the

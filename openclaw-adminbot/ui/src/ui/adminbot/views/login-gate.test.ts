@@ -44,6 +44,7 @@ function createState(overrides: Partial<AppViewState> = {}): AppViewState {
     submitMemberAuth: async () => undefined,
     signOutMember: async () => undefined,
     loadRoster: async () => undefined,
+    scheduleRosterSearch: () => undefined,
     password: "",
     settings: {
       gatewayUrl: "ws://127.0.0.1:18789",
@@ -447,6 +448,32 @@ describe("renderLoginGate", () => {
     expect(passwordFields.length).toBe(2);
     const submit = container.querySelector<HTMLButtonElement>(".login-gate__connect");
     expect(submit?.textContent?.trim()).toBe("Claim profile");
+  });
+
+  it("searches on input and renders only the returned roster page", async () => {
+    const container = document.createElement("div");
+    let searches = 0;
+    const state = createState({
+      loginMode: "claim",
+      rosterMembers: [{ id: "m1", name: "Ada Lovelace" }],
+      scheduleRosterSearch: () => {
+        searches += 1;
+      },
+    } as Partial<AppViewState>);
+    render(renderLoginGate(state), container);
+    await Promise.resolve();
+    const input = container.querySelector<HTMLInputElement>(
+      '.login-gate__picker input[type="text"]',
+    );
+    expect(input).not.toBeNull();
+    input!.value = "Turing";
+    input!.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(state.rosterFilter).toBe("Turing");
+    expect(state.rosterLoading).toBe(true);
+    expect(searches).toBe(1);
+    render(renderLoginGate(state), container);
+    await Promise.resolve();
+    expect(container.querySelectorAll(".login-gate__picker-option")).toHaveLength(0);
   });
 
   it("shows a roster error with a retry action instead of the empty state", async () => {

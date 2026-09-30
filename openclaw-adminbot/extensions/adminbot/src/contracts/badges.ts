@@ -37,6 +37,8 @@ export type AdminBotBadgeAssignment = {
   source: AdminBotBadgeAssignmentSource;
   nomination_id?: string;
   evidence?: string;
+  /** Explicit total; absent legacy awards count as one. */
+  count?: number;
 };
 
 export type AdminBotAssignedBadge = AdminBotBadgeAssignment & {
@@ -104,9 +106,34 @@ export const adminBotDefaultBadgeDefinitions: readonly (AdminBotBadgeDefinitionI
     id: "team_contributor__infra_builder",
     category: "Team Contributor",
     name: "Infra Builder",
+    tier: "Good",
     description:
       "Built or maintains shared lab infrastructure (eval pipelines, compute tooling, website, etc.).",
     sort_order: 10,
+  },
+  {
+    id: "team_contributor__infra_builder_advanced",
+    category: "Team Contributor",
+    name: "Infra Builder",
+    tier: "Advanced",
+    description: "Recognised advanced contributions to shared lab infrastructure.",
+    sort_order: 11,
+  },
+  {
+    id: "team_contributor__pro_writer_good",
+    category: "Team Contributor",
+    name: "Pro Writer",
+    tier: "Good",
+    description: "Recognised writing contributions to lab papers.",
+    sort_order: 12,
+  },
+  {
+    id: "team_contributor__pro_writer_advanced",
+    category: "Team Contributor",
+    name: "Pro Writer",
+    tier: "Advanced",
+    description: "Recognised advanced writing contributions to lab papers.",
+    sort_order: 13,
   },
   {
     id: "team_contributor__bug_hunter",
@@ -135,9 +162,16 @@ export const adminBotDefaultBadgeDefinitions: readonly (AdminBotBadgeDefinitionI
     id: "community_building__media_impact",
     category: "Community Building",
     name: "Media Impact",
-    description:
-      "Research was covered by press or cited in a policy or industry document.",
+    description: "Research was covered by press or cited in a policy or industry document.",
     sort_order: 50,
+  },
+  {
+    id: "community_building__lab_engagement",
+    category: "Community Building",
+    name: "Lab Engagement",
+    description:
+      "Has talked to Zhijing face-to-face in at least three group meeting occasions, including in person and online.",
+    sort_order: 55,
   },
   {
     id: "causality__level_1",
@@ -252,3 +286,20 @@ export type AdminBotBadgeSuggestion = {
 export type AdminBotBadgeSuggestionView = AdminBotBadgeSuggestion & {
   suggested_by_name?: string;
 };
+
+/** Stable symbols for the catalogue; custom badges remain visible without a schema migration. */
+export function adminBotBadgeEmoji(name: string): string {
+  const symbols: Record<string, string> = {
+    "infra builder": "🛠️",
+    "bug hunter": "🐛",
+    "referral bonus": "🤝",
+    ambassador: "🌍",
+    "media impact": "📣",
+    "lab engagement": "💬",
+    causality: "🔗",
+    "pro writer": "✍️",
+    prowriter: "✍️",
+    "love and care": "💛",
+  };
+  return symbols[name.trim().toLowerCase()] ?? "🏅";
+}

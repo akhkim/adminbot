@@ -8,6 +8,7 @@ import type { UiSettings } from "../../storage.ts";
 import { saveStoredMemberSession, type PaperNudgeBatch } from "../auth/session.ts";
 import {
   loadAdminBotNudgeBatches,
+  loadAdminBotPaperSlotOverview,
   nudgeAdminBotPaperAuthors,
   nudgeableBatches,
   type AdminBotPaperSlotsHost,
@@ -129,6 +130,26 @@ describe("nudge pass", () => {
     await loadAdminBotNudgeBatches(host);
     expect(host.adminBotPaperNudgeBatches?.map((entry) => entry.member_id)).toEqual(["ada"]);
     expect(host.adminBotPaperNudgeSelected).toEqual(["ada"]);
+  });
+
+  it("does not repopulate another member's slots after a session switch", async () => {
+    let finish: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const host = createHost();
+    const loading = loadAdminBotPaperSlotOverview(host);
+    expect(host.adminBotPaperSlotsLoading).toBe(true);
+    saveStoredMemberSession({ sessionToken: "next", memberId: "ada" } as never);
+    host.adminBotPaperSlotOverview = [];
+    host.adminBotPaperSlotsLoading = false;
+    finish?.(json({ papers: [{ paper_id: "private-paper" }] }));
+    await loading;
+    expect(host.adminBotPaperSlotOverview).toEqual([]);
+    expect(host.adminBotPaperSlotsLoading).toBe(false);
   });
 
   it("sends one request per recipient instead of one long one", async () => {

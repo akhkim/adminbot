@@ -486,15 +486,6 @@ export const adminBotConsoleStyles = `    :root {
         45deg, #c3c2b7, #c3c2b7 3px, var(--panel-alt) 3px, var(--panel-alt) 6px);
     }
     .avail-strip-meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
-    /* Public surfaces: the deadline board is embedded rather than reimplemented, so the console
-       and the standalone /deadlines page can never show different dates. */
-    .public-frame {
-      width: 100%;
-      height: 70vh;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-    }
     .reimb-log {
       display: grid;
       gap: 6px;

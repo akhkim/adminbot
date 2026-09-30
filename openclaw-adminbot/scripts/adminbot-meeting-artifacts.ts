@@ -13,11 +13,9 @@
  * and a JSON summary on stdout so a failed pass shows red in the Cron tab with a reason.
  */
 import { execFile } from "node:child_process";
-import { isMainModule } from "./lib/is-main-module.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import {
   artifactKind,
@@ -29,6 +27,7 @@ import {
   type AdminBotMeetingRecord,
 } from "../extensions/adminbot/api.js";
 import { resolveGogExecutable } from "../extensions/adminbot/src/connectors/gog.js";
+import { isMainModule } from "./lib/is-main-module.mjs";
 
 const execFileAsync = promisify(execFile);
 const GOG_TIMEOUT_MS = 120_000;
@@ -76,9 +75,7 @@ async function listDropFolder(folderId: string, account: string): Promise<DriveF
     { encoding: "utf8", timeout: GOG_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, env: process.env },
   );
   const parsed = JSON.parse(stdout || "[]") as unknown;
-  const rows = Array.isArray(parsed)
-    ? parsed
-    : ((parsed as { files?: unknown[] }).files ?? []);
+  const rows = Array.isArray(parsed) ? parsed : ((parsed as { files?: unknown[] }).files ?? []);
   return rows.flatMap((row) => {
     const record = row as Record<string, unknown>;
     const id = typeof record.id === "string" ? record.id : "";
@@ -113,60 +110,6 @@ async function downloadFile(fileId: string, directory: string, account: string):
   return path.join(directory, created);
 }
 
-/**
- * Which artifacts this pass has already folded in.
- *
- * Keyed on the Drive file id rather than the name: a host who re-uploads a corrected export gets a
- * new id and it is processed again, which is what they meant, while an unchanged file sitting in
- * the folder forever is read exactly once. Files are deliberately not deleted or moved -- this
- * process holds no mandate to touch a human's Drive.
- */
-class ProcessedArtifacts {
-  private readonly db: DatabaseSync;
-
-  constructor(databasePath: string) {
-    fs.mkdirSync(path.dirname(databasePath), { recursive: true });
-    this.db = new DatabaseSync(databasePath);
-    this.db.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA busy_timeout = 5000;
-      CREATE TABLE IF NOT EXISTS adminbot_meeting_artifacts (
-        file_id TEXT PRIMARY KEY,
-        file_name TEXT NOT NULL,
-        meeting_id TEXT,
-        status TEXT NOT NULL,
-        processed_at TEXT NOT NULL
-      );
-    `);
-  }
-
-  seen(fileId: string): boolean {
-    const row = this.db
-      .prepare("SELECT status FROM adminbot_meeting_artifacts WHERE file_id = ?")
-      .get(fileId) as { status?: string } | undefined;
-    // An unmatched file is retried on every pass: the meeting it belongs to may simply not have
-    // been filed yet when it was dropped.
-    return row?.status === "attached";
-  }
-
-  record(file: DriveFile, meetingId: string | undefined, status: string): void {
-    this.db
-      .prepare(
-        `INSERT INTO adminbot_meeting_artifacts (file_id, file_name, meeting_id, status, processed_at)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(file_id) DO UPDATE SET
-           meeting_id = excluded.meeting_id,
-           status = excluded.status,
-           processed_at = excluded.processed_at`,
-      )
-      .run(file.id, file.name, meetingId ?? null, status, new Date().toISOString());
-  }
-
-  close(): void {
-    this.db.close();
-  }
-}
-
 export async function runMeetingArtifactPass(): Promise<ArtifactPassSummary> {
   const account = requireEnv("ADMINBOT_BOT_EMAIL");
   const folderId = requireEnv("ADMINBOT_MEETING_DROP_FOLDER_ID");
@@ -180,8 +123,20 @@ export async function runMeetingArtifactPass(): Promise<ArtifactPassSummary> {
     unmatched: [],
     errors: [],
   };
-  const processed = new ProcessedArtifacts(databasePath);
-  const { service, close } = createAdminBotSqliteService({ databasePath });
+  const { service, store, close } = createAdminBotSqliteService({ databasePath });
+  // The Drive file id is the deduplication key. Unmatched and empty files remain retryable.
+  const record = (
+    file: DriveFile,
+    meetingId: string | undefined,
+    status: "attached" | "unmatched" | "empty",
+  ) =>
+    store.recordMeetingArtifact({
+      file_id: file.id,
+      file_name: file.name,
+      meeting_id: meetingId,
+      status,
+      processed_at: new Date().toISOString(),
+    });
   // Transcripts are written here and deleted in the finally below. A tmpdir per pass rather than a
   // fixed path so a crashed run leaves one identifiable directory instead of a growing pile.
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-meeting-"));
@@ -191,7 +146,7 @@ export async function runMeetingArtifactPass(): Promise<ArtifactPassSummary> {
     const roster = members.ok ? members.payload.members : [];
     for (const file of files) {
       const kind = artifactKind(file.name);
-      if (!kind || processed.seen(file.id)) {
+      if (!kind || store.hasAttachedMeetingArtifact(file.id)) {
         continue;
       }
       summary.found += 1;
@@ -204,7 +159,7 @@ export async function runMeetingArtifactPass(): Promise<ArtifactPassSummary> {
           : undefined;
         if (!meeting) {
           summary.unmatched.push(file.name);
-          processed.record(file, undefined, "unmatched");
+          record(file, undefined, "unmatched");
           continue;
         }
         const localPath = await downloadFile(file.id, scratch, account);
@@ -213,7 +168,7 @@ export async function runMeetingArtifactPass(): Promise<ArtifactPassSummary> {
           const update = participantsUpdate(meeting, contents, roster);
           if (!update) {
             summary.unmatched.push(`${file.name} (no participant rows)`);
-            processed.record(file, meeting.id, "empty");
+            record(file, meeting.id, "empty");
             continue;
           }
           const result = service.upsertMeeting(update);
@@ -221,14 +176,20 @@ export async function runMeetingArtifactPass(): Promise<ArtifactPassSummary> {
             throw new Error(result.error.message);
           }
           summary.attached += 1;
-          processed.record(file, meeting.id, "attached");
+          record(file, meeting.id, "attached");
           continue;
         }
-        summary.summarized += (await attachTranscript(service, meeting, contents, roster, file.name))
+        summary.summarized += (await attachTranscript(
+          service,
+          meeting,
+          contents,
+          roster,
+          file.name,
+        ))
           ? 1
           : 0;
         summary.attached += 1;
-        processed.record(file, meeting.id, "attached");
+        record(file, meeting.id, "attached");
       } catch (error) {
         summary.errors.push(
           `${file.name}: ${error instanceof Error ? error.message : String(error)}`,
@@ -239,7 +200,6 @@ export async function runMeetingArtifactPass(): Promise<ArtifactPassSummary> {
     // The transcript exists on disk for the length of one summarization and no longer. This is the
     // same promise the record shape makes, and it has to hold on the failure path too.
     fs.rmSync(scratch, { recursive: true, force: true });
-    processed.close();
     close();
   }
   return summary;

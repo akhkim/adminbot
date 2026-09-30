@@ -14,8 +14,8 @@
 // the second and ignores the first, so a member trying out the stars does not file four ratings.
 import { LitElement, css, html, nothing } from "lit";
 import { property } from "lit/decorators.js";
-import { getSafeLocalStorage } from "../../local-storage.ts";
 import { I18nController, t } from "../../i18n/index.ts";
+import { getSafeLocalStorage } from "../../local-storage.ts";
 
 type StoredFeedback = {
   rating: number;
@@ -117,7 +117,11 @@ export class AdminbotFeedbackWidget extends LitElement {
   // The element is reused across tab navigation (same template position), so a changed feature id
   // must reload its vote instead of showing the previous feature's, and the open panel must collapse
   // back to the pill so navigating to a new tab never leaves the previous tab's widget expanded.
-  override attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
+  override attributeChangedCallback(
+    name: string,
+    oldValue: string | null,
+    newValue: string | null,
+  ) {
     super.attributeChangedCallback(name, oldValue, newValue);
     if (name === "feature-id" && oldValue !== newValue) {
       this.open = false;
@@ -258,6 +262,19 @@ export class AdminbotFeedbackWidget extends LitElement {
       height: 7px;
       border-radius: 50%;
       background: var(--ok, var(--accent));
+    }
+
+    @media (max-width: 640px) {
+      .fb__open {
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        padding: 0;
+      }
+
+      .fb__open-label {
+        display: none;
+      }
     }
 
     /* Open panel: roomy, one clear job at a time. */
@@ -474,7 +491,7 @@ export class AdminbotFeedbackWidget extends LitElement {
           @click=${this.openPanel}
         >
           <span class="fb__open-icon">${starIcon}</span>
-          <span>${this.label || t("feedback.openLabel")}</span>
+          <span class="fb__open-label">${this.label || t("feedback.openLabel")}</span>
           ${this.rating !== null ? html`<span class="fb__open-dot" aria-hidden="true"></span>` : ""}
         </button>
       `;
@@ -557,7 +574,9 @@ export class AdminbotFeedbackWidget extends LitElement {
             ${t("feedback.send")}
           </button>
           <span class="fb__count">
-            ${t("feedback.countRemaining", { remaining: String(COMMENT_MAX - this.commentDraft.length) })}
+            ${t("feedback.countRemaining", {
+              remaining: String(COMMENT_MAX - this.commentDraft.length),
+            })}
           </span>
         </div>
       </div>
