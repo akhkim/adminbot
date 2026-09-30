@@ -1531,7 +1531,17 @@ export class AdminBotService {
   private seedDefaultBadges(): void {
     const now = new Date().toISOString();
     for (const seed of adminBotDefaultBadgeDefinitions) {
-      if (this.store.getBadgeDefinition(seed.id)) {
+      const existing = this.store.getBadgeDefinition(seed.id);
+      if (existing) {
+        if (
+          seed.id === "team_contributor__infra_builder" &&
+          !existing.tier &&
+          existing.name === seed.name &&
+          existing.category === seed.category &&
+          existing.description === seed.description
+        ) {
+          this.store.saveBadgeDefinition({ ...existing, tier: "Good", updated_at: now });
+        }
         continue;
       }
       const familyKey =
