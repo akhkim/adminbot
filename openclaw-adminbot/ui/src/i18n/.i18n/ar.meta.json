@@ -171,6 +171,7 @@
     "adminbotTimeAvailability.form.errorHours",
     "adminbotTimeAvailability.form.errorLink",
     "adminbotTimeAvailability.form.errorOrder",
+    "adminbotTimeAvailability.form.exampleHint",
     "adminbotTimeAvailability.form.hide",
     "adminbotTimeAvailability.form.hours",
     "adminbotTimeAvailability.form.jinesisTitle",
@@ -180,6 +181,7 @@
     "adminbotTimeAvailability.form.note",
     "adminbotTimeAvailability.form.partialHint",
     "adminbotTimeAvailability.form.project",
+    "adminbotTimeAvailability.form.projectExample",
     "adminbotTimeAvailability.form.projectPlaceholder",
     "adminbotTimeAvailability.form.remove",
     "adminbotTimeAvailability.form.saving",
@@ -1286,12 +1288,12 @@
     "tabUsage.untimed",
     "tabUsage.window"
   ],
-  "generatedAt": "2026-09-30T00:24:33.587Z",
+  "generatedAt": "2026-09-30T21:20:58.779Z",
   "locale": "ar",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "90712c4529f50930ae39f18a5b7dfe73ba401830c90757bab118d68d45e616c3",
-  "totalKeys": 2431,
+  "sourceHash": "638ac3af343bf0431b40cff8ea458eb1eb00ffaf62094dacfc9967f3b910a6aa",
+  "totalKeys": 2433,
   "translatedKeys": 1146,
   "workflow": 1
 }

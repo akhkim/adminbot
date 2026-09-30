@@ -1781,3 +1781,32 @@ describe("withinWindow", () => {
     expect(withinWindow({ start: "2026-04-01", end: "2026-04-30" }, window)).toBe(false);
   });
 });
+
+describe("commitment entry point", () => {
+  it("puts the primary add action before the report and opens the existing editor", () => {
+    const onActiveCommitmentChange = vi.fn();
+    const container = renderView({ activeCommitmentType: null, onActiveCommitmentChange });
+    const button = container.querySelector<HTMLButtonElement>(
+      ".adminbot-time-availability__add-commitment",
+    )!;
+    const report = container.querySelector(".adminbot-time-availability__report")!;
+    expect(button.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    button.click();
+    expect(onActiveCommitmentChange).toHaveBeenCalledWith("jinesis");
+  });
+  it("shows an editable example without filling or saving a commitment", () => {
+    const onSaveSchedule = vi.fn();
+    const container = renderView({
+      activeCommitmentType: "jinesis",
+      draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT },
+      onSaveSchedule,
+    });
+    expect(container.textContent).toContain("Example: 20 hours per week on Project XXX.");
+    const hours = container.querySelector<HTMLInputElement>(
+      '[data-testid="time-availability-hours"]',
+    )!;
+    expect(hours.placeholder).toBe("20");
+    expect(hours.value).toBe("");
+    expect(onSaveSchedule).not.toHaveBeenCalled();
+  });
+});
