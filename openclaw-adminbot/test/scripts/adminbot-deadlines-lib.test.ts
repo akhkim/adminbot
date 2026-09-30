@@ -1148,13 +1148,15 @@ print(json.dumps(requirement_from_text(${JSON.stringify(text)}, 'https://example
     ).toBe(expected);
   });
 
-  it("preserves requirement conflicts across homepage/CFP merging", () => {
+  it("caches requirement evidence and preserves conflicts across homepage/CFP merging", () => {
     expect(
       runPython(`m = load('adminbot-deadline-collect')
 a = m.workshop_profile_from_html('<p>Abstract registration is required.</p>', 'https://example.org', 2035)
 b = m.workshop_profile_from_html('<p>No abstract registration is required.</p>', 'https://example.org/cfp', 2035)
 merged = m._merge_workshop_profiles(a, b)
-print(json.dumps([merged['abstract_requirement'], merged['abstract_requirement_conflict']]))`),
+previous = dict(merged, website_deadline_candidates=[])
+cached = m.cached_workshop_metadata(previous)[2]
+print(json.dumps([cached['abstract_requirement'], cached['abstract_requirement_conflict']]))`),
     ).toEqual(["unknown", true]);
   });
 

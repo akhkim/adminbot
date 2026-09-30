@@ -752,7 +752,8 @@ def split_workshop_milestones(item, candidates, year):
             abstract_stamp = selected["stamp"]
     full_portal = item.get("_full_submission_deadline", "")
     initial_portal = item.get("_openreview_deadline", "")
-    if not abstract_stamp and full_portal and initial_portal and initial_portal < full_portal:
+    if full_portal and initial_portal and initial_portal < full_portal:
+        # Explicit two-stage invitations outrank the older abstract date on a cached CFP.
         abstract_stamp = initial_portal
     if not abstract_stamp:
         return [item]
