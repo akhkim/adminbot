@@ -140,6 +140,7 @@ import {
   memberSheetSource,
   resolveMemberSheetConfig,
 } from "./member-sheet-config.js";
+import { createNotificationDraftHandler } from "./notification-drafts.js";
 import {
   previewCallSheetPush,
   proposeCallSheetPush,
@@ -339,6 +340,7 @@ export type AdminBotMockServiceOptions = {
   // Path to scripts/adminbot-openreview.py. Injected as a path rather than a built
   // workflow because the workflow needs the store this factory owns; absent in unit
   // setups, which leaves every /openreview route reporting 503 rather than half-working.
+  notificationDraftScriptPath?: string;
   openReviewScriptPath?: string;
   openReviewPythonCommand?: string;
   // Reads each member's location from their Slack profile. Injected from the repo-root
@@ -516,6 +518,7 @@ function createAnonymousRateLimiter(): AnonymousRateLimiter {
 }
 
 type AdminBotRouteContext = {
+  notificationDrafts: ReturnType<typeof createNotificationDraftHandler>;
   service: AdminBotService;
   // The raw store, for the CV change ledger. Everything else goes through the service; this is
   // append-only bookkeeping with no policy of its own, so it does not earn a service method.
@@ -861,6 +864,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       })
     : undefined;
   const ctx: AdminBotRouteContext = {
+    notificationDrafts: createNotificationDraftHandler(options.notificationDraftScriptPath, () =>
+      store.listLabMembers(),
+    ),
     service,
     store,
     auth,
@@ -1547,6 +1553,14 @@ async function handleAuthenticatedRoute(
     return;
   }
   const { service, privacyBroker, sensitiveInfo } = ctx;
+  if (req.method === "POST" && url.pathname === "/tools/notification-drafts") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    await ctx.notificationDrafts(req, res);
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/automation/email/run") {
     // Triggers outbound email on behalf of the lab; not a per-member action.
     if (!requirePrivileged(res, principal)) {

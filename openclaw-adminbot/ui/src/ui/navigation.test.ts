@@ -59,6 +59,7 @@ describe("iconForTab", () => {
       gettingStarted: "check",
       myWork: "book",
       labSharing: "link",
+      adminbotNotificationDrafts: "send",
       adminbotOpportunities: "zap",
       chat: "messageSquare",
       overview: "barChart",
@@ -121,6 +122,7 @@ describe("titleForTab", () => {
       gettingStarted: "Getting Started",
       myWork: "My Projects & Papers",
       labSharing: "Collaborate",
+      adminbotNotificationDrafts: "OpenReview announcements",
       adminbotOpportunities: "Opportunities",
       chat: "Chat",
       overview: "Overview",
@@ -179,6 +181,7 @@ describe("subtitleForTab", () => {
       // Corrected to the shipped string: the tab has said "Coming soon" for a while and this
       // expectation had not followed, leaving the suite red for a reason unrelated to it.
       labSharing: "Coming soon — share resources, ideas, and collaborate.",
+      adminbotNotificationDrafts: "Create tweet drafts and images from notification exports.",
       adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
       chat: "Gateway chat for quick interventions.",
       overview: "Status, entry points, health.",
