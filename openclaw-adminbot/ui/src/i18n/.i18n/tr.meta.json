@@ -1286,11 +1286,11 @@
     "tabUsage.untimed",
     "tabUsage.window"
   ],
-  "generatedAt": "2026-09-30T00:24:33.751Z",
+  "generatedAt": "2026-09-30T20:41:55.868Z",
   "locale": "tr",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "90712c4529f50930ae39f18a5b7dfe73ba401830c90757bab118d68d45e616c3",
+  "sourceHash": "9977c61535e7e4f4ff8f0c2bd89985aeba4c1c67ff6275f1eab6587851423321",
   "totalKeys": 2431,
   "translatedKeys": 1146,
   "workflow": 1
