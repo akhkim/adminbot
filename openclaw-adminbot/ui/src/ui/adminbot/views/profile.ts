@@ -1612,9 +1612,6 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
                       />
                       <span class="profile-badge-picker__title">
                         ${assignedBadgeLabel(badge)}
-                        ${badge.category
-                          ? html`<span class="ab-chip">${badge.category}</span>`
-                          : nothing}
                       </span>
                       <p class="profile-badge-picker__description">${badge.description}</p>
                     </label>

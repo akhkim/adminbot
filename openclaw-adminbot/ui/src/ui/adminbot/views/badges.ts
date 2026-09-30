@@ -202,7 +202,6 @@ function renderCatalogCard(props: AdminBotBadgesProps, badge: BadgeDefinition) {
             ${icons.edit}
           </button>
         </div>
-        ${badge.category ? html`<span class="ab-chip">${badge.category}</span>` : nothing}
         <p class="adminbot-badge-catalog__description">${badge.description}</p>
       </div>
     </div>
@@ -386,7 +385,9 @@ function renderMemberBadgeRow(props: AdminBotBadgesProps, member: BadgeRosterMem
           : html`<ul class="adminbot-badge-chip-list">
               ${assigned.map(
                 (badge) => html`<li
-                  class="adminbot-badge-chip ${badge.evidence ? "adminbot-badge-chip--has-evidence" : ""}"
+                  class="adminbot-badge-chip ${badge.evidence
+                    ? "adminbot-badge-chip--has-evidence"
+                    : ""}"
                   tabindex=${badge.evidence ? "0" : "-1"}
                 >
                   <span>${badgeLabel(badge)}</span>
@@ -425,7 +426,9 @@ function renderMemberBadgeRow(props: AdminBotBadgesProps, member: BadgeRosterMem
 function renderMembersBadgeTable(props: AdminBotBadgesProps) {
   const members = [...props.members]
     .filter((member) => memberMatchesQuery(member, props.memberQuery))
-    .sort((left, right) => (left.name ?? left.id ?? "").localeCompare(right.name ?? right.id ?? ""));
+    .sort((left, right) =>
+      (left.name ?? left.id ?? "").localeCompare(right.name ?? right.id ?? ""),
+    );
   return html`
     <div class="card adminbot-card adminbot-card--wide">
       <div class="card-title">${t("adminbotBadges.assignments")}</div>
@@ -480,14 +483,15 @@ function renderNominations(props: AdminBotBadgesProps) {
                   <div class="adminbot-badge-card__head">
                     <div>
                       <div class="card-title">
-                        ${nomination.member_name ?? nomination.member_id}
-                        — ${badgeLabel({
+                        ${nomination.member_name ?? nomination.member_id} —
+                        ${badgeLabel({
                           name: nomination.badge_name,
                           tier: nomination.badge_tier,
                         })}
                       </div>
                       <div class="adminbot-form__meta">
-                        ${t("adminbotBadges.field.submittedAt")}: ${submittedAt(nomination.created_at)}
+                        ${t("adminbotBadges.field.submittedAt")}:
+                        ${submittedAt(nomination.created_at)}
                       </div>
                       <!-- Who put it forward, when that is not the member themselves. It is the
                            first thing an admin needs here: a claim about your own work and a
@@ -653,7 +657,12 @@ export function renderAdminBotBadges(props: AdminBotBadgesProps) {
             </div>`
           : nothing}
         <div class="adminbot-form__actions">
-          <button class="btn btn--sm" type="button" ?disabled=${props.definitionsLoading} @click=${props.onRefresh}>
+          <button
+            class="btn btn--sm"
+            type="button"
+            ?disabled=${props.definitionsLoading}
+            @click=${props.onRefresh}
+          >
             ${t("adminbotBadges.refresh")}
           </button>
         </div>
