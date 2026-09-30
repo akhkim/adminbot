@@ -266,3 +266,11 @@ The collector recognizes explicit registration requirements, explicit absence or
 ### Workshop schedule display
 
 In Upcoming, each workshop's displayed date, stage label, countdown, and urgency refer to its next published stage. A workshop with a passed submission can remain Upcoming while decisions or camera-ready dates are ahead. Once all stages have passed, Past shows the submission date. Cards, Groups, and Table share an expandable schedule, and switching views preserves which workshop schedules are open. A shared organizer notification cutoff is not a workshop decision date.
+
+## Extraction evidence
+
+Workshop reconciliation retains `deadline_observations` in the canonical dataset and generated consumers. Each observation carries its extracted date and precision, workshop URL, document or script-asset URL, extraction method, milestone, evidence, and decision. Website evidence can agree with or conflict with the matched portal cutoff; it does not silently move that cutoff. Unselected and rejected candidates remain inspectable. Skipped website checks retain their existing evidence and check age.
+
+A page whose title or main heading explicitly identifies a different edition cannot supply the current deadline. Crossed-out dates can support extension history but cannot be selected as the current deadline. Explicit abstract and full-paper targets reject evidence for the other milestone. These guards do not prove that every unlabeled page or script belongs to the requested track; those cases still need source review.
+
+Script assets remain a bounded fallback when the page supplies no deadline candidates. Their observations identify the actual asset separately from the workshop URL. Historical recovery remains limited to forced refreshes with extension evidence and insufficient date history. These observations describe submission deadlines; conference-wide notification policy and notification-date precedence are unchanged.

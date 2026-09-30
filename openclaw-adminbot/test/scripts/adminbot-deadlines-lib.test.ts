@@ -1214,3 +1214,52 @@ with tempfile.TemporaryDirectory() as directory:
     ]);
   });
 });
+
+describe("deadline extraction evidence", () => {
+  it("rejects reused pages from another edition and retains the reason", () => {
+    expect(
+      runPython(`from adminbot_workshop_deadlines import deadline_candidates_from_html, reconcile_deadline_candidates
+c, _ = deadline_candidates_from_html('<h1>Workshop 2034</h1><p>Paper submission deadline: September 10 at 23:59 AoE</p>', 'https://example.org', 2035)
+r = reconcile_deadline_candidates(c, '2035-09-12 23:59:00', 'https://openreview.net/example', 2035)
+print(json.dumps([r['deadline_aoe'], r['deadline_observations'][1]['decision']]))`),
+    ).toEqual(["2035-09-12 23:59:00", "different_edition"]);
+  });
+  it("does not select crossed-out dates even when they match the portal", () => {
+    expect(
+      runPython(`from adminbot_workshop_deadlines import deadline_candidates_from_html, reconcile_deadline_candidates
+c, _ = deadline_candidates_from_html('<p>Paper submission deadline: <s>September 10 at 23:59 AoE</s></p><p>Paper submission deadline extended to September 17 at 23:59 AoE</p>', 'https://example.org', 2035)
+r = reconcile_deadline_candidates(c, '2035-09-10 23:59:00', 'https://openreview.net/example', 2035)
+print(json.dumps([r['deadline_aoe'], sorted(set(x['decision'] for x in r['deadline_observations']))]))`),
+    ).toEqual([
+      "2035-09-10 23:59:00",
+      ["authoritative", "conflicts_with_portal", "historical_date"],
+    ]);
+  });
+  it("keeps full-paper selection separate from abstract evidence", () => {
+    expect(
+      runPython(`from adminbot_workshop_deadlines import deadline_candidates_from_html, reconcile_deadline_candidates
+c, _ = deadline_candidates_from_html('<p>Abstract registration deadline: September 10 at 23:59 AoE</p>', 'https://example.org', 2035)
+r = reconcile_deadline_candidates(c, '', '', 2035, target_hint='Example full_paper')
+print(json.dumps([r['deadline_aoe'], r['deadline_observations'][0]['decision']]))`),
+    ).toEqual(["", "different_milestone"]);
+  });
+  it("retains asset URLs separately from the workshop page without network access", () => {
+    expect(
+      runPython(`m = load('adminbot-deadline-collect')
+m._fetch_text_asset = lambda url: (url, 'Paper submission deadline: September 25 at 23:59 AoE')
+p = m._profile_with_deadline_assets('<script src="/assets/cfp.js"></script>', 'https://example.org', 2035)
+c = p['_deadline_candidates'][0]
+print(json.dumps([c['source_url'], c['document_id'], c['extraction_kind']]))`),
+    ).toEqual(["https://example.org", "https://example.org/assets/cfp.js", "script_asset"]);
+  });
+});
+
+it("keeps extraction observations and their original check age on a skipped sweep", () => {
+  expect(
+    runPython(`m = load('adminbot-deadline-collect')
+old = dict(id='example', name='Example', venue_type='workshop', deadline_aoe='2035-12-20 23:59:00', profile_extracted_at='2035-09-10T00:00:00Z', source_checked_at='2035-09-10T00:00:00Z', deadline_observations=[{'decision':'conflicts_with_portal'}])
+rows = [dict(id='example', name='Example', venue_type='workshop', deadline_aoe=old['deadline_aoe'])]
+m.enrich_workshop_sources(rows, {'example': old}, AoEClock.resolve('2035-09-11T00:00:00Z'))
+print(json.dumps([rows[0]['deadline_observations'], rows[0]['source_checked_at']]))`),
+  ).toEqual([[{ decision: "conflicts_with_portal" }], "2035-09-10T00:00:00Z"]);
+});
