@@ -908,6 +908,9 @@ class GoogleClient {
       event.startTimeZone ?? DEFAULT_TIMEZONE,
       "--end-timezone",
       event.endTimeZone ?? event.startTimeZone ?? DEFAULT_TIMEZONE,
+      // Silent: AdminBot's calendar writes never email anyone (connectors/gog.ts).
+      "--send-updates",
+      "none",
     ];
     if (event.allDay) args.push("--all-day");
     if (event.description) args.push("--description", event.description);

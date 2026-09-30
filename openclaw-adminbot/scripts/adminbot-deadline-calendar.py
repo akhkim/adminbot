@@ -57,6 +57,8 @@ CALENDAR_ID = _require_env("ADMINBOT_DEADLINE_CALENDAR_ID", "ADMINBOT_LAB_EMAIL"
 GOG = os.environ.get("GOG_BIN", os.path.expanduser("~/.local/bin/gog"))
 ACCOUNT = _require_env("GOG_ACCOUNT", "ADMINBOT_BOT_EMAIL")
 MARKER = "adminbot-deadline"
+# AdminBot's calendar writes never email anyone (see CALENDAR_SEND_UPDATES in connectors/gog.ts).
+SEND_UPDATES = "none"
 
 
 def gog(args, check=True):
@@ -101,7 +103,7 @@ def build_event(item):
 
 
 def existing_events(window_start, window_end):
-    """Map marker -> eventId for AdminBot-managed events already on the calendar."""
+    """Map marker -> event for AdminBot-managed events already on the calendar."""
     result = gog(
         [
             "calendar", "events", CALENDAR_ID,
@@ -125,8 +127,36 @@ def existing_events(window_start, window_end):
         description = str(event.get("description") or "")
         for token in description.split():
             if token.startswith(f"[{MARKER}:"):
-                found[token.strip()] = event.get("id")
+                found[token.strip()] = event
     return found
+
+
+def _instant(value):
+    """A Google event start/end as an aware datetime, or None when it cannot be read."""
+    stamp = value.get("dateTime") if isinstance(value, dict) else value
+    if not isinstance(stamp, str) or not stamp:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def is_current(existing, event):
+    """True when the calendar already shows exactly this event, so there is nothing to write.
+
+    Every write is a change guests and subscribers can be told about, so an event that already
+    matches is left alone. Anything that cannot be compared counts as changed.
+    """
+    start, end = _instant(existing.get("start")), _instant(existing.get("end"))
+    return (
+        str(existing.get("summary") or "") == event["summary"]
+        and str(existing.get("description") or "") == event["description"]
+        and start is not None
+        and end is not None
+        and start == datetime.datetime.fromisoformat(event["start"])
+        and end == datetime.datetime.fromisoformat(event["end"])
+    )
 
 
 def main():
@@ -171,16 +201,20 @@ def main():
     window_end = max(datetime.datetime.fromisoformat(e["end"]).date() for _, e in planned) + datetime.timedelta(days=2)
     existing = existing_events(window_start, window_end)
 
-    created = updated = 0
+    created = updated = unchanged = 0
     for item, event in planned:
         marker = marker_for(item["id"])
-        event_id = existing.get(marker)
-        if event_id:
+        current = existing.get(marker)
+        event_id = current.get("id") if current else None
+        if event_id and is_current(current, event):
+            unchanged += 1
+        elif event_id:
             gog([
                 "calendar", "update", CALENDAR_ID, event_id,
                 "--summary", event["summary"],
                 "--description", event["description"],
                 "--from", event["start"], "--to", event["end"], "--all-day=false",
+                "--send-updates", SEND_UPDATES,
             ])
             updated += 1
             print(f"  updated  {event['start']}  {event['summary'][:66]}")
@@ -190,11 +224,15 @@ def main():
                 "--summary", event["summary"],
                 "--description", event["description"],
                 "--from", event["start"], "--to", event["end"], "--all-day=false",
+                "--send-updates", SEND_UPDATES,
             ])
             created += 1
             print(f"  created  {event['start']}  {event['summary'][:66]}")
 
-    print(f"\ncreated: {created} | updated: {updated} | calendar: {CALENDAR_ID}")
+    print(
+        f"\ncreated: {created} | updated: {updated} | unchanged: {unchanged}"
+        f" | calendar: {CALENDAR_ID}"
+    )
 
 
 if __name__ == "__main__":

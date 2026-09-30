@@ -115,14 +115,39 @@ print(json.dumps(calls))`) as string[][];
       "calendar@example.test",
       "existing-event",
     ]);
-    expect(calls[1].slice(-5)).toEqual([
+    expect(calls[1].slice(-7)).toEqual([
       "--from",
       "2026-10-01T10:59:59+00:00",
       "--to",
       "2026-10-01T11:59:59+00:00",
       "--all-day=false",
+      "--send-updates",
+      "none",
     ]);
     expect(calls[3]).toEqual(calls[1]);
+  });
+
+  it("leaves an event that already matches untouched", () => {
+    const calls = runPython(`${setup}
+event = m.build_event(item)
+calls = []
+def gog(args, check=True):
+    calls.append(args)
+    return SimpleNamespace(returncode=0, stdout=json.dumps({'events': [{
+        'id': 'existing-event',
+        'summary': event['summary'],
+        'description': event['description'],
+        'start': {'dateTime': '2026-10-01T10:59:59Z'},
+        'end': {'dateTime': '2026-10-01T11:59:59Z'},
+    }]}))
+with patch.object(m.DeadlineDataset, 'venues', return_value=[item]), \
+     patch.object(m, 'gog', side_effect=gog), \
+     patch.dict(os.environ, {'ADMINBOT_DEADLINE_NOW': '2026-10-01T10:00:00+00:00'}), \
+     patch.object(sys, 'argv', ['calendar', '--send']):
+    m.main()
+print(json.dumps(calls))`) as string[][];
+    expect(calls).toHaveLength(1);
+    expect(calls[0].slice(0, 2)).toEqual(["calendar", "events"]);
   });
 
   it("creates timed events, previews without Google calls, and skips expired deadlines", () => {
@@ -140,8 +165,8 @@ with patch.object(m.DeadlineDataset, 'venues', return_value=[item]), \
         gog.reset_mock()
         with patch.dict(os.environ, {'ADMINBOT_DEADLINE_NOW': '2026-10-01T12:00:00+00:00'}):
             m.main()
-    print(json.dumps([preview_calls, create[:2], create[-1], gog.call_count]))`),
-    ).toEqual([0, ["calendar", "create"], "--all-day=false", 0]);
+    print(json.dumps([preview_calls, create[:2], create[-3:], gog.call_count]))`),
+    ).toEqual([0, ["calendar", "create"], ["--all-day=false", "--send-updates", "none"], 0]);
   });
 });
 
