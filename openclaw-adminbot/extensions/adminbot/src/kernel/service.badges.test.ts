@@ -30,6 +30,29 @@ describe("AdminBotService badges", () => {
     ).toEqual(["Level 1", "Level 2", "Level 3"]);
   });
 
+  it("sets an explicit count idempotently and preserves it on legacy saves", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+    const id = "community_building__referral_bonus";
+    expect(unwrap(service.assignBadge("pat", id, "admin")).assignment.count).toBe(1);
+    for (let retry = 0; retry < 2; retry++) {
+      expect(unwrap(service.assignBadge("pat", id, "admin", undefined, 3)).assignment.count).toBe(
+        3,
+      );
+    }
+    expect(unwrap(service.assignBadge("pat", id, "admin")).assignment.count).toBe(3);
+    for (const invalid of [0, -1, 1.5, "3", null, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(service.assignBadge("pat", id, "admin", undefined, invalid)).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+    }
+    expect(
+      unwrap(service.listLabMembers()).members.find((m) => m.id === "pat")?.assigned_badges?.[0]
+        .count,
+    ).toBe(3);
+  });
+
   it("keeps badge tiers exclusive per family when an admin reassigns one", () => {
     const service = new AdminBotService();
     unwrap(service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));

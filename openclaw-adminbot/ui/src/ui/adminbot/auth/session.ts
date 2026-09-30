@@ -86,6 +86,7 @@ export type AssignedBadge = {
   awarded_at: string;
   awarded_by: string;
   source: "admin" | "nomination";
+  count?: number;
   nomination_id?: string;
   evidence?: string;
   category: string;
@@ -2861,10 +2862,12 @@ export async function assignBadgeToMember(
   sessionToken: string,
   baseUrl: string,
   evidence?: string,
+  count?: number,
 ): Promise<AuthResult<AssignedBadge>> {
   const result = await authedJson(baseUrl, "/badges/assignments", "POST", sessionToken, {
     member_id: memberId,
     badge_id: badgeId,
+    ...(count !== undefined ? { count } : {}),
     ...(evidence ? { evidence } : {}),
   });
   if ("unreachable" in result) {

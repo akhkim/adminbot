@@ -405,6 +405,7 @@ export async function assignAdminBadge(
   memberId: string,
   badgeId: string,
   evidence?: string,
+  count?: number,
 ): Promise<void> {
   const stored = loadStoredMemberSession();
   if (!stored) {
@@ -420,6 +421,7 @@ export async function assignAdminBadge(
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
       evidence,
+      count,
     );
     if (!result.ok) {
       host.adminBotBadgeNotice = {
