@@ -2482,6 +2482,34 @@
     {
       "count": 1,
       "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Duplicate pair pages"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Member pages"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Recipient pages"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "#theme-causality, #proj-example"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "2026-07-24T00:00:00.000Z"
@@ -2492,6 +2520,13 @@
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Alice, Bob"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Brief background, collaboration context, and why they are joining"
     },
     {
       "count": 1,
@@ -2534,13 +2569,6 @@
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "paper-2026-example"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/adminbot/views/admin.ts",
-      "text": "pat"
     },
     {
       "count": 1,
@@ -2627,7 +2655,7 @@
       "text": "Add paper"
     },
     {
-      "count": 2,
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
@@ -2732,7 +2760,7 @@
       "text": "Approval-gated work will appear here when AdminBot proposes it."
     },
     {
-      "count": 3,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
@@ -2750,7 +2778,28 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Background / reason for adding this person"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Blocked"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Calendar invitations"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Changes apply on Save member. Full membership adds Monday through its access workflow. Zurich lunch uses the configured location-based sweep and approval queue; setting a city does not immediately send an invitation."
     },
     {
       "count": 1,
@@ -2764,10 +2813,17 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Check for possible duplicate records and members without an email when you need to review them. Loading these checks reads the full lab roster."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Clear selection"
     },
     {
-      "count": 6,
+      "count": 5,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
@@ -2778,7 +2834,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
-      "text": "Collaborator subgroup"
+      "text": "Comma-separated channel names or IDs. Invitations are part of the onboarding draft and only run after approval and execution."
     },
     {
       "count": 1,
@@ -2795,7 +2851,7 @@
       "text": "Composes the onboarding guide for their member type and queues it for approval — the same mail the Onboarding tab sends from the roster. Nothing is sent until an admin approves it. Untick when the record is a backfill for somebody the lab has already onboarded."
     },
     {
-      "count": 3,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
@@ -2830,7 +2886,7 @@
       "text": "Create a roster entry and seed its privilege-derived access."
     },
     {
-      "count": 2,
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
@@ -2865,18 +2921,11 @@
       "text": "Edit member"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Edit my profile"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/admin.ts",
-      "text": "Edit paper"
     },
     {
       "count": 1,
@@ -2928,7 +2977,7 @@
       "text": "Finished"
     },
     {
-      "count": 2,
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
@@ -3002,6 +3051,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Loading AdminBot…"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Location"
     },
     {
@@ -3026,6 +3082,13 @@
       "text": "Markdown"
     },
     {
+      "count": 2,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Meetings"
+    },
+    {
       "count": 1,
       "kind": "html-text",
       "name": "text",
@@ -3037,7 +3100,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
-      "text": "Member type"
+      "text": "Membership / access"
     },
     {
       "count": 1,
@@ -3061,6 +3124,13 @@
       "text": "Missing edit link"
     },
     {
+      "count": 3,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Next"
+    },
+    {
       "count": 1,
       "kind": "html-text",
       "name": "text",
@@ -3080,13 +3150,6 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "no email"
-    },
-    {
-      "count": 2,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/admin.ts",
-      "text": "No lab members yet."
     },
     {
       "count": 1,
@@ -3117,7 +3180,7 @@
       "text": "none"
     },
     {
-      "count": 3,
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
@@ -3208,11 +3271,18 @@
       "text": "Overleaf (view)"
     },
     {
-      "count": 2,
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Overleaf edit URL"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Page"
     },
     {
       "count": 1,
@@ -3229,7 +3299,7 @@
       "text": "Paper escalation business days"
     },
     {
-      "count": 2,
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
@@ -3285,7 +3355,14 @@
       "text": "Preview"
     },
     {
-      "count": 2,
+      "count": 3,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Previous"
+    },
+    {
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
@@ -3380,6 +3457,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Roster-wide checks"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Save conferences"
     },
     {
@@ -3408,17 +3492,10 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
-      "text": "Save paper"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Save settings"
     },
     {
-      "count": 2,
+      "count": 3,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
@@ -3471,6 +3548,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Sets their access: adminbot-admin is admin, full is a lab member, anything else is an external collaborator. Applied when you press Save member."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Settings"
     },
     {
@@ -3486,6 +3570,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Slack"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Slack groups for onboarding (optional)"
     },
     {
       "count": 2,
@@ -3520,6 +3611,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Status, project, paper, and conference filters apply to this page and reset when you change pages."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Subject"
     },
     {
@@ -3534,17 +3632,24 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Theme meetings and Monday only. Project calls are managed separately."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Timezone"
     },
     {
-      "count": 3,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Title"
     },
     {
-      "count": 2,
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
@@ -3556,6 +3661,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "Topics"
+    },
+    {
+      "count": 2,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Try again"
     },
     {
       "count": 1,
@@ -3625,6 +3737,20 @@
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Meetings"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "Member type"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
       "text": "On leave"
     },
     {
@@ -3636,6 +3762,13 @@
     },
     {
       "count": 1,
+      "kind": "object-property",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/admin.ts",
+      "text": "None"
+    },
+    {
+      "count": 2,
       "kind": "object-property",
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/admin.ts",
@@ -3933,7 +4066,21 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/conference-papers.ts",
-      "text": "Closest first. Match strength is relative to this conference."
+      "text": "All"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/conference-papers.ts",
+      "text": "Category"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/conference-papers.ts",
+      "text": "Closest first. Match strength is relative to this selection."
     },
     {
       "count": 1,
@@ -3941,6 +4088,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/conference-papers.ts",
       "text": "Conference"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/conference-papers.ts",
+      "text": "Loading categories…"
     },
     {
       "count": 1,
@@ -3982,7 +4136,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/conference-papers.ts",
-      "text": "Ranks everything accepted at a conference against what you work on, and shows the closest matches. Nothing here is filtered by keyword — a paper can match because it is about the same thing in different words."
+      "text": "Ranks the selected accepted papers against what you work on, and shows the closest matches. Nothing here is filtered by keyword: a paper can match because it is about the same thing in different words."
     },
     {
       "count": 1,
@@ -3990,6 +4144,55 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/conference-papers.ts",
       "text": "What you work on"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/dashboard.ts",
+      "text": ". Please upload the de-anonymized camera-ready (full author list) to Drive and paste the link into the paper's \"Drive copy of the paper PDF\" field under My Projects &amp; Papers. We need it before we can post about the paper on social media."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/dashboard.ts",
+      "text": "AdminBot still has no Google Drive PDF for"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/dashboard.ts",
+      "text": "Got it"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/dashboard.ts",
+      "text": "Open My Projects &amp; Papers"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/dashboard.ts",
+      "text": "SuperSycophantic was accepted at NeurIPS 🎉. Please add its Drive PDF by Sep 27."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/dashboard.ts",
+      "text": "SuperSycophantic: Stress-Testing Frontier LLMs from Single- to Multi-Turn Sycophancy"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/dashboard.ts",
+      "text": "Try again"
     },
     {
       "count": 1,
@@ -4008,16 +4211,156 @@
     {
       "count": 1,
       "kind": "html-attribute",
-      "name": "aria-label",
+      "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/deadline-parent-conference-select.ts",
-      "text": "Parent conference"
+      "text": "Choose or enter a conference"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.abstract.ts",
+      "text": "Source ↗"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/deadlines.abstract.ts",
+      "text": "Abstract"
     },
     {
       "count": 1,
       "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/adminbot/views/deadline-parent-conference-select.ts",
-      "text": "Choose or enter a conference"
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "Linked papers"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "Recommend a deadline"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "Recommended to"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "Slack message preview"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "Choose a member"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "Done"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "Edit"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "Loading members…"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "Member"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "More members"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "More papers"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "Papers (optional)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "Reason (optional)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "Recommend a deadline"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "Search"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.recommendation.ts",
+      "text": "This recommendation was already sent."
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/deadlines.timezone.ts",
+      "text": "Display timezone"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/deadlines.timezone.ts",
+      "text": "Timezones"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.timezone.ts",
+      "text": "No matching timezone"
     },
     {
       "count": 1,
@@ -4025,6 +4368,13 @@
       "name": "aria-label",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Deadline period"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Filter by location"
     },
     {
       "count": 1,
@@ -4088,6 +4438,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "✓ On your timeline"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Abstract"
     },
     {
       "count": 1,
@@ -4206,7 +4563,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
-      "text": "Deadline (AoE)"
+      "text": "Deadline"
     },
     {
       "count": 1,
@@ -4262,6 +4619,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Filter by location"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Groups"
     },
     {
@@ -4291,6 +4655,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Item"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Latest source check failed"
     },
     {
       "count": 1,
@@ -4384,7 +4755,7 @@
       "text": "OpenReview URL"
     },
     {
-      "count": 7,
+      "count": 8,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
@@ -4479,6 +4850,20 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Source not verified"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Stage"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "stale"
     },
     {
@@ -4501,6 +4886,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Time zone"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Time zone unknown"
     },
     {
       "count": 1,
@@ -4650,7 +5042,7 @@
       "text": "Rebuttals"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
@@ -4662,6 +5054,20 @@
       "name": "label",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Workshops"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/deadlines.workshop-notifications.ts",
+      "text": "Decision date (unverified)"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/deadlines.workshop-notifications.ts",
+      "text": "Notify authors by"
     },
     {
       "count": 1,
@@ -5652,6 +6058,244 @@
     },
     {
       "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Clear chat"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Close conversation drawer"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Close conversations"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Conversation"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Conversation list"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Conversations"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Exit full screen"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Expand chat"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Local chat"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Local chat full screen"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Message to the local model"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Search conversations"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Send locally"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Show conversations"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Stop generation"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Message Qwen…"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Search conversations"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Clear this chat"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Exit full screen"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Expand chat"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Send (Enter)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "A private space to think, write, and work with Qwen on Aurora."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Aurora workspace"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Chats disappear when you leave My Desk or sign out. Nothing is saved to your account."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Local chat"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Local only · Aurora"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "No conversations found."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "No external fallback"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "No external providers, lab records, saved transcripts, or automatically loaded images. Other AdminBot chats have separate routing. Up to 12 session-only chats, 23 messages per request, and 32,000 characters of context."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Privacy & limits"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Qwen can make mistakes. Enter to send · Shift+Enter for a new line."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "This session"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "Waiting for local model…"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/local-chat.ts",
+      "text": "What would you like to explore?"
+    },
+    {
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/location-prompt.ts",
@@ -5680,6 +6324,13 @@
     },
     {
       "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/login-gate.ts",
+      "text": "AdminBot"
+    },
+    {
+      "count": 1,
       "kind": "object-property",
       "name": "title",
       "path": "ui/src/ui/adminbot/views/login-gate.ts",
@@ -5702,9 +6353,233 @@
     {
       "count": 1,
       "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/member-guide-status.ts",
+      "text": "Onboarding email status"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-guide-status.ts",
+      "text": "Refresh status"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-guide-status.ts",
+      "text": "Review in Pending Actions"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Reason for declining"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Ada Lovelace"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "ada@example.org"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "How they are joining the lab, who they work with"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "https://"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Reason (optional, shown to them)"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "University, company"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "access."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Add member"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Affiliation"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "An admin reviews this before they are added to the roster. Nothing is sent to them until then."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Approve"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Close"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Decline"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Email"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Member type"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Name"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Note for the admins"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Research topics"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Send for review"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Start their onboarding"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "The requested Member Type makes them an AdminBot admin. Check that is intended."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Website"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Withdraw"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Your best guess. The admin who approves confirms it, since it sets access."
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Member type"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/member-requests.ts",
+      "text": "Not sure"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/member-sheet.ts",
       "text": "Any column…"
+    },
+    {
+      "count": 2,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-sheet.ts",
+      "text": "Add row"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-sheet.ts",
+      "text": "Adds them to the roster sheet, creates their AdminBot record with the access their Member Type grants, and sends their onboarding guide — all as soon as you press Add. Nothing waits in Pending Actions; you are the approver."
     },
     {
       "count": 1,
@@ -5714,11 +6589,60 @@
       "text": "Cancel"
     },
     {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-sheet.ts",
+      "text": "Choose…"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-sheet.ts",
+      "text": "Close"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-sheet.ts",
+      "text": "Email for correspondence"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-sheet.ts",
+      "text": "Member Attributes"
+    },
+    {
       "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/member-sheet.ts",
       "text": "Member roster"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-sheet.ts",
+      "text": "Member Type"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-sheet.ts",
+      "text": "Name"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-sheet.ts",
+      "text": "Onboarded by their access alone, with no email:"
     },
     {
       "count": 1,
@@ -5754,6 +6678,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/member-sheet.ts",
       "text": "Search"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-sheet.ts",
+      "text": "Slack email"
     },
     {
       "count": 1,
@@ -6216,6 +7147,41 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/my-work.ts",
       "text": "Year"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/openreview-citation-checks.ts",
+      "text": "Automated checks can be wrong. A missing match is not proof of fabrication."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/openreview-citation-checks.ts",
+      "text": "Every paper the lab's OpenReview account is an author of is checked automatically each time a new PDF is uploaded."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/openreview-citation-checks.ts",
+      "text": "No submissions have been checked yet."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/openreview-citation-checks.ts",
+      "text": "OpenReview submissions"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/openreview-citation-checks.ts",
+      "text": "Search Google Scholar"
     },
     {
       "count": 1,
@@ -6887,6 +7853,13 @@
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/adminbot/views/paper-legacy.ts",
+      "text": "Publication track"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/paper-legacy.ts",
       "text": "Short name"
     },
     {
@@ -7251,6 +8224,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/profile.ts",
+      "text": "Could not load lab members."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/profile.ts",
       "text": "Face clearly visible, preferably front-facing."
     },
     {
@@ -7279,6 +8259,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/profile.ts",
+      "text": "Loading lab members…"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/profile.ts",
       "text": "remove.bg"
     },
     {
@@ -7287,6 +8274,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/profile.ts",
       "text": "Slack profile photo guidelines"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/profile.ts",
+      "text": "Try again"
     },
     {
       "count": 1,
@@ -8218,6 +9212,13 @@
       "name": "text",
       "path": "ui/src/ui/app-render.ts",
       "text": "Notifications"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/app-render.ts",
+      "text": "Try again"
     },
     {
       "count": 1,

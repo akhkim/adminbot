@@ -32,12 +32,30 @@ describe("AdminBot deadline dataset generation", () => {
     const nlp4pi = venuesDoc.items.find((item) => item.id === "emnlp2026_ws_nlp4pi");
     expect(nlp4pi).toMatchObject({
       deadline_aoe: "2026-08-03 23:59:59",
-      notification_aoe: "2026-08-15 23:59:59",
+      notification_aoe: "",
+      notification_previous_aoe: "2026-08-15 23:59:59",
+      notification_status: "unverified",
       submission_type: "commitment",
       venue_group: "EMNLP 2026 Workshops",
       openreview_url: "https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment",
     });
     expect(nlp4pi?.cfp_url).toMatch(/^https?:\/\//u);
+  });
+
+  it("keeps legacy shared workshop cutoffs out of actual decision dates", () => {
+    const workshops = venuesDoc.items.filter(
+      (item) => item.venue_group === "NeurIPS 2026 Workshops",
+    );
+    expect(workshops.length).toBeGreaterThan(0);
+    for (const item of workshops) {
+      expect(item.notification_aoe).toBe("");
+      if (item.notification_previous_aoe) {
+        expect(item.notification_policy).toMatchObject({
+          milestone: "notification_by",
+          status: "unverified",
+        });
+      }
+    }
   });
 
   it("keeps one current projection with dated history and explicit venue aliases", () => {

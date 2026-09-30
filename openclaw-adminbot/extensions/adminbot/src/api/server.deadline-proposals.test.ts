@@ -214,6 +214,9 @@ describe("deadline proposal API", () => {
         expect.objectContaining({
           name: "API Workshop",
           venue_group: "EMNLP 2026 Workshops",
+          deadline_at: "2026-10-02T15:00:00.000Z",
+          deadline_time_precision: "exact",
+          deadline_timezone: "Europe/Zurich",
           homepage_url: "https://example.org/api-workshop/home",
           cfp_url: "https://example.org/api-workshop/cfp",
         }),

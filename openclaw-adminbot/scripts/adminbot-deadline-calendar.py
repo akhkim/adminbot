@@ -32,6 +32,7 @@ import subprocess
 import sys
 
 from adminbot_deadlines import AoEClock, DeadlineDataset
+from adminbot_deadline_time import deadline_label
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENUES = os.path.join(HERE, "..", "extensions", "adminbot", "content", "deadlines", "venues.json")
@@ -83,9 +84,11 @@ def marker_for(venue_id):
 def build_event(item):
     end = AoEClock.instant(item["deadline_aoe"])
     summary = f"{item['name']} — {item.get('deadline_label') or 'deadline'}"
+    if item.get("deadline_time_precision") == "date_only":
+        summary += " (planning cutoff; time unknown)"
     lines = [
         f"{item['name']} ({item.get('venue_type', 'venue')})",
-        f"Deadline: {item['deadline_aoe']} AoE",
+        f"Deadline: {deadline_label(item)}",
     ]
     if item.get("notification_aoe"):
         lines.append(f"Notification: {item['notification_aoe']} AoE")

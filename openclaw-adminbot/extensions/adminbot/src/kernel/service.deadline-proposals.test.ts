@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
+import { stageSnapshot } from "../contracts/deadline-proposals.stage.js";
 import { AdminBotMemoryStore } from "../persistence/memory.js";
 import { AdminBotService } from "./service.js";
 
@@ -345,4 +346,179 @@ it("rejects visitor corrections, missing targets, and approval after the target 
     }),
   ).toMatchObject({ ok: false, status: 409 });
   expect(service.deadlineReadModel([])).toMatchObject([{ deadline_aoe: "2026-09-18 23:59:00" }]);
+});
+
+describe("stage-specific proposals", () => {
+  const decision = {
+    milestone: "notification",
+    label: "Decisions",
+    kind: "date" as const,
+    date: "2026-09-20",
+  };
+  function setup() {
+    const venue = {
+      id: "past-venue",
+      deadline_id: "past-venue",
+      name: "Past Conference",
+      milestone: "submission",
+      deadline_aoe: "2026-07-01 23:59:00",
+      schedule: [
+        decision,
+        { milestone: "camera_ready", label: "Camera-ready", kind: "date", date: "2026-10-01" },
+      ],
+    };
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store, { deadlineDataset: () => [venue] });
+    return { venue, store, service };
+  }
+  async function publish(
+    service: AdminBotService,
+    proposal: ReturnType<AdminBotService["submitDeadlineProposal"]>,
+  ) {
+    const view = unwrap(proposal);
+    return service.publishDeadlineProposal(view.id, view.payload_hash, {
+      payload_hash: view.payload_hash,
+      approver_role: "admin",
+      approver_id: "admin-1",
+    });
+  }
+  it("adds one date to a past venue only after approval, retaining its primary date and schedule", async () => {
+    const { service } = setup();
+    const proposal = service.submitDeadlineProposal(
+      input({
+        deadlineTime: "",
+        timezone: "",
+        stage: {
+          milestone: "registration",
+          label: "Registration",
+          operation: "add",
+          venueId: "past-venue",
+        },
+      }),
+      "member-1",
+      "stage-add",
+    );
+    expect((service.deadlineReadModel([])[0] as any).schedule).toHaveLength(2);
+    expect((await publish(service, proposal)).ok).toBe(true);
+    const result = service.deadlineReadModel([])[0] as any;
+    expect(result.deadline_aoe).toBe("2026-07-01 23:59:00");
+    expect(result.schedule).toHaveLength(3);
+    expect(
+      service.submitDeadlineProposal(
+        input({
+          deadlineTime: "",
+          timezone: "",
+          stage: {
+            milestone: "registration",
+            label: "Registration",
+            operation: "add",
+            venueId: "past-venue",
+          },
+        }),
+        "member-1",
+        "stage-add",
+      ),
+    ).toMatchObject({ ok: true, status: 200 });
+    expect(result.schedule[2]).toEqual({
+      milestone: "registration",
+      label: "Registration",
+      kind: "date",
+      date: "2026-09-14",
+      planning_at: "2026-09-13T10:00:00.000Z",
+    });
+  });
+  it("corrects only the stage identified in the ellipsis and preserves the source timezone", async () => {
+    const { service } = setup();
+    const proposal = service.submitDeadlineProposal(
+      input({
+        timezone: "Europe/Zurich",
+        stage: {
+          milestone: "notification",
+          label: "Decisions",
+          operation: "correct",
+          venueId: "past-venue",
+          previous: stageSnapshot(decision),
+        },
+      }),
+      "member-1",
+      "stage-correct",
+    );
+    expect((await publish(service, proposal)).ok).toBe(true);
+    const result = service.deadlineReadModel([])[0] as any;
+    expect(result.deadline_aoe).toBe("2026-07-01 23:59:00");
+    expect(result.schedule[0]).toMatchObject({
+      milestone: "notification",
+      date: "2026-09-14T21:59:00.000Z",
+      timezone: "Europe/Zurich",
+    });
+    expect(result.schedule[1].date).toBe("2026-10-01");
+  });
+  it("refuses a stale correction at execution and never changes another stage", async () => {
+    const { service, venue } = setup();
+    const proposal = service.submitDeadlineProposal(
+      input({
+        stage: {
+          milestone: "notification",
+          label: "Decisions",
+          operation: "correct",
+          venueId: "past-venue",
+          previous: stageSnapshot(decision),
+        },
+      }),
+      "member-1",
+      "stale-stage",
+    );
+    venue.schedule = [{ ...decision, date: "2026-09-22" }];
+    expect(await publish(service, proposal)).toMatchObject({ ok: false, status: 409 });
+    expect((service.deadlineReadModel([])[0] as any).schedule[0].date).toBe("2026-09-22");
+  });
+  it("rejects missing targets, duplicate stages and attempts to retarget a revision", () => {
+    const { service } = setup();
+    const stage = {
+      milestone: "notification",
+      label: "Decisions",
+      operation: "add" as const,
+      venueId: "past-venue",
+    };
+    expect(service.submitDeadlineProposal(input({ stage }), "member-1", "dup")).toMatchObject({
+      ok: false,
+      status: 409,
+    });
+    expect(
+      service.submitDeadlineProposal(
+        input({ stage: { ...stage, venueId: "missing" } }),
+        "member-1",
+        "missing",
+      ),
+    ).toMatchObject({ ok: false, status: 400 });
+    const proposal = unwrap(
+      service.submitDeadlineProposal(
+        input({ stage: { ...stage, milestone: "registration", label: "Registration" } }),
+        "member-1",
+        "valid",
+      ),
+    );
+    expect(service.reviseDeadlineProposal(proposal.id, input({ stage }), "admin-1")).toMatchObject({
+      ok: false,
+      status: 409,
+    });
+  });
+  it("allows a visitor to propose an additional stage but does not publish it", () => {
+    const { service } = setup();
+    expect(
+      service.submitDeadlineProposal(
+        input({
+          stage: {
+            milestone: "registration",
+            label: "Registration",
+            operation: "add",
+            venueId: "past-venue",
+          },
+        }),
+        "visitor:deadline:example",
+        "visitor-stage",
+      ),
+    ).toMatchObject({ ok: true });
+    expect((service.deadlineReadModel([])[0] as any).schedule).toHaveLength(2);
+  });
 });

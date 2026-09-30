@@ -1,6 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import {
+  deadlineInstantMs,
+  deadlineDateTimeLabel,
+  planningCountdownLabel,
   aoeDateLabel,
   aoeDateTimeLabel,
   aoeInstantMs,
@@ -18,6 +21,27 @@ describe("aoeInstantMs", () => {
   // wrong shifts every countdown on both surfaces by half a day.
   it("shifts an AoE wall-clock time by twelve hours", () => {
     expect(aoeInstantMs("2026-09-19 23:59:59")).toBe(Date.UTC(2026, 8, 19, 23, 59, 59) + 12 * HOUR);
+  });
+
+  it.each([
+    "2026-02-29 12:00:00",
+    "2026-04-31 12:00:00",
+    "2026-00-01 12:00:00",
+    "2026-13-01 12:00:00",
+    "2026-01-00 12:00:00",
+    "2026-01-01 24:00:00",
+    "2026-01-01 12:60:00",
+    "2026-01-01 12:00:60",
+    "prefix 2026-01-01 12:00:00",
+    "2026-01-01 12:00:00Z",
+    "2026-01-01 12:00:00\n",
+  ])("rejects malformed or impossible dates: %s", (stamp) => {
+    expect(aoeInstantMs(stamp)).toBeNaN();
+  });
+
+  it("accepts leap days and preserves years below 100", () => {
+    expect(aoeInstantMs("2024-02-29T23:59:59")).toBe(Date.parse("2024-03-01T11:59:59Z"));
+    expect(aoeInstantMs("0099-01-01 00:00:00")).toBe(Date.parse("0099-01-01T12:00:00Z"));
   });
 
   it("returns NaN for an unparseable stamp rather than a bogus instant", () => {
@@ -104,5 +128,35 @@ describe("upcomingMajorDeadlines", () => {
   it("returns fewer than the limit rather than padding when the snapshot runs out", () => {
     // Far past every deadline in the bundled snapshot.
     expect(upcomingMajorDeadlines(Date.UTC(2030, 0, 1), 2)).toEqual([]);
+  });
+});
+
+describe("source precision", () => {
+  const dateOnly = {
+    ...DEADLINE_VENUES[0],
+    deadline_aoe: "2035-01-30 22:00:00",
+    deadline_at: "",
+    deadline_date: "2035-02-01",
+    deadline_timezone: "",
+    deadline_time_precision: "date_only",
+    deadline_planning_at: "2035-01-31T10:00:00Z",
+  };
+  it("shows the source day instead of the earlier planning day", () => {
+    expect(deadlineDateTimeLabel(dateOnly)).toBe("Feb 1, 2035 · time unknown");
+    expect(deadlineInstantMs(dateOnly)).toBe(Date.parse("2035-01-31T10:00:00Z"));
+  });
+  it("labels a passed planning cutoff without claiming submissions closed", () => {
+    expect(planningCountdownLabel(dateOnly, Date.parse("2035-01-31T11:00:00Z"))).toBe(
+      "Planning cutoff passed · check source",
+    );
+  });
+  it("formats the exact UTC instant in AoE in the UI", () => {
+    expect(
+      deadlineDateTimeLabel({
+        ...dateOnly,
+        deadline_time_precision: "exact",
+        deadline_at: "2035-02-02T11:59:59Z",
+      }),
+    ).toBe("Feb 1, 2035 · 23:59 AoE");
   });
 });

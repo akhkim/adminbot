@@ -69,6 +69,24 @@ export function createAdminBotSlackAdminExecutor(
         await removeFromSlackChannel(token, payload.channel, payload.user_id, fetchImpl);
         return { handled: true };
       }
+      if (proposal.type === "deadline.recommend") {
+        const payload = readGroupDmPayload(proposal);
+        if (
+          payload.user_ids.length !== 2 ||
+          !payload.user_ids.every((id) => /^[UW][A-Z0-9]+$/u.test(id))
+        ) {
+          throw new Error("deadline.recommend requires two distinct Slack users");
+        }
+        const token = resolveSlackBotToken(env);
+        await notifySlackOwner(
+          token,
+          payload.user_ids.join(","),
+          payload.message,
+          fetchImpl,
+          proposal.id,
+        );
+        return { handled: true };
+      }
       // The hourly digest can instead live in a channel as one message, edited each hour.
       if (proposal.type === "paper_integrity.report" && readChannelTarget(proposal)) {
         const target = readChannelTarget(proposal)!;
@@ -497,6 +515,7 @@ async function notifySlackOwner(
   ownerUserId: string,
   message: string,
   fetchImpl: SlackAdminFetch,
+  messageId?: string,
 ): Promise<void> {
   const openResponse = await fetchImpl("https://slack.com/api/conversations.open", {
     method: "POST",
@@ -517,7 +536,19 @@ async function notifySlackOwner(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json; charset=utf-8",
     },
-    body: JSON.stringify({ channel: openPayload.channel.id, text: message }),
+    body: JSON.stringify({
+      channel: openPayload.channel.id,
+      text: message,
+      ...(messageId
+        ? {
+            client_msg_id: messageId.replace(/^act_/u, ""),
+            mrkdwn: false,
+            parse: "none",
+            unfurl_links: false,
+            unfurl_media: false,
+          }
+        : {}),
+    }),
   });
   const postPayload = parseSlackJson<SlackRenameResponse>(await postResponse.text());
   if (!postResponse.ok || !postPayload?.ok) {

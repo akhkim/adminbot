@@ -4,33 +4,68 @@
 // agree on what "3 days left" means. Both read the same generated summary; only the presentation
 // differs. A countdown that disagreed between the two surfaces would read as a bug in the data.
 
+import type { DeadlineVenue } from "./deadlines.ts";
 import { DEADLINE_SUMMARIES, type DeadlineSummaryVenue } from "./deadlines-summary.ts";
 
 export const MS_DAY = 86_400_000;
 
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // AoE (UTC-12): a wall-clock deadline maps to its UTC instant + 12h.
 export function aoeInstantMs(aoe: string): number {
-  const m = /(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/u.exec(aoe);
-  if (!m) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/u.exec(aoe);
+  if (!m || m[0] !== aoe) {
     return Number.NaN;
   }
   const [, y, mo, d, h, mi, s] = m.map(Number);
-  return Date.UTC(y, mo - 1, d, h, mi, s) + 12 * 3600 * 1000;
+  const wall = new Date(0);
+  wall.setUTCFullYear(y, mo - 1, d);
+  wall.setUTCHours(h, mi, s, 0);
+  // Date setters normalize invalid fields; reject that rollover before applying the AoE offset.
+  if (
+    wall.getUTCFullYear() !== y ||
+    wall.getUTCMonth() !== mo - 1 ||
+    wall.getUTCDate() !== d ||
+    wall.getUTCHours() !== h ||
+    wall.getUTCMinutes() !== mi ||
+    wall.getUTCSeconds() !== s
+  ) {
+    return Number.NaN;
+  }
+  return wall.getTime() + 12 * 3600 * 1000;
+}
+
+/** Exact cutoff when known; otherwise the explicitly marked early planning boundary. */
+export function deadlineInstantMs(
+  venue: Pick<DeadlineVenue, "deadline_aoe" | "deadline_at" | "deadline_planning_at">,
+): number {
+  const canonical = venue.deadline_at || venue.deadline_planning_at;
+  return canonical ? Date.parse(canonical) : aoeInstantMs(venue.deadline_aoe);
+}
+
+export function deadlineDateTimeLabel(
+  venue: Pick<
+    DeadlineVenue,
+    | "deadline_aoe"
+    | "deadline_at"
+    | "deadline_date"
+    | "deadline_timezone"
+    | "deadline_time_precision"
+  >,
+): string {
+  if (venue.deadline_time_precision === "date_only") {
+    return `${plainDateLabel(venue.deadline_date || "")} · time unknown${venue.deadline_timezone ? ` (${venue.deadline_timezone})` : ""}`;
+  }
+  const instant = venue.deadline_at ? Date.parse(venue.deadline_at) : Number.NaN;
+  const aoe = Number.isFinite(instant)
+    ? new Date(instant - 12 * 3_600_000).toISOString().slice(0, 19).replace("T", " ")
+    : venue.deadline_aoe;
+  return aoeDateTimeLabel(aoe);
+}
+
+export function planningCountdownLabel(venue: DeadlineVenue, now: number): string {
+  const left = deadlineInstantMs(venue) - now;
+  return left <= 0 ? "Planning cutoff passed · check source" : countdownLabel(left);
 }
 
 // Display the AoE calendar date (not the +12h-shifted UTC date).
@@ -192,10 +227,8 @@ export function allUpcomingConferences(
   options: { archivalOnly?: boolean } = {},
 ): DeadlineEntry[] {
   return DEADLINE_SUMMARIES.filter(isMajorConference)
-    .filter(
-      (venue) => !options.archivalOnly || venue.archival_status === "archival",
-    )
-    .map((venue) => ({ venue, instant: aoeInstantMs(venue.deadline_aoe) }))
+    .filter((venue) => !options.archivalOnly || venue.archival_status === "archival")
+    .map((venue) => ({ venue, instant: deadlineInstantMs(venue) }))
     .filter((entry) => Number.isFinite(entry.instant) && entry.instant > now)
     .toSorted((a, b) => a.instant - b.instant);
 }
@@ -211,7 +244,7 @@ export function allUpcomingConferences(
 export function allUpcomingVenues(now: number): DeadlineEntry[] {
   return DEADLINE_SUMMARIES.map((venue) => ({
     venue,
-    instant: aoeInstantMs(venue.deadline_aoe),
+    instant: deadlineInstantMs(venue),
   }))
     .filter((entry) => Number.isFinite(entry.instant) && entry.instant > now)
     .toSorted((a, b) => a.instant - b.instant);

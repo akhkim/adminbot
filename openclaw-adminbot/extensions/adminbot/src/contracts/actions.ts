@@ -139,6 +139,7 @@ export const adminBotActionTypes = [
   "openreview.nudge",
   "openreview.warning",
   "deadline.publish",
+  "deadline.recommend",
   // Writing cells back to the lab's member spreadsheet from the Membership tab's grid. A typed
   // action rather than a call out of the service for the usual reason -- it reaches Google and
   // changes a document several people read -- and for one specific to this sheet: the roster is

@@ -865,8 +865,13 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.papers.get(paperId);
   }
 
-  listPapers(page?: AdminBotListPage): AdminBotPaperRecord[] {
+  listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[] {
     const papers = [...this.papers.values()]
+      .filter(
+        (paper) =>
+          !page?.authorMemberId ||
+          paper.author_links?.some((author) => author.member_id === page.authorMemberId),
+      )
       .filter((paper) => !page?.q || paperMatchesQuery(paper, page.q))
       .toSorted((left, right) =>
         page
