@@ -6538,6 +6538,22 @@ async function handleMemberRequestRoute(
     );
     return;
   }
+  const edit = /^\/lab\/members\/requests\/([^/]+)\/edit$/u.exec(url.pathname);
+  if (req.method === "POST" && edit?.[1]) {
+    if (!isAdmin) {
+      sendJson(res, 403, { error: { message: "only an admin can edit a member request" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.editMemberRequest(
+        decodeURIComponent(edit[1]),
+        principal.member.id,
+        readRecord(await readJson(req)),
+      ),
+    );
+    return;
+  }
   const decision = /^\/lab\/members\/requests\/([^/]+)\/(approve|reject)$/u.exec(url.pathname);
   if (req.method === "POST" && decision?.[1] && decision[2]) {
     if (!isAdmin) {
@@ -6551,7 +6567,11 @@ async function handleMemberRequestRoute(
       sendServiceResult(res, service.rejectMemberRequest(requestId, principal.member.id, note));
       return;
     }
-    const claimed = service.claimMemberRequest(requestId, principal.member.id);
+    const claimed = service.claimMemberRequest(
+      requestId,
+      principal.member.id,
+      typeof body.expected_updated_at === "string" ? body.expected_updated_at : undefined,
+    );
     if (!claimed.ok) {
       sendServiceResult(res, claimed);
       return;

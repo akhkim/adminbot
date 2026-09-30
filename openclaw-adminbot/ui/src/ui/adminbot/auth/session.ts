@@ -1165,6 +1165,7 @@ export type MemberRequestView = {
   meetings?: string[];
   note?: string;
   created_at: string;
+  updated_at?: string;
   decided_at?: string;
   decided_by?: string;
   decision_note?: string;
@@ -1235,17 +1236,33 @@ export async function submitMemberRequest(
   return await memberRequestCall(baseUrl, "", "POST", sessionToken, input);
 }
 
+export async function editMemberRequest(
+  request: MemberRequestView,
+  input: MemberRequestInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(request.id)}/edit`,
+    "POST",
+    sessionToken,
+    { ...input, expected_updated_at: request.updated_at ?? request.created_at },
+  );
+}
+
 export async function approveMemberRequest(
   requestId: string,
   sessionToken: string,
   baseUrl: string,
+  expectedUpdatedAt?: string,
 ): Promise<AuthResult<{ request: MemberRequestView; member: LabMember }>> {
   return await memberRequestCall(
     baseUrl,
     `/${encodeURIComponent(requestId)}/approve`,
     "POST",
     sessionToken,
-    {},
+    { expected_updated_at: expectedUpdatedAt },
   );
 }
 

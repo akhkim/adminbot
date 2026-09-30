@@ -1029,6 +1029,10 @@
   min-width: 0;
 }
 
+.adminbot-form__field--wide {
+  grid-column: 1 / -1;
+}
+
 .adminbot-form__field span {
   color: var(--muted);
   font-size: var(--control-ui-text-xs);

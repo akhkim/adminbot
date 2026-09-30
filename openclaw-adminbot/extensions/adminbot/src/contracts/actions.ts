@@ -2454,6 +2454,7 @@ export type AdminBotAuditEvent = {
     | "lab_member.deleted"
     | "lab_members.purged_without_email"
     | "lab_member_request.submitted"
+    | "lab_member_request.edited"
     | "lab_member_request.approved"
     | "lab_member_request.rejected"
     | "lab_member_request.withdrawn"
