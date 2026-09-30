@@ -1,4 +1,5 @@
-﻿/* ===========================================
+﻿/* ====================================}
+
    Shell Layout
    =========================================== */
 
@@ -66,7 +67,8 @@
   padding-top: 0;
 }
 
-/* ===========================================
+/* ====================================}
+
    Topbar
    =========================================== */
 
@@ -406,7 +408,8 @@
   display: none !important;
 }
 
-/* ===========================================
+/* ====================================}
+
    Navigation Sidebar
    =========================================== */
 
@@ -911,7 +914,8 @@
   opacity: 0.5;
 }
 
-/* ===========================================
+/* ====================================}
+
    Content Area
    =========================================== */
 
@@ -1147,7 +1151,8 @@
   white-space: nowrap;
 }
 
-/* ===========================================
+/* ====================================}
+
    Grid Utilities
    =========================================== */
 
@@ -1195,7 +1200,8 @@
   align-items: center;
 }
 
-/* ===========================================
+/* ====================================}
+
    Responsive - Tablet
    =========================================== */
 
@@ -1250,9 +1256,11 @@
   display: none;
 }
 
-/* ===========================================
+/* ====================================}
+
    Signed-out header (landing + sign-in gate)
-   ===========================================
+   ====================================}
+
    In flow rather than floating, so both hosts lay out as a column and the thing below centres in
    whatever height the bar leaves behind â€” no magic offset to keep in sync. Sticky on top of that,
    because the sign-up form is long enough to scroll and the way back out has to stay reachable from
@@ -1333,9 +1341,11 @@
   }
 }
 
-/* ===========================================
+/* ====================================}
+
    Dashboard (home, signed in)
-   ===========================================
+   ====================================}
+
    Two bands: what is waiting on you, then where to go. The attention stack is the loud one, so the
    shortcut grid below it stays deliberately flat -- no cards competing with cards. */
 
@@ -2364,7 +2374,8 @@
   color: var(--muted);
 }
 
-/* ===========================================
+/* ====================================}
+
    My Profile
    =========================================== */
 
@@ -2404,7 +2415,8 @@
   min-width: 0;
 }
 
-/* ===========================================
+/* ====================================}
+
    Identity card
    =========================================== */
 
@@ -3062,7 +3074,8 @@
   }
 }
 
-/* ===========================================
+/* ====================================}
+
    Section cards
    =========================================== */
 
@@ -3096,7 +3109,8 @@
   font-size: var(--control-ui-text-sm);
 }
 
-/* ===========================================
+/* ====================================}
+
    Field groups -- shared by the read-only view and both forms
    =========================================== */
 
@@ -3418,7 +3432,8 @@
   background: var(--danger);
 }
 
-/* ===========================================
+/* ====================================}
+
    Suggestions
    =========================================== */
 
@@ -3538,7 +3553,8 @@
   stroke-width: 1.5px;
 }
 
-/* ===========================================
+/* ====================================}
+
    My Projects & Papers
    =========================================== */
 
@@ -4154,9 +4170,11 @@
   }
 }
 
-/* ===========================================
+/* ====================================}
+
    Landing (visitor, no session)
-   ===========================================
+   ====================================}
+
    The one place in the app that gets to breathe. Everything else here is a dense operations
    dashboard, so the landing earns its weight from space and type rather than from new colour: the
    wordmark is the whole hero, and the ruled backdrop echoes the ledgers the lab actually runs on
@@ -4369,9 +4387,11 @@
   }
 }
 
-/* ===========================================
+/* ====================================}
+
    Public shell (no session)
-   ===========================================
+   ====================================}
+
    A visitor gets the same sidebar language as the signed-in shell, plus a slim topbar carrying the
    sign-in action, but a plain flex layout rather than the dashboard grid: none of the grid's other
    areas (chat rail, status) exist without a gateway behind them. */
@@ -4552,7 +4572,8 @@
   }
 }
 
-/* ===========================================
+/* ====================================}
+
    Deadline board
    =========================================== */
 
@@ -6121,8 +6142,9 @@ adminbot-deadline-timezone {
   align-items: center;
   justify-content: center;
   min-height: 28px;
-  min-width: 126px;
-  padding: 4px 8px;
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
   font-family: inherit;
   font-size: 12px;
   font-weight: 400;
@@ -6399,9 +6421,11 @@ adminbot-deadline-timezone {
   }
 }
 
-/* ===========================================
+/* ====================================}
+
    AdminBot primitives
-   ===========================================
+   ====================================}
+
 
    One vocabulary for the lab's own surfaces. Before this, each AdminBot view invented its own
    label, chip, row and empty state, so thirteen pages of one product read as thirteen products.
@@ -6935,7 +6959,8 @@ adminbot-deadline-timezone {
   line-height: 1.5;
 }
 
-/* ===========================================
+/* ====================================}
+
    Lab Sharing
    =========================================== */
 
@@ -12196,6 +12221,7 @@ html[data-theme="light"] .deadline-board [data-urgency] {
 
 /* Wrapped actions follow the same vertical rhythm as paired text lines. */
 .deadline-board :is(.deadline-recommendation-actions, .deadline-card__actions) {
+  column-gap: 4px;
   row-gap: var(--deadline-row-gap);
 }
 
@@ -12209,4 +12235,67 @@ html[data-theme="light"] .deadline-board [data-urgency] {
 }
 .deadline-board .deadline-table__schedule-row > td {
   vertical-align: baseline;
+}
+
+/* Share dimensions across available and saved timeline actions. */
+.deadline-board :is(.deadline-card__timeline-button, .deadline-card__timeline-status) svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Share action styling across the board and recommendation shadow root. */
+.deadline-board .deadline-card__timeline-button,
+.deadline-board deadline-recommendation::part(deadline-action) {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: none;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+.deadline-board .deadline-card__timeline-button:hover,
+.deadline-board deadline-recommendation::part(deadline-action):hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.deadline-board .deadline-card__timeline-button:focus-visible,
+.deadline-board deadline-recommendation::part(deadline-action):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.deadline-board .deadline-card__timeline-button:disabled,
+.deadline-board deadline-recommendation::part(deadline-action):disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.deadline-board :is(.deadline-card__timeline-button, .deadline-card__timeline-status) svg,
+.deadline-board deadline-recommendation::part(deadline-action-icon) {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@media (pointer: coarse) {
+  .deadline-board .deadline-card__timeline-button,
+  .deadline-board deadline-recommendation::part(deadline-action) {
+    height: 32px;
+    min-height: 32px;
+  }
 }
