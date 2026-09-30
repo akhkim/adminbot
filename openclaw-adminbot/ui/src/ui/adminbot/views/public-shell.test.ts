@@ -96,7 +96,8 @@ describe("renderPublicShell", () => {
     };
     await view.updateComplete;
     await vi.waitFor(() => {
-      expect(container.textContent).toContain("Past and upcoming conference & workshop deadlines.");
+      expect(container.querySelector(".deadline-board h1")?.textContent?.trim()).toBe("Deadlines");
+      expect(container.querySelector('.deadline-board input[type="search"]')).not.toBeNull();
     });
     expect(container.querySelector(".content--public-deadlines > .adminbot-card")).toBeNull();
   });

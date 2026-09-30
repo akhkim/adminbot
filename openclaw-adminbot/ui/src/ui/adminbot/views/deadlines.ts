@@ -1,11 +1,10 @@
+import { html, nothing, LitElement, type TemplateResult } from "lit";
 // Shared rendering for public and signed-in deadline surfaces.
 // Stays in the app document flow so the page owns one vertical scroll.
-
-import { html, nothing, LitElement, type TemplateResult } from "lit";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
-import type { UiSettings } from "../../storage.ts";
 import "./deadlines.recommendation.ts";
+import type { UiSettings } from "../../storage.ts";
 import type { AccessRole } from "../access.ts";
 import { resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
@@ -43,15 +42,15 @@ import {
   countdownLabel,
   dateRangeLabel,
   daysLeftLabel,
-  MS_DAY,
   plainDateLabel,
   urgencyOf,
   type Urgency,
 } from "../data/deadline-time.ts";
 import { DEADLINE_VENUES, type DeadlineMilestone, type DeadlineVenue } from "../data/deadlines.ts";
 import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
-import { renderDeadlineDate } from "./deadline-date.ts";
+import { renderDeadlineDate, renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderDeadlineParentConferenceSelect } from "./deadline-parent-conference-select.ts";
+import { wrapSeparator } from "./deadline-separator.ts";
 import {
   renderAbstractRequirement,
   abstractRequirementStatus,
@@ -59,12 +58,6 @@ import {
   renderAbstractMilestoneDate,
   type AbstractMilestone,
 } from "./deadlines.abstract.ts";
-// Native rendering for every Control UI deadline surface.
-//
-// The service also exposes a self-contained version at GET /deadlines. Both surfaces read the
-// generated deadline dataset and present the same board: period, type and archival filters,
-// search, venue groups, source links, history, and card/group/table views. This renderer stays in
-// app's document flow so the containing page owns one ordinary vertical scroll.
 import {
   proposalVenueLabel,
   proposalDateFields,
@@ -72,6 +65,7 @@ import {
   renderStageDetails,
   deadlineStageKinds,
 } from "./deadlines.proposal-stage.ts";
+import { renderPublicationPolicy } from "./deadlines.publication-policy.ts";
 import {
   stageKey,
   chooseStage,
@@ -983,13 +977,10 @@ function renderVenueLocation(venue: DeadlineVenue, override?: readonly string[])
  * as one classification. `venue_priority` is still on the record for anything that wants to rank
  * venues — it is simply not a badge.
  */
-function renderClassification(venue: DeadlineVenue) {
-  const archival = archivalLabelOf(venue);
-  return archival
-    ? html`<span class="deadline-classification">
-        <span class="deadline-archival" data-archival=${venue.archival_status}>${archival}</span>
-      </span>`
-    : nothing;
+function renderClassification(venue: DeadlineVenue, placement = "card") {
+  return html`${venueLocationSites(venue).length
+    ? wrapSeparator()
+    : nothing}${renderPublicationPolicy(venue, archivalLabelOf(venue), placement)}`;
 }
 
 const ENTRY_TYPE_LABELS: Record<DeadlineVenue["entry_type"], string> = {
@@ -1003,7 +994,7 @@ const ENTRY_TYPE_LABELS: Record<DeadlineVenue["entry_type"], string> = {
 };
 
 const ENTRY_TYPE_OPTIONS: ReadonlyArray<{ value: DeadlineBoardEntryType; label: string }> = [
-  { value: "all", label: "All entry types" },
+  { value: "all", label: "All types" },
   { value: "main_conference", label: "Main conferences" },
   { value: "demo_track", label: "Demo tracks" },
   { value: "workshop", label: "Workshops" },
@@ -1017,7 +1008,7 @@ const ARCHIVAL_STATUS_OPTIONS: ReadonlyArray<{
   value: DeadlineBoardArchivalStatus;
   label: string;
 }> = [
-  { value: "all", label: "All archival statuses" },
+  { value: "all", label: "All statuses" },
   { value: "archival", label: "Archival" },
   { value: "non_archival", label: "Non-archival" },
   { value: "mixed", label: "Archival + non-archival" },
@@ -1032,7 +1023,9 @@ const ARCHIVAL_STATUS_OPTIONS: ReadonlyArray<{
  * notification or conference has not.
  */
 function countdownTarget(entry: DeadlineBoardEntry, now: number): number {
-  if (!Number.isFinite(entry.instant)) { return Number.POSITIVE_INFINITY; }
+  if (!Number.isFinite(entry.instant)) {
+    return Number.POSITIVE_INFINITY;
+  }
   return entry.stage?.instant ?? nextVenueStage(entry.venue, now)?.instant ?? entry.instant;
 }
 
@@ -1042,20 +1035,6 @@ function urgency(entry: DeadlineBoardEntry, now: number): DeadlineUrgency {
   }
   const target = countdownTarget(entry, now);
   return target <= now ? "passed" : urgencyOf(target, now);
-}
-
-/**
- * The words beside a countdown. Names the stage when it is not the submission, because "45 days
- * left" printed next to a deadline that passed last month otherwise reads as a broken clock.
- */
-function stageCountdownLabel(entry: DeadlineBoardEntry, now: number): string {
-  if (!Number.isFinite(entry.instant)) { return ""; }
-  if (!entry.stage && entry.venue.deadline_time_precision === "date_only") {
-    return entry.instant <= now ? "Check source" : daysLeftLabel(entry.instant, now);
-  }
-  const stage = entry.stage ?? nextVenueStage(entry.venue, now);
-  const left = daysLeftLabel(stage?.instant ?? entry.instant, now);
-  return stage && !stage.submission ? `${stage.label} · ${left}` : left;
 }
 
 function capitalize(value: string): string {
@@ -1099,18 +1078,6 @@ function groupRowTitle(
   }
   return { name: name || venue.name, stage };
 }
-
-function countdownParts(diff: number) {
-  const left = Math.max(diff, 0);
-  return {
-    days: Math.floor(left / MS_DAY),
-    hours: Math.floor(left / 3_600_000) % 24,
-    minutes: Math.floor(left / 60_000) % 60,
-    seconds: Math.floor(left / 1000) % 60,
-  };
-}
-
-const pad = (value: number): string => String(value).padStart(2, "0");
 
 class AdminbotDeadlinesView extends LitElement {
   static override properties = {
@@ -1937,9 +1904,7 @@ class AdminbotDeadlinesView extends LitElement {
           <div class="deadline-proposal-row__links">
             <a href=${deadline.homepageUrl} target="_blank" rel="noopener noreferrer">Homepage</a>
             ${deadline.cfpUrl
-              ? html`<a href=${deadline.cfpUrl} target="_blank" rel="noopener noreferrer"
-                  >Call for papers</a
-                >`
+              ? html`<a href=${deadline.cfpUrl} target="_blank" rel="noopener noreferrer">Call for papers</a>`
               : nothing}
             ${deadline.openReviewUrl
               ? html`<a href=${deadline.openReviewUrl} target="_blank" rel="noopener noreferrer"
@@ -2052,9 +2017,8 @@ class AdminbotDeadlinesView extends LitElement {
         </section>
       `;
     }
-    const stage = entry.stage ?? nextVenueStage(entry.venue, this.now);
+    const stage = entry.stage ?? nextVenueStage(entry.venue, this.now, this.displayZone);
     const pendingStage = stage && !stage.submission ? stage : undefined;
-    const parts = countdownParts(countdownTarget(entry, this.now) - this.now);
     return html`
       <section
         class="deadline-board__hero"
@@ -2065,21 +2029,25 @@ class AdminbotDeadlinesView extends LitElement {
         data-urgency=${urgency(entry, this.now)}
         data-period=${this.period}
       >
-        <p class="deadline-board__eyebrow">${lead} deadline · ${entry.venue.venue_group}</p>
+        <p class="deadline-board__eyebrow">
+          <span>${lead} deadline</span>${wrapSeparator()}<span>${entry.venue.venue_group}</span>
+        </p>
         <h2 class="deadline-board__hero-name">${renderDeadlineTitle(entry.venue)}</h2>
         <div class="deadline-board__hero-meta-row">
           <div class="deadline-board__hero-meta">
-            ${pendingStage?.label ?? capitalize(entry.venue.deadline_label)} ·
-            <time
-              class="deadline-board__hero-date"
-              datetime=${pendingStage?.day ?? entry.venue.deadline_aoe}
-              >${pendingStage?.dateLabel ?? renderDeadlineDate(entry.venue, this.displayZone)}</time
+            <span>${pendingStage?.label ?? capitalize(entry.venue.deadline_label)}</span
+            >${wrapSeparator()}
+            <span class="deadline-board__hero-date-row"
+              ><time
+                class="deadline-board__hero-date"
+                datetime=${pendingStage?.day ?? entry.venue.deadline_aoe}
+                >${pendingStage
+                  ? renderDeadlineDateLabel(pendingStage.dateLabel)
+                  : renderDeadlineDate(entry.venue, this.displayZone)}</time
+              >
+              ${this.renderHistory(entry.venue, "hero")}</span
             >
-            ${this.renderHistory(entry.venue, "hero")} ·
-            <span class="deadline-board__hero-urgency"
-              >${stageCountdownLabel(entry, this.now)}</span
-            >
-            ${renderClassification(entry.venue)} ${renderVenueLocation(entry.venue)}
+            ${renderVenueLocation(entry.venue)} ${renderClassification(entry.venue, "hero")}
           </div>
         </div>
         ${renderAbstractRequirement(entry.venue, this.venues, this.displayZone, this.now)}
@@ -2088,27 +2056,17 @@ class AdminbotDeadlinesView extends LitElement {
         entry.instant <= this.now
           ? html`<p>${planningCountdownLabel(entry.venue, this.now)}</p>`
           : this.period === "upcoming"
-            ? html`<div
-                class="deadline-board__hero-countdown"
-                aria-label=${countdownLabel(countdownTarget(entry, this.now) - this.now)}
-              >
-                ${this.renderCountdownUnit(parts.days, "days")}
-                <span aria-hidden="true">:</span>
-                ${this.renderCountdownUnit(pad(parts.hours), "hrs")}
-                <span aria-hidden="true">:</span>
-                ${this.renderCountdownUnit(pad(parts.minutes), "min")}
-                <span aria-hidden="true">:</span>
-                ${this.renderCountdownUnit(pad(parts.seconds), "sec")}
+            ? html`<div class="deadline-board__hero-clock">
+                <div
+                  class="deadline-board__hero-countdown"
+                  aria-label=${countdownLabel(countdownTarget(entry, this.now) - this.now)}
+                >
+                  ${countdownLabel(countdownTarget(entry, this.now) - this.now)}
+                </div>
               </div>`
             : nothing}
       </section>
     `;
-  }
-
-  private renderCountdownUnit(value: string | number, label: string) {
-    return html`<span class="deadline-board__countdown-unit">
-      <strong>${value}</strong><small>${label}</small>
-    </span>`;
   }
 
   private renderModes() {
@@ -2290,36 +2248,6 @@ class AdminbotDeadlinesView extends LitElement {
     `;
   }
 
-  private renderArchivalGuide() {
-    return html`
-      <details class="deadline-board__guide">
-        <summary>What archival status means</summary>
-        <p>
-          Workshop status follows its own CFP or an official parent policy. A workshop can offer
-          archival, non-archival, or separate archival and non-archival routes.
-        </p>
-        <dl>
-          <div>
-            <dt>Archival</dt>
-            <dd>counts as publishing; the same paper cannot generally be submitted elsewhere.</dd>
-          </div>
-          <div>
-            <dt>Non-archival</dt>
-            <dd>does not count as publishing; you can still submit the paper elsewhere.</dd>
-          </div>
-          <div>
-            <dt>Archival + non-archival</dt>
-            <dd>choose the CFP's non-archival route if the paper may be submitted elsewhere.</dd>
-          </div>
-          <div>
-            <dt>Unknown</dt>
-            <dd>check the call for papers before assuming another submission is allowed.</dd>
-          </div>
-        </dl>
-      </details>
-    `;
-  }
-
   private renderStageHistory(
     venue: DeadlineVenue,
     stage: DeadlineMilestone & { abstractVenue?: DeadlineVenue },
@@ -2403,8 +2331,7 @@ class AdminbotDeadlinesView extends LitElement {
         <header class="deadline-details__header">
           <strong>${venue.name}</strong>
           <p>${capitalize(venue.deadline_label)}</p>
-          <div>${renderDeadlineDate(venue, this.displayZone, true)}</div>
-          ${renderAbstractRequirement(venue, this.venues, this.displayZone, this.now, true)}
+
           ${venue.deadline_time_precision === "date_only"
             ? html`<p>
                 Plan before
@@ -2421,35 +2348,48 @@ class AdminbotDeadlinesView extends LitElement {
                   : " in UTC+14, the earliest possible timezone"};
                 the source does not specify a closing time.
               </p>`
-            : html`<p>Original: ${deadlineDisplayLabel(venue, "original", true)}</p>`}
+            : nothing}
         </header>
 
-        <section class="deadline-details__history">
-          <strong>History</strong>
-          ${previous.length
-            ? html`<ul>
-                ${previous.map(
-                  (revision) => html`<li>
-                    ${renderDeadlineDate(revision, this.displayZone)} ·
-                    ${capitalize(revision.deadline_label || "deadline")} · recorded
-                    ${revision.observed_at.slice(0, 10)}
-                    ${revision.link
-                      ? html` ·
-                          <a href=${revision.link} target="_blank" rel="noopener noreferrer"
-                            >source ↗</a
-                          >`
-                      : nothing}
-                  </li>`,
-                )}
-              </ul>`
-            : html`<p>
-                ${extended
-                  ? "The source marks this deadline as extended, but does not publish the earlier date."
-                  : "No earlier dates recorded."}
-              </p>`}
-        </section>
+        <dl class="deadline-details__facts">
+          <dt>Source date</dt>
+          <dd>${deadlineDisplayLabel(venue, "original", true)}</dd>
+          ${venue.source_checked_at
+            ? html`<dt>Last checked</dt>
+                <dd>
+                  <time datetime=${venue.source_checked_at}
+                    >${plainDateLabel(venue.source_checked_at)}</time
+                  >
+                </dd>`
+            : nothing}
+        </dl>
+        ${previous.length || extended
+          ? html`<section class="deadline-details__history">
+              <strong>Date changes</strong>
+              ${previous.length
+                ? html`<ul>
+                    ${previous.map(
+                      (revision) => html`<li>
+                        ${renderDeadlineDate(revision, this.displayZone)} ·
+                        ${capitalize(revision.deadline_label || "deadline")} · recorded
+                        ${revision.observed_at.slice(0, 10)}
+                        ${revision.link
+                          ? html` ·
+                              <a href=${revision.link} target="_blank" rel="noopener noreferrer"
+                                >source ↗</a
+                              >`
+                          : nothing}
+                      </li>`,
+                    )}
+                  </ul>`
+                : html`<p>
+                    ${extended
+                      ? "The source marks this deadline as extended, but does not publish the earlier date."
+                      : "No earlier dates recorded."}
+                  </p>`}
+            </section>`
+          : nothing}
         <footer class="deadline-details__footer">
-          ${this.renderSourceActions(venue, { timeline: false })}
           ${this.memberId && this.accessRole !== "anonymous"
             ? html`<button
                 class="btn btn--sm"
@@ -2469,6 +2409,7 @@ class AdminbotDeadlinesView extends LitElement {
                 Suggest deadline correction
               </button>`
             : nothing}
+          ${this.renderSourceActions(venue, { timeline: false })}
         </footer>
       </div>
     </span>`;
@@ -2490,13 +2431,14 @@ class AdminbotDeadlinesView extends LitElement {
         this.requestUpdate();
       }}
     >
-      ${label ? html`<span>${label}</span>` : nothing}<span aria-hidden="true"
+      ${label ? html`<span class="deadline-card__stage">${label}</span>` : nothing}<span
+        aria-hidden="true"
         >${icons.chevronDown}</span
       >
     </button>`;
   }
 
-  private renderSchedule(venue: DeadlineVenue) {
+  private renderSchedule(venue: DeadlineVenue, label: string) {
     const entries = venueSchedule(venue, { includeSubmission: true, venues: this.venues }).filter(
       (entry) => entry.milestone !== "notification_by",
     );
@@ -2527,16 +2469,18 @@ class AdminbotDeadlinesView extends LitElement {
         <span class="deadline-card__milestone-label">${capitalize(entry.label)}</span>
         <span class="deadline-stage-date"
           ><span class="deadline-card__milestone-date"
-            >${entry.abstractVenue
-              ? renderAbstractMilestoneDate(entry.abstractVenue, this.displayZone, this.now)
-              : milestoneDateLabel(entry, this.displayZone)} </span
+            >${renderDeadlineDateLabel(
+              entry.abstractVenue
+                ? renderAbstractMilestoneDate(entry.abstractVenue, this.displayZone, this.now)
+                : milestoneDateLabel(entry, this.displayZone),
+            )}</span
           >${this.renderStageHistory(venue, entry, "schedule")}</span
         >
       </li>`,
     );
     const open = this.expandedSchedules.has(venue.id);
     return html`<div class="deadline-card__schedule-details" data-testid="deadline-schedule">
-      ${this.renderScheduleToggle(venue, "Schedule")}
+      ${this.renderScheduleToggle(venue, label)}
       ${open
         ? html`<ul class="deadline-card__schedule">
             ${unknownAbstract}${rows}
@@ -2572,6 +2516,8 @@ class AdminbotDeadlinesView extends LitElement {
         ? nextVenueStage(venue, this.now, this.displayZone)
         : undefined);
     const displayedInstant = stage?.instant ?? entry.instant;
+    const stageLabel = stage?.label ?? capitalize(venue.deadline_label || "Submission");
+    const schedule = this.renderSchedule(venue, stageLabel);
     return html`
       <article
         class="deadline-card"
@@ -2594,21 +2540,20 @@ class AdminbotDeadlinesView extends LitElement {
             : nothing}
         </div>
         <h2 class="deadline-card__name">${renderDeadlineTitle(venue)}</h2>
-        <p
-          class="deadline-card__group"
-          title=${`${workshopGroupLabel(venue.venue_group)} · ${stage?.label ?? capitalize(venue.deadline_label)}`}
-        >
-          <span class="deadline-card__group-name">${workshopGroupLabel(venue.venue_group)}</span>
-          <span aria-hidden="true">·</span>
-          <span class="deadline-card__stage"
-            >${stage?.label ?? capitalize(venue.deadline_label)}</span
-          >
-        </p>
-        ${renderVenueLocation(venue)} ${renderClassification(venue)}
+        ${venue.name !== workshopGroupLabel(venue.venue_group)
+          ? html`<p class="deadline-card__group" title=${workshopGroupLabel(venue.venue_group)}>
+              <span class="deadline-card__group-name"
+                >${workshopGroupLabel(venue.venue_group)}</span
+              >
+            </p>`
+          : nothing}
+        <div class="deadline-card__context">
+          ${renderVenueLocation(venue)} ${renderClassification(venue)}
+        </div>
         <span class="deadline-card__date-row">
           <time class="deadline-card__date" datetime=${stage?.day ?? venue.deadline_aoe}>
             ${stage && !stage.submission
-              ? stage.dateLabel
+              ? renderDeadlineDateLabel(stage.dateLabel)
               : renderDeadlineDate(venue, this.displayZone)}
           </time>
           ${this.renderHistory(venue, "card")}
@@ -2627,7 +2572,12 @@ class AdminbotDeadlinesView extends LitElement {
             </p>`
           : nothing}
         ${renderAbstractRequirement(venue, this.venues, this.displayZone, this.now)}
-        ${this.renderSchedule(venue)} ${this.renderStale(venue)} ${this.renderSourceActions(venue)}
+        ${schedule === nothing
+          ? html`<div class="deadline-card__schedule-details">
+              <span class="deadline-card__stage">${stageLabel}</span>
+            </div>`
+          : schedule}
+        ${this.renderStale(venue)} ${this.renderSourceActions(venue)}
       </article>
     `;
   }
@@ -2659,6 +2609,7 @@ class AdminbotDeadlinesView extends LitElement {
     const milestones = this.timelineMilestones;
     if (
       !Number.isFinite(deadlineInstantMs(venue)) ||
+      deadlineInstantMs(venue) <= this.now ||
       !milestones ||
       !this.onSaveTimeline ||
       this.timelineBusyId
@@ -2706,6 +2657,7 @@ class AdminbotDeadlinesView extends LitElement {
     const milestones = this.timelineMilestones;
     if (
       !Number.isFinite(deadlineInstantMs(venue)) ||
+      deadlineInstantMs(venue) <= this.now ||
       !milestones ||
       !this.onSaveTimeline ||
       !this.memberId ||
@@ -2715,15 +2667,19 @@ class AdminbotDeadlinesView extends LitElement {
       return nothing;
     }
     if (hasDeadlineMilestone(milestones, venue)) {
-      return html`<span class="deadline-card__missing" data-testid="deadline-on-timeline"
+      return html`<span
+        class="deadline-card__timeline-status"
+        role="status"
+        data-testid="deadline-on-timeline"
         >✓ On your timeline</span
       >`;
     }
     const busy = this.timelineBusyId === venue.deadline_id;
     return html`<button
         type="button"
-        class="btn btn--sm"
+        class="btn btn--sm deadline-card__source--button deadline-card__timeline-button"
         data-testid="deadline-add-to-timeline"
+        aria-busy=${busy}
         aria-label=${`Add to my timeline: ${venue.name} ${venue.deadline_label}`}
         ?disabled=${Boolean(this.timelineBusyId)}
         @click=${() => void this.addToTimeline(sourceVenue)}
@@ -2731,7 +2687,9 @@ class AdminbotDeadlinesView extends LitElement {
         ${busy ? "Adding…" : "Add to my timeline"}
       </button>
       ${this.timelineFailedId === venue.deadline_id
-        ? html`<span class="deadline-card__missing" role="alert">Couldn't add it. Try again.</span>`
+        ? html`<span class="deadline-card__timeline-error" role="alert"
+            >Couldn't add it. Try again.</span
+          >`
         : nothing}`;
   }
 
@@ -2760,6 +2718,9 @@ class AdminbotDeadlinesView extends LitElement {
     if (!workshop) {
       return venue.link || timeline !== nothing
         ? html`<span class="deadline-card__actions">
+            ${timeline !== nothing
+              ? html`<span class="deadline-card__personal-actions">${timeline}</span>`
+              : nothing}
             ${venue.link
               ? html`<a
                   class="deadline-card__source deadline-card__source--button"
@@ -2770,21 +2731,13 @@ class AdminbotDeadlinesView extends LitElement {
                   >Official site ↗</a
                 >`
               : nothing}
-            ${timeline}
           </span>`
         : nothing;
     }
     return html`<span class="deadline-card__actions">
-      ${workshop.sourceUrl
-        ? html`<a
-            class="deadline-card__source deadline-card__source--button"
-            href=${workshop.sourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label=${`${workshop.sourceLabel} for ${venue.name}`}
-            >${workshop.sourceLabel} ↗</a
-          >`
-        : html`<span class="deadline-card__missing">Call for papers not found yet</span>`}
+      ${timeline !== nothing
+        ? html`<span class="deadline-card__personal-actions">${timeline}</span>`
+        : nothing}
       ${workshop.openReviewUrl
         ? html`<a
             class="deadline-card__source deadline-card__source--button"
@@ -2795,7 +2748,16 @@ class AdminbotDeadlinesView extends LitElement {
             >OpenReview ↗</a
           >`
         : nothing}
-      ${timeline}
+      ${workshop.sourceUrl
+        ? html`<a
+            class="deadline-card__source deadline-card__source--button"
+            href=${workshop.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label=${`${workshop.sourceLabel} for ${venue.name}`}
+            >${workshop.sourceLabel} ↗</a
+          >`
+        : html`<span class="deadline-card__missing">Call for papers not found yet</span>`}
     </span>`;
   }
 
@@ -2863,7 +2825,7 @@ class AdminbotDeadlinesView extends LitElement {
                   <td class="deadline-table__date">
                     <span class="deadline-table__date-row">
                       ${stage && !stage.submission
-                        ? stage.dateLabel
+                        ? renderDeadlineDateLabel(stage.dateLabel)
                         : renderDeadlineDate(entry.venue, this.displayZone)}
                       ${this.renderHistory(entry.venue, "table")}
                     </span>
@@ -2892,7 +2854,7 @@ class AdminbotDeadlinesView extends LitElement {
                       <span class="deadline-card__type"
                         >${ENTRY_TYPE_LABELS[entry.venue.entry_type]}</span
                       >
-                      ${renderClassification(entry.venue)}
+                      ${renderClassification(entry.venue, "table")}
                     </span>
                   </td>
                   <td class="deadline-table__venue">${entry.venue.venue_group}</td>
@@ -2926,7 +2888,18 @@ class AdminbotDeadlinesView extends LitElement {
                         )}
                       >
                         <td aria-hidden="true"></td>
-                        <td>${milestoneDateLabel(milestone, this.displayZone)}</td>
+                        <td>
+                          <span class="deadline-stage-date"
+                            >${milestoneDateLabel(
+                              milestone,
+                              this.displayZone,
+                            )}${this.renderStageHistory(
+                              entry.venue,
+                              milestone,
+                              "table-schedule",
+                            )}</span
+                          >
+                        </td>
                         <td>${milestone.label}</td>
                         <td colspan="5"></td>
                       </tr>`,
@@ -3021,7 +2994,7 @@ class AdminbotDeadlinesView extends LitElement {
           <span class="deadline-group__date-line"
             ><time class="deadline-group__row-date" datetime=${stage?.day ?? venue.deadline_aoe}>
               ${stage && !stage.submission
-                ? stage.dateLabel
+                ? renderDeadlineDateLabel(stage.dateLabel)
                 : renderDeadlineDate(venue, this.displayZone)}
             </time>
             ${this.renderHistory(venue, "group")}</span
@@ -3043,7 +3016,8 @@ class AdminbotDeadlinesView extends LitElement {
             ${note ? html`<span class="deadline-group__row-detail">${note}</span>` : nothing}
             <span class="deadline-card__labels">
               <span class="deadline-card__type">${ENTRY_TYPE_LABELS[venue.entry_type]}</span>
-              ${renderClassification(venue)} ${showLocation ? renderVenueLocation(venue) : nothing}
+              ${showLocation ? renderVenueLocation(venue) : nothing}
+              ${renderClassification(venue, "group")}
             </span>
           </p>
           ${renderAbstractRequirement(venue, this.venues, this.displayZone, this.now)}
@@ -3104,6 +3078,11 @@ class AdminbotDeadlinesView extends LitElement {
         class="deadline-group__row deadline-group__row--milestone"
         data-milestone=${item.milestone.milestone}
         data-stage-state=${stageState}
+        data-urgency=${!Number.isFinite(instant)
+          ? "unknown"
+          : instant <= this.now
+            ? "passed"
+            : urgencyOf(instant, this.now)}
       >
         <span class="deadline-group__row-countdown" aria-hidden="true"></span>
         <span class="deadline-group__row-date-wrap">
@@ -3174,7 +3153,11 @@ class AdminbotDeadlinesView extends LitElement {
         // ordered by that stage, so the lead entry carries it -- and for a conference the lab has
         // already submitted to, the stage is its notification or the conference itself rather
         // than the deadline it closed weeks ago.
-        const leadStage = group.entries[0].stage ?? (Number.isFinite(group.entries[0].instant) ? nextVenueStage(group.entries[0].venue, this.now, this.displayZone) : undefined);
+        const leadStage =
+          group.entries[0].stage ??
+          (Number.isFinite(group.entries[0].instant)
+            ? nextVenueStage(group.entries[0].venue, this.now, this.displayZone)
+            : undefined);
         const leadPending = leadStage && !leadStage.submission ? leadStage : undefined;
         const notificationPolicy =
           group.kind === "workshops"
@@ -3213,7 +3196,7 @@ class AdminbotDeadlinesView extends LitElement {
               aria-controls=${panelId}
               @click=${() => this.toggleGroup(group.id)}
             >
-              <span class="deadline-group__chevron" aria-hidden="true">›</span>
+              <span class="deadline-group__chevron" aria-hidden="true">${icons.chevronRight}</span>
               <span class="deadline-group__summary-countdown"
                 >${!group.entries[0].stage &&
                 group.entries[0].venue.deadline_time_precision === "date_only"
@@ -3229,19 +3212,26 @@ class AdminbotDeadlinesView extends LitElement {
                 <small>
                   ${group.kind === "conference" || leadPending
                     ? html`<span class="deadline-group__next-stage"
-                          >${leadPending
-                            ? leadPending.label
-                            : capitalize(group.entries[0].venue.deadline_label)}</span
-                        ><span aria-hidden="true"> · </span>`
-                    : nothing}${leadPending
-                    ? leadPending.dateLabel
-                    : renderDeadlineDate(group.entries[0].venue, this.displayZone)}
+                        >${leadPending
+                          ? leadPending.label
+                          : capitalize(group.entries[0].venue.deadline_label)}</span
+                      >`
+                    : nothing}
                   ${groupLocation
                     ? renderVenueLocation(groupLocation, venueConferenceSites(groupLocation))
                     : nothing}
                 </small>
               </span>
-              <span class="deadline-group__count">${counts.join(" · ")}</span>
+              <span class="deadline-group__summary-date">
+                ${leadPending
+                  ? renderDeadlineDateLabel(leadPending.dateLabel)
+                  : renderDeadlineDate(group.entries[0].venue, this.displayZone)}
+              </span>
+              <span class="deadline-group__count"
+                >${counts.map(
+                  (count, index) => html`${index ? wrapSeparator() : nothing}<span>${count}</span>`,
+                )}</span
+              >
             </button>
             <div class="deadline-group__panel" id=${panelId} ?hidden=${!open}>
               ${notificationPolicy
@@ -3344,7 +3334,12 @@ class AdminbotDeadlinesView extends LitElement {
         <header class="deadline-board__header">
           <div>
             <h1>${t("tabs.adminbotDeadlines")}</h1>
-            <p>${t("subtitles.adminbotDeadlines")}</p>
+            ${latestSourceCheck
+              ? html`<p class="deadline-board__updated">
+                  Latest source check
+                  <time datetime=${latestSourceCheck}>${plainDateLabel(latestSourceCheck)}</time>
+                </p>`
+              : nothing}
           </div>
           <div class="deadline-board__header-actions">
             ${canPropose
@@ -3386,7 +3381,7 @@ class AdminbotDeadlinesView extends LitElement {
           ? html`<p class="deadline-proposal__failure" role="alert">${this.proposalFailure}</p>`
           : nothing}
         ${this.renderProposalDrawer()} ${this.renderModes()}
-        ${this.renderControls(matching, periodEntries, filters)} ${this.renderArchivalGuide()}
+        ${this.renderControls(matching, periodEntries, filters)}
         <div class="deadline-board__overview">${this.renderHero(next)}</div>
         ${filtered.length
           ? this.view === "cards"
@@ -3397,11 +3392,6 @@ class AdminbotDeadlinesView extends LitElement {
               ? this.renderGroups(filtered)
               : this.renderTable(filtered)
           : html`<p class="deadline-board__empty">No deadlines match your filter.</p>`}
-        <p class="deadline-board__foot">
-          Showing ${filtered.length} of ${matching.length} matching ${this.period} deadlines ·
-          official venue sites + OpenReview
-          ${latestSourceCheck ? ` · latest source check ${latestSourceCheck}` : ""}
-        </p>
         <span class="deadline-proposal-trigger">
           <button
             class="btn btn--sm primary"
