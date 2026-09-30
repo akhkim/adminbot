@@ -252,6 +252,10 @@ export type SchedulePatch = {
 
 export type AdminBotTimeAvailabilityProps = {
   members: AdminBotLabMember[];
+  collaborators?: AdminBotLabMember[];
+  collaboratorsLoading?: boolean;
+  collaboratorsError?: string | null;
+  onLoadCollaborators?: () => void;
   loading: boolean;
   error: string | null;
   onRefresh?: () => void;
@@ -269,15 +273,7 @@ export type AdminBotTimeAvailabilityProps = {
   onChartWindowChange?: (window: TimeChartWindow) => void;
   /** The signed-in member. The editor renders only when this matches the selected member. */
   viewerMemberId: string | null;
-  /**
-   * Whether the viewer is an admin, which is what decides whose schedule they may read at all.
-   *
-   * A schedule is holidays, courses, other jobs and -- in the overall note -- whatever the member
-   * wrote up about their circumstances. That is planning data for the people who plan, so a plain
-   * member sees their own and nothing else: the picker is not offered to them, and the service
-   * strips the schedule fields from every other member's record on the way out
-   * (adminBotScheduleMemberFields), so this is the affordance for a rule already enforced there.
-   */
+  /** Admins see the roster; members see self and separately authorized collaborator snapshots. */
   viewerIsAdmin: boolean;
   /** The trips log's draft, kept out here so a re-render cannot wipe half-typed input. */
   tripDraft?: TripDraft;
@@ -1972,11 +1968,18 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
     ? t("adminbotTimeAvailability.loadingUsers")
     : t("adminbotTimeAvailability.selectUser");
   // Whose schedules this viewer may read. An admin plans for the lab, so they get everyone; anyone
-  // else gets exactly their own record, which is also all the service will send them.
+  // else gets self plus the narrow authorized collaborator snapshots.
   const readableMembers = props.viewerIsAdmin
     ? props.members
-    : props.members.filter((member) => member.id === props.viewerMemberId);
-  const selectedMember = readableMembers.find((member) => member.id === props.selectedMemberId);
+    : [
+        ...props.members.filter((member) => member.id === props.viewerMemberId),
+        ...(props.collaborators ?? []),
+      ];
+  const selectedMember =
+    readableMembers.find((member) => member.id === props.selectedMemberId) ??
+    (props.onLoadCollaborators
+      ? readableMembers.find((member) => member.id === props.viewerMemberId)
+      : undefined);
   const storedAvailability = selectedMember ? availabilityRows(selectedMember.availability) : [];
   const storedTimeOff = selectedMember ? timeOffRows(selectedMember.time_off) : [];
   const storedMilestones = selectedMember ? milestoneRows(selectedMember.milestones) : [];
@@ -2013,6 +2016,35 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
 
   return html`
     <div class="card adminbot-card adminbot-card--wide adminbot-time-availability">
+      ${!props.viewerIsAdmin && props.onLoadCollaborators
+        ? html` <section class="adminbot-form" aria-label="See my collaborator's time availability">
+            <h3>See my collaborator's time availability</h3>
+            <p class="muted">
+              Coauthors on projects with unfinished paper slots. Schedules are read-only; private
+              notes and links are not shared.
+            </p>
+            <button
+              class="btn"
+              ?disabled=${props.collaboratorsLoading}
+              @click=${props.onLoadCollaborators}
+            >
+              ${props.collaboratorsLoading
+                ? "Loading collaborator schedules…"
+                : "Load / refresh collaborator schedules"}
+            </button>
+            ${props.collaboratorsError
+              ? html`<p role="alert">${props.collaboratorsError}</p>`
+              : nothing}
+            ${renderMemberSelect({
+              options: readableMembers.map((m) => ({ id: m.id, name: m.name ?? m.id })),
+              value: selectedMember?.id ?? "",
+              label: "Whose timeline to view",
+              placeholder: "Choose a collaborator",
+              disabled: Boolean(props.collaboratorsLoading),
+              onPick: props.onMemberChange,
+            })}
+          </section>`
+        : nothing}
       <div class="adminbot-form adminbot-time-availability__controls">
         ${props.viewerIsAdmin
           ? html`<label class="adminbot-form__field">
@@ -2034,7 +2066,9 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
               class="adminbot-time-availability__own-only"
               data-testid="time-availability-own-only"
             >
-              ${t("adminbotTimeAvailability.ownScheduleOnly")}
+              ${props.onLoadCollaborators
+                ? "You can edit your own schedule. Collaborator schedules are read-only."
+                : t("adminbotTimeAvailability.ownScheduleOnly")}
             </p>`}
         ${renderRangeSwitch(props)}
         ${props.onRefresh

@@ -3693,6 +3693,14 @@ async function handleAuthenticatedRoute(
     await handleMemberRequestRoute(req, res, ctx, url, principal);
     return;
   }
+  if (req.method === "GET" && url.pathname === "/lab/members/collaborator-schedules") {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "member session required" } });
+      return;
+    }
+    sendServiceResult(res, service.listActiveCollaboratorSchedules(principal.member.id));
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/lab/members/self") {
     if (principal.kind !== "member") {
       sendJson(res, 403, { error: { message: "member session required" } });

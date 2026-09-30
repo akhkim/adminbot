@@ -17,6 +17,7 @@ import {
   type AccessRole,
 } from "./adminbot/access.ts";
 import {
+  fetchMemberResource,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   submitFeedback,
@@ -3988,19 +3989,54 @@ export function renderApp(state: AppViewState) {
               onTripDraftChange: (draft) => {
                 state.adminBotTripDraft = draft;
               },
+              collaborators:
+                state.adminBotCollaboratorSchedulesSession ===
+                loadStoredMemberSession()?.sessionToken
+                  ? state.adminBotCollaboratorSchedules
+                  : [],
+              collaboratorsLoading: state.adminBotCollaboratorSchedulesLoading,
+              collaboratorsError: state.adminBotCollaboratorSchedulesError,
+              onLoadCollaborators: async () => {
+                const session = loadStoredMemberSession();
+                if (!session || state.adminBotCollaboratorSchedulesLoading) {
+                  return;
+                }
+                state.adminBotCollaboratorSchedulesLoading = true;
+                state.adminBotCollaboratorSchedulesError = null;
+                state.adminBotCollaboratorSchedules = [];
+                state.adminBotCollaboratorSchedulesSession = session.sessionToken;
+                try {
+                  const result = await fetchMemberResource(
+                    "/lab/members/collaborator-schedules",
+                    session.sessionToken,
+                    resolveAdminBotBaseUrl(state.settings),
+                  );
+                  if (loadStoredMemberSession()?.sessionToken !== session.sessionToken) {
+                    return;
+                  }
+                  if (!result.ok) {
+                    throw new Error(
+                      "Collaborator schedules could not be loaded. Please try again.",
+                    );
+                  }
+                  const value = result.value as {
+                    members: typeof state.adminBotCollaboratorSchedules;
+                  };
+                  state.adminBotCollaboratorSchedules = value.members;
+                } catch (error) {
+                  if (loadStoredMemberSession()?.sessionToken === session.sessionToken) {
+                    state.adminBotCollaboratorSchedulesError = String(error);
+                  }
+                } finally {
+                  state.adminBotCollaboratorSchedulesLoading = false;
+                }
+              },
               members: state.adminBotData.members ?? [],
               loading: state.adminBotLoading,
               error: state.adminBotError,
               onRefresh: () => void loadAdminBot(state, adminBotMode, needsPapersForTab),
-              // Default to your own schedule once the roster lands: it is the one you came for,
-              // and it is the only one you can edit. A plain member is pinned to it -- whose time
-              // is committed where is planning data for the people who plan, so reading another
-              // member's schedule is an admin act (the service strips the fields for everyone
-              // else, so a stale selection here would render an empty page anyway).
-              selectedMemberId:
-                accessRole === "admin"
-                  ? state.adminBotTimeAvailabilityMemberId || (state.memberId ?? "")
-                  : (state.memberId ?? ""),
+              // Self is editable; separately authorized collaborator snapshots remain read-only.
+              selectedMemberId: state.adminBotTimeAvailabilityMemberId || (state.memberId ?? ""),
               onMemberChange: (memberId) => {
                 state.adminBotTimeAvailabilityMemberId = memberId;
                 // A different member's schedule carries a different note; keeping the draft would
