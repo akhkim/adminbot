@@ -14,19 +14,18 @@ export class DeadlineRecommendation extends LitElement {
     memberId: {},
     directory: { attribute: false },
     store: { attribute: false },
-    loadError: {},
   };
   deadlineId = "";
   venueName = "";
   memberId = "";
   directory?: DeadlineRecommendationDirectory;
   store?: DeadlineRecommendationStore;
-  loadError = "";
   private picker?: DeadlineRecommendationDirectory;
   private memberQuery = "";
   private memberOffset?: number;
   private paperOffset?: number;
   private loading = false;
+  private failedPicker?: "members" | "papers";
   private generation = 0;
   private searchTimer?: ReturnType<typeof setTimeout>;
   private recipient = "";
@@ -55,6 +54,7 @@ export class DeadlineRecommendation extends LitElement {
     }
     const generation = ++this.generation;
     this.loading = true;
+    this.failedPicker = undefined;
     this.error = "";
     this.requestUpdate();
     try {
@@ -78,7 +78,8 @@ export class DeadlineRecommendation extends LitElement {
         this.paperOffset = result.nextOffset;
       }
     } catch (error) {
-      if (generation === this.generation) {
+      if (generation === this.generation && this.open) {
+        this.failedPicker = mode;
         this.error = error instanceof Error ? error.message : String(error);
       }
     } finally {
@@ -109,6 +110,7 @@ export class DeadlineRecommendation extends LitElement {
       this.open = false;
       this.busy = false;
       this.loading = false;
+      this.failedPicker = undefined;
     }
   }
   override disconnectedCallback() {
@@ -528,11 +530,9 @@ ${this.preview.message
                   .replaceAll("&amp;", "&")}</pre
               >`
           : html`
-              ${this.loadError
-                ? html`<p role="alert">${this.loadError}</p>`
-                : !this.directory
-                  ? html`<p>Loading members…</p>`
-                  : nothing}
+              ${this.loading && !this.picker
+                ? html`<p role="status">Loading members…</p>`
+                : nothing}
               <div class="member-controls">
                 <label
                   >Search<input
@@ -733,6 +733,11 @@ ${this.preview.message
           : nothing}
         ${this.error ? html`<p role="alert">${this.error}</p>` : nothing}
         <footer>
+          ${this.failedPicker
+            ? html`<button type="button" @click=${() => void this.loadPicker(this.failedPicker!)}>
+                Retry
+              </button>`
+            : nothing}
           <button type="button" ?disabled=${this.busy} @click=${() => this.close()}>
             ${this.preview?.status === "sent" ? "Close" : "Cancel"}
           </button>

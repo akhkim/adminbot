@@ -287,3 +287,30 @@ it("selects papers with the keyboard and dismisses the popup when focus leaves",
   await element.updateComplete;
   expect(search.getAttribute("aria-expanded")).toBe("false");
 });
+
+it("shows one picker error and recovers independently of an unavailable summary", async () => {
+  const list = vi
+    .fn()
+    .mockRejectedValueOnce(
+      new Error("Deadline recommendations are unavailable. Please try again later."),
+    )
+    .mockResolvedValue({
+      members: [{ id: "bea", name: "Bea", slack_linked: true }],
+      papers: [],
+      recommendations: [],
+    });
+  element.directory = undefined;
+  element.store = { list, preview: vi.fn(), send: vi.fn() };
+  await element.updateComplete;
+  await click("Recommend");
+  await vi.waitFor(() =>
+    expect(element.shadowRoot!.querySelectorAll('[role="alert"]')).toHaveLength(1),
+  );
+  expect(element.shadowRoot!.textContent).not.toContain("not found");
+  await click("Retry");
+  await vi.waitFor(() =>
+    expect(element.shadowRoot!.querySelector("select")?.textContent).toContain("Bea"),
+  );
+  expect(element.shadowRoot!.querySelector('[role="alert"]')).toBeNull();
+  expect(element.shadowRoot!.textContent).not.toContain("Loading members…");
+});

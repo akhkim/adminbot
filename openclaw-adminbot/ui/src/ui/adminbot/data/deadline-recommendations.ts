@@ -57,6 +57,9 @@ export class AdminBotDeadlineRecommendationStore implements DeadlineRecommendati
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+    if (response.status === 404 && body === undefined) {
+      throw new Error("Deadline recommendations are unavailable. Please try again later.");
+    }
     const result = await response.json();
     if (!response.ok) {
       throw new Error(result?.error?.message ?? "Could not load recommendations.");

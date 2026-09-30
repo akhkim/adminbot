@@ -1093,7 +1093,6 @@ class AdminbotDeadlinesView extends LitElement {
   memberId = "";
   recommendationStore: DeadlineRecommendationStore = new AdminBotDeadlineRecommendationStore();
   private recommendationDirectory?: DeadlineRecommendationDirectory;
-  private recommendationError = "";
   private recommendationLoad = 0;
   private recommendationIds: string[] = [];
   private recommendationScope = "";
@@ -1101,7 +1100,6 @@ class AdminbotDeadlinesView extends LitElement {
   private async loadRecommendations() {
     const generation = ++this.recommendationLoad;
     this.recommendationDirectory = undefined;
-    this.recommendationError = "";
     if (!this.memberId || this.accessRole === "anonymous") {
       this.requestUpdate();
       return;
@@ -1128,10 +1126,8 @@ class AdminbotDeadlinesView extends LitElement {
       if (generation === this.recommendationLoad) {
         this.recommendationDirectory = directory;
       }
-    } catch (error) {
-      if (generation === this.recommendationLoad) {
-        this.recommendationError = error instanceof Error ? error.message : String(error);
-      }
+    } catch {
+      // Recipient indicators are optional; the form owns member-loading errors and retries.
     }
     this.requestUpdate();
   }
@@ -2706,7 +2702,6 @@ class AdminbotDeadlinesView extends LitElement {
       .memberId=${this.memberId}
       .directory=${this.recommendationDirectory}
       .store=${this.recommendationStore}
-      .loadError=${this.recommendationError}
       @recommendation-sent=${() => this.loadRecommendations()}
     ></deadline-recommendation>`;
     const sources = this.renderSourceLinks(venue, options);

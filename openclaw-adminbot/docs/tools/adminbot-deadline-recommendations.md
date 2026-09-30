@@ -17,3 +17,7 @@ Repeated sends from the same recommender to the same recipient for the same dead
 The API returns no-store responses. Reasons are escaped as text; link unfurls are disabled. Automated workshop matching and nudge eligibility are separate: these suggestions are initiated and explicitly sent by a person.
 
 Exact dates in recommendation messages use the original source timezone and the offset applicable on the deadline date. Missing source timezones are stated beside UTC. Date-only announcements keep their calendar date without an invented closing time. A changed UTC cutoff invalidates an existing preview.
+
+## Deployment and loading errors
+
+Deploy the AdminBot service as well as the frontend before enabling recommendations. The member directory requires `GET /deadline-recommendations`; updating the Vercel frontend alone does not install that backend route. A missing directory endpoint shows one unavailable-service message. Retry reloads the failed member or paper search without submitting a recommendation. Optional recipient-summary failures do not block an independently successful member search.
