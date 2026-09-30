@@ -37,6 +37,8 @@ export type AdminBotBadgeAssignment = {
   source: AdminBotBadgeAssignmentSource;
   nomination_id?: string;
   evidence?: string;
+  /** Explicit total; absent legacy awards count as one. */
+  count?: number;
 };
 
 export type AdminBotAssignedBadge = AdminBotBadgeAssignment & {
@@ -259,3 +261,20 @@ export type AdminBotBadgeSuggestion = {
 export type AdminBotBadgeSuggestionView = AdminBotBadgeSuggestion & {
   suggested_by_name?: string;
 };
+
+/** Stable symbols for the catalogue; custom badges remain visible without a schema migration. */
+export function adminBotBadgeEmoji(name: string): string {
+  const symbols: Record<string, string> = {
+    "infra builder": "🛠️",
+    "bug hunter": "🐛",
+    "referral bonus": "🤝",
+    ambassador: "🌍",
+    "media impact": "📣",
+    "lab engagement": "💬",
+    causality: "🔗",
+    "pro writer": "✍️",
+    prowriter: "✍️",
+    "love and care": "💛",
+  };
+  return symbols[name.trim().toLowerCase()] ?? "🏅";
+}

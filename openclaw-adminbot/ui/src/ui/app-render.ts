@@ -4435,8 +4435,8 @@ export function renderApp(state: AppViewState) {
                   ]);
                 },
                 onSaveDefinition: (input) => saveAdminBadgeDefinition(state, input),
-                onAssign: (memberId, badgeId, evidence) =>
-                  void assignAdminBadge(state, memberId, badgeId, evidence),
+                onAssign: (memberId, badgeId, evidence, count) =>
+                  void assignAdminBadge(state, memberId, badgeId, evidence, count),
                 onRemove: (memberId, badgeId) => void removeAdminBadge(state, memberId, badgeId),
                 onDecide: (nominationId, decision) =>
                   void decideAdminBadgeNomination(state, nominationId, decision),

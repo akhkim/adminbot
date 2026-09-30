@@ -101,6 +101,7 @@ export type AdminBotAccessGrant = {
 export type AdminBotMemberStatus = "active" | "part_time" | "on_leave" | "alumni" | "external";
 
 export type AdminBotLabMember = {
+  assigned_badges?: import("../auth/session.ts").AssignedBadge[];
   id: string;
   name: string;
   email?: string;
