@@ -952,6 +952,7 @@ describe("renderProfile field types", () => {
     const values = roleBoxes(container).map((box) => box.value);
     expect(values.length).toBeGreaterThan(0);
     expect(values).toContain("PhD Student");
+    expect(container.querySelector('[data-testid="profile-multi-role"] summary')?.getAttribute("aria-label")).toBe("Career stage");
     expect(values).not.toContain("Research Assistant");
     expect(values).not.toContain("Research Intern");
     // Nothing outside the closed vocabulary is offered.
