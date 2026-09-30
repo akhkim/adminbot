@@ -200,6 +200,12 @@ export type AdminBotProps = {
   data: AdminBotDashboardData;
   /** The member editor's Meetings checkboxes; absent outside the Lab Members panel. */
   standingMeetings?: AdminBotStandingMeetingsState;
+  onboardingSlackChannels?: {
+    channels: readonly string[] | null;
+    loading: boolean;
+    error: string | null;
+  };
+  onLoadOnboardingSlackChannels?: () => void;
   /**
    * Requests to add somebody to the roster, and the calls that file and decide them. Absent
    * outside the Lab Members panel and for a visitor with no member session, who can do neither.
@@ -585,8 +591,9 @@ function saveMemberForm(
       ...(creating
         ? {
             create: true,
-            slackChannels: getFormValue(data, "slackChannels")
-              .split(",")
+            slackChannels: data
+              .getAll("slackChannels")
+              .map(String)
               .map((channel) => channel.trim())
               .filter(Boolean),
           }
@@ -2325,13 +2332,41 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
               onboarded.</small
             >
           </label>
-          <label class="adminbot-form__field"
-            ><span>Slack groups for onboarding (optional)</span
-            ><input name="slackChannels" placeholder="#theme-causality, #proj-example" /><small
-              >Comma-separated channel names or IDs. Invitations are part of the onboarding draft
-              and only run after approval and execution.</small
-            ></label
-          >
+          <div class="adminbot-form__field">
+            <span>Slack groups for onboarding (optional)</span>
+            ${props.onboardingSlackChannels?.channels
+              ? renderMultiSelectField({
+                  name: "slackChannels",
+                  label: "Slack groups for onboarding",
+                  placeholder: "Choose meeting or discussion channels",
+                  options: props.onboardingSlackChannels.channels
+                    .filter((name) => /^(meeting-|disc)/.test(name.replace(/^#/, "")))
+                    .map((name) => name.replace(/^#/, ""))
+                    .toSorted()
+                    .map((value) => ({ value, label: `#${value}` })),
+                  selected: new Set(),
+                  rootClass: "adminbot-form__multi",
+                  optionClass: "adminbot-form__multi-option",
+                })
+              : html`<button
+                  type="button"
+                  class="btn btn--sm"
+                  ?disabled=${props.onboardingSlackChannels?.loading ||
+                  !props.onLoadOnboardingSlackChannels}
+                  @click=${props.onLoadOnboardingSlackChannels}
+                >
+                  ${props.onboardingSlackChannels?.loading
+                    ? "Loading Slack channels…"
+                    : "Load Slack channel options"}
+                </button>`}
+            ${props.onboardingSlackChannels?.error
+              ? html`<small role="alert">${props.onboardingSlackChannels.error}</small>`
+              : nothing}
+            <small
+              >Choose existing #meeting-* or #disc* channels. Invitations are part of the onboarding
+              draft and only run after approval and execution.</small
+            >
+          </div>
           <div class="adminbot-form__actions">
             <button class="btn btn--sm primary" type="submit">Add member</button>
           </div>
