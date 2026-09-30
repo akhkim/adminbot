@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { adminBotDefaultBadgeDefinitions } from "../contracts/badges.js";
+import { AdminBotMemoryStore } from "../persistence/memory.js";
 import { AdminBotService } from "./service.js";
 
 function unwrap<T>(
@@ -28,6 +30,52 @@ describe("AdminBotService badges", () => {
     expect(
       badges.filter((badge) => badge.family_key === "causality").map((badge) => badge.tier),
     ).toEqual(["Level 1", "Level 2", "Level 3"]);
+  });
+
+  it("offers exclusive Good and Advanced Infra Builder and Pro Writer tiers", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+    const definitions = unwrap(service.listBadgeDefinitions()).badges;
+    for (const name of ["Infra Builder", "Pro Writer"]) {
+      const tiers = definitions.filter((b) => b.name === name);
+      expect(tiers.map((b) => b.tier)).toEqual(["Good", "Advanced"]);
+      expect(new Set(tiers.map((b) => b.family_key)).size).toBe(1);
+      unwrap(service.assignBadge("pat", tiers[0].id, "admin"));
+      unwrap(service.assignBadge("pat", tiers[1].id, "admin"));
+      const held = unwrap(service.listLabMembers()).members[0].assigned_badges!.filter(
+        (b) => b.name === name,
+      );
+      expect(held).toHaveLength(1);
+      expect(held[0].tier).toBe("Advanced");
+    }
+  });
+
+  it("upgrades only the unchanged legacy Infra Builder definition", () => {
+    for (const customized of [false, true]) {
+      const store = new AdminBotMemoryStore();
+      const seed = adminBotDefaultBadgeDefinitions.find(
+        (b) => b.id === "team_contributor__infra_builder",
+      )!;
+      store.saveBadgeDefinition({
+        ...seed,
+        tier: undefined,
+        family_key: "legacy-infra",
+        sort_order: 10,
+        description: customized ? "Lab-specific criteria" : seed.description,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+      const service = new AdminBotService(store);
+      const definitions = unwrap(service.listBadgeDefinitions()).badges;
+      expect(definitions.find((b) => b.id === seed.id)?.tier).toBe(customized ? undefined : "Good");
+      expect(
+        definitions.find((b) => b.id === "team_contributor__infra_builder_advanced")?.family_key,
+      ).toBe("legacy-infra");
+      new AdminBotService(store);
+      expect(store.listBadgeDefinitions().filter((b) => b.name === "Infra Builder")).toHaveLength(
+        2,
+      );
+    }
   });
 
   it("sets an explicit count idempotently and preserves it on legacy saves", () => {
