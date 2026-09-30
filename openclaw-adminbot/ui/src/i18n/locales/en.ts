@@ -2378,7 +2378,7 @@ export const en: TranslationMap = {
     // SOCIAL_URL_FIELDS or validateOpenReviewId; keep them in step if those change.
     hints: {
       calendarEmail: "The Google account your calendar invites should go to.",
-      correspondenceEmail: "Where the lab writes to you. Often not your @cs.toronto.edu address.",
+      correspondenceEmail: "This is your official organizational email. Imagine we contact government sectors or external collaborators. Usually you need to be cc’ed via your institutional email.",
       github: "A username, link, or note about your GitHub account.",
       linkedin: "Your profile page: linkedin.com/in/username",
       twitter: "Your profile page: x.com/username",
