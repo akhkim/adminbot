@@ -275,10 +275,7 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     group: "work",
   },
   {
-    // Empty for every row on the sheet today; it is the column alumni will eventually be aged out
-    // by, which is why it is off the mandatory list -- and why it asks for a *plan* rather than a
-    // fact. Nobody can state the month they left before they leave, so the question people can
-    // actually answer is when they expect to move on.
+    // Ask for an expected offboarding month, rather than claiming the member has already left.
     key: "graduated_month",
     labelKey: "profile.fields.graduatedMonth",
     example: "2027-06",
@@ -301,8 +298,7 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     // Career direction, asked as a question rather than a label: where this person wants to go
     // next, when, and what the lab can actually do about it. It sits with the other timeline
     // facts (joined/graduated month) because the answer is usually pinned to those dates, and it
-    // is optional -- "I don't know yet" is a normal answer at any point in a research career, and
-    // a required field would only teach people to type something they don't mean.
+    // is required for profile completion. An uncertain plan can be described in free text.
     // Confidential (adminBotConfidentialMemberFields): a job search is not roster material, so
     // only this member and the admins read it.
     key: "next_position",
