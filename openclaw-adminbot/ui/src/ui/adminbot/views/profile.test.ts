@@ -952,6 +952,8 @@ describe("renderProfile field types", () => {
     const values = roleBoxes(container).map((box) => box.value);
     expect(values.length).toBeGreaterThan(0);
     expect(values).toContain("PhD Student");
+    expect(values).not.toContain("Research Assistant");
+    expect(values).not.toContain("Research Intern");
     // Nothing outside the closed vocabulary is offered.
     expect(values).not.toContain("Definitely Not A Real Role");
     expect(roleBoxes(container).every((box) => !box.checked)).toBe(true);
@@ -967,6 +969,19 @@ describe("renderProfile field types", () => {
       .map((box) => box.value);
 
     expect(checked).toEqual(["PhD Student", "Lab Manager"]);
+  });
+
+  it("preserves saved research appointments when editing the career stage", () => {
+    const container = renderPage(
+      createState(createMember({ role: "Master's Student, Research Assistant, Research Intern" })),
+      vi.fn(),
+    );
+    expect(roleBoxes(container).filter((box) => box.checked).map((box) => box.value)).toEqual([
+      "Master's Student",
+      "Research Assistant",
+      "Research Intern",
+    ]);
+    expect(container.querySelectorAll(".profile__multi-option--legacy input")).toHaveLength(2);
   });
 
   it("keeps a box for an imported role the vocabulary has no option for", () => {

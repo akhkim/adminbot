@@ -148,7 +148,11 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     labelKey: "profile.fields.role",
     example: adminBotMemberRoles[0] ?? "",
     type: "multi_dropdown",
-    options: adminBotMemberRoles.filter((role) => role !== "External Collaborator"),
+    // These describe appointments or lab relationships, rather than career stage. Existing
+    // values remain editable through multiSelectOptionsFor's legacy-value preservation.
+    options: adminBotMemberRoles.filter(
+      (role) => !["External Collaborator", "Research Assistant", "Research Intern"].includes(role),
+    ),
     group: "identity",
   },
   {
