@@ -1,0 +1,25 @@
+{
+  "source": "openreview-notifications (local source snapshot)",
+  "imported": "2026-09-30",
+  "note": "Local source snapshot; no Git metadata or license file was present. Parser, renderer and original tests copied unchanged. AdminBot adapter is separate.",
+  "sha256": {
+    "parse_notifications.py": "6416db092c08f17ad2285bd3ae810418b8258f0bf0b25fba59e50d0015b28eca",
+    "README.md": "a3a110a705961e990c8a226fd47b18c9a913a9865ae8f1c1023ce5f474b18225",
+    "openreview_notifications/__init__.py": "5d41b8a27cd3cfdc726dfdb254dd9ca869a0bf046fb2ceac64b80456017b85d7",
+    "openreview_notifications/acceptance.py": "b2ff1289a6974c3cf796fe50a7f1637b0269cf92015c6a4b70318947b08925d6",
+    "openreview_notifications/filters.py": "3f37cb3a8a29edbede1512fccadc2e33d5ce0fb454e99fd6309f08595fed7493",
+    "openreview_notifications/images.py": "5be15b6230efb152d32e7b59a456e5edce30c36671bbb7728112b040ef5564c9",
+    "openreview_notifications/messages.py": "8c10a0fed20d79b03445e948cfc70033c7ee6f5319e8ccf7d937ce6838f0d482",
+    "openreview_notifications/tweets.py": "0f13500ffd077197ffad79b18d9a84017f02edf8e902450749de36efb2d90785",
+    "tests/test_acceptance.py": "3b58950507eb1fb8866c6158f2c2b6960156aefb2bc7a9d16f46e9c846ac0e0d",
+    "tests/test_command.py": "13793f08643cbe0f8fccedc0759ae60aaafae8c2f8a3716cbfc9598ac62b2287",
+    "tests/test_filters.py": "33a4e6ad5821515904deab986027545705107582be82535c41d779f91444fb36",
+    "tests/test_images.py": "5748d6856961690136d5499953b1bb959cd6ff96e7fe52bc210487a043530631",
+    "tests/test_messages.py": "6fb7426c4e665c1512a8e06ce253ce94bd8c3b468695674374e6779da0d14ffb",
+    "tests/test_pipeline.py": "811f1f091501678d34c146acfbfa17260fe40bc038053a75ebf4248e7c88a8c3",
+    "tests/test_reminders.py": "bd488f3c74ba1ed7303b4e2d87291f602460e8b323ef915c5a303570ea27a882",
+    "tests/test_selection_regressions.py": "9c7389329ef67e48b5f81f00392252505d79a1f146a02ce77fa50380071ac223",
+    "tests/test_tweets.py": "1c5615b1a37b5efc878965e4a7498af090b207df5bc97e0ffb159aa3ee6766f2",
+    "tests/test_venue_validation.py": "e34f3382727357ad75ea942740347bb08af5471cc272478d2f4696aa7c453a98"
+  }
+}

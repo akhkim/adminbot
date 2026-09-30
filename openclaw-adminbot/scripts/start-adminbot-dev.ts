@@ -17,19 +17,13 @@ import {
   createDevicePairingApprover,
 } from "../extensions/adminbot/host/main.ts";
 import { createAdminBotMockService } from "../extensions/adminbot/src/api/server.ts";
+import { getRuntimeConfig } from "../src/config/io/io.js";
 import {
   approveDevicePairing,
   ensureDeviceToken,
   requestDevicePairing,
   resolveSharedGatewayAuthIssuer,
-} from "../src/plugin-sdk/device-bootstrap.ts";
-
-const devicePairing = {
-  approveDevicePairing,
-  ensureDeviceToken,
-  requestDevicePairing,
-  resolveSharedGatewayAuthIssuer,
-};
+} from "../src/plugin-sdk/device-bootstrap.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const email = requireEnv("ADMINBOT_DEV_EMAIL").toLowerCase();
@@ -46,11 +40,25 @@ if (password.length < 10) {
 
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 
+const devicePairing = {
+  approveDevicePairing,
+  ensureDeviceToken,
+  requestDevicePairing,
+  resolveSharedGatewayAuthIssuer,
+};
+const gatewayConfig = getRuntimeConfig({ pin: false }).gateway;
+
 const app = createAdminBotMockService({
-  databasePath,
-  auditRetentionDays: 7,
   deviceTokenIssuer: createDeviceTokenIssuer({ devicePairing }),
   devicePairingApprover: createDevicePairingApprover({ devicePairing }),
+  gatewayUrl:
+    process.env.ADMINBOT_GATEWAY_WS_URL || `ws://127.0.0.1:${gatewayConfig?.port ?? 18789}`,
+  notificationDraftScriptPath: path.join(
+    repoRoot,
+    "scripts/openreview-notifications/adminbot_bridge.py",
+  ),
+  databasePath,
+  auditRetentionDays: 7,
   // Keep this local bootstrap isolated from real calendar/email connectors.
   calendarInviteRunner: async () => {},
   accountApprovedEmailRunner: async () => {},

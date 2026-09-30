@@ -866,6 +866,10 @@ const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
   notifyLazyViewChanged,
 );
+const lazyNotificationDrafts = createLazyView(
+  () => import("./adminbot/views/notification-drafts.ts"),
+  notifyLazyViewChanged,
+);
 const lazyPublicShell = createLazyView(
   () => import("./adminbot/views/public-shell.ts"),
   notifyLazyViewChanged,
@@ -4477,6 +4481,14 @@ export function renderApp(state: AppViewState) {
                   return state.adminBotNotice?.kind === "success";
                 },
               }),
+            )
+          : nothing}
+        ${state.tab === "adminbotNotificationDrafts" && adminBotMode === "admin"
+          ? renderLazyView(lazyNotificationDrafts, (m) =>
+              m.renderNotificationDrafts(
+                resolveAdminBotBaseUrl(state.settings),
+                loadStoredMemberSession()?.sessionToken ?? "",
+              ),
             )
           : nothing}
         ${state.tab === "adminbotOpportunities"
