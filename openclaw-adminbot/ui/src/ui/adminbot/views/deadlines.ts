@@ -134,7 +134,7 @@ export type DeadlineBoardFilters = Readonly<{
   archivalStatus: DeadlineBoardArchivalStatus;
   location?: string;
 }>;
-type DeadlineUrgency = Urgency | "passed";
+type DeadlineUrgency = Urgency | "passed" | "unknown";
 
 export const DEFAULT_DEADLINE_BOARD_FILTERS: DeadlineBoardFilters = {
   entryType: "all",
@@ -156,7 +156,14 @@ export function buildDeadlineBoardEntries(
 ): DeadlineBoardEntry[] {
   const sorted = venues
     .map((venue) => ({ venue, instant: deadlineInstantMs(venue) }))
-    .filter((entry) => Number.isFinite(entry.instant))
+    .filter(
+      (entry) =>
+        Number.isFinite(entry.instant) ||
+        (entry.venue.venue_type === "workshop" && entry.venue.deadline_aoe === ""),
+    )
+    .map((entry) =>
+      Number.isFinite(entry.instant) ? entry : { ...entry, instant: Number.POSITIVE_INFINITY },
+    )
     .toSorted(
       (left, right) =>
         left.instant - right.instant || left.venue.name.localeCompare(right.venue.name),
@@ -535,13 +542,14 @@ export function conferenceTimeline(
 export function headlineDeadlineEntry(
   entries: readonly DeadlineBoardEntry[],
 ): DeadlineBoardEntry | undefined {
+  const dated = entries.filter((entry) => Number.isFinite(entry.instant));
   return (
-    entries.find(
+    dated.find(
       (entry) =>
         entry.venue.archival_status === "archival" && entry.venue.entry_type !== "workshop",
     ) ??
-    entries.find((entry) => entry.venue.entry_type !== "workshop") ??
-    entries[0]
+    dated.find((entry) => entry.venue.entry_type !== "workshop") ??
+    dated[0]
   );
 }
 
@@ -606,7 +614,7 @@ export function entriesForDeadlinePeriod(
   }
   if (period === "past") {
     return entries
-      .filter((entry) => !nextVenueStage(entry.venue, now))
+      .filter((entry) => Number.isFinite(entry.instant) && !nextVenueStage(entry.venue, now))
       .toSorted(
         (left, right) =>
           right.instant - left.instant || left.venue.name.localeCompare(right.venue.name),
@@ -617,7 +625,9 @@ export function entriesForDeadlinePeriod(
     const stage = venueStages(entry.venue, displayZone, venues).find(
       (stage) => stage.instant > now,
     );
-    if (stage) {
+    if (!Number.isFinite(entry.instant)) {
+      pending.set(entry, Number.POSITIVE_INFINITY);
+    } else if (stage) {
       pending.set(entry, stage.instant);
     }
   }
@@ -842,10 +852,11 @@ export type DeadlineChangeSummary = {
 export function deadlineChangeSummary(venue: DeadlineVenue): DeadlineChangeSummary | null {
   const dates = venue.revisions
     .map((revision) => revision.deadline_aoe)
+    .filter(Boolean)
     .filter(
       (deadline, index, revisions) => deadline.slice(0, 16) !== revisions[index - 1]?.slice(0, 16),
     );
-  if (dates.at(-1)?.slice(0, 16) !== venue.deadline_aoe.slice(0, 16)) {
+  if (venue.deadline_aoe && dates.at(-1)?.slice(0, 16) !== venue.deadline_aoe.slice(0, 16)) {
     dates.push(venue.deadline_aoe);
   }
   if (dates.length < 2) {
@@ -1021,10 +1032,14 @@ const ARCHIVAL_STATUS_OPTIONS: ReadonlyArray<{
  * notification or conference has not.
  */
 function countdownTarget(entry: DeadlineBoardEntry, now: number): number {
+  if (!Number.isFinite(entry.instant)) { return Number.POSITIVE_INFINITY; }
   return entry.stage?.instant ?? nextVenueStage(entry.venue, now)?.instant ?? entry.instant;
 }
 
 function urgency(entry: DeadlineBoardEntry, now: number): DeadlineUrgency {
+  if (!Number.isFinite(entry.instant)) {
+    return "unknown";
+  }
   const target = countdownTarget(entry, now);
   return target <= now ? "passed" : urgencyOf(target, now);
 }
@@ -1034,6 +1049,7 @@ function urgency(entry: DeadlineBoardEntry, now: number): DeadlineUrgency {
  * left" printed next to a deadline that passed last month otherwise reads as a broken clock.
  */
 function stageCountdownLabel(entry: DeadlineBoardEntry, now: number): string {
+  if (!Number.isFinite(entry.instant)) { return ""; }
   if (!entry.stage && entry.venue.deadline_time_precision === "date_only") {
     return entry.instant <= now ? "Check source" : daysLeftLabel(entry.instant, now);
   }
@@ -2490,7 +2506,7 @@ class AdminbotDeadlinesView extends LitElement {
       ? undefined
       : abstractRequirementStatus(venue);
     const count = entries.length + (abstractStatus ? 1 : 0);
-    if (count <= 1) {
+    if (!count || (count === 1 && !abstractStatus && entries[0]?.milestone === "submission")) {
       return nothing;
     }
     const unknownAbstract = abstractStatus
@@ -2641,7 +2657,12 @@ class AdminbotDeadlinesView extends LitElement {
     const selected = this.selectedStage(sourceVenue);
     const venue = this.timelineVenue(sourceVenue);
     const milestones = this.timelineMilestones;
-    if (!milestones || !this.onSaveTimeline || this.timelineBusyId) {
+    if (
+      !Number.isFinite(deadlineInstantMs(venue)) ||
+      !milestones ||
+      !this.onSaveTimeline ||
+      this.timelineBusyId
+    ) {
       return;
     }
     this.timelineBusyId = venue.deadline_id;
@@ -2684,6 +2705,7 @@ class AdminbotDeadlinesView extends LitElement {
     const venue = this.timelineVenue(sourceVenue);
     const milestones = this.timelineMilestones;
     if (
+      !Number.isFinite(deadlineInstantMs(venue)) ||
       !milestones ||
       !this.onSaveTimeline ||
       !this.memberId ||
@@ -3152,9 +3174,7 @@ class AdminbotDeadlinesView extends LitElement {
         // ordered by that stage, so the lead entry carries it -- and for a conference the lab has
         // already submitted to, the stage is its notification or the conference itself rather
         // than the deadline it closed weeks ago.
-        const leadStage =
-          group.entries[0].stage ??
-          nextVenueStage(group.entries[0].venue, this.now, this.displayZone);
+        const leadStage = group.entries[0].stage ?? (Number.isFinite(group.entries[0].instant) ? nextVenueStage(group.entries[0].venue, this.now, this.displayZone) : undefined);
         const leadPending = leadStage && !leadStage.submission ? leadStage : undefined;
         const notificationPolicy =
           group.kind === "workshops"

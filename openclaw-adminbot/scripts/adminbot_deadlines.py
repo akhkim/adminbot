@@ -383,7 +383,10 @@ class DeadlineDataset:
             for row in document["items"]:
                 if not isinstance(row, dict) or not isinstance(row.get("id"), str) or row["id"] in ids:
                     raise ValueError("Accepted deadline dataset contains invalid or duplicate ids")
-                AoEClock.instant(row.get("deadline_aoe", ""))
+                if row.get("deadline_aoe") == "" and row.get("venue_type") == "workshop":
+                    pass
+                else:
+                    AoEClock.instant(row.get("deadline_aoe", ""))
                 ids.add(row["id"])
             return document["items"]
         if os.environ.get("ADMINBOT_DEADLINE_DATASET_PATH"):
@@ -401,14 +404,14 @@ class DeadlineDataset:
         """Current projections between now and the horizon, soonest first."""
         horizon = clock.now + datetime.timedelta(days=window_days)
         chosen = [
-            venue for venue in self.venues() if clock.now <= clock.instant(venue["deadline_aoe"]) <= horizon
+            venue for venue in self.venues() if venue.get("deadline_aoe") and clock.now <= clock.instant(venue["deadline_aoe"]) <= horizon
         ]
         chosen.sort(key=lambda venue: (venue["deadline_aoe"], venue["name"]))
         return chosen
 
     def past(self, clock: AoEClock) -> list[dict]:
         """Current projections already expired, most recently expired first."""
-        chosen = [venue for venue in self.venues() if clock.has_passed(venue["deadline_aoe"])]
+        chosen = [venue for venue in self.venues() if venue.get("deadline_aoe") and clock.has_passed(venue["deadline_aoe"])]
         chosen.sort(key=lambda venue: (venue["deadline_aoe"], venue["name"]), reverse=True)
         return chosen
 

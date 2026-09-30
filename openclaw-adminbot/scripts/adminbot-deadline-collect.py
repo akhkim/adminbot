@@ -1453,9 +1453,7 @@ def fetch_workshop_source(source, previous_by_id=None):
         gid = g.get("id", "")
         rest = gid[len(pref):]
         c = g.get("content", {}) or {}
-        # Each workshop takes its own stamp when OpenReview carries one. No date
-        # means no countdown to show, so it is left out rather than published with
-        # a placeholder somebody would plan against.
+        # Discovery does not require a deadline; an empty stamp stays explicitly unknown.
         item_id = source["id_prefix"] + rest
         previous = previous_by_id.get(item_id, {})
         route = _submission_type(source["family"], rest)
@@ -1465,11 +1463,9 @@ def fetch_workshop_source(source, previous_by_id=None):
                 and AoEClock.resolve().has_passed(observed_deadline)):
             # Expired invitations are needed to recheck tracked cutoffs, not to backfill every old track.
             continue
-        if not observed_deadline and not previous and not allow_official_only:
-            continue
         final_submission_deadline = (
             _group_final_submission_deadline(c)
-            if route != SUBMISSION_COMMITMENT and (observed_deadline or allow_official_only)
+            if route != SUBMISSION_COMMITMENT
             else ""
         )
         deadline = final_submission_deadline or observed_deadline or previous.get("deadline_aoe", "")
@@ -1493,8 +1489,8 @@ def fetch_workshop_source(source, previous_by_id=None):
             openreview_invitation=invitation_metadata.get(gid, {}),
             _group_final_deadline=final_submission_deadline,
             _group_final_evidence=str(_group_value(c, "date") or "")[:700],
-            _source_observed=bool(observed_deadline or final_submission_deadline),
-            source_checked_at=(checked_at() if observed_deadline or final_submission_deadline
+            _source_observed=bool(observed_deadline or final_submission_deadline or not deadline),
+            source_checked_at=(checked_at() if observed_deadline or final_submission_deadline or not deadline
                                else previous.get("source_checked_at", "")),
             link=homepage or review_url)
         out[rest] = item
@@ -1842,7 +1838,7 @@ def merge_history(item, previous=None, stale=False, reset_previous=False):
     if source_revisions_present and source_revisions:
         revisions.sort(key=lambda revision: revision.get("deadline_aoe", "")[:16])
 
-    distinct_deadlines = list(dict.fromkeys(revision["deadline_aoe"][:16] for revision in revisions))
+    distinct_deadlines = list(dict.fromkeys(revision["deadline_aoe"][:16] for revision in revisions if revision.get("deadline_aoe")))
     if (len(distinct_deadlines) > 1
             and all(revision.get("deadline_time_precision") != "date_only" for revision in revisions)
             and all(
@@ -1893,7 +1889,7 @@ def write_outputs(items):
     attach_schedules(items)
     migrate_workshop_dates(items)
     attach_abstract_requirements(items)
-    items.sort(key=lambda x: (x["deadline_aoe"], x["name"]))
+    items.sort(key=lambda x: (not bool(x["deadline_aoe"]), x["deadline_aoe"], x["name"]))
     doc = dict(history_version=4, timezone="AoE (UTC-12)",
                note=("Current projections with append-only deadline revisions. "
                      "Workshop contribution deadlines are reconciled deterministically from "
@@ -2103,7 +2099,7 @@ def main():
             pass
 
     enrich_workshop_sources(items, previous_by_id, clock, force_refresh)
-    items = [item for item in items if item.get("deadline_aoe")]
+    items = [item for item in items if item.get("deadline_aoe") or item.get("venue_type") == "workshop"]
     observed_ids = {
         item["id"] for item in items
         if item.get("_source_observed", True)
