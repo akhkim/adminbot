@@ -6,6 +6,9 @@
 .adminbot-time-chart {
   width: 100%;
 }
+.adminbot-time-chart__phone-hint {
+  display: none;
+}
 .adminbot-time-chart__pager {
   display: flex;
   align-items: center;
@@ -324,6 +327,13 @@
 }
 
 @media (max-width: 600px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
+  .adminbot-time-chart__phone-hint {
+    display: block;
+    margin: 0 0 var(--space-2);
+    color: var(--muted);
+    font-size: var(--control-ui-text-sm);
+  }
+
   .adminbot-time-availability__report {
     grid-template-columns: minmax(0, 1fr);
     min-width: 0;

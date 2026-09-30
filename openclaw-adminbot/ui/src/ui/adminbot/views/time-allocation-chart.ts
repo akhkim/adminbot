@@ -892,6 +892,11 @@ function EffortStackChart({
     { className: "adminbot-time-chart" },
     createElement("span", { className: "adminbot-time-chart__summary" }, segmentSummary),
     createElement(
+      "p",
+      { className: "adminbot-time-chart__phone-hint" },
+      t("adminbotTimeAvailability.chartPhoneHint"),
+    ),
+    createElement(
       "div",
       { className: "adminbot-time-chart__pager" },
       createElement(ChartPageButton, {

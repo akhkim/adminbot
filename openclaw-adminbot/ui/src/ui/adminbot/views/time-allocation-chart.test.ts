@@ -59,6 +59,9 @@ describe("the time allocation chart element", () => {
     // recharts needs layout to draw bars, which jsdom does not do -- but the surrounding chrome
     // React renders unconditionally is proof the root mounted and the component ran.
     expect(chart.querySelector(".adminbot-time-chart__pager")).not.toBeNull();
+    expect(chart.querySelector(".adminbot-time-chart__phone-hint")?.textContent).toBe(
+      "Swipe sideways to see more dates. Tap a bar for details.",
+    );
     expect(chart.querySelectorAll(".adminbot-time-chart__page-button").length).toBe(2);
     expect(chart.querySelector(".adminbot-time-chart__plot")?.getAttribute("tabindex")).toBe("0");
   });
