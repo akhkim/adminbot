@@ -291,3 +291,5 @@ Cards, grouped rows, and the table share the same date formatting and countdown 
 Publication-policy labels open a short explanation by click, tap, or keyboard. The header shows the latest source check across the dataset; each deadline’s details show its own source-check date. Correction and personal-timeline actions occupy a separate row above the source links. Official-site links remain at the right end of the source row for visitors and signed-in members.
 
 On phones, filters use two columns when space permits and one column on narrow screens. Search remains full-width, venue chips scroll horizontally, and search and filters use 32px heights, while venue chips and view switches use 28px heights with spacing between separate controls. These compact sizes also apply on desktop.
+
+The frontend temporarily falls back to `/deadlines/venues.json` when `/deadlines` is missing or returns the legacy HTML page instead of a dataset. Empty current datasets remain valid, and authentication or server errors are not hidden by the fallback. Remove this compatibility read after the backend serves JSON at `/deadlines`.
