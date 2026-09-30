@@ -92,7 +92,11 @@ export function renderMultiSelectField(config: MultiSelectFieldConfig): Template
       @change=${syncMultiSelectSummary}
     >
       <summary class="adminbot-multiselect__summary" aria-label=${config.label}>
-        <span class="adminbot-multiselect__value" data-multi-select-value>${summary}</span>
+        <span
+          class="adminbot-multiselect__value"
+          data-multi-select-value
+          .textContent=${summary}
+        ></span>
         <span class="adminbot-multiselect__caret" aria-hidden="true"></span>
       </summary>
       <div class="adminbot-multiselect__menu" role="group" aria-label=${config.label}>

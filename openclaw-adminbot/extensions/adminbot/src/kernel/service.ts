@@ -4048,6 +4048,58 @@ export class AdminBotService {
     return { ok: true, status: 201, payload: { request } };
   }
 
+  editMemberRequest(
+    requestId: string,
+    actor: string,
+    body: Record<string, unknown>,
+  ): AdminBotServiceResponse<{ request: AdminBotMemberRequest }> {
+    if (this.store.getLabMember(actor)?.privilege_level !== "admin") {
+      return serviceError(403, "only an admin can edit a member request");
+    }
+    const existing = this.store.getMemberRequest(requestId);
+    if (!existing) {
+      return serviceError(404, "member request not found");
+    }
+    if (existing.status !== "pending") {
+      return serviceError(409, "only pending member requests can be edited");
+    }
+    if (body.expected_updated_at !== existing.updated_at) {
+      return serviceError(409, "this request changed; reload it before editing");
+    }
+    const read = readAdminBotMemberRequest(body);
+    if (!read.ok) {
+      return serviceError(400, read.error);
+    }
+    const email = read.profile.email.toLowerCase();
+    if (
+      this.store.listLabMembers().some((member) => member.email?.trim().toLowerCase() === email) ||
+      this.store
+        .listMemberRequests({ status: "pending" })
+        .some(
+          (request) => request.id !== requestId && request.profile.email.toLowerCase() === email,
+        )
+    ) {
+      return serviceError(409, "this email already belongs to a member or pending request");
+    }
+    const request: AdminBotMemberRequest = {
+      ...existing,
+      profile: read.profile,
+      note: read.note,
+      updated_at: new Date(Math.max(Date.now(), Date.parse(existing.updated_at) + 1)).toISOString(),
+    };
+    this.store.saveMemberRequest(request);
+    this.recordAudit({
+      type: "lab_member_request.edited",
+      actor,
+      details: {
+        request_id: requestId,
+        previous_member_type: existing.profile.member_type,
+        member_type: request.profile.member_type,
+      },
+    });
+    return { ok: true, status: 200, payload: { request } };
+  }
+
   /** An admin reads every request; anyone else reads only their own. */
   listMemberRequests(viewer: {
     memberId: string;
@@ -4069,6 +4121,7 @@ export class AdminBotService {
   claimMemberRequest(
     requestId: string,
     adminId: string,
+    expectedUpdatedAt?: string,
   ): AdminBotServiceResponse<{ request: AdminBotMemberRequest }> {
     const existing = this.store.getMemberRequest(requestId);
     if (!existing) {
@@ -4076,6 +4129,9 @@ export class AdminBotService {
     }
     if (existing.status !== "pending") {
       return serviceError(409, `this request was already ${existing.status}`);
+    }
+    if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== existing.updated_at) {
+      return serviceError(409, "this request changed; reload it before approving");
     }
     const now = new Date().toISOString();
     const claimed: AdminBotMemberRequest = {

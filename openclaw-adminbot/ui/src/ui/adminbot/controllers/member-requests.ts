@@ -8,6 +8,7 @@
 import {
   approveMemberRequest,
   fetchMemberRequests,
+  editMemberRequest,
   loadStoredMemberSession,
   type MemberRequestInput,
   type MemberRequestView,
@@ -148,7 +149,12 @@ export async function approveAdminBotMemberRequest(
 ): Promise<void> {
   let approved = false;
   await decide(host, request.id, async (token, baseUrl) => {
-    const result = await approveMemberRequest(request.id, token, baseUrl);
+    const result = await approveMemberRequest(
+      request.id,
+      token,
+      baseUrl,
+      request.updated_at ?? request.created_at,
+    );
     if (!result.ok) {
       return failure(failureText(result, `Couldn't approve ${request.profile.name}.`));
     }
@@ -171,6 +177,22 @@ export async function approveAdminBotMemberRequest(
   if (approved) {
     await loadAdminBot(host);
   }
+}
+
+export async function editAdminBotMemberRequest(
+  host: AdminBotMemberRequestsHost,
+  request: MemberRequestView,
+  input: MemberRequestInput,
+): Promise<boolean> {
+  let saved = false;
+  await decide(host, request.id, async (token, baseUrl) => {
+    const result = await editMemberRequest(request, input, token, baseUrl);
+    saved = result.ok;
+    return result.ok
+      ? success(`Updated ${input.name}'s request. It is still waiting for approval.`)
+      : failure(failureText(result, "Couldn't edit this request."));
+  });
+  return saved;
 }
 
 export async function rejectAdminBotMemberRequest(

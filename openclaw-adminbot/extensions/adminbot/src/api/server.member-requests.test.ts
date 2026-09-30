@@ -107,6 +107,8 @@ type RequestView = {
   member_id?: string;
   decision_note?: string;
   profile: Record<string, string>;
+  updated_at: string;
+  meetings?: string[];
 };
 
 async function lab() {
@@ -152,6 +154,90 @@ const ADA = {
 };
 
 describe("member requests", () => {
+  it("lets an admin correct a pending request without onboarding, and approval uses the correction", async () => {
+    const { mock, admin, pat, sam, call, list, calendarShares } = await lab();
+    const { request } = (await (
+      await call(pat, "", "POST", {
+        ...ADA,
+        member_type: "full, coauthor-major",
+        meetings: ["theme-demo"],
+      })
+    ).json()) as { request: RequestView };
+    const body = {
+      ...ADA,
+      member_type: "coauthor-major",
+      expected_updated_at: request.updated_at,
+      privilege_level: "admin",
+    };
+    expect((await call(pat, `/${request.id}/edit`, "POST", body)).status).toBe(403);
+    expect((await call(sam, `/${request.id}/edit`, "POST", body)).status).toBe(403);
+    calendarShares.length = 0;
+    const saved = await call(admin, `/${request.id}/edit`, "POST", body);
+    expect(saved.status).toBe(200);
+    const edited = ((await saved.json()) as { request: RequestView }).request;
+    expect(edited).toMatchObject({
+      status: "pending",
+      requested_by: "pat",
+      profile: { member_type: "coauthor-major" },
+      meetings: ["theme-demo"],
+    });
+    expect(edited.profile).not.toHaveProperty("privilege_level");
+    expect(edited.updated_at).not.toBe(request.updated_at);
+    expect(roster(mock).some((member) => member.email === ADA.email)).toBe(false);
+    expect(calendarShares).toEqual([]);
+    expect((await call(admin, `/${request.id}/edit`, "POST", body)).status).toBe(409);
+    expect((await list(admin))[0]?.profile.member_type).toBe("coauthor-major");
+    expect(
+      (
+        await call(admin, `/${request.id}/approve`, "POST", {
+          expected_updated_at: request.updated_at,
+        })
+      ).status,
+    ).toBe(409);
+    expect((await call(admin, `/${request.id}/approve`, "POST", {})).status).toBe(200);
+    expect(roster(mock).find((member) => member.email === ADA.email)?.member_type).toBe(
+      "coauthor-major",
+    );
+    expect(
+      (
+        await call(admin, `/${request.id}/edit`, "POST", {
+          ...body,
+          expected_updated_at: edited.updated_at,
+        })
+      ).status,
+    ).toBe(409);
+  });
+
+  it("refuses invalid or duplicate edits and preserves the original request", async () => {
+    const { admin, pat, call, list } = await lab();
+    const { request } = (await (await call(pat, "", "POST", ADA)).json()) as {
+      request: RequestView;
+    };
+    expect(
+      (
+        await call(admin, `/${request.id}/edit`, "POST", {
+          ...ADA,
+          email: "bad",
+          expected_updated_at: request.updated_at,
+        })
+      ).status,
+    ).toBe(400);
+    await call(pat, "", "POST", { name: "Other", email: "other@example.org" });
+    expect(
+      (
+        await call(admin, `/${request.id}/edit`, "POST", {
+          ...ADA,
+          email: "other@example.org",
+          expected_updated_at: request.updated_at,
+        })
+      ).status,
+    ).toBe(409);
+    expect((await list(admin)).find((row) => row.id === request.id)?.profile).toMatchObject({
+      email: ADA.email,
+      member_type: "full",
+    });
+  });
+
   it("holds a non-admin's request out of the roster until an admin approves it", async () => {
     const { mock, admin, pat, call, list } = await lab();
     const submitted = await call(pat, "", "POST", ADA);

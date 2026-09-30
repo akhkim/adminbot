@@ -49,6 +49,52 @@ function draw(
 }
 
 describe("member requests", () => {
+  it("prefills the edit form and saves major only without approving", async () => {
+    const onEdit = vi.fn(async () => true);
+    const onApprove = vi.fn();
+    const original = request({
+      profile: {
+        name: "Ada Lovelace",
+        email: "ada@example.org",
+        member_type: "full, coauthor-major",
+      },
+    });
+    const container = draw(renderMemberRequests, { requests: [original], onEdit, onApprove });
+    expect(
+      container.querySelector('[data-testid="member-request-edit"]')?.textContent?.trim(),
+    ).toBe("Edit");
+    const form = container.querySelector<HTMLFormElement>(
+      '[data-testid="member-request-editor"] form',
+    )!;
+    expect(form.querySelector<HTMLInputElement>('input[name="name"]')!.value).toBe("Ada Lovelace");
+    form.querySelector<HTMLInputElement>('input[value="full"]')!.checked = false;
+    expect(form.querySelector<HTMLInputElement>('input[value="coauthor-major"]')!.checked).toBe(
+      true,
+    );
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+    expect(onEdit).toHaveBeenCalledWith(
+      original,
+      expect.objectContaining({ member_type: "coauthor-major" }),
+    );
+    expect(onApprove).not.toHaveBeenCalled();
+  });
+
+  it("does not offer edits to non-admins or for decided requests", () => {
+    const onEdit = vi.fn(async () => true);
+    expect(
+      draw(renderMemberRequests, { isAdmin: false, onEdit }).querySelector(
+        '[data-testid="member-request-edit"]',
+      ),
+    ).toBeNull();
+    expect(
+      draw(renderMemberRequests, {
+        requests: [request({ status: "approved" })],
+        onEdit,
+      }).querySelector('[data-testid="member-request-edit"]'),
+    ).toBeNull();
+  });
+
   it("shows an admin each pending request with who asked and what approving grants", () => {
     const container = draw(renderMemberRequests, {
       requests: [request(), request({ id: "mreq_2", status: "rejected" })],

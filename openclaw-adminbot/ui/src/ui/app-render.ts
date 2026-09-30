@@ -95,6 +95,7 @@ import {
 } from "./adminbot/controllers/mailing-list.ts";
 import {
   approveAdminBotMemberRequest,
+  editAdminBotMemberRequest,
   loadAdminBotMemberRequests,
   rejectAdminBotMemberRequest,
   submitAdminBotMemberRequest,
@@ -4239,6 +4240,10 @@ export function renderApp(state: AppViewState) {
                       state: state.adminBotMemberRequests,
                       onSubmit: (input) =>
                         submitAdminBotMemberRequest(state, input).finally(() =>
+                          requestHostUpdate?.(),
+                        ),
+                      onEdit: (request, input) =>
+                        editAdminBotMemberRequest(state, request, input).finally(() =>
                           requestHostUpdate?.(),
                         ),
                       onApprove: (request, options) => {
