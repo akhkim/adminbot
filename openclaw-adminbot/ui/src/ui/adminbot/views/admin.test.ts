@@ -2361,7 +2361,7 @@ describe("onboarding additions", () => {
       new Date().toISOString().slice(0, 7),
     );
     expect(form.querySelector<HTMLInputElement>('input[name="receivesNudges"]')!.checked).toBe(
-      false,
+      true,
     );
     expect(form.querySelector('datalist option[value="Tübingen"]')).not.toBeNull();
     expect(form.querySelector('datalist option[value="ETH Zurich"]')).not.toBeNull();

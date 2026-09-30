@@ -833,5 +833,11 @@ export async function writeMemberTypeToSheet(
   const ran = await approveAndExecute(service, planned.proposal, approver);
   return ran.ok
     ? { status: "done", proposal_id: planned.proposal.id, sheet_row: row.sheet_row }
-    : { status: "failed", reason: ran.reason, proposal_id: planned.proposal.id };
+    : {
+        status: "failed",
+        reason: /protected cell|protected object/i.test(ran.reason)
+          ? `Google Sheets blocked row ${row.sheet_row}: the member-type cell is protected. Ask the spreadsheet owner to allow the AdminBot connector account to edit this range, then retry. The sheet was not updated.`
+          : ran.reason,
+        proposal_id: planned.proposal.id,
+      };
 }

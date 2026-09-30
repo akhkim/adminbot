@@ -418,13 +418,14 @@ describe("renderPaperSlots", () => {
     expect(container.textContent).toContain("the link must be a /abs/ URL");
   });
 
-  it("dims a slot that is not reachable yet, without narrating why", async () => {
+  it("keeps slots visually open and editable before prerequisites", async () => {
     // The "Waiting on X" line, the "unblocks Y" line and the host/path spec were three rows of
     // small grey type under every field. The dimming carries the same meaning without turning the
     // card into a dependency graph.
     const { container } = await draw([]);
     const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
-    expect(overleaf?.className).toContain("paper-slot--blocked");
+    expect(overleaf?.className).not.toContain("paper-slot--blocked");
+    expect(overleaf?.querySelector<HTMLInputElement>("input")?.disabled).toBe(false);
     expect(overleaf?.textContent).not.toContain("Waiting on");
     expect(overleaf?.textContent).not.toContain("unblocks");
   });
@@ -580,10 +581,10 @@ describe("renderPaperSlots -- only what is ready", () => {
     expect(container.querySelector('[data-testid="paper-slot-p1-project_folder"]')).not.toBeNull();
   });
 
-  it("says how many are held back, so nothing looks lost", async () => {
+  it("explains that all fields are available at any project stage", async () => {
     const { container } = await draw([], false, { showAll: false });
     expect(container.querySelector(".paper-slots__filter-text")?.textContent).toContain(
-      "further off",
+      "available at any project stage",
     );
   });
 });

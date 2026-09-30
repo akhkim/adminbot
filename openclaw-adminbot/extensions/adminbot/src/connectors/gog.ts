@@ -310,6 +310,35 @@ export function createGogAdminBotExecutor(
   const capture = options.capture ?? createGogCapture(options.env);
   return {
     async execute(proposal) {
+      if (proposal.type === "calendar.add_attendees") {
+        const payload = requirePayload(proposal);
+        const args = buildCalendarAddAttendeesArgs(proposal);
+        const eventId = requireString(payload, "event_id");
+        const readArgs = rootArgs("calendar.event", optionalString(payload, "account"));
+        readArgs.push(
+          "calendar",
+          "event",
+          optionalString(payload, "calendar_id") ?? "primary",
+          eventId,
+        );
+        const existing = new Set(
+          parseEventAttendees(await capture(readArgs), eventId, true).map((attendee) =>
+            attendee.email.toLowerCase(),
+          ),
+        );
+        const missing = [
+          ...new Set(
+            (recipients(payload.attendees) ?? "")
+              .split(",")
+              .map((email) => email.trim().toLowerCase()),
+          ),
+        ].filter((email) => email && !existing.has(email));
+        if (missing.length > 0) {
+          args[args.indexOf("--add-attendee") + 1] = missing.join(",");
+          await run(args);
+        }
+        return { handled: true };
+      }
       if (proposal.type === "calendar.remove_attendees") {
         await removeCalendarAttendees(proposal, run, capture);
         return { handled: true };
@@ -770,7 +799,7 @@ async function removeCalendarAttendees(
 
 type EventAttendee = { email: string; optional: boolean; resource: boolean };
 
-function parseEventAttendees(stdout: string, eventId: string): EventAttendee[] {
+function parseEventAttendees(stdout: string, eventId: string, allowEmpty = false): EventAttendee[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(stdout);
@@ -782,6 +811,9 @@ function parseEventAttendees(stdout: string, eventId: string): EventAttendee[] {
     record.event && typeof record.event === "object" ? record.event : record
   ) as Record<string, unknown>;
   if (!Array.isArray(event.attendees)) {
+    if (allowEmpty && event.id === eventId && event.attendees === undefined) {
+      return [];
+    }
     // An event with no guest list at all cannot be the meeting a removal was planned against.
     throw new Error(`gog calendar event ${eventId} returned no attendee list`);
   }
