@@ -130,14 +130,13 @@ const filed = (mock: ReturnType<typeof createAdminBotMockService>) =>
   ).store.listProposalsByType("onboarding.send_guide");
 
 describe("onboarding a member from their roster row", () => {
-  it("files the guide for approval when an admin asks", async () => {
+  it("reports failure instead of a successful send when no sender is configured", async () => {
     const { baseUrl, mock } = await lab();
     const token = await memberToken(mock, baseUrl, "admin", "admin@cs.toronto.edu");
     const res = await onboard(baseUrl, "grace", { Authorization: `Bearer ${token}` });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(500);
     await expect(res.json()).resolves.toMatchObject({
-      template_id: "member",
-      email: "grace@lab.co",
+      error: { message: expect.any(String) },
     });
     expect(filed(mock)).toHaveLength(1);
   });

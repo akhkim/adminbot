@@ -321,7 +321,7 @@ describe("onboarding from the roster", () => {
       throw new Error(again.error.message);
     }
     expect(again.created).toEqual([]);
-    expect(again.skipped[0]!.reason).toContain("already waiting");
+    expect(again.skipped[0]!.reason).toContain("already queued or sent");
   });
 
   // Their onboarding is the backend access grant, so they are enrolled rather than skipped.

@@ -1099,13 +1099,15 @@ export async function mergeLabMembersAsAdmin(
 }
 
 export type MemberOnboardingGuideQueued = {
+  status?: "done" | "queued";
   proposal_id: string;
   template_id: string;
   email: string;
 };
 
 // Puts one roster member through onboarding: the service composes nothing here, it files an
-// `onboarding.send_guide` proposal for approval. Admin Bearer session only, like every other write
+// `onboarding.send_guide` proposal. Standard full-member guides are approved and sent immediately;
+// other guides wait for review. Admin Bearer session only, like every other write
 // on this page that reaches a person -- the shared service principal is refused (403) by the route
 // itself.
 //

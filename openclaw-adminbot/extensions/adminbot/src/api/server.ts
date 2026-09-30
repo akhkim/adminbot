@@ -5217,14 +5217,24 @@ async function handleAuthenticatedRoute(
       sendJson(res, 400, { error: { message: "Use up to 20 Slack channel names or IDs." } });
       return;
     }
-    sendServiceResult(
-      res,
-      service.queueOnboardingGuideForMember({
-        memberId: decodeURIComponent(memberOnboardingGuide[1]),
-        actor: principalActor(principal),
-        slackChannels: body.slack_project_channels as string[] | undefined,
-      }),
+    const guide = await queueNewMemberGuide(
+      memberOnboardingDeps(ctx, principal, approverIdentityFor(principal)),
+      decodeURIComponent(memberOnboardingGuide[1]),
+      { slackChannels: body.slack_project_channels as string[] | undefined },
     );
+    if (guide.status === "failed" || guide.status === "skipped") {
+      sendJson(res, guide.status === "skipped" ? 422 : (guide.http_status ?? 502), {
+        error: { message: guide.reason },
+      });
+      return;
+    }
+    sendJson(res, 200, {
+      proposal_id: guide.proposal_id,
+      template_id: guide.template_id,
+      email: guide.email,
+      status: guide.status,
+      detail: guide.detail,
+    });
     return;
   }
   const onboardingStep = /^\/lab\/members\/([^/]+)\/onboarding\/([^/]+)$/u.exec(url.pathname);

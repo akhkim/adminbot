@@ -2818,7 +2818,10 @@ async function onboardSavedMember(
   }
   return {
     kind: "success",
-    text: `Saved member ${memberId}. Their ${result.value.template_id} onboarding email draft is queued in Pending Actions. An admin must review, approve, and execute it there; no email has been sent yet.`,
+    text:
+      result.value.status === "done"
+        ? `Saved member ${memberId}. Their standard onboarding email has been sent.`
+        : `Saved member ${memberId}. Their ${result.value.template_id} onboarding email draft is queued in Pending Actions. An admin must review, approve, and execute it there; no email has been sent yet.`,
   };
 }
 
