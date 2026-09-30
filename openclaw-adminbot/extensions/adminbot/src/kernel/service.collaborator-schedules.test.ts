@@ -96,4 +96,28 @@ describe("active collaborator schedules", () => {
       payload: { members: [] },
     });
   });
+  it("does not truncate collaborators beyond the first page of own papers", () => {
+    const service = new AdminBotService();
+    for (const id of ["viewer", "late-peer"]) {
+      expect(service.upsertLabMember({ id, name: id }).ok).toBe(true);
+    }
+    for (let i = 0; i < 201; i++) {
+      expect(
+        service.upsertPaper({
+          id: `paper-${i}`,
+          title: `Paper ${String(i).padStart(3, "0")}`,
+          authors: [],
+          current_step: "brainstorming_docs",
+          author_links: [
+            { name: "viewer", member_id: "viewer" },
+            ...(i === 200 ? [{ name: "late-peer", member_id: "late-peer" }] : []),
+          ],
+        }).ok,
+      ).toBe(true);
+    }
+    expect(service.listActiveCollaboratorSchedules("viewer")).toMatchObject({
+      ok: true,
+      payload: { members: [{ id: "late-peer" }] },
+    });
+  });
 });

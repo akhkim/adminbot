@@ -4022,6 +4022,9 @@ export function renderApp(state: AppViewState) {
                   const value = result.value as {
                     members: typeof state.adminBotCollaboratorSchedules;
                   };
+                  if (!Array.isArray(value.members)) {
+                    throw new Error("Invalid collaborator schedule response. Please try again.");
+                  }
                   state.adminBotCollaboratorSchedules = value.members;
                 } catch (error) {
                   if (loadStoredMemberSession()?.sessionToken === session.sessionToken) {
