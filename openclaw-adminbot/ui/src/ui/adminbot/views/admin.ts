@@ -1420,11 +1420,15 @@ function renderMemberFormFields(
       /></label>
       ${renderMemberTypeField(member)} ${renderMeetingsField(member, standingMeetings)}
       <label class="adminbot-form__field adminbot-form__field--check">
-        <input type="checkbox" name="receivesNudges" ?checked=${member?.receives_nudges === true} />
+        <input
+          type="checkbox"
+          name="receivesNudges"
+          ?checked=${member ? member.receives_nudges === true : true}
+        />
         <span>AdminBot may contact them</span>
         <small
-          >Off unless the lab turns it on. Everything AdminBot sends — profile reminders, paper
-          chases, meeting nudges — goes only to people on this list.</small
+          >On for new members unless turned off. Existing contact preferences are preserved. Turn
+          off to stop profile reminders, paper chases, and meeting nudges.</small
         >
       </label>
       <label class="adminbot-form__field"

@@ -120,7 +120,10 @@ describe("createGogAdminBotExecutor", () => {
     ["calendar.cancel", { event_id: "event-1" }],
   ] as const)("sends no email for %s", async (type, payload) => {
     const run = vi.fn(async () => {});
-    const executor = createGogAdminBotExecutor({ run });
+    const executor = createGogAdminBotExecutor({
+      run,
+      capture: async () => JSON.stringify({ attendees: [] }),
+    });
 
     await executor.execute(proposal(type, payload));
 
@@ -135,7 +138,10 @@ describe("createGogAdminBotExecutor", () => {
   // move the event or rewrite its title as a side effect.
   it("adds attendees to an existing event without replacing the guest list", async () => {
     const run = vi.fn(async () => {});
-    const executor = createGogAdminBotExecutor({ run });
+    const executor = createGogAdminBotExecutor({
+      run,
+      capture: async () => JSON.stringify({ attendees: [] }),
+    });
 
     await executor.execute(
       proposal("calendar.add_attendees", {
@@ -160,6 +166,55 @@ describe("createGogAdminBotExecutor", () => {
     expect(args).not.toContain("--attendees");
     expect(args).not.toContain("--summary");
     expect(args).not.toContain("--from");
+  });
+
+  it("skips existing attendees and adds only missing addresses on retries", async () => {
+    const run = vi.fn(async () => {});
+    const capture = vi.fn(async () =>
+      JSON.stringify({ attendees: [{ email: "ADA@example.com" }] }),
+    );
+    const executor = createGogAdminBotExecutor({ run, capture });
+    await executor.execute(
+      proposal("calendar.add_attendees", { event_id: "event-9", attendees: ["ada@example.com"] }),
+    );
+    expect(run).not.toHaveBeenCalled();
+    await executor.execute(
+      proposal("calendar.add_attendees", {
+        event_id: "event-9",
+        attendees: ["ada@example.com", "mei@example.com", "MEI@example.com"],
+      }),
+    );
+    expect(run).toHaveBeenCalledTimes(1);
+    const args = run.mock.calls[0]?.[0] as string[];
+    expect(args[args.indexOf("--add-attendee") + 1]).toBe("mei@example.com");
+  });
+
+  it.each(["not json", JSON.stringify({}), JSON.stringify({ event: { id: "wrong-event" } })])(
+    "does not write when the live attendee read is invalid: %s",
+    async (response) => {
+      const run = vi.fn(async () => {});
+      const executor = createGogAdminBotExecutor({ run, capture: async () => response });
+      await expect(
+        executor.execute(
+          proposal("calendar.add_attendees", {
+            event_id: "event-9",
+            attendees: ["ada@example.com"],
+          }),
+        ),
+      ).rejects.toThrow();
+      expect(run).not.toHaveBeenCalled();
+    },
+  );
+  it("can add the first guest to an event with no attendee list", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({
+      run,
+      capture: async () => JSON.stringify({ event: { id: "event-9" } }),
+    });
+    await executor.execute(
+      proposal("calendar.add_attendees", { event_id: "event-9", attendees: ["ada@example.com"] }),
+    );
+    expect(run).toHaveBeenCalledTimes(1);
   });
 
   describe("calendar.remove_attendees", () => {

@@ -16,6 +16,7 @@ import {
   previewOnboardFromMemberSheet,
   proposeMemberSheetEdits,
   readMemberSheet,
+  writeMemberTypeToSheet,
 } from "./server.member-sheet.js";
 
 const HEADER = [
@@ -594,5 +595,37 @@ describe("describeMemberSheetReadFailure", () => {
     expect(describeMemberSheetReadFailure(new Error("socket hang up"), target)).toBe(
       "could not read the member sheet: socket hang up",
     );
+  });
+});
+
+describe("member type sheet permissions", () => {
+  it("reports protected cells as an owner action without claiming the sheet was updated", async () => {
+    const service = new AdminBotService(undefined, {
+      executor: {
+        execute: async () => {
+          throw new Error("You are trying to edit a protected cell or object.");
+        },
+      },
+    });
+    const result = await writeMemberTypeToSheet(
+      service,
+      source(),
+      {
+        id: "yuen",
+        name: "Yuen Chen",
+        email: "yuenc2@illinois.edu",
+        member_type: "full",
+        privilege_level: "member",
+        access: [],
+        status: "active",
+        created_at: "2026-09-30",
+        updated_at: "2026-09-30",
+      },
+      ADMIN,
+      "andrew",
+    );
+    expect(result.status).toBe("failed");
+    expect(result.status === "failed" && result.reason).toContain("Ask the spreadsheet owner");
+    expect(result.status === "failed" && result.reason).toContain("sheet was not updated");
   });
 });
