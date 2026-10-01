@@ -1,5 +1,5 @@
 import { css, html, LitElement, nothing } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
+import { property, state } from "lit/decorators.js";
 import { loadSettings } from "../../storage.ts";
 import {
   loadStoredMemberSession,
@@ -8,7 +8,6 @@ import {
 } from "../auth/session.ts";
 
 /** Confirming files a proposal; approval owns every external effect. */
-@customElement("adminbot-interview-invite")
 export class InterviewInvite extends LitElement {
   @property({ attribute: false }) members: LabMember[] = [];
   @state() private busy = false;
@@ -332,4 +331,8 @@ export class InterviewInvite extends LitElement {
       </form>
     </details>`;
   }
+}
+
+if (!customElements.get("adminbot-interview-invite")) {
+  customElements.define("adminbot-interview-invite", InterviewInvite);
 }

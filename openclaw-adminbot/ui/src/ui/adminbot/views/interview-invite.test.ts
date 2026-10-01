@@ -23,7 +23,7 @@ it("previews and queues a draft without claiming it has been sent", async () => 
       ),
   );
   vi.stubGlobal("fetch", fetcher);
-  const element = new InterviewInvite();
+  const element = document.createElement("adminbot-interview-invite") as InterviewInvite;
   element.members = [
     { id: "one", name: "Example One", slack_user_id: "UONE", privilege_level: "member" },
     { id: "two", name: "Example Two", slack_user_id: "UTWO", privilege_level: "member" },
