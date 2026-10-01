@@ -1508,14 +1508,14 @@ describe("the LinkedIn URN", () => {
   });
 });
 
-it("renders free-form CV and GitHub safely and leaves historical fields optional", () => {
+it("renders free-form CV and GitHub safely and keeps intake responses optional", () => {
   const member = createMember({ cv_url: "Available on request", github_url: "@pat" });
   const container = renderPage(createState(member), vi.fn());
   const links = container.querySelector('[data-testid="profile-links"]')!;
   expect(links.textContent).toContain("Available on request");
   expect(links.textContent).toContain("@pat");
   expect(links.querySelector('a[href="@pat"]')).toBeNull();
-  expect(adminBotMandatoryProfileFields).not.toContain("joined_month");
+  expect(adminBotMandatoryProfileFields).toContain("joined_month");
   expect(adminBotMandatoryProfileFields).not.toContain("intake_form_url");
   expect(adminBotMandatoryProfileFields).toContain("github_url");
   expect(adminBotMandatoryProfileFields).toContain("cv_url");
