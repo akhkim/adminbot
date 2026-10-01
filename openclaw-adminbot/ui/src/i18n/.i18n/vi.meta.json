@@ -1288,11 +1288,11 @@
     "tabUsage.untimed",
     "tabUsage.window"
   ],
-  "generatedAt": "2026-10-01T02:33:38.797Z",
+  "generatedAt": "2026-10-01T02:34:03.853Z",
   "locale": "vi",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "bee091e9f2c1c59079af226b4371b3d773fe10a395c4d79bdb628d47c890e153",
+  "sourceHash": "0c916443101d88879ec4e91dab14a353080435d0761abc30294d9c364a6b0fd9",
   "totalKeys": 2433,
   "translatedKeys": 1146,
   "workflow": 1
