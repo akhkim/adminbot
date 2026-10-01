@@ -60,6 +60,9 @@ export type ProfessorViewProps = {
    * is the asking, and ticking the box is still hers to do on the paper.
    */
   piReview: PiReviewRow[];
+  piReviewLoading?: boolean;
+  piReviewError?: string | null;
+  onRetryPiReview?: () => void;
   onOpen: (tab: Tab) => void;
   /**
    * Row lists open past their preview cap, keyed by list id.
@@ -359,7 +362,7 @@ function section(params: {
    * whether you open it now, so it is worth a line rather than left to be inferred from the rows.
    */
   blurb?: string;
-  count: number;
+  count: number | null;
   tab: Tab;
   linkLabel: string;
   onOpen: (tab: Tab) => void;
@@ -370,7 +373,7 @@ function section(params: {
       <div class="professor__head">
         <div class="card-title">${params.title}</div>
         <span class="professor__count ab-num" data-empty=${params.count === 0 ? "true" : "false"}
-          >${params.count}</span
+          >${params.count ?? "—"}</span
         >
       </div>
       ${params.blurb ? html`<p class="professor__blurb">${params.blurb}</p>` : nothing}
@@ -739,51 +742,61 @@ export function renderProfessorView(props: ProfessorViewProps) {
 
   const sections: Array<{ settled: boolean; pinned?: boolean; body: unknown }> = [
     {
-      settled: props.piReview.length === 0,
+      settled: !props.piReviewLoading && !props.piReviewError && props.piReview.length === 0,
       body: section({
         id: "pi-review",
         title: t("professor.piReview.title"),
         blurb: t("professor.piReview.blurb"),
-        count: props.piReview.length,
+        count: props.piReviewLoading || props.piReviewError ? null : props.piReview.length,
         // The paper card is where the yes is given, so that is where this points.
         tab: "adminbotPapers",
         linkLabel: t("professor.piReview.open"),
         onOpen: props.onOpen,
-        body: rows({
-          id: "pi-review",
-          items: props.piReview.map((row) =>
-            rowButton({
-              action: t("professor.piReview.open"),
-              onOpen: () => props.onOpen("adminbotPapers"),
-              body: html`<strong>${row.title}</strong>
-                <span class="muted">${row.authors.join(", ")}</span>
-                ${row.packageComplete
-                  ? nothing
-                  : html`<span class="muted">${t("professor.piReview.incomplete")}</span>`}
-                ${row.waitingSince
-                  ? html`<span class="professor__when"
-                      >${t("professor.piReview.since", {
-                        date: row.waitingSince.slice(0, 10),
-                      })}</span
-                    >`
-                  : nothing}`,
-              // Reading the PDF and giving the yes are two different errands, so the PDF keeps its
-              // own target rather than being swallowed by the row.
-              aside: row.drivePdfUrl
-                ? html`<a
-                    class="professor__row-aside"
-                    href=${row.drivePdfUrl}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    >${t("professor.piReview.pdf")}</a
-                  >`
-                : undefined,
-            }),
-          ),
-          empty: t("professor.piReview.empty"),
-          expanded: props.expanded,
-          onToggleExpand: props.onToggleExpand,
-        }),
+        body: props.piReviewLoading
+          ? html`<p role="status">Loading PI review queue…</p>`
+          : props.piReviewError
+            ? html`<p role="alert">
+                  Could not load the PI review queue. Approval status is unknown.
+                  ${props.piReviewError}
+                </p>
+                <button class="btn btn--sm" type="button" @click=${props.onRetryPiReview}>
+                  Retry PI review queue
+                </button>`
+            : rows({
+                id: "pi-review",
+                items: props.piReview.map((row) =>
+                  rowButton({
+                    action: t("professor.piReview.open"),
+                    onOpen: () => props.onOpen("adminbotPapers"),
+                    body: html`<strong>${row.title}</strong>
+                      <span class="muted">${row.authors.join(", ")}</span>
+                      ${row.packageComplete
+                        ? nothing
+                        : html`<span class="muted">${t("professor.piReview.incomplete")}</span>`}
+                      ${row.waitingSince
+                        ? html`<span class="professor__when"
+                            >${t("professor.piReview.since", {
+                              date: row.waitingSince.slice(0, 10),
+                            })}</span
+                          >`
+                        : nothing}`,
+                    // Reading the PDF and giving the yes are two different errands, so the PDF keeps its
+                    // own target rather than being swallowed by the row.
+                    aside: row.drivePdfUrl
+                      ? html`<a
+                          class="professor__row-aside"
+                          href=${row.drivePdfUrl}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          >${t("professor.piReview.pdf")}</a
+                        >`
+                      : undefined,
+                  }),
+                ),
+                empty: t("professor.piReview.empty"),
+                expanded: props.expanded,
+                onToggleExpand: props.onToggleExpand,
+              }),
       }),
     },
     {

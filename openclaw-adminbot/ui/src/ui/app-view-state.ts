@@ -620,6 +620,7 @@ export type AppViewState = {
   /** Nudges raised to the head professor and still unanswered. Read with the overview beside it. */
   adminBotEscalatedNudges: import("./adminbot/auth/session.ts").EscalatedNudgeRow[];
   adminBotPiReview: import("./adminbot/auth/session.ts").PiReviewRow[];
+  adminBotPiReviewError: string | null;
   adminBotProfileOverviewFieldCount: number;
   adminBotProfileAdoption?: import("./adminbot/auth/session.ts").MemberAdoptionSummary | null;
   adminBotProfileOverviewLoading: boolean;

@@ -424,7 +424,8 @@ export type AuthErrorKind =
   // to do with credentials: a long-lived dev service outliving the console that calls it. It used
   // to fall through to auth-failed, which sent people to check their login for a problem that was
   // really a process needing a restart.
-  | "not-found";
+  | "not-found"
+  | "invalid-response";
 
 export type AuthResult<T> =
   | { ok: true; value: T }
@@ -4427,9 +4428,8 @@ export type PiReviewRow = {
 /**
  * The papers at the PI gate (GET /papers/pi-review).
  *
- * A 404 reads as an empty queue for the same reason the escalation queue does: the page ships from
- * Vercel on merge and the service follows on the host, so a service that predates the route should
- * render as "nothing waiting", not as a broken panel.
+ * A missing endpoint or invalid response leaves approval status unknown; only a successful
+ * queue response can establish that nobody is waiting.
  */
 export async function fetchPiReviewQueue(
   sessionToken: string,
@@ -4440,12 +4440,34 @@ export async function fetchPiReviewQueue(
     return { ok: false, kind: "unreachable" };
   }
   if (result.response.status === 404) {
-    return { ok: true, value: [] };
+    return {
+      ok: false,
+      kind: "not-found",
+      message: "The backend does not support the PI review queue yet.",
+    };
   }
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as { papers?: Array<Record<string, unknown>> };
+  const body = result.body as { papers?: Array<Record<string, unknown>> } | null;
+  if (
+    !body ||
+    !Array.isArray(body.papers) ||
+    body.papers.some(
+      (row) =>
+        !row ||
+        typeof row.paper_id !== "string" ||
+        !row.paper_id.trim() ||
+        typeof row.title !== "string" ||
+        !row.title.trim(),
+    )
+  ) {
+    return {
+      ok: false,
+      kind: "invalid-response",
+      message: "The backend returned an invalid PI review queue.",
+    };
+  }
   const rows = (body.papers ?? []).flatMap((row) => {
     const paperId = typeof row.paper_id === "string" ? row.paper_id : "";
     const title = typeof row.title === "string" ? row.title : "";

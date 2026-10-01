@@ -136,8 +136,8 @@ function rowFor(slots: PaperSlotRow[], slot: AdminBotPaperSlot): PaperSlotRow | 
  *
  * `pi_approval` is the PI's own, and to an author it used to look like any other unfilled field --
  * a "Missing" pill and the word "the PI" in grey -- which reads as something nobody has picked up.
- * Once the package is prepared the paper is genuinely with her: it is on her queue on My Desk and
- * she has been told it is there (workflows/papers/pi-review.ts). So the row says so.
+ * The slot state establishes readiness for her queue, not successful notification delivery.
+ * The copy must not claim she was told without a delivery record.
  *
  * Null until the paper is actually at the gate. Before that the claim would be false -- the package
  * is still being assembled, nothing has reached her -- and the row keeps saying what it waits on.
@@ -155,8 +155,8 @@ function piReviewNotice(
   }
   const readyAt = rowFor(slots, "authors_ack")?.provided_at?.slice(0, 10);
   return readyAt
-    ? `Sent to Zhijing to review on ${readyAt}. It is on her desk waiting for her yes to post.`
-    : "Sent to Zhijing to review. It is on her desk waiting for her yes to post.";
+    ? `Ready for PI approval since ${readyAt}. It appears in the PI review queue on My Desk; this does not confirm a notification was delivered.`
+    : "Ready for PI approval. It appears in the PI review queue on My Desk; this does not confirm a notification was delivered.";
 }
 
 /**

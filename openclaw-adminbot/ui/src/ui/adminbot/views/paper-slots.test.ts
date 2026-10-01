@@ -684,10 +684,12 @@ describe("field guidance", () => {
       row({ slot: "authors_ack", status: "provided", provided_at: "2026-09-08T10:00:00.000Z" }),
     ];
 
-    it("tells the authors the paper has gone to her, and when", async () => {
+    it("reports readiness without claiming notification delivery", async () => {
       const { container } = await draw(atGate);
       const note = container.querySelector('[data-testid="paper-slot-pi-sent-p1"]');
-      expect(note?.textContent).toContain("Sent to Zhijing to review");
+      expect(note?.textContent).toContain("Ready for PI approval");
+      expect(note?.textContent).toContain("does not confirm a notification was delivered");
+      expect(note?.textContent).not.toContain("Sent to Zhijing");
       expect(note?.textContent).toContain("2026-09-08");
     });
 
