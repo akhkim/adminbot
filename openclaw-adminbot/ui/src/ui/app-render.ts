@@ -4236,6 +4236,14 @@ export function renderApp(state: AppViewState) {
               memberList: adminBotPanel === "members" ? state.adminBotMemberList : undefined,
               standingMeetings:
                 adminBotPanel === "members" ? state.adminBotStandingMeetings : undefined,
+              onboardingSlackChannels: state.myWorkChannelCheck,
+              onLoadOnboardingSlackChannels: hasMemberSession
+                ? () => {
+                    const pending = loadSlackChannelNames(state);
+                    requestHostUpdate?.();
+                    void pending.finally(() => requestHostUpdate?.());
+                  }
+                : undefined,
               memberRequests:
                 adminBotPanel === "members" && hasMemberSession
                   ? {
