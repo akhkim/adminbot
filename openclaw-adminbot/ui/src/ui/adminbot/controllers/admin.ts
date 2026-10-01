@@ -3417,7 +3417,7 @@ export async function markAdminBotNudgesSeen(host: AdminBotHost): Promise<void> 
 export async function saveAdminBotPaper(
   host: AdminBotHost,
   paper: AdminBotPaperSaveInput,
-): Promise<void> {
+): Promise<boolean> {
   host.adminBotNotice = null;
   const artifacts = {
     ...(paper.overleafEditUrl ? { overleaf_edit_url: paper.overleafEditUrl } : {}),
@@ -3480,7 +3480,8 @@ export async function saveAdminBotPaper(
   // for break-glass sessions that hold a gateway token but no member login.
   const stored = loadStoredMemberSession();
   if (stored) {
-    return serializeMemberSave(
+    let success = false;
+    await serializeMemberSave(
       host,
       JSON.stringify(["paper", stored.sessionToken, paper.id]),
       async () => {
@@ -3508,6 +3509,7 @@ export async function saveAdminBotPaper(
           host.adminBotNotice = { kind: "error", text: paperSaveErrorText(saved.kind) };
           return;
         }
+        success = true;
         host.adminBotNotice = { kind: "success", text: `Saved paper ${paper.id}.` };
         const updated = saved.value as AdminBotPaperRecord;
         if (updated?.id === paper.id) {
@@ -3521,6 +3523,7 @@ export async function saveAdminBotPaper(
         }
       },
     );
+    return success;
   }
   try {
     await invokeAdminBotTool(host, "adminbot_upsert_paper", {
@@ -3542,11 +3545,13 @@ export async function saveAdminBotPaper(
     });
     host.adminBotNotice = { kind: "success", text: `Saved paper ${paper.id}.` };
     await loadAdminBot(host);
+    return true;
   } catch (err) {
     host.adminBotNotice = {
       kind: "error",
       text: formatAdminBotToolError(err),
     };
+    return false;
   }
 }
 
