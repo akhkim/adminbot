@@ -542,7 +542,7 @@ function renderSchoolCell(
   });
   const placeholder = field.placeholderKey ? t(field.placeholderKey) : nothing;
   return html`
-    <td class="logistics-schools__cell logistics-schools__cell--${field.key}">
+    <td class="logistics-schools__cell logistics-schools__cell--${field.key}" data-label=${label}>
       ${field.control === "notes"
         ? html`
             <textarea
@@ -720,7 +720,10 @@ function renderFactsSection(props: LettersProps) {
                   (row) => row.id,
                   (row, index) => html`
                     <tr class="logistics-schools__row">
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.facts.project")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="text"
@@ -733,7 +736,10 @@ function renderFactsSection(props: LettersProps) {
                           @input=${update(row, "project")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.facts.contribution")}
+                      >
                         <textarea
                           class="logistics-schools__input logistics-schools__notes"
                           rows="2"
@@ -885,10 +891,16 @@ function renderMeetingSection(props: MeetingProps) {
                   (row) => row.id,
                   (row, index) => html`
                     <tr class="logistics-schools__row">
-                      <td class="logistics-schools__cell logistics-meeting__submitted">
+                      <td
+                        class="logistics-schools__cell logistics-meeting__submitted"
+                        data-label=${t("logistics.meeting.submitted")}
+                      >
                         ${submittedLabel(row.submittedAt)}
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.purpose")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="text"
@@ -898,7 +910,10 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "purpose")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.preferredTime")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="datetime-local"
@@ -907,7 +922,10 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "preferredTime")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.timezone")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="text"
@@ -917,7 +935,10 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "timezone")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.length")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="number"
@@ -930,7 +951,7 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "lengthMinutes")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td class="logistics-schools__cell" data-label=${t("logistics.meeting.city")}>
                         <input
                           class="logistics-schools__input"
                           type="text"
@@ -940,7 +961,10 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "city")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.docPrep")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="url"
@@ -950,7 +974,10 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "docPrepUrl")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.whatsappHello")}
+                      >
                         <select
                           class="logistics-schools__input"
                           aria-label=${cellLabel(t("logistics.meeting.whatsappHello"), index)}
@@ -962,7 +989,10 @@ function renderMeetingSection(props: MeetingProps) {
                           <option value="no">${t("logistics.meeting.whatsappNo")}</option>
                         </select>
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.latestOk")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="date"

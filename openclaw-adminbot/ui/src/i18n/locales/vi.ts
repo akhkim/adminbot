@@ -1407,6 +1407,7 @@ export const vi: TranslationMap = {
     capacityNoteUnset:
       "No weekly capacity set on this profile, so there is nothing to compare these hours against.",
     chartAria: "Time allocation chart for {member}",
+    chartPhoneHint: "Swipe sideways to see more dates. Tap a bar for details.",
     chartSubtitle: "Hours committed per period. Overlapping commitments are stacked.",
     empty: "Select a user to view their time allocation.",
     endDate: "End date",
