@@ -2043,7 +2043,7 @@ class AdminbotDeadlinesView extends LitElement {
               >
               ${this.renderHistory(entry.venue, "hero")}</span
             >
-            ${renderVenueLocation(entry.venue)} ${renderClassification(entry.venue, "hero")}
+            ${renderClassification(entry.venue, "hero")}
           </div>
         </div>
         ${renderAbstractRequirement(entry.venue, this.venues, this.displayZone, this.now)}
@@ -2348,6 +2348,10 @@ class AdminbotDeadlinesView extends LitElement {
         </header>
 
         <dl class="deadline-details__facts">
+          <dt>Location</dt>
+          <dd>
+            ${venueLocationSites(venue).length ? renderVenueLocation(venue) : "Not published"}
+          </dd>
           <dt>Source date</dt>
           <dd>${deadlineDisplayLabel(venue, "original", true)}</dd>
           ${venue.source_checked_at
@@ -2543,9 +2547,7 @@ class AdminbotDeadlinesView extends LitElement {
               >
             </p>`
           : nothing}
-        <div class="deadline-card__context">
-          ${renderVenueLocation(venue)} ${renderClassification(venue)}
-        </div>
+        <div class="deadline-card__context">${renderClassification(venue)}</div>
         <span class="deadline-card__date-row">
           <time class="deadline-card__date" datetime=${stage?.day ?? venue.deadline_aoe}>
             ${stage && !stage.submission
@@ -2675,7 +2677,7 @@ class AdminbotDeadlinesView extends LitElement {
     const busy = this.timelineBusyId === venue.deadline_id;
     return html`<button
         type="button"
-        class="btn btn--icon deadline-card__timeline-button"
+        class="btn primary deadline-card__timeline-button"
         title=${busy ? "Adding to my timeline…" : "Add to my timeline"}
         data-testid="deadline-add-to-timeline"
         aria-busy=${busy}
@@ -2684,6 +2686,7 @@ class AdminbotDeadlinesView extends LitElement {
         @click=${() => void this.addToTimeline(sourceVenue)}
       >
         <span aria-hidden="true">${icons.clockPlus}</span>
+        <span>${busy ? "Adding…" : "Add to my timeline"}</span>
       </button>
       ${this.timelineFailedId === venue.deadline_id
         ? html`<span class="deadline-card__timeline-error" role="alert"
@@ -2771,7 +2774,6 @@ class AdminbotDeadlinesView extends LitElement {
               <th>Item</th>
               <th>Type</th>
               <th>Venue</th>
-              <th>Location</th>
               <th><span class="sr-only">Source and history</span></th>
             </tr>
           </thead>
@@ -2856,14 +2858,6 @@ class AdminbotDeadlinesView extends LitElement {
                     </span>
                   </td>
                   <td class="deadline-table__venue">${entry.venue.venue_group}</td>
-                  <!-- No pin icon here: the column heading already says "Location", and a
-                       column of identical icons would only add noise. A multi-site venue stays
-                       on one line, ellipsised, so a table of twenty NeurIPS workshops does not
-                       become three times as tall; the full list is in the title. -->
-                  <td class="deadline-table__location" title=${venueLocationLabel(entry.venue)}>
-                    ${venueLocationLabel(entry.venue) ||
-                    html`<span aria-label="Location not published">—</span>`}
-                  </td>
                   <td>
                     ${entry.venue.stale
                       ? html`<span
@@ -2899,7 +2893,7 @@ class AdminbotDeadlinesView extends LitElement {
                           >
                         </td>
                         <td>${milestone.label}</td>
-                        <td colspan="5"></td>
+                        <td colspan="4"></td>
                       </tr>`,
                     )
                   : nothing}
@@ -2911,25 +2905,10 @@ class AdminbotDeadlinesView extends LitElement {
     `;
   }
 
-  /**
-   * `showLocation` puts the site on the row itself.
-   *
-   * Workshop rows turn it on: a reader deciding whether to submit is deciding whether to travel,
-   * and the heading's copy is out of view once a long group is scrolled. It is redundant with
-   * the heading by design -- the heading is what a *collapsed* group shows, and the rows are
-   * what an open one shows, so neither can be dropped in favour of the other.
-   *
-   * The honest limit: what this prints is the parent conference's location, because that is the
-   * only location the collector resolves (`PARENT_CONFERENCE_LOCATIONS`, keyed by family and
-   * year). For a single-site conference that is the workshop's city. For a multi-site one it is
-   * every site the conference runs at, since which of them a given workshop sits at is not a
-   * fact this pipeline has -- so the row says "one of these", never a city it guessed.
-   */
   private renderGroupRow(
     entry: DeadlineBoardEntry,
     conference: string,
     groupKind: DeadlineBoardGroup["kind"] = "workshops",
-    showLocation = false,
   ) {
     const { venue } = entry;
     const baseTitle = groupRowTitle(venue, conference, groupKind);
@@ -3014,7 +2993,7 @@ class AdminbotDeadlinesView extends LitElement {
             ${note ? html`<span class="deadline-group__row-detail">${note}</span>` : nothing}
             <span class="deadline-card__labels">
               <span class="deadline-card__type">${ENTRY_TYPE_LABELS[venue.entry_type]}</span>
-              ${showLocation ? renderVenueLocation(venue) : nothing}
+
               ${renderClassification(venue, "group")}
             </span>
           </p>
@@ -3061,7 +3040,7 @@ class AdminbotDeadlinesView extends LitElement {
         <p class="deadline-group__section-head">
           <strong>${label}</strong><span>${entries.length}</span>
         </p>
-        ${entries.map((entry) => this.renderGroupRow(entry, conference, "workshops", true))}
+        ${entries.map((entry) => this.renderGroupRow(entry, conference, "workshops"))}
       </section>
     `;
   }
@@ -3130,19 +3109,11 @@ class AdminbotDeadlinesView extends LitElement {
           >
             <!-- Full venue name, not the stage: a standalone row carries no group heading
                  above it, so it is the only place the venue gets named. -->
-            ${this.renderGroupRow(solo, group.label, "workshops", true)}
+            ${this.renderGroupRow(solo, group.label, "workshops")}
           </section>`;
         }
         const open = this.expandedGroups.has(group.id);
         const panelId = `deadline-group-panel-${index}`;
-        // A group is one conference — its own stages, or the workshops attached to it — so one
-        // location covers every row inside it and belongs on the heading, where it is readable
-        // without expanding the group. Scanning for the first entry that has one rather than
-        // reading entries[0] keeps the heading populated when the earliest deadline happens to
-        // be a row the collector found no location for.
-        const groupLocation = group.entries.find(
-          (entry) => venueConferenceSites(entry.venue).length,
-        )?.venue;
         // A conference counts its own calendar. Splitting one venue's rows by archival status
         // would say the same thing on every line, where "2 deadlines · 4 more dates" tells the
         // reader what is behind the triangle before they open it.
@@ -3214,9 +3185,6 @@ class AdminbotDeadlinesView extends LitElement {
                           ? leadPending.label
                           : capitalize(group.entries[0].venue.deadline_label)}</span
                       >`
-                    : nothing}
-                  ${groupLocation
-                    ? renderVenueLocation(groupLocation, venueConferenceSites(groupLocation))
                     : nothing}
                 </small>
               </span>
