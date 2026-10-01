@@ -236,6 +236,9 @@ const MILESTONE_ORDER = [
   "submission",
   "reviews",
   "rebuttal",
+  "author_response",
+  "discussion",
+  "review_issue",
   "notification",
   "notification_by",
   "cycle_end",
@@ -2497,8 +2500,23 @@ class AdminbotDeadlinesView extends LitElement {
             : status === "administrator_approved"
               ? "Date corrected after administrator review."
               : "";
+    const scheduleNote = ["source_unavailable", "extraction_unavailable"].includes(
+      venue.schedule_status ?? "",
+    )
+      ? "Schedule check failed; previous dates retained."
+      : venue.schedule_status === "needs_review"
+        ? "Schedule has unresolved details."
+        : venue.schedule_status === "unverified"
+          ? "Schedule has not been verified."
+          : "";
     return html`${renderWorkshopNotificationNotes(venue)}${note
       ? html`<p class="deadline-card__note">${note}</p>`
+      : nothing}
+    ${scheduleNote
+      ? html`<p class="deadline-card__note" data-testid="deadline-schedule-status">
+          ${scheduleNote}
+          ${(venue.schedule_issues ?? []).map((issue) => html`<span> ${issue}</span>`)}
+        </p>`
       : nothing}`;
   }
 

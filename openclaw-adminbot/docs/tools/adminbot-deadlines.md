@@ -38,6 +38,43 @@ An exact deadline carries `deadline_at` as a UTC instant; the Control UI default
 
 `deadline_planning_at` is the exact cutoff when known. For a date-only source it is the start of that day in the known zone, or UTC+14 when the zone is unknown. The compatibility field `deadline_aoe` represents the same planning instant for existing scheduled consumers. This boundary is an early planning target, not evidence that submissions close then. The board shows the source day with “time unknown”, uses the normal countdown style, and explains the boundary in the deadline details. Reminder messages, calendar entries and copied member milestones identify these as planning cutoffs. Passing one does not trigger a missed-submission escalation. A matched exact OpenReview cutoff remains authoritative when the website supplies only a date.
 
+Conference schedules are collected from configured official CFP and schedule pages, including
+surrounding prose and footnotes. The collector retains venue/track identities in code, not their
+dates. Existing dataset observations remain the fallback when a page or extractor is unavailable.
+An offline `--rewrite-outputs` preserves schedules; it never reinstates a hardcoded calendar.
+
+The Python collector calls the service-only `POST /internal/deadlines/extract-schedule` operation using
+`ADMINBOT_SERVICE_BASE_URL` (default `http://127.0.0.1:8765`) and `ADMINBOT_SERVICE_TOKEN`. The service
+uses the shared `completeLocally` client with the existing `ADMINBOT_LOCAL_BASE_URL`,
+`ADMINBOT_LOCAL_MODEL`, and optional `VLLM_API_KEY` configuration and shared defaults. Both hops
+require loopback endpoints and reject redirects. Requests cancel after 120 seconds or a client
+disconnect; truncated model output and invalid evidence are rejected.
+Pages are checked once per day per venue/track or ARR cycle, independently of the submission
+cutoff. Shared URLs are fetched once per run. Unchanged normalized text reuses the extracted
+result; a prose or footnote change triggers extraction even if a table is unchanged. `--force-refresh`
+bypasses the daily page check interval but still reuses identical text. Change the extractor version
+when its contract changes. Input is limited to 80,000 characters per scope; oversized input fails
+rather than silently dropping the end of a page. Stored state contains only the current extraction,
+its evidence and content hash, not successive full-page snapshots.
+
+Every extracted date needs a matching excerpt from a configured source. Exact times additionally
+need explicit clock/timezone evidence; otherwise the date retains its conservative planning cutoff.
+Initial author response, reviewer discussion, and other phases have distinct milestone identities.
+The model must report unpublished phases and ambiguities instead of filling in dates. Evidence
+validation checks transcription, not semantic completeness: `source_backed` means the accepted
+entries have supporting text, not that every possible requirement has been discovered.
+
+`schedule_checked_at` advances after a successful page read and validated extraction or cache reuse;
+`schedule_extracted_at` advances only after new extraction. `schedule_status` is `needs_review` for
+reported uncertainty, omitted prior stages or a primary-date disagreement, and `source_unavailable`
+when a website read fails; `extraction_unavailable` identifies model or evidence-validation failure. These states are shown with the venue details. Failures keep the previous
+schedule and successful-check timestamp. A separately observed primary deadline is preserved when
+the schedule disagrees. Full extraction evidence is retained in `schedule_observation` in the runtime
+JSON, while the UI receives milestone evidence and compact status fields. A missing collection
+service credential is an explicit collection failure, not a successful refresh. Failures retain a
+separate attempt timestamp and retry after 15 minutes, doubling to at most one day; a forced
+refresh bypasses this backoff. A successful check clears the failure count.
+
 Workshop website extraction and OpenReview observation have separate clocks. A successful website
 read saves its parsed `website_deadline_candidates` alongside `profile_extracted_at`. Between
 website checks, fresh OpenReview observations are reconciled against those cached candidates,
@@ -281,6 +318,8 @@ Script assets remain a bounded fallback when the page supplies no deadline candi
 Discovered workshops remain in the dataset with an empty `deadline_aoe` until a source supplies a usable date. Their stable IDs let later collection update the existing entry. Previously observed deadlines are retained when a source temporarily stops reporting them.
 
 The board includes undated workshops in their usual venue groups, after dated entries in Upcoming, with “Deadline unknown” and neutral styling. It does not show a countdown or an Add to timeline action. Known notification or conference dates remain available as milestones, without substituting for the missing submission deadline. Undated workshops are excluded from deadline-driven matching, reminders, escalation, and channel digests.
+
+Deadline schedule extraction yields to other completions using the shared local client in the same service process. A foreground request aborts the extraction HTTP request; extraction retries after all foreground requests finish and two seconds elapse without another request. Only one extraction runs at a time. Waiting and retries count toward the original two-minute timeout; disconnects and timeouts stop retries, and the collector retains saved dates. This coordination does not cover separate service processes or clients that bypass the shared client. Releasing inference capacity depends on the model server honoring HTTP disconnect cancellation.
 
 ### Deadline board layout
 

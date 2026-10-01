@@ -1,3 +1,5 @@
+import { localModelCapacity } from "./local-model-capacity.js";
+
 /**
  * Loopback-only HTTP clients for the guidebook corpus.
  *
@@ -141,6 +143,10 @@ export async function completeLocally(params: {
   temperature?: number;
   /** Output ceiling. Unset leaves it to the server, which for a reasoning model means "a lot". */
   maxTokens?: number;
+  /** Reject truncated structured output when the caller requires a complete response. */
+  requireComplete?: boolean;
+  /** Yield to other completions and retry within the caller’s original timeout. */
+  background?: boolean;
   /**
    * Further request fields, spread over the payload last.
    *
@@ -151,23 +157,34 @@ export async function completeLocally(params: {
    */
   extra?: Record<string, unknown>;
 }): Promise<string> {
-  const parsed = (await postJson(
-    params.fetchImpl,
-    params.baseUrl,
-    "chat/completions",
-    params.apiKey,
-    {
-      model: params.model,
-      messages: params.messages,
-      temperature: params.temperature ?? 0.2,
-      ...(params.maxTokens === undefined ? {} : { max_tokens: params.maxTokens }),
-      ...params.extra,
-    },
-    params.purposeLabel ?? "guidebook answer",
+  const parsed = (await localModelCapacity.run(
+    params.background === true,
     params.signal,
-  )) as { model?: string; choices?: Array<{ message?: { content?: unknown } }> };
+    (signal) =>
+      postJson(
+        params.fetchImpl,
+        params.baseUrl,
+        "chat/completions",
+        params.apiKey,
+        {
+          model: params.model,
+          messages: params.messages,
+          temperature: params.temperature ?? 0.2,
+          ...(params.maxTokens === undefined ? {} : { max_tokens: params.maxTokens }),
+          ...params.extra,
+        },
+        params.purposeLabel ?? "guidebook answer",
+        signal,
+      ),
+  )) as {
+    model?: string;
+    choices?: Array<{ finish_reason?: string; message?: { content?: unknown } }>;
+  };
   if (params.verifyModel && parsed.model !== params.model) {
     throw new Error("local model response did not match the configured model");
+  }
+  if (params.requireComplete && parsed.choices?.[0]?.finish_reason !== "stop") {
+    throw new Error(`${params.purposeLabel ?? "guidebook answer"} model response incomplete`);
   }
   const content = parsed.choices?.[0]?.message?.content;
   if (typeof content !== "string" || !content.trim()) {

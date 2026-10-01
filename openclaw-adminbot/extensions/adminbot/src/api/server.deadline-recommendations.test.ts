@@ -149,3 +149,22 @@ describe("recommendation HTTP boundary", () => {
     expect(publicData).not.toContain("recommender_member_id");
   });
 });
+
+it("restricts schedule extraction to the collection service", async () => {
+  const { baseUrl, mock } = await startService();
+  const member = await adminHeaders(baseUrl, mock);
+  for (const headers of [{}, member]) {
+    const response = await fetch(`${baseUrl}/internal/deadlines/extract-schedule`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect([401, 403]).toContain(response.status);
+  }
+  const response = await fetch(`${baseUrl}/internal/deadlines/extract-schedule`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${SERVICE_TOKEN}`, "Content-Type": "application/json" },
+    body: "{}",
+  });
+  expect(response.status).toBe(400);
+});
