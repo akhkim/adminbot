@@ -1,0 +1,59 @@
+# Deploy main to Aurora once CI has passed on it.
+#
+# Runs on the self-hosted runner on Aurora (deploy/aurora/install-actions-runner.sh), which does the
+# deploy locally with deploy/aurora/auto-deploy.sh: build beside the live release, swap, health
+# check, roll back on failure. GitHub's hosted runners cannot reach Aurora, which is why the runner
+# lives there.
+#
+# Safety notes, since this repository is public and the runner sits next to the lab's credentials:
+#
+#   - The runner's job-started hook (deploy/aurora/runner-job-guard.sh) fails every job that is not
+#     this file on main, triggered by workflow_run or workflow_dispatch. That hook, not anything in
+#     this file, is what keeps other workflows -- a pushed branch, a fork's pull request -- off it.
+#   - `workflow_run` always runs this file as it is on the default branch, never a PR's copy. Its
+#     `branches` filter matches the *name* of the head branch, which a fork can also call `main`, so
+#     the job also requires a push event in this repository.
+#   - auto-deploy.sh refuses a commit that does not contain what is live, and skips one already
+#     contained in it, so a late CI run cannot roll a newer deploy back.
+#   - No secrets. The checkout keeps no token.
+name: Deploy to Aurora
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time, and never cancel one: a cancelled swap is worse than a slow one. A newer
+# pending run replaces an older pending one, which is what is wanted.
+concurrency:
+  group: deploy-aurora
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: [self-hosted, aurora-deploy]
+    environment: aurora
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # Full history: the deploy compares the target against the live release's commit.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Deploy
+        env:
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: bash openclaw-adminbot/deploy/aurora/auto-deploy.sh --source "$GITHUB_WORKSPACE" --ref "$TARGET_SHA"
