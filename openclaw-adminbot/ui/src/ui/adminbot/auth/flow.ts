@@ -215,6 +215,7 @@ export type MemberAuthHost = {
   adminBotBroadcastDraft?: string;
   adminBotBroadcastExpiry?: string;
   adminBotBroadcastAvailability?: string;
+  adminBotBroadcastTimezone?: string;
   adminBotBroadcastBusy?: boolean;
   adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
   adminBotNotice?: { kind: "success" | "error"; text: string } | null;
@@ -649,6 +650,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotBroadcastDraft = undefined;
   host.adminBotBroadcastExpiry = undefined;
   host.adminBotBroadcastAvailability = undefined;
+  host.adminBotBroadcastTimezone = undefined;
   host.adminBotBroadcastBusy = false;
   host.adminBotBroadcastNotice = null;
   host.adminBotNotice = null;

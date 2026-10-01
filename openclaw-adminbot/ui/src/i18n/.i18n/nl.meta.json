@@ -917,6 +917,8 @@
     "professor.broadcast.post",
     "professor.broadcast.showsUntil",
     "professor.broadcast.takeDown",
+    "professor.broadcast.timezone",
+    "professor.broadcast.timezoneLabel",
     "professor.broadcast.title",
     "professor.broadcast.until",
     "professor.broadcast.update",
@@ -1293,12 +1295,12 @@
     "tabUsage.untimed",
     "tabUsage.window"
   ],
-  "generatedAt": "2026-10-01T08:58:06.914Z",
+  "generatedAt": "2026-10-01T22:06:24.088Z",
   "locale": "nl",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "f0a942ddfd50cf1269acc952360adca363b01f94f5beaf1a14ff33df3d17391b",
-  "totalKeys": 2438,
+  "sourceHash": "c657cbdbc2cb028a87a8a3b54b633ad658a950d34bafe927b9c5c4301126736d",
+  "totalKeys": 2440,
   "translatedKeys": 1146,
   "workflow": 1
 }

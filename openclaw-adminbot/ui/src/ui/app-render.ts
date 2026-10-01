@@ -3647,6 +3647,7 @@ export function renderApp(state: AppViewState) {
               broadcastDraft: state.adminBotBroadcastDraft,
               broadcastExpiry: state.adminBotBroadcastExpiry,
               broadcastAvailability: state.adminBotBroadcastAvailability,
+              broadcastTimezone: state.adminBotBroadcastTimezone,
               broadcastBusy: state.adminBotBroadcastBusy,
               broadcastNotice: state.adminBotBroadcastNotice,
               onBroadcastDraftChange: (value) => {
@@ -3659,6 +3660,10 @@ export function renderApp(state: AppViewState) {
               },
               onBroadcastAvailabilityChange: (value) => {
                 state.adminBotBroadcastAvailability = value;
+                requestHostUpdate?.();
+              },
+              onBroadcastTimezoneChange: (value) => {
+                state.adminBotBroadcastTimezone = value;
                 requestHostUpdate?.();
               },
               onBroadcastPublish: (draft) => {

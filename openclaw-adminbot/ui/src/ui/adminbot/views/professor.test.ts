@@ -94,6 +94,7 @@ function draw(overrides: Partial<ProfessorViewProps> = {}) {
   const draft: string[] = [];
   const expiry: string[] = [];
   const availability: string[] = [];
+  const timezone: string[] = [];
   const published: Array<{ message: string; availability: string; expiresOn: string } | null> = [];
   const container = document.createElement("div");
   document.body.append(container);
@@ -112,12 +113,13 @@ function draw(overrides: Partial<ProfessorViewProps> = {}) {
       onBroadcastDraftChange: (value) => draft.push(value),
       onBroadcastExpiryChange: (value) => expiry.push(value),
       onBroadcastAvailabilityChange: (value) => availability.push(value),
+      onBroadcastTimezoneChange: (value) => timezone.push(value),
       onBroadcastPublish: (value) => published.push(value),
       ...overrides,
     }),
     container,
   );
-  return { container, opened, toggled, draft, expiry, availability, published };
+  return { container, opened, toggled, draft, expiry, availability, timezone, published };
 }
 
 /**
@@ -744,10 +746,16 @@ describe("the broadcast box", () => {
       broadcastDraft: "Back in Toronto Thursday.",
       broadcastExpiry: "2026-09-30",
       broadcastAvailability: "busy",
+      broadcastTimezone: "America/Toronto",
     });
     container.querySelector<HTMLButtonElement>('[data-testid="professor-broadcast-post"]')?.click();
     expect(published).toEqual([
-      { message: "Back in Toronto Thursday.", availability: "busy", expiresOn: "2026-09-30" },
+      {
+        message: "Back in Toronto Thursday.",
+        availability: "busy",
+        expiresOn: "2026-09-30",
+        timezone: "America/Toronto",
+      },
     ]);
   });
 
@@ -891,4 +899,29 @@ it("does not claim an empty PI queue while loading", () => {
   const section = container.querySelector('[data-testid="professor-pi-review"]');
   expect(section?.textContent).toContain("Loading PI review queue");
   expect(section?.textContent).not.toContain("No paper is waiting");
+});
+
+it("allows publishing a time-zone-only edit and reports the input", () => {
+  const { container, timezone, published } = draw({
+    broadcast: {
+      availability: "busy",
+      message: "Reviewing",
+      expires_at: "2099-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      updated_by: "synthetic",
+    },
+    broadcastTimezone: "UTC",
+  });
+  const input = container.querySelector<HTMLInputElement>(
+    '[data-testid="professor-broadcast-timezone"]',
+  )!;
+  input.value = "America/Toronto";
+  input.dispatchEvent(new Event("input"));
+  expect(timezone).toEqual(["America/Toronto"]);
+  const button = container.querySelector<HTMLButtonElement>(
+    '[data-testid="professor-broadcast-post"]',
+  )!;
+  expect(button.disabled).toBe(false);
+  button.click();
+  expect(published[0]).toMatchObject({ timezone: "UTC" });
 });

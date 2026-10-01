@@ -710,6 +710,11 @@ function renderBroadcast(state: AppViewState) {
         <h2 class="dashboard__broadcast-title">${t("dashboard.broadcast.title")}</h2>
       </div>
       <p class="dashboard__broadcast-body">${broadcast.message}</p>
+      ${broadcast.timezone
+        ? html`<p class="dashboard__broadcast-meta">
+            ${t("professor.broadcast.timezoneLabel", { timezone: broadcast.timezone })}
+          </p>`
+        : nothing}
       <p class="dashboard__broadcast-meta">
         ${t("dashboard.broadcast.posted", {
           when: new Date(broadcast.updated_at).toLocaleDateString(),

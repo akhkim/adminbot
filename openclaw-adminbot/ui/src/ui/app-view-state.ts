@@ -522,6 +522,7 @@ export type AppViewState = {
   adminBotBroadcastDraft?: string;
   adminBotBroadcastExpiry?: string;
   adminBotBroadcastAvailability?: string;
+  adminBotBroadcastTimezone?: string;
   adminBotBroadcastBusy?: boolean;
   adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
   /** The tab-usage window, null until the first read answers. */
@@ -538,6 +539,7 @@ export type AppViewState = {
       message: string;
       availability: string;
       expiresOn: string;
+      timezone?: string;
     } | null,
   ) => Promise<void>;
   adminBotNotificationsError?: string | null;

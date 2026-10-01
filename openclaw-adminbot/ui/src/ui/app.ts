@@ -398,6 +398,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotBroadcastDraft?: string;
   @state() adminBotBroadcastExpiry?: string;
   @state() adminBotBroadcastAvailability?: string;
+  @state() adminBotBroadcastTimezone?: string;
   @state() adminBotBroadcastBusy = false;
   @state() adminBotBroadcastNotice: { kind: "success" | "error"; text: string } | null = null;
   // Which My Desk lists she has opened. Not persisted: it is where she is on the page, not a
@@ -1880,7 +1881,7 @@ export class OpenClawApp extends LitElement {
   }
 
   publishBroadcast(
-    draft: { message: string; availability: string; expiresOn: string } | null,
+    draft: { message: string; availability: string; expiresOn: string; timezone?: string } | null,
   ): Promise<void> {
     return publishAdminBotBroadcast(
       this as unknown as Parameters<typeof publishAdminBotBroadcast>[0],
