@@ -3318,6 +3318,7 @@ async function handleAuthenticatedRoute(
         asString(body.badge_id),
         principal.member.id,
         asString(body.evidence) || undefined,
+        body.count,
       ),
     );
     return;

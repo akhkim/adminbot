@@ -1531,7 +1531,17 @@ export class AdminBotService {
   private seedDefaultBadges(): void {
     const now = new Date().toISOString();
     for (const seed of adminBotDefaultBadgeDefinitions) {
-      if (this.store.getBadgeDefinition(seed.id)) {
+      const existing = this.store.getBadgeDefinition(seed.id);
+      if (existing) {
+        if (
+          seed.id === "team_contributor__infra_builder" &&
+          !existing.tier &&
+          existing.name === seed.name &&
+          existing.category === seed.category &&
+          existing.description === seed.description
+        ) {
+          this.store.saveBadgeDefinition({ ...existing, tier: "Good", updated_at: now });
+        }
         continue;
       }
       const familyKey =
@@ -3548,7 +3558,14 @@ export class AdminBotService {
     badgeId: string,
     actor: string,
     evidenceInput?: string,
+    countInput?: unknown,
   ): AdminBotServiceResponse<{ assignment: AdminBotAssignedBadge }> {
+    if (
+      countInput !== undefined &&
+      (typeof countInput !== "number" || !Number.isSafeInteger(countInput) || countInput < 1)
+    ) {
+      return serviceError(400, "badge count must be a positive safe integer");
+    }
     const member = this.store.getLabMember(memberId);
     if (!member) {
       return serviceError(404, "member not found");
@@ -3578,6 +3595,11 @@ export class AdminBotService {
       awarded_at: now,
       awarded_by: actor,
       source: "admin",
+      count:
+        (countInput as number | undefined) ??
+        this.store.listBadgeAssignments(memberId).find((entry) => entry.badge_id === badge.id)
+          ?.count ??
+        1,
       ...(evidence ? { evidence } : {}),
     });
     const assignment = this.assignedBadgesFor(memberId).find(
@@ -3586,7 +3608,12 @@ export class AdminBotService {
     this.recordAudit({
       type: "badge.assigned",
       actor,
-      details: { member_id: memberId, badge_id: badge.id, family_key: badge.family_key },
+      details: {
+        member_id: memberId,
+        badge_id: badge.id,
+        family_key: badge.family_key,
+        count: assignment?.count ?? 1,
+      },
     });
     if (!assignment) {
       return serviceError(500, "badge assignment could not be read back");
