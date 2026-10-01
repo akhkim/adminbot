@@ -204,7 +204,6 @@ function renderCatalogCard(props: AdminBotBadgesProps, badge: BadgeDefinition) {
             ${icons.edit}
           </button>
         </div>
-        ${badge.category ? html`<span class="ab-chip">${badge.category}</span>` : nothing}
         <p class="adminbot-badge-catalog__description">${badge.description}</p>
       </div>
     </div>
