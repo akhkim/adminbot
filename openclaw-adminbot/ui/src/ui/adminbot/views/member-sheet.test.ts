@@ -180,7 +180,7 @@ describe("the roster grid", () => {
       memberSheetOnboardPreview: { planned: [], skipped: [] },
     };
     const host = draw(state);
-    expect(text(host)).toContain("Nothing would be queued for this selection.");
+    expect(text(host)).toContain("Nothing would be sent or queued for this selection.");
     host.querySelector<HTMLButtonElement>('[data-testid="onboard-preview-cancel"]')?.click();
     expect(state.memberSheetOnboardPreview).toBeNull();
   });
@@ -272,8 +272,69 @@ describe("the roster grid", () => {
       },
     });
     expect(text(host)).toContain("Queued 1");
-    expect(text(host)).toContain("Nothing has been sent yet");
+    expect(text(host)).toContain("not been sent yet");
+    expect(text(host)).not.toContain("Sent ");
     expect(text(host)).toContain("sends no onboarding mail");
+  });
+
+  // The standard full-member guide goes out on the admin's click, so the result must not tell
+  // them it is waiting in Pending Actions.
+  it("reports sent guides apart from queued ones", () => {
+    const host = draw({
+      memberSheet: SHEET,
+      memberSheetOnboardResult: {
+        created: [
+          {
+            sheet_row: 2,
+            email: "ada@example.org",
+            template_id: "member",
+            proposal_id: "a",
+            status: "sent",
+          },
+          {
+            sheet_row: 3,
+            email: "yuen@example.org",
+            template_id: "alumni",
+            proposal_id: "b",
+            status: "queued",
+          },
+        ],
+        skipped: [],
+      },
+    });
+    expect(
+      host.querySelector('[data-testid="onboard-result-sent"]')?.textContent?.replace(/\s+/g, " "),
+    ).toContain("Sent 1 onboarding email on your approval.");
+    expect(
+      host
+        .querySelector('[data-testid="onboard-result-queued"]')
+        ?.textContent?.replace(/\s+/g, " "),
+    ).toContain("Queued 1 email in Pending Actions. It has not been sent yet");
+  });
+
+  it("says which previewed emails send on confirm and which wait for approval", () => {
+    const mail = (sheet_row: number, template_id: string, email: string) => ({
+      sheet_row,
+      name: email,
+      email,
+      template_id,
+      subject: "Welcome",
+      body: "Hello",
+      reply_to: "lab@example.org",
+    });
+    const host = draw({
+      memberSheet: SHEET,
+      memberSheetOnboardPreview: {
+        planned: [mail(2, "member", "ada@example.org"), mail(3, "alumni", "yuen@example.org")],
+        skipped: [],
+      },
+    });
+    const panel = text(host);
+    expect(panel).toContain("1 email is sent as soon as you confirm.");
+    expect(panel).toContain("1 email proposal is queued in Pending Actions");
+    expect(
+      host.querySelector<HTMLButtonElement>('[data-testid="onboard-confirm"]')?.textContent,
+    ).toContain("Send 1, queue 1 for approval");
   });
 
   it("only offers to onboard once rows are selected, and then only as a preview", () => {

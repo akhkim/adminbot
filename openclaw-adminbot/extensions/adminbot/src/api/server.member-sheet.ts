@@ -249,7 +249,17 @@ export type MemberSheetOnboardRequest = {
 };
 
 export type MemberSheetOnboardResult = {
-  created: { sheet_row: number; email: string; template_id: string; proposal_id: string }[];
+  /**
+   * Each guide this run filed. `sent`: the standard full-member guide, approved by the admin who
+   * ran it and already mailed. `queued`: every other template, waiting in Pending Actions.
+   */
+  created: {
+    sheet_row: number;
+    email: string;
+    template_id: string;
+    proposal_id: string;
+    status: "sent" | "queued";
+  }[];
   /**
    * Rows not yet on the roster, now created and given the access their Member Type grants -- the
    * same enrollment every other way onto the roster runs, including the no-mail types whose whole
@@ -421,7 +431,8 @@ export async function previewOnboardFromMemberSheet(
 }
 
 /**
- * Composes the onboarding mail for each selected row and queues it for approval.
+ * Composes the onboarding mail for each selected row: the standard full-member guide is sent on
+ * the running admin's approval, every other template is queued for approval.
  *
  * A row is skipped, with its reason, rather than half-onboarded: no address, a Member Type whose
  * onboarding is the backend access grant rather than a mail, or a template whose placeholders this
@@ -437,7 +448,10 @@ export async function onboardFromMemberSheet(
     enroll: (
       input: AdminBotLabMemberInput,
     ) => Promise<AdminBotServiceResponse<NewMemberOnboardingResult>>;
-    /** Step 3, queued for approval: this tab has always put mail in front of an approver. */
+    /**
+     * Step 3: the standard full-member guide is sent on this admin's approval; every other
+     * template is queued for approval in Pending Actions.
+     */
     queueGuide: (
       memberId: string,
       options: { email: string; values?: Record<string, string> },
@@ -511,6 +525,7 @@ export async function onboardFromMemberSheet(
         email: row.email,
         template_id: guide.template_id,
         proposal_id: guide.proposal_id,
+        status: guide.status === "done" ? "sent" : "queued",
       });
     } else {
       skipped.push({ sheet_row: row.sheet_row, reason: guide.reason });

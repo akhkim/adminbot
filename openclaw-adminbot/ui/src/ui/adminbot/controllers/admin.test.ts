@@ -898,6 +898,25 @@ describe("saveAdminBotMember — onboarding the person just added", () => {
     expect(host.adminBotNotice?.text).toMatch(/queued in Pending Actions/i);
   });
 
+  it("reports a confirmed immediate send without directing the admin to Pending Actions", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    routes(
+      new Response(
+        JSON.stringify({
+          proposal_id: "act_7",
+          template_id: "member",
+          email: "grace@lab.co",
+          status: "done",
+        }),
+        { status: 200 },
+      ),
+    );
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+    expect(host.adminBotNotice?.text).toContain("standard onboarding email has been sent");
+    expect(host.adminBotNotice?.text).not.toContain("Pending Actions");
+  });
+
   it("carries the member type, which is what decides the template", async () => {
     saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
     const { host } = createHost({});

@@ -12236,7 +12236,11 @@ export class AdminBotService {
       );
     }
     const alreadyQueued = this.store.listProposalsByType("onboarding.send_guide").some((stored) => {
-      if (stored.status !== "pending" && stored.status !== "approved") {
+      if (
+        stored.status !== "pending" &&
+        stored.status !== "approved" &&
+        stored.status !== "executed"
+      ) {
         return false;
       }
       const payload = (stored.proposed_payload ?? {}) as Record<string, unknown>;
@@ -12249,7 +12253,7 @@ export class AdminBotService {
     if (alreadyQueued) {
       return serviceError(
         409,
-        `the ${template.templateId} onboarding guide for ${email} is already waiting for approval`,
+        `the ${template.templateId} onboarding guide for ${email} is already queued or sent`,
       );
     }
     const proposal = this.createProposal({
