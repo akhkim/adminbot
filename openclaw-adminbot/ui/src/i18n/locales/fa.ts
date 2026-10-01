@@ -1519,6 +1519,9 @@ export const fa: TranslationMap = {
       category: "Category",
       customLabel: "Name this category",
       project: "Project",
+      projectExample: "Project XXX",
+      exampleHint:
+        "Example: 20 hours per week on Project XXX. Enter your own project, hours and dates below; the example is not saved.",
       projectPlaceholder: "Leave blank for term baseline",
       hours: "Hours per week",
       link: "Link (optional)",

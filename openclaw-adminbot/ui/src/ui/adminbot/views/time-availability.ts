@@ -1023,12 +1023,17 @@ function renderJinesisEditor(
     titleKey: "adminbotTimeAvailability.form.jinesisTitle",
     editTitleKey: "adminbotTimeAvailability.form.editJinesisTitle",
     head: ({ draft, field }) => html`
+      ${draft.editingIndex === null
+        ? html`<p class="card-sub adminbot-time-availability__form-note">
+            ${t("adminbotTimeAvailability.form.exampleHint")}
+          </p>`
+        : nothing}
       <label class="adminbot-form__field">
         <span>${t("adminbotTimeAvailability.form.project")}</span>
         <input
           type="text"
           .value=${draft.project}
-          placeholder=${t("adminbotTimeAvailability.form.projectPlaceholder")}
+          placeholder=${t("adminbotTimeAvailability.form.projectExample")}
           @input=${field("project")}
         />
       </label>
@@ -1040,6 +1045,7 @@ function renderJinesisEditor(
           max="168"
           step="0.5"
           data-testid="time-availability-hours"
+          placeholder="20"
           .value=${draft.hoursPerWeek}
           @input=${field("hoursPerWeek")}
         />
@@ -2082,6 +2088,15 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
             </button>`
           : nothing}
       </div>
+      ${editable && !props.activeCommitmentType
+        ? html`<button
+            type="button"
+            class="btn primary adminbot-time-availability__add-commitment"
+            @click=${() => revealCommitmentEditor(props, "jinesis")}
+          >
+            ${t("adminbotTimeAvailability.form.addCommitment")}
+          </button>`
+        : nothing}
       ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
       ${selectedMember
         ? html`
@@ -2239,15 +2254,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                           </div>
                         </div>
                       `
-                    : html`
-                        <button
-                          type="button"
-                          class="btn primary adminbot-time-availability__add-commitment"
-                          @click=${() => revealCommitmentEditor(props, "jinesis")}
-                        >
-                          ${t("adminbotTimeAvailability.form.addCommitment")}
-                        </button>
-                      `}
+                    : nothing}
                 `
               : nothing}
             ${!editable && props.tripDraft
