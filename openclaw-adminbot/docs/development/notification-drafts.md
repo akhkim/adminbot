@@ -16,6 +16,11 @@ If an acceptance has no paper link, the adapter searches the full uploaded expor
 notifications) for the same exact venue/year/track and submission number. Conflicting forum IDs are
 rejected; an existing direct paper link is preserved.
 
+Each numbered tweet entry includes the paper's saved arXiv link when available in SQLite.
+Matching prefers the OpenReview submission ID, then an exact title (ignoring case and outer
+whitespace), rejecting conflicting IDs and duplicate matches. Missing or invalid arXiv links
+produce warnings; links are never guessed. Browser-supplied paper links are ignored.
+
 It posts nothing and does not write to SQLite. Only paper IDs are sent to OpenReview; the roster
 and notifications stay local. Notifications are passed to Python over stdin; generated images use a
 temporary directory removed after each request. Input is limited to 26 MB at the API (25 MB

@@ -63,6 +63,7 @@ class AuthorTests(unittest.TestCase):
         client = Mock()
         client.get_note.return_value = SimpleNamespace(content={"authorids": {"value": ["~Test_Author1"]}})
         request = {"min_date": "2026-09-01", "conference": "neurips", "template": 1,
+            "paper_links": [{"title": "Synthetic Study", "arxiv_url": "https://arxiv.org/abs/2601.12345"}],
             "members": [{"openreview_id": "~Test_Author1", "handle": "TestHandle"}],
             "notifications": [{"id": "synthetic", "cdate": 1790000000000,
                 "domain": "NeurIPS.cc/2026/Conference", "content": {

@@ -9,6 +9,7 @@ import { readJson, sendJson } from "./server.http.js";
 export function createNotificationDraftHandler(
   scriptPath?: string,
   listMembers: () => AdminBotLabMember[] = () => [],
+  listPaperLinks: () => { title: string; submission_url?: string; arxiv_url?: string }[] = () => [],
 ) {
   let busy = false;
   return async (req: IncomingMessage, res: ServerResponse) => {
@@ -112,6 +113,7 @@ export function createNotificationDraftHandler(
             images: body.images,
             // The roster comes only from the service store, never the browser.
             members,
+            paper_links: listPaperLinks(),
           }),
         );
       });

@@ -28,3 +28,38 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(result["images"], [])
             with self.assertRaises(ValueError):
                 generate({**self.request(), "notifications": {}}, Path(folder))
+
+    @unittest.skipUnless(importlib.util.find_spec("PIL"), "Pillow not installed")
+    def test_many_papers_produce_one_complete_image(self):
+        import base64
+        import io
+        from PIL import Image
+        request = self.request()
+        original = request["notifications"][0]
+        request["notifications"] = [
+            {**original, "id": f"synthetic-{i}", "content": {
+                "subject": f"Decision notification for your submission {i}: Synthetic Study {i}",
+                "text": "Decision: Accept",
+            }} for i in range(1, 21)
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            result = generate(request, Path(folder))
+            self.assertEqual(len(result["images"]), 1)
+            with Image.open(io.BytesIO(base64.b64decode(result["images"][0]["data"]))) as image:
+                self.assertGreater(image.height, 1380)
+                for i in range(1, 21):
+                    self.assertIn(f"Synthetic Study {i} (", image.info["Description"])
+
+    @unittest.skipUnless(importlib.util.find_spec("PIL"), "Pillow not installed")
+    def test_multiple_venues_share_one_image(self):
+        from PIL import Image
+        from adminbot_images import write_image
+        with tempfile.TemporaryDirectory() as folder:
+            path = write_image([
+                {"venue": venue, "papers": [{"title": f"Study {venue}", "track": "Main"}]}
+                for venue in ("Venue A", "Venue B")
+            ], folder)
+            self.assertEqual(len(list(Path(folder).glob("*.png"))), 1)
+            with Image.open(path) as image:
+                self.assertIn("Study Venue A", image.info["Description"])
+                self.assertIn("Study Venue B", image.info["Description"])

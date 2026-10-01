@@ -1074,8 +1074,14 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       })
     : undefined;
   const ctx: AdminBotRouteContext = {
-    notificationDrafts: createNotificationDraftHandler(options.notificationDraftScriptPath, () =>
-      store.listLabMembers(),
+    notificationDrafts: createNotificationDraftHandler(
+      options.notificationDraftScriptPath,
+      () => store.listLabMembers(),
+      () => store.listPapers().map((paper) => ({
+        title: paper.title,
+        submission_url: paper.artifacts?.submission_url,
+        arxiv_url: paper.artifacts?.arxiv_url,
+      })),
     ),
     service,
     store,

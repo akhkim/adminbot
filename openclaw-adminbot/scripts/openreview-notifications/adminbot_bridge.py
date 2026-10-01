@@ -9,6 +9,7 @@ from openreview_notifications.filters import filter_notifications, parse_min_dat
 from openreview_notifications.tweets import format_notifications
 from adminbot_authors import enrich
 from adminbot_paper_links import recover_paper_links
+from adminbot_arxiv import add_arxiv_links
 
 
 def generate(request, directory):
@@ -26,11 +27,12 @@ def generate(request, directory):
         raise ValueError("Too many papers for one generation. Use a later date to narrow the selection.")
     skipped.extend(recover_paper_links(announcements, selected, records))
     skipped.extend(enrich(announcements, request.get("members", [])))
+    skipped.extend(add_arxiv_links(announcements, request.get("paper_links", [])))
     images = []
     if request.get("images", True) and announcements:
-        from openreview_notifications.images import write_images
-        for path in write_images(announcements, directory):
-            images.append({"name": path.name, "data": base64.b64encode(path.read_bytes()).decode("ascii")})
+        from adminbot_images import write_image
+        path = write_image(announcements, directory)
+        images.append({"name": path.name, "data": base64.b64encode(path.read_bytes()).decode("ascii")})
     return {"announcements": announcements, "images": images, "warnings": skipped}
 
 

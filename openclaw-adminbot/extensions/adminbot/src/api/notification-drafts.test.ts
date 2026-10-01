@@ -128,12 +128,20 @@ class OpenReviewClient:
     twitter_url: "https://x.com/TestHandle",
   });
   const before = app.store.listLabMembers();
+  expect(app.service.upsertPaper({
+    id: "synthetic-paper",
+    title: "Synthetic Learning Study",
+    authors: ["Test Author"],
+    current_step: "overleaf_writing",
+    artifacts: { arxiv_url: "https://arxiv.org/abs/2601.12345" },
+  }).ok).toBe(true);
   const response = await fetch(url, {
     method: "POST",
     headers: auth,
     body: JSON.stringify({
       ...input,
       members: [{ openreview_id: "~Test_Author1", handle: "InjectedHandle" }],
+      paper_links: [{ title: "Synthetic Learning Study", arxiv_url: "https://arxiv.org/abs/2601.99999" }],
       notifications: [
         {
           ...input.notifications[0],
@@ -149,6 +157,8 @@ class OpenReviewClient:
   expect(response.status).toBe(200);
   expect(result.announcements[0].text).toContain("Authors: @TestHandle");
   expect(result.announcements[0].text).not.toContain("InjectedHandle");
+  expect(result.announcements[0].text).toContain("1. Synthetic Learning Study (Main conference) https://arxiv.org/abs/2601.12345");
+  expect(result.announcements[0].text).not.toContain("2601.99999");
   expect(result.warnings).toEqual([]);
   expect(app.store.listLabMembers()).toEqual(before);
 });
