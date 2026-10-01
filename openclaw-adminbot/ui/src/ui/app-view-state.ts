@@ -9,6 +9,7 @@ import type {
   MeetingCursor,
   MemberNotification,
 } from "./adminbot/auth/session.ts";
+import type { AdminBotLabMember } from "./adminbot/controllers/admin.ts";
 import type {
   AdminBotDashboardData,
   AdminBotMemberListState,
@@ -493,6 +494,10 @@ export type AppViewState = {
   adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
   adminBotMemberMapRequestId: number;
+  adminBotCollaboratorSchedules: AdminBotLabMember[];
+  adminBotCollaboratorSchedulesLoading: boolean;
+  adminBotCollaboratorSchedulesError: string | null;
+  adminBotCollaboratorSchedulesSession: string;
   adminBotTimeAvailabilityMemberId: string;
   // Meeting Recordings tab. The list as the service returned it -- already redacted for a member,
   // full for an admin -- plus the two flags the view needs to distinguish "still loading" from

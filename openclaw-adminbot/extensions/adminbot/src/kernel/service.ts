@@ -3376,6 +3376,73 @@ export class AdminBotService {
     };
   }
 
+  listActiveCollaboratorSchedules(viewerId: string): AdminBotServiceResponse<{
+    members: Pick<
+      AdminBotLabMember,
+      "id" | "name" | "hours_per_week" | "availability" | "time_off"
+    >[];
+  }> {
+    if (!this.store.getLabMember(viewerId)) {
+      return { ok: false, status: 404, error: { message: "member not found" } };
+    }
+    const ids = new Set<string>();
+    // Read only this viewer's papers, including every page rather than silently truncating.
+    for (let offset = 0; ; offset += 200) {
+      const papers = this.store.listPapers({ authorMemberId: viewerId, limit: 200, offset });
+      for (const paper of papers) {
+        const progress = paperSlotProgress(
+          paper.id,
+          this.store.listPaperSlots(paper.id),
+          this.store.listSocialDrafts(paper.id),
+        );
+        if (progress.provided >= progress.total) {
+          continue;
+        }
+        for (const author of paper.author_links ?? []) {
+          if (author.member_id && author.member_id !== viewerId) {
+            ids.add(author.member_id);
+          }
+        }
+      }
+      if (papers.length < 200) {
+        break;
+      }
+    }
+    const members = [...ids]
+      .flatMap((id) => {
+        const member = this.store.getLabMember(id);
+        if (!member) {
+          return [];
+        }
+        return [
+          {
+            id: member.id,
+            name: member.name,
+            hours_per_week: member.hours_per_week,
+            availability: (member.availability ?? []).map(
+              ({ start, end, project, hours_per_week }) => ({
+                start,
+                end,
+                project,
+                hours_per_week,
+              }),
+            ),
+            time_off: (member.time_off ?? []).map(
+              ({ start, end, kind, availability, hours_per_week }) => ({
+                start,
+                end,
+                kind,
+                availability,
+                hours_per_week,
+              }),
+            ),
+          },
+        ];
+      })
+      .toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+    return { ok: true, status: 200, payload: { members } };
+  }
+
   listBadgeDefinitions(): AdminBotServiceResponse<{ badges: AdminBotBadgeDefinition[] }> {
     return { ok: true, status: 200, payload: { badges: this.store.listBadgeDefinitions() } };
   }

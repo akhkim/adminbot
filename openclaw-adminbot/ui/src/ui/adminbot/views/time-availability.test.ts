@@ -193,6 +193,33 @@ describe("draftError", () => {
 });
 
 describe("renderAdminBotTimeAvailability", () => {
+  it("offers authorized collaborators read-only without arbitrary roster schedules", () => {
+    const peer = member({ id: "peer", name: "Coauthor" });
+    const stranger = member({
+      id: "stranger",
+      name: "Unrelated",
+      availability: [
+        { start: "2026-03-02", end: "2026-03-15", project: "Secret", hours_per_week: 5 },
+      ],
+    });
+    const load = vi.fn();
+    const view = renderView({
+      members: [member(), stranger],
+      collaborators: [peer],
+      selectedMemberId: "peer",
+      onLoadCollaborators: load,
+    });
+    expect(view.textContent).toContain("See my collaborator's time availability");
+    expect(view.textContent).toContain("Coauthor");
+    expect(view.textContent).not.toContain("Secret");
+    expect(view.textContent).not.toContain("Add commitment");
+    const refresh = [...view.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Load / refresh"),
+    );
+    refresh?.click();
+    expect(load).toHaveBeenCalledOnce();
+  });
+
   it("offers a manual schedule refresh and disables it while loading", () => {
     const onRefresh = vi.fn();
     renderView({ onRefresh })
