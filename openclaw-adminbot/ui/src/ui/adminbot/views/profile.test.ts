@@ -666,7 +666,9 @@ describe("renderProfile LinkedIn URN and intake form", () => {
 
     const hint = (key: string) =>
       container.querySelector(`[data-testid="profile-hint-${key}"]`)?.textContent?.trim();
-    expect(hint("correspondence_email")).toBe("This is your official organizational email. Imagine we contact government sectors or external collaborators. Usually you need to be cc’ed via your institutional email.");
+    expect(hint("correspondence_email")).toBe(
+      "This is your official organizational email. Imagine we contact government sectors or external collaborators. Usually you need to be cc’ed via your institutional email.",
+    );
     expect(hint("github_url")).toContain("A username, link, or note");
     expect(hint("linkedin_url")).toContain("linkedin.com/in/username");
     expect(hint("openreview_id")).toContain("~Zhijing_Jin1");
@@ -953,7 +955,11 @@ describe("renderProfile field types", () => {
     const values = roleBoxes(container).map((box) => box.value);
     expect(values.length).toBeGreaterThan(0);
     expect(values).toContain("PhD Student");
-    expect(container.querySelector('[data-testid="profile-multi-role"] summary')?.getAttribute("aria-label")).toBe("Career stage");
+    expect(
+      container
+        .querySelector('[data-testid="profile-multi-role"] summary')
+        ?.getAttribute("aria-label"),
+    ).toBe("Career stage");
     expect(values).not.toContain("Research Assistant");
     expect(values).not.toContain("Research Intern");
     // Nothing outside the closed vocabulary is offered.
@@ -978,11 +984,11 @@ describe("renderProfile field types", () => {
       createState(createMember({ role: "Master's Student, Research Assistant, Research Intern" })),
       vi.fn(),
     );
-    expect(roleBoxes(container).filter((box) => box.checked).map((box) => box.value)).toEqual([
-      "Master's Student",
-      "Research Assistant",
-      "Research Intern",
-    ]);
+    expect(
+      roleBoxes(container)
+        .filter((box) => box.checked)
+        .map((box) => box.value),
+    ).toEqual(["Master's Student", "Research Assistant", "Research Intern"]);
     expect(container.querySelectorAll(".profile__multi-option--legacy input")).toHaveLength(2);
   });
 
