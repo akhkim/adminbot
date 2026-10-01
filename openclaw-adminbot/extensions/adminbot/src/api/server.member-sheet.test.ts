@@ -286,6 +286,8 @@ describe("onboarding from the roster", () => {
         email: "yuenc2@illinois.edu",
         template_id: "alumni",
         proposal_id: expect.any(String),
+        // Only the standard full-member guide is sent on the admin's click; alumni waits.
+        status: "queued",
       },
     ]);
     // An onboarding.send_guide, not a pre-rendered email.send: the send is what provisions the
@@ -321,7 +323,7 @@ describe("onboarding from the roster", () => {
       throw new Error(again.error.message);
     }
     expect(again.created).toEqual([]);
-    expect(again.skipped[0]!.reason).toContain("already waiting");
+    expect(again.skipped[0]!.reason).toContain("already queued or sent");
   });
 
   // Their onboarding is the backend access grant, so they are enrolled rather than skipped.

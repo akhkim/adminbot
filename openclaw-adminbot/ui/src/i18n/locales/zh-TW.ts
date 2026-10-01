@@ -1225,6 +1225,7 @@ export const zh_TW: TranslationMap = {
       description: "Description",
       criteriaUrl: "Criteria link",
       evidence: "Evidence",
+      count: "Count (total awards)",
       assignEvidence: "Evidence (optional)",
       submittedBy: "Submitted by",
       submittedAt: "Submitted",

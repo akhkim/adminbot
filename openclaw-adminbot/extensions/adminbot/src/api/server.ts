@@ -3318,6 +3318,7 @@ async function handleAuthenticatedRoute(
         asString(body.badge_id),
         principal.member.id,
         asString(body.evidence) || undefined,
+        body.count,
       ),
     );
     return;
@@ -3691,6 +3692,14 @@ async function handleAuthenticatedRoute(
       return;
     }
     await handleMemberRequestRoute(req, res, ctx, url, principal);
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/lab/members/collaborator-schedules") {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "member session required" } });
+      return;
+    }
+    sendServiceResult(res, service.listActiveCollaboratorSchedules(principal.member.id));
     return;
   }
   if (req.method === "GET" && url.pathname === "/lab/members/self") {
@@ -5217,14 +5226,24 @@ async function handleAuthenticatedRoute(
       sendJson(res, 400, { error: { message: "Use up to 20 Slack channel names or IDs." } });
       return;
     }
-    sendServiceResult(
-      res,
-      service.queueOnboardingGuideForMember({
-        memberId: decodeURIComponent(memberOnboardingGuide[1]),
-        actor: principalActor(principal),
-        slackChannels: body.slack_project_channels as string[] | undefined,
-      }),
+    const guide = await queueNewMemberGuide(
+      memberOnboardingDeps(ctx, principal, approverIdentityFor(principal)),
+      decodeURIComponent(memberOnboardingGuide[1]),
+      { slackChannels: body.slack_project_channels as string[] | undefined },
     );
+    if (guide.status === "failed" || guide.status === "skipped") {
+      sendJson(res, guide.status === "skipped" ? 422 : (guide.http_status ?? 502), {
+        error: { message: guide.reason },
+      });
+      return;
+    }
+    sendJson(res, 200, {
+      proposal_id: guide.proposal_id,
+      template_id: guide.template_id,
+      email: guide.email,
+      status: guide.status,
+      detail: guide.detail,
+    });
     return;
   }
   const onboardingStep = /^\/lab\/members\/([^/]+)\/onboarding\/([^/]+)$/u.exec(url.pathname);
@@ -5393,8 +5412,8 @@ async function handleAuthenticatedRoute(
     const onboardBody = (await readJson(req)) as MemberSheetOnboardRequest;
     let onboardResult;
     try {
-      // The admin's click approves enrollment, as on the Members tab; the mail itself still waits
-      // in Pending Actions, which is what this tab has always done with it.
+      // The admin's click approves enrollment, as on the Members tab, and the standard full-member
+      // guide with it; guides for other Member Types still wait in Pending Actions.
       const onboardDeps = memberOnboardingDeps(ctx, principal, approverIdentityFor(principal));
       onboardResult = await onboardFromMemberSheet(service, ctx.memberSheet, onboardBody, {
         enroll: (input) =>

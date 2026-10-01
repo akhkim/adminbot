@@ -537,6 +537,11 @@ export const adminBotMandatoryProfileFields = [
   // an answer the member can give (see SELF_PROFILE_EDITABLE_FIELDS).
   "one_on_one_folder_url",
   "openreview_id",
+  "affiliation",
+  "hours_per_week",
+  "joined_month",
+  "graduated_month",
+  "next_position",
 ] as const;
 
 export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFields)[number];
@@ -808,6 +813,11 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   cv_url: "CV",
   one_on_one_folder_url: "Link to 1:1 Folder",
   openreview_id: "OpenReview",
+  affiliation: "Main affiliation",
+  hours_per_week: "Hours per week on Jinesis projects",
+  joined_month: "Joined month",
+  graduated_month: "Potential offboarding month",
+  next_position: "Next position you are looking for",
 };
 
 /**

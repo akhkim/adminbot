@@ -101,6 +101,7 @@ export type AdminBotAccessGrant = {
 export type AdminBotMemberStatus = "active" | "part_time" | "on_leave" | "alumni" | "external";
 
 export type AdminBotLabMember = {
+  assigned_badges?: import("../auth/session.ts").AssignedBadge[];
   id: string;
   name: string;
   email?: string;
@@ -2818,7 +2819,10 @@ async function onboardSavedMember(
   }
   return {
     kind: "success",
-    text: `Saved member ${memberId}. Their ${result.value.template_id} onboarding email draft is queued in Pending Actions. An admin must review, approve, and execute it there; no email has been sent yet.`,
+    text:
+      result.value.status === "done"
+        ? `Saved member ${memberId}. Their standard onboarding email has been sent.`
+        : `Saved member ${memberId}. Their ${result.value.template_id} onboarding email draft is queued in Pending Actions. An admin must review, approve, and execute it there; no email has been sent yet.`,
   };
 }
 

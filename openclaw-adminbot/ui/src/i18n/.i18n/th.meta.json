@@ -26,6 +26,7 @@
     "adminbotBadges.error.unreachable",
     "adminbotBadges.field.assignEvidence",
     "adminbotBadges.field.category",
+    "adminbotBadges.field.count",
     "adminbotBadges.field.criteriaUrl",
     "adminbotBadges.field.currentBadges",
     "adminbotBadges.field.description",
@@ -1287,12 +1288,12 @@
     "tabUsage.untimed",
     "tabUsage.window"
   ],
-  "generatedAt": "2026-09-30T20:05:43.233Z",
+  "generatedAt": "2026-10-01T02:33:38.673Z",
   "locale": "th",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "b7400f6cf3ff0afdb6f3e69b32b82895b787e67557ca41ddf38bd6781e3a1465",
-  "totalKeys": 2432,
+  "sourceHash": "bee091e9f2c1c59079af226b4371b3d773fe10a395c4d79bdb628d47c890e153",
+  "totalKeys": 2433,
   "translatedKeys": 1146,
   "workflow": 1
 }
