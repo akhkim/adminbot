@@ -8,30 +8,6 @@ POLICY_SCOPE = 'NeurIPS 2026 workshop contributions'
 POLICY_ID = 'neurips2026_workshop_notification_by'
 
 
-def migrate_workshop_dates(items):
-    """Keep legacy values inspectable without presenting shared cutoffs as decisions."""
-    for item in items:
-        if item.get('venue_type') != 'workshop':
-            continue
-        stamp = item.get('notification_aoe', '')
-        if stamp and item.get('notification_status') != 'source_backed':
-            item.setdefault('notification_previous_aoe', stamp)
-            item['notification_status'] = 'unverified'
-            item['notification_aoe'] = ''
-            if item.get('venue_group') == 'NeurIPS 2026 Workshops':
-                item.setdefault('notification_policy', {
-                    'milestone': 'notification_by', 'label': 'Workshops must notify authors by',
-                    'kind': 'date', 'date': stamp[:10], 'status': 'unverified',
-                })
-        if (item.get('id') == CURATED_WORKSHOP and item.get('deadline_aoe')
-                and not item.get('deadline_source_evidence')):
-            item['deadline_source_status'] = 'legacy_unverified'
-        for issue in notification_conflicts(item):
-            if issue not in item.setdefault('notification_issues', []):
-                item['notification_issues'].append(issue)
-    return items
-
-
 def notification_conflicts(item):
     cutoff = item.get('notification_policy', {}).get('date', '')
     return ['Published decision date is later than the shared notification cutoff.'] if any(
@@ -52,7 +28,6 @@ def refresh_workshop_dates(items, previous_by_id, clock, force_refresh=False, *,
                         'notification_previous_aoe', 'notification_issues'):
                 if key in previous:
                     item[key] = copy.deepcopy(previous[key])
-    migrate_workshop_dates(items)
     curated = [item for item in items if item.get('id') == CURATED_WORKSHOP]
     for item in curated:
         item['_schedule_purpose'] = (

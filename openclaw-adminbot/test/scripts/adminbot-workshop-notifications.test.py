@@ -1,4 +1,5 @@
 import copy
+import json
 import pathlib
 import sys
 import unittest
@@ -19,7 +20,7 @@ def answer():
 
 def workshop(id='synthetic_workshop'):
     return dict(id=id, venue_type='workshop', venue_group='NeurIPS 2026 Workshops',
-                notification_aoe='2026-09-29 23:59:59', deadline_aoe='2026-09-10 23:59:59')
+                notification_aoe='', deadline_aoe='2026-09-10 23:59:59')
 
 
 class NotificationTests(unittest.TestCase):
@@ -27,16 +28,19 @@ class NotificationTests(unittest.TestCase):
         return m.refresh_workshop_dates(rows, previous or {}, AoEClock.resolve(day),
             fetch_html=fetch or (lambda url: (url, TEXT)), extract=extract or (lambda *_: answer()))
 
-    def test_migration_does_not_claim_a_shared_cutoff_is_a_decision(self):
-        row = workshop()
-        m.migrate_workshop_dates([row])
-        self.assertEqual(row['notification_aoe'], '')
-        self.assertEqual(row['notification_policy']['status'], 'unverified')
-        self.assertEqual(row['notification_policy']['date'], '2026-09-29')
-        self.assertEqual(row['notification_previous_aoe'], '2026-09-29 23:59:59')
-        once = copy.deepcopy(row)
-        m.migrate_workshop_dates([row])
-        self.assertEqual(row, once)
+    def test_shipped_snapshot_already_separates_unverified_notifications(self):
+        dataset = pathlib.Path(__file__).resolve().parents[2] / 'extensions/adminbot/content/deadlines/deadlines.json'
+        rows = json.loads(dataset.read_text())['items']
+        workshops = [row for row in rows if row['venue_type'] == 'workshop']
+        self.assertTrue(workshops)
+        for row in workshops:
+            if row.get('notification_status') != 'source_backed':
+                self.assertFalse(row.get('notification_aoe'))
+            self.assertNotEqual(row.get('abstract_requirement_evidence'),
+                                'The same submission track publishes a separate abstract deadline.')
+        curated = next(row for row in workshops if row['id'] == m.CURATED_WORKSHOP)
+        if not curated.get('deadline_source_evidence'):
+            self.assertEqual(curated['deadline_source_status'], 'legacy_unverified')
 
     def test_policy_is_checked_once_for_many_workshops(self):
         calls = []
@@ -71,11 +75,18 @@ class NotificationTests(unittest.TestCase):
         self.assertEqual(row['notification_policy']['status'], 'source_unavailable')
         self.assertEqual(row['notification_aoe'], '')
 
-    def test_failed_first_check_keeps_unverified_legacy_day(self):
+    def test_failed_first_check_keeps_saved_unverified_policy(self):
         row = workshop()
+        row['notification_policy'] = dict(milestone='notification_by', kind='date', date='2026-09-29', status='unverified')
         self.refresh([row], extract=lambda *_: {'entries': [], 'issues': []})
         self.assertEqual(row['notification_policy']['date'], '2026-09-29')
         self.assertNotIn('evidence', row['notification_policy'])
+        self.assertEqual(row['notification_aoe'], '')
+
+    def test_failed_first_check_does_not_invent_a_shared_cutoff(self):
+        row = workshop()
+        self.refresh([row], extract=lambda *_: {'entries': [], 'issues': []})
+        self.assertNotIn('date', row['notification_policy'])
         self.assertEqual(row['notification_aoe'], '')
 
     def test_missing_policy_target_does_not_advance_the_success_clock(self):
@@ -99,13 +110,6 @@ class NotificationTests(unittest.TestCase):
         self.refresh([row], {row['id']: copy.deepcopy(row)})
         self.assertEqual(row['notification_issues'], [])
 
-    def test_curated_legacy_submission_is_explicitly_unverified(self):
-        row = dict(workshop(m.CURATED_WORKSHOP), venue_group='EMNLP 2026 Workshops')
-        m.migrate_workshop_dates([row])
-        self.assertEqual(row['deadline_source_status'], 'legacy_unverified')
-        self.assertNotIn('notification_policy', row)
-        self.assertEqual(row['notification_aoe'], '')
-
     def test_curated_workshop_source_supplies_submission_and_decision(self):
         url = 'https://sites.google.com/view/nlp4positiveimpact/call-for-papers-2026'
         text = '<h1>Synthetic workshop 2026 schedule</h1><p>ARR commitment deadline: August 9, 2026.</p><p>Notification of acceptance: August 23, 2026.</p>'
@@ -122,7 +126,7 @@ class NotificationTests(unittest.TestCase):
 
     def test_conflict_keeps_both_dates(self):
         row = workshop()
-        m.migrate_workshop_dates([row])
+        row['notification_policy'] = dict(milestone='notification_by', kind='date', date='2026-09-29', status='unverified')
         row['schedule'] = [dict(milestone='notification', date='2026-10-01', evidence='Decisions October 1')]
         self.assertEqual(len(m.notification_conflicts(row)), 1)
         self.assertEqual(row['schedule'][0]['date'], '2026-10-01')

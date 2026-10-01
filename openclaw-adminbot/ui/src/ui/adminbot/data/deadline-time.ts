@@ -1,11 +1,11 @@
+import { deadlinePlanningInstant } from "../../../../../extensions/adminbot/src/contracts/deadline-time.js";
 // AoE date arithmetic and urgency banding for the bundled deadline snapshot.
 //
 // Extracted from views/deadlines.ts so the full board and the two-row summary on the profile page
 // agree on what "3 days left" means. Both read the same generated summary; only the presentation
 // differs. A countdown that disagreed between the two surfaces would read as a bug in the data.
-
-import type { DeadlineVenue } from "./deadlines.ts";
 import { DEADLINE_SUMMARIES, type DeadlineSummaryVenue } from "./deadlines-summary.ts";
+import type { DeadlineVenue } from "./deadlines.ts";
 
 export const MS_DAY = 86_400_000;
 
@@ -37,10 +37,19 @@ export function aoeInstantMs(aoe: string): number {
 
 /** Exact cutoff when known; otherwise the explicitly marked early planning boundary. */
 export function deadlineInstantMs(
-  venue: Pick<DeadlineVenue, "deadline_aoe" | "deadline_at" | "deadline_planning_at">,
+  venue: Pick<
+    DeadlineVenue,
+    | "deadline_aoe"
+    | "deadline_at"
+    | "deadline_date"
+    | "deadline_timezone"
+    | "deadline_time_precision"
+  >,
 ): number {
-  const canonical = venue.deadline_at || venue.deadline_planning_at;
-  return canonical ? Date.parse(canonical) : aoeInstantMs(venue.deadline_aoe);
+  if (venue.deadline_time_precision === "date_only") {
+    return deadlinePlanningInstant(venue.deadline_date || "", venue.deadline_timezone);
+  }
+  return venue.deadline_at ? Date.parse(venue.deadline_at) : aoeInstantMs(venue.deadline_aoe);
 }
 
 export function deadlineDateTimeLabel(

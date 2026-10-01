@@ -139,7 +139,6 @@ describe("source precision", () => {
     deadline_date: "2035-02-01",
     deadline_timezone: "",
     deadline_time_precision: "date_only",
-    deadline_planning_at: "2035-01-31T10:00:00Z",
   };
   it("shows the source day instead of the earlier planning day", () => {
     expect(deadlineDateTimeLabel(dateOnly)).toBe("Feb 1, 2035 · time unknown");
@@ -158,5 +157,39 @@ describe("source precision", () => {
         deadline_at: "2035-02-02T11:59:59Z",
       }),
     ).toBe("Feb 1, 2035 · 23:59 AoE");
+  });
+});
+
+describe("calculated planning cutoff", () => {
+  it.each([
+    ["2035-01-15", "America/Toronto", "2035-01-15T05:00:00Z"],
+    ["2035-07-15", "America/Toronto", "2035-07-15T04:00:00Z"],
+    ["2035-07-15", "GMT+2", "2035-07-14T22:00:00Z"],
+    ["2035-07-15", "UTC-03:30", "2035-07-15T03:30:00Z"],
+    ["2035-07-15", "AoE", "2035-07-15T12:00:00Z"],
+    ["2035-07-15", "", "2035-07-14T10:00:00Z"],
+  ])("resolves %s in %s", (date, zone, expected) => {
+    expect(
+      deadlineInstantMs({
+        deadline_aoe: "",
+        deadline_date: date,
+        deadline_timezone: zone,
+        deadline_time_precision: "date_only",
+      }),
+    ).toBe(Date.parse(expected));
+  });
+  it.each([
+    ["2035-02-30", "UTC"],
+    ["2035-07-15", "GMT+25"],
+    ["2035-07-15", "invalid"],
+  ])("rejects invalid date/zone %s %s", (date, zone) => {
+    expect(
+      deadlineInstantMs({
+        deadline_aoe: "",
+        deadline_date: date,
+        deadline_timezone: zone,
+        deadline_time_precision: "date_only",
+      }),
+    ).toBeNaN();
   });
 });

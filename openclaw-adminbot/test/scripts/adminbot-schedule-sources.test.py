@@ -152,7 +152,7 @@ class ScheduleTests(unittest.TestCase):
                 value = {'entries': [entry(timezone='UTC', time_evidence=quote)], 'issues': []}
                 entries, _ = m.validate_result(value, {URL: m.source_text(TEXT + FOOTNOTE + quote)},
                                                {'year': 2035, 'targets': [{'id': 'example_paper'}]})
-                self.assertEqual(entries[0]['deadline_planning_at'], '2035-09-19T23:59:00Z')
+                self.assertEqual(entries[0]['deadline_at'], '2035-09-19T23:59:00Z')
 
     def test_date_only_uses_earliest_timezone_and_no_aoe_claim(self):
         value = result()

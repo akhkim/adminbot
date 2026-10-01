@@ -37,7 +37,7 @@ from adminbot_conference_deadlines import (
     refresh_configured_conferences as refresh_conference_milestones,
 )
 from adminbot_schedule_sources import refresh_schedules
-from adminbot_workshop_notifications import migrate_workshop_dates, refresh_workshop_dates
+from adminbot_workshop_notifications import refresh_workshop_dates
 from adminbot_deadlines import AoEClock, is_sweep_due
 from adminbot_deadline_time import TIME_FIELDS, timing_fields
 from adminbot_abstract_requirements import ABSTRACT_FIELDS, requirement_from_text, merge_requirements, attach_abstract_requirements
@@ -1662,7 +1662,6 @@ def write_outputs(items):
     without a sweep -- see --rewrite-outputs. Every writer runs from the one list,
     which keeps the service and Control UI datasets in sync.
     """
-    migrate_workshop_dates(items)
     attach_abstract_requirements(items)
     items.sort(key=lambda x: (not bool(x["deadline_aoe"]), x["deadline_aoe"], x["name"]))
     doc = dict(history_version=4, timezone="AoE (UTC-12)",
@@ -1720,13 +1719,13 @@ def write_outputs(items):
                 "export type DeadlineRevision = {\n"
                 "  observed_at: string;\n  deadline_aoe: string;\n"
                 "  deadline_at?: string;\n  deadline_date?: string;\n  deadline_timezone?: string;\n"
-                "  deadline_time_precision?: string;\n  deadline_planning_at?: string;\n"
+                "  deadline_time_precision?: string;\n"
                 "  notification_aoe?: string;\n  deadline_label?: string;\n  link?: string;\n};\n\n"
                 "/** One dated stage of a venue's calendar, other than the submission itself. */\n"
                 "export type DeadlineMilestone = {\n"
                 "  /** reviews | rebuttal | notification | cycle_end | camera_ready | conference */\n"
                 "  milestone: string;\n  label: string;\n"
-                "  source_url?: string;\n  evidence?: string;\n  planning_at?: string;\n"
+                "  source_url?: string;\n  evidence?: string;\n"
                 "  /** How to read the date: an AoE cutoff, a day the venue acts on, or a span. */\n"
                 "  kind: \"deadline\" | \"date\" | \"period\";\n"
                 "  /** Set for kind \"deadline\" and \"date\". */\n"
@@ -1743,7 +1742,7 @@ def write_outputs(items):
                 "  abstract_requirement_conflict?: boolean;\n  abstract_deadline_id?: string;\n"
                 "  id: string;\n  name: string;\n  venue_type: string;\n  venue_group: string;\n"
                 "  deadline_at?: string;\n  deadline_date?: string;\n  deadline_timezone?: string;\n"
-                "  deadline_time_precision?: string;\n  deadline_planning_at?: string;\n"
+                "  deadline_time_precision?: string;\n"
                 "  /** Stable dated-deadline identity; equal to the legacy id. */\n"
                 "  deadline_id: string;\n"
                 "  /** Canonical venue identity, with every accepted legacy form listed below. */\n"
@@ -1846,7 +1845,6 @@ def main():
         return
     previous_doc = _load_previous_document(baseline_args[0] if baseline_args else "")
     previous_items = previous_doc.get("items", [])
-    migrate_workshop_dates(previous_items)
     previous_history_version = previous_doc.get("history_version")
     previous_has_history = previous_history_version == 4
     previous_by_id = {item.get("id"): item for item in previous_items if item.get("id")}
