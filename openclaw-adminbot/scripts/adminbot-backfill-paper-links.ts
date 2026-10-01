@@ -6,7 +6,9 @@
 // link that is already set -- the database is the record of what the lab decided, and a spreadsheet
 // export is one person's snapshot of it. It can only fill blanks.
 //
-// Source is a CSV export of the "Formatted Papers" tab of the Quick-Start Survey workbook, which is
+// --paper-submissions reads only URL text in columns E/F of Paper Submissions;
+// it fills missing artifacts on unambiguous exact-title matches, without requiring a Year.
+// Source otherwise is a CSV export of the "Formatted Papers" tab of the Quick-Start Survey workbook, which is
 // where the lab actually keeps arXiv and Overleaf URLs. Export it as CSV rather than teaching this
 // script to read xlsx: the repo has no spreadsheet dependency and this does not justify adding one.
 //
@@ -19,11 +21,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
+import { isAdminBotOverleafHost } from "../extensions/adminbot/src/contracts/overleaf.js";
+import { isMainModule } from "./lib/is-main-module.mjs";
 
 type Options = {
   csv: string;
   database: string;
   write: boolean;
+  paperSubmissions: boolean;
   /** Report every unmatched sheet row, not just the count. */
   verbose: boolean;
   /**
@@ -75,6 +80,7 @@ function parseArgs(argv: readonly string[]): Options {
     csv: "",
     database: "state/adminbot.sqlite",
     write: false,
+    paperSubmissions: false,
     verbose: false,
     sinceYear: 2025,
     yes: false,
@@ -92,6 +98,8 @@ function parseArgs(argv: readonly string[]): Options {
         throw new Error("--since-year needs a year, e.g. --since-year 2025");
       }
       options.sinceYear = value;
+    } else if (arg === "--paper-submissions") {
+      options.paperSubmissions = true;
     } else if (arg === "--write") {
       options.write = true;
     } else if (arg === "--yes" || arg === "-y") {
@@ -108,6 +116,7 @@ function parseArgs(argv: readonly string[]): Options {
           "  --csv <file>       CSV export of the survey's 'Formatted Papers' tab (required)",
           "  --database <file>  SQLite path (default: state/adminbot.sqlite)",
           "  --since-year <y>   Ignore sheet rows older than this (default: 2025)",
+          "  --paper-submissions  Read E/F links from Paper Submissions (exact matches only)",
           "  --write            Apply the changes. Without it, nothing is written.",
           "  --yes, -y          Approve every placeholder merge without asking",
           "  --no-merge         Only match on exact titles; never merge placeholders",
@@ -121,6 +130,9 @@ function parseArgs(argv: readonly string[]): Options {
   }
   if (!options.csv) {
     throw new Error("--csv is required (export the 'Formatted Papers' tab as CSV)");
+  }
+  if (options.paperSubmissions) {
+    options.noMerge = true;
   }
   return options;
 }
@@ -224,7 +236,11 @@ function pendingLinks(
   payload: PaperPayload,
   row: SheetRow,
   columnIndex: ReadonlyMap<string, number>,
+  paperSubmissions = false,
 ): { field: string; value: string }[] {
+  if (paperSubmissions) {
+    return pendingSubmissionLinks(payload.artifacts ?? {}, row.cells);
+  }
   const artifacts = { ...payload.artifacts };
   const found: { field: string; value: string }[] = [];
   for (const [column, field] of LINK_COLUMNS) {
@@ -248,6 +264,48 @@ function pendingLinks(
     found.push({ field, value: url });
   }
   return found;
+}
+
+/** Paper Submissions E/F cells are mixed notes and links; never reinterpret dates as URLs. */
+export function pendingSubmissionLinks(
+  artifacts: Readonly<Record<string, string | undefined>>,
+  cells: readonly string[],
+): { field: string; value: string }[] {
+  const found = new Map<string, string>();
+  for (const cell of cells.slice(4, 6)) {
+    for (const raw of cell.match(/https?:\/\/[^\s<>"']+/giu) ?? []) {
+      const value = raw.replace(/[),.;]+$/u, "");
+      let url: URL;
+      try {
+        url = new URL(value);
+      } catch {
+        continue;
+      }
+      if (url.protocol !== "https:" || url.username || url.password) {
+        continue;
+      }
+      let field: string | undefined;
+      if (isAdminBotOverleafHost(url.hostname)) {
+        if (/^\/read\/[A-Za-z0-9]+\/?$/u.test(url.pathname)) {
+          field = "overleaf_view_url";
+        } else if (/^\/[A-Za-z0-9]{12,64}\/?$/u.test(url.pathname)) {
+          field = "overleaf_share_url";
+        } else if (/^\/project\/[A-Za-z0-9]{1,64}\/?$/u.test(url.pathname)) {
+          field = "overleaf_edit_url";
+        }
+      } else if (url.hostname === "docs.google.com") {
+        if (/^\/document\/d\/[A-Za-z0-9_-]+(?:\/|$)/u.test(url.pathname)) {
+          field = "brainstorming_doc_url";
+        } else if (/^\/presentation\/d\/[A-Za-z0-9_-]+(?:\/|$)/u.test(url.pathname)) {
+          field = "google_slides_url";
+        }
+      }
+      if (field && !artifacts[field] && !found.has(field)) {
+        found.set(field, value);
+      }
+    }
+  }
+  return [...found].map(([field, value]) => ({ field, value }));
 }
 
 /**
@@ -291,11 +349,11 @@ async function main(): Promise<void> {
       continue;
     }
     const year = yearColumn === undefined ? Number.NaN : parseYear(cells[yearColumn] ?? "");
-    if (Number.isNaN(year)) {
+    if (!options.paperSubmissions && Number.isNaN(year)) {
       skippedUndated++;
       continue;
     }
-    if (year < options.sinceYear) {
+    if (!options.paperSubmissions && year < options.sinceYear) {
       skippedOld++;
       continue;
     }
@@ -305,11 +363,13 @@ async function main(): Promise<void> {
   // Sheet rows keyed by exact title, and separately by pre-colon head for the placeholder merge.
   // A head shared by two rows is not usable -- a guess between two papers is worse than leaving the
   // placeholder alone -- so those heads are dropped rather than resolved.
-  const byTitle = new Map<string, SheetRow>();
+  const byTitle = new Map<string, SheetRow | null>();
   const byHead = new Map<string, SheetRow | null>();
   for (const row of kept) {
     const key = titleKey(row.title);
-    if (!byTitle.has(key)) {
+    if (options.paperSubmissions && byTitle.has(key)) {
+      byTitle.set(key, null);
+    } else if (!byTitle.has(key)) {
       byTitle.set(key, row);
     }
     const head = titleHead(row.title);
@@ -331,6 +391,11 @@ async function main(): Promise<void> {
   const usedKeys = new Set<string>();
   const mergeCandidates: Candidate[] = [];
   let matchedExact = 0;
+  const titleCounts = new Map<string, number>();
+  for (const paper of papers) {
+    const key = titleKey((JSON.parse(paper.payload_json) as PaperPayload).title ?? "");
+    titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1);
+  }
 
   for (const paper of papers) {
     const payload = JSON.parse(paper.payload_json) as PaperPayload;
@@ -339,6 +404,9 @@ async function main(): Promise<void> {
       continue;
     }
     const key = titleKey(title);
+    if (options.paperSubmissions && titleCounts.get(key) !== 1) {
+      continue;
+    }
     const row = byTitle.get(key);
     if (!row) {
       // The paper's whole title is a sheet title's pre-colon half: a placeholder and its finished
@@ -353,7 +421,7 @@ async function main(): Promise<void> {
     matchedExact++;
     usedKeys.add(titleKey(row.title));
 
-    const links = pendingLinks(payload, row, columnIndex);
+    const links = pendingLinks(payload, row, columnIndex, options.paperSubmissions);
     if (links.length === 0) {
       continue;
     }
@@ -366,7 +434,11 @@ async function main(): Promise<void> {
   }
 
   console.log(`papers in database:        ${papers.length}`);
-  console.log(`sheet rows from ${options.sinceYear} on:   ${kept.length}`);
+  console.log(
+    options.paperSubmissions
+      ? `Paper Submissions rows:    ${kept.length}`
+      : `sheet rows from ${options.sinceYear} on:   ${kept.length}`,
+  );
   console.log(`  skipped, older:          ${skippedOld}`);
   console.log(`  skipped, no year:        ${skippedUndated}`);
   console.log(`matched by exact title:    ${matchedExact}`);
@@ -376,7 +448,12 @@ async function main(): Promise<void> {
   if (mergeCandidates.length > 0) {
     console.log("\nproposed placeholder merges:");
     for (const candidate of mergeCandidates) {
-      const links = pendingLinks(candidate.payload, candidate.row, columnIndex);
+      const links = pendingLinks(
+        candidate.payload,
+        candidate.row,
+        columnIndex,
+        options.paperSubmissions,
+      );
       console.log(`  "${candidate.title}"  ->  "${candidate.row.title}" (${candidate.row.year})`);
       console.log(
         `    ${links.length} link${links.length === 1 ? "" : "s"} would follow${
@@ -414,7 +491,12 @@ async function main(): Promise<void> {
           }
           approved++;
           usedKeys.add(titleKey(candidate.row.title));
-          const links = pendingLinks(candidate.payload, candidate.row, columnIndex);
+          const links = pendingLinks(
+            candidate.payload,
+            candidate.row,
+            columnIndex,
+            options.paperSubmissions,
+          );
           const artifacts = { ...candidate.payload.artifacts };
           for (const link of links) {
             artifacts[link.field] = link.value;
@@ -448,14 +530,21 @@ async function main(): Promise<void> {
 
   // Back up before the first write, not after: a backup taken later is a backup of the damage.
   const backup = backupPath(options.database);
-  fs.copyFileSync(options.database, backup);
+  db.exec(`VACUUM INTO '${backup.replaceAll("'", "''")}'`);
   console.log(`\nBacked up to ${path.resolve(backup)}`);
 
-  const update = db.prepare("UPDATE adminbot_papers SET payload_json = ? WHERE id = ?");
-  db.exec("BEGIN");
+  const originals = new Map(papers.map((paper) => [paper.id, paper.payload_json]));
+  const update = db.prepare(
+    "UPDATE adminbot_papers SET payload_json = ? WHERE id = ? AND payload_json = ?",
+  );
+  db.exec("BEGIN IMMEDIATE");
   try {
     for (const [id, payload] of updates) {
-      update.run(payload, id);
+      if (update.run(payload, id, originals.get(id)).changes !== 1) {
+        throw new Error(
+          "Paper changed during backfill; no updates committed. Run a fresh dry run.",
+        );
+      }
     }
     db.exec("COMMIT");
   } catch (error) {
@@ -469,7 +558,9 @@ async function main(): Promise<void> {
   db.close();
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+if (isMainModule(import.meta.url)) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}
