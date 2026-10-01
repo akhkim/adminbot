@@ -78,14 +78,16 @@ export type ProfessorViewProps = {
   broadcastDraft?: string;
   broadcastExpiry?: string;
   broadcastAvailability?: string;
+  broadcastTimezone?: string;
   broadcastBusy?: boolean;
   broadcastNotice?: { kind: "success" | "error"; text: string } | null;
   onBroadcastDraftChange: (value: string) => void;
   onBroadcastExpiryChange: (value: string) => void;
   onBroadcastAvailabilityChange: (value: string) => void;
+  onBroadcastTimezoneChange?: (value: string) => void;
   /** Post what is in the box, or take the current broadcast down with null. */
   onBroadcastPublish: (
-    draft: { message: string; availability: string; expiresOn: string } | null,
+    draft: { message: string; availability: string; expiresOn: string; timezone?: string } | null,
   ) => void;
 };
 
@@ -631,8 +633,12 @@ function broadcastBox(props: ProfessorViewProps) {
   const expiresOn =
     props.broadcastExpiry ?? (live ? live.expires_at.slice(0, 10) : defaultExpiryDate());
   const availability = props.broadcastAvailability ?? live?.availability ?? "away";
+  const timezone = props.broadcastTimezone ?? live?.timezone ?? "";
   const busy = Boolean(props.broadcastBusy);
-  const dirty = draft.trim() !== (live?.message ?? "").trim();
+  const dirty =
+    draft.trim() !== (live?.message ?? "").trim() ||
+    availability !== live?.availability ||
+    timezone.trim() !== (live?.timezone ?? "");
 
   return html`
     <section class="professor__section professor__broadcast" data-testid="professor-broadcast">
@@ -687,6 +693,18 @@ function broadcastBox(props: ProfessorViewProps) {
             )}
           </select>
         </label>
+        <label class="professor__broadcast-field">
+          <span>${t("professor.broadcast.timezone")}</span>
+          <input
+            type="text"
+            data-testid="professor-broadcast-timezone"
+            .value=${timezone}
+            placeholder="America/Toronto"
+            ?disabled=${busy}
+            @input=${(event: Event) =>
+              props.onBroadcastTimezoneChange?.((event.target as HTMLInputElement).value)}
+          />
+        </label>
         <div class="professor__broadcast-actions">
           <button
             class="btn btn--sm primary"
@@ -695,7 +713,13 @@ function broadcastBox(props: ProfessorViewProps) {
             ?disabled=${busy ||
             !draft.trim() ||
             (!dirty && !!live && expiresOn === live.expires_at.slice(0, 10))}
-            @click=${() => props.onBroadcastPublish({ message: draft, availability, expiresOn })}
+            @click=${() =>
+              props.onBroadcastPublish({
+                message: draft,
+                availability,
+                expiresOn,
+                ...(timezone.trim() ? { timezone: timezone.trim() } : {}),
+              })}
           >
             ${live ? t("professor.broadcast.update") : t("professor.broadcast.post")}
           </button>

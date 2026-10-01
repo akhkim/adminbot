@@ -3685,6 +3685,7 @@ export async function sendMeetingAttendanceNudges(
  * them, and this page should render that rather than crash on it.
  */
 export type LabBroadcast = {
+  timezone?: string;
   id?: string;
   availability: "available" | "busy" | "away" | "unknown";
   message: string;
@@ -3725,7 +3726,12 @@ export async function fetchLabBroadcasts(
  * than deletes -- see the contract note -- so the archive keeps it either way.
  */
 export async function publishLabBroadcast(
-  draft: { availability: LabBroadcast["availability"]; message: string; expires_at: string } | null,
+  draft: {
+    availability: LabBroadcast["availability"];
+    message: string;
+    expires_at: string;
+    timezone?: string;
+  } | null,
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<{ status: LabBroadcast | null; history: LabBroadcast[] }>> {

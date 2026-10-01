@@ -686,12 +686,15 @@ describe("the lab-wide broadcast", () => {
 
   it("shows the current broadcast above everything else", () => {
     const container = renderPage(
-      createState({ adminBotBroadcast: live } as Partial<AppViewState>),
+      createState({
+        adminBotBroadcast: { ...live, timezone: "America/Toronto" },
+      } as Partial<AppViewState>),
       "member",
     );
     const banner = container.querySelector('[data-testid="dashboard-broadcast"]');
     expect(banner).not.toBeNull();
     expect(banner?.textContent).toContain("Zürich");
+    expect(banner?.textContent).toContain("Time zone: America/Toronto");
     expect(banner?.textContent).toContain("Broadcast from Zhijing");
     // Above the attention stack, not tucked in beside it.
     const attention = container.querySelector('[data-testid="dashboard-attention"]');

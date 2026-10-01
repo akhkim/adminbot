@@ -450,6 +450,8 @@ export const fa: TranslationMap = {
       until: "Showing until {date}",
       showsUntil: "Show until",
       availability: "Status",
+      timezone: "Zhijing’s time zone (optional)",
+      timezoneLabel: "Time zone: {timezone}",
       availability_away: "Away",
       availability_busy: "Busy",
       availability_available: "Available",
