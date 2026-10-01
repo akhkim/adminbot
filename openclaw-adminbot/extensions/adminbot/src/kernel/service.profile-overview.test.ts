@@ -23,6 +23,10 @@ const COMPLETE = {
   correspondence_email: "ada@cs.toronto.edu",
   whatsapp: "+1 555 0100",
   joined_month: "2026-01",
+  affiliation: "University of Toronto",
+  hours_per_week: 20,
+  graduated_month: "2027-06",
+  next_position: "Considering research positions",
   github_url: "https://github.com/ada",
   linkedin_url: "https://linkedin.com/in/ada",
   linkedin_urn: "urn:li:person:ada",
@@ -71,7 +75,7 @@ describe("listMemberProfileOverview", () => {
     // the exported list. (Only `name` is dropped today; adminBotAdminOwnedProfileFields is empty.)
     // A client counting the exported list would show everybody stuck short forever, which is
     // exactly why the count is carried rather than derived.
-    expect(overview.mandatory_field_count).toBe(11);
+    expect(overview.mandatory_field_count).toBe(16);
     expect(overview.members[0]?.filled_field_count).toBe(overview.mandatory_field_count);
     expect(overview.members[0]?.missing_fields).toEqual([]);
   });
@@ -93,6 +97,26 @@ describe("listMemberProfileOverview", () => {
     const [row] = overview.members;
     expect(row?.missing_fields).toEqual(["cv_url", "openreview_id"]);
     expect(row?.filled_field_count).toBe(overview.mandatory_field_count - 2);
+  });
+
+  it("includes missing work fields while accepting zero committed hours", () => {
+    const service = serviceWith([
+      {
+        id: "ada",
+        ...COMPLETE,
+        affiliation: "",
+        hours_per_week: 0,
+        joined_month: "",
+        graduated_month: "",
+        next_position: "",
+      },
+    ]);
+    expect(unwrap(service.listMemberProfileOverview()).members[0]?.missing_fields).toEqual([
+      "affiliation",
+      "joined_month",
+      "graduated_month",
+      "next_position",
+    ]);
   });
 
   it("counts an empty list as missing, the way the reminder pass already does", () => {

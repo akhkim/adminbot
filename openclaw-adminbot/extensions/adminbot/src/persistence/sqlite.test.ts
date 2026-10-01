@@ -31,6 +31,19 @@ function unwrap<T>(
 }
 
 describe("AdminBotSqliteStore", () => {
+  it("retains explicit badge counts after reopening SQLite", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(first.service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+    unwrap(
+      first.service.assignBadge("pat", "community_building__referral_bonus", "admin", undefined, 4),
+    );
+    first.store.close();
+    const reopened = createAdminBotSqliteService({ databasePath });
+    expect(unwrap(reopened.service.listLabMembers()).members[0].assigned_badges?.[0].count).toBe(4);
+    reopened.store.close();
+  });
+
   it("searches only eligible roster names before applying the public result cap", () => {
     const instance = createAdminBotSqliteService({ databasePath: tempDbPath() });
     for (let index = 0; index < 26; index += 1) {

@@ -2,9 +2,9 @@
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
 import { guard } from "lit/directives/guard.js";
+import { styleMap } from "lit/directives/style-map.js";
 import "./adminbot/views/reference-checker.ts";
 import "./adminbot/views/openreview-citation-checks.ts";
-import { styleMap } from "lit/directives/style-map.js";
 import { i18n, t } from "../i18n/index.ts";
 import {
   canAccessTab,
@@ -79,6 +79,7 @@ import {
   toggleAdminBotNudgeRecipient,
 } from "./adminbot/controllers/admin.ts";
 import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
+import { loadCollaboratorSchedules } from "./adminbot/controllers/collaborator-schedules.ts";
 import {
   loadAdminBotLogisticsRequests,
   openAdminBotLogisticsRequest,
@@ -3988,19 +3989,20 @@ export function renderApp(state: AppViewState) {
               onTripDraftChange: (draft) => {
                 state.adminBotTripDraft = draft;
               },
+              collaborators:
+                state.adminBotCollaboratorSchedulesSession ===
+                loadStoredMemberSession()?.sessionToken
+                  ? state.adminBotCollaboratorSchedules
+                  : [],
+              collaboratorsLoading: state.adminBotCollaboratorSchedulesLoading,
+              collaboratorsError: state.adminBotCollaboratorSchedulesError,
+              onLoadCollaborators: () => void loadCollaboratorSchedules(state),
               members: state.adminBotData.members ?? [],
               loading: state.adminBotLoading,
               error: state.adminBotError,
               onRefresh: () => void loadAdminBot(state, adminBotMode, needsPapersForTab),
-              // Default to your own schedule once the roster lands: it is the one you came for,
-              // and it is the only one you can edit. A plain member is pinned to it -- whose time
-              // is committed where is planning data for the people who plan, so reading another
-              // member's schedule is an admin act (the service strips the fields for everyone
-              // else, so a stale selection here would render an empty page anyway).
-              selectedMemberId:
-                accessRole === "admin"
-                  ? state.adminBotTimeAvailabilityMemberId || (state.memberId ?? "")
-                  : (state.memberId ?? ""),
+              // Self is editable; separately authorized collaborator snapshots remain read-only.
+              selectedMemberId: state.adminBotTimeAvailabilityMemberId || (state.memberId ?? ""),
               onMemberChange: (memberId) => {
                 state.adminBotTimeAvailabilityMemberId = memberId;
                 // A different member's schedule carries a different note; keeping the draft would
@@ -4234,6 +4236,14 @@ export function renderApp(state: AppViewState) {
               memberList: adminBotPanel === "members" ? state.adminBotMemberList : undefined,
               standingMeetings:
                 adminBotPanel === "members" ? state.adminBotStandingMeetings : undefined,
+              onboardingSlackChannels: state.myWorkChannelCheck,
+              onLoadOnboardingSlackChannels: hasMemberSession
+                ? () => {
+                    const pending = loadSlackChannelNames(state);
+                    requestHostUpdate?.();
+                    void pending.finally(() => requestHostUpdate?.());
+                  }
+                : undefined,
               memberRequests:
                 adminBotPanel === "members" && hasMemberSession
                   ? {
@@ -4435,8 +4445,8 @@ export function renderApp(state: AppViewState) {
                   ]);
                 },
                 onSaveDefinition: (input) => saveAdminBadgeDefinition(state, input),
-                onAssign: (memberId, badgeId, evidence) =>
-                  void assignAdminBadge(state, memberId, badgeId, evidence),
+                onAssign: (memberId, badgeId, evidence, count) =>
+                  void assignAdminBadge(state, memberId, badgeId, evidence, count),
                 onRemove: (memberId, badgeId) => void removeAdminBadge(state, memberId, badgeId),
                 onDecide: (nominationId, decision) =>
                   void decideAdminBadgeNomination(state, nominationId, decision),

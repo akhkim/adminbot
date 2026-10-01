@@ -26,6 +26,7 @@
     "adminbotBadges.error.unreachable",
     "adminbotBadges.field.assignEvidence",
     "adminbotBadges.field.category",
+    "adminbotBadges.field.count",
     "adminbotBadges.field.criteriaUrl",
     "adminbotBadges.field.currentBadges",
     "adminbotBadges.field.description",
@@ -153,6 +154,7 @@
     "adminbotTimeAvailability.category.personal",
     "adminbotTimeAvailability.category.vacation",
     "adminbotTimeAvailability.chartAria",
+    "adminbotTimeAvailability.chartPhoneHint",
     "adminbotTimeAvailability.chartSubtitle",
     "adminbotTimeAvailability.empty",
     "adminbotTimeAvailability.endDate",
@@ -1288,12 +1290,12 @@
     "tabUsage.untimed",
     "tabUsage.window"
   ],
-  "generatedAt": "2026-09-30T21:20:58.636Z",
+  "generatedAt": "2026-10-01T02:34:27.338Z",
   "locale": "fr",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "638ac3af343bf0431b40cff8ea458eb1eb00ffaf62094dacfc9967f3b910a6aa",
-  "totalKeys": 2433,
+  "sourceHash": "38e57c337d8095915bccb4d2fd72584e9d1fffe1b1c584aa59ded61315dfb3b3",
+  "totalKeys": 2435,
   "translatedKeys": 1146,
   "workflow": 1
 }

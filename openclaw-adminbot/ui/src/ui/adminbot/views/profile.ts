@@ -22,6 +22,7 @@ import {
   isAdminBotFullMember,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import {
+  adminBotBadgeEmoji,
   ADMINBOT_BADGE_DESCRIPTION_MAX,
   ADMINBOT_BADGE_RATIONALE_MAX,
 } from "../../../../../extensions/adminbot/src/contracts/badges.js";
@@ -66,6 +67,7 @@ import {
   type ProfileFieldGroup,
 } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
+import { renderMemberBadgeSymbols, badgeCountLabel } from "./badge-symbols.ts";
 import { renderCountrySelect } from "./country-select.ts";
 import { renderMemberSelect } from "./member-select.ts";
 import { ownPapers } from "./my-work.ts";
@@ -1239,8 +1241,10 @@ function renderBadges(state: AppViewState, member: LabMember) {
     <div class="profile__badges" data-testid="profile-badges">
       ${assigned.map(
         (badge) => html`<span class="profile-badge profile-badge--managed" tabindex="0">
-          <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
-          <span>${assignedBadgeLabel(badge)}</span>
+          <span class="profile-badge__icon" aria-hidden="true"
+            >${adminBotBadgeEmoji(badge.name)}</span
+          >
+          <span>${badgeCountLabel(badge)}</span>
           <span class="profile-badge__popover" role="tooltip">
             <strong>${badge.category}</strong>
             <span>${badge.description}</span>
@@ -1258,7 +1262,9 @@ function renderBadges(state: AppViewState, member: LabMember) {
       )}
       ${computed.map(
         (badge) => html`<span class="profile-badge">
-          <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
+          <span class="profile-badge__icon" aria-hidden="true"
+            >${adminBotBadgeEmoji(badge.split(" · ")[0])}</span
+          >
           ${badge}
         </span>`,
       )}
@@ -1612,9 +1618,6 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
                       />
                       <span class="profile-badge-picker__title">
                         ${assignedBadgeLabel(badge)}
-                        ${badge.category
-                          ? html`<span class="ab-chip">${badge.category}</span>`
-                          : nothing}
                       </span>
                       <p class="profile-badge-picker__description">${badge.description}</p>
                     </label>
@@ -1947,6 +1950,7 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         <div class="profile__identity-copy">
           <div class="profile__identity-top">
             <span class="profile__name">${name}</span>
+            ${renderMemberBadgeSymbols(member.assigned_badges ?? [])}
             <!-- One pill per role. Somebody who is both a PhD student and the lab manager reads as
                  two facts about them, where a single pill holding "PhD Student, Lab Manager" reads
                  as one oddly punctuated job title. -->

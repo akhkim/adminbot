@@ -1237,6 +1237,7 @@ export const vi: TranslationMap = {
       description: "Description",
       criteriaUrl: "Criteria link",
       evidence: "Evidence",
+      count: "Count (total awards)",
       assignEvidence: "Evidence (optional)",
       submittedBy: "Submitted by",
       submittedAt: "Submitted",
@@ -1406,6 +1407,7 @@ export const vi: TranslationMap = {
     capacityNoteUnset:
       "No weekly capacity set on this profile, so there is nothing to compare these hours against.",
     chartAria: "Time allocation chart for {member}",
+    chartPhoneHint: "Swipe sideways to see more dates. Tap a bar for details.",
     chartSubtitle: "Hours committed per period. Overlapping commitments are stacked.",
     empty: "Select a user to view their time allocation.",
     endDate: "End date",
@@ -1493,7 +1495,7 @@ export const vi: TranslationMap = {
       title: "Overall notes for admins",
       hint: "Anything the rows above cannot say — a situation that is complicated, dates that may move, weeks that are hard to predict. Only you and the lab's admins can read this.",
       placeholder:
-        "e.g. I am my grandmother's carer on alternating weeks, so the hours above are an average rather than a fixed schedule.",
+        "e.g. My project meetings alternate between weeks, so the hours above are an average rather than a fixed schedule.",
       submit: "Save notes",
     },
     legendTimeOff: "Outside Jinesis commitments",

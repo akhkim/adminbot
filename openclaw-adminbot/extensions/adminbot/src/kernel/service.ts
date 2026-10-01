@@ -1531,7 +1531,17 @@ export class AdminBotService {
   private seedDefaultBadges(): void {
     const now = new Date().toISOString();
     for (const seed of adminBotDefaultBadgeDefinitions) {
-      if (this.store.getBadgeDefinition(seed.id)) {
+      const existing = this.store.getBadgeDefinition(seed.id);
+      if (existing) {
+        if (
+          seed.id === "team_contributor__infra_builder" &&
+          !existing.tier &&
+          existing.name === seed.name &&
+          existing.category === seed.category &&
+          existing.description === seed.description
+        ) {
+          this.store.saveBadgeDefinition({ ...existing, tier: "Good", updated_at: now });
+        }
         continue;
       }
       const familyKey =
@@ -3366,6 +3376,73 @@ export class AdminBotService {
     };
   }
 
+  listActiveCollaboratorSchedules(viewerId: string): AdminBotServiceResponse<{
+    members: Pick<
+      AdminBotLabMember,
+      "id" | "name" | "hours_per_week" | "availability" | "time_off"
+    >[];
+  }> {
+    if (!this.store.getLabMember(viewerId)) {
+      return { ok: false, status: 404, error: { message: "member not found" } };
+    }
+    const ids = new Set<string>();
+    // Read only this viewer's papers, including every page rather than silently truncating.
+    for (let offset = 0; ; offset += 200) {
+      const papers = this.store.listPapers({ authorMemberId: viewerId, limit: 200, offset });
+      for (const paper of papers) {
+        const progress = paperSlotProgress(
+          paper.id,
+          this.store.listPaperSlots(paper.id),
+          this.store.listSocialDrafts(paper.id),
+        );
+        if (progress.provided >= progress.total) {
+          continue;
+        }
+        for (const author of paper.author_links ?? []) {
+          if (author.member_id && author.member_id !== viewerId) {
+            ids.add(author.member_id);
+          }
+        }
+      }
+      if (papers.length < 200) {
+        break;
+      }
+    }
+    const members = [...ids]
+      .flatMap((id) => {
+        const member = this.store.getLabMember(id);
+        if (!member) {
+          return [];
+        }
+        return [
+          {
+            id: member.id,
+            name: member.name,
+            hours_per_week: member.hours_per_week,
+            availability: (member.availability ?? []).map(
+              ({ start, end, project, hours_per_week }) => ({
+                start,
+                end,
+                project,
+                hours_per_week,
+              }),
+            ),
+            time_off: (member.time_off ?? []).map(
+              ({ start, end, kind, availability, hours_per_week }) => ({
+                start,
+                end,
+                kind,
+                availability,
+                hours_per_week,
+              }),
+            ),
+          },
+        ];
+      })
+      .toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+    return { ok: true, status: 200, payload: { members } };
+  }
+
   listBadgeDefinitions(): AdminBotServiceResponse<{ badges: AdminBotBadgeDefinition[] }> {
     return { ok: true, status: 200, payload: { badges: this.store.listBadgeDefinitions() } };
   }
@@ -3481,7 +3558,14 @@ export class AdminBotService {
     badgeId: string,
     actor: string,
     evidenceInput?: string,
+    countInput?: unknown,
   ): AdminBotServiceResponse<{ assignment: AdminBotAssignedBadge }> {
+    if (
+      countInput !== undefined &&
+      (typeof countInput !== "number" || !Number.isSafeInteger(countInput) || countInput < 1)
+    ) {
+      return serviceError(400, "badge count must be a positive safe integer");
+    }
     const member = this.store.getLabMember(memberId);
     if (!member) {
       return serviceError(404, "member not found");
@@ -3511,6 +3595,11 @@ export class AdminBotService {
       awarded_at: now,
       awarded_by: actor,
       source: "admin",
+      count:
+        (countInput as number | undefined) ??
+        this.store.listBadgeAssignments(memberId).find((entry) => entry.badge_id === badge.id)
+          ?.count ??
+        1,
       ...(evidence ? { evidence } : {}),
     });
     const assignment = this.assignedBadgesFor(memberId).find(
@@ -3519,7 +3608,12 @@ export class AdminBotService {
     this.recordAudit({
       type: "badge.assigned",
       actor,
-      details: { member_id: memberId, badge_id: badge.id, family_key: badge.family_key },
+      details: {
+        member_id: memberId,
+        badge_id: badge.id,
+        family_key: badge.family_key,
+        count: assignment?.count ?? 1,
+      },
     });
     if (!assignment) {
       return serviceError(500, "badge assignment could not be read back");
@@ -12142,7 +12236,11 @@ export class AdminBotService {
       );
     }
     const alreadyQueued = this.store.listProposalsByType("onboarding.send_guide").some((stored) => {
-      if (stored.status !== "pending" && stored.status !== "approved") {
+      if (
+        stored.status !== "pending" &&
+        stored.status !== "approved" &&
+        stored.status !== "executed"
+      ) {
         return false;
       }
       const payload = (stored.proposed_payload ?? {}) as Record<string, unknown>;
@@ -12155,7 +12253,7 @@ export class AdminBotService {
     if (alreadyQueued) {
       return serviceError(
         409,
-        `the ${template.templateId} onboarding guide for ${email} is already waiting for approval`,
+        `the ${template.templateId} onboarding guide for ${email} is already queued or sent`,
       );
     }
     const proposal = this.createProposal({
