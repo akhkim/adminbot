@@ -22,6 +22,7 @@ import {
   createGptZeroBibliographyScanner,
   createPublicOpenReviewPdfReader,
 } from "../connectors/reference-scan.js";
+import { createInterviewChannelProvisioner } from "../connectors/slack-interview.js";
 import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
 import {
   adminBotRegistrationStatuses,
@@ -143,6 +144,7 @@ import {
   type AdminBotOnboardingSendRequest,
 } from "../workflows/onboarding/guide-sender.js";
 import { memberGuideStatus } from "../workflows/onboarding/guide-status.js";
+import { readInterviewInvitation } from "../workflows/onboarding/interview.js";
 import { IclrIntegrityWatch } from "../workflows/papers/iclr-integrity-watch.js";
 import {
   createImportColumnMapper,
@@ -199,6 +201,7 @@ import {
   sendJson,
   sendServiceResult,
 } from "./server.http.js";
+import { prepareInterviewInvitation } from "./server.interview-invitation.js";
 import { handleLabSharingRoute } from "./server.lab-sharing.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
 import {
@@ -697,6 +700,7 @@ type LabCalendarGrant = {
  * reporting success would mark a guide sent that nobody received.
  */
 function executorWithOnboardingGuide(
+  serviceRef: () => AdminBotService,
   inner: AdminBotActionExecutor | undefined,
   sender: () => AdminBotOnboardingSender | undefined,
   labCalendar: () => LabCalendarGrant | undefined,
@@ -707,6 +711,7 @@ function executorWithOnboardingGuide(
 ): AdminBotActionExecutor {
   return {
     async execute(proposal) {
+      const service = serviceRef();
       if (proposal.type === "lab_member.enroll") {
         const run = enroll();
         return run ? run(proposal) : { handled: false, reason: "enrollment is not wired" };
@@ -747,6 +752,17 @@ function executorWithOnboardingGuide(
         template_id: templateId,
         name,
         email,
+        ...(payload.interview ? { interview: readInterviewInvitation(payload.interview) } : {}),
+        ...(Array.isArray(payload.cc)
+          ? { cc: payload.cc.filter((value): value is string => typeof value === "string") }
+          : {}),
+        ...(typeof payload.reply_to === "string" ? { reply_to: payload.reply_to } : {}),
+        ...(typeof payload.body_override === "string"
+          ? { body_override: payload.body_override }
+          : {}),
+        ...(typeof payload.subject_override === "string"
+          ? { subject_override: payload.subject_override }
+          : {}),
         ...(payload.values && typeof payload.values === "object"
           ? { values: payload.values as Record<string, string | undefined> }
           : {}),
@@ -767,6 +783,35 @@ function executorWithOnboardingGuide(
         // Refused rather than thrown: an unfilled placeholder or a missing value is a fixable
         // state, and the reason is what an admin needs to see on the failed approval.
         return { handled: true, delivered: false, reason: result.error.message };
+      }
+      if (payload.interview && result.payload.sent) {
+        const existing = service.listLabMembers();
+        if (
+          existing.ok &&
+          !existing.payload.members.some(
+            (member) => member.email?.toLowerCase() === email.toLowerCase(),
+          )
+        ) {
+          const saved = service.upsertLabMember({
+            id: `interview-${randomUUID()}`,
+            name,
+            email,
+            member_type: "interviewee",
+            collaborator_subgroup: "interviewee",
+            privilege_level: "external_collaborator",
+          });
+          if (!saved.ok) {
+            return {
+              handled: true,
+              delivered: true,
+              artifacts: {
+                template_id: result.payload.template_id,
+                subject: result.payload.subject,
+                warning: `Invitation sent; candidate record needs attention: ${saved.error.message}`,
+              },
+            };
+          }
+        }
       }
       return {
         handled: true,
@@ -835,6 +880,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   } = {};
   const withOnboarding = (executor: AdminBotActionExecutor | undefined) =>
     executorWithOnboardingGuide(
+      () => service,
       executor,
       () => onboardingSenderRef,
       () => onboardingArms.labCalendar,
@@ -992,6 +1038,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   const onboardingSender =
     options.onboardingSender ??
     createAdminBotOnboardingSender({
+      provisionInterviewChannel: createInterviewChannelProvisioner(),
       provisionDriveWorkspace: createDriveWorkspaceProvisioner(),
       ...(dcsRosterRecorder ? { addDcsRosterRow: dcsRosterRecorder } : {}),
       // The number lives in settings, never in the repo (see AGENTS.md: no real phone numbers).
@@ -5609,6 +5656,54 @@ async function handleAuthenticatedRoute(
         dryRun: syncBody.dry_run === true,
         force,
       }),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/onboarding/interviewers") {
+    if (
+      principal.kind !== "member" ||
+      !["member", "admin"].includes(principal.member.privilege_level)
+    ) {
+      sendJson(res, 403, { error: { message: "A lab member session is required." } });
+      return;
+    }
+    const query = (url.searchParams.get("q") || "").trim().toLowerCase().slice(0, 100);
+    sendJson(res, 200, {
+      members: ctx.store
+        .listLabMembers()
+        .filter(
+          (member) =>
+            member.slack_user_id &&
+            ["member", "admin"].includes(member.privilege_level) &&
+            (!query || member.name.toLowerCase().includes(query)),
+        )
+        .slice(0, 50)
+        .map((member) => ({
+          id: member.id,
+          name: member.name,
+          slack_user_id: member.slack_user_id,
+          privilege_level: member.privilege_level,
+        })),
+    });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/onboarding/interview-invitation") {
+    if (
+      principal.kind !== "member" ||
+      !["member", "admin"].includes(principal.member.privilege_level)
+    ) {
+      sendJson(res, 403, { error: { message: "A lab member session is required." } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      await prepareInterviewInvitation(
+        service,
+        readRecord(await readJsonOrEmpty(req)),
+        principal.member,
+        ctx.onboardingSender,
+        () => ctx.store.listProposalsByType("onboarding.send_guide"),
+      ),
     );
     return;
   }

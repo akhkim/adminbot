@@ -1,3 +1,4 @@
+import "./interview-invite.ts";
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
@@ -2265,6 +2266,9 @@ function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember
 }
 
 function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
+  const interviewInvite = html`<adminbot-interview-invite
+    .members=${members}
+  ></adminbot-interview-invite>`;
   const spreadsheet = renderMemberSpreadsheet(props, props.memberList?.rows ?? members);
   const requests = props.memberRequests
     ? { ...props.memberRequests, isAdmin: props.mode === "admin" }
@@ -2274,8 +2278,10 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
   // member, but only an admin's Add member writes the roster; anyone else's files a request.
   if (props.mode === "general") {
     return requests
-      ? html`${renderMemberRequests(requests)}${spreadsheet}${renderMemberRequestForm(requests)}`
-      : spreadsheet;
+      ? html`${interviewInvite}${renderMemberRequests(
+          requests,
+        )}${spreadsheet}${renderMemberRequestForm(requests)}`
+      : html`${interviewInvite}${spreadsheet}`;
   }
   const fullRosterChecks =
     props.memberList && !props.rosterLoadedAt
@@ -2303,7 +2309,7 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
           props,
           members,
         )}`;
-  return html`${requests
+  return html`${interviewInvite}${requests
       ? renderMemberRequests(requests)
       : nothing}${spreadsheet}${fullRosterChecks}
     <div class="adminbot-editor-grid">
