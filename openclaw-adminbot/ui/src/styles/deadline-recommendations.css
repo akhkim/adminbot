@@ -19,11 +19,3 @@
 .deadline-recommendation-details {
   display: none;
 }
-@container deadline-board (max-width: 21em) {
-  .deadline-recommendation-actions > deadline-recommendation {
-    display: none;
-  }
-  .deadline-recommendation-details {
-    display: inline-flex;
-  }
-}

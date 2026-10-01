@@ -1867,7 +1867,7 @@ describe("venue location", () => {
     ]);
   });
 
-  it("shows the location on a workshop card, listing every site", async () => {
+  it("keeps workshop locations in details, listing every site", async () => {
     const container = await renderView();
     const cards = [...container.querySelectorAll<HTMLElement>(".deadline-card")];
     const neurips = cards.find(
@@ -1875,7 +1875,10 @@ describe("venue location", () => {
         card.dataset.entryType === "workshop" &&
         card.querySelector(".deadline-card__group-name")?.textContent?.includes("NeurIPS 2026"),
     )!;
-    const location = neurips.querySelector<HTMLElement>(".deadline-location")!;
+    expect(neurips.querySelector(".deadline-card__context .deadline-location")).toBeNull();
+    const location = neurips.querySelector<HTMLElement>(
+      ".deadline-card__history-panel .deadline-location",
+    )!;
     expect(location.querySelector(".deadline-location__sites")?.textContent?.trim()).toBe(
       "Sydney, Australia · Atlanta, USA · Paris, France",
     );
@@ -1893,32 +1896,23 @@ describe("venue location", () => {
     expect(single.getAttribute("title")).toBe("Budapest, Hungary");
   });
 
-  it("gives the table a Location column, with an em dash where none is published", async () => {
+  it("moves table locations into deadline details", async () => {
     const container = await renderView();
     buttonNamed(container, "Table").click();
     await settle(container);
     const headings = [...container.querySelectorAll(".deadline-table th")].map((cell) =>
       cell.textContent?.trim(),
     );
-    expect(headings).toContain("Location");
-
-    const cells = [...container.querySelectorAll<HTMLElement>(".deadline-table__location")];
-    expect(cells.length).toBeGreaterThan(0);
-    // The column heading already names the field, so the cell carries no pin icon.
-    expect(
-      container.querySelector(".deadline-table__location .deadline-location__icon"),
-    ).toBeNull();
-    expect(cells.some((cell) => cell.textContent?.trim() === "Budapest, Hungary")).toBe(true);
-    expect(
-      cells.some(
-        (cell) => cell.textContent?.trim() === "Sydney, Australia · Atlanta, USA · Paris, France",
-      ),
-    ).toBe(true);
-    // ARR cycles publish no location and must still occupy the column.
-    expect(cells.some((cell) => cell.textContent?.trim() === "—")).toBe(true);
+    expect(headings).not.toContain("Location");
+    expect(container.querySelector(".deadline-table__location")).toBeNull();
+    const details = [...container.querySelectorAll(".deadline-details__facts")].map(
+      (facts) => facts.textContent,
+    );
+    expect(details.some((text) => text?.includes("Budapest, Hungary"))).toBe(true);
+    expect(details.some((text) => text?.includes("Not published"))).toBe(true);
   });
 
-  it("puts the location on the group heading and on every workshop row beneath it", async () => {
+  it("keeps group locations in each workshop’s details", async () => {
     const container = await renderView();
     buttonNamed(container, "Groups").click();
     await settle(container);
@@ -1929,14 +1923,7 @@ describe("venue location", () => {
           .querySelector(".deadline-group__heading strong")
           ?.textContent?.includes("NeurIPS 2026"),
     )!;
-    expect(
-      group
-        .querySelector(".deadline-group__heading .deadline-location__sites")
-        ?.textContent?.trim(),
-    ).toBe("Sydney, Australia · Atlanta, USA · Paris, France");
-    // Every workshop row carries one too, and names its own city rather than repeating the
-    // heading. The heading keeps the full list because it stands for every row beneath it, and
-    // because that is what a collapsed group shows.
+    expect(group.querySelector(".deadline-group__heading .deadline-location")).toBeNull();
     const rows = [...group.querySelectorAll<HTMLElement>(".deadline-group__row")];
     expect(rows.length).toBeGreaterThan(1);
     const sites = rows.map((row) =>
@@ -1948,7 +1935,7 @@ describe("venue location", () => {
     expect(sites.some((site) => site === "Sydney, Australia")).toBe(true);
   });
 
-  it("puts the location on a standalone group row, which has no heading above it", async () => {
+  it("keeps a standalone group location in details", async () => {
     // Searching down to one workshop leaves its bundle with a single row, which the board
     // renders as a standalone card — no heading, so the row itself has to carry the location.
     const container = await renderView();
