@@ -1645,3 +1645,27 @@ Propose a new deadline can add one stage to an existing conference or workshop, 
 Each dated stage has a details menu. Signed-in members can use Suggest deadline correction there; the form targets that stage only. Adding a stage does not replace the submission date or the rest of the schedule. An existing stage must be corrected through its details instead of added again.
 
 Proposals use the administrator approval queue. Approval is bound to the proposed stage and date. If a stage changes before its correction is published, the correction must be submitted again against the current date.
+
+### Interview invitations
+
+On **Lab members**, open **Invite an interviewee**. Enter the candidate's name and email,
+project, exact task, and two lab interviewers. Search by name if an interviewer is not in the
+current roster page. Both interviewers need a Slack user ID and email on their profiles.
+
+**Preview email** shows the candidate address, interviewer CC addresses, and task. Editing a
+field invalidates the preview. **Submit for admin approval** queues an `onboarding.send_guide`
+proposal in Pending Actions; it does not email or invite anyone. An admin reviews and approves
+the exact payload there.
+
+Execution creates or reuses a private candidate-specific Slack channel, checks that no other
+people occupy it, adds the two interviewers, and sends the candidate's Slack Connect invitation
+and task email. The two interviewers are CC'ed, and replies go to the first interviewer. The
+standard friends/collaborators channel is not used. A successfully sent invitation adds a new
+candidate to the roster as `interviewee` at the external-collaborator privilege level; existing
+member access is preserved. Repeated submissions for a pending, approved, or executed invitation
+are refused.
+
+The configured bot needs Slack permissions for private-channel listing/creation, membership
+reads/invites, `auth.test`, and email lookup, plus the existing Slack Connect and Gmail sender.
+Missing permissions stop execution; preview and queueing never provision a channel. This needs
+an Aurora backend release as well as the frontend release.
