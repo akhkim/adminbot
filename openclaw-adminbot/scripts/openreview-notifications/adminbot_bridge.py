@@ -10,10 +10,12 @@ from openreview_notifications.tweets import format_notifications
 from adminbot_authors import enrich
 from adminbot_paper_links import recover_paper_links
 from adminbot_arxiv import add_arxiv_links
+from adminbot_csv import parse_notifications_csv
 
 
 def generate(request, directory):
-    records = request.get("notifications")
+    records = (parse_notifications_csv(request["notifications_csv"])
+               if "notifications_csv" in request else request.get("notifications"))
     if not isinstance(records, list) or len(records) > 10000:
         raise ValueError("Upload a JSON array containing at most 10,000 notifications.")
     selected = filter_notifications(records, parse_min_date(request["min_date"]), request["conference"])

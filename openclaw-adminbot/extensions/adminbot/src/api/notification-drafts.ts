@@ -3,8 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { readDriveFileBase64, resolveGogExecutable } from "../connectors/gog.js";
 import { adminBotNormalizeXHandle, type AdminBotLabMember } from "../contracts/actions.js";
 import { readJson, sendJson } from "./server.http.js";
+
+const DEFAULT_NOTIFICATIONS_FILE_ID = "1M88hLvN6WvWIthUPTnHilWbsmOz2DZg7";
 
 export function createNotificationDraftHandler(
   scriptPath?: string,
@@ -39,8 +42,15 @@ export function createNotificationDraftHandler(
       const body = (await readJson(req, 26 * 1024 * 1024)) as Record<string, unknown>;
       if (
         !body ||
-        !Array.isArray(body.notifications) ||
-        body.notifications.length > 10000 ||
+        !(
+          (body.notifications === undefined && body.notifications_csv === undefined) ||
+          (Array.isArray(body.notifications) &&
+            body.notifications.length <= 10000 &&
+            body.notifications_csv === undefined) ||
+          (typeof body.notifications_csv === "string" &&
+            body.notifications_csv.trim().length > 0 &&
+            body.notifications === undefined)
+        ) ||
         typeof body.min_date !== "string" ||
         !/^\d{4}-\d{2}-\d{2}$/.test(body.min_date) ||
         typeof body.conference !== "string" ||
@@ -60,6 +70,27 @@ export function createNotificationDraftHandler(
         return;
       }
       clearTimeout(timeout);
+      if (body.notifications === undefined && body.notifications_csv === undefined) {
+        try {
+          const encoded = await readDriveFileBase64(DEFAULT_NOTIFICATIONS_FILE_ID, {
+            command: resolveGogExecutable(),
+            maxBytes: 25 * 1024 * 1024,
+            signal: controller.signal,
+          });
+          body.notifications_csv = Buffer.from(encoded, "base64").toString("utf8");
+          if (!(body.notifications_csv as string).trim()) {
+            throw new Error("Empty CSV");
+          }
+        } catch {
+          sendJson(res, 502, {
+            error: {
+              message:
+                "Could not load the default Google Drive CSV (maximum 25 MB). Check the service's gog sign-in and access to the shared file, or upload a CSV/JSON file.",
+            },
+          });
+          return;
+        }
+      }
       const members = listMembers().map((member) => ({
         openreview_id: member.openreview_id,
         handle: adminBotNormalizeXHandle(member.twitter_url),
@@ -107,6 +138,7 @@ export function createNotificationDraftHandler(
         child.stdin.end(
           JSON.stringify({
             notifications: body.notifications,
+            notifications_csv: body.notifications_csv,
             min_date: body.min_date,
             conference: body.conference,
             template: body.template,

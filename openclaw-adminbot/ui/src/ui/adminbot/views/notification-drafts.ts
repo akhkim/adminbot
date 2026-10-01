@@ -11,6 +11,7 @@ export class NotificationDrafts extends LitElement {
   @property() baseUrl = "";
   @property() sessionToken = "";
   @state() private file: File | null = null;
+  @state() private uploadInvalid = false;
   @state() private date = "";
   @state() private conference = "";
   @state() private template = "";
@@ -181,19 +182,27 @@ export class NotificationDrafts extends LitElement {
     this.result = null;
     this.error = "";
     this.file = null;
+    this.uploadInvalid = true;
     if (
       files.length !== 1 ||
-      !files[0].name.toLowerCase().endsWith(".json") ||
+      !/\.(json|csv)$/i.test(files[0].name) ||
       !files[0].size ||
       files[0].size > 25 * 1024 * 1024
     ) {
-      this.error = "Choose one non-empty notifications JSON file, up to 25 MB.";
+      this.error = "Choose one non-empty notifications JSON or CSV file, up to 25 MB.";
       return;
     }
     this.file = files[0];
+    this.uploadInvalid = false;
   }
   private async generate() {
-    if (!this.file || !this.date || !this.conference.trim() || this.busy || !this.sessionToken) {
+    if (
+      this.uploadInvalid ||
+      !this.date ||
+      !this.conference.trim() ||
+      this.busy ||
+      !this.sessionToken
+    ) {
       return;
     }
     const generation = this.generation;
@@ -203,8 +212,10 @@ export class NotificationDrafts extends LitElement {
     this.result = null;
     this.controller = new AbortController();
     try {
-      const notifications: unknown = JSON.parse((await this.file.text()).replace(/^\uFEFF/, ""));
-      if (!Array.isArray(notifications)) {
+      const text = this.file ? (await this.file.text()).replace(/^\uFEFF/, "") : "";
+      const csv = this.file?.name.toLowerCase().endsWith(".csv");
+      const notifications: unknown = !this.file || csv ? undefined : JSON.parse(text);
+      if (this.file && !csv && !Array.isArray(notifications)) {
         throw new Error("The JSON must contain an array of notifications.");
       }
       if (generation !== this.generation) {
@@ -218,6 +229,7 @@ export class NotificationDrafts extends LitElement {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          notifications_csv: csv ? text : undefined,
           notifications,
           min_date: this.date,
           conference: this.conference.trim(),
@@ -269,11 +281,11 @@ export class NotificationDrafts extends LitElement {
           }
         }}
       >
-        ${this.file?.name || "Drop your notifications JSON here"}
+        ${this.file?.name || "Optional: drop a notifications JSON or CSV to override Google Drive"}
         <input
-          aria-label="Notifications JSON"
+          aria-label="Notifications JSON or CSV"
           type="file"
-          accept=".json,application/json"
+          accept=".json,.csv,application/json,text/csv"
           ?disabled=${this.busy}
           @change=${(e: Event) => {
             const input = e.target as HTMLInputElement;
@@ -284,6 +296,20 @@ export class NotificationDrafts extends LitElement {
           }}
         />
       </label>
+      <p class="hint">Without an upload, Generate drafts loads the latest CSV from Google Drive.</p>
+      ${this.file || this.uploadInvalid
+        ? html`<button
+            ?disabled=${this.busy}
+            @click=${() => {
+              this.file = null;
+              this.uploadInvalid = false;
+              this.result = null;
+              this.error = "";
+            }}
+          >
+            Use Google Drive instead
+          </button>`
+        : nothing}
       <div class="fields">
         <label
           >Notifications after<input
@@ -343,7 +369,7 @@ export class NotificationDrafts extends LitElement {
       <button
         class="primary"
         ?disabled=${this.busy ||
-        !this.file ||
+        this.uploadInvalid ||
         !this.date ||
         !this.conference.trim() ||
         !this.sessionToken}

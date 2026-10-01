@@ -13,13 +13,18 @@ async function mount() {
   await el.updateComplete;
   return el;
 }
-async function fill(el: NotificationDrafts, size?: number) {
+async function fill(
+  el: NotificationDrafts,
+  size?: number,
+  name = "notifications.json",
+  text = "[]",
+) {
   const root = el.shadowRoot!;
-  const file = new File(["[]"], "notifications.json", { type: "application/json" });
+  const file = new File([text], name);
   if (size !== undefined) {
     Object.defineProperty(file, "size", { value: size });
   }
-  Object.defineProperty(file, "text", { value: async () => "[]" });
+  Object.defineProperty(file, "text", { value: async () => text });
   const input = root.querySelector<HTMLInputElement>('input[type="file"]')!;
   Object.defineProperty(input, "files", { value: [file], configurable: true });
   input.dispatchEvent(new Event("change"));
@@ -41,6 +46,43 @@ it("accepts a 12 MB export and rejects files above 25 MB", async () => {
   await fill(el, 25 * 1024 * 1024 + 1);
   expect(el.shadowRoot!.querySelector("[role=alert]")?.textContent).toContain("25 MB");
   expect(el.shadowRoot!.querySelector<HTMLButtonElement>(".primary")!.disabled).toBe(true);
+});
+
+it("submits CSV text without parsing it as JSON", async () => {
+  const fetcher = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ announcements: [], images: [], warnings: [] }),
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const el = await mount();
+  const csv = "id,date_utc,venue_domain,subject,message\n";
+  await fill(el, undefined, "notifications.CSV", csv);
+  el.shadowRoot!.querySelector<HTMLButtonElement>(".primary")!.click();
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+  const body = JSON.parse(fetcher.mock.calls[0][1].body);
+  expect(body.notifications_csv).toBe(csv);
+  expect(body.notifications).toBeUndefined();
+});
+
+it("uses Drive when the upload is cleared", async () => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue({
+      ok: true,
+      json: async () => ({ announcements: [], images: [], warnings: [] }),
+    });
+  vi.stubGlobal("fetch", fetcher);
+  const el = await mount();
+  await fill(el);
+  [...el.shadowRoot!.querySelectorAll("button")]
+    .find((button) => button.textContent?.includes("Use Google Drive instead"))!
+    .click();
+  await el.updateComplete;
+  el.shadowRoot!.querySelector<HTMLButtonElement>(".primary")!.click();
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+  const body = JSON.parse(fetcher.mock.calls[0][1].body);
+  expect(body.notifications).toBeUndefined();
+  expect(body.notifications_csv).toBeUndefined();
 });
 it("is admin-only and generates drafts and downloadable images only on submit", async () => {
   expect(canAccessTab("adminbotNotificationDrafts", "member")).toBe(false);

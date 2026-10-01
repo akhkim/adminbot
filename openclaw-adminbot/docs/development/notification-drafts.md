@@ -1,7 +1,15 @@
 # OpenReview announcement drafts
 
 Admins can open **General Tools → OpenReview To Tweet**, upload a notifications JSON
-array, choose a conference and an exclusive UTC cutoff date, and generate tweet drafts and PNGs.
+array or CSV export, choose a conference and an exclusive UTC cutoff date, and generate tweet drafts and PNGs.
+CSV requires `id`, `date_utc`, `venue_domain`, `subject`, and `message` columns;
+dates use `YYYY-MM-DD HH:MM:SS` in UTC. Quoted commas and multiline messages are supported.
+Both formats use the same filtering, matching, and generation flow.
+Uploading is optional. Without an upload, each Generate request downloads the latest CSV from
+Drive file `1M88hLvN6WvWIthUPTnHilWbsmOz2DZg7` using the backend's authenticated `gog`
+connector (`GOG_BIN`/`GOG_ACCOUNT` as configured). That Google account must have read access;
+the file need not be public. There is no cached fallback. Download/access failures are shown
+to the user, who can upload a file instead. The same 25 MB limit applies to the Drive CSV.
 The imported parser selects acceptance notifications and preserves workshop/track labels.
 Draft text is editable and copyable; images are downloadable paper lists. Editing tweet text
 does not change the images. Review titles, tracks, institution handles and length before posting.

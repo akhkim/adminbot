@@ -4,9 +4,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { createAdminBotMockService } from "./server.js";
+const drive = vi.hoisted(() => vi.fn());
+vi.mock("../connectors/gog.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../connectors/gog.js")>()),
+  readDriveFileBase64: drive,
+}));
 const apps: ReturnType<typeof createAdminBotMockService>[] = [];
 const directories: string[] = [];
 afterEach(async () => {
+  drive.mockReset();
   for (const app of apps.splice(0)) {
     await new Promise<void>((resolve) => {
       app.server.close(() => resolve());
@@ -17,6 +23,33 @@ afterEach(async () => {
   for (const directory of directories.splice(0)) {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+it("fetches the fixed Drive CSV afresh only when no upload is supplied", async () => {
+  const { url, headers } = await setup();
+  const auth = headers(true);
+  const csv =
+    "id,date_utc,venue_domain,subject,message\nsynthetic,2026-09-21 14:13:20,NeurIPS.cc/2026/Conference,Decision notification for your submission 1: Synthetic Learning Study,Decision: Accept\n";
+  drive.mockResolvedValue(Buffer.from(csv).toString("base64"));
+  const send = (body: unknown) =>
+    fetch(url, { method: "POST", headers: auth, body: JSON.stringify(body) });
+  for (let i = 0; i < 2; i++) {
+    const response = await send({ ...input, notifications: undefined });
+    expect(response.status).toBe(200);
+    expect((await response.json()).announcements[0].text).toContain("Synthetic Learning Study");
+  }
+  expect(drive).toHaveBeenCalledTimes(2);
+  expect(drive).toHaveBeenCalledWith(
+    "1M88hLvN6WvWIthUPTnHilWbsmOz2DZg7",
+    expect.objectContaining({ maxBytes: 25 * 1024 * 1024 }),
+  );
+  expect((await send(input)).status).toBe(200);
+  expect(drive).toHaveBeenCalledTimes(2);
+  drive.mockRejectedValue(new Error("private vendor details"));
+  const failed = await send({ ...input, notifications: undefined });
+  expect(failed.status).toBe(500);
+  expect(await failed.text()).not.toContain("private vendor details");
+  expect((await send(input)).status).toBe(200);
 });
 async function setup(databasePath?: string) {
   const app = createAdminBotMockService({
@@ -128,20 +161,24 @@ class OpenReviewClient:
     twitter_url: "https://x.com/TestHandle",
   });
   const before = app.store.listLabMembers();
-  expect(app.service.upsertPaper({
-    id: "synthetic-paper",
-    title: "Synthetic Learning Study",
-    authors: ["Test Author"],
-    current_step: "overleaf_writing",
-    artifacts: { arxiv_url: "https://arxiv.org/abs/2601.12345" },
-  }).ok).toBe(true);
+  expect(
+    app.service.upsertPaper({
+      id: "synthetic-paper",
+      title: "Synthetic Learning Study",
+      authors: ["Test Author"],
+      current_step: "overleaf_writing",
+      artifacts: { arxiv_url: "https://arxiv.org/abs/2601.12345" },
+    }).ok,
+  ).toBe(true);
   const response = await fetch(url, {
     method: "POST",
     headers: auth,
     body: JSON.stringify({
       ...input,
       members: [{ openreview_id: "~Test_Author1", handle: "InjectedHandle" }],
-      paper_links: [{ title: "Synthetic Learning Study", arxiv_url: "https://arxiv.org/abs/2601.99999" }],
+      paper_links: [
+        { title: "Synthetic Learning Study", arxiv_url: "https://arxiv.org/abs/2601.99999" },
+      ],
       notifications: [
         {
           ...input.notifications[0],
@@ -157,7 +194,9 @@ class OpenReviewClient:
   expect(response.status).toBe(200);
   expect(result.announcements[0].text).toContain("Authors: @TestHandle");
   expect(result.announcements[0].text).not.toContain("InjectedHandle");
-  expect(result.announcements[0].text).toContain("1. Synthetic Learning Study (Main conference) https://arxiv.org/abs/2601.12345");
+  expect(result.announcements[0].text).toContain(
+    "1. Synthetic Learning Study (Main conference) https://arxiv.org/abs/2601.12345",
+  );
   expect(result.announcements[0].text).not.toContain("2601.99999");
   expect(result.warnings).toEqual([]);
   expect(app.store.listLabMembers()).toEqual(before);
@@ -197,4 +236,24 @@ it("handles malformed input, invalid dates, and empty results", async () => {
     body: JSON.stringify({ ...input, notifications: [] }),
   });
   expect((await empty.json()).announcements).toEqual([]);
+});
+
+it("accepts CSV with the same results as JSON and rejects malformed CSV", async () => {
+  const { url, headers } = await setup();
+  const auth = headers(true);
+  const send = (body: unknown) =>
+    fetch(url, { method: "POST", headers: auth, body: JSON.stringify(body) });
+  const json = await (await send(input)).json();
+  const csv = await send({
+    ...input,
+    notifications: undefined,
+    notifications_csv:
+      "id,date_utc,venue_domain,subject,message\nsynthetic,2026-09-21 14:13:20,NeurIPS.cc/2026/Conference,Decision notification for your submission 1: Synthetic Learning Study,Decision: Accept\n",
+  });
+  expect(csv.status).toBe(200);
+  expect(await csv.json()).toEqual(json);
+  expect((await send({ ...input, notifications_csv: "bad" })).status).toBe(400);
+  expect(
+    (await send({ ...input, notifications: undefined, notifications_csv: "bad" })).status,
+  ).toBe(422);
 });
