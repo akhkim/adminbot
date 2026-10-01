@@ -27,6 +27,7 @@ import {
   type AdminBotMeetingRecord,
 } from "../extensions/adminbot/api.js";
 import { resolveGogExecutable } from "../extensions/adminbot/src/connectors/gog.js";
+import { adminbotServiceDatabasePath } from "./adminbot-service-database.js";
 import { isMainModule } from "./lib/is-main-module.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -113,9 +114,7 @@ async function downloadFile(fileId: string, directory: string, account: string):
 export async function runMeetingArtifactPass(): Promise<ArtifactPassSummary> {
   const account = requireEnv("ADMINBOT_BOT_EMAIL");
   const folderId = requireEnv("ADMINBOT_MEETING_DROP_FOLDER_ID");
-  const databasePath =
-    process.env.ADMINBOT_DB_PATH ??
-    path.join(os.homedir(), ".openclaw", "state", "adminbot.sqlite");
+  const databasePath = adminbotServiceDatabasePath();
   const summary: ArtifactPassSummary = {
     found: 0,
     attached: 0,
