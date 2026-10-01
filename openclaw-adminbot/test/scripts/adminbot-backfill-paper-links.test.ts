@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { pendingSubmissionLinks } from "../../scripts/adminbot-backfill-paper-links.js";
+import {
+  pendingSubmissionLinks,
+  paperSubmissionGridRows,
+} from "../../scripts/adminbot-backfill-paper-links.js";
 
 describe("Paper Submissions E/F link classification", () => {
   it("classifies mixed URLs without replacing existing artifacts or reading other columns", () => {
@@ -101,8 +104,122 @@ it("runs the real CLI without Year, preserves existing fields and is idempotent"
     restored.close();
     fs.appendFileSync(csv, ",Synthetic Paper,,,https://docs.google.com/document/d/other/edit,\n");
     expect(run().stdout).toContain("matched by exact title:    0");
+    const snapshot = path.join(dir, "cells.json");
+    fs.writeFileSync(
+      snapshot,
+      JSON.stringify({
+        sheets: [
+          {
+            properties: { title: "Paper submissions" },
+            data: [
+              {
+                rowData: [
+                  { values: [{}, { formattedValue: "Title" }] },
+                  {
+                    values: [
+                      {},
+                      { formattedValue: "Synthetic Paper" },
+                      {},
+                      {},
+                      {},
+                      {
+                        chipRuns: [
+                          {
+                            chip: {
+                              richLinkProperties: { uri: "https://overleaf.com/read/chiptoken" },
+                            },
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const chipRun = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "scripts/adminbot-backfill-paper-links.ts",
+        "--sheet-json",
+        snapshot,
+        "--database",
+        database,
+        "--write",
+      ],
+      { encoding: "utf8" },
+    );
+    expect(chipRun.status, chipRun.stderr).toBe(0);
+    expect(
+      JSON.parse(
+        (db.prepare("SELECT payload_json FROM adminbot_papers").get() as { payload_json: string })
+          .payload_json,
+      ).artifacts.overleaf_view_url,
+    ).toBe("https://overleaf.com/read/chiptoken");
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+it("preserves E/F metadata links and rejects wrong tab or shifted ranges", () => {
+  const grid = {
+    sheets: [
+      {
+        properties: { title: "Paper submissions" },
+        data: [
+          {
+            rowData: [
+              { values: [{}, { formattedValue: "Title" }] },
+              {
+                values: [
+                  {},
+                  { formattedValue: "Synthetic Paper" },
+                  {},
+                  {},
+                  { formattedValue: "Draft", hyperlink: "https://overleaf.com/read/token" },
+                  {
+                    formattedValue: "Brainstorm",
+                    chipRuns: [
+                      {
+                        chip: {
+                          richLinkProperties: {
+                            uri: "https://docs.google.com/document/d/brainstorm/edit",
+                          },
+                        },
+                      },
+                    ],
+                    textFormatRuns: [
+                      {
+                        format: {
+                          link: { uri: "https://docs.google.com/presentation/d/slides/edit" },
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const rows = paperSubmissionGridRows(grid);
+  expect(rows[1][1]).toBe("Synthetic Paper");
+  expect(
+    pendingSubmissionLinks({}, rows[1])
+      .map((link) => link.field)
+      .toSorted(),
+  ).toEqual(["brainstorming_doc_url", "google_slides_url", "overleaf_view_url"]);
+  expect(() => paperSubmissionGridRows({ sheets: [] })).toThrow("one Paper Submissions");
+  const shifted = {
+    sheets: [{ ...grid.sheets[0], data: [{ ...grid.sheets[0].data[0], startColumn: 4 }] }],
+  };
+  expect(() => paperSubmissionGridRows(shifted)).toThrow("begin at A1");
 });

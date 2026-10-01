@@ -26,6 +26,7 @@ import { isMainModule } from "./lib/is-main-module.mjs";
 
 type Options = {
   csv: string;
+  sheetJson: string;
   database: string;
   write: boolean;
   paperSubmissions: boolean;
@@ -78,6 +79,7 @@ const FIELD_GUARDS: Readonly<Record<string, RegExp>> = {
 function parseArgs(argv: readonly string[]): Options {
   const options: Options = {
     csv: "",
+    sheetJson: "",
     database: "state/adminbot.sqlite",
     write: false,
     paperSubmissions: false,
@@ -90,6 +92,9 @@ function parseArgs(argv: readonly string[]): Options {
     const arg = argv[i];
     if (arg === "--csv") {
       options.csv = argv[++i] ?? "";
+    } else if (arg === "--sheet-json") {
+      options.sheetJson = argv[++i] ?? "";
+      options.paperSubmissions = true;
     } else if (arg === "--database") {
       options.database = argv[++i] ?? options.database;
     } else if (arg === "--since-year") {
@@ -113,7 +118,8 @@ function parseArgs(argv: readonly string[]): Options {
         [
           "Backfill arXiv/Overleaf/code links onto existing AdminBot papers.",
           "",
-          "  --csv <file>       CSV export of the survey's 'Formatted Papers' tab (required)",
+          "  --csv <file>       CSV input (Formatted Papers, or --paper-submissions)",
+          "  --sheet-json <file> Sheets API grid data for Paper Submissions (preserves smart chips)",
           "  --database <file>  SQLite path (default: state/adminbot.sqlite)",
           "  --since-year <y>   Ignore sheet rows older than this (default: 2025)",
           "  --paper-submissions  Read E/F links from Paper Submissions (exact matches only)",
@@ -128,8 +134,8 @@ function parseArgs(argv: readonly string[]): Options {
       process.exit(0);
     }
   }
-  if (!options.csv) {
-    throw new Error("--csv is required (export the 'Formatted Papers' tab as CSV)");
+  if (Boolean(options.csv) === Boolean(options.sheetJson)) {
+    throw new Error("Supply exactly one --csv or --sheet-json input");
   }
   if (options.paperSubmissions) {
     options.noMerge = true;
@@ -266,6 +272,55 @@ function pendingLinks(
   return found;
 }
 
+type SheetCell = {
+  formattedValue?: string;
+  hyperlink?: string;
+  textFormatRuns?: { format?: { link?: { uri?: string } } }[];
+  chipRuns?: { chip?: { richLinkProperties?: { uri?: string } } }[];
+};
+
+/** Read only the named tab's A:F grid; preserve blank cells so E/F cannot drift. */
+export function paperSubmissionGridRows(input: unknown): string[][] {
+  if (!input || typeof input !== "object" || !("sheets" in input) || !Array.isArray(input.sheets)) {
+    throw new Error("Expected a Sheets API response with grid data");
+  }
+  const sheets = input.sheets.filter(
+    (sheet) =>
+      typeof sheet?.properties?.title === "string" &&
+      sheet.properties.title.toLowerCase() === "paper submissions",
+  );
+  if (sheets.length !== 1 || !Array.isArray(sheets[0].data) || sheets[0].data.length !== 1) {
+    throw new Error("Expected one Paper Submissions A1:F grid");
+  }
+  const grid = sheets[0].data[0];
+  if ((grid.startRow ?? 0) !== 0 || (grid.startColumn ?? 0) !== 0 || !Array.isArray(grid.rowData)) {
+    throw new Error("Grid must begin at A1 and include header and rows");
+  }
+  return grid.rowData.map((row: { values?: SheetCell[] }) => {
+    if (row.values !== undefined && !Array.isArray(row.values)) {
+      throw new Error("Invalid grid row");
+    }
+    return Array.from({ length: 6 }, (_, index) => {
+      const cell = row.values?.[index];
+      if (!cell) {
+        return "";
+      }
+      const text = typeof cell.formattedValue === "string" ? cell.formattedValue : "";
+      if (index < 4) {
+        return text;
+      }
+      return [
+        text,
+        cell.hyperlink,
+        ...(cell.textFormatRuns ?? []).map((run) => run.format?.link?.uri),
+        ...(cell.chipRuns ?? []).map((run) => run.chip?.richLinkProperties?.uri),
+      ]
+        .filter((value) => typeof value === "string")
+        .join(" ");
+    });
+  });
+}
+
 /** Paper Submissions E/F cells are mixed notes and links; never reinterpret dates as URLs. */
 export function pendingSubmissionLinks(
   artifacts: Readonly<Record<string, string | undefined>>,
@@ -328,7 +383,9 @@ async function main(): Promise<void> {
     throw new Error(`Database not found: ${options.database}`);
   }
 
-  const rows = parseCsv(fs.readFileSync(options.csv, "utf8"));
+  const rows = options.sheetJson
+    ? paperSubmissionGridRows(JSON.parse(fs.readFileSync(options.sheetJson, "utf8")))
+    : parseCsv(fs.readFileSync(options.csv, "utf8"));
   if (rows.length < 2) {
     throw new Error(`No rows in ${options.csv}`);
   }
