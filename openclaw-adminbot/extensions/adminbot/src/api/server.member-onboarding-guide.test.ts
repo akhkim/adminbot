@@ -2,7 +2,7 @@
 // the record exists. The service's own refusals are covered in
 // kernel/service.member-onboarding-guide.test.ts; what is tested here is the route: who may reach
 // it, and that its path is not swallowed by the checklist-step route it sits in front of.
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
 import { createAdminBotMockService } from "./server.js";
 
@@ -23,8 +23,25 @@ afterEach(async () => {
   }
 });
 
-async function startService() {
+/**
+ * Stands in for the Gmail sender. The guide route now sends on the admin's click, so a test that
+ * left the production default in place would shell out to the real `gog gmail send` -- harmless
+ * only on a machine where gog happens to have no account.
+ */
+function fakeSender(result: "sent" | "refused" = "refused") {
+  return vi.fn(async () =>
+    result === "sent"
+      ? {
+          ok: true as const,
+          payload: { template_id: "member", subject: "Welcome", body: "Hello", sent: true },
+        }
+      : { ok: false as const, error: { status: 503, message: "test sender refuses" } },
+  );
+}
+
+async function startService(sender: ReturnType<typeof fakeSender> = fakeSender()) {
   const mock = createAdminBotMockService({
+    onboardingSender: sender as never,
     serviceToken: SERVICE_TOKEN,
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
@@ -99,8 +116,8 @@ function onboard(baseUrl: string, memberId: string, headers: Record<string, stri
   });
 }
 
-async function lab() {
-  const { baseUrl, mock } = await startService();
+async function lab(sender: ReturnType<typeof fakeSender> = fakeSender()) {
+  const { baseUrl, mock } = await startService(sender);
   seedMember(mock, {
     id: "admin",
     name: "Admin",
@@ -130,15 +147,28 @@ const filed = (mock: ReturnType<typeof createAdminBotMockService>) =>
   ).store.listProposalsByType("onboarding.send_guide");
 
 describe("onboarding a member from their roster row", () => {
-  it("files the guide for approval when an admin asks", async () => {
-    const { baseUrl, mock } = await lab();
+  // A full member's standard guide is approved by the admin's click and sent there and then.
+  it("sends a full member's guide on the admin's click", async () => {
+    const sender = fakeSender("sent");
+    const { baseUrl, mock } = await lab(sender);
     const token = await memberToken(mock, baseUrl, "admin", "admin@cs.toronto.edu");
     const res = await onboard(baseUrl, "grace", { Authorization: `Bearer ${token}` });
     expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ status: "done", email: "grace@lab.co" });
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(filed(mock)).toHaveLength(1);
+  });
+
+  it("reports failure instead of a successful send when the sender refuses", async () => {
+    const sender = fakeSender("refused");
+    const { baseUrl, mock } = await lab(sender);
+    const token = await memberToken(mock, baseUrl, "admin", "admin@cs.toronto.edu");
+    const res = await onboard(baseUrl, "grace", { Authorization: `Bearer ${token}` });
+    expect(res.ok).toBe(false);
     await expect(res.json()).resolves.toMatchObject({
-      template_id: "member",
-      email: "grace@lab.co",
+      error: { message: expect.any(String) },
     });
+    expect(sender).toHaveBeenCalledTimes(1);
     expect(filed(mock)).toHaveLength(1);
   });
 

@@ -1,7 +1,7 @@
-import "./member-guide-status.ts";
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
+import "./member-guide-status.ts";
 import { ifDefined } from "lit/directives/if-defined.js";
 import {
   adminBotIsAlumniMember,
@@ -78,6 +78,7 @@ import {
   type PreRegistrationVenue,
   type VenueTarget,
 } from "../venue-targets.ts";
+import { renderMemberBadgeSymbols } from "./badge-symbols.ts";
 import {
   MEMBER_REQUEST_POPOVER_ID,
   type MemberRequestsProps,
@@ -200,6 +201,12 @@ export type AdminBotProps = {
   data: AdminBotDashboardData;
   /** The member editor's Meetings checkboxes; absent outside the Lab Members panel. */
   standingMeetings?: AdminBotStandingMeetingsState;
+  onboardingSlackChannels?: {
+    channels: readonly string[] | null;
+    loading: boolean;
+    error: string | null;
+  };
+  onLoadOnboardingSlackChannels?: () => void;
   /**
    * Requests to add somebody to the roster, and the calls that file and decide them. Absent
    * outside the Lab Members panel and for a visitor with no member session, who can do neither.
@@ -585,8 +592,9 @@ function saveMemberForm(
       ...(creating
         ? {
             create: true,
-            slackChannels: getFormValue(data, "slackChannels")
-              .split(",")
+            slackChannels: data
+              .getAll("slackChannels")
+              .map(String)
               .map((channel) => channel.trim())
               .filter(Boolean),
           }
@@ -1823,7 +1831,9 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 data-conferences=${[...new Set(memberPapers.map(paperConference))].join("|")}
               >
                 <td>
-                  <strong>${member.name}</strong><small>${member.id}</small>
+                  <strong>${member.name}</strong>${renderMemberBadgeSymbols(
+                    member.assigned_badges,
+                  )}<small>${member.id}</small>
                   ${memberPapers.length
                     ? html`<span
                         class="adminbot-member-sheet__papers"
@@ -2319,19 +2329,47 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
             />
             <span>Start their onboarding</span>
             <small
-              >Composes the onboarding guide for their member type and queues it for approval — the
-              same mail the Onboarding tab sends from the roster. Nothing is sent until an admin
-              approves it. Untick when the record is a backfill for somebody the lab has already
-              onboarded.</small
+              >Composes the onboarding guide for their member type — the same mail the Onboarding
+              tab sends from the roster. The standard full-member guide is sent as soon as you save;
+              guides for other member types wait for approval in Pending Actions. Untick when the
+              record is a backfill for somebody the lab has already onboarded.</small
             >
           </label>
-          <label class="adminbot-form__field"
-            ><span>Slack groups for onboarding (optional)</span
-            ><input name="slackChannels" placeholder="#theme-causality, #proj-example" /><small
-              >Comma-separated channel names or IDs. Invitations are part of the onboarding draft
-              and only run after approval and execution.</small
-            ></label
-          >
+          <div class="adminbot-form__field">
+            <span>Slack groups for onboarding (optional)</span>
+            ${props.onboardingSlackChannels?.channels
+              ? renderMultiSelectField({
+                  name: "slackChannels",
+                  label: "Slack groups for onboarding",
+                  placeholder: "Choose meeting or discussion channels",
+                  options: props.onboardingSlackChannels.channels
+                    .filter((name) => /^(meeting-|disc)/.test(name.replace(/^#/, "")))
+                    .map((name) => name.replace(/^#/, ""))
+                    .toSorted()
+                    .map((value) => ({ value, label: `#${value}` })),
+                  selected: new Set(),
+                  rootClass: "adminbot-form__multi",
+                  optionClass: "adminbot-form__multi-option",
+                })
+              : html`<button
+                  type="button"
+                  class="btn btn--sm"
+                  ?disabled=${props.onboardingSlackChannels?.loading ||
+                  !props.onLoadOnboardingSlackChannels}
+                  @click=${props.onLoadOnboardingSlackChannels}
+                >
+                  ${props.onboardingSlackChannels?.loading
+                    ? "Loading Slack channels…"
+                    : "Load Slack channel options"}
+                </button>`}
+            ${props.onboardingSlackChannels?.error
+              ? html`<small role="alert">${props.onboardingSlackChannels.error}</small>`
+              : nothing}
+            <small
+              >Choose existing #meeting-* or #disc* channels. Invitations are part of the onboarding
+              draft and only run after approval and execution.</small
+            >
+          </div>
           <div class="adminbot-form__actions">
             <button class="btn btn--sm primary" type="submit">Add member</button>
           </div>
@@ -3694,7 +3732,11 @@ function renderAnnouncementRecipients(
                     @change=${() => props.onNudgeToggleRecipient(member.id)}
                   />
                 </td>
-                <td><strong>${member.name}</strong><small>${member.id}</small></td>
+                <td>
+                  <strong>${member.name}</strong>${renderMemberBadgeSymbols(
+                    member.assigned_badges,
+                  )}<small>${member.id}</small>
+                </td>
                 <td>
                   ${channel === "slack"
                     ? (member.slack_user_id ??

@@ -1255,6 +1255,7 @@ export const en: TranslationMap = {
       description: "Description",
       criteriaUrl: "Criteria link",
       evidence: "Evidence",
+      count: "Count (total awards)",
       assignEvidence: "Evidence (optional)",
       submittedBy: "Submitted by",
       submittedAt: "Submitted",
@@ -1423,10 +1424,11 @@ export const en: TranslationMap = {
     capacity: "{hours} hours/week capacity",
     // The chart's own footnote, restored with the recharts chart it explains.
     capacityNote:
-      "Dashed line marks 100% average allocation. Partial weeks and months show a lower average; commitments stop on their saved end date. Hover for active days and daily capacity details.",
+      "Dashed line marks 100% average allocation. Partial weeks and months show a lower average; commitments stop on their saved end date. Tap or hover a bar for active days and daily capacity details.",
     capacityNoteUnset:
       "No weekly capacity set on this profile, so there is nothing to compare these hours against.",
     chartAria: "Time allocation chart for {member}",
+    chartPhoneHint: "Swipe sideways to see more dates. Tap a bar for details.",
     chartSubtitle: "Hours committed per period. Overlapping commitments are stacked.",
     empty: "Select a user to view their time allocation.",
     endDate: "End date",
@@ -2300,7 +2302,7 @@ export const en: TranslationMap = {
       name: "Name",
       preferredName: "Preferred name",
       email: "Email (@cs.toronto.edu)",
-      role: "Career stage / lab role",
+      role: "Career stage",
       calendarEmail: "Calendar email",
       affiliation: "Main affiliation",
       location: "Resident location",
@@ -2378,7 +2380,8 @@ export const en: TranslationMap = {
     // SOCIAL_URL_FIELDS or validateOpenReviewId; keep them in step if those change.
     hints: {
       calendarEmail: "The Google account your calendar invites should go to.",
-      correspondenceEmail: "Where the lab writes to you. Often not your @cs.toronto.edu address.",
+      correspondenceEmail:
+        "This is your official organizational email. Imagine we contact government sectors or external collaborators. Usually you need to be cc’ed via your institutional email.",
       github: "A username, link, or note about your GitHub account.",
       linkedin: "Your profile page: linkedin.com/in/username",
       twitter: "Your profile page: x.com/username",
@@ -2574,7 +2577,7 @@ export const en: TranslationMap = {
       signup: {
         name: "Name",
         namePlaceholder: "Your full name",
-        role: "Career stage / lab role",
+        role: "Career stage",
         rolePlaceholder: "e.g. PhD student (optional)",
         affiliation: "Affiliation",
         affiliationPlaceholder: "Lab, department, or organization (optional)",

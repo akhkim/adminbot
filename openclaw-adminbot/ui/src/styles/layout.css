@@ -12299,3 +12299,21 @@ html[data-theme="light"] .deadline-board [data-urgency] {
     min-height: 32px;
   }
 }
+
+.adminbot-member-badge-symbols {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-inline: 6px;
+  vertical-align: middle;
+}
+.adminbot-member-badge-symbols > span {
+  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.adminbot-member-badge-symbols small {
+  color: var(--text);
+  font-size: 0.75em;
+}

@@ -1718,3 +1718,22 @@ it("makes letter deadline required and defaults a new school to AoE", () => {
       ?.value,
   ).toBe("AoE");
 });
+
+// The same fields become stacked cards on phones. Their visible labels must survive without
+// relying on a table header that is above/offscreen while somebody edits a row.
+it("provides visible phone labels for every editable request cell", () => {
+  const letters = drawLetters({ schools: [createSchoolRow()], facts: [createFactRow()] }).container;
+  const meeting = draw({ template: "bookMeeting", meetings: [createMeetingRow()] }).container;
+  for (const view of [letters, meeting]) {
+    const cells = [...view.querySelectorAll(".logistics-schools__cell")].filter((cell) =>
+      cell.querySelector("input, select, textarea"),
+    );
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of cells) {
+      expect(cell.getAttribute("data-label")?.trim()).toBeTruthy();
+      expect(
+        cell.querySelector("input, select, textarea")?.getAttribute("aria-label")?.trim(),
+      ).toBeTruthy();
+    }
+  }
+});
