@@ -3254,7 +3254,9 @@ class AdminbotDeadlinesView extends LitElement {
                 ? html`<p class="deadline-group__shared-policy">
                     Organizers must notify authors by
                     ${milestoneDateLabel(notificationPolicy, this.displayZone)}
-                    ${notificationPolicy.status === "source_unavailable"
+                    ${["source_unavailable", "extraction_unavailable"].includes(
+                      notificationPolicy.status ?? "",
+                    )
                       ? html`<span>Latest source check failed</span>`
                       : notificationPolicy.status === "unverified" || !notificationPolicy.evidence
                         ? html`<span>Source not verified</span>`

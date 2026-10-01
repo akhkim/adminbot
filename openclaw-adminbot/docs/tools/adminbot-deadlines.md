@@ -24,15 +24,23 @@ workshop daily only within three days of its deadline; other workshop pages wait
 public GitHub Pages histories needed to recover earlier extension dates are checked concurrently in
 a second bounded pool.
 
-Workshop notification requirements are separate from individual decision dates. The shared
-NeurIPS requirement is represented as a “Notify authors by” milestone, never as each workshop's
-actual decision date. The UI keeps both milestones distinct and displays conflicting observations.
+Workshop notification requirements are separate from individual decision dates. The NeurIPS
+workshop call supplies a shared “Workshops must notify authors by” milestone, collected once for
+the family and reused by its workshops. It is never copied into each workshop's `notification_aoe`.
+A workshop's own supported decision date remains a separate notification milestone; a published
+calendar date later than the shared cutoff raises a conflict instead of replacing either value.
+
+The manually tracked NLP4PI ARR commitment reads its official CFP through the schedule extractor,
+including its decision date. Alternative submission routes remain separate stages with their
+conditions. Its source identity and URL remain configured; its submission and notification dates
+are no longer constants. This change does not add model calls for every discovered workshop.
 
 Both ordinary collection and offline output regeneration migrate legacy workshop notification
 values. Shared NeurIPS values become unverified policy dates; other legacy values remain as
 `notification_previous_aoe` with unverified status. Revision history is retained. The existing
 NLP4PI submission date remains available but is marked unverified if it lacks extraction evidence.
-The UI labels unverified values explicitly.
+Successful extraction replaces these provisional projections; failed checks preserve previous
+observations and their last successful check time. The UI labels unverified values explicitly.
 
 An exact deadline carries `deadline_at` as a UTC instant; the Control UI defaults to the browser timezone. When a source gives only a date, `deadline_at` is empty and `deadline_time_precision` is `date_only`. `deadline_date` retains the published day and `deadline_timezone` records the known zone, or an empty string when the zone is unknown. The original timezone is preserved when the source supplies it; normalized legacy AoE stamps alone do not establish the source timezone.
 
