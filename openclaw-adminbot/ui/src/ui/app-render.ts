@@ -3625,6 +3625,11 @@ export function renderApp(state: AppViewState) {
               profiles: state.adminBotProfileOverview ?? [],
               escalated: state.adminBotEscalatedNudges ?? [],
               piReview: state.adminBotPiReview ?? [],
+              piReviewLoading: state.adminBotProfileOverviewLoading,
+              piReviewError: state.adminBotPiReviewError,
+              onRetryPiReview: () => {
+                void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
+              },
               onOpen: (tab) => state.setTab(tab),
               expanded: state.professorExpandedLists,
               onToggleExpand: (id) => {
