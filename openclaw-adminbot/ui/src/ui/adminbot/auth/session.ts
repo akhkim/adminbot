@@ -1454,7 +1454,14 @@ export type MemberSheetEditResult = {
 };
 
 export type MemberSheetOnboardResult = {
-  created: { sheet_row: number; email: string; template_id: string; proposal_id: string }[];
+  /** `sent`: already mailed on this admin's approval. `queued`: waiting in Pending Actions. */
+  created: {
+    sheet_row: number;
+    email: string;
+    template_id: string;
+    proposal_id: string;
+    status?: "sent" | "queued";
+  }[];
   /** Rows not yet on the roster, added with the access their Member Type grants. */
   enrolled?: {
     sheet_row: number;

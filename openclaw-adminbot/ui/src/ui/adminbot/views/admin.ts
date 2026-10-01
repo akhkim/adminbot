@@ -2319,10 +2319,10 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
             />
             <span>Start their onboarding</span>
             <small
-              >Composes the onboarding guide for their member type and queues it for approval — the
-              same mail the Onboarding tab sends from the roster. Nothing is sent until an admin
-              approves it. Untick when the record is a backfill for somebody the lab has already
-              onboarded.</small
+              >Composes the onboarding guide for their member type — the same mail the Onboarding
+              tab sends from the roster. The standard full-member guide is sent as soon as you save;
+              guides for other member types wait for approval in Pending Actions. Untick when the
+              record is a backfill for somebody the lab has already onboarded.</small
             >
           </label>
           <label class="adminbot-form__field"

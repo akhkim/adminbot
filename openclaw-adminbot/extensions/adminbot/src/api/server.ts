@@ -5403,8 +5403,8 @@ async function handleAuthenticatedRoute(
     const onboardBody = (await readJson(req)) as MemberSheetOnboardRequest;
     let onboardResult;
     try {
-      // The admin's click approves enrollment, as on the Members tab; the mail itself still waits
-      // in Pending Actions, which is what this tab has always done with it.
+      // The admin's click approves enrollment, as on the Members tab, and the standard full-member
+      // guide with it; guides for other Member Types still wait in Pending Actions.
       const onboardDeps = memberOnboardingDeps(ctx, principal, approverIdentityFor(principal));
       onboardResult = await onboardFromMemberSheet(service, ctx.memberSheet, onboardBody, {
         enroll: (input) =>

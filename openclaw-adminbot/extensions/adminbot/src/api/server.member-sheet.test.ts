@@ -286,6 +286,8 @@ describe("onboarding from the roster", () => {
         email: "yuenc2@illinois.edu",
         template_id: "alumni",
         proposal_id: expect.any(String),
+        // Only the standard full-member guide is sent on the admin's click; alumni waits.
+        status: "queued",
       },
     ]);
     // An onboarding.send_guide, not a pre-rendered email.send: the send is what provisions the
