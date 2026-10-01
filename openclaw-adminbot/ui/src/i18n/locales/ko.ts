@@ -1234,6 +1234,7 @@ export const ko: TranslationMap = {
       description: "Description",
       criteriaUrl: "Criteria link",
       evidence: "Evidence",
+      count: "Count (total awards)",
       assignEvidence: "Evidence (optional)",
       submittedBy: "Submitted by",
       submittedAt: "Submitted",
@@ -1403,6 +1404,7 @@ export const ko: TranslationMap = {
     capacityNoteUnset:
       "No weekly capacity set on this profile, so there is nothing to compare these hours against.",
     chartAria: "Time allocation chart for {member}",
+    chartPhoneHint: "Swipe sideways to see more dates. Tap a bar for details.",
     chartSubtitle: "Hours committed per period. Overlapping commitments are stacked.",
     empty: "Select a user to view their time allocation.",
     endDate: "End date",
@@ -1490,7 +1492,7 @@ export const ko: TranslationMap = {
       title: "Overall notes for admins",
       hint: "Anything the rows above cannot say — a situation that is complicated, dates that may move, weeks that are hard to predict. Only you and the lab's admins can read this.",
       placeholder:
-        "e.g. I am my grandmother's carer on alternating weeks, so the hours above are an average rather than a fixed schedule.",
+        "e.g. My project meetings alternate between weeks, so the hours above are an average rather than a fixed schedule.",
       submit: "Save notes",
     },
     legendTimeOff: "Outside Jinesis commitments",
@@ -1511,6 +1513,9 @@ export const ko: TranslationMap = {
       category: "Category",
       customLabel: "Name this category",
       project: "Project",
+      projectExample: "Project XXX",
+      exampleHint:
+        "Example: 20 hours per week on Project XXX. Enter your own project, hours and dates below; the example is not saved.",
       projectPlaceholder: "Leave blank for term baseline",
       hours: "Hours per week",
       link: "Link (optional)",
@@ -2284,6 +2289,8 @@ export const ko: TranslationMap = {
       linkedin: "LinkedIn",
       linkedinUrn: "LinkedIn member ID (URN)",
       twitter: "X / Twitter",
+      twitterFollowers: "X followers (self-reported)",
+      linkedinFollowers: "LinkedIn followers (self-reported)",
       github: "GitHub",
       scholar: "Google Scholar",
       openreviewId: "OpenReview ID",
@@ -2338,6 +2345,8 @@ export const ko: TranslationMap = {
       github: "Your profile page, not a repository: github.com/username",
       linkedin: "Your profile page: linkedin.com/in/username",
       twitter: "Your profile page: x.com/username",
+      followers:
+        "Enter your current follower count, or 0 to clear it. Media Impact uses your higher count and requires more than 1,000 followers.",
       scholar: "Your citations page, including the ?user= part of the address.",
       intakeFormUrl: "The “edit your response” link Google Forms emailed you after you applied.",
       intakeFormSearch:

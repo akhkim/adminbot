@@ -11,18 +11,13 @@ import {
   adminBotLogisticsSettledStatuses,
   type AdminBotLogisticsRequest,
 } from "../../contracts/actions.js";
+import { toAbsoluteRfc3339 } from "../calendar/time.js";
 import { requestDeadlineDetails } from "./requests.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/**
- * How far ahead of a letter's deadline the reminder goes out.
- *
- * Three days, as asked. Long enough that a letter can still be written after reading it, short
- * enough that it is about this week -- a fortnight's notice about a letter is a mail that gets
- * archived and then needed.
- */
-export const adminBotRecLetterReminderLeadDays = 3;
+/** Weekdays only; no jurisdiction-specific holiday calendar is configured. */
+export const adminBotRecLetterReminderLeadDays = 2;
 
 /** How many schools a reminder line names before it stops listing them. */
 const SCHOOLS_LISTED = 5;
@@ -43,24 +38,17 @@ export type RecLetterReminderDue = {
   schools: string[];
 };
 
-/**
- * Every open letter request whose deadline is inside the window.
- *
- * Counted from the instant and floored: the reminder fires on the first morning fewer than four
- * whole days are left, which for the end-of-day deadlines the form produces is the calendar day
- * three days before. My Desk rounds the same gap the other way for its label, and is right to --
- * a queue read at a glance should never say a letter is nearer than it is -- but a countdown that
- * has to fire on one particular morning cannot round away the morning it was aimed at.
- *
- * The late side is open -- anything from the deadline up to the window fires -- so a pass that did
- * not run yesterday still sends today rather than skipping the letter entirely. The say-once ledger
- * in the service is what stops the open end becoming a daily repeat.
+/** The window opens at midnight two weekdays before the deadline, in its own timezone.
+ * Missed runs can catch up until the exact deadline; the service ledger prevents repeat sends.
  */
 export function recLetterRemindersDue(
   requests: readonly AdminBotLogisticsRequest[],
   now: Date,
   leadDays: number = adminBotRecLetterReminderLeadDays,
 ): RecLetterReminderDue[] {
+  if (!Number.isInteger(leadDays) || leadDays < 0 || leadDays > 366) {
+    return [];
+  }
   const nowMs = now.getTime();
   return requests
     .filter((request) => request.kind === "recommendation_letters" && !SETTLED.has(request.status))
@@ -71,11 +59,22 @@ export function recLetterRemindersDue(
       // A request with no deadline on file is a real state, not a zero: the member has asked for
       // the letter without filling in a date. There is nothing to count down to, so it waits on
       // the desk rather than producing a reminder about an instant nobody named.
-      if (!deadlineAt || !Number.isFinite(deadlineMs)) {
+      if (!deadline || !deadlineAt || !Number.isFinite(deadlineMs)) {
         return [];
       }
       const daysUntil = Math.floor((deadlineMs - nowMs) / DAY_MS);
-      if (daysUntil < 0 || daysUntil > leadDays) {
+      const start = new Date(`${deadline.date}T12:00:00Z`);
+      for (let remaining = leadDays; remaining > 0; ) {
+        start.setUTCDate(start.getUTCDate() - 1);
+        if (start.getUTCDay() !== 0 && start.getUTCDay() !== 6) {
+          remaining -= 1;
+        }
+      }
+      const windowAt = toAbsoluteRfc3339(
+        `${start.toISOString().slice(0, 10)}T00:00`,
+        deadline.timezone,
+      );
+      if (!windowAt || nowMs < Date.parse(windowAt) || nowMs > deadlineMs) {
         return [];
       }
       return [
@@ -131,7 +130,7 @@ export function recLetterReminderSubject(
   if (due.length === 1 && first) {
     return `Recommendation letter for ${first.member_name} is due ${recLetterReminderWhen(first.days_until)}`;
   }
-  return `${due.length} recommendation letters due within ${leadDays} days`;
+  return `${due.length} recommendation letters due within ${leadDays} business days`;
 }
 
 /**

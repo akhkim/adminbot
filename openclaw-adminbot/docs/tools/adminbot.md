@@ -63,6 +63,42 @@ system `python3` picks the packages up. Rerun
 `install-user-services.sh` directly on the host) to (re)provision it —
 `restart` alone does not rerun this install step.
 
+### Automatic deploys to Aurora
+
+A push to `main` that passes CI deploys itself. `.github/workflows/deploy-aurora.yaml` runs on a
+self-hosted runner on Aurora (GitHub's hosted runners cannot reach the host), and
+`deploy/aurora/auto-deploy.sh` builds the new release beside the live one, rewrites the four units
+that name the release, restarts AdminBot and the Gateway (an outage of a few seconds), and probes
+`/adminbot`, `/deadlines` (200), `/lab/members` (401) and the Gateway's `/healthz`. If the probes
+fail, it restores the previous release and units and fails the job. A rollback restores code, not
+the database.
+
+It refuses, without touching the services, when:
+
+- the commit does not contain the live release's commit. Merge a `deploy/*` branch into `main`
+  before relying on automatic deploys, or they stop here. A commit that the live release already
+  contains is skipped as superseded.
+- `install-user-services.sh` or `install-member-sheet-poller.sh` changed. Unit definitions need a
+  manual `aurora-adminbot-host.sh deploy`.
+- the units do not run from the live release, the writer lock is held, or the build fails.
+- `state/` is on a network filesystem and the host has not opted in with
+  `AURORA_ACCEPT_NETWORK_STATE=1` in the runner's `.env`.
+
+Install the runner once, as the service account. The registration token is valid for an hour:
+
+```bash
+gh api -X POST repos/<owner>/<repo>/actions/runners/registration-token -q .token |
+  ssh aurora 'bash -l /w/406/adminbot/current/deploy/aurora/install-actions-runner.sh \
+    --repo <owner>/<repo> --root /w/406/adminbot --accept-network-state'
+```
+
+The repository is public, so every job any workflow sends to the runner's label would run beside
+the lab's credentials. The runner's job-started hook (`deploy/aurora/runner-job-guard.sh`, installed
+with the allowed values written in) fails every job except `deploy-aurora.yaml` on `main`. Merging
+to `main` is deploying to Aurora, so keep `main` PR-only (no direct pushes) and keep the `aurora`
+environment restricted to `main`. Trigger a deploy by hand with
+`gh workflow run deploy-aurora.yaml --ref main`.
+
 ### Private reasoning and NVIDIA NIM
 
 The AdminBot service classifies every `adminbot_reason` request with local
@@ -517,7 +553,7 @@ genuine admin session and only when the type actually changes (compared token-wi
   (`calendar.grant_lab_calendar`, recorded as `auth.calendar_invite_sent` like the backfill). No
   action revokes a calendar share, so a loss is reported in the notice for someone to handle by
   hand.
-- **One email, in one case:** somebody moving *into* alumni gets the `alumni` guide
+- **One email, in one case:** somebody moving _into_ alumni gets the `alumni` guide
   (`onboarding.send_guide`). Every other change sends nothing.
 
 **Meetings** is a second checkbox field listing the lab calendar's standing meetings: the Monday
@@ -1645,3 +1681,27 @@ Propose a new deadline can add one stage to an existing conference or workshop, 
 Each dated stage has a details menu. Signed-in members can use Suggest deadline correction there; the form targets that stage only. Adding a stage does not replace the submission date or the rest of the schedule. An existing stage must be corrected through its details instead of added again.
 
 Proposals use the administrator approval queue. Approval is bound to the proposed stage and date. If a stage changes before its correction is published, the correction must be submitted again against the current date.
+
+### Interview invitations
+
+On **Lab members**, open **Invite an interviewee**. Enter the candidate's name and email,
+project, exact task, and two lab interviewers. Search by name if an interviewer is not in the
+current roster page. Both interviewers need a Slack user ID and email on their profiles.
+
+**Preview email** shows the candidate address, interviewer CC addresses, and task. Editing a
+field invalidates the preview. **Submit for admin approval** queues an `onboarding.send_guide`
+proposal in Pending Actions; it does not email or invite anyone. An admin reviews and approves
+the exact payload there.
+
+Execution creates or reuses a private candidate-specific Slack channel, checks that no other
+people occupy it, adds the two interviewers, and sends the candidate's Slack Connect invitation
+and task email. The two interviewers are CC'ed, and replies go to the first interviewer. The
+standard friends/collaborators channel is not used. A successfully sent invitation adds a new
+candidate to the roster as `interviewee` at the external-collaborator privilege level; existing
+member access is preserved. Repeated submissions for a pending, approved, or executed invitation
+are refused.
+
+The configured bot needs Slack permissions for private-channel listing/creation, membership
+reads/invites, `auth.test`, and email lookup, plus the existing Slack Connect and Gmail sender.
+Missing permissions stop execution; preview and queueing never provision a channel. This needs
+an Aurora backend release as well as the frontend release.

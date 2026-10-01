@@ -85,7 +85,9 @@ export type AssignedBadge = {
   family_key: string;
   awarded_at: string;
   awarded_by: string;
-  source: "admin" | "nomination";
+  source: "admin" | "nomination" | "self_report";
+  count?: number;
+  follower_count?: number;
   nomination_id?: string;
   evidence?: string;
   category: string;
@@ -247,6 +249,8 @@ export type LabMember = {
   intake_form_unavailable?: boolean;
   linkedin_url?: string | null;
   twitter_url?: string | null;
+  twitter_followers?: number;
+  linkedin_followers?: number;
   github_url?: string | null;
   scholar_url?: string | null;
   avatar_url?: string | null;
@@ -420,7 +424,8 @@ export type AuthErrorKind =
   // to do with credentials: a long-lived dev service outliving the console that calls it. It used
   // to fall through to auth-failed, which sent people to check their login for a problem that was
   // really a process needing a restart.
-  | "not-found";
+  | "not-found"
+  | "invalid-response";
 
 export type AuthResult<T> =
   | { ok: true; value: T }
@@ -1099,13 +1104,15 @@ export async function mergeLabMembersAsAdmin(
 }
 
 export type MemberOnboardingGuideQueued = {
+  status?: "done" | "queued";
   proposal_id: string;
   template_id: string;
   email: string;
 };
 
 // Puts one roster member through onboarding: the service composes nothing here, it files an
-// `onboarding.send_guide` proposal for approval. Admin Bearer session only, like every other write
+// `onboarding.send_guide` proposal. Standard full-member guides are approved and sent immediately;
+// other guides wait for review. Admin Bearer session only, like every other write
 // on this page that reaches a person -- the shared service principal is refused (403) by the route
 // itself.
 //
@@ -1165,6 +1172,7 @@ export type MemberRequestView = {
   meetings?: string[];
   note?: string;
   created_at: string;
+  updated_at?: string;
   decided_at?: string;
   decided_by?: string;
   decision_note?: string;
@@ -1235,17 +1243,33 @@ export async function submitMemberRequest(
   return await memberRequestCall(baseUrl, "", "POST", sessionToken, input);
 }
 
+export async function editMemberRequest(
+  request: MemberRequestView,
+  input: MemberRequestInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(request.id)}/edit`,
+    "POST",
+    sessionToken,
+    { ...input, expected_updated_at: request.updated_at ?? request.created_at },
+  );
+}
+
 export async function approveMemberRequest(
   requestId: string,
   sessionToken: string,
   baseUrl: string,
+  expectedUpdatedAt?: string,
 ): Promise<AuthResult<{ request: MemberRequestView; member: LabMember }>> {
   return await memberRequestCall(
     baseUrl,
     `/${encodeURIComponent(requestId)}/approve`,
     "POST",
     sessionToken,
-    {},
+    { expected_updated_at: expectedUpdatedAt },
   );
 }
 
@@ -1435,7 +1459,14 @@ export type MemberSheetEditResult = {
 };
 
 export type MemberSheetOnboardResult = {
-  created: { sheet_row: number; email: string; template_id: string; proposal_id: string }[];
+  /** `sent`: already mailed on this admin's approval. `queued`: waiting in Pending Actions. */
+  created: {
+    sheet_row: number;
+    email: string;
+    template_id: string;
+    proposal_id: string;
+    status?: "sent" | "queued";
+  }[];
   /** Rows not yet on the roster, added with the access their Member Type grants. */
   enrolled?: {
     sheet_row: number;
@@ -2844,10 +2875,12 @@ export async function assignBadgeToMember(
   sessionToken: string,
   baseUrl: string,
   evidence?: string,
+  count?: number,
 ): Promise<AuthResult<AssignedBadge>> {
   const result = await authedJson(baseUrl, "/badges/assignments", "POST", sessionToken, {
     member_id: memberId,
     badge_id: badgeId,
+    ...(count !== undefined ? { count } : {}),
     ...(evidence ? { evidence } : {}),
   });
   if ("unreachable" in result) {
@@ -4395,9 +4428,8 @@ export type PiReviewRow = {
 /**
  * The papers at the PI gate (GET /papers/pi-review).
  *
- * A 404 reads as an empty queue for the same reason the escalation queue does: the page ships from
- * Vercel on merge and the service follows on the host, so a service that predates the route should
- * render as "nothing waiting", not as a broken panel.
+ * A missing endpoint or invalid response leaves approval status unknown; only a successful
+ * queue response can establish that nobody is waiting.
  */
 export async function fetchPiReviewQueue(
   sessionToken: string,
@@ -4408,12 +4440,34 @@ export async function fetchPiReviewQueue(
     return { ok: false, kind: "unreachable" };
   }
   if (result.response.status === 404) {
-    return { ok: true, value: [] };
+    return {
+      ok: false,
+      kind: "not-found",
+      message: "The backend does not support the PI review queue yet.",
+    };
   }
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as { papers?: Array<Record<string, unknown>> };
+  const body = result.body as { papers?: Array<Record<string, unknown>> } | null;
+  if (
+    !body ||
+    !Array.isArray(body.papers) ||
+    body.papers.some(
+      (row) =>
+        !row ||
+        typeof row.paper_id !== "string" ||
+        !row.paper_id.trim() ||
+        typeof row.title !== "string" ||
+        !row.title.trim(),
+    )
+  ) {
+    return {
+      ok: false,
+      kind: "invalid-response",
+      message: "The backend returned an invalid PI review queue.",
+    };
+  }
   const rows = (body.papers ?? []).flatMap((row) => {
     const paperId = typeof row.paper_id === "string" ? row.paper_id : "";
     const title = typeof row.title === "string" ? row.title : "";

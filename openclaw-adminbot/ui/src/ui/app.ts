@@ -44,6 +44,7 @@ import type {
   TabVisitReport,
 } from "./adminbot/auth/session.ts";
 import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
+import type { AdminBotLabMember } from "./adminbot/controllers/admin.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
@@ -699,6 +700,10 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMemberMap: MemberMap | null | undefined = undefined;
   @state() adminBotMemberMapLoading = false;
   adminBotMemberMapRequestId = 0;
+  @state() adminBotCollaboratorSchedules: AdminBotLabMember[] = [];
+  @state() adminBotCollaboratorSchedulesLoading = false;
+  @state() adminBotCollaboratorSchedulesError: string | null = null;
+  @state() adminBotCollaboratorSchedulesSession = "";
   @state() adminBotTimeAvailabilityMemberId = "";
   @state() adminBotLogisticsSignatureFiles: File[] = [];
   @state() adminBotLogisticsDescription = "";
@@ -744,6 +749,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotProfileOverview: MemberProfileOverviewRow[] = [];
   @state() adminBotEscalatedNudges: EscalatedNudgeRow[] = [];
   @state() adminBotPiReview: PiReviewRow[] = [];
+  @state() adminBotPiReviewError: string | null = null;
   @state() adminBotProfileOverviewFieldCount = 0;
   // The lab-wide adoption roll-up that heads the same page. Null until the first read answers, so
   // "not loaded" and "nothing adopted" are distinguishable.

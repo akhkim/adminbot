@@ -9,6 +9,7 @@ import type {
   MeetingCursor,
   MemberNotification,
 } from "./adminbot/auth/session.ts";
+import type { AdminBotLabMember } from "./adminbot/controllers/admin.ts";
 import type {
   AdminBotDashboardData,
   AdminBotMemberListState,
@@ -493,6 +494,10 @@ export type AppViewState = {
   adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
   adminBotMemberMapRequestId: number;
+  adminBotCollaboratorSchedules: AdminBotLabMember[];
+  adminBotCollaboratorSchedulesLoading: boolean;
+  adminBotCollaboratorSchedulesError: string | null;
+  adminBotCollaboratorSchedulesSession: string;
   adminBotTimeAvailabilityMemberId: string;
   // Meeting Recordings tab. The list as the service returned it -- already redacted for a member,
   // full for an admin -- plus the two flags the view needs to distinguish "still loading" from
@@ -615,6 +620,7 @@ export type AppViewState = {
   /** Nudges raised to the head professor and still unanswered. Read with the overview beside it. */
   adminBotEscalatedNudges: import("./adminbot/auth/session.ts").EscalatedNudgeRow[];
   adminBotPiReview: import("./adminbot/auth/session.ts").PiReviewRow[];
+  adminBotPiReviewError: string | null;
   adminBotProfileOverviewFieldCount: number;
   adminBotProfileAdoption?: import("./adminbot/auth/session.ts").MemberAdoptionSummary | null;
   adminBotProfileOverviewLoading: boolean;

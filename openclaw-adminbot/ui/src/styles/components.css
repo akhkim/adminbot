@@ -1029,6 +1029,10 @@
   min-width: 0;
 }
 
+.adminbot-form__field--wide {
+  grid-column: 1 / -1;
+}
+
 .adminbot-form__field span {
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
@@ -10998,20 +11002,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-time-availability__add-commitment {
   width: 100%;
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--control-ui-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg) 90%, var(--bg-accent));
-  transition: all 0.15s ease;
-  text-align: center;
-}
-
-.adminbot-time-availability__add-commitment:hover {
-  background: color-mix(in srgb, var(--bg) 80%, var(--bg-accent));
-  border-style: solid;
+  min-height: 44px;
 }
 
 .adminbot-time-availability__commitment-picker {
@@ -11438,18 +11429,18 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 /* Neutral primary actions follow the same palette in light, dark and custom themes. */
-.adminbot-time-availability .btn.primary {
+.adminbot-time-availability .btn.primary:not(.adminbot-time-availability__add-commitment) {
   border-color: var(--border-strong);
   background: var(--secondary);
   color: var(--text);
 }
 
-.adminbot-time-availability .btn.primary:hover {
+.adminbot-time-availability .btn.primary:not(.adminbot-time-availability__add-commitment):hover {
   background: var(--bg-hover);
   border-color: var(--border-hover);
 }
 
-.adminbot-time-availability .btn.primary:active {
+.adminbot-time-availability .btn.primary:not(.adminbot-time-availability__add-commitment):active {
   background: var(--bg-muted);
   border-color: var(--border-strong);
 }

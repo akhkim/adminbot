@@ -870,3 +870,25 @@ describe("the papers waiting on her yes", () => {
     );
   });
 });
+
+it("shows an unavailable PI queue with a working retry instead of an empty success", () => {
+  let retried = false;
+  const { container } = draw({
+    piReviewError: "Service unavailable",
+    onRetryPiReview: () => {
+      retried = true;
+    },
+  });
+  const section = container.querySelector('[data-testid="professor-pi-review"]');
+  expect(section?.textContent).toContain("Approval status is unknown");
+  expect(section?.textContent).not.toContain("No paper is waiting");
+  expect(section?.querySelector(".professor__count")?.textContent?.trim()).toBe("—");
+  section?.querySelector<HTMLButtonElement>("button")?.click();
+  expect(retried).toBe(true);
+});
+it("does not claim an empty PI queue while loading", () => {
+  const { container } = draw({ piReviewLoading: true });
+  const section = container.querySelector('[data-testid="professor-pi-review"]');
+  expect(section?.textContent).toContain("Loading PI review queue");
+  expect(section?.textContent).not.toContain("No paper is waiting");
+});

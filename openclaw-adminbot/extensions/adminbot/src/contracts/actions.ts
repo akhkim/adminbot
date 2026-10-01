@@ -537,6 +537,11 @@ export const adminBotMandatoryProfileFields = [
   // an answer the member can give (see SELF_PROFILE_EDITABLE_FIELDS).
   "one_on_one_folder_url",
   "openreview_id",
+  "affiliation",
+  "hours_per_week",
+  "joined_month",
+  "graduated_month",
+  "next_position",
 ] as const;
 
 export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFields)[number];
@@ -808,6 +813,11 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   cv_url: "CV",
   one_on_one_folder_url: "Link to 1:1 Folder",
   openreview_id: "OpenReview",
+  affiliation: "Main affiliation",
+  hours_per_week: "Hours per week on Jinesis projects",
+  joined_month: "Joined month",
+  graduated_month: "Potential offboarding month",
+  next_position: "Next position you are looking for",
 };
 
 /**
@@ -1529,6 +1539,9 @@ export type AdminBotLabMemberInput = {
   // Members read theirs off https://linkedin-urn-collector.vercel.app and paste it here.
   linkedin_urn?: string;
   twitter_url?: string;
+  /** Self-reported; used only for the Media Impact audience badge. */
+  twitter_followers?: number;
+  linkedin_followers?: number;
   github_url?: string;
   scholar_url?: string;
   // Never propose or assign this person as an emergency reviewer, whatever their topic
@@ -2454,6 +2467,7 @@ export type AdminBotAuditEvent = {
     | "lab_member.deleted"
     | "lab_members.purged_without_email"
     | "lab_member_request.submitted"
+    | "lab_member_request.edited"
     | "lab_member_request.approved"
     | "lab_member_request.rejected"
     | "lab_member_request.withdrawn"

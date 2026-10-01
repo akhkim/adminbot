@@ -2374,4 +2374,72 @@ describe("onboarding additions", () => {
     ]);
     expect(container.textContent).toContain("Background / reason for adding this person");
   });
+  it("offers only real meeting/discussion channels and submits selected channel names", () => {
+    const saves = vi.fn();
+    const container = document.createElement("div");
+    render(
+      renderAdminBot(
+        baseProps({
+          mode: "admin",
+          onSaveMember: saves,
+          onboardingSlackChannels: {
+            channels: [
+              "proj-example",
+              "meeting-causality",
+              "discussion-nlp",
+              "random",
+              "disc-reading",
+            ],
+            loading: false,
+            error: null,
+          },
+        }),
+      ),
+      container,
+    );
+    const form = container.querySelector<HTMLFormElement>("#adminbot-add-member form")!;
+    const channels = [...form.querySelectorAll<HTMLInputElement>('input[name="slackChannels"]')];
+    expect(channels.map((input) => input.value)).toEqual([
+      "disc-reading",
+      "discussion-nlp",
+      "meeting-causality",
+    ]);
+    channels[0]!.checked = true;
+    channels[2]!.checked = true;
+    form.querySelector<HTMLInputElement>('input[name="name"]')!.value = "Alex Example";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saves).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        slackChannels: ["disc-reading", "meeting-causality"],
+      }),
+    );
+  });
+  it("shows channel lookup failures without inventing channel options", () => {
+    const container = document.createElement("div");
+    const load = vi.fn();
+    render(
+      renderAdminBot(
+        baseProps({
+          mode: "admin",
+          onboardingSlackChannels: {
+            channels: null,
+            loading: false,
+            error: "Slack lookup unavailable",
+          },
+          onLoadOnboardingSlackChannels: load,
+        }),
+      ),
+      container,
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Slack lookup unavailable",
+    );
+    expect(container.querySelector('input[name="slackChannels"]')).toBeNull();
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Load Slack channel options"),
+    )!;
+    button.click();
+    expect(load).toHaveBeenCalledOnce();
+  });
 });

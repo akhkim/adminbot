@@ -110,6 +110,26 @@ describe("renderProfile autosave", () => {
 
   // The paragraph the research-topic tags cannot be, and the reason it is a field rather than a
   // line in `notes`: the lab quotes it back in introductions and directory entries.
+  it("autosaves optional follower counts as numbers including zero", () => {
+    const onSave = vi.fn();
+    const container = renderPage(createState(createMember()), onSave);
+    for (const [key, value] of [
+      ["twitter_followers", "10000"],
+      ["linkedin_followers", "0"],
+    ]) {
+      const input = container.querySelector<HTMLInputElement>(`input[name="${key}"]`)!;
+      expect(input.type).toBe("number");
+      expect(input.required).toBe(false);
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    vi.advanceTimersByTime(1000);
+    expect(onSave).toHaveBeenCalledWith(
+      "pat",
+      expect.objectContaining({ twitter_followers: 10000, linkedin_followers: 0 }),
+    );
+  });
+
   it("collects an elevator pitch, capped where the service caps it", () => {
     const member = createMember();
     const state = createState(member);
@@ -666,6 +686,9 @@ describe("renderProfile LinkedIn URN and intake form", () => {
 
     const hint = (key: string) =>
       container.querySelector(`[data-testid="profile-hint-${key}"]`)?.textContent?.trim();
+    expect(hint("correspondence_email")).toBe(
+      "This is your official organizational email. Imagine we contact government sectors or external collaborators. Usually you need to be cc’ed via your institutional email.",
+    );
     expect(hint("github_url")).toContain("A username, link, or note");
     expect(hint("linkedin_url")).toContain("linkedin.com/in/username");
     expect(hint("openreview_id")).toContain("~Zhijing_Jin1");
@@ -952,6 +975,13 @@ describe("renderProfile field types", () => {
     const values = roleBoxes(container).map((box) => box.value);
     expect(values.length).toBeGreaterThan(0);
     expect(values).toContain("PhD Student");
+    expect(
+      container
+        .querySelector('[data-testid="profile-multi-role"] summary')
+        ?.getAttribute("aria-label"),
+    ).toBe("Career stage");
+    expect(values).not.toContain("Research Assistant");
+    expect(values).not.toContain("Research Intern");
     // Nothing outside the closed vocabulary is offered.
     expect(values).not.toContain("Definitely Not A Real Role");
     expect(roleBoxes(container).every((box) => !box.checked)).toBe(true);
@@ -967,6 +997,19 @@ describe("renderProfile field types", () => {
       .map((box) => box.value);
 
     expect(checked).toEqual(["PhD Student", "Lab Manager"]);
+  });
+
+  it("preserves saved research appointments when editing the career stage", () => {
+    const container = renderPage(
+      createState(createMember({ role: "Master's Student, Research Assistant, Research Intern" })),
+      vi.fn(),
+    );
+    expect(
+      roleBoxes(container)
+        .filter((box) => box.checked)
+        .map((box) => box.value),
+    ).toEqual(["Master's Student", "Research Assistant", "Research Intern"]);
+    expect(container.querySelectorAll(".profile__multi-option--legacy input")).toHaveLength(2);
   });
 
   it("keeps a box for an imported role the vocabulary has no option for", () => {
@@ -1491,14 +1534,14 @@ describe("the LinkedIn URN", () => {
   });
 });
 
-it("renders free-form CV and GitHub safely and leaves historical fields optional", () => {
+it("renders free-form CV and GitHub safely and keeps intake responses optional", () => {
   const member = createMember({ cv_url: "Available on request", github_url: "@pat" });
   const container = renderPage(createState(member), vi.fn());
   const links = container.querySelector('[data-testid="profile-links"]')!;
   expect(links.textContent).toContain("Available on request");
   expect(links.textContent).toContain("@pat");
   expect(links.querySelector('a[href="@pat"]')).toBeNull();
-  expect(adminBotMandatoryProfileFields).not.toContain("joined_month");
+  expect(adminBotMandatoryProfileFields).toContain("joined_month");
   expect(adminBotMandatoryProfileFields).not.toContain("intake_form_url");
   expect(adminBotMandatoryProfileFields).toContain("github_url");
   expect(adminBotMandatoryProfileFields).toContain("cv_url");

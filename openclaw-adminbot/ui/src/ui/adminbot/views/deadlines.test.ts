@@ -25,6 +25,7 @@ import {
   venueSchedule,
   workshopGroupLabel,
   priorDeadlineRevisions,
+  recentDeadlineActions,
   renderDeadlines,
   venueConferenceSites,
   venueLocationLabel,
@@ -983,9 +984,9 @@ describe("renderDeadlines", () => {
 
     buttonNamed(container, "Groups").click();
     await settle(container);
-    const headings = [...container.querySelectorAll(".deadline-group__heading strong")].map(
-      (heading) => heading.textContent?.trim(),
-    );
+    const headings = [
+      ...container.querySelectorAll(".deadline-group__heading .deadline-action__venue"),
+    ].map((heading) => heading.textContent?.trim());
     expect(headings).toContain("Workshops of EMNLP 2026");
     expect(headings).toContain("Workshops of NeurIPS 2026");
     // A conference now heads its own collapsible group, spelled the way the data spells it.
@@ -1215,7 +1216,9 @@ describe("renderDeadlines", () => {
     const container = await renderView("default");
     const iclr = [...container.querySelectorAll<HTMLElement>(".deadline-group")].find(
       (group) =>
-        group.querySelector(".deadline-group__heading strong")?.textContent?.trim() === "ICLR 2027",
+        group
+          .querySelector(".deadline-group__heading .deadline-action__venue")
+          ?.textContent?.trim() === "ICLR 2027",
     )!;
     expect(iclr.dataset.groupKind).toBe("conference");
 
@@ -1232,7 +1235,9 @@ describe("renderDeadlines", () => {
     await settle(container);
     const open = [...container.querySelectorAll<HTMLElement>(".deadline-group")].find(
       (group) =>
-        group.querySelector(".deadline-group__heading strong")?.textContent?.trim() === "ICLR 2027",
+        group
+          .querySelector(".deadline-group__heading .deadline-action__venue")
+          ?.textContent?.trim() === "ICLR 2027",
     )!;
     const timeline = open.querySelector<HTMLElement>(
       '[data-testid="deadline-conference-timeline"]',
@@ -1308,7 +1313,7 @@ describe("renderDeadlines", () => {
       [...openGroup.querySelector(".deadline-group__row-note")!.children].map(
         (element) => element.className,
       ),
-    ).toEqual(["deadline-card__labels"]);
+    ).toEqual(["deadline-action__venue", "deadline-card__labels"]);
     expect(openGroup.querySelector(".deadline-group__row-name a")).not.toBeNull();
     expect(openGroup.querySelector(".deadline-card__source--button")).not.toBeNull();
     expect(buttonNamed(container, "Groups").getAttribute("aria-pressed")).toBe("true");
@@ -1441,8 +1446,9 @@ describe("renderDeadlines", () => {
     const group = () =>
       [...container.querySelectorAll<HTMLElement>(".deadline-group")].find(
         (entry) =>
-          entry.querySelector(".deadline-group__heading strong")?.textContent?.trim() ===
-          "ICLR 2027",
+          entry
+            .querySelector(".deadline-group__heading .deadline-action__venue")
+            ?.textContent?.trim() === "ICLR 2027",
       )!;
     group().querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
     await settle(container);
@@ -1474,7 +1480,7 @@ describe("renderDeadlines", () => {
     }
   });
 
-  it("names the next stage and its date after all ICLR submissions close", async () => {
+  it("names the next action and its date after all ICLR submissions close", async () => {
     vi.setSystemTime(new Date("2026-09-27T12:00:00Z"));
     const container = await renderView("default");
     const chip = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -1483,10 +1489,10 @@ describe("renderDeadlines", () => {
     chip.click();
     await settle(container);
     expect(container.querySelector(".deadline-board__hero-meta")?.textContent).toContain(
-      "Reviews released",
+      "Author-reviewer discussion",
     );
     expect(container.querySelector(".deadline-board__hero-date")?.textContent?.trim()).toBe(
-      "Nov 5, 2026",
+      "Nov 5 – Nov 18, 2026",
     );
   });
 
@@ -1867,7 +1873,7 @@ describe("venue location", () => {
     ]);
   });
 
-  it("shows the location on a workshop card, listing every site", async () => {
+  it("keeps workshop locations in details, listing every site", async () => {
     const container = await renderView();
     const cards = [...container.querySelectorAll<HTMLElement>(".deadline-card")];
     const neurips = cards.find(
@@ -1875,7 +1881,10 @@ describe("venue location", () => {
         card.dataset.entryType === "workshop" &&
         card.querySelector(".deadline-card__group-name")?.textContent?.includes("NeurIPS 2026"),
     )!;
-    const location = neurips.querySelector<HTMLElement>(".deadline-location")!;
+    expect(neurips.querySelector(".deadline-card__context .deadline-location")).toBeNull();
+    const location = neurips.querySelector<HTMLElement>(
+      ".deadline-card__history-panel .deadline-location",
+    )!;
     expect(location.querySelector(".deadline-location__sites")?.textContent?.trim()).toBe(
       "Sydney, Australia · Atlanta, USA · Paris, France",
     );
@@ -1893,32 +1902,23 @@ describe("venue location", () => {
     expect(single.getAttribute("title")).toBe("Budapest, Hungary");
   });
 
-  it("gives the table a Location column, with an em dash where none is published", async () => {
+  it("moves table locations into deadline details", async () => {
     const container = await renderView();
     buttonNamed(container, "Table").click();
     await settle(container);
     const headings = [...container.querySelectorAll(".deadline-table th")].map((cell) =>
       cell.textContent?.trim(),
     );
-    expect(headings).toContain("Location");
-
-    const cells = [...container.querySelectorAll<HTMLElement>(".deadline-table__location")];
-    expect(cells.length).toBeGreaterThan(0);
-    // The column heading already names the field, so the cell carries no pin icon.
-    expect(
-      container.querySelector(".deadline-table__location .deadline-location__icon"),
-    ).toBeNull();
-    expect(cells.some((cell) => cell.textContent?.trim() === "Budapest, Hungary")).toBe(true);
-    expect(
-      cells.some(
-        (cell) => cell.textContent?.trim() === "Sydney, Australia · Atlanta, USA · Paris, France",
-      ),
-    ).toBe(true);
-    // ARR cycles publish no location and must still occupy the column.
-    expect(cells.some((cell) => cell.textContent?.trim() === "—")).toBe(true);
+    expect(headings).not.toContain("Location");
+    expect(container.querySelector(".deadline-table__location")).toBeNull();
+    const details = [...container.querySelectorAll(".deadline-details__facts")].map(
+      (facts) => facts.textContent,
+    );
+    expect(details.some((text) => text?.includes("Budapest, Hungary"))).toBe(true);
+    expect(details.some((text) => text?.includes("Not published"))).toBe(true);
   });
 
-  it("puts the location on the group heading and on every workshop row beneath it", async () => {
+  it("keeps group locations in each workshop’s details", async () => {
     const container = await renderView();
     buttonNamed(container, "Groups").click();
     await settle(container);
@@ -1926,17 +1926,10 @@ describe("venue location", () => {
       (section) =>
         section.dataset.standalone !== "true" &&
         section
-          .querySelector(".deadline-group__heading strong")
+          .querySelector(".deadline-group__heading .deadline-action__venue")
           ?.textContent?.includes("NeurIPS 2026"),
     )!;
-    expect(
-      group
-        .querySelector(".deadline-group__heading .deadline-location__sites")
-        ?.textContent?.trim(),
-    ).toBe("Sydney, Australia · Atlanta, USA · Paris, France");
-    // Every workshop row carries one too, and names its own city rather than repeating the
-    // heading. The heading keeps the full list because it stands for every row beneath it, and
-    // because that is what a collapsed group shows.
+    expect(group.querySelector(".deadline-group__heading .deadline-location")).toBeNull();
     const rows = [...group.querySelectorAll<HTMLElement>(".deadline-group__row")];
     expect(rows.length).toBeGreaterThan(1);
     const sites = rows.map((row) =>
@@ -1948,7 +1941,7 @@ describe("venue location", () => {
     expect(sites.some((site) => site === "Sydney, Australia")).toBe(true);
   });
 
-  it("puts the location on a standalone group row, which has no heading above it", async () => {
+  it("keeps a standalone group location in details", async () => {
     // Searching down to one workshop leaves its bundle with a single row, which the board
     // renders as a standalone card — no heading, so the row itself has to carry the location.
     const container = await renderView();
@@ -2372,7 +2365,7 @@ it("does not repeat a selected shared conference stage across its submission row
   expect(conferenceTimeline(rows, venues)).toHaveLength(1);
 });
 
-it("uses the earliest upcoming stage by default for main conferences as well as workshops", () => {
+it("prioritizes the next action over earlier informational dates", () => {
   const venue = {
     ...DEADLINE_VENUES[0],
     id: "next-stage",
@@ -2386,7 +2379,7 @@ it("uses the earliest upcoming stage by default for main conferences as well as 
     ],
   } as DeadlineVenue;
   const rows = entriesForDeadlinePeriod(buildDeadlineBoardEntries([venue]), Date.now(), "upcoming");
-  expect(rows[0]?.stage?.label).toBe("Decisions");
+  expect(rows[0]?.stage?.label).toBe("Camera-ready");
 });
 
 it("proposes a single stage for an existing past venue without entering venue details again", async () => {
@@ -2598,4 +2591,91 @@ it("keeps source links after member-only correction actions", async () => {
   expect(
     container.querySelector(`[id="${policy.getAttribute("popovertarget")}"]`)?.getAttribute("role"),
   ).toBe("note");
+});
+
+it("keeps only actions passed within 14 days, deduplicates shared stages and respects stage filters", () => {
+  const now = Date.parse("2026-10-02T12:00:00Z");
+  const venue = {
+    ...DEADLINE_VENUES[0],
+    id: "attention",
+    venue_id: "attention",
+    deadline_id: "attention",
+    deadline_at: "2026-09-18T12:00:00Z",
+    deadline_aoe: "2026-09-18 00:00:00",
+    milestone: "submission",
+    notification_aoe: "",
+    schedule: [
+      { milestone: "camera_ready", label: "Camera-ready", kind: "date", date: "2026-09-30" },
+      { milestone: "author_response", label: "Rebuttal", kind: "date", date: "2026-09-01" },
+      { milestone: "conference", label: "Attend conference", kind: "date", date: "2026-10-01" },
+    ],
+  } as DeadlineVenue;
+  const entries = buildDeadlineBoardEntries([
+    venue,
+    { ...venue, id: "duplicate", deadline_id: "duplicate" },
+  ]);
+  const recent = recentDeadlineActions(entries, now);
+  expect(recent.map((row) => row.stage?.key)).toEqual(["camera_ready", "submission"]);
+  expect(recentDeadlineActions(entries, now + 1).map((row) => row.stage?.key)).toEqual([
+    "camera_ready",
+  ]);
+  expect(recentDeadlineActions(entries, now, "UTC", [], "camera_ready")).toHaveLength(1);
+  expect(recentDeadlineActions(entries, now, "UTC", [], "conference")).toEqual([]);
+});
+
+it("shows recent actions above the headline and makes the action the primary heading", async () => {
+  const venue = {
+    ...DEADLINE_VENUES[0],
+    id: "attention-ui",
+    venue_id: "attention-ui",
+    name: "Example venue",
+    venue_group: "Example venue",
+    deadline_id: "attention-ui",
+    deadline_at: "2026-08-20T12:00:00Z",
+    deadline_aoe: "2026-08-20 00:00:00",
+    milestone: "submission",
+    deadline_label: "Paper submission",
+    notification_aoe: "",
+    schedule: [
+      { milestone: "camera_ready", label: "Camera-ready due", kind: "date", date: "2026-09-01" },
+      { milestone: "conference", label: "Attend conference", kind: "date", date: "2026-08-25" },
+    ],
+  } as DeadlineVenue;
+  const store = new TestProposalStore();
+  vi.spyOn(store, "listPublished").mockResolvedValue([venue]);
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  const recent = container.querySelector(".deadline-recent")!;
+  expect(recent.textContent).toContain("Paper submission");
+  expect(recent.textContent).not.toContain("Attend conference");
+  expect(
+    container.querySelector(".deadline-board__hero .deadline-action__title")?.textContent,
+  ).toContain("Camera-ready due");
+  expect(
+    recent.compareDocumentPosition(container.querySelector(".deadline-board__overview")!) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-card .deadline-action__title")?.textContent).toContain(
+    "Camera-ready due",
+  );
+  expect(
+    container
+      .querySelector(".deadline-card [aria-label^='Deadline details']")
+      ?.getAttribute("aria-label"),
+  ).toContain("Camera-ready due");
+  const stageFilter = container.querySelector<HTMLSelectElement>(
+    "select[aria-label='Filter by stage']",
+  )!;
+  stageFilter.value = "submission";
+  stageFilter.dispatchEvent(new Event("change"));
+  await settle(container);
+  expect(container.querySelector(".deadline-recent")?.textContent).toContain("Paper submission");
+  expect(container.querySelector(".deadline-board__empty")?.textContent).toContain(
+    "No upcoming deadlines match",
+  );
+  expect(container.textContent).not.toContain("Nothing matches this filter");
 });

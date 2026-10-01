@@ -467,14 +467,12 @@ describe("new member creation", () => {
       body: JSON.stringify({ slack_project_channels: ["#theme-causality"] }),
     });
     expect(queued.status).toBe(200);
-    const proposals = mock.service.listPending();
-    expect(
-      proposals.ok &&
-        proposals.payload.proposals.find((proposal) => proposal.type === "onboarding.send_guide")
-          ?.proposed_payload,
-    ).toMatchObject({ slack_project_channels: ["#theme-causality"] });
-    expect(await (await fetch(url, { headers })).json()).toMatchObject({ status: "pending" });
-    expect(executed.some((proposal) => proposal.type === "onboarding.send_guide")).toBe(false);
+    const result = await queued.json();
+    expect(result).toMatchObject({ status: "done", template_id: "member" });
+    expect(mock.service.getProposal(result.proposal_id)?.proposed_payload).toMatchObject({
+      slack_project_channels: ["#theme-causality"],
+    });
+    expect(mock.service.getProposal(result.proposal_id)?.status).toBe("executed");
     const invalid = await fetch(url, {
       method: "POST",
       headers,

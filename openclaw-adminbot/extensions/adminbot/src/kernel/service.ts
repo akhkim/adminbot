@@ -1531,7 +1531,30 @@ export class AdminBotService {
   private seedDefaultBadges(): void {
     const now = new Date().toISOString();
     for (const seed of adminBotDefaultBadgeDefinitions) {
-      if (this.store.getBadgeDefinition(seed.id)) {
+      const existing = this.store.getBadgeDefinition(seed.id);
+      if (existing) {
+        if (
+          seed.id === "community_building__media_impact" &&
+          existing.name === seed.name &&
+          existing.category === seed.category &&
+          existing.description ===
+            "Research was covered by press or cited in a policy or industry document."
+        ) {
+          this.store.saveBadgeDefinition({
+            ...existing,
+            description: seed.description,
+            updated_at: now,
+          });
+        }
+        if (
+          seed.id === "team_contributor__infra_builder" &&
+          !existing.tier &&
+          existing.name === seed.name &&
+          existing.category === seed.category &&
+          existing.description === seed.description
+        ) {
+          this.store.saveBadgeDefinition({ ...existing, tier: "Good", updated_at: now });
+        }
         continue;
       }
       const familyKey =
@@ -3366,6 +3389,73 @@ export class AdminBotService {
     };
   }
 
+  listActiveCollaboratorSchedules(viewerId: string): AdminBotServiceResponse<{
+    members: Pick<
+      AdminBotLabMember,
+      "id" | "name" | "hours_per_week" | "availability" | "time_off"
+    >[];
+  }> {
+    if (!this.store.getLabMember(viewerId)) {
+      return { ok: false, status: 404, error: { message: "member not found" } };
+    }
+    const ids = new Set<string>();
+    // Read only this viewer's papers, including every page rather than silently truncating.
+    for (let offset = 0; ; offset += 200) {
+      const papers = this.store.listPapers({ authorMemberId: viewerId, limit: 200, offset });
+      for (const paper of papers) {
+        const progress = paperSlotProgress(
+          paper.id,
+          this.store.listPaperSlots(paper.id),
+          this.store.listSocialDrafts(paper.id),
+        );
+        if (progress.provided >= progress.total) {
+          continue;
+        }
+        for (const author of paper.author_links ?? []) {
+          if (author.member_id && author.member_id !== viewerId) {
+            ids.add(author.member_id);
+          }
+        }
+      }
+      if (papers.length < 200) {
+        break;
+      }
+    }
+    const members = [...ids]
+      .flatMap((id) => {
+        const member = this.store.getLabMember(id);
+        if (!member) {
+          return [];
+        }
+        return [
+          {
+            id: member.id,
+            name: member.name,
+            hours_per_week: member.hours_per_week,
+            availability: (member.availability ?? []).map(
+              ({ start, end, project, hours_per_week }) => ({
+                start,
+                end,
+                project,
+                hours_per_week,
+              }),
+            ),
+            time_off: (member.time_off ?? []).map(
+              ({ start, end, kind, availability, hours_per_week }) => ({
+                start,
+                end,
+                kind,
+                availability,
+                hours_per_week,
+              }),
+            ),
+          },
+        ];
+      })
+      .toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+    return { ok: true, status: 200, payload: { members } };
+  }
+
   listBadgeDefinitions(): AdminBotServiceResponse<{ badges: AdminBotBadgeDefinition[] }> {
     return { ok: true, status: 200, payload: { badges: this.store.listBadgeDefinitions() } };
   }
@@ -3481,7 +3571,14 @@ export class AdminBotService {
     badgeId: string,
     actor: string,
     evidenceInput?: string,
+    countInput?: unknown,
   ): AdminBotServiceResponse<{ assignment: AdminBotAssignedBadge }> {
+    if (
+      countInput !== undefined &&
+      (typeof countInput !== "number" || !Number.isSafeInteger(countInput) || countInput < 1)
+    ) {
+      return serviceError(400, "badge count must be a positive safe integer");
+    }
     const member = this.store.getLabMember(memberId);
     if (!member) {
       return serviceError(404, "member not found");
@@ -3511,6 +3608,11 @@ export class AdminBotService {
       awarded_at: now,
       awarded_by: actor,
       source: "admin",
+      count:
+        (countInput as number | undefined) ??
+        this.store.listBadgeAssignments(memberId).find((entry) => entry.badge_id === badge.id)
+          ?.count ??
+        1,
       ...(evidence ? { evidence } : {}),
     });
     const assignment = this.assignedBadgesFor(memberId).find(
@@ -3519,7 +3621,12 @@ export class AdminBotService {
     this.recordAudit({
       type: "badge.assigned",
       actor,
-      details: { member_id: memberId, badge_id: badge.id, family_key: badge.family_key },
+      details: {
+        member_id: memberId,
+        badge_id: badge.id,
+        family_key: badge.family_key,
+        count: assignment?.count ?? 1,
+      },
     });
     if (!assignment) {
       return serviceError(500, "badge assignment could not be read back");
@@ -4048,6 +4155,58 @@ export class AdminBotService {
     return { ok: true, status: 201, payload: { request } };
   }
 
+  editMemberRequest(
+    requestId: string,
+    actor: string,
+    body: Record<string, unknown>,
+  ): AdminBotServiceResponse<{ request: AdminBotMemberRequest }> {
+    if (this.store.getLabMember(actor)?.privilege_level !== "admin") {
+      return serviceError(403, "only an admin can edit a member request");
+    }
+    const existing = this.store.getMemberRequest(requestId);
+    if (!existing) {
+      return serviceError(404, "member request not found");
+    }
+    if (existing.status !== "pending") {
+      return serviceError(409, "only pending member requests can be edited");
+    }
+    if (body.expected_updated_at !== existing.updated_at) {
+      return serviceError(409, "this request changed; reload it before editing");
+    }
+    const read = readAdminBotMemberRequest(body);
+    if (!read.ok) {
+      return serviceError(400, read.error);
+    }
+    const email = read.profile.email.toLowerCase();
+    if (
+      this.store.listLabMembers().some((member) => member.email?.trim().toLowerCase() === email) ||
+      this.store
+        .listMemberRequests({ status: "pending" })
+        .some(
+          (request) => request.id !== requestId && request.profile.email.toLowerCase() === email,
+        )
+    ) {
+      return serviceError(409, "this email already belongs to a member or pending request");
+    }
+    const request: AdminBotMemberRequest = {
+      ...existing,
+      profile: read.profile,
+      note: read.note,
+      updated_at: new Date(Math.max(Date.now(), Date.parse(existing.updated_at) + 1)).toISOString(),
+    };
+    this.store.saveMemberRequest(request);
+    this.recordAudit({
+      type: "lab_member_request.edited",
+      actor,
+      details: {
+        request_id: requestId,
+        previous_member_type: existing.profile.member_type,
+        member_type: request.profile.member_type,
+      },
+    });
+    return { ok: true, status: 200, payload: { request } };
+  }
+
   /** An admin reads every request; anyone else reads only their own. */
   listMemberRequests(viewer: {
     memberId: string;
@@ -4069,6 +4228,7 @@ export class AdminBotService {
   claimMemberRequest(
     requestId: string,
     adminId: string,
+    expectedUpdatedAt?: string,
   ): AdminBotServiceResponse<{ request: AdminBotMemberRequest }> {
     const existing = this.store.getMemberRequest(requestId);
     if (!existing) {
@@ -4076,6 +4236,9 @@ export class AdminBotService {
     }
     if (existing.status !== "pending") {
       return serviceError(409, `this request was already ${existing.status}`);
+    }
+    if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== existing.updated_at) {
+      return serviceError(409, "this request changed; reload it before approving");
     }
     const now = new Date().toISOString();
     const claimed: AdminBotMemberRequest = {
@@ -4254,6 +4417,31 @@ export class AdminBotService {
     assigned: AdminBotAssignedBadge[],
     deadlines?: unknown[],
   ): T & { assigned_badges?: AdminBotAssignedBadge[] } {
+    const followers = Math.max(member?.twitter_followers ?? 0, member?.linkedin_followers ?? 0);
+    const mediaBadge =
+      Number.isSafeInteger(followers) && followers > 1000
+        ? this.store.getBadgeDefinition("community_building__media_impact")
+        : undefined;
+    // Audience eligibility is derived from the member record; legacy awards remain untouched.
+    const visibleAssignments: AdminBotAssignedBadge[] = [];
+    if (mediaBadge && Number.isSafeInteger(followers) && followers > 1000) {
+      visibleAssignments.push({
+        ...mediaBadge,
+        badge_id: mediaBadge.id,
+        member_id: member.id,
+        awarded_at: member?.updated_at ?? mediaBadge.updated_at,
+        awarded_by: member.id,
+        source: "self_report",
+        follower_count: followers,
+        description: "More than 1,000 followers on X or LinkedIn (self-reported; higher count).",
+      });
+    }
+    assigned = [
+      ...visibleAssignments,
+      ...assigned.filter(
+        (badge) => !visibleAssignments.some((derived) => derived.badge_id === badge.badge_id),
+      ),
+    ];
     if (member.milestones?.length) {
       member = {
         ...member,
@@ -4282,7 +4470,10 @@ export class AdminBotService {
             ...assignment,
             category: badge.category,
             name: badge.name,
-            description: badge.description,
+            description:
+              badge.id === "community_building__media_impact"
+                ? "Historical Media Impact award; this count records awards, not followers."
+                : badge.description,
             ...(badge.criteria_url ? { criteria_url: badge.criteria_url } : {}),
             ...(badge.tier ? { tier: badge.tier } : {}),
             sort_order: badge.sort_order,
@@ -12086,7 +12277,11 @@ export class AdminBotService {
       );
     }
     const alreadyQueued = this.store.listProposalsByType("onboarding.send_guide").some((stored) => {
-      if (stored.status !== "pending" && stored.status !== "approved") {
+      if (
+        stored.status !== "pending" &&
+        stored.status !== "approved" &&
+        stored.status !== "executed"
+      ) {
         return false;
       }
       const payload = (stored.proposed_payload ?? {}) as Record<string, unknown>;
@@ -12099,7 +12294,7 @@ export class AdminBotService {
     if (alreadyQueued) {
       return serviceError(
         409,
-        `the ${template.templateId} onboarding guide for ${email} is already waiting for approval`,
+        `the ${template.templateId} onboarding guide for ${email} is already queued or sent`,
       );
     }
     const proposal = this.createProposal({
@@ -12594,7 +12789,7 @@ export class AdminBotService {
       summary:
         due.length === 1
           ? `Remind ${headProfessor.name}: ${due[0]?.member_name}'s letter is due ${due[0]?.deadline_label ?? due[0]?.deadline_at.slice(0, 10)}`
-          : `Remind ${headProfessor.name} of ${due.length} letters due within ${adminBotRecLetterReminderLeadDays} days`,
+          : `Remind ${headProfessor.name} of ${due.length} letters due within ${adminBotRecLetterReminderLeadDays} business days`,
       target: { service: "email", channel: "email", target: recipient },
       proposed_payload: {
         to: recipient,
@@ -12609,7 +12804,7 @@ export class AdminBotService {
     const executed = await this.execute(proposed.payload.id, { dry_run: false });
     if (!executed.ok) {
       // Unstamped on purpose, unlike the say-once sweeps that announce an event: the window is
-      // three days wide, so a send that failed this morning is worth trying again tomorrow while
+      // open until the deadline, so a send that failed this morning is worth trying again tomorrow while
       // the letter is still worth writing. A reader who gets it twice has lost less than one who
       // never gets it.
       return serviceError(502, `could not email the letter reminder: ${executed.error.message}`);
@@ -14127,6 +14322,8 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   // supplied a URN yet.
   "linkedin_urn",
   "twitter_url",
+  "twitter_followers",
+  "linkedin_followers",
   "github_url",
   "scholar_url",
   "calendar_email",
@@ -14638,6 +14835,12 @@ function validateLabMember(
     );
     if (!roles.length || unknown) {
       return `member role must be one of: ${adminBotMemberRoles.join(", ")}`;
+    }
+  }
+  for (const field of ["twitter_followers", "linkedin_followers"] as const) {
+    const count = member[field];
+    if (count !== undefined && (!Number.isSafeInteger(count) || count < 0)) {
+      return `${field} must be a non-negative safe integer`;
     }
   }
   if (
