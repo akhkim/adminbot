@@ -934,6 +934,7 @@ function paperWorkspaceProps(
 ): MyWorkProps {
   return {
     onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
+    onSaveBlocker: (paper) => saveAdminBotPaper(state, paper),
     onRerender: () => requestHostUpdate?.(),
     // One loader for both objects; the panel says which it is asking about.
     onLoadRecentEdits: (subject, id) => {

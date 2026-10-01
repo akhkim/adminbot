@@ -56,6 +56,7 @@ function overviewRow(overrides: Partial<PaperSlotOverviewRow> = {}): PaperSlotOv
 }
 
 type DrawOptions = {
+  onSaveBlocker?: MyWorkProps["onSaveBlocker"];
   papers?: AdminBotPaperRecord[];
   /** Passed straight through as MyWorkProps.papers -- the Active Papers scoping. */
   scopedPapers?: AdminBotPaperRecord[];
@@ -115,6 +116,12 @@ function draw(options: DrawOptions = {}) {
     } as unknown as AppViewState);
   const props: MyWorkProps = {
     onSavePaper: (input: AdminBotPaperSaveInput) => saved.push(input),
+    onSaveBlocker:
+      options.onSaveBlocker ??
+      (async (input) => {
+        saved.push(input);
+        return true;
+      }),
     ...(options.onDeletePaper
       ? { onDeletePaper: (record: AdminBotPaperRecord) => deleted.push(record.id) }
       : {}),
@@ -1842,4 +1849,76 @@ describe("a decision banner that has done its job", () => {
     expect(saved.at(-1)?.decisionSeen).toBe("accept:EMNLP 2026");
     expect(saved.at(-1)?.presentationType).toBeUndefined();
   });
+});
+
+describe("blocker report validation", () => {
+  it("explains an empty or whitespace-only title without discarding the draft", () => {
+    resetMyWorkViewModeForTest();
+    const view = draw();
+    view.container
+      .querySelector<HTMLButtonElement>('[data-testid="paper-legacy-report-p1"]')!
+      .click();
+    view.rerender();
+    const title = view.container.querySelector<HTMLInputElement>(
+      '[data-testid="blocker-title-p1"]',
+    )!;
+    expect(title.required).toBe(true);
+    expect(title.checkValidity()).toBe(false);
+    title.value = "   ";
+    title.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(title.validationMessage).toBe("Enter a short description of what is blocked.");
+    expect(view.saved).toHaveLength(0);
+    expect(view.state.myWorkBlockerDraft?.paperId).toBe("p1");
+    title.value = "Review for arXiv";
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(title.checkValidity()).toBe(true);
+  });
+});
+
+describe("blocker save feedback", () => {
+  it.each([false, true])(
+    "waits for the save result (%s), keeping failed drafts",
+    async (success) => {
+      resetMyWorkViewModeForTest();
+      let finish!: (value: boolean) => void;
+      const onSaveBlocker = vi.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const view = draw({ onSaveBlocker });
+      view.container
+        .querySelector<HTMLButtonElement>('[data-testid="paper-legacy-report-p1"]')!
+        .click();
+      view.rerender();
+      const form = view.container.querySelector<HTMLFormElement>(".blocker-form")!;
+      (form.elements.namedItem("title") as HTMLInputElement).value = "Review for arXiv";
+      (form.elements.namedItem("note") as HTMLTextAreaElement).value = "Synthetic details";
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      view.rerender();
+      expect(view.state.myWorkBlockerDraft?.saving).toBe(true);
+      expect(
+        view.container.querySelector<HTMLButtonElement>('.blocker-form button[type="submit"]')
+          ?.disabled,
+      ).toBe(true);
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      expect(onSaveBlocker).toHaveBeenCalledTimes(1);
+      finish(success);
+      await Promise.resolve();
+      view.rerender();
+      if (success) expect(view.state.myWorkBlockerDraft).toBeNull();
+      else {
+        expect(view.container.querySelector('[role="alert"]')?.textContent).toContain(
+          "Your draft is kept",
+        );
+        expect(
+          view.container.querySelector<HTMLInputElement>('[data-testid="blocker-title-p1"]')?.value,
+        ).toBe("Review for arXiv");
+        expect(
+          view.container.querySelector<HTMLTextAreaElement>(".blocker-form textarea")?.value,
+        ).toBe("Synthetic details");
+      }
+    },
+  );
 });

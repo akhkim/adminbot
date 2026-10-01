@@ -1313,7 +1313,7 @@ describe("saveAdminBotPaper", () => {
       }),
     );
 
-    await saveAdminBotPaper(host, baseInput);
+    expect(await saveAdminBotPaper(host, baseInput)).toBe(false);
 
     expect(host.adminBotNotice).toMatchObject({
       kind: "error",

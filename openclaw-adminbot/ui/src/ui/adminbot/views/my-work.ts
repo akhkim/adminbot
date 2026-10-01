@@ -129,6 +129,7 @@ import { renderRecentEdits } from "./recent-edits.ts";
 
 export type MyWorkProps = {
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
+  onSaveBlocker?: (paper: AdminBotPaperSaveInput) => Promise<boolean>;
   /**
    * Which papers this surface is about. Defaults to the signed-in member's own, which is what
    * My Projects & Papers means; Active Papers passes the whole lab. The cards, their fields and
@@ -249,6 +250,11 @@ export type BlockerDraft = {
   /** The blocker being edited, keyed by filing time. Absent when filing a new one. */
   at?: string;
   text: string;
+  title?: string;
+  note?: string;
+  stage?: string;
+  saving?: boolean;
+  error?: string;
 };
 
 export type Blocker = {
@@ -433,11 +439,16 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
   return html`
     <form
       class="blocker-form"
-      @submit=${(event: SubmitEvent) => {
+      @submit=${async (event: SubmitEvent) => {
         event.preventDefault();
+        if (draft.saving) return;
         const data = new FormData(event.currentTarget as HTMLFormElement);
         const title = String(data.get("title") ?? "").trim();
-        if (!title) {
+        const titleInput = (event.currentTarget as HTMLFormElement).elements.namedItem(
+          "title",
+        ) as HTMLInputElement;
+        titleInput.setCustomValidity(title ? "" : "Enter a short description of what is blocked.");
+        if (!titleInput.reportValidity()) {
           return;
         }
         const fields = {
@@ -445,13 +456,25 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
           title,
           note: String(data.get("note") ?? "").trim(),
         };
-        props.onSavePaper(
-          editing
-            ? editBlockerInput(paper, editing.at, fields)
-            : // Named at filing time so the admin list can say who to go ask.
-              fileBlockerInput(paper, { ...fields, by: findOwnMember(state)?.name ?? "" }),
-        );
-        state.myWorkBlockerDraft = null;
+        Object.assign(draft, fields, { saving: true, error: undefined });
+        props.onRerender?.();
+        try {
+          const saved = await props.onSaveBlocker?.(
+            editing
+              ? editBlockerInput(paper, editing.at, fields)
+              : // Named at filing time so the admin list can say who to go ask.
+                fileBlockerInput(paper, { ...fields, by: findOwnMember(state)?.name ?? "" }),
+          );
+          if (state.myWorkBlockerDraft !== draft) return;
+          if (saved) state.myWorkBlockerDraft = null;
+          else draft.error = "Could not save the blocker report. Your draft is kept. Try again.";
+        } catch {
+          if (state.myWorkBlockerDraft === draft)
+            draft.error = "Could not save the blocker report. Your draft is kept. Try again.";
+        } finally {
+          draft.saving = false;
+          props.onRerender?.();
+        }
       }}
     >
       <p class="blocker-form__notice">
@@ -465,10 +488,18 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
       <div class="blocker-form__fields">
         <label class="register__field">
           <span class="register__label">Which stage is blocked?</span>
-          <select class="input" name="stage" data-testid=${`blocker-stage-${paper.id}`}>
+          <select
+            class="input"
+            name="stage"
+            ?disabled=${draft.saving}
+            data-testid=${`blocker-stage-${paper.id}`}
+          >
             ${paperSteps.map(
               (step) => html`
-                <option value=${step} ?selected=${step === (editing?.stage || paper.current_step)}>
+                <option
+                  value=${step}
+                  ?selected=${step === (draft.stage || editing?.stage || paper.current_step)}
+                >
                   ${stepLabel(step)}
                 </option>
               `,
@@ -477,13 +508,16 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
         </label>
 
         <label class="register__field">
-          <span class="register__label">What is blocked? (short)</span>
+          <span class="register__label">What is blocked? (short, required)</span>
           <input
             class="input"
             name="title"
+            ?disabled=${draft.saving}
+            required
+            @input=${(event: Event) => (event.target as HTMLInputElement).setCustomValidity("")}
             maxlength=${BLOCKER_TITLE_MAX}
             placeholder="e.g. OpenReview rejects the PDF"
-            .value=${editing?.title ?? ""}
+            .value=${draft.title ?? editing?.title ?? ""}
             data-testid=${`blocker-title-${paper.id}`}
           />
           <span class="register__hint">Up to ${BLOCKER_TITLE_MAX} characters.</span>
@@ -495,20 +529,31 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
         <textarea
           class="input"
           name="note"
+          ?disabled=${draft.saving}
           rows="4"
           placeholder=${t("myWork.blockers.placeholder")}
         >
-${editing?.note ?? ""}</textarea
+${draft.note ?? editing?.note ?? ""}</textarea
         >
       </label>
 
+      ${draft.error ? html`<p role="alert">${draft.error}</p>` : nothing}
       <div class="blocker-form__footer">
         <p class="blocker-form__reviewer">
           ${t("myWork.blockers.reviewer", { name: reviewerName(state) })}
         </p>
         <div class="register__actions">
-          <button type="submit" class="btn primary">
-            ${editing ? "Save changes" : t("myWork.blockers.submit")}
+          <button
+            type="submit"
+            class="btn primary"
+            ?disabled=${draft.saving}
+            aria-busy=${Boolean(draft.saving)}
+          >
+            ${draft.saving
+              ? "Saving report…"
+              : editing
+                ? "Save changes"
+                : t("myWork.blockers.submit")}
           </button>
           <button
             type="button"
