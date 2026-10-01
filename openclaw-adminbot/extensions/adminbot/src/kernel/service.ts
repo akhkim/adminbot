@@ -12748,7 +12748,7 @@ export class AdminBotService {
       summary:
         due.length === 1
           ? `Remind ${headProfessor.name}: ${due[0]?.member_name}'s letter is due ${due[0]?.deadline_label ?? due[0]?.deadline_at.slice(0, 10)}`
-          : `Remind ${headProfessor.name} of ${due.length} letters due within ${adminBotRecLetterReminderLeadDays} days`,
+          : `Remind ${headProfessor.name} of ${due.length} letters due within ${adminBotRecLetterReminderLeadDays} business days`,
       target: { service: "email", channel: "email", target: recipient },
       proposed_payload: {
         to: recipient,
@@ -12763,7 +12763,7 @@ export class AdminBotService {
     const executed = await this.execute(proposed.payload.id, { dry_run: false });
     if (!executed.ok) {
       // Unstamped on purpose, unlike the say-once sweeps that announce an event: the window is
-      // three days wide, so a send that failed this morning is worth trying again tomorrow while
+      // open until the deadline, so a send that failed this morning is worth trying again tomorrow while
       // the letter is still worth writing. A reader who gets it twice has lost less than one who
       // never gets it.
       return serviceError(502, `could not email the letter reminder: ${executed.error.message}`);

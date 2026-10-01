@@ -48,6 +48,23 @@ describe("recLetterRemindersDue", () => {
     expect(due[0]?.days_until).toBe(3);
   });
 
+  it("opens Thursday for a Monday deadline and respects the deadline timezone", () => {
+    const request = letters({
+      id: "monday",
+      schools: [
+        {
+          school: "Example",
+          letter_deadline: "2026-11-30",
+          letter_deadline_time: "12:00",
+          deadline_timezone: "America/Toronto",
+        },
+      ],
+    });
+    expect(recLetterRemindersDue([request], new Date("2026-11-26T04:59:00Z"))).toEqual([]);
+    expect(recLetterRemindersDue([request], new Date("2026-11-26T05:00:00Z"))).toHaveLength(1);
+    expect(recLetterRemindersDue([request], new Date("2026-11-30T17:00:01Z"))).toEqual([]);
+  });
+
   it("still fires on a letter due tomorrow, so a pass that did not run yesterday is not a miss", () => {
     const due = recLetterRemindersDue(
       [letters({ id: "tight", deadline_at: "2026-11-29T12:00:00Z" })],
@@ -129,7 +146,9 @@ describe("the mail", () => {
     expect(recLetterReminderSubject(one)).toBe(
       "Recommendation letter for Ada Lovelace is due in 3 days",
     );
-    expect(recLetterReminderSubject(two)).toBe("2 recommendation letters due within 3 days");
+    expect(recLetterReminderSubject(two)).toBe(
+      "2 recommendation letters due within 2 business days",
+    );
   });
 
   it("lists each letter with its date, its schools and where to read the request", () => {
