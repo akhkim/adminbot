@@ -6,6 +6,6 @@ Pass 1: My Desk initially disables an unchanged broadcast. Editing only the time
 
 Pass 2: Saved browser JPEGs inspected at native dimensions. Desktop details are native crops of 1832×891 context captures; phone details crop black capture padding from 480×1054 originals. Originals retained in the local compact task evidence directory. No pixel enlargement or restyling. Readable at ordinary PR width.
 
-Pass 3: Pending rendered PR inspection.
+Pass 3: PR #390 rendered before/after desktop and mobile images inspected at normal GitHub page scale. The linked member strip was also opened and visually checked at full size.
 
 Backend support is required to persist timezone. An older backend that discards the field produces an explicit partial-save error. No backend deployment, live records or document completion edits were performed.
