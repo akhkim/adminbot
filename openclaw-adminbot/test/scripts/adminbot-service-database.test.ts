@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { adminbotServiceDatabasePath } from "../../scripts/adminbot-service-database.js";
@@ -6,13 +7,13 @@ const repoRoot = path.resolve(import.meta.dirname, "../..");
 
 describe("AdminBot service database path", () => {
   it("defaults to the database the service host opens", () => {
-    // createAdminBotHost opens path.join(repoRoot, "state/adminbot.sqlite"); a script filing
-    // meetings anywhere else files them where the Meetings tab cannot see them.
-    expect(adminbotServiceDatabasePath({})).toBe(path.join(repoRoot, "state/adminbot.sqlite"));
-  });
-
-  it("never falls back to the home-directory copy", () => {
-    expect(adminbotServiceDatabasePath({ HOME: "/home/someone" })).not.toContain(".openclaw");
+    // createAdminBotHost opens path.join(repoRoot, "state/adminbot.sqlite"). Read it from the host
+    // rather than restating it, so moving the host's database fails here instead of silently
+    // splitting the scripts from the service again.
+    const host = fs.readFileSync(path.join(repoRoot, "extensions/adminbot/host/main.ts"), "utf8");
+    const relative = host.match(/databasePath:\s*path\.join\(repoRoot,\s*"([^"]+)"\)/)?.[1];
+    expect(relative).toBeDefined();
+    expect(adminbotServiceDatabasePath({})).toBe(path.join(repoRoot, relative!));
   });
 
   it("honours ADMINBOT_DB_PATH, ignoring a blank one", () => {
@@ -20,7 +21,7 @@ describe("AdminBot service database path", () => {
       "/srv/state/x.sqlite",
     );
     expect(adminbotServiceDatabasePath({ ADMINBOT_DB_PATH: "  " })).toBe(
-      path.join(repoRoot, "state/adminbot.sqlite"),
+      adminbotServiceDatabasePath({}),
     );
   });
 });

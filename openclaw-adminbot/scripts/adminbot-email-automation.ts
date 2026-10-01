@@ -1762,8 +1762,10 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   // the last time the two files agreed look unread, and re-run its replies and onboarding. What
   // the pass files for the lab -- meetings, paper stages -- goes to the database the service
   // reads, or nobody ever sees it.
+  // A blank value is unset, not "": SQLite opens "" as a private temporary database, which would
+  // forget every settled message at the end of the run and replay it on the next.
   const ledgerPath =
-    process.env.ADMINBOT_DB_PATH ??
+    process.env.ADMINBOT_DB_PATH?.trim() ||
     path.join(os.homedir(), ".openclaw", "state", "adminbot.sqlite");
   const databasePath = adminbotServiceDatabasePath();
   const state = new StateStore(ledgerPath);

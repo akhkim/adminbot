@@ -13,7 +13,8 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
  * recording notice the hourly email pass filed went into a database the Meetings tab never reads:
  * filed, marked completed, and invisible.
  *
- * `ADMINBOT_DB_PATH` still overrides it, as it always did.
+ * `ADMINBOT_DB_PATH` still overrides it, as it always did for these scripts. The host does not read
+ * it, so setting it moves the scripts and not the service: leave it unset on a deploy host.
  */
 export function adminbotServiceDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
   return env.ADMINBOT_DB_PATH?.trim() || path.join(REPO_ROOT, "state", "adminbot.sqlite");
