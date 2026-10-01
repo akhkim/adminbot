@@ -410,21 +410,61 @@ export function venueStages(
   return stages.toSorted((left, right) => left.instant - right.instant);
 }
 
-/**
- * The soonest stage of a venue that has not happened yet, or undefined once the whole calendar is
- * behind us.
- *
- * This is what every countdown on the board targets. For the common row -- a submission still
- * open, with its decisions and conference dates after it -- the answer is the submission, so
- * nothing changes. It differs only for a venue whose deadline has passed, where the next thing to
- * wait for is the notification or the conference itself.
- */
+const DEADLINE_ACTION_KEYS = new Set([
+  "submission",
+  "abstract",
+  "author_response",
+  "camera_ready",
+  "commitment",
+  "registration",
+]);
+
+/** Recently passed actions stay visible even while a venue has later dates. */
+export function recentDeadlineActions(
+  entries: readonly DeadlineBoardEntry[],
+  now: number,
+  displayZone?: string,
+  venues: readonly DeadlineVenue[] = [],
+  selectedStage = "",
+): DeadlineBoardEntry[] {
+  const seen = new Set<string>();
+  return entries
+    .flatMap((entry) =>
+      venueStages(entry.venue, displayZone, venues)
+        .filter(
+          (stage) =>
+            DEADLINE_ACTION_KEYS.has(stage.key) &&
+            (!selectedStage || stage.key === selectedStage) &&
+            stage.instant <= now &&
+            stage.instant >= now - 14 * 86400000,
+        )
+        .map((stage) => ({ ...entry, stage, instant: stage.instant })),
+    )
+    .filter((entry) => {
+      const key = JSON.stringify([
+        entry.venue.venue_id || entry.venue.id,
+        entry.venue.track || "",
+        entry.venue.submission_type || "",
+        entry.stage.key,
+        entry.stage.label,
+        entry.instant,
+      ]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .toSorted((a, b) => b.instant - a.instant);
+}
+
+/** Prefer the next author action; informational dates remain in the venue timeline. */
 export function nextVenueStage(
   venue: DeadlineVenue,
   now: number,
   displayZone?: string,
+  venues: readonly DeadlineVenue[] = [],
 ): DeadlineStage | undefined {
-  return venueStages(venue, displayZone).find((stage) => stage.instant > now);
+  const pending = venueStages(venue, displayZone, venues).filter((stage) => stage.instant > now);
+  return pending.find((stage) => DEADLINE_ACTION_KEYS.has(stage.key)) ?? pending[0];
 }
 
 /** What a timeline row is called, for a stable tie-break between two same-day rows. */
@@ -537,6 +577,10 @@ export function headlineDeadlineEntry(
   entries: readonly DeadlineBoardEntry[],
 ): DeadlineBoardEntry | undefined {
   const dated = entries.filter((entry) => Number.isFinite(entry.instant));
+  const actions = dated.filter((entry) =>
+    DEADLINE_ACTION_KEYS.has(entry.stage?.key ?? stageKey(entry.venue.milestone ?? "submission")),
+  );
+  if (actions.length && actions.length !== dated.length) return headlineDeadlineEntry(actions);
   return (
     dated.find(
       (entry) =>
@@ -616,9 +660,7 @@ export function entriesForDeadlinePeriod(
   }
   const pending = new Map<DeadlineBoardEntry, number>();
   for (const entry of entries) {
-    const stage = venueStages(entry.venue, displayZone, venues).find(
-      (stage) => stage.instant > now,
-    );
+    const stage = nextVenueStage(entry.venue, now, displayZone, venues);
     if (!Number.isFinite(entry.instant)) {
       pending.set(entry, Number.POSITIVE_INFINITY);
     } else if (stage) {
@@ -634,7 +676,7 @@ export function entriesForDeadlinePeriod(
     )
     .map((entry) => ({
       ...entry,
-      stage: venueStages(entry.venue, displayZone, venues).find((stage) => stage.instant > now),
+      stage: nextVenueStage(entry.venue, now, displayZone, venues),
     }));
 }
 
@@ -1159,9 +1201,7 @@ class AdminbotDeadlinesView extends LitElement {
           this.period,
         )
       : this.period === "upcoming"
-        ? venueStages(venue, this.displayZone, this.venues).find(
-            (stage) => stage.instant > this.now,
-          )
+        ? nextVenueStage(venue, this.now, this.displayZone, this.venues)
         : undefined;
   }
   private period: DeadlineBoardPeriod = "upcoming";
@@ -2028,7 +2068,12 @@ class AdminbotDeadlinesView extends LitElement {
         <p class="deadline-board__eyebrow">
           <span>${lead} deadline</span>${wrapSeparator()}<span>${entry.venue.venue_group}</span>
         </p>
-        <h2 class="deadline-board__hero-name">${renderDeadlineTitle(entry.venue)}</h2>
+        <h2 class="deadline-action__title">
+          ${stage?.label ?? capitalize(entry.venue.deadline_label || "Submission")}
+        </h2>
+        <p class="deadline-board__hero-name deadline-action__venue">
+          ${renderDeadlineTitle(entry.venue)}
+        </p>
         <div class="deadline-board__hero-meta-row">
           <div class="deadline-board__hero-meta">
             <span>${pendingStage?.label ?? capitalize(entry.venue.deadline_label)}</span
@@ -2539,7 +2584,8 @@ class AdminbotDeadlinesView extends LitElement {
               >`
             : nothing}
         </div>
-        <h2 class="deadline-card__name">${renderDeadlineTitle(venue)}</h2>
+        <h2 class="deadline-action__title">${stageLabel}</h2>
+        <p class="deadline-card__name deadline-action__venue">${renderDeadlineTitle(venue)}</p>
         ${venue.name !== workshopGroupLabel(venue.venue_group)
           ? html`<p class="deadline-card__group" title=${workshopGroupLabel(venue.venue_group)}>
               <span class="deadline-card__group-name"
@@ -2987,9 +3033,10 @@ class AdminbotDeadlinesView extends LitElement {
         </span>
         <div class="deadline-group__row-main">
           <h3 class="deadline-group__row-name" title=${venue.name}>
-            ${renderDeadlineTitle(venue, title.name)}
+            ${renderDeadlineTitle(venue, stage?.label ?? title.name)}
           </h3>
           <p class="deadline-group__row-note">
+            <span class="deadline-action__venue">${renderDeadlineTitle(venue)}</span>
             ${note ? html`<span class="deadline-group__row-detail">${note}</span>` : nothing}
             <span class="deadline-card__labels">
               <span class="deadline-card__type">${ENTRY_TYPE_LABELS[venue.entry_type]}</span>
@@ -3177,7 +3224,11 @@ class AdminbotDeadlinesView extends LitElement {
                       )}</span
               >
               <span class="deadline-group__heading">
-                <strong>${group.label}</strong>
+                <strong
+                  >${leadStage?.label ??
+                  capitalize(group.entries[0].venue.deadline_label || "Submission")}</strong
+                >
+                <span class="deadline-action__venue">${group.label}</span>
                 <small>
                   ${group.kind === "conference" || leadPending
                     ? html`<span class="deadline-group__next-stage"
@@ -3283,6 +3334,16 @@ class AdminbotDeadlinesView extends LitElement {
       ...new Set(filtered.map((entry) => entry.venue.deadline_id || entry.venue.id)),
     ];
     this.recommendationScope = JSON.stringify(this.recommendationIds);
+    const recent =
+      this.period === "upcoming"
+        ? recentDeadlineActions(
+            filterDeadlineBoardEntries(all, this.activeGroup, this.query, filters),
+            this.now,
+            this.displayZone,
+            this.venues,
+            this.stageFilter,
+          )
+        : [];
     const next = headlineDeadlineEntry(filtered);
     const latestSourceCheck = this.venues
       .map((venue) => venue.source_checked_at || "")
@@ -3348,7 +3409,30 @@ class AdminbotDeadlinesView extends LitElement {
           : nothing}
         ${this.renderProposalDrawer()} ${this.renderModes()}
         ${this.renderControls(matching, periodEntries, filters)}
-        <div class="deadline-board__overview">${this.renderHero(next)}</div>
+        ${recent.length
+          ? html`<section class="deadline-recent" aria-label="Recently passed actions">
+              <h2>Passed in the last 14 days</h2>
+              <p>
+                Recently passed action dates. Check your submission status and the venue’s rules.
+              </p>
+              <ul>
+                ${recent.map(
+                  (entry) => html`<li>
+                    <strong>${entry.stage!.label}</strong>
+                    <span class="deadline-action__venue">${renderDeadlineTitle(entry.venue)}</span>
+                    <span
+                      >Passed ${Math.floor((this.now - entry.instant) / 86400000)}
+                      ${Math.floor((this.now - entry.instant) / 86400000) === 1 ? "day" : "days"}
+                      ago · ${renderDeadlineDateLabel(entry.stage!.dateLabel)}</span
+                    >
+                  </li>`,
+                )}
+              </ul>
+            </section>`
+          : nothing}
+        ${next || !recent.length
+          ? html`<div class="deadline-board__overview">${this.renderHero(next)}</div>`
+          : nothing}
         ${filtered.length
           ? this.view === "cards"
             ? html`<div class="deadline-board__grid">
@@ -3357,7 +3441,11 @@ class AdminbotDeadlinesView extends LitElement {
             : this.view === "groups"
               ? this.renderGroups(filtered)
               : this.renderTable(filtered)
-          : html`<p class="deadline-board__empty">No deadlines match your filter.</p>`}
+          : html`<p class="deadline-board__empty">
+              ${recent.length
+                ? "No upcoming deadlines match your filter."
+                : "No deadlines match your filter."}
+            </p>`}
         <span class="deadline-proposal-trigger">
           <button
             class="btn btn--sm primary"

@@ -12314,3 +12314,54 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   color: var(--text);
   font-size: 0.75em;
 }
+
+/* Deadline actions lead; venue identity remains supporting context. */
+.deadline-board .deadline-action__venue {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--muted);
+  margin: 4px 0;
+}
+.deadline-board .deadline-table__stage {
+  font-weight: 700;
+}
+.deadline-recent {
+  border: 1px solid var(--warn);
+  border-left: 4px solid var(--warn);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.deadline-recent h2 {
+  margin: 0 0 8px;
+}
+.deadline-recent p {
+  color: var(--muted);
+}
+.deadline-recent ul {
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+.deadline-recent li {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.deadline-recent li > strong {
+  display: block;
+  font-size: 1.125rem;
+}
+
+.deadline-board .deadline-action__title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.deadline-board .deadline-board__hero-name.deadline-action__venue,
+.deadline-board .deadline-card__name.deadline-action__venue {
+  font-size: 0.875rem;
+  font-weight: 400;
+}
