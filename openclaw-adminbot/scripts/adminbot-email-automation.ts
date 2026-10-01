@@ -23,6 +23,7 @@ import { loadConfig } from "../src/config/config.js";
 import type { OpenClawConfig } from "../src/config/types/openclaw.js";
 import { resolveSecretInputString } from "../src/secrets/resolve-secret-input-string.js";
 import { downloadLinkedDriveFiles } from "./adminbot-drive-download.js";
+import { adminbotServiceDatabasePath } from "./adminbot-service-database.js";
 import {
   AdminBotEmailModel,
   GMAIL_SCAN_DEFAULT_LOOKBACK_MS,
@@ -1757,10 +1758,15 @@ async function fileRecordingNotice(
 export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   loadDotEnv(path.join(os.homedir(), ".openclaw", ".env"));
   process.env.GOG_ACCOUNT = botEmail();
-  const databasePath =
+  // The message ledger stays where it has always been: moving it would make every message since
+  // the last time the two files agreed look unread, and re-run its replies and onboarding. What
+  // the pass files for the lab -- meetings, paper stages -- goes to the database the service
+  // reads, or nobody ever sees it.
+  const ledgerPath =
     process.env.ADMINBOT_DB_PATH ??
     path.join(os.homedir(), ".openclaw", "state", "adminbot.sqlite");
-  const state = new StateStore(databasePath);
+  const databasePath = adminbotServiceDatabasePath();
+  const state = new StateStore(ledgerPath);
   const google = new GoogleClient();
   const model = new AdminBotEmailModel();
   const summary: EmailAutomationSummary = {
