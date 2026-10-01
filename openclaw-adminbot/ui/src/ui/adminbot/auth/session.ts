@@ -85,8 +85,9 @@ export type AssignedBadge = {
   family_key: string;
   awarded_at: string;
   awarded_by: string;
-  source: "admin" | "nomination";
+  source: "admin" | "nomination" | "self_report";
   count?: number;
+  follower_count?: number;
   nomination_id?: string;
   evidence?: string;
   category: string;
@@ -248,6 +249,8 @@ export type LabMember = {
   intake_form_unavailable?: boolean;
   linkedin_url?: string | null;
   twitter_url?: string | null;
+  twitter_followers?: number;
+  linkedin_followers?: number;
   github_url?: string | null;
   scholar_url?: string | null;
   avatar_url?: string | null;

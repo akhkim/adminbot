@@ -2331,6 +2331,8 @@ export const en: TranslationMap = {
       linkedin: "LinkedIn",
       linkedinUrn: "LinkedIn member ID (URN)",
       twitter: "X / Twitter",
+      twitterFollowers: "X followers (self-reported)",
+      linkedinFollowers: "LinkedIn followers (self-reported)",
       github: "GitHub",
       scholar: "Google Scholar",
       openreviewId: "OpenReview ID",
@@ -2388,6 +2390,8 @@ export const en: TranslationMap = {
       github: "A username, link, or note about your GitHub account.",
       linkedin: "Your profile page: linkedin.com/in/username",
       twitter: "Your profile page: x.com/username",
+      followers:
+        "Enter your current follower count, or 0 to clear it. Media Impact uses your higher count and requires more than 1,000 followers.",
       scholar: "Your citations page, including the ?user= part of the address.",
       intakeFormUrl:
         "Paste the response link if you have it, or mark that you cannot find it below.",

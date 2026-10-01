@@ -110,6 +110,26 @@ describe("renderProfile autosave", () => {
 
   // The paragraph the research-topic tags cannot be, and the reason it is a field rather than a
   // line in `notes`: the lab quotes it back in introductions and directory entries.
+  it("autosaves optional follower counts as numbers including zero", () => {
+    const onSave = vi.fn();
+    const container = renderPage(createState(createMember()), onSave);
+    for (const [key, value] of [
+      ["twitter_followers", "10000"],
+      ["linkedin_followers", "0"],
+    ]) {
+      const input = container.querySelector<HTMLInputElement>(`input[name="${key}"]`)!;
+      expect(input.type).toBe("number");
+      expect(input.required).toBe(false);
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    vi.advanceTimersByTime(1000);
+    expect(onSave).toHaveBeenCalledWith(
+      "pat",
+      expect.objectContaining({ twitter_followers: 10000, linkedin_followers: 0 }),
+    );
+  });
+
   it("collects an elevator pitch, capped where the service caps it", () => {
     const member = createMember();
     const state = createState(member);
