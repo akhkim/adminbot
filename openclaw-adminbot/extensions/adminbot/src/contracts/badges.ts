@@ -41,7 +41,10 @@ export type AdminBotBadgeAssignment = {
   count?: number;
 };
 
-export type AdminBotAssignedBadge = AdminBotBadgeAssignment & {
+export type AdminBotAssignedBadge = Omit<AdminBotBadgeAssignment, "source"> & {
+  source: AdminBotBadgeAssignmentSource | "self_report";
+  /** Derived audience size, distinct from historical award totals. */
+  follower_count?: number;
   category: string;
   name: string;
   description: string;
@@ -162,7 +165,7 @@ export const adminBotDefaultBadgeDefinitions: readonly (AdminBotBadgeDefinitionI
     id: "community_building__media_impact",
     category: "Community Building",
     name: "Media Impact",
-    description: "Research was covered by press or cited in a policy or industry document.",
+    description: "More than 1,000 followers on X or LinkedIn (self-reported; higher count).",
     sort_order: 50,
   },
   {

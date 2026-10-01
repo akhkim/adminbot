@@ -1534,6 +1534,19 @@ export class AdminBotService {
       const existing = this.store.getBadgeDefinition(seed.id);
       if (existing) {
         if (
+          seed.id === "community_building__media_impact" &&
+          existing.name === seed.name &&
+          existing.category === seed.category &&
+          existing.description ===
+            "Research was covered by press or cited in a policy or industry document."
+        ) {
+          this.store.saveBadgeDefinition({
+            ...existing,
+            description: seed.description,
+            updated_at: now,
+          });
+        }
+        if (
           seed.id === "team_contributor__infra_builder" &&
           !existing.tier &&
           existing.name === seed.name &&
@@ -4404,6 +4417,31 @@ export class AdminBotService {
     assigned: AdminBotAssignedBadge[],
     deadlines?: unknown[],
   ): T & { assigned_badges?: AdminBotAssignedBadge[] } {
+    const followers = Math.max(member?.twitter_followers ?? 0, member?.linkedin_followers ?? 0);
+    const mediaBadge =
+      Number.isSafeInteger(followers) && followers > 1000
+        ? this.store.getBadgeDefinition("community_building__media_impact")
+        : undefined;
+    // Audience eligibility is derived from the member record; legacy awards remain untouched.
+    const visibleAssignments: AdminBotAssignedBadge[] = [];
+    if (mediaBadge && Number.isSafeInteger(followers) && followers > 1000) {
+      visibleAssignments.push({
+        ...mediaBadge,
+        badge_id: mediaBadge.id,
+        member_id: member.id,
+        awarded_at: member?.updated_at ?? mediaBadge.updated_at,
+        awarded_by: member.id,
+        source: "self_report",
+        follower_count: followers,
+        description: "More than 1,000 followers on X or LinkedIn (self-reported; higher count).",
+      });
+    }
+    assigned = [
+      ...visibleAssignments,
+      ...assigned.filter(
+        (badge) => !visibleAssignments.some((derived) => derived.badge_id === badge.badge_id),
+      ),
+    ];
     if (member.milestones?.length) {
       member = {
         ...member,
@@ -4432,7 +4470,10 @@ export class AdminBotService {
             ...assignment,
             category: badge.category,
             name: badge.name,
-            description: badge.description,
+            description:
+              badge.id === "community_building__media_impact"
+                ? "Historical Media Impact award; this count records awards, not followers."
+                : badge.description,
             ...(badge.criteria_url ? { criteria_url: badge.criteria_url } : {}),
             ...(badge.tier ? { tier: badge.tier } : {}),
             sort_order: badge.sort_order,
@@ -14281,6 +14322,8 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   // supplied a URN yet.
   "linkedin_urn",
   "twitter_url",
+  "twitter_followers",
+  "linkedin_followers",
   "github_url",
   "scholar_url",
   "calendar_email",
@@ -14792,6 +14835,12 @@ function validateLabMember(
     );
     if (!roles.length || unknown) {
       return `member role must be one of: ${adminBotMemberRoles.join(", ")}`;
+    }
+  }
+  for (const field of ["twitter_followers", "linkedin_followers"] as const) {
+    const count = member[field];
+    if (count !== undefined && (!Number.isSafeInteger(count) || count < 0)) {
+      return `${field} must be a non-negative safe integer`;
     }
   }
   if (
