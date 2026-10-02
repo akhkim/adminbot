@@ -139,6 +139,13 @@ describe("renderProfile autosave", () => {
     const pitch = container.querySelector<HTMLTextAreaElement>('textarea[name="elevator_pitch"]')!;
     expect(pitch).not.toBeNull();
     expect(pitch.maxLength).toBe(ADMINBOT_ELEVATOR_PITCH_MAX);
+    expect(pitch.required).toBe(false);
+    expect(container.textContent).toContain(
+      "Elevator pitch that Zhijing can use when recommending you to other prof/recruiter",
+    );
+    expect(container.textContent).toContain(
+      "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
+    );
 
     pitch.value = "I work out when a model's answer is caused by its evidence.";
     pitch.dispatchEvent(new Event("input", { bubbles: true }));

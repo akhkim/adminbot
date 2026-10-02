@@ -1315,11 +1315,11 @@
     "tabUsage.untimed",
     "tabUsage.window"
   ],
-  "generatedAt": "2026-10-02T08:13:45.471Z",
+  "generatedAt": "2026-10-02T09:55:37.526Z",
   "locale": "th",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "82594882b7b5354a5f5e082d06b4c0cdce74aef526f42ca029003a7332a30f1a",
+  "sourceHash": "9f7be0c9b26c74cd8c1bd080cd6ced361d4cd4d75cf0af85f86770405953d5d0",
   "totalKeys": 2460,
   "translatedKeys": 1146,
   "workflow": 1
