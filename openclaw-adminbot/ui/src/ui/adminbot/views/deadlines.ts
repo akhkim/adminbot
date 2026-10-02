@@ -3224,7 +3224,10 @@ class AdminbotDeadlinesView extends LitElement {
                       )}</span
               >
               <span class="deadline-group__heading">
-                <strong class=${leadPending ? "deadline-group__next-stage" : nothing}
+                <strong
+                  class=${group.kind === "conference" || leadPending
+                    ? "deadline-group__next-stage"
+                    : nothing}
                   >${leadStage?.label ??
                   capitalize(group.entries[0].venue.deadline_label || "Submission")}</strong
                 >
