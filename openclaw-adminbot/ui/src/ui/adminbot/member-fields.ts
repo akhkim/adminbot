@@ -202,13 +202,10 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     group: "research",
   },
   {
-    // The paragraph the topic tags above cannot be: what this person works on, in their own words.
-    // Optional, and deliberately so -- a required pitch is a form asking somebody to be
-    // interesting on demand, and what comes back is a restatement of the tags.
     key: "elevator_pitch",
     labelKey: "profile.fields.elevatorPitch",
     example:
-      "I work out when a language model's answer is actually caused by the evidence it was given, and when it just looks that way.",
+      "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
     type: "paragraph",
     hintKey: "profile.hints.elevatorPitch",
     // The service's own ceiling (validateLabMember in extensions/adminbot/src/kernel/service.ts).

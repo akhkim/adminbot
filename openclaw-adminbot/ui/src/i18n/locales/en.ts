@@ -2362,7 +2362,7 @@ export const en: TranslationMap = {
       scholar: "Google Scholar",
       openreviewId: "OpenReview ID",
       researchTopics: "Research topics",
-      elevatorPitch: "Elevator pitch",
+      elevatorPitch: "Elevator pitch that Zhijing can use when recommending you to other prof/recruiter",
       projects: "Projects",
       notes: "Notes",
     },
@@ -2404,7 +2404,7 @@ export const en: TranslationMap = {
       oneOnOneFolderUrl:
         "The Google Drive folder holding the notes from your one-on-ones. Open the folder in Drive and copy the address — it looks like drive.google.com/drive/folders/… A link to a single document is not it: the notes are one file per meeting, so the folder is the part that keeps being right. Only you and lab admins can see this field.",
       elevatorPitch:
-        "How you would explain your research to a smart person who does not work in it — the question you are chasing and why it matters, in a paragraph you could say out loud. The lab reuses it: introductions to visitors and collaborators, your entry on the shared directory, the blurb that goes out when a paper of yours lands. Research topics above are tags for filtering a roster; this is the part that makes somebody want to talk to you.",
+        "A short paragraph about your achievements that Zhijing can use when recommending you to professors or recruiters.",
     },
     // The shapes the service accepts, stated where the answer is typed. Each one mirrors a rule in
     // SOCIAL_URL_FIELDS or validateOpenReviewId; keep them in step if those change.
@@ -2436,7 +2436,7 @@ export const en: TranslationMap = {
       offboardingMonth:
         "The year and month you plan on leaving Jinesis for a new job or stage, like 2027-06. An estimate is fine — it is not a commitment.",
       elevatorPitch:
-        "One paragraph, in your own words — what you work on and why it is worth doing.",
+        "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
       merchRequests:
         "What you would like from the next lab merch order — item, size, quantity. Leave it blank if you would rather not have anything.",
     },
