@@ -1301,7 +1301,11 @@ function renderLettersRequest(props: LettersProps) {
             />
             <span
               >I confirm that I have sent all application-portal invitations for this request to
-              <strong>zjin.admin@cs.toronto.edu</strong>, not Zhijing's main email.</span
+              <strong>zjin.admin@cs.toronto.edu</strong>, not Zhijing's main email.<span
+                class="cron-required-marker"
+                aria-hidden="true"
+                >*</span
+              ></span
             >
           </label>
           <a
