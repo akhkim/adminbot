@@ -405,6 +405,8 @@ export type MemberRegistration = {
   member_id?: string;
   member_name?: string;
   profile?: Record<string, unknown>;
+  /** False when the viewer may read the queue but only the PI may decide it. */
+  can_decide?: boolean;
 };
 
 // Closed set of failure modes so callers render distinct guidance. `retryAfterSeconds`
@@ -1107,6 +1109,35 @@ export async function mergeLabMembersAsAdmin(
   };
 }
 
+/** Re-key one member under a new id; the service carries every record that named the old one. */
+export async function renameLabMemberAsAdmin(
+  memberId: string,
+  newId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ member: LabMember; changed: Record<string, number> }>> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/${encodeURIComponent(memberId)}/id`,
+    "POST",
+    sessionToken,
+    { new_id: newId },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as { member: LabMember; changed: Record<string, number> },
+  };
+}
+
 export type MemberOnboardingGuideQueued = {
   status?: "done" | "queued";
   proposal_id: string;
@@ -1183,6 +1214,8 @@ export type MemberRequestView = {
   member_id?: string;
   /** The access level approving would grant, worked out from the requested Member Type. */
   access_level?: string;
+  /** False when the viewer may read the request but only the PI may decide it. */
+  can_decide?: boolean;
 };
 
 export type MemberRequestInput = MemberRequestView["profile"] & { note?: string };
@@ -2765,8 +2798,16 @@ export async function fetchPendingRegistrations(
     }
     return { ok: false, ...mapErrorResponse(response, body, { weakOn400: false }) };
   }
-  const registrations = (body as { registrations?: MemberRegistration[] } | null)?.registrations;
-  return { ok: true, value: registrations ?? [] };
+  const parsed = body as { registrations?: MemberRegistration[]; can_decide?: boolean } | null;
+  const registrations = parsed?.registrations ?? [];
+  // The service answers once for the viewer; each card reads it off its own row. Absent is an
+  // older service, and leaving the field unset keeps the buttons the way that service had them.
+  if (typeof parsed?.can_decide === "boolean") {
+    for (const registration of registrations) {
+      registration.can_decide = parsed.can_decide;
+    }
+  }
+  return { ok: true, value: registrations };
 }
 
 async function decideRegistration(

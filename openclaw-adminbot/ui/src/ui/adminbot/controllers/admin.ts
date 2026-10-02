@@ -55,6 +55,7 @@ import {
   updateSettingsAsAdmin,
   updateOwnSchedule,
   mergeLabMembersAsAdmin,
+  renameLabMemberAsAdmin,
   fetchSlackChannelNames,
   deleteLabMemberAsAdmin,
   fetchMembersWithoutEmail,
@@ -2878,6 +2879,46 @@ export async function mergeAdminBotMembers(
           .join(", ")}.`
       : `Merged ${duplicateId} into ${survivorId}.`,
   };
+  await loadAdminBot(host);
+}
+
+/**
+ * Gives one member a new id. Member session only, for the merge's reason: the service refuses
+ * this to the shared service principal, so break-glass access does not offer it.
+ */
+export async function renameAdminBotMember(
+  host: AdminBotHost,
+  memberId: string,
+  newId: string,
+): Promise<void> {
+  host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your admin account to change a member ID.",
+    };
+    return;
+  }
+  const result = await renameLabMemberAsAdmin(
+    memberId,
+    newId,
+    stored.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  if (!result.ok) {
+    host.adminBotNotice = {
+      kind: "error",
+      text:
+        result.kind === "unreachable"
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+          : result.kind === "forbidden"
+            ? "Your session no longer has admin access — sign in again and retry."
+            : (result.message ?? "Couldn't change that member ID."),
+    };
+    return;
+  }
+  host.adminBotNotice = { kind: "success", text: `Changed member ID ${memberId} to ${newId}.` };
   await loadAdminBot(host);
 }
 

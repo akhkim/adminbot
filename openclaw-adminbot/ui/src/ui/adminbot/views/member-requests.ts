@@ -105,7 +105,7 @@ function renderRequestFields(input?: MemberRequestInput) {
           optionClass: "adminbot-form__multi-option",
           testId: "member-request-member-type",
         })}
-        <small>Your best guess. The admin who approves confirms it, since it sets access.</small>
+        <small>Your best guess. The PI confirms it on approval, since it sets access.</small>
       </div>
       <label class="adminbot-form__field"
         ><span>Affiliation</span
@@ -164,7 +164,7 @@ export function renderMemberRequestForm(props: MemberRequestsProps) {
     </button>
     <div class="card-title">Add member</div>
     <div class="card-sub">
-      An admin reviews this before they are added to the roster. Nothing is sent to them until then.
+      The PI reviews this before they are added to the roster. Nothing is sent to them until then.
     </div>
     <form class="adminbot-form" @submit=${(event: Event) => void submitRequest(event, props)}>
       ${renderRequestFields()}
@@ -268,6 +268,25 @@ function renderAdminRequest(request: MemberRequestView, props: MemberRequestsPro
           The requested Member Type makes them an AdminBot admin. Check that is intended.
         </p>`
       : nothing}
+    ${request.can_decide === false
+      ? html`<div class="adminbot-form__actions">
+          ${renderRequestEditor(request, props)}
+          <span class="muted" data-testid="member-request-pi-only"
+            >Only the PI can approve or decline a new member.</span
+          >
+        </div>`
+      : renderDecisionControls(request, props, busy)}
+  </li>`;
+}
+
+// Undefined `can_decide` is an older service that still let any admin decide, so the controls stay;
+// the service is the gate either way and answers a non-PI's click with a 403.
+function renderDecisionControls(
+  request: MemberRequestView,
+  props: MemberRequestsProps,
+  busy: boolean,
+) {
+  return html`
     <div class="adminbot-form__actions">
       ${renderRequestEditor(request, props)}
       <label class="adminbot-form__field--check">
@@ -300,11 +319,11 @@ function renderAdminRequest(request: MemberRequestView, props: MemberRequestsPro
         Decline
       </button>
     </div>
-  </li>`;
+  `;
 }
 
 const STATUS_LABEL: Record<MemberRequestView["status"], string> = {
-  pending: "Waiting for an admin",
+  pending: "Waiting for the PI",
   approved: "Added to the roster",
   rejected: "Declined",
 };
@@ -359,7 +378,7 @@ export function renderMemberRequests(props: MemberRequestsProps) {
     <p class="card-sub">
       ${props.isAdmin
         ? "Members who are not admins proposed these people. Approving adds them exactly as your own Add member would."
-        : "People you asked to add. They join the roster once an admin approves."}
+        : "People you asked to add. They join the roster once the PI approves."}
     </p>
     ${state.error ? html`<p role="alert">${state.error}</p>` : nothing}
     <ul class="adminbot-member-requests">

@@ -257,6 +257,8 @@ export type AdminBotProps = {
    * signed-in admin), which is what takes the panel off the page rather than a disabled button.
    */
   onMergeMembers?: (survivorId: string, duplicateId: string) => void;
+  /** Re-key one member under a new id. Admin mode only; absent hides the Change ID button. */
+  onRenameMember?: (memberId: string, newId: string) => void;
   /**
    * Delete one roster row outright. Admin mode only, and absent means the affordance is not
    * rendered at all rather than rendered disabled -- a delete button that cannot delete is a
@@ -1356,7 +1358,8 @@ function renderMeetingsField(
 // Shared roster fields for the admin add/edit-member popovers. When a member is
 // supplied the fields are prefilled and the id is locked, so the same
 // submitMemberForm/onSaveMember upsert path edits the existing record (PUT is an
-// id-keyed merge) instead of creating a new one.
+// id-keyed merge) instead of creating a new one. Changing the id is its own
+// route (Change ID), never this upsert, which would fork the record.
 //
 // Everything below the governance block is rendered from the shared member field registry, so
 // this editor and the member's own Profile page ask for exactly the same facts. They used not to:
@@ -1366,6 +1369,7 @@ function renderMeetingsField(
 function renderMemberFormFields(
   member?: AdminBotLabMember,
   standingMeetings?: AdminBotStandingMeetingsState,
+  onRenameMember?: AdminBotProps["onRenameMember"],
 ) {
   const noteDraft = parseMemberNotes(member?.notes);
   const editing = member !== undefined;
@@ -1391,9 +1395,18 @@ function renderMemberFormFields(
           .value=${member?.id ?? ""}
           ?readonly=${editing}
           ?required=${editing}
-        /><small
+        />${member && onRenameMember
+          ? html`<button
+              class="btn btn--sm"
+              type="button"
+              data-testid="member-change-id"
+              @click=${(event: Event) => changeMemberId(event, member, onRenameMember)}
+            >
+              Change ID
+            </button>`
+          : nothing}<small
           >${editing
-            ? "Permanent account ID. Edit the name below to correct their displayed name; this ID links their papers and account and stays unchanged."
+            ? "Links their papers, sign-in and settings. Change ID moves all of those to the new ID; to fix how their name reads, edit the name below instead."
             : "Optional. Generated from their name; duplicate names get a unique suffix."}</small
         ></label
       >
@@ -1504,6 +1517,38 @@ function renderMemberEditsPopover(member: AdminBotLabMember, index: number, prop
   `;
 }
 
+function changeMemberId(
+  event: Event,
+  member: AdminBotLabMember,
+  onRenameMember: NonNullable<AdminBotProps["onRenameMember"]>,
+): void {
+  const newId = globalThis.prompt?.(`New member ID for ${member.name}:`, member.id)?.trim();
+  if (!newId || newId === member.id) {
+    return;
+  }
+  if (
+    !globalThis.confirm?.(
+      `Change ${member.name}'s member ID from "${member.id}" to "${newId}"?\n\n` +
+        `Their papers, sign-in, sessions and settings move to the new ID. ` +
+        `Links that spell out the old ID stop working.`,
+    )
+  ) {
+    return;
+  }
+  // A queued autosave carries the old id, and landing after the rename would upsert a fresh record
+  // under it -- a ghost of the member just moved. Drop it; the roster reloads after the rename.
+  const form = (event.currentTarget as Element | null)?.closest("form");
+  if (form) {
+    const pending = memberAutosaveTimers.get(form);
+    if (pending !== undefined) {
+      clearTimeout(pending);
+      memberAutosaveTimers.delete(form);
+    }
+    form.closest<HTMLElement>("[popover]")?.hidePopover();
+  }
+  onRenameMember(member.id, newId);
+}
+
 function renderMemberEditPopover(member: AdminBotLabMember, index: number, props: AdminBotProps) {
   const editId = `adminbot-edit-member-${index}`;
   // The shell is always here: `popovertarget` resolves against the id, so the button needs it in
@@ -1532,7 +1577,11 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
                 style="grid-column: 1 / -1"
                 .memberId=${member.id}
               ></adminbot-member-guide-status>
-              ${renderMemberFormFields(member, props.standingMeetings)}
+              ${renderMemberFormFields(
+                member,
+                props.standingMeetings,
+                props.mode === "admin" ? props.onRenameMember : undefined,
+              )}
               <div class="adminbot-form__actions">
                 <button class="btn btn--sm primary" type="submit">Save member</button>
               </div>

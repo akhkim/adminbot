@@ -61,6 +61,7 @@ import {
   submitAdminBotReimbursement,
   resolveAdminBotEmailReview,
   mergeAdminBotMembers,
+  renameAdminBotMember,
   loadSlackChannelNames,
   EMPTY_SLACK_CHANNEL_CHECK,
   deleteAdminBotMember,
@@ -4386,6 +4387,8 @@ export function renderApp(state: AppViewState) {
               onSaveMember: (member, options) => saveAdminBotMember(state, member, options),
               onMergeMembers: (survivorId, duplicateId) =>
                 void mergeAdminBotMembers(state, survivorId, duplicateId),
+              onRenameMember: (memberId, newId) =>
+                void renameAdminBotMember(state, memberId, newId),
               onDeleteMember: (member) => void deleteAdminBotMember(state, member.id),
               onPurgeMembersWithoutEmail: (dryRun) =>
                 void purgeAdminBotMembersWithoutEmail(state, { dryRun }),

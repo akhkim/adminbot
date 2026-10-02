@@ -1582,12 +1582,19 @@ async function handleRegistrationRoute(
     const status = adminBotRegistrationStatuses.includes(raw as AdminBotRegistrationStatus)
       ? (raw as AdminBotRegistrationStatus)
       : "pending";
-    sendJson(res, 200, { registrations: await ctx.auth.listRegistrations(status) });
+    sendJson(res, 200, {
+      registrations: await ctx.auth.listRegistrations(status),
+      // Whether this viewer may approve or reject: admins read the queue, only the PI decides it.
+      can_decide: isHeadProfessorAtKeyboard(ctx, principal),
+    });
     return;
   }
   const approve = /^\/auth\/registrations\/([^/]+)\/approve$/u.exec(url.pathname);
   if (req.method === "POST" && approve?.[1]) {
-    if (!requireMemberPrivileged(res, principal)) {
+    // A sign-up is a new member asking in, so it is the PI's decision exactly as a member request
+    // is; admins can still read the queue above. The privilege check stays first so the service
+    // principal keeps its own refusal rather than being told it is not the PI.
+    if (!requireMemberPrivileged(res, principal) || !requireHeadProfessor(res, ctx, principal)) {
       return;
     }
     const approved = await ctx.auth.approveRegistration(decodeURIComponent(approve[1]), decidedBy);
@@ -1624,7 +1631,7 @@ async function handleRegistrationRoute(
   }
   const reject = /^\/auth\/registrations\/([^/]+)\/reject$/u.exec(url.pathname);
   if (req.method === "POST" && reject?.[1]) {
-    if (!requireMemberPrivileged(res, principal)) {
+    if (!requireMemberPrivileged(res, principal) || !requireHeadProfessor(res, ctx, principal)) {
       return;
     }
     sendAuthResult(
@@ -4121,6 +4128,24 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  const renameId = /^\/lab\/members\/([^/]+)\/id$/u.exec(url.pathname);
+  if (req.method === "POST" && renameId?.[1]) {
+    // Admin session only, for the merge's reason: it re-keys a person's login, papers and
+    // settings in one go, and the caller types the new key.
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.renameLabMember({
+        memberId: decodeURIComponent(renameId[1]),
+        newId: asString(body.new_id),
+        actorId: principalActor(principal),
+      }),
+    );
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/slack/channels") {
     // Names only -- no ids, no membership, no topics. The one caller is the project form asking
     // "is there already a channel called this", and a route that returned the workspace's shape
@@ -4246,6 +4271,19 @@ async function handleAuthenticatedRoute(
       return;
     }
     const body = (await readJson(req)) as AdminBotSettingsInput;
+    // Naming the PI is naming who approves new members, so an admin who could rewrite it could
+    // hand themselves that right. Once it is set, only the PI moves it; an unset one can still be
+    // filled in by any admin, which is how a fresh deployment gets one at all.
+    const head = service.headProfessorMemberId();
+    if (
+      head !== undefined &&
+      body.head_professor_member_id !== undefined &&
+      (body.head_professor_member_id?.trim() ?? "") !== head &&
+      !isHeadProfessorAtKeyboard(ctx, principal)
+    ) {
+      sendJson(res, 403, { error: { message: "only the PI can change who the PI is" } });
+      return;
+    }
     sendServiceResult(res, service.updateSettings(body));
     return;
   }
@@ -6632,9 +6670,12 @@ async function handleMemberRequestRoute(
     }
     // What approving would grant, worked out the same way the save will work it out, so the admin
     // reads "this makes them an admin" on the card rather than finding out afterwards.
+    const canDecide = isHeadProfessorAtKeyboard(ctx, principal);
     sendJson(res, 200, {
       requests: result.payload.requests.map((request) => ({
         ...request,
+        // Lets the card show Approve/Decline to the PI and "waiting on the PI" to everyone else.
+        can_decide: canDecide,
         requested_by_name: ctx.store.getLabMember(request.requested_by)?.name,
         access_level:
           privilegeForMemberTypeChange(
@@ -6670,8 +6711,8 @@ async function handleMemberRequestRoute(
   }
   const decision = /^\/lab\/members\/requests\/([^/]+)\/(approve|reject)$/u.exec(url.pathname);
   if (req.method === "POST" && decision?.[1] && decision[2]) {
-    if (!isAdmin) {
-      sendJson(res, 403, { error: { message: "only an admin can decide a member request" } });
+    // The PI and nobody else, admins included: who joins the lab is not an admin write.
+    if (!requireHeadProfessor(res, ctx, principal)) {
       return;
     }
     const requestId = decodeURIComponent(decision[1]);
@@ -7016,6 +7057,37 @@ function integritySheet():
         readGogSheetRows(spreadsheetId, { range: `'${tab.replace(/'/gu, "''")}'!A1:Z1000` }),
     },
   };
+}
+
+/**
+ * Whether the person at the keyboard is the lab's PI, as `head_professor_member_id` names them.
+ *
+ * Deliberately not a privilege level: every admin holds the same one, and the rule this guards is
+ * that admins do *not* get to decide who joins the lab. A "view as" session is refused even when
+ * the member being viewed is the PI -- `principal.member` is then the PI's record, but the hands on
+ * the keyboard are an admin's, which is exactly the person this keeps out.
+ */
+function isHeadProfessorAtKeyboard(ctx: AdminBotRouteContext, principal: AdminBotPrincipal) {
+  if (principal.kind !== "member" || principal.impersonator) {
+    return false;
+  }
+  const head = ctx.service.headProfessorMemberId();
+  return head !== undefined && principal.member.id === head;
+}
+
+/** Approving or declining somebody new: the PI's call alone. */
+function requireHeadProfessor(
+  res: ServerResponse,
+  ctx: AdminBotRouteContext,
+  principal: AdminBotPrincipal,
+): boolean {
+  if (isHeadProfessorAtKeyboard(ctx, principal)) {
+    return true;
+  }
+  sendJson(res, 403, {
+    error: { message: "only the PI can approve or decline a new member" },
+  });
+  return false;
 }
 
 function requireMemberPrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {

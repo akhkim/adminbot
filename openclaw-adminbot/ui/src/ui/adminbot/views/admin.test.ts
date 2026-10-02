@@ -454,6 +454,30 @@ describe("renderAdminBot members panel — the edit form waits to be asked for",
     expect(names).toContain("memberType");
     expect(names).not.toContain("privilegeLevel");
   });
+
+  it("lets an admin change a member's id through its own route, never the form's upsert", () => {
+    const onRenameMember = vi.fn();
+    const props = { ...lazyProps(), onRenameMember };
+    const container = renderToDiv(props);
+    const button = container.querySelector<HTMLButtonElement>(
+      '#adminbot-edit-member-0 [data-testid="member-change-id"]',
+    );
+    expect(button).not.toBeNull();
+    // The id input itself stays read-only: typing a new id there would fork the record.
+    expect(
+      container.querySelector<HTMLInputElement>('#adminbot-edit-member-0 input[name="id"]')
+        ?.readOnly,
+    ).toBe(true);
+    const prompt = vi.spyOn(globalThis, "prompt").mockReturnValue("lazy-renamed");
+    const confirm = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    button!.click();
+    expect(onRenameMember).toHaveBeenCalledWith("lazy-one", "lazy-renamed");
+    prompt.mockRestore();
+    confirm.mockRestore();
+
+    const general = renderToDiv({ ...lazyProps(), mode: "general", onRenameMember });
+    expect(general.querySelector('[data-testid="member-change-id"]')).toBeNull();
+  });
 });
 
 describe("renderAdminBot members panel — edit affordance", () => {

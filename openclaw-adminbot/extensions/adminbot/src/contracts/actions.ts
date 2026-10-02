@@ -2465,6 +2465,7 @@ export type AdminBotAuditEvent = {
     | "paper_author_links.backfilled"
     // Carries the whole retired record in `details`, because a merge has no undo.
     | "lab_member.merged"
+    | "lab_member.id_changed"
     | "lab_member.deleted"
     | "lab_members.purged_without_email"
     | "lab_member_request.submitted"

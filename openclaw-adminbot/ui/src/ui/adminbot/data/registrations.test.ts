@@ -63,6 +63,18 @@ describe("adminbot-registrations", () => {
     expect(h.registrationsLoading).toBe(false);
   });
 
+  it("carries the service's PI-only answer onto every row, and nothing when it gives none", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ registrations: [pendingClaim], can_decide: false }))
+      .mockResolvedValueOnce(jsonResponse({ registrations: [pendingClaim] }));
+    const admin = host();
+    await loadAdminBotRegistrations(admin);
+    expect(admin.registrations[0]?.can_decide).toBe(false);
+    const older = host();
+    await loadAdminBotRegistrations(older);
+    expect(older.registrations[0]).not.toHaveProperty("can_decide");
+  });
+
   it("reports no-session without calling the service", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     vi.stubGlobal("localStorage", createStorageMock());

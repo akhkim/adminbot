@@ -118,6 +118,63 @@ function comparePageText(left: string, right: string): number {
   return compareSqliteText(left.toLowerCase(), right.toLowerCase());
 }
 
+/**
+ * A copy of `value` with every string equal to `from` -- as a value or as an object key -- turned
+ * into `to`. The in-memory reading of the SQLite rename's "the id as a whole JSON string" rule.
+ * Only plain objects and arrays are walked; anything else is a leaf and kept as it is.
+ */
+function renameIdDeep(value: unknown, from: string, to: string): unknown {
+  if (value === from) {
+    return to;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => renameIdDeep(entry, from, to));
+  }
+  if (value !== null && typeof value === "object") {
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      return value;
+    }
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key === from ? to : key,
+        renameIdDeep(entry, from, to),
+      ]),
+    );
+  }
+  return value;
+}
+
+/**
+ * A map key with the id renamed: the whole key, a JSON-array key, or one part of a composite key
+ * joined by the separators this store uses (NUL, colon, space).
+ */
+function renameIdInKey(key: unknown, from: string, to: string): unknown {
+  if (typeof key !== "string" || key === from) {
+    return key === from ? to : key;
+  }
+  if (key.startsWith("[")) {
+    try {
+      const parsed: unknown = JSON.parse(key);
+      if (Array.isArray(parsed)) {
+        return JSON.stringify(renameIdDeep(parsed, from, to));
+      }
+    } catch {
+      // Not JSON after all; fall through to the composite-key split.
+    }
+  }
+  const NUL = String.fromCharCode(0);
+  return key
+    .split(NUL)
+    .map((segment) =>
+      segment
+        .split(/([: ])/u)
+        .map((part) => (part === from ? to : part))
+        .join(""),
+    )
+    .join(NUL);
+}
+
 const foldAscii = (value: string) => value.replace(/[A-Z]/gu, (letter) => letter.toLowerCase());
 
 function compareIndexedPageText(left: string, right: string): number {
@@ -723,6 +780,81 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       }
     }
     return removed;
+  }
+
+  /**
+   * The in-memory mirror of the SQLite rename, and generic for the same reason: it walks every
+   * collection this store holds rather than a list that would fall behind the next one added. The
+   * audit log is left alone as history. Two passes -- plan everything, then write -- so a collision
+   * throws with nothing changed, as the SQLite transaction rolls back.
+   */
+  renameMemberId(fromMemberId: string, toMemberId: string): Record<string, number> {
+    const changed: Record<string, number> = {};
+    const fields = this as unknown as Record<string, unknown>;
+    const writes: Array<() => void> = [];
+    for (const field of Object.keys(fields)) {
+      const current = fields[field];
+      if (field === "auditEvents" || typeof current === "function") {
+        continue;
+      }
+      if (current instanceof Map) {
+        const next = new Map<unknown, unknown>();
+        let count = 0;
+        for (const [key, entry] of current) {
+          const nextKey = renameIdInKey(key, fromMemberId, toMemberId);
+          const nextEntry = renameIdDeep(entry, fromMemberId, toMemberId);
+          if (next.has(nextKey)) {
+            throw new Error(`${field} already holds a record keyed on "${String(nextKey)}"`);
+          }
+          next.set(nextKey, nextEntry);
+          if (nextKey !== key || JSON.stringify(nextEntry) !== JSON.stringify(entry)) {
+            count += 1;
+          }
+        }
+        if (count > 0) {
+          changed[field] = count;
+          writes.push(() => {
+            current.clear();
+            for (const [key, entry] of next) {
+              current.set(key, entry);
+            }
+          });
+        }
+      } else if (current instanceof Set) {
+        const next = [...current].map((entry) => renameIdDeep(entry, fromMemberId, toMemberId));
+        const count = next.filter((entry, index) => entry !== [...current][index]).length;
+        if (count > 0) {
+          changed[field] = count;
+          writes.push(() => {
+            current.clear();
+            for (const entry of next) {
+              current.add(entry);
+            }
+          });
+        }
+      } else if (Array.isArray(current)) {
+        const next = current.map((entry) => renameIdDeep(entry, fromMemberId, toMemberId));
+        const count = next.filter(
+          (entry, index) => JSON.stringify(entry) !== JSON.stringify(current[index]),
+        ).length;
+        if (count > 0) {
+          changed[field] = count;
+          writes.push(() => current.splice(0, current.length, ...next));
+        }
+      } else if (current !== null && typeof current === "object") {
+        const next = renameIdDeep(current, fromMemberId, toMemberId);
+        if (JSON.stringify(next) !== JSON.stringify(current)) {
+          changed[field] = 1;
+          writes.push(() => {
+            fields[field] = next;
+          });
+        }
+      }
+    }
+    for (const write of writes) {
+      write();
+    }
+    return changed;
   }
 
   /**

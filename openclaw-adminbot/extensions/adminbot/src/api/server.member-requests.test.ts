@@ -131,7 +131,18 @@ async function lab() {
     email: "sam@cs.toronto.edu",
     privilege_level: "external_collaborator",
   });
+  seedMember(mock, {
+    id: "zhijing",
+    name: "Zhijing",
+    email: "zhijing@cs.toronto.edu",
+    privilege_level: "admin",
+  });
+  const settings = mock.service.updateSettings({ head_professor_member_id: "zhijing" });
+  if (!settings.ok) {
+    throw new Error(settings.error.message);
+  }
   const admin = await memberToken(mock, baseUrl, "admin", "admin@cs.toronto.edu");
+  const pi = await memberToken(mock, baseUrl, "zhijing", "zhijing@cs.toronto.edu");
   const pat = await memberToken(mock, baseUrl, "pat", "pat@cs.toronto.edu");
   const sam = await memberToken(mock, baseUrl, "sam", "sam@cs.toronto.edu");
   const call = (token: string, path: string, method = "GET", body?: unknown) =>
@@ -142,7 +153,7 @@ async function lab() {
     });
   const list = async (token: string, query = "") =>
     ((await (await call(token, query)).json()) as { requests: RequestView[] }).requests;
-  return { baseUrl, mock, admin, pat, sam, call, list, calendarShares };
+  return { baseUrl, mock, admin, pi, pat, sam, call, list, calendarShares };
 }
 
 const ADA = {
@@ -155,7 +166,7 @@ const ADA = {
 
 describe("member requests", () => {
   it("lets an admin correct a pending request without onboarding, and approval uses the correction", async () => {
-    const { mock, admin, pat, sam, call, list, calendarShares } = await lab();
+    const { mock, admin, pi, pat, sam, call, list, calendarShares } = await lab();
     const { request } = (await (
       await call(pat, "", "POST", {
         ...ADA,
@@ -189,12 +200,12 @@ describe("member requests", () => {
     expect((await list(admin))[0]?.profile.member_type).toBe("coauthor-major");
     expect(
       (
-        await call(admin, `/${request.id}/approve`, "POST", {
+        await call(pi, `/${request.id}/approve`, "POST", {
           expected_updated_at: request.updated_at,
         })
       ).status,
     ).toBe(409);
-    expect((await call(admin, `/${request.id}/approve`, "POST", {})).status).toBe(200);
+    expect((await call(pi, `/${request.id}/approve`, "POST", {})).status).toBe(200);
     expect(roster(mock).find((member) => member.email === ADA.email)?.member_type).toBe(
       "coauthor-major",
     );
@@ -238,8 +249,8 @@ describe("member requests", () => {
     });
   });
 
-  it("holds a non-admin's request out of the roster until an admin approves it", async () => {
-    const { mock, admin, pat, call, list } = await lab();
+  it("holds a non-admin's request out of the roster until the PI approves it", async () => {
+    const { mock, admin, pi, pat, call, list } = await lab();
     const submitted = await call(pat, "", "POST", ADA);
     expect(submitted.status).toBe(201);
     const { request } = (await submitted.json()) as { request: RequestView };
@@ -254,7 +265,7 @@ describe("member requests", () => {
       access_level: "member",
     });
 
-    const approved = await call(admin, `/${request.id}/approve`, "POST", {});
+    const approved = await call(pi, `/${request.id}/approve`, "POST", {});
     expect(approved.status).toBe(200);
     const result = (await approved.json()) as {
       request: RequestView;
@@ -273,7 +284,7 @@ describe("member requests", () => {
     expect(result.member.id).toMatch(/^mem_/u);
 
     // A second press on the same card must not create Ada twice.
-    const again = await call(admin, `/${request.id}/approve`, "POST", {});
+    const again = await call(pi, `/${request.id}/approve`, "POST", {});
     expect(again.status).toBe(409);
     expect(roster(mock).filter((m) => m.email === "ada@example.org")).toHaveLength(1);
   });
@@ -281,12 +292,12 @@ describe("member requests", () => {
   // Approving a request used to create the record and stop: the enrollment Add member runs --
   // calendar, Monday meeting, rooms -- was skipped because the save was not flagged as new.
   it("enrolls the approved member exactly as Add member does", async () => {
-    const { admin, pat, call, calendarShares } = await lab();
+    const { pi, pat, call, calendarShares } = await lab();
     const { request } = (await (await call(pat, "", "POST", ADA)).json()) as {
       request: RequestView;
     };
     calendarShares.length = 0;
-    const approved = (await (await call(admin, `/${request.id}/approve`, "POST", {})).json()) as {
+    const approved = (await (await call(pi, `/${request.id}/approve`, "POST", {})).json()) as {
       member: {
         member_type_change?: { steps: Array<{ step: string; status: string }> };
       };
@@ -306,13 +317,81 @@ describe("member requests", () => {
     expect((await list(pat)).map((r) => r.profile.email)).toEqual(["grace@example.org"]);
   });
 
-  it("only lets an admin decide", async () => {
-    const { pat, sam, call } = await lab();
+  it("only lets the PI decide -- not an admin, and not an admin viewing as the PI", async () => {
+    const { baseUrl, mock, admin, pi, pat, sam, call, list } = await lab();
     const { request } = (await (await call(pat, "", "POST", ADA)).json()) as {
       request: RequestView;
     };
     expect((await call(pat, `/${request.id}/approve`, "POST", {})).status).toBe(403);
     expect((await call(sam, `/${request.id}/reject`, "POST", {})).status).toBe(403);
+    expect((await call(admin, `/${request.id}/approve`, "POST", {})).status).toBe(403);
+    expect((await call(admin, `/${request.id}/reject`, "POST", {})).status).toBe(403);
+    const viewing = await fetch(`${baseUrl}/auth/impersonate`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${admin}` }),
+      body: JSON.stringify({ member_id: "zhijing" }),
+    });
+    const asPi = ((await viewing.json()) as { session_token: string }).session_token;
+    expect((await call(asPi, `/${request.id}/approve`, "POST", {})).status).toBe(403);
+    expect(roster(mock).some((member) => member.email === ADA.email)).toBe(false);
+
+    // Admins still see the queue, told the decision is not theirs; the PI is offered it.
+    expect((await list(admin))[0]).toMatchObject({ status: "pending", can_decide: false });
+    expect((await list(pi))[0]).toMatchObject({ status: "pending", can_decide: true });
+    expect((await call(pi, `/${request.id}/approve`, "POST", {})).status).toBe(200);
+  });
+
+  it("leaves account sign-ups to the PI as well", async () => {
+    const { baseUrl, mock, admin, pi } = await lab();
+    seedMember(mock, { id: "kim", name: "Kim", email: "kim@cs.toronto.edu" });
+    await fetch(`${baseUrl}/auth/claim`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        member_id: "kim",
+        email: "kim@cs.toronto.edu",
+        password: "correcthorse",
+      }),
+    });
+    const queue = async (token: string) =>
+      (await (
+        await fetch(`${baseUrl}/auth/registrations?status=pending`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      ).json()) as { registrations: Array<{ id: string }>; can_decide: boolean };
+    const seenByAdmin = await queue(admin);
+    expect(seenByAdmin.can_decide).toBe(false);
+    const [registration] = seenByAdmin.registrations;
+    const decide = (token: string, decision: string) =>
+      fetch(`${baseUrl}/auth/registrations/${registration?.id}/${decision}`, {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+        body: "{}",
+      });
+    expect((await decide(admin, "approve")).status).toBe(403);
+    expect((await decide(admin, "reject")).status).toBe(403);
+    expect((await decide(SERVICE_TOKEN, "approve")).status).toBe(403);
+    const seenByPi = await queue(pi);
+    expect(seenByPi.can_decide).toBe(true);
+    expect(seenByPi.registrations[0]?.id).toBe(registration?.id);
+    expect((await decide(pi, "approve")).status).toBe(200);
+  });
+
+  it("does not let an admin make themselves the PI", async () => {
+    const { baseUrl, mock, admin, pi } = await lab();
+    const put = (token: string, head: string) =>
+      fetch(`${baseUrl}/settings`, {
+        method: "PUT",
+        headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+        body: JSON.stringify({ head_professor_member_id: head }),
+      });
+    expect((await put(admin, "admin")).status).toBe(403);
+    expect((await put(admin, "")).status).toBe(403);
+    // Re-sending the PI unchanged is what the Settings form does on every save.
+    expect((await put(admin, "zhijing")).status).toBe(200);
+    expect(mock.service.headProfessorMemberId()).toBe("zhijing");
+    expect((await put(pi, "admin")).status).toBe(200);
+    expect(mock.service.headProfessorMemberId()).toBe("admin");
   });
 
   it("refuses the service principal and anonymous callers", async () => {
@@ -327,12 +406,12 @@ describe("member requests", () => {
   });
 
   it("drops governance fields a request tries to carry", async () => {
-    const { mock, admin, pat, call } = await lab();
+    const { mock, pi, pat, call } = await lab();
     const { request } = (await (
       await call(pat, "", "POST", { ...ADA, member_type: "", privilege_level: "admin" })
     ).json()) as { request: RequestView };
     expect(request.profile).not.toHaveProperty("privilege_level");
-    const approved = (await (await call(admin, `/${request.id}/approve`, "POST", {})).json()) as {
+    const approved = (await (await call(pi, `/${request.id}/approve`, "POST", {})).json()) as {
       member: { id: string };
     };
     expect(roster(mock).find((m) => m.id === approved.member.id)).toMatchObject({
@@ -341,11 +420,11 @@ describe("member requests", () => {
   });
 
   it("returns a rejection and its reason to the requester", async () => {
-    const { mock, admin, pat, call, list } = await lab();
+    const { mock, pi, pat, call, list } = await lab();
     const { request } = (await (await call(pat, "", "POST", ADA)).json()) as {
       request: RequestView;
     };
-    const rejected = await call(admin, `/${request.id}/reject`, "POST", {
+    const rejected = await call(pi, `/${request.id}/reject`, "POST", {
       note: "Already added under her other address.",
     });
     expect(rejected.status).toBe(200);

@@ -590,6 +590,16 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
    * weekly updates and submission keys that belong to nobody once the member is gone.
    */
   purgeMemberReferences(memberId: string): Record<string, number>;
+  /**
+   * Re-keys one member under a new id everywhere the database names them, returning what changed
+   * per `table.column`.
+   *
+   * Not `reassignMemberReferences` with a fresh row: that list is the rows a *merge* should move,
+   * and it leaves papers, settings, requests and every JSON payload naming the old id alone. A
+   * rename that did the same would detach the person from their own papers. Throws -- and changes
+   * nothing -- if any row would collide with one already keyed on the new id.
+   */
+  renameMemberId(fromMemberId: string, toMemberId: string): Record<string, number>;
   // Returns the events actually inserted. A change already on record is ignored rather than
   // re-dated, so re-scanning cannot make an old move look like it just happened.
   recordCvChanges(events: AdminBotCvChangeEvent[]): AdminBotCvChangeEvent[];
@@ -1306,6 +1316,11 @@ const LOCATION_DRIFT_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 // inputs; anything looser would let "2026" through as a range and silently compare it as a string
 // against "2026-05-01".
 const ISO_DAY_RE = /^\d{4}-\d{2}-\d{2}$/u;
+
+// What an admin may rename a member *to*. Narrower than the ids already on the roster on purpose:
+// the id is spliced into URLs and matched as a JSON string by the rename sweep, so it stays plain.
+// `mem_` ids from self-signup still pass, so a rename is never forced to be a "tidy" one.
+const MEMBER_ID_PATTERN = /^(?=.{1,64}$)[a-z0-9]+(?:[-_][a-z0-9]+)*$/u;
 
 const DEFAULT_SETTINGS = {
   paper_escalation_business_days: 3,
@@ -2868,6 +2883,11 @@ export class AdminBotService {
 
   getSettings(): AdminBotServiceResponse<AdminBotSettings> {
     return { ok: true, status: 200, payload: this.resolveSettings() };
+  }
+
+  /** The member the settings name as the lab's PI, or undefined when none is set. */
+  headProfessorMemberId(): string | undefined {
+    return this.resolveSettings().head_professor_member_id?.trim() || undefined;
   }
 
   /**
@@ -5277,6 +5297,61 @@ export class AdminBotService {
       },
     });
     return { ok: true, status: 200, payload: { member: merged, conflicts, moved } };
+  }
+
+  /**
+   * Give one member a new id, carrying everything that named the old one.
+   *
+   * The id is the key papers, sessions, credentials and settings hold, which is why the editor
+   * keeps it read-only -- and also why a bad one (a generated `mem_<uuid>`, a typo from an import)
+   * is worth fixing once rather than living with. Sessions move with it rather than being revoked
+   * as a merge's are: a merge judges that two records are one person and can be wrong, a rename
+   * is the same person under a new key, so signing them out would cost a login and buy nothing.
+   */
+  renameLabMember(params: {
+    memberId: string;
+    newId: string;
+    actorId: string;
+  }): AdminBotServiceResponse<{ member: AdminBotLabMember; changed: Record<string, number> }> {
+    const newId = params.newId.trim();
+    if (!MEMBER_ID_PATTERN.test(newId)) {
+      return serviceError(
+        400,
+        "a member id is lowercase letters and digits, joined by single hyphens or underscores (at most 64 characters)",
+      );
+    }
+    if (newId === params.memberId) {
+      return serviceError(400, "that is already this member's id");
+    }
+    const member = this.store.getLabMember(params.memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    if (this.store.getLabMember(newId)) {
+      return serviceError(409, `member id "${newId}" is already taken`);
+    }
+    let changed: Record<string, number>;
+    try {
+      changed = this.store.renameMemberId(params.memberId, newId);
+    } catch (error) {
+      // A constraint failure means some table already holds a row keyed on the new id -- a leftover
+      // from a deleted or merged member. The store rolled back, so nothing moved.
+      return serviceError(
+        409,
+        `could not move every record to "${newId}": ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    const renamed = this.store.getLabMember(newId);
+    if (!renamed) {
+      // The sweep re-keys the roster row like any other; reaching here means it did not.
+      return serviceError(500, "the member record did not move to the new id");
+    }
+    this.recordAudit({
+      type: "lab_member.id_changed",
+      actor: params.actorId,
+      details: { from_id: params.memberId, to_id: newId, name: member.name, changed },
+    });
+    return { ok: true, status: 200, payload: { member: renamed, changed } };
   }
 
   /**

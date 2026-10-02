@@ -146,6 +146,18 @@ async function loginToken(baseUrl: string, email: string): Promise<string> {
   return ((await res.json()) as { session_token: string }).session_token;
 }
 
+/** Names the PI through Settings, as an admin does on a deployment that has none yet. */
+async function namePi(baseUrl: string, adminSession: string, memberId: string): Promise<void> {
+  const res = await fetch(`${baseUrl}/settings`, {
+    method: "PUT",
+    headers: { ...jsonHeaders(), Authorization: `Bearer ${adminSession}` },
+    body: JSON.stringify({ head_professor_member_id: memberId }),
+  });
+  if (res.status !== 200) {
+    throw new Error(`naming the PI failed: ${res.status} ${await res.text()}`);
+  }
+}
+
 describe("AdminBot mock service", () => {
   it("serves the management UI and state endpoints for the service principal", async () => {
     const { baseUrl } = await startService();
@@ -417,6 +429,8 @@ describe("AdminBot mock service", () => {
     });
     await approveClaim(baseUrl, "approver", "approver@cs.toronto.edu");
     const adminSession = await loginToken(baseUrl, "approver@cs.toronto.edu");
+    // Deciding a sign-up is the PI's alone; with none named yet, any admin may name one.
+    await namePi(baseUrl, adminSession, "approver");
     invited.length = 0;
     const signup = await fetch(`${baseUrl}/auth/signup`, {
       method: "POST",
@@ -1433,6 +1447,8 @@ describe("AdminBot service-principal privilege scoping", () => {
     const { baseUrl } = await startService();
     const token = await adminToken(baseUrl, "boss", "boss@cs.toronto.edu");
     const adminHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    // Registration decisions are the PI's, so this admin is named PI first.
+    await namePi(baseUrl, token, "boss");
     const approveId = await pendingClaim(baseUrl, "ap", "ap@cs.toronto.edu");
     const rejectId = await pendingClaim(baseUrl, "rj", "rj@cs.toronto.edu");
 

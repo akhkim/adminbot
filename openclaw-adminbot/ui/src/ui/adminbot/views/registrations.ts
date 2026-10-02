@@ -135,26 +135,40 @@ function renderRegistration(props: AdminBotRegistrationsProps, registration: Mem
         ? renderClaimDetails(registration)
         : renderSignupDetails(registration)}
       <div class="adminbot-registration__email">${registration.email}</div>
-      <div class="adminbot-form__actions">
-        <button
-          class="btn primary"
-          type="button"
-          ?disabled=${busy}
-          aria-busy=${props.busyId === registration.id}
-          @click=${() => props.onDecide(registration.id, "approve")}
-        >
-          ${t("adminbotRegistrations.approve")}
-        </button>
-        <button
-          class="btn danger"
-          type="button"
-          ?disabled=${busy}
-          @click=${() => props.onDecide(registration.id, "reject")}
-        >
-          ${t("adminbotRegistrations.reject")}
-        </button>
-      </div>
+      ${registration.can_decide === false
+        ? html`<div class="adminbot-form__meta">${t("adminbotRegistrations.piOnly")}</div>`
+        : renderDecisionButtons(props, registration, busy)}
     </li>
+  `;
+}
+
+// Undefined `can_decide` is an older service that still let any admin decide; the service is the
+// gate either way and answers a non-PI's click with a 403.
+function renderDecisionButtons(
+  props: AdminBotRegistrationsProps,
+  registration: MemberRegistration,
+  busy: boolean,
+) {
+  return html`
+    <div class="adminbot-form__actions">
+      <button
+        class="btn primary"
+        type="button"
+        ?disabled=${busy}
+        aria-busy=${props.busyId === registration.id}
+        @click=${() => props.onDecide(registration.id, "approve")}
+      >
+        ${t("adminbotRegistrations.approve")}
+      </button>
+      <button
+        class="btn danger"
+        type="button"
+        ?disabled=${busy}
+        @click=${() => props.onDecide(registration.id, "reject")}
+      >
+        ${t("adminbotRegistrations.reject")}
+      </button>
+    </div>
   `;
 }
 

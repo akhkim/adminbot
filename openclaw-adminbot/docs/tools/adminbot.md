@@ -495,13 +495,28 @@ run the same three steps (`api/server.member-onboarding.ts`):
    `belongsOnSurface`.
 3. **The guide** (`onboarding.send_guide`) for the types the access design mails.
 
-Only who approves differs. An admin's click approves each step on the spot (Add member, request
-and sign-up approval, Add row, and enrollment from onboard selected rows, whose mails still wait in
-Pending Actions). The sweep runs with nobody present, and a spreadsheet row is not an
+Only who approves differs. A member request or a portal sign-up is somebody asking in, and only
+the PI -- the member `head_professor_member_id` names -- may approve or decline one: admins see
+the queue and can correct a request, but the service answers their Approve with a 403, and so it
+does an admin "viewing as" the PI. Once that setting is filled in, only the PI can change it. An
+admin's click approves each step on the spot for the rest (Add member, Add row, and enrollment
+from onboard selected rows, whose mails still wait in Pending Actions), and the PI's click does
+the same for the two above. The sweep runs with nobody present, and a spreadsheet row is not an
 authorization, so it creates each joiner at `external_collaborator` and files one
 `lab_member.enroll` per joiner. Approving that card sets the level the Member Type implies and runs
 step 2, each step approved by that admin; it refuses if the Member Type changed after the card was
 filed, or if the member has since been enrolled another way.
+
+### Changing a member ID
+
+The member ID is the key papers, sign-ins, sessions, settings and pending actions hold, so the
+editor keeps it read-only and an admin changes it with **Change ID** in the Edit member popover
+(`POST /lab/members/{id}/id` with `{ "new_id": ... }`). The service re-keys every table in one
+transaction, matching the old ID only as a whole value, so renaming `pat` leaves `pat-lee` alone.
+The member stays signed in. The audit log is the exception: it is history and keeps the old ID,
+and the `lab_member.id_changed` line joins the two. A row already keyed on the new ID -- a
+leftover from a deleted member -- is a 409 that changes nothing. New IDs are lowercase letters and
+digits joined by single hyphens or underscores, at most 64 characters.
 
 ### Adding a member from the Members tab
 
