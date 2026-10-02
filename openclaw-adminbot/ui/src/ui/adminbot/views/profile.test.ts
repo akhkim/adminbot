@@ -94,6 +94,26 @@ describe("renderProfile autosave", () => {
     vi.useRealTimers();
   });
 
+  it("keeps malformed month drafts visible while saving unrelated profile edits", () => {
+    const onSave = vi.fn();
+    const container = renderPage(createState(createMember({ joined_month: "Jan-26" })), onSave);
+    const month = container.querySelector<HTMLInputElement>('input[name="joined_month"]')!;
+    const name = container.querySelector<HTMLInputElement>('input[name="name"]')!;
+    name.value = "Pat Updated";
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1_000);
+    expect(onSave).toHaveBeenCalledWith("pat", expect.objectContaining({ name: "Pat Updated" }));
+    expect(onSave.mock.calls.at(-1)?.[1]).not.toHaveProperty("joined_month");
+    expect(month.value).toBe("Jan-26");
+    month.value = "2026-01";
+    month.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1_000);
+    expect(onSave).toHaveBeenLastCalledWith(
+      "pat",
+      expect.objectContaining({ joined_month: "2026-01" }),
+    );
+  });
+
   it("cancels a pending profile save when the signed-in member changes", () => {
     const member = createMember();
     const onSave = vi.fn();
@@ -1758,6 +1778,21 @@ it("validates year-month fields without hiding legacy values", () => {
     input.value = "2026-01";
     expect(input.checkValidity()).toBe(true);
     input.value = "";
+    expect(input.checkValidity()).toBe(true);
+  }
+});
+
+
+it("accepts only real month-day birthdays without collecting a birth year", () => {
+  const container = renderPage(createState(createMember()), vi.fn());
+  const input = container.querySelector<HTMLInputElement>('input[name="birthday"]')!;
+  expect(input.type).toBe("text");
+  for (const value of ["2026-03-14", "02-30", "04-31", "13-01", "3-14"]) {
+    input.value = value;
+    expect(input.checkValidity()).toBe(false);
+  }
+  for (const value of ["03-14", "02-29", "12-31", ""]) {
+    input.value = value;
     expect(input.checkValidity()).toBe(true);
   }
 });

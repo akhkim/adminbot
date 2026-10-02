@@ -617,7 +617,7 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
       continue;
     }
     const value = String(data.get(field.key) ?? "").trim();
-    if (field.key === "joined_month" || field.key === "graduated_month") {
+    if (field.pattern || field.type === "date") {
       const input = form.elements.namedItem(field.key) as HTMLInputElement | null;
       // Keep an invalid legacy value visible, but never autosave it or erase it silently.
       if (input && !input.checkValidity()) {
@@ -920,11 +920,10 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           )}
           type="text"
           maxlength=${SHORT_TEXT_MAX_LENGTH}
-          pattern=${ifDefined(
-            field.key === "joined_month" || field.key === "graduated_month"
-              ? "[0-9]{4}-(0[1-9]|1[0-2])"
-              : undefined,
-          )}
+          pattern=${ifDefined(field.pattern)}
+          @change=${field.pattern
+            ? (event: Event) => (event.currentTarget as HTMLInputElement).reportValidity()
+            : nothing}
           placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
           autocomplete="off"
