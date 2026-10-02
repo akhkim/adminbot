@@ -6,7 +6,13 @@ import { icons } from "../../icons.ts";
 import "./deadlines.recommendation.ts";
 import type { UiSettings } from "../../storage.ts";
 import type { AccessRole } from "../access.ts";
-import { resolveAdminBotBaseUrl } from "../auth/session.ts";
+import {
+  resolveAdminBotBaseUrl,
+  loadStoredMemberSession,
+  fetchConferenceRosters,
+  inviteConferenceAttendees,
+  type ConferenceRoster,
+} from "../auth/session.ts";
 import {
   deadlineMilestoneRow,
   hasDeadlineMilestone,
@@ -58,6 +64,7 @@ import {
   renderAbstractMilestoneDate,
   type AbstractMilestone,
 } from "./deadlines.abstract.ts";
+import { conferenceRosterFor, renderConferenceAttendance } from "./deadlines.conference.ts";
 import {
   proposalVenueLabel,
   proposalDateFields,
@@ -1143,8 +1150,56 @@ class AdminbotDeadlinesView extends LitElement {
     recommendationStore: { attribute: false },
     timelineMilestones: { attribute: false },
     onSaveTimeline: { attribute: false },
+    conferenceBaseUrl: { attribute: false },
   };
 
+  conferenceBaseUrl = "";
+  private conferenceRosters: ConferenceRoster[] = [];
+  private conferenceLoad = 0;
+  private conferenceError = "";
+  private conferenceBusy = "";
+  private conferenceNotice = new Map<string, string>();
+  private async loadConferenceRosters() {
+    const generation = ++this.conferenceLoad;
+    this.conferenceRosters = [];
+    this.conferenceError = "";
+    this.conferenceNotice.clear();
+    const token = loadStoredMemberSession()?.sessionToken;
+    if (this.accessRole !== "admin" || !token) {
+      this.requestUpdate();
+      return;
+    }
+    const result = await fetchConferenceRosters(token, this.conferenceBaseUrl).catch(() => ({
+      ok: false as const,
+      kind: "unreachable" as const,
+    }));
+    if (generation !== this.conferenceLoad || this.accessRole !== "admin") return;
+    if (result.ok) this.conferenceRosters = result.value;
+    else
+      this.conferenceError =
+        "Conference attendance is unavailable. Check the backend release and connection.";
+    this.requestUpdate();
+  }
+  private async addConferenceAuthors(key: string) {
+    const token = loadStoredMemberSession()?.sessionToken;
+    if (this.accessRole !== "admin" || !token || this.conferenceBusy) return;
+    this.conferenceBusy = key;
+    this.requestUpdate();
+    try {
+      const result = await inviteConferenceAttendees(token, this.conferenceBaseUrl, key);
+      this.conferenceNotice.set(
+        key,
+        result.ok
+          ? `${result.value.invited} invited · ${result.value.skipped} skipped · ${result.value.failed} failed`
+          : "Invites failed. Check the action audit and channel access before retrying.",
+      );
+    } catch {
+      this.conferenceNotice.set(key, "Invites failed. Check the action audit before retrying.");
+    } finally {
+      this.conferenceBusy = "";
+      this.requestUpdate();
+    }
+  }
   accessRole: AccessRole = "anonymous";
   memberId = "";
   recommendationStore: DeadlineRecommendationStore = new AdminBotDeadlineRecommendationStore();
@@ -1271,6 +1326,8 @@ class AdminbotDeadlinesView extends LitElement {
   }
 
   protected override updated(changed: Map<PropertyKey, unknown>): void {
+    if (changed.has("accessRole") || changed.has("memberId") || changed.has("conferenceBaseUrl"))
+      void this.loadConferenceRosters();
     if (
       changed.has("recommendationStore") ||
       changed.has("memberId") ||
@@ -3179,6 +3236,13 @@ class AdminbotDeadlinesView extends LitElement {
             ${this.renderGroupRow(solo, group.label, "workshops")}
           </section>`;
         }
+        const attendance =
+          this.accessRole === "admin" && group.kind === "conference"
+            ? conferenceRosterFor(
+                group.entries.map((entry) => entry.venue),
+                this.conferenceRosters,
+              )
+            : undefined;
         const open = this.expandedGroups.has(group.id);
         const panelId = `deadline-group-panel-${index}`;
         // A conference counts its own calendar. Splitting one venue's rows by archival status
@@ -3266,6 +3330,14 @@ class AdminbotDeadlinesView extends LitElement {
                 )}</span
               >
             </button>
+            ${attendance
+              ? renderConferenceAttendance(
+                  attendance,
+                  this.conferenceBusy === attendance.key,
+                  this.conferenceNotice.get(attendance.key) ?? "",
+                  () => void this.addConferenceAuthors(attendance.key),
+                )
+              : nothing}
             <div class="deadline-group__panel" id=${panelId} ?hidden=${!open}>
               ${notificationPolicy
                 ? html`<p class="deadline-group__shared-policy">
@@ -3369,6 +3441,9 @@ class AdminbotDeadlinesView extends LitElement {
       ?.slice(0, 10);
     return html`
       <section class="deadline-board">
+        ${this.accessRole === "admin" && this.conferenceError
+          ? html`<p class="callout" role="status">${this.conferenceError}</p>`
+          : nothing}
         ${this.datasetFailure
           ? html`<p class="callout danger" role="alert" data-testid="deadline-load-error">
               ${this.datasetFailure}
@@ -3499,6 +3574,7 @@ export function renderDeadlines(options: RenderDeadlinesOptions = {}) {
     .recommendationStore=${options.recommendationStore ?? recommendationStoreFor(options.settings)}
     .timelineMilestones=${options.timelineMilestones ?? null}
     .onSaveTimeline=${options.onSaveTimeline}
+    .conferenceBaseUrl=${resolveAdminBotBaseUrl(options.settings)}
   ></adminbot-deadlines-view>`;
 }
 
