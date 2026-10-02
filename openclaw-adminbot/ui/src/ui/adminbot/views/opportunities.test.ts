@@ -11,9 +11,12 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  servedNames = [];
   document.body.innerHTML = "";
   vi.useRealTimers();
 });
+
+let servedNames: string[] = [];
 
 async function renderView(): Promise<HTMLElement> {
   const container = document.createElement("div");
@@ -23,11 +26,9 @@ async function renderView(): Promise<HTMLElement> {
     updateComplete?: Promise<unknown>;
   } | null;
   await element?.updateComplete;
-  // The contributed half is fetched in connectedCallback, so the first paint predates it. Fake
-  // timers are in force, so drain microtasks by hand rather than waiting on a clock that is frozen.
-  for (let i = 0; i < 10; i += 1) {
-    await Promise.resolve();
-  }
+  await vi.waitFor(() => {
+    for (const name of servedNames) expect(container.textContent).toContain(name);
+  });
   await element?.updateComplete;
   return container;
 }
@@ -139,6 +140,7 @@ describe("who may contribute", () => {
   }
 
   function serveContributed(entries: AdminBotOpportunityView[]): void {
+    servedNames = entries.map((entry) => entry.name);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(JSON.stringify({ opportunities: entries }), { status: 200 })),

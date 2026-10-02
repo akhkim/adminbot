@@ -12,6 +12,7 @@ import {
   saveStoredMemberSession,
   type LogisticsRequest,
 } from "../auth/session.ts";
+import { resetAdminBotOfflineMemory } from "../offline/outbox.ts";
 import {
   downloadAdminBotLogisticsDocument,
   loadAdminBotLogisticsRequests,
@@ -72,7 +73,8 @@ const json = (body: unknown, status = 200) =>
   });
 
 describe("logistics controller", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await resetAdminBotOfflineMemory();
     vi.stubGlobal("localStorage", createStorageMock());
   });
 
