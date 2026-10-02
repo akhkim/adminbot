@@ -975,6 +975,7 @@ describe("renderProfile field types", () => {
     const values = roleBoxes(container).map((box) => box.value);
     expect(values.length).toBeGreaterThan(0);
     expect(values).toContain("PhD Student");
+    expect(values).toContain("Predoctoral gap-year researcher");
     expect(
       container
         .querySelector('[data-testid="profile-multi-role"] summary')
@@ -1031,19 +1032,19 @@ describe("renderProfile field types", () => {
       const container = renderPage(createState(createMember({ role: "" })), onSave);
       const boxes = roleBoxes(container);
       const lab = boxes.find((box) => box.value === "Lab Manager")!;
-      const phd = boxes.find((box) => box.value === "PhD Student")!;
+      const predoctoral = boxes.find((box) => box.value === "Predoctoral gap-year researcher")!;
 
       // Ticked in the other order on purpose: what is stored is the vocabulary's order, so two
       // people who picked the same pair store the same string.
       lab.checked = true;
       lab.dispatchEvent(new Event("input", { bubbles: true }));
-      phd.checked = true;
-      phd.dispatchEvent(new Event("input", { bubbles: true }));
+      predoctoral.checked = true;
+      predoctoral.dispatchEvent(new Event("input", { bubbles: true }));
       vi.advanceTimersByTime(1000);
 
       expect(onSave).toHaveBeenCalled();
       const saved = onSave.mock.calls.at(-1)?.[1] as { role?: string };
-      expect(saved.role).toBe("PhD Student, Lab Manager");
+      expect(saved.role).toBe("Predoctoral gap-year researcher, Lab Manager");
     } finally {
       vi.useRealTimers();
     }
