@@ -3165,7 +3165,7 @@ class AdminbotDeadlinesView extends LitElement {
         // A card, not a group: no disclosure triangle, no section headings, nothing to expand.
         // Rendered through the same row renderer the panel uses so the two cannot drift apart.
         const solo = group.entries[0];
-        if (group.standalone && solo) {
+        if (group.kind === "workshops" && group.standalone && solo) {
           return html`<section
             class="deadline-group deadline-group--standalone"
             data-count="1"
