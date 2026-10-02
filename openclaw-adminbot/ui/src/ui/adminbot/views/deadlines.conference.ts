@@ -35,7 +35,7 @@ export function renderConferenceAttendance(
   notice: string,
   invite: () => void,
 ) {
-  const labels = { yes: "Going", no: "Not going", unknown: "Not confirmed" };
+  const labels = { yes: "Going" };
   const venue = roster.venue
     .replace(new RegExp(`\\b${roster.year}\\b`, "gu"), "")
     .trim()
@@ -46,7 +46,7 @@ export function renderConferenceAttendance(
     class="deadline-conference-attendance"
     aria-label=${`${roster.label} attendance`}
   >
-    ${(["yes", "unknown", "no"] as const).map((state) => {
+    ${(["yes"] as const).map((state) => {
       const people = roster.people.filter((person) => person.attending === state);
       return people.length
         ? html`<div>

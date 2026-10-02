@@ -5,7 +5,7 @@ import type { DeadlineVenue } from "../data/deadlines.ts";
 import { conferenceRosterFor, renderConferenceAttendance } from "./deadlines.conference.ts";
 
 describe("conference deadline attendance", () => {
-  it("matches exact aliases and year and keeps all attendance states visible", () => {
+  it("matches exact aliases and year and shows only going authors alongside the Slack action", () => {
     const roster = {
       key: "iclr:2027",
       venue: "ICLR 2027",
@@ -38,8 +38,12 @@ describe("conference deadline attendance", () => {
       renderConferenceAttendance(roster, false, "", () => invites++),
       container,
     );
-    expect(container.textContent).toContain("Not confirmed");
-    expect(container.textContent).toContain("Not going");
+    expect(container.textContent).toContain("Ada");
+    expect(container.textContent).not.toContain("Bob");
+    expect(container.textContent).not.toContain("Cora");
+    expect(container.textContent).not.toContain("Not confirmed");
+    expect(container.textContent).not.toContain("Not going");
+    expect(container.querySelector("button")?.textContent).toContain("#conf-iclr-2027");
     container.querySelector("button")?.click();
     expect(invites).toBe(1);
     render(
