@@ -2691,5 +2691,68 @@ it("keeps recent passed actions in Past and upcoming actions in Upcoming", async
   expect(container.querySelector(".deadline-board__empty")?.textContent).toContain(
     "No deadlines match",
   );
+});
 
+it("defaults to archival publication actions and keeps other stages available through filters", async () => {
+  const base = {
+    ...DEADLINE_VENUES[0],
+    entry_type: "main_conference",
+    archival_status: "archival",
+    milestone: "submission",
+    deadline_label: "Paper submission",
+    deadline_at: "2026-09-01T12:00:00Z",
+    deadline_aoe: "2026-09-01 00:00:00",
+    schedule: [],
+  } as DeadlineVenue;
+  const venues = [
+    {
+      ...base,
+      id: "archival-paper",
+      venue_id: "archival-paper",
+      deadline_id: "archival-paper",
+      venue_group: "Archival paper",
+    },
+    {
+      ...base,
+      id: "workshop",
+      venue_id: "workshop",
+      deadline_id: "workshop",
+      venue_group: "Workshop",
+      entry_type: "workshop",
+    },
+    {
+      ...base,
+      id: "non-archival",
+      venue_id: "non-archival",
+      deadline_id: "non-archival",
+      venue_group: "Non archival",
+      archival_status: "non_archival",
+    },
+    {
+      ...base,
+      id: "decision",
+      venue_id: "decision",
+      deadline_id: "decision",
+      venue_group: "Decision only",
+      milestone: "notification",
+    },
+  ] as DeadlineVenue[];
+  const store = new TestProposalStore();
+  vi.spyOn(store, "listPublished").mockResolvedValue(venues);
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  expect(
+    container.querySelector<HTMLSelectElement>("select[aria-label='Filter by stage']")?.value,
+  ).toBe("submission_actions");
+  expect(
+    container.querySelector<HTMLSelectElement>("select[data-testid='deadline-filter-entry-type']")?.value,
+  ).toBe("paper_deadlines");
+  expect(container.querySelector(".deadline-board__hero")?.textContent).toContain("Archival paper");
+  expect(
+    container.querySelector(".deadline-board__grid, .deadline-board__groups")?.textContent ??
+      container.querySelector(".deadline-group")?.textContent,
+  ).not.toContain("Workshop");
+  expect(container.querySelector(".deadline-recent")).toBeNull();
 });

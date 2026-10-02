@@ -121,8 +121,11 @@ export type DeadlineBoardGroup = {
 };
 export type DeadlineBoardView = "cards" | "groups" | "table";
 export type DeadlineBoardPeriod = "upcoming" | "past";
-export type DeadlineBoardEntryType = "all" | DeadlineVenue["entry_type"];
-export type DeadlineBoardArchivalStatus = "all" | DeadlineVenue["archival_status"];
+export type DeadlineBoardEntryType = "all" | "paper_deadlines" | DeadlineVenue["entry_type"];
+export type DeadlineBoardArchivalStatus =
+  | "all"
+  | "publication_actions"
+  | DeadlineVenue["archival_status"];
 export type DeadlineBoardFilters = Readonly<{
   entryType: DeadlineBoardEntryType;
   archivalStatus: DeadlineBoardArchivalStatus;
@@ -691,10 +694,20 @@ export function filterDeadlineBoardEntries(
     if (group && venue.venue_group !== group) {
       return false;
     }
-    if (filters.entryType !== "all" && venue.entry_type !== filters.entryType) {
+    if (
+      filters.entryType === "paper_deadlines"
+        ? !["main_conference", "arr_direct_submission", "arr_commitment"].includes(venue.entry_type)
+        : filters.entryType !== "all" && venue.entry_type !== filters.entryType
+    ) {
       return false;
     }
-    if (filters.archivalStatus !== "all" && venue.archival_status !== filters.archivalStatus) {
+    if (
+      filters.archivalStatus === "publication_actions"
+        ? venue.archival_status !== "archival" &&
+          venue.archival_status !== "mixed" &&
+          venue.entry_type !== "arr_direct_submission"
+        : filters.archivalStatus !== "all" && venue.archival_status !== filters.archivalStatus
+    ) {
       return false;
     }
     if (filters.location) {
@@ -1187,10 +1200,10 @@ class AdminbotDeadlinesView extends LitElement {
   private now = Date.now();
   private activeGroup = "";
   private query = "";
-  private entryType: DeadlineBoardEntryType = "all";
-  private archivalStatus: DeadlineBoardArchivalStatus = "all";
+  private entryType: DeadlineBoardEntryType = "paper_deadlines";
+  private archivalStatus: DeadlineBoardArchivalStatus = "publication_actions";
   private location = "";
-  private stageFilter = "";
+  private stageFilter = "submission_actions";
 
   private selectedStage(venue: DeadlineVenue): DeadlineStage | undefined {
     return this.stageFilter
@@ -2189,7 +2202,10 @@ class AdminbotDeadlinesView extends LitElement {
             .value=${this.entryType}
             @change=${this.setEntryType}
           >
-            ${ENTRY_TYPE_OPTIONS.map(
+            ${[
+              { value: "paper_deadlines" as const, label: "Paper deadlines (excluding workshops)" },
+              ...ENTRY_TYPE_OPTIONS,
+            ].map(
               (option) => html`<option value=${option.value}>
                 ${option.label} (${count("entryType", option.value)})
               </option>`,
@@ -2204,7 +2220,10 @@ class AdminbotDeadlinesView extends LitElement {
             .value=${this.archivalStatus}
             @change=${this.setArchivalStatus}
           >
-            ${ARCHIVAL_STATUS_OPTIONS.map(
+            ${[
+              { value: "publication_actions" as const, label: "Archival papers & ARR submissions" },
+              ...ARCHIVAL_STATUS_OPTIONS,
+            ].map(
               (option) => html`<option value=${option.value}>
                 ${option.label} (${count("archivalStatus", option.value)})
               </option>`,

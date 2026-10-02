@@ -39,7 +39,12 @@ export function chooseStage<T extends { key: string; instant: number }>(
   period: "upcoming" | "past",
 ): T | undefined {
   const matching = stages
-    .filter((stage) => stage.key === key && Number.isFinite(stage.instant))
+    .filter(
+      (stage) =>
+        (key === "submission_actions"
+          ? ["abstract", "submission", "commitment"].includes(stage.key)
+          : stage.key === key) && Number.isFinite(stage.instant),
+    )
     .toSorted((a, b) => a.instant - b.instant);
   return period === "upcoming"
     ? matching.find((stage) => stage.instant > now)
@@ -75,6 +80,9 @@ export function renderStageFilter(
       .value=${value}
       @change=${(event: Event) => onChange((event.target as HTMLSelectElement).value)}
     >
+      <option value="submission_actions">
+        Abstract, paper submission & commitment (${count("submission_actions")})
+      </option>
       <option value="">${t("deadlineStageFilter.all")} (${count("")})</option>
       ${options.map(
         (option) =>
