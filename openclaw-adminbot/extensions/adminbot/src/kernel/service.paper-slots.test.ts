@@ -56,11 +56,11 @@ function seed(service: AdminBotService): void {
 }
 
 describe("listPaperSlots", () => {
-  it("answers with all 25 rows, so the card renders a checklist rather than a list of answers", () => {
+  it("answers with all 28 rows, so the card renders a checklist rather than a list of answers", () => {
     const service = new AdminBotService();
     seed(service);
     const { slots } = unwrap(service.listPaperSlots("p1"));
-    expect(slots).toHaveLength(25);
+    expect(slots).toHaveLength(28);
     expect(slots.every((slot) => slot.status === "missing")).toBe(true);
   });
 
@@ -584,4 +584,56 @@ describe("the conference roll-call", () => {
     expect(row()?.attendance).toEqual({ yes: 0, no: 0, unknown: 2, going: [] });
     expect(row()?.cycle_closed).toBe(false);
   });
+});
+
+it("queues an author's feedback with reason and deadlines without publication approval", () => {
+  const service = new AdminBotService();
+  seed(service);
+  const input = {
+    value_text: JSON.stringify({
+      reason: "Check claims",
+      url: "https://example.com/draft",
+      soft_deadline: "2000-01-01T00:00:00Z",
+      hard_deadline: "2000-01-02T00:00:00Z",
+    }),
+  };
+  expect(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input,
+      memberId: "stranger",
+      privileged: false,
+    }),
+  ).toMatchObject({ ok: false, status: 403 });
+  unwrap(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input,
+      memberId: "ada",
+      privileged: false,
+    }),
+  );
+  expect(unwrap(service.listPiReviewQueue()).papers[0].feedback?.reason).toBe("Check claims");
+  expect(
+    unwrap(service.listPaperSlots("p1", { memberId: "stranger" })).slots.find(
+      (row) => row.slot === "feedback_arr",
+    )?.value_text,
+  ).toBeUndefined();
+  expect(
+    unwrap(service.listPaperSlots("p1", { memberId: "ada" })).slots.find(
+      (row) => row.slot === "feedback_arr",
+    )?.value_text,
+  ).toContain("Check claims");
+  unwrap(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input: { value_text: "" },
+      memberId: "ada",
+      privileged: false,
+    }),
+  );
+  expect(unwrap(service.listPiReviewQueue()).papers).toHaveLength(0);
 });

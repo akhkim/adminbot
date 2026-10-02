@@ -7857,6 +7857,13 @@
     },
     {
       "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/paper-feedback.ts",
+      "text": "https://…"
+    },
+    {
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-legacy.ts",
@@ -8298,20 +8305,6 @@
     },
     {
       "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/professor.timezone-base.ts",
-      "text": "Loading PI review queue…"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/professor.timezone-base.ts",
-      "text": "Retry PI review queue"
-    },
-    {
-      "count": 1,
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/professor.ts",
@@ -8323,6 +8316,20 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/professor.ts",
       "text": "Loading PI review queue…"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/professor.ts",
+      "text": "Past submission cutoff — soft submission"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/professor.ts",
+      "text": "Publication approval"
     },
     {
       "count": 1,

@@ -15,6 +15,11 @@
 // ticks the box or an admin waives it, and there is no second list to fall out of step.
 import type { AdminBotPaperRecord } from "../../contracts/actions.js";
 import {
+  parsePaperFeedback,
+  paperFeedbackSlots,
+  type PaperFeedback,
+} from "../../contracts/paper-feedback.js";
+import {
   isAdminBotPaperAtPiGate,
   isAdminBotPaperSlotSettled,
   type AdminBotPaperSlotRecord,
@@ -22,6 +27,7 @@ import {
 
 /** One paper waiting on the PI, with the evidence that says it is ready to be looked at. */
 export type PiReviewRow = {
+  feedback?: PaperFeedback & { label: string; slot: string };
   paper_id: string;
   title: string;
   authors: string[];
@@ -114,4 +120,40 @@ export function buildPiReviewNotice(row: PiReviewRow): { title: string; body: st
       .filter(Boolean)
       .join("\n\n"),
   };
+}
+
+/** Explicit feedback requests use the same durable paper slots and admin queue read permissions. */
+export function paperFeedbackQueue(candidates: readonly PiReviewCandidate[]): PiReviewRow[] {
+  return candidates
+    .flatMap(({ paper, slots }) =>
+      slots.flatMap((row) => {
+        if (!(row.slot in paperFeedbackSlots) || row.status !== "provided" || !row.value_text) {
+          return [];
+        }
+        const feedback = parsePaperFeedback(row.value_text);
+        if (!feedback) {
+          return [];
+        }
+        return [
+          {
+            paper_id: paper.id,
+            title: paper.title,
+            authors: paper.authors,
+            waiting_since: row.provided_at,
+            drive_pdf_url: feedback.url,
+            package_complete: true,
+            feedback: {
+              ...feedback,
+              label: paperFeedbackSlots[row.slot as keyof typeof paperFeedbackSlots],
+              slot: row.slot,
+            },
+          },
+        ];
+      }),
+    )
+    .toSorted(
+      (a, b) =>
+        (a.feedback?.hard_deadline ?? "9999").localeCompare(b.feedback?.hard_deadline ?? "9999") ||
+        (a.waiting_since ?? "").localeCompare(b.waiting_since ?? ""),
+    );
 }

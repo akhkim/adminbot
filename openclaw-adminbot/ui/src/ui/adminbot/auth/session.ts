@@ -1,3 +1,7 @@
+import {
+  parsePaperFeedback,
+  type PaperFeedback,
+} from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 // Control UI module implements per-member AdminBot email+password auth.
 //
 // Talks to the standalone AdminBot service (default `http://<host>:8765`).
@@ -4419,6 +4423,7 @@ export type EscalatedNudgeRow = {
 
 /** One paper waiting on the head professor's yes to post. */
 export type PiReviewRow = {
+  feedback?: PaperFeedback & { label: string; slot: string };
   paperId: string;
   title: string;
   authors: string[];
@@ -4491,6 +4496,13 @@ export async function fetchPiReviewQueue(
         ...(typeof row.venue === "string" ? { venue: row.venue } : {}),
         ...(typeof row.waiting_since === "string" ? { waitingSince: row.waiting_since } : {}),
         ...(typeof row.drive_pdf_url === "string" ? { drivePdfUrl: row.drive_pdf_url } : {}),
+        ...(row.feedback &&
+        typeof row.feedback === "object" &&
+        parsePaperFeedback(JSON.stringify(row.feedback)) &&
+        typeof (row.feedback as Record<string, unknown>).label === "string" &&
+        typeof (row.feedback as Record<string, unknown>).slot === "string"
+          ? { feedback: row.feedback as PiReviewRow["feedback"] }
+          : {}),
         packageComplete: row.package_complete === true,
       },
     ];
