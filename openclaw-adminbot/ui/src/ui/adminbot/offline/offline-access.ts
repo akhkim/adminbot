@@ -1,4 +1,4 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { pendingDraftCount, retryDraftSync } from "./draft-sync.ts";
 
@@ -58,33 +58,9 @@ export class OfflineAccess extends LitElement {
     }
   }
 
-  static override styles = css`
-    :host {
-      display: block;
-      margin-bottom: 12px;
-      font: inherit;
-    }
-    details {
-      border: 1px solid var(--border, #8886);
-      border-radius: 10px;
-      padding: 10px 14px;
-    }
-    summary {
-      cursor: pointer;
-      font-weight: 600;
-    }
-    p {
-      max-width: 75ch;
-      line-height: 1.5;
-      font-size: 13px;
-    }
-    button {
-      font: inherit;
-      padding: 8px 12px;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-  `;
+  protected override createRenderRoot(): HTMLElement {
+    return this;
+  }
 
   override render() {
     const pending = pendingDraftCount(this.scope);
@@ -95,7 +71,7 @@ export class OfflineAccess extends LitElement {
       </summary>
       <p role="status">
         ${pending} draft${pending === 1 ? "" : "s"} awaiting sync or review.
-        <button @click=${retryDraftSync}>Sync drafts now</button>
+        <button class="btn" type="button" @click=${retryDraftSync}>Sync drafts now</button>
       </p>
       <p>
         Previously loaded records are available for reading. Recommendation letters, meeting
@@ -109,7 +85,9 @@ export class OfflineAccess extends LitElement {
         Downloads belong to this browser or installed app and account.
       </p>
       <p>AI is not needed for reading or editing. On-device AI is not installed.</p>
-      <button @click=${() => this.keepStorage()}>Keep offline data on this device</button>
+      <button class="btn" type="button" @click=${() => this.keepStorage()}>
+        Keep offline data on this device
+      </button>
       <p role="status">${this.storageMessage}</p>
     </details>`;
   }
