@@ -32,6 +32,12 @@ export function stageKey(key: string): string {
   return key || "submission";
 }
 
+export function matchesStage(key: string, selected: string): boolean {
+  return selected === "submission_actions"
+    ? ["abstract", "submission", "commitment"].includes(key)
+    : key === selected;
+}
+
 export function chooseStage<T extends { key: string; instant: number }>(
   stages: readonly T[],
   key: string,
@@ -39,12 +45,7 @@ export function chooseStage<T extends { key: string; instant: number }>(
   period: "upcoming" | "past",
 ): T | undefined {
   const matching = stages
-    .filter(
-      (stage) =>
-        (key === "submission_actions"
-          ? ["abstract", "submission", "commitment"].includes(stage.key)
-          : stage.key === key) && Number.isFinite(stage.instant),
-    )
+    .filter((stage) => matchesStage(stage.key, key) && Number.isFinite(stage.instant))
     .toSorted((a, b) => a.instant - b.instant);
   return period === "upcoming"
     ? matching.find((stage) => stage.instant > now)

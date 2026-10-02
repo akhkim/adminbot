@@ -68,6 +68,7 @@ import {
 import { renderPublicationPolicy } from "./deadlines.publication-policy.ts";
 import {
   stageKey,
+  matchesStage,
   chooseStage,
   stageFilterOptions,
   renderStageFilter,
@@ -437,7 +438,7 @@ export function recentDeadlineActions(
         .filter(
           (stage) =>
             DEADLINE_ACTION_KEYS.has(stage.key) &&
-            (!selectedStage || stage.key === selectedStage) &&
+            (!selectedStage || matchesStage(stage.key, selectedStage)) &&
             stage.instant <= now &&
             stage.instant >= now - 14 * 86400000,
         )

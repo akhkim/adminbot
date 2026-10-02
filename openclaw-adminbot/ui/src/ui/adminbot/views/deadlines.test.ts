@@ -2776,3 +2776,35 @@ it("defaults to archival publication actions and keeps other stages available th
   ).not.toContain("Workshop");
   expect(container.querySelector(".deadline-recent")).toBeNull();
 });
+
+it("keeps recent publication actions under the default combined stage filter", () => {
+  const now = Date.parse("2026-10-02T12:00:00Z");
+  const venue = {
+    ...DEADLINE_VENUES[0],
+    id: "recent",
+    deadline_at: "2026-09-26T12:00:00Z",
+    deadline_aoe: "2026-09-26 23:59:59",
+    milestone: "full_paper",
+    schedule: [
+      {
+        milestone: "commitment",
+        label: "Commitment",
+        kind: "deadline" as const,
+        date: "2026-09-27",
+      },
+      { milestone: "abstract", label: "Abstract", kind: "deadline" as const, date: "2026-09-28" },
+      {
+        milestone: "camera_ready",
+        label: "Camera ready",
+        kind: "deadline" as const,
+        date: "2026-09-29",
+      },
+    ],
+  };
+  const entries = buildDeadlineBoardEntries([venue]);
+  expect(
+    recentDeadlineActions(entries, now, undefined, [venue], "submission_actions")
+      .map((entry) => entry.stage?.key)
+      .toSorted(),
+  ).toEqual(["abstract", "commitment", "submission"]);
+});
