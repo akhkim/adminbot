@@ -121,8 +121,11 @@ export type DeadlineBoardGroup = {
 };
 export type DeadlineBoardView = "cards" | "groups" | "table";
 export type DeadlineBoardPeriod = "upcoming" | "past";
-export type DeadlineBoardEntryType = "all" | DeadlineVenue["entry_type"];
-export type DeadlineBoardArchivalStatus = "all" | DeadlineVenue["archival_status"];
+export type DeadlineBoardEntryType = "all" | "paper_deadlines" | DeadlineVenue["entry_type"];
+export type DeadlineBoardArchivalStatus =
+  | "all"
+  | "publication_actions"
+  | DeadlineVenue["archival_status"];
 export type DeadlineBoardFilters = Readonly<{
   entryType: DeadlineBoardEntryType;
   archivalStatus: DeadlineBoardArchivalStatus;
@@ -691,10 +694,20 @@ export function filterDeadlineBoardEntries(
     if (group && venue.venue_group !== group) {
       return false;
     }
-    if (filters.entryType !== "all" && venue.entry_type !== filters.entryType) {
+    if (
+      filters.entryType === "paper_deadlines"
+        ? !["main_conference", "arr_direct_submission", "arr_commitment"].includes(venue.entry_type)
+        : filters.entryType !== "all" && venue.entry_type !== filters.entryType
+    ) {
       return false;
     }
-    if (filters.archivalStatus !== "all" && venue.archival_status !== filters.archivalStatus) {
+    if (
+      filters.archivalStatus === "publication_actions"
+        ? venue.archival_status !== "archival" &&
+          venue.archival_status !== "mixed" &&
+          venue.entry_type !== "arr_direct_submission"
+        : filters.archivalStatus !== "all" && venue.archival_status !== filters.archivalStatus
+    ) {
       return false;
     }
     if (filters.location) {
@@ -1187,10 +1200,10 @@ class AdminbotDeadlinesView extends LitElement {
   private now = Date.now();
   private activeGroup = "";
   private query = "";
-  private entryType: DeadlineBoardEntryType = "all";
-  private archivalStatus: DeadlineBoardArchivalStatus = "all";
+  private entryType: DeadlineBoardEntryType = "paper_deadlines";
+  private archivalStatus: DeadlineBoardArchivalStatus = "publication_actions";
   private location = "";
-  private stageFilter = "";
+  private stageFilter = "submission_actions";
 
   private selectedStage(venue: DeadlineVenue): DeadlineStage | undefined {
     return this.stageFilter
@@ -2189,7 +2202,10 @@ class AdminbotDeadlinesView extends LitElement {
             .value=${this.entryType}
             @change=${this.setEntryType}
           >
-            ${ENTRY_TYPE_OPTIONS.map(
+            ${[
+              { value: "paper_deadlines" as const, label: "Paper deadlines (excluding workshops)" },
+              ...ENTRY_TYPE_OPTIONS,
+            ].map(
               (option) => html`<option value=${option.value}>
                 ${option.label} (${count("entryType", option.value)})
               </option>`,
@@ -2204,7 +2220,10 @@ class AdminbotDeadlinesView extends LitElement {
             .value=${this.archivalStatus}
             @change=${this.setArchivalStatus}
           >
-            ${ARCHIVAL_STATUS_OPTIONS.map(
+            ${[
+              { value: "publication_actions" as const, label: "Archival papers & ARR submissions" },
+              ...ARCHIVAL_STATUS_OPTIONS,
+            ].map(
               (option) => html`<option value=${option.value}>
                 ${option.label} (${count("archivalStatus", option.value)})
               </option>`,
@@ -3146,7 +3165,7 @@ class AdminbotDeadlinesView extends LitElement {
         // A card, not a group: no disclosure triangle, no section headings, nothing to expand.
         // Rendered through the same row renderer the panel uses so the two cannot drift apart.
         const solo = group.entries[0];
-        if (group.standalone && solo) {
+        if (group.kind === "workshops" && group.standalone && solo) {
           return html`<section
             class="deadline-group deadline-group--standalone"
             data-count="1"
@@ -3225,24 +3244,20 @@ class AdminbotDeadlinesView extends LitElement {
               >
               <span class="deadline-group__heading">
                 <strong
+                  class=${group.kind === "conference" || leadPending
+                    ? "deadline-group__next-stage"
+                    : nothing}
                   >${leadStage?.label ??
                   capitalize(group.entries[0].venue.deadline_label || "Submission")}</strong
                 >
+                <span aria-hidden="true">|</span>
                 <span class="deadline-action__venue">${group.label}</span>
-                <small>
-                  ${group.kind === "conference" || leadPending
-                    ? html`<span class="deadline-group__next-stage"
-                        >${leadPending
-                          ? leadPending.label
-                          : capitalize(group.entries[0].venue.deadline_label)}</span
-                      >`
-                    : nothing}
-                </small>
-              </span>
-              <span class="deadline-group__summary-date">
-                ${leadPending
-                  ? renderDeadlineDateLabel(leadPending.dateLabel)
-                  : renderDeadlineDate(group.entries[0].venue, this.displayZone)}
+                <span aria-hidden="true">|</span>
+                <span class="deadline-group__summary-date">
+                  ${leadPending
+                    ? renderDeadlineDateLabel(leadPending.dateLabel)
+                    : renderDeadlineDate(group.entries[0].venue, this.displayZone)}
+                </span>
               </span>
               <span class="deadline-group__count"
                 >${counts.map(
@@ -3335,7 +3350,7 @@ class AdminbotDeadlinesView extends LitElement {
     ];
     this.recommendationScope = JSON.stringify(this.recommendationIds);
     const recent =
-      this.period === "upcoming"
+      this.period === "past"
         ? recentDeadlineActions(
             filterDeadlineBoardEntries(all, this.activeGroup, this.query, filters),
             this.now,
@@ -3410,8 +3425,8 @@ class AdminbotDeadlinesView extends LitElement {
         ${this.renderProposalDrawer()} ${this.renderModes()}
         ${this.renderControls(matching, periodEntries, filters)}
         ${recent.length
-          ? html`<section class="deadline-recent" aria-label="Recently passed actions">
-              <h2>Passed in the last 14 days</h2>
+          ? html`<details class="deadline-recent" aria-label="Recently passed actions">
+              <summary>Passed in the last 14 days (${recent.length})</summary>
               <p>
                 Recently passed action dates. Check your submission status and the venue’s rules.
               </p>
@@ -3428,7 +3443,7 @@ class AdminbotDeadlinesView extends LitElement {
                   </li>`,
                 )}
               </ul>
-            </section>`
+            </details>`
           : nothing}
         ${next || !recent.length
           ? html`<div class="deadline-board__overview">${this.renderHero(next)}</div>`
