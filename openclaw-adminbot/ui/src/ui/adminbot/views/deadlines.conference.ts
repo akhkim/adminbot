@@ -29,19 +29,8 @@ export function conferenceRosterFor(
   return undefined;
 }
 
-export function renderConferenceAttendance(
-  roster: ConferenceRoster,
-  busy: boolean,
-  notice: string,
-  invite: () => void,
-) {
+export function renderConferenceAttendance(roster: ConferenceRoster) {
   const labels = { yes: "Going" };
-  const venue = roster.venue
-    .replace(new RegExp(`\\b${roster.year}\\b`, "gu"), "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, "-")
-    .replace(/^-|-$/gu, "");
   return html`<section
     class="deadline-conference-attendance"
     aria-label=${`${roster.label} attendance`}
@@ -76,11 +65,5 @@ export function renderConferenceAttendance(
           </div>`
         : nothing;
     })}
-    ${roster.going_count
-      ? html`<button class="btn" type="button" ?disabled=${busy} @click=${invite}>
-          ${busy ? "Adding…" : `Add going authors to #conf-${venue}-${roster.year}`}
-        </button>`
-      : nothing}
-    ${notice ? html`<p role="status">${notice}</p>` : nothing}
   </section>`;
 }

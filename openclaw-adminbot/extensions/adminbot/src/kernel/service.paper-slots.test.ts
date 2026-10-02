@@ -2,7 +2,7 @@
 // what the global nudge actually sends.
 //
 // Its own file rather than more of service.test.ts, which is already the longest in the extension.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AdminBotService } from "./service.js";
 
 function unwrap<T>(
@@ -508,6 +508,11 @@ describe("the conference roll-call", () => {
         }),
       );
     }
+    await vi.waitFor(() =>
+      expect(deliveries.filter((entry) => entry.type === "slack.invite_to_channel")).toHaveLength(
+        2,
+      ),
+    );
     const rosters = unwrap(service.listConferenceRosters()).conferences;
     for (const roster of rosters)
       expect(unwrap(await service.inviteConferenceAttendees(roster.key))).toMatchObject({
@@ -519,13 +524,73 @@ describe("the conference roll-call", () => {
       deliveries
         .filter((entry) => entry.type === "slack.invite_to_channel")
         .map((entry) => entry.proposed_payload),
-    ).toEqual([
-      { channel: "conf-iclr-2027", user_id: "U-ADA" },
-      { channel: "conf-emnlp-2026", user_id: "U-ADA" },
-    ]);
+    ).toEqual(
+      expect.arrayContaining([
+        { channel: "conf-iclr-2027", user_id: "U-ADA" },
+        { channel: "conf-emnlp-2026", user_id: "U-ADA" },
+      ]),
+    );
     await service.inviteConferenceAttendees(rosters[0].key);
     expect(deliveries.filter((entry) => entry.type === "slack.invite_to_channel")).toHaveLength(2);
     expect((await service.inviteConferenceAttendees("missing:2026")).ok).toBe(false);
+  });
+
+  it("automatically invites when acceptance follows Going and keeps save failures separate", async () => {
+    const deliveries: unknown[] = [];
+    const service = new AdminBotService(undefined, {
+      executor: {
+        execute: async (proposal) => {
+          deliveries.push(proposal.proposed_payload);
+          throw new Error("Slack unavailable");
+        },
+      },
+    });
+    seed(service);
+    const paper = unwrap(
+      service.upsertPaper({
+        id: "auto",
+        title: "Synthetic",
+        authors: ["Ada Lovelace"],
+        author_links: [{ name: "Ada Lovelace", member_id: "ada" }],
+        current_step: "overleaf_writing",
+        first_author_member_id: "ada",
+      }),
+    );
+    unwrap(
+      service.setConferenceAttendee({
+        paperId: paper.id,
+        name: "Ada Lovelace",
+        memberId: "ada",
+        attending: "yes",
+        actorId: "ada",
+        privileged: false,
+      }),
+    );
+    expect(deliveries).toHaveLength(0);
+    const accepted = {
+      ...paper,
+      venue_decision: "accept" as const,
+      accepted_venue: "EMNLP",
+      accepted_year: 2026,
+      is_archival: true,
+      presentation_type: "poster" as const,
+    };
+    expect(service.upsertPaper(accepted).ok).toBe(true);
+    await vi.waitFor(() =>
+      expect(deliveries).toEqual([{ channel: "conf-emnlp-2026", user_id: "U-ADA" }]),
+    );
+    expect(service.upsertPaper(accepted).ok).toBe(true);
+    unwrap(
+      service.setConferenceAttendee({
+        paperId: paper.id,
+        name: "Ada Lovelace",
+        memberId: "ada",
+        attending: "no",
+        actorId: "ada",
+        privileged: false,
+      }),
+    );
+    expect(deliveries).toHaveLength(1);
   });
 
   it("puts every author on the card before anybody has been added by hand", () => {

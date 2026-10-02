@@ -4876,26 +4876,6 @@ export async function fetchConferenceRosters(
   return { ok: true, value: body?.conferences ?? [] };
 }
 
-export async function inviteConferenceAttendees(
-  sessionToken: string,
-  baseUrl: string,
-  key: string,
-): Promise<AuthResult<{ channel: string; invited: number; skipped: number; failed: number }>> {
-  const result = await authedJson(
-    baseUrl,
-    `/papers/conference-rosters/${encodeURIComponent(key)}/channel-invites`,
-    "POST",
-    sessionToken,
-    {},
-  );
-  if ("unreachable" in result) return { ok: false, kind: "unreachable" };
-  if (!result.response.ok) return { ok: false, ...calendarFailure(result.response, result.body) };
-  return {
-    ok: true,
-    value: result.body as { channel: string; invited: number; skipped: number; failed: number },
-  };
-}
-
 /** Not going is the absence of a row, never a value. Withdrawing deletes; see deleteConferenceTrip. */
 export type ConferenceTripIntent = "going" | "undecided";
 export type ConferenceFundingNeed = "none" | "fee_only" | "flight_only" | "full_travel";

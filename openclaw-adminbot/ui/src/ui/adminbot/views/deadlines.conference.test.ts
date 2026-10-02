@@ -5,7 +5,7 @@ import type { DeadlineVenue } from "../data/deadlines.ts";
 import { conferenceRosterFor, renderConferenceAttendance } from "./deadlines.conference.ts";
 
 describe("conference deadline attendance", () => {
-  it("matches exact aliases and year and shows only going authors alongside the Slack action", () => {
+  it("matches exact aliases and year and shows only going authors without a manual Slack button", () => {
     const roster = {
       key: "iclr:2027",
       venue: "ICLR 2027",
@@ -33,24 +33,12 @@ describe("conference deadline attendance", () => {
       conferenceRosterFor([{ ...venue, venue_family: "ACL", name: "ACL 2027" }], [roster]),
     ).toBeUndefined();
     const container = document.createElement("div");
-    let invites = 0;
-    render(
-      renderConferenceAttendance(roster, false, "", () => invites++),
-      container,
-    );
+    render(renderConferenceAttendance(roster), container);
     expect(container.textContent).toContain("Ada");
     expect(container.textContent).not.toContain("Bob");
     expect(container.textContent).not.toContain("Cora");
     expect(container.textContent).not.toContain("Not confirmed");
     expect(container.textContent).not.toContain("Not going");
-    expect(container.querySelector("button")?.textContent).toContain("#conf-iclr-2027");
-    container.querySelector("button")?.click();
-    expect(invites).toBe(1);
-    render(
-      renderConferenceAttendance(roster, true, "0 invited · 1 failed", () => invites++),
-      container,
-    );
-    expect(container.querySelector("button")?.disabled).toBe(true);
-    expect(container.querySelector('[role="status"]')?.textContent).toContain("1 failed");
+    expect(container.querySelector("button")).toBeNull();
   });
 });
