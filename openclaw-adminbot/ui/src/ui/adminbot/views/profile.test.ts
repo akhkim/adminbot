@@ -1238,8 +1238,6 @@ describe("renderProfile visual structure", () => {
     expect(badges).not.toContain("Postdoc");
   });
 
-  // Badges moved out of the header into a section of their own, next to the nomination form. The
-  // header keeps the completeness ring, which is the one thing it still states about the record.
   it("shows a completeness indicator in the header and badges in their own section", () => {
     // A badge is something the record earns, so the fixture has to earn one: authorship of a paper
     // it submitted. (Role is not a badge -- see the test above.)
@@ -1260,11 +1258,8 @@ describe("renderProfile visual structure", () => {
     const section = container.querySelector('[data-testid="profile-badges-section"]');
     expect(section).not.toBeNull();
     expect(section?.querySelector('[data-testid="profile-badges"]')).not.toBeNull();
-    // Immediately above the nomination form: "what I have" and "what I could ask for" are one
-    // subject, and they used to sit at opposite ends of the page.
-    expect(section?.nextElementSibling?.getAttribute("data-testid")).toBe(
-      "profile-badge-nominations",
-    );
+    expect(hero.nextElementSibling).toBe(section);
+    expect(section?.nextElementSibling?.querySelector("h2")?.textContent).toBe("Basic info");
   });
 
   it("shows admin-managed badges ahead of computed badges and renders the self-nomination form", () => {
