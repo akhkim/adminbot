@@ -47,13 +47,30 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function settle(container: HTMLElement): Promise<void> {
+async function settle(container: HTMLElement, allCatalog = true): Promise<void> {
   const element = container.querySelector("adminbot-deadlines-view") as {
     updateComplete?: Promise<unknown>;
   };
   await element?.updateComplete;
   await Promise.resolve();
   await element?.updateComplete;
+  // Existing catalog/layout cases explicitly exercise the unfiltered catalog.
+  // Default-filter coverage below opts out and checks the production defaults.
+  if (allCatalog && !container.dataset.catalogFiltersSelected) {
+    container.dataset.catalogFiltersSelected = "true";
+    for (const [selector, value] of [
+      ["[data-testid='deadline-filter-entry-type']", "all"],
+      ["[data-testid='deadline-filter-archival-status']", "all"],
+      ["[data-testid='deadline-filter-stage']", ""],
+    ]) {
+      const select = container.querySelector<HTMLSelectElement>(selector);
+      if (select) {
+        select.value = value;
+        select.dispatchEvent(new Event("change"));
+      }
+    }
+    await element?.updateComplete;
+  }
 }
 
 async function renderView(view: "cards" | "default" = "cards"): Promise<HTMLElement> {
@@ -2298,7 +2315,9 @@ it("filters by a selected stage and uses its date across views and timeline", as
   const select = container.querySelector<HTMLSelectElement>(
     '[data-testid="deadline-filter-stage"]',
   )!;
-  expect(select.options[0]?.textContent).toBe("All stages (2)");
+  expect([...select.options].find((option) => option.value === "")?.textContent).toBe(
+    "All stages (2)",
+  );
   expect(select.querySelector('option[value="notification"]')?.textContent).toBe("Decisions (1)");
   select.value = "notification";
   select.dispatchEvent(new Event("change"));
@@ -2742,12 +2761,13 @@ it("defaults to archival publication actions and keeps other stages available th
   const container = document.createElement("div");
   document.body.append(container);
   render(renderDeadlines({ proposalStore: store }), container);
-  await settle(container);
+  await settle(container, false);
   expect(
     container.querySelector<HTMLSelectElement>("select[aria-label='Filter by stage']")?.value,
   ).toBe("submission_actions");
   expect(
-    container.querySelector<HTMLSelectElement>("select[data-testid='deadline-filter-entry-type']")?.value,
+    container.querySelector<HTMLSelectElement>("select[data-testid='deadline-filter-entry-type']")
+      ?.value,
   ).toBe("paper_deadlines");
   expect(container.querySelector(".deadline-board__hero")?.textContent).toContain("Archival paper");
   expect(
