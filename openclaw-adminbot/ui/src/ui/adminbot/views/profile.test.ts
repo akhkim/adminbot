@@ -1767,7 +1767,10 @@ describe("suggesting a new badge", () => {
 });
 
 it("validates year-month fields without hiding legacy values", () => {
-  const container = renderPage(createState(createMember({ joined_month: "Jan-26" })), vi.fn());
+  const container = renderPage(
+    createState(createMember({ joined_month: "Jan-26", graduated_month: "Jan-26" })),
+    vi.fn(),
+  );
   for (const key of ["joined_month", "graduated_month"]) {
     const input = container.querySelector(`input[name="${key}"]`) as HTMLInputElement;
     if (key === "joined_month") expect(input.value).toBe("Jan-26");
@@ -1782,7 +1785,6 @@ it("validates year-month fields without hiding legacy values", () => {
   }
 });
 
-
 it("accepts only real month-day birthdays without collecting a birth year", () => {
   const container = renderPage(createState(createMember()), vi.fn());
   const input = container.querySelector<HTMLInputElement>('input[name="birthday"]')!;
@@ -1794,5 +1796,16 @@ it("accepts only real month-day birthdays without collecting a birth year", () =
   for (const value of ["03-14", "02-29", "12-31", ""]) {
     input.value = value;
     expect(input.checkValidity()).toBe(true);
+  }
+});
+
+it("uses native month selectors for valid and empty year-month values", () => {
+  const container = renderPage(createState(createMember({ joined_month: "2026-01" })), vi.fn());
+  for (const key of ["joined_month", "graduated_month"]) {
+    const input = container.querySelector<HTMLInputElement>(`input[name="${key}"]`)!;
+    expect(input.type).toBe("month");
+    input.value = "2027-06";
+    expect(input.checkValidity()).toBe(true);
+    expect(input.value).toBe("2027-06");
   }
 });

@@ -36,6 +36,7 @@ export type ProfileFieldType =
   // has to learn a second shape.
   | "multi_dropdown"
   | "date"
+  | "month"
   | "link"
   | "numeric"
   | "list"
@@ -205,8 +206,7 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
   {
     key: "elevator_pitch",
     labelKey: "profile.fields.elevatorPitch",
-    example:
-      "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
+    example: "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
     type: "paragraph",
     hintKey: "profile.hints.elevatorPitch",
     // The service's own ceiling (validateLabMember in extensions/adminbot/src/kernel/service.ts).
@@ -275,7 +275,7 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     pattern: "[0-9]{4}-(0[1-9]|1[0-2])",
     labelKey: "profile.fields.joinedMonth",
     example: "2026-03",
-    type: "short_text",
+    type: "month",
     hintKey: "profile.hints.month",
     group: "work",
   },
@@ -285,7 +285,7 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     pattern: "[0-9]{4}-(0[1-9]|1[0-2])",
     labelKey: "profile.fields.graduatedMonth",
     example: "2027-06",
-    type: "short_text",
+    type: "month",
     hintKey: "profile.hints.offboardingMonth",
     group: "work",
   },
