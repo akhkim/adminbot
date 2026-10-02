@@ -102,6 +102,7 @@ const {
   CONTROL_UI_OPERATOR_SCOPES,
   GatewayBrowserClient,
   GatewayRequestError,
+  operatorScopesWidened,
   resolveMemberOperatorScopes,
   shouldRetryWithDeviceToken,
 } = await import("./gateway.ts");
@@ -400,6 +401,17 @@ describe("GatewayBrowserClient", () => {
     expect(resolveMemberOperatorScopes("member")).toEqual(["operator.read"]);
     expect(resolveMemberOperatorScopes("trial")).toEqual(["operator.read"]);
     expect(resolveMemberOperatorScopes(null)).toEqual(["operator.read"]);
+  });
+
+  it("operatorScopesWidened detects a late privilege upgrade", () => {
+    const readOnly = resolveMemberOperatorScopes(null);
+    const admin = resolveMemberOperatorScopes("admin");
+    // The reload path connects before privilege loads; this is what triggers the reconnect.
+    expect(operatorScopesWidened(readOnly, admin)).toBe(true);
+    // No change, a narrowing, or an equal set must not cause a reconnect loop.
+    expect(operatorScopesWidened(readOnly, resolveMemberOperatorScopes("member"))).toBe(false);
+    expect(operatorScopesWidened(admin, admin)).toBe(false);
+    expect(operatorScopesWidened(admin, readOnly)).toBe(false);
   });
 
   it("adds the current Control UI protocol to bare protocol mismatch errors", () => {

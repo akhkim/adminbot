@@ -14,8 +14,10 @@
 // service already validates against (SELF_PROFILE_EDITABLE_FIELDS in kernel/service.ts), so this
 // file describes the form, never the permission.
 import {
+  adminBotAdminOwnedProfileFields,
   adminBotMandatoryProfileFields,
   adminBotMemberRoles,
+  ADMINBOT_ELEVATOR_PITCH_MAX,
 } from "../../../../extensions/adminbot/src/contracts/actions.js";
 import type { icons } from "../icons.ts";
 
@@ -28,6 +30,11 @@ export type ProfileFieldType =
   | "short_text"
   | "paragraph"
   | "dropdown"
+  // The same closed vocabulary as `dropdown`, but a person may hold several of its answers at
+  // once. Stored as the one joined string the column already holds (see
+  // ADMINBOT_MEMBER_ROLE_SEPARATOR), not as an array, so nothing that reads the field for display
+  // has to learn a second shape.
+  | "multi_dropdown"
   | "date"
   | "link"
   | "numeric"
@@ -80,6 +87,9 @@ export type ProfileField = {
   // the control instead of coming back as a rejected save the member has to interpret.
   min?: number;
   max?: number;
+  // Text-only ceiling, for the fields the service caps tighter than the generic paragraph limit.
+  // Same reason as min/max: the rule belongs where the answer is typed, not in a rejected save.
+  maxLength?: number;
   group: ProfileFieldGroup;
 };
 
@@ -112,7 +122,7 @@ export function timezoneOptions(): readonly string[] {
 // Priority order: identity and how to reach the person, then work logistics, then what they
 // actually work on, then the external links, roughly from most to least commonly filled in for
 // a research-lab roster.
-export const PROFILE_FIELDS: ProfileField[] = [
+const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
   {
     key: "name",
     labelKey: "profile.fields.name",
@@ -131,11 +141,18 @@ export const PROFILE_FIELDS: ProfileField[] = [
     group: "identity",
   },
   {
+    // Several answers allowed: people here are routinely two things at once -- a PhD student who
+    // also manages the lab, a research assistant part-way through a master's -- and one dropdown
+    // made each of them pick which half of the truth to record.
     key: "role",
     labelKey: "profile.fields.role",
     example: adminBotMemberRoles[0] ?? "",
-    type: "dropdown",
-    options: adminBotMemberRoles,
+    type: "multi_dropdown",
+    // These describe appointments or lab relationships, rather than career stage. Existing
+    // values remain editable through multiSelectOptionsFor's legacy-value preservation.
+    options: adminBotMemberRoles.filter(
+      (role) => !["External Collaborator", "Research Assistant", "Research Intern"].includes(role),
+    ),
     group: "identity",
   },
   {
@@ -185,6 +202,17 @@ export const PROFILE_FIELDS: ProfileField[] = [
     group: "research",
   },
   {
+    key: "elevator_pitch",
+    labelKey: "profile.fields.elevatorPitch",
+    example:
+      "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
+    type: "paragraph",
+    hintKey: "profile.hints.elevatorPitch",
+    // The service's own ceiling (validateLabMember in extensions/adminbot/src/kernel/service.ts).
+    maxLength: ADMINBOT_ELEVATOR_PITCH_MAX,
+    group: "research",
+  },
+  {
     key: "projects",
     labelKey: "profile.fields.projects",
     example: "AdminBot",
@@ -227,6 +255,19 @@ export const PROFILE_FIELDS: ProfileField[] = [
     group: "work",
   },
   {
+    // Month and day, never a year -- see the field note in contracts. It sits in `identity` rather
+    // than `work` because it is a fact about the person, not their post, and it carries a help
+    // bubble for the one thing nobody would guess from a label: filling it in puts a recurring
+    // event on the shared lab calendar. A field whose whole purpose is to publish something should
+    // say so where it is typed, not in a changelog.
+    key: "birthday",
+    labelKey: "profile.fields.birthday",
+    example: "03-14",
+    type: "short_text",
+    hintKey: "profile.hints.birthday",
+    group: "identity",
+  },
+  {
     key: "joined_month",
     labelKey: "profile.fields.joinedMonth",
     example: "2026-03",
@@ -235,10 +276,7 @@ export const PROFILE_FIELDS: ProfileField[] = [
     group: "work",
   },
   {
-    // Empty for every row on the sheet today; it is the column alumni will eventually be aged out
-    // by, which is why it is off the mandatory list -- and why it asks for a *plan* rather than a
-    // fact. Nobody can state the month they left before they leave, so the question people can
-    // actually answer is when they expect to move on.
+    // Ask for an expected offboarding month, rather than claiming the member has already left.
     key: "graduated_month",
     labelKey: "profile.fields.graduatedMonth",
     example: "2027-06",
@@ -247,7 +285,31 @@ export const PROFILE_FIELDS: ProfileField[] = [
     group: "work",
   },
   {
-    // The only confidential field on the page: the service strips it from every /lab/members
+    // What the member wants out of the next merch run. Free text rather than a size dropdown: the
+    // orders are not uniform term to term, and a closed list would need editing before each one.
+    // Optional, and blank is a real answer -- somebody who wants nothing should not have to say so.
+    key: "merch_requests",
+    labelKey: "profile.fields.merchRequests",
+    example: "T-shirt (L), and a few stickers",
+    type: "short_text",
+    hintKey: "profile.hints.merchRequests",
+    group: "work",
+  },
+  {
+    // Career direction, asked as a question rather than a label: where this person wants to go
+    // next, when, and what the lab can actually do about it. It sits with the other timeline
+    // facts (joined/graduated month) because the answer is usually pinned to those dates, and it
+    // is required for profile completion. An uncertain plan can be described in free text.
+    // Confidential (adminBotConfidentialMemberFields): a job search is not roster material, so
+    // only this member and the admins read it.
+    key: "next_position",
+    labelKey: "profile.fields.nextPosition",
+    example: "PhD in NLP, applying Dec 2027 -- intros to causal-inference groups would help",
+    type: "paragraph",
+    group: "work",
+  },
+  {
+    // Confidential, like next_position above: the service strips it from every /lab/members
     // reader but this member and admins (adminBotConfidentialMemberFields). Last row of the last
     // group, so it comes after every other answer -- it is the one field a person may want to
     // think before answering, and optional because "nothing to declare" must never be something
@@ -280,14 +342,27 @@ export const PROFILE_FIELDS: ProfileField[] = [
     key: "cv_url",
     labelKey: "profile.fields.cvUrl",
     example: "https://zhijing-jin.com/files/CV.pdf",
+    type: "short_text",
+    group: "links",
+  },
+  {
+    // Where this member's one-on-one notes live. A Drive folder and only a Drive folder: the
+    // service checks the /drive/folders/ shape (SOCIAL_URL_FIELDS in kernel/service.ts), so the
+    // hint says so before anyone pastes the Doc from last week's meeting instead. Required (see
+    // adminBotMandatoryProfileFields): a folder that does not exist yet is a set of meeting notes
+    // with nowhere to go, so "not made yet" is the blank the mark is there to close.
+    key: "one_on_one_folder_url",
+    labelKey: "profile.fields.oneOnOneFolderUrl",
+    example: "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz",
     type: "link",
+    hintKey: "profile.hints.oneOnOneFolderUrl",
     group: "links",
   },
   {
     key: "github_url",
     labelKey: "profile.fields.github",
     example: "https://github.com/zhijing-jin",
-    type: "link",
+    type: "short_text",
     hintKey: "profile.hints.github",
     group: "links",
   },
@@ -301,15 +376,14 @@ export const PROFILE_FIELDS: ProfileField[] = [
   },
   {
     // LinkedIn publishes no mapping from a vanity URL to a URN, so this value cannot be derived
-    // from anything else on the page. The lab looks it up and fills it in; a member reading a
-    // string of digits off a collector site was a step nobody could be expected to get right.
+    // from anything else on the page. It has to be looked up -- but the member can look it up as
+    // easily as an admin can, and the field's help text points at the collector tool that reads it
+    // off their own account, so it is an ordinary required answer rather than an admin-owned one.
+    // See adminBotAdminOwnedProfileFields, which it used to be the sole entry on.
     key: "linkedin_urn",
     labelKey: "profile.fields.linkedinUrn",
     example: "ACoAAB1234567",
     type: "short_text",
-    // Read-only for the member: they see whether it is on file and, if not, follow the collector
-    // link that produces it. Typing a 13-digit id off another site was the step that never worked.
-    adminOnly: true,
     group: "links",
   },
   {
@@ -326,6 +400,26 @@ export const PROFILE_FIELDS: ProfileField[] = [
     example: "https://x.com/ZhijingJin",
     type: "link",
     hintKey: "profile.hints.twitter",
+    group: "links",
+  },
+  {
+    key: "twitter_followers",
+    labelKey: "profile.fields.twitterFollowers",
+    example: "10000",
+    type: "numeric",
+    hintKey: "profile.hints.followers",
+    min: 0,
+    max: Number.MAX_SAFE_INTEGER,
+    group: "links",
+  },
+  {
+    key: "linkedin_followers",
+    labelKey: "profile.fields.linkedinFollowers",
+    example: "10000",
+    type: "numeric",
+    hintKey: "profile.hints.followers",
+    min: 0,
+    max: Number.MAX_SAFE_INTEGER,
     group: "links",
   },
   {
@@ -355,3 +449,12 @@ export const PROFILE_FIELDS: ProfileField[] = [
     group: "links",
   },
 ];
+
+// Who owes each answer is declared once, in the contracts module, and stamped on here -- the same
+// list the service's reminder reads. Kept as a flag on the row rather than a lookup at each call
+// site because every consumer of this table already has the row in hand.
+export const PROFILE_FIELDS: ProfileField[] = PROFILE_FIELD_DEFINITIONS.map((field) =>
+  adminBotAdminOwnedProfileFields.includes(field.key)
+    ? { ...field, adminOnly: true as const }
+    : field,
+);

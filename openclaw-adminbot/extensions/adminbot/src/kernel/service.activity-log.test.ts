@@ -151,3 +151,138 @@ describe("login events", () => {
     expect(serviceWithMember().listLoginEvents("nobody").ok).toBe(false);
   });
 });
+
+// The per-object reads: "who has been in this record", asked of a profile and of a paper.
+//
+// The lab-wide feed these replaced answered the question only by making somebody scroll past
+// everybody else's work. The rows are the same rows; what changed is what you may ask for.
+describe("recent updates", () => {
+  it("names the actor and the field on a member's record", () => {
+    const service = serviceWithMember();
+    unwrap(
+      service.upsertLabMember({ id: "ada", name: "Ada Lovelace", location: "Toronto" } as never, {
+        source: "admin",
+        actor: "grace",
+      }),
+    );
+    const [row] = unwrap(service.listRecentUpdatesForMember("ada")).updates;
+    expect(row).toMatchObject({
+      actor_member_id: "grace",
+      actor_name: "Grace Hopper",
+      subject_member_id: "ada",
+      field_key: "location",
+      source: "admin",
+    });
+  });
+
+  // A self-edit carries no subject, so the naive query -- rows whose subject is Ada -- would show
+  // her every correction an admin made and none of her own work.
+  it("includes the member's own edits, which carry no subject at all", () => {
+    const service = serviceWithMember();
+    unwrap(
+      service.upsertLabMember({ id: "ada", name: "Ada Lovelace", location: "Toronto" } as never, {
+        source: "member",
+        actor: "ada",
+      }),
+    );
+    unwrap(
+      service.upsertLabMember({ id: "ada", name: "Ada Lovelace", role: "PhD Student" } as never, {
+        source: "admin",
+        actor: "grace",
+      }),
+    );
+    const actors = unwrap(service.listRecentUpdatesForMember("ada")).updates.map(
+      (row) => row.actor_member_id,
+    );
+    expect(actors).toContain("ada");
+    expect(actors).toContain("grace");
+  });
+
+  it("does not put one member's record in another's history", () => {
+    const service = serviceWithMember();
+    unwrap(
+      service.upsertLabMember({ id: "grace", name: "Grace Hopper", location: "Boston" } as never, {
+        source: "member",
+        actor: "grace",
+      }),
+    );
+    expect(unwrap(service.listRecentUpdatesForMember("ada")).updates).toEqual([]);
+  });
+
+  it("gives the newest first and honours the limit", () => {
+    const service = serviceWithMember();
+    for (const location of ["Toronto", "Zurich", "Boston"]) {
+      unwrap(
+        service.upsertLabMember({ id: "ada", name: "Ada Lovelace", location } as never, {
+          source: "member",
+          actor: "ada",
+        }),
+      );
+    }
+    const updates = unwrap(service.listRecentUpdatesForMember("ada", 2)).updates;
+    expect(updates).toHaveLength(2);
+    expect(updates[0]?.at >= (updates[1]?.at ?? "")).toBe(true);
+  });
+
+  // An unattributed pass -- the roster importer -- must not read as the member editing themselves.
+  it("does not credit an import to the member whose record it touched", () => {
+    const service = serviceWithMember();
+    unwrap(service.upsertLabMember({ id: "ada", name: "Ada Lovelace", location: "Oslo" } as never));
+    expect(unwrap(service.listRecentUpdatesForMember("ada")).updates).toEqual([]);
+  });
+
+  it("has no history for a member who is not on the roster", () => {
+    expect(serviceWithMember().listRecentUpdatesForMember("nobody")).toMatchObject({
+      ok: false,
+      status: 404,
+    });
+  });
+});
+
+describe("a paper's history", () => {
+  function serviceWithPaper() {
+    const service = serviceWithMember();
+    unwrap(
+      service.upsertPaper(
+        { id: "cais", title: "Causal abstraction", authors: ["Ada Lovelace"] } as never,
+        { source: "member", actor: "ada" },
+      ),
+    );
+    return service;
+  }
+
+  it("covers the record and its evidence slots, and nothing else's", () => {
+    const service = serviceWithPaper();
+    unwrap(
+      service.upsertPaper(
+        { id: "other", title: "Other paper", authors: ["Grace Hopper"] } as never,
+        { source: "member", actor: "grace" },
+      ),
+    );
+    const updates = unwrap(
+      service.listRecentUpdatesForPaper("cais", { memberId: "ada", isAdmin: false }),
+    ).updates;
+    expect(updates.length).toBeGreaterThan(0);
+    for (const row of updates) {
+      expect(row.paper_id).toBe("cais");
+    }
+  });
+
+  // Same rule the paper's own checklist follows: the history must not be a way around it.
+  it("refuses a member who did not author it, and allows an admin", () => {
+    const service = serviceWithPaper();
+    expect(
+      service.listRecentUpdatesForPaper("cais", { memberId: "grace", isAdmin: false }),
+    ).toMatchObject({ ok: false, status: 403 });
+    expect(
+      service.listRecentUpdatesForPaper("cais", { memberId: "grace", isAdmin: true }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("has no history for a paper that does not exist", () => {
+    expect(serviceWithPaper().listRecentUpdatesForPaper("nope", { isAdmin: true })).toMatchObject({
+      ok: false,
+      status: 404,
+    });
+  });
+});

@@ -42,8 +42,16 @@ export function resolveAdminBotControlUiUrl(env: NodeJS.ProcessEnv = process.env
  * that pin back, or a token minted by one could land on a Control UI pointed at the other and be
  * rejected. One service, one Control UI — see DEFAULT_ADMINBOT_CONTROL_UI_URL above.
  */
+export const ADMINBOT_PASSWORD_RESET_PATH = "/reset-password";
+
 export function buildPasswordResetUrl(params: { token: string; controlUiUrl?: string }): string {
   const base = stripTrailingSlashes(params.controlUiUrl?.trim() || DEFAULT_ADMINBOT_CONTROL_UI_URL);
   const query = new URLSearchParams({ passwordReset: params.token });
-  return `${base}/?${query.toString()}`;
+  // A path of its own rather than the root with a parameter. Both land on the same form -- the
+  // Control UI is a single-page app and Vercel rewrites every path to index.html -- but the root
+  // spends a beat as the landing page before the token is read, so a member following a reset link
+  // watches the marketing page appear, then a sign-in form, then finally the reset form. Naming the
+  // destination in the URL also makes the link legible in an inbox: what it does is now readable
+  // before it is clicked, which is the one thing a password link should not be coy about.
+  return `${base}${ADMINBOT_PASSWORD_RESET_PATH}?${query.toString()}`;
 }

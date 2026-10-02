@@ -19,8 +19,14 @@
 //
 // Blockers are real records now, not browser state: they are written onto the paper the same way
 // the step is, so an admin sees a report the moment it is filed. See blockers.ts.
+import "../paper-visibility.ts";
 import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
+import {
+  adminBotNormalizePaperAlias,
+  adminBotPaperAliasMaxLength,
+  adminBotProjectChannelName,
+} from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -29,8 +35,10 @@ import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/
 import {
   draftLinkedInPost,
   loadStoredMemberSession,
+  mapImportColumns,
   resolveAdminBotBaseUrl,
 } from "../auth/session.ts";
+import { cancelAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import {
   BLOCKER_TITLE_MAX,
   editBlockerInput,
@@ -44,9 +52,11 @@ import type {
   AdminBotPaperRecord,
   AdminBotPaperSaveInput,
   AdminBotPaperStep,
+  SlackChannelCheck,
 } from "../controllers/admin.ts";
+import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
 import { aoeInstantMs } from "../data/deadline-time.ts";
-import { DEADLINE_VENUES } from "../data/deadlines.ts";
+import { DEADLINE_SUMMARIES } from "../data/deadlines-summary.ts";
 import {
   ARCHIVAL_VENUES,
   type CatalogVenue,
@@ -56,7 +66,13 @@ import {
   parseVenue,
   venueYears,
 } from "../data/venue-catalog.ts";
-import { decisionOf, isDecisionAnswered, renderDecisionBanner } from "../decision-popup.ts";
+import {
+  decisionEmailSentStamp,
+  decisionOf,
+  isDecisionAnswered,
+  isDecisionEmailSent,
+  renderDecisionBanner,
+} from "../decision-popup.ts";
 import {
   clearHiddenPapers,
   partitionHiddenPapers,
@@ -65,17 +81,27 @@ import {
 } from "../hidden-papers.ts";
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import {
+  publicationTrack,
+  presentationFormat,
+  PUBLICATION_TRACKS,
+  PRESENTATION_FORMATS,
+} from "../paper-classification.ts";
+import {
   completedOnLabel,
   completionReadiness,
   isPaperCompleted,
   partitionByCompletion,
 } from "../paper-completion.ts";
 import {
+  clearHistory,
+  clearSavedEdits,
   diffForHistory,
   emptyPaperGridState,
+  PAPER_GRID_DEFAULT_THRESHOLD,
   PAPER_GRID_THRESHOLD,
   recordHistory,
   renderPaperGrid,
+  unsentSlotEdits,
   type PaperGridState,
 } from "../paper-grid.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
@@ -83,21 +109,27 @@ import { openPreRegistrationDialog } from "../pre-registration.ts";
 import {
   formatVenueTargets,
   serializeVenueTargets,
-  nextDeadlineVenue,
-  papersNeedingRegistration,
   effectiveVenueTargets,
   readVenueTargets,
   venueTargetMatches,
 } from "../venue-targets.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
-import { renderPaperCycle } from "./paper-cycle.ts";
+import { paperTripDraftFrom, renderPaperCycle, type PaperTripDraft } from "./paper-cycle.ts";
+import {
+  cancelPaperLegacyAutosave,
+  emptyPaperLegacyState,
+  renderPaperLegacy,
+  type PaperLegacyState,
+} from "./paper-legacy.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
 import { renderPaperTimeline } from "./paper-timeline.ts";
 import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
 import { findOwnMember } from "./profile.ts";
+import { renderRecentEdits } from "./recent-edits.ts";
 
 export type MyWorkProps = {
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
+  onSaveBlocker?: (paper: AdminBotPaperSaveInput) => Promise<boolean>;
   /**
    * Which papers this surface is about. Defaults to the signed-in member's own, which is what
    * My Projects & Papers means; Active Papers passes the whole lab. The cards, their fields and
@@ -127,11 +159,31 @@ export type MyWorkProps = {
   onReviewNudges: () => void;
   onToggleNudgeRecipient: (memberId: string) => void;
   onToggleCard: (paperId: string) => void;
+  /**
+   * Fetches one paper's evidence without opening its card.
+   *
+   * The sheet needs it: a card loads its cycle when somebody expands it, and the grid shows
+   * thirty papers at once with nothing expanded. Optional, so a surface that has no cycle wiring
+   * simply offers no evidence columns rather than offering ones that would drop what is typed.
+   */
+  onLoadSlots?: (paperId: string) => void;
   onSaveSlot: (
     paperId: string,
     slot: string,
     input: { url?: string; value_text?: string; value_note?: string; done?: boolean },
   ) => void;
+  /**
+   * The reader's own conference-trip answers, keyed by conference rather than by paper.
+   *
+   * Optional as a set, like the rest of the cycle wiring: Active Papers reuses this renderer over
+   * everybody's papers, and "what do you need paid for" is not a question to put on somebody
+   * else's card.
+   */
+  tripDrafts?: Record<string, PaperTripDraft>;
+  tripSavingKey?: string | null;
+  onEditTrip?: (conferenceKey: string, patch: Partial<PaperTripDraft>) => void;
+  onSaveTrip?: (conferenceKey: string) => void;
+  onWithdrawTrip?: (conferenceKey: string) => void;
   onNudgeAuthors: () => void;
   /** The signed-in member, so their own consent rows get buttons and nobody else's do. */
   /**
@@ -143,6 +195,20 @@ export type MyWorkProps = {
    * and the second one invites an admin to answer a question that was asked of the author.
    */
   personal?: boolean;
+  /**
+   * Whether the reader administers the lab, which is the other half of the rule that decides
+   * whether this page opens on the sheet or on the cards.
+   *
+   * An administrator arrives at their own papers the way they arrive at everyone else's -- to file
+   * the links they collected and move what moved -- so the sweep surface is the right first screen
+   * for them at three papers, where a member reading their own work still wants the cards until
+   * there are five. It changes nothing about what they may edit: the sheet writes through the same
+   * two endpoints the cards do, and the service decides what each write is allowed to touch.
+   *
+   * Absent means not an administrator, so a page rendered before privilege has loaded opens on the
+   * cards rather than flipping surfaces underneath somebody mid-read.
+   */
+  viewerIsAdmin?: boolean;
   memberId: string | null;
   memberName: (memberId: string) => string;
   onSaveDraft: (paperId: string, platform: string, body: string) => void;
@@ -157,6 +223,8 @@ export type MyWorkProps = {
   onSetReimbursement: (paperId: string, memberId: string, status: string) => void;
   /** Writes the signed-in member's own line for this week. Absent leaves the log read-only. */
   onSaveWeeklyUpdate?: (paperId: string, body: string) => void;
+  /** Fetches one object's edit history, called when its panel is opened. */
+  onLoadRecentEdits?: (subject: "member" | "paper", id: string) => void;
   /**
    * Removes the paper outright. Absent hides the control entirely.
    *
@@ -165,6 +233,16 @@ export type MyWorkProps = {
    * and a button that always 403s teaches people to distrust the page.
    */
   onDeletePaper?: (paper: AdminBotPaperRecord) => void;
+  /**
+   * What the form knows about the workspace's Slack channels, for the already-exists check.
+   *
+   * Absent hides the checkbox entirely rather than showing one that cannot answer: an affordance
+   * that never resolves is worse than none, because the member cannot tell "unchecked" from
+   * "checked and fine".
+   */
+  channelCheck?: SlackChannelCheck;
+  /** Ticking the box, which is what loads the channel names. */
+  onChannelCheckToggle?: (enabled: boolean) => void;
 };
 
 export type BlockerDraft = {
@@ -172,6 +250,11 @@ export type BlockerDraft = {
   /** The blocker being edited, keyed by filing time. Absent when filing a new one. */
   at?: string;
   text: string;
+  title?: string;
+  note?: string;
+  stage?: string;
+  saving?: boolean;
+  error?: string;
 };
 
 export type Blocker = {
@@ -254,7 +337,11 @@ function saveStep(props: MyWorkProps, paper: AdminBotPaperRecord, step: AdminBot
 // resolveAdminBotBaseUrl falls back to this page's own hostname and a guessed port -- which is not
 // where AdminBot lives when the console is served from anywhere but the service itself, so every
 // draft died as "AdminBot is not reachable" before the request left the browser.
-function renderStepControls(state: AppViewState, paper: AdminBotPaperRecord, props: MyWorkProps) {
+function renderStepControls(
+  paper: AdminBotPaperRecord,
+  props: MyWorkProps,
+  options: { picker?: boolean } = {},
+) {
   const { index } = paperProgress(paper);
   const next = index >= 0 && index < paperSteps.length - 1 ? paperSteps[index + 1] : null;
   return html`
@@ -284,41 +371,45 @@ function renderStepControls(state: AppViewState, paper: AdminBotPaperRecord, pro
            current_step still buckets blockers and drives the Active Papers view, and it has to
            be movable in both directions -- a mis-click, or a rejection that sends a paper back to
            writing. Jumping *forward* past unfinished steps still asks first, because that is the
-           move that asserts work happened. -->
-      <label class="my-work-item__step">
-        <span class="sr-only">Pipeline step</span>
-        <select
-          class="target__select"
-          data-testid=${`my-work-step-${paper.id}`}
-          @change=${(event: Event) => {
-            const target = (event.target as HTMLSelectElement).value as AdminBotPaperStep;
-            const targetIndex = paperSteps.indexOf(target);
-            if (targetIndex - index > 1) {
-              const names = paperSteps
-                .slice(index, targetIndex)
-                .map((value) => stepLabel(value))
-                .join(", ");
-              if (
-                !globalThis.confirm(
-                  `Jumping to ${stepLabel(target)} marks these as done: ${names}.\n\nContinue?`,
-                )
-              ) {
-                (event.target as HTMLSelectElement).value = paper.current_step;
-                return;
-              }
-            }
-            saveStep(props, paper, target);
-          }}
-        >
-          ${paperSteps.map(
-            (step) => html`
-              <option value=${step} ?selected=${step === paper.current_step}>
-                ${stepLabel(step)}
-              </option>
-            `,
-          )}
-        </select>
-      </label>
+           move that asserts work happened.
+           Left off where the page already has a Current step control -- the legacy view -- so
+           one field is not two dropdowns that can disagree while one of them is mid-edit. -->
+      ${options.picker === false
+        ? nothing
+        : html`<label class="my-work-item__step">
+            <span class="sr-only">Pipeline step</span>
+            <select
+              class="target__select"
+              data-testid=${`my-work-step-${paper.id}`}
+              @change=${(event: Event) => {
+                const target = (event.target as HTMLSelectElement).value as AdminBotPaperStep;
+                const targetIndex = paperSteps.indexOf(target);
+                if (targetIndex - index > 1) {
+                  const names = paperSteps
+                    .slice(index, targetIndex)
+                    .map((value) => stepLabel(value))
+                    .join(", ");
+                  if (
+                    !globalThis.confirm(
+                      `Jumping to ${stepLabel(target)} marks these as done: ${names}.\n\nContinue?`,
+                    )
+                  ) {
+                    (event.target as HTMLSelectElement).value = paper.current_step;
+                    return;
+                  }
+                }
+                saveStep(props, paper, target);
+              }}
+            >
+              ${paperSteps.map(
+                (step) => html`
+                  <option value=${step} ?selected=${step === paper.current_step}>
+                    ${stepLabel(step)}
+                  </option>
+                `,
+              )}
+            </select>
+          </label>`}
     </div>
   `;
 }
@@ -348,11 +439,16 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
   return html`
     <form
       class="blocker-form"
-      @submit=${(event: SubmitEvent) => {
+      @submit=${async (event: SubmitEvent) => {
         event.preventDefault();
+        if (draft.saving) return;
         const data = new FormData(event.currentTarget as HTMLFormElement);
         const title = String(data.get("title") ?? "").trim();
-        if (!title) {
+        const titleInput = (event.currentTarget as HTMLFormElement).elements.namedItem(
+          "title",
+        ) as HTMLInputElement;
+        titleInput.setCustomValidity(title ? "" : "Enter a short description of what is blocked.");
+        if (!titleInput.reportValidity()) {
           return;
         }
         const fields = {
@@ -360,13 +456,25 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
           title,
           note: String(data.get("note") ?? "").trim(),
         };
-        props.onSavePaper(
-          editing
-            ? editBlockerInput(paper, editing.at, fields)
-            : // Named at filing time so the admin list can say who to go ask.
-              fileBlockerInput(paper, { ...fields, by: findOwnMember(state)?.name ?? "" }),
-        );
-        state.myWorkBlockerDraft = null;
+        Object.assign(draft, fields, { saving: true, error: undefined });
+        props.onRerender?.();
+        try {
+          const saved = await props.onSaveBlocker?.(
+            editing
+              ? editBlockerInput(paper, editing.at, fields)
+              : // Named at filing time so the admin list can say who to go ask.
+                fileBlockerInput(paper, { ...fields, by: findOwnMember(state)?.name ?? "" }),
+          );
+          if (state.myWorkBlockerDraft !== draft) return;
+          if (saved) state.myWorkBlockerDraft = null;
+          else draft.error = "Could not save the blocker report. Your draft is kept. Try again.";
+        } catch {
+          if (state.myWorkBlockerDraft === draft)
+            draft.error = "Could not save the blocker report. Your draft is kept. Try again.";
+        } finally {
+          draft.saving = false;
+          props.onRerender?.();
+        }
       }}
     >
       <p class="blocker-form__notice">
@@ -380,10 +488,18 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
       <div class="blocker-form__fields">
         <label class="register__field">
           <span class="register__label">Which stage is blocked?</span>
-          <select class="input" name="stage" data-testid=${`blocker-stage-${paper.id}`}>
+          <select
+            class="input"
+            name="stage"
+            ?disabled=${draft.saving}
+            data-testid=${`blocker-stage-${paper.id}`}
+          >
             ${paperSteps.map(
               (step) => html`
-                <option value=${step} ?selected=${step === (editing?.stage || paper.current_step)}>
+                <option
+                  value=${step}
+                  ?selected=${step === (draft.stage || editing?.stage || paper.current_step)}
+                >
                   ${stepLabel(step)}
                 </option>
               `,
@@ -392,13 +508,16 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
         </label>
 
         <label class="register__field">
-          <span class="register__label">What is blocked? (short)</span>
+          <span class="register__label">What is blocked? (short, required)</span>
           <input
             class="input"
             name="title"
+            ?disabled=${draft.saving}
+            required
+            @input=${(event: Event) => (event.target as HTMLInputElement).setCustomValidity("")}
             maxlength=${BLOCKER_TITLE_MAX}
             placeholder="e.g. OpenReview rejects the PDF"
-            .value=${editing?.title ?? ""}
+            .value=${draft.title ?? editing?.title ?? ""}
             data-testid=${`blocker-title-${paper.id}`}
           />
           <span class="register__hint">Up to ${BLOCKER_TITLE_MAX} characters.</span>
@@ -410,20 +529,31 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
         <textarea
           class="input"
           name="note"
+          ?disabled=${draft.saving}
           rows="4"
           placeholder=${t("myWork.blockers.placeholder")}
         >
-${editing?.note ?? ""}</textarea
+${draft.note ?? editing?.note ?? ""}</textarea
         >
       </label>
 
+      ${draft.error ? html`<p role="alert">${draft.error}</p>` : nothing}
       <div class="blocker-form__footer">
         <p class="blocker-form__reviewer">
           ${t("myWork.blockers.reviewer", { name: reviewerName(state) })}
         </p>
         <div class="register__actions">
-          <button type="submit" class="btn primary">
-            ${editing ? "Save changes" : t("myWork.blockers.submit")}
+          <button
+            type="submit"
+            class="btn primary"
+            ?disabled=${draft.saving}
+            aria-busy=${Boolean(draft.saving)}
+          >
+            ${draft.saving
+              ? "Saving report…"
+              : editing
+                ? "Save changes"
+                : t("myWork.blockers.submit")}
           </button>
           <button
             type="button"
@@ -509,6 +639,256 @@ function overviewFor(props: MyWorkProps, paperId: string): PaperSlotOverviewRow 
  * go and do. This carries the count *and* the first thing outstanding, which is the sentence
  * somebody scanning five papers is actually looking for.
  */
+/**
+ * One autosave timer per project card.
+ *
+ * Keyed by paper id rather than a single module timer like the profile's basics form, because
+ * several cards can be open at once: a shared timer would let a pause in one card commit another
+ * card's half-typed draft.
+ */
+const detailsSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * What was last written for each card, so the same values are not written twice.
+ *
+ * Autosave and the blur commit can both come due for one edit: the debounce fires, and a moment
+ * later the member tabs away while the record they just saved is still in flight, so `dirty` is
+ * still true. Without this the second one repeats the first.
+ */
+const detailsLastSaved = new Map<string, string>();
+
+function detailsSignature(draft: ProjectDetailsDraft): string {
+  return JSON.stringify([draft.title.trim(), draft.alias.trim(), draft.startedOn.trim()]);
+}
+
+type ProjectDetailsDraft = {
+  title: string;
+  alias: string;
+  startedOn: string;
+  error: string | null;
+};
+
+/**
+ * Why this draft cannot be written yet, or null.
+ *
+ * Autosave needs this in a way the profile's basics form does not. That form writes whatever is in
+ * it and lets the server judge, which is fine when every field is free text. Here a title cannot be
+ * empty and the short name has to be a legal Slack channel, so an unguarded autosave would fire a
+ * doomed request every time the member paused mid-word -- and answer them with an error about a
+ * value they were still in the middle of typing.
+ */
+function detailsRefusal(draft: ProjectDetailsDraft): string | null {
+  if (!draft.title.trim()) {
+    return "Give the project a title.";
+  }
+  // Blank clears the alias, which the record allows; anything else has to be a name Slack would
+  // take.
+  const aliasTyped = draft.alias.trim();
+  const aliasProblem = aliasTyped ? aliasRefusal(aliasTyped) : null;
+  if (aliasProblem) {
+    return aliasProblem;
+  }
+  const startedOn = draft.startedOn.trim();
+  if (startedOn && !/^\d{4}-\d{2}-\d{2}$/u.test(startedOn)) {
+    return "The start date must look like 2026-09-01.";
+  }
+  return null;
+}
+
+/**
+ * The project's own answers, editable after the fact, and saved the way the profile page saves.
+ *
+ * Autosave commits a beat after typing stops, or immediately when focus leaves the panel -- the
+ * same contract the profile's basics form makes. Two differences, both forced by this form rather
+ * than chosen:
+ *
+ *   - A draft that cannot be written is held, not sent (see detailsRefusal). The pending timer is
+ *     cancelled outright, so a half-typed short name never becomes a request.
+ *   - The draft outlives its own commit. These inputs are bound to state rather than read off the
+ *     DOM, so dropping the draft the moment a save fires would snap the box back to the stored
+ *     value while the member was still typing in it. It stops differing from what is stored once
+ *     the record comes back instead.
+ */
+function renderProjectDetails(
+  state: AppViewState,
+  props: MyWorkProps,
+  paper: AdminBotPaperRecord,
+): unknown {
+  const stored: ProjectDetailsDraft = {
+    title: paper.title ?? "",
+    alias: paper.alias ?? "",
+    startedOn: paper.started_on ?? "",
+    error: null,
+  };
+  const draft = (state.myWorkProjectEdits ?? {})[paper.id] ?? stored;
+  const setTimer = (next: ReturnType<typeof setTimeout> | undefined): void => {
+    if (next) {
+      detailsSaveTimers.set(paper.id, next);
+    } else {
+      detailsSaveTimers.delete(paper.id);
+    }
+  };
+  const patch = (fields: Partial<ProjectDetailsDraft>): void => {
+    // Spreading undefined in an object literal contributes nothing, so this is safe against the
+    // partial state doubles the view is rendered with in tests.
+    const current = (state.myWorkProjectEdits ?? {})[paper.id] ?? stored;
+    state.myWorkProjectEdits = {
+      ...state.myWorkProjectEdits,
+      [paper.id]: { ...current, ...fields },
+    };
+    props.onRerender?.();
+  };
+  // Reads the draft at fire time rather than closing over the one this render saw: the timer
+  // outlives the render that set it, and the whole point is to commit what was typed since.
+  const commit = (options: { force?: boolean } = {}): void => {
+    const live = (state.myWorkProjectEdits ?? {})[paper.id];
+    if (!live) {
+      return;
+    }
+    const refusal = detailsRefusal(live);
+    if (refusal) {
+      patch({ error: refusal });
+      return;
+    }
+    // Only the automatic paths are deduplicated. A press of the button is a deliberate act and
+    // always writes: a save that failed leaves the signature recorded, and suppressing the retry
+    // would turn the button into exactly the silent no-op it exists to avoid.
+    const signature = detailsSignature(live);
+    if (!options.force && signature === detailsLastSaved.get(paper.id)) {
+      return;
+    }
+    detailsLastSaved.set(paper.id, signature);
+    const aliasTyped = live.alias.trim();
+    props.onSavePaper({
+      id: paper.id,
+      title: live.title.trim(),
+      authors: paper.authors ?? [],
+      currentStep: paper.current_step as AdminBotPaperStep,
+      alias: aliasTyped ? (adminBotNormalizePaperAlias(aliasTyped) ?? "") : "",
+      startedOn: live.startedOn.trim(),
+    });
+    patch({ error: null });
+  };
+  const edited = (fields: Partial<ProjectDetailsDraft>): void => {
+    patch({ ...fields, error: null });
+    const live = (state.myWorkProjectEdits ?? {})[paper.id] ?? stored;
+    if (detailsRefusal(live)) {
+      // Held rather than queued. The message waits for the member to stop or leave, so they are not
+      // told off for a short name they are three characters into typing.
+      cancelAutosave(detailsSaveTimers.get(paper.id), setTimer);
+      return;
+    }
+    scheduleAutosave(detailsSaveTimers.get(paper.id), setTimer, commit);
+  };
+  const dirty =
+    draft.title !== stored.title ||
+    draft.alias !== stored.alias ||
+    draft.startedOn !== stored.startedOn;
+  return html`
+    <details class="my-work-details" data-testid=${`my-work-details-${paper.id}`}>
+      <summary>Project details</summary>
+      <form
+        class="my-work-details__form"
+        @submit=${(event: SubmitEvent) => event.preventDefault()}
+        @focusout=${(event: FocusEvent) => {
+          const form = event.currentTarget as HTMLFormElement;
+          if (!focusLeftForm(form, event)) {
+            return;
+          }
+          // Leaving resolves the draft rather than waiting out the debounce: the member may be on
+          // their way to another card or another tab, and a pending timer would not survive it.
+          //
+          // Not flushAutosave, which only runs when a timer is pending. A draft that cannot be
+          // written has had its timer cancelled, and that is exactly the case that must not pass
+          // silently -- it is how the create form used to lose a project without saying so.
+          // `commit` decides: it writes, or it explains.
+          const live = (state.myWorkProjectEdits ?? {})[paper.id];
+          const changed =
+            live !== undefined &&
+            (live.title !== stored.title ||
+              live.alias !== stored.alias ||
+              live.startedOn !== stored.startedOn);
+          if (!changed) {
+            return;
+          }
+          cancelAutosave(detailsSaveTimers.get(paper.id), setTimer);
+          commit();
+        }}
+      >
+        <div class="my-work-details__grid">
+          <label class="my-work-details__field">
+            <span>Title</span>
+            <input
+              class="input"
+              data-testid=${`my-work-details-title-${paper.id}`}
+              .value=${draft.title}
+              @input=${(event: Event) =>
+                edited({ title: (event.target as HTMLInputElement).value })}
+            />
+          </label>
+          <label class="my-work-details__field">
+            <span>Short name</span>
+            <input
+              class="input"
+              maxlength=${adminBotPaperAliasMaxLength}
+              data-testid=${`my-work-details-alias-${paper.id}`}
+              .value=${draft.alias}
+              @input=${(event: Event) =>
+                edited({ alias: (event.target as HTMLInputElement).value })}
+            />
+            <span class="register__hint">
+              Names the Slack channel for a project that does not have one yet. Renaming it here
+              does not rename a channel that already exists.
+            </span>
+          </label>
+          <label class="my-work-details__field">
+            <span>Started on</span>
+            <input
+              class="input"
+              type="date"
+              data-testid=${`my-work-details-started-${paper.id}`}
+              .value=${draft.startedOn}
+              @input=${(event: Event) =>
+                edited({ startedOn: (event.target as HTMLInputElement).value })}
+            />
+          </label>
+        </div>
+        ${draft.error
+          ? html`<p
+              class="my-work-add-form__error"
+              role="alert"
+              data-testid=${`my-work-details-error-${paper.id}`}
+            >
+              ${draft.error}
+            </p>`
+          : nothing}
+        <div class="my-work-details__actions">
+          <span class="my-work-details__autosave-hint">${t("myWork.details.autosaveHint")}</span>
+          <!-- The explicit save. Autosave still does the work; this only changes when the member
+               gets to decide it happened. A form that only ever saves itself gives someone who has
+               just corrected a title no way to *finish*: they either wait out a debounce they
+               cannot see or navigate away and hope. -->
+          <button
+            type="button"
+            class="btn btn--sm"
+            ?disabled=${!dirty}
+            data-testid=${`my-work-details-save-${paper.id}`}
+            @click=${() => {
+              // Unconditional, unlike flushAutosave: with no pending timer that helper does
+              // nothing, and a Save button that silently no-ops because the debounce already fired
+              // is the one outcome a person pressing it cannot tell apart from a broken button.
+              cancelAutosave(detailsSaveTimers.get(paper.id), setTimer);
+              commit({ force: true });
+            }}
+          >
+            Save details
+          </button>
+        </div>
+      </form>
+    </details>
+  `;
+}
+
 function renderCardSummary(paper: AdminBotPaperRecord, props: MyWorkProps) {
   const row = overviewFor(props, paper.id);
   if (!row) {
@@ -678,17 +1058,34 @@ function renderAcceptance(paper: AdminBotPaperRecord, props: MyWorkProps) {
               </select>
             </label>
             <label class="paper-acceptance__field">
-              <span class="register__label">Presentation</span>
+              <span class="register__label">Publication track</span>
+              <select
+                class="input"
+                data-testid=${`paper-track-${paper.id}`}
+                @change=${(event: Event) =>
+                  save({ publicationTrack: (event.target as HTMLSelectElement).value })}
+              >
+                <option value="" ?selected=${!publicationTrack(paper)}>Not said</option>
+                ${PUBLICATION_TRACKS.map(
+                  (track) =>
+                    html`<option value=${track} ?selected=${publicationTrack(paper) === track}>
+                      ${track[0].toUpperCase()}${track.slice(1)}
+                    </option>`,
+                )}
+              </select>
+            </label>
+            <label class="paper-acceptance__field">
+              <span class="register__label">Presentation format</span>
               <select
                 class="input"
                 data-testid=${`paper-presentation-${paper.id}`}
                 @change=${(event: Event) =>
                   save({ presentationType: (event.target as HTMLSelectElement).value })}
               >
-                <option value="" ?selected=${!paper.presentation_type}>Not said</option>
-                ${["poster", "findings", "main", "spotlight", "oral", "award"].map(
+                <option value="" ?selected=${!presentationFormat(paper)}>Not said</option>
+                ${PRESENTATION_FORMATS.map(
                   (type) => html`
-                    <option value=${type} ?selected=${type === paper.presentation_type}>
+                    <option value=${type} ?selected=${type === presentationFormat(paper)}>
                       ${type[0]?.toUpperCase()}${type.slice(1)}
                     </option>
                   `,
@@ -797,6 +1194,21 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
     conferenceOpen:
       paper.venue_decision === "accept" && cycle.missingAcceptanceDetails.length === 0,
     missingAcceptanceDetails: cycle.missingAcceptanceDetails,
+    // Only when the service named a conference for this paper and the surface wired the writes.
+    // Both halves matter: without the key there is nothing to key an answer to, and without the
+    // handlers the block would draw controls that do nothing.
+    ...(cycle.conferenceKey && props.onSaveTrip && props.onEditTrip
+      ? {
+          myTrip: cycle.myTrip ?? null,
+          tripDraft:
+            props.tripDrafts?.[cycle.conferenceKey] ?? paperTripDraftFrom(cycle.myTrip ?? null),
+          tripSaving: props.tripSavingKey === cycle.conferenceKey,
+          onEditTrip: (patch: Partial<PaperTripDraft>) =>
+            props.onEditTrip?.(cycle.conferenceKey as string, patch),
+          onSaveTrip: () => props.onSaveTrip?.(cycle.conferenceKey as string),
+          onWithdrawTrip: () => props.onWithdrawTrip?.(cycle.conferenceKey as string),
+        }
+      : {}),
     cycleClosed: cycle.cycleClosed,
     memberId: props.memberId,
     memberName: props.memberName,
@@ -923,7 +1335,8 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
       <div class="my-work-item__body" id=${panelId} ?hidden=${!open}>
         ${open
           ? html`
-              ${renderVenueTargets(paper)} ${renderTarget(paper, props)}
+              ${renderProjectDetails(state, props, paper)} ${renderVenueTargets(paper)}
+              ${renderTarget(paper, props)}
               ${renderPaperTimeline({
                 paperId: paper.id,
                 slots: props.slots[paper.id]?.slots ?? [],
@@ -932,6 +1345,7 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
               ${renderNextStep(paper)} ${renderAcceptance(paper, props)}
               ${renderPaperSlots({
                 paperId: paper.id,
+                paperTitle: paper.title,
                 slots: props.slots[paper.id]?.slots ?? [],
                 stages: props.slots[paper.id]?.stages ?? [],
                 details: {
@@ -947,11 +1361,16 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                   // Optional-chained: this view is rendered against partial state doubles in
                   // tests and against a host that may predate the field, and an author list that
                   // throws is worse than one whose draft box starts empty.
-                  coauthorDraft: state.myWorkCoauthorDraft?.[paper.id] ?? { email: "", name: "" },
+                  coauthorDraft: state.myWorkCoauthorDraft?.[paper.id] ?? {
+                    email: "",
+                    name: "",
+                    twitter: "",
+                  },
                   onCoauthorDraftChange: (draft) => {
                     const current = state.myWorkCoauthorDraft?.[paper.id] ?? {
                       email: "",
                       name: "",
+                      twitter: "",
                     };
                     state.myWorkCoauthorDraft = {
                       ...state.myWorkCoauthorDraft,
@@ -999,12 +1418,82 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                 },
               })}
               ${renderWeeklyUpdates(paper, props)} ${renderCycle(state, paper, props)}
-              ${renderStepControls(state, paper, props)} ${renderDeletePaper(paper, props)}
+              ${renderStepControls(paper, props)}
+              <!-- Who moved this paper, and when. Below the controls and shut: it is history
+                   about the checklist above it, and the card is long enough already. Opening it
+                   is what fetches it. -->
+              ${renderRecentEdits({
+                ...(state.adminBotRecentEdits?.[recentEditsKey("paper", paper.id)] ??
+                  EMPTY_RECENT_EDITS),
+                subject: "paper",
+                onOpen: () => props.onLoadRecentEdits?.("paper", paper.id),
+              })}
+              ${renderDeletePaper(paper, props)}
             `
           : nothing}
       </div>
     </article>
   `;
+}
+
+/**
+ * What the card has that the legacy view's fields do not: everything that is not one answer on the
+ * record or one evidence slot.
+ *
+ * The same renderers the card calls, with the same handlers, so the legacy view is the card drawn
+ * flat rather than a second implementation of it. Left out on purpose: the card's project-details
+ * form and its acceptance fields, because the legacy form already carries every one of those as a
+ * row and two controls for one field is two answers waiting to disagree. Completion comes along
+ * without them -- it is a timestamp, not a field the legacy form has.
+ */
+function renderLegacyExtras(state: AppViewState, paper: AdminBotPaperRecord, props: MyWorkProps) {
+  return {
+    top: html`
+      <div class="paper-legacy__actions">
+        <button
+          type="button"
+          class="btn btn--sm"
+          data-testid=${`paper-legacy-report-${paper.id}`}
+          @click=${() => {
+            state.myWorkBlockerDraft = { paperId: paper.id, text: "" };
+            props.onRerender?.();
+          }}
+        >
+          ${t("myWork.blockers.report")}
+        </button>
+        <button
+          type="button"
+          class="btn btn--sm"
+          data-testid=${`paper-legacy-hide-${paper.id}`}
+          title=${t("myWork.hidden.hideTitle")}
+          @click=${() => {
+            toggleHiddenPaper(props.memberId, paper.id);
+            props.onRerender?.();
+          }}
+        >
+          ${t("myWork.hidden.hide")}
+        </button>
+      </div>
+      ${renderPaperBlockers(state, props, paper)} ${renderBlockerForm(state, props, paper)}
+      ${renderVenueTargets(paper)} ${renderTarget(paper, props)}
+      ${renderPaperTimeline({
+        paperId: paper.id,
+        slots: props.slots[paper.id]?.slots ?? [],
+        paper,
+      })}
+      ${renderNextStep(paper)}
+    `,
+    bottom: html`
+      ${renderCompletion(paper, props)} ${renderWeeklyUpdates(paper, props)}
+      ${renderCycle(state, paper, props)} ${renderStepControls(paper, props, { picker: false })}
+      ${renderRecentEdits({
+        ...(state.adminBotRecentEdits?.[recentEditsKey("paper", paper.id)] ?? EMPTY_RECENT_EDITS),
+        subject: "paper",
+        onOpen: () => props.onLoadRecentEdits?.("paper", paper.id),
+      })}
+      ${renderDeletePaper(paper, props)}
+    `,
+  };
 }
 
 /**
@@ -1317,7 +1806,7 @@ function renderAddButton(state: AppViewState) {
  * from scratch.
  */
 function upcomingVenues(now = new Date()) {
-  const future = DEADLINE_VENUES.filter((venue) => {
+  const future = DEADLINE_SUMMARIES.filter((venue) => {
     const due = aoeInstantMs(venue.deadline_aoe);
     return Number.isFinite(due) && due > now.getTime();
   })
@@ -1363,6 +1852,135 @@ function defaultTarget(now = new Date()) {
 /** How sure the authors are about hitting this venue. Coarse on purpose: finer is false precision. */
 const CONFIDENCE_OPTIONS = ["30", "50", "80", "99"];
 
+/**
+ * Why this short name cannot be one, or null when it can.
+ *
+ * Shared by the create form and the card's own editor so the two cannot answer differently: the
+ * alias becomes a Slack channel either way, and a rule that only one of them enforces is a rule
+ * that gets discovered afterwards.
+ */
+export function aliasRefusal(typed: string): string | null {
+  const trimmed = typed.trim();
+  if (!trimmed) {
+    return "Give the project a short name — it becomes its Slack channel.";
+  }
+  if (!adminBotNormalizePaperAlias(trimmed)) {
+    return (
+      `"${trimmed}" cannot be a Slack channel name. Use letters, digits and hyphens, ` +
+      `${adminBotPaperAliasMaxLength} characters or fewer — a title with an apostrophe, ` +
+      "a colon or spaces around punctuation will not do as it stands."
+    );
+  }
+  return null;
+}
+
+/**
+ * Whether the alias contradicts a channel the member says already exists.
+ *
+ * Three states, and only one of them blocks:
+ *
+ *   - box unticked, or the channel list unavailable -> not a mismatch. A lookup that could not run
+ *     must never refuse a correct alias; the claim is simply unverified, which is where the form
+ *     was before this checkbox existed.
+ *   - box ticked and `#proj-<alias>` is in the workspace -> not a mismatch.
+ *   - box ticked and it is not -> a mismatch, and the submit stops.
+ */
+function channelMismatch(props: MyWorkProps, alias: string): boolean {
+  const check = props.channelCheck;
+  if (!check?.enabled || !check.channels) {
+    return false;
+  }
+  return !channelExists(check.channels, alias);
+}
+
+/** Slack channel names are lowercase, so the comparison is too. */
+function channelExists(channels: readonly string[], alias: string): boolean {
+  const wanted = adminBotProjectChannelName(alias).toLowerCase();
+  return channels.some((channel) => channel.replace(/^#/u, "").toLowerCase() === wanted);
+}
+
+/**
+ * Channels that look like near-misses for what was typed, so a mismatch is actionable.
+ *
+ * A bare "no channel matches" leaves the member guessing at a name they cannot see from here.
+ * Matching on the shared prefix is enough to surface the usual mistake -- `cais2` against
+ * `#proj-cais`, `causal-ai` against `#proj-cais` -- without listing a workspace at them.
+ */
+function nearbyChannels(channels: readonly string[], alias: string): string[] {
+  const wanted = alias.toLowerCase();
+  if (wanted.length < 2) {
+    return [];
+  }
+  return channels
+    .map((channel) => channel.replace(/^#/u, ""))
+    .filter((channel) => channel.startsWith("proj-"))
+    .filter((channel) => {
+      const suffix = channel.slice("proj-".length).toLowerCase();
+      return suffix.startsWith(wanted.slice(0, 3)) || wanted.startsWith(suffix.slice(0, 3));
+    })
+    .slice(0, 5);
+}
+
+/**
+ * The "this channel already exists" box, and the verdict once it is ticked.
+ *
+ * Rendered only when the page was given a channel-check state: without one the box could be ticked
+ * and never answer, which is worse than not offering it -- an unanswered check reads as a passed
+ * one.
+ */
+function renderChannelExistsCheck(props: MyWorkProps, state: AppViewState) {
+  const check = props.channelCheck;
+  if (!check || !props.onChannelCheckToggle) {
+    return nothing;
+  }
+  const alias = adminBotNormalizePaperAlias(state.myWorkProjectAlias) ?? "";
+  const verdict = (() => {
+    if (!check.enabled) {
+      return nothing;
+    }
+    if (check.loading) {
+      return html`<span class="register__hint">Reading the lab's Slack channels…</span>`;
+    }
+    if (check.error) {
+      // Not styled as an error on the field: the member has done nothing wrong, and the project can
+      // still be filed. It says what could not be done and leaves the decision with them.
+      return html`<span class="register__hint" data-testid="my-work-channel-check-unavailable"
+        >${check.error} You can still file the project — check the channel name by hand.</span
+      >`;
+    }
+    if (!check.channels || !alias) {
+      return nothing;
+    }
+    if (channelExists(check.channels, alias)) {
+      return html`<span class="register__hint" data-testid="my-work-channel-check-ok"
+        >Matches <code>#${adminBotProjectChannelName(alias)}</code> in Slack.</span
+      >`;
+    }
+    const nearby = nearbyChannels(check.channels, alias);
+    return html`<span class="register__error" data-testid="my-work-channel-check-mismatch">
+      No <code>#${adminBotProjectChannelName(alias)}</code> in Slack.
+      ${nearby.length
+        ? html`Did you mean ${nearby.map((channel) => html`<code>#${channel}</code> `)}?`
+        : html`Check the channel's exact name and use it as the alias.`}
+    </span>`;
+  })();
+  return html`
+    <div class="register__field">
+      <label class="my-work-add-form__checkbox">
+        <input
+          type="checkbox"
+          data-testid="my-work-channel-exists"
+          .checked=${check.enabled}
+          @change=${(event: Event) =>
+            props.onChannelCheckToggle?.((event.target as HTMLInputElement).checked)}
+        />
+        <span>This project already has a Slack channel</span>
+      </label>
+      ${verdict}
+    </div>
+  `;
+}
+
 function renderAddForm(state: AppViewState, props: MyWorkProps) {
   const draft = state.myWorkProjectDraft ?? "";
   const member = findOwnMember(state);
@@ -1394,10 +2012,49 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
       class="my-work-add-form register"
       @submit=${(event: SubmitEvent) => {
         event.preventDefault();
+        const form = event.currentTarget as HTMLFormElement;
+        const data = new FormData(form);
         const title = draft.trim();
+        const aliasTyped = String(data.get("alias") ?? "").trim();
+        const alias = adminBotNormalizePaperAlias(aliasTyped) ?? "";
+        const startedOn = String(data.get("started_on") ?? "").trim();
+        // Every refusal below says why. They all used to be a bare `return`, which files nothing
+        // and reports nothing: the member is left looking at a filled-in form and an unchanged
+        // page, with no way to tell a rejected alias from a dead click. The alias is the one that
+        // actually bites -- copying the title across brings its apostrophes, colons and length
+        // with it, none of which can be a Slack channel name.
+        const refuse = (reason: string): void => {
+          state.myWorkProjectError = reason;
+          props.onRerender?.();
+        };
+        // Both are asked for rather than optional: the alias is what the project's Slack channel
+        // gets named after, and a start date filled in later is a guess. The submit refuses rather
+        // than filing a project that has to be chased for them afterwards.
         if (!title) {
+          refuse("Give the project a title.");
           return;
         }
+        const aliasProblem = aliasRefusal(aliasTyped);
+        if (aliasProblem) {
+          refuse(aliasProblem);
+          return;
+        }
+        if (!startedOn) {
+          refuse("Say when work on the project started.");
+          return;
+        }
+        // The already-exists box is a claim the member made; this is where it is checked. Only a
+        // *known* mismatch blocks -- if the channel list could not be read, the box is treated as
+        // unticked rather than as a failure, because refusing a correct alias over an unavailable
+        // lookup is worse than filing one nobody verified.
+        if (channelMismatch(props, alias)) {
+          refuse(
+            `No #${adminBotProjectChannelName(alias)} in Slack, but the box says the channel ` +
+              "already exists. Use the channel's exact name, or untick the box.",
+          );
+          return;
+        }
+        state.myWorkProjectError = null;
         const rows = currentTargets();
         const primary = rows[0] ?? { venueId: fallback.id, year: fallback.year, confidence: 50 };
         props.onSavePaper({
@@ -1409,6 +2066,8 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
             .replace(/(^-|-$)/gu, "")
             .slice(0, 60),
           title,
+          alias,
+          startedOn,
           authors: member?.name?.trim() ? [member.name.trim()] : [],
           currentStep: paperSteps[0],
           // Every target, each with its own odds -- the shape venue-targets.ts already stores.
@@ -1426,13 +2085,22 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
           confidence: String(primary.confidence),
         });
         state.myWorkProjectDraft = null;
+        state.myWorkProjectAlias = "";
+        state.myWorkProjectError = null;
         state.myWorkProjectVenues = [];
+        props.onChannelCheckToggle?.(false);
       }}
     >
       <div class="my-work-add-form__head">
         <h3>${t("myWork.items.add")}</h3>
         <p>Starts at the first step and shows up on Active Papers too.</p>
       </div>
+
+      ${state.myWorkProjectError
+        ? html`<p class="my-work-add-form__error" role="alert" data-testid="my-work-add-error">
+            ${state.myWorkProjectError}
+          </p>`
+        : nothing}
 
       <label class="register__field">
         <span class="register__label">Title</span>
@@ -1445,6 +2113,52 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
             state.myWorkProjectDraft = (event.target as HTMLInputElement).value;
           }}
         />
+      </label>
+
+      <label class="register__field">
+        <span class="register__label">Alias</span>
+        <input
+          class="input"
+          name="alias"
+          required
+          maxlength=${adminBotPaperAliasMaxLength}
+          placeholder="ex. CAIS"
+          data-testid="my-work-add-alias"
+          .value=${state.myWorkProjectAlias}
+          @input=${(event: Event) => {
+            state.myWorkProjectAlias = (event.target as HTMLInputElement).value;
+          }}
+        />
+        <!-- Said here rather than only in a validation message: the name becomes a channel other
+             people have to recognise, so what it will look like belongs next to the box. The
+             already-exists rule is stated before the box is filled in for the same reason -- an
+             alias that disagrees with a live channel is not a validation error to discover on
+             submit, it is a channel nobody can find afterwards. -->
+        <span class="register__hint">
+          What the lab calls this project out loud — CAIS for Causal AI Scientist. Its Slack channel
+          will be #proj-cais. Letters, digits and hyphens.
+          <strong
+            >If the project already has a Slack channel, the alias must be that channel's name
+            without the <code>proj-</code> prefix</strong
+          >
+          — #proj-cais means the alias is <code>cais</code>.
+        </span>
+      </label>
+
+      ${renderChannelExistsCheck(props, state)}
+
+      <label class="register__field">
+        <span class="register__label">Started on</span>
+        <input
+          class="input"
+          name="started_on"
+          type="date"
+          required
+          data-testid="my-work-add-started-on"
+        />
+        <span class="register__hint">
+          When work actually began, which is often well before the paper is filed here.
+        </span>
       </label>
 
       <!-- One row per venue the paper is aimed at, each with its own odds.
@@ -1615,13 +2329,114 @@ function renderBlockers(state: AppViewState, items: AdminBotPaperRecord[]) {
 // not throw away half-typed cells.
 let gridState: PaperGridState | null = null;
 
+// The flat view, held the same way and for the same reason as the sheet above it. The two are
+// mutually exclusive -- both take the whole page -- so opening either closes the other.
+let legacyState: PaperLegacyState | null = null;
+
+/**
+ * Whether this reader has left the flat view.
+ *
+ * The flat view is what the page opens on -- every field of every paper on one page, which is
+ * what somebody arriving at My Projects & Papers to read or fill in their work is after -- so the
+ * only thing worth remembering is that they asked for something else. Without it "Back to cards"
+ * would be a button that does nothing: the next render would look at the same papers and fold the
+ * cards away again under somebody who just left.
+ *
+ * Two states rather than `gridChoice`'s three below, because unlike the sheet there is nothing
+ * underneath this one to defer to: asking for the flat view and never having said anything are
+ * the same page.
+ *
+ * Per session and not persisted, like `gridChoice`: a preference typed by pressing a button in one
+ * sitting, not a setting.
+ */
+let legacyDismissed = false;
+
+/**
+ * Which surface this reader has asked for, when they have asked at all.
+ *
+ * `auto` means they have not, and the paper count and their role decide (`opensOnSheet`). The
+ * other two are a standing answer for the rest of the session, and the reason this exists as a
+ * third value rather than as `gridState !== null`: now that the sheet can open by itself, pressing
+ * Back to cards has to be remembered somewhere. Dropping `gridState` alone would leave the next
+ * render looking at the same paper count and re-opening the sheet on top of somebody who just
+ * closed it.
+ *
+ * Per session and not persisted, like everything else here -- a preference typed by pressing a
+ * button in one sitting, not a setting.
+ */
+let gridChoice: "auto" | "sheet" | "cards" = "auto";
+
 // Which cards have been expanded to their full checklist. Per session and per card: it is a
 // viewing preference, not a fact about the paper.
 const showAllSlots = new Set<string>();
 
 function exitGrid(rerender: () => void): void {
   gridState = null;
+  // Remembered, not just closed: see `gridChoice`. Without this the default would re-open the
+  // sheet on the very next render for the readers it opens for.
+  gridChoice = "cards";
   rerender();
+}
+
+function exitLegacy(rerender: () => void): void {
+  legacyState = null;
+  // Remembered, not just closed: see `legacyDismissed`. Now that the flat view opens by itself,
+  // dropping `legacyState` alone would re-open it on the next render and make this button look
+  // broken.
+  legacyDismissed = true;
+  rerender();
+}
+
+/**
+ * For the tests, and named as such: both view modes are module state the app itself never resets,
+ * so a spec that opens one would otherwise leave the next spec looking at it.
+ */
+export function resetMyWorkViewModeForTest(): void {
+  gridState = null;
+  legacyState = null;
+  legacyDismissed = false;
+}
+
+/**
+ * Puts the page on the card list, the way pressing "Back to cards" does.
+ *
+ * For the tests, and named as such. The flat view is what the page opens on, so a spec about the
+ * cards, the sheet, or any of the banners above them has to say which surface it means -- and
+ * saying it here, rather than by clicking through the flat view first, keeps those specs about
+ * what they were always about.
+ */
+export function showMyWorkCardsForTest(): void {
+  legacyState = null;
+  legacyDismissed = true;
+}
+
+/**
+ * Forgets which surface the reader asked for, so the next render decides again.
+ *
+ * For the tests, and named as such: `gridChoice` is module state that the app itself never needs
+ * to clear -- a reload starts a new session and a new module -- but a suite renders this page a
+ * hundred times in one module, and one "Back to cards" would otherwise be the standing answer for
+ * every test that follows it.
+ */
+export function resetPaperSheetChoice(): void {
+  gridState = null;
+  gridChoice = "auto";
+}
+
+/**
+ * Whether leaving the flat view lands on the sheet rather than merely offering it.
+ *
+ * This used to decide what the whole page opened on. The flat view now sits in front of it, so the
+ * question it answers is narrower and asked later: once somebody has pressed "Back to cards", is
+ * the cards or the sheet what "cards" means for them. Both audiences keep the answer they had.
+ *
+ * Two audiences, one rule: an administrator once the sheet is offered at all -- the caller has
+ * already checked that -- and anybody carrying enough papers that the visit is a sweep rather than
+ * a read. Everyone else gets the cards and the button, exactly as before -- nothing is taken away
+ * from either side, the sheet just stops being something one group has to ask for every visit.
+ */
+function opensOnSheet(params: { count: number; admin: boolean }): boolean {
+  return params.admin || params.count >= PAPER_GRID_DEFAULT_THRESHOLD;
 }
 
 /**
@@ -1744,17 +2559,6 @@ function renderNudgePreview(props: MyWorkProps) {
 }
 
 /**
- * The pre-registration banner.
- *
- * Deliberately the loudest thing on the page, and deliberately temporary: it appears only while a
- * deadline is close and only while this member still has a paper that has not been pointed at it.
- * Register everything and it disappears, which is the only honest way to make a banner people do
- * not learn to scroll past.
- *
- * The count is of the member's own unregistered papers rather than the lab's, because a number
- * about other people's work is not a prompt to do anything.
- */
-/**
  * Decisions this member has not answered, and what they have half-picked.
  *
  * Session state, not app state: dismissing is a "not right now", and the stored flag is what
@@ -1772,12 +2576,41 @@ const savedDecisions = new Set<string>();
  * reading "Saved ✓" while describing something older than the screen.
  */
 const dirtyDecisions = new Set<string>();
+/**
+ * Decisions closed by hand this session.
+ *
+ * Session-only on purpose: the close also writes the seen stamp, so the next load has the durable
+ * answer and this set exists only to make the banner leave the page under the click that closed it.
+ */
+const dismissedDecisions = new Set<string>();
 /** The coauthor-email task: whether the box is open, and the body as edited. */
 const emailTasks = new Map<string, { open: boolean; body: string }>();
 const decisionDrafts = new Map<
   string,
-  { presentation: string; attending: "yes" | "no" | ""; nextVenue: string }
+  { track?: string; presentation: string; attending: "yes" | "no" | ""; nextVenue: string }
 >();
+
+/** Discard unsaved paper edits before a different member can use this browser session. */
+export function resetMyWorkSessionState(): void {
+  for (const timer of detailsSaveTimers.values()) {
+    clearTimeout(timer);
+  }
+  detailsSaveTimers.clear();
+  detailsLastSaved.clear();
+  cancelPaperLegacyAutosave();
+  clearHistory();
+  gridState = null;
+  legacyState = null;
+  legacyDismissed = false;
+  gridChoice = "auto";
+  showAllSlots.clear();
+  collapsedDecisions.clear();
+  savedDecisions.clear();
+  dirtyDecisions.clear();
+  dismissedDecisions.clear();
+  emailTasks.clear();
+  decisionDrafts.clear();
+}
 
 /** The venue as the banner names it, so the mail and the heading never disagree. */
 function venueOf(paper: AdminBotPaperRecord): string {
@@ -1793,9 +2626,22 @@ function renderDecisionBanners(
   if (!memberId) {
     return nothing;
   }
-  // Every decided paper, answered or not. The banner is the record of the decision as well as
-  // the prompt for it, so it does not leave when the prompt is satisfied.
-  const waiting = papers.filter((paper) => decisionOf(paper) !== null);
+  // A decided paper still asking for something. Three ways a banner stops asking:
+  //
+  //   - closed by hand this session,
+  //   - answered in an earlier session -- the answer is on the paper card, and a prompt that
+  //     outlives its answer is just a page that never empties,
+  //   - (not here) answered in *this* session, which keeps its banner: the click that recorded
+  //     the answer needs something to confirm against, and a card that vanishes under the button
+  //     reads as the page eating the answer.
+  const waiting = papers.filter((paper) => {
+    if (decisionOf(paper) === null || dismissedDecisions.has(paper.id)) {
+      return false;
+    }
+    return (
+      !isDecisionAnswered(paper) || savedDecisions.has(paper.id) || dirtyDecisions.has(paper.id)
+    );
+  });
   if (waiting.length === 0) {
     return nothing;
   }
@@ -1809,7 +2655,8 @@ function renderDecisionBanners(
     const saved =
       !dirtyDecisions.has(paper.id) && (savedDecisions.has(paper.id) || isDecisionAnswered(paper));
     const draft = decisionDrafts.get(paper.id) ?? {
-      presentation: paper.presentation_type ?? "",
+      track: publicationTrack(paper),
+      presentation: presentationFormat(paper),
       attending: "" as const,
       nextVenue: "",
     };
@@ -1833,6 +2680,7 @@ function renderDecisionBanners(
         return owner.id === memberId || isSamePerson(owner.name, props.memberName(memberId));
       })(),
       email: emailTasks.get(paper.id) ?? null,
+      emailSent: isDecisionEmailSent(paper),
       onToggleEmail: () => {
         const current = emailTasks.get(paper.id);
         emailTasks.set(paper.id, {
@@ -1855,8 +2703,16 @@ function renderDecisionBanners(
         });
         props.onRerender?.();
       },
+      onSetEmailSent: (sent) =>
+        props.onSavePaper({
+          id: paper.id,
+          title: paper.title,
+          authors: paper.authors ?? [],
+          currentStep: paper.current_step as AdminBotPaperStep,
+          decisionEmailSent: sent ? decisionEmailSentStamp(paper) : "",
+        }),
       onReset: () => {
-        decisionDrafts.set(paper.id, { presentation: "", attending: "", nextVenue: "" });
+        decisionDrafts.set(paper.id, { track: "", presentation: "", attending: "", nextVenue: "" });
         savedDecisions.delete(paper.id);
         dirtyDecisions.add(paper.id);
         props.onRerender?.();
@@ -1882,6 +2738,10 @@ function renderDecisionBanners(
           onSavePaper: props.onSavePaper,
           onDone: () => props.onRerender?.(),
         }),
+      onDismiss: () => {
+        dismissedDecisions.add(paper.id);
+        props.onRerender?.();
+      },
       collapsed: collapsedDecisions.has(paper.id),
       onToggleCollapsed: () => {
         // Collapsed, not gone. The decision is still unanswered, and a banner that vanishes on
@@ -1896,48 +2756,6 @@ function renderDecisionBanners(
       },
     });
   })}`;
-}
-
-function renderPreRegistrationBanner(papers: AdminBotPaperRecord[], props: MyWorkProps) {
-  const next = nextDeadlineVenue();
-  if (!next || papers.length === 0) {
-    return nothing;
-  }
-  const outstanding = papersNeedingRegistration(papers, next.venue.venue_id);
-  if (outstanding.length === 0) {
-    return nothing;
-  }
-  const registered = papers.length - outstanding.length;
-  return html`
-    <section
-      class="prereg-banner ${next.days <= 14 ? "prereg-banner--urgent" : ""}"
-      data-testid="prereg-banner"
-    >
-      <div class="prereg-banner__text">
-        <div class="prereg-banner__title">
-          <span aria-hidden="true">🚨</span> Conference pre-registration — ${next.venue.label}
-        </div>
-        <div class="prereg-banner__sub">
-          ${next.days} day${next.days === 1 ? "" : "s"} to the deadline · ${outstanding.length} of
-          your ${papers.length} paper${papers.length === 1 ? "" : "s"} not registered
-          yet${registered > 0 ? ` · ${registered} done` : ""}
-        </div>
-      </div>
-      <button
-        type="button"
-        class="btn primary prereg-banner__cta"
-        data-testid="prereg-open"
-        @click=${() =>
-          openPreRegistrationDialog({
-            papers,
-            onSavePaper: props.onSavePaper,
-            onDone: () => props.onRerender?.(),
-          })}
-      >
-        Pre-register a paper
-      </button>
-    </section>
-  `;
 }
 
 /**
@@ -2036,15 +2854,137 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
   // A grid for three papers is worse than three cards; the threshold is where the per-paper
   // surface stops paying for itself.
   const gridOffered = items.length > PAPER_GRID_THRESHOLD;
+  // Asked for, or opened for them: `gridChoice` is the reader's own answer where they have given
+  // one, and the count and their role stand in where they have not.
+  const showsGrid =
+    gridOffered &&
+    (gridChoice === "sheet" ||
+      (gridChoice === "auto" &&
+        opensOnSheet({ count: items.length, admin: props.viewerIsAdmin ?? false })));
   const rerender = () => props.onRerender?.();
+  /**
+   * Whether the page is on the flat view.
+   *
+   * Offered on one paper, unlike the sheet -- it is the same paper drawn flat rather than a bulk
+   * tool -- but not on none: an empty flat form says "Nothing here yet" where the card list says
+   * it and offers the form that fixes it.
+   *
+   * Nothing else needs saying about the sheet here. Its own button lives on the card list, which
+   * is only reachable past this gate, so anybody who has asked for the sheet has already left the
+   * flat view -- and `showsGrid` above then decides cards against sheet exactly as it did before
+   * the flat view moved in front of them both.
+   */
+  const showsLegacy = items.length > 0 && !legacyDismissed;
 
-  if (gridOffered && gridState) {
+  if (showsLegacy) {
+    // Made on the way in rather than by the button, for the same reason the sheet's state is:
+    // there are now two ways onto this surface and only one of them is a press. Kept across
+    // renders so a half-typed field survives a repaint.
+    legacyState ??= emptyPaperLegacyState();
     return html`
-      <div class="my-work">
+      <!-- Takes the page like the sheet does, and for the opposite reason: this is one long
+           column of label-and-control rows, which wants the same readable measure the profile
+           uses rather than the card list's summaries. -->
+      <div class="my-work my-work--legacy">
+        <div class="my-work__section-actions">
+          ${renderNudgeButton(props)} ${renderAddButton(state)}
+        </div>
+        <adminbot-paper-visibility
+          .papers=${items}
+          .memberId=${props.memberId}
+          @visibility-changed=${rerender}
+        ></adminbot-paper-visibility>
+        ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
+        <!-- Everything the card list says to the reader above its cards, said here too: the
+             legacy view is where the page opens now, so a decision banner left on the cards is an
+             OpenReview acceptance nobody is asked about. -->
+        ${props.personal
+          ? renderDecisionBanners(items, props, state.adminBotData?.members ?? [])
+          : nothing}
+        ${renderBlockers(state, items)} ${renderNudgePreview(props)}
+        ${props.slotsNotice
+          ? html`<p class="my-work__notice-line" role="status">${props.slotsNotice}</p>`
+          : nothing}
+        ${props.slotsError
+          ? html`<p class="my-work__error-line" role="alert">${props.slotsError}</p>`
+          : nothing}
+        ${renderPaperLegacy({
+          state: legacyState,
+          papers: items,
+          // The card's own two data sources and two writes, handed to the flat view: same state,
+          // same endpoints. This is a third drawing of the card, not a third store.
+          slots: props.slots,
+          onLoadSlots: props.onLoadSlots,
+          onSavePaper: props.onSavePaper,
+          onSaveSlot: props.onSaveSlot,
+          onChange: rerender,
+          onExit: () => exitLegacy(rerender),
+          renderPaperExtras: (paper) => renderLegacyExtras(state, paper, props),
+        })}
+        ${tucked.length
+          ? html`<p class="my-work__hidden-line" data-testid="my-work-hidden-line">
+              ${t("myWork.hidden.count", { count: String(tucked.length) })}
+              <button
+                type="button"
+                class="btn btn--sm"
+                data-testid="my-work-show-hidden"
+                @click=${() => {
+                  clearHiddenPapers(props.memberId);
+                  props.onRerender?.();
+                }}
+              >
+                ${t("myWork.hidden.showAll")}
+              </button>
+            </p>`
+          : nothing}
+      </div>
+    `;
+  }
+
+  if (showsGrid) {
+    // Made on the way in rather than by the button, because the sheet now has two ways to open
+    // and only one of them is a press. Kept across renders so half-typed cells survive a repaint.
+    gridState ??= emptyPaperGridState();
+    return html`
+      <!-- The sheet takes the page: my-work caps itself at a readable measure for the card
+           list, which is a column of prose, while a sheet of sixty columns wants every pixel.
+           The cap was leaving a third of the window empty beside a table that scrolls. -->
+      <div class="my-work my-work--sheet">
+        <div class="my-work__section-actions">${renderAddButton(state)}</div>
+        <adminbot-paper-visibility
+          .papers=${items}
+          .memberId=${props.memberId}
+          @visibility-changed=${rerender}
+        ></adminbot-paper-visibility>
+        ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
+        <!-- The two things on the card list that are addressed to the reader rather than filed by
+             them, carried onto the sheet: a venue decision waiting for an answer, and a save that
+             failed. They used to be safe to leave behind because the sheet was somewhere you went
+             deliberately, from a page that had already shown them -- now it is where five papers
+             land you first, so a question nobody sees is a question nobody answers. The blockers
+             board and the nudge preview stay on the cards: neither is asking this reader for
+             anything. -->
+        ${props.personal
+          ? renderDecisionBanners(items, props, state.adminBotData?.members ?? [])
+          : nothing}
+        ${props.slotsError
+          ? html`<p class="my-work__error-line" role="alert">${props.slotsError}</p>`
+          : nothing}
         ${renderPaperGrid({
           state: gridState,
           papers: items,
           onChange: rerender,
+          // The card's own two data sources, handed to the sheet: the evidence rows it has
+          // loaded, and the two writes that fill them. Same state, same endpoints -- the grid is
+          // a second drawing of the card, not a second store.
+          slots: props.slots,
+          onLoadSlots: props.onLoadSlots,
+          onSaveSlots: (writes) => {
+            for (const write of writes) {
+              props.onSaveSlot(write.paperId, write.slot, write.input);
+            }
+          },
+          viewerName: findOwnMember(state)?.name ?? "",
           onSaveAll: (inputs) => {
             if (!gridState) {
               return;
@@ -2054,6 +2994,7 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
             // Diffed before the write: afterwards the record holds the new value and the old
             // one is gone, so "changed X from A to B" would no longer be answerable.
             const entries = diffForHistory(gridState, items);
+            const stranded = unsentSlotEdits(gridState, items);
             gridState.history = recordHistory(entries);
             rerender();
             // One request per changed paper, because that is the endpoint that exists today.
@@ -2062,11 +3003,43 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
               props.onSavePaper(input);
             }
             gridState.saving = false;
-            gridState.edits = new Map();
-            gridState.notice = `Sent ${inputs.length} paper(s) · ${entries.length} change(s) logged.`;
+            clearSavedEdits(gridState, items);
+            gridState.notice = `Sent ${inputs.length} paper(s) · ${entries.length} change(s) logged.${
+              // Said rather than swallowed: these are evidence cells typed against a paper whose
+              // slots had not loaded, and the person who typed them deserves to know they need a
+              // second press once the band has finished loading.
+              stranded ? ` ${stranded} evidence cell(s) still loading — press Update again.` : ""
+            }`;
             rerender();
           },
           onExit: () => exitGrid(rerender),
+          onMapColumnsWithModel: async (unmapped, available) => {
+            const stored = loadStoredMemberSession();
+            return stored
+              ? mapImportColumns(unmapped, available, stored.sessionToken, resolveAdminBotBaseUrl())
+              : {};
+          },
+          // The second step, and a deliberate one: these rows matched no paper, so each becomes a
+          // new record rather than an edit to an existing one. Same endpoint as everything else.
+          onCreatePapers: (candidates) => {
+            for (const candidate of candidates) {
+              const title = candidate.values.title ?? "";
+              props.onSavePaper({
+                // Slugged from the title, the way the create form does it: the service upserts by
+                // id, and a row out of somebody's sheet has none to offer.
+                id: title
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/gu, "-")
+                  .replace(/(^-|-$)/gu, "")
+                  .slice(0, 60),
+                title,
+                authors: [],
+                currentStep: paperSteps[0],
+                alias: candidate.values.alias ?? "",
+                startedOn: candidate.values.started_on ?? "",
+              });
+            }
+          },
         })}
       </div>
     `;
@@ -2074,11 +3047,6 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
 
   return html`
     <div class="my-work">
-      ${props.personal ? renderPreRegistrationBanner(items, props) : nothing}
-      ${props.personal
-        ? renderDecisionBanners(items, props, state.adminBotData?.members ?? [])
-        : nothing}
-      ${renderBlockers(state, items)}
       <section class="my-work__section">
         <div class="my-work__section-head">
           <h2 class="my-work__section-title">${props.title ?? t("myWork.items.title")}</h2>
@@ -2090,16 +3058,51 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
                   data-testid="my-work-open-grid"
                   @click=${() => {
                     gridState = emptyPaperGridState();
+                    // A press outranks the default in both directions: this is how somebody who
+                    // pressed Back to cards earlier gets the sheet again.
+                    gridChoice = "sheet";
                     rerender();
                   }}
                 >
                   Fill in as a spreadsheet (${items.length})
                 </button>`
               : nothing}
+            <!-- No paper-count threshold, unlike the sheet beside it. The sheet is a bulk tool and
+                 is worse than the cards below three papers; this one is just the same paper drawn
+                 flat, and somebody with one paper has as much reason to want every field on one
+                 page as somebody with nine. -->
+            ${items.length
+              ? html`<button
+                  type="button"
+                  class="btn btn--sm"
+                  data-testid="my-work-open-legacy"
+                  @click=${() => {
+                    legacyState = emptyPaperLegacyState();
+                    // A press outranks the default in both directions: this is how somebody who
+                    // pressed Back to cards earlier gets the flat view again.
+                    legacyDismissed = false;
+                    // The two full-page views are mutually exclusive: leaving the sheet open
+                    // underneath would restore it on Back to cards.
+                    gridState = null;
+                    rerender();
+                  }}
+                >
+                  View legacy view (${items.length})
+                </button>`
+              : nothing}
             ${renderNudgeButton(props)} ${renderAddButton(state)}
           </div>
         </div>
-        ${renderNudgePreview(props)}
+        <adminbot-paper-visibility
+          .papers=${items}
+          .memberId=${props.memberId}
+          @visibility-changed=${rerender}
+        ></adminbot-paper-visibility>
+        ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
+        ${props.personal
+          ? renderDecisionBanners(items, props, state.adminBotData?.members ?? [])
+          : nothing}
+        ${renderBlockers(state, items)} ${renderNudgePreview(props)}
         ${props.slotsNotice
           ? html`<p class="my-work__notice-line" role="status">${props.slotsNotice}</p>`
           : nothing}
@@ -2156,7 +3159,6 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
             </p>`
           : nothing}
         <p class="my-work__notice">${t("myWork.items.syncNotice")}</p>
-        ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
       </section>
     </div>
   `;

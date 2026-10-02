@@ -30,6 +30,7 @@ import {
 import { persistChatComposerState, restoreChatComposerState } from "./chat/composer-persistence.ts";
 import { startControlUiResponsivenessObserver } from "./control-ui-performance.ts";
 import { loadControlUiBootstrapConfig } from "./controllers/control-ui-bootstrap.ts";
+import { operatorScopesWidened, resolveMemberOperatorScopes } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import { syncSignedOutViewWithLocation } from "./signed-out-view.ts";
 import type { ChatQueueItem } from "./ui-types.ts";
@@ -95,6 +96,7 @@ type LifecycleHost = {
   authGateVisible?: boolean;
   guestReimbursements?: boolean;
   topbarObserver: ResizeObserver | null;
+  requestUpdate?: () => void;
 };
 
 export function handleConnected(host: LifecycleHost) {
@@ -130,20 +132,43 @@ export function handleConnected(host: LifecycleHost) {
     const memberHost = host as unknown as MemberAuthHost;
     const gatewayTokenPresent = Boolean(memberHost.settings?.token?.trim());
     if (!gatewayTokenPresent && hasStoredMemberSession()) {
-      void resumeMemberSession(memberHost).then((outcome) => {
-        // "cleared": stored session was rejected — run the normal connect so the
-        // gate shows standard diagnostics. "unreachable" keeps its hint and skips
-        // a doomed tokenless connect. "resumed" already connected.
-        if (outcome === "cleared" && host.connectGeneration === connectGeneration) {
-          connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
-        }
-      });
+      // The bootstrap read only configures the gateway UI. Session verification reads the
+      // AdminBot URL from settings already resolved above, so run both requests in parallel.
+      void resumeMemberSession(memberHost, () => host.connectGeneration === connectGeneration).then(
+        (outcome) => {
+          if (host.connectGeneration !== connectGeneration) {
+            return;
+          }
+          // A rejected session returns to the gate; an unreachable service retains the login.
+          if (outcome === "cleared") {
+            connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
+          }
+          // Clearing the browser token is not reactive; repaint so the pending view can become
+          // the sign-in gate even if the gateway has not emitted an event yet.
+          host.requestUpdate?.();
+        },
+      );
     } else {
       // Gateway token already present (break-glass/URL-param or same-tab reload):
       // the full resume is skipped, so eagerly load privilege from any stored
       // member session so Lab Members gates correctly before it is ever opened.
+      //
+      // The privilege fetch is async but connect below is synchronous, so an admin
+      // would otherwise connect while privilegeLevel is still null and declare a
+      // read-only connection -- leaving every write RPC (Lab Members) failing with
+      // `missing scope: operator.write` for the life of the tab. Reconnect once if
+      // the privilege lands late and entitles the member to more than we asked for.
       if (hasStoredMemberSession()) {
-        void loadMemberPrivilege(memberHost);
+        const scopesAtConnect = resolveMemberOperatorScopes(memberHost.memberPrivilegeLevel);
+        void loadMemberPrivilege(memberHost).then(() => {
+          if (host.connectGeneration !== connectGeneration) {
+            return;
+          }
+          const scopesAfterPrivilege = resolveMemberOperatorScopes(memberHost.memberPrivilegeLevel);
+          if (operatorScopesWidened(scopesAtConnect, scopesAfterPrivilege)) {
+            connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
+          }
+        });
       }
       connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
     }

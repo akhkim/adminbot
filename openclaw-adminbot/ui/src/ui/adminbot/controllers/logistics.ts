@@ -23,6 +23,7 @@ import {
   type LogisticsRequestInput,
   type LogisticsRequestStatus,
 } from "../auth/session.ts";
+import { submitSignatureFormRequest } from "../auth/session.ts";
 import {
   clearLogisticsDraft,
   clearMeetingRequestDraft,
@@ -44,10 +45,18 @@ export type AdminBotLogisticsHost = {
   adminBotLogisticsSubmitError: string | null;
   /** Set on a submit that landed, so the form can say so and stop showing the draft as pending. */
   adminBotLogisticsSubmittedId: string | null;
+  /** What the automatic call-sheet push said about the meeting request just filed, if anything. */
+  adminBotLogisticsCallSheetNote: string | null;
   /** The request whose signed document is being uploaded, so its row can say so. */
   adminBotLogisticsSigningId: string | null;
   /** "<requestId>:<fileName>" while that one file is being fetched for download. */
   adminBotLogisticsDownloadingId: string | null;
+  /** The signature request as typed on this tab, before it is filed on the lab's form. */
+  adminBotSignatureForm: { driveUrl: string; deadline: string; context: string };
+  adminBotSignatureSubmitting: boolean;
+  adminBotSignatureError: string | null;
+  /** Set once the form accepted it, so the tab says so instead of looking like nothing happened. */
+  adminBotSignatureSubmitted: boolean;
 };
 
 function failureText(result: { kind: string; message?: string }, baseUrl: string): string {
@@ -84,6 +93,7 @@ export async function loadAdminBotLogisticsRequests(host: AdminBotLogisticsHost)
   host.adminBotLogisticsRequestsError = null;
   try {
     const result = await fetchLogisticsRequests(wire.token, wire.baseUrl);
+    if (loadStoredMemberSession()?.sessionToken !== wire.token) return;
     if (!result.ok) {
       host.adminBotLogisticsRequests = [];
       host.adminBotLogisticsRequestsError = failureText(result, wire.baseUrl);
@@ -91,7 +101,9 @@ export async function loadAdminBotLogisticsRequests(host: AdminBotLogisticsHost)
     }
     host.adminBotLogisticsRequests = result.value;
   } finally {
-    host.adminBotLogisticsRequestsLoading = false;
+    if (loadStoredMemberSession()?.sessionToken === wire.token) {
+      host.adminBotLogisticsRequestsLoading = false;
+    }
   }
 }
 
@@ -118,6 +130,8 @@ export async function openAdminBotLogisticsRequest(
   host.adminBotLogisticsOpenLoading = true;
   try {
     const result = await fetchLogisticsRequest(requestId, wire.token, wire.baseUrl);
+    if (loadStoredMemberSession()?.sessionToken !== wire.token) return;
+    if (host.adminBotLogisticsOpenRequestId !== requestId) return;
     if (!result.ok) {
       host.adminBotLogisticsRequestsError = failureText(result, wire.baseUrl);
       // Back to the list rather than an empty card: whatever went wrong, there is nothing to show.
@@ -126,7 +140,9 @@ export async function openAdminBotLogisticsRequest(
     }
     host.adminBotLogisticsOpenRequest = result.value;
   } finally {
-    host.adminBotLogisticsOpenLoading = false;
+    if (loadStoredMemberSession()?.sessionToken === wire.token) {
+      host.adminBotLogisticsOpenLoading = false;
+    }
   }
 }
 
@@ -150,6 +166,7 @@ export async function submitAdminBotLogisticsRequest(
   host.adminBotLogisticsSubmitting = true;
   host.adminBotLogisticsSubmitError = null;
   host.adminBotLogisticsSubmittedId = null;
+  host.adminBotLogisticsCallSheetNote = null;
   try {
     const result = await submitLogisticsRequest(input, wire.token, wire.baseUrl);
     if (!result.ok) {
@@ -157,6 +174,9 @@ export async function submitAdminBotLogisticsRequest(
       return null;
     }
     host.adminBotLogisticsSubmittedId = result.value.id;
+    // Shown with the confirmation: a meeting request whose doc prep link cannot be opened is not on
+    // the queue, and the only moment the author is looking is this one.
+    host.adminBotLogisticsCallSheetNote = result.value.call_sheet?.message ?? null;
     host.adminBotLogisticsRequests = [result.value, ...host.adminBotLogisticsRequests];
     await clearDraftFor(input.kind, scope);
     return result.value;
@@ -387,4 +407,45 @@ function keptBytes(
     ...(updated.documents ? { documents: keep(open.documents, updated.documents) } : {}),
     ...(updated.attachments ? { attachments: keep(open.attachments, updated.attachments) } : {}),
   };
+}
+
+/**
+ * Files the signature request on the lab's Google Form.
+ *
+ * The tab used to hand the member a link and let them type the same four answers into Google
+ * themselves. This is that, with the typing done here -- so nothing else about the request changes:
+ * it lands as a row on the same form, in the same responses sheet, under the same name.
+ */
+export async function submitAdminBotSignatureForm(host: AdminBotLogisticsHost): Promise<boolean> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotSignatureError = t("logistics.requests.error.signIn");
+    return false;
+  }
+  host.adminBotSignatureSubmitting = true;
+  host.adminBotSignatureError = null;
+  host.adminBotSignatureSubmitted = false;
+  try {
+    const form = host.adminBotSignatureForm;
+    const result = await submitSignatureFormRequest(
+      {
+        drive_url: form.driveUrl.trim(),
+        deadline: form.deadline.trim(),
+        ...(form.context.trim() ? { context: form.context.trim() } : {}),
+      },
+      wire.token,
+      wire.baseUrl,
+    );
+    if (!result.ok) {
+      host.adminBotSignatureError = failureText(result, wire.baseUrl);
+      return false;
+    }
+    host.adminBotSignatureSubmitted = true;
+    // Cleared on success only: a failed send leaves everything typed where it is, because the
+    // member's next move is to press the button again, not to fill it in twice.
+    host.adminBotSignatureForm = { driveUrl: "", deadline: "", context: "" };
+    return true;
+  } finally {
+    host.adminBotSignatureSubmitting = false;
+  }
 }

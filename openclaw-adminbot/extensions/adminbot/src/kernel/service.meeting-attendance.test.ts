@@ -22,6 +22,7 @@ function serviceWithMembers(): AdminBotService {
   });
   unwrap(
     service.upsertLabMember({
+      receives_nudges: true,
       id: "ada",
       name: "Ada Lovelace",
       member_type: "full",
@@ -30,6 +31,7 @@ function serviceWithMembers(): AdminBotService {
   );
   unwrap(
     service.upsertLabMember({
+      receives_nudges: true,
       id: "mei",
       name: "Mei Chen",
       member_type: "full",
@@ -76,6 +78,7 @@ describe("collectMeetingAttendanceNudges", () => {
     const service = serviceWithMembers();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "sam",
         name: "Sam Okafor",
         // Not a full member, so only the invite can put them in scope.
@@ -145,8 +148,8 @@ describe("sendMeetingAttendanceNudges", () => {
     const service = new AdminBotService(undefined, {
       executor: { execute: async () => ({ handled: false }) },
     });
-    unwrap(service.upsertLabMember({ id: "ada", name: "Ada", member_type: "full" } as never));
-    unwrap(service.upsertLabMember({ id: "mei", name: "Mei", member_type: "full" } as never));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "ada", name: "Ada", member_type: "full" } as never));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "mei", name: "Mei", member_type: "full" } as never));
     fileMeetings(service, [["ada"], ["ada"]]);
 
     const sent = unwrap(await service.sendMeetingAttendanceNudges("admin"));

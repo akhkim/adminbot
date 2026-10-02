@@ -346,6 +346,8 @@ async function fireMilestone(input: {
   const title = asString(input.venue.title) ?? input.venueId;
   const deadlineMs = asNumber(input.venue.deadline_ms) ?? 0;
   let sent = 0;
+  // Of those, how many the connector composed but declined to deliver.
+  let withheld = 0;
   const problems: string[] = [];
 
   for (const paper of input.targets) {
@@ -398,6 +400,12 @@ async function fireMilestone(input: {
       problems.push(`submission ${number}: ${executed.error.message}`);
       continue;
     }
+    // A real execute can still come back simulated: the OpenReview bridge has a delivery kill
+    // switch (ADMINBOT_OPENREVIEW_SEND), and when it is off the message is composed, validated and
+    // not posted. Counting that as sent is what made this pass report deliveries nobody received.
+    if (executed.payload.status !== "executed") {
+      withheld += 1;
+    }
     sent += 1;
   }
 
@@ -405,11 +413,15 @@ async function fireMilestone(input: {
   if (sent === 0) {
     return { status: "blocked", recipients: 0, detail: detail ?? "no deliverable recipients" };
   }
-  const status: AdminBotOpenReviewMilestoneStatus = input.dryRun
-    ? "dry_run"
-    : needsApproval
-      ? "proposed"
-      : "sent";
+  // `dry_run` covers both ways of not delivering -- the caller asking for a rehearsal, and the
+  // deploy-time kill switch answering for one -- because they are the same fact to whoever reads
+  // this: the cycle ran and nothing went out.
+  const status: AdminBotOpenReviewMilestoneStatus =
+    input.dryRun || withheld > 0
+      ? "dry_run"
+      : needsApproval
+        ? "proposed"
+        : "sent";
   return { status, recipients: sent, ...(detail ? { detail } : {}) };
 }
 

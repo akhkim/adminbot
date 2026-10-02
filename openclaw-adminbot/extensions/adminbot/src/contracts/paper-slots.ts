@@ -24,10 +24,21 @@
 // that table because consent is asked against a specific draft, and a second copy of "is there an
 // approved draft" in `paper_slots` would be free to disagree with it.
 
+import {
+  ADMINBOT_LAB_OVERLEAF_HOST,
+  adminBotOverleafHosts,
+  OVERLEAF_COM_HOST,
+} from "./overleaf.js";
+import type { OpenReviewIdentityReview } from "./paper-artifact-links.js";
+
 /** Every artifact a paper can be asked for. Ordered roughly as the work happens. */
 export const adminBotPaperSlots = [
+  "feedback_arr",
+  "feedback_arxiv",
+  "feedback_camera_ready",
   "project_folder",
   "overleaf_view",
+  "overleaf_share",
   "overleaf_edit",
   "papermentor_review",
   "fixes_merged",
@@ -64,7 +75,7 @@ export type AdminBotPaperSlot = (typeof adminBotPaperSlots)[number];
  * `adminBotConfidentialPaperSlots`). `enum` carries a closed status plus a free-text note about
  * the physical world, which is why `paper_slots` has both `value_text` and `value_note`.
  */
-export type AdminBotPaperSlotKind = "link" | "bool" | "text" | "secret6" | "enum";
+export type AdminBotPaperSlotKind = "link" | "bool" | "text" | "secret6" | "enum" | "feedback";
 
 /** Who is asked for it. Resolved to a person by the service, never named here. */
 export type AdminBotPaperSlotOwner = "first_author" | "coauthors" | "pi" | "admin";
@@ -148,10 +159,23 @@ export type AdminBotPaperSlotDefinition = {
   /** Human string, used verbatim in the nudge. */
   label: string;
   /**
-   * Slots that must be provided-or-waived before this one is worth asking for. Without this the
-   * nudge would chase an author for an arXiv link on a paper that has not been submitted.
+   * Slots that must be provided-or-waived before this one can be filled in at all. Without this
+   * the card would offer an arXiv link on a paper that has not been submitted.
    */
   upstream: AdminBotPaperSlot[];
+  /**
+   * Slots that must be settled before the lab starts *asking* for this one. Defaults to
+   * `upstream`, which is the honest answer for almost every slot: a field becomes fillable and
+   * becomes chaseable at the same moment.
+   *
+   * The two come apart where work may legitimately start early but is nobody's next move. The
+   * social drafts are the case that forced the split: an announcement is written from the paper,
+   * so it can be drafted the moment the PDF compiles -- but until there is an arXiv link there is
+   * nothing to announce, and a nudge for it would outrank the submission work that has to happen
+   * first. Opening the field without opening the nudge is what "you may, but nobody is waiting"
+   * looks like.
+   */
+  chaseAfter?: AdminBotPaperSlot[];
   /**
    * Whether the lab chases this one.
    *
@@ -184,6 +208,16 @@ export type AdminBotPaperSlotDefinition = {
   /** `link` slots only: a path the URL must contain. Any one of them satisfies it. */
   urlPath?: readonly string[];
   /**
+   * `link` slots only: a pattern the whole pathname must match.
+   *
+   * For the one link shape `urlPath` cannot describe. A substring rule works when the meaningful
+   * part of a URL sits behind a fixed prefix -- `/project/`, `/read/`, `/abs/` -- and an Overleaf
+   * share link has no prefix at all: the token *is* the path. The rule that matters there is
+   * "exactly one segment", which is also what keeps this from quietly accepting the other two
+   * Overleaf shapes, since both of those have two.
+   */
+  urlPathPattern?: RegExp;
+  /**
    * Render this slot inside another one's row rather than as a row of its own.
    *
    * Four pairs of slots are two halves of one PaperFlow node -- the two Overleaf links are both
@@ -208,7 +242,51 @@ export type AdminBotPaperSlotDefinition = {
  * `gates` names the step a slot releases, so "what is this for" is answerable from the row rather
  * than from the graph. `upstream` is the dependency edge the nudge walk actually follows.
  */
+/**
+ * The Overleaf hosts both project slots accept, as literals.
+ *
+ * Static rather than resolved from the environment, because this registry is shared code: the
+ * Control UI imports it to validate a cell as it is typed, and a browser has no environment to
+ * read. `validateAdminBotPaperSlotUrl` layers this deployment's configured instance on top when
+ * it runs service-side, so a deployment that moved its Overleaf is still checked correctly where
+ * the check is authoritative.
+ */
+const OVERLEAF_HOSTS = [OVERLEAF_COM_HOST, ADMINBOT_LAB_OVERLEAF_HOST] as const;
+
 export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperSlotDefinition> = {
+  feedback_arr: {
+    kind: "feedback",
+    node: "feedback_arr",
+    owner: "first_author",
+    gates: null,
+    branch: "core",
+    label: "ARR / Overleaf feedback",
+    upstream: [],
+    required: false,
+    deadlineBearing: false,
+  },
+  feedback_arxiv: {
+    kind: "feedback",
+    node: "feedback_arxiv",
+    owner: "first_author",
+    gates: null,
+    branch: "core",
+    label: "arXiv feedback",
+    upstream: [],
+    required: false,
+    deadlineBearing: false,
+  },
+  feedback_camera_ready: {
+    kind: "feedback",
+    node: "feedback_camera_ready",
+    owner: "first_author",
+    gates: null,
+    branch: "core",
+    label: "Camera-ready feedback",
+    upstream: [],
+    required: false,
+    deadlineBearing: false,
+  },
   project_folder: {
     kind: "link",
     node: "BR",
@@ -241,10 +319,38 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     // you paste into a channel.
     required: false,
     deadlineBearing: false,
-    urlHosts: ["overleaf.com"],
+    urlHosts: OVERLEAF_HOSTS,
     urlPath: ["/read/"],
     hint: "Overleaf's read-only share link. Safe to paste in a channel — nobody can edit the paper with it.",
-    example: "https://overleaf.com/read/xzqvbnmklpqr",
+    example: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/read/xzqvbnmklpqr`,
+  },
+  overleaf_share: {
+    subOf: "overleaf_edit",
+    kind: "link",
+    node: "OV",
+    owner: "first_author",
+    // Nothing waits on it. The project link is what the paper cannot proceed without; this is a
+    // second way to hand out the same write access, so gating a step on it would let a paper be
+    // held up by the absence of a convenience.
+    gates: null,
+    branch: "core",
+    label: "Overleaf share edit link",
+    upstream: ["project_folder"],
+    // Advisory, and never chased. Asking an author for this one would be asking them to mint a
+    // credential they may have had no reason to create -- see the hint.
+    required: false,
+    deadlineBearing: false,
+    urlHosts: OVERLEAF_HOSTS,
+    // One segment, which is the whole distinction: `/project/<id>` and `/read/<token>` both have
+    // two, so the shapes cannot collide. Length is bounded rather than pinned to the 22 characters
+    // Overleaf currently mints, since a fork is free to size its tokens differently.
+    urlPathPattern: /^\/[A-Za-z0-9]{12,64}\/?$/u,
+    hint:
+      "Overleaf's “Anyone with this link can edit” URL. This one is a credential, not an " +
+      "address: it grants write access to whoever holds it, without an invitation and without " +
+      "appearing in the project's member list. Everyone who can read this paper's record can use " +
+      "it. Prefer the project link above and invite coauthors by name where you can.",
+    example: `https://${OVERLEAF_COM_HOST}/1234567890abcdefghijkl#a1b2c3`,
   },
   overleaf_edit: {
     groupLabel: "Overleaf",
@@ -257,10 +363,14 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["project_folder"],
     required: true,
     deadlineBearing: true,
-    urlHosts: ["overleaf.com"],
+    urlHosts: OVERLEAF_HOSTS,
     urlPath: ["/project/"],
-    hint: "The URL in your address bar while editing. Hands over write access, so keep it to coauthors.",
-    example: "https://overleaf.com/project/65f2a1c9d4e3b7a801f6",
+    // Both hosts are accepted and only one of them can be reviewed, which is why the hint names
+    // the lab's own: every paper is now reviewed by PaperMentor before submission, and PaperMentor
+    // only sees projects on the instance it is built into. A draft on overleaf.com is not refused
+    // -- that is a real paper, and refusing the link would only cost the lab the record of it.
+    hint: `This project URL identifies the paper for PaperMentor; it does not grant sharing access. To share, open Overleaf’s Share menu, enable link sharing, and copy the edit or view link. Papers are reviewed by PaperMentor before submission, which can only read projects on ${ADMINBOT_LAB_OVERLEAF_HOST}.`,
+    example: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
   },
   papermentor_review: {
     kind: "bool",
@@ -399,11 +509,15 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     gates: "social_posts",
     branch: "social",
     label: "X post drafted",
-    upstream: ["arxiv"],
+    // Written from the paper, not from the arXiv listing, so it opens with the rest of Branch 2
+    // when the PDF compiles -- the same edge the chart draws (PDF -> XD). The arXiv link is what
+    // makes it worth *chasing*, not what makes it possible.
+    upstream: ["pdf_ready"],
+    chaseAfter: ["arxiv"],
     required: true,
     deadlineBearing: false,
     derived: true,
-    hint: "Provided once an approved X draft exists. Write it with the drafting tool.",
+    hint: "Provided once an approved X draft exists. Write it with the drafting tool — you can start as soon as the PDF compiles, it does not wait for the arXiv link.",
   },
   linkedin_draft: {
     kind: "bool",
@@ -412,11 +526,15 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     gates: "social_posts",
     branch: "social",
     label: "LinkedIn post drafted",
-    upstream: ["x_draft"],
+    // Parallel to the X draft rather than behind it, which is what the chart says (PDF -> LI) and
+    // why: a 280-character thread is the wrong source text for a 900-character post, so making
+    // one wait on the other blocked it on work it does not need.
+    upstream: ["pdf_ready"],
+    chaseAfter: ["arxiv"],
     required: true,
     deadlineBearing: false,
     derived: true,
-    hint: "Provided once an approved LinkedIn draft exists. Write it with the drafting tool.",
+    hint: "Provided once an approved LinkedIn draft exists. Write it with the drafting tool — you can start as soon as the PDF compiles, it does not wait for the arXiv link.",
   },
   coauthor_feedback: {
     kind: "bool",
@@ -562,6 +680,56 @@ export function isConfidentialPaperSlot(slot: AdminBotPaperSlot): boolean {
 }
 
 /** One stored slot row. */
+/**
+ * What can confirm a slot without taking anybody's word for it.
+ *
+ * The distinction this whole field exists for: a slot is *validated* when its value is the right
+ * shape, and *verified* when something outside the lab's own claim says the artifact is really
+ * there. A Drive link that parses is validated; a Drive link whose file the lab account can open
+ * is verified. Most slots have no verifier and never will -- "the author list is final" is a
+ * judgement, not a fact a machine can check -- and that is the point of the map below being
+ * partial rather than a column with a default.
+ */
+export const adminBotPaperSlotVerifiers = [
+  "google_drive",
+  "papermentor",
+  "arxiv",
+  "openreview",
+  /** AdminBot posted it itself, so the execution record is the evidence. */
+  "adminbot_post",
+] as const;
+
+export type AdminBotPaperSlotVerifier = (typeof adminBotPaperSlotVerifiers)[number];
+
+/**
+ * Which slots something can confirm, and what confirms them.
+ *
+ * Deliberately small, and deliberately not aspirational: a slot appears here when the check is
+ * built, because the stage walk records which evidence was machine-confirmed and a verifier named
+ * but not wired would make that record a claim about a check nobody runs.
+ */
+export const adminBotPaperSlotVerifier: Partial<
+  Record<AdminBotPaperSlot, AdminBotPaperSlotVerifier>
+> = {
+  project_folder: "google_drive",
+  drive_pdf_arxiv: "google_drive",
+  slides: "google_drive",
+  poster: "google_drive",
+  // Both come from the reviewer itself: the review slot from the run being ingested at all, the
+  // fixes from a later run that no longer finds anything serious. See workflows/papers/papermentor.
+  papermentor_review: "papermentor",
+  fixes_merged: "papermentor",
+  // The public record. arXiv can be asked outright; OpenReview can only ever confirm, never deny,
+  // because a blind submission is invisible to an anonymous reader -- see the probe's own note.
+  arxiv: "arxiv",
+  submission: "openreview",
+  // The two the lab does not have to check at all, because AdminBot published them: the URL comes
+  // back from the connector that posted, so the slot is filled by the act rather than reported
+  // afterwards by the person who watched it happen.
+  x_post: "adminbot_post",
+  linkedin_post: "adminbot_post",
+};
+
 export type AdminBotPaperSlotRecord = {
   paper_id: string;
   slot: AdminBotPaperSlot;
@@ -575,6 +743,21 @@ export type AdminBotPaperSlotRecord = {
   provided_by_member_id?: string;
   provided_at?: string;
   validated_at?: string;
+  /**
+   * What confirmed the artifact is really there, and when.
+   *
+   * Absent is not a failure and does not hold a paper up: most slots have no verifier, a check
+   * can be unconfigured, and a deployment with no Google account wired reads every Drive link as
+   * unconfirmed rather than as wrong. What a failed check produces is `invalid` with a reason,
+   * the same as a value that never parsed -- so the thing that stops a paper is a contradiction,
+   * never a silence.
+   */
+  verified_by?: AdminBotPaperSlotVerifier;
+  verified_at?: string;
+  /** Public metadata observed by the verifier, never supplied by a member. */
+  verified_title?: string;
+  previous_submission_id?: string;
+  identity_review?: OpenReviewIdentityReview;
   invalid_reason?: string;
   waived_by_member_id?: string;
   waived_reason?: string;
@@ -599,11 +782,16 @@ export type AdminBotPaperSlotValueCheck = { ok: true } | { ok: false; reason: st
  *
  * Shape only, never a liveness fetch. Fetching would mean the service makes an outbound request
  * to an address a member typed, which is a request-forgery primitive in exchange for a check that
- * is stale the moment it passes.
+ * is stale the moment it passes. `contracts/overleaf.ts` is where a checked link becomes a project
+ * id, which is the only part of one that is safe to build a request from.
  */
+/** The two slots whose accepted hosts this deployment may have moved. */
+const OVERLEAF_SLOTS = new Set<AdminBotPaperSlot>(["overleaf_view", "overleaf_edit"]);
+
 export function validateAdminBotPaperSlotUrl(
   slot: AdminBotPaperSlot,
   raw: string,
+  options: { env?: NodeJS.ProcessEnv } = {},
 ): AdminBotPaperSlotValueCheck {
   const definition = adminBotPaperSlotRegistry[slot];
   if (definition.kind !== "link") {
@@ -622,7 +810,12 @@ export function validateAdminBotPaperSlotUrl(
   if (url.protocol !== "https:") {
     return { ok: false, reason: "the link must start with https://" };
   }
-  const hosts = definition.urlHosts;
+  // The registry's literals, plus whatever instance this deployment configured. They are the same
+  // list on the lab's own boxes; they differ only where `ADMINBOT_OVERLEAF_URL` names a third
+  // host, and then the service -- which is the authoritative check -- is the side that knows.
+  const hosts = OVERLEAF_SLOTS.has(slot)
+    ? [...new Set([...(definition.urlHosts ?? []), ...adminBotOverleafHosts(options.env)])]
+    : definition.urlHosts;
   if (hosts?.length) {
     // Subdomains count: `www.overleaf.com` and `overleaf.com` are the same place, and rejecting
     // the copy-pasted one teaches people to edit URLs by hand until it is accepted.
@@ -634,6 +827,11 @@ export function validateAdminBotPaperSlotUrl(
   const paths = definition.urlPath;
   if (paths?.length && !paths.some((path) => url.pathname.includes(path))) {
     return { ok: false, reason: `the link must be a ${paths.join(" or ")} URL` };
+  }
+  // Checked after the host, so a mistyped share link is told it is on the wrong Overleaf before it
+  // is told its path is wrong -- the host is the fixable half.
+  if (definition.urlPathPattern && !definition.urlPathPattern.test(url.pathname)) {
+    return { ok: false, reason: `that is not a ${definition.label.toLowerCase()}` };
   }
   return { ok: true };
 }
@@ -665,4 +863,34 @@ export function isAdminBotPosterPhysicalState(value: string): value is AdminBotP
 /** A slot counts as done when it is provided or an admin waived it. Everything else is open. */
 export function isAdminBotPaperSlotSettled(status: AdminBotPaperSlotStatus): boolean {
   return status === "provided" || status === "waived";
+}
+
+/**
+ * Whether this paper is sitting at the PI's gate: the package is prepared and the yes is not given.
+ *
+ * `pi_approval` is the one slot the lab does not chase and cannot tick for itself, so "is it with
+ * her" is a question two surfaces ask and must answer identically -- her own queue on My Desk
+ * (workflows/papers/pi-review.ts) and the author's card under My Projects, which says the paper has
+ * gone to her. Two copies of this condition is how a paper comes to be announced as sent on one
+ * screen while never appearing on the other.
+ *
+ * The two upstream conditions are the graph's own, PK before GT: `authors_ack` is the last thing
+ * the authors do to the package and `drive_pdf_arxiv` is the copy being approved. Requiring both is
+ * requiring the package, rather than a single tick that could be ahead of the file it describes.
+ *
+ * Structural in its row type so the service's stored records and the Control UI's wire rows both
+ * satisfy it without either side importing the other's shape.
+ */
+export function isAdminBotPaperAtPiGate(
+  slots: readonly { slot: string; status: AdminBotPaperSlotStatus }[],
+): boolean {
+  const status = (slot: string) =>
+    slots.find((row) => row.slot === slot)?.status ?? ("missing" as AdminBotPaperSlotStatus);
+  if (isAdminBotPaperSlotSettled(status("pi_approval"))) {
+    return false;
+  }
+  return (
+    isAdminBotPaperSlotSettled(status("authors_ack")) &&
+    isAdminBotPaperSlotSettled(status("drive_pdf_arxiv"))
+  );
 }

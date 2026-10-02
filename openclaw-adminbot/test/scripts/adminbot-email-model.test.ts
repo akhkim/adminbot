@@ -1,19 +1,34 @@
 import { describe, expect, it, vi } from "vitest";
-import { AdminBotEmailModel, gmailOneHourQuery } from "../../scripts/adminbot-email-model.js";
+import { AdminBotEmailModel, gmailScanQuery } from "../../scripts/adminbot-email-model.js";
 
 describe("AdminBot email model", () => {
-  it("queries an exact one-hour Gmail epoch window", () => {
+  const BOT = { ADMINBOT_BOT_EMAIL: "adminbot@example.com" };
+  const NOW = new Date("2026-07-18T12:00:00Z");
+
+  it("scans forward from the watermark it is given", () => {
     // The mailbox to exclude is deployment configuration, so the fixture supplies it rather than
     // the query naming a real account.
-    expect(
-      gmailOneHourQuery(new Date("2026-07-18T12:00:00Z"), {
-        ADMINBOT_BOT_EMAIL: "adminbot@example.com",
-      }),
-    ).toBe("in:inbox after:1784372400 before:1784376001 -from:adminbot@example.com");
+    expect(gmailScanQuery(new Date("2026-07-18T11:00:00Z"), NOW, BOT)).toBe(
+      "in:inbox after:1784372400 -from:adminbot@example.com",
+    );
     // Unconfigured, it refuses rather than build a query that matches the bot's own sends.
-    expect(() => gmailOneHourQuery(new Date("2026-07-18T12:00:00Z"), {})).toThrow(
+    expect(() => gmailScanQuery(new Date("2026-07-18T11:00:00Z"), NOW, {})).toThrow(
       /ADMINBOT_BOT_EMAIL/u,
     );
+  });
+
+  // A pass that has been down for a fortnight must not try to re-read the archive, but it does have
+  // to reach back further than the single hour the window used to be pinned to.
+  it("clamps a stale watermark to the maximum lookback", () => {
+    expect(gmailScanQuery(new Date("2026-01-01T00:00:00Z"), NOW, BOT)).toBe(
+      "in:inbox after:1783771200 -from:adminbot@example.com",
+    );
+  });
+
+  // No `before:`. It bounded nothing the watermark does not, and it is how a clock a few seconds
+  // ahead of Gmail's loses a message for good.
+  it("puts no upper bound on the window", () => {
+    expect(gmailScanQuery(new Date("2026-07-18T11:59:00Z"), NOW, BOT)).not.toContain("before:");
   });
 
   it("uses the loopback vLLM chat API with constrained non-thinking JSON", async () => {

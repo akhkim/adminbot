@@ -481,7 +481,8 @@ describe("OpenAI-compatible embeddings HTTP API (e2e)", () => {
       expect(res.status).toBe(403);
       const json = (await res.json()) as { error?: { type?: string; message?: string } };
       expect(json.error?.type).toBe("forbidden");
-      expect(json.error?.message).toBe("missing scope: operator.admin");
+      expect(json.error?.message).toMatch(/^missing scope: operator\.admin\b/);
+      expect(json.error?.message).toContain("x-openclaw-model");
       expect(createEmbeddingProviderMock).not.toHaveBeenCalled();
     } finally {
       await server.close({ reason: "embeddings model override auth test done" });

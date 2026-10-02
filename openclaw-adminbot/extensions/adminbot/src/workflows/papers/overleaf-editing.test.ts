@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ADMINBOT_LAB_OVERLEAF_HOST } from "../../contracts/overleaf.js";
 import { assertOverleafPayloadReady, buildOverleafEditPayload } from "./overleaf-editing.js";
 
 describe("AdminBot Overleaf editing helpers", () => {
@@ -62,5 +63,37 @@ describe("AdminBot Overleaf editing helpers", () => {
     expect(payload.mode).toBe("manual");
     expect(payload.targetFiles).toEqual(["sections/abstract.tex"]);
     expect(() => assertOverleafPayloadReady(payload)).not.toThrow();
+  });
+
+  it("accepts a project on the lab's own Overleaf, which is where papers are written now", () => {
+    const payload = buildOverleafEditPayload({
+      title: "Paper Three",
+      authors: ["Alice"],
+      overleafEditUrl: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
+      requestedEdits: "Fix typo in abstract.",
+      members: [],
+    });
+
+    expect(() => assertOverleafPayloadReady(payload)).not.toThrow();
+  });
+
+  // The destination, not just its presence: an approved edit is posted to the configured bridge,
+  // and a paper record pointing somewhere else is the one way it could be aimed at a host nobody
+  // chose. Refused at execution rather than silently sent.
+  it("refuses to execute against a link that is not an Overleaf project we know", () => {
+    for (const overleafEditUrl of [
+      "https://evil.example/project/65f2a1c9d4e3b7a801f6",
+      "https://www.overleaf.com/read/xzqvbnmklpqr",
+      "http://www.overleaf.com/project/65f2a1c9d4e3b7a801f6",
+    ]) {
+      const payload = buildOverleafEditPayload({
+        title: "Paper Four",
+        authors: ["Alice"],
+        overleafEditUrl,
+        requestedEdits: "Fix typo in abstract.",
+        members: [],
+      });
+      expect(() => assertOverleafPayloadReady(payload)).toThrow(/must be an https project link/u);
+    }
   });
 });

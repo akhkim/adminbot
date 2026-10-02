@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { availabilityRows, timeOffRows, todayIso } from "./availability.js";
+import { deadlineMilestoneRow, availabilityRows, timeOffRows, todayIso } from "./availability.js";
 
 const ROWS = [
   { start: "2026-08-03", end: "2026-08-30", project: "Rebuttals", hours_per_week: 18 },
@@ -51,5 +51,21 @@ describe("timeOffRows", () => {
 describe("todayIso", () => {
   it("reads the viewer's calendar day, not a UTC instant", () => {
     expect(todayIso(new Date(2026, 7, 6, 23, 30))).toBe("2026-08-06");
+  });
+});
+
+it("copies a date-only deadline as a labelled planning boundary", () => {
+  expect(
+    deadlineMilestoneRow({
+      deadline_id: "example",
+      name: "Example",
+      deadline_aoe: "2035-01-30 22:00:00",
+      deadline_time_precision: "date_only",
+      link: "",
+    }),
+  ).toMatchObject({
+    date: "2035-01-30",
+    time: "22:00",
+    label: "Example — planning cutoff (time unknown)",
   });
 });

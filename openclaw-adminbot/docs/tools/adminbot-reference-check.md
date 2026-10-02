@@ -14,24 +14,33 @@ openclaw cron run "tool: hallucinated reference check"
 
 ## Runtime, and why the tool is scoped
 
-Verification is rate limited, not compute bound: each reference walks arXiv, then Crossref, then
-OpenAlex through one shared 1.1s limiter, stopping early only on a strong title match. A full sweep
-of both venues (16 papers, ~65 references each) therefore costs roughly
+Verification is rate limited, not compute bound: each uncached reference walks arXiv, then Crossref,
+then OpenAlex through one shared 1.1s limiter, stopping early only on a strong title match. An empty
+cache needs roughly
 
     16 papers x 65 refs x 3 providers x 1.1s = ~57 minutes
 
-which is exactly what a full run measured before it hit the job's 60 minute cap. The tool is
-scoped to `--limit=2` (the 2 newest submissions per venue) so the button reliably finishes. Run a
-full sweep from a shell, where nothing is timing it:
+which is exactly what a full run measured before it hit the job's 60 minute cap. Verdicts are now
+cached in AdminBot's SQLite database, so unchanged references avoid DOI and title lookups on later
+runs. The tool remains scoped to `--limit=2` (the 2 newest submissions per venue) so a cold-cache
+button run reliably finishes. Run a full sweep from a shell, where nothing is timing it:
 
 ```bash
 node scripts/adminbot-reference-check.mjs            # every paper, no cap
 node scripts/adminbot-reference-check.mjs --limit=5  # or a bigger slice
 ```
 
-The durable fix is a verdict cache: PaperMentor keys one per bib entry and skips repeat lookups, so
-only new or changed references cost a request. That is not ported yet — note that this repo's
-storage rule puts such a cache in SQLite, not the JSON sidecar PaperMentor uses.
+The cache key includes the citation fields, provider mode, trust mode, and verifier schema version.
+Reordering references does not invalidate it. Confirmed matches remain fresh for 90 days; negative,
+uncertain, and mismatch verdicts expire after 6 hours–7 days so corrected provider records are
+picked up. A provider outage is never cached. Every paper and the final summary report
+hit/miss/write counts.
+
+Force a fresh provider pass while replacing stored verdicts with:
+
+```bash
+node scripts/adminbot-reference-check.mjs --refresh-cache --no-propose --limit=1
+```
 
 Run it directly for a dry pass that queues nothing:
 
@@ -115,6 +124,7 @@ still appears in the run report for a human to read. Adding the key turns the fu
 | `ADMINBOT_REPORT_EMAIL`           | **required, no default**                               | Address cc'd on every warning (old name `ADMINBOT_ZHIJING_EMAIL` still accepted) |
 | `ADMINBOT_REFERENCE_MAX_ENTRIES`  | `200`                                                  | Per-paper entry cap                                                              |
 | `ADMINBOT_REFERENCE_CHECK_JSON`   | unset                                                  | Write the full result set to this path                                           |
+| `ADMINBOT_DB_PATH`                | `~/.openclaw/state/adminbot.sqlite`                    | SQLite database that stores reusable reference verdicts                          |
 
 `OPENREVIEW_USERNAME`/`OPENREVIEW_PASSWORD`, `ADMINBOT_LOCAL_BASE_URL`/`ADMINBOT_LOCAL_MODEL`/
 `VLLM_API_KEY`, and `ADMINBOT_SERVICE_TOKEN` come from the usual env file.

@@ -25,6 +25,7 @@ You need a local AdminBot service listening on loopback, for example
 
 | Endpoint                              | Purpose                                                           |
 | ------------------------------------- | ----------------------------------------------------------------- |
+| `POST /public/deadline-proposals`     | Submit a deadline for administrator review.                       |
 | `POST /proposals`                     | Create one typed action proposal.                                 |
 | `POST /privacy/tasks`                 | Route reasoning through the VM-local privacy gate.                |
 | `GET /proposals/pending`              | Return pending approval items.                                    |
@@ -62,6 +63,42 @@ system `python3` picks the packages up. Rerun
 `install-user-services.sh` directly on the host) to (re)provision it —
 `restart` alone does not rerun this install step.
 
+### Automatic deploys to Aurora
+
+A push to `main` that passes CI deploys itself. `.github/workflows/deploy-aurora.yaml` runs on a
+self-hosted runner on Aurora (GitHub's hosted runners cannot reach the host), and
+`deploy/aurora/auto-deploy.sh` builds the new release beside the live one, rewrites the four units
+that name the release, restarts AdminBot and the Gateway (an outage of a few seconds), and probes
+`/adminbot`, `/deadlines` (200), `/lab/members` (401) and the Gateway's `/healthz`. If the probes
+fail, it restores the previous release and units and fails the job. A rollback restores code, not
+the database.
+
+It refuses, without touching the services, when:
+
+- the commit does not contain the live release's commit. Merge a `deploy/*` branch into `main`
+  before relying on automatic deploys, or they stop here. A commit that the live release already
+  contains is skipped as superseded.
+- `install-user-services.sh` or `install-member-sheet-poller.sh` changed. Unit definitions need a
+  manual `aurora-adminbot-host.sh deploy`.
+- the units do not run from the live release, the writer lock is held, or the build fails.
+- `state/` is on a network filesystem and the host has not opted in with
+  `AURORA_ACCEPT_NETWORK_STATE=1` in the runner's `.env`.
+
+Install the runner once, as the service account. The registration token is valid for an hour:
+
+```bash
+gh api -X POST repos/<owner>/<repo>/actions/runners/registration-token -q .token |
+  ssh aurora 'bash -l /w/406/adminbot/current/deploy/aurora/install-actions-runner.sh \
+    --repo <owner>/<repo> --root /w/406/adminbot --accept-network-state'
+```
+
+The repository is public, so every job any workflow sends to the runner's label would run beside
+the lab's credentials. The runner's job-started hook (`deploy/aurora/runner-job-guard.sh`, installed
+with the allowed values written in) fails every job except `deploy-aurora.yaml` on `main`. Merging
+to `main` is deploying to Aurora, so keep `main` PR-only (no direct pushes) and keep the `aurora`
+environment restricted to `main`. Trigger a deploy by hand with
+`gh workflow run deploy-aurora.yaml --ref main`.
+
 ### Private reasoning and NVIDIA NIM
 
 The AdminBot service classifies every `adminbot_reason` request with local
@@ -98,17 +135,15 @@ Without that configuration, the in-process allocator is development-only and can
 coordinate separate services. See the gateway guide for GPU tunnels, streaming,
 cancellation, and deployment checks.
 
-A failed DCS form submit is written to `adminbot_failed_external_requests` with
-the exact payload, then retried at `ADMINBOT_DCS_AWS_FALLBACK_URL` if set, then
-escalated through `sendMemberNudge` (propose → auto-execute) to the head
-professor plus `ADMINBOT_DCS_ESCALATION_MEMBER_IDS`. Privileged operators can
-list failures at `GET /ops/failed-requests`; anyone signed in can read
-`GET /ops/llm-load`.
+Department account filing uses the DCS roster sheet described below; the retired form
+failover is not enabled. Privileged operators can inspect the external-request ledger at
+`GET /ops/failed-requests`; signed-in members can read `GET /ops/llm-load`.
 
-The Control UI caches successful member GETs and queues mutations in IndexedDB
-when `:8765` is unreachable (Chrome/Docs-style reads, WhatsApp-style queued
-sends). An on-device SLM for offline drafts is an interview-task stub, not
-shipped.
+The Control UI caches successful member GETs in account-scoped IndexedDB.
+Recommendation-letter, meeting-request, and signature drafts save locally and sync
+private working copies on reconnect. Final requests and approvals require an explicit
+connected action; legacy queued mutations are retained for recovery and never replayed.
+An on-device SLM is not shipped.
 
 ### Connect Gmail and Calendar with gog
 
@@ -205,6 +240,35 @@ export OVERLEAF_ACCESS_TOKEN="..."
 
 Without these variables, approved execution fails closed and leaves the proposal
 approved for a later live run after the bridge is configured.
+
+### Which Overleaf a paper may live on
+
+Two hosts are accepted for both Overleaf evidence slots and for the edit action:
+`overleaf.com`, and the lab's own instance — `overleaf.safe.eu`, the one
+PaperMentor is built into. `contracts/overleaf.ts` holds both, and a deployment
+that runs its own names it instead:
+
+```bash
+export ADMINBOT_OVERLEAF_URL="https://overleaf.example.edu"
+```
+
+`overleaf.com` is never dropped: naming your own instance does not end
+collaboration with people who use the hosted one. The configured host is an
+addition to the check, never a way to switch it off.
+
+Both hosts are accepted and only one of them can be reviewed, which is the point
+of recording the difference rather than refusing the link. Every paper is
+reviewed by PaperMentor before submission, and PaperMentor only reads projects on
+the instance it is part of — so a draft on `overleaf.com` is a real paper that
+has to move before it can clear that step, which is a thing to tell its author
+early rather than a link to reject.
+
+`adminBotOverleafProjectRef` is how a link becomes something addressable: it
+checks the scheme, the host and the `/project/<id>` shape, and returns the id
+alone against a closed charset. Nothing follows a URL a member typed — the slot
+validator's rule (shape only, never a liveness fetch) holds here too — and
+`assertOverleafPayloadReady` refuses an approved edit whose destination is not
+one of these projects, so the bridge cannot be pointed at a host nobody chose.
 
 ## Set up AdminBot
 
@@ -405,6 +469,175 @@ Calendar, GitHub, and paper-pipeline records from that privilege level. Use
 People added without an explicit level receive `external_collaborator`, the
 least-privileged tier. Set `privilege_level` explicitly to grant more.
 
+### Membership roster grid
+
+The **Membership** tab's Onboarding section reads the lab's own Google spreadsheet live over
+`GET /membership/sheet`. It needs no configuration: it defaults to spreadsheet
+`1ZqdaRzev6fFHxGbaAn_NDAPgv-Wi-hklHrT5jB68m68`, gid `764749323`, which is the
+`Full Slack Member List` tab.
+
+Point it somewhere else with any of:
+
+| Variable                      | What it names                                                       |
+| ----------------------------- | ------------------------------------------------------------------- |
+| `ADMINBOT_MEMBER_SHEET_URL`   | A whole Sheets URL; the spreadsheet id and `gid` are read out of it |
+| `ADMINBOT_MEMBER_SHEET_ID`    | The spreadsheet id alone                                            |
+| `ADMINBOT_MEMBER_SHEET_GID`   | The tab, by gid                                                     |
+| `ADMINBOT_MEMBER_SHEET_TAB`   | The tab, by title                                                   |
+| `ADMINBOT_MEMBER_SHEET_RANGE` | The poller's `Tab!A:Z` range; its tab name is used as a fallback    |
+
+Prefer a gid. A gid survives a rename and a tab title does not, so the grid resolves the gid to
+whatever the tab is called at the moment of each read, and falls back to the configured title if
+the metadata call fails. A gid explicitly configured beats an explicitly configured title; the
+default gid does not, so an operator who spelled out a tab name keeps it.
+
+When the grid cannot read the sheet it says which of the three fixable things went wrong -- the tab
+does not exist under that name, AdminBot's Google account cannot open the spreadsheet, or its token
+has expired. A `404` from the route itself is reported as what it is: the Control UI ships from
+Vercel and the service from Aurora, so a Membership tab that reports no member-sheet route is
+talking to a service that predates it and needs a deploy, not a broken spreadsheet.
+
+### One onboarding, every way in
+
+A person can reach the roster six ways: **Add member** on the Members tab, approving a **member
+request**, the Onboarding section's **Add row** and **onboard selected rows**, the weekly
+**sheet sweep** (`POST /onboarding/sheet-sweep/run`), and approving a portal **sign-up**. All six
+run the same three steps (`api/server.member-onboarding.ts`):
+
+1. **The record**, at the access level its Member Type implies (below). A type that implies none
+   leaves a new person at `external_collaborator`; an explicit admin choice wins.
+2. **Enrollment** -- what holding that type grants under the External Collab Access Design, applied
+   as the move from holding nothing: Slack rooms, a `slack.connect_invite` to
+   #friends-and-collaborators for the no-mail types (the guide carries that invite for everyone
+   else), the Monday group meeting, and lab calendar read access (`calendar.grant_lab_calendar`).
+   Full members, own-pace advisees and major coauthors hold the calendar and the Monday meeting --
+   the access design's "View access to lab calendar + invite to Monday Group Meeting" row, read by
+   `belongsOnSurface`.
+3. **The guide** (`onboarding.send_guide`) for the types the access design mails.
+
+Only who approves differs. An admin's click approves each step on the spot (Add member, request
+and sign-up approval, Add row, and enrollment from onboard selected rows, whose mails still wait in
+Pending Actions). The sweep runs with nobody present, and a spreadsheet row is not an
+authorization, so it creates each joiner at `external_collaborator` and files one
+`lab_member.enroll` per joiner. Approving that card sets the level the Member Type implies and runs
+step 2, each step approved by that admin; it refuses if the Member Type changed after the card was
+filed, or if the member has since been enrolled another way.
+
+### Adding a member from the Members tab
+
+**Add member** on the Members tab creates the roster record and, unless the admin unticks **Start
+their onboarding**, puts the new member through onboarding in the same press. The record is written
+over `PUT /lab/members/{id}`; the onboarding leg is `POST /lab/members/{id}/onboarding/guide`, which
+composes nothing and sends nothing -- it files an `onboarding.send_guide` proposal for approval,
+exactly as the Onboarding section's sheet selection and the weekly sweep do. Approving it is what
+mints the Slack Connect invite, provisions the Drive folder, files the DCS account request and
+sends the mail.
+
+Which guide somebody gets is decided by **Member type** on the form, through the same
+most-committed-role rule the sheet rows use: `full, coauthor-major` gets the full-member mail. Five
+types send no mail at all -- `acquaintance`, `coauthor-discussant-or-designer`, `external-prof`,
+`benefit-partner` and `benefit-direct-relative` -- because their onboarding is the backend access
+grant.
+
+The save and the guide are reported together, and a refused guide never undoes the save. The
+reasons an admin will see are all fixable: the record has no email address, its Member Type sends no
+mail (or is blank), or that guide has already been sent to the address or is already waiting for an
+approver -- which is what pressing **Add member** twice on one id produces. Onboarding needs a real
+admin sign-in; over break-glass gateway access the record still saves and the notice says the guide
+was not queued.
+
+### Changing a Member Type
+
+Changing **Member type** on an existing member on the Lab Members tab re-onboards them, without
+the welcome mail, and applies it on the spot. The admin's save is the approval: each external
+step is still a typed proposal, approved by that admin, executed and audited, the same way Add
+row works. None of them waits in Pending Actions. `PUT /lab/members/{id}` does this only for a
+genuine admin session and only when the type actually changes (compared token-wise, so
+`Coauthor-Major ` is not a change). The service token still cannot set the field.
+
+- **Access level follows the type.** The form has no Privilege or Collaborator subgroup field;
+  Member type is a set of checkboxes and decides both. `adminbot-admin` (or the legacy `admin`) is
+  admin. `full` is `member`, or stays `trial`. Any collaboration type is `external_collaborator`
+  with that type's subgroup, and the most-committed token wins. Removing the admin tag demotes, but
+  **an admin cannot remove their own**: the service answers `409`, so nobody locks themselves out.
+  An admin whose type predates the tag has it pre-ticked, so saving keeps their access. New
+  members also get their access level from the type.
+- **The sheet row is updated.** Member Type is written back to the person's row on the member
+  sheet, so the 06:10 roster sync does not put the old type back. It is guarded against concurrent
+  edits like a grid edit.
+- **Slack rooms** named by the access matrix are joined or left (`slack.invite_to_channel` /
+  `slack.remove_from_channel`). Becoming `full` never removes anyone from the lab's rooms.
+- **The Monday group meeting** gains or loses them on every live series (`calendar.add_attendees` /
+  `calendar.remove_attendees`, both `--send-updates none`).
+- **Lab calendar** read access is granted silently when they gain it
+  (`calendar.grant_lab_calendar`, recorded as `auth.calendar_invite_sent` like the backfill). No
+  action revokes a calendar share, so a loss is reported in the notice for someone to handle by
+  hand.
+- **One email, in one case:** somebody moving _into_ alumni gets the `alumni` guide
+  (`onboarding.send_guide`). Every other change sends nothing.
+
+**Meetings** is a second checkbox field listing the lab calendar's standing meetings: the Monday
+group meeting and every recurring `Theme:` and `Proj:` series (`GET /lab/meetings`, admin only).
+A box is ticked when any of the member's addresses is on that meeting's guest list. Saving adds
+the member to newly ticked meetings and removes them from unticked ones, silently, on every live
+series. If the list could not be read, the field is left out of the save entirely, so a failed
+read is never taken as "on no meetings". A Monday box the admin actually changed wins over what
+the type would imply; an unchanged box leaves the Monday meeting to the type.
+
+Member type and Meetings are never autosaved. The editor autosaves other fields as they are
+typed, but these two apply only when **Save member** is pressed, so a half-ticked set of boxes
+never moves anybody.
+
+Each step is reported separately in the save notice. A failed step does not undo the save or stop
+the others, and it turns the notice red. The whole change is recorded as
+`lab_member.member_type_applied` in the audit log.
+
+### Roster sync
+
+`scripts/adminbot-roster-sync-cron.sh` calls `POST /members/roster-sync` at 06:10 daily. It reads
+the same tab as the grid above, through the same configuration, and reconciles exactly two things
+against the database: who is on the roster, and each member's **Member Type**. Profile fields are
+`adminbot-member-sheet-poller`'s job -- widening this would let a spreadsheet typo overwrite what a
+member typed about themselves on their own profile page.
+
+What it does with what it finds is the whole design:
+
+- **Member Type is written** onto members it can match. That column is governance-owned and the
+  spreadsheet _is_ the governance record, so copying it across is transcription. Writes are stamped
+  `import`, so the adoption rate does not credit them to the member, and they are a patch -- a sync
+  that knows one column cannot blank the twenty-nine it does not.
+- **Access consequences are proposed, never executed.** A type change can revoke a row of the
+  External Collab Access Design matrix, and where that row names a standing Slack room the sync
+  files a `slack.remove_from_channel` proposal. Nothing here executes: `slack.remove_from_channel`
+  is T3/admin, and somebody losing a conversation they were part of is not a cron job's call.
+- **Joiners and leavers are reported, not acted on.** A sheet row matching no member is far more
+  often somebody mid-onboarding than a member to create -- and creating one is an access grant, which
+  a sync must never make on its own. Use the Membership tab's Onboarding section for that. A member
+  matching no sheet row is far more often an address the sheet spells differently than a departure.
+
+The lab calendar and the Monday group meeting are deliberately not proposed here.
+`adminbot-meeting-membership` already reconciles both against the roster at 06:35, reading the same
+`belongsOnSurface` predicate, so the sync runs 25 minutes ahead of it and a type change lands in
+time for that morning's pass. The response still reports the surfaces each member gained or lost.
+
+Two guards, because a bad read is indistinguishable from a real mass change:
+
+- A sheet with no `Member Type` column is a `422`. Without it every row reads as "type cleared",
+  which is a mass revocation dressed up as a sync; a renamed tab, a truncated read and a permissions
+  error all arrive as exactly that.
+- A pass that would change more than a quarter of the roster (floor: 10) is refused and applies
+  nothing. `{"force": true}` overrides it, and takes an admin session -- the service principal the
+  cron uses is refused, because "I have looked at the spreadsheet" is not something a cron job can
+  assert. A refused pass exits non-zero so it shows up in the run list rather than reading as a
+  quiet night.
+
+`{"dry_run": true}` returns the whole diff and writes nothing.
+
+One case worth knowing: when a member's record carries an explicit `collaborator_subgroup`, that
+outranks the member-type token, so the matrix rows do not follow a type change. The response flags
+those with `subgroup_pinned` and the cron summary names them, rather than reporting "no
+consequences" for a change that genuinely had none only because the answer came from elsewhere.
+
 ### Member map
 
 `GET /member-map` groups active members by city. It's rendered two places: the
@@ -416,6 +649,14 @@ Alumni are left off both. Both Slack actions -- "Refresh from Slack"
 (`POST /members/directory/refresh-slack`) -- live solely in the standalone
 page's own toolbar; the console tab carries no chrome of its own around the
 iframe, so there is exactly one place to trigger either.
+
+Both also run on a schedule, so neither button is the only way the data stays
+current: `adminbot-member-directory` syncs ids and timezones at 05:40 and
+`adminbot-member-map` re-reads profile locations at 06:10. The buttons are for
+when you do not want to wait for tomorrow. The two are separate passes writing
+separate fields, which is easy to misread from their names -- the ID/timezone
+sync does not touch `slack_location`, and before the map pass was scheduled a
+stale Slack stamp could outrank a fresher roster location indefinitely.
 
 Both are also reachable without a person: `scripts/adminbot-member-directory-cron.sh`
 calls `POST /members/directory/refresh-slack` once a day as an OpenClaw cron job,
@@ -482,6 +723,251 @@ windows are open-ended on the late side, because a sweep that fired only on exac
 exactly day 5 would miss every date the cron ran late for -- the ledger is what stops the open end
 becoming a daily repeat.
 
+## Where a paper is, and how it gets there
+
+`current_step` used to be a field somebody maintained. It is now derived from the paper's own
+evidence, and the derivation reads a field that has been on every slot since the registry existed
+and was read by nothing: `gates`, "the pipeline step this slot releases".
+
+A step is released when every **required** slot gating it is settled, and a paper is at the
+furthest released step. The trunk of the PaperFlow chart, in the registry's own words:
+
+| Step               | Released by                                                               |
+| ------------------ | ------------------------------------------------------------------------- |
+| `overleaf_writing` | `project_folder`                                                          |
+| `submission`       | `overleaf_edit`, `papermentor_review`, `fixes_merged`, `pdf_ready`        |
+| `google_drive_pdf` | `submission`, `submission_id`                                             |
+| `arxiv_polish`     | `drive_pdf_arxiv`, `authors_ack`, `arxiv_paper_password`, `pi_approval`   |
+| `social_posts`     | `arxiv`, `x_draft`, `linkedin_draft`, `coauthor_feedback`, `social_final` |
+
+Advisory slots are out of it: `overleaf_view` gates `submission` too, and a paper whose authors only
+ever circulated the edit link is not stuck before submission because of it. A **waived** slot counts
+as settled, which is what waiving is for.
+
+Three properties, and each of them is about not lying:
+
+- **Contiguous.** The walk stops at the first step whose evidence is incomplete, so a poster
+  uploaded in week one cannot report a paper as being at `poster_making` while it is still being
+  written. The branches run in parallel off the compiled PDF; the trunk is what a stage means.
+- **Forward only.** A paper is advanced to the derived step and never dragged back, and never past
+  a step somebody set by hand. Evidence arrives late, gets corrected, gets waived.
+- **Not a gate.** Nothing here blocks a paper from moving without its evidence. The stepper stays
+  open, for the reason the slot registry gives: a hard gate deadlocks the paper, and the person who
+  could clear it is the one being blocked. This only catches a paper up to what it has proved.
+
+Every advance writes a `paper.stage_advanced` audit row naming the slots that released the step, so
+"why does this say submission" has an answer that is four pieces of evidence rather than "somebody
+changed a dropdown". It runs on every slot write — including the PaperMentor ingest, the one
+evidence path with no member behind it — and hourly as `adminbot-paper-stages` for anything that
+lands outside a write.
+
+### Checked, not just claimed
+
+A slot is **validated** when its value is the right shape and **verified** when something outside
+the lab's own claim says the artifact is really there. Until recently every piece of evidence on a
+paper was somebody's word — a Drive URL that parses proves a member typed a Drive URL — so
+`verified_by` / `verified_at` now sit alongside `provided_at` on the row, and the stage audit records
+which of the evidence was machine-confirmed. A paper advanced on four ticked boxes should not read
+the same as one advanced on three ticks and a file Google confirmed.
+
+Two verifiers are wired (`adminBotPaperSlotVerifier` names them, and a slot appears there only when
+its check exists):
+
+| Slot                                                    | Confirmed by                                                                       |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `project_folder`, `drive_pdf_arxiv`, `slides`, `poster` | `gog drive get` — the file is really in Drive                                      |
+| `papermentor_review`                                    | the review being ingested at all                                                   |
+| `fixes_merged`                                          | a **later** review that comes back with nothing critical and nothing to warn about |
+| `arxiv`                                                 | the arXiv export API — the paper is listed, under a title that matches             |
+| `submission`                                            | OpenReview's public API, **positively only** — see below                           |
+| `x_post`, `linkedin_post`                               | AdminBot posted them: the connector reports the URL it created                     |
+
+Most slots have no verifier and never will: "the author list is final" is a judgement, not a fact a
+machine can check.
+
+**OpenReview can only ever confirm.** The probe is anonymous, and a submission under blind review is
+invisible to a reader who is not on its committee — so "we cannot see it" and "there is no such
+paper" are the same HTTP answer. Reading that as absence would invalidate the evidence of every
+paper the lab currently has in review, so this probe never reports `missing`: it confirms what it
+can see and says "could not tell" about everything else. A submission on CMT, HotCRP or a venue's
+own site has no id to ask about at all, and the run says so rather than staying silent.
+
+**arXiv answers about titles as well as existence.** An unknown id does not 404 there — the feed
+comes back with one entry titled `Error`, which is the one case that counts as the outside world
+saying the paper is not there. When a paper _is_ listed, its title is compared with the paper on
+file word-wise, loosely enough to survive a rename and a LaTeX-mangled colon. A mismatch is
+**reported, not acted on**: papers get retitled between submission and posting, and the row keeps
+its confirmation while the pass names it for a person to look at.
+
+**The posts need no check at all.** AdminBot publishes them through the approval gate, so the
+connector knows the URL it just created and reports it back on the execution outcome
+(`AdminBotExecutorOutcome.artifacts`). The slot is filled by the act rather than by somebody pasting
+a link back a week later — and never overwritten: a slot an author already filled keeps what it has.
+
+**Three outcomes, and the middle one is the design.** Found stamps the row. **Missing** — Google
+saying there is no such file — contradicts the evidence, so the row goes `invalid` with a reason,
+the same state a value that never parsed lands in, which re-opens the nudge with the reason
+attached. **Unreadable** — no account configured, a network that blinked, a file shared with a
+person but not with the lab's account — writes nothing at all. A paper must never stall because the
+lab failed to ask, and the commonest cause of "cannot open" is a sharing setting rather than a wrong
+link. So what stops a paper is a contradiction, never a silence: a deployment with no Google account
+wired confirms nothing and advances exactly as before.
+
+The `fixes_merged` inference is deliberately narrow. The ask is "merge the cheap ones", so a comment
+count that merely dropped proves somebody did some work, not that the step is done — that stays the
+author's tick. What a machine can say for certain is the other end: the reviewer read the draft
+again and found nothing serious, so there is nothing left to merge. It needs a previous run, too — a
+first review that comes back clean says the paper was already good, not that fixes were merged.
+
+`POST /papers/evidence/verify/run` is the pass, and `adminbot-paper-stages` runs it **before** the
+stage walk: a link the check is about to contradict must not release a step first.
+
+The one slot still waiting on someone else is `pdf_ready`: proving a project compiles cleanly means
+asking the lab's Overleaf for a compile status, which is the same upstream work the headless
+PaperMentor trigger needs — a service-token path in `jiarui-liu/overleaf`. Until that exists it stays
+an author's tick, chased like any other.
+
+### The PI's gate
+
+`pi_approval` is PaperFlow's `GT` — _prepared is not permission_ — and it is the only slot owned by
+the head professor. **Nothing in AdminBot ticks it.** What is automated is the asking, which until
+now happened nowhere: the nudge sweep computed the item, resolved its owner to the head professor,
+and `sendMemberNudge` refused to message her — correctly, since the lab does not chase its PI — so a
+prepared package reached the gate with nobody told.
+
+A paper now signs itself up. When `drive_pdf_arxiv` and `authors_ack` are both settled and the yes
+has not been given, the paper appears in **Waiting on your yes to post** on My Desk, and she is told
+once, as a notification on her own page rather than a DM. The queue is derived from the slots, so a
+paper leaves it the moment she ticks the box or an admin waives it, and there is no second list to
+fall out of step. The say-once key carries when the package became ready, so a paper prepared again
+— revised, re-submitted, a second arXiv version — announces itself again.
+
+A missing `arxiv_paper_password` does not hold the decision up: the row says the package is
+incomplete and she can still say yes, because that is the authors' errand and not her decision.
+
+## PaperMentor reviews
+
+Every paper is reviewed by PaperMentor -- the multi-agent reviewer built into the lab's own
+Overleaf -- before it is submitted. `papermentor_review` has been an evidence slot since the slot
+registry existed, but it was a `bool`: the author ticked a box and the lab took their word for it,
+which meant `fixes_merged` was chased with no idea whether there was anything to fix.
+
+Now the reviewer says so itself.
+
+**What is kept, and what is not.** PaperMentor writes each finished review to
+`/var/lib/overleaf/ai-tutor-cache/<project id>/review_comments.json` on the Overleaf host, and
+attaches the comments themselves to the author's project as threads. AdminBot keeps **only the
+counting half**: when the review ran, how many comments, by severity and category, how many landed
+in each file, and which agents failed. Not one word of the comments, the quoted text, the paper
+type summary or the agents' error prose. Those are unpublished paper content, they already exist
+where they are useful, and `contracts/papermentor.ts` is the boundary that keeps them there --
+written as an allow-list, so a field the fork adds later arrives as nothing rather than as a leak.
+
+**How a review finds its paper.** By the Overleaf project id, read out of the link the author
+already keeps as evidence (`overleaf_edit`, or the older `artifacts.overleaf_edit_url`). Both sides
+go through `adminBotOverleafProjectRef`, so this is a comparison of two ids and never anything that
+follows a URL. A review of a project no paper claims is refused with a 404 and named in the run
+summary rather than stored as an orphan -- that is usually a paper nobody registered, which is the
+thing for somebody to go and fix.
+
+**What it changes on the paper.** The `papermentor_review` slot is marked provided, dated from the
+review rather than from the ingest, and with no member credited: nobody ticked a box, and crediting
+an author would inflate the number that measures whether people are using the checklist. A slot an
+admin **waived** stays waived -- the review is still recorded next to it, which is what makes the
+override visible.
+
+**The collector.** `scripts/adminbot-papermentor-runs.ts`, wrapped by
+`scripts/adminbot-papermentor-cron.sh` and registered as `adminbot-papermentor-runs` (hourly). It
+reads the cache directory, summarizes each review and posts it to
+`POST /papers/papermentor/runs` under the service token. Idempotent by construction: a run is
+identified by its project and the instant it ran, so re-reading the same cached file records
+nothing new and needs no local cursor.
+
+```bash
+# Where PaperMentor caches its reviews, if not the default above.
+export ADMINBOT_PAPERMENTOR_CACHE_DIR="/var/lib/overleaf/ai-tutor-cache"
+# Where to post them, if not the loopback service.
+export ADMINBOT_URL="https://adminbot.example:8443"
+
+scripts/adminbot-papermentor-cron.sh --dry-run          # read and summarize, post nothing
+scripts/adminbot-papermentor-cron.sh --since 2026-09-01 # ignore reviews older than this
+```
+
+Run it on the Overleaf host with `ADMINBOT_URL` pointed at the service, or on the AdminBot host
+with the cache directory mounted or synced and `ADMINBOT_URL` left unset. A first pass against a
+full cache would otherwise report a year of old reviews as news, which is what `--since` is for.
+
+`GET /papers/papermentor/runs?paper_id=` reads back what has been ingested, newest first, for an
+operator checking the collector is working.
+
+**What the lab chases.** The review is a step on the evidence checklist, so it rides the paper-slot
+nudge sweep rather than a sweep of its own -- one message per person per cadence, however many
+papers and however many kinds of thing they owe. Three things the slot's own status cannot say are
+added to the line:
+
+| The paper                             | The line says                                                                               |
+| ------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Draft is on `overleaf.com`            | it has to move to the lab's Overleaf before PaperMentor can read it at all                  |
+| On the lab's Overleaf, never reviewed | where to run it -- the AI Tutor panel in the project                                        |
+| Reviewed, fixes still open            | what the reviewer found: "PaperMentor left 14 comments 3 days ago (3 critical, 5 warnings)" |
+
+The first is the one worth having. Every paper is reviewed before submission and PaperMentor only
+reads its own instance, so a draft on `overleaf.com` cannot clear the step at all -- and the worst
+moment to discover that is deadline week. The link is on the paper from the start, so the lab can
+say it in week one.
+
+**Freshness.** A review older than `adminBotPaperMentorFreshnessDays` (**21 days**) re-opens
+`papermentor_review` in the nudge, saying how old the last one was. A draft three weeks into a
+writing push is a different paper: the sections the review called thin have been rewritten, and the
+ones written since have never been read. Three weeks is a guess at how fast a draft moves rather
+than a fact about this lab, which is why it is a named constant.
+
+Two deliberate limits on that. It only re-opens while the paper is **unsubmitted** -- re-reviewing a
+paper that is already with a venue is work that cannot change anything -- and it is **not a write**:
+the stored row keeps saying the review happened, because it did. Only the chase knows about
+staleness, so the paper card still shows the tick; a card that reads "reviewed, and due for another"
+is the next piece of UI work, not something the sweep should fake by clearing a row.
+
+## Recommendation letter deadlines
+
+Each school requires a letter deadline on submission or edit; application deadlines do not count.
+Blank timezone defaults to **AoE (UTC−12)** and blank time to **23:59**. The queue shows the earliest
+letter deadline in its entered timezone, including for older requests; missing letter dates show no
+deadline. Sort by submission, user, deadline, or status; filter by name/school, request type, or status.
+Open the member's name for request details and documents.
+
+The one mail AdminBot sends the head professor. Every nudge pipeline refuses that address on
+purpose -- the lab does not chase its PI, and the escalation path runs _towards_ her -- so this is a
+typed action of its own, `logistics.rec_letter_reminder`, rather than a member nudge with the guard
+relaxed. The direction is what makes it different: it is her own queue, about work only she can do,
+on dates her members chose.
+
+**Three days before** a recommendation-letter request comes due, the letters in that window are
+mailed to the head professor's roster address in one message -- however many are due, because four
+separate reminders in one morning is the desk being nagged, and the letters are written in one
+sitting anyway. The mail names each member, the deadline, how far off it is and the schools on the
+request, and links to the requests themselves.
+
+The window uses the same letter-only deadline resolver as the request queue, including for older
+requests with a cached application deadline. The reminder displays the entered clock and zone. Whole days are
+**floored** rather than rounded up: the reminder fires on the first morning fewer than four whole
+days are left, which for the end-of-day deadlines the form produces is the calendar day three days
+before. My Desk rounds the same gap the other way for its badge, which is right for a list read at a
+glance and wrong for a countdown that has to fire on one particular morning.
+
+Said once per request per deadline, tracked in the nudge ledger under `rec_letter_reminder`. The
+subject carries the deadline, so **a school date that moves re-arms the reminder** against the new
+one while re-saving the same request does not. The late side is open, so a pass that did not run
+yesterday still sends today rather than skipping the letter; a settled, withdrawn or dateless
+request is never in the window at all.
+
+Fail-closed on the recipient: the address is the head professor on file (`head_professor_member_id`
+in settings, and the `email` on that roster row), never a constant in the source. A deployment that
+has named no head professor, or whose professor has no address, **refuses the pass** on a morning
+when something was due rather than guessing at an inbox -- and stays quiet on a morning when nothing
+was. A send that fails is not stamped, so it is retried the next morning while the letter is still
+worth writing.
+
 ## City channels
 
 A city gets a Slack channel at **four members** -- `#group-toronto`, `#group-zurich`,
@@ -512,6 +998,73 @@ announces it is also the one that has to make undoing it obvious.
 AdminBot **does not create channels**. A missing `#group-<city>` fails the invite and is reported;
 opening a channel is a decision about the workspace's shape, and a sweep that quietly makes rooms is
 how a directory fills with them.
+
+## The DCS roster sheet
+
+Sending the full-member onboarding guide (template `member`) files one row on the sheet the
+department's sysadmin acts on, and mails that member the credentials the row carries. It replaces
+the Microsoft-Forms automation that used to drive a headless browser through
+`https://forms.office.com/r/TgGWBGWLZa`: the form carried only First/Last/Email, its selectors
+could be relaid out by Microsoft without notice, and it handed back no receipt, so "submitted" only
+ever meant "the click did not throw".
+
+Point it at a spreadsheet with:
+
+| Variable                       | What it names                                    |
+| ------------------------------ | ------------------------------------------------ |
+| `ADMINBOT_DCS_ROSTER_SHEET_ID` | The spreadsheet id alone. Unset disables filing. |
+
+Unset is not an error and not a silent skip: the send reports `dcs_roster_row.added: false` with
+"the DCS roster sheet is not configured", the same shape the retired form used for "not wired up".
+
+The sheet's columns, which `DCS_ROSTER_SHEET_COLUMNS` in
+`extensions/adminbot/src/workflows/onboarding/dcs-roster-sheet.ts` declares and checks against the
+live header before every write:
+
+`full_name`, `adminbot_internal_id`, `dcs_username`, `dcs_password`, `non_dcs_email`,
+`career_stage`, `at_uoft_or_not`, `permission`, `date_of_this_row_change`
+
+A row is one account. `dcs_username` is chosen from three candidates, in the lab's order of
+preference -- `firstname`, `lastname`, then `{first initial}{lastname}` -- taking the first that is
+held by nobody on the sheet and nobody on the roster. A name with no family name in it is refused
+rather than guessed at, and so is a name with all three candidates taken; both report a failure for
+a human to file by hand. The guide itself still goes out either way -- the row is a side errand,
+and the member is waiting on the mail.
+
+The cell holds a **bare account name**, not an address. `dcs_username` is the unix account DCS
+sponsors, the roster contract spells it bare ("e.g. `akim`"), the sysadmin's roster is keyed on
+that string, and the rows already on the sheet are bare. The `@cs.toronto.edu` address is rendered
+where it belongs, in the credentials mail to the member. Comparison runs both sides through
+`normalizeDcsUsername`, which strips a domain if a hand-typed row carries one -- without that, a
+bare `andrew` on the sheet and a generated `andrew@cs.toronto.edu` never match and the taken-check
+silently passes every collision through.
+
+`permission` defaults to `UofT-slack-only`, the least-privileged provisioned value in
+`contracts/compute-access.ts`, unless the roster already grants this person something. An
+escalation is a deliberate later row, never a side effect of onboarding.
+
+`at_uoft_or_not` is left blank when the roster does not know. It is never written as "no": that
+would report an absence of information to DCS as a claim about somebody's eligibility.
+
+### The temporary password
+
+`dcs_password` is generated per member, 20 characters from an alphabet with no `0`/`O` or
+`1`/`l`/`I` in it, and it is the initial credential for the account the sysadmin creates. It
+replaces nothing on the portal side -- `ADMINBOT_SEEDED_PORTAL_PASSWORD` is a separate thing and is
+unchanged.
+
+It is written to two places and only two: the sheet cell, and the credentials mail to the member.
+It is deliberately **not** in the audit log (`auth.dcs_roster_row_added` records the username
+only), not in the `POST /onboarding/guide` response payload, and not in the dry-run transcript,
+which prints `DRY-RUN-NOT-A-PASSWORD` instead. The mail is sent as its own message rather than
+folded into the guide, because the guide is cc'd to project leads on most sends.
+
+A row that landed with an unsent credentials mail is reported as `added: true` with an error that
+says to send the credentials by hand and **not** to re-run the filing -- re-filing asks for a
+second account under a second password.
+
+Because the password lives in a spreadsheet cell, treat the sheet's sharing as the blast radius and
+have the sysadmin force a change on first sign-in.
 
 ## Onboarding cycles
 
@@ -545,6 +1098,8 @@ whether somebody was ever told.
 | Nudge                          | Runs                | Channel        | Escalates |
 | ------------------------------ | ------------------- | -------------- | --------- |
 | Setup checklist still open     | 10 days, then 60    | Slack          | no        |
+| Onboarding follow-up           | 5 business days, +3 | Slack          | **yes**   |
+| Never signed in                | every 3 days        | Slack          | no        |
 | Thesis deadline approaching    | 14 days before      | Slack          | no        |
 | Thesis ready to grade          | 5 days after        | Slack          | no        |
 | Finishing month approaching    | 2 months before     | Slack          | no        |
@@ -561,17 +1116,63 @@ whether somebody was ever told.
 | Workshop matches               | admin presses Nudge | Slack          | no        |
 | Ad-hoc admin nudge             | admin types it      | Slack or email | no        |
 
-The three that escalate are the three where nobody finding out costs something that cannot be
+### The onboarding follow-up ladder
+
+The onboarding email itself is queued by a person -- from **Add member**, from the Onboarding
+section's sheet selection, or by the weekly sweep -- and approved by one. What follows it is
+not:
+
+1. **Five business days** after the welcome, if the member has neither signed in nor edited
+   anything, a Slack reminder. Business days, so somebody welcomed on a Thursday is not chased over
+   their first weekend.
+2. **Three days later**, a second reminder, which says it is the second and says the next thing that
+   happens is a person.
+3. **Five days after that**, both reminders land on the professor's page under that member's name,
+   and AdminBot stops asking.
+
+Any sign of life ends it at any step -- a sign-in or an edit the member made themselves. The
+escalation writes `escalated_at` on the notifications the ladder already filed, so it arrives in the
+queue the professor's page already reads rather than in a second list to remember to check.
+
+Running alongside it is a standing reminder for anyone who has **never signed in at all**, every
+three days. It stands aside while the ladder owns a member, so a newly welcomed member is never
+chased twice in the same week about the same thing in different words.
+
+Both are driven by `adminBotDormantChaseMemberTypes` in `contracts/actions.ts`, which is `["full"]`
+today. Adding `"alumni"`, `"own-pace-advisee"` or `"coauthor-major"` to that array is the whole
+change needed to bring those groups in -- nothing else reads a member type to decide who is chased.
+Alumni are refused separately and always, so adding `"alumni"` there will mean "an alumnus still
+holding a lab role", never "chase people who have left".
+
+Both run from `scripts/adminbot-disengagement-cron.sh`, which is safe to run daily: the cadences
+live in the service, so a doubled crontab cannot turn either into a daily nag.
+
+The four that escalate are the four where nobody finding out costs something that cannot be
 recovered later: a missing submission link when the deadline does not move, a blank profile or
-timeline that everything downstream is planned from, and a paper the group meeting cannot plan
-around because nobody registered it. The rest are worth saying and worth reading, and a sweep that
+timeline that everything downstream is planned from, a paper the group meeting cannot plan around
+because nobody registered it, and a member who never arrived at all -- who is the one case where
+the thing that has gone wrong is invisible from every other page, because somebody who has never
+signed in generates no rows anywhere. The rest are worth saying and worth reading, and a sweep that
 pulled the head professor into every unanswered one would train everybody to ignore the ones that
 matter.
 
-An important nudge that is still unread after
-`adminBotNudgeEscalateAfterDays` (five) opens a three-way Slack DM -- AdminBot, the head professor
-and the member -- with everything of theirs that is overdue in one message. It escalates once, and
-the member is in the room: the point is the thing getting done, not a report about them.
+The onboarding ladder escalates on its own schedule rather than through
+`adminBotNudgeEscalateAfterDays`: it has already asked twice on a clock the lab chose, so the
+generic five-days-unread rule would only ask a third time before doing the same thing.
+
+An important nudge that is still unread after `adminBotNudgeEscalateAfterDays` (five) is stamped
+`escalated_at` and appears on the professor's page, under that member's name, with everything of
+theirs that is overdue. The member gets one Slack DM saying it has gone there. It escalates once.
+
+**AdminBot sends the PI nothing.** Not a Slack DM, not a portal notification, not a dashboard
+warning -- their entire queue is the escalation list on their own page. Two rules keep it that way:
+`sendMemberNudge` refuses the head professor ahead of the notification write, which covers every
+sweep because that function is the only place a notification is ever created; and the escalation,
+which used to open a three-way DM with them in it, now writes only to the desk.
+
+The member is still told, and told where it went, so this is not a private complaint about them --
+which was the reason the three-way DM existed. What changed is that the professor reading it in a
+DM was the same item said twice to the one person who cannot act on it by replying.
 
 `POST /nudges/send` -- the one route where the text and the recipients come from a browser --
 deliberately drops `important`. The reason the escalation can auto-execute is that nothing but a
@@ -601,6 +1202,8 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | ----------------------------------- | -------------------- | ---------------------------------------------------------------------------- |
 | `adminbot-email`                    | `5 * * * *`          | Hourly inbound email triage pass                                             |
 | `adminbot-openreview`               | `15 0,6,12,18 * * *` | Reviewing-cycle pass, four times a day                                       |
+| `adminbot-citation-checks`          | `25,55 * * * *`      | Check the citations of each new OpenReview submission version                |
+| `adminbot-iclr-integrity`           | `12 * * * *`         | Pangram AI-text score of new ICLR versions; Slack alert on AI text/citations |
 | `adminbot-meeting-artifacts`        | `20 * * * *`         | Meeting artifact drop-folder pass                                            |
 | `adminbot-member-directory`         | `40 5 * * *`         | Daily Slack timezone/directory sync                                          |
 | `adminbot-slack-directory`          | `45 5 * * *`         | Daily Slack channel directory refresh                                        |
@@ -609,11 +1212,15 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                     |
 | `adminbot-graduations`              | `0 8 * * 1`          | Confirm finishing months, chase alumni transitions, and arrange the ceremony |
 | `adminbot-city-channels`            | `0 7 * * 1,4`        | Add members to their city Slack channel once a city reaches four             |
-| `adminbot-paperflow-nudges`         | `0 9 * * 1-5`        | PaperFlow venue-stage nudges                                                 |
+| `adminbot-email-templates`          | `30 8 * * 1`         | Check the email-template doc against the shipped copy                        |
+| `adminbot-paperflow-nudges`         | `0 9 * * 1`          | PaperFlow venue-stage nudges, once a week                                    |
 | `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                     |
 | `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                       |
 | `adminbot-onboarding-chase`         | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months      |
 | `adminbot-thesis-milestones`        | `50 9 * * 1-5`       | Guidebook nudge before a thesis deadline, grading reminder five days after   |
+| `adminbot-paper-stages`             | `45 * * * *`         | Verify the evidence, advance each paper on it, and queue the PI's gate       |
+| `adminbot-papermentor-runs`         | `35 * * * *`         | Collect PaperMentor's cached reviews and record them against their papers    |
+| `adminbot-rec-letter-reminders`     | `25 10 * * *`        | Mail the head professor the letters due within three days                    |
 | `adminbot-meeting-attendance`       | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting                   |
 | `adminbot-weekly-updates`           | `0 10 * * 1`         | Ask authors for the week's paper updates                                     |
 | `adminbot-prereg-nudges`            | `0 14 * * 4`         | Pre-meeting pre-registration sweep                                           |
@@ -655,7 +1262,10 @@ through to the next whenever it fails to resolve -- not only when it is empty.
    timezone, whose IANA name carries a city) and stamps it on the member as
    `slack_location`. A member Slack no longer knows about has their stamp
    cleared rather than left stale, so an old value cannot outrank a fresher
-   source forever.
+   source forever. That clearing only happens when the pass runs, which is why
+   it is scheduled daily (`adminbot-member-map`, 06:10) rather than left to the
+   button: this is the one source of the three that cannot refresh itself, and
+   it is the one the other two defer to.
 2. **Last-login location**, country-level only. Stamped automatically on every
    successful sign-in from the caller's IP (see "Login location" below) -- there
    is nothing to manually refresh here, it is already as current as their most
@@ -993,6 +1603,7 @@ checks and audit logging.
 
 ## Related
 
+- [Email template drift check](/tools/adminbot-email-templates)
 - [PaperFlow stage nudges](/tools/adminbot-paperflow-nudges)
 - [Email triage](/tools/adminbot-email-triage)
 - [Standing orders](/automation/standing-orders)
@@ -1052,3 +1663,65 @@ The zone comes from `resolveAttendeeZoneAt`, resolved against the event's own da
 first: a logged trip covering that day, then an explicit `timezone`, then a zone guessed from
 `current_city`, then from `location`. So September invites read in Berlin time and October invites
 read in home time without the member touching anything twice.
+
+## Visitor deadline proposals
+
+Visitors can use **Propose a new deadline** without signing in and optionally provide their name and email for follow-up. Proposal card headers show a **Visitor** or **Lab member** badge. Reviewing administrators can see those details; they are not included in the public deadline feed. Signed-in submissions use the member's existing name and email. Contact details are stored separately from deadline fields and retained across revisions. Administrators can revise, reject, or publish submissions; publication requires approval of the current payload hash.
+
+`POST /public/deadline-proposals` accepts the deadline fields as JSON and optional `submitter_contact: { name, email }`. Successful requests return `202 {"status":"received"}`. An optional `Idempotency-Key` header (up to 200 characters) supports retries; the UI supplies it automatically. Reusing a key preserves the original submission and contact details, including across restarts.
+
+Requests are subject to the origin allowlist, a 16 KiB body limit, and field validation. Each address can make five submission attempts per hour. Rate-limited requests return `429` with `Retry-After`. Address resolution follows the existing trusted-proxy configuration. Rate limits are held in memory and reset on restart.
+
+### Deadline refresh and reviewed corrections
+
+Signed-in members can choose **Suggest deadline correction** from the menu beside an existing deadline. The existing publication proposal flow records the target and its prior date in the immutable payload. Administrators review the before/after dates and approve the exact payload hash. Publication replaces the target by stable ID, retains its milestone and history, and refuses a stale correction when the accepted date has changed in the meantime. Visitors can propose new deadlines but cannot correct existing ones.
+
+The service reads `extensions/adminbot/content/deadlines` on each deadline request; set `ADMINBOT_DEADLINE_DATASET_PATH` for a different location. The collector honors the same dataset-path variable and replaces that file atomically. The deadline page starts empty and loads only server data, matching the member timeline convention. Visible pages reload every five minutes. Initial failures show an error and Retry button; failed refreshes retain the last successful server response with an explicit error. Bundled data is never substituted. Collection therefore does not require a service rebuild or restart. A missing or malformed runtime dataset fails the request instead of silently serving the compiled snapshot. Deploying code still requires the normal build and restart.
+
+Cron consumers read the accepted `/deadlines` projection, including approved corrections, using `ADMINBOT_DEADLINE_READ_URL` (default `http://127.0.0.1:8765/deadlines` in the cron wrapper). Standalone Python invocations without that variable use the local dataset. Matching stores the stable deadline ID; reminders resolve its current date before computing cadence. Regenerate legacy matches before enabling reminders: entries without a resolvable ID are skipped. Calendar corrections appear on the next configured calendar sync. Approved corrections remain authoritative if later collection disagrees and require another reviewed correction to change them.
+
+The collector checks eligible sources daily from fourteen days before through seven days after their deadline, weekly for other workshops, and fortnightly for other tracked OpenReview conferences. ICLR 2027 abstract/full-paper and EACL 2027 demo milestones have exact invitation mappings and refresh on the same cadence. ARR cycles and AACL, EMNLP, EACL, and NAACL submission/commitment rows are refreshed from exact labeled official-table rows; missing or ambiguous rows preserve the previous date with uncertainty. The historical NeurIPS rebuttal constant remains a manually checked source. The daily `adminbot-deadline-refresh-venues` job already exists in `config/adminbot-cron.json`; inspect and synchronize that job with `scripts/adminbot-cron-sync.sh --dry-run --only adminbot-deadline-refresh-venues` and then the same command without `--dry-run`. Do not create a duplicate job or enable unrelated delivery jobs during setup.
+
+Explicit abstract and full-paper dates are retained separately. A matched OpenReview invitation due date takes precedence over a conflicting CFP announcement; unmatched stages remain provisional. Invitation expiry is recorded separately from the due date. Source failures do not constitute a successful source check, and the board's latest-check date describes the newest individual observation, not verification of the entire dataset.
+
+### Deadline jobs after Aurora deployment
+
+Register the two deadline jobs explicitly after deployment using the [deadline cron setup](adminbot-deadline-cron-setup.md) procedure. Normal service starts and restarts do not change cron registration.
+
+### Selecting a deadline stage
+
+The deadlines board defaults to following the next published stage. Selecting a stage, such as Decisions or Camera-ready, restricts the board to venues with a known date for that stage. Dates, countdowns, ordering, and the Upcoming/Past split follow the selection in Groups, Cards, and Table. Shared organizer notification requirements are not decision dates. When a stage occurs more than once, Upcoming shows its next occurrence and Past its most recent completed occurrence.
+
+Adding a selected stage to a member's timeline saves that stage, preserving date-only announcements without inventing a time. Expanding the schedule still shows the venue's other stages.
+
+### Propose and correct individual stages
+
+Propose a new deadline can add one stage to an existing conference or workshop, including past venues, or create a new venue. Choose a standard stage or name a custom one, enter its date, and supply a source. Leave the time blank when the source gives only a date.
+
+Each dated stage has a details menu. Signed-in members can use Suggest deadline correction there; the form targets that stage only. Adding a stage does not replace the submission date or the rest of the schedule. An existing stage must be corrected through its details instead of added again.
+
+Proposals use the administrator approval queue. Approval is bound to the proposed stage and date. If a stage changes before its correction is published, the correction must be submitted again against the current date.
+
+### Interview invitations
+
+On **Lab members**, open **Invite an interviewee**. Enter the candidate's name and email,
+project, exact task, and two lab interviewers. Search by name if an interviewer is not in the
+current roster page. Both interviewers need a Slack user ID and email on their profiles.
+
+**Preview email** shows the candidate address, interviewer CC addresses, and task. Editing a
+field invalidates the preview. **Submit for admin approval** queues an `onboarding.send_guide`
+proposal in Pending Actions; it does not email or invite anyone. An admin reviews and approves
+the exact payload there.
+
+Execution creates or reuses a private candidate-specific Slack channel, checks that no other
+people occupy it, adds the two interviewers, and sends the candidate's Slack Connect invitation
+and task email. The two interviewers are CC'ed, and replies go to the first interviewer. The
+standard friends/collaborators channel is not used. A successfully sent invitation adds a new
+candidate to the roster as `interviewee` at the external-collaborator privilege level; existing
+member access is preserved. Repeated submissions for a pending, approved, or executed invitation
+are refused.
+
+The configured bot needs Slack permissions for private-channel listing/creation, membership
+reads/invites, `auth.test`, and email lookup, plus the existing Slack Connect and Gmail sender.
+Missing permissions stop execution; preview and queueing never provision a channel. This needs
+an Aurora backend release as well as the frontend release.

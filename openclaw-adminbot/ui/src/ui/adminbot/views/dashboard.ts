@@ -20,8 +20,10 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
 import { iconForTab, isKnownTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
+import type { MemberNotification } from "../auth/session.ts";
+import { daysLeftLabel, upcomingMajorDeadlines, urgencyOf } from "../data/deadline-time.ts";
 import { nextStepFor } from "../next-step.ts";
-import { renderDeadlines } from "./deadlines.ts";
+import { renderAoeDateTime } from "./deadline-date.ts";
 import { renderMemberMap } from "./member-map.ts";
 import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
 import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile.ts";
@@ -113,17 +115,69 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
  * member has seen it, not that they have done it, and an attendance reminder is worth keeping on
  * screen until they have actually turned up to a meeting.
  */
-function notificationItems(state: AppViewState, role: AccessRole): AttentionItem[] {
+/**
+ * The notifications this page actually shows: the newest of each kind, minus anything a computed
+ * card already says better.
+ *
+ * Two kinds of duplicate had built up on the dashboard, and they are different problems:
+ *
+ *   - The same nudge sent again. The workshop matcher runs on a schedule, so "Workshops that may
+ *     fit your papers" arrived once per pass and stacked; only the latest is news, and the older
+ *     ones are a list of papers that has since changed.
+ *   - A nudge about something the page is already showing. "Your profile is missing required
+ *     fields" sat directly above the card that names the blank fields and buttons through to each
+ *     one -- the same sentence, worse. The computed card wins because it is specific and current;
+ *     the nudge is a copy of a message that was already delivered on Slack.
+ *
+ * Collapsing here rather than in the service on purpose: the notification rows are the record of
+ * what the lab said and when, and they are read by the nudge escalation. This is a decision about
+ * one page.
+ */
+type VisibleNotification = MemberNotification & { collapsed_ids: string[] };
+
+/** How much a notification insists on being the one its kind is represented by. */
+function rank(notification: MemberNotification): number {
+  return (notification.escalated_at ? 2 : 0) + (notification.important ? 1 : 0);
+}
+
+function visibleNotifications(state: AppViewState, role: AccessRole): VisibleNotification[] {
   if (role === "anonymous") {
     return [];
   }
-  return (state.adminBotNotifications ?? []).map((notification) => ({
+  // A computed card is a better answer than a nudge about the same thing, so the nudge goes.
+  const covered = mandatoryFieldsItem(state) ? new Set(["profile"]) : new Set<string>();
+  const byKind = new Map<string, MemberNotification[]>();
+  for (const notification of state.adminBotNotifications ?? []) {
+    if (covered.has(notification.kind)) {
+      continue;
+    }
+    byKind.set(notification.kind, [...(byKind.get(notification.kind) ?? []), notification]);
+  }
+  return [...byKind.values()]
+    .map((group) => {
+      // Newest wins, except that an escalation outranks it. Collapsing purely by date would let a
+      // fresh send bury the one the head professor has already been brought into, and that is the
+      // loudest state this page has -- see renderNudgeWarning, which stops talking about unread
+      // counts entirely once something is escalated.
+      const [kept, ...rest] = [...group].sort(
+        (left, right) =>
+          rank(right) - rank(left) || right.created_at.localeCompare(left.created_at),
+      );
+      return { ...(kept as MemberNotification), collapsed_ids: rest.map((entry) => entry.id) };
+    })
+    .sort((left, right) => right.created_at.localeCompare(left.created_at));
+}
+
+function notificationItems(state: AppViewState, role: AccessRole): AttentionItem[] {
+  return visibleNotifications(state, role).map((notification) => ({
     id: `notification-${notification.id}`,
     title: notification.title,
     summary: notification.body,
     actionLabel: t("dashboard.notifications.open"),
     onAction: () => {
-      void state.markNotificationsRead?.([notification.id]);
+      // The ones it stands for go with it: they are older sends of the same nudge, and leaving
+      // them unread would keep the banner counting messages this page no longer shows.
+      void state.markNotificationsRead?.([notification.id, ...notification.collapsed_ids]);
       // Checked rather than cast: the tab is a string the service chose, and routing at a view that
       // does not exist would be worse than the card simply not navigating.
       if (isKnownTab(notification.tab)) {
@@ -150,6 +204,25 @@ function proposalsItem(state: AppViewState, role: AccessRole): AttentionItem | n
       count: String(pending.length),
     }),
     actionLabel: t("dashboard.proposals.open"),
+    onAction: () => state.setTab("adminbot"),
+  };
+}
+
+function emailReviewsItem(state: AppViewState, role: AccessRole): AttentionItem | null {
+  if (role !== "admin") {
+    return null;
+  }
+  const reviews = state.adminBotData?.emailReviews ?? [];
+  if (reviews.length === 0) {
+    return null;
+  }
+  return {
+    id: "email-reviews",
+    title: "Emails need a decision",
+    summary: `${reviews.length} ${
+      reviews.length === 1 ? "message was" : "messages were"
+    } held because AdminBot could not safely decide what to update.`,
+    actionLabel: "Review emails",
     onAction: () => state.setTab("adminbot"),
   };
 }
@@ -229,6 +302,7 @@ function attentionItems(state: AppViewState, role: AccessRole): AttentionItem[] 
     ...notificationItems(state, role),
     mandatoryFieldsItem(state),
     nextStepItem(state, role),
+    emailReviewsItem(state, role),
     proposalsItem(state, role),
     registrationsItem(state, role),
   ].filter((item): item is AttentionItem => item !== null);
@@ -364,6 +438,106 @@ function renderWorkSummary(state: AppViewState) {
  * The dashboard: what is waiting on the viewer, a summary of their projects and papers, and the
  * complete public deadline board.
  */
+/** How many deadlines the dashboard shows. Two is a glance; the board is one click away. */
+const DASHBOARD_DEADLINE_COUNT = 2;
+
+type NextDeadline = {
+  key: string;
+  label: string;
+  instant: number;
+  mine: boolean;
+};
+
+/**
+ * The next two deadlines, across both lists the member is actually working to.
+ *
+ * A union rather than the public board alone. The board answers "what is the field doing"; a
+ * member's own dated milestones -- a thesis draft, a committee date, a conference they added to
+ * their own panel -- are the ones they plan around, and a summary that showed only the public half
+ * could say "nothing for six weeks" to somebody with a submission on Friday.
+ *
+ * Two, and no more. The whole board used to render here, which made the dashboard mostly a copy of
+ * the Deadlines tab: the same rows, one scroll further down, on a page whose job is to say what is
+ * waiting on *you*. It is a glance now, and it links to the board rather than reproducing it.
+ */
+function nextDeadlines(state: AppViewState): NextDeadline[] {
+  const now = Date.now();
+  const rows: NextDeadline[] = upcomingMajorDeadlines(now, DASHBOARD_DEADLINE_COUNT).map(
+    (entry) => ({
+      key: `venue:${entry.venue.deadline_id ?? entry.venue.name}`,
+      label: entry.venue.name,
+      instant: entry.instant,
+      mine: false,
+    }),
+  );
+  const member = findOwnMember(state);
+  for (const milestone of member?.milestones ?? []) {
+    const date = String(milestone.date ?? "").trim();
+    if (!date) {
+      continue;
+    }
+    // Midday rather than midnight: a whole-day milestone has no clock on it, and parsing it as
+    // UTC midnight prints as the day before for every reader west of Greenwich.
+    const instant = Date.parse(`${date}T12:00:00Z`);
+    if (!Number.isFinite(instant) || instant < now) {
+      continue;
+    }
+    rows.push({
+      key: `mine:${date}:${milestone.label ?? ""}`,
+      label: String(milestone.label ?? "").trim() || date,
+      instant,
+      mine: true,
+    });
+  }
+  return rows
+    .toSorted((left, right) => left.instant - right.instant)
+    .slice(0, DASHBOARD_DEADLINE_COUNT);
+}
+
+function renderNextDeadlines(state: AppViewState) {
+  const rows = nextDeadlines(state);
+  if (rows.length === 0) {
+    return nothing;
+  }
+  const now = Date.now();
+  // The board's own row vocabulary, two rows of it: countdown, name, date. The data-urgency
+  // attribute is what resolves the urgency color token, so "3 days left" is the same red here as
+  // it is on the board rather than a second scale that drifts from it.
+  return html`<section class="dashboard__next-deadlines" data-testid="dashboard-next-deadlines">
+    <div class="dashboard__next-deadlines-head">
+      <h3 class="card-title">${t("dashboard.nextDeadlines.title")}</h3>
+      <button
+        type="button"
+        class="dashboard__next-deadlines-open"
+        data-testid="dashboard-next-deadlines-open"
+        @click=${() => state.setTab("adminbotDeadlines")}
+      >
+        ${t("dashboard.nextDeadlines.open")}
+      </button>
+    </div>
+    <ol class="dashboard__next-deadlines-list">
+      ${rows.map(
+        (row) =>
+          html`<li class="dashboard__next-deadline" data-urgency=${urgencyOf(row.instant, now)}>
+            <span class="dashboard__next-deadline-countdown"
+              >${daysLeftLabel(row.instant, now)}</span
+            >
+            <span class="dashboard__next-deadline-name">
+              ${row.label}${row.mine
+                ? html`<span class="dashboard__next-deadline-tag"
+                    >${t("dashboard.nextDeadlines.yours")}</span
+                  >`
+                : nothing}
+            </span>
+            <span class="dashboard__next-deadline-date">
+              ${renderAoeDateTime(new Date(row.instant).toISOString())}
+            </span>
+          </li>`,
+      )}
+    </ol>
+  </section>`;
+}
+
 /**
  * The warning across the top of the page: what has been asked of this member and not answered.
  *
@@ -379,9 +553,8 @@ function renderNudgeWarning(state: AppViewState, role: AccessRole) {
   if (role === "anonymous") {
     return nothing;
   }
-  const unread = (state.adminBotNotifications ?? []).filter(
-    (notification) => !notification.read_at,
-  );
+  // The same list the cards below draw, so the count can never promise more than the page shows.
+  const unread = visibleNotifications(state, role).filter((notification) => !notification.read_at);
   if (!unread.length) {
     return nothing;
   }
@@ -393,7 +566,9 @@ function renderNudgeWarning(state: AppViewState, role: AccessRole) {
   const headline = escalated.length
     ? t("dashboard.nudgeWarning.escalated", { count: String(escalated.length) })
     : important.length
-      ? t("dashboard.nudgeWarning.important", { count: String(important.length) })
+      ? t("dashboard.nudgeWarning.important", {
+          count: String(important.length),
+        })
       : t("dashboard.nudgeWarning.unread", { count: String(unread.length) });
   return html`
     <section
@@ -412,7 +587,13 @@ function renderNudgeWarning(state: AppViewState, role: AccessRole) {
         class="btn btn--sm"
         type="button"
         data-testid="dashboard-nudge-warning-ack"
-        @click=${() => void state.markNotificationsRead?.(unread.map((entry) => entry.id))}
+        @click=${() =>
+          // Everything the banner stands for, not only what it lists: a collapsed sibling is
+          // still an unread row in the service, and the nudge escalation reads those. Leaving
+          // them behind would acknowledge a page rather than the messages on it.
+          void state.markNotificationsRead?.(
+            unread.flatMap((entry) => [entry.id, ...entry.collapsed_ids]),
+          )}
       >
         ${t("dashboard.nudgeWarning.acknowledge")}
       </button>
@@ -420,18 +601,166 @@ function renderNudgeWarning(state: AppViewState, role: AccessRole) {
   `;
 }
 
-export function renderDashboard(state: AppViewState, role: AccessRole) {
+/**
+ * A one-off, hand-written notice for one member. Temporary: delete after it expires.
+ *
+ * SuperSycophantic was accepted at NeurIPS with no Drive PDF on file, and the first author and the
+ * PI are not the ones to chase, so this asks the second author directly. It is matched on the
+ * signed-in member's own roster record, stops showing once Oscar dismisses it, and stops showing
+ * for everyone once it expires -- after that it is dead code.
+ */
+export const ONE_OFF_NOTICE_EXPIRES_AT = Date.parse("2026-09-28T04:00:00Z"); // end of Sep 27, Toronto
+const ONE_OFF_NOTICE_DISMISS_KEY = "adminbot.oneOffNotice.supersycophanticDrivePdf";
+
+export function isOneOffNoticeRecipient(state: AppViewState): boolean {
+  // An admin viewing the lab as Oscar is not Oscar.
+  if (state.memberImpersonatedBy) {
+    return false;
+  }
+  // The roster record, not `state.memberName` -- that is the sign-up form's name box, which
+  // anybody can type anything into.
+  const name = (findOwnMember(state)?.name ?? "").trim().toLowerCase().replace(/\s+/gu, " ");
+  return name === "oscar yasunaga";
+}
+
+function oneOffNoticeDismissed(): boolean {
+  try {
+    return window.localStorage.getItem(ONE_OFF_NOTICE_DISMISS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function renderOneOffNotice(state: AppViewState, role: AccessRole) {
+  if (
+    role === "anonymous" ||
+    Date.now() >= ONE_OFF_NOTICE_EXPIRES_AT ||
+    !isOneOffNoticeRecipient(state) ||
+    oneOffNoticeDismissed()
+  ) {
+    return nothing;
+  }
+  const dismiss = (event: Event) => {
+    try {
+      window.localStorage.setItem(ONE_OFF_NOTICE_DISMISS_KEY, "1");
+    } catch {
+      // Storage blocked: it still disappears for this page view, and expires on its own anyway.
+    }
+    // Hidden rather than removed: lit owns this node, and the next render drops it via the check
+    // above.
+    const section = (event.currentTarget as HTMLElement).closest("section");
+    if (section) {
+      section.hidden = true;
+    }
+  };
+  return html`
+    <section
+      class="dashboard__nudge-warning"
+      data-tone="warn"
+      data-testid="dashboard-one-off-notice"
+      role="status"
+    >
+      <strong
+        >SuperSycophantic was accepted at NeurIPS 🎉. Please add its Drive PDF by Sep 27.</strong
+      >
+      <ul>
+        <li>
+          AdminBot still has no Google Drive PDF for
+          <em
+            >SuperSycophantic: Stress-Testing Frontier LLMs from Single- to Multi-Turn
+            Sycophancy</em
+          >. Please upload the de-anonymized camera-ready (full author list) to Drive and paste the
+          link into the paper's "Drive copy of the paper PDF" field under My Projects &amp; Papers.
+          We need it before we can post about the paper on social media.
+        </li>
+      </ul>
+      <button class="btn btn--sm" type="button" @click=${() => state.setTab("myWork")}>
+        Open My Projects &amp; Papers
+      </button>
+      <button class="btn btn--sm" type="button" @click=${dismiss}>Got it</button>
+    </section>
+  `;
+}
+
+/**
+ * The lab-wide broadcast, above everything else on the page.
+ *
+ * Top of the dashboard rather than a banner on every tab: this page is home for anyone signed in,
+ * so it is the first thing a member sees, and a strip that followed them onto all twenty tabs would
+ * be read once and then scrolled past forever.
+ *
+ * Not dismissible, and deliberately: it expires on its own clock, which is the author saying how
+ * long it is worth saying. A dismiss button would let a member turn off the one channel the lab has
+ * for telling everybody something at once.
+ */
+function renderBroadcast(state: AppViewState) {
+  const broadcast = state.adminBotBroadcast;
+  if (!broadcast) {
+    return nothing;
+  }
+  // The service already applies expiry and retraction, but this page can hold a loaded broadcast
+  // across midnight -- so the boundary is re-checked here rather than trusted from load time.
+  if (broadcast.retracted_at || Date.parse(broadcast.expires_at) <= Date.now()) {
+    return nothing;
+  }
+  return html`
+    <section class="dashboard__broadcast" data-testid="dashboard-broadcast" aria-live="polite">
+      <div class="dashboard__broadcast-head">
+        <span class="dashboard__broadcast-icon" aria-hidden="true">📣</span>
+        <h2 class="dashboard__broadcast-title">${t("dashboard.broadcast.title")}</h2>
+      </div>
+      <p class="dashboard__broadcast-body">${broadcast.message}</p>
+      ${broadcast.timezone
+        ? html`<p class="dashboard__broadcast-meta">
+            ${t("professor.broadcast.timezoneLabel", { timezone: broadcast.timezone })}
+          </p>`
+        : nothing}
+      <p class="dashboard__broadcast-meta">
+        ${t("dashboard.broadcast.posted", {
+          when: new Date(broadcast.updated_at).toLocaleDateString(),
+        })}
+      </p>
+    </section>
+  `;
+}
+
+export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?: () => void) {
+  if (role !== "anonymous" && state.adminBotData?.loadedAt === null) {
+    const ownProfile = findOwnMember(state);
+    const profileItem = ownProfile ? mandatoryFieldsItem(state) : null;
+    return html`<div class="dashboard">
+      ${renderBroadcast(state)} ${renderOneOffNotice(state, role)}
+      ${ownProfile ? renderNudgeWarning(state, role) : nothing}
+      <section class="dashboard__attention" aria-live="polite">
+        ${state.adminBotError
+          ? html`<div class="callout danger" role="alert" data-testid="dashboard-load-error">
+              Could not load your dashboard.
+              ${onRetry
+                ? html`<button class="btn btn--sm" type="button" @click=${onRetry}>
+                    Try again
+                  </button>`
+                : nothing}
+            </div>`
+          : html`<p role="status" data-testid="dashboard-loading">
+              ${ownProfile ? "Loading your papers…" : "Loading your dashboard…"}
+            </p>`}
+        ${profileItem
+          ? html`<div class="dashboard__stack">${renderAttentionCard(profileItem)}</div>`
+          : nothing}
+      </section>
+      ${ownProfile ? renderNextDeadlines(state) : nothing}
+    </div>`;
+  }
   return html`
     <div class="dashboard">
-      ${renderOfflineBanner(state)} ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
+      ${renderOfflineBanner(state)} ${renderBroadcast(state)} ${renderOneOffNotice(state, role)}
+      ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
           ${renderWorkSummary(state)} ${renderMemberMap(state.adminBotMemberMap ?? null)}
         </div>
       </section>
-      <div class="dashboard__deadlines" data-testid="dashboard-deadlines">
-        ${renderDeadlines({ role, memberId: state.memberId, settings: state.settings })}
-      </div>
+      ${renderNextDeadlines(state)}
     </div>
   `;
 }
@@ -450,7 +779,12 @@ function renderOfflineBanner(state: AppViewState) {
       ? `${pending} edit${pending === 1 ? "" : "s"} retained from the old queue. Review and submit again when connected; these will not send automatically.`
       : "";
   return html`
-    <section class="dashboard__nudge-warning" data-tone="warn" data-testid="dashboard-offline" role="status">
+    <section
+      class="dashboard__nudge-warning"
+      data-tone="warn"
+      data-testid="dashboard-offline"
+      role="status"
+    >
       <strong>Working offline</strong>
       <p>${[reads, writes].filter(Boolean).join(" ")}</p>
     </section>

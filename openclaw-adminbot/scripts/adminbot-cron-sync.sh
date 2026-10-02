@@ -19,7 +19,27 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$REPO_ROOT/config/adminbot-cron.json"
-OPENCLAW="${OPENCLAW_BIN:-pnpm openclaw}"
+
+# Aurora keeps node and pnpm in ~/.local/bin, which a non-interactive ssh shell does not put on
+# PATH. Every remote block in aurora-adminbot-host.sh exports this for the same reason; this script
+# is meant to be runnable there too and was not, so it failed on every job with "pnpm: command not
+# found" -- twenty-eight times, having already printed what it was about to do.
+export PATH="$HOME/.local/bin:$PATH"
+
+# `pnpm openclaw` goes through scripts/run-node.mjs, which rebuilds a stale dist before running --
+# what you want on a working copy. A deployed release has no pnpm and needs no rebuild, so it falls
+# back to the built entry point, which is the same one aurora-adminbot-host.sh invokes remotely.
+if [[ -n "${OPENCLAW_BIN:-}" ]]; then
+  OPENCLAW="$OPENCLAW_BIN"
+elif command -v pnpm >/dev/null 2>&1; then
+  OPENCLAW="pnpm openclaw"
+elif [[ -f "$REPO_ROOT/openclaw.mjs" ]]; then
+  OPENCLAW="node $REPO_ROOT/openclaw.mjs"
+else
+  printf 'adminbot-cron-sync: no pnpm on PATH and no %s/openclaw.mjs; set OPENCLAW_BIN\n' \
+    "$REPO_ROOT" >&2
+  exit 1
+fi
 DRY_RUN=0
 ONLY=""
 
@@ -39,20 +59,35 @@ done
 
 # The store is read once. Asking the gateway per job turns a sixteen-job sync into sixteen round
 # trips, and a partial answer halfway through would leave the set half-applied.
-existing="$($OPENCLAW cron list --json 2>/dev/null || echo '[]')"
+existing="$($OPENCLAW cron list --all --json)"
 
-python3 - "$MANIFEST" "$REPO_ROOT" "$existing" "$DRY_RUN" "$ONLY" <<'PY' > /tmp/adminbot-cron-plan.$$
+PLAN="$(mktemp)"
+trap 'rm -f "$PLAN"' EXIT
+
+python3 - "$MANIFEST" "$REPO_ROOT" "$existing" "$DRY_RUN" "$ONLY" <<'PY' > "$PLAN"
 import json, shlex, sys
 
 manifest_path, repo_root, existing_raw, dry_run, only = sys.argv[1:6]
 manifest = json.load(open(manifest_path))
 
-try:
-    parsed = json.loads(existing_raw)
-except json.JSONDecodeError:
-    parsed = []
+parsed = json.loads(existing_raw)
 rows = parsed.get("jobs", parsed) if isinstance(parsed, dict) else parsed
-known = {row.get("name") for row in rows if isinstance(row, dict)}
+if not isinstance(rows, list) or any(not isinstance(row, dict) or not row.get("name") or not row.get("id") for row in rows):
+    raise SystemExit("Invalid cron listing; refusing to register jobs")
+selected = [row for row in rows if not only or row["name"] == only]
+if len({row["name"] for row in selected}) != len(selected):
+    raise SystemExit("Duplicate cron names; resolve duplicates before syncing")
+if only and only not in {job["name"] for job in manifest["jobs"]}:
+    raise SystemExit("Unknown manifest job: " + only)
+# Name -> id. `cron edit` selects by id positionally, not by name: passing --name to it *renames*
+# the job, and without an id it refused every edit with "Missing required argument id". The store is
+# the only place the id exists, which is why the listing is read for more than a membership test.
+ids = {
+    row.get("name"): row.get("id")
+    for row in rows
+    if isinstance(row, dict) and row.get("name") and row.get("id")
+}
+known = set(ids)
 
 for job in manifest["jobs"]:
     name = job["name"]
@@ -62,9 +97,12 @@ for job in manifest["jobs"]:
     argv = [part.replace("scripts/", f"{repo_root}/scripts/", 1) if part.startswith("scripts/") else part
             for part in job["argv"]]
     verb = "edit" if name in known else "add"
-    args = [verb, "--name", name]
-    if verb == "add":
-        args += ["--description", job["description"]]
+    if verb == "edit":
+        # The id first, as the positional the command wants. `--name` is not repeated: it is what
+        # matched this job in the first place, and on edit it would only ever rename it to itself.
+        args = ["edit", ids[name]]
+    else:
+        args = ["add", "--name", name, "--description", job["description"]]
     args += [
         "--cron", job["cron"],
         "--command-argv", json.dumps(argv),
@@ -106,7 +144,7 @@ while IFS=$'\t' read -r verb name args <&3; do
       fi
       ;;
   esac
-done 3< /tmp/adminbot-cron-plan.$$
-rm -f /tmp/adminbot-cron-plan.$$
+done 3< "$PLAN"
+rm -f "$PLAN"
 
 exit "$status"

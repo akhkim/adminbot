@@ -1,7 +1,7 @@
+import { adminBotIsAlumniMember } from "../../contracts/actions.js";
 import type {
   AdminBotExternalCollaboratorSubgroup,
   AdminBotLabMember,
-  AdminBotPrivilegeLevel,
 } from "../../contracts/actions.js";
 
 // The document the `yes_separate` follow-up email tells the person to read; the skill's
@@ -76,6 +76,8 @@ const ACCESS_ITEMS = [
       own_pace_advisee: "yes",
       coauthor_minor: "yes",
       coauthor_major: "yes",
+      benefit_partner: "yes",
+      benefit_direct_relative: "yes",
     },
   },
   {
@@ -88,6 +90,8 @@ const ACCESS_ITEMS = [
       coauthor_minor: "yes",
       coauthor_major: "yes",
       coauthor_discussant_designer: "yes",
+      benefit_partner: "yes",
+      benefit_direct_relative: "yes",
     },
   },
   {
@@ -138,16 +142,20 @@ const ACCESS_ITEMS = [
       coauthor_discussant_designer: "yes",
       disappearing_coauthor: "yes",
       external_prof: "yes",
+      benefit_partner: "yes",
+      benefit_direct_relative: "yes",
     },
   },
   {
     id: "active_channels",
     label: "#jinesis-active and #random-active",
     detail: "Add them to #jinesis-active and #random-active, both channels.",
+    // Discussant/designers are deliberately not here. The sheet leaves that cell blank, and this
+    // row grants two general channels rather than the per-topic and per-project rooms that
+    // subgroup does get -- see discussion_channel and project_channel.
     cells: {
       own_pace_advisee: "yes",
       coauthor_major: "yes",
-      coauthor_discussant_designer: "yes",
     },
   },
   {
@@ -159,12 +167,13 @@ const ACCESS_ITEMS = [
   {
     id: "discussion_channel",
     label: "#discussion-xxx topic channel",
-    detail: "Add to #discussion-xxx for joining the discussions on this broad topic.",
+    detail: "Add to #discussion-xxx for joining the discussions on any related broad topic.",
     cells: {
       own_pace_advisee: "yes",
       coauthor_minor: "yes",
       coauthor_major: "yes",
       coauthor_discussant_designer: "yes",
+      benefit_partner: "yes",
     },
   },
   {
@@ -183,15 +192,26 @@ const ACCESS_ITEMS = [
     label: "Project Google Drive folder",
     detail:
       "Has access to our project-related Google Drive folder (or create it if it does not exist).",
+    // Acquaintances are deliberately not here. The sheet leaves that cell blank, and this row is
+    // lab documents rather than a channel: an acquaintance is somebody the lab keeps an address
+    // for, which is a weaker relationship than everyone else granted this.
     cells: {
       interviewee: "yes",
       slightly_better_than_emails: "yes",
-      acquaintance: "yes",
       own_pace_advisee: "yes",
       coauthor_minor: "yes",
       coauthor_major: "yes",
       coauthor_discussant_designer: "yes",
     },
+  },
+  {
+    // The two standing invites. `belongsOnSurface` (surface-membership.ts) reads this row for
+    // external collaborators, so granting it here is what puts somebody on the lab calendar and the
+    // Monday meeting -- there is no second list of who belongs.
+    id: "lab_calendar_group_meeting",
+    label: "Lab calendar and Monday Group Meeting",
+    detail: "View access to the lab calendar and an invite to the Monday Group Meeting.",
+    cells: { own_pace_advisee: "yes", coauthor_major: "yes" },
   },
   {
     id: "weekly_meeting",
@@ -263,12 +283,27 @@ const ACCESS_ITEMS = [
     label: "Vector sponsor roster share",
     detail:
       "On the constantly-updating name + institutional-email sheet auto-shared with our Vector sponsor contact, who reads it to decide whether to extend or remove an account. Full members are on it too, by privilege level rather than subgroup -- see vectorSponsorRoster.",
-    cells: { coauthor_major: "yes" },
+    // `own_pace_advisee` is what the sheet's cell says, and this row is the one place where the
+    // sheet contradicts itself: the row's own prose asks to share "our 'coauthor-major' and 'full
+    // members'", which is exactly what `VECTOR_ROSTER_MEMBER_TYPES` implements, while the
+    // own-pace-advisee column next to it is marked Y.
+    //
+    // The cell is transcribed here because that is what this table is -- the sheet's answer -- but
+    // the function is deliberately NOT changed to match, because the two are keyed on different
+    // fields and only one of them sends anything anywhere: this matrix reads
+    // `collaborator_subgroup`, which no roster row currently sets, while `vectorSponsorRoster`
+    // reads the `member_type` column and its output goes to somebody outside the lab. Widening it
+    // on the strength of a cell that argues with its own row would put two named people's
+    // addresses in front of a sponsor without anybody deciding to.
+    //
+    // So this is a live question, not a settled policy: if the lab means the cell, add
+    // "own-pace-advisee" to VECTOR_ROSTER_MEMBER_TYPES; if it means the prose, blank the cell.
+    cells: { coauthor_major: "yes", own_pace_advisee: "yes" },
   },
   {
     id: "city_dinner_invite",
     label: "City-based dinner or team building invite",
-    detail: "Invite to city-based dinners and team building events.",
+    detail: "Invite to city-based meals and team building events.",
     cells: {
       interviewee: "yes",
       acquaintance: "yes",
@@ -279,9 +314,34 @@ const ACCESS_ITEMS = [
       coauthor_discussant_designer: "yes",
     },
   },
+  {
+    // Nothing in AdminBot can issue a fob or a guest contract, so this row is a checklist item for
+    // a person, not something an onboarding step executes.
+    id: "physical_office_access",
+    label: "Physical office access",
+    detail:
+      "Access to our physical office locations (e.g., Vector member onboarding and fob access; ETH OAT building access if they have an ETH card; MPI guest contract).",
+    cells: { benefit_partner: "yes" },
+  },
 ] as const satisfies readonly AccessItemDefinition[];
 
 export type AdminBotCollaboratorAccessItemId = (typeof ACCESS_ITEMS)[number]["id"];
+
+/**
+ * The whole matrix, rows included that grant nothing to anybody.
+ *
+ * `collaboratorSubgroupAccess` cannot answer for those: it reports what a subgroup is granted,
+ * so a row every subgroup is denied is invisible through it -- and "trusted for lab private
+ * info", which is exactly that row today, is the one whose disappearance would matter most.
+ * The conformance test compares this against the spreadsheet row for row, so an item that
+ * stops being denied to everyone has to show up as a diff rather than as nothing.
+ */
+export const adminBotCollaboratorAccessItems: readonly {
+  id: AdminBotCollaboratorAccessItemId;
+  label: string;
+  detail: string;
+  cells: Partial<Record<AdminBotExternalCollaboratorSubgroup, AdminBotCollaboratorGrantedCell>>;
+}[] = ACCESS_ITEMS;
 
 export type AdminBotCollaboratorGrant = {
   item: AdminBotCollaboratorAccessItemId;
@@ -307,11 +367,63 @@ export function collaboratorSubgroupAccess(
   return grants;
 }
 
-// The `vector_roster_share` row is the one item whose population crosses both axes: the sponsor
-// sheet carries internal lab members by privilege level plus external collaborators in the
-// coauthor_major subgroup. Admins are on it because they are lab people who hold Vector accounts —
-// leaving them off would have the sponsor read their absence as "remove this account".
-const VECTOR_ROSTER_PRIVILEGE_LEVELS: readonly AdminBotPrivilegeLevel[] = ["member", "admin"];
+// The member-type tokens the onboarding sheet uses, and the subgroup row each grades against.
+// Ordered most-committed first for the same reason TEMPLATE_BY_TYPE is.
+const SUBGROUP_BY_TOKEN: readonly (readonly [string, AdminBotExternalCollaboratorSubgroup])[] = [
+  ["coauthor-major", "coauthor_major"],
+  ["own-pace-advisee", "own_pace_advisee"],
+  ["coauthor-minor", "coauthor_minor"],
+  ["coauthor-discussant-or-designer", "coauthor_discussant_designer"],
+  ["disappearing-coauthor", "disappearing_coauthor"],
+  ["external-prof", "external_prof"],
+  ["alumni", "alumni"],
+  ["interviewee", "interviewee"],
+  ["slightly-better-than-emails", "slightly_better_than_emails"],
+  ["acquaintance", "acquaintance"],
+  ["benefit-partner", "benefit_partner"],
+  ["benefit-direct-relative", "benefit_direct_relative"],
+];
+
+/**
+ * The subgroup a Member Type maps to, ignoring any subgroup already on the record.
+ *
+ * `resolveSubgroup` (access-audit.ts) lets a stored `collaborator_subgroup` win, which is right for
+ * grading. A type change is the case where the stored value is the stale one, so it asks the column
+ * directly. Undefined for `full` (a full member has no subgroup) and for types no subgroup covers.
+ */
+export function subgroupForMemberType(
+  memberType: string | undefined,
+): AdminBotExternalCollaboratorSubgroup | undefined {
+  const tokens = new Set(
+    (memberType ?? "")
+      .split(",")
+      .map((part) => part.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (tokens.has("full")) {
+    return undefined;
+  }
+  return SUBGROUP_BY_TOKEN.find(([token]) => tokens.has(token))?.[1];
+}
+
+/** Whether a subgroup's row of the matrix grants this item. */
+export function subgroupHoldsAccessItem(
+  subgroup: AdminBotExternalCollaboratorSubgroup,
+  item: AdminBotCollaboratorAccessItemId,
+): boolean {
+  return collaboratorSubgroupAccess(subgroup).some((grant) => grant.item === item);
+}
+
+/**
+ * Who the sponsor sheet is for: the lab's full members and its major coauthors.
+ *
+ * Read from the member-type column, which is the lab's own statement of who is in the lab. It used
+ * to select on `privilege_level` being member or admin, and that is a different question --
+ * privilege says what somebody may *do*, and almost every imported row defaults to `member`. The
+ * sheet carried 184 people where this rule finds 62, which is the same mistake the nudge allowlist
+ * made and for the same reason: the roster is not a list of lab members.
+ */
+const VECTOR_ROSTER_MEMBER_TYPES = ["full", "coauthor-major"] as const;
 
 export type AdminBotVectorRosterEntry = {
   id: string;
@@ -327,21 +439,47 @@ export type AdminBotVectorRoster = {
 };
 
 /**
+ * The address to put on the sheet: the institutional one when the person has it.
+ *
+ * The sponsor reads this against university accounts, so a @cs.toronto.edu address is the one that
+ * means something to him; a personal or other-institution address is what somebody without a DCS
+ * account is reachable at, and is better than an empty cell. Every field a member may carry an
+ * address on is considered, because the cs address is not always the one filed as primary.
+ */
+function vectorRosterEmail(member: AdminBotLabMember): string | undefined {
+  const candidates = [member.email, member.correspondence_email, member.calendar_email]
+    .map((entry) => entry?.trim())
+    .filter((entry): entry is string => Boolean(entry));
+  return (
+    candidates.find((entry) => entry.toLowerCase().endsWith("@cs.toronto.edu")) ?? candidates[0]
+  );
+}
+
+/**
  * Who belongs on the Vector sponsor sheet: name and institutional email only, nothing else about
  * the person. Sorted by name then id so the shared sheet does not churn between refreshes.
+ *
+ * Alumni are excluded outright, ahead of the type check rather than through it. Somebody who has
+ * left keeps `privilege_level: member` and often keeps `full` in their member type too, so nothing
+ * ever took them off -- twenty-two of them were on the sheet, which is the sponsor being told to
+ * keep twenty-two accounts that should have been closed. Leaving is the fact that decides this, and
+ * it outranks whatever the type column still says.
  */
 export function vectorSponsorRoster(members: readonly AdminBotLabMember[]): AdminBotVectorRoster {
   const entries: AdminBotVectorRosterEntry[] = [];
   const missingEmail: string[] = [];
   for (const member of members) {
-    const onRoster =
-      VECTOR_ROSTER_PRIVILEGE_LEVELS.includes(member.privilege_level) ||
-      (member.privilege_level === "external_collaborator" &&
-        member.collaborator_subgroup === "coauthor_major");
-    if (!onRoster) {
+    if (adminBotIsAlumniMember(member)) {
       continue;
     }
-    const email = member.email?.trim();
+    const types = String(member.member_type ?? "")
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean);
+    if (!types.some((type) => (VECTOR_ROSTER_MEMBER_TYPES as readonly string[]).includes(type))) {
+      continue;
+    }
+    const email = vectorRosterEmail(member);
     if (!email) {
       missingEmail.push(member.id);
       continue;

@@ -2,37 +2,41 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import type { LogisticsRequest, LogisticsRequestStatus } from "../auth/session.ts";
+import {
+  DEFAULT_LOGISTICS_QUEUE_OPTIONS,
+  type LogisticsQueueOptions,
+} from "../data/logistics-queue.ts";
 import { renderAdminBotLogisticsQueue } from "./logistics-requests.queue.ts";
 
 type DrawOptions = {
+  options?: Partial<LogisticsQueueOptions>;
   requests?: LogisticsRequest[];
   loading?: boolean;
   error?: string | null;
   showSettled?: boolean;
   signingId?: string | null;
   signedNote?: string;
-  downloadingId?: string | null;
 };
 
 function draw(options: DrawOptions = {}) {
+  const optionChanges: Partial<LogisticsQueueOptions>[] = [];
   const uploads: { id: string; files: File[] }[] = [];
   const statuses: { id: string; status: LogisticsRequestStatus }[] = [];
   const opened: string[] = [];
   const settledToggles: boolean[] = [];
   const noteChanges: string[] = [];
-  const downloads: { id: string; name: string }[] = [];
   const container = document.createElement("div");
   document.body.append(container);
   render(
     renderAdminBotLogisticsQueue({
+      options: { ...DEFAULT_LOGISTICS_QUEUE_OPTIONS, ...options.options },
+      onOptionsChange: (patch) => optionChanges.push(patch),
       requests: options.requests ?? [],
       loading: options.loading ?? false,
       error: options.error ?? null,
       showSettled: options.showSettled ?? false,
       onShowSettledChange: (next) => settledToggles.push(next),
       signingId: options.signingId ?? null,
-      downloadingId: options.downloadingId ?? null,
-      onDownload: (id, name) => downloads.push({ id, name }),
       signedNote: options.signedNote ?? "",
       onSignedNoteChange: (next) => noteChanges.push(next),
       onSendSigned: (id, files) => uploads.push({ id, files }),
@@ -41,7 +45,7 @@ function draw(options: DrawOptions = {}) {
     }),
     container,
   );
-  return { container, uploads, statuses, opened, settledToggles, noteChanges, downloads };
+  return { container, optionChanges, uploads, statuses, opened, settledToggles, noteChanges };
 }
 
 function request(fields: Partial<LogisticsRequest> = {}): LogisticsRequest {
@@ -64,63 +68,28 @@ function rows(container: HTMLElement): HTMLElement[] {
 }
 
 describe("the queue as a spreadsheet", () => {
-  it("puts every fact about a request on one line", () => {
+  it("keeps the queue compact with details available from the member name", () => {
     const { container } = draw({
       requests: [request({ deadline_at: "2026-12-01T23:59:00.000Z" })],
     });
-    const headings = [...container.querySelectorAll(".logistics-queue__head")].map((head) =>
-      head.textContent?.trim(),
+    const headings = [...container.querySelectorAll(".logistics-queue__head")].map(
+      (head) =>
+        head.querySelector("button")?.getAttribute("aria-label") ?? head.textContent?.trim(),
     );
     expect(headings).toEqual([
       "Submitted",
       "User",
-      "Type of Request",
-      "Documents to sign",
-      "What it is for",
-      "Most Recent Deadline",
+      "Earliest deadline",
       "Status",
       "Signed Document",
     ]);
     const text = rows(container)[0]?.textContent?.replace(/\s+/gu, " ") ?? "";
+    expect(rows(container)[0]?.querySelectorAll("td")).toHaveLength(5);
+    expect(text).not.toContain("Document Signature");
     expect(text).toContain("Ada Lovelace");
-    expect(text).toContain("Visa letter for the Berlin trip");
-    expect(text).toContain("form.pdf");
-    expect(text).toContain("Dec 1, 2026");
-  });
-
-  it("hands the document over from the row, fetching it on the way", () => {
-    // The whole point of this screen: take the thing that needs signing without opening a card.
-    // The bytes are not in the queue -- the list read strips them -- so the press is what gets them.
-    const drawn = draw({ requests: [request()] });
-    const button = drawn.container.querySelector<HTMLButtonElement>(
-      "[data-testid='logistics-queue-download']",
-    );
-    expect(button?.textContent).toContain("form.pdf");
-    button?.click();
-    expect(drawn.downloads).toEqual([{ id: "logreq_1", name: "form.pdf" }]);
-  });
-
-  it("does not offer the same file twice while it is being fetched", () => {
-    const { container } = draw({ requests: [request()], downloadingId: "logreq_1:form.pdf" });
-    expect(
-      container.querySelector<HTMLButtonElement>("[data-testid='logistics-queue-download']")
-        ?.disabled,
-    ).toBe(true);
-  });
-
-  it("shows the name alone once the service has dropped the bytes", () => {
-    const { container } = draw({
-      showSettled: true,
-      requests: [
-        request({
-          status: "completed",
-          documents: [{ name: "form.pdf", size: 2048 }],
-          files_cleared_at: "2026-08-20T10:00:00.000Z",
-        }),
-      ],
-    });
-    expect(container.querySelector("[data-testid='logistics-queue-download']")).toBeNull();
-    expect(container.querySelector(".logistics-queue__file")?.textContent).toContain("form.pdf");
+    expect(text).not.toContain("Visa letter for the Berlin trip");
+    expect(text).not.toContain("form.pdf");
+    expect(text).toContain("No deadline");
   });
 
   it("sends the signed file as soon as it is picked", () => {
@@ -239,10 +208,72 @@ describe("the queue as a spreadsheet", () => {
     expect(drawn.opened).toEqual(["logreq_1"]);
   });
 
+  // The status names what the recommender still has to do, not what the member already did. A
+  // letter request sitting at `submitted` is a letter nobody has sent yet, so offering "Submitted"
+  // as its current state is the one reading that is never true. See logistics-status.ts.
+  it("names a letter request's statuses from the recommender's side", () => {
+    const { container } = draw({
+      requests: [request({ kind: "recommendation_letters", status: "submitted" })],
+    });
+    const select = container.querySelector<HTMLSelectElement>(".logistics-queue__status");
+    expect(
+      [...(select?.options ?? [])].map((option) => [option.value, option.textContent?.trim()]),
+    ).toEqual([
+      ["submitted", "To submit"],
+      ["in_progress", "In progress"],
+      ["completed", "Submitted"],
+      ["declined", "Declined"],
+    ]);
+    expect(select?.value).toBe("submitted");
+  });
+
+  it("leaves the other two kinds saying what they always said", () => {
+    for (const kind of ["document_signature", "book_meeting"] as const) {
+      const { container } = draw({ requests: [request({ kind, status: "submitted" })] });
+      const select = container.querySelector<HTMLSelectElement>(".logistics-queue__status");
+      expect([...(select?.options ?? [])].map((option) => option.textContent?.trim())).toEqual([
+        "Submitted",
+        "In progress",
+        "Done",
+        "Declined",
+      ]);
+    }
+  });
+
   it("reports a failure to read the queue", () => {
     const { container } = draw({ requests: [], error: "Could not reach the AdminBot service." });
     expect(container.querySelector(".logistics-requests__error")?.textContent).toContain(
       "Could not reach",
     );
   });
+});
+
+it("offers accessible sorting and filter controls while keeping the three removed columns hidden", () => {
+  const drawn = draw({ requests: [request()] });
+  const deadline = drawn.container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Earliest deadline"]',
+  )!;
+  expect(deadline.closest("th")?.getAttribute("aria-sort")).toBe("ascending");
+  deadline.click();
+  expect(drawn.optionChanges.pop()).toEqual({ sortBy: "deadline", sortDirection: "desc" });
+  const search = drawn.container.querySelector<HTMLInputElement>('input[type="search"]')!;
+  search.value = "Ada";
+  search.dispatchEvent(new Event("input", { bubbles: true }));
+  expect(drawn.optionChanges.pop()).toEqual({ search: "Ada" });
+  const filters = drawn.container.querySelectorAll<HTMLSelectElement>(
+    ".logistics-queue__filters select",
+  );
+  filters[0].value = "recommendation_letters";
+  filters[0].dispatchEvent(new Event("change", { bubbles: true }));
+  expect(drawn.optionChanges.pop()).toEqual({ kind: "recommendation_letters" });
+  filters[1].value = "completed";
+  filters[1].dispatchEvent(new Event("change", { bubbles: true }));
+  expect(drawn.optionChanges.pop()).toEqual({ status: "completed" });
+  expect(drawn.settledToggles).toEqual([]);
+});
+
+it("distinguishes no filter matches from an empty queue", () => {
+  const drawn = draw({ requests: [request()], options: { search: "nobody" } });
+  expect(drawn.container.textContent).toContain("No requests match these filters.");
+  expect(drawn.container.querySelector('input[type="search"]')).not.toBeNull();
 });

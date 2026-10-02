@@ -31,6 +31,10 @@ function renderView(overrides: Partial<AdminBotMeetingsProps> = {}): HTMLElement
   render(
     renderAdminBotMeetings({
       meetings: [MEETING],
+      visibleCount: 12,
+      onShowMore: vi.fn(),
+      hasMore: false,
+      loadingMore: false,
       loading: false,
       saving: false,
       error: null,
@@ -142,6 +146,48 @@ describe("renderAdminBotMeetings", () => {
     );
   });
 
+  it("renders recordings in bounded batches and lets the reader request the next batch", () => {
+    const meetings = Array.from({ length: 26 }, (_, index) => ({
+      ...MEETING,
+      id: `recording-${index}`,
+      topic: `Recording ${index}`,
+    }));
+    const onShowMore = vi.fn();
+    const view = renderView({ meetings, visibleCount: 12, onShowMore });
+    expect(view.querySelectorAll(".meetings__card")).toHaveLength(12);
+    const button = view.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']");
+    expect(button?.textContent).toContain("Show 12 more");
+    button?.click();
+    expect(onShowMore).toHaveBeenCalledWith(24);
+    const expanded = renderView({ meetings, visibleCount: 24, onShowMore });
+    expect(expanded.querySelectorAll(".meetings__card")).toHaveLength(24);
+    expanded.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']")?.click();
+    expect(onShowMore).toHaveBeenLastCalledWith(26);
+    expect(renderView({ meetings, visibleCount: 26 }).querySelector(".meetings__more")).toBeNull();
+  });
+
+  it("offers the next server page and disables repeated requests while it loads", () => {
+    const onShowMore = vi.fn();
+    const meetings = Array.from({ length: 12 }, (_, index) => ({
+      ...MEETING,
+      id: `recording-${index}`,
+    }));
+    const view = renderView({ meetings, visibleCount: 12, hasMore: true, onShowMore });
+    const button = view.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']");
+    button?.click();
+    expect(onShowMore).toHaveBeenCalledWith(24);
+    const loading = renderView({ meetings, visibleCount: 12, hasMore: true, loadingMore: true });
+    expect(
+      loading.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']")?.disabled,
+    ).toBe(true);
+  });
+
+  it("shows the request error instead of claiming that no recordings exist", () => {
+    const view = renderView({ meetings: [], error: "Service unavailable" });
+    expect(view.textContent).toContain("Service unavailable");
+    expect(view.textContent).not.toContain("No meeting recordings yet");
+  });
+
   it("explains a meeting with no transcript rather than showing an empty summary", () => {
     const view = renderView({
       meetings: [{ ...MEETING, summary: undefined, transcript: undefined }],
@@ -175,6 +221,42 @@ describe("renderAdminBotMeetings", () => {
       .querySelector("form")
       ?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
     expect(onFileMeeting).not.toHaveBeenCalled();
+  });
+});
+
+// The card's subtitle is what identifies a recording when the topic does not -- every notice from
+// the older template filed as "Untitled Zoom meeting", so the length beside the date is doing real
+// work rather than decorating.
+describe("how long the recording runs", () => {
+  it("reports the length Zoom stated, to the second", () => {
+    const view = renderView({
+      meetings: [{ ...MEETING, duration_seconds: 98, duration_minutes: undefined }],
+    });
+    expect(view.textContent).toContain("1m 38s");
+  });
+
+  // 98 seconds rounded to minutes reads "2 min", and anything under thirty seconds rounds away to
+  // nothing and vanishes from the card entirely.
+  it("does not round a short clip into a minute count", () => {
+    const view = renderView({ meetings: [{ ...MEETING, duration_seconds: 20 }] });
+    expect(view.textContent).toContain("0m 20s");
+    expect(view.textContent).not.toContain("58 min");
+  });
+
+  it("switches to hours and minutes once it runs past an hour", () => {
+    const view = renderView({
+      meetings: [{ ...MEETING, duration_seconds: 2 * 3600 + 5 * 60 + 9 }],
+    });
+    expect(view.textContent).toContain("2h 5m");
+  });
+
+  // The hand-filed meeting length is the last resort: it is the length of the *meeting*, which is
+  // not the length of the recording.
+  it("falls back to a hand-filed meeting length when no recording length is known", () => {
+    const view = renderView({
+      meetings: [{ ...MEETING, duration_seconds: undefined, duration_minutes: 58 }],
+    });
+    expect(view.textContent).toContain("58 min");
   });
 });
 
@@ -269,5 +351,27 @@ describe("attendance nudge panel", () => {
     });
     expect(container.textContent).toContain("Fewer than 2 meetings");
     expect(container.querySelector("[data-testid='meetings-nudge-send']")).toBeNull();
+  });
+});
+
+describe("the recordings archive panel", () => {
+  // This tab only lists meetings AdminBot has a summary for. Somebody looking for one it has no row
+  // for was given no indication the videos existed anywhere.
+  it("points at the share channel even when nothing is listed", () => {
+    const container = renderView({ meetings: [] });
+    const panel = container.querySelector('[data-testid="meetings-archive"]');
+    expect(panel?.textContent).toContain("#jinesis-share");
+  });
+
+  it("links out to the unlisted playlist, in a new tab", () => {
+    const container = renderView({ meetings: [] });
+    const link = container.querySelector<HTMLAnchorElement>(
+      '[data-testid="meetings-playlist-link"]',
+    );
+    expect(link?.getAttribute("href")).toBe(
+      "https://www.youtube.com/playlist?list=PLtVBX_ld338VkH1UzdXs03LTKZp8-FBDL",
+    );
+    // It leaves the app, so it opens in a new tab and does not hand the opener over with it.
+    expect(link?.getAttribute("rel")).toContain("noopener");
   });
 });

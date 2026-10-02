@@ -11,10 +11,12 @@
 // prose is what a model does and a vector distance does not.
 
 import {
+  adminBotIsAlumniType,
   isAdminBotFullMember,
   type AdminBotLabMember,
   type AdminBotPaperRecord,
 } from "../../contracts/actions.js";
+import { parseAdminBotMemberRoles } from "../../contracts/member-roles.js";
 import type { AdminBotConferenceAttendeeRecord } from "../../contracts/paper-cycle.js";
 import { interestTerms, overlappingKeywords } from "./venue-relevance.js";
 
@@ -139,8 +141,20 @@ export type WorkshopMatcher = (request: {
    * Called as each model call settles. A pass is thousands of calls and tens of minutes, so the
    * caller persisting it needs somewhere to hang "how far along is this" -- otherwise a page
    * opened mid-pass can only say "running" and never "running, 800 of 2500".
+   *
+   * `failed` is how many of those `done` calls gave up rather than answered. A call that failed
+   * must still count toward `done`, or a pass with one bad batch never reaches its total and the
+   * tab sits on "Matching in progress..." forever; reporting the failures separately is what keeps
+   * that honest.
    */
-  onProgress?: (done: number, total: number) => void;
+  onProgress?: (done: number, total: number, failed: number, detail?: string) => void;
+  /**
+   * Abort the pass. Jobs already in flight are cancelled and no further ones are started.
+   *
+   * A pass is tens of minutes of a shared model, so an administrator who started one against a
+   * broken endpoint needs a way to stop it that does not involve restarting the service.
+   */
+  signal?: AbortSignal;
 }) => Promise<WorkshopPaperMatch[]>;
 
 /**
@@ -200,10 +214,36 @@ export function workshopNudgeInputsFromAdminBot(params: {
   members: readonly AdminBotLabMember[];
   attendees: readonly AdminBotConferenceAttendeeRecord[];
   workshops: readonly WorkshopProfile[];
+  /**
+   * `head_professor_member_id` from settings. Required to exclude the PI, because the `role` check
+   * below cannot do it: see the comment there.
+   */
+  headProfessorMemberId?: string;
 }): WorkshopNudgeNativeInputs {
+  const headProfessorMemberId = params.headProfessorMemberId?.trim();
   const activeMembers = params.members.filter(
     (member) =>
-      isAdminBotFullMember(member) && member.status !== "alumni" && member.status !== "external",
+      isAdminBotFullMember(member) &&
+      member.status !== "alumni" &&
+      member.status !== "external" &&
+      // The roster carries leavers whose status was never flipped; the Member Type column is the
+      // governance record, so an `alumni` token there wins over an `active` status.
+      !adminBotIsAlumniType(member.member_type) &&
+      // Professors get the papers, not the nudges: a workshop-submission prompt is a thing the
+      // lab asks of whoever is doing the submitting, and it is not the professor.
+      //
+      // By id first, because the role check underneath it has never excluded anybody. `role` is
+      // free text imported from the roster sheet, and not one of the lab's 200 members has a value
+      // containing "professor" -- the PI's is empty. So she read as an ordinary `full` member,
+      // matched on the papers she supervises (which is most of them), and led the workshop nudge
+      // list. `head_professor_member_id` is the field that actually answers "who is the PI", and it
+      // is what every other sweep gates on.
+      member.id !== headProfessorMemberId &&
+      // Kept as the secondary signal: a visiting or second professor has no settings field naming
+      // them, so a filled-in role is still the only thing that can exclude them here.
+      // A member may hold several roles, so this asks whether one of them is Professor rather than
+      // whether the whole string is: "PhD Student, Professor" excludes them just as "Professor" does.
+      !parseAdminBotMemberRoles(member.role).some((role) => role.toLowerCase() === "professor"),
   );
   const membersById = new Map(activeMembers.map((member) => [member.id, member]));
   const paperIdsByMember = new Map<string, Set<string>>();
@@ -214,6 +254,11 @@ export function workshopNudgeInputsFromAdminBot(params: {
   for (const paper of [...params.papers].toSorted((left, right) =>
     left.id.localeCompare(right.id),
   )) {
+    // A settled paper is not looking for a venue, so it neither spends model calls in the match
+    // nor puts its author in the nudge queue.
+    if (paperIsSettled(paper)) {
+      continue;
+    }
     const unresolvedNames = (paper.author_links ?? [])
       .filter((author) => !author.member_id && !author.email)
       .map((author) => author.name.trim())
@@ -226,13 +271,19 @@ export function workshopNudgeInputsFromAdminBot(params: {
       });
     }
 
-    const recipientIds = unique([
-      ...(paper.author_links ?? []).flatMap((author) =>
-        author.member_id ? [author.member_id] : [],
-      ),
-      ...(paper.first_author_member_id ? [paper.first_author_member_id] : []),
-      ...(paper.submitted_by_member_id ? [paper.submitted_by_member_id] : []),
-    ]).filter((memberId) => membersById.has(memberId));
+    // The first author, and only the first author: the workshop submission is theirs to make,
+    // and nudging every coauthor asked seven people to answer one question. The explicit
+    // `first_author_member_id` wins; the paper's first author link covers records that predate
+    // it; whoever filed the paper stands in only when the record names no authors at all. There
+    // is deliberately no falling through to a later coauthor -- a paper first-authored by a
+    // professor, an alumnus, or an outside author gets no nudge and is reported below, rather
+    // than sending the message to somebody it was not meant for.
+    const firstAuthorId =
+      paper.first_author_member_id ??
+      ((paper.author_links ?? []).length > 0
+        ? (paper.author_links ?? [])[0]?.member_id
+        : paper.submitted_by_member_id);
+    const recipientIds = firstAuthorId && membersById.has(firstAuthorId) ? [firstAuthorId] : [];
     if (!recipientIds.length) {
       normalized.push(workshopPaperFromAdminBot(paper));
       papersWithoutRecipients.push({ paper_id: paper.id, title: paper.title });
@@ -259,6 +310,61 @@ export function workshopNudgeInputsFromAdminBot(params: {
       papers_without_active_recipients: papersWithoutRecipients,
     },
   };
+}
+
+/** One conference an admin may narrow a pass to, with how many open workshops it still has. */
+export type WorkshopConferenceOption = {
+  key: string;
+  label: string;
+  workshop_count: number;
+};
+
+/**
+ * The conferences a pass could be limited to: the parents of every workshop still open.
+ *
+ * Derived from the same profiles the pass itself works from, so the list can never offer a
+ * conference the matcher would then find nothing for. Cheap -- it reads the generated dataset and
+ * makes no model calls -- which is what lets the picker be populated on page open.
+ */
+export function workshopConferenceOptions(
+  records: readonly DeadlineWorkshopRecord[],
+  now = new Date(),
+): WorkshopConferenceOption[] {
+  const byKey = new Map<string, WorkshopConferenceOption>();
+  for (const profile of workshopProfilesFromDeadlines(records, now)) {
+    const key = profile.parent_conference_key?.trim();
+    if (!key) {
+      continue;
+    }
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.workshop_count += 1;
+      continue;
+    }
+    byKey.set(key, {
+      key,
+      label: profile.parent_conference?.trim() || key,
+      workshop_count: 1,
+    });
+  }
+  // Most workshops first: the conference with the most open calls is the one an admin narrowing a
+  // pass is usually reaching for, and the tail is alphabetical so the order is stable between reads.
+  return [...byKey.values()].toSorted(
+    (left, right) =>
+      right.workshop_count - left.workshop_count || left.label.localeCompare(right.label),
+  );
+}
+
+/** Narrow profiles to one conference. An unknown or blank key leaves the list untouched. */
+export function workshopProfilesForConference(
+  profiles: readonly WorkshopProfile[],
+  conferenceKey: string | undefined,
+): WorkshopProfile[] {
+  const key = conferenceKey?.trim();
+  if (!key) {
+    return [...profiles];
+  }
+  return profiles.filter((profile) => profile.parent_conference_key?.trim() === key);
 }
 
 export function workshopProfilesFromDeadlines(
@@ -490,6 +596,22 @@ function rankUpToThreeWorkshops(
       ...recommendation,
       final_rank: workshopRanks.get(recommendation.workshop.workshop_id),
     }));
+}
+
+/**
+ * A paper whose venue question is answered.
+ *
+ * An accepted or otherwise finished paper has nothing to gain from a workshop recommendation, and
+ * on a full sweep the settled papers are model calls spent asking about work that is already
+ * placed. `venue_decision` is the typed record; legacy rows carry the same fact as prose in a
+ * `Status:` note, so that is read too.
+ */
+function paperIsSettled(paper: AdminBotPaperRecord): boolean {
+  if (paper.venue_decision === "accept") {
+    return true;
+  }
+  const noted = noteValue(paper.notes, "Status");
+  return Boolean(noted && /accept|publish|complete|camera[\s-]?ready|\bdone\b/iu.test(noted));
 }
 
 function workshopPaperFromAdminBot(

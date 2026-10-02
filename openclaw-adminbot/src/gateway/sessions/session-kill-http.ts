@@ -81,7 +81,10 @@ export async function handleSessionKillHttpRequest(
   const requestedScopes = resolveTrustedHttpOperatorScopes(req, requestAuth);
   const scopeAuth = authorizeOperatorScopesForMethod("sessions.delete", requestedScopes);
   if (!scopeAuth.allowed) {
-    sendMissingScopeForbidden(res, scopeAuth.missingScope);
+    sendMissingScopeForbidden(res, scopeAuth.missingScope, {
+      method: "sessions.delete",
+      presentedScopes: requestedScopes,
+    });
     return true;
   }
 

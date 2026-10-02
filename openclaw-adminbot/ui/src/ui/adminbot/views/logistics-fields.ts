@@ -17,6 +17,7 @@ export type SchoolField = {
   labelKey: string;
   // Second line under the column name, for a heading that needs a qualifier to be understood.
   hintKey?: string;
+  required?: boolean;
   control: "text" | "date" | "time" | "url" | "suggest" | "notes";
   placeholderKey?: string;
   // Only for "suggest": the datalist this column's input reads its offered words from.
@@ -42,6 +43,14 @@ export const TEMPLATE_FOLDER_URL =
 export const SIGNATURE_FORM_URL =
   "https://docs.google.com/forms/d/1yNvSz65dU8hozDXhASuyFk8kvQuhj0hD2X9znHMzz9U";
 
+// Where meetings are asked for now: a tab on the lab contact spreadsheet, the same workbook the
+// member roster lives in. The in-app table this replaced collected the same four columns into the
+// service, so the tab points out rather than collecting them itself -- same trade as the signature
+// form above. The `gid` is the tab, and it is the whole point of the link: without it the workbook
+// opens on whichever sheet was last viewed.
+export const MEETING_SHEET_URL =
+  "https://docs.google.com/spreadsheets/d/1ZqdaRzev6fFHxGbaAn_NDAPgv-Wi-hklHrT5jB68m68/edit?gid=1633153118#gid=1633153118";
+
 // In the order a member works across a row: which school, when each deadline falls, where both
 // halves of the request stand, then what the program is.
 export const SCHOOL_FIELDS: SchoolField[] = [
@@ -64,7 +73,8 @@ export const SCHOOL_FIELDS: SchoolField[] = [
   {
     key: "letterDeadline",
     labelKey: "logistics.schools.letterDeadline",
-    hintKey: "logistics.schools.letterDeadlineHint",
+    hintKey: "logistics.schools.letterDeadlineRequired",
+    required: true,
     control: "date",
   },
   { key: "letterDeadlineTime", labelKey: "logistics.schools.letterDeadlineTime", control: "time" },
@@ -73,10 +83,10 @@ export const SCHOOL_FIELDS: SchoolField[] = [
     // clock, so a zone per deadline would be two chances to disagree about the same campus.
     key: "deadlineTimezone",
     labelKey: "logistics.schools.deadlineTimezone",
-    hintKey: "logistics.schools.deadlineTimezoneHint",
+    hintKey: "logistics.schools.aoeHint",
     control: "suggest",
     listId: TIMEZONE_LIST_ID,
-    placeholderKey: "logistics.schools.deadlineTimezonePlaceholder",
+    placeholderKey: "logistics.schools.aoePlaceholder",
   },
   {
     key: "applicationStatus",

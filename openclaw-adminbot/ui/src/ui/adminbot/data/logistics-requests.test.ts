@@ -15,6 +15,7 @@ import {
   formatFileSize,
   lettersRequestInput,
   meetingRequestInput,
+  meetingFromWire,
   meetingToWire,
   oversizedFile,
   requestToFormState,
@@ -100,6 +101,41 @@ describe("row conversion", () => {
     ).not.toHaveProperty("length_minutes");
   });
 
+  it("sends the call-queue columns a member filled in", () => {
+    const wire = meetingToWire(
+      createMeetingRow({
+        purpose: "sync",
+        city: " Toronto ",
+        docPrepUrl: " https://docs.google.com/document/d/abc123def456/edit ",
+        latestOkDate: "2026-09-30",
+        whatsappHello: "yes",
+      }),
+    );
+    expect(wire).toMatchObject({
+      city: "Toronto",
+      doc_prep_url: "https://docs.google.com/document/d/abc123def456/edit",
+      latest_ok_date: "2026-09-30",
+      whatsapp_hello: true,
+    });
+  });
+
+  // The sheet's column distinguishes "no" from a blank, so an unanswered select must not become
+  // `false` on the way out -- that would answer for the member.
+  it("sends no whatsapp answer at all when the member left it unanswered", () => {
+    expect(meetingToWire(createMeetingRow({ purpose: "sync" }))).not.toHaveProperty(
+      "whatsapp_hello",
+    );
+    expect(
+      meetingToWire(createMeetingRow({ purpose: "sync", whatsappHello: "no" })).whatsapp_hello,
+    ).toBe(false);
+  });
+
+  it("round-trips the whatsapp answer back into the form's three states", () => {
+    expect(meetingFromWire({ purpose: "sync" }).whatsappHello).toBe("");
+    expect(meetingFromWire({ purpose: "sync", whatsapp_hello: false }).whatsappHello).toBe("no");
+    expect(meetingFromWire({ purpose: "sync", whatsapp_hello: true }).whatsappHello).toBe("yes");
+  });
+
   it("trims a fact down to what the writer reads", () => {
     expect(
       factToWire(createFactRow({ project: " AdminBot ", contribution: " the gate " })),
@@ -138,7 +174,7 @@ describe("request builders", () => {
       cvOverleafUrl: "https://overleaf.com/read/abc",
       driveFolderUrl: "",
     });
-    expect(input.schools).toEqual([{ school: "MIT" }]);
+    expect(input.schools).toEqual([{ school: "MIT", deadline_timezone: "AoE" }]);
     expect(input.facts).toEqual([{ project: "AdminBot", contribution: "the gate" }]);
     expect(input.cv_overleaf_url).toBe("https://overleaf.com/read/abc");
     expect(input).not.toHaveProperty("drive_folder_url");
@@ -219,6 +255,34 @@ describe("describeSubmitBlock", () => {
         rows: [createMeetingRow({ preferredTime: "2026-09-01T14:00" })],
       }),
     ).toEqual({ reason: "no-purpose" });
+  });
+
+  // The call is spent on the doc prep document, and the queue push drops a row whose link cannot be
+  // opened -- so a request without one would be filed and then quietly go nowhere.
+  it("asks for a doc prep link on every meeting", () => {
+    expect(
+      describeSubmitBlock("book_meeting", {
+        rows: [createMeetingRow({ purpose: "thesis check-in" })],
+      }),
+    ).toEqual({ reason: "no-doc-prep" });
+    expect(
+      describeSubmitBlock("book_meeting", {
+        rows: [createMeetingRow({ purpose: "thesis check-in", docPrepUrl: "   " })],
+      }),
+    ).toEqual({ reason: "no-doc-prep" });
+  });
+
+  it("takes a meeting that has both", () => {
+    expect(
+      describeSubmitBlock("book_meeting", {
+        rows: [
+          createMeetingRow({
+            purpose: "thesis check-in",
+            docPrepUrl: "https://docs.google.com/document/d/abc/edit",
+          }),
+        ],
+      }),
+    ).toBeNull();
   });
 
   it("lets a filled-in request through", () => {
@@ -339,5 +403,24 @@ describe("requestToFormState", () => {
     });
     const ids = form.letters?.schools.map((row) => row.id) ?? [];
     expect(new Set(ids).size).toBe(2);
+  });
+});
+
+it("requires a valid letter deadline even if the application date is present", () => {
+  const form = {
+    schools: [createSchoolRow({ school: "Example", applicationDeadline: "2026-12-01" })],
+    facts: [],
+    cvOverleafUrl: "",
+    driveFolderUrl: "",
+  };
+  expect(describeSubmitBlock("recommendation_letters", form)).toEqual({
+    reason: "letter-deadline",
+  });
+  form.schools[0].letterDeadline = "2026-12-15";
+  expect(describeSubmitBlock("recommendation_letters", form)).toBeNull();
+  expect(schoolToWire(form.schools[0]).deadline_timezone).toBe("AoE");
+  form.schools[0].deadlineTimezone = "invalid/zone";
+  expect(describeSubmitBlock("recommendation_letters", form)).toEqual({
+    reason: "letter-deadline",
   });
 });

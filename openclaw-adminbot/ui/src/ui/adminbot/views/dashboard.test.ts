@@ -1,11 +1,15 @@
 /* @vitest-environment jsdom */
 
 import { render } from "lit";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { adminBotAdminOwnedProfileFields } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AccessRole } from "../access.ts";
+import { createEmptyAdminBotDashboardData } from "../controllers/admin.ts";
+import * as deadlineTime from "../data/deadline-time.ts";
+import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { renderDashboard } from "./dashboard.ts";
-import { buildDeadlineBoardEntries, entriesForDeadlinePeriod } from "./deadlines.ts";
+import { findOwnMember } from "./profile.ts";
 
 function createState(overrides: Partial<AppViewState> = {}): AppViewState {
   return {
@@ -32,6 +36,54 @@ function attentionIds(container: HTMLElement): string[] {
 }
 
 describe("renderDashboard", () => {
+  it("shows loading instead of empty work while the first read is pending", () => {
+    const container = renderPage(
+      createState({ adminBotData: createEmptyAdminBotDashboardData(), adminBotLoading: true }),
+    );
+    expect(container.querySelector('[data-testid="dashboard-loading"]')).not.toBeNull();
+    expect(container.querySelector(".dashboard__empty")).toBeNull();
+    expect(container.querySelector('[data-testid="dashboard-summary-myWork"]')).toBeNull();
+  });
+
+  it("shows the member's profile action while papers are still loading", () => {
+    const container = renderPage(
+      createState({
+        memberId: "m1",
+        adminBotData: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [{ id: "m1", name: "Ada" }],
+        },
+        adminBotLoading: true,
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
+    expect(
+      container.querySelector('[data-testid="dashboard-attention-mandatoryFields"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("Loading your papers");
+    expect(container.querySelector('[data-testid="dashboard-summary-myWork"]')).toBeNull();
+  });
+
+  it("shows a retryable failure instead of zero work after the first read fails", () => {
+    const onRetry = vi.fn();
+    const container = document.createElement("div");
+    render(
+      renderDashboard(
+        createState({
+          adminBotData: createEmptyAdminBotDashboardData(),
+          adminBotError: "Service unavailable",
+        }),
+        "admin",
+        onRetry,
+      ),
+      container,
+    );
+    expect(container.querySelector('[data-testid="dashboard-load-error"]')).not.toBeNull();
+    expect(container.querySelector(".dashboard__empty")).toBeNull();
+    container.querySelector<HTMLButtonElement>("button")?.click();
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it("says nothing is waiting when nothing is", () => {
     const container = renderPage(createState());
     expect(attentionIds(container)).toEqual([]);
@@ -81,6 +133,33 @@ describe("renderDashboard", () => {
     );
     expect(attentionIds(container)).toEqual(["proposals", "registrations"]);
     expect(container.textContent).toContain("1");
+  });
+
+  it("surfaces held email only to an administrator", () => {
+    const setTab = vi.fn();
+    const state = createState({
+      setTab,
+      adminBotData: {
+        proposals: [],
+        emailReviews: [
+          {
+            message_id: "m1",
+            thread_id: "t1",
+            sender: "venue@example.org",
+            category: "paperflow_bcc",
+            updated_at: "2026-09-03T21:05:00.000Z",
+          },
+        ],
+      },
+    });
+    const admin = renderPage(state, "admin");
+    expect(attentionIds(admin)).toContain("email-reviews");
+    admin
+      .querySelector<HTMLButtonElement>('[data-testid="dashboard-attention-email-reviews"] button')
+      ?.click();
+    expect(setTab).toHaveBeenCalledWith("adminbot");
+
+    expect(attentionIds(renderPage(state, "member"))).not.toContain("email-reviews");
   });
 
   it("keeps the admin queues out of a member's view", () => {
@@ -157,30 +236,85 @@ describe("renderDashboard", () => {
     ).toContain("Nothing is blocked.");
   });
 
-  it("uses the complete public deadline board instead of a dashboard-only summary", async () => {
+  // The whole board used to render here, which made the dashboard mostly a second copy of the
+  // Deadlines tab. It is a two-row glance now, and the board is a click away.
+  it("shows a two-row deadline glance rather than the whole board", () => {
     const container = renderPage(createState(), "member");
-    document.body.append(container);
-    const board = container.querySelector("adminbot-deadlines-view") as HTMLElement & {
-      updateComplete: Promise<unknown>;
-    };
-    await board.updateComplete;
+    expect(container.querySelector("adminbot-deadlines-view")).toBeNull();
+    const widget = container.querySelector('[data-testid="dashboard-next-deadlines"]');
+    expect(widget).not.toBeNull();
+    expect(widget?.querySelectorAll(".dashboard__next-deadline")).toHaveLength(2);
+    expect(container.querySelector('[data-testid="dashboard-next-deadlines-open"]')).not.toBeNull();
+  });
 
-    expect(container.querySelector("adminbot-deadline-summary")).toBeNull();
-    expect(container.querySelector('[data-testid="dashboard-deadlines"]')).not.toBeNull();
-    expect(board.querySelector('.deadline-board__search input[type="search"]')).not.toBeNull();
-    expect(board.querySelector('[data-testid="deadline-group-all"]')).not.toBeNull();
-    const renderedCount = [...board.querySelectorAll<HTMLElement>(".deadline-group")].reduce(
-      (total, group) => total + Number(group.dataset.count),
-      0,
+  // The member's own dated milestones are the ones they plan around, so a glance that showed only
+  // the public board could say "nothing for weeks" to somebody with a submission on Friday.
+  it("merges the member's own milestones into the glance, soonest first", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-08-24T12:00:00Z"));
+    // Control both inputs to the merge: real dates and refreshed venue data must not change
+    // which row leads. The public row also proves the merge keeps conference deadlines.
+    const deadlines = vi.spyOn(deadlineTime, "upcomingMajorDeadlines").mockReturnValue([
+      {
+        venue: { ...DEADLINE_VENUES[0]!, name: "Example conference" },
+        instant: Date.parse("2026-08-26T12:00:00Z"),
+      },
+    ]);
+    try {
+      const state = createState({
+        memberId: "ada",
+        adminBotData: {
+          proposals: [],
+          members: [
+            {
+              id: "ada",
+              name: "Ada Lovelace",
+              milestones: [{ date: "2026-08-25", label: "Thesis draft" }],
+            },
+          ],
+        },
+      } as unknown as Partial<AppViewState>);
+      expect(findOwnMember(state)?.milestones).toHaveLength(1);
+      const container = renderPage(state, "member");
+      const rows = [...container.querySelectorAll<HTMLElement>(".dashboard__next-deadline")];
+      expect(rows).toHaveLength(2);
+      expect(rows[0]?.textContent).toContain("Thesis draft");
+      expect(rows[0]?.textContent).toContain("yours");
+      expect(rows[1]?.textContent).toContain("Example conference");
+    } finally {
+      deadlines.mockRestore();
+      clock.mockRestore();
+    }
+  });
+
+  // The glance borrows the board's row vocabulary rather than inventing a second one: the urgency
+  // attribute is what resolves the countdown's color, so without it every row reads as plain text
+  // and a deadline tomorrow looks like one in March.
+  it("carries the board's urgency and countdown on each row", () => {
+    const soon = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const container = renderPage(
+      createState({
+        memberId: "ada",
+        adminBotData: {
+          proposals: [],
+          members: [
+            {
+              id: "ada",
+              name: "Ada",
+              milestones: [{ date: soon, label: "Thesis" }],
+            },
+          ],
+        },
+      } as unknown as Partial<AppViewState>),
+      "member",
     );
-    const completeUpcomingCount = entriesForDeadlinePeriod(
-      buildDeadlineBoardEntries(),
-      Date.now(),
-      "upcoming",
-    ).length;
-    expect(renderedCount).toBe(completeUpcomingCount);
-    expect(board.textContent).toContain("Past and upcoming conference & workshop deadlines.");
-    container.remove();
+    const row = container.querySelector<HTMLElement>(".dashboard__next-deadline");
+    expect(row?.dataset.urgency).toBe("critical");
+    expect(row?.querySelector(".dashboard__next-deadline-countdown")?.textContent).toMatch(
+      /day|today/u,
+    );
+    // The date splits the same way the board splits it, so the time reads as secondary.
+    expect(row?.querySelector(".deadline-date")).not.toBeNull();
+    expect(row?.querySelector(".deadline-time")).not.toBeNull();
   });
 
   // A blank mandatory field never blocks saving or leaving the profile editor (see profile.ts),
@@ -246,8 +380,9 @@ describe("renderDashboard", () => {
     );
   });
 
-  // The URN is filled in by an admin, so chasing the member for it names a field whose control on
-  // the profile page is disabled.
+  // Chasing a member for a field their own profile page will not let them answer names a blank they
+  // cannot close. adminBotAdminOwnedProfileFields is empty at present -- `linkedin_urn` came off it
+  // and is now an ordinary blank like the rest -- so this asserts the rule rather than a roster.
   it("never lists an admin-filled field among the blanks", () => {
     const container = renderPage(
       createState({
@@ -260,7 +395,9 @@ describe("renderDashboard", () => {
       "member",
     );
 
-    expect(container.querySelector('[data-testid="dashboard-blank-linkedin_urn"]')).toBeNull();
+    for (const key of adminBotAdminOwnedProfileFields) {
+      expect(container.querySelector(`[data-testid="dashboard-blank-${key}"]`)).toBeNull();
+    }
   });
 
   it("drops the mandatory-fields item once every required field is filled in", () => {
@@ -277,6 +414,10 @@ describe("renderDashboard", () => {
               location: "Toronto",
               research_topics: ["alignment"],
               joined_month: "2026-03",
+              affiliation: "University of Toronto",
+              hours_per_week: 20,
+              graduated_month: "2027-06",
+              next_position: "Considering research positions",
               correspondence_email: "ada@cs.toronto.edu",
               calendar_email: "ada@gmail.com",
               whatsapp: "(+1) 555 0100",
@@ -284,6 +425,7 @@ describe("renderDashboard", () => {
               github_url: "https://github.com/ada",
               linkedin_url: "https://www.linkedin.com/in/ada",
               cv_url: "https://ada.dev/cv.pdf",
+              one_on_one_folder_url: "https://drive.google.com/drive/folders/ada",
               intake_form_url: "https://docs.google.com/forms/d/e/ada/viewform",
               linkedin_urn: "ACoAAB1234567",
             },
@@ -371,6 +513,117 @@ describe("notifications on the dashboard", () => {
     expect(container.querySelector('[data-testid="dashboard-nudge-warning"]')).toBeNull();
   });
 
+  // Two shapes of duplicate had built up on this page, and they are different problems.
+  describe("duplicates", () => {
+    const workshop = (id: string, at: string) => ({
+      ...NOTIFICATION,
+      id,
+      kind: "workshop",
+      title: "Workshops that may fit your papers",
+      created_at: at,
+    });
+
+    // The matcher runs on a schedule, so this nudge arrived once per pass. Only the latest is
+    // news; the older ones list papers that have since moved.
+    it("keeps only the latest of a nudge that is sent again", () => {
+      const container = renderPage(
+        createState({
+          adminBotNotifications: [
+            workshop("old", "2026-08-01T09:00:00.000Z"),
+            workshop("new", "2026-09-01T09:00:00.000Z"),
+            NOTIFICATION,
+          ],
+        } as never),
+      );
+      const ids = attentionIds(container);
+      expect(ids).toContain("notification-new");
+      expect(ids).not.toContain("notification-old");
+      expect(ids).toContain("notification-notif-1");
+    });
+
+    // Acknowledging what is on screen has to acknowledge what it stands for, or the collapsed row
+    // stays unread in the service and the nudge escalation keeps counting it.
+    it("marks the ones it collapsed read along with the one it shows", () => {
+      const read: unknown[] = [];
+      const container = renderPage(
+        createState({
+          adminBotNotifications: [
+            workshop("old", "2026-08-01T09:00:00.000Z"),
+            workshop("new", "2026-09-01T09:00:00.000Z"),
+          ],
+          markNotificationsRead: async (ids: string[]) => {
+            read.push(ids);
+          },
+        } as never),
+      );
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="dashboard-attention-notification-new"] button',
+        )
+        ?.click();
+      expect(read).toEqual([["new", "old"]]);
+    });
+
+    // The card below it names the actual blank fields and buttons through to each one. The nudge
+    // is the same sentence, worse, and it was sitting directly above it.
+    it("drops a nudge about something the page already computes", () => {
+      const container = renderPage(
+        createState({
+          memberId: "m1",
+          adminBotData: {
+            proposals: [],
+            members: [{ id: "m1", name: "Ada" }],
+          },
+          adminBotNotifications: [
+            {
+              ...NOTIFICATION,
+              id: "profile-nudge",
+              kind: "profile",
+              title: "Your profile is missing required fields",
+            },
+          ],
+        } as never),
+        "member",
+      );
+      const ids = attentionIds(container);
+      expect(ids).toContain("mandatoryFields");
+      expect(ids).not.toContain("notification-profile-nudge");
+    });
+
+    // With nothing computed to replace it -- a member whose profile is complete -- the nudge is
+    // the only thing that would say so, and dropping it would lose the message.
+    it("keeps the profile nudge when there is no card to replace it", () => {
+      const container = renderPage(
+        createState({
+          adminBotNotifications: [{ ...NOTIFICATION, id: "profile-nudge", kind: "profile" }],
+        } as never),
+      );
+      expect(attentionIds(container)).toContain("notification-profile-nudge");
+    });
+
+    // Escalation is the loudest state this page has. Collapsing purely by date would let a fresh
+    // send bury the one the head professor has already been brought into.
+    it("keeps an escalated nudge over a newer one of the same kind", () => {
+      const container = renderPage(
+        createState({
+          adminBotNotifications: [
+            {
+              ...workshop("escalated", "2026-08-01T09:00:00.000Z"),
+              important: true,
+              escalated_at: "2026-08-20T09:00:00.000Z",
+            },
+            workshop("new", "2026-09-01T09:00:00.000Z"),
+          ],
+        } as never),
+      );
+      expect(attentionIds(container)).toContain("notification-escalated");
+      expect(
+        container.querySelector<HTMLElement>('[data-testid="dashboard-nudge-warning"]')?.dataset
+          .tone,
+      ).toBe("danger");
+    });
+  });
+
   it("acknowledges every unread one at once from the banner", () => {
     const read: unknown[] = [];
     const container = renderPage(
@@ -428,5 +681,140 @@ describe("notifications on the dashboard", () => {
     const banner = container.querySelector('[data-testid="dashboard-offline"]');
     expect(banner?.textContent).toContain("Working offline");
     expect(banner?.textContent).toContain("2 edits retained from the old queue");
+  });
+});
+
+// The one channel the lab has for telling everybody something at once. Top of the page, above the
+// attention stack, because this page is the first thing a member lands on after signing in.
+describe("the lab-wide broadcast", () => {
+  const live = {
+    id: "bcast_1",
+    availability: "away" as const,
+    message: "Sep 11-17: Zürich. Sep 18-20: Toronto.",
+    updated_at: "2026-09-10T18:00:00.000Z",
+    expires_at: "2099-01-01T00:00:00.000Z",
+    updated_by: "zhijing",
+  };
+
+  it("shows the current broadcast above everything else", () => {
+    const container = renderPage(
+      createState({
+        adminBotBroadcast: { ...live, timezone: "America/Toronto" },
+      } as Partial<AppViewState>),
+      "member",
+    );
+    const banner = container.querySelector('[data-testid="dashboard-broadcast"]');
+    expect(banner).not.toBeNull();
+    expect(banner?.textContent).toContain("Zürich");
+    expect(banner?.textContent).toContain("Time zone: America/Toronto");
+    expect(banner?.textContent).toContain("Broadcast from Zhijing");
+    // Above the attention stack, not tucked in beside it.
+    const attention = container.querySelector('[data-testid="dashboard-attention"]');
+    expect(banner!.compareDocumentPosition(attention!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("shows nothing when there is no broadcast", () => {
+    expect(
+      renderPage(
+        createState({ adminBotBroadcast: null } as Partial<AppViewState>),
+        "member",
+      ).querySelector('[data-testid="dashboard-broadcast"]'),
+    ).toBeNull();
+  });
+
+  // The page can hold a loaded broadcast across its own expiry, so the boundary is re-checked at
+  // render rather than trusted from load time.
+  it("stops showing one that has expired since it was loaded", () => {
+    const container = renderPage(
+      createState({
+        adminBotBroadcast: { ...live, expires_at: "2020-01-01T00:00:00.000Z" },
+      } as Partial<AppViewState>),
+      "member",
+    );
+    expect(container.querySelector('[data-testid="dashboard-broadcast"]')).toBeNull();
+  });
+
+  it("stops showing one that was withdrawn", () => {
+    const container = renderPage(
+      createState({
+        adminBotBroadcast: { ...live, retracted_at: "2026-09-11T00:00:00.000Z" },
+      } as Partial<AppViewState>),
+      "member",
+    );
+    expect(container.querySelector('[data-testid="dashboard-broadcast"]')).toBeNull();
+  });
+});
+
+describe("one-off Drive PDF notice", () => {
+  beforeEach(() => vi.useFakeTimers({ now: new Date("2026-09-27T12:00:00Z") }));
+  afterEach(() => vi.useRealTimers());
+
+  const NOTICE = '[data-testid="dashboard-one-off-notice"]';
+  const members = [
+    { id: "oscar", name: "Oscar Yasunaga" },
+    { id: "terry", name: "Terry Jingchen Zhang" },
+    { id: "zhijing-jin", name: "Zhijing Jin" },
+  ];
+  const signedInAs = (memberId: string, extra: Partial<AppViewState> = {}) =>
+    createState({
+      memberId,
+      adminBotData: { ...createEmptyAdminBotDashboardData(), members },
+      ...extra,
+    } as unknown as Partial<AppViewState>);
+
+  it("shows only to Oscar", () => {
+    expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).not.toBeNull();
+    for (const other of ["terry", "zhijing-jin"]) {
+      expect(renderPage(signedInAs(other), "member").querySelector(NOTICE)).toBeNull();
+      expect(renderPage(signedInAs(other), "admin").querySelector(NOTICE)).toBeNull();
+    }
+    expect(renderPage(createState(), "anonymous").querySelector(NOTICE)).toBeNull();
+  });
+
+  it("ignores a typed sign-up name and an admin viewing as Oscar", () => {
+    expect(
+      renderPage(
+        signedInAs("terry", { memberName: "Oscar Yasunaga" } as Partial<AppViewState>),
+        "member",
+      ).querySelector(NOTICE),
+    ).toBeNull();
+    expect(
+      renderPage(
+        signedInAs("oscar", {
+          memberImpersonatedBy: { id: "zhijing-jin", name: "Zhijing Jin" },
+        } as Partial<AppViewState>),
+        "admin",
+      ).querySelector(NOTICE),
+    ).toBeNull();
+  });
+
+  it("is gone once dismissed or expired", () => {
+    // This file's jsdom has no localStorage; the notice needs one to remember the dismissal.
+    const stored = new Map<string, string>();
+    const originalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => stored.get(key) ?? null,
+        setItem: (key: string, value: string) => stored.set(key, value),
+      },
+    });
+    try {
+      const page = renderPage(signedInAs("oscar"), "member");
+      page.querySelectorAll<HTMLButtonElement>(`${NOTICE} button`)[1]?.click();
+      expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).toBeNull();
+      stored.clear();
+
+      vi.useFakeTimers({ now: new Date("2026-09-28T04:00:00Z") });
+      expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).toBeNull();
+    } finally {
+      if (originalStorage) {
+        Object.defineProperty(window, "localStorage", originalStorage);
+      } else {
+        Reflect.deleteProperty(window, "localStorage");
+      }
+    }
   });
 });

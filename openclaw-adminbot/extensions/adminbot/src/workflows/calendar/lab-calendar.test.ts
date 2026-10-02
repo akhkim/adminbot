@@ -22,6 +22,14 @@ describe("resolveLabCalendar", () => {
     expect(calendar.embed_url).toContain("other%40example.com");
     expect(calendar.embed_url).toContain("Europe%2FZurich");
   });
+
+  it("stores an AoE display label as its canonical IANA zone", () => {
+    const calendar = resolveLabCalendar({
+      ADMINBOT_LAB_CALENDAR_TIMEZONE: "Anywhere on Earth (AoE, UTC−12)",
+    });
+    expect(calendar.timezone).toBe("Etc/GMT+12");
+    expect(calendar.embed_url).toContain("Etc%2FGMT%2B12");
+  });
 });
 
 describe("labCalendarEmbedUrl", () => {

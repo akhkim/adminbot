@@ -19,6 +19,10 @@
 // second should cost nothing once you have read the first.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
+import {
+  matchesMemberTypeFilter,
+  renderMemberTypeFilter,
+} from "../member-type-filter.ts";
 import type { PaperSlotOverviewRow } from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 
@@ -45,6 +49,15 @@ export type PaperOverviewFilter = {
    * put that person's stack away without losing the row that says how they are doing.
    */
   collapsed: string[];
+  /**
+   * Roster member types to show, as a union. Empty means every type.
+   *
+   * Applied to the people rows rather than to the papers: a paper does not have a member type, the
+   * author does, and a co-authored paper legitimately appears under two people whose types differ.
+   * Filtering the papers instead would drop a major coauthor's paper from their own row because a
+   * different author on it is an acquaintance.
+   */
+  memberTypes: string[];
 };
 
 export const EMPTY_PAPER_OVERVIEW_FILTER: PaperOverviewFilter = {
@@ -53,6 +66,7 @@ export const EMPTY_PAPER_OVERVIEW_FILTER: PaperOverviewFilter = {
   stage: "",
   state: "all",
   collapsed: [],
+  memberTypes: [],
 };
 
 /**
@@ -504,6 +518,15 @@ export type PaperOverviewProps = {
   /** Opens the paper itself. The row is a summary; the record is edited where it is edited. */
   onOpenPaper: (paperId: string) => void;
   stages: ReadonlyArray<{ value: string; label: string }>;
+  /**
+   * This person's roster member type, for the type filter.
+   *
+   * A lookup rather than a field on the row because the rows are folded out of papers, and a paper
+   * carries an author link, not a roster record. Optional so the table still renders for a caller
+   * that has no roster to hand -- which is every test that is not about this filter, and is why an
+   * absent lookup reads as "unknown type" rather than as "filter everything out".
+   */
+  memberTypeOf?: (memberId: string | undefined) => string | undefined;
   /** Drawn in the header, where the page's own actions belong. Optional so tests need none. */
   actions?: unknown;
 };
@@ -511,7 +534,9 @@ export type PaperOverviewProps = {
 export function renderPaperOverviewTable(props: PaperOverviewProps) {
   const summary = paperOverviewSummary(props.rows);
   const shown = filterPaperRows(props.rows, props.filter);
-  const people = paperPersonRows(shown);
+  const people = paperPersonRows(shown).filter((person) =>
+    matchesMemberTypeFilter(props.memberTypeOf?.(person.memberId), props.filter.memberTypes),
+  );
   const venues = paperVenueOptions(props.rows);
   return html`
     <section class="adminbot-shell paper-overview" data-testid="adminbot-paper-overview">
@@ -570,6 +595,12 @@ export function renderPaperOverviewTable(props: PaperOverviewProps) {
                 ...venues.map((venue) => ({ value: venue, label: venue })),
               ],
               onChange: (value) => props.onFilterChange({ ...props.filter, venue: value }),
+            })}
+            ${renderMemberTypeFilter({
+              selected: props.filter.memberTypes,
+              onChange: (memberTypes) => props.onFilterChange({ ...props.filter, memberTypes }),
+              testIdPrefix: "paper-overview",
+              label: t("profileOverview.filters.memberTypeLabel"),
             })}
             ${props.actions ?? nothing}
           </div>

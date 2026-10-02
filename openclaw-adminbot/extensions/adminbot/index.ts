@@ -12,8 +12,10 @@ import {
   collaboratorSubgroupSchema,
   evidencePointerSchema,
   paperArtifactsSchema,
+  paperPresentationTypeSchema,
   paperReminderSchema,
   paperStepSchema,
+  paperVenueDecisionSchema,
   privilegeLevelSchema,
   riskTierSchema,
   sensitiveInfoSchema,
@@ -211,7 +213,7 @@ export default defineToolPlugin({
       name: "adminbot_suggest_calendar_change",
       label: "AdminBot suggest calendar change",
       description:
-        "Create a calendar proposal from explicit fields or extract its summary and date range from a Google Docs URL, Gmail message id, or Gmail query. A Google Calendar URL selects the writable destination calendar.",
+        "Create a pending calendar proposal from explicit fields or extract its summary and date range from a Google Docs URL, Gmail message id, or Gmail query. This tool never schedules or changes an event; report success only as proposed and awaiting approval. A Google Calendar URL selects the writable destination calendar.",
       optional: true,
       parameters: Type.Object({
         changeType: Type.Unsafe<"tentative_hold" | "send_invite" | "reschedule" | "cancel">({
@@ -492,6 +494,16 @@ export default defineToolPlugin({
         title: Type.String(),
         authors: Type.Array(Type.String()),
         currentStep: paperStepSchema,
+        venueDecision: Type.Optional(paperVenueDecisionSchema),
+        acceptedVenue: Type.Optional(Type.String()),
+        // Empty string is the explicit clear emitted by the project card's "Not said" controls.
+        acceptedYear: Type.Optional(
+          Type.Union([Type.Integer({ minimum: 2000, maximum: 2100 }), Type.Literal("")]),
+        ),
+        isArchival: Type.Optional(Type.Union([Type.Boolean(), Type.Literal("")])),
+        presentationType: Type.Optional(
+          Type.Union([paperPresentationTypeSchema, Type.Literal("")]),
+        ),
         artifacts: Type.Optional(paperArtifactsSchema),
         mentorMemberId: Type.Optional(Type.String()),
         checks: Type.Optional(

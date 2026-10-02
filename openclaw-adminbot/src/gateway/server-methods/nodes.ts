@@ -88,6 +88,7 @@ export {
   NODE_WAKE_RECONNECT_RETRY_WAIT_MS,
   NODE_WAKE_RECONNECT_WAIT_MS,
 } from "./nodes-wake-state.js";
+import { formatMissingScopeMessage } from "../auth/missing-scope-message.js";
 
 const NODE_WAKE_THROTTLE_MS = 15_000;
 const NODE_WAKE_NUDGE_THROTTLE_MS = 10 * 60_000;
@@ -825,7 +826,14 @@ export const nodeHandlers: GatewayRequestHandlers = {
         respond(
           false,
           undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `missing scope: ${approved.missingScope}`),
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            formatMissingScopeMessage({
+              missingScope: approved.missingScope,
+              method: "node.pair.approve",
+              presentedScopes: callerScopes,
+            }),
+          ),
         );
         return;
       }

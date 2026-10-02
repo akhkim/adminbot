@@ -76,7 +76,11 @@ export function renderPaperWeeklyUpdates(props: PaperWeeklyUpdatesProps) {
         ? html`
             <label class="weekly-updates__own">
               <span class="weekly-updates__own-label">
-                ${own ? "Your update this week" : "What did you do on this paper this week?"}
+                What did you do on this paper during ${adminBotFormatWeek(thisWeek)}?
+              </span>
+              <span class="weekly-updates__own-sub">
+                One entry per paper, per week, written by you. Your coauthors and the lab read it;
+                it is not sent to anyone as a message.
               </span>
               <textarea
                 class="input weekly-updates__box"
@@ -94,8 +98,11 @@ export function renderPaperWeeklyUpdates(props: PaperWeeklyUpdatesProps) {
                 }}
               ></textarea>
               <span class="weekly-updates__hint">
-                Two lines is plenty. This is what your coauthors read on Monday, and what the Sunday
-                reminder stops asking you for.
+                ${own
+                  ? "Saved. Edit the box and click outside it to update this week's entry."
+                  : "Two lines is plenty. It saves when you click outside the box."}
+                This is what your coauthors read on Monday, and what stops the Sunday reminder
+                asking you for it.
               </span>
             </label>
           `

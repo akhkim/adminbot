@@ -1,0 +1,308 @@
+export const ADMINBOT_BADGE_DESCRIPTION_MAX = 240;
+export const ADMINBOT_BADGE_EVIDENCE_MAX = 2000;
+export const ADMINBOT_BADGE_CATEGORY_MAX = 80;
+
+export const adminBotBadgeAssignmentSources = ["admin", "nomination"] as const;
+
+export type AdminBotBadgeAssignmentSource = (typeof adminBotBadgeAssignmentSources)[number];
+
+export type AdminBotBadgeDefinitionInput = {
+  id?: string;
+  category: string;
+  name: string;
+  description: string;
+  criteria_url?: string;
+  tier?: string;
+  family_key?: string;
+  sort_order?: number;
+};
+
+export type AdminBotBadgeDefinition = Omit<
+  Required<Pick<AdminBotBadgeDefinitionInput, "id" | "category" | "name" | "description">>,
+  never
+> &
+  Pick<AdminBotBadgeDefinitionInput, "criteria_url" | "tier"> & {
+    family_key: string;
+    sort_order: number;
+    created_at: string;
+    updated_at: string;
+  };
+
+export type AdminBotBadgeAssignment = {
+  member_id: string;
+  badge_id: string;
+  family_key: string;
+  awarded_at: string;
+  awarded_by: string;
+  source: AdminBotBadgeAssignmentSource;
+  nomination_id?: string;
+  evidence?: string;
+  /** Explicit total; absent legacy awards count as one. */
+  count?: number;
+};
+
+export type AdminBotAssignedBadge = Omit<AdminBotBadgeAssignment, "source"> & {
+  source: AdminBotBadgeAssignmentSource | "self_report";
+  /** Derived audience size, distinct from historical award totals. */
+  follower_count?: number;
+  category: string;
+  name: string;
+  description: string;
+  criteria_url?: string;
+  tier?: string;
+  sort_order: number;
+};
+
+export const adminBotBadgeNominationStatuses = ["pending", "approved", "rejected"] as const;
+
+export type AdminBotBadgeNominationStatus = (typeof adminBotBadgeNominationStatuses)[number];
+
+export type AdminBotBadgeNomination = {
+  id: string;
+  badge_id: string;
+  family_key: string;
+  /** Who the badge would go to. Not necessarily who asked for it -- see `nominated_by`. */
+  member_id: string;
+  /**
+   * Who put the nomination in, when that is not the member themselves.
+   *
+   * Absent on a self-nomination, which is what every nomination written before this field existed
+   * was: an absent nominator reads as "the member", not as "unknown". Storing the member's own id
+   * here instead would make a stored self-nomination indistinguishable from one an admin filed on
+   * their behalf, and the whole reason to keep the field is that the difference is worth reading.
+   *
+   * It is not a permission. The service takes the nominator from the caller's session, never from
+   * the request body, so this records what happened rather than deciding what may.
+   */
+  nominated_by?: string;
+  evidence?: string;
+  status: AdminBotBadgeNominationStatus;
+  created_at: string;
+  decided_at?: string;
+  decided_by?: string;
+};
+
+export type AdminBotBadgeNominationView = AdminBotBadgeNomination & {
+  badge_category: string;
+  badge_name: string;
+  badge_description: string;
+  badge_tier?: string;
+  badge_criteria_url?: string;
+  member_name?: string;
+  /** The nominator's display name, resolved the same way `member_name` is. */
+  nominator_name?: string;
+};
+
+export function normalizeBadgeFamilyKey(category: string, name: string): string {
+  const base = `${category} ${name}`
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "_")
+    .replace(/^_+|_+$/gu, "");
+  return base || "badge";
+}
+
+export const adminBotDefaultBadgeDefinitions: readonly (AdminBotBadgeDefinitionInput & {
+  id: string;
+})[] = [
+  {
+    id: "team_contributor__infra_builder",
+    category: "Team Contributor",
+    name: "Infra Builder",
+    tier: "Good",
+    description:
+      "Built or maintains shared lab infrastructure (eval pipelines, compute tooling, website, etc.).",
+    sort_order: 10,
+  },
+  {
+    id: "team_contributor__infra_builder_advanced",
+    category: "Team Contributor",
+    name: "Infra Builder",
+    tier: "Advanced",
+    description: "Recognised advanced contributions to shared lab infrastructure.",
+    sort_order: 11,
+  },
+  {
+    id: "team_contributor__pro_writer_good",
+    category: "Team Contributor",
+    name: "Pro Writer",
+    tier: "Good",
+    description: "Recognised writing contributions to lab papers.",
+    sort_order: 12,
+  },
+  {
+    id: "team_contributor__pro_writer_advanced",
+    category: "Team Contributor",
+    name: "Pro Writer",
+    tier: "Advanced",
+    description: "Recognised advanced writing contributions to lab papers.",
+    sort_order: 13,
+  },
+  {
+    id: "team_contributor__bug_hunter",
+    category: "Team Contributor",
+    name: "Bug Hunter",
+    description: "Found a substantive error in a lab paper before submission.",
+    sort_order: 20,
+  },
+  {
+    id: "community_building__referral_bonus",
+    category: "Community Building",
+    name: "Referral Bonus",
+    description:
+      "At least one person recommended by the user joined the lab for at least one coauthored project.",
+    sort_order: 30,
+  },
+  {
+    id: "community_building__ambassador",
+    category: "Community Building",
+    name: "Ambassador",
+    description:
+      "Represented or organized lab outreach at a conference booth, outreach event, etc.",
+    sort_order: 40,
+  },
+  {
+    id: "community_building__media_impact",
+    category: "Community Building",
+    name: "Media Impact",
+    description: "More than 1,000 followers on X or LinkedIn (self-reported; higher count).",
+    sort_order: 50,
+  },
+  {
+    id: "community_building__lab_engagement",
+    category: "Community Building",
+    name: "Lab Engagement",
+    description:
+      "Has talked to Zhijing face-to-face in at least three group meeting occasions, including in person and online.",
+    sort_order: 55,
+  },
+  {
+    id: "causality__level_1",
+    category: "Causality",
+    name: "Causality",
+    tier: "Level 1",
+    family_key: "causality",
+    description: "Passed the CausalTutor curriculum.",
+    sort_order: 60,
+  },
+  {
+    id: "causality__level_2",
+    category: "Causality",
+    name: "Causality",
+    tier: "Level 2",
+    family_key: "causality",
+    description: "Causal researcher with at least one main-conference publication.",
+    sort_order: 70,
+  },
+  {
+    id: "causality__level_3",
+    category: "Causality",
+    name: "Causality",
+    tier: "Level 3",
+    family_key: "causality",
+    description: "Causal expert with >=3 causality papers.",
+    sort_order: 80,
+  },
+] as const;
+
+// A badge the lab does not have yet.
+//
+// Nominating is already open to everybody (see AdminBotBadgeNomination), but only against the
+// catalogue an admin has already written. That is the wrong way round for the half of this board
+// that is meant to recognise work nobody anticipated: the person who notices that a kind of
+// contribution goes unrecognised is almost never the person who maintains the badge list, and
+// until now they had nowhere to say so. So a member may propose the badge itself, and an admin
+// decides whether it joins the catalogue.
+//
+// Deliberately not a shortcut to `createBadgeDefinition`. A badge definition is lab vocabulary --
+// every future nomination is phrased in it and every holder's profile renders it -- so it stays an
+// admin's call, and what a member contributes is the case for making it. Approving a suggestion
+// runs the same validation and duplicate checks as an admin creating the badge by hand, because it
+// is the same code path; the suggestion just supplies the fields.
+
+export const ADMINBOT_BADGE_RATIONALE_MAX = 2000;
+
+export const adminBotBadgeSuggestionStatuses = ["pending", "approved", "rejected"] as const;
+
+export type AdminBotBadgeSuggestionStatus = (typeof adminBotBadgeSuggestionStatuses)[number];
+
+/**
+ * What a member fills in. The badge's own fields, plus the argument for having it.
+ *
+ * The badge fields mirror AdminBotBadgeDefinitionInput exactly rather than being a looser
+ * free-text "what should the badge be" -- an admin who has to retype a suggestion into the real
+ * form will approve fewer of them, and a suggestion that cannot be approved as written is a
+ * suggestion whose validation happens after somebody has already said yes.
+ *
+ * `id`, `family_key` and `sort_order` are absent on purpose: they are the catalogue's business,
+ * settled when the badge is created, not something a member can meaningfully propose.
+ */
+export type AdminBotBadgeSuggestionInput = {
+  category: string;
+  name: string;
+  description: string;
+  criteria_url?: string;
+  tier?: string;
+  /** Why the lab should have this badge. Required -- see the note on the record below. */
+  rationale: string;
+};
+
+export type AdminBotBadgeSuggestion = {
+  id: string;
+  category: string;
+  name: string;
+  description: string;
+  criteria_url?: string;
+  tier?: string;
+  /**
+   * The case for the badge, in the suggester's words.
+   *
+   * Required, for the reason evidence is required on a nomination: the description says what the
+   * badge would mean and says nothing about whether the lab needs it. An admin reading a bare
+   * name-and-description has to reconstruct the argument or guess at it, and a queue of items
+   * nobody can decide is a queue nobody reads. It is also the part that survives rejection -- the
+   * record of what somebody thought was going unrecognised.
+   */
+  rationale: string;
+  /**
+   * Absent once the suggester has been purged from the roster.
+   *
+   * Same split as `submitted_by_member_id` on an opportunity, for the same reason: an approved
+   * suggestion produced a badge the whole lab can now hold, so the row outlives its author and
+   * loses the name. Anything still pending or rejected never became lab vocabulary and goes.
+   */
+  suggested_by?: string;
+  status: AdminBotBadgeSuggestionStatus;
+  created_at: string;
+  decided_at?: string;
+  decided_by?: string;
+  /**
+   * The badge this suggestion turned into, set on approval.
+   *
+   * Carried so the queue can link a decided row to the thing it produced, and so the catalogue can
+   * say which of its entries the lab asked for rather than an admin. Absent on a rejection.
+   */
+  created_badge_id?: string;
+};
+
+/** What the queue renders: the record plus the suggester's name, for the attribution line. */
+export type AdminBotBadgeSuggestionView = AdminBotBadgeSuggestion & {
+  suggested_by_name?: string;
+};
+
+/** Stable symbols for the catalogue; custom badges remain visible without a schema migration. */
+export function adminBotBadgeEmoji(name: string): string {
+  const symbols: Record<string, string> = {
+    "infra builder": "🛠️",
+    "bug hunter": "🐛",
+    "referral bonus": "🤝",
+    ambassador: "🌍",
+    "media impact": "📣",
+    "lab engagement": "💬",
+    causality: "🔗",
+    "pro writer": "✍️",
+    prowriter: "✍️",
+    "love and care": "💛",
+  };
+  return symbols[name.trim().toLowerCase()] ?? "🏅";
+}

@@ -2,7 +2,7 @@
 """
 AdminBot deadline matcher (Output 2, step 1).
 
-Maps lab papers to the UPCOMING deadlines in venues.json:
+Maps lab papers to the UPCOMING deadlines in deadlines.json:
 
   ONGOING papers ("Paper submissions" tab)  -> target venue via the `Venue`
       column (freeform, e.g. "EMNLP 100%", "NeurIPS 100%", "90% ARR Aug",
@@ -27,9 +27,9 @@ from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from adminbot_deadlines import AoEClock, DEADLINES_DIR as DDIR
+from adminbot_deadlines import DeadlineDataset, AoEClock, DEADLINES_DIR as DDIR
 
-# ongoing Venue-string -> venue_group key used in venues.json
+# ongoing Venue-string -> venue_group key used in deadlines.json
 TARGET_TO_GROUP = {
     "EMNLP 2026 (commitment)": "EMNLP 2026",
     "NeurIPS 2026 (rebuttal)": "NeurIPS 2026",
@@ -103,10 +103,10 @@ TOPIC_THRESHOLD = 3.0
 
 
 def build_workshop_registry(clock=None):
-    # Every upcoming workshop across venues.json, keyed by the code after "_ws_".
+    # Every upcoming workshop across deadlines.json, keyed by the code after "_ws_".
     # The dataset retains expired records for the Past view; matching must not suggest them.
     clock = clock or AoEClock.resolve()
-    items = json.load(open(os.path.join(DDIR, "venues.json")))["items"]
+    items = DeadlineDataset(DDIR).venues()
     reg = {}
     for it in items:
         if it.get("venue_type") != "workshop":
@@ -167,10 +167,10 @@ def main():
     clock = AoEClock.resolve(a.now)
     cur_year = clock.today.year
 
-    venue_items = json.load(open(os.path.join(DDIR, "venues.json")))["items"]
+    venue_items = DeadlineDataset(DDIR).venues()
     venues = {}
     for venue in venue_items:
-        if clock.has_passed(venue["deadline_aoe"]):
+        if not venue.get("deadline_aoe") or clock.has_passed(venue["deadline_aoe"]):
             continue
         group = venue["venue_group"]
         if group not in venues or venue["deadline_aoe"] < venues[group]["deadline_aoe"]:
@@ -189,7 +189,7 @@ def main():
         if tgt and tgt in TARGET_TO_GROUP and TARGET_TO_GROUP[tgt] in venues:
             grp = TARGET_TO_GROUP[tgt]
             ongoing.append(dict(kind="ongoing", title=t, raw_venue=v, target=tgt,
-                                venue_group=grp, deadline_aoe=venues[grp]["deadline_aoe"],
+                                venue_group=grp, deadline_id=venues[grp]["id"], deadline_aoe=venues[grp]["deadline_aoe"],
                                 authors=split_authors(au), confirmed=True))
 
     # READY -> workshop suggestions. Topic-match against every workshop; each match
@@ -213,7 +213,7 @@ def main():
         top = reg[picks[0][0]]
         ready.append(dict(kind="ready", title=title, year=yr,
                           authors=split_authors(r[10]),
-                          venue_group=top["venue_group"], deadline_aoe=top["deadline_aoe"],
+                          venue_group=top["venue_group"], deadline_id=top["id"], deadline_aoe=top["deadline_aoe"],
                           suggestions=[dict(code=c, name=reg[c]["name"],
                                             venue_group=reg[c]["venue_group"],
                                             deadline_aoe=reg[c]["deadline_aoe"], score=s)

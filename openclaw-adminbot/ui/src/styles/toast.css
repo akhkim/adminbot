@@ -10,9 +10,66 @@
   flex-direction: column;
   gap: 10px;
   width: min(360px, calc(100vw - 32px));
+  /* Never taller than the viewport it is fixed to. Without this the stack grew downward past the
+     bottom of the screen, and since every one of these waits to be dismissed by hand, the ones
+     below the fold were unreachable and permanent. */
+  max-height: calc(100vh - 32px);
   /* The container spans the corner even when empty, so it must never eat clicks; each toast turns
      pointer events back on for itself. */
   pointer-events: none;
+}
+
+/* Pinned above the stack rather than scrolling with it: it is the way out of a long backlog, so it
+   is the one control that must not be somewhere you have to scroll to find. */
+.toasts__bar {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 14px 40px rgb(0 0 0 / 28%);
+}
+
+.toasts__count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.toasts__dismiss-all {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toasts__dismiss-all:hover {
+  border-color: var(--accent);
+}
+
+/* Scrolls, and is only as tall as the toasts in it. `height: fit-content` is what lets it take
+   pointer events -- needed to be scrollable -- without its box covering the empty corner below the
+   stack and swallowing clicks meant for the page. */
+.toasts__stack {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: fit-content;
+  min-height: 0;
+  overflow-y: auto;
+  /* Room for the box shadows, which would otherwise be clipped by the scroll container. */
+  padding: 4px;
+  margin: -4px;
+  overscroll-behavior: contain;
 }
 
 .toast {
@@ -71,6 +128,16 @@
   font-size: 12px;
   line-height: 1.45;
   color: var(--muted);
+  /* About eight lines, then it scrolls inside the toast. The weekly paper update lists every paper
+     an author is on, which for a prolific one is most of the lab -- unbounded, a single one of
+     those filled the viewport, pushed every other toast off the bottom, and carried its own close
+     button along with it. */
+  max-height: 9rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* The message is plain text with real newlines in it; without this they collapse and the list
+     reads as one run-on paragraph. */
+  white-space: pre-wrap;
 }
 
 .toast__action {

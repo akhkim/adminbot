@@ -6,6 +6,7 @@ ENV_FILE=""
 ADMINBOT_PORT="8765"
 START_MODE="no"
 INTERVAL="1min"
+WRITER_LOCK_TOKEN=""
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -42,9 +43,24 @@ while (($# > 0)); do
       START_MODE="no"
       shift
       ;;
+    --writer-lock-token)
+      (($# >= 2)) || die "--writer-lock-token requires a value"
+      WRITER_LOCK_TOKEN="$2"
+      shift 2
+      ;;
     *) die "unknown argument: $1" ;;
   esac
 done
+
+# Only the locked service installer may rewrite or start this database writer. A standalone
+# invocation without its inherited token could otherwise race a deployment or database snapshot.
+assert_writer_lock() {
+  [[ -n "$WRITER_LOCK_TOKEN" ]] || die "poller installer requires --writer-lock-token from the locked service installer"
+  lock_dir="$HOME/.config/jinesis-adminbot/.writer.lock"
+  [[ -f "$lock_dir/owner" && ! -L "$lock_dir/owner" && "$(cat "$lock_dir/owner")" == "$WRITER_LOCK_TOKEN" ]] ||
+    die "poller installer does not own the AdminBot writer lock"
+}
+assert_writer_lock
 
 [[ -n "$ROOT" && -d "$ROOT" ]] || die "--root must name the release directory"
 [[ -n "$ENV_FILE" ]] || die "--env-file is required"
@@ -58,6 +74,7 @@ TSX_BIN="$ROOT/node_modules/.bin/tsx"
 UNIT_DIR="$HOME/.config/systemd/user"
 mkdir -p "$UNIT_DIR"
 
+assert_writer_lock
 cat >"$UNIT_DIR/jinesis-adminbot-sheet-poller.service" <<EOF
 [Unit]
 Description=Jinesis AdminBot Google Sheet member importer
@@ -117,6 +134,7 @@ fi
 # a bad header, unknown id, stale Google authorization, or wrong tab fails without changing data.
 "$TSX_BIN" "$ROOT/scripts/adminbot-member-sheet-poller.ts" --dry-run ||
   die "member sheet poller dry-run failed"
+assert_writer_lock
 systemctl --user enable --now jinesis-adminbot-sheet-poller.timer
 systemctl --user start jinesis-adminbot-sheet-poller.service
 systemctl --user --no-pager --full status jinesis-adminbot-sheet-poller.timer

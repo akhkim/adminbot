@@ -3,16 +3,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
+  createEmptyAdminBotDashboardData,
+  createEmptyAdminBotMemberList,
+  createEmptyAdminBotMemberNudgeState,
+  createEmptyAdminBotReimbursementState,
+} from "../controllers/admin.ts";
+import {
   type MemberAuthHost,
   acknowledgeOnboardingChecklist,
+  beginViewAs,
+  endViewAs,
   loadMemberPrivilege,
+  loadRoster,
   recoverFromRejectedDeviceToken,
   resumeMemberSession,
   toggleOnboardingStep,
   signOutMember,
   submitMemberAuth,
 } from "./flow.ts";
-import { clearStoredMemberSession, saveStoredMemberSession } from "./session.ts";
+import {
+  clearStoredMemberSession,
+  loadStoredMemberSession,
+  saveStoredMemberSession,
+} from "./session.ts";
 
 const BASE_URL = "http://127.0.0.1:8765";
 
@@ -22,6 +35,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   clearStoredMemberSession();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -32,6 +46,16 @@ function jsonResponse(status: number, body: unknown): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function mockLoginAndDevice(body: unknown) {
+  return vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (input) =>
+      String(input).includes("/auth/device-token")
+        ? jsonResponse(200, { token: "device-tok", scopes: ["operator.read"] })
+        : jsonResponse(200, body),
+    );
 }
 
 function makeHost(overrides: Partial<MemberAuthHost> = {}): MemberAuthHost {
@@ -74,6 +98,28 @@ function makeHost(overrides: Partial<MemberAuthHost> = {}): MemberAuthHost {
   };
 }
 
+describe("loadRoster search", () => {
+  it("keeps the newest search results when an older response arrives later", async () => {
+    let releaseOld: ((response: Response) => void) | undefined;
+    const oldResponse = new Promise<Response>((resolve) => {
+      releaseOld = resolve;
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) =>
+      String(input).includes("q=Ada")
+        ? oldResponse
+        : jsonResponse(200, { members: [{ id: "alan", name: "Alan Turing" }] }),
+    );
+    const host = makeHost({ rosterFilter: "Ada" });
+    const first = loadRoster(host);
+    host.rosterFilter = "Alan";
+    await loadRoster(host);
+    releaseOld?.(jsonResponse(200, { members: [{ id: "ada", name: "Ada Lovelace" }] }));
+    await first;
+    expect(host.rosterMembers).toEqual([{ id: "alan", name: "Alan Turing" }]);
+    expect(host.rosterLoading).toBe(false);
+  });
+});
+
 // Signing in must not downgrade the gateway URL the page is already configured with. AdminBot
 // advertised its own loopback address, so adopting it pointed a hosted browser at port 18789 on the
 // member's own machine and every sign-in ended at "disconnected (1006): no reason".
@@ -90,14 +136,12 @@ describe("gateway URL on sign-in", () => {
 
   it("keeps the configured URL when the service advertises loopback", async () => {
     const host = signedInHost();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, {
-        session_token: "sess",
-        expires_at: "2026-08-01T00:00:00Z",
-        member: { id: "pat" },
-        gateway: { url: "ws://127.0.0.1:18789", token: "gw" },
-      }),
-    );
+    mockLoginAndDevice({
+      session_token: "sess",
+      expires_at: "2026-08-01T00:00:00Z",
+      member: { id: "pat" },
+      gateway: { url: "ws://127.0.0.1:18789" },
+    });
 
     await submitMemberAuth(host);
 
@@ -108,14 +152,11 @@ describe("gateway URL on sign-in", () => {
 
   it("keeps the configured URL when the service omits one", async () => {
     const host = signedInHost();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, {
-        session_token: "sess",
-        expires_at: "2026-08-01T00:00:00Z",
-        member: { id: "pat" },
-        gateway: { token: "gw" },
-      }),
-    );
+    mockLoginAndDevice({
+      session_token: "sess",
+      expires_at: "2026-08-01T00:00:00Z",
+      member: { id: "pat" },
+    });
 
     await submitMemberAuth(host);
 
@@ -126,14 +167,12 @@ describe("gateway URL on sign-in", () => {
 
   it("adopts a routable URL the service does advertise", async () => {
     const host = signedInHost();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, {
-        session_token: "sess",
-        expires_at: "2026-08-01T00:00:00Z",
-        member: { id: "pat" },
-        gateway: { url: "wss://moved.example.ts.net", token: "gw" },
-      }),
-    );
+    mockLoginAndDevice({
+      session_token: "sess",
+      expires_at: "2026-08-01T00:00:00Z",
+      member: { id: "pat" },
+      gateway: { url: "wss://moved.example.ts.net" },
+    });
 
     await submitMemberAuth(host);
 
@@ -146,14 +185,12 @@ describe("gateway URL on sign-in", () => {
 describe("memberPrivilegeLevel wiring", () => {
   it("applyMemberSession persists privilege on signin success", async () => {
     const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, {
-        session_token: "sess",
-        expires_at: "2026-08-01T00:00:00Z",
-        member: { id: "pat", privilege_level: "admin" },
-        gateway: { url: "ws://127.0.0.1:18789", token: "gw" },
-      }),
-    );
+    mockLoginAndDevice({
+      session_token: "sess",
+      expires_at: "2026-08-01T00:00:00Z",
+      member: { id: "pat", privilege_level: "admin" },
+      gateway: { url: "ws://127.0.0.1:18789" },
+    });
     await submitMemberAuth(host);
     expect(host.memberPrivilegeLevel).toBe("admin");
     expect(host.connect).toHaveBeenCalled();
@@ -214,6 +251,193 @@ describe("memberPrivilegeLevel wiring", () => {
     const host = makeHost({ memberPrivilegeLevel: "admin", client: { stop: vi.fn() } });
     await signOutMember(host);
     expect(host.memberPrivilegeLevel).toBeNull();
+  });
+
+  it("clears private page data before the logout request finishes", async () => {
+    saveStoredMemberSession({ sessionToken: "old-session", expiresAt: "later" });
+    const host = makeHost({
+      adminBotData: {
+        ...createEmptyAdminBotDashboardData(),
+        members: [{ id: "old-private" } as never],
+        loadedAt: 1,
+      },
+      adminBotMemberList: {
+        ...createEmptyAdminBotMemberList(),
+        rows: [{ id: "old-private" } as never],
+        loadedAt: 1,
+      },
+      adminBotRosterLoadedAt: 1,
+      adminBotMemberMap: { people: [{ id: "old-private" }] } as never,
+      adminBotReimbursement: {
+        ...createEmptyAdminBotReimbursementState(),
+        messages: [{ role: "user", content: "old receipt" }] as never,
+      },
+      adminBotLogisticsRequests: [{ id: "old-request" }] as never,
+      adminBotLogisticsRequestsLoadedAt: 1,
+      adminBotLogisticsOpenRequest: {
+        id: "old-request",
+        documents: [{ data_base64: "secret" }],
+      } as never,
+      adminBotLogisticsDescription: "old draft",
+      adminBotLogisticsDraftScope: "old-member",
+      adminBotNotifications: [{ id: "old-notification" }] as never,
+      memberSheet: { rows: [{ id: "old-row" }] } as never,
+      memberSheetLoadedAt: 1,
+      adminBotProfileOverview: [{ member_id: "old-private" }] as never,
+      adminBotProfileOverviewLoadedAt: 1,
+      adminBotTravel: { history: [{ id: "old-trip" }] } as never,
+      adminBotPaperSlots: { "old-paper": { paperId: "old-paper" } } as never,
+      adminBotPaperSlotsLoadedAt: 1,
+      adminBotTripDrafts: { "old-conference": { notes: "private" } } as never,
+      adminBotTabUsage: { visits: 7 } as never,
+      adminBotTabUsageLoadedAt: 1,
+    });
+    let resolveLogout: (response: Response) => void = () => {};
+    vi.spyOn(globalThis, "fetch").mockReturnValue(
+      new Promise<Response>((resolve) => {
+        resolveLogout = resolve;
+      }),
+    );
+
+    const pending = signOutMember(host);
+    expect(loadStoredMemberSession()).toBeNull();
+    expect(host.adminBotData?.members).toEqual([]);
+    expect(host.adminBotMemberList?.rows).toEqual([]);
+    expect(host.adminBotRosterLoadedAt).toBeNull();
+    expect(host.adminBotMemberMap).toBeUndefined();
+    expect(host.adminBotReimbursement?.messages).toEqual([]);
+    expect(host.adminBotLogisticsRequests).toEqual([]);
+    expect(host.adminBotLogisticsRequestsLoadedAt).toBeNull();
+    expect(host.adminBotLogisticsOpenRequest).toBeNull();
+    expect(host.adminBotLogisticsDescription).toBe("");
+    expect(host.adminBotLogisticsDraftScope).toBeNull();
+    expect(host.adminBotNotifications).toBeUndefined();
+    expect(host.memberSheet).toBeNull();
+    expect(host.memberSheetLoadedAt).toBeNull();
+    expect(host.adminBotProfileOverview).toEqual([]);
+    expect(host.adminBotProfileOverviewLoadedAt).toBeNull();
+    expect(host.adminBotTravel?.history).toBeNull();
+    expect(host.adminBotPaperSlots).toEqual({});
+    expect(host.adminBotPaperSlotsLoadedAt).toBeNull();
+    expect(host.adminBotTripDrafts).toEqual({});
+    expect(host.adminBotTabUsage).toBeNull();
+    expect(host.adminBotTabUsageLoadedAt).toBeNull();
+    resolveLogout(jsonResponse(200, {}));
+    await pending;
+  });
+
+  it("a delayed logout of A does not clear a new sign-in for B", async () => {
+    saveStoredMemberSession({ sessionToken: "session-a", expiresAt: "later" });
+    const oldClient = { stop: vi.fn() };
+    const resetViews = vi.fn();
+    const host = makeHost({
+      memberId: "a",
+      client: oldClient,
+      resetMemberViewSessionState: resetViews,
+      memberEmail: "b@example.com",
+      memberPassword: "password-b",
+      adminBotLocationDrift: { current_city: "A's city" } as never,
+      adminBotLocationDrifts: [{ current_city: "A's city" }] as never,
+      adminBotMeetings: [{ id: "A's meeting", recording: { passcode: "private" } }] as never,
+      adminBotMeetingsVisibleCount: 24,
+      adminBotMeetingsNextCursor: { started_at: "2026-08-12T14:00:00Z", id: "A's meeting" },
+      adminBotMeetingsLoadingMore: true,
+      adminBotMeetingNudgePreview: { members: [{ id: "a" }] } as never,
+      calendarEvents: [{ id: "A's event", summary: "private" }] as never,
+      calendarMessages: [{ role: "user", content: "A's private prompt" }],
+      calendarSource: { id: "A's calendar", timezone: "UTC", embed_url: "private" },
+      adminBotNotice: { kind: "success", text: "A's calendar update" },
+      adminBotBroadcastExpiry: "A's date",
+      adminBotBroadcastAvailability: "A's private hours",
+      adminBotBroadcastTimezone: "America/Toronto",
+      adminBotMemberNudge: {
+        channel: "email",
+        message: "A's private announcement",
+        subject: "A only",
+        selectedMemberIds: ["a-peer"],
+        busy: true,
+      },
+      adminBotSelectedActionIds: ["a-action"],
+      adminBotBulkActionBusy: true,
+      adminBotBusyActionId: "a-action",
+      adminBotAvailabilityNotesDraft: "A's medical schedule note",
+      adminBotTimeAvailabilityDraft: { note: "A's private time" } as never,
+      adminBotTimeAwayDraft: { note: "A's holiday" } as never,
+      adminBotMilestoneDraft: { label: "A's deadline" } as never,
+      adminBotTripDraft: { note: "A's trip" } as never,
+      myWorkProjectDraft: "A's project",
+      myWorkProjectAlias: "a-private",
+      myWorkProjectEdits: { a: { title: "A's title", alias: "x", startedOn: "", error: null } },
+      adminBotVenueFilter: "A's venue",
+      adminBotPreregMissingEdit: true,
+      profileBadgeNomineeId: "a-peer",
+    });
+    let finishLogout: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/auth/logout")) {
+        return new Promise<Response>((resolve) => {
+          finishLogout = resolve;
+        });
+      }
+      if (url.includes("/auth/login")) {
+        return jsonResponse(200, {
+          session_token: "session-b",
+          expires_at: "later",
+          member: { id: "b", privilege_level: "member" },
+          gateway: { url: "ws://127.0.0.1:18789" },
+        });
+      }
+      if (url.includes("/auth/device-token")) {
+        return jsonResponse(200, { token: "device-b", scopes: ["operator.read"] });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    const pendingLogout = signOutMember(host);
+    await vi.waitFor(() => expect(finishLogout).toBeTypeOf("function"));
+    expect(oldClient.stop).toHaveBeenCalledOnce();
+    host.memberEmail = "b@example.com";
+    host.memberPassword = "password-b";
+    await submitMemberAuth(host);
+    expect(resetViews).toHaveBeenCalledTimes(2);
+    expect(host.memberId).toBe("b");
+    expect(loadStoredMemberSession()?.sessionToken).toBe("session-b");
+    expect(host.adminBotLocationDrift).toBeUndefined();
+    expect(host.adminBotLocationDrifts).toBeUndefined();
+    expect(host.adminBotMeetings).toBeUndefined();
+    expect(host.adminBotMeetingsVisibleCount).toBe(12);
+    expect(host.adminBotMeetingsNextCursor).toBeNull();
+    expect(host.adminBotMeetingsLoadingMore).toBe(false);
+    expect(host.adminBotMeetingNudgePreview).toBeNull();
+    expect(host.calendarEvents).toBeUndefined();
+    expect(host.calendarMessages).toEqual([]);
+    expect(host.calendarSource).toBeNull();
+    expect(host.adminBotNotice).toBeNull();
+    expect(host.adminBotBroadcastExpiry).toBeUndefined();
+    expect(host.adminBotBroadcastAvailability).toBeUndefined();
+    expect(host.adminBotBroadcastTimezone).toBeUndefined();
+    expect(host.adminBotMemberNudge).toEqual(createEmptyAdminBotMemberNudgeState());
+    expect(host.adminBotSelectedActionIds).toEqual([]);
+    expect(host.adminBotBulkActionBusy).toBe(false);
+    expect(host.adminBotBusyActionId).toBeNull();
+    expect(host.adminBotAvailabilityNotesDraft).toBeNull();
+    expect(host.adminBotTimeAvailabilityDraft?.note).toBe("");
+    expect(host.adminBotTimeAwayDraft?.note).toBe("");
+    expect(host.adminBotMilestoneDraft?.label).toBe("");
+    expect(host.adminBotTripDraft?.note).toBe("");
+    expect(host.myWorkProjectDraft).toBeNull();
+    expect(host.myWorkProjectAlias).toBe("");
+    expect(host.myWorkProjectEdits).toEqual({});
+    expect(host.adminBotVenueFilter).toBe("");
+    expect(host.adminBotPreregMissingEdit).toBe(false);
+    expect(host.profileBadgeNomineeId).toBe("");
+
+    finishLogout?.(jsonResponse(200, {}));
+    await pendingLogout;
+    expect(host.memberId).toBe("b");
+    expect(loadStoredMemberSession()?.sessionToken).toBe("session-b");
+    expect(host.client).not.toBe(oldClient);
   });
 });
 
@@ -392,7 +616,7 @@ describe("device-bound gateway token", () => {
     session_token: "sess",
     expires_at: "2026-08-01T00:00:00Z",
     member: { id: "pat", privilege_level: "member" },
-    gateway: { url: "ws://127.0.0.1:18789", token: "shared-gw-token" },
+    gateway: { url: "ws://127.0.0.1:18789" },
   };
 
   it("stores the minted token and keeps the shared gateway token out of settings", async () => {
@@ -416,7 +640,38 @@ describe("device-bound gateway token", () => {
     );
   });
 
-  it("falls back to the session's gateway token when the service cannot mint one", async () => {
+  it("makes a verified member available while gateway token minting is pending", async () => {
+    let finishDevice: ((response: Response) => void) | undefined;
+    const deviceResponse = new Promise<Response>((resolve) => {
+      finishDevice = resolve;
+    });
+    const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input).includes("/auth/login")) {
+        return jsonResponse(200, loginBody);
+      }
+      if (String(input).includes("/auth/device-token")) {
+        return deviceResponse;
+      }
+      throw new Error(`unexpected fetch: ${String(input)}`);
+    });
+
+    const signingIn = submitMemberAuth(host);
+    await vi.waitFor(() =>
+      expect(fetchSpy.mock.calls.some(([url]) => String(url).includes("/auth/device-token"))).toBe(
+        true,
+      ),
+    );
+    expect(host.memberId).toBe("pat");
+    expect(loadStoredMemberSession()?.sessionToken).toBe("sess");
+    expect(host.connect).not.toHaveBeenCalled();
+
+    finishDevice?.(jsonResponse(200, { token: "device-tok", scopes: ["operator.read"] }));
+    await signingIn;
+    expect(host.connect).toHaveBeenCalled();
+  });
+
+  it("fails closed when the service cannot mint a device token", async () => {
     const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
     routedFetch({
       "/auth/login": () => jsonResponse(200, loginBody),
@@ -425,10 +680,9 @@ describe("device-bound gateway token", () => {
 
     await submitMemberAuth(host);
 
-    expect(host.applySettings).toHaveBeenCalledWith(
-      expect.objectContaining({ token: "shared-gw-token" }),
-    );
-    expect(host.connect).toHaveBeenCalled();
+    expect(host.applySettings).not.toHaveBeenCalled();
+    expect(host.connect).not.toHaveBeenCalled();
+    expect(host.memberFormError).toContain("device credential");
   });
 
   it("signing out clears the device's gateway token", async () => {
@@ -439,7 +693,7 @@ describe("device-bound gateway token", () => {
         jsonResponse(200, {
           expires_at: "2026-08-01T00:00:00Z",
           member: { id: "pat", privilege_level: "member" },
-          gateway: { url: "ws://127.0.0.1:18789", token: "shared-gw-token" },
+          gateway: { url: "ws://127.0.0.1:18789" },
         }),
       "/auth/device-token": () =>
         jsonResponse(200, { token: "device-tok", scopes: ["operator.read"] }),
@@ -458,8 +712,8 @@ describe("device-bound gateway token", () => {
 
 // A connect the gateway refuses for want of an acceptable credential — the device token was
 // rejected (rotated shared secret, device no longer paired, revoked token) or none was ever minted
-// — must not strand a signed-in member. Recovery re-mints first so the member stays off the shared
-// gateway secret, and only falls back to the session's shared token when minting is unavailable.
+// — must not strand a signed-in member. Recovery re-mints the device credential and fails closed
+// when minting is unavailable, so a browser is never handed the shared gateway secret.
 describe("recoverFromRejectedDeviceToken", () => {
   it("re-mints the device token rather than handing the member the shared secret", async () => {
     saveStoredMemberSession({ sessionToken: "sess", expiresAt: "2026-08-01T00:00:00Z" });
@@ -471,7 +725,7 @@ describe("recoverFromRejectedDeviceToken", () => {
         return jsonResponse(200, {
           expires_at: "2026-08-01T00:00:00Z",
           member: { id: "pat", privilege_level: "member" },
-          gateway: { url: "ws://127.0.0.1:18789", token: "shared-gw-token" },
+          gateway: { url: "ws://127.0.0.1:18789" },
         });
       }
       if (url.includes("/auth/device-token")) {
@@ -496,7 +750,7 @@ describe("recoverFromRejectedDeviceToken", () => {
     expect(host.applySettings).toHaveBeenLastCalledWith(expect.objectContaining({ token: "" }));
   });
 
-  it("falls back to the session's gateway token when the service cannot mint", async () => {
+  it("fails closed when the service cannot mint a replacement", async () => {
     saveStoredMemberSession({ sessionToken: "sess", expiresAt: "2026-08-01T00:00:00Z" });
     const host = makeHost();
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
@@ -507,14 +761,12 @@ describe("recoverFromRejectedDeviceToken", () => {
       return jsonResponse(200, {
         expires_at: "2026-08-01T00:00:00Z",
         member: { id: "pat", privilege_level: "member" },
-        gateway: { url: "ws://127.0.0.1:18789", token: "shared-gw-token" },
+        gateway: { url: "ws://127.0.0.1:18789" },
       });
     });
 
-    expect(await recoverFromRejectedDeviceToken(host)).toBe(true);
-    expect(host.applySettings).toHaveBeenLastCalledWith(
-      expect.objectContaining({ token: "shared-gw-token" }),
-    );
+    expect(await recoverFromRejectedDeviceToken(host)).toBe(false);
+    expect(host.applySettings).not.toHaveBeenCalled();
   });
 
   it("declines when no member is signed in", async () => {
@@ -595,18 +847,358 @@ describe("device-token recovery latch", () => {
   it("re-arms recovery when a member signs in", async () => {
     const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
     host.deviceTokenRecoveryAttempted = true;
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, {
-        session_token: "sess",
-        expires_at: "2026-08-01T00:00:00Z",
-        member: { id: "pat", privilege_level: "member" },
-        gateway: { url: "ws://127.0.0.1:18789", token: "gw" },
-      }),
-    );
+    mockLoginAndDevice({
+      session_token: "sess",
+      expires_at: "2026-08-01T00:00:00Z",
+      member: { id: "pat", privilege_level: "member" },
+      gateway: { url: "ws://127.0.0.1:18789" },
+    });
 
     await submitMemberAuth(host);
 
     expect(host.deviceTokenRecoveryAttempted).toBe(false);
     expect(host.connect).toHaveBeenCalled();
+  });
+});
+
+describe("viewing the lab as another member", () => {
+  const ADMIN_TOKEN = "admin-sess";
+
+  function signedInAdmin() {
+    saveStoredMemberSession({ sessionToken: ADMIN_TOKEN, expiresAt: "2026-12-01T00:00:00Z" });
+    return makeHost({ memberId: "root", memberPrivilegeLevel: "admin" });
+  }
+
+  // The impersonate call, the device token the swap re-mints, and the session read that a resume
+  // does -- the three URLs any of these paths can touch.
+  function mockService(handlers: {
+    impersonate?: () => Response | Promise<Response>;
+    session?: () => Response | Promise<Response>;
+    stop?: () => Response | Promise<Response>;
+  }) {
+    return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/auth/impersonate/stop")) {
+        return handlers.stop?.() ?? jsonResponse(200, { ended: true });
+      }
+      if (url.includes("/auth/impersonate")) {
+        return (
+          handlers.impersonate?.() ??
+          jsonResponse(200, {
+            session_token: "view-sess",
+            expires_at: "2026-09-03T10:30:00Z",
+            member: { id: "ada", privilege_level: "member" },
+            impersonated_by: { id: "root", name: "Root" },
+          })
+        );
+      }
+      if (url.includes("/auth/device-token")) {
+        return jsonResponse(200, { token: "device-tok", scopes: ["operator.read"] });
+      }
+      if (url.includes("/auth/session")) {
+        return (
+          handlers.session?.() ??
+          jsonResponse(200, {
+            expires_at: "2026-12-01T00:00:00Z",
+            member: { id: "root", privilege_level: "admin" },
+          })
+        );
+      }
+      return jsonResponse(200, {});
+    });
+  }
+
+  it("swaps the active session and parks the admin's own", async () => {
+    const host = signedInAdmin();
+    mockService({});
+
+    await beginViewAs(host, "ada");
+
+    // The app now reads as the member everywhere, including the privilege that gates admin tabs.
+    expect(host.memberId).toBe("ada");
+    expect(host.memberPrivilegeLevel).toBe("member");
+    expect(host.memberImpersonatedBy).toEqual({ id: "root", name: "Root" });
+    // And the way back is on disk, so a reload does not strand the admin in somebody else's view.
+    const stored = loadStoredMemberSession();
+    expect(stored?.sessionToken).toBe("view-sess");
+    expect(stored?.impersonator?.sessionToken).toBe(ADMIN_TOKEN);
+  });
+
+  it("cannot restore a late view-as session after sign-out", async () => {
+    const host = signedInAdmin();
+    let finishStart!: (response: Response) => void;
+    const pendingStart = new Promise<Response>((resolve) => {
+      finishStart = resolve;
+    });
+    mockService({ impersonate: () => pendingStart });
+    const viewing = beginViewAs(host, "ada");
+    await signOutMember(host);
+    finishStart(
+      jsonResponse(200, {
+        session_token: "view-sess",
+        expires_at: "later",
+        member: { id: "ada" },
+        impersonated_by: { id: "root", name: "Root" },
+      }),
+    );
+    await viewing;
+    expect(loadStoredMemberSession()).toBeNull();
+    expect(host.memberId).toBeNull();
+  });
+
+  it("cannot restore the parked admin session after sign-out during stop", async () => {
+    const host = signedInAdmin();
+    mockService({});
+    await beginViewAs(host, "ada");
+    let finishStop!: (response: Response) => void;
+    const pendingStop = new Promise<Response>((resolve) => {
+      finishStop = resolve;
+    });
+    mockService({ stop: () => pendingStop });
+    const stopping = endViewAs(host);
+    await signOutMember(host);
+    finishStop(jsonResponse(200, { ended: true }));
+    await stopping;
+    expect(loadStoredMemberSession()).toBeNull();
+    expect(host.memberId).toBeNull();
+  });
+
+  it("drops cached roster and dashboard data on both sides of view-as", async () => {
+    const host = signedInAdmin();
+    host.adminBotData = {
+      ...createEmptyAdminBotDashboardData(),
+      members: [{ id: "admin-private" } as never],
+      loadedAt: 1,
+    };
+    host.adminBotMemberList = {
+      ...createEmptyAdminBotMemberList(),
+      rows: [{ id: "admin-private" } as never],
+      loadedAt: 1,
+    };
+    mockService({});
+
+    await beginViewAs(host, "ada");
+    expect(host.adminBotData?.members).toEqual([]);
+    expect(host.adminBotData?.loadedAt).toBeNull();
+    expect(host.adminBotMemberList?.rows).toEqual([]);
+    expect(host.adminBotMemberList?.loadedAt).toBeNull();
+
+    host.adminBotData = {
+      ...createEmptyAdminBotDashboardData(),
+      members: [{ id: "member-private" } as never],
+      loadedAt: 2,
+    };
+    host.adminBotMemberList = {
+      ...createEmptyAdminBotMemberList(),
+      rows: [{ id: "member-private" } as never],
+      loadedAt: 2,
+    };
+    await endViewAs(host);
+    expect(host.adminBotData?.members).toEqual([]);
+    expect(host.adminBotMemberList?.rows).toEqual([]);
+  });
+
+  it("puts the admin back where they were, and drops the parked token", async () => {
+    const host = signedInAdmin();
+    mockService({});
+    await beginViewAs(host, "ada");
+
+    await endViewAs(host);
+
+    expect(host.memberId).toBe("root");
+    expect(host.memberPrivilegeLevel).toBe("admin");
+    expect(host.memberImpersonatedBy).toBeNull();
+    const stored = loadStoredMemberSession();
+    expect(stored?.sessionToken).toBe(ADMIN_TOKEN);
+    expect(stored?.impersonator).toBeUndefined();
+  });
+
+  it("refuses to nest, so there is only ever one way back", async () => {
+    const host = signedInAdmin();
+    const fetchSpy = mockService({});
+    await beginViewAs(host, "ada");
+    const callsAfterFirst = fetchSpy.mock.calls.length;
+
+    await beginViewAs(host, "grace");
+
+    expect(fetchSpy.mock.calls.length).toBe(callsAfterFirst);
+    expect(host.memberId).toBe("ada");
+  });
+
+  it("leaves the admin where they are when the service refuses", async () => {
+    const host = signedInAdmin();
+    mockService({
+      impersonate: () => jsonResponse(403, { error: { message: "admin privileges required" } }),
+    });
+
+    await beginViewAs(host, "ada");
+
+    expect(host.memberId).toBe("root");
+    expect(host.memberImpersonatedBy).toBeUndefined();
+    expect(host.memberImpersonationError).toBeTruthy();
+    // Nothing was parked, so the stored session is untouched rather than half-swapped.
+    expect(loadStoredMemberSession()?.sessionToken).toBe(ADMIN_TOKEN);
+  });
+
+  it("signs out rather than stranding the admin when their own session died meanwhile", async () => {
+    const host = signedInAdmin();
+    let viewing = false;
+    mockService({
+      impersonate: () => {
+        viewing = true;
+        return jsonResponse(200, {
+          session_token: "view-sess",
+          expires_at: "2026-09-03T10:30:00Z",
+          member: { id: "ada", privilege_level: "member" },
+          impersonated_by: { id: "root", name: "Root" },
+        });
+      },
+      // The admin's own session is gone by the time they come back -- expired, or revoked from
+      // another browser. There is nothing to restore, so the gate is the only honest destination.
+      session: () =>
+        viewing
+          ? jsonResponse(401, { error: { message: "authentication required" } })
+          : jsonResponse(200, { expires_at: "x", member: { id: "root" } }),
+    });
+    await beginViewAs(host, "ada");
+
+    await endViewAs(host);
+
+    expect(host.memberId).toBeNull();
+    expect(host.memberImpersonatedBy).toBeNull();
+    expect(loadStoredMemberSession()).toBeNull();
+  });
+});
+
+describe("refresh preserves sessions during temporary failures", () => {
+  it.each([200, 401])(
+    "ignores a stale %s response even when the stored token is unchanged",
+    async (status) => {
+      saveStoredMemberSession({ sessionToken: "same-session", expiresAt: "later" });
+      let resolveSession!: (response: Response) => void;
+      vi.spyOn(globalThis, "fetch").mockReturnValue(
+        new Promise<Response>((resolve) => {
+          resolveSession = resolve;
+        }),
+      );
+      const host = makeHost({ memberId: "current-member", memberPrivilegeLevel: "admin" });
+      let current = true;
+      const pending = resumeMemberSession(host, () => current);
+
+      current = false;
+      resolveSession(jsonResponse(status, { member: { id: "stale-member" } }));
+
+      expect(await pending).toBe("no-session");
+      expect(loadStoredMemberSession()?.sessionToken).toBe("same-session");
+      expect(host.memberId).toBe("current-member");
+      expect(host.connect).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not connect or store a device token after the instance becomes stale", async () => {
+    saveStoredMemberSession({ sessionToken: "same-session", expiresAt: "later" });
+    let resolveDevice!: (response: Response) => void;
+    let deviceRequested = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const path = String(input);
+      if (path.includes("/auth/session")) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            expires_at: "later",
+            member: { id: "current-member", privilege_level: "member" },
+          }),
+        );
+      }
+      if (path.includes("/auth/device-token")) {
+        deviceRequested = true;
+        return new Promise<Response>((resolve) => {
+          resolveDevice = resolve;
+        });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const host = makeHost();
+    let current = true;
+    const pending = resumeMemberSession(host, () => current);
+    await vi.waitFor(() => expect(deviceRequested).toBe(true));
+
+    current = false;
+    resolveDevice(jsonResponse(200, { token: "stale-device-token", scopes: ["operator.read"] }));
+
+    expect(await pending).toBe("resumed");
+    expect(host.connect).not.toHaveBeenCalled();
+    expect(localStorage.getItem("openclaw.device.auth.v1") ?? "").not.toContain(
+      "stale-device-token",
+    );
+  });
+
+  it("does not restore a session that was signed out while resume was loading", async () => {
+    saveStoredMemberSession({ sessionToken: "old-session", expiresAt: "later" });
+    let resolveSession: (response: Response) => void = () => {};
+    vi.spyOn(globalThis, "fetch").mockReturnValue(
+      new Promise<Response>((resolve) => {
+        resolveSession = resolve;
+      }),
+    );
+    const host = makeHost();
+    const pending = resumeMemberSession(host);
+    clearStoredMemberSession();
+    resolveSession(jsonResponse(200, { member: { id: "old-private" } }));
+    expect(await pending).toBe("no-session");
+    expect(host.memberId).toBeNull();
+  });
+
+  it.each([404, 429, 500, 502, 503])("keeps a stored login after HTTP %s", async (status) => {
+    saveStoredMemberSession({
+      sessionToken: "synthetic-session",
+      expiresAt: "2030-01-01T00:00:00Z",
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(status, {}));
+    expect(await resumeMemberSession(makeHost())).toBe("unreachable");
+    expect(loadStoredMemberSession()?.sessionToken).toBe("synthetic-session");
+  });
+  it.each([401, 403])("clears rejected sessions after HTTP %s", async (status) => {
+    saveStoredMemberSession({
+      sessionToken: "synthetic-session",
+      expiresAt: "2030-01-01T00:00:00Z",
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(status, {}));
+    expect(await resumeMemberSession(makeHost())).toBe("cleared");
+    expect(loadStoredMemberSession()).toBeNull();
+  });
+
+  it("drops private state and the gateway connection when a stored session is rejected", async () => {
+    saveStoredMemberSession({ sessionToken: "rejected-session", expiresAt: "later" });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(401, {}));
+    const stop = vi.fn();
+    const host = makeHost({
+      memberId: "former-member",
+      memberPrivilegeLevel: "admin",
+      connected: true,
+      client: { stop },
+      adminBotData: {
+        ...createEmptyAdminBotDashboardData(),
+        members: [{ id: "private-member" } as never],
+        loadedAt: 1,
+      },
+      adminBotMemberList: {
+        ...createEmptyAdminBotMemberList(),
+        rows: [{ id: "private-member" } as never],
+        loadedAt: 1,
+      },
+      resetMemberViewSessionState: vi.fn(),
+    });
+
+    expect(await resumeMemberSession(host)).toBe("cleared");
+    expect(loadStoredMemberSession()).toBeNull();
+    expect(host.memberId).toBeNull();
+    expect(host.memberPrivilegeLevel).toBeNull();
+    expect(host.adminBotData?.members).toEqual([]);
+    expect(host.adminBotMemberList?.rows).toEqual([]);
+    expect(host.resetMemberViewSessionState).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(host.connected).toBe(false);
+    expect(host.client).toBeNull();
+    expect(host.applySettings).toHaveBeenCalledWith(expect.objectContaining({ token: "" }));
   });
 });

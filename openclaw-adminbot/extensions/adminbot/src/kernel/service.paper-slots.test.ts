@@ -28,6 +28,7 @@ function serviceWithDelivery(): AdminBotService {
 function seed(service: AdminBotService): void {
   unwrap(
     service.upsertLabMember({
+      receives_nudges: true,
       id: "ada",
       name: "Ada Lovelace",
       privilege_level: "member",
@@ -36,6 +37,7 @@ function seed(service: AdminBotService): void {
   );
   unwrap(
     service.upsertLabMember({
+      receives_nudges: true,
       id: "bob",
       name: "Bob Coauthor",
       privilege_level: "member",
@@ -54,11 +56,11 @@ function seed(service: AdminBotService): void {
 }
 
 describe("listPaperSlots", () => {
-  it("answers with all 24 rows, so the card renders a checklist rather than a list of answers", () => {
+  it("answers with all 28 rows, so the card renders a checklist rather than a list of answers", () => {
     const service = new AdminBotService();
     seed(service);
     const { slots } = unwrap(service.listPaperSlots("p1"));
-    expect(slots).toHaveLength(24);
+    expect(slots).toHaveLength(28);
     expect(slots.every((slot) => slot.status === "missing")).toBe(true);
   });
 
@@ -91,6 +93,7 @@ describe("setPaperSlot", () => {
     seed(service);
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "eve",
         name: "Eve Outsider",
         privilege_level: "member",
@@ -149,15 +152,105 @@ describe("the paper fields the slots hang off", () => {
     expect(saved).toMatchObject({ venue: "ICLR 2027", deadline: "2026-09-24" });
   });
 
-  it("refuses the governance fields outright rather than silently dropping them", () => {
+  it("lets an author record every acceptance field and preserves them on later edits", () => {
+    const service = new AdminBotService();
+    seed(service);
+    const decided = unwrap(
+      service.upsertOwnPaper("ada", {
+        id: "p1",
+        venue_decision: "accept",
+        accepted_venue: "ICLR 2027",
+        accepted_year: 2027,
+        is_archival: true,
+        presentation_type: "spotlight",
+      }),
+    );
+    expect(decided).toMatchObject({
+      venue_decision: "accept",
+      accepted_venue: "ICLR 2027",
+      accepted_year: 2027,
+      is_archival: true,
+      presentation_type: "spotlight",
+    });
+
+    const renamed = unwrap(service.upsertOwnPaper("ada", { id: "p1", title: "New title" }));
+    expect(renamed).toMatchObject({
+      title: "New title",
+      venue_decision: "accept",
+      accepted_venue: "ICLR 2027",
+      accepted_year: 2027,
+      is_archival: true,
+      presentation_type: "spotlight",
+    });
+
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "eve",
+        name: "Eve Outsider",
+        privilege_level: "member",
+      } as never),
+    );
+    expect(service.upsertOwnPaper("eve", { id: "p1", venue_decision: "reject" })).toMatchObject({
+      ok: false,
+      status: 403,
+    });
+  });
+
+  it("clears optional acceptance details when the card sends Not said", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(
+      service.upsertPaper({
+        id: "p1",
+        title: "Causal abstraction",
+        authors: ["Ada Lovelace", "Bob Coauthor"],
+        current_step: "overleaf_writing",
+        venue_decision: "accept",
+        accepted_venue: "ICLR 2027",
+        accepted_year: 2027,
+        is_archival: true,
+        presentation_type: "spotlight",
+      }),
+    );
+
+    const cleared = unwrap(
+      service.upsertOwnPaper("ada", {
+        id: "p1",
+        accepted_venue: "",
+        accepted_year: "",
+        is_archival: "",
+        presentation_type: "",
+      }),
+    );
+    expect(cleared).toMatchObject({ venue_decision: "accept" });
+    expect(cleared.accepted_venue).toBeUndefined();
+    expect(cleared.accepted_year).toBeUndefined();
+    expect(cleared.is_archival).toBeUndefined();
+    expect(cleared.presentation_type).toBeUndefined();
+  });
+
+  it("refuses malformed acceptance details instead of storing unusable values", () => {
     const service = new AdminBotService();
     seed(service);
     for (const field of [
-      "first_author_member_id",
-      "venue_decision",
-      "attempt",
-      "dormant_override",
+      { venue_decision: "maybe" },
+      { accepted_year: 1999 },
+      { accepted_year: 2026.5 },
+      { is_archival: "yes" },
+      { presentation_type: "keynote" },
     ]) {
+      expect(service.upsertOwnPaper("ada", { id: "p1", ...field })).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+    }
+  });
+
+  it("refuses the governance fields outright rather than silently dropping them", () => {
+    const service = new AdminBotService();
+    seed(service);
+    for (const field of ["first_author_member_id", "attempt", "dormant_override"]) {
       expect(service.upsertOwnPaper("ada", { id: "p1", [field]: "bob" })).toMatchObject({
         ok: false,
         status: 400,
@@ -216,6 +309,7 @@ describe("collectPaperNudgeBatches", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "ada",
         name: "Ada Lovelace",
         privilege_level: "member",
@@ -337,8 +431,209 @@ describe("attendance on the slot overview", () => {
     // The field is always present so the console never has to distinguish "no attendees" from
     // "this service is too old to say".
     const service = new AdminBotService();
-    service.upsertPaper({ id: "p2", title: "Quiet", authors: ["Alice"], current_step: "submission" });
+    service.upsertPaper({
+      id: "p2",
+      title: "Quiet",
+      authors: ["Alice"],
+      current_step: "submission",
+    });
     const row = service.listPaperSlotOverview().payload?.papers.find((p) => p.paper_id === "p2");
     expect(row?.attendance).toEqual({ yes: 0, no: 0, unknown: 0, going: [] });
   });
+});
+
+describe("the conference roll-call", () => {
+  /** An accepted paper with all four acceptance details, so the conference branch is open. */
+  function acceptedService(): AdminBotService {
+    const service = serviceWithDelivery();
+    seed(service);
+    unwrap(
+      service.upsertPaper({
+        id: "p1",
+        title: "Causal abstraction",
+        authors: ["Ada Lovelace", "Bob Coauthor"],
+        current_step: "overleaf_writing",
+        first_author_member_id: "ada",
+        venue_decision: "accept",
+        accepted_venue: "EMNLP",
+        accepted_year: 2026,
+        is_archival: true,
+        presentation_type: "poster",
+      }),
+    );
+    return service;
+  }
+
+  it("puts every author on the card before anybody has been added by hand", () => {
+    const { attendees } = unwrap(acceptedService().listPaperSlots("p1"));
+    expect(attendees.map((row) => [row.name, row.attending])).toEqual([
+      ["Ada Lovelace", "unknown"],
+      ["Bob Coauthor", "unknown"],
+    ]);
+  });
+
+  it("leaves a paper alone until its acceptance details are in", () => {
+    const service = serviceWithDelivery();
+    seed(service);
+    // Accepted, but the venue, year, archival flag and presentation type are all missing, so
+    // nobody has been asked anything yet.
+    unwrap(
+      service.upsertPaper({
+        id: "p1",
+        title: "Causal abstraction",
+        authors: ["Ada Lovelace", "Bob Coauthor"],
+        current_step: "overleaf_writing",
+        venue_decision: "accept",
+      }),
+    );
+    expect(unwrap(service.listPaperSlots("p1")).attendees).toEqual([]);
+  });
+
+  it("chases the first author about every author nobody has answered for", () => {
+    const { batches } = unwrap(acceptedService().collectPaperNudgeBatches());
+    // The first author owns the answer for the whole paper, so one message names everybody.
+    const ada = batches.find((batch) => batch.member_id === "ada");
+    expect(ada?.message).toContain("Confirm whether Ada Lovelace is attending");
+    expect(ada?.message).toContain("Confirm whether Bob Coauthor is attending");
+    expect(batches.find((batch) => batch.member_id === "bob")?.message ?? "").not.toContain(
+      "is attending",
+    );
+  });
+
+  it("stops asking once the answer is recorded", () => {
+    const service = acceptedService();
+    for (const name of ["Ada Lovelace", "Bob Coauthor"]) {
+      unwrap(
+        service.setConferenceAttendee({
+          paperId: "p1",
+          name,
+          attending: name === "Ada Lovelace" ? "yes" : "no",
+          actorId: "ada",
+          privileged: false,
+        }),
+      );
+    }
+    const { batches } = unwrap(service.collectPaperNudgeBatches());
+    expect(batches.map((batch) => batch.message).join("\n")).not.toContain("is attending");
+  });
+
+  it("answers the roll-call when the name is typed rather than picked", () => {
+    const service = acceptedService();
+    // No member id, and a different casing: the add box only ever knows a name, and a second row
+    // keyed by that name would leave the linked author unanswered forever.
+    unwrap(
+      service.setConferenceAttendee({
+        paperId: "p1",
+        name: "ada lovelace",
+        attending: "yes",
+        actorId: "ada",
+        privileged: false,
+      }),
+    );
+    const { attendees } = unwrap(service.listPaperSlots("p1"));
+    expect(attendees.map((row) => [row.name, row.attending])).toEqual([
+      ["Ada Lovelace", "yes"],
+      ["Bob Coauthor", "unknown"],
+    ]);
+  });
+
+  it("gathers everyone at one conference across every accepted paper", () => {
+    const service = acceptedService();
+    unwrap(
+      service.upsertPaper({
+        id: "p2",
+        title: "Robustness bounds",
+        authors: ["Ada Lovelace", "Jo Park"],
+        current_step: "overleaf_writing",
+        venue_decision: "accept",
+        // A different spelling of the same conference, which the roster has to fold together.
+        accepted_venue: "emnlp",
+        accepted_year: 2026,
+        is_archival: true,
+        presentation_type: "oral",
+      }),
+    );
+    unwrap(
+      service.setConferenceAttendee({
+        paperId: "p1",
+        name: "Ada Lovelace",
+        attending: "yes",
+        actorId: "ada",
+        privileged: false,
+      }),
+    );
+    const { conferences } = unwrap(service.listConferenceRosters());
+    expect(conferences).toHaveLength(1);
+    expect(conferences[0]).toMatchObject({
+      label: "EMNLP 2026",
+      paper_count: 2,
+      going_count: 1,
+      unanswered_count: 2,
+    });
+    expect(conferences[0]?.people.map((person) => [person.name, person.attending])).toEqual([
+      ["Ada Lovelace", "yes"],
+      ["Bob Coauthor", "unknown"],
+      ["Jo Park", "unknown"],
+    ]);
+  });
+
+  it("holds the paper open while anybody is still unaccounted for", () => {
+    const service = acceptedService();
+    const row = () =>
+      unwrap(service.listPaperSlotOverview()).papers.find((paper) => paper.paper_id === "p1");
+    expect(row()?.attendance).toEqual({ yes: 0, no: 0, unknown: 2, going: [] });
+    expect(row()?.cycle_closed).toBe(false);
+  });
+});
+
+it("queues an author's feedback with reason and deadlines without publication approval", () => {
+  const service = new AdminBotService();
+  seed(service);
+  const input = {
+    value_text: JSON.stringify({
+      reason: "Check claims",
+      url: "https://example.com/draft",
+      soft_deadline: "2000-01-01T00:00:00Z",
+      hard_deadline: "2000-01-02T00:00:00Z",
+    }),
+  };
+  expect(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input,
+      memberId: "stranger",
+      privileged: false,
+    }),
+  ).toMatchObject({ ok: false, status: 403 });
+  unwrap(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input,
+      memberId: "ada",
+      privileged: false,
+    }),
+  );
+  expect(unwrap(service.listPiReviewQueue()).papers[0].feedback?.reason).toBe("Check claims");
+  expect(
+    unwrap(service.listPaperSlots("p1", { memberId: "stranger" })).slots.find(
+      (row) => row.slot === "feedback_arr",
+    )?.value_text,
+  ).toBeUndefined();
+  expect(
+    unwrap(service.listPaperSlots("p1", { memberId: "ada" })).slots.find(
+      (row) => row.slot === "feedback_arr",
+    )?.value_text,
+  ).toContain("Check claims");
+  unwrap(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input: { value_text: "" },
+      memberId: "ada",
+      privileged: false,
+    }),
+  );
+  expect(unwrap(service.listPiReviewQueue()).papers).toHaveLength(0);
 });

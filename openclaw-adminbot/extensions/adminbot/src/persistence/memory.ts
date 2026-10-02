@@ -28,9 +28,41 @@ import type {
   AdminBotSettings,
 } from "../contracts/actions.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
-import type { AdminBotLoginEvent, AdminBotUpdateEvent } from "../contracts/activity-log.js";
+import type {
+  AdminBotLoginEvent,
+  AdminBotLoginLocation,
+  AdminBotUpdateEvent,
+} from "../contracts/activity-log.js";
+import type {
+  AdminBotBadgeAssignment,
+  AdminBotBadgeDefinition,
+  AdminBotBadgeNomination,
+  AdminBotBadgeNominationStatus,
+  AdminBotBadgeSuggestion,
+  AdminBotBadgeSuggestionStatus,
+} from "../contracts/badges.js";
+import type { AdminBotConferenceTripRecord } from "../contracts/conference-trips.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
+import type {
+  AdminBotEmailReviewItem,
+  AdminBotEmailReviewResolution,
+  AdminBotResolvedEmailReviewItem,
+} from "../contracts/email-review.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
+import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
+import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
+import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
+import {
+  ADMINBOT_BROADCAST_HISTORY_LIMIT,
+  type LabDirectorStatus,
+} from "../contracts/lab-sharing-status.js";
+import type { LabHelpRequest } from "../contracts/lab-sharing.js";
+import type {
+  AdminBotMemberRequest,
+  AdminBotMemberRequestStatus,
+} from "../contracts/member-requests.js";
+import type { OpenReviewCitationCheck } from "../contracts/openreview-citation-checks.js";
+import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
   AdminBotConferenceAttendeeRecord,
   AdminBotNudgeLedgerRecord,
@@ -39,24 +71,183 @@ import type {
   AdminBotSocialDraftRecord,
   AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
+import type { PaperAiTextCheck } from "../contracts/paper-integrity-checks.js";
 import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
-import type { AdminBotServiceStore, AdminBotSlackChannelNamingRecord } from "../kernel/service.js";
+import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
+import type { ReferenceScan } from "../contracts/reference-scans.js";
+import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
+import type {
+  AdminBotLabMemberSummary,
+  AdminBotListPage,
+  AdminBotMeetingArtifactRecord,
+  AdminBotMeetingCursor,
+  AdminBotServiceStore,
+  AdminBotSlackChannelNamingRecord,
+  AdminBotSlackConnectInvite,
+} from "../kernel/service.js";
+import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import { meetsDurationFloor } from "../workflows/meetings/records.js";
+import { discoverMemoryHelpRequests } from "./lab-sharing-discovery-memory.js";
+
+/** Addresses are matched case-insensitively, as they are in the SQLite store. */
+function slackConnectInviteKey(email: string, channelId: string): string {
+  return `${email.trim().toLowerCase()}\u0000${channelId}`;
+}
+
+function memberMatchesQuery(member: AdminBotLabMember, q: string): boolean {
+  const needle = q.toLowerCase();
+  return [member.name, member.email, ...(member.research_topics ?? []), ...(member.projects ?? [])]
+    .filter((value): value is string => Boolean(value))
+    .some((value) => value.toLowerCase().includes(needle));
+}
+
+function paperMatchesQuery(paper: AdminBotPaperRecord, q: string): boolean {
+  const needle = q.toLowerCase();
+  return [paper.title, paper.venue, ...paper.authors]
+    .filter((value): value is string => Boolean(value))
+    .some((value) => value.toLowerCase().includes(needle));
+}
+
+function compareSqliteText(left: string, right: string): number {
+  return Buffer.compare(Buffer.from(left), Buffer.from(right));
+}
+
+function comparePageText(left: string, right: string): number {
+  return compareSqliteText(left.toLowerCase(), right.toLowerCase());
+}
+
+const foldAscii = (value: string) => value.replace(/[A-Z]/gu, (letter) => letter.toLowerCase());
+
+function compareIndexedPageText(left: string, right: string): number {
+  return compareSqliteText(foldAscii(left), foldAscii(right));
+}
 
 export class AdminBotMemoryStore implements AdminBotServiceStore {
+  private readonly referenceScans = new Map<string, ReferenceScan>();
+  getReferenceScan(submissionId: string, pdfHash: string): ReferenceScan | undefined {
+    return this.referenceScans.get(JSON.stringify([submissionId, pdfHash]));
+  }
+  saveReferenceScan(scan: ReferenceScan): void {
+    this.referenceScans.set(
+      JSON.stringify([scan.submission_id, scan.pdf_sha256]),
+      structuredClone(scan),
+    );
+  }
+
+  private readonly openReviewCitationChecks = new Map<string, OpenReviewCitationCheck>();
+  getOpenReviewCitationCheck(
+    submissionId: string,
+    pdfPath: string,
+  ): OpenReviewCitationCheck | undefined {
+    const check = this.openReviewCitationChecks.get(JSON.stringify([submissionId, pdfPath]));
+    return check ? structuredClone(check) : undefined;
+  }
+  listOpenReviewCitationChecks(submissionId?: string): OpenReviewCitationCheck[] {
+    return [...this.openReviewCitationChecks.values()]
+      .filter((check) => submissionId === undefined || check.submission_id === submissionId)
+      .sort((a, b) => b.checked_at.localeCompare(a.checked_at))
+      .map((check) => structuredClone(check));
+  }
+  saveOpenReviewCitationCheck(check: OpenReviewCitationCheck): void {
+    this.openReviewCitationChecks.set(
+      JSON.stringify([check.submission_id, check.pdf_path]),
+      structuredClone(check),
+    );
+  }
+
+  private readonly paperAiTextChecks = new Map<string, PaperAiTextCheck>();
+  getPaperAiTextCheck(submissionId: string, pdfPath: string): PaperAiTextCheck | undefined {
+    const check = this.paperAiTextChecks.get(JSON.stringify([submissionId, pdfPath]));
+    return check ? structuredClone(check) : undefined;
+  }
+  listPaperAiTextChecks(submissionId?: string): PaperAiTextCheck[] {
+    return [...this.paperAiTextChecks.values()]
+      .filter((check) => submissionId === undefined || check.submission_id === submissionId)
+      .sort((a, b) => b.checked_at.localeCompare(a.checked_at))
+      .map((check) => structuredClone(check));
+  }
+  savePaperAiTextCheck(check: PaperAiTextCheck): void {
+    this.paperAiTextChecks.set(
+      JSON.stringify([check.submission_id, check.pdf_path]),
+      structuredClone(check),
+    );
+  }
+
+  private readonly helpInterests = new Map<string, LabHelpInterest>();
+  saveHelpInterest(interest: LabHelpInterest): void {
+    this.helpInterests.set(
+      JSON.stringify([interest.paper_id, interest.member_id]),
+      structuredClone(interest),
+    );
+  }
+  listHelpInterests(): LabHelpInterest[] {
+    return [...this.helpInterests.values()].map((row) => structuredClone(row));
+  }
+  // Append-only, newest first, mirroring persistence/lab-sharing-status.ts. A null save retracts
+  // the newest live entry rather than dropping it: the archive is the point.
+  private directorBroadcasts: LabDirectorStatus[] = [];
+  saveDirectorStatus(status: LabDirectorStatus | null): void {
+    if (status) {
+      this.directorBroadcasts.unshift(structuredClone(status));
+      return;
+    }
+    const latest = this.directorBroadcasts[0];
+    if (latest && !latest.retracted_at) {
+      this.directorBroadcasts[0] = { ...latest, retracted_at: new Date().toISOString() };
+    }
+  }
+  readDirectorStatus(): LabDirectorStatus | null {
+    return structuredClone(this.directorBroadcasts[0] ?? null);
+  }
+  listDirectorStatusHistory(limit = ADMINBOT_BROADCAST_HISTORY_LIMIT): LabDirectorStatus[] {
+    return this.directorBroadcasts.slice(0, Math.max(1, limit)).map((row) => structuredClone(row));
+  }
+  private readonly helpRequests = new Map<string, LabHelpRequest>();
+  saveHelpRequest(request: LabHelpRequest): void {
+    this.helpRequests.set(request.paper_id, structuredClone(request));
+  }
+  discoverHelpRequests(
+    query: LabSharingDiscoveryQuery,
+    after?: DiscoveryPosition,
+  ): DiscoveredHelpRequest[] {
+    return discoverMemoryHelpRequests(
+      this.listHelpRequests(),
+      (id) => this.getPaper(id),
+      (id) => this.getLabMember(id),
+      query,
+      after,
+    );
+  }
+  getHelpRequest(paperId: string): LabHelpRequest | undefined {
+    return structuredClone(this.helpRequests.get(paperId));
+  }
+  listHelpRequests(): LabHelpRequest[] {
+    return [...this.helpRequests.values()].map((row) => structuredClone(row));
+  }
   private readonly proposals = new Map<string, AdminBotStoredProposal>();
   private readonly deadlineSubmissionActions = new Map<string, string>();
   private readonly publishedDeadlines = new Map<string, PublishedDeadlineRecord>();
   private readonly executionResults = new Map<string, AdminBotExecutionResult>();
   private readonly executionResultsByIdempotencyKey = new Map<string, AdminBotExecutionResult>();
+  private readonly executionClaims = new Map<string, string>();
   private readonly labMembers = new Map<string, AdminBotLabMember>();
+  private readonly badgeDefinitions = new Map<string, AdminBotBadgeDefinition>();
+  private readonly badgeAssignments = new Map<string, AdminBotBadgeAssignment>();
+  private readonly badgeNominations = new Map<string, AdminBotBadgeNomination>();
+  private readonly badgeSuggestions = new Map<string, AdminBotBadgeSuggestion>();
+  private readonly opportunities = new Map<string, AdminBotOpportunity>();
+  private readonly memberRequests = new Map<string, AdminBotMemberRequest>();
   private readonly papers = new Map<string, AdminBotPaperRecord>();
   // Keyed `paperId\u0000slot`, matching the SQLite composite primary key so both stores collapse a
   // re-save onto the same row.
   private readonly paperSlots = new Map<string, AdminBotPaperSlotRecord>();
   // Keyed `paperId\u0000stage`, matching the SQLite composite primary key.
   private readonly paperflowEvidence = new Map<string, AdminBotPaperflowEvidenceRecord>();
+  private readonly paperMentorRuns = new Map<string, AdminBotPaperMentorRun>();
+  private readonly emailReviews = new Map<string, AdminBotEmailReviewItem>();
+  private readonly resolvedEmailReviews = new Map<string, AdminBotResolvedEmailReviewItem>();
   // Keyed exactly as their SQLite primary keys are, so a re-save collapses onto the same row in
   // both stores rather than accumulating duplicates in one of them.
   private readonly nudgeLedger = new Map<string, AdminBotNudgeLedgerRecord>();
@@ -65,6 +256,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly conferenceAttendees = new Map<string, AdminBotConferenceAttendeeRecord>();
   private readonly paperReimbursements = new Map<string, AdminBotPaperReimbursementRecord>();
   private readonly meetings = new Map<string, AdminBotMeetingRecord>();
+  private readonly meetingArtifacts = new Map<string, AdminBotMeetingArtifactRecord>();
   private readonly memberNotifications = new Map<string, AdminBotMemberNotification>();
   // Keyed by member + entry, matching the SQLite primary key, so both stores dedupe identically.
   private readonly cvChanges = new Map<string, AdminBotCvChangeEvent>();
@@ -76,6 +268,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   // event, so a plain array is the whole implementation.
   private readonly workshopMatchRuns = new Map<string, AdminBotWorkshopMatchRun>();
   private readonly loginEvents: AdminBotLoginEvent[] = [];
+  private readonly tabVisits: AdminBotTabVisit[] = [];
   private readonly updateEvents: AdminBotUpdateEvent[] = [];
   private readonly openReviewCycles = new Map<string, AdminBotOpenReviewCycleRecord>();
   private readonly openReviewMilestones = new Map<string, AdminBotOpenReviewMilestoneRecord>();
@@ -87,6 +280,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly sessions = new Map<string, AdminBotAuthSession>();
   private readonly passwordResets = new Map<string, AdminBotPasswordReset>();
   private readonly slackChannelNaming = new Map<string, AdminBotSlackChannelNamingRecord>();
+  private readonly slackConnectInvites = new Map<string, AdminBotSlackConnectInvite>();
   // Keyed by adminBotFeedbackId, matching the SQLite primary key, so a re-rating collapses onto
   // the same row in both stores.
   private readonly feedback = new Map<string, AdminBotFeedbackEntry>();
@@ -163,22 +357,372 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.executionResultsByIdempotencyKey.get(idempotencyKey);
   }
 
+  claimExecution(effectKey: string, actionId: string): boolean {
+    if (this.executionClaims.has(effectKey)) {
+      return false;
+    }
+    this.executionClaims.set(effectKey, actionId);
+    return true;
+  }
+
+  releaseExecutionClaim(effectKey: string, actionId: string): void {
+    if (this.executionClaims.get(effectKey) === actionId) {
+      this.executionClaims.delete(effectKey);
+    }
+  }
+
   saveLabMember(member: AdminBotLabMember): void {
     this.labMembers.set(member.id, member);
+  }
+
+  patchLabMemberAuthFields(
+    memberId: string,
+    patch: Parameters<AdminBotServiceStore["patchLabMemberAuthFields"]>[1],
+  ): boolean {
+    const member = this.labMembers.get(memberId);
+    if (!member) {
+      return false;
+    }
+    this.labMembers.set(memberId, { ...member, ...patch });
+    return true;
   }
 
   getLabMember(memberId: string): AdminBotLabMember | undefined {
     return this.labMembers.get(memberId);
   }
 
-  listLabMembers(): AdminBotLabMember[] {
-    return [...this.labMembers.values()].toSorted((left, right) =>
-      left.name.localeCompare(right.name),
+  listLabMembers(page?: AdminBotListPage): AdminBotLabMember[] {
+    const members = [...this.labMembers.values()]
+      .filter((member) => !page?.q || memberMatchesQuery(member, page.q))
+      .toSorted((left, right) =>
+        page
+          ? compareIndexedPageText(left.name, right.name) || compareSqliteText(left.id, right.id)
+          : left.name.localeCompare(right.name),
+      );
+    return page ? members.slice(page.offset, page.offset + page.limit) : members;
+  }
+
+  searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }> {
+    const needle = query.toLowerCase();
+    const pending = new Set(
+      [...this.registrations.values()]
+        .filter((entry) => entry.kind === "claim" && entry.status === "pending")
+        .map((entry) => entry.member_id),
     );
+    return [...this.labMembers.values()]
+      .filter(
+        (member) =>
+          member.name.toLowerCase().includes(needle) &&
+          !this.credentialsByMemberId.has(member.id) &&
+          !pending.has(member.id),
+      )
+      .toSorted(
+        (left, right) =>
+          compareIndexedPageText(left.name, right.name) || compareSqliteText(left.id, right.id),
+      )
+      .slice(0, limit)
+      .map(({ id, name }) => ({ id, name }));
+  }
+
+  listLabMemberSummaries(): AdminBotLabMemberSummary[] {
+    return [...this.labMembers.values()]
+      .toSorted(
+        (left, right) =>
+          comparePageText(left.name, right.name) || compareSqliteText(left.id, right.id),
+      )
+      .map((member) => {
+        const summary = { ...member };
+        delete summary.field_provenance;
+        delete (summary as Partial<AdminBotLabMember>).access;
+        return summary.onboarding
+          ? {
+              ...summary,
+              onboarding: {
+                steps: summary.onboarding.steps.map(({ id, status }) => ({ id, status })),
+              },
+            }
+          : summary;
+      });
+  }
+
+  countLabMembers(q?: string): number {
+    return [...this.labMembers.values()].filter((member) => !q || memberMatchesQuery(member, q))
+      .length;
+  }
+
+  saveBadgeDefinition(badge: AdminBotBadgeDefinition): void {
+    this.badgeDefinitions.set(badge.id, badge);
+  }
+
+  getBadgeDefinition(badgeId: string): AdminBotBadgeDefinition | undefined {
+    return this.badgeDefinitions.get(badgeId);
+  }
+
+  listBadgeDefinitions(): AdminBotBadgeDefinition[] {
+    return [...this.badgeDefinitions.values()].toSorted(
+      (left, right) =>
+        left.sort_order - right.sort_order ||
+        left.category.localeCompare(right.category) ||
+        left.name.localeCompare(right.name) ||
+        (left.tier ?? "").localeCompare(right.tier ?? ""),
+    );
+  }
+
+  saveBadgeAssignment(assignment: AdminBotBadgeAssignment): void {
+    for (const [key, existing] of [...this.badgeAssignments]) {
+      if (
+        existing.member_id === assignment.member_id &&
+        existing.family_key === assignment.family_key &&
+        key !== badgeAssignmentKey(assignment.member_id, assignment.badge_id)
+      ) {
+        this.badgeAssignments.delete(key);
+      }
+    }
+    this.badgeAssignments.set(
+      badgeAssignmentKey(assignment.member_id, assignment.badge_id),
+      assignment,
+    );
+  }
+
+  getBadgeAssignment(memberId: string, familyKey: string): AdminBotBadgeAssignment | undefined {
+    return [...this.badgeAssignments.values()].find(
+      (assignment) => assignment.member_id === memberId && assignment.family_key === familyKey,
+    );
+  }
+
+  listBadgeAssignments(memberId?: string | string[]): AdminBotBadgeAssignment[] {
+    const selected = Array.isArray(memberId) ? new Set(memberId) : null;
+    return [...this.badgeAssignments.values()]
+      .filter(
+        (assignment) =>
+          !memberId ||
+          (selected ? selected.has(assignment.member_id) : assignment.member_id === memberId),
+      )
+      .toSorted((left, right) => left.awarded_at.localeCompare(right.awarded_at));
+  }
+
+  deleteBadgeAssignment(memberId: string, badgeId: string): boolean {
+    return this.badgeAssignments.delete(badgeAssignmentKey(memberId, badgeId));
+  }
+
+  saveBadgeNomination(nomination: AdminBotBadgeNomination): void {
+    this.badgeNominations.set(nomination.id, nomination);
+  }
+
+  getBadgeNomination(nominationId: string): AdminBotBadgeNomination | undefined {
+    return this.badgeNominations.get(nominationId);
+  }
+
+  listBadgeNominations(params?: {
+    memberId?: string;
+    status?: AdminBotBadgeNominationStatus;
+  }): AdminBotBadgeNomination[] {
+    return [...this.badgeNominations.values()]
+      .filter(
+        (nomination) =>
+          (!params?.memberId || nomination.member_id === params.memberId) &&
+          (!params?.status || nomination.status === params.status),
+      )
+      .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+  }
+
+  saveBadgeSuggestion(suggestion: AdminBotBadgeSuggestion): void {
+    this.badgeSuggestions.set(suggestion.id, suggestion);
+  }
+
+  getBadgeSuggestion(suggestionId: string): AdminBotBadgeSuggestion | undefined {
+    return this.badgeSuggestions.get(suggestionId);
+  }
+
+  // Both filters are honoured here rather than only in the SQLite store. `suggestedBy` is what
+  // scopes a non-admin to their own suggestions, so a store that accepted the parameter and
+  // ignored it would serve the whole queue to every member -- and since the tests run on this
+  // store, nothing would catch it.
+  listBadgeSuggestions(params?: {
+    suggestedBy?: string;
+    status?: AdminBotBadgeSuggestionStatus;
+  }): AdminBotBadgeSuggestion[] {
+    return [...this.badgeSuggestions.values()]
+      .filter(
+        (suggestion) =>
+          (!params?.suggestedBy || suggestion.suggested_by === params.suggestedBy) &&
+          (!params?.status || suggestion.status === params.status),
+      )
+      .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+  }
+
+  saveOpportunity(opportunity: AdminBotOpportunity): void {
+    this.opportunities.set(opportunity.id, opportunity);
+  }
+
+  getOpportunity(opportunityId: string): AdminBotOpportunity | undefined {
+    return this.opportunities.get(opportunityId);
+  }
+
+  listOpportunities(params?: {
+    memberId?: string;
+    status?: AdminBotOpportunityStatus;
+  }): AdminBotOpportunity[] {
+    return [...this.opportunities.values()]
+      .filter(
+        (opportunity) =>
+          (!params?.memberId || opportunity.submitted_by_member_id === params.memberId) &&
+          (!params?.status || opportunity.status === params.status),
+      )
+      .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+  }
+
+  deleteOpportunity(opportunityId: string): boolean {
+    return this.opportunities.delete(opportunityId);
+  }
+
+  saveMemberRequest(request: AdminBotMemberRequest): void {
+    this.memberRequests.set(request.id, request);
+  }
+
+  getMemberRequest(requestId: string): AdminBotMemberRequest | undefined {
+    return this.memberRequests.get(requestId);
+  }
+
+  listMemberRequests(params?: {
+    requestedBy?: string;
+    status?: AdminBotMemberRequestStatus;
+  }): AdminBotMemberRequest[] {
+    return [...this.memberRequests.values()]
+      .filter(
+        (request) =>
+          (!params?.requestedBy || request.requested_by === params.requestedBy) &&
+          (!params?.status || request.status === params.status),
+      )
+      .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+  }
+
+  deleteMemberRequest(requestId: string): boolean {
+    return this.memberRequests.delete(requestId);
   }
 
   deleteLabMember(memberId: string): boolean {
     return this.labMembers.delete(memberId);
+  }
+
+  /**
+   * The in-memory mirror of the SQLite purge.
+   *
+   * Same list as the store's `MEMBER_OWNED_COLUMNS`: everything a merge would repoint, plus the
+   * rows a merge deliberately keeps because a survivor inherits them and a delete has nobody to.
+   * Sessions stay out here too -- the service revokes them before calling this.
+   */
+  purgeMemberReferences(memberId: string): Record<string, number> {
+    const removed: Record<string, number> = {};
+    const drop = (label: string, count: number) => {
+      if (count > 0) {
+        removed[label] = (removed[label] ?? 0) + count;
+      }
+    };
+    const purgeMap = <T extends { member_id?: string }>(map: Map<string, T>, label: string) => {
+      let count = 0;
+      for (const [key, record] of [...map]) {
+        if (record.member_id === memberId) {
+          map.delete(key);
+          count += 1;
+        }
+      }
+      drop(label, count);
+    };
+    const purgeList = <T>(list: T[], label: string, owned: (entry: T) => boolean) => {
+      let count = 0;
+      for (let index = list.length - 1; index >= 0; index -= 1) {
+        const entry = list[index];
+        if (entry !== undefined && owned(entry)) {
+          list.splice(index, 1);
+          count += 1;
+        }
+      }
+      drop(label, count);
+    };
+
+    purgeMap(this.cvChanges, "cv_changes");
+    purgeMap(this.logisticsRequests, "logistics_requests");
+    purgeMap(this.nudgeLedger, "nudge_ledger");
+    purgeMap(this.socialConsents, "social_draft_consents");
+    purgeMap(this.conferenceAttendees, "conference_attendees");
+    purgeMap(this.paperReimbursements, "paper_reimbursements");
+    purgeMap(this.badgeAssignments, "badge_assignments");
+    purgeMap(this.badgeNominations, "badge_nominations");
+    {
+      let dropped = 0;
+      for (const [key, opportunity] of [...this.opportunities]) {
+        if (opportunity.submitted_by_member_id !== memberId) {
+          continue;
+        }
+        // An approved entry is on the board for the whole lab and is not this member's to take
+        // with them; it keeps its row and loses only the name attached to it. Anything never
+        // published goes with them.
+        if (opportunity.status === "approved") {
+          const { submitted_by_member_id: _purged, ...rest } = opportunity;
+          this.opportunities.set(key, rest);
+          continue;
+        }
+        this.opportunities.delete(key);
+        dropped += 1;
+      }
+      drop("opportunities", dropped);
+    }
+    purgeMap(this.registrations, "account_registrations");
+    purgeMap(this.passwordResets, "password_resets");
+    // The rows a merge keeps and a delete cannot.
+    purgeMap(this.memberNotifications, "member_notifications");
+    purgeMap(this.feedback, "feedback");
+    purgeMap(this.paperWeeklyUpdates, "paper_weekly_updates");
+
+    for (const [credentialMemberId, credential] of [...this.credentialsByMemberId]) {
+      if (credentialMemberId !== memberId) {
+        continue;
+      }
+      this.credentialsByMemberId.delete(credentialMemberId);
+      this.credentialsByEmail.delete(credential.email);
+      drop("member_credentials", 1);
+    }
+    purgeList(this.memberLocations, "member_locations", (entry) => entry.member_id === memberId);
+    purgeList(this.loginEvents, "login_events", (entry) => entry.member_id === memberId);
+    purgeList(this.tabVisits, "tab_visits", (entry) => entry.member_id === memberId);
+    // Either column makes the row this member's, unlike the merge, which repoints them
+    // independently: there is no survivor to attribute the other half to.
+    purgeList(
+      this.updateEvents,
+      "update_events",
+      (entry) => entry.member_id === memberId || entry.subject_member_id === memberId,
+    );
+    for (const [key, draft] of [...this.socialDrafts]) {
+      if (draft.generated_by_member_id === memberId) {
+        this.socialDrafts.set(key, {
+          ...draft,
+          generated_by_member_id: undefined,
+        });
+        drop("social_drafts.generated_by", 1);
+      }
+    }
+    for (const [key, slot] of [...this.paperSlots]) {
+      let updated = slot;
+      if (slot.provided_by_member_id === memberId) {
+        updated = { ...updated, provided_by_member_id: undefined };
+        drop("paper_slots.provided_by", 1);
+      }
+      if (slot.waived_by_member_id === memberId) {
+        updated = { ...updated, waived_by_member_id: undefined };
+        drop("paper_slots.waived_by", 1);
+      }
+      if (updated !== slot) {
+        this.paperSlots.set(key, updated);
+      }
+    }
+    for (const [key, submitter] of [...this.deadlineSubmissionActions]) {
+      if (submitter === memberId) {
+        this.deadlineSubmissionActions.delete(key);
+        drop("deadline_submission_keys", 1);
+      }
+    }
+    return removed;
   }
 
   /**
@@ -224,6 +768,17 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     remap(this.paperReimbursements, "paper_reimbursements", (key) =>
       key.replace(fromMemberId, toMemberId),
     );
+    remap(this.badgeAssignments, "badge_assignments", (_key, record) =>
+      badgeAssignmentKey(record.member_id, record.badge_id),
+    );
+    remap(this.badgeNominations, "badge_nominations", (key) => key);
+    for (const [key, opportunity] of [...this.opportunities]) {
+      if (opportunity.submitted_by_member_id !== fromMemberId) {
+        continue;
+      }
+      this.opportunities.set(key, { ...opportunity, submitted_by_member_id: toMemberId });
+      bump("opportunities");
+    }
     remap(this.registrations, "account_registrations", (key) => key);
     remap(this.passwordResets, "password_resets", (key) => key);
     // Sessions are not repointed -- see the note in the SQLite store; the service revokes the
@@ -254,6 +809,12 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
         bump("login_events");
       }
     }
+    for (const [index, entry] of this.tabVisits.entries()) {
+      if (entry.member_id === fromMemberId) {
+        this.tabVisits[index] = { ...entry, member_id: toMemberId };
+        bump("tab_visits");
+      }
+    }
     // Both columns, for the reason the SQLite sweep spells out: moving who typed without moving
     // whose record was touched would flip a self-edit into an admin edit.
     for (const [index, entry] of this.updateEvents.entries()) {
@@ -272,7 +833,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     }
     for (const [key, draft] of [...this.socialDrafts]) {
       if (draft.generated_by_member_id === fromMemberId) {
-        this.socialDrafts.set(key, { ...draft, generated_by_member_id: toMemberId });
+        this.socialDrafts.set(key, {
+          ...draft,
+          generated_by_member_id: toMemberId,
+        });
         bump("social_drafts");
       }
     }
@@ -301,10 +865,24 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.papers.get(paperId);
   }
 
-  listPapers(): AdminBotPaperRecord[] {
-    return [...this.papers.values()].toSorted((left, right) =>
-      left.title.localeCompare(right.title),
-    );
+  listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[] {
+    const papers = [...this.papers.values()]
+      .filter(
+        (paper) =>
+          !page?.authorMemberId ||
+          paper.author_links?.some((author) => author.member_id === page.authorMemberId),
+      )
+      .filter((paper) => !page?.q || paperMatchesQuery(paper, page.q))
+      .toSorted((left, right) =>
+        page
+          ? compareIndexedPageText(left.title, right.title) || compareSqliteText(left.id, right.id)
+          : left.title.localeCompare(right.title),
+      );
+    return page ? papers.slice(page.offset, page.offset + page.limit) : papers;
+  }
+
+  countPapers(q?: string): number {
+    return [...this.papers.values()].filter((paper) => !q || paperMatchesQuery(paper, q)).length;
   }
 
   deletePaper(paperId: string): boolean {
@@ -370,6 +948,30 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     );
   }
 
+  private readonly conferenceTrips = new Map<string, AdminBotConferenceTripRecord>();
+
+  saveConferenceTrip(record: AdminBotConferenceTripRecord): void {
+    this.conferenceTrips.set(
+      JSON.stringify([record.conference_key, record.member_id]),
+      structuredClone(record),
+    );
+  }
+
+  deleteConferenceTrip(conferenceKey: string, memberId: string): boolean {
+    return this.conferenceTrips.delete(JSON.stringify([conferenceKey, memberId]));
+  }
+
+  listConferenceTrips(conferenceKey?: string): AdminBotConferenceTripRecord[] {
+    return [...this.conferenceTrips.values()]
+      .filter((trip) => !conferenceKey || trip.conference_key === conferenceKey)
+      .map((trip) => structuredClone(trip))
+      .toSorted(
+        (left, right) =>
+          left.conference_key.localeCompare(right.conference_key) ||
+          left.member_id.localeCompare(right.member_id),
+      );
+  }
+
   saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void {
     this.conferenceAttendees.set(`${record.paper_id}|${record.attendee_key}`, record);
   }
@@ -403,6 +1005,28 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       );
   }
 
+  savePaperMentorRun(record: AdminBotPaperMentorRun): void {
+    // First sighting wins, matching the sqlite store's ON CONFLICT DO NOTHING: the collector
+    // re-reads the same cached review until a newer one replaces it.
+    if (this.paperMentorRuns.has(record.id)) {
+      return;
+    }
+    this.paperMentorRuns.set(record.id, record);
+  }
+
+  getPaperMentorRun(id: string): AdminBotPaperMentorRun | undefined {
+    return this.paperMentorRuns.get(id);
+  }
+
+  listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[] {
+    return [...this.paperMentorRuns.values()]
+      .filter((record) => paperId === undefined || record.paper_id === paperId)
+      .toSorted(
+        (left, right) =>
+          right.reviewed_at.localeCompare(left.reviewed_at) || left.id.localeCompare(right.id),
+      );
+  }
+
   savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void {
     // First sighting wins, matching the sqlite store's ON CONFLICT DO NOTHING: a stage that
     // already closed keeps the mail that closed it.
@@ -422,6 +1046,50 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       );
   }
 
+  /** Test and no-database servers may seed the same queue the hourly script writes in SQLite. */
+  saveEmailReview(review: AdminBotEmailReviewItem): void {
+    this.emailReviews.set(review.message_id, structuredClone(review));
+    this.resolvedEmailReviews.delete(review.message_id);
+  }
+
+  listEmailReviews(): AdminBotEmailReviewItem[] {
+    return [...this.emailReviews.values()]
+      .map((review) => structuredClone(review))
+      .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+  }
+
+  getEmailReview(messageId: string): AdminBotEmailReviewItem | undefined {
+    const review = this.emailReviews.get(messageId);
+    return review ? structuredClone(review) : undefined;
+  }
+
+  listResolvedEmailReviews(limit: number): AdminBotResolvedEmailReviewItem[] {
+    return [...this.resolvedEmailReviews.values()]
+      .toSorted((left, right) => right.resolved_at.localeCompare(left.resolved_at))
+      .slice(0, limit)
+      .map((review) => structuredClone(review));
+  }
+
+  resolveEmailReview(params: {
+    messageId: string;
+    resolution: AdminBotEmailReviewResolution["kind"];
+    resolvedBy: string;
+    resolvedAt: string;
+  }): boolean {
+    const review = this.emailReviews.get(params.messageId);
+    if (!review) {
+      return false;
+    }
+    this.emailReviews.delete(params.messageId);
+    this.resolvedEmailReviews.set(params.messageId, {
+      ...structuredClone(review),
+      resolution: params.resolution,
+      resolved_by: params.resolvedBy,
+      resolved_at: params.resolvedAt,
+    });
+    return true;
+  }
+
   appendMemberLocation(entry: AdminBotMemberLocationEntry): void {
     this.memberLocations.push(entry);
   }
@@ -438,17 +1106,53 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   }
 
   saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void {
-    this.workshopMatchRuns.set(run.id, run);
+    // Stamped here as well as in SQLite, so a caller that reads `progress_at` to tell a live pass
+    // from an abandoned one behaves the same against either store.
+    this.workshopMatchRuns.set(run.id, {
+      ...run,
+      calls_failed: run.calls_failed ?? 0,
+      progress_at: new Date().toISOString(),
+    });
   }
 
   latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined {
-    return [...this.workshopMatchRuns.values()].toSorted((left, right) =>
-      right.started_at.localeCompare(left.started_at),
-    )[0];
+    // Insertion order breaks a tie on `started_at`, which is a millisecond stamp two runs really
+    // can share: replacing a wedged pass writes the old row off and starts the new one in the same
+    // tick. A stable sort on the timestamp alone hands back whichever was inserted first -- the
+    // dead one -- so the replacement is invisible and the tab stays wedged on the run it replaced.
+    return [...this.workshopMatchRuns.values()]
+      .map((run, index) => ({ run, index }))
+      .toSorted(
+        (left, right) =>
+          right.run.started_at.localeCompare(left.run.started_at) || right.index - left.index,
+      )[0]?.run;
   }
 
   appendLoginEvent(event: AdminBotLoginEvent): void {
     this.loginEvents.push(event);
+  }
+
+  /**
+   * The one in-place write either log has. See the SQLite side for why enriching a row is not the
+   * same as editing the fact it records.
+   *
+   * Each field falls back to what is already there, matching the COALESCE over there: a later
+   * country-only answer must not blank a city an earlier one resolved.
+   */
+  attachLoginEventLocation(id: string, location: AdminBotLoginLocation): void {
+    const index = this.loginEvents.findIndex((event) => event.id === id);
+    const existing = this.loginEvents[index];
+    if (!existing) {
+      return;
+    }
+    const merged = { ...existing };
+    for (const field of ["country", "continent", "city", "timezone"] as const) {
+      const value = location[field];
+      if (value) {
+        merged[field] = value;
+      }
+    }
+    this.loginEvents[index] = merged;
   }
 
   listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[] {
@@ -460,6 +1164,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   listLoginEventsSince(since: string): AdminBotLoginEvent[] {
     return recentFirst(this.loginEvents.filter((event) => event.at >= since));
+  }
+
+  appendTabVisit(visit: AdminBotTabVisit): void {
+    this.tabVisits.push(visit);
+  }
+
+  listTabVisitsSince(since: string): AdminBotTabVisit[] {
+    return recentFirst(this.tabVisits.filter((visit) => visit.at >= since));
   }
 
   appendUpdateEvent(event: AdminBotUpdateEvent): void {
@@ -484,6 +1196,32 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return recentFirst(this.updateEvents.filter((event) => event.at >= since));
   }
 
+  listRecentUpdateEvents(limit: number): AdminBotUpdateEvent[] {
+    return recentFirst(this.updateEvents, limit);
+  }
+
+  listUpdateEventsForMemberRecord(memberId: string, limit: number): AdminBotUpdateEvent[] {
+    return recentFirst(
+      this.updateEvents.filter(
+        (event) =>
+          event.subject_member_id === memberId ||
+          (!event.subject_member_id && event.member_id === memberId && event.subject === "profile"),
+      ),
+      limit,
+    );
+  }
+
+  listUpdateEventsForPaper(paperId: string, limit: number): AdminBotUpdateEvent[] {
+    return recentFirst(
+      this.updateEvents.filter(
+        (event) =>
+          event.slot_id === `paper:${paperId}` ||
+          event.slot_id.startsWith(`paper_slot:${paperId}:`),
+      ),
+      limit,
+    );
+  }
+
   saveMeeting(meeting: AdminBotMeetingRecord): void {
     this.meetings.set(meeting.id, meeting);
   }
@@ -496,8 +1234,37 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return [...this.meetings.values()];
   }
 
+  listMeetingsPage(options: {
+    limit: number;
+    before?: AdminBotMeetingCursor;
+    minimumMinutes: number;
+  }): AdminBotMeetingRecord[] {
+    const timestamp = (meeting: AdminBotMeetingCursor) => Date.parse(meeting.started_at) || 0;
+    return [...this.meetings.values()]
+      .filter((meeting) => meetsDurationFloor(meeting, options.minimumMinutes))
+      .filter(
+        (meeting) =>
+          !options.before ||
+          timestamp(meeting) < timestamp(options.before) ||
+          (timestamp(meeting) === timestamp(options.before) &&
+            compareSqliteText(meeting.id, options.before.id) < 0),
+      )
+      .sort(
+        (left, right) => timestamp(right) - timestamp(left) || compareSqliteText(right.id, left.id),
+      )
+      .slice(0, options.limit);
+  }
+
   deleteMeeting(meetingId: string): boolean {
     return this.meetings.delete(meetingId);
+  }
+
+  hasAttachedMeetingArtifact(fileId: string): boolean {
+    return this.meetingArtifacts.get(fileId)?.status === "attached";
+  }
+
+  recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void {
+    this.meetingArtifacts.set(record.file_id, structuredClone(record));
   }
 
   saveMemberNotification(notification: AdminBotMemberNotification): void {
@@ -508,6 +1275,12 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return [...this.memberNotifications.values()]
       .filter((notification) => notification.member_id === memberId)
       .toSorted((left, right) => right.created_at.localeCompare(left.created_at));
+  }
+
+  listEscalatedMemberNotifications(): AdminBotMemberNotification[] {
+    return [...this.memberNotifications.values()]
+      .filter((notification) => notification.escalated_at && !notification.read_at)
+      .toSorted((left, right) => (left.escalated_at ?? "").localeCompare(right.escalated_at ?? ""));
   }
 
   deleteMemberNotification(notificationId: string): boolean {
@@ -636,9 +1409,28 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.credentialsByMemberId.get(memberId);
   }
 
+  listCredentialMemberIds(): string[] {
+    return [...this.credentialsByMemberId.keys()];
+  }
+
   saveCredential(credential: AdminBotMemberCredential): void {
     this.credentialsByMemberId.set(credential.member_id, credential);
     this.credentialsByEmail.set(credential.email.toLowerCase(), credential);
+  }
+
+  changePasswordAndRevokeSessions(
+    memberId: string,
+    expectedPasswordHash: string,
+    newPasswordHash: string,
+    updatedAt: string,
+  ): boolean {
+    const credential = this.credentialsByMemberId.get(memberId);
+    if (!credential || credential.password_scrypt !== expectedPasswordHash) {
+      return false;
+    }
+    this.saveCredential({ ...credential, password_scrypt: newPasswordHash, updated_at: updatedAt });
+    this.revokeSessionsForMember(memberId, updatedAt);
+    return true;
   }
 
   updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void {
@@ -657,8 +1449,50 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.credentialsByEmail.set(updated.email, updated);
   }
 
+  changeMemberLoginEmail(
+    memberId: string,
+    newEmail: string,
+    expectedPasswordHash: string,
+    updatedAt: string,
+  ): "changed" | "stale" | "taken" {
+    const credential = this.credentialsByMemberId.get(memberId);
+    const member = this.labMembers.get(memberId);
+    if (!credential || credential.password_scrypt !== expectedPasswordHash || !member) {
+      return "stale";
+    }
+    const email = newEmail.toLowerCase();
+    const holder = this.credentialsByEmail.get(email);
+    if ((holder && holder.member_id !== memberId) || this.getPendingRegistrationByEmail(email)) {
+      return "taken";
+    }
+    this.updateCredentialEmail(memberId, email, updatedAt);
+    this.labMembers.set(memberId, { ...member, email, updated_at: updatedAt });
+    return "changed";
+  }
+
   saveAccountRegistration(registration: AdminBotAccountRegistration): void {
     this.registrations.set(registration.id, registration);
+  }
+
+  trySavePendingRegistration(registration: AdminBotAccountRegistration): boolean {
+    if (registration.status !== "pending") {
+      throw new Error("only pending registrations can be inserted here");
+    }
+    if (
+      this.registrations.has(registration.id) ||
+      this.getCredentialByEmail(registration.email) ||
+      (registration.kind === "claim" &&
+        registration.member_id &&
+        this.getCredentialByMemberId(registration.member_id)) ||
+      this.getPendingRegistrationByEmail(registration.email) ||
+      (registration.kind === "claim" &&
+        registration.member_id &&
+        this.getPendingRegistrationByMemberId(registration.member_id))
+    ) {
+      return false;
+    }
+    this.registrations.set(registration.id, registration);
+    return true;
   }
 
   getAccountRegistration(id: string): AdminBotAccountRegistration | undefined {
@@ -677,13 +1511,57 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     status: AdminBotRegistrationStatus,
     decidedBy: string,
     decidedAt: string,
-  ): void {
+  ): boolean {
     const registration = this.registrations.get(id);
-    if (registration) {
-      registration.status = status;
-      registration.decided_by = decidedBy;
-      registration.decided_at = decidedAt;
+    if (!registration || registration.status !== "pending") {
+      return false;
     }
+    this.registrations.set(id, {
+      ...registration,
+      status,
+      decided_by: decidedBy,
+      decided_at: decidedAt,
+    });
+    return true;
+  }
+
+  tryApproveRegistration(
+    id: string,
+    decidedBy: string,
+    decidedAt: string,
+    preparedMember?: AdminBotLabMember,
+  ): { ok: true; member_id: string } | { ok: false; reason: "not_pending" | "conflict" } {
+    const registration = this.registrations.get(id);
+    if (!registration || registration.status !== "pending") {
+      return { ok: false, reason: "not_pending" };
+    }
+    const memberId = registration.kind === "claim" ? registration.member_id : preparedMember?.id;
+    if (
+      !memberId ||
+      (registration.kind === "signup" && (!preparedMember || this.labMembers.has(memberId))) ||
+      (registration.kind === "claim" && !this.labMembers.has(memberId)) ||
+      this.credentialsByMemberId.has(memberId) ||
+      this.credentialsByEmail.has(registration.email.toLowerCase())
+    ) {
+      return { ok: false, reason: "conflict" };
+    }
+    if (preparedMember && registration.kind === "signup") {
+      this.labMembers.set(memberId, preparedMember);
+    }
+    this.saveCredential({
+      member_id: memberId,
+      email: registration.email,
+      password_scrypt: registration.password_scrypt,
+      claimed_at: decidedAt,
+      updated_at: decidedAt,
+    });
+    this.registrations.set(id, {
+      ...registration,
+      status: "approved",
+      decided_by: decidedBy,
+      decided_at: decidedAt,
+    });
+    return { ok: true, member_id: memberId };
   }
 
   getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined {
@@ -701,6 +1579,20 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   saveSession(session: AdminBotAuthSession): void {
     this.sessions.set(session.token_hash, session);
+  }
+
+  saveSessionIfCredentialCurrent(
+    session: AdminBotAuthSession,
+    expectedPasswordHash: string,
+  ): boolean {
+    if (
+      this.credentialsByMemberId.get(session.member_id)?.password_scrypt !== expectedPasswordHash ||
+      this.sessions.has(session.token_hash)
+    ) {
+      return false;
+    }
+    this.sessions.set(session.token_hash, session);
+    return true;
   }
 
   getSession(tokenHash: string): AdminBotAuthSession | undefined {
@@ -743,6 +1635,22 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
         reset.used_at = usedAt;
       }
     }
+  }
+
+  consumePasswordResetAndRevokeSessions(
+    tokenHash: string,
+    newPasswordHash: string,
+    usedAt: string,
+  ): boolean {
+    const reset = this.passwordResets.get(tokenHash);
+    const credential = reset && this.credentialsByMemberId.get(reset.member_id);
+    if (!reset || reset.used_at || reset.expires_at <= usedAt || !credential) {
+      return false;
+    }
+    this.saveCredential({ ...credential, password_scrypt: newPasswordHash, updated_at: usedAt });
+    this.markPasswordResetsUsedForMember(reset.member_id, usedAt);
+    this.revokeSessionsForMember(reset.member_id, usedAt);
+    return true;
   }
 
   pruneSessionsBefore(cutoffIso: string): number {
@@ -790,6 +1698,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       .toSorted((left, right) => right.updated_at.localeCompare(left.updated_at));
   }
 
+  saveSlackConnectInvite(invite: AdminBotSlackConnectInvite): void {
+    this.slackConnectInvites.set(slackConnectInviteKey(invite.email, invite.channel_id), invite);
+  }
+
+  getSlackConnectInvite(email: string, channelId: string): AdminBotSlackConnectInvite | undefined {
+    return this.slackConnectInvites.get(slackConnectInviteKey(email, channelId));
+  }
+
   saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void {
     this.slackChannelNaming.set(record.channel_id, record);
   }
@@ -807,6 +1723,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   deleteSlackChannelNamingRecord(channelId: string): boolean {
     return this.slackChannelNaming.delete(channelId);
   }
+}
+
+function badgeAssignmentKey(memberId: string, badgeId: string): string {
+  return `${memberId}\u0000${badgeId}`;
 }
 
 // Both logs read newest-first everywhere, matching the `ORDER BY at DESC, rowid DESC` their SQLite

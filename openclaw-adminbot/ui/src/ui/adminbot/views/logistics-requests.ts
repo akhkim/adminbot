@@ -19,8 +19,10 @@ import type {
   LogisticsRequestStatus,
   LogisticsSchool,
 } from "../auth/session.ts";
+import { logisticsDeadlineText } from "../data/logistics-queue.ts";
 import { attachmentDataUrl, formatFileSize } from "../data/logistics-requests.ts";
 import { SCHOOL_FIELDS, TEMPLATE_FOLDER_URL, type SchoolField } from "./logistics-fields.ts";
+import { logisticsStatusLabel } from "./logistics-status.ts";
 
 export type AdminBotLogisticsRequestsProps = {
   requests: LogisticsRequest[];
@@ -49,14 +51,6 @@ const KIND_LABEL_KEY: Record<LogisticsRequest["kind"], string> = {
   book_meeting: "logistics.templates.bookMeeting",
 };
 
-const STATUS_LABEL_KEY: Record<LogisticsRequestStatus, string> = {
-  submitted: "logistics.requests.status.submitted",
-  in_progress: "logistics.requests.status.inProgress",
-  completed: "logistics.requests.status.completed",
-  declined: "logistics.requests.status.declined",
-  withdrawn: "logistics.requests.status.withdrawn",
-};
-
 // The three answers an admin gives. Withdrawn is deliberately absent: it belongs to the requester,
 // and the service refuses it here however privileged the caller is.
 const ANSWERS: LogisticsRequestStatus[] = ["in_progress", "completed", "declined"];
@@ -75,26 +69,18 @@ function formatInstant(instant: string): string {
     : parsed.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
-function formatDay(instant: string): string {
-  const parsed = new Date(instant);
-  return Number.isNaN(parsed.getTime())
-    ? instant
-    : parsed.toLocaleDateString([], {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-}
-
-function renderStatusPill(status: LogisticsRequestStatus) {
+function renderStatusPill(kind: LogisticsRequest["kind"], status: LogisticsRequestStatus) {
   return html`
-    <span class="logistics-status logistics-status--${status}">${t(STATUS_LABEL_KEY[status])}</span>
+    <span class="logistics-status logistics-status--${status}">
+      ${logisticsStatusLabel(kind, status)}
+    </span>
   `;
 }
 
 function renderDeadlineCell(request: LogisticsRequest) {
-  return request.deadline_at
-    ? html`<span class="ab-num">${formatDay(request.deadline_at)}</span>`
+  const deadline = logisticsDeadlineText(request);
+  return deadline
+    ? html`<span class="ab-num">${deadline}</span>`
     : html`<span class="muted">${t("logistics.requests.noDeadline")}</span>`;
 }
 
@@ -124,7 +110,7 @@ function renderRequestRow(props: AdminBotLogisticsRequestsProps, request: Logist
             `}
       </td>
       <td class="logistics-requests__cell">${renderDeadlineCell(request)}</td>
-      <td class="logistics-requests__cell">${renderStatusPill(request.status)}</td>
+      <td class="logistics-requests__cell">${renderStatusPill(request.kind, request.status)}</td>
     </tr>
   `;
 }
@@ -165,7 +151,7 @@ function renderRequestsList(props: AdminBotLogisticsRequestsProps) {
                         ${t("logistics.requests.type")}
                       </th>
                       <th scope="col" class="logistics-requests__head">
-                        ${t("logistics.requests.deadline")}
+                        ${t("logistics.requests.earliestDeadline")}
                       </th>
                       <th scope="col" class="logistics-requests__head">
                         ${t("logistics.requests.statusColumn")}
@@ -267,6 +253,9 @@ function schoolCellValue(school: LogisticsSchool, field: SchoolField): string {
     programLink: "program_link",
     notes: "notes",
   };
+  if (field.key === "deadlineTimezone") {
+    return school.deadline_timezone?.trim() || "AoE";
+  }
   return school[wire[field.key]] ?? "";
 }
 
@@ -473,7 +462,7 @@ function renderAnswerControls(props: AdminBotLogisticsRequestsProps, request: Lo
               ?disabled=${props.openLoading || request.status === status}
               @click=${() => props.onSetStatus(request.id, status, props.statusNote)}
             >
-              ${t(STATUS_LABEL_KEY[status])}
+              ${logisticsStatusLabel(request.kind, status)}
             </button>
           `,
         )}
@@ -503,7 +492,7 @@ function renderRequestDetail(props: AdminBotLogisticsRequestsProps, request: Log
       </div>
       <div class="logistics-detail__heading">
         <h3 class="card-title">${request.member_name}</h3>
-        ${renderStatusPill(request.status)}
+        ${renderStatusPill(request.kind, request.status)}
       </div>
       <p class="card-sub">
         ${t("logistics.requests.detailSub", {
@@ -511,9 +500,9 @@ function renderRequestDetail(props: AdminBotLogisticsRequestsProps, request: Log
           saved: formatInstant(request.submitted_at),
         })}
         ·
-        ${request.deadline_at
-          ? t("logistics.requests.detailDeadline", {
-              date: formatInstant(request.deadline_at),
+        ${logisticsDeadlineText(request)
+          ? t("logistics.requests.detailEarliestDeadline", {
+              date: logisticsDeadlineText(request),
             })
           : t("logistics.requests.noDeadline")}
       </p>

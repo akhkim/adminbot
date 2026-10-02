@@ -44,6 +44,7 @@ function createState(overrides: Partial<AppViewState> = {}): AppViewState {
     submitMemberAuth: async () => undefined,
     signOutMember: async () => undefined,
     loadRoster: async () => undefined,
+    scheduleRosterSearch: () => undefined,
     password: "",
     settings: {
       gatewayUrl: "ws://127.0.0.1:18789",
@@ -449,6 +450,32 @@ describe("renderLoginGate", () => {
     expect(submit?.textContent?.trim()).toBe("Claim profile");
   });
 
+  it("searches on input and renders only the returned roster page", async () => {
+    const container = document.createElement("div");
+    let searches = 0;
+    const state = createState({
+      loginMode: "claim",
+      rosterMembers: [{ id: "m1", name: "Ada Lovelace" }],
+      scheduleRosterSearch: () => {
+        searches += 1;
+      },
+    } as Partial<AppViewState>);
+    render(renderLoginGate(state), container);
+    await Promise.resolve();
+    const input = container.querySelector<HTMLInputElement>(
+      '.login-gate__picker input[type="text"]',
+    );
+    expect(input).not.toBeNull();
+    input!.value = "Turing";
+    input!.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(state.rosterFilter).toBe("Turing");
+    expect(state.rosterLoading).toBe(true);
+    expect(searches).toBe(1);
+    render(renderLoginGate(state), container);
+    await Promise.resolve();
+    expect(container.querySelectorAll(".login-gate__picker-option")).toHaveLength(0);
+  });
+
   it("shows a roster error with a retry action instead of the empty state", async () => {
     const container = document.createElement("div");
     let retries = 0;
@@ -610,6 +637,36 @@ describe("the already-a-member hint", () => {
 });
 
 describe("password reset steps", () => {
+  beforeEach(async () => {
+    await i18n.setLocale("en");
+  });
+
+  it("names the step in the card heading and explains it in the subtitle", () => {
+    const host = document.createElement("div");
+
+    render(renderLoginGate(createState({ loginMode: "reset-request" })), host);
+    expect(host.querySelector(".login-gate__title")?.textContent?.trim()).toBe(
+      "Forgot your password?",
+    );
+    expect(host.querySelector(".login-gate__sub")?.textContent).toContain(
+      "send you a link to choose a new password",
+    );
+
+    render(renderLoginGate(createState({ loginMode: "reset-confirm" })), host);
+    expect(host.querySelector(".login-gate__title")?.textContent?.trim()).toBe("Set new password");
+    expect(host.querySelector(".login-gate__sub")?.textContent).toContain(
+      "Choose a new password for your account",
+    );
+  });
+
+  it("offers the way back to sign-in rather than the claim toggle", () => {
+    const host = document.createElement("div");
+
+    render(renderLoginGate(createState({ loginMode: "reset-request" })), host);
+    expect(host.querySelector(".login-gate__reset-back")?.textContent).toContain("Back to sign in");
+    expect(host.textContent).not.toContain("Already have an account?");
+  });
+
   it("asks only for an email in the request step", () => {
     const state = createState({ loginMode: "reset-request" });
     const host = document.createElement("div");

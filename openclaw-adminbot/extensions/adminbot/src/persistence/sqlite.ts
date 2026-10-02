@@ -26,9 +26,38 @@ import type {
   AdminBotSettings,
   AdminBotStoredProposal,
 } from "../contracts/actions.js";
-import type { AdminBotLoginEvent, AdminBotUpdateEvent } from "../contracts/activity-log.js";
+import type {
+  AdminBotLoginEvent,
+  AdminBotLoginLocation,
+  AdminBotUpdateEvent,
+} from "../contracts/activity-log.js";
+import type {
+  AdminBotBadgeAssignment,
+  AdminBotBadgeDefinition,
+  AdminBotBadgeNomination,
+  AdminBotBadgeNominationStatus,
+  AdminBotBadgeSuggestion,
+  AdminBotBadgeSuggestionStatus,
+} from "../contracts/badges.js";
+import type { AdminBotConferenceTripRecord } from "../contracts/conference-trips.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
+import type {
+  AdminBotEmailReviewItem,
+  AdminBotEmailReviewResolution,
+  AdminBotResolvedEmailReviewItem,
+} from "../contracts/email-review.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
+import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
+import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discovery.js";
+import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
+import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
+import type { LabHelpRequest } from "../contracts/lab-sharing.js";
+import type {
+  AdminBotMemberRequest,
+  AdminBotMemberRequestStatus,
+} from "../contracts/member-requests.js";
+import type { OpenReviewCitationCheck } from "../contracts/openreview-citation-checks.js";
+import type { AdminBotOpportunity, AdminBotOpportunityStatus } from "../contracts/opportunities.js";
 import type {
   AdminBotConferenceAttendeeRecord,
   AdminBotNudgeLedgerRecord,
@@ -37,6 +66,7 @@ import type {
   AdminBotSocialDraftRecord,
   AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
+import type { PaperAiTextCheck } from "../contracts/paper-integrity-checks.js";
 import type {
   AdminBotPaperSlot,
   AdminBotPaperSlotRecord,
@@ -44,21 +74,83 @@ import type {
 } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
+import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
+import type { ReferenceScan } from "../contracts/reference-scans.js";
+import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import {
   AdminBotService,
   type AdminBotActionExecutor,
+  type AdminBotLabMemberSummary,
+  type AdminBotListPage,
+  type AdminBotMeetingArtifactRecord,
+  type AdminBotMeetingCursor,
   type AdminBotServiceOptions,
   type AdminBotServiceStore,
   type AdminBotSlackChannelNamingRecord,
+  type AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
+import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import { meetsDurationFloor } from "../workflows/meetings/records.js";
 import { resolveMemberOnboarding } from "../workflows/onboarding/onboarding.js";
+import {
+  adminBotEmailReviewFromRow,
+  adminBotResolvedEmailReviewFromRow,
+  ensureAdminBotEmailReviewSchema,
+} from "./email-review.js";
 import {
   createFailedRequestLedgerFromDatabase,
   type FailedExternalRequestLedger,
 } from "./failed-requests.js";
+import { discoverHelpRequests } from "./lab-sharing-discovery.js";
+import {
+  ensureLabInterestSchema,
+  saveHelpInterest,
+  listHelpInterests,
+} from "./lab-sharing-interest.js";
+import {
+  ensureDirectorStatusSchema,
+  listDirectorStatusHistory,
+  saveDirectorStatus,
+  readDirectorStatus,
+} from "./lab-sharing-status.js";
+import { ensureLabSharingSchema, saveHelpRequest, listHelpRequests } from "./lab-sharing.js";
 import { createMemberDraftStore } from "./member-drafts.js";
+import {
+  ensureOpenReviewCitationCheckSchema,
+  getOpenReviewCitationCheck,
+  listOpenReviewCitationChecks,
+  saveOpenReviewCitationCheck,
+} from "./openreview-citation-checks.js";
+import {
+  ensurePaperAiTextCheckSchema,
+  getPaperAiTextCheck,
+  listPaperAiTextChecks,
+  savePaperAiTextCheck,
+} from "./paper-ai-text-checks.js";
+import {
+  ensureReferenceScanSchema,
+  getReferenceScan,
+  saveReferenceScan,
+} from "./reference-scans.js";
 
 const require = createRequire(import.meta.url);
+
+// Search only fields that every authenticated roster reader may see. Never match on notes or
+// personal circumstances: even a yes/no search result would reveal private content.
+const LAB_MEMBER_SEARCH = `(
+  instr(adminbot_lower(coalesce(json_extract(m.payload_json, '$.name'), '')), ?) > 0 OR
+  instr(adminbot_lower(coalesce(json_extract(m.payload_json, '$.email'), '')), ?) > 0 OR
+  EXISTS (SELECT 1 FROM json_each(m.payload_json, '$.research_topics') topic
+    WHERE instr(adminbot_lower(topic.value), ?) > 0) OR
+  EXISTS (SELECT 1 FROM json_each(m.payload_json, '$.projects') project
+    WHERE instr(adminbot_lower(project.value), ?) > 0)
+)`;
+const PAPER_SEARCH = `(
+  instr(adminbot_lower(coalesce(json_extract(p.payload_json, '$.title'), '')), ?) > 0 OR
+  instr(adminbot_lower(coalesce(json_extract(p.payload_json, '$.venue'), '')), ?) > 0 OR
+  EXISTS (SELECT 1 FROM json_each(p.payload_json, '$.authors') author
+    WHERE instr(adminbot_lower(author.value), ?) > 0)
+)`;
 
 export type AdminBotSqliteServiceOptions = {
   databasePath: string;
@@ -106,9 +198,14 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ensureDatabaseDirectory(databasePath);
     const sqlite = requireNodeSqlite();
     this.db = new sqlite.DatabaseSync(databasePath);
+    // SQLite's built-in lower() only handles ASCII; use the same fold as the in-memory store.
+    this.db.function("adminbot_lower", { deterministic: true }, (value) =>
+      String(value ?? "").toLowerCase(),
+    );
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
+      PRAGMA busy_timeout = 5000;
 
       CREATE TABLE IF NOT EXISTS adminbot_proposals (
         id TEXT PRIMARY KEY,
@@ -150,6 +247,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         dry_run INTEGER NOT NULL,
         executed_at TEXT NOT NULL,
         result_json TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS adminbot_execution_claims (
+        effect_key TEXT PRIMARY KEY,
+        action_id TEXT NOT NULL,
+        claimed_at TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS adminbot_audit_events (
@@ -232,6 +335,102 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_lab_members_privilege_idx
         ON adminbot_lab_members(privilege_level, updated_at);
+      CREATE INDEX IF NOT EXISTS adminbot_lab_members_name_idx
+        ON adminbot_lab_members(json_extract(payload_json, '$.name'), id);
+      CREATE INDEX IF NOT EXISTS adminbot_lab_members_name_nocase_idx
+        ON adminbot_lab_members(json_extract(payload_json, '$.name') COLLATE NOCASE, id);
+
+      CREATE TABLE IF NOT EXISTS adminbot_badge_definitions (
+        id TEXT PRIMARY KEY,
+        family_key TEXT NOT NULL,
+        category TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_badge_definitions_family_idx
+        ON adminbot_badge_definitions(family_key, sort_order, updated_at);
+
+      CREATE TABLE IF NOT EXISTS adminbot_badge_assignments (
+        member_id TEXT NOT NULL,
+        badge_id TEXT NOT NULL,
+        family_key TEXT NOT NULL,
+        awarded_at TEXT NOT NULL,
+        awarded_by TEXT NOT NULL,
+        source TEXT NOT NULL,
+        nomination_id TEXT,
+        payload_json TEXT NOT NULL,
+        PRIMARY KEY (member_id, badge_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_badge_assignments_member_family_idx
+        ON adminbot_badge_assignments(member_id, family_key, awarded_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_badge_nominations (
+        id TEXT PRIMARY KEY,
+        member_id TEXT NOT NULL,
+        badge_id TEXT NOT NULL,
+        family_key TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT,
+        nominated_by TEXT,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_badge_nominations_member_status_idx
+        ON adminbot_badge_nominations(member_id, status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_badge_nominations_status_idx
+        ON adminbot_badge_nominations(status, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_badge_suggestions (
+        id TEXT PRIMARY KEY,
+        suggested_by TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT,
+        created_badge_id TEXT,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_badge_suggestions_status_idx
+        ON adminbot_badge_suggestions(status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_badge_suggestions_member_idx
+        ON adminbot_badge_suggestions(suggested_by, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_member_requests (
+        id TEXT PRIMARY KEY,
+        requested_by TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_member_requests_status_idx
+        ON adminbot_member_requests(status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_member_requests_requester_idx
+        ON adminbot_member_requests(requested_by, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_opportunities (
+        id TEXT PRIMARY KEY,
+        submitted_by_member_id TEXT,
+        category TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_opportunities_status_idx
+        ON adminbot_opportunities(status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_opportunities_member_idx
+        ON adminbot_opportunities(submitted_by_member_id, created_at DESC);
 
       CREATE TABLE IF NOT EXISTS adminbot_papers (
         id TEXT PRIMARY KEY,
@@ -242,6 +441,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_papers_step_idx
         ON adminbot_papers(current_step, updated_at);
+      CREATE INDEX IF NOT EXISTS adminbot_papers_title_idx
+        ON adminbot_papers(json_extract(payload_json, '$.title'), id);
+      CREATE INDEX IF NOT EXISTS adminbot_papers_title_nocase_idx
+        ON adminbot_papers(json_extract(payload_json, '$.title') COLLATE NOCASE, id);
 
       -- One row per evidence slot, per paper. Real columns rather than a JSON blob on the paper:
       -- the nudge sweep reads status across every open paper at once, and that is a query, not a
@@ -260,6 +463,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         provided_by_member_id TEXT,
         provided_at TEXT,
         validated_at TEXT,
+        -- What confirmed the artifact is really there, as opposed to the value being the right
+        -- shape. Nullable and usually null: most slots have no verifier at all.
+        verified_by TEXT,
+        verified_at TEXT,
         invalid_reason TEXT,
         waived_by_member_id TEXT,
         waived_reason TEXT,
@@ -307,6 +514,34 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         PRIMARY KEY (paper_id, stage)
       );
 
+      -- One PaperMentor review of one project: that it ran, and what it counted.
+      --
+      -- The comments themselves are not here and never will be. They are unpublished paper content
+      -- and they already exist where they are useful -- as threads in the author's own project --
+      -- so what this table holds is the part the lab chases on: when the review happened, how many
+      -- comments it produced, how severe, and which agents did not finish. See contracts/papermentor.ts.
+      --
+      -- Keyed by "<project id>:<reviewedAt>" rather than by paper, because a paper is reviewed
+      -- many times and each run is its own fact. The id is what makes re-reading the collector's
+      -- source file a no-op.
+      CREATE TABLE IF NOT EXISTS adminbot_papermentor_runs (
+        id TEXT PRIMARY KEY,
+        paper_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        reviewed_at TEXT NOT NULL,
+        ingested_at TEXT NOT NULL,
+        model TEXT,
+        paper_type TEXT,
+        comments_total INTEGER NOT NULL,
+        by_severity TEXT NOT NULL,
+        by_category TEXT NOT NULL,
+        by_document TEXT NOT NULL,
+        failed_agents TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_papermentor_runs_paper_idx
+        ON adminbot_papermentor_runs(paper_id, reviewed_at DESC);
+
       -- The social draft itself, kept because consent is asked against a specific wording.
       CREATE TABLE IF NOT EXISTS adminbot_paper_social_drafts (
         id TEXT PRIMARY KEY,
@@ -346,6 +581,24 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         PRIMARY KEY (paper_id, attendee_key)
       );
 
+      -- One member's plan for one conference, keyed by both: a person takes one trip to EMNLP
+      -- however many papers they have there, which is exactly what the per-paper attendee table
+      -- above cannot express.
+      CREATE TABLE IF NOT EXISTS adminbot_conference_trips (
+        conference_key TEXT NOT NULL,
+        member_id TEXT NOT NULL,
+        intent TEXT NOT NULL,
+        funding TEXT NOT NULL,
+        needs_lodging INTEGER NOT NULL DEFAULT 0,
+        arrival_on TEXT,
+        departure_on TEXT,
+        needs_visa_letter INTEGER NOT NULL DEFAULT 0,
+        paper_id TEXT,
+        notes TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (conference_key, member_id)
+      );
+
       CREATE TABLE IF NOT EXISTS adminbot_paper_reimbursements (
         paper_id TEXT NOT NULL,
         member_id TEXT NOT NULL,
@@ -381,6 +634,16 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       -- column is the whole access pattern.
       CREATE INDEX IF NOT EXISTS adminbot_meetings_started_idx
         ON adminbot_meetings(started_at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_meetings_page_idx
+        ON adminbot_meetings(COALESCE(julianday(started_at), 0) DESC, id DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_meeting_artifacts (
+        file_id TEXT PRIMARY KEY,
+        file_name TEXT NOT NULL,
+        meeting_id TEXT,
+        status TEXT NOT NULL,
+        processed_at TEXT NOT NULL
+      );
 
       CREATE TABLE IF NOT EXISTS adminbot_member_notifications (
         id TEXT PRIMARY KEY,
@@ -444,17 +707,30 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       CREATE INDEX IF NOT EXISTS adminbot_account_registrations_status_idx
         ON adminbot_account_registrations(status, email, member_id);
 
+      CREATE UNIQUE INDEX IF NOT EXISTS adminbot_pending_registrations_email_unique_idx
+        ON adminbot_account_registrations(lower(email)) WHERE status = 'pending';
+
+      CREATE UNIQUE INDEX IF NOT EXISTS adminbot_pending_claims_member_unique_idx
+        ON adminbot_account_registrations(member_id)
+        WHERE status = 'pending' AND kind = 'claim' AND member_id IS NOT NULL;
+
       CREATE TABLE IF NOT EXISTS adminbot_sessions (
         token_hash TEXT PRIMARY KEY,
         member_id TEXT NOT NULL,
         created_at TEXT NOT NULL,
         expires_at TEXT NOT NULL,
         last_seen_at TEXT NOT NULL,
-        revoked_at TEXT
+        revoked_at TEXT,
+        -- Null on a normal sign-in; the admin's member id on a "view as" session. See
+        -- AdminBotAuthSession in contracts/actions.ts for why the two ids are kept apart.
+        impersonated_by TEXT
       );
 
       CREATE INDEX IF NOT EXISTS adminbot_sessions_member_expiry_idx
         ON adminbot_sessions(member_id, expires_at);
+
+      CREATE INDEX IF NOT EXISTS adminbot_sessions_expiry_idx
+        ON adminbot_sessions(expires_at);
 
       CREATE TABLE IF NOT EXISTS adminbot_password_resets (
         token_hash TEXT PRIMARY KEY,
@@ -475,6 +751,21 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_slack_channel_naming_updated_idx
         ON adminbot_slack_channel_naming(updated_at);
+
+      -- Slack Connect invite links, kept so a re-send does not mint a second one.
+      --
+      -- Keyed by address *and* channel: the same person can be invited to the onboarding channel
+      -- and to a project channel, and those are different invitations. Slack's own links expire,
+      -- so a row older than the reuse window is treated as absent rather than deleted -- keeping
+      -- it means "we invited them on this date", which is the question asked when somebody says
+      -- the link no longer works.
+      CREATE TABLE IF NOT EXISTS adminbot_slack_connect_invites (
+        email TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (email, channel_id)
+      );
 
       -- One row per member per surface: a re-rating is a change of mind, not a second vote.
       -- Anonymous rows share one slot per feature (see adminBotFeedbackId).
@@ -520,6 +811,27 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       CREATE INDEX IF NOT EXISTS adminbot_login_events_at_idx
         ON adminbot_login_events(at DESC);
 
+      -- Which Control UI tab was opened, by whom, when. The third of these logs and the same shape
+      -- for the same reason: the question is a distribution, so it has to be rows.
+      --
+      -- The tab column holds the UI's own tab id, stored as sent -- see contracts/tab-visits.ts
+      -- for why this side does not police the list. impersonated is 0/1 rather than absent so a
+      -- reader can exclude an admin's "view as" browsing without joining anything.
+      CREATE TABLE IF NOT EXISTS adminbot_tab_visits (
+        id TEXT PRIMARY KEY,
+        member_id TEXT NOT NULL,
+        tab TEXT NOT NULL,
+        at TEXT NOT NULL,
+        impersonated INTEGER NOT NULL DEFAULT 0
+      );
+
+      -- The window sweep is the only read; the member index is what makes dwell derivable, since
+      -- that walks one member's visits in order.
+      CREATE INDEX IF NOT EXISTS adminbot_tab_visits_at_idx
+        ON adminbot_tab_visits(at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_tab_visits_member_idx
+        ON adminbot_tab_visits(member_id, at);
+
       -- Who changed which field of what, when. slot_id is namespaced by subject (see
       -- contracts/activity-log.ts) so profile fields and paper slots share one table without
       -- colliding.
@@ -552,6 +864,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         started_by TEXT,
         calls_done INTEGER NOT NULL DEFAULT 0,
         calls_total INTEGER NOT NULL DEFAULT 0,
+        calls_failed INTEGER NOT NULL DEFAULT 0,
+        progress_at TEXT,
         payload_json TEXT,
         error TEXT
       );
@@ -573,10 +887,133 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       CREATE INDEX IF NOT EXISTS adminbot_failed_external_requests_updated_idx
         ON adminbot_failed_external_requests(updated_at DESC);
     `);
+    ensureLabSharingSchema(this.db);
+    ensureDirectorStatusSchema(this.db);
+    ensureReferenceScanSchema(this.db);
+    ensureOpenReviewCitationCheckSchema(this.db);
+    ensurePaperAiTextCheckSchema(this.db);
+    ensureLabInterestSchema(this.db);
+    ensureAdminBotEmailReviewSchema(this.db);
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
     this.migratePaperSlotColumns();
     this.failedRequests = createFailedRequestLedgerFromDatabase(this.db);
+    this.migrateWorkshopMatchRuns();
+    this.migrateSessionColumns();
+    this.migrateBadgeNominationColumns();
+    this.migrateLoginEventColumns();
+  }
+
+  /**
+   * Give the run table its progress clock, and close out passes their process did not survive.
+   *
+   * A workshop-matching pass runs as an un-awaited task inside the service, so it dies with the
+   * process. The row it leaves behind still says `running`, and `startWorkshopNudgeRun` refuses to
+   * start a pass while one is running -- so a single restart mid-pass wedges the tab permanently on
+   * "Matching in progress...", counting model calls nobody is making any more. Nothing short of a
+   * hand-edited database recovered from it.
+   *
+   * Startup is the one moment where "running" is provably wrong: no pass can predate this process.
+   */
+  /**
+   * Give an `adminbot_sessions` written by an earlier release the `impersonated_by` column.
+   *
+   * Nullable with no default, so every session that already exists reads back as a normal sign-in
+   * -- which is what they all are. Nothing else about the row changes, so live sessions survive
+   * the upgrade rather than everybody being signed out by a migration.
+   */
+  private migrateSessionColumns(): void {
+    const columns = new Set(
+      (
+        this.db.prepare("PRAGMA table_info(adminbot_sessions)").all() as Array<{ name: string }>
+      ).map((row) => row.name),
+    );
+    if (!columns.has("impersonated_by")) {
+      this.db.exec("ALTER TABLE adminbot_sessions ADD COLUMN impersonated_by TEXT");
+    }
+  }
+
+  /**
+   * Give `adminbot_badge_nominations` written before nominating somebody else was possible the
+   * `nominated_by` column.
+   *
+   * Nullable with no default, which is exactly right for the rows already there: every one of them
+   * is a self-nomination, and an absent nominator is how a self-nomination is stored now too. The
+   * column exists so the member scope can be answered with an index rather than by reading every
+   * nomination in the table and filtering the JSON.
+   *
+   * The index is created here rather than beside the table's other two, and that is not tidiness:
+   * `CREATE TABLE IF NOT EXISTS` is a no-op against a database that already has the table, so an
+   * index on `nominated_by` declared in the same statement batch runs before the column exists and
+   * takes the whole service down at startup with "no such column". Here it runs after the ALTER,
+   * on every boot, so a database that gained the column but somehow lost the index gets it back.
+   */
+  private migrateBadgeNominationColumns(): void {
+    const columns = new Set(
+      (
+        this.db.prepare("PRAGMA table_info(adminbot_badge_nominations)").all() as Array<{
+          name: string;
+        }>
+      ).map((row) => row.name),
+    );
+    if (!columns.has("nominated_by")) {
+      this.db.exec("ALTER TABLE adminbot_badge_nominations ADD COLUMN nominated_by TEXT");
+    }
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS adminbot_badge_nominations_nominated_by_idx
+        ON adminbot_badge_nominations(nominated_by, created_at DESC)`,
+    );
+  }
+
+  /**
+   * Give an `adminbot_login_events` written before travel history its four location columns.
+   *
+   * All nullable: every row that already exists was written when only the timestamp was recorded,
+   * and there is no way to recover where those sign-ins came from. They read back as located
+   * nowhere, which is exactly what is known about them -- backfilling them from the member's
+   * current `last_login_city` would invent a travel history that never happened.
+   */
+  private migrateLoginEventColumns(): void {
+    const columns = new Set(
+      (
+        this.db.prepare("PRAGMA table_info(adminbot_login_events)").all() as Array<{ name: string }>
+      ).map((row) => row.name),
+    );
+    for (const column of ["country", "continent", "city", "timezone"]) {
+      if (!columns.has(column)) {
+        this.db.exec(`ALTER TABLE adminbot_login_events ADD COLUMN ${column} TEXT`);
+      }
+    }
+  }
+
+  private migrateWorkshopMatchRuns(): void {
+    const columns = new Set(
+      (
+        this.db.prepare("PRAGMA table_info(adminbot_workshop_match_runs)").all() as Array<{
+          name: string;
+        }>
+      ).map((row) => row.name),
+    );
+    if (!columns.has("progress_at")) {
+      this.db.exec("ALTER TABLE adminbot_workshop_match_runs ADD COLUMN progress_at TEXT");
+    }
+    if (!columns.has("calls_failed")) {
+      this.db.exec(
+        "ALTER TABLE adminbot_workshop_match_runs ADD COLUMN calls_failed INTEGER NOT NULL DEFAULT 0",
+      );
+    }
+    this.db
+      .prepare(
+        `UPDATE adminbot_workshop_match_runs
+            SET status = 'failed',
+                finished_at = COALESCE(finished_at, ?),
+                error = COALESCE(
+                  error,
+                  'The service restarted while this pass was running, so it was abandoned. Start a new one.'
+                )
+          WHERE status = 'running'`,
+      )
+      .run(new Date().toISOString());
   }
 
   failedRequestLedger(): FailedExternalRequestLedger {
@@ -604,6 +1041,20 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     );
     if (!columns.has("value_note")) {
       this.db.exec("ALTER TABLE adminbot_paper_slots ADD COLUMN value_note TEXT");
+    }
+    // Nullable with no default, like every other column added here: every row that already exists
+    // reads back as unconfirmed, which is exactly what it is. Nothing is re-checked on upgrade --
+    // the verification pass finds them in its own time.
+    for (const column of [
+      "verified_by",
+      "verified_at",
+      "verified_title",
+      "previous_submission_id",
+      "identity_review",
+    ]) {
+      if (!columns.has(column)) {
+        this.db.exec(`ALTER TABLE adminbot_paper_slots ADD COLUMN ${column} TEXT`);
+      }
     }
     if (!columns.has("nudge_count")) {
       return;
@@ -880,6 +1331,31 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return row?.result_json ? parseJson<AdminBotExecutionResult>(row.result_json) : undefined;
   }
 
+  claimExecution(
+    effectKey: string,
+    actionId: string,
+    claimedAt: string,
+    staleBefore: string,
+  ): boolean {
+    this.db
+      .prepare("DELETE FROM adminbot_execution_claims WHERE effect_key = ? AND claimed_at < ?")
+      .run(effectKey, staleBefore);
+    const result = this.db
+      .prepare(
+        `INSERT INTO adminbot_execution_claims (effect_key, action_id, claimed_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(effect_key) DO NOTHING`,
+      )
+      .run(effectKey, actionId, claimedAt);
+    return result.changes === 1;
+  }
+
+  releaseExecutionClaim(effectKey: string, actionId: string): void {
+    this.db
+      .prepare("DELETE FROM adminbot_execution_claims WHERE effect_key = ? AND action_id = ?")
+      .run(effectKey, actionId);
+  }
+
   saveLabMember(member: AdminBotLabMember): void {
     this.db
       .prepare(
@@ -897,6 +1373,21 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       .run(member.id, member.privilege_level, member.updated_at, JSON.stringify(member));
   }
 
+  patchLabMemberAuthFields(
+    memberId: string,
+    patch: Parameters<AdminBotServiceStore["patchLabMemberAuthFields"]>[1],
+  ): boolean {
+    return (
+      this.db
+        .prepare(
+          `UPDATE adminbot_lab_members
+         SET updated_at = ?, payload_json = json_patch(payload_json, ?)
+         WHERE id = ?`,
+        )
+        .run(patch.updated_at, JSON.stringify(patch), memberId).changes > 0
+    );
+  }
+
   getLabMember(memberId: string): AdminBotLabMember | undefined {
     const row = this.db
       .prepare("SELECT payload_json FROM adminbot_lab_members WHERE id = ?")
@@ -904,13 +1395,518 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return row?.payload_json ? parseJson<AdminBotLabMember>(row.payload_json) : undefined;
   }
 
-  listLabMembers(): AdminBotLabMember[] {
+  listLabMembers(page?: AdminBotListPage): AdminBotLabMember[] {
+    const q = page?.q?.toLowerCase();
+    const where = q ? `WHERE ${LAB_MEMBER_SEARCH}` : "";
+    // ponytail: NOCASE indexes the common paged read but folds ASCII only. Search still folds
+    // Unicode; add a persisted Unicode sort key if locale-aware global ordering becomes necessary.
     const rows = this.db
       .prepare(
-        "SELECT payload_json FROM adminbot_lab_members ORDER BY json_extract(payload_json, '$.name')",
+        `SELECT m.payload_json FROM adminbot_lab_members m ${where}
+          ORDER BY ${page ? "json_extract(m.payload_json, '$.name') COLLATE NOCASE, m.id" : "json_extract(m.payload_json, '$.name')"}
+          ${page ? "LIMIT ? OFFSET ?" : ""}`,
+      )
+      .all(...(q ? [q, q, q, q] : []), ...(page ? [page.limit, page.offset] : [])) as Array<{
+      payload_json: string;
+    }>;
+    return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
+  }
+
+  searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }> {
+    const needle = query.toLowerCase();
+    const rows = this.db
+      .prepare(
+        `SELECT m.id, json_extract(m.payload_json, '$.name') AS name
+         FROM adminbot_lab_members m
+         WHERE NOT EXISTS (
+           SELECT 1 FROM adminbot_member_credentials c WHERE c.member_id = m.id
+         ) AND m.id NOT IN (
+           SELECT r.member_id FROM adminbot_account_registrations r
+           WHERE r.status = 'pending' AND r.kind = 'claim' AND r.member_id IS NOT NULL
+         ) ${needle ? "AND instr(adminbot_lower(json_extract(m.payload_json, '$.name')), ?) > 0" : ""}
+         ORDER BY json_extract(m.payload_json, '$.name') COLLATE NOCASE, m.id
+         LIMIT ?`,
+      )
+      .all(...(needle ? [needle] : []), limit) as Array<{ id: string; name: string | null }>;
+    return rows.map(({ id, name }) => ({ id, name: name ?? "" }));
+  }
+
+  listLabMemberSummaries(): AdminBotLabMemberSummary[] {
+    const rows = this.db
+      .prepare(
+        `SELECT m.payload_json FROM adminbot_lab_members m
+         ORDER BY adminbot_lower(json_extract(m.payload_json, '$.name')), m.id`,
       )
       .all() as Array<{ payload_json: string }>;
-    return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
+    return rows.map((row) => {
+      const summary = parseJson<AdminBotLabMember>(row.payload_json);
+      delete summary.field_provenance;
+      delete (summary as Partial<AdminBotLabMember>).access;
+      if (summary.onboarding && !Array.isArray(summary.onboarding)) {
+        return {
+          ...summary,
+          onboarding: {
+            steps: Array.isArray(summary.onboarding.steps)
+              ? summary.onboarding.steps.map(({ id, status }) => ({ id, status }))
+              : [],
+          },
+        };
+      }
+      return summary;
+    });
+  }
+
+  countLabMembers(q?: string): number {
+    const needle = q?.toLowerCase();
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total FROM adminbot_lab_members m ${needle ? `WHERE ${LAB_MEMBER_SEARCH}` : ""}`,
+      )
+      .get(...(needle ? [needle, needle, needle, needle] : [])) as { total: number };
+    return row.total;
+  }
+
+  saveBadgeDefinition(badge: AdminBotBadgeDefinition): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_badge_definitions (
+          id,
+          family_key,
+          category,
+          sort_order,
+          updated_at,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          family_key = excluded.family_key,
+          category = excluded.category,
+          sort_order = excluded.sort_order,
+          updated_at = excluded.updated_at,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        badge.id,
+        badge.family_key,
+        badge.category,
+        badge.sort_order,
+        badge.updated_at,
+        JSON.stringify(badge),
+      );
+  }
+
+  getBadgeDefinition(badgeId: string): AdminBotBadgeDefinition | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_badge_definitions WHERE id = ?")
+      .get(badgeId) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotBadgeDefinition>(row.payload_json) : undefined;
+  }
+
+  listBadgeDefinitions(): AdminBotBadgeDefinition[] {
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_badge_definitions
+          ORDER BY sort_order ASC, category ASC, json_extract(payload_json, '$.name') ASC`,
+      )
+      .all() as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotBadgeDefinition>(row.payload_json));
+  }
+
+  saveBadgeAssignment(assignment: AdminBotBadgeAssignment): void {
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare(
+          `DELETE FROM adminbot_badge_assignments
+            WHERE member_id = ? AND family_key = ? AND badge_id != ?`,
+        )
+        .run(assignment.member_id, assignment.family_key, assignment.badge_id);
+      this.db
+        .prepare(
+          `INSERT INTO adminbot_badge_assignments (
+            member_id,
+            badge_id,
+            family_key,
+            awarded_at,
+            awarded_by,
+            source,
+            nomination_id,
+            payload_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(member_id, badge_id) DO UPDATE SET
+            family_key = excluded.family_key,
+            awarded_at = excluded.awarded_at,
+            awarded_by = excluded.awarded_by,
+            source = excluded.source,
+            nomination_id = excluded.nomination_id,
+            payload_json = excluded.payload_json`,
+        )
+        .run(
+          assignment.member_id,
+          assignment.badge_id,
+          assignment.family_key,
+          assignment.awarded_at,
+          assignment.awarded_by,
+          assignment.source,
+          assignment.nomination_id ?? null,
+          JSON.stringify(assignment),
+        );
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  getBadgeAssignment(memberId: string, familyKey: string): AdminBotBadgeAssignment | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_badge_assignments
+          WHERE member_id = ? AND family_key = ?
+          ORDER BY awarded_at DESC
+          LIMIT 1`,
+      )
+      .get(memberId, familyKey) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotBadgeAssignment>(row.payload_json) : undefined;
+  }
+
+  listBadgeAssignments(memberId?: string | string[]): AdminBotBadgeAssignment[] {
+    const rows = (
+      Array.isArray(memberId)
+        ? this.db
+            .prepare(
+              `SELECT payload_json
+                FROM adminbot_badge_assignments
+                WHERE member_id IN (SELECT value FROM json_each(?))
+                ORDER BY awarded_at ASC`,
+            )
+            .all(JSON.stringify(memberId))
+        : memberId
+          ? this.db
+              .prepare(
+                `SELECT payload_json
+                FROM adminbot_badge_assignments
+                WHERE member_id = ?
+                ORDER BY awarded_at ASC`,
+              )
+              .all(memberId)
+          : this.db
+              .prepare(
+                `SELECT payload_json
+                FROM adminbot_badge_assignments
+                ORDER BY awarded_at ASC`,
+              )
+              .all()
+    ) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotBadgeAssignment>(row.payload_json));
+  }
+
+  deleteBadgeAssignment(memberId: string, badgeId: string): boolean {
+    const result = this.db
+      .prepare("DELETE FROM adminbot_badge_assignments WHERE member_id = ? AND badge_id = ?")
+      .run(memberId, badgeId) as { changes?: number };
+    return (result.changes ?? 0) > 0;
+  }
+
+  saveBadgeNomination(nomination: AdminBotBadgeNomination): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_badge_nominations (
+          id,
+          member_id,
+          badge_id,
+          family_key,
+          status,
+          created_at,
+          decided_at,
+          decided_by,
+          nominated_by,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          member_id = excluded.member_id,
+          badge_id = excluded.badge_id,
+          family_key = excluded.family_key,
+          status = excluded.status,
+          created_at = excluded.created_at,
+          decided_at = excluded.decided_at,
+          decided_by = excluded.decided_by,
+          nominated_by = excluded.nominated_by,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        nomination.id,
+        nomination.member_id,
+        nomination.badge_id,
+        nomination.family_key,
+        nomination.status,
+        nomination.created_at,
+        nomination.decided_at ?? null,
+        nomination.decided_by ?? null,
+        nomination.nominated_by ?? null,
+        JSON.stringify(nomination),
+      );
+  }
+
+  saveBadgeSuggestion(suggestion: AdminBotBadgeSuggestion): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_badge_suggestions (
+          id,
+          suggested_by,
+          status,
+          created_at,
+          decided_at,
+          decided_by,
+          created_badge_id,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          suggested_by = excluded.suggested_by,
+          status = excluded.status,
+          created_at = excluded.created_at,
+          decided_at = excluded.decided_at,
+          decided_by = excluded.decided_by,
+          created_badge_id = excluded.created_badge_id,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        suggestion.id,
+        suggestion.suggested_by ?? null,
+        suggestion.status,
+        suggestion.created_at,
+        suggestion.decided_at ?? null,
+        suggestion.decided_by ?? null,
+        suggestion.created_badge_id ?? null,
+        JSON.stringify(suggestion),
+      );
+  }
+
+  getBadgeSuggestion(suggestionId: string): AdminBotBadgeSuggestion | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_badge_suggestions WHERE id = ?")
+      .get(suggestionId) as { payload_json: string } | undefined;
+    return row ? parseJson<AdminBotBadgeSuggestion>(row.payload_json) : undefined;
+  }
+
+  listBadgeSuggestions(params?: {
+    suggestedBy?: string;
+    status?: AdminBotBadgeSuggestionStatus;
+  }): AdminBotBadgeSuggestion[] {
+    const clauses: string[] = [];
+    const values: Array<string> = [];
+    if (params?.suggestedBy) {
+      clauses.push("suggested_by = ?");
+      values.push(params.suggestedBy);
+    }
+    if (params?.status) {
+      clauses.push("status = ?");
+      values.push(params.status);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_badge_suggestions
+          ${where}
+          ORDER BY created_at DESC`,
+      )
+      .all(...values) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotBadgeSuggestion>(row.payload_json));
+  }
+
+  saveMemberRequest(request: AdminBotMemberRequest): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_member_requests (
+          id,
+          requested_by,
+          status,
+          created_at,
+          updated_at,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          requested_by = excluded.requested_by,
+          status = excluded.status,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        request.id,
+        request.requested_by,
+        request.status,
+        request.created_at,
+        request.updated_at,
+        JSON.stringify(request),
+      );
+  }
+
+  getMemberRequest(requestId: string): AdminBotMemberRequest | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_member_requests WHERE id = ?")
+      .get(requestId) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotMemberRequest>(row.payload_json) : undefined;
+  }
+
+  listMemberRequests(params?: {
+    requestedBy?: string;
+    status?: AdminBotMemberRequestStatus;
+  }): AdminBotMemberRequest[] {
+    const clauses: string[] = [];
+    const values: string[] = [];
+    if (params?.requestedBy) {
+      clauses.push("requested_by = ?");
+      values.push(params.requestedBy);
+    }
+    if (params?.status) {
+      clauses.push("status = ?");
+      values.push(params.status);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_member_requests
+          ${where}
+          ORDER BY created_at DESC`,
+      )
+      .all(...values) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotMemberRequest>(row.payload_json));
+  }
+
+  deleteMemberRequest(requestId: string): boolean {
+    const result = this.db
+      .prepare("DELETE FROM adminbot_member_requests WHERE id = ?")
+      .run(requestId) as { changes?: number };
+    return (result.changes ?? 0) > 0;
+  }
+
+  saveOpportunity(opportunity: AdminBotOpportunity): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_opportunities (
+          id,
+          submitted_by_member_id,
+          category,
+          status,
+          created_at,
+          updated_at,
+          decided_at,
+          decided_by,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          submitted_by_member_id = excluded.submitted_by_member_id,
+          category = excluded.category,
+          status = excluded.status,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          decided_at = excluded.decided_at,
+          decided_by = excluded.decided_by,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        opportunity.id,
+        opportunity.submitted_by_member_id ?? null,
+        opportunity.category,
+        opportunity.status,
+        opportunity.created_at,
+        opportunity.updated_at,
+        opportunity.decided_at ?? null,
+        opportunity.decided_by ?? null,
+        JSON.stringify(opportunity),
+      );
+  }
+
+  getOpportunity(opportunityId: string): AdminBotOpportunity | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_opportunities WHERE id = ?")
+      .get(opportunityId) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotOpportunity>(row.payload_json) : undefined;
+  }
+
+  listOpportunities(params?: {
+    memberId?: string;
+    status?: AdminBotOpportunityStatus;
+  }): AdminBotOpportunity[] {
+    const clauses: string[] = [];
+    const values: Array<string> = [];
+    if (params?.memberId) {
+      clauses.push("submitted_by_member_id = ?");
+      values.push(params.memberId);
+    }
+    if (params?.status) {
+      clauses.push("status = ?");
+      values.push(params.status);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_opportunities
+          ${where}
+          ORDER BY created_at DESC`,
+      )
+      .all(...values) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotOpportunity>(row.payload_json));
+  }
+
+  deleteOpportunity(opportunityId: string): boolean {
+    const result = this.db
+      .prepare("DELETE FROM adminbot_opportunities WHERE id = ?")
+      .run(opportunityId) as { changes?: number };
+    return (result.changes ?? 0) > 0;
+  }
+
+  getBadgeNomination(nominationId: string): AdminBotBadgeNomination | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_badge_nominations WHERE id = ?")
+      .get(nominationId) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotBadgeNomination>(row.payload_json) : undefined;
+  }
+
+  listBadgeNominations(params?: {
+    memberId?: string;
+    /**
+     * Everything one member can see about themselves: badges proposed for them, and badges they
+     * proposed for other people. One clause rather than two queries the caller merges, so the
+     * `created_at DESC` order below is the order the reader gets.
+     */
+    involvingMemberId?: string;
+    nominatedBy?: string;
+    status?: AdminBotBadgeNominationStatus;
+  }): AdminBotBadgeNomination[] {
+    const clauses: string[] = [];
+    const values: Array<string> = [];
+    if (params?.memberId) {
+      clauses.push("member_id = ?");
+      values.push(params.memberId);
+    }
+    if (params?.involvingMemberId) {
+      clauses.push("(member_id = ? OR nominated_by = ?)");
+      values.push(params.involvingMemberId, params.involvingMemberId);
+    }
+    if (params?.nominatedBy) {
+      clauses.push("nominated_by = ?");
+      values.push(params.nominatedBy);
+    }
+    if (params?.status) {
+      clauses.push("status = ?");
+      values.push(params.status);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json
+          FROM adminbot_badge_nominations
+          ${where}
+          ORDER BY created_at DESC`,
+      )
+      .all(...values) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotBadgeNomination>(row.payload_json));
   }
 
   deleteLabMember(memberId: string): boolean {
@@ -930,11 +1926,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
    */
   private static readonly MEMBER_REFERENCE_COLUMNS: ReadonlyArray<[string, string]> = [
     ["adminbot_account_registrations", "member_id"],
+    ["adminbot_tab_visits", "member_id"],
+    ["adminbot_badge_assignments", "member_id"],
+    ["adminbot_badge_nominations", "member_id"],
     ["adminbot_cv_changes", "member_id"],
     ["adminbot_logistics_requests", "member_id"],
     ["adminbot_login_events", "member_id"],
     ["adminbot_member_locations", "member_id"],
     ["adminbot_nudge_ledger", "member_id"],
+    ["adminbot_opportunities", "submitted_by_member_id"],
     ["adminbot_paper_conference_attendees", "member_id"],
     ["adminbot_paper_reimbursements", "member_id"],
     ["adminbot_paper_social_draft_consents", "member_id"],
@@ -961,6 +1961,156 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ["adminbot_member_credentials", "member_id"],
   ];
 
+  /**
+   * Every table a delete must clear, which is the merge list plus the rows a merge keeps.
+   *
+   * The extras are the rows that only ever meant something as *this* member's: a notification is
+   * addressed to them, a feedback entry and a weekly update are authored by them, and a deadline
+   * submission key records which of them filed it. A merge leaves those alone because the survivor
+   * inherits them; a delete has nobody to inherit, so leaving them would strand rows pointing at
+   * an id the roster can no longer resolve -- the dashboard would render a notification for a
+   * member who is gone, and `listMemberProfileOverview` would count an author who does not exist.
+   *
+   * Sessions are still not here. They are revoked through `revokeSessionsForMember` before the
+   * purge runs, for the same reason a merge revokes rather than repoints: a session is a bearer of
+   * someone's identity, and it should stop working through the path that records that it did.
+   */
+  /**
+   * The rows a delete removes outright: they exist only because this member did.
+   *
+   * The merge list minus the three attribution columns below, plus the rows a merge keeps because
+   * a survivor inherits them. A notification is addressed to this member, a feedback entry and a
+   * weekly update are authored by them, an attendee row and a reimbursement are about them -- none
+   * of it means anything once they are gone, and leaving it strands rows naming an id the roster
+   * can no longer resolve.
+   *
+   * Sessions are not here. They are revoked through `revokeSessionsForMember` before the purge
+   * runs, for the reason the merge gives: a session should stop working through the path that
+   * records that it did.
+   */
+  private static readonly MEMBER_OWNED_COLUMNS: ReadonlyArray<[string, string]> = [
+    ["adminbot_account_registrations", "member_id"],
+    ["adminbot_tab_visits", "member_id"],
+    ["adminbot_badge_assignments", "member_id"],
+    ["adminbot_badge_nominations", "member_id"],
+    ["adminbot_cv_changes", "member_id"],
+    ["adminbot_logistics_requests", "member_id"],
+    ["adminbot_login_events", "member_id"],
+    ["adminbot_member_locations", "member_id"],
+    ["adminbot_nudge_ledger", "member_id"],
+    ["adminbot_paper_conference_attendees", "member_id"],
+    ["adminbot_paper_reimbursements", "member_id"],
+    ["adminbot_paper_social_draft_consents", "member_id"],
+    ["adminbot_password_resets", "member_id"],
+    ["adminbot_update_events", "member_id"],
+    ["adminbot_update_events", "subject_member_id"],
+    ["adminbot_member_credentials", "member_id"],
+    ["adminbot_member_notifications", "member_id"],
+    ["adminbot_feedback", "member_id"],
+    ["adminbot_paper_weekly_updates", "member_id"],
+    ["adminbot_deadline_submission_keys", "submitter_member_id"],
+  ];
+
+  /**
+   * Columns that merely say *who* did something to a record the lab keeps anyway.
+   *
+   * Cleared rather than deleted, which is the whole difference between this and the list above: a
+   * paper slot is the paper's evidence and a social draft is the paper's copy. Deleting them
+   * because the person who filed them left would throw away the artifact to erase the signature --
+   * the lab would lose an arXiv link because an intern was removed from the roster. The row stays
+   * and the attribution goes.
+   */
+  private static readonly MEMBER_ATTRIBUTION_COLUMNS: ReadonlyArray<[string, string]> = [
+    ["adminbot_paper_slots", "provided_by_member_id"],
+    ["adminbot_paper_slots", "waived_by_member_id"],
+    ["adminbot_paper_social_drafts", "generated_by_member_id"],
+  ];
+
+  purgeMemberReferences(memberId: string): Record<string, number> {
+    const removed: Record<string, number> = {};
+    // One transaction, for the reason the merge gives: a half-purged member leaves rows naming an
+    // id nothing can resolve, which is worse than a member who is still there.
+    this.db.exec("BEGIN");
+    try {
+      for (const [table, column] of AdminBotSqliteStore.MEMBER_OWNED_COLUMNS) {
+        const result = this.db
+          .prepare(`DELETE FROM "${table}" WHERE ${column} = ?`)
+          .run(memberId) as { changes?: number };
+        const changes = result.changes ?? 0;
+        if (changes > 0) {
+          removed[`${table}.${column}`] = (removed[`${table}.${column}`] ?? 0) + changes;
+        }
+      }
+      // Opportunities split on status rather than by table, so they cannot be expressed as either
+      // list above. An approved entry is on the board for the whole lab and outlives whoever
+      // suggested it: it keeps its row and loses the name. Anything never published goes.
+      {
+        const deleted = this.db
+          .prepare(
+            `DELETE FROM adminbot_opportunities
+              WHERE submitted_by_member_id = ? AND status <> 'approved'`,
+          )
+          .run(memberId) as { changes?: number };
+        if ((deleted.changes ?? 0) > 0) {
+          removed["adminbot_opportunities.submitted_by_member_id"] = deleted.changes ?? 0;
+        }
+        const cleared = this.db
+          .prepare(
+            `UPDATE adminbot_opportunities
+              SET submitted_by_member_id = NULL,
+                  payload_json = json_remove(payload_json, '$.submitted_by_member_id')
+              WHERE submitted_by_member_id = ? AND status = 'approved'`,
+          )
+          .run(memberId) as { changes?: number };
+        if ((cleared.changes ?? 0) > 0) {
+          removed["adminbot_opportunities.submitted_by_member_id"] =
+            (removed["adminbot_opportunities.submitted_by_member_id"] ?? 0) +
+            (cleared.changes ?? 0);
+        }
+      }
+      // Badge suggestions split on status for the same reason opportunities do: an approved one
+      // became a badge the whole lab can hold, so the row stays as the record of where that badge
+      // came from and loses the name. Pending and rejected ones never became lab vocabulary.
+      {
+        const deleted = this.db
+          .prepare(
+            `DELETE FROM adminbot_badge_suggestions
+              WHERE suggested_by = ? AND status <> 'approved'`,
+          )
+          .run(memberId) as { changes?: number };
+        if ((deleted.changes ?? 0) > 0) {
+          removed["adminbot_badge_suggestions.suggested_by"] = deleted.changes ?? 0;
+        }
+        const cleared = this.db
+          .prepare(
+            `UPDATE adminbot_badge_suggestions
+              SET suggested_by = NULL,
+                  payload_json = json_remove(payload_json, '$.suggested_by')
+              WHERE suggested_by = ? AND status = 'approved'`,
+          )
+          .run(memberId) as { changes?: number };
+        if ((cleared.changes ?? 0) > 0) {
+          removed["adminbot_badge_suggestions.suggested_by"] =
+            (removed["adminbot_badge_suggestions.suggested_by"] ?? 0) + (cleared.changes ?? 0);
+        }
+      }
+      for (const [table, column] of AdminBotSqliteStore.MEMBER_ATTRIBUTION_COLUMNS) {
+        const result = this.db
+          .prepare(`UPDATE "${table}" SET ${column} = NULL WHERE ${column} = ?`)
+          .run(memberId) as { changes?: number };
+        const changes = result.changes ?? 0;
+        if (changes > 0) {
+          removed[`${table}.${column}`] = (removed[`${table}.${column}`] ?? 0) + changes;
+        }
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return removed;
+  }
+
   reassignMemberReferences(fromMemberId: string, toMemberId: string): Record<string, number> {
     const moved: Record<string, number> = {};
     // One transaction: a half-repointed member is worse than an unmerged one, because the rows
@@ -983,6 +2133,23 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         }
         // Whatever the UPDATE could not move is a collision with a row the survivor already owns.
         this.db.prepare(`DELETE FROM "${table}" WHERE ${column} = ?`).run(fromMemberId);
+      }
+      // Badge suggestions are repointed here rather than from MEMBER_REFERENCE_COLUMNS because
+      // that loop moves the column and leaves `payload_json` alone -- and payload_json is what is
+      // read back, so a merge done through the loop would move the row and change nothing anybody
+      // can see. Nothing keys on the suggester, so there is no collision case to drop.
+      {
+        const result = this.db
+          .prepare(
+            `UPDATE adminbot_badge_suggestions
+              SET suggested_by = ?,
+                  payload_json = json_set(payload_json, '$.suggested_by', ?)
+              WHERE suggested_by = ?`,
+          )
+          .run(toMemberId, toMemberId, fromMemberId) as { changes?: number };
+        if ((result.changes ?? 0) > 0) {
+          moved["adminbot_badge_suggestions.suggested_by"] = result.changes ?? 0;
+        }
       }
       this.db.exec("COMMIT");
     } catch (error) {
@@ -1175,13 +2342,43 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return row?.payload_json ? parseJson<AdminBotPaperRecord>(row.payload_json) : undefined;
   }
 
-  listPapers(): AdminBotPaperRecord[] {
+  listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[] {
+    const q = page?.q?.toLowerCase();
+    const clauses = [
+      ...(q ? [PAPER_SEARCH] : []),
+      ...(page?.authorMemberId
+        ? [
+            "EXISTS (SELECT 1 FROM json_each(p.payload_json, '$.author_links') a WHERE json_extract(a.value, '$.member_id') = ?)",
+          ]
+        : []),
+    ];
+    const where = clauses.length
+      ? `WHERE ${clauses.map((clause) => `(${clause})`).join(" AND ")}`
+      : "";
     const rows = this.db
       .prepare(
-        "SELECT payload_json FROM adminbot_papers ORDER BY json_extract(payload_json, '$.title')",
+        `SELECT p.payload_json FROM adminbot_papers p ${where}
+          ORDER BY ${page ? "json_extract(p.payload_json, '$.title') COLLATE NOCASE, p.id" : "json_extract(p.payload_json, '$.title')"}
+          ${page ? "LIMIT ? OFFSET ?" : ""}`,
       )
-      .all() as Array<{ payload_json: string }>;
+      .all(
+        ...(q ? [q, q, q] : []),
+        ...(page?.authorMemberId ? [page.authorMemberId] : []),
+        ...(page ? [page.limit, page.offset] : []),
+      ) as Array<{
+      payload_json: string;
+    }>;
     return rows.map((row) => parseJson<AdminBotPaperRecord>(row.payload_json));
+  }
+
+  countPapers(q?: string): number {
+    const needle = q?.toLowerCase();
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total FROM adminbot_papers p ${needle ? `WHERE ${PAPER_SEARCH}` : ""}`,
+      )
+      .get(...(needle ? [needle, needle, needle] : [])) as { total: number };
+    return row.total;
   }
 
   deletePaper(paperId: string): boolean {
@@ -1201,6 +2398,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       "adminbot_paper_conference_attendees",
       "adminbot_paper_reimbursements",
       "adminbot_paperflow_evidence",
+      "adminbot_papermentor_runs",
       // Left behind until now, against the comment above. A weekly update is the one row on a
       // paper that only its author can write, so an orphan of it is somebody's work attributed to
       // a paper that no longer exists -- and it is counted by the adoption rate.
@@ -1229,10 +2427,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           provided_by_member_id,
           provided_at,
           validated_at,
+          verified_by,
+          verified_at,
+          verified_title,
+          previous_submission_id,
+          identity_review,
           invalid_reason,
           waived_by_member_id,
           waived_reason
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(paper_id, slot) DO UPDATE SET
           status = excluded.status,
           url = excluded.url,
@@ -1241,6 +2444,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           provided_by_member_id = excluded.provided_by_member_id,
           provided_at = excluded.provided_at,
           validated_at = excluded.validated_at,
+          verified_by = excluded.verified_by,
+          verified_at = excluded.verified_at,
+          verified_title = excluded.verified_title,
+          previous_submission_id = excluded.previous_submission_id,
+          identity_review = excluded.identity_review,
           invalid_reason = excluded.invalid_reason,
           waived_by_member_id = excluded.waived_by_member_id,
           waived_reason = excluded.waived_reason`,
@@ -1255,6 +2463,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         record.provided_by_member_id ?? null,
         record.provided_at ?? null,
         record.validated_at ?? null,
+        record.verified_by ?? null,
+        record.verified_at ?? null,
+        record.verified_title ?? null,
+        record.previous_submission_id ?? null,
+        record.identity_review ? JSON.stringify(record.identity_review) : null,
         record.invalid_reason ?? null,
         record.waived_by_member_id ?? null,
         record.waived_reason ?? null,
@@ -1410,6 +2623,73 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       );
   }
 
+  saveConferenceTrip(record: AdminBotConferenceTripRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_conference_trips
+          (conference_key, member_id, intent, funding, needs_lodging, arrival_on, departure_on,
+           needs_visa_letter, paper_id, notes, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(conference_key, member_id) DO UPDATE SET
+           intent = excluded.intent,
+           funding = excluded.funding,
+           needs_lodging = excluded.needs_lodging,
+           arrival_on = excluded.arrival_on,
+           departure_on = excluded.departure_on,
+           needs_visa_letter = excluded.needs_visa_letter,
+           paper_id = excluded.paper_id,
+           notes = excluded.notes,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        record.conference_key,
+        record.member_id,
+        record.intent,
+        record.funding,
+        record.needs_lodging ? 1 : 0,
+        record.arrival_on ?? null,
+        record.departure_on ?? null,
+        record.needs_visa_letter ? 1 : 0,
+        record.paper_id ?? null,
+        record.notes ?? null,
+        record.updated_at,
+      );
+  }
+
+  deleteConferenceTrip(conferenceKey: string, memberId: string): boolean {
+    const result = this.db
+      .prepare("DELETE FROM adminbot_conference_trips WHERE conference_key = ? AND member_id = ?")
+      .run(conferenceKey, memberId);
+    return result.changes > 0;
+  }
+
+  listConferenceTrips(conferenceKey?: string): AdminBotConferenceTripRecord[] {
+    const rows = (
+      conferenceKey
+        ? this.db
+            .prepare(
+              "SELECT * FROM adminbot_conference_trips WHERE conference_key = ? ORDER BY member_id",
+            )
+            .all(conferenceKey)
+        : this.db
+            .prepare("SELECT * FROM adminbot_conference_trips ORDER BY conference_key, member_id")
+            .all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      conference_key: String(row.conference_key),
+      member_id: String(row.member_id),
+      intent: String(row.intent) as AdminBotConferenceTripRecord["intent"],
+      funding: String(row.funding) as AdminBotConferenceTripRecord["funding"],
+      needs_lodging: Boolean(row.needs_lodging),
+      needs_visa_letter: Boolean(row.needs_visa_letter),
+      updated_at: String(row.updated_at),
+      ...optionalText(row, "arrival_on"),
+      ...optionalText(row, "departure_on"),
+      ...optionalText(row, "paper_id"),
+      ...optionalText(row, "notes"),
+    }));
+  }
+
   listConferenceAttendees(paperId?: string): AdminBotConferenceAttendeeRecord[] {
     const rows = (
       paperId
@@ -1481,6 +2761,56 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => paperSlotFromRow(row));
   }
 
+  savePaperMentorRun(record: AdminBotPaperMentorRun): void {
+    // First sighting wins. The collector re-reads the same cached review on every pass until a
+    // newer one overwrites it, so a second write of the same run id is that pass running again --
+    // and `ingested_at` should stay the moment the lab first heard about the review.
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_papermentor_runs
+          (id, paper_id, project_id, reviewed_at, ingested_at, model, paper_type,
+           comments_total, by_severity, by_category, by_document, failed_agents)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO NOTHING`,
+      )
+      .run(
+        record.id,
+        record.paper_id,
+        record.project_id,
+        record.reviewed_at,
+        record.ingested_at,
+        record.model ?? null,
+        record.paper_type ?? null,
+        record.comments_total,
+        JSON.stringify(record.by_severity),
+        JSON.stringify(record.by_category),
+        JSON.stringify(record.by_document),
+        JSON.stringify(record.failed_agents),
+      );
+  }
+
+  getPaperMentorRun(id: string): AdminBotPaperMentorRun | undefined {
+    const row = this.db.prepare("SELECT * FROM adminbot_papermentor_runs WHERE id = ?").get(id) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? paperMentorRunFromRow(row) : undefined;
+  }
+
+  listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[] {
+    const rows = (
+      paperId
+        ? this.db
+            .prepare(
+              "SELECT * FROM adminbot_papermentor_runs WHERE paper_id = ? ORDER BY reviewed_at DESC, id",
+            )
+            .all(paperId)
+        : this.db
+            .prepare("SELECT * FROM adminbot_papermentor_runs ORDER BY reviewed_at DESC, id")
+            .all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map(paperMentorRunFromRow);
+  }
+
   savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void {
     // First sighting wins. A stage that already closed stays closed with the mail that closed it:
     // a later bcc on the same decision is the author forwarding the thread again, and letting it
@@ -1534,6 +2864,172 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     });
   }
 
+  getReferenceScan(submissionId: string, pdfHash: string): ReferenceScan | undefined {
+    return getReferenceScan(this.db, submissionId, pdfHash);
+  }
+
+  saveReferenceScan(scan: ReferenceScan): void {
+    saveReferenceScan(this.db, scan);
+  }
+
+  getOpenReviewCitationCheck(
+    submissionId: string,
+    pdfPath: string,
+  ): OpenReviewCitationCheck | undefined {
+    return getOpenReviewCitationCheck(this.db, submissionId, pdfPath);
+  }
+
+  listOpenReviewCitationChecks(submissionId?: string): OpenReviewCitationCheck[] {
+    return listOpenReviewCitationChecks(this.db, submissionId);
+  }
+
+  saveOpenReviewCitationCheck(check: OpenReviewCitationCheck): void {
+    saveOpenReviewCitationCheck(this.db, check);
+  }
+
+  getPaperAiTextCheck(submissionId: string, pdfPath: string): PaperAiTextCheck | undefined {
+    return getPaperAiTextCheck(this.db, submissionId, pdfPath);
+  }
+
+  listPaperAiTextChecks(submissionId?: string): PaperAiTextCheck[] {
+    return listPaperAiTextChecks(this.db, submissionId);
+  }
+
+  savePaperAiTextCheck(check: PaperAiTextCheck): void {
+    savePaperAiTextCheck(this.db, check);
+  }
+
+  saveHelpInterest(interest: LabHelpInterest): void {
+    saveHelpInterest(this.db, interest);
+  }
+  listHelpInterests(): LabHelpInterest[] {
+    return listHelpInterests(this.db);
+  }
+  saveDirectorStatus(status: LabDirectorStatus | null): void {
+    saveDirectorStatus(this.db, status);
+  }
+  readDirectorStatus(): LabDirectorStatus | null {
+    return readDirectorStatus(this.db);
+  }
+  listDirectorStatusHistory(limit?: number): LabDirectorStatus[] {
+    return listDirectorStatusHistory(this.db, limit);
+  }
+  saveHelpRequest(request: LabHelpRequest): void {
+    saveHelpRequest(this.db, request);
+  }
+  discoverHelpRequests(
+    query: LabSharingDiscoveryQuery,
+    after?: DiscoveryPosition,
+  ): DiscoveredHelpRequest[] {
+    return discoverHelpRequests(this.db, query, after);
+  }
+  getHelpRequest(paperId: string): LabHelpRequest | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_help_requests WHERE paper_id = ?")
+      .get(paperId) as { payload_json: string } | undefined;
+    return row ? (JSON.parse(row.payload_json) as LabHelpRequest) : undefined;
+  }
+  listHelpRequests(): LabHelpRequest[] {
+    return listHelpRequests(this.db);
+  }
+
+  saveEmailReview(review: AdminBotEmailReviewItem): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_email_messages
+          (message_id, thread_id, sender, subject, category, status, reason, attempts,
+           received_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'needs_review', ?, 1, ?, ?)
+         ON CONFLICT(message_id) DO UPDATE SET
+           thread_id=excluded.thread_id,
+           sender=excluded.sender,
+           subject=excluded.subject,
+           category=excluded.category,
+           status='needs_review',
+           reason=excluded.reason,
+           received_at=excluded.received_at,
+           resolved_at=NULL,
+           resolved_by=NULL,
+           resolution=NULL,
+           updated_at=excluded.updated_at`,
+      )
+      .run(
+        review.message_id,
+        review.thread_id,
+        review.sender,
+        review.subject ?? null,
+        review.category,
+        review.reason ?? null,
+        review.received_at ?? null,
+        review.updated_at,
+      );
+  }
+
+  listEmailReviews(): AdminBotEmailReviewItem[] {
+    const rows = this.db
+      .prepare(
+        `SELECT message_id, thread_id, sender, subject, category,
+                COALESCE(NULLIF(TRIM(last_error), ''), reason) AS reason, received_at, updated_at
+           FROM adminbot_email_messages
+          WHERE status = 'needs_review'
+          ORDER BY updated_at DESC`,
+      )
+      .all() as Array<Record<string, unknown>>;
+    return rows.map(adminBotEmailReviewFromRow);
+  }
+
+  getEmailReview(messageId: string): AdminBotEmailReviewItem | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT message_id, thread_id, sender, subject, category,
+                COALESCE(NULLIF(TRIM(last_error), ''), reason) AS reason, received_at, updated_at
+           FROM adminbot_email_messages
+          WHERE message_id = ? AND status = 'needs_review'`,
+      )
+      .get(messageId) as Record<string, unknown> | undefined;
+    return row ? adminBotEmailReviewFromRow(row) : undefined;
+  }
+
+  listResolvedEmailReviews(limit: number): AdminBotResolvedEmailReviewItem[] {
+    const rows = this.db
+      .prepare(
+        `SELECT message_id, thread_id, sender, subject, category,
+                COALESCE(NULLIF(TRIM(last_error), ''), reason) AS reason, received_at, updated_at,
+                resolution, resolved_at, resolved_by
+           FROM adminbot_email_messages
+          WHERE status = 'reviewed'
+            AND resolution IN ('paperflow_evidence', 'dismissed')
+            AND resolved_at IS NOT NULL
+            AND resolved_by IS NOT NULL
+          ORDER BY resolved_at DESC
+          LIMIT ?`,
+      )
+      .all(limit) as Array<Record<string, unknown>>;
+    return rows.map(adminBotResolvedEmailReviewFromRow);
+  }
+
+  resolveEmailReview(params: {
+    messageId: string;
+    resolution: AdminBotEmailReviewResolution["kind"];
+    resolvedBy: string;
+    resolvedAt: string;
+  }): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE adminbot_email_messages
+            SET status = 'reviewed', resolved_at = ?, resolved_by = ?, resolution = ?, updated_at = ?
+          WHERE message_id = ? AND status = 'needs_review'`,
+      )
+      .run(
+        params.resolvedAt,
+        params.resolvedBy,
+        params.resolution,
+        params.resolvedAt,
+        params.messageId,
+      );
+    return Number(result.changes) > 0;
+  }
+
   appendMemberLocation(entry: AdminBotMemberLocationEntry): void {
     this.db
       .prepare(
@@ -1569,14 +3065,17 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.db
       .prepare(
         `INSERT INTO adminbot_workshop_match_runs
-           (id, status, started_at, finished_at, started_by, calls_done, calls_total, payload_json, error)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (id, status, started_at, finished_at, started_by, calls_done, calls_total, calls_failed,
+            progress_at, payload_json, error)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            status = excluded.status,
            finished_at = excluded.finished_at,
            started_by = excluded.started_by,
            calls_done = excluded.calls_done,
            calls_total = excluded.calls_total,
+           calls_failed = excluded.calls_failed,
+           progress_at = excluded.progress_at,
            payload_json = excluded.payload_json,
            error = excluded.error`,
       )
@@ -1588,6 +3087,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         run.started_by ?? null,
         run.calls_done,
         run.calls_total,
+        run.calls_failed ?? 0,
+        // Stamped on write rather than carried by the caller: every save is this run moving, and a
+        // clock a caller can forget to wind is the failure this column exists to catch.
+        new Date().toISOString(),
         run.payload_json ?? null,
         run.error ?? null,
       );
@@ -1597,8 +3100,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     const row = this.db
       .prepare(
         `SELECT id, status, started_at, finished_at, started_by, calls_done, calls_total,
-                payload_json, error
-         FROM adminbot_workshop_match_runs ORDER BY started_at DESC LIMIT 1`,
+                calls_failed, progress_at, payload_json, error
+         -- rowid breaks a tie on started_at, which two runs really can share: replacing a wedged
+         -- pass writes the old row off and inserts the new one in the same millisecond, and
+         -- without the tiebreak "latest" can resolve to the dead run the new one replaced.
+         FROM adminbot_workshop_match_runs ORDER BY started_at DESC, rowid DESC LIMIT 1`,
       )
       .get() as (AdminBotWorkshopMatchRun & Record<string, unknown>) | undefined;
     if (!row) {
@@ -1612,28 +3118,88 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   appendLoginEvent(event: AdminBotLoginEvent): void {
     this.db
-      .prepare("INSERT INTO adminbot_login_events (id, member_id, at) VALUES (?, ?, ?)")
-      .run(event.id, event.member_id, event.at);
+      .prepare(
+        `INSERT INTO adminbot_login_events
+         (id, member_id, at, country, continent, city, timezone)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        event.id,
+        event.member_id,
+        event.at,
+        event.country ?? null,
+        event.continent ?? null,
+        event.city ?? null,
+        event.timezone ?? null,
+      );
+  }
+
+  attachLoginEventLocation(id: string, location: AdminBotLoginLocation): void {
+    this.db
+      .prepare(
+        `UPDATE adminbot_login_events SET
+           country = COALESCE(NULLIF(?, ''), country),
+           continent = COALESCE(NULLIF(?, ''), continent),
+           city = COALESCE(NULLIF(?, ''), city),
+           timezone = COALESCE(NULLIF(?, ''), timezone)
+         WHERE id = ?`,
+      )
+      .run(
+        location.country ?? null,
+        location.continent ?? null,
+        location.city ?? null,
+        location.timezone ?? null,
+        id,
+      );
   }
 
   listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[] {
-    return (
-      this.db
-        .prepare(
-          `SELECT id, member_id, at FROM adminbot_login_events
+    const rows = this.db
+      .prepare(
+        `SELECT id, member_id, at, country, continent, city, timezone FROM adminbot_login_events
          WHERE member_id = ? ORDER BY at DESC, rowid DESC LIMIT ?`,
-        )
-        // -1 is SQLite's "no limit", which keeps this one statement rather than two.
-        .all(memberId, typeof limit === "number" ? limit : -1) as AdminBotLoginEvent[]
-    );
+      )
+      // -1 is SQLite's "no limit", which keeps this one statement rather than two.
+      .all(memberId, typeof limit === "number" ? limit : -1) as AdminBotLoginEvent[];
+    return rows.map(loginEventFromRow);
   }
 
   listLoginEventsSince(since: string): AdminBotLoginEvent[] {
-    return this.db
+    const rows = this.db
       .prepare(
-        "SELECT id, member_id, at FROM adminbot_login_events WHERE at >= ? ORDER BY at DESC, rowid DESC",
+        `SELECT id, member_id, at, country, continent, city, timezone
+         FROM adminbot_login_events WHERE at >= ? ORDER BY at DESC, rowid DESC`,
       )
       .all(since) as AdminBotLoginEvent[];
+    return rows.map(loginEventFromRow);
+  }
+
+  appendTabVisit(visit: AdminBotTabVisit): void {
+    this.db
+      .prepare(
+        "INSERT INTO adminbot_tab_visits (id, member_id, tab, at, impersonated) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(visit.id, visit.member_id, visit.tab, visit.at, visit.impersonated ? 1 : 0);
+  }
+
+  listTabVisitsSince(since: string): AdminBotTabVisit[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, member_id, tab, at, impersonated FROM adminbot_tab_visits
+         WHERE at >= ? ORDER BY at DESC, rowid DESC`,
+      )
+      .all(since) as Array<{
+      id: string;
+      member_id: string;
+      tab: string;
+      at: string;
+      impersonated: number;
+    }>;
+    // 0/1 back to a boolean, and absent rather than `false`: the memory store never writes the
+    // field at all when it is off, and the two stores are meant to be indistinguishable.
+    return rows.map(({ impersonated, ...visit }) =>
+      impersonated ? { ...visit, impersonated: true } : visit,
+    );
   }
 
   appendUpdateEvent(event: AdminBotUpdateEvent): void {
@@ -1672,6 +3238,49 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   listUpdateEventsSince(since: string): AdminBotUpdateEvent[] {
     return this.readUpdateEvents("WHERE at >= ? ORDER BY at DESC, rowid DESC", since);
+  }
+
+  // "Who changed what, lately" across everyone. rowid breaks the tie for the same reason it does
+  // everywhere else here: one save writes a row per changed field, and they share a millisecond.
+  listRecentUpdateEvents(limit: number): AdminBotUpdateEvent[] {
+    return this.readUpdateEvents("ORDER BY at DESC, rowid DESC LIMIT ?", limit);
+  }
+
+  /**
+   * Everything done to one member's record, whoever did it.
+   *
+   * Two clauses because a self-edit carries no subject: `subject_member_id` is only written when
+   * the actor is somebody else, so "Ada's record" is the rows naming her as the subject plus the
+   * profile rows where she is the actor and there is no subject at all. Reading only the first
+   * would show a member every correction an admin made and none of their own work.
+   */
+  listUpdateEventsForMemberRecord(memberId: string, limit: number): AdminBotUpdateEvent[] {
+    return this.readUpdateEvents(
+      `WHERE subject_member_id = ?
+          OR (subject_member_id IS NULL AND member_id = ? AND subject = 'profile')
+        ORDER BY at DESC, rowid DESC LIMIT ?`,
+      memberId,
+      memberId,
+      limit,
+    );
+  }
+
+  /**
+   * Everything done to one paper: the record itself and every evidence slot on it.
+   *
+   * A prefix match rather than an exact slot id, because the paper's slots each carry their own
+   * (`paper_slot:<paper>:<slot>`). The id is escaped and the escape declared: a paper id is a
+   * slug, but one containing `%` would otherwise widen the match to everything.
+   */
+  listUpdateEventsForPaper(paperId: string, limit: number): AdminBotUpdateEvent[] {
+    const escaped = paperId.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+    return this.readUpdateEvents(
+      `WHERE slot_id = ? OR slot_id LIKE ? ESCAPE '\\'
+        ORDER BY at DESC, rowid DESC LIMIT ?`,
+      `paper:${paperId}`,
+      `paper_slot:${escaped}:%`,
+      limit,
+    );
   }
 
   // SQLite gives back `null` for an absent TEXT column, but the contract says the field is absent.
@@ -1723,8 +3332,82 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => parseJson<AdminBotMeetingRecord>(row.payload_json));
   }
 
+  listMeetingsPage(options: {
+    limit: number;
+    before?: AdminBotMeetingCursor;
+    minimumMinutes: number;
+  }): AdminBotMeetingRecord[] {
+    const chunkSize = Math.max(64, options.limit);
+    const first = this.db.prepare(
+      `SELECT id, started_at, payload_json FROM adminbot_meetings
+       ORDER BY COALESCE(julianday(started_at), 0) DESC, id DESC LIMIT ?`,
+    );
+    const after = this.db.prepare(
+      `SELECT id, started_at, payload_json FROM adminbot_meetings
+       WHERE COALESCE(julianday(started_at), 0) <= COALESCE(julianday(?), 0)
+         AND (COALESCE(julianday(started_at), 0) < COALESCE(julianday(?), 0) OR id < ?)
+       ORDER BY COALESCE(julianday(started_at), 0) DESC, id DESC LIMIT ?`,
+    );
+    const meetings: AdminBotMeetingRecord[] = [];
+    let before = options.before;
+    while (meetings.length < options.limit) {
+      const rows = (
+        before
+          ? after.all(before.started_at, before.started_at, before.id, chunkSize)
+          : first.all(chunkSize)
+      ) as Array<{
+        id: string;
+        started_at: string;
+        payload_json: string;
+      }>;
+      if (rows.length === 0) {
+        break;
+      }
+      for (const row of rows) {
+        before = { started_at: row.started_at, id: row.id };
+        const meeting = parseJson<AdminBotMeetingRecord>(row.payload_json);
+        if (meetsDurationFloor(meeting, options.minimumMinutes)) {
+          meetings.push(meeting);
+          if (meetings.length === options.limit) {
+            break;
+          }
+        }
+      }
+      if (rows.length < chunkSize) {
+        break;
+      }
+    }
+    return meetings;
+  }
+
   deleteMeeting(meetingId: string): boolean {
     return this.db.prepare("DELETE FROM adminbot_meetings WHERE id = ?").run(meetingId).changes > 0;
+  }
+
+  hasAttachedMeetingArtifact(fileId: string): boolean {
+    const row = this.db
+      .prepare("SELECT status FROM adminbot_meeting_artifacts WHERE file_id = ?")
+      .get(fileId) as { status?: string } | undefined;
+    return row?.status === "attached";
+  }
+
+  recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_meeting_artifacts (file_id, file_name, meeting_id, status, processed_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(file_id) DO UPDATE SET
+           meeting_id = excluded.meeting_id,
+           status = excluded.status,
+           processed_at = excluded.processed_at`,
+      )
+      .run(
+        record.file_id,
+        record.file_name,
+        record.meeting_id ?? null,
+        record.status,
+        record.processed_at,
+      );
   }
 
   saveMemberNotification(notification: AdminBotMemberNotification): void {
@@ -1762,6 +3445,18 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       )
       .all(memberId) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotMemberNotification>(row.payload_json));
+  }
+
+  // Filtered in JS rather than SQL: `escalated_at` and `read_at` live inside payload_json, and the
+  // escalated set is small by construction -- it is what one professor is expected to work through.
+  listEscalatedMemberNotifications(): AdminBotMemberNotification[] {
+    const rows = this.db
+      .prepare("SELECT payload_json FROM adminbot_member_notifications")
+      .all() as Array<{ payload_json: string }>;
+    return rows
+      .map((row) => parseJson<AdminBotMemberNotification>(row.payload_json))
+      .filter((notification) => notification.escalated_at && !notification.read_at)
+      .toSorted((left, right) => (left.escalated_at ?? "").localeCompare(right.escalated_at ?? ""));
   }
 
   deleteMemberNotification(notificationId: string): boolean {
@@ -1942,6 +3637,53 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       .run(usedAt, memberId);
   }
 
+  consumePasswordResetAndRevokeSessions(
+    tokenHash: string,
+    newPasswordHash: string,
+    usedAt: string,
+  ): boolean {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const reset = this.db
+        .prepare(
+          `SELECT member_id FROM adminbot_password_resets
+           WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`,
+        )
+        .get(tokenHash, usedAt) as { member_id: string } | undefined;
+      if (!reset) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      const changed = this.db
+        .prepare(
+          `UPDATE adminbot_member_credentials SET password_scrypt = ?, updated_at = ?
+           WHERE member_id = ?`,
+        )
+        .run(newPasswordHash, usedAt, reset.member_id);
+      if (!changed.changes) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      this.db
+        .prepare(
+          `UPDATE adminbot_password_resets SET used_at = ?
+           WHERE member_id = ? AND used_at IS NULL`,
+        )
+        .run(usedAt, reset.member_id);
+      this.db
+        .prepare(
+          `UPDATE adminbot_sessions SET revoked_at = ?
+           WHERE member_id = ? AND revoked_at IS NULL`,
+        )
+        .run(usedAt, reset.member_id);
+      this.db.exec("COMMIT");
+      return true;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined {
     const row = this.db
       .prepare(
@@ -1950,6 +3692,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       )
       .get(memberId) as AdminBotMemberCredential | undefined;
     return row ?? undefined;
+  }
+
+  listCredentialMemberIds(): string[] {
+    const rows = this.db
+      .prepare("SELECT member_id FROM adminbot_member_credentials")
+      .all() as Array<{
+      member_id: string;
+    }>;
+    return rows.map((row) => row.member_id);
   }
 
   saveCredential(credential: AdminBotMemberCredential): void {
@@ -1976,6 +3727,38 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       );
   }
 
+  changePasswordAndRevokeSessions(
+    memberId: string,
+    expectedPasswordHash: string,
+    newPasswordHash: string,
+    updatedAt: string,
+  ): boolean {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const changed = this.db
+        .prepare(
+          `UPDATE adminbot_member_credentials SET password_scrypt = ?, updated_at = ?
+           WHERE member_id = ? AND password_scrypt = ?`,
+        )
+        .run(newPasswordHash, updatedAt, memberId, expectedPasswordHash);
+      if (!changed.changes) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      this.db
+        .prepare(
+          `UPDATE adminbot_sessions SET revoked_at = ?
+           WHERE member_id = ? AND revoked_at IS NULL`,
+        )
+        .run(updatedAt, memberId);
+      this.db.exec("COMMIT");
+      return true;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void {
     this.db
       .prepare(
@@ -1984,6 +3767,60 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           WHERE member_id = ?`,
       )
       .run(newEmail.toLowerCase(), updatedAt, memberId);
+  }
+
+  changeMemberLoginEmail(
+    memberId: string,
+    newEmail: string,
+    expectedPasswordHash: string,
+    updatedAt: string,
+  ): "changed" | "stale" | "taken" {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const updated = this.db
+        .prepare(
+          `UPDATE adminbot_member_credentials
+           SET email = ?, updated_at = ?
+           WHERE member_id = ? AND password_scrypt = ?`,
+        )
+        .run(newEmail.toLowerCase(), updatedAt, memberId, expectedPasswordHash);
+      if (!updated.changes) {
+        this.db.exec("ROLLBACK");
+        return "stale";
+      }
+      const pending = this.db
+        .prepare(
+          `SELECT 1 FROM adminbot_account_registrations
+           WHERE status = 'pending' AND lower(email) = lower(?) LIMIT 1`,
+        )
+        .get(newEmail);
+      if (pending) {
+        this.db.exec("ROLLBACK");
+        return "taken";
+      }
+      const memberUpdated = this.db
+        .prepare(
+          `UPDATE adminbot_lab_members
+           SET updated_at = ?, payload_json = json_set(payload_json, '$.email', ?, '$.updated_at', ?)
+           WHERE id = ?`,
+        )
+        .run(updatedAt, newEmail.toLowerCase(), updatedAt, memberId);
+      if (!memberUpdated.changes) {
+        this.db.exec("ROLLBACK");
+        return "stale";
+      }
+      this.db.exec("COMMIT");
+      return "changed";
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      if (
+        error instanceof Error &&
+        error.message.includes("UNIQUE constraint failed: adminbot_member_credentials.email")
+      ) {
+        return "taken";
+      }
+      throw error;
+    }
   }
 
   saveAccountRegistration(registration: AdminBotAccountRegistration): void {
@@ -2020,6 +3857,49 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       );
   }
 
+  trySavePendingRegistration(registration: AdminBotAccountRegistration): boolean {
+    if (registration.status !== "pending") {
+      throw new Error("only pending registrations can be inserted here");
+    }
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const memberId = registration.kind === "claim" ? (registration.member_id ?? null) : null;
+      const credential = this.db
+        .prepare(
+          `SELECT 1 FROM adminbot_member_credentials
+           WHERE lower(email) = lower(?) OR (? IS NOT NULL AND member_id = ?)
+           LIMIT 1`,
+        )
+        .get(registration.email, memberId, memberId);
+      if (credential) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      const inserted = this.db
+        .prepare(
+          `INSERT INTO adminbot_account_registrations (
+            id, kind, member_id, email, password_scrypt, profile_json, status, created_at,
+            decided_at, decided_by
+          ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, NULL, NULL)
+          ON CONFLICT DO NOTHING`,
+        )
+        .run(
+          registration.id,
+          registration.kind,
+          registration.member_id ?? null,
+          registration.email.toLowerCase(),
+          registration.password_scrypt,
+          registration.profile_json ?? null,
+          registration.created_at,
+        );
+      this.db.exec("COMMIT");
+      return inserted.changes > 0;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   getAccountRegistration(id: string): AdminBotAccountRegistration | undefined {
     const row = this.db.prepare(`${REGISTRATION_COLUMNS} WHERE id = ?`).get(id) as
       | AccountRegistrationRow
@@ -2043,14 +3923,84 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     status: AdminBotRegistrationStatus,
     decidedBy: string,
     decidedAt: string,
-  ): void {
-    this.db
-      .prepare(
-        `UPDATE adminbot_account_registrations
+  ): boolean {
+    return (
+      this.db
+        .prepare(
+          `UPDATE adminbot_account_registrations
           SET status = ?, decided_by = ?, decided_at = ?
-          WHERE id = ?`,
-      )
-      .run(status, decidedBy, decidedAt, id);
+          WHERE id = ? AND status = 'pending'`,
+        )
+        .run(status, decidedBy, decidedAt, id).changes > 0
+    );
+  }
+
+  tryApproveRegistration(
+    id: string,
+    decidedBy: string,
+    decidedAt: string,
+    preparedMember?: AdminBotLabMember,
+  ): { ok: true; member_id: string } | { ok: false; reason: "not_pending" | "conflict" } {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.db.prepare(`${REGISTRATION_COLUMNS} WHERE id = ?`).get(id) as
+        | AccountRegistrationRow
+        | undefined;
+      if (!row || row.status !== "pending") {
+        this.db.exec("ROLLBACK");
+        return { ok: false, reason: "not_pending" };
+      }
+      const memberId = row.kind === "claim" ? row.member_id : preparedMember?.id;
+      if (
+        !memberId ||
+        (row.kind === "signup" &&
+          (!preparedMember ||
+            this.db.prepare("SELECT 1 FROM adminbot_lab_members WHERE id = ?").get(memberId))) ||
+        (row.kind === "claim" &&
+          !this.db.prepare("SELECT 1 FROM adminbot_lab_members WHERE id = ?").get(memberId)) ||
+        this.db
+          .prepare("SELECT 1 FROM adminbot_member_credentials WHERE member_id = ? OR email = ?")
+          .get(memberId, row.email)
+      ) {
+        this.db.exec("ROLLBACK");
+        return { ok: false, reason: "conflict" };
+      }
+      if (preparedMember && row.kind === "signup") {
+        this.db
+          .prepare(
+            `INSERT INTO adminbot_lab_members (id, privilege_level, updated_at, payload_json)
+           VALUES (?, ?, ?, ?)`,
+          )
+          .run(
+            preparedMember.id,
+            preparedMember.privilege_level,
+            preparedMember.updated_at,
+            JSON.stringify(preparedMember),
+          );
+      }
+      this.db
+        .prepare(
+          `INSERT INTO adminbot_member_credentials
+         (member_id, email, password_scrypt, claimed_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(memberId, row.email, row.password_scrypt, decidedAt, decidedAt);
+      this.db
+        .prepare(
+          `UPDATE adminbot_account_registrations
+         SET status = 'approved', decided_by = ?, decided_at = ?
+         WHERE id = ? AND status = 'pending'`,
+        )
+        .run(decidedBy, decidedAt, id);
+      this.db.exec("COMMIT");
+      return { ok: true, member_id: memberId };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+        return { ok: false, reason: "conflict" };
+      }
+      throw error;
+    }
   }
 
   getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined {
@@ -2076,13 +4026,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           created_at,
           expires_at,
           last_seen_at,
-          revoked_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          revoked_at,
+          impersonated_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(token_hash) DO UPDATE SET
           member_id = excluded.member_id,
           expires_at = excluded.expires_at,
           last_seen_at = excluded.last_seen_at,
-          revoked_at = excluded.revoked_at`,
+          revoked_at = excluded.revoked_at,
+          impersonated_by = excluded.impersonated_by`,
       )
       .run(
         session.token_hash,
@@ -2091,18 +4043,48 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         session.expires_at,
         session.last_seen_at,
         session.revoked_at ?? null,
+        session.impersonated_by ?? null,
       );
+  }
+
+  saveSessionIfCredentialCurrent(
+    session: AdminBotAuthSession,
+    expectedPasswordHash: string,
+  ): boolean {
+    const inserted = this.db
+      .prepare(
+        `INSERT INTO adminbot_sessions (
+          token_hash, member_id, created_at, expires_at, last_seen_at, revoked_at, impersonated_by
+        )
+        SELECT ?, credential.member_id, ?, ?, ?, ?, ?
+        FROM adminbot_member_credentials AS credential
+        WHERE credential.member_id = ? AND credential.password_scrypt = ?
+        ON CONFLICT DO NOTHING`,
+      )
+      .run(
+        session.token_hash,
+        session.created_at,
+        session.expires_at,
+        session.last_seen_at,
+        session.revoked_at ?? null,
+        session.impersonated_by ?? null,
+        session.member_id,
+        expectedPasswordHash,
+      );
+    return inserted.changes > 0;
   }
 
   getSession(tokenHash: string): AdminBotAuthSession | undefined {
     const row = this.db
       .prepare(
-        `SELECT token_hash, member_id, created_at, expires_at, last_seen_at, revoked_at
+        `SELECT token_hash, member_id, created_at, expires_at, last_seen_at, revoked_at,
+                impersonated_by
           FROM adminbot_sessions WHERE token_hash = ?`,
       )
       .get(tokenHash) as
-      | (Omit<AdminBotAuthSession, "revoked_at"> & {
+      | (Omit<AdminBotAuthSession, "revoked_at" | "impersonated_by"> & {
           revoked_at: string | null;
+          impersonated_by: string | null;
         })
       | undefined;
     if (!row) {
@@ -2115,6 +4097,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       expires_at: row.expires_at,
       last_seen_at: row.last_seen_at,
       ...(row.revoked_at ? { revoked_at: row.revoked_at } : {}),
+      ...(row.impersonated_by ? { impersonated_by: row.impersonated_by } : {}),
     };
   }
 
@@ -2227,6 +4210,33 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => parseJson<AdminBotFeedbackEntry>(row.payload_json));
   }
 
+  saveSlackConnectInvite(invite: AdminBotSlackConnectInvite): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_slack_connect_invites (
+          email,
+          channel_id,
+          url,
+          created_at
+        ) VALUES (?, ?, ?, ?)
+        ON CONFLICT(email, channel_id) DO UPDATE SET
+          url = excluded.url,
+          created_at = excluded.created_at`,
+      )
+      .run(invite.email.trim().toLowerCase(), invite.channel_id, invite.url, invite.created_at);
+  }
+
+  getSlackConnectInvite(email: string, channelId: string): AdminBotSlackConnectInvite | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT email, channel_id, url, created_at
+         FROM adminbot_slack_connect_invites
+         WHERE email = ? AND channel_id = ?`,
+      )
+      .get(email.trim().toLowerCase(), channelId) as AdminBotSlackConnectInvite | undefined;
+    return row;
+  }
+
   saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void {
     this.db
       .prepare(
@@ -2295,6 +4305,13 @@ function ensureDatabaseDirectory(databasePath: string): void {
  * nullable columns are dropped rather than carried through as `null` -- otherwise every caller
  * would have to treat "no URL" and "URL is null" as two different absences.
  */
+function loginEventFromRow(row: AdminBotLoginEvent): AdminBotLoginEvent {
+  // Nullable SQL columns represent absent location fields in the event contract.
+  return Object.fromEntries(
+    Object.entries(row).filter(([, value]) => value !== null),
+  ) as AdminBotLoginEvent;
+}
+
 function paperSlotFromRow(row: Record<string, unknown>): AdminBotPaperSlotRecord {
   const text = (key: string): string | undefined => {
     const value = row[key];
@@ -2314,9 +4331,37 @@ function paperSlotFromRow(row: Record<string, unknown>): AdminBotPaperSlotRecord
     ...optional("provided_by_member_id"),
     ...optional("provided_at"),
     ...optional("validated_at"),
+    ...optional("verified_by"),
+    ...optional("verified_at"),
+    ...optional("verified_title"),
+    ...optional("previous_submission_id"),
+    ...(text("identity_review")
+      ? {
+          identity_review: parseJson<NonNullable<AdminBotPaperSlotRecord["identity_review"]>>(
+            text("identity_review")!,
+          ),
+        }
+      : {}),
     ...optional("invalid_reason"),
     ...optional("waived_by_member_id"),
     ...optional("waived_reason"),
+  };
+}
+
+function paperMentorRunFromRow(row: Record<string, unknown>): AdminBotPaperMentorRun {
+  return {
+    id: String(row.id),
+    paper_id: String(row.paper_id),
+    project_id: String(row.project_id),
+    reviewed_at: String(row.reviewed_at),
+    ingested_at: String(row.ingested_at),
+    ...optionalText(row, "model"),
+    ...optionalText(row, "paper_type"),
+    comments_total: Number(row.comments_total),
+    by_severity: parseJson<Record<string, number>>(String(row.by_severity)),
+    by_category: parseJson<Record<string, number>>(String(row.by_category)),
+    by_document: parseJson<AdminBotPaperMentorRun["by_document"]>(String(row.by_document)),
+    failed_agents: parseJson<string[]>(String(row.failed_agents)),
   };
 }
 

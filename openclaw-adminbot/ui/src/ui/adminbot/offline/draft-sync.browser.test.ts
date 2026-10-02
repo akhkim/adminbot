@@ -7,6 +7,7 @@ import {
   loadWorkingDraft,
   saveWorkingDraft,
   syncWorkingDraft,
+  retryDraftSync,
   resolveDraftConflict,
 } from "./draft-sync.ts";
 
@@ -176,5 +177,24 @@ describe("offline working copies in real IndexedDB", () => {
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     await downloadDraftCopies(scope, key);
     expect(JSON.parse(await exported.text()).current).toEqual({ text: "keep me" });
+    vi.spyOn(IDBObjectStore.prototype, "put").mockImplementationOnce(() => {
+      throw new DOMException("Storage still unavailable", "QuotaExceededError");
+    });
+    await syncWorkingDraft(scope, key);
+    expect(draftSyncStatus(scope, key).status).toBe("error");
+    expect(fetcher).not.toHaveBeenCalled();
+    fetcher.mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      return Response.json({
+        draft: { revision: 1, mutationId: body.mutationId, data: body.data },
+      });
+    });
+    retryDraftSync();
+    await vi.waitFor(() => expect(draftSyncStatus(scope, key).status).toBe("synced"));
+    expect(await loadWorkingDraft(scope, key)).toEqual({ text: "keep me" });
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://aurora.test/member-drafts/book-meeting",
+      expect.objectContaining({ method: "PUT", body: expect.stringContaining("keep me") }),
+    );
   });
 });

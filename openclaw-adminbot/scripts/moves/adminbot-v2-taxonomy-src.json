@@ -76,10 +76,6 @@
     "to": "extensions/adminbot/src/workflows/calendar/source.ts"
   },
   {
-    "from": "extensions/adminbot/src/features/deadlines/board.ts",
-    "to": "extensions/adminbot/src/workflows/deadlines/board.ts"
-  },
-  {
     "from": "extensions/adminbot/src/features/deadlines/generated/dataset.ts",
     "to": "extensions/adminbot/src/workflows/deadlines/generated/dataset.ts"
   },

@@ -348,14 +348,18 @@ export async function syncWorkingDraft(scope: string, key: DraftKey): Promise<vo
     scope !== activeScope ||
     !entry ||
     syncing.has(identity) ||
-    entry.status === "conflict" ||
-    entry.status === "error"
+    entry.status === "conflict"
   ) {
     return;
   }
   syncing.add(identity);
   const snapshot = structuredClone(entry.row);
   try {
+    // Retry the local commit before uploading a draft whose previous save failed.
+    if (entry.status === "error") {
+      await persist(snapshot);
+      entry.status = "local";
+    }
     await writes.get(snapshot.id);
     entry.status = snapshot.dirty ? "syncing" : entry.status;
     changed(scope, key);

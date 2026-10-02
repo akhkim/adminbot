@@ -1,10 +1,11 @@
 // AoE date arithmetic and urgency banding for the bundled deadline snapshot.
 //
 // Extracted from views/deadlines.ts so the full board and the two-row summary on the profile page
-// agree on what "3 days left" means. Both read DEADLINE_VENUES; only the presentation differs, and
-// a countdown that disagreed between the two surfaces would read as a bug in the data.
+// agree on what "3 days left" means. Both read the same generated summary; only the presentation
+// differs. A countdown that disagreed between the two surfaces would read as a bug in the data.
 
-import { DEADLINE_VENUES, type DeadlineVenue } from "./deadlines.ts";
+import type { DeadlineVenue } from "./deadlines.ts";
+import { DEADLINE_SUMMARIES, type DeadlineSummaryVenue } from "./deadlines-summary.ts";
 
 export const MS_DAY = 86_400_000;
 
@@ -12,12 +13,62 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 // AoE (UTC-12): a wall-clock deadline maps to its UTC instant + 12h.
 export function aoeInstantMs(aoe: string): number {
-  const m = /(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/u.exec(aoe);
-  if (!m) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/u.exec(aoe);
+  if (!m || m[0] !== aoe) {
     return Number.NaN;
   }
   const [, y, mo, d, h, mi, s] = m.map(Number);
-  return Date.UTC(y, mo - 1, d, h, mi, s) + 12 * 3600 * 1000;
+  const wall = new Date(0);
+  wall.setUTCFullYear(y, mo - 1, d);
+  wall.setUTCHours(h, mi, s, 0);
+  // Date setters normalize invalid fields; reject that rollover before applying the AoE offset.
+  if (
+    wall.getUTCFullYear() !== y ||
+    wall.getUTCMonth() !== mo - 1 ||
+    wall.getUTCDate() !== d ||
+    wall.getUTCHours() !== h ||
+    wall.getUTCMinutes() !== mi ||
+    wall.getUTCSeconds() !== s
+  ) {
+    return Number.NaN;
+  }
+  return wall.getTime() + 12 * 3600 * 1000;
+}
+
+/** Exact cutoff when known; otherwise the explicitly marked early planning boundary. */
+export function deadlineInstantMs(
+  venue: Pick<DeadlineVenue, "deadline_aoe" | "deadline_at" | "deadline_planning_at">,
+): number {
+  const canonical = venue.deadline_at || venue.deadline_planning_at;
+  return canonical ? Date.parse(canonical) : aoeInstantMs(venue.deadline_aoe);
+}
+
+export function deadlineDateTimeLabel(
+  venue: Pick<
+    DeadlineVenue,
+    | "deadline_aoe"
+    | "deadline_at"
+    | "deadline_date"
+    | "deadline_timezone"
+    | "deadline_time_precision"
+  >,
+): string {
+  if (!venue.deadline_aoe && !venue.deadline_at && !venue.deadline_date) {
+    return "Deadline unknown";
+  }
+  if (venue.deadline_time_precision === "date_only") {
+    return `${plainDateLabel(venue.deadline_date || "")} · time unknown${venue.deadline_timezone ? ` (${venue.deadline_timezone})` : ""}`;
+  }
+  const instant = venue.deadline_at ? Date.parse(venue.deadline_at) : Number.NaN;
+  const aoe = Number.isFinite(instant)
+    ? new Date(instant - 12 * 3_600_000).toISOString().slice(0, 19).replace("T", " ")
+    : venue.deadline_aoe;
+  return aoeDateTimeLabel(aoe);
+}
+
+export function planningCountdownLabel(venue: DeadlineVenue, now: number): string {
+  const left = deadlineInstantMs(venue) - now;
+  return left <= 0 ? "Planning cutoff passed · check source" : countdownLabel(left);
 }
 
 // Display the AoE calendar date (not the +12h-shifted UTC date).
@@ -32,6 +83,36 @@ export function aoeDateTimeLabel(aoe: string): string {
   const date = aoeDateLabel(aoe);
   const time = /[ T](\d{2}):(\d{2})/u.exec(aoe);
   return date && time ? `${date} · ${time[1]}:${time[2]} AoE` : date;
+}
+
+/**
+ * A calendar day with no time of day: "Nov 5, 2026".
+ *
+ * Distinct from `aoeDateLabel` on purpose. That one keeps the AoE frame because an AoE deadline is
+ * still open twelve hours after its UTC date; a day the venue *acts* on -- decisions released, the
+ * conference opening -- is a plain calendar date, and stamping AoE on it would claim a precision
+ * the venue never published.
+ */
+export function plainDateLabel(day: string): string {
+  const m = /(\d{4})-(\d{2})-(\d{2})/u.exec(day);
+  return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}` : "";
+}
+
+/**
+ * A span as one line: "Nov 5 – Nov 18, 2026", or "Dec 30, 2026 – Jan 2, 2027" across a year.
+ *
+ * The year is printed once when both ends share it, because "Nov 5, 2026 – Nov 18, 2026" makes a
+ * one-week rebuttal window look like two separate dates to read and compare.
+ */
+export function dateRangeLabel(from: string, to: string): string {
+  const start = plainDateLabel(from);
+  const end = plainDateLabel(to);
+  if (!start || !end) {
+    return start || end;
+  }
+  return from.slice(0, 4) === to.slice(0, 4)
+    ? `${start.replace(/, \d{4}$/u, "")} – ${end}`
+    : `${start} – ${end}`;
 }
 
 // Four bands rather than a gradient: a countdown is read as "can I still start this", and that
@@ -57,7 +138,25 @@ const pad = (n: number): string => String(n).padStart(2, "0");
 
 // Remaining time as "Nd HH:MM:SS", including 0d on the final day so every board keeps one stable
 // shape as the deadline approaches.
+/**
+ * The same remaining time in words rather than as a clock: "3 days left", "today", "passed".
+ *
+ * Day granularity is what makes it safe on a surface that does not tick. The clock form above goes
+ * visibly stale the moment it stops updating; this one is still right an hour later.
+ */
+export function daysLeftLabel(instant: number, now: number): string {
+  const diff = instant - now;
+  if (diff <= 0) {
+    return "passed";
+  }
+  const days = Math.floor(diff / MS_DAY);
+  return days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} left`;
+}
+
 export function countdownLabel(ms: number): string {
+  if (!Number.isFinite(ms)) {
+    return "";
+  }
   const left = Math.max(ms, 0);
   const d = Math.floor(left / MS_DAY);
   const h = Math.floor(left / 3_600_000) % 24;
@@ -67,14 +166,14 @@ export function countdownLabel(ms: number): string {
   return `${d}d ${clock}`;
 }
 
-export type DeadlineEntry = { venue: DeadlineVenue; instant: number };
+export type DeadlineEntry = { venue: DeadlineSummaryVenue; instant: number };
 
 // "Major" is a conference/track submission deadline, read from the generated entry type. Workshops
 // dominate the snapshot and often share a handful of instants, so including them would make a
 // two-row summary repeat one workshop group. Rebuttals
 // are excluded for the same reason they are not submissions -- they are work on a paper already in,
 // not a deadline to aim a new one at. The full board still lists every one of them.
-function isMajorConference(venue: DeadlineVenue): boolean {
+function isMajorConference(venue: DeadlineSummaryVenue): boolean {
   return (
     venue.entry_type !== "workshop" &&
     venue.entry_type !== "rebuttal" &&
@@ -133,9 +232,9 @@ export function allUpcomingConferences(
   now: number,
   options: { archivalOnly?: boolean } = {},
 ): DeadlineEntry[] {
-  return DEADLINE_VENUES.filter(isMajorConference)
+  return DEADLINE_SUMMARIES.filter(isMajorConference)
     .filter((venue) => !options.archivalOnly || venue.archival_status === "archival")
-    .map((venue) => ({ venue, instant: aoeInstantMs(venue.deadline_aoe) }))
+    .map((venue) => ({ venue, instant: deadlineInstantMs(venue) }))
     .filter((entry) => Number.isFinite(entry.instant) && entry.instant > now)
     .toSorted((a, b) => a.instant - b.instant);
 }
@@ -149,7 +248,10 @@ export function allUpcomingConferences(
  * they got.
  */
 export function allUpcomingVenues(now: number): DeadlineEntry[] {
-  return DEADLINE_VENUES.map((venue) => ({ venue, instant: aoeInstantMs(venue.deadline_aoe) }))
+  return DEADLINE_SUMMARIES.map((venue) => ({
+    venue,
+    instant: deadlineInstantMs(venue),
+  }))
     .filter((entry) => Number.isFinite(entry.instant) && entry.instant > now)
     .toSorted((a, b) => a.instant - b.instant);
 }

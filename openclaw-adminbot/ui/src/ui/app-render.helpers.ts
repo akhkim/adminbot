@@ -1,7 +1,7 @@
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
 import { t } from "../i18n/index.ts";
-import { visibleTabsForRole, type AccessRole } from "./adminbot/access.ts";
+import { visibleTabsForMember, type AccessRole } from "./adminbot/access.ts";
 import {
   createChatSessionsLoadOverrides,
   flushChatQueueAfterIdleSessionReconciliation,
@@ -112,20 +112,6 @@ export function resolveAssistantAttachmentAuthToken(
   state: Pick<AppViewState, "hello" | "settings" | "password">,
 ) {
   return resolveControlUiAuthToken(state);
-}
-
-export function resolveDashboardHeaderContext(
-  state: Pick<AppViewState, "agentsList" | "sessionKey">,
-): { agentLabel: string } {
-  const agentId = resolveAgentIdFromSessionKey(state.sessionKey);
-  const agent = state.agentsList?.agents.find(
-    (entry) => normalizeLowercaseStringOrEmpty(entry.id) === agentId,
-  );
-  const agentLabel =
-    normalizeOptionalString(agent?.identity?.name) ??
-    normalizeOptionalString(agent?.name) ??
-    agentId;
-  return { agentLabel };
 }
 
 function resolveSidebarChatSessionKey(state: AppViewState): string {
@@ -245,7 +231,11 @@ const NEW_CHAT_CREATE_FAILED_MESSAGE =
  * a label pretending to be a control.
  */
 export function renderPageTabs(state: AppViewState, role: AccessRole) {
-  const siblings = visibleTabsForRole(pageTabsFor(state.tab), role);
+  const siblings = visibleTabsForMember(
+    pageTabsFor(state.tab),
+    role,
+    state.adminBotOnboarding?.steps,
+  );
   if (siblings.length < 2) {
     return nothing;
   }
@@ -362,7 +352,7 @@ function renderCronFilterIcon(hiddenCount: number) {
               position: absolute;
               top: -5px;
               right: -6px;
-              background: var(--color-accent, #6366f1);
+              background: var(--accent, #6366f1);
               color: #fff;
               border-radius: var(--radius-full);
               font-size: 9px;

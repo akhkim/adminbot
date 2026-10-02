@@ -29,6 +29,20 @@ export const icons = {
       <polyline points="12 6 12 12 16 14" />
     </svg>
   `,
+  clockPlus: html`
+    <svg viewBox="0 0 24 24">
+      <polyline points="11 6 11 12 15 14" />
+      <path d="M19 6a10 10 0 1 0 1.165 10" />
+      <path d="M19 8v6m-3-3h6" />
+    </svg>
+  `,
+  history: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l4 2" />
+    </svg>
+  `,
   link: html`
     <svg viewBox="0 0 24 24">
       <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
@@ -153,7 +167,9 @@ export const icons = {
   bell: html`
     <svg viewBox="0 0 24 24">
       <path d="M10.268 21a2 2 0 0 0 3.464 0" />
-      <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
+      <path
+        d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"
+      />
     </svg>
   `,
   alertTriangle: html`
@@ -280,6 +296,12 @@ export const icons = {
       <path d="M2 12h20" />
     </svg>
   `,
+  mapPin: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  `,
   image: html`
     <svg viewBox="0 0 24 24">
       <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
@@ -337,6 +359,13 @@ export const icons = {
     <svg viewBox="0 0 24 24">
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke-linecap="round" />
       <circle cx="12" cy="7" r="4" />
+    </svg>
+  `,
+  users: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" stroke-linecap="round" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke-linecap="round" />
     </svg>
   `,
   arrowLeft: html`

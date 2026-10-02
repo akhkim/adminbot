@@ -172,10 +172,6 @@ function expectedBuildSpawn() {
   return [process.execPath, "scripts/tsdown-build.mjs", "--no-clean"];
 }
 
-function expectedBundledPluginAssetBuildSpawn() {
-  return [process.execPath, "scripts/bundled-plugin-assets.mjs", "--phase", "build"];
-}
-
 function statusCommandSpawn() {
   return [process.execPath, "openclaw.mjs", "status"];
 }
@@ -426,7 +422,6 @@ describe("run-node script", () => {
         );
         await expect(fs.readFile(indexPath, "utf-8")).resolves.toContain("sentinel");
         expect(nodeCalls).toEqual([
-          [process.execPath, "scripts/bundled-plugin-assets.mjs", "--phase", "build"],
           [process.execPath, "scripts/tsdown-build.mjs", "--no-clean"],
           [process.execPath, "openclaw.mjs", "--version"],
         ]);
@@ -467,7 +462,6 @@ describe("run-node script", () => {
 
       expect(exitCode).toBe(0);
       expect(spawnCalls).toEqual([
-        expectedBundledPluginAssetBuildSpawn(),
         expectedBuildSpawn(),
         statusCommandSpawn(),
       ]);
@@ -515,17 +509,14 @@ describe("run-node script", () => {
       });
 
       expect(exitCode).toBe(0);
-      expect(spawnCalls).toHaveLength(3);
-      expect(spawnCalls[0]?.args).toEqual([
-        "scripts/bundled-plugin-assets.mjs",
-        "--phase",
-        "build",
-      ]);
-      expect(spawnCalls[1]?.args).toEqual(["scripts/tsdown-build.mjs", "--no-clean"]);
-      expect(spawnCalls[2]?.args).toEqual(["openclaw.mjs", "status"]);
-      expect(spawnCalls[0]?.env.OPENCLAW_RUN_NODE_SKIP_DTS_BUILD).toBeUndefined();
-      expect(spawnCalls[1]?.env.OPENCLAW_RUN_NODE_SKIP_DTS_BUILD).toBe("1");
-      expect(spawnCalls[2]?.env.OPENCLAW_RUN_NODE_SKIP_DTS_BUILD).toBeUndefined();
+      // Two spawns, not three: the bundled-plugin-asset phase is gone. It only ever ran commands a
+      // plugin declared under `openclaw.assetScripts`, and the one plugin that did (canvas) is not
+      // in this fork, so it was a no-op before the deep clean deleted the script it called.
+      expect(spawnCalls).toHaveLength(2);
+      expect(spawnCalls[0]?.args).toEqual(["scripts/tsdown-build.mjs", "--no-clean"]);
+      expect(spawnCalls[1]?.args).toEqual(["openclaw.mjs", "status"]);
+      expect(spawnCalls[0]?.env.OPENCLAW_RUN_NODE_SKIP_DTS_BUILD).toBe("1");
+      expect(spawnCalls[1]?.env.OPENCLAW_RUN_NODE_SKIP_DTS_BUILD).toBeUndefined();
     });
   });
 
@@ -586,12 +577,6 @@ describe("run-node script", () => {
       await writeRuntimePostBuildScaffold(tmp);
       const outputPath = path.join(tmp, ".artifacts", "run-node", "output.log");
       const spawn = (_cmd: string, args: string[]) => {
-        if (args[0] === "scripts/bundled-plugin-assets.mjs") {
-          return createPipedExitedProcess({
-            stdout: "asset stdout\n",
-            stderr: "asset stderr\n",
-          });
-        }
         if (args[0] === "scripts/tsdown-build.mjs") {
           return createPipedExitedProcess({
             stdout: "build stdout\n",
@@ -637,8 +622,6 @@ describe("run-node script", () => {
 
       expect(exitCode).toBe(0);
       expect(stdoutChunks.join("")).toBe('{"plugins":[]}\n');
-      expect(stderrChunks.join("")).toContain("asset stdout\n");
-      expect(stderrChunks.join("")).toContain("asset stderr\n");
       expect(stderrChunks.join("")).toContain("build stdout\n");
       expect(stderrChunks.join("")).toContain("build stderr\n");
     });
@@ -1019,7 +1002,6 @@ describe("run-node script", () => {
 
       expect(exitCode).toBe(0);
       expect(spawnCalls).toEqual([
-        expectedBundledPluginAssetBuildSpawn(),
         expectedBuildSpawn(),
         [
           process.execPath,
@@ -1610,7 +1592,6 @@ describe("run-node script", () => {
 
       expect(exitCode).toBe(0);
       expect(spawnCalls).toEqual([
-        expectedBundledPluginAssetBuildSpawn(),
         expectedBuildSpawn(),
         statusCommandSpawn(),
       ]);
@@ -1682,7 +1663,6 @@ describe("run-node script", () => {
 
       expect(exitCode).toBe(0);
       expect(spawnCalls).toEqual([
-        expectedBundledPluginAssetBuildSpawn(),
         expectedBuildSpawn(),
         statusCommandSpawn(),
       ]);
@@ -2769,7 +2749,6 @@ describe("run-node script", () => {
 
       expect(exitCode).toBe(0);
       expect(spawnCalls).toEqual([
-        expectedBundledPluginAssetBuildSpawn(),
         expectedBuildSpawn(),
         statusCommandSpawn(),
       ]);

@@ -926,7 +926,8 @@ describe("POST /tools/invoke", () => {
     const body = await res.json();
     expect(body.ok).toBe(false);
     expect(body.error?.type).toBe("forbidden");
-    expect(body.error?.message).toBe("missing scope: operator.write");
+    expect(body.error?.message).toMatch(/^missing scope: operator\.write\b/);
+    expect(body.error?.message).toContain("agent");
   });
 
   it("treats shared-secret bearer auth as full operator access on /tools/invoke", async () => {

@@ -10,7 +10,11 @@ import type {
   AdminBotMeetingRecord,
   AdminBotMeetingRecordInput,
 } from "../../contracts/actions.js";
-import { attendanceFromParticipants, attendanceFromSpeakers, parseParticipantCsv } from "./attendance.js";
+import {
+  attendanceFromParticipants,
+  attendanceFromSpeakers,
+  parseParticipantCsv,
+} from "./attendance.js";
 import { parseVtt } from "./vtt.js";
 import { meetingRecordId, parseZoomRecordingNotice } from "./zoom-email.js";
 
@@ -45,6 +49,10 @@ export function noticeToMeeting(
       ...(notice.passcode ? { passcode: notice.passcode } : {}),
     },
     source: "zoom_email",
+    // Kept to the second on the record's own field rather than rounded here: `duration_minutes` is
+    // what the card reads, and rounding a 98-second recording to "2 min" at the ingest would throw
+    // away the only precise number the notice gave us.
+    ...(notice.durationSeconds ? { duration_seconds: notice.durationSeconds } : {}),
     ...(notice.startedAt
       ? {}
       : { notes: `Zoom's date line did not parse: ${notice.startedAtText ?? "absent"}` }),

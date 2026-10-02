@@ -77,4 +77,18 @@ describe("account approval email", () => {
 
     expect(runs[0]![runs[0]!.indexOf("--body") + 1]).toContain("https://from-env.example");
   });
+
+  it("uses the canonical Control UI environment variable in approval links", async () => {
+    const runs: string[][] = [];
+    const send = createAccountApprovedEmailRunner({
+      env: { ADMINBOT_CONTROL_UI_URL: "https://control.example/" } as NodeJS.ProcessEnv,
+      run: async (args) => {
+        runs.push(args);
+      },
+    });
+
+    await send({ email: "ada@example.com" });
+
+    expect(runs[0]![runs[0]!.indexOf("--body") + 1]).toContain("https://control.example");
+  });
 });

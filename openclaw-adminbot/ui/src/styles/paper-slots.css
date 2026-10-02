@@ -644,7 +644,7 @@
 .paper-slots__branch-number {
   padding: 1px var(--space-2);
   border-radius: var(--radius-sm);
-  background: var(--surface-2, var(--bg));
+  background: var(--bg-muted, var(--bg));
   font-size: var(--control-ui-text-xs);
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -743,7 +743,7 @@
   padding: var(--space-3);
   border: 1px dashed var(--border);
   border-radius: var(--radius-md);
-  background: var(--surface-2, transparent);
+  background: var(--bg-muted, transparent);
 }
 
 .paper-stages__lede {
@@ -1023,6 +1023,12 @@
   color: var(--warn);
 }
 
+/* The handle the announcement will tag them by. Accented rather than muted: it is the one badge
+   on the row that says something will happen with this person, not just who they are. */
+.coauthor__badge--x {
+  color: var(--accent);
+}
+
 .coauthor__actions {
   display: flex;
   gap: 2px;
@@ -1041,13 +1047,22 @@
   border-top: 1px dashed var(--border);
 }
 
-/* The external boxes sit on one line where there is room: a name, an address, and the button that
-   commits them, read left to right in the order they are filled. */
+/* The external boxes sit on one line where there is room: a name, an address, a handle, and the
+   button that commits them, read left to right in the order they are filled. */
 .coauthors__add-external {
   display: grid;
-  grid-template-columns: minmax(8rem, 1fr) minmax(12rem, 1.4fr) auto;
+  grid-template-columns: minmax(7rem, 1fr) minmax(11rem, 1.3fr) minmax(7rem, 0.8fr) auto;
   gap: var(--space-2);
   align-items: center;
+}
+
+/* Spans the row so a rejected handle is read under the box it was typed in, rather than squeezing
+   the controls out of alignment on the line above it. */
+.coauthors__error {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--warn);
 }
 
 .coauthors__empty {
@@ -1091,7 +1106,7 @@
 
 .ptl__head-hint {
   font-size: var(--control-ui-text-xs);
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .ptl__lane--core { --lane: #6d66c2; }
@@ -1134,7 +1149,7 @@
   font-size: var(--control-ui-text-xs);
   font-style: italic;
   font-weight: 500;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .ptl__lane-gate--done {
@@ -1159,7 +1174,7 @@
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: var(--control-ui-text-xs);
-  color: var(--text-muted);
+  color: var(--muted);
   white-space: nowrap;
 }
 
@@ -1219,4 +1234,87 @@
 
 .ptl__step--waiting {
   opacity: 0.6;
+}
+
+/* "What you need for this trip" — the reader's own travel answers, under "Who is going" on an
+   accepted paper's card. A stacked column like the profile's field rows rather than the grid the
+   slot checklist uses: these are six questions asked once, not a list of artifacts to work down. */
+.paper-trip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.paper-trip__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.paper-trip__field > span {
+  font-size: var(--control-ui-text-sm);
+  font-weight: 500;
+}
+
+/* A checkbox and its explanation read as one control, so the box sits beside the label rather
+   than above it like the typed fields do. */
+.paper-trip__check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.paper-trip__check input {
+  margin-top: 3px;
+}
+
+.paper-trip__check small {
+  display: block;
+  color: var(--muted);
+}
+
+.paper-trip__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
+}
+
+/* Baseline for the disclosure head these groups share (paper slots, the cycle's groups, weekly
+   updates). The full look is scoped to the containers that draw them -- see
+   `:is(.my-work-item, .paper-legacy__card-parts)` in layout.css -- but the chevron is a bare SVG
+   with no intrinsic size, so any container that misses that scope drew it as a page-sized
+   triangle. `:where()` keeps these at zero specificity: they only fill in where nothing else
+   applies. */
+:where(.paper-slots__group-head) {
+  display: flex;
+  align-items: center;
+  /* Space-between, as the card does, rather than an auto margin on the chevron: a margin here
+     would still apply inside the card, whose own rules never set one. */
+  justify-content: space-between;
+  gap: var(--space-3);
+  cursor: pointer;
+  list-style: none;
+}
+
+:where(.paper-slots__group-head)::-webkit-details-marker {
+  display: none;
+}
+
+:where(.paper-slots__group-chevron) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+}
+
+:where(.paper-slots__group-chevron) svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
 }

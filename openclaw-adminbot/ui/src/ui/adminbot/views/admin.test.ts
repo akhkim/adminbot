@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { render } from "lit";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   type AdminBotLabMember,
   type AdminBotLabMemberSaveInput,
@@ -9,7 +9,7 @@ import {
   createEmptyAdminBotDashboardData,
 } from "../controllers/admin.ts";
 import { PROFILE_FIELDS } from "../member-fields.ts";
-import { renderAdminBot, type AdminBotProps } from "./admin.ts";
+import { renderAdminBot, resetAdminViewSessionState, type AdminBotProps } from "./admin.ts";
 
 function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
   return { ...members[0]!, ...overrides };
@@ -42,6 +42,11 @@ function baseProps(overrides: Partial<AdminBotProps> = {}): AdminBotProps {
     onRefresh: () => undefined,
     onApprove: () => undefined,
     onRemove: () => undefined,
+    selectedActionIds: [],
+    bulkActionBusy: false,
+    onToggleActionSelected: () => undefined,
+    onSetSelectedActions: () => undefined,
+    onRemoveSelectedActions: () => undefined,
     onExecute: () => undefined,
     onSaveMember: () => undefined,
     onSaveOwnProfile: () => undefined,
@@ -84,11 +89,372 @@ beforeAll(() => {
   (HTMLElement.prototype as { hidePopover?: () => void }).hidePopover ??= () => undefined;
 });
 
-function renderToDiv(props: AdminBotProps): HTMLElement {
+describe("renderAdminBot first load", () => {
+  it("shows progress instead of an empty roster while the first request is pending", () => {
+    const container = renderToDiv(
+      baseProps({ loading: true, data: createEmptyAdminBotDashboardData() }),
+      { openEditors: false },
+    );
+    expect(container.querySelector('[data-testid="adminbot-first-load"]')?.textContent).toContain(
+      "Loading AdminBot",
+    );
+    expect(container.querySelector(".adminbot-member-sheet")).toBeNull();
+    expect(container.querySelector(".adminbot-shell")?.getAttribute("aria-busy")).toBe("true");
+  });
+
+  it("offers a retry after the first request fails and keeps stale data on later failures", () => {
+    const onRefresh = vi.fn();
+    const failed = renderToDiv(
+      baseProps({
+        data: createEmptyAdminBotDashboardData(),
+        error: "Request failed",
+        onRefresh,
+      }),
+      { openEditors: false },
+    );
+    expect(failed.querySelector(".adminbot-member-sheet")).toBeNull();
+    failed
+      .querySelector<HTMLButtonElement>('[data-testid="adminbot-first-load-error"] button')
+      ?.click();
+    expect(onRefresh).toHaveBeenCalledOnce();
+    const stale = renderToDiv(baseProps({ error: "Request failed" }), { openEditors: false });
+    expect(stale.querySelector(".adminbot-member-sheet")).not.toBeNull();
+    expect(stale.querySelector('[data-testid="adminbot-first-load-error"]')).toBeNull();
+  });
+});
+
+describe("renderAdminBot paged roster", () => {
+  it("shows one loading label instead of a false page range while fetching", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "general",
+        memberList: {
+          rows: [],
+          total: 1005,
+          limit: 50,
+          offset: 50,
+          query: "",
+          loading: true,
+          error: null,
+        },
+      }),
+      { openEditors: false },
+    );
+    const nav = container.querySelector('nav[aria-label="Member pages"]');
+    expect(nav?.textContent).toContain("Loading people…");
+    expect(nav?.textContent).not.toContain("Showing 0 of 1005");
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(1);
+  });
+
+  it("keeps the result count renderable after a local filter updates it", () => {
+    const container = document.createElement("div");
+    const initial = baseProps({
+      mode: "general",
+      memberList: {
+        rows: [member({ id: "one" }), member({ id: "two" })],
+        total: 2,
+        limit: 20,
+        offset: 0,
+        query: "",
+        loading: false,
+        error: null,
+      },
+    });
+    render(renderAdminBot(initial), container);
+    container
+      .querySelector<HTMLInputElement>('input[name="search"]')
+      ?.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(container.querySelector("[data-member-result-count]")?.textContent).toBe(
+      "2 on this page",
+    );
+
+    const searched = baseProps({
+      ...initial,
+      memberList: { ...initial.memberList!, rows: [member({ id: "one" })], total: 1, query: "one" },
+    });
+    expect(() => render(renderAdminBot(searched), container)).not.toThrow();
+    expect(container.querySelector("[data-member-result-count]")?.textContent).toBe("1 person");
+    expect(container.querySelectorAll(".adminbot-member-sheet tbody tr")).toHaveLength(1);
+  });
+
+  it("keeps my profile editable when it is outside the loaded page", () => {
+    const onSaveOwnProfile = vi.fn();
+    const other = member({ id: "other", name: "Other Member" });
+    const container = renderToDiv(
+      baseProps({
+        mode: "general",
+        signedInMemberId: "pat",
+        memberList: {
+          rows: [other],
+          total: 42,
+          limit: 20,
+          offset: 20,
+          query: "other",
+          loading: false,
+          error: null,
+        },
+        onSaveOwnProfile,
+      }),
+    );
+    expect(container.querySelectorAll(".adminbot-member-sheet tbody tr")).toHaveLength(1);
+    expect(container.querySelector(".adminbot-member-sheet tbody")?.textContent).toContain(
+      "Other Member",
+    );
+    expect(container.querySelector(".adminbot-member-sheet tbody")?.textContent).not.toContain(
+      "Pat Doe",
+    );
+    expect(container.querySelector('nav[aria-label="Member pages"]')?.textContent).toContain(
+      "Showing 21–21 of 42",
+    );
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        '.adminbot-member-sheet__heading button[popovertarget="adminbot-self-edit-member-own"]',
+      ),
+    ).not.toBeNull();
+    container
+      .querySelector<HTMLFormElement>("#adminbot-self-edit-member-own form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(onSaveOwnProfile).toHaveBeenCalledWith(
+      "pat",
+      expect.objectContaining({ name: "Pat Doe" }),
+    );
+  });
+
+  it("shows the loaded page and its full count, and searches across all members", () => {
+    const onMemberListChange = vi.fn();
+    const pageMember = member({ id: "page-21", name: "Page Twenty One" });
+    const container = renderToDiv(
+      baseProps({
+        mode: "general",
+        memberList: {
+          rows: [pageMember],
+          total: 42,
+          limit: 20,
+          offset: 20,
+          query: "robot",
+          loading: false,
+          error: null,
+        },
+        onMemberListChange,
+      }),
+      { openEditors: false },
+    );
+    expect(container.querySelectorAll(".adminbot-member-sheet tbody tr")).toHaveLength(1);
+    expect(container.querySelector(".adminbot-member-sheet tbody")?.textContent).toContain(
+      "Page Twenty One",
+    );
+    expect(container.querySelector("[data-member-result-count]")?.textContent).toContain(
+      "42 people",
+    );
+    expect(container.querySelector('nav[aria-label="Member pages"]')?.textContent).toContain(
+      "Showing 21–21 of 42",
+    );
+    const buttons = container.querySelectorAll<HTMLButtonElement>(
+      'nav[aria-label="Member pages"] button',
+    );
+    buttons[0]?.click();
+    buttons[1]?.click();
+    expect(onMemberListChange).toHaveBeenNthCalledWith(1, "robot", 0);
+    expect(onMemberListChange).toHaveBeenNthCalledWith(2, "robot", 40);
+    const search = container.querySelector<HTMLInputElement>('input[name="search"]');
+    search!.value = "  language  ";
+    container
+      .querySelector(".adminbot-member-filters")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(onMemberListChange).toHaveBeenLastCalledWith("language", 0);
+  });
+
+  it("shows a page-load error with a retry and does not claim an empty roster", () => {
+    const onMemberListChange = vi.fn();
+    const container = renderToDiv(
+      baseProps({
+        memberList: {
+          rows: [],
+          total: 42,
+          limit: 20,
+          offset: 20,
+          query: "robot",
+          loading: false,
+          error: "Request failed",
+        },
+        onMemberListChange,
+      }),
+      { openEditors: false },
+    );
+    expect(container.querySelector(".adminbot-member-sheet__scroll")?.textContent).not.toContain(
+      "No lab members yet",
+    );
+    container
+      .querySelector<HTMLButtonElement>('nav[aria-label="Member pages"] ~ .callout button')
+      ?.click();
+    expect(onMemberListChange).toHaveBeenCalledWith("robot", 20);
+  });
+});
+
+/**
+ * Render the panel with every row's edit popover built, which is what a person sees.
+ *
+ * The roster sheet defers each row's edit form until its Edit button is first clicked, so that
+ * 77 popovers' worth of fields are not built for forms nobody opened. In a browser the click
+ * opens the popover natively and repaints in the same tick; here the click is made and the panel
+ * re-rendered, which is the same two steps. Assertions about the editor stay written the way they
+ * were -- query the container -- rather than every one of them learning about the deferral.
+ *
+ * `openEditors: false` renders it the way the panel first paints, for the tests that are about the
+ * deferral itself.
+ */
+function renderToDiv(props: AdminBotProps, options: { openEditors?: boolean } = {}): HTMLElement {
   const container = document.createElement("div");
+  render(renderAdminBot(props), container);
+  if (options.openEditors === false) {
+    return container;
+  }
+  // By the popover they target, not by class: the row's edit-history button shares that class and
+  // fetches on click, and clicking it here would make "nothing is asked for until somebody asks"
+  // untestable.
+  const editButtons = container.querySelectorAll<HTMLButtonElement>(
+    'button[popovertarget^="adminbot-edit-member-"], button[popovertarget^="adminbot-self-edit-member-"]',
+  );
+  if (editButtons.length === 0) {
+    return container;
+  }
+  for (const button of editButtons) {
+    button.click();
+  }
   render(renderAdminBot(props), container);
   return container;
 }
+
+// The members sheet draws an edit popover for every row up front, so anything inside one is paid
+// for once per person on the roster. `timezone` offers the 418 zones Intl knows: as a per-row
+// <select> that was 32,682 <option> nodes for 77 people -- 95% of everything on the page, none of
+// it visible until somebody clicks Edit -- and the panel took ~3.4s to render where the papers
+// panel, same popover-per-row shape and same row count, took 190ms. One shared <datalist> is
+// referenced by id, so the list exists once however many rows there are.
+describe("renderAdminBot members panel — long option lists are shared, not repeated", () => {
+  const roster = Array.from({ length: 12 }, (_, i) =>
+    member({ id: `m${i}`, name: `Member ${i}`, email: `m${i}@lab.co` }),
+  );
+  const draw = (count: number) =>
+    renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: roster.slice(0, count),
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+
+  it("renders the timezone list once for the whole sheet, not once per row", () => {
+    const container = draw(12);
+    const lists = container.querySelectorAll("datalist#adminbot-field-options-timezone");
+    expect(lists).toHaveLength(1);
+    expect(lists[0]!.querySelectorAll("option").length).toBeGreaterThan(40);
+    // And no row carries its own copy.
+    expect(container.querySelectorAll('select[name="timezone"]')).toHaveLength(0);
+  });
+
+  it("points every row's timezone control at that one list", () => {
+    const container = draw(12);
+    const inputs = [...container.querySelectorAll<HTMLInputElement>('input[name="timezone"]')];
+    expect(inputs.length).toBeGreaterThan(1);
+    for (const input of inputs) {
+      expect(input.getAttribute("list")).toBe("adminbot-field-options-timezone");
+    }
+  });
+
+  // The property that actually keeps the panel fast: adding people must not multiply the option
+  // nodes. Short vocabularies (status, privilege) still inline per row and do scale -- the point
+  // is that the long one no longer does.
+  it("does not grow the timezone option count as the roster grows", () => {
+    const count = (n: number) =>
+      draw(n).querySelectorAll("datalist#adminbot-field-options-timezone option").length;
+    expect(count(12)).toBe(count(1));
+  });
+});
+
+// Each roster row carries an edit popover holding a ~19-field form. For 77 people that was four
+// fifths of the panel's DOM, built for forms nobody had opened. The form now waits for the first
+// click on that row's Edit button.
+describe("renderAdminBot members panel — the edit form waits to be asked for", () => {
+  // Ids unique to this block: the set of opened editors is module state that outlives one test,
+  // so a shared id would let an earlier test's click decide this one's answer.
+  const lazyRoster = [
+    member({ id: "lazy-one", name: "Lazy One", email: "one@lab.co" }),
+    member({ id: "lazy-two", name: "Lazy Two", email: "two@lab.co" }),
+  ];
+  const lazyProps = () =>
+    baseProps({
+      mode: "admin",
+      data: { ...createEmptyAdminBotDashboardData(), members: lazyRoster, loadedAt: Date.now() },
+    });
+
+  it("draws the popover shell but not the form, until a row is opened", () => {
+    const container = renderToDiv(lazyProps(), { openEditors: false });
+    // The shell has to exist: `popovertarget` resolves against its id, so without it the button
+    // has nothing to open.
+    expect(container.querySelector("#adminbot-edit-member-0")).not.toBeNull();
+    expect(container.querySelector("#adminbot-edit-member-0 form")).toBeNull();
+    // No row carries a field yet. The one that remains is the Add-member form, which is rendered
+    // once for the sheet rather than per row and is meant to be ready to type into.
+    expect(
+      container.querySelectorAll('[id^="adminbot-edit-member-"] input[name="timezone"]'),
+    ).toHaveLength(0);
+    expect(container.querySelectorAll('input[name="timezone"]')).toHaveLength(1);
+  });
+
+  it("builds that row's form on the click, and only that row's", () => {
+    const props = lazyProps();
+    const container = document.createElement("div");
+    render(renderAdminBot(props), container);
+    container
+      .querySelector<HTMLButtonElement>("button[popovertarget=adminbot-edit-member-0]")
+      ?.click();
+    render(renderAdminBot(props), container);
+    expect(container.querySelector("#adminbot-edit-member-0 form")).not.toBeNull();
+    expect(container.querySelector("#adminbot-edit-member-1 form")).toBeNull();
+  });
+
+  // Deferred, not mounted-and-unmounted. Once a row's form is built it stays built, so a draft
+  // typed into it is still there when the popover is reopened and the autosave timer still has a
+  // form in the tree to read.
+  it("keeps the form once built, including what was typed into it", () => {
+    const props = lazyProps();
+    const container = document.createElement("div");
+    render(renderAdminBot(props), container);
+    container
+      .querySelector<HTMLButtonElement>("button[popovertarget=adminbot-edit-member-1]")
+      ?.click();
+    render(renderAdminBot(props), container);
+    const role = container.querySelector<HTMLInputElement>(
+      '#adminbot-edit-member-1 input[name="location"]',
+    );
+    expect(role).not.toBeNull();
+    role!.value = "half typed";
+    // Another render for any reason at all -- a roster refresh, a notice landing.
+    render(renderAdminBot(props), container);
+    expect(
+      container.querySelector<HTMLInputElement>('#adminbot-edit-member-1 input[name="location"]')
+        ?.value,
+    ).toBe("half typed");
+  });
+
+  // The deferral is about when the markup is built, never about what is in it.
+  it("offers the same fields it always did once opened", () => {
+    const opened = renderToDiv(lazyProps());
+    const names = [...opened.querySelectorAll<HTMLElement>("#adminbot-edit-member-0 [name]")].map(
+      (el) => el.getAttribute("name"),
+    );
+    for (const field of PROFILE_FIELDS.filter((entry) => entry.type !== "image")) {
+      expect(names, field.key).toContain(field.key);
+    }
+    expect(names).toContain("id");
+    expect(names).toContain("memberType");
+    expect(names).not.toContain("privilegeLevel");
+  });
+});
 
 describe("renderAdminBot members panel — edit affordance", () => {
   it("renders a per-row Edit action and a prefilled edit popover in admin mode", () => {
@@ -114,194 +480,33 @@ describe("renderAdminBot members panel — edit affordance", () => {
     const nameInput = popover?.querySelector<HTMLInputElement>('input[name="name"]');
     expect(nameInput?.value).toBe("Pat Doe");
 
-    const privilege = popover?.querySelector<HTMLSelectElement>('select[name="privilegeLevel"]');
-    expect(privilege?.value).toBe("admin");
+    // Access is a Member type now: an admin whose type predates the tag has it ticked, so saving
+    // keeps their access.
+    const ticked = [
+      ...(popover?.querySelectorAll<HTMLInputElement>('input[name="memberType"]') ?? []),
+    ]
+      .filter((box) => box.checked)
+      .map((box) => box.value);
+    expect(ticked).toContain("adminbot-admin");
 
     // The Add-member popover still exists alongside per-row editing.
     expect(container.querySelector("#adminbot-add-member")).not.toBeNull();
   });
 
-  it("defaults a new member's privilege select to external_collaborator", () => {
-    const container = renderToDiv(baseProps({ mode: "admin" }));
-    const privilege = container.querySelector<HTMLSelectElement>(
-      '#adminbot-add-member select[name="privilegeLevel"]',
-    );
-
-    expect(privilege?.value).toBe("external_collaborator");
-    expect([...(privilege?.options ?? [])].map((option) => option.value)).toEqual([
-      "external_collaborator",
-      "trial",
-      "member",
-      "admin",
-    ]);
-  });
-
-  it("offers the collaborator subgroup only while the privilege select says external collaborator", () => {
+  it("asks for Member type as checkboxes, with no Privilege or subgroup field", () => {
     const container = renderToDiv(baseProps({ mode: "admin" }));
     const form = container.querySelector<HTMLElement>("#adminbot-add-member");
-    const field = form?.querySelector<HTMLElement>("[data-collaborator-subgroup-field]");
-    const subgroup = form?.querySelector<HTMLSelectElement>('select[name="collaboratorSubgroup"]');
 
-    // A new member defaults to external_collaborator, so the field starts visible.
-    expect(field?.hidden).toBe(false);
-    expect([...(subgroup?.options ?? [])].map((option) => option.value)).toEqual([
-      "",
-      "interviewee",
-      "slightly_better_than_emails",
-      "acquaintance",
-      "alumni",
-      "own_pace_advisee",
-      "coauthor_minor",
-      "coauthor_major",
-      "coauthor_discussant_designer",
-      "disappearing_coauthor",
-      "external_prof",
-    ]);
-    expect([...(subgroup?.options ?? [])].map((option) => option.textContent?.trim())).toContain(
-      "Slightly Better Than Emails",
+    expect(form?.querySelector('[name="privilegeLevel"]')).toBeNull();
+    expect(form?.querySelector('[name="collaboratorSubgroup"]')).toBeNull();
+    const boxes = [...(form?.querySelectorAll<HTMLInputElement>('input[name="memberType"]') ?? [])];
+    expect(boxes.map((box) => box.value)).toEqual(
+      expect.arrayContaining(["full", "alumni", "coauthor-major", "adminbot-admin"]),
     );
-
-    const privilege = form?.querySelector<HTMLSelectElement>('select[name="privilegeLevel"]');
-    privilege!.value = "member";
-    privilege!.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(field?.hidden).toBe(true);
-
-    // The prefilled edit popover for a core member starts hidden for the same reason.
-    const editField = container.querySelector<HTMLElement>(
-      "#adminbot-edit-member-0 [data-collaborator-subgroup-field]",
-    );
-    expect(editField?.hidden).toBe(true);
+    expect(boxes.some((box) => box.checked)).toBe(false);
   });
 
-  // The roster is written down two paths that do not know about each other, so one person can be
-  // two half-records. The panel is a comparison an admin resolves, never an automatic merge.
-  it("offers to combine two records that look like one person", () => {
-    const saved: Array<[string, string]> = [];
-    const container = renderToDiv(
-      baseProps({
-        mode: "admin",
-        data: {
-          ...createEmptyAdminBotDashboardData(),
-          members: [
-            member({ id: "terry-jingchen-zhang", name: "Terry Jingchen Zhang", email: "t@lab.co" }),
-            member({
-              id: "terry-zhang",
-              name: "Terry Zhang",
-              email: "terry@cs.test",
-              slack_user_id: "U09",
-            }),
-          ],
-          loadedAt: Date.now(),
-        },
-        onMergeMembers: (survivorId, duplicateId) => saved.push([survivorId, duplicateId]),
-      }),
-    );
-    const panel = container.querySelector('[data-testid="member-duplicates"]');
-    expect(panel).not.toBeNull();
-    // Either record can be the survivor -- only a human knows which spelling the lab uses.
-    expect(
-      panel?.querySelector('[data-testid="member-merge-terry-jingchen-zhang-terry-zhang"]'),
-    ).not.toBeNull();
-    expect(
-      panel?.querySelector('[data-testid="member-merge-terry-zhang-terry-jingchen-zhang"]'),
-    ).not.toBeNull();
-
-    globalThis.confirm = () => true;
-    panel
-      ?.querySelector<HTMLButtonElement>(
-        '[data-testid="member-merge-terry-jingchen-zhang-terry-zhang"]',
-      )
-      ?.click();
-    expect(saved).toEqual([["terry-jingchen-zhang", "terry-zhang"]]);
-  });
-
-  it("merges nothing without a confirmation", () => {
-    const saved: Array<[string, string]> = [];
-    const container = renderToDiv(
-      baseProps({
-        mode: "admin",
-        data: {
-          ...createEmptyAdminBotDashboardData(),
-          members: [
-            member({ id: "miu-nicole-takagi", name: "Miu Nicole Takagi" }),
-            member({ id: "miu-takagi", name: "Miu Takagi", email: "miu@cs.test" }),
-          ],
-          loadedAt: Date.now(),
-        },
-        onMergeMembers: (survivorId, duplicateId) => saved.push([survivorId, duplicateId]),
-      }),
-    );
-    globalThis.confirm = () => false;
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="member-merge-miu-takagi-miu-nicole-takagi"]')
-      ?.click();
-    expect(saved).toEqual([]);
-  });
-
-  it("keeps the panel off the page when there is nothing to combine", () => {
-    const container = renderToDiv(baseProps({ mode: "admin" }));
-    expect(container.querySelector('[data-testid="member-duplicates"]')).toBeNull();
-  });
-
-  // The whole point of the shared registry: the roster editor and the member's own profile page
-  // ask for the same facts. It used to be twenty fields against twenty-seven, so an admin looking
-  // at a record could not fill in a preferred name, a CV link or any social but GitHub.
-  it("offers every member field the profile page does", () => {
-    const container = renderToDiv(baseProps({ mode: "admin" }));
-    const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
-    const missing = PROFILE_FIELDS.filter(
-      (field) => !popover?.querySelector(`[name="${field.key}"]`),
-    ).map((field) => field.key);
-    expect(missing).toEqual([]);
-  });
-
-  it("keeps admin-only fields out of a member's own edit form", () => {
-    const container = renderToDiv(
-      // `mode` is admin-or-general; the self-edit popover is what a non-admin gets on their own
-      // row, which is the general roster view plus a signed-in member id.
-      baseProps({ mode: "general", signedInMemberId: "pat" }),
-    );
-    const popover = container.querySelector<HTMLElement>("#adminbot-self-edit-member-0");
-    const adminOnly = PROFILE_FIELDS.filter((field) => field.adminOnly);
-    expect(adminOnly.length).toBeGreaterThan(0);
-    for (const field of adminOnly) {
-      expect(popover?.querySelector(`[name="${field.key}"]`)).toBeNull();
-    }
-    // Everything else is still there -- the restriction is the flag, not a shorter list.
-    const missing = PROFILE_FIELDS.filter(
-      (field) => !field.adminOnly && !popover?.querySelector(`[name="${field.key}"]`),
-    ).map((field) => field.key);
-    expect(missing).toEqual([]);
-  });
-
-  it("sends registry fields in the service's wire shape, typed by the registry", () => {
-    const saved: AdminBotLabMemberSaveInput[] = [];
-    const container = renderToDiv(
-      baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
-    );
-    const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
-    const set = (key: string, value: string) => {
-      const input = popover?.querySelector<HTMLInputElement>(`[name="${key}"]`);
-      input!.value = value;
-    };
-    set("preferred_name", "Pat");
-    set("research_topics", "robotics, world models");
-    set("hours_per_week", "12");
-    popover
-      ?.querySelector<HTMLFormElement>("form")
-      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-
-    expect(saved[0]?.profile).toMatchObject({
-      preferred_name: "Pat",
-      research_topics: ["robotics", "world models"],
-      hours_per_week: 12,
-    });
-    // A field the admin left blank is absent, not "" -- the service reads an empty string as
-    // "clear this", so sending every untouched field would wipe the record on each save.
-    expect(saved[0]?.profile).not.toHaveProperty("scholar_url");
-  });
-
-  it("prefills the subgroup of an external collaborator and sends it with the save", () => {
+  it("sends every ticked member type, and no Privilege or subgroup", () => {
     const saved: AdminBotLabMemberSaveInput[] = [];
     const container = renderToDiv(
       baseProps({
@@ -312,6 +517,7 @@ describe("renderAdminBot members panel — edit affordance", () => {
             member({
               privilege_level: "external_collaborator",
               collaborator_subgroup: "coauthor_major",
+              member_type: "coauthor-major",
             }),
           ],
           loadedAt: Date.now(),
@@ -320,49 +526,111 @@ describe("renderAdminBot members panel — edit affordance", () => {
       }),
     );
     const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
-    const field = popover?.querySelector<HTMLElement>("[data-collaborator-subgroup-field]");
-    expect(field?.hidden).toBe(false);
-    expect(
-      popover?.querySelector<HTMLSelectElement>('select[name="collaboratorSubgroup"]')?.value,
-    ).toBe("coauthor_major");
-
+    popover!.querySelector<HTMLInputElement>('input[name="memberType"][value="alumni"]')!.checked =
+      true;
     popover
       ?.querySelector<HTMLFormElement>("form")
       ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    expect(saved[0]?.collaboratorSubgroup).toBe("coauthor_major");
 
-    // The roster shows the subgroup next to the privilege it qualifies.
+    expect(saved[0]?.memberType).toBe("alumni, coauthor-major");
+    expect(saved[0]).not.toHaveProperty("privilegeLevel");
+    expect(saved[0]).not.toHaveProperty("collaboratorSubgroup");
+    // The roster still shows the subgroup next to the access level it qualifies.
     expect(container.querySelector("tbody tr")?.textContent).toContain("Coauthor Major");
   });
 
-  it("keeps the subgroup out of the payload once the privilege is no longer collaborator", () => {
+  it("never autosaves a Member type or Meetings tick", () => {
+    vi.useFakeTimers();
+    try {
+      const saved: AdminBotLabMemberSaveInput[] = [];
+      const container = renderToDiv(
+        baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
+      );
+      const box = container.querySelector<HTMLInputElement>(
+        '#adminbot-edit-member-0 input[name="memberType"][value="alumni"]',
+      );
+      box!.checked = true;
+      box!.dispatchEvent(new Event("change", { bubbles: true }));
+      vi.advanceTimersByTime(2000);
+      expect(saved).toEqual([]);
+
+      // An ordinary field still autosaves -- without the type in the payload.
+      const name = container.querySelector<HTMLInputElement>(
+        '#adminbot-edit-member-0 input[name="name"]',
+      );
+      name!.value = "Pat D.";
+      name!.dispatchEvent(new Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(2000);
+      expect(saved).toHaveLength(1);
+      expect(saved[0]).not.toHaveProperty("memberType");
+      expect(saved[0]).not.toHaveProperty("meetings");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("offers the lab's meetings, ticked where they are on the guest list", () => {
     const saved: AdminBotLabMemberSaveInput[] = [];
     const container = renderToDiv(
       baseProps({
         mode: "admin",
-        data: {
-          ...createEmptyAdminBotDashboardData(),
-          members: [
-            member({
-              privilege_level: "external_collaborator",
-              collaborator_subgroup: "coauthor_major",
-            }),
+        onSaveMember: (input) => saved.push(input),
+        standingMeetings: {
+          meetings: [
+            {
+              id: "monday",
+              title: "Group meeting",
+              kind: "group",
+              event_ids: ["monday"],
+              attendees: ["pat@lab.co"],
+            },
+            {
+              id: "theme1",
+              title: "Theme: Causal Inference",
+              kind: "theme",
+              event_ids: ["theme1"],
+              attendees: [],
+            },
           ],
+          loading: false,
+          error: null,
           loadedAt: Date.now(),
         },
-        onSaveMember: (input) => saved.push(input),
       }),
     );
     const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
-    const privilege = popover?.querySelector<HTMLSelectElement>('select[name="privilegeLevel"]');
-    privilege!.value = "member";
-    privilege!.dispatchEvent(new Event("change", { bubbles: true }));
+    const boxes = [
+      ...(popover?.querySelectorAll<HTMLInputElement>('input[name="meetings"]') ?? []),
+    ];
+    expect(boxes.map((box) => [box.value, box.checked])).toEqual([
+      ["monday", true],
+      ["theme1", false],
+    ]);
+    expect(popover?.textContent).toContain("Theme: Causal Inference");
+
+    boxes[1]!.checked = true;
     popover
       ?.querySelector<HTMLFormElement>("form")
       ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved[0]?.meetings).toEqual(["monday", "theme1"]);
+  });
 
-    expect(saved).toHaveLength(1);
-    expect(saved[0]).not.toHaveProperty("collaboratorSubgroup");
+  it("sends no meetings at all when the list could not be read", () => {
+    const saved: AdminBotLabMemberSaveInput[] = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onSaveMember: (input) => saved.push(input),
+        standingMeetings: { meetings: [], loading: false, error: "calendar down", loadedAt: null },
+      }),
+    );
+    const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
+    expect(popover?.textContent).toContain("calendar down");
+    popover
+      ?.querySelector<HTMLFormElement>("form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    // An unread list must not read as "on no meetings": that would remove them from every one.
+    expect(saved[0]).not.toHaveProperty("meetings");
   });
 
   it("hides the subgroup of a member whose privilege is not collaborator", () => {
@@ -482,17 +750,19 @@ describe("renderAdminBot members panel — edit affordance", () => {
       }),
     );
     const form = container.querySelector<HTMLFormElement>("#adminbot-self-edit-member-0 form");
-    // Role is a closed vocabulary now, so the self-edit form offers a select rather than a box.
-    const roleSelect = form?.querySelector<HTMLSelectElement>('select[name="role"]');
-    if (roleSelect) {
-      roleSelect.value = "Industry Researcher";
+    // Role is a closed vocabulary and takes several answers, so the form offers checkboxes over
+    // that vocabulary rather than a select.
+    const roleBoxes = [...(form?.querySelectorAll<HTMLInputElement>('input[name="role"]') ?? [])];
+    for (const box of roleBoxes) {
+      box.checked = box.value === "Industry Researcher" || box.value === "Lab Manager";
     }
     form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 
     expect(saved).toHaveLength(1);
     const [memberId, fields] = saved[0]!;
     expect(memberId).toBe("pat");
-    expect(fields.role).toBe("Industry Researcher");
+    // Stored in the vocabulary's order, not the order the boxes happen to sit in the DOM.
+    expect(fields.role).toBe("Industry Researcher, Lab Manager");
     expect(fields.name).toBe("Pat Doe");
     // Governance keys can never appear — the form has no inputs for them.
     expect(Object.keys(fields)).not.toContain("privilege_level");
@@ -562,6 +832,98 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(email?.readOnly).toBe(false);
   });
 
+  // Onboarding routes on the Member Type -- `templateForMemberType` picks the guide from it -- so
+  // the form that creates a member has to be able to say what they are.
+  it("offers the member type on the add-member form", () => {
+    const container = renderToDiv(baseProps({ mode: "admin" }));
+    const values = [
+      ...container.querySelectorAll<HTMLInputElement>(
+        '#adminbot-add-member input[name="memberType"]',
+      ),
+    ].map((box) => box.value);
+    expect(values).toContain("full");
+    expect(values).toContain("alumni");
+  });
+
+  // The column is a comma-separated list and the lab uses tokens before anybody adds them to the
+  // shared vocabulary. A select built from that list alone would rewrite the value on the next save.
+  it("keeps a stored member type the vocabulary does not list", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [member({ privilege_level: "member", member_type: "full, eurosafeai" })],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+    const ticked = [
+      ...container.querySelectorAll<HTMLInputElement>(
+        '#adminbot-edit-member-0 input[name="memberType"]',
+      ),
+    ]
+      .filter((box) => box.checked)
+      .map((box) => box.value);
+    expect(ticked).toEqual(["full", "eurosafeai"]);
+  });
+
+  // Adding somebody to the roster and onboarding them used to be two separate errands.
+  it("asks to start onboarding when a member is added, and says so by default", () => {
+    const saved: Array<{ id: string; onboard?: boolean }> = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onSaveMember: (input, options) => saved.push({ id: input.id, onboard: options?.onboard }),
+      }),
+    );
+    const tick = container.querySelector<HTMLInputElement>(
+      '#adminbot-add-member [data-testid="member-form-onboard"]',
+    );
+    expect(tick?.checked).toBe(true);
+
+    const form = container.querySelector<HTMLFormElement>("#adminbot-add-member form");
+    form!.querySelector<HTMLInputElement>('input[name="id"]')!.value = "grace";
+    form!.querySelector<HTMLInputElement>('input[name="name"]')!.value = "Grace Hopper";
+    form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved).toEqual([{ id: "grace", onboard: true }]);
+  });
+
+  it("does not onboard when the tick is cleared", () => {
+    const saved: Array<{ onboard?: boolean }> = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onSaveMember: (_input, options) => saved.push({ onboard: options?.onboard }),
+      }),
+    );
+    const form = container.querySelector<HTMLFormElement>("#adminbot-add-member form");
+    form!.querySelector<HTMLInputElement>('input[name="id"]')!.value = "grace";
+    form!.querySelector<HTMLInputElement>('input[name="name"]')!.value = "Grace Hopper";
+    form!.querySelector<HTMLInputElement>('[data-testid="member-form-onboard"]')!.checked = false;
+    form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved).toEqual([{ onboard: false }]);
+  });
+
+  // Editing a row is not adding a member, and re-mailing somebody the lab onboarded months ago is
+  // the failure this guards: the edit form carries no such box, so it can never ask for one.
+  it("never onboards from the edit-member form", () => {
+    const saved: Array<{ onboard?: boolean }> = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onSaveMember: (_input, options) => saved.push({ onboard: options?.onboard }),
+      }),
+    );
+    expect(
+      container.querySelector('#adminbot-edit-member-0 [data-testid="member-form-onboard"]'),
+    ).toBeNull();
+    container
+      .querySelector<HTMLFormElement>("#adminbot-edit-member-0 form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved).toEqual([{ onboard: false }]);
+  });
+
   it("keeps the full admin edit path on every row, including other members", () => {
     const roster = [member({ id: "pat", name: "Pat Doe" }), member({ id: "sam", name: "Sam Roe" })];
     const container = renderToDiv(
@@ -580,7 +942,7 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(container.querySelector('[id^="adminbot-self-edit-member"]')).toBeNull();
     // Admin popovers keep the governance field set.
     expect(
-      container.querySelector('#adminbot-edit-member-1 select[name="privilegeLevel"]'),
+      container.querySelector('#adminbot-edit-member-1 input[name="memberType"]'),
     ).not.toBeNull();
   });
 
@@ -792,6 +1154,93 @@ describe("renderAdminBot announcements panel", () => {
     expect(new Set(recipients)).toEqual(new Set(["existing", "a", "b"]));
   });
 
+  it("pages recipients while filtering the full roster and keeping selections across pages", () => {
+    const roster = Array.from({ length: 105 }, (_, index) =>
+      member({
+        id: `person-${index + 1}`,
+        name: `Person ${index + 1}`,
+        slack_user_id: index === 75 ? undefined : `U${index + 1}`,
+        projects: index >= 103 ? ["Causal"] : ["Atlas"],
+      }),
+    );
+    const container = document.createElement("div");
+    const props = baseProps({
+      mode: "admin",
+      panel: "announcements",
+      data: { ...createEmptyAdminBotDashboardData(), members: roster, loadedAt: Date.now() },
+      memberNudge: {
+        channel: "slack",
+        message: "",
+        subject: "",
+        selectedMemberIds: ["existing"],
+        busy: false,
+      },
+      onRerender: () => render(renderAdminBot(props), container),
+      onNudgeSetRecipients: (ids) => {
+        props.memberNudge = { ...props.memberNudge, selectedMemberIds: ids };
+        render(renderAdminBot(props), container);
+      },
+    });
+    render(renderAdminBot(props), container);
+    const rowIds = () =>
+      [
+        ...container.querySelectorAll<HTMLTableRowElement>(".adminbot-nudge-recipients tbody tr"),
+      ].map((row) => row.dataset.memberId);
+    const pages = () => container.querySelector<HTMLElement>('nav[aria-label="Recipient pages"]');
+    const clickPage = (label: string) =>
+      [...(pages()?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+        .find((button) => button.textContent?.trim() === label)
+        ?.click();
+
+    expect(rowIds()).toHaveLength(50);
+    expect(pages()?.textContent).toContain("Showing 1–50 of 105");
+    clickPage("Next");
+    expect(rowIds()).toHaveLength(50);
+    expect(rowIds()[0]).toBe("person-51");
+    container
+      .querySelector<HTMLButtonElement>(".adminbot-nudge-recipients__actions button")
+      ?.click();
+    expect(props.memberNudge.selectedMemberIds).toContain("existing");
+    expect(props.memberNudge.selectedMemberIds).toContain("person-51");
+    expect(props.memberNudge.selectedMemberIds).not.toContain("person-76");
+
+    clickPage("Next");
+    expect(rowIds()).toEqual([
+      "person-101",
+      "person-102",
+      "person-103",
+      "person-104",
+      "person-105",
+    ]);
+    const project = container.querySelector<HTMLSelectElement>(
+      '.adminbot-nudge-recipients select[name="project"]',
+    );
+    if (!project) {
+      throw new Error("missing project filter");
+    }
+    project.value = "Causal";
+    project.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(rowIds()).toEqual(["person-104", "person-105"]);
+    expect(pages()?.textContent).toContain("Showing 1–2 of 2");
+    expect(container.querySelector("[data-recipient-result-count]")?.textContent).toContain(
+      "2 matching people",
+    );
+    expect(props.memberNudge.selectedMemberIds).toContain("person-51");
+
+    const search = container.querySelector<HTMLInputElement>(
+      '.adminbot-nudge-recipients input[name="search"]',
+    );
+    if (!search) {
+      throw new Error("missing recipient search");
+    }
+    search.value = "Person 105";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(rowIds()).toEqual(["person-105"]);
+    expect(container.querySelector("[data-recipient-result-count]")?.textContent).toContain(
+      "1 matching person",
+    );
+  });
+
   it("preselects members who haven't marked the LinkedIn step done, skipping alumni/external", () => {
     let recipients: string[] = [];
     const step = (status: string) => ({ steps: [{ id: "linkedin", status }] });
@@ -804,6 +1253,16 @@ describe("renderAdminBot announcements panel", () => {
         id: "left",
         name: "Left",
         status: "alumni" as const,
+        onboarding: step("current"),
+      },
+      // The spelling 22 of the lab's 24 alumni actually carry: the type says they left and the
+      // status is absent. Somebody who leaves mid-onboarding has every remaining step unticked
+      // forever, so a status-only test swept all of them in on one press.
+      {
+        ...members[0],
+        id: "left-typed",
+        name: "Left Typed",
+        member_type: "full, alumni",
         onboarding: step("current"),
       },
     ];
@@ -828,8 +1287,9 @@ describe("renderAdminBot announcements panel", () => {
       (button) => button.textContent?.trim() === "Select: LinkedIn not joined",
     );
     laggardsButton?.dispatchEvent(new Event("click", { bubbles: true }));
-    // A member with no checklist at all counts as not-joined; alumni are never nudged, and the
-    // existing manual selection is kept (additive, like "Select all visible").
+    // A member with no checklist at all counts as not-joined; alumni are never nudged however the
+    // roster spells it, and the existing manual selection is kept (additive, like "Select all
+    // visible").
     expect(new Set(recipients)).toEqual(new Set(["existing", "pending", "no-checklist"]));
   });
 
@@ -996,26 +1456,14 @@ describe("renderAdminBot papers panel — member self-service", () => {
     expect(addCard?.querySelector('select[name="reminderStatus"]')).toBeNull();
   });
 
-  it("shows the edit form on a paper the member authors and hides it on one they don't", () => {
+  it("does not build unreachable edit popovers for every paper", () => {
     const container = renderToDiv(
       papersProps({}, [paper(), paper({ id: "paper-2", authors: ["Someone Else"] })]),
     );
-
-    const forms = [
-      ...container.querySelectorAll('[id^="adminbot-edit-paper-"] form.adminbot-form'),
-    ];
-    expect(forms).toHaveLength(1);
-    expect(forms[0]?.querySelector<HTMLInputElement>('input[name="id"]')?.value).toBe("paper-1");
-  });
-
-  it("treats a paper the member filed as theirs even when the authors are written differently", () => {
-    const container = renderToDiv(
-      papersProps({}, [paper({ authors: ["P. Doe"], submitted_by_member_id: "pat" })]),
-    );
-
     expect(
       container.querySelectorAll('[id^="adminbot-edit-paper-"] form.adminbot-form'),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
+    expect(container.querySelectorAll('[data-testid^="paper-overview-open-"]')).toHaveLength(2);
   });
 
   it("keeps deletion out of the member view", () => {
@@ -1037,7 +1485,7 @@ describe("renderAdminBot papers panel — member self-service", () => {
     expect(row).not.toBeNull();
     // The title opens the record, so a paper is still read and edited in one place.
     expect(row?.querySelector("button.logistics-requests__open")).not.toBeNull();
-    expect(container.querySelector('[id^="adminbot-edit-paper-"]')).not.toBeNull();
+    expect(container.querySelector('[id^="adminbot-edit-paper-"]')).toBeNull();
   });
 
   it("offers no add-paper form when nobody is signed in", () => {
@@ -1141,6 +1589,7 @@ describe("pre-registration venue table", () => {
       current_step: "overleaf_writing",
       artifacts: {
         overleaf_edit_url: "https://overleaf.com/project/abc",
+        overleaf_view_url: "https://overleaf.com/read/abc",
         venue_targets: JSON.stringify([
           { venue_id: "iclr2027_paper", label: "ICLR 2027", confidence: 50 },
           { venue_id: "arr_2026_october", label: "ARR October", confidence: 99 },
@@ -1159,6 +1608,20 @@ describe("pre-registration venue table", () => {
       },
     },
     { id: "c", title: "Not registered", authors: [], current_step: "overleaf_writing" },
+    {
+      id: "e",
+      title: "Read-only link only",
+      authors: ["Dan"],
+      current_step: "overleaf_writing",
+      artifacts: {
+        // A blank edit field, which is what the grid stores when somebody clears the cell.
+        overleaf_edit_url: "   ",
+        overleaf_view_url: "https://overleaf.com/read/xyz",
+        venue_targets: JSON.stringify([
+          { venue_id: "arr_2026_october", label: "ARR October", confidence: 40 },
+        ]),
+      },
+    },
     {
       id: "d",
       title: "Registered from its own card",
@@ -1186,7 +1649,7 @@ describe("pre-registration venue table", () => {
 
   it("shows one row per paper, not one per venue", () => {
     const board = draw().querySelector('[data-testid="prereg-board"]');
-    expect(board?.querySelectorAll("tbody tr")).toHaveLength(3);
+    expect(board?.querySelectorAll("tbody tr")).toHaveLength(4);
   });
 
   it("lists a paper registered through the card picker, not just through the dialog", () => {
@@ -1211,11 +1674,145 @@ describe("pre-registration venue table", () => {
     );
   });
 
-  it("carries the spreadsheet's four columns", () => {
-    const head = draw().querySelector('[data-testid="prereg-board"] thead')?.textContent ?? "";
-    for (const column of ["Title", "Venue", "Authors", "Overleaf"]) {
-      expect(head).toContain(column);
+  // The fixture, by readiness: "Aimed at both" 99 (the only one with an edit link), "ICLR only"
+  // 80, "Registered from its own card" 50, "Read-only link only" 40 (edit field stored blank).
+  function drawWith(extra: Record<string, unknown>) {
+    return renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        data: { ...createEmptyAdminBotDashboardData(), members, papers, loadedAt: Date.now() },
+        ...extra,
+      }),
+    );
+  }
+
+  function titlesOf(container: HTMLElement): string[] {
+    return [...container.querySelectorAll('[data-testid="prereg-board"] tbody tr')].map(
+      (row) => row.querySelector("td")?.textContent?.trim() ?? "",
+    );
+  }
+
+  it("sorts by readiness unless told otherwise", () => {
+    expect(titlesOf(drawWith({}))[0]).toBe("Aimed at both");
+  });
+
+  it("puts the rows with no edit link first when sorted by edit link", () => {
+    const titles = titlesOf(drawWith({ preregSort: "editLink" }));
+    // The one paper that has an edit link goes last, even though it is the readiest.
+    expect(titles.at(-1)).toBe("Aimed at both");
+    // A field stored as whitespace is a missing link, not a link.
+    expect(titles.slice(0, 3)).toContain("Read-only link only");
+    // Within the missing group the original readiness order survives, so the sort is a regrouping
+    // rather than a reshuffle.
+    expect(titles.slice(0, 3)).toEqual([
+      "ICLR only",
+      "Registered from its own card",
+      "Read-only link only",
+    ]);
+  });
+
+  it("sorts by title", () => {
+    expect(titlesOf(drawWith({ preregSort: "title" }))).toEqual([
+      "Aimed at both",
+      "ICLR only",
+      "Read-only link only",
+      "Registered from its own card",
+    ]);
+  });
+
+  it("puts the rows with no view link first when sorted by view link", () => {
+    // A different gap from the edit link: "Aimed at both" and "Read-only link only" both have a
+    // read-only URL, and only the first has an edit URL, so the two orderings are not the same
+    // list reshuffled.
+    const titles = titlesOf(drawWith({ preregSort: "viewLink" }));
+    expect(titles.slice(0, 2)).toEqual(["ICLR only", "Registered from its own card"]);
+    expect(titles.slice(2)).toEqual(["Aimed at both", "Read-only link only"]);
+  });
+
+  it("reverses whichever ordering is on screen, tie-breaks included", () => {
+    const forward = titlesOf(drawWith({}));
+    const reversed = titlesOf(drawWith({ preregSortReversed: true }));
+    expect(reversed).toEqual([...forward].reverse());
+    // And it reverses the chosen key rather than snapping back to readiness.
+    expect(titlesOf(drawWith({ preregSort: "title", preregSortReversed: true }))).toEqual([
+      "Registered from its own card",
+      "Read-only link only",
+      "ICLR only",
+      "Aimed at both",
+    ]);
+  });
+
+  it("keeps a venue on the board after submission closes, until its decisions land", () => {
+    // ICLR 2027's paper deadline is 25 Sep 2026 and its decisions are 16 Dec. On the 26th the
+    // venue is past submission and unresolved, which is when the board matters most.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-26T12:00:00Z"));
+    try {
+      const chip = drawWith({}).querySelector('[data-testid="venue-filter-iclr2027_paper"]');
+      expect(chip).not.toBeNull();
+      expect(chip?.textContent).toContain("awaiting results");
+      // Its papers are still listed rather than dropped with it.
+      expect(titlesOf(drawWith({}))).toContain("ICLR only");
+    } finally {
+      vi.useRealTimers();
     }
+  });
+
+  it("drops papers under the confidence threshold", () => {
+    expect(titlesOf(drawWith({ preregMinConfidence: 50 }))).not.toContain("Read-only link only");
+    expect(titlesOf(drawWith({ preregMinConfidence: 75 }))).toEqual(["Aimed at both", "ICLR only"]);
+    // A paper is judged on its best target, not its first: "Aimed at both" is 50% at ICLR and 99%
+    // at ARR, and it survives a 75% floor because of the second.
+    expect(titlesOf(drawWith({ preregMinConfidence: 75 }))).toContain("Aimed at both");
+  });
+
+  it("can show only the rows still missing an edit link", () => {
+    const titles = titlesOf(drawWith({ preregMissingEdit: true }));
+    expect(titles).toHaveLength(3);
+    expect(titles).not.toContain("Aimed at both");
+  });
+
+  it("says a filter emptied the board rather than that nobody has registered", () => {
+    // 90%+ leaves only "Aimed at both", which is also the one paper that has an edit link, so
+    // asking for both at once is genuinely empty rather than merely short.
+    const empty = drawWith({ preregMinConfidence: 90, preregMissingEdit: true });
+    expect(empty.querySelector('[data-testid="prereg-empty"]')?.textContent).toContain(
+      "matches these filters",
+    );
+    // And still says the plain thing when no filter is on.
+    const none = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members,
+          papers: [papers[2]!],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+    expect(none.querySelector('[data-testid="prereg-empty"]')?.textContent).toContain(
+      "Nobody has pre-registered",
+    );
+  });
+
+  it("folds the active papers table into a disclosure that arrives open", () => {
+    const container = drawWith({});
+    const table = container.querySelector('[data-testid="adminbot-paper-overview"]');
+    const details = table?.closest("details.paper-overview__board");
+    expect(details).not.toBeNull();
+    // Open on arrival: this is the tab's subject, not a detail under it.
+    expect((details as HTMLDetailsElement).open).toBe(true);
+    expect(details?.querySelector("summary")?.textContent).toContain("Active papers");
+  });
+
+  it("carries the spreadsheet's columns, with a column per Overleaf link", () => {
+    const head = draw().querySelector('[data-testid="prereg-board"] thead');
+    expect(
+      [...(head?.querySelectorAll("th") ?? [])].map((cell) => cell.textContent?.trim()),
+    ).toEqual(["Title", "Venue", "Authors", "Overleaf (edit)", "Overleaf (view)"]);
   });
 
   it("filtering to a venue drops papers not aimed at it", () => {
@@ -1234,5 +1831,615 @@ describe("pre-registration venue table", () => {
   it("marks a missing Overleaf link rather than leaving the cell ambiguous", () => {
     const board = draw("iclr2027_paper").querySelector('[data-testid="prereg-board"]');
     expect(board?.querySelector(".venue-table__missing")).not.toBeNull();
+  });
+
+  /** The two Overleaf cells of the row whose title contains `title`, in column order. */
+  function overleafCells(venue: string, title: string) {
+    const row = [...draw(venue).querySelectorAll('[data-testid="prereg-board"] tbody tr')].find(
+      (entry) => entry.textContent?.includes(title),
+    );
+    return [...(row?.querySelectorAll(".venue-table__link") ?? [])];
+  }
+
+  // The project link and the read-only share link are different things -- one is who may write,
+  // the other is what you send someone you are not adding to the project -- so each gets a column
+  // and a row carrying both offers both.
+  it("gives each Overleaf link its own column", () => {
+    const [edit, view] = overleafCells("arr_2026_october", "Aimed at both");
+    expect(edit?.querySelector("a")?.getAttribute("href")).toBe("https://overleaf.com/project/abc");
+    expect(edit?.querySelector("a")?.textContent?.trim()).toBe("Edit");
+    expect(view?.querySelector("a")?.getAttribute("href")).toBe("https://overleaf.com/read/abc");
+    expect(view?.querySelector("a")?.textContent?.trim()).toBe("View");
+  });
+
+  // Which link a paper is missing is the thing a column of its own makes readable: the edit cell
+  // says "—" while the view cell beside it is filled. A blank stored field is a blank field, not
+  // an answer -- reading it as one put a link to nowhere in a column that has its own em dash.
+  it("marks the empty column and keeps the filled one when only one link exists", () => {
+    const [edit, view] = overleafCells("arr_2026_october", "Read-only link only");
+    expect(edit?.querySelector("a")).toBeNull();
+    expect(edit?.querySelector(".venue-table__missing")).not.toBeNull();
+    expect(view?.querySelector("a")?.getAttribute("href")).toBe("https://overleaf.com/read/xyz");
+    expect(view?.querySelector(".venue-table__missing")).toBeNull();
+  });
+});
+
+// The roster editor takes whatever the admin currently knows: no field blocks the save (the id is
+// the upsert key and the one exception), and edits land on the record by themselves after a pause,
+// so the Save button is a flush rather than a gate.
+describe("renderAdminBot members panel — lenient saves and autosave", () => {
+  function editForm(container: HTMLElement): HTMLFormElement {
+    const form = container.querySelector<HTMLFormElement>("#adminbot-edit-member-0 form");
+    expect(form).not.toBeNull();
+    return form!;
+  }
+
+  it("puts no required mark on registry fields, calendar email included", () => {
+    const container = renderToDiv(baseProps({ mode: "admin" }));
+    const form = editForm(container);
+    expect(form.querySelector('input[name="calendar_email"]')?.hasAttribute("required")).toBe(
+      false,
+    );
+    // Only the id — the upsert key — may refuse to be blank, and on an edit it is prefilled
+    // and readonly, so nothing blocks saving an existing record.
+    for (const input of form.querySelectorAll<HTMLInputElement>("input[required]")) {
+      expect(input.name).toBe("id");
+      expect(input.readOnly).toBe(true);
+    }
+  });
+
+  it("saves with mandatory-ledger fields blank, omitting them from the patch", () => {
+    const saved: AdminBotLabMemberSaveInput[] = [];
+    const container = renderToDiv(
+      baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
+    );
+    const form = editForm(container);
+    const calendar = form.querySelector<HTMLInputElement>('input[name="calendar_email"]');
+    calendar!.value = "";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved).toHaveLength(1);
+    expect(saved[0]!.id).toBe(members[0]!.id);
+    // A blank answer is left out of the patch (absent means "leave it alone"), never refused.
+    expect("calendar_email" in (saved[0]!.profile ?? {})).toBe(false);
+  });
+
+  it("saves with the name box emptied by omitting name, so the stored one survives", () => {
+    const saved: AdminBotLabMemberSaveInput[] = [];
+    const container = renderToDiv(
+      baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
+    );
+    const form = editForm(container);
+    form.querySelector<HTMLInputElement>('input[name="name"]')!.value = "";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved).toHaveLength(1);
+    expect("name" in saved[0]!).toBe(false);
+  });
+
+  it("autosaves an edit after the typing pause, without the Save button", () => {
+    vi.useFakeTimers();
+    try {
+      const saved: AdminBotLabMemberSaveInput[] = [];
+      const container = renderToDiv(
+        baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
+      );
+      const form = editForm(container);
+      const location = form.querySelector<HTMLInputElement>('input[name="location"]');
+      location!.value = "Toronto, Canada";
+      location!.dispatchEvent(new Event("input", { bubbles: true }));
+      // Still typing: nothing saved yet, and further keystrokes restart the clock.
+      expect(saved).toHaveLength(0);
+      vi.advanceTimersByTime(500);
+      location!.dispatchEvent(new Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(500);
+      expect(saved).toHaveLength(0);
+      vi.advanceTimersByTime(300);
+      expect(saved).toHaveLength(1);
+      expect(saved[0]!.profile?.location).toBe("Toronto, Canada");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels an old member form's autosave on account switch", () => {
+    vi.useFakeTimers();
+    try {
+      const onSaveMember = vi.fn();
+      const container = renderToDiv(baseProps({ mode: "admin", onSaveMember }));
+      const form = editForm(container);
+      const location = form.querySelector<HTMLInputElement>('input[name="location"]')!;
+      location.value = "Private draft";
+      location.dispatchEvent(new Event("input", { bubbles: true }));
+
+      resetAdminViewSessionState();
+      vi.advanceTimersByTime(1_000);
+
+      expect(onSaveMember).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not autosave the add-member form, which would create half-typed records", () => {
+    vi.useFakeTimers();
+    try {
+      const saved: AdminBotLabMemberSaveInput[] = [];
+      const container = renderToDiv(
+        baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
+      );
+      const idInput = container.querySelector<HTMLInputElement>(
+        '#adminbot-add-member input[name="id"]',
+      );
+      idInput!.value = "pa";
+      idInput!.dispatchEvent(new Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(2000);
+      expect(saved).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("renderAdminBot members panel — view as", () => {
+  const roster: AdminBotLabMember[] = [
+    ...members,
+    member({ id: "ada", name: "Ada Lovelace", email: "ada@lab.co", privilege_level: "member" }),
+  ];
+
+  function draw(overrides: Partial<AdminBotProps> = {}) {
+    return renderToDiv(
+      baseProps({
+        mode: "admin",
+        signedInMemberId: "pat",
+        data: { ...createEmptyAdminBotDashboardData(), members: roster, loadedAt: Date.now() },
+        ...overrides,
+      }),
+    );
+  }
+
+  function viewAsButtons(container: HTMLElement): HTMLButtonElement[] {
+    return [...container.querySelectorAll<HTMLButtonElement>("tbody tr button")].filter(
+      (button) => button.textContent?.trim() === "View as",
+    );
+  }
+
+  it("offers the action on other members' rows only", () => {
+    const container = draw({ onViewAsMember: () => undefined });
+    const buttons = viewAsButtons(container);
+    // One button, on Ada's row -- viewing as yourself is the one case the service refuses outright,
+    // so the row that would do it does not offer it.
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]?.closest("tr")?.textContent).toContain("Ada Lovelace");
+  });
+
+  it("hands back the member whose row was clicked", () => {
+    const clicked: string[] = [];
+    const container = draw({ onViewAsMember: (entry) => clicked.push(entry.id) });
+    viewAsButtons(container)[0]?.click();
+    expect(clicked).toEqual(["ada"]);
+  });
+
+  it("leaves the action off the page entirely when the host cannot open one", () => {
+    // No callback is how a non-admin -- or an admin already inside somebody else's view -- sees
+    // this panel. Absent rather than disabled: a button that cannot act is a question the page
+    // has no way to answer.
+    expect(viewAsButtons(draw())).toHaveLength(0);
+  });
+});
+
+describe("renderAdminBot members panel — edit history", () => {
+  it("opens one member's history from their row and fetches it on the click", () => {
+    const asked: Array<[string, string]> = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onLoadRecentEdits: (subject, id) => asked.push([subject, id]),
+      }),
+    );
+    const open = container.querySelector<HTMLButtonElement>(
+      '[data-testid="member-edits-open-pat"]',
+    );
+    expect(open).not.toBeNull();
+    // The popover it points at is the one carrying that member's rows, not a shared panel.
+    expect(open?.getAttribute("popovertarget")).toBe(
+      container.querySelector('[data-testid="member-edits-pat"]')?.id,
+    );
+    // Nothing is asked for until somebody asks: forty histories nobody opened is the cost this
+    // avoids.
+    expect(asked).toEqual([]);
+    open?.click();
+    expect(asked).toEqual([["member", "pat"]]);
+  });
+
+  it("shows the loaded rows, naming the actor rather than the member", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onLoadRecentEdits: () => undefined,
+        recentEdits: {
+          "member:pat": {
+            loading: false,
+            error: null,
+            updates: [
+              {
+                slot_id: "member:pat:role",
+                subject: "member",
+                field_key: "role",
+                actor_member_id: "sam",
+                actor_name: "Sam Lee",
+                source: "admin",
+                at: "2026-09-01T10:00:00Z",
+              },
+            ],
+          },
+        },
+      }),
+    );
+    const panel = container.querySelector('[data-testid="member-edits-pat"]');
+    expect(panel?.querySelector(".recent-edits__actor")?.textContent).toBe("Sam Lee");
+    expect(panel?.querySelector('[data-testid="recent-edits-empty"]')).toBeNull();
+  });
+
+  it("keeps the history out of the general roster, where the row is not an admin's to read", () => {
+    const container = renderToDiv(
+      baseProps({ mode: "general", onLoadRecentEdits: () => undefined }),
+    );
+    expect(container.querySelector('[data-testid="member-edits-open-pat"]')).toBeNull();
+    expect(container.querySelector('[data-testid="member-edits-pat"]')).toBeNull();
+  });
+});
+
+describe("renderAdminBot papers panel — conference travel", () => {
+  const roster = {
+    key: "emnlp:2026",
+    venue: "EMNLP",
+    year: 2026,
+    label: "EMNLP 2026",
+    paper_count: 2,
+    going_count: 1,
+    unanswered_count: 1,
+    people: [
+      {
+        attendee_key: "member:ada",
+        member_id: "ada",
+        name: "Ada Lovelace",
+        attending: "yes" as const,
+        papers: [
+          { paper_id: "p1", title: "Causal abstraction", attending: "yes" as const },
+          { paper_id: "p2", title: "Robustness bounds", attending: "unknown" as const },
+        ],
+      },
+      {
+        attendee_key: "name:jo-park",
+        name: "Jo Park",
+        attending: "unknown" as const,
+        papers: [{ paper_id: "p2", title: "Robustness bounds", attending: "unknown" as const }],
+      },
+    ],
+    papers_awaiting: [{ paper_id: "p2", title: "Robustness bounds", unanswered: 1 }],
+  };
+
+  function withRoster() {
+    return renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        data: { ...createEmptyAdminBotDashboardData(), members, conferenceRosters: [roster] },
+      }),
+    );
+  }
+
+  it("names everyone at the conference, not only the people who said yes", () => {
+    const container = withRoster();
+    const ada = container.querySelector(
+      '[data-testid="travel-board-person-emnlp:2026-member:ada"]',
+    );
+    const jo = container.querySelector(
+      '[data-testid="travel-board-person-emnlp:2026-name:jo-park"]',
+    );
+    expect(ada?.textContent).toContain("Ada Lovelace");
+    expect(ada?.textContent).toContain("Going");
+    // The whole point of the board: an unanswered person is a name to chase, not a count.
+    expect(jo?.textContent).toContain("Jo Park");
+    expect(jo?.textContent).toContain("No answer yet");
+  });
+
+  it("carries the year, so two years of the same conference cannot merge", () => {
+    const section = withRoster().querySelector(
+      '[data-testid="travel-board-conference-emnlp:2026"]',
+    );
+    expect(section?.textContent).toContain("EMNLP 2026");
+  });
+
+  it("names the papers still owing an answer", () => {
+    expect(withRoster().textContent).toContain("Robustness bounds (1)");
+  });
+
+  it("renders nothing when the service returned no conferences", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        data: { ...createEmptyAdminBotDashboardData(), members },
+      }),
+    );
+    expect(container.querySelector('[data-testid="travel-board"]')).toBeNull();
+  });
+
+  // Years relative to the clock rather than literals: the cut is "a year that has finished", so a
+  // fixture pinned to 2026 would quietly change sides on 1 January and take the assertion with it.
+  const thisYear = new Date().getFullYear();
+
+  function rosterFor(year: number) {
+    return {
+      ...roster,
+      key: `emnlp:${year}`,
+      year,
+      label: `EMNLP ${year}`,
+      papers_awaiting: [],
+    };
+  }
+
+  function withYears(...years: number[]) {
+    return renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members,
+          conferenceRosters: years.map((year) => rosterFor(year)),
+        },
+      }),
+    );
+  }
+
+  it("keeps a finished year out of the board and behind the disclosure", () => {
+    const container = withYears(thisYear, thisYear - 1);
+    const past = container.querySelector('[data-testid="travel-board-past"]');
+    // Still rendered -- a native <details> hides its contents without dropping them, so the rows
+    // stay findable by find-in-page and by a screen reader that opens the section.
+    const old = container.querySelector(
+      `[data-testid="travel-board-conference-emnlp:${thisYear - 1}"]`,
+    );
+    const current = container.querySelector(
+      `[data-testid="travel-board-conference-emnlp:${thisYear}"]`,
+    );
+    expect(old).not.toBeNull();
+    expect(past?.contains(old)).toBe(true);
+    expect(past?.contains(current)).toBe(false);
+  });
+
+  it("leaves the disclosure shut on arrival, and says how many years it holds", () => {
+    const container = withYears(thisYear, thisYear - 1, thisYear - 2);
+    const details = container.querySelector<HTMLDetailsElement>("details.travel-board__past");
+    expect(details?.open).toBe(false);
+    expect(details?.querySelector("summary")?.textContent).toContain("Past conferences (2)");
+  });
+
+  it("offers no disclosure when nothing has finished yet", () => {
+    const container = withYears(thisYear, thisYear + 1);
+    expect(container.querySelector('[data-testid="travel-board-past"]')).toBeNull();
+    expect(container.querySelector('[data-testid="travel-board-current-empty"]')).toBeNull();
+  });
+
+  it("says so when every conference is behind the disclosure", () => {
+    const container = withYears(thisYear - 1);
+    // Otherwise the card would be a title, a blurb and a closed section, which reads as broken
+    // rather than as a lab with no accepted paper this year.
+    expect(
+      container.querySelector('[data-testid="travel-board-current-empty"]')?.textContent,
+    ).toContain("Nothing accepted for this year yet.");
+    expect(container.querySelector('[data-testid="travel-board-past"]')).not.toBeNull();
+  });
+});
+
+describe("pending actions bulk clear", () => {
+  function proposal(id: string, summary: string) {
+    return {
+      id,
+      type: "slack.send_message",
+      risk_tier: "T3" as const,
+      summary,
+      status: "pending" as const,
+      payload_hash: `hash_${id}`,
+      approval_requirement: { requires_approval: true, approver_roles: ["pi"], min_approvals: 1 },
+      approvals: [],
+      created_at: "2026-07-14T19:00:00.000Z",
+      updated_at: "2026-07-14T19:00:00.000Z",
+    };
+  }
+
+  const proposals = [proposal("act_one", "First thing"), proposal("act_two", "Second thing")];
+
+  function drawActions(overrides: Partial<AdminBotProps> = {}) {
+    const container = document.createElement("div");
+    render(
+      renderAdminBot(
+        baseProps({
+          panel: "actions",
+          mode: "admin",
+          data: { ...createEmptyAdminBotDashboardData(), proposals, loadedAt: Date.now() },
+          ...overrides,
+        }),
+      ),
+      container,
+    );
+    return container;
+  }
+
+  it("offers one checkbox per proposal plus a select-all", () => {
+    const host = drawActions();
+    expect(host.querySelectorAll(".adminbot-action__select input").length).toBe(2);
+    expect(host.querySelector(".adminbot-action-bulk__all")?.textContent).toContain("Select all 2");
+  });
+
+  it("keeps the remove button disabled until something is ticked", () => {
+    const idle = drawActions().querySelector<HTMLButtonElement>(".adminbot-action-bulk button");
+    expect(idle?.disabled).toBe(true);
+
+    const armed = drawActions({ selectedActionIds: ["act_one"] }).querySelector<HTMLButtonElement>(
+      ".adminbot-action-bulk button",
+    );
+    expect(armed?.disabled).toBe(false);
+    expect(armed?.textContent).toContain("(1)");
+  });
+
+  it("reports a partial selection and reflects it on the select-all box", () => {
+    const host = drawActions({ selectedActionIds: ["act_one"] });
+    expect(host.querySelector(".adminbot-action-bulk__all")?.textContent).toContain("1 of 2");
+    const all = host.querySelector<HTMLInputElement>(".adminbot-action-bulk__all input");
+    expect(all?.indeterminate).toBe(true);
+    expect(all?.checked).toBe(false);
+  });
+
+  it("select-all hands back every id, and hands back nothing once all are ticked", () => {
+    const seen: string[][] = [];
+    const none = drawActions({ onSetSelectedActions: (ids) => seen.push(ids) });
+    none
+      .querySelector<HTMLInputElement>(".adminbot-action-bulk__all input")
+      ?.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(seen[0]).toEqual(["act_one", "act_two"]);
+
+    const all = drawActions({
+      selectedActionIds: ["act_one", "act_two"],
+      onSetSelectedActions: (ids) => seen.push(ids),
+    });
+    all
+      .querySelector<HTMLInputElement>(".adminbot-action-bulk__all input")
+      ?.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(seen[1]).toEqual([]);
+  });
+
+  it("ticking a row toggles just that proposal", () => {
+    const toggled: string[] = [];
+    const host = drawActions({ onToggleActionSelected: (id) => toggled.push(id) });
+    host
+      .querySelectorAll<HTMLInputElement>(".adminbot-action__select input")[1]
+      ?.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(toggled).toEqual(["act_two"]);
+  });
+
+  // The whole point of the asymmetry: a bulk clear is a tidy-up, a bulk execute would be N
+  // irreversible external effects behind one click. There must be no way to ask for the latter.
+  it("offers no bulk execute", () => {
+    const bar = drawActions({ selectedActionIds: ["act_one", "act_two"] }).querySelector(
+      ".adminbot-action-bulk",
+    );
+    expect(bar?.textContent).toContain("Remove selected");
+    expect(bar?.textContent?.toLowerCase()).not.toContain("execute");
+  });
+
+  it("freezes the per-row buttons while a bulk clear is running", () => {
+    const host = drawActions({ selectedActionIds: ["act_one"], bulkActionBusy: true });
+    const rowButtons = host.querySelectorAll<HTMLButtonElement>(".adminbot-action__actions button");
+    expect(rowButtons.length).toBe(4);
+    for (const button of rowButtons) {
+      expect(button.disabled).toBe(true);
+    }
+    expect(
+      host.querySelector<HTMLButtonElement>(".adminbot-action-bulk button")?.textContent,
+    ).toContain("Removing");
+  });
+});
+
+describe("onboarding additions", () => {
+  it("submits a new member without a manual ID and offers city/institution suggestions", () => {
+    const saves: unknown[] = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        onSaveMember: (member, options) => {
+          saves.push({ member, options });
+        },
+      }),
+    );
+    const form = container.querySelector<HTMLFormElement>("#adminbot-add-member form")!;
+    const id = form.querySelector<HTMLInputElement>('input[name="id"]')!;
+    expect(id.required).toBe(false);
+    form.querySelector<HTMLInputElement>('input[name="name"]')!.value = "Alex Example";
+    expect(form.querySelector<HTMLInputElement>('input[name="joined_month"]')!.value).toBe(
+      new Date().toISOString().slice(0, 7),
+    );
+    expect(form.querySelector<HTMLInputElement>('input[name="receivesNudges"]')!.checked).toBe(
+      true,
+    );
+    expect(form.querySelector('datalist option[value="Tübingen"]')).not.toBeNull();
+    expect(form.querySelector('datalist option[value="ETH Zurich"]')).not.toBeNull();
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saves).toEqual([
+      expect.objectContaining({
+        member: expect.objectContaining({ id: "", name: "Alex Example" }),
+        options: { onboard: true, create: true, slackChannels: [] },
+      }),
+    ]);
+    expect(container.textContent).toContain("Background / reason for adding this person");
+  });
+  it("offers only real meeting/discussion channels and submits selected channel names", () => {
+    const saves = vi.fn();
+    const container = document.createElement("div");
+    render(
+      renderAdminBot(
+        baseProps({
+          mode: "admin",
+          onSaveMember: saves,
+          onboardingSlackChannels: {
+            channels: [
+              "proj-example",
+              "meeting-causality",
+              "discussion-nlp",
+              "random",
+              "disc-reading",
+            ],
+            loading: false,
+            error: null,
+          },
+        }),
+      ),
+      container,
+    );
+    const form = container.querySelector<HTMLFormElement>("#adminbot-add-member form")!;
+    const channels = [...form.querySelectorAll<HTMLInputElement>('input[name="slackChannels"]')];
+    expect(channels.map((input) => input.value)).toEqual([
+      "disc-reading",
+      "discussion-nlp",
+      "meeting-causality",
+    ]);
+    channels[0]!.checked = true;
+    channels[2]!.checked = true;
+    form.querySelector<HTMLInputElement>('input[name="name"]')!.value = "Alex Example";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saves).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        slackChannels: ["disc-reading", "meeting-causality"],
+      }),
+    );
+  });
+  it("shows channel lookup failures without inventing channel options", () => {
+    const container = document.createElement("div");
+    const load = vi.fn();
+    render(
+      renderAdminBot(
+        baseProps({
+          mode: "admin",
+          onboardingSlackChannels: {
+            channels: null,
+            loading: false,
+            error: "Slack lookup unavailable",
+          },
+          onLoadOnboardingSlackChannels: load,
+        }),
+      ),
+      container,
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Slack lookup unavailable",
+    );
+    expect(container.querySelector('input[name="slackChannels"]')).toBeNull();
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Load Slack channel options"),
+    )!;
+    button.click();
+    expect(load).toHaveBeenCalledOnce();
   });
 });

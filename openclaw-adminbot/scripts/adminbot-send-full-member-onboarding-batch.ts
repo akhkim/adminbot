@@ -32,17 +32,21 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import { renderEmailBodyHtml } from "../extensions/adminbot/src/connectors/email-html.ts";
-import { verifyPassword } from "../extensions/adminbot/src/workflows/identity/auth.ts";
+import {
+  ADMINBOT_SEEDED_PORTAL_PASSWORD,
+  verifyPassword,
+} from "../extensions/adminbot/src/workflows/identity/auth.ts";
 import { composeOnboardingGuide } from "../extensions/adminbot/src/workflows/onboarding/guide.ts";
 import { parseCsv } from "./adminbot-import-member-sheet.ts";
 
 const execFile = promisify(execFileCallback);
 const TEMPLATE_ID = "member";
-const SEEDED_PASSWORD = "jinesis";
+const SEEDED_PASSWORD = ADMINBOT_SEEDED_PORTAL_PASSWORD;
 const OUT_DIR = ".artifacts/onboarding-mail-batch";
 const MEMBER_TYPE_HEADER = "Member Type";
 const TEST_ONBOARD_HEADER = "Test Onboard";
-const CORRESPONDENCE_HEADER = "Email for correspondence (the more professional the better)";
+const CORRESPONDENCE_HEADER =
+  "Email for correspondence (the more professional the better)";
 const SLACK_ID_HEADER = "Slack ID";
 // The test-onboarding batches that have already been mailed.
 const EXCLUDED_TEST_GROUPS = new Set(["1", "2", "3"]);
@@ -92,7 +96,10 @@ function correspondenceAddress(cell: string): string | undefined {
         .toLowerCase(),
     )
     .filter((part) => /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/u.test(part));
-  return candidates.find((address) => address.endsWith("@gmail.com")) ?? candidates[0];
+  return (
+    candidates.find((address) => address.endsWith("@gmail.com")) ??
+    candidates[0]
+  );
 }
 
 type Recipient = { name: string; to: string; memberType: string };
@@ -105,7 +112,9 @@ function loadNeverSignedIn(databasePath: string): {
   const db = new DatabaseSync(databasePath);
   try {
     const members = (
-      db.prepare("SELECT id, payload_json FROM adminbot_lab_members").all() as unknown as Array<{
+      db
+        .prepare("SELECT id, payload_json FROM adminbot_lab_members")
+        .all() as unknown as Array<{
         id: string;
         payload_json: string;
       }>
@@ -119,12 +128,17 @@ function loadNeverSignedIn(databasePath: string): {
         .map((row) => [String(row.member.slack_user_id).trim(), row.id]),
     );
     const byName = new Map(
-      members.map((row) => [normalizeName(String(row.member.name ?? "")), row.id]),
+      members.map((row) => [
+        normalizeName(String(row.member.name ?? "")),
+        row.id,
+      ]),
     );
     const credentials = new Map(
       (
         db
-          .prepare("SELECT member_id, password_scrypt FROM adminbot_member_credentials")
+          .prepare(
+            "SELECT member_id, password_scrypt FROM adminbot_member_credentials",
+          )
           .all() as unknown as Array<{
           member_id: string;
           password_scrypt: string;
@@ -132,7 +146,8 @@ function loadNeverSignedIn(databasePath: string): {
       ).map((row) => [row.member_id, row.password_scrypt]),
     );
     return {
-      idFor: (slackId, name) => bySlack.get(slackId.trim()) ?? byName.get(normalizeName(name)),
+      idFor: (slackId, name) =>
+        bySlack.get(slackId.trim()) ?? byName.get(normalizeName(name)),
       // No credential means no account yet, which the mail covers -- only a changed password is a
       // reason to stay silent.
       hasOwnPassword: (memberId) => {
@@ -151,10 +166,16 @@ function main(): void {
   const onlyAt = args.indexOf("--only");
   const only = onlyAt < 0 ? undefined : args[onlyAt + 1]?.toLowerCase();
   const logAt = args.indexOf("--log");
-  const logPath = (logAt < 0 ? undefined : args[logAt + 1]) ?? path.join(OUT_DIR, "sent.log");
-  const flagValues = new Set([only, logAt < 0 ? undefined : args[logAt + 1]].filter(Boolean));
+  const logPath =
+    (logAt < 0 ? undefined : args[logAt + 1]) ?? path.join(OUT_DIR, "sent.log");
+  const flagValues = new Set(
+    [only, logAt < 0 ? undefined : args[logAt + 1]].filter(Boolean),
+  );
   const [databasePath, csvPath] = args.filter(
-    (arg) => !arg.startsWith("--") && !flagValues.has(arg.toLowerCase()) && !flagValues.has(arg),
+    (arg) =>
+      !arg.startsWith("--") &&
+      !flagValues.has(arg.toLowerCase()) &&
+      !flagValues.has(arg),
   );
   if (!databasePath || !csvPath) {
     throw new Error(
@@ -162,7 +183,9 @@ function main(): void {
     );
   }
   if (send && !process.env.GOG_KEYRING_PASSWORD) {
-    throw new Error("--send needs GOG_KEYRING_PASSWORD; gog cannot read its token without it");
+    throw new Error(
+      "--send needs GOG_KEYRING_PASSWORD; gog cannot read its token without it",
+    );
   }
 
   const rows = parseCsv(fs.readFileSync(csvPath, "utf8").replace(/^﻿/u, ""));
@@ -228,19 +251,35 @@ function main(): void {
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const composed = recipients.map((recipient) => {
-    const result = composeOnboardingGuide(TEMPLATE_ID, { first_name: firstNameOf(recipient.name) });
+    const result = composeOnboardingGuide(TEMPLATE_ID, {
+      first_name: firstNameOf(recipient.name),
+    });
     if (!result.ok) {
-      throw new Error(`${recipient.name}: ${result.reason} ${result.missing.join(", ")}`);
+      throw new Error(
+        `${recipient.name}: ${result.reason} ${result.missing.join(", ")}`,
+      );
     }
-    return { recipient, subject: result.guide.subject, body: result.guide.body };
+    return {
+      recipient,
+      subject: result.guide.subject,
+      body: result.guide.body,
+    };
   });
 
   console.log(`recipients: ${composed.length}`);
   for (const entry of composed) {
-    const extra = entry.recipient.memberType === "full" ? "" : `  (${entry.recipient.memberType})`;
-    console.log(`  ${entry.recipient.name.padEnd(26)} -> ${entry.recipient.to}${extra}`);
+    const extra =
+      entry.recipient.memberType === "full"
+        ? ""
+        : `  (${entry.recipient.memberType})`;
+    console.log(
+      `  ${entry.recipient.name.padEnd(26)} -> ${entry.recipient.to}${extra}`,
+    );
     fs.writeFileSync(
-      path.join(OUT_DIR, `${entry.recipient.to.replace(/[^a-z0-9]+/gu, "-")}.txt`),
+      path.join(
+        OUT_DIR,
+        `${entry.recipient.to.replace(/[^a-z0-9]+/gu, "-")}.txt`,
+      ),
       `To: ${entry.recipient.to}\nBcc: ${TRACKING_BCC}\nSubject: ${entry.subject}\n\n${entry.body}\n`,
     );
   }

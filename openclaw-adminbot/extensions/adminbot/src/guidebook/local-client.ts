@@ -15,6 +15,7 @@ export type GuidebookFetch = (
     headers?: Record<string, string>;
     body?: string;
     signal?: AbortSignal;
+    redirect?: "error";
   },
 ) => Promise<{ ok: boolean; status: number; statusText: string; text(): Promise<string> }>;
 
@@ -50,6 +51,8 @@ async function postJson(
   try {
     response = await fetchImpl(endpoint, {
       method: "POST",
+      // A loopback origin must not redirect private excerpts to another host.
+      redirect: "error",
       headers: {
         "Content-Type": "application/json",
         ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
@@ -129,22 +132,44 @@ export async function completeLocally(params: {
   baseUrl: string;
   model: string;
   apiKey?: string;
-  messages: Array<{ role: "system" | "user"; content: string }>;
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
   signal?: AbortSignal;
   /** Opens every error this call can raise. Defaults to the guidebook, which was the first caller. */
   purposeLabel?: string;
+  /** Fail closed if the server answers with a different model. */
+  verifyModel?: boolean;
   /** Sampling temperature. Left at the guidebook's 0.2 unless a caller needs otherwise. */
   temperature?: number;
+  /** Output ceiling. Unset leaves it to the server, which for a reasoning model means "a lot". */
+  maxTokens?: number;
+  /**
+   * Further request fields, spread over the payload last.
+   *
+   * vLLM takes `chat_template_kwargs: { enable_thinking: false }` and a `response_format` JSON
+   * schema, and every caller that wants a short, parseable answer out of Qwen sends both. They are
+   * passed through rather than modelled here because they are vLLM's vocabulary, not OpenAI's,
+   * and the next server may spell them differently.
+   */
+  extra?: Record<string, unknown>;
 }): Promise<string> {
   const parsed = (await postJson(
     routeLlmFetch(params.fetchImpl, "local"),
     params.baseUrl,
     "chat/completions",
     params.apiKey,
-    { model: params.model, messages: params.messages, temperature: params.temperature ?? 0.2 },
+    {
+      model: params.model,
+      messages: params.messages,
+      temperature: params.temperature ?? 0.2,
+      ...(params.maxTokens === undefined ? {} : { max_tokens: params.maxTokens }),
+      ...params.extra,
+    },
     params.purposeLabel ?? "guidebook answer",
     params.signal,
-  )) as { choices?: Array<{ message?: { content?: unknown } }> };
+  )) as { model?: string; choices?: Array<{ message?: { content?: unknown } }> };
+  if (params.verifyModel && parsed.model !== params.model) {
+    throw new Error("local model response did not match the configured model");
+  }
   const content = parsed.choices?.[0]?.message?.content;
   if (typeof content !== "string" || !content.trim()) {
     throw new Error(`${params.purposeLabel ?? "guidebook answer"} model returned no content`);

@@ -4,3 +4,30 @@ src/gateway/server-methods/CLAUDE.md -text
 ui/src/i18n/.i18n/* linguist-generated
 ui/src/i18n/locales/*.ts linguist-generated
 ui/src/i18n/locales/en.ts -linguist-generated
+
+# What the Aurora deploy ships.
+#
+# scripts/aurora-adminbot-host.sh deploys with `git archive`, and that tarball is scp'd over the VPN
+# and unpacked into a CS department home directory -- a networked filesystem, where the cost is per
+# file rather than per byte. The service runs no tests, so every test file in that archive is paid
+# for three times (tar, transfer, extract) and used zero times: 4,207 files and 51 MB of a 119 MB
+# archive, a little over a third of the entries.
+#
+# `export-ignore` affects `git archive` only. Nothing else uses it -- Vercel clones rather than
+# archives, and there are no CI workflows -- so this changes the deploy payload and nothing else.
+#
+# Two directions this can go wrong, both worth knowing before adding a rule here:
+#   - A file needed at runtime that only ever appears in the archive is invisible until a release
+#     dies on it (see src/agents/workspace/workspace-templates.packaged.test.ts for the last time
+#     that happened). Verify a rule by building from an extracted archive, not by reading it.
+#   - These patterns match at every level, not just the root. Every directory they currently hit
+#     was checked to hold tests and test helpers only.
+*.test.ts export-ignore
+*.test.tsx export-ignore
+*.test.mts export-ignore
+*.test.js export-ignore
+*.test.mjs export-ignore
+*.spec.ts export-ignore
+*.test.json export-ignore
+test/ export-ignore
+__tests__/ export-ignore

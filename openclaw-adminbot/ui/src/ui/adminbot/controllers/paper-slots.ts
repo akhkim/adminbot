@@ -8,6 +8,7 @@
 // Slots are loaded per card rather than all at once. Twenty-three rows per paper is a lot to fetch
 // for papers nobody has expanded, and a card that is closed shows only the counts, which the
 // overview already carries.
+import { adminBotIsAlumniMember } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
@@ -19,6 +20,8 @@ import {
   recordPaperSocialConsent,
   resolveAdminBotBaseUrl,
   runPaperSlotReminder,
+  deleteConferenceTrip,
+  saveConferenceTrip,
   savePaperAttendee,
   savePaperReimbursementStatus,
   savePaperSlot,
@@ -28,6 +31,7 @@ import {
   type PaperNudgeBatch,
   type PaperSlotOverviewRow,
 } from "../auth/session.ts";
+import type { PaperTripDraft } from "../views/paper-cycle.ts";
 
 export type AdminBotPaperSlotsHost = {
   settings: UiSettings;
@@ -56,6 +60,9 @@ export type AdminBotPaperSlotsHost = {
   adminBotPaperSlotsLoadedAt: number | null;
   adminBotPaperSlotsNudging: boolean;
   adminBotPaperSlotsNotice: string | null;
+  /** Half-typed trip answers, keyed by conference. One answer covers every paper at that venue. */
+  adminBotTripDrafts: Record<string, PaperTripDraft>;
+  adminBotTripSavingKey: string | null;
   /** The preview. Null until an admin asks to see what would go out. */
   adminBotPaperNudgeBatches: PaperNudgeBatch[] | null;
   adminBotPaperNudgeLoading: boolean;
@@ -103,6 +110,12 @@ function headProfessorMemberId(host: AdminBotPaperSlotsHost): string {
  *
  * Filtered rather than hidden-and-sent: a name that is not on this list never reaches the preview,
  * so what an admin reads before pressing is exactly who gets a message.
+ *
+ * "Has left" goes through `adminBotIsAlumniMember`, which reads `member_type` as well as `status`.
+ * The roster spells it in the type for 22 of the lab's 24 alumni, with no status at all, so a
+ * `status`-only test -- which this was -- left nearly all of them in the preview. The send refused
+ * them anyway (`sendMemberNudge` asks the same helper), so this was a count and a list of names
+ * that did not match what pressing the button would do.
  */
 export function nudgeableBatches(
   host: AdminBotPaperSlotsHost,
@@ -119,7 +132,7 @@ export function nudgeableBatches(
       return false;
     }
     const full = member.privilege_level === "member" || member.privilege_level === "admin";
-    return full && member.status !== "alumni" && member.status !== "external";
+    return full && !adminBotIsAlumniMember(member) && member.status !== "external";
   });
 }
 
@@ -133,6 +146,10 @@ function session(host: AdminBotPaperSlotsHost): { token: string; baseUrl: string
     : null;
 }
 
+function sameSession(token: string): boolean {
+  return loadStoredMemberSession()?.sessionToken === token;
+}
+
 export async function loadAdminBotPaperSlotOverview(host: AdminBotPaperSlotsHost): Promise<void> {
   const wire = session(host);
   if (!wire) {
@@ -143,6 +160,9 @@ export async function loadAdminBotPaperSlotOverview(host: AdminBotPaperSlotsHost
   host.adminBotPaperSlotsError = null;
   try {
     const result = await fetchPaperSlotOverview(wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotPaperSlotOverview = [];
       host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
@@ -150,7 +170,9 @@ export async function loadAdminBotPaperSlotOverview(host: AdminBotPaperSlotsHost
     }
     host.adminBotPaperSlotOverview = result.value;
   } finally {
-    host.adminBotPaperSlotsLoading = false;
+    if (sameSession(wire.token)) {
+      host.adminBotPaperSlotsLoading = false;
+    }
   }
 }
 
@@ -187,6 +209,9 @@ export async function loadAdminBotPaperSlots(
   host.adminBotPaperSlotsBusyId = paperId;
   try {
     const result = await fetchPaperSlots(paperId, wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
       return;
@@ -196,7 +221,9 @@ export async function loadAdminBotPaperSlots(
       [paperId]: result.value,
     };
   } finally {
-    host.adminBotPaperSlotsBusyId = null;
+    if (sameSession(wire.token)) {
+      host.adminBotPaperSlotsBusyId = null;
+    }
   }
 }
 
@@ -228,6 +255,9 @@ export async function saveAdminBotPaperWeeklyUpdate(
   host.adminBotPaperSlotsBusyId = paperId;
   try {
     const result = await savePaperWeeklyUpdate(paperId, body, wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
       return;
@@ -245,7 +275,9 @@ export async function saveAdminBotPaperWeeklyUpdate(
       };
     }
   } finally {
-    host.adminBotPaperSlotsBusyId = null;
+    if (sameSession(wire.token)) {
+      host.adminBotPaperSlotsBusyId = null;
+    }
   }
 }
 
@@ -260,25 +292,41 @@ export async function saveAdminBotPaperSlot(
     host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
     return;
   }
-  host.adminBotPaperSlotsError = null;
-  const result = await savePaperSlot(paperId, slot, input, wire.token, wire.baseUrl);
-  if (!result.ok) {
-    host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
+  const feedbackRequest = slot.startsWith("feedback_");
+  if (feedbackRequest && host.adminBotPaperSlotsBusyId) {
     return;
   }
-  const cycle = host.adminBotPaperSlots[paperId];
-  if (cycle) {
-    host.adminBotPaperSlots = {
-      ...host.adminBotPaperSlots,
-      [paperId]: {
-        ...cycle,
-        slots: cycle.slots.map((row) => (row.slot === slot ? result.value : row)),
-      },
-    };
+  if (feedbackRequest) {
+    host.adminBotPaperSlotsBusyId = paperId;
   }
-  // The header counts and the outstanding list are computed by the service, so a write only
-  // reaches them through a re-read.
-  host.adminBotPaperSlotsLoadedAt = null;
+  try {
+    host.adminBotPaperSlotsError = null;
+    const result = await savePaperSlot(paperId, slot, input, wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
+    if (!result.ok) {
+      host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
+      return;
+    }
+    const cycle = host.adminBotPaperSlots[paperId];
+    if (cycle) {
+      host.adminBotPaperSlots = {
+        ...host.adminBotPaperSlots,
+        [paperId]: {
+          ...cycle,
+          slots: cycle.slots.map((row) => (row.slot === slot ? result.value : row)),
+        },
+      };
+    }
+    // The header counts and the outstanding list are computed by the service, so a write only
+    // reaches them through a re-read.
+    host.adminBotPaperSlotsLoadedAt = null;
+  } finally {
+    if (feedbackRequest) {
+      host.adminBotPaperSlotsBusyId = null;
+    }
+  }
 }
 
 /**
@@ -306,6 +354,9 @@ async function mutateCycle(
   host.adminBotPaperSlotsBusyId = paperId;
   try {
     const result = await run(wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotPaperSlotsError = failureText(
         result as { kind: string; message?: string },
@@ -314,9 +365,17 @@ async function mutateCycle(
       return;
     }
   } finally {
-    host.adminBotPaperSlotsBusyId = null;
+    if (sameSession(wire.token)) {
+      host.adminBotPaperSlotsBusyId = null;
+    }
+  }
+  if (!sameSession(wire.token)) {
+    return;
   }
   await loadAdminBotPaperSlots(host, paperId);
+  if (!sameSession(wire.token)) {
+    return;
+  }
   host.adminBotPaperSlotsLoadedAt = null;
 }
 
@@ -416,6 +475,9 @@ export async function loadAdminBotNudgeBatches(host: AdminBotPaperSlotsHost): Pr
   host.adminBotPaperSlotsNotice = null;
   try {
     const result = await fetchPaperNudgeBatches(wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
       return;
@@ -428,7 +490,9 @@ export async function loadAdminBotNudgeBatches(host: AdminBotPaperSlotsHost): Pr
       .filter((batch) => batch.deliverable)
       .map((batch) => batch.member_id);
   } finally {
-    host.adminBotPaperNudgeLoading = false;
+    if (sameSession(wire.token)) {
+      host.adminBotPaperNudgeLoading = false;
+    }
   }
 }
 
@@ -474,11 +538,17 @@ export async function nudgeAdminBotPaperAuthors(host: AdminBotPaperSlotsHost): P
     // time keeps every request short, and makes a failure name the person it belongs to instead of
     // condemning the batch.
     for (const [index, memberId] of recipients.entries()) {
+      if (!sameSession(wire.token)) {
+        return;
+      }
       host.adminBotPaperSlotsNotice = t("paperSlots.nudgingProgress", {
         done: String(index),
         total: String(recipients.length),
       });
       const result = await runPaperSlotReminder(wire.token, wire.baseUrl, [memberId]);
+      if (!sameSession(wire.token)) {
+        return;
+      }
       if (!result.ok) {
         // Keep going: one unreachable recipient is not a reason to leave the rest unchased, and
         // the ledger is stamped per person, so the ones that landed stay landed.
@@ -503,6 +573,125 @@ export async function nudgeAdminBotPaperAuthors(host: AdminBotPaperSlotsHost): P
     // Re-read so "last nudged" reflects what just happened.
     host.adminBotPaperSlotsLoadedAt = null;
   } finally {
-    host.adminBotPaperSlotsNudging = false;
+    if (sameSession(wire.token)) {
+      host.adminBotPaperSlotsNudging = false;
+    }
+  }
+}
+
+/** Hold one field of the reader's trip answer. Nothing is sent until Save. */
+export function editAdminBotTrip(
+  host: AdminBotPaperSlotsHost,
+  conferenceKey: string,
+  patch: Partial<PaperTripDraft>,
+  base: PaperTripDraft,
+): void {
+  const current = host.adminBotTripDrafts[conferenceKey] ?? base;
+  host.adminBotTripDrafts = {
+    ...host.adminBotTripDrafts,
+    [conferenceKey]: { ...current, ...patch },
+  };
+}
+
+/**
+ * Reload every open card that shares this conference.
+ *
+ * One trip covers every paper at a venue, so a save made on one card is the answer on all of them.
+ * Refetching only the card that was saved would leave a sibling showing the old answer until
+ * somebody closed and reopened it.
+ */
+async function refreshCardsForConference(
+  host: AdminBotPaperSlotsHost,
+  conferenceKey: string,
+  token: string,
+): Promise<void> {
+  const affected = Object.entries(host.adminBotPaperSlots)
+    .filter(([, cycle]) => cycle.conferenceKey === conferenceKey)
+    .map(([paperId]) => paperId);
+  for (const paperId of affected) {
+    if (!sameSession(token)) {
+      return;
+    }
+    await loadAdminBotPaperSlots(host, paperId);
+  }
+}
+
+export async function saveAdminBotTrip(
+  host: AdminBotPaperSlotsHost,
+  conferenceKey: string,
+  draft: PaperTripDraft,
+): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
+    return;
+  }
+  host.adminBotTripSavingKey = conferenceKey;
+  host.adminBotPaperSlotsError = null;
+  try {
+    const result = await saveConferenceTrip(
+      conferenceKey,
+      {
+        intent: draft.intent,
+        funding: draft.funding,
+        needs_lodging: draft.needs_lodging,
+        needs_visa_letter: draft.needs_visa_letter,
+        // Blank is "not answered", and the service treats an absent field that way. Sending ""
+        // would store an empty string where the column means "no date given".
+        ...(draft.arrival_on ? { arrival_on: draft.arrival_on } : {}),
+        ...(draft.departure_on ? { departure_on: draft.departure_on } : {}),
+        ...(draft.notes.trim() ? { notes: draft.notes } : {}),
+      },
+      wire.token,
+      wire.baseUrl,
+    );
+    if (!sameSession(wire.token)) {
+      return;
+    }
+    if (!result.ok) {
+      host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
+      return;
+    }
+    const drafts = { ...host.adminBotTripDrafts };
+    // Dropped rather than kept in step with the response: the stored row is the answer now, and
+    // two copies of it is how a form starts disagreeing with the server.
+    delete drafts[conferenceKey];
+    host.adminBotTripDrafts = drafts;
+    await refreshCardsForConference(host, conferenceKey, wire.token);
+  } finally {
+    if (sameSession(wire.token)) {
+      host.adminBotTripSavingKey = null;
+    }
+  }
+}
+
+export async function withdrawAdminBotTrip(
+  host: AdminBotPaperSlotsHost,
+  conferenceKey: string,
+): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
+    return;
+  }
+  host.adminBotTripSavingKey = conferenceKey;
+  host.adminBotPaperSlotsError = null;
+  try {
+    const result = await deleteConferenceTrip(conferenceKey, wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
+    if (!result.ok) {
+      host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
+      return;
+    }
+    const drafts = { ...host.adminBotTripDrafts };
+    delete drafts[conferenceKey];
+    host.adminBotTripDrafts = drafts;
+    await refreshCardsForConference(host, conferenceKey, wire.token);
+  } finally {
+    if (sameSession(wire.token)) {
+      host.adminBotTripSavingKey = null;
+    }
   }
 }

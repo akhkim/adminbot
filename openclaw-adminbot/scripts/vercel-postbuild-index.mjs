@@ -44,7 +44,7 @@ const deadlineDataPath = path.join(
   "adminbot",
   "content",
   "deadlines",
-  "venues.json",
+  "deadlines.json",
 );
 
 const BASE_TAG = '    <base href="/" />';
@@ -57,6 +57,10 @@ Allow: /assets/
 Allow: /favicon.svg
 Allow: /favicon-32.png
 Allow: /apple-touch-icon.png
+Allow: /manifest.webmanifest
+Allow: /google808ad109656be5be.html
+Allow: /googlef16eab5c3c9c074c.html
+Allow: /sitemap.xml
 Sitemap: https://jinesis-admin.vercel.app/sitemap.xml
 `;
 export const DEADLINES_SITEMAP_XML = `<?xml version="1.0" encoding="UTF-8"?>

@@ -414,13 +414,13 @@ class AdminbotGrantReportView extends LitElement {
           padding: 4px 2px 24px;
         }
         .grant-report-view .gr-intro {
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted, #9fb0cc);
           font-size: 13px;
           margin: 0 0 14px;
           max-width: 76ch;
         }
         .gr-prov {
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
           font-size: 11.5px;
           margin: 0 0 14px;
           max-width: 90ch;
@@ -453,7 +453,7 @@ class AdminbotGrantReportView extends LitElement {
           padding: 6px 12px;
           border: 1px solid var(--border, #26324a);
           border-radius: 999px;
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated, #141b2b);
           color: var(--text, #d7e2f4);
           font-size: 13px;
           cursor: pointer;
@@ -476,15 +476,15 @@ class AdminbotGrantReportView extends LitElement {
           padding: 12px 14px;
           border: 1px solid var(--border, #26324a);
           border-radius: 10px;
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated, #141b2b);
           color: var(--text, #d7e2f4);
           cursor: pointer;
         }
         .gr-area:hover {
-          border-color: var(--text-muted, #66799a);
+          border-color: var(--muted, #66799a);
         }
         .gr-area.is-active {
-          border-color: var(--c);
+          border-color: color-mix(in srgb, var(--text) 75%, var(--c));
           box-shadow: inset 0 0 0 1px var(--c);
         }
         .gr-area-head {
@@ -494,23 +494,23 @@ class AdminbotGrantReportView extends LitElement {
           gap: 8px;
         }
         .gr-area-name {
-          color: var(--c);
+          color: color-mix(in srgb, var(--text) 75%, var(--c));
           font-weight: 600;
           font-size: 14px;
         }
         .gr-area-count {
           font-variant-numeric: tabular-nums;
           font-size: 13px;
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted, #9fb0cc);
         }
         .gr-area-gloss {
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted, #9fb0cc);
           font-size: 12px;
           font-style: italic;
           margin: 2px 0 6px;
         }
         .gr-area-tech {
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
           font-size: 11.5px;
           line-height: 1.55;
         }
@@ -521,7 +521,7 @@ class AdminbotGrantReportView extends LitElement {
           justify-content: space-between;
           gap: 8px;
           margin-bottom: 10px;
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted, #9fb0cc);
           font-size: 12.5px;
         }
         .gr-listhead-right {
@@ -533,7 +533,7 @@ class AdminbotGrantReportView extends LitElement {
           border: 1px solid var(--border, #26324a);
           border-radius: 999px;
           background: transparent;
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted, #9fb0cc);
           font-size: 11.5px;
           cursor: pointer;
           white-space: nowrap;
@@ -551,7 +551,7 @@ class AdminbotGrantReportView extends LitElement {
           padding: 9px 12px;
           border: 1px solid var(--border, #26324a);
           border-radius: 8px;
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated, #141b2b);
         }
         .gr-paper.is-unconfirmed {
           border-style: dashed;
@@ -572,12 +572,12 @@ class AdminbotGrantReportView extends LitElement {
           display: flex;
           gap: 10px;
           flex-wrap: wrap;
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted, #9fb0cc);
           font-size: 11.5px;
           margin-top: 3px;
         }
         .gr-authors {
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
         }
         .gr-chips {
           display: flex;
@@ -589,7 +589,7 @@ class AdminbotGrantReportView extends LitElement {
           padding: 1px 8px;
           border-radius: 999px;
           border: 1px solid var(--c, #26324a);
-          color: var(--c, #9fb0cc);
+          color: color-mix(in srgb, var(--text) 75%, var(--c, var(--muted)));
           font-size: 10.5px;
           white-space: nowrap;
         }
@@ -605,7 +605,7 @@ class AdminbotGrantReportView extends LitElement {
           --c: #e0a458;
         }
         .gr-note {
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
           font-size: 11px;
           margin-top: 5px;
         }
@@ -617,7 +617,7 @@ class AdminbotGrantReportView extends LitElement {
         .gr-section {
           border: 1px solid var(--border, #26324a);
           border-radius: 10px;
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated, #141b2b);
         }
         .gr-depth-3 {
           margin-left: 14px;
@@ -639,7 +639,7 @@ class AdminbotGrantReportView extends LitElement {
           cursor: pointer;
         }
         .gr-caret {
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
           font-size: 11px;
         }
         .gr-section-number {
@@ -651,7 +651,7 @@ class AdminbotGrantReportView extends LitElement {
           flex: 1;
         }
         .gr-section-count {
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
           font-size: 12px;
           font-variant-numeric: tabular-nums;
         }
@@ -659,7 +659,7 @@ class AdminbotGrantReportView extends LitElement {
           padding: 0 13px 13px 32px;
         }
         .gr-summary {
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted, #9fb0cc);
           font-size: 12.5px;
           margin: 0 0 8px;
           max-width: 80ch;
@@ -709,7 +709,7 @@ class AdminbotGrantReportView extends LitElement {
           color: var(--accent, #4f8cff);
         }
         .gr-evidence summary {
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
           font-size: 12px;
           cursor: pointer;
           margin-bottom: 8px;
@@ -724,14 +724,14 @@ class AdminbotGrantReportView extends LitElement {
           padding: 12px 14px;
           border: 1px solid var(--border, #26324a);
           border-radius: 10px;
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated, #141b2b);
         }
         .gr-stat-value {
           font-size: 24px;
           font-variant-numeric: tabular-nums;
         }
         .gr-stat-label {
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted, #9fb0cc);
           font-size: 11.5px;
           margin-top: 2px;
         }
@@ -753,7 +753,7 @@ class AdminbotGrantReportView extends LitElement {
           font-size: 12px;
         }
         .gr-bar-label {
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted, #9fb0cc);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -772,7 +772,7 @@ class AdminbotGrantReportView extends LitElement {
         .gr-bar-value {
           text-align: right;
           font-variant-numeric: tabular-nums;
-          color: var(--text-muted, #66799a);
+          color: var(--muted, #66799a);
         }
         @media (max-width: 640px) {
           .gr-depth-3,

@@ -38,9 +38,16 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       label: "Lab calendar access",
       category: "Getting started",
       required: true,
-      detail:
-        "You've been added as a view-only guest on the Jinesis Lab calendar " +
-        "(America/Toronto timezone) automatically — no action needed.",
+      // Conditional on the same variable as the link below, and for a reason this lab has already
+      // paid for: the claim used to be unconditional while the link was not, so a deployment with
+      // no lab calendar configured told 155 members they had been added to a calendar that had
+      // never heard of them, with no link to notice the absence by. A step that admits access is
+      // still coming is worth far more than one that confidently states a falsehood.
+      detail: process.env[LAB_EMAIL_ENV]?.trim()
+        ? "You've been added as a view-only guest on the Jinesis Lab calendar " +
+          "(America/Toronto timezone) automatically — no action needed."
+        : "Lab calendar access is not set up on this deployment yet. Ask an admin to grant it; " +
+          "there is nothing for you to do here.",
       links: optionalLink("Open the lab calendar", LAB_EMAIL_ENV, labCalendarEmbedUrl),
     },
     {

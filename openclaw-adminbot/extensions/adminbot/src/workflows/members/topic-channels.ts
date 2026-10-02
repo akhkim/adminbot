@@ -1,0 +1,264 @@
+// Which topic channels a person belongs in.
+//
+// Rows 15 and 18 of the external-collaborator access design: #discussion-xxx for the broad topic,
+// #meeting-xxx for the weekly themed meeting. The topic is the channel's own name -- the lab has
+// already decided what its topics are by opening channels for them -- so this never invents one.
+//
+// Matching is deliberately conservative. Every token of the channel's topic has to appear in the
+// person's vocabulary: #discussion-causal-inference needs both "causal" and "inference", not
+// either. The looser rule reads better on paper and is worse in practice, because the failure it
+// produces is a real person put in a room they have nothing to do with, which somebody then has to
+// notice and undo. A missed match costs an invite that an admin can send by hand.
+import type { AdminBotLabMember, AdminBotPaperRecord } from "../../contracts/actions.js";
+
+/** The channel families this matches. The prefix is stripped to leave the topic. */
+export const ADMINBOT_TOPIC_CHANNEL_PREFIXES = ["discussion", "meeting"] as const;
+
+export type AdminBotTopicChannelPrefix = (typeof ADMINBOT_TOPIC_CHANNEL_PREFIXES)[number];
+
+/**
+ * Words that carry no topic. Matching on these is how everybody ends up in every channel: a title
+ * containing "model" would otherwise join #discussion-model-editing.
+ *
+ * Short tokens are dropped separately, below, which covers most of the rest.
+ */
+const STOPWORDS = new Set([
+  "and",
+  "for",
+  "the",
+  "with",
+  "from",
+  "into",
+  "over",
+  "using",
+  "toward",
+  "towards",
+  "general",
+  "generic",
+  "misc",
+  "other",
+  "team",
+  "group",
+  "lab",
+  "chat",
+  "random",
+  "active",
+]);
+
+/** Lowercase alphanumeric words of four characters or more, minus the stopwords. */
+export function topicTokens(text: string): string[] {
+  return [
+    ...new Set(
+      String(text ?? "")
+        .toLowerCase()
+        .split(/[^a-z0-9]+/u)
+        .filter((token) => token.length >= 4 && !STOPWORDS.has(token)),
+    ),
+  ];
+}
+
+/** The topic a channel name carries, or null when it is not one of ours. */
+export function topicOfChannel(
+  channelName: string,
+): { prefix: AdminBotTopicChannelPrefix; topic: string } | null {
+  const name = String(channelName ?? "")
+    .trim()
+    .replace(/^#/u, "")
+    .toLowerCase();
+  for (const prefix of ADMINBOT_TOPIC_CHANNEL_PREFIXES) {
+    if (name.startsWith(`${prefix}-`)) {
+      const topic = name.slice(prefix.length + 1);
+      return topic ? { prefix, topic } : null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Everything the lab knows about what this person works on.
+ *
+ * Their stated research interests, and the projects they are actually on -- title and alias both,
+ * because a project is as often known by its short name as its title, and the alias is frequently
+ * the more topical of the two ("cais" says less than "Causal AI Scientist", but "alg-circuit" says
+ * more than a title that leads with a method name).
+ */
+export function memberTopicVocabulary(
+  member: AdminBotLabMember,
+  papers: readonly AdminBotPaperRecord[],
+): string[] {
+  const parts: string[] = [...(member.research_topics ?? [])];
+  for (const paper of papers) {
+    const onIt = (paper.author_links ?? []).some((link) => link.member_id === member.id);
+    if (!onIt) {
+      continue;
+    }
+    parts.push(paper.title ?? "");
+    if (paper.alias) {
+      // Hyphens are separators, so an alias reads as its words rather than one long token.
+      parts.push(paper.alias.replaceAll("-", " "));
+    }
+  }
+  return [...new Set(parts.flatMap((part) => topicTokens(part)))];
+}
+
+/**
+ * The channels this person belongs in, from the list of channels that exist.
+ *
+ * `channels` is what Slack currently has, not what anybody thinks it should have: the lab decides
+ * its topics by opening channels, and a match against a channel that does not exist is an invite
+ * that cannot be sent.
+ */
+export function matchTopicChannels(params: {
+  member: AdminBotLabMember;
+  papers: readonly AdminBotPaperRecord[];
+  channels: readonly string[];
+  /** Restrict to one family. Omitted matches both. */
+  prefix?: AdminBotTopicChannelPrefix;
+}): string[] {
+  const vocabulary = new Set(memberTopicVocabulary(params.member, params.papers));
+  if (vocabulary.size === 0) {
+    return [];
+  }
+  const matched: string[] = [];
+  for (const channel of params.channels) {
+    const parsed = topicOfChannel(channel);
+    if (!parsed || (params.prefix && parsed.prefix !== params.prefix)) {
+      continue;
+    }
+    const wanted = topicTokens(parsed.topic);
+    // A topic that reduces to nothing -- #discussion-misc, say -- matches nobody rather than
+    // everybody. An empty `every` is vacuously true, which is the wrong answer here.
+    if (wanted.length === 0) {
+      continue;
+    }
+    if (wanted.every((token) => vocabulary.has(token))) {
+      matched.push(channel.replace(/^#/u, "").toLowerCase());
+    }
+  }
+  return [...new Set(matched)].toSorted((left, right) => left.localeCompare(right));
+}
+
+/** The prefix every themed meeting's title carries. */
+export const ADMINBOT_THEMED_MEETING_PREFIX = "theme:";
+
+/** The theme a Wednesday event's title carries, or null when it is not one of ours. */
+export function themeOfEvent(summary: string): string | null {
+  const title = String(summary ?? "").trim();
+  if (!title.toLowerCase().startsWith(ADMINBOT_THEMED_MEETING_PREFIX)) {
+    return null;
+  }
+  const theme = title.slice(ADMINBOT_THEMED_MEETING_PREFIX.length).trim();
+  return theme || null;
+}
+
+export type AdminBotThemedMeeting = { event_id: string; summary: string };
+
+/**
+ * Which themed meeting a #meeting-xxx channel belongs to.
+ *
+ * The channel's topic has to be fully present in the event's theme, not the reverse: "Theme: Causal
+ * Inference and Agents" is the meeting for #meeting-causal-inference, while a channel about
+ * something broader than its meeting is not. Same asymmetry as the channel matcher, for the same
+ * reason -- the cost of a wrong match is a real person on a recurring invite they did not ask for.
+ *
+ * A channel matching several events returns them all rather than guessing; the caller reports that
+ * rather than picking one, because two events with the same theme is a calendar problem the lab
+ * should see.
+ */
+export function matchThemedMeetings(
+  channelName: string,
+  meetings: readonly AdminBotThemedMeeting[],
+): AdminBotThemedMeeting[] {
+  return matchMeetingsForChannel(channelName, meetings, THEMED_MEETING_FAMILY);
+}
+
+/** The prefix every project meeting's title carries. */
+export const ADMINBOT_PROJECT_MEETING_PREFIX = "proj:";
+
+/**
+ * The project a recurring event's title names, or null when it is not one of ours.
+ *
+ * Mirrors `themeOfEvent` against the other family. The two prefixes are what keep the families
+ * apart on a calendar that holds both: "Theme: Causal Inference" is the Wednesday topic meeting,
+ * "Proj: Law to Benchmark" is one project's own standing call, and a sweep that filled one from the
+ * other's channel would put a project's collaborators on a meeting for everybody.
+ */
+export function projectOfEvent(summary: string): string | null {
+  const title = String(summary ?? "").trim();
+  if (!title.toLowerCase().startsWith(ADMINBOT_PROJECT_MEETING_PREFIX)) {
+    return null;
+  }
+  const project = title.slice(ADMINBOT_PROJECT_MEETING_PREFIX.length).trim();
+  return project || null;
+}
+
+/**
+ * A channel family and the event titles its meetings carry.
+ *
+ * Declared as a pair because the two halves only mean anything together: `#meeting-xxx` belongs to
+ * `Theme: xxx` and `#proj-xxx` to `Proj: xxx`, and crossing them is the one mistake this whole
+ * mechanism has to be unable to make.
+ */
+export type AdminBotMeetingFamily = {
+  /** The channel-name prefix, without the trailing hyphen. */
+  channelPrefix: string;
+  /** Reads the event title and returns the part to match on, or null when it is another family. */
+  titleTopic: (summary: string) => string | null;
+};
+
+export const THEMED_MEETING_FAMILY: AdminBotMeetingFamily = {
+  channelPrefix: "meeting",
+  titleTopic: themeOfEvent,
+};
+
+export const PROJECT_MEETING_FAMILY: AdminBotMeetingFamily = {
+  channelPrefix: "proj",
+  titleTopic: projectOfEvent,
+};
+
+export const ADMINBOT_MEETING_FAMILIES: readonly AdminBotMeetingFamily[] = [
+  THEMED_MEETING_FAMILY,
+  PROJECT_MEETING_FAMILY,
+];
+
+/**
+ * Which meetings a channel belongs to, in whichever family the channel is from.
+ *
+ * The matching rule is the one `matchThemedMeetings` documents and is unchanged: the channel's
+ * topic has to be fully present in the event's, never the reverse, because the cost of a loose
+ * match is a real person on a recurring invite they did not ask for.
+ *
+ * Note what that asymmetry means for a project whose channel and event disagree on a word:
+ * `#proj-law-to-benchmark` gives the single token `benchmark`, and an event titled
+ * "Proj: Law-to-Bench Weekly" gives `bench` and `weekly`, so they do not match and no invite is
+ * proposed. That is the rule working, not failing -- the two names are genuinely different, and the
+ * fix is to make them agree rather than to teach the matcher to guess at stems.
+ */
+export function matchMeetingsForChannel(
+  channelName: string,
+  meetings: readonly AdminBotThemedMeeting[],
+  family?: AdminBotMeetingFamily,
+): AdminBotThemedMeeting[] {
+  const name = String(channelName ?? "")
+    .trim()
+    .replace(/^#/u, "")
+    .toLowerCase();
+  const candidates = family ? [family] : ADMINBOT_MEETING_FAMILIES;
+  const owner = candidates.find((entry) => name.startsWith(`${entry.channelPrefix}-`));
+  if (!owner) {
+    return [];
+  }
+  const topic = name.slice(owner.channelPrefix.length + 1);
+  const wanted = topicTokens(topic);
+  if (wanted.length === 0) {
+    return [];
+  }
+  return meetings.filter((meeting) => {
+    const eventTopic = owner.titleTopic(meeting.summary);
+    if (!eventTopic) {
+      return false;
+    }
+    const have = new Set(topicTokens(eventTopic));
+    return wanted.every((token) => have.has(token));
+  });
+}

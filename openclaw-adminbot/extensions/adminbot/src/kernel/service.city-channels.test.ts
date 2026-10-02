@@ -30,6 +30,7 @@ function serviceWithTorontoFour(options: { inviteFails?: boolean } = {}) {
   for (let index = 0; index < 4; index += 1) {
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: `m${index}`,
         name: `Member ${index}`,
         privilege_level: "member",
@@ -88,6 +89,7 @@ describe("syncCityChannels", () => {
     for (let index = 0; index < 3; index += 1) {
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: `z${index}`,
           name: `Zurich ${index}`,
           privilege_level: "member",
@@ -102,6 +104,7 @@ describe("syncCityChannels", () => {
 
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "z3",
         name: "Zurich 3",
         privilege_level: "member",
@@ -123,10 +126,11 @@ describe("syncCityChannels", () => {
 
     // m0 moves to Zürich, and three more people are already there, so the city clears the
     // four-member threshold.
-    unwrap(service.upsertLabMember({ id: "m0", current_city: "Zurich" } as never));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "m0", current_city: "Zurich" } as never));
     for (let index = 0; index < 3; index += 1) {
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: `z${index}`,
           name: `Zurich ${index}`,
           privilege_level: "member",
@@ -151,7 +155,7 @@ describe("syncCityChannels", () => {
     );
 
     // Back to Toronto later: already offered that channel once, so it is not offered again.
-    unwrap(service.upsertLabMember({ id: "m0", current_city: "Toronto" } as never));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "m0", current_city: "Toronto" } as never));
     const back = unwrap(await service.syncCityChannels("cron"));
     expect(back.invited.some((entry) => entry.member_id === "m0")).toBe(false);
   });
@@ -164,6 +168,7 @@ describe("syncCityChannels", () => {
     const legacy = memberById(service, "m1")!;
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         ...legacy,
         city_channels_invited: undefined,
         city_channel_invited_at: "2026-01-01T00:00:00.000Z",

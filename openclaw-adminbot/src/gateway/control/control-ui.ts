@@ -373,7 +373,14 @@ async function authorizeControlUiReadRequest(
     requestedScopes,
   );
   if (!scopeAuth.allowed) {
-    sendJson(res, 403, buildMissingScopeForbiddenBody(scopeAuth.missingScope));
+    sendJson(
+      res,
+      403,
+      buildMissingScopeForbiddenBody(scopeAuth.missingScope, {
+        method: opts.requiredOperatorMethod ?? "assistant.media.get",
+        presentedScopes: requestedScopes,
+      }),
+    );
     return false;
   }
 

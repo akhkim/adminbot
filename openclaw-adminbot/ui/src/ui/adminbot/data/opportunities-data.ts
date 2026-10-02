@@ -1,7 +1,7 @@
 // Opportunities the lab wants members to hear about: PhD programs, internships, grants and
 // awards, and Rising Stars workshops.
 //
-// Hand-maintained, unlike `deadlines-data.ts` which is generated from venues.json. These are
+// Hand-maintained, unlike `deadlines-data.ts` which is generated from deadlines.json. These are
 // annual programs whose dates are announced by the host institution rather than scraped, so an
 // admin edits this file and the Opportunities tab picks it up on the next UI build.
 //
@@ -27,6 +27,10 @@ export const OPPORTUNITY_CATEGORY_LABELS: Record<OpportunityCategory, string> = 
   faculty: "Faculty Job Market",
 };
 
+export const OPPORTUNITY_STATUSES = ["pending", "approved", "rejected"] as const;
+
+export type OpportunityStatus = (typeof OPPORTUNITY_STATUSES)[number];
+
 export type Opportunity = {
   id: string;
   name: string;
@@ -40,7 +44,63 @@ export type Opportunity = {
   // their own eligibility rather than having the lab decide it for them.
   eligibility?: string;
   note?: string;
+  // Free-text application window, e.g. "Sep 1 – Oct 15, 2026".
+  application_window?: string;
 };
+
+/**
+ * An entry a member suggested, as the service returns it.
+ *
+ * The bundled list above is lab-vetted and ships with the build; these arrive at runtime and carry
+ * the review state that decides who may see them. `status` is present here and absent on a bundled
+ * `Opportunity`, which is what the board keys "can this be edited" off -- a bundled row has no
+ * server-side identity to edit.
+ */
+/** What the refresh sweep read off the entry's own page, waiting on a human. */
+export type OpportunityDeadlineProposal = {
+  deadline_aoe: string;
+  source_url: string;
+  evidence: string;
+  found_at: string;
+};
+
+/** Where a sweep found an entry, when a sweep found it rather than a member submitting it. */
+export type OpportunityDiscovery = {
+  feed: string;
+  source_url: string;
+  evidence: string;
+  found_at: string;
+};
+
+export type AdminBotOpportunityView = Opportunity & {
+  status: OpportunityStatus;
+  proposed_deadline?: OpportunityDeadlineProposal;
+  discovered?: OpportunityDiscovery;
+  submitted_by_member_id?: string;
+  submitted_by_name?: string;
+  created_at: string;
+  updated_at: string;
+  decided_at?: string;
+  decided_by?: string;
+};
+
+/** What the add/edit form sends. The service re-validates all of it. */
+export type AdminBotOpportunityDraft = {
+  name: string;
+  category: OpportunityCategory;
+  org?: string;
+  deadline_aoe?: string;
+  link?: string;
+  eligibility?: string;
+  note?: string;
+  application_window?: string;
+};
+
+export function isContributedOpportunity(
+  entry: Opportunity | AdminBotOpportunityView,
+): entry is AdminBotOpportunityView {
+  return "status" in entry;
+}
 
 export const OPPORTUNITIES: Opportunity[] = [
   // --- Rising Stars ---------------------------------------------------------------------

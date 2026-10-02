@@ -1,4 +1,4 @@
-import { routeLlmFetch } from "../kernel/llm-gateway-client.js";
+import type { AdminBotLabMember } from "../contracts/actions.js";
 /**
  * The vendor leg of the LinkedIn draft: PDF extraction and generation, both via OpenRouter.
  *
@@ -37,7 +37,7 @@ import { routeLlmFetch } from "../kernel/llm-gateway-client.js";
  * choice for public-announcement copy about a paper that is about to be posted publicly; it is
  * not the route for anything the privacy broker would classify as private.
  */
-
+import { routeLlmFetch } from "../kernel/llm-gateway-client.js";
 import {
   buildLinkedInDraftPrompt,
   reviewLinkedInDraft,
@@ -47,7 +47,6 @@ import {
   type AdminBotPaperSource,
   type AdminBotVerifiedAuthor,
 } from "../workflows/papers/linkedin-draft.js";
-import type { AdminBotLabMember } from "../contracts/actions.js";
 
 export type SocialDraftFetch = (
   input: string | URL,
@@ -115,7 +114,11 @@ async function callOpenRouter(
   label: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  const response = await routeLlmFetch(fetchImpl, "public", env)(OPENROUTER_URL, {
+  const response = await routeLlmFetch(
+    fetchImpl,
+    "public",
+    env,
+  )(OPENROUTER_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${requireOpenRouterKey(env)}`,
@@ -182,7 +185,7 @@ export async function extractPaperFromPdf(
                   type: "text",
                   text:
                     "Extract from this research paper: the exact title, the full ordered author " +
-                    'list, and the complete abstract. Reply with ONLY valid JSON, no code fences: ' +
+                    "list, and the complete abstract. Reply with ONLY valid JSON, no code fences: " +
                     '{"title": "...", "authors": ["First Last", ...], "abstract": "..."}',
                 },
                 {
@@ -310,9 +313,7 @@ export type LinkedInDraftResponse = {
   authors: AdminBotVerifiedAuthor[];
 };
 
-export type LinkedInDraftRunner = (
-  request: LinkedInDraftRequest,
-) => Promise<LinkedInDraftResponse>;
+export type LinkedInDraftRunner = (request: LinkedInDraftRequest) => Promise<LinkedInDraftResponse>;
 
 export function createLinkedInDraftRunner(
   options: AdminBotSocialDraftOptions = {},

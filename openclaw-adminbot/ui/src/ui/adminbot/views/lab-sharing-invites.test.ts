@@ -1,0 +1,156 @@
+import { afterEach, expect, it, vi } from "vitest";
+import type { LabSharingInvites } from "./lab-sharing-invites.ts";
+import "./lab-sharing-invites.ts";
+afterEach(() => {
+  document.body.replaceChildren();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+it("creates a pending request, retains drafts on failure and clears on logout", async () => {
+  vi.useFakeTimers();
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => ({
+    ok: true,
+    json: async () =>
+      url.endsWith("/lab-sharing/mine")
+        ? { projects: [{ id: "project", title: "Synthetic project" }], requests: [{ paper_id: "project", status: "open" }] }
+        : init?.method === "POST"
+          ? { id: "proposal", status: "pending" }
+          : { invites: [] },
+  }));
+  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("scrollIntoView", vi.fn());
+  const el = document.createElement("lab-sharing-invites") as LabSharingInvites;
+  el.scrollIntoView = vi.fn();
+  el.sessionToken = "member";
+  document.body.append(el);
+  await el.updateComplete;
+  await vi.advanceTimersByTimeAsync(0);
+  await el.updateComplete;
+  await el.selectMember("recipient", "Ravi Reader");
+  const project = el.querySelector("select")!;
+  project.value = "project";
+  project.dispatchEvent(new Event("change"));
+  const note = el.querySelector("textarea")!;
+  note.value = "Review synthetic traces";
+  note.dispatchEvent(new Event("input"));
+  await el.updateComplete;
+  el.querySelector("form")!.dispatchEvent(new Event("submit", { cancelable: true }));
+  await vi.advanceTimersByTimeAsync(0);
+  await el.updateComplete;
+  expect(el.textContent).toContain("Invitation request: Pending administrator approval");
+  const sent = fetcher.mock.calls.find(([, init]) => init?.method === "POST")!;
+  expect(JSON.parse(String(sent[1]?.body))).toEqual({
+    paper_id: "project",
+    recipient_id: "recipient",
+    kind: "collaboration",
+    note: "Review synthetic traces",
+  });
+  fetcher.mockRejectedValueOnce(new Error("Offline"));
+  el.querySelector("form")!.dispatchEvent(new Event("submit", { cancelable: true }));
+  await vi.advanceTimersByTimeAsync(0);
+  await el.updateComplete;
+  expect(el.textContent).toContain("Offline");
+  expect(el.querySelector("textarea")!.value).toBe("Review synthetic traces");
+  await el.selectMember("another", "Mina Member");
+  await el.updateComplete;
+  expect(el.querySelector("textarea")!.value).toBe("");
+  expect(el.textContent).not.toContain("Offline");
+  expect(el.textContent).not.toContain("Invitation request:");
+  el.sessionToken = "";
+  await el.updateComplete;
+  expect(el.textContent?.trim()).toBe("");
+});
+
+it("keeps submission success distinct from a failed history refresh", async () => {
+  vi.useFakeTimers();
+  let accepted = false;
+  let finish: (() => void) | undefined;
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === "POST") {
+      await new Promise<void>((resolve) => { finish = resolve; });
+      accepted = true;
+      return { ok: true, json: async () => ({ status: "pending" }) };
+    }
+    if (accepted) throw new Error("Offline");
+    return { ok: true, json: async () => url.endsWith("/lab-sharing/mine")
+      ? { projects: [{ id: "project", title: "Synthetic project" }], requests: [{ paper_id: "project", status: "open" }] }
+      : { invites: [] } };
+  }));
+  const el = document.createElement("lab-sharing-invites") as LabSharingInvites;
+  el.scrollIntoView = vi.fn();
+  el.sessionToken = "member";
+  document.body.append(el);
+  await vi.advanceTimersByTimeAsync(0);
+  await el.updateComplete;
+  await el.selectMember("recipient", "Ravi Reader");
+  el.querySelector("form")!.dispatchEvent(new Event("submit", { cancelable: true }));
+  await el.selectMember("another", "Mina Member");
+  expect(el.textContent).toContain("Ravi Reader");
+  finish!();
+  await vi.advanceTimersByTimeAsync(0);
+  await el.updateComplete;
+  expect(el.textContent).toContain("Invitation request: Pending administrator approval");
+  expect(el.textContent).toContain("Your request was accepted, but history could not refresh");
+});
+
+it("offers only managed projects with open help requests and clears a closed selection", async () => {
+  vi.useFakeTimers();
+  let open = true;
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ok: true, json: async () => url.endsWith("/lab-sharing/mine")
+    ? {projects: [{id: "open", title: "Open project"}, {id: "closed", title: "Closed project"}], requests: [{paper_id: "open", status: open ? "open" : "closed"}, {paper_id: "closed", status: "closed"}]}
+    : {invites: []}})));
+  const el = document.createElement("lab-sharing-invites") as LabSharingInvites;
+  el.scrollIntoView = vi.fn(); el.sessionToken = "member"; document.body.append(el);
+  await vi.advanceTimersByTimeAsync(0); await el.updateComplete;
+  await el.selectMember("recipient", "Ravi Reader");
+  expect(el.querySelector('option[value="open"]')).not.toBeNull();
+  expect(el.querySelector('option[value="closed"]')).toBeNull();
+  open = false;
+  [...el.querySelectorAll("button")].find(b => b.textContent?.includes("Refresh invitations"))!.click();
+  await vi.advanceTimersByTimeAsync(0); await el.updateComplete;
+  expect(el.querySelector("form")).toBeNull();
+  expect(el.textContent).toContain("Open a help request for a project you manage");
+});
+
+it("releases a stalled load and offers a retry after timeout", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("fetch", vi.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+    init.signal!.addEventListener("abort", () => reject(new Error("aborted")), {once: true});
+  })));
+  const el = document.createElement("lab-sharing-invites") as LabSharingInvites;
+  el.sessionToken = "member"; document.body.append(el);
+  await el.updateComplete;
+  await vi.advanceTimersByTimeAsync(30_000);
+  await el.updateComplete;
+  expect(el.textContent).toContain("Invitations took too long to load");
+  expect(el.querySelector("button")!.disabled).toBe(false);
+});
+
+it("preserves the draft and uncertain outcome when submission times out", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === "POST") {
+      return new Promise((_resolve, reject) => {
+        init.signal!.addEventListener("abort", () => reject(new Error("aborted")), {once: true});
+      });
+    }
+    return {ok: true, json: async () => url.endsWith("/lab-sharing/mine")
+      ? {projects: [{id: "project", title: "Project"}], requests: [{paper_id: "project", status: "open"}]}
+      : {invites: []}};
+  }));
+  const el = document.createElement("lab-sharing-invites") as LabSharingInvites;
+  el.scrollIntoView = vi.fn(); el.sessionToken = "member";
+  document.body.append(el); await vi.advanceTimersByTimeAsync(0); await el.updateComplete;
+  await el.selectMember("recipient", "Ravi Reader");
+  const project = el.querySelector("select")!;
+  project.value = "project"; project.dispatchEvent(new Event("change"));
+  const note = el.querySelector("textarea")!;
+  note.value = "Review synthetic traces"; note.dispatchEvent(new Event("input"));
+  el.querySelector("form")!.dispatchEvent(new Event("submit", {cancelable: true}));
+  await vi.advanceTimersByTimeAsync(30_000); await el.updateComplete;
+  expect(el.textContent).toContain("It may have been accepted. Refresh invitations before trying again.");
+  expect(el.textContent).not.toContain("Invitation request: Pending");
+  expect(note.value).toBe("Review synthetic traces");
+  expect(project.value).toBe("project");
+  expect(el.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
+});

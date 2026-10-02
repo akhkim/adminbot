@@ -46,7 +46,11 @@ async function startService(
     // to assert on the calls themselves.
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
-    dcsFormRunner: async () => {},
+    dcsRosterRecorder: async () => ({
+      username: "stub@cs.toronto.edu",
+      password: "stub",
+      candidates: ["stub@cs.toronto.edu"],
+    }),
     ...options,
   });
   await new Promise<void>((resolve, reject) => {
@@ -85,6 +89,9 @@ function mockFor(baseUrl: string): ReturnType<typeof createAdminBotMockService> 
 
 function seedMember(baseUrl: string, id: string, body: Record<string, unknown>): void {
   const result = mockFor(baseUrl).service.upsertLabMember({
+    // Seeded onto the nudge list unless the case says otherwise: the list is opt-in, and a fixture
+    // that is not on it can never be mailed. See adminBotReceivesNudges.
+    receives_nudges: true,
     ...(body as AdminBotLabMemberInput),
     id,
   });
@@ -102,16 +109,16 @@ async function listPending(baseUrl: string): Promise<RegistrationView[]> {
   return ((await res.json()) as { registrations: RegistrationView[] }).registrations;
 }
 
-function approveRegistration(baseUrl: string, id: string): { member_id: string } {
-  const result = mockFor(baseUrl).auth.approveRegistration(id, "test-admin");
+async function approveRegistration(baseUrl: string, id: string): Promise<{ member_id: string }> {
+  const result = await mockFor(baseUrl).auth.approveRegistration(id, "test-admin");
   if (!result.ok) {
     throw new Error(`approve failed for ${id}: ${result.error.message}`);
   }
   return result.payload;
 }
 
-function rejectRegistration(baseUrl: string, id: string): void {
-  const result = mockFor(baseUrl).auth.rejectRegistration(id, "test-admin");
+async function rejectRegistration(baseUrl: string, id: string): Promise<void> {
+  const result = await mockFor(baseUrl).auth.rejectRegistration(id, "test-admin");
   if (!result.ok) {
     throw new Error(`reject failed for ${id}: ${result.error.message}`);
   }
@@ -127,7 +134,7 @@ async function approveClaim(baseUrl: string, memberId: string, email: string): P
   if (!registration) {
     throw new Error(`no pending claim for ${memberId}`);
   }
-  approveRegistration(baseUrl, registration.id);
+  await approveRegistration(baseUrl, registration.id);
 }
 
 async function loginToken(baseUrl: string, email: string): Promise<string> {
@@ -177,15 +184,13 @@ describe("AdminBot mock service", () => {
     expect(sensitiveInfo.status).toBe(403);
   });
 
-  it("serves the deadlines board and dataset as public, unauthenticated routes", async () => {
+  it("serves the deadline dataset as a public, unauthenticated route", async () => {
     const { baseUrl } = await startService();
 
-    const board = await fetch(`${baseUrl}/deadlines`);
-    expect(board.status).toBe(200);
-    expect(await board.text()).toContain("Deadlines");
-
-    const dataset = await fetch(`${baseUrl}/deadlines/venues.json`);
+    const dataset = await fetch(`${baseUrl}/deadlines`);
     expect(dataset.status).toBe(200);
+    expect(dataset.headers.get("content-type")).toContain("application/json");
+    expect(dataset.headers.has("location")).toBe(false);
     const body = (await dataset.json()) as { items: unknown[] };
     expect(Array.isArray(body.items)).toBe(true);
     expect(body.items.length).toBeGreaterThan(0);
@@ -212,6 +217,35 @@ describe("AdminBot mock service", () => {
     await expect(members.json()).resolves.toEqual({
       error: { message: "authentication required" },
     });
+  });
+
+  it("waits for a session lookup before deciding access to a protected route", async () => {
+    const { baseUrl, mock } = await startService();
+    const original = mock.auth.resolveSession.bind(mock.auth);
+    let lookupStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      lookupStarted = resolve;
+    });
+    let releaseLookup!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      releaseLookup = resolve;
+    });
+    Object.defineProperty(mock.auth, "resolveSession", {
+      value: async (token: string) => {
+        lookupStarted();
+        await blocked;
+        return original(token);
+      },
+    });
+    const request = fetch(`${baseUrl}/settings`, {
+      headers: { Authorization: "Bearer invalid-member-session" },
+    });
+    try {
+      await started;
+    } finally {
+      releaseLookup();
+    }
+    expect((await request).status).toBe(401);
   });
 
   it("accepts Slack channel naming events for the service principal", async () => {
@@ -258,7 +292,7 @@ describe("AdminBot mock service", () => {
     expect(sweep.status).toBe(200);
     await expect(sweep.json()).resolves.toMatchObject({
       scanned: 1,
-      renamed: 1,
+      renames_proposed: 1,
       skipped: 0,
     });
   });
@@ -304,7 +338,7 @@ describe("AdminBot mock service", () => {
     const pending = await listPending(baseUrl);
     const registration = pending.find((entry) => entry.member_id === "ada");
     expect(registration?.kind).toBe("claim");
-    approveRegistration(baseUrl, registration!.id);
+    await approveRegistration(baseUrl, registration!.id);
 
     const login = await fetch(`${baseUrl}/auth/login`, {
       method: "POST",
@@ -326,6 +360,19 @@ describe("AdminBot mock service", () => {
     expect((viewBody.member as { id: string }).id).toBe("ada");
   });
 
+  it("searches the public claim roster without exposing full member profiles", async () => {
+    const { baseUrl } = await startService();
+    await seedMember(baseUrl, "ada", { name: "Ada Lovelace", privilege_level: "member" });
+    await seedMember(baseUrl, "alan", { name: "Alan Turing", privilege_level: "member" });
+    const response = await fetch(`${baseUrl}/auth/roster?q=ada`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      members: [{ id: "ada", name: "Ada Lovelace" }],
+    });
+    const overlong = await fetch(`${baseUrl}/auth/roster?q=${"x".repeat(81)}`);
+    expect(overlong.status).toBe(400);
+  });
+
   it("signup then approval creates a member reachable by login", async () => {
     const { baseUrl } = await startService();
     const signup = await fetch(`${baseUrl}/auth/signup`, {
@@ -342,7 +389,7 @@ describe("AdminBot mock service", () => {
 
     const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
     expect(registration).toBeDefined();
-    const approveBody = approveRegistration(baseUrl, registration!.id);
+    const approveBody = await approveRegistration(baseUrl, registration!.id);
 
     const members = await (
       await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() })
@@ -362,6 +409,15 @@ describe("AdminBot mock service", () => {
         invited.push(email);
       },
     });
+    // The route is what onboards the new member; the auth service alone only commits the account.
+    seedMember(baseUrl, "approver", {
+      name: "Approver",
+      email: "approver@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    await approveClaim(baseUrl, "approver", "approver@cs.toronto.edu");
+    const adminSession = await loginToken(baseUrl, "approver@cs.toronto.edu");
+    invited.length = 0;
     const signup = await fetch(`${baseUrl}/auth/signup`, {
       method: "POST",
       headers: jsonHeaders(),
@@ -374,11 +430,15 @@ describe("AdminBot mock service", () => {
     expect(signup.status).toBe(200);
 
     const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
-    const approveBody = approveRegistration(baseUrl, registration!.id);
+    const approved = await fetch(`${baseUrl}/auth/registrations/${registration!.id}/approve`, {
+      method: "POST",
+      headers: { ...jsonHeaders(), Authorization: `Bearer ${adminSession}` },
+    });
+    expect(approved.status).toBe(200);
+    const approveBody = (await approved.json()) as { member_id: string };
 
-    // Fire-and-forget: flush microtasks so the injected runner's resolution is observable.
-    await Promise.resolve();
-    await Promise.resolve();
+    // Granted through the typed `calendar.grant_lab_calendar` action, approved by the admin who
+    // approved the account, like every other new member's.
     expect(invited).toEqual(["calendar-person@cs.toronto.edu"]);
 
     const members = (await (
@@ -409,7 +469,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
-    approveRegistration(baseUrl, registration!.id);
+    await approveRegistration(baseUrl, registration!.id);
 
     // Fire-and-forget: flush microtasks so the injected runner's resolution is observable.
     await Promise.resolve();
@@ -419,11 +479,12 @@ describe("AdminBot mock service", () => {
 
   // The request moved off approval and onto the send that promises it. Approving is now silent:
   // by then the member has the address the request produces.
-  it("approving a registration files no DCS request", async () => {
-    const submitted: Array<{ firstName: string; lastName: string; email: string }> = [];
+  it("approving a registration files no DCS roster row", async () => {
+    const submitted: Array<{ name: string; email: string }> = [];
     const { baseUrl } = await startService({
-      dcsFormRunner: async (params) => {
+      dcsRosterRecorder: async (params) => {
         submitted.push(params);
+        return { username: "x@cs.toronto.edu", password: "pw", candidates: ["x@cs.toronto.edu"] };
       },
     });
     await fetch(`${baseUrl}/auth/signup`, {
@@ -436,7 +497,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
-    approveRegistration(baseUrl, registration!.id);
+    await approveRegistration(baseUrl, registration!.id);
 
     await Promise.resolve();
     await Promise.resolve();
@@ -444,12 +505,14 @@ describe("AdminBot mock service", () => {
   });
 
   // The other half of the move: the send files it, and the audit trail follows the trigger. The
-  // request lands on a Microsoft Form with no receipt, so this row is the only evidence.
-  it("sending the full-member guide files the DCS request and audits it", async () => {
-    const submitted: Array<{ firstName: string; lastName: string; email: string }> = [];
+  // row is acted on by a sysadmin who reports back through no channel this service reads, so the
+  // audit row is the only evidence on our side.
+  it("sending the full-member guide files the DCS roster row and audits it", async () => {
+    const submitted: Array<{ name: string; email: string }> = [];
     const { baseUrl } = await startService({
-      dcsFormRunner: async (params) => {
+      dcsRosterRecorder: async (params) => {
         submitted.push(params);
+        return { username: "x@cs.toronto.edu", password: "pw", candidates: ["x@cs.toronto.edu"] };
       },
     });
     await seedMember(baseUrl, "boss", {
@@ -471,10 +534,9 @@ describe("AdminBot mock service", () => {
       }),
     });
     expect(response.status).toBe(200);
-    // A preview provisions and sends nothing, so it must not file a request either.
+    // A preview provisions and sends nothing, so it must not file a row either.
     expect(submitted).toEqual([]);
   });
-
 
   it("does not email anyone when a registration is rejected", async () => {
     const sent: Array<{ email: string }> = [];
@@ -494,7 +556,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "nope");
-    rejectRegistration(baseUrl, registration!.id);
+    await rejectRegistration(baseUrl, registration!.id);
 
     await Promise.resolve();
     await Promise.resolve();
@@ -518,9 +580,11 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "mk");
-    expect(approveRegistration(baseUrl, registration!.id)).toEqual({
+    expect(await approveRegistration(baseUrl, registration!.id)).toEqual({
       status: "approved",
       member_id: "mk",
+      member_created: false,
+      email: "mk@cs.toronto.edu",
     });
     expect(await loginToken(baseUrl, "mk@cs.toronto.edu")).toBeTruthy();
   });
@@ -542,8 +606,13 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "rk");
-    const approveBody = approveRegistration(baseUrl, registration!.id);
-    expect(approveBody).toEqual({ status: "approved", member_id: "rk" });
+    const approveBody = await approveRegistration(baseUrl, registration!.id);
+    expect(approveBody).toEqual({
+      status: "approved",
+      member_id: "rk",
+      member_created: false,
+      email: "rk@cs.toronto.edu",
+    });
     expect(await loginToken(baseUrl, "rk@cs.toronto.edu")).toBeTruthy();
   });
 
@@ -560,7 +629,7 @@ describe("AdminBot mock service", () => {
       }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "rj");
-    rejectRegistration(baseUrl, registration!.id);
+    await rejectRegistration(baseUrl, registration!.id);
 
     const login = await fetch(`${baseUrl}/auth/login`, {
       method: "POST",
@@ -573,7 +642,7 @@ describe("AdminBot mock service", () => {
     });
   });
 
-  it("includes the gateway payload only when a gateway token is configured", async () => {
+  it("never exposes the shared gateway token in a member login payload", async () => {
     const { baseUrl } = await startService({ gatewayToken: "gw-secret", gatewayUrl: "ws://x:1" });
     await seedMember(baseUrl, "gwm", { name: "GW", email: "gw@cs.toronto.edu" });
     await approveClaim(baseUrl, "gwm", "gw@cs.toronto.edu");
@@ -583,8 +652,8 @@ describe("AdminBot mock service", () => {
       headers: jsonHeaders(),
       body: JSON.stringify({ email: "gw@cs.toronto.edu", password: "correcthorse" }),
     });
-    const body = (await login.json()) as { gateway?: { url: string; token: string } };
-    expect(body.gateway).toEqual({ url: "ws://x:1", token: "gw-secret" });
+    const body = (await login.json()) as { gateway?: { url: string } };
+    expect(body.gateway).toEqual({ url: "ws://x:1" });
   });
 
   it("returns generic errors for unknown claims, collisions, and short passwords", async () => {
@@ -703,6 +772,47 @@ describe("AdminBot mock service", () => {
     await expect(rateLimitAndGetAuditedIp(false)).resolves.not.toBe(spoofed);
     // Trusted: this process is configured to sit behind a proxy that sets the header itself.
     await expect(rateLimitAndGetAuditedIp(true)).resolves.toBe(spoofed);
+  });
+
+  // A session cookie handed to a browser that reached us over HTTPS has to carry Secure, or it
+  // goes out in the clear the first time anything addresses that host over http://. The same
+  // service is also reached over loopback plain HTTP by the cron wrappers, where a Secure cookie
+  // would never be sent back -- so the attribute is decided per request rather than at startup.
+  it("marks the session cookie Secure only when the request arrived over TLS", async () => {
+    let seq = 0;
+
+    async function loginCookie(
+      trustProxyHeaders: boolean,
+      forwardedProto?: string,
+    ): Promise<string> {
+      // A fresh service per case: startService is per-test state, and the member only has to exist
+      // long enough to log in once.
+      seq += 1;
+      const id = `sec${seq}`;
+      const email = `${id}@cs.toronto.edu`;
+      const { baseUrl } = await startService({ trustProxyHeaders });
+      seedMember(baseUrl, id, { name: "Sec", email });
+      await approveClaim(baseUrl, id, email);
+      const res = await fetch(`${baseUrl}/auth/login`, {
+        method: "POST",
+        headers: jsonHeaders(forwardedProto ? { "X-Forwarded-Proto": forwardedProto } : {}),
+        body: JSON.stringify({ email, password: "correcthorse" }),
+      });
+      return res.headers.get("set-cookie") ?? "";
+    }
+
+    // Plain loopback, which is how the cron wrappers and the verify commands reach the service.
+    await expect(loginCookie(false)).resolves.not.toContain("Secure");
+    // Behind the configured public proxy: our hop is plain, the browser's hop was HTTPS.
+    await expect(loginCookie(true, "https")).resolves.toContain("Secure");
+    // Trusted proxy that reports a plain hop stays plain.
+    await expect(loginCookie(true, "http")).resolves.not.toContain("Secure");
+    // Untrusted proxy: a caller-supplied header must not get to decide the attribute, the same
+    // rule X-Forwarded-For already follows above.
+    await expect(loginCookie(false, "https")).resolves.not.toContain("Secure");
+    // Secure is additive -- the protections that never depended on the transport still hold.
+    await expect(loginCookie(true, "https")).resolves.toContain("HttpOnly");
+    await expect(loginCookie(true, "https")).resolves.toContain("SameSite=Lax");
   });
 
   it("guards member self-profile edits", async () => {
@@ -826,7 +936,7 @@ describe("AdminBot mock service", () => {
       projects: ["Project Atlas"],
       hours_per_week: 20,
       location: "Zurich",
-      affiliation: "ETH",
+      affiliation: "ETH Zurich",
       timezone: "Europe/Zurich",
       personal_website: "https://boss.example.com",
       notes: "on sabbatical",
@@ -1421,9 +1531,7 @@ describe("AdminBot service-principal privilege scoping", () => {
   it("hides another member's schedule from a plain member, and shows it to an admin", async () => {
     const { baseUrl } = await startService();
     const schedule = {
-      availability: [
-        { start: "2026-03-02", end: "2026-03-15", hours_per_week: 20 },
-      ],
+      availability: [{ start: "2026-03-02", end: "2026-03-15", hours_per_week: 20 }],
       time_off: [
         {
           start: "2026-04-01",
@@ -1468,12 +1576,7 @@ describe("AdminBot service-principal privilege scoping", () => {
     const adaToPeer = asPeer.find((member) => member.id === "ada")!;
     // Still on the roster -- this is a field rule, not a row rule.
     expect(adaToPeer.name).toBe("Ada");
-    for (const field of [
-      "availability",
-      "time_off",
-      "milestones",
-      "availability_notes",
-    ]) {
+    for (const field of ["availability", "time_off", "milestones", "availability_notes"]) {
       expect(field in adaToPeer).toBe(false);
     }
     // Their own schedule is still theirs to read.
@@ -1529,10 +1632,7 @@ describe("AdminBot service-principal privilege scoping", () => {
       body: JSON.stringify({ availability_notes: "   " }),
     });
     expect(cleared.status).toBe(200);
-    expect(
-      "availability_notes" in
-        ((await cleared.json()) as Record<string, unknown>),
-    ).toBe(false);
+    expect("availability_notes" in ((await cleared.json()) as Record<string, unknown>)).toBe(false);
   });
 
   it("reports members with incomplete mandatory profile fields to any caller", async () => {
@@ -1587,7 +1687,11 @@ describe("AdminBot service-principal privilege scoping", () => {
       headers: serviceHeaders(),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { reviewed: number; non_compliant: number; nudges_created: number };
+    const body = (await res.json()) as {
+      reviewed: number;
+      non_compliant: number;
+      nudges_created: number;
+    };
     expect(body.reviewed).toBe(2);
     expect(body.non_compliant).toBe(1);
     expect(body.nudges_created).toBe(1);
@@ -1648,6 +1752,41 @@ describe("AdminBot service-principal privilege scoping", () => {
 
     // An approval has to name a person, and every agent tool call shares this one principal.
     expect(res.status).toBe(403);
+  });
+
+  it("answers a connector refusal as 500 with its message, never a 502 a tunnel would swallow", async () => {
+    // Cloudflare replaces an origin 502 with its own CORS-less page, so a refused write reached the
+    // Control UI as "Couldn't reach the AdminBot service" and the refusal itself was lost.
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async () => {
+          throw new Error(
+            "Google API error (400 badRequest): You are trying to edit a protected cell",
+          );
+        },
+      },
+    });
+    const token = await adminToken(baseUrl, "boss", "boss@cs.toronto.edu");
+    const proposal = await proposeSlackMessage(baseUrl);
+    const approved = await fetch(`${baseUrl}/approvals/${proposal.id}/approve`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ payload_hash: proposal.hash, approver_role: "admin" }),
+    });
+    expect(approved.status).toBe(200);
+
+    const executed = await fetch(`${baseUrl}/actions/${proposal.id}/execute`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ idempotency_key: "k1", dry_run: false }),
+    });
+
+    expect(executed.status).toBe(500);
+    await expect(executed.json()).resolves.toEqual({
+      error: {
+        message: "Google API error (400 badRequest): You are trying to edit a protected cell",
+      },
+    });
   });
 
   it("lets a member tick off their own onboarding step but not someone else's", async () => {
@@ -1741,6 +1880,27 @@ describe("AdminBot service-principal privilege scoping", () => {
       expect.objectContaining({ approver_role: "admin", approver_id: "boss" }),
     ]);
     expect(body.status).toBe("approved");
+  });
+
+  it("records the remover from the session, not from the request body", async () => {
+    const { baseUrl, mock } = await startService();
+    const token = await adminToken(baseUrl, "boss", "boss@cs.toronto.edu");
+    const proposal = await proposeSlackMessage(baseUrl);
+
+    const res = await fetch(`${baseUrl}/proposals/${proposal.id}/remove`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ actor: "somebody-else", note: "duplicate" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mock.service.listAuditEvents()).toContainEqual(
+      expect.objectContaining({
+        type: "proposal.removed",
+        actor: "boss",
+        details: expect.objectContaining({ note: "duplicate" }),
+      }),
+    );
   });
 });
 
@@ -1958,11 +2118,16 @@ describe("onboarding acknowledgement", () => {
 // board stays shared, but a member's write is confined to papers they filed or are named on, and to
 // the descriptive fields (governance -- mentor, checklist, reminder cadence -- stays admin-only).
 describe("member-authored papers", () => {
-  async function tokenFor(baseUrl: string, id: string, name: string): Promise<string> {
+  async function tokenFor(
+    baseUrl: string,
+    id: string,
+    name: string,
+    privilegeLevel: "member" | "admin" = "member",
+  ): Promise<string> {
     seedMember(baseUrl, id, {
       name,
       email: `${id}@cs.toronto.edu`,
-      privilege_level: "member",
+      privilege_level: privilegeLevel,
     });
     await approveClaim(baseUrl, id, `${id}@cs.toronto.edu`);
     return await loginToken(baseUrl, `${id}@cs.toronto.edu`);
@@ -2028,6 +2193,53 @@ describe("member-authored papers", () => {
       submitted_by_member_id: "ada",
       artifacts: { conference: "ICML 2026" },
     });
+  });
+
+  it("persists acceptance details from an author session", async () => {
+    const { baseUrl } = await startService();
+    const token = await tokenFor(baseUrl, "ada", "Ada Author");
+    await putPaper(baseUrl, "ada-paper", memberHeaders(token), {
+      title: "Sparse world models",
+      authors: ["Ada Author"],
+      current_step: "submission",
+    });
+
+    const res = await putPaper(baseUrl, "ada-paper", memberHeaders(token), {
+      venue_decision: "accept",
+      accepted_venue: "ICLR 2027",
+      accepted_year: 2027,
+      is_archival: true,
+      presentation_type: "spotlight",
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      venue_decision: "accept",
+      accepted_venue: "ICLR 2027",
+      accepted_year: 2027,
+      is_archival: true,
+      presentation_type: "spotlight",
+    });
+  });
+
+  it("lets an authenticated admin record a decision on another member's paper", async () => {
+    const { baseUrl } = await startService();
+    const adminToken = await tokenFor(baseUrl, "admin", "Admin User", "admin");
+    await putPaper(baseUrl, "lab-paper", serviceHeaders({ "Content-Type": "application/json" }), {
+      title: "Lab paper",
+      authors: ["Someone Else"],
+      current_step: "submission",
+    });
+
+    const res = await putPaper(baseUrl, "lab-paper", memberHeaders(adminToken), {
+      title: "Lab paper",
+      authors: ["Someone Else"],
+      current_step: "submission",
+      venue_decision: "reject",
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ venue_decision: "reject" });
   });
 
   it("lets a member named in the authors edit a paper an admin filed", async () => {
@@ -2346,6 +2558,17 @@ describe("AdminBot device token issuance", () => {
 });
 
 describe("anonymous reimbursement access", () => {
+  it("rejects oversized JSON before the anonymous workflow handles it", async () => {
+    const { baseUrl } = await startService({ reimbursementWorkflow: stubWorkflow });
+    const res = await fetch(`${baseUrl}/reimbursements/converse`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ message: "x".repeat(1024 * 1024 + 1) }),
+    });
+
+    expect(res.status).toBe(413);
+  });
+
   const stubWorkflow = {
     converse: async () => ({
       assistant_message: "ok",
@@ -2467,6 +2690,29 @@ describe("cross-origin refusals", () => {
     expect(refusals[0]).toContain("http://admin.safe.eu");
     expect(refusals[0]).toContain("https://admin.safe.eu");
   });
+
+  it("rejects a disallowed-origin mutation before dispatch", async () => {
+    const { baseUrl, mock } = await startService({
+      allowedOrigins: ["https://admin.safe.eu"],
+    });
+    const before = mock.service.listPending();
+    if (!before.ok) {
+      throw new Error("failed to read pending proposals");
+    }
+
+    const refused = await fetch(`${baseUrl}/proposals`, {
+      method: "POST",
+      headers: serviceHeaders({
+        Origin: "https://attacker.example",
+        "Content-Type": "application/json",
+      }),
+      body: JSON.stringify({ type: "email.send", summary: "must not be created" }),
+    });
+
+    expect(refused.status).toBe(403);
+    const after = mock.service.listPending();
+    expect(after.ok && after.payload.proposals).toHaveLength(before.payload.proposals.length);
+  });
 });
 
 describe("the calendar routes", () => {
@@ -2491,6 +2737,134 @@ describe("the calendar routes", () => {
     const token = await loginToken(baseUrl, "plain@cs.toronto.edu");
     return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   }
+
+  // The board is a public tab, so "who may see what" is the whole point of these.
+  it("shows an anonymous visitor approved opportunities and nothing else", async () => {
+    const { baseUrl } = await startService();
+    const member = await memberSession(baseUrl);
+    const admin = await adminSession(baseUrl);
+
+    const submitted = await fetch(`${baseUrl}/opportunities`, {
+      method: "POST",
+      headers: member,
+      body: JSON.stringify({ name: "Pending program", category: "phd" }),
+    });
+    expect(submitted.status).toBe(201);
+    const { opportunity } = (await submitted.json()) as { opportunity: { id: string } };
+
+    // Nothing is approved yet, so the public read is empty even though a row exists.
+    await expect((await fetch(`${baseUrl}/opportunities`)).json()).resolves.toMatchObject({
+      opportunities: [],
+    });
+
+    // The submitter still sees their own pending entry, so the tab does not look like it ate it.
+    await expect(
+      (await fetch(`${baseUrl}/opportunities`, { headers: member })).json(),
+    ).resolves.toMatchObject({ opportunities: [{ id: opportunity.id, status: "pending" }] });
+
+    expect(
+      (
+        await fetch(`${baseUrl}/opportunities/${opportunity.id}/approve`, {
+          method: "POST",
+          headers: admin,
+        })
+      ).status,
+    ).toBe(200);
+
+    await expect((await fetch(`${baseUrl}/opportunities`)).json()).resolves.toMatchObject({
+      opportunities: [{ id: opportunity.id, status: "approved", submitted_by_name: "Plain" }],
+    });
+  });
+
+  it("refuses an anonymous write and a non-admin decision", async () => {
+    const { baseUrl } = await startService();
+    const member = await memberSession(baseUrl);
+
+    const anonymous = await fetch(`${baseUrl}/opportunities`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Drive-by", category: "phd" }),
+    });
+    expect(anonymous.status).toBe(401);
+
+    const submitted = await fetch(`${baseUrl}/opportunities`, {
+      method: "POST",
+      headers: member,
+      body: JSON.stringify({ name: "Mine", category: "phd" }),
+    });
+    const { opportunity } = (await submitted.json()) as { opportunity: { id: string } };
+
+    // A member cannot wave their own suggestion onto the public board.
+    const selfApprove = await fetch(`${baseUrl}/opportunities/${opportunity.id}/approve`, {
+      method: "POST",
+      headers: member,
+    });
+    expect(selfApprove.status).toBe(403);
+  });
+
+  it("lets a member edit and withdraw their own entry only while it is pending", async () => {
+    const { baseUrl } = await startService();
+    const member = await memberSession(baseUrl);
+    const admin = await adminSession(baseUrl);
+
+    const submitted = await fetch(`${baseUrl}/opportunities`, {
+      method: "POST",
+      headers: member,
+      body: JSON.stringify({ name: "Typo", category: "phd" }),
+    });
+    const { opportunity } = (await submitted.json()) as { opportunity: { id: string } };
+
+    const edited = await fetch(`${baseUrl}/opportunities/${opportunity.id}`, {
+      method: "PUT",
+      headers: member,
+      body: JSON.stringify({ name: "Fixed", category: "internship" }),
+    });
+    expect(edited.status).toBe(200);
+    await expect(edited.json()).resolves.toMatchObject({
+      opportunity: { name: "Fixed", category: "internship" },
+    });
+
+    await fetch(`${baseUrl}/opportunities/${opportunity.id}/approve`, {
+      method: "POST",
+      headers: admin,
+    });
+
+    // Once it is on the board, changing the text under the decision is the lab's call.
+    const afterDecision = await fetch(`${baseUrl}/opportunities/${opportunity.id}`, {
+      method: "PUT",
+      headers: member,
+      body: JSON.stringify({ name: "Sneaky rewrite", category: "phd" }),
+    });
+    expect(afterDecision.status).toBe(409);
+
+    const removed = await fetch(`${baseUrl}/opportunities/${opportunity.id}`, {
+      method: "DELETE",
+      headers: admin,
+    });
+    expect(removed.status).toBe(200);
+    await expect((await fetch(`${baseUrl}/opportunities`)).json()).resolves.toMatchObject({
+      opportunities: [],
+    });
+  });
+
+  it("rejects a submission the contract will not accept", async () => {
+    const { baseUrl } = await startService();
+    const member = await memberSession(baseUrl);
+
+    for (const body of [
+      { name: "", category: "phd" },
+      { name: "No category", category: "not_a_category" },
+      { name: "Bad date", category: "phd", deadline_aoe: "2026-13-45 00:00:00" },
+      { name: "Bad link", category: "phd", link: "javascript:alert(1)" },
+    ]) {
+      const response = await fetch(`${baseUrl}/opportunities`, {
+        method: "POST",
+        headers: member,
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(400);
+    }
+  });
 
   it("names the calendar it read alongside the events", async () => {
     const { baseUrl } = await startService({
@@ -2660,6 +3034,116 @@ describe("the calendar routes", () => {
     expect(executed[0]?.payload.from).toBeUndefined();
   });
 
+  // An exclusive send: the tab's filters are the whole guest list, so the same call adds the people
+  // who match and takes off the roster members who no longer do.
+  it("adds and removes in one call, as two typed actions", async () => {
+    const executed: Array<{ type: string; payload: Record<string, unknown> }> = [];
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push({
+            type: proposal.type,
+            payload: proposal.proposed_payload as Record<string, unknown>,
+          });
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        attendees: ["new@cs.toronto.edu"],
+        remove: ["gone@cs.toronto.edu"],
+        remaining_attendees: ["stays@cs.toronto.edu", "new@cs.toronto.edu"],
+        summary: "Lab retreat",
+      }),
+    });
+    expect(response.status).toBe(200);
+
+    // Added first, so a failure between the two leaves the event over-inclusive rather than short
+    // of the people who were supposed to be on it.
+    expect(executed.map((entry) => entry.type)).toEqual([
+      "calendar.add_attendees",
+      "calendar.remove_attendees",
+    ]);
+    expect(executed[1]?.payload).toMatchObject({
+      event_id: "evt-9",
+      removed_attendees: ["gone@cs.toronto.edu"],
+      remaining_attendees: ["stays@cs.toronto.edu", "new@cs.toronto.edu"],
+    });
+  });
+
+  it("removes without adding when the filters only narrowed", async () => {
+    const executed: string[] = [];
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal.type);
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        attendees: [],
+        remove: ["gone@cs.toronto.edu"],
+        remaining_attendees: ["stays@cs.toronto.edu"],
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(executed).toEqual(["calendar.remove_attendees"]);
+  });
+
+  // The write behind a removal replaces the guest list rather than subtracting from it, so both of
+  // these would quietly uninvite people the caller never meant to touch.
+  it("refuses a removal that would clear the event or drop the people it just invited", async () => {
+    const executed: string[] = [];
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal.type);
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const cleared = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ remove: ["gone@cs.toronto.edu"], remaining_attendees: [] }),
+    });
+    expect(cleared.status).toBe(422);
+    await expect(cleared.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("refusing to clear") },
+    });
+
+    const orphaned = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        attendees: ["new@cs.toronto.edu"],
+        remove: ["gone@cs.toronto.edu"],
+        // Predates the add, so executing this would take the new invitee straight back off.
+        remaining_attendees: ["stays@cs.toronto.edu"],
+      }),
+    });
+    expect(orphaned.status).toBe(422);
+    await expect(orphaned.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("new@cs.toronto.edu") },
+    });
+
+    // Neither refusal reached Google.
+    expect(executed).toEqual([]);
+  });
+
   // Every calendar write failed with `Google API error (400 badRequest)` because the wall-clock
   // time went to Google unresolved. An already-absolute time must still pass through untouched.
   it("passes an already-absolute time through unchanged", async () => {
@@ -2686,6 +3170,64 @@ describe("the calendar routes", () => {
     expect(executed[0]?.from).toBe("2026-08-18T13:00:00-04:00");
   });
 
+  it.each([
+    ["create", "/calendar/events"],
+    ["update", "/calendar/events/evt-9"],
+  ])("canonicalizes an AoE display label on calendar %s", async (_operation, route) => {
+    const executed: Array<Record<string, unknown>> = [];
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal.proposed_payload as Record<string, unknown>);
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}${route}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        summary: "AoE deadline check-in",
+        start: "2026-09-01T13:00",
+        end: "2026-09-01T14:00",
+        timezone: "Anywhere on Earth (AoE, UTC−12)",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(executed[0]).toMatchObject({
+      from: "2026-09-02T01:00:00.000Z",
+      to: "2026-09-02T02:00:00.000Z",
+      timezone: "Etc/GMT+12",
+    });
+  });
+
+  it.each([
+    ["create", "/calendar/events"],
+    ["update", "/calendar/events/evt-9"],
+  ])("rejects an invalid timezone cleanly on calendar %s", async (_operation, route) => {
+    const { baseUrl } = await startService();
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}${route}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        summary: "Bad zone",
+        start: "2026-09-01T13:00",
+        end: "2026-09-01T14:00",
+        timezone: "Toronto-ish",
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("IANA") },
+    });
+  });
+
   it("refuses a start it cannot read rather than sending it to Google", async () => {
     const { baseUrl } = await startService();
     const headers = await adminSession(baseUrl);
@@ -2708,6 +3250,14 @@ describe("the calendar routes", () => {
       body: JSON.stringify({ attendees: [] }),
     });
     expect(noAttendees.status).toBe(400);
+
+    // Neither half named is still nothing to do; a removal alone is a real send (tested above).
+    const neither = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ attendees: [], remove: [] }),
+    });
+    expect(neither.status).toBe(400);
 
     const noTimes = await fetch(`${baseUrl}/calendar/events`, {
       method: "POST",
@@ -2770,12 +3320,19 @@ describe("the meetings routes", () => {
     await memberToken(baseUrl, "ada", "Ada Attendee");
     fileMeeting(baseUrl, {
       attendees: [
-        { member_id: "ada", display_name: "Ada Attendee", source: "participant_report", present: true },
+        {
+          member_id: "ada",
+          display_name: "Ada Attendee",
+          source: "participant_report",
+          present: true,
+        },
         { display_name: "Guest iPhone", source: "participant_report", present: true },
       ],
     });
 
-    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${baseUrl}/meetings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { meetings: Array<Record<string, unknown>> };
     expect(body.meetings[0]?.attendees).toHaveLength(2);
@@ -2790,12 +3347,19 @@ describe("the meetings routes", () => {
     seedMember(baseUrl, "bo", { name: "Bo Other", email: "bo@cs.toronto.edu" });
     fileMeeting(baseUrl, {
       attendees: [
-        { member_id: "ada", display_name: "Ada Attendee", source: "participant_report", present: true },
+        {
+          member_id: "ada",
+          display_name: "Ada Attendee",
+          source: "participant_report",
+          present: true,
+        },
         { member_id: "bo", display_name: "Bo Other", source: "participant_report", present: true },
       ],
     });
 
-    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${baseUrl}/meetings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       meetings: Array<{ attendees: Array<{ member_id?: string }>; attendee_count: number }>;
@@ -2809,6 +3373,140 @@ describe("the meetings routes", () => {
       },
     ]);
     expect(body.meetings[0]?.attendee_count).toBe(2);
+  });
+
+  it("pages recordings without repeating or skipping rows when a newer one arrives", async () => {
+    const { baseUrl } = await startService();
+    const adminToken = await memberToken(baseUrl, "root", "Root Admin", "admin");
+    const memberTokenValue = await memberToken(baseUrl, "ada", "Ada Attendee");
+    const attendees = [
+      { member_id: "ada", display_name: "Ada Attendee", source: "manual", present: true },
+      { member_id: "bo", display_name: "Bo Other", source: "manual", present: true },
+    ];
+    fileMeeting(baseUrl, {
+      id: "older-a",
+      started_at: "2026-08-10T14:00:00Z",
+      duration_minutes: 30,
+      attendees,
+    });
+    fileMeeting(baseUrl, {
+      id: "older-b",
+      started_at: "2026-08-10T14:00:00Z",
+      duration_minutes: 30,
+      attendees,
+    });
+    fileMeeting(baseUrl, {
+      id: "short",
+      started_at: "2026-08-11T14:00:00Z",
+      duration_minutes: 2,
+    });
+    fileMeeting(baseUrl, {
+      id: "newest",
+      started_at: "2026-08-12T14:00:00Z",
+      duration_minutes: 30,
+      attendees,
+    });
+    const headers = { Authorization: `Bearer ${memberTokenValue}` };
+    const first = await fetch(`${baseUrl}/meetings?limit=2`, { headers });
+    expect(first.status).toBe(200);
+    const page1 = (await first.json()) as {
+      meetings: Array<{
+        id: string;
+        attendees: Array<{ member_id?: string }>;
+        attendee_count: number;
+      }>;
+      next_cursor: { started_at: string; id: string };
+    };
+    expect(page1.meetings.map((meeting) => meeting.id)).toEqual(["newest", "older-b"]);
+    expect(page1.meetings[0]?.attendees).toEqual([
+      { member_id: "ada", display_name: "Ada Attendee", source: "manual", present: true },
+    ]);
+    expect(page1.meetings[0]?.attendee_count).toBe(2);
+    fileMeeting(baseUrl, {
+      id: "arrived-later",
+      started_at: "2026-08-13T14:00:00Z",
+      duration_minutes: 30,
+    });
+    const cursor = new URLSearchParams({
+      limit: "2",
+      before_started_at: page1.next_cursor.started_at,
+      before_id: page1.next_cursor.id,
+    });
+    const second = await fetch(`${baseUrl}/meetings?${cursor}`, { headers });
+    const page2 = (await second.json()) as {
+      meetings: Array<{ id: string }>;
+      next_cursor?: unknown;
+    };
+    expect(page2.meetings.map((meeting) => meeting.id)).toEqual(["older-a"]);
+    expect(page2.next_cursor).toBeUndefined();
+
+    const admin = await fetch(`${baseUrl}/meetings?limit=2`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const adminPage = (await admin.json()) as { meetings: Array<{ attendees: unknown[] }> };
+    expect(adminPage.meetings[0]?.attendees).toBeUndefined();
+    expect(adminPage.meetings[1]?.attendees).toHaveLength(2);
+    const unpaged = await fetch(`${baseUrl}/meetings`, { headers });
+    const legacy = (await unpaged.json()) as { meetings: unknown[]; next_cursor?: unknown };
+    expect(legacy.meetings).toHaveLength(4);
+    expect(legacy.next_cursor).toBeUndefined();
+  });
+
+  it("keeps historical recordings with invalid or blank dates reachable across pages", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee");
+    const dated = fileMeeting(baseUrl, { id: "dated", duration_minutes: 30 });
+    const store = mockFor(baseUrl).store;
+    for (const [id, started_at] of [
+      ["z-invalid", "not-a-date"],
+      ["y-blank", ""],
+      ["x-invalid", "malformed"],
+    ]) {
+      store.saveMeeting({ ...dated, id, started_at });
+    }
+
+    const seen: string[] = [];
+    let cursor: { started_at: string; id: string } | undefined;
+    for (let pageNumber = 0; pageNumber < 5; pageNumber++) {
+      const query = new URLSearchParams({ limit: "1" });
+      if (cursor) {
+        query.set("before_started_at", cursor.started_at);
+        query.set("before_id", cursor.id);
+      }
+      const response = await fetch(`${baseUrl}/meetings?${query}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(response.status).toBe(200);
+      const page = (await response.json()) as {
+        meetings: Array<{ id: string }>;
+        next_cursor?: { started_at: string; id: string };
+      };
+      seen.push(...page.meetings.map((meeting) => meeting.id));
+      cursor = page.next_cursor;
+      if (!cursor) {
+        break;
+      }
+    }
+    expect(seen).toEqual(["dated", "z-invalid", "y-blank", "x-invalid"]);
+    expect(cursor).toBeUndefined();
+  });
+
+  it("rejects malformed recording page requests", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee");
+    for (const query of [
+      "limit=0",
+      "limit=51",
+      "before_id=x",
+      "limit=2&before_id=x",
+      "limit=2&before_started_at=bad",
+      `limit=2&before_started_at=${"x".repeat(101)}&before_id=x`,
+    ]) {
+      const response = await fetch(`${baseUrl}/meetings?${query}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(response.status).toBe(400);
+    }
   });
 
   it("refuses an anonymous read", async () => {
@@ -2873,7 +3571,9 @@ describe("the meetings routes", () => {
     fileMeeting(baseUrl, { id: "short", topic: "Room check", duration_minutes: 4 });
     fileMeeting(baseUrl, { id: "real", topic: "Weekly Lab Meeting", duration_minutes: 58 });
 
-    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${baseUrl}/meetings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const body = (await res.json()) as { meetings: Array<{ id: string }> };
     expect(body.meetings.map((meeting) => meeting.id)).toEqual(["real"]);
   });
@@ -2885,7 +3585,9 @@ describe("the meetings routes", () => {
     const token = await memberToken(baseUrl, "ada", "Ada Attendee");
     fileMeeting(baseUrl, { id: "unknown-length" });
 
-    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${baseUrl}/meetings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const body = (await res.json()) as { meetings: Array<{ id: string }> };
     expect(body.meetings.map((meeting) => meeting.id)).toEqual(["unknown-length"]);
   });
@@ -2902,7 +3604,9 @@ describe("the meetings routes", () => {
     });
     expect(settings.status).toBe(200);
 
-    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${baseUrl}/meetings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const body = (await res.json()) as { meetings: Array<{ id: string }> };
     expect(body.meetings.map((meeting) => meeting.id)).toEqual(["short"]);
   });
@@ -2943,7 +3647,11 @@ describe("the meetings routes", () => {
     const res = await fetch(`${baseUrl}/meetings`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ id: "empty", topic: "Nothing", started_at: "2026-08-14T15:00:00.000Z" }),
+      body: JSON.stringify({
+        id: "empty",
+        topic: "Nothing",
+        started_at: "2026-08-14T15:00:00.000Z",
+      }),
     });
     expect(res.status).toBe(400);
   });
@@ -3096,8 +3804,11 @@ describe("the member location timeline", () => {
     observeLogin(baseUrl, "ada", "Germany", new Date().toISOString());
 
     expect(
-      (await fetch(`${baseUrl}/lab/location-drifts`, { headers: { Authorization: `Bearer ${member}` } }))
-        .status,
+      (
+        await fetch(`${baseUrl}/lab/location-drifts`, {
+          headers: { Authorization: `Bearer ${member}` },
+        })
+      ).status,
     ).toBe(403);
     const res = await fetch(`${baseUrl}/lab/location-drifts`, {
       headers: { Authorization: `Bearer ${admin}` },
@@ -3105,5 +3816,389 @@ describe("the member location timeline", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { drifts: Array<{ member_id: string }> };
     expect(body.drifts.map((drift) => drift.member_id)).toEqual(["ada"]);
+  });
+});
+
+// The escalation queue is the one read that crosses member boundaries, so what it refuses matters
+// as much as what it returns.
+describe("GET /nudges/escalated", () => {
+  it("is admin-only, and stays separate from anybody's own notification stream", async () => {
+    const { baseUrl } = await startService();
+
+    const anonymous = await fetch(`${baseUrl}/nudges/escalated`);
+    expect(anonymous.status).toBe(401);
+
+    const privileged = await fetch(`${baseUrl}/nudges/escalated`, { headers: serviceHeaders() });
+    expect(privileged.status).toBe(200);
+    await expect(privileged.json()).resolves.toEqual({ members: [] });
+
+    // /notifications is still nobody else's business, service token or not: this route exists
+    // because that one deliberately refuses, not as a way around it.
+    const stream = await fetch(`${baseUrl}/notifications`, { headers: serviceHeaders() });
+    expect(stream.status).toBe(401);
+  });
+});
+
+describe("viewing the lab as another member", () => {
+  // An admin and a plain member, both with real sessions, which is where every case starts.
+  async function twoAccounts(baseUrl: string): Promise<{ adminToken: string }> {
+    seedMember(baseUrl, "root", {
+      name: "Root",
+      email: "root@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    seedMember(baseUrl, "ada", { name: "Ada", email: "ada@cs.toronto.edu" });
+    await approveClaim(baseUrl, "root", "root@cs.toronto.edu");
+    await approveClaim(baseUrl, "ada", "ada@cs.toronto.edu");
+    return { adminToken: await loginToken(baseUrl, "root@cs.toronto.edu") };
+  }
+
+  async function viewAs(baseUrl: string, adminToken: string, memberId: string): Promise<string> {
+    const res = await fetch(`${baseUrl}/auth/impersonate`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({ member_id: memberId }),
+    });
+    if (res.status !== 200) {
+      throw new Error(`impersonate failed: ${res.status} ${await res.text()}`);
+    }
+    return ((await res.json()) as { session_token: string }).session_token;
+  }
+
+  it("serves the member's own session, and says who is really looking", async () => {
+    const { baseUrl } = await startService();
+    const { adminToken } = await twoAccounts(baseUrl);
+    const token = await viewAs(baseUrl, adminToken, "ada");
+    const session = await fetch(`${baseUrl}/auth/session`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    await expect(session.json()).resolves.toMatchObject({
+      member: { id: "ada" },
+      impersonated_by: { id: "root", name: "Root" },
+    });
+  });
+
+  it("refuses the shared service token, which would turn one secret into the whole roster", async () => {
+    const { baseUrl } = await startService();
+    await twoAccounts(baseUrl);
+    const res = await fetch(`${baseUrl}/auth/impersonate`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ member_id: "ada" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("refuses a member who is not an admin", async () => {
+    const { baseUrl } = await startService();
+    await twoAccounts(baseUrl);
+    const adaToken = await loginToken(baseUrl, "ada@cs.toronto.edu");
+    const res = await fetch(`${baseUrl}/auth/impersonate`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adaToken}` }),
+      body: JSON.stringify({ member_id: "root" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("files a profile edit made while viewing under the admin, not the member", async () => {
+    const { baseUrl } = await startService();
+    const { adminToken } = await twoAccounts(baseUrl);
+    const token = await viewAs(baseUrl, adminToken, "ada");
+    const saved = await fetch(`${baseUrl}/lab/members/ada`, {
+      method: "PUT",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({ location: "Vancouver" }),
+    });
+    expect(saved.status).toBe(200);
+    // The write lands on Ada's record -- that is what "as Ada" means.
+    const roster = mockFor(baseUrl).service.listLabMembers();
+    if (!roster.ok) {
+      throw new Error(roster.error.message);
+    }
+    const stored = roster.payload.members.find((entry) => entry.id === "ada");
+    expect(stored?.location).toBe("Vancouver");
+    // But the field is stamped as an admin's doing, with the admin named. Stamping it `member`
+    // would count as Ada adopting the tool on a day she was not there, which is exactly the
+    // number the Profile Overview exists to keep honest.
+    expect(stored?.field_provenance?.location).toMatchObject({ source: "admin", actor: "root" });
+  });
+
+  it("refuses to change the member's sign-in credentials", async () => {
+    const { baseUrl } = await startService();
+    const { adminToken } = await twoAccounts(baseUrl);
+    const token = await viewAs(baseUrl, adminToken, "ada");
+    for (const [pathname, body] of [
+      ["/auth/password", { current_password: "correcthorse", new_password: "hunter22222" }],
+      ["/auth/email", { new_email: "elsewhere@example.com", current_password: "correcthorse" }],
+    ] as const) {
+      const res = await fetch(`${baseUrl}${pathname}`, {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+        body: JSON.stringify(body),
+      });
+      // Acting as an account is not taking it over: these are the two routes that would lock the
+      // member out of their own.
+      expect(res.status).toBe(403);
+    }
+    // And the password still works, so nothing half-happened.
+    expect(await loginToken(baseUrl, "ada@cs.toronto.edu")).toBeTruthy();
+  });
+
+  it("ends on request and leaves the admin signed in as themselves", async () => {
+    const { baseUrl } = await startService();
+    const { adminToken } = await twoAccounts(baseUrl);
+    const token = await viewAs(baseUrl, adminToken, "ada");
+    const stopped = await fetch(`${baseUrl}/auth/impersonate/stop`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(stopped.status).toBe(200);
+    const dead = await fetch(`${baseUrl}/auth/session`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(dead.status).toBe(401);
+    const own = await fetch(`${baseUrl}/auth/session`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    await expect(own.json()).resolves.toMatchObject({ member: { id: "root" } });
+  });
+});
+
+describe("lab calendar invite backfill route", () => {
+  it("plans by default, and refuses the shared service token", async () => {
+    const invited: string[] = [];
+    const { baseUrl } = await startService({
+      calendarInviteRunner: async (email: string) => {
+        invited.push(email);
+      },
+    });
+    seedMember(baseUrl, "root", {
+      name: "Root",
+      email: "root@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    seedMember(baseUrl, "ada", {
+      name: "Ada",
+      email: "ada@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "root", "root@cs.toronto.edu");
+    const adminToken = await loginToken(baseUrl, "root@cs.toronto.edu");
+
+    // The service principal drives every agent tool call, and a run mails real people.
+    const refused = await fetch(`${baseUrl}/lab/members/backfill-calendar-invites`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({}),
+    });
+    expect(refused.status).toBe(403);
+
+    // Counted as a delta: approving root above fired its own onboarding invite for root, which is
+    // the approval path doing its job and not this route's doing.
+    const beforePlan = invited.length;
+    const planned = await fetch(`${baseUrl}/lab/members/backfill-calendar-invites`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({}),
+    });
+    await expect(planned.json()).resolves.toMatchObject({ dry_run: true });
+    // An empty body is a plan, never a send: the default has to be the safe one when 155 people
+    // are on the other end of it.
+    expect(invited).toHaveLength(beforePlan);
+
+    const ran = await fetch(`${baseUrl}/lab/members/backfill-calendar-invites`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({ dry_run: false }),
+    });
+    expect(ran.status).toBe(200);
+    expect(invited).toContain("ada@cs.toronto.edu");
+  });
+});
+
+describe("publication mailing list", () => {
+  async function labWithPapers(sent: Array<{ to: string; subject: string; body: string }>) {
+    const { baseUrl } = await startService({
+      publicationMailingRunner: async (params) => {
+        sent.push(params);
+      },
+    });
+    seedMember(baseUrl, "root", {
+      name: "Root",
+      email: "root@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    await approveClaim(baseUrl, "root", "root@cs.toronto.edu");
+    const mock = mockFor(baseUrl);
+    for (const [id, title, arxiv, venue, decision] of [
+      ["in-range", "In Range", "https://arxiv.org/abs/2606.00001", "", ""],
+      ["out-range", "Out Of Range", "https://arxiv.org/abs/2201.00001", "", ""],
+      ["undated", "Undated", "", "", ""],
+      // The venue pair: one accepted at ICLR 2027 with nothing to date it, one only aimed there.
+      ["accepted", "Accepted At ICLR", "", "ICLR 2027", "accept"],
+      ["aimed", "Aimed At ICLR", "", "ICLR 2027", ""],
+    ] as const) {
+      const result = mock.service.upsertPaper({
+        id,
+        title,
+        authors: ["Ada"],
+        ...(venue ? { venue } : {}),
+        ...(decision ? { venue_decision: decision } : {}),
+        ...(arxiv ? { artifacts: { arxiv_url: arxiv } } : {}),
+      } as never);
+      if (!result.ok) {
+        throw new Error(result.error.message);
+      }
+    }
+    return { baseUrl, token: await loginToken(baseUrl, "root@cs.toronto.edu") };
+  }
+
+  it("previews the exact digest the send would mail", async () => {
+    const sent: Array<{ to: string; subject: string; body: string }> = [];
+    const { baseUrl, token } = await labWithPapers(sent);
+    const preview = await fetch(`${baseUrl}/papers/mailing-list?from=2026-01-01&to=2026-12-31`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = (await preview.json()) as {
+      publications: Array<{ id: string }>;
+      undated_count: number;
+      subject: string;
+    };
+    expect(body.publications.map((entry) => entry.id)).toEqual(["in-range"]);
+    expect(body.undated_count).toBe(3);
+    // Read-only: a preview must never be the thing that sends.
+    expect(sent).toEqual([]);
+
+    const run = await fetch(`${baseUrl}/papers/mailing-list/send`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({ from: "2026-01-01", to: "2026-12-31", email: "funder@example.org" }),
+    });
+    expect(run.status).toBe(200);
+    // The same subject and body the preview showed -- one function behind both, so the tab cannot
+    // show one list and the email carry another.
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe("funder@example.org");
+    expect(sent[0]?.subject).toBe(body.subject);
+    expect(sent[0]?.body).toContain("In Range");
+    expect(sent[0]?.body).not.toContain("Out Of Range");
+  });
+
+  it("refuses a bad range and a missing recipient before sending anything", async () => {
+    const sent: Array<{ to: string; subject: string; body: string }> = [];
+    const { baseUrl, token } = await labWithPapers(sent);
+    const backwards = await fetch(`${baseUrl}/papers/mailing-list?from=2026-12-31&to=2026-01-01`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(backwards.status).toBe(400);
+    const noEmail = await fetch(`${baseUrl}/papers/mailing-list/send`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({ from: "2026-01-01", to: "2026-12-31", email: "  " }),
+    });
+    expect(noEmail.status).toBe(400);
+    expect(sent).toEqual([]);
+  });
+
+  it("keeps the shared service token out of an admin-composed send", async () => {
+    const sent: Array<{ to: string; subject: string; body: string }> = [];
+    const { baseUrl } = await labWithPapers(sent);
+    const refused = await fetch(`${baseUrl}/papers/mailing-list/send`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ from: "2026-01-01", to: "2026-12-31", email: "anyone@example.org" }),
+    });
+    // The caller names the recipient, so this is a send to an arbitrary address.
+    expect(refused.status).toBe(403);
+    expect(sent).toEqual([]);
+  });
+
+  it("audits what left the lab and to whom", async () => {
+    const sent: Array<{ to: string; subject: string; body: string }> = [];
+    const { baseUrl, token } = await labWithPapers(sent);
+    await fetch(`${baseUrl}/papers/mailing-list/send`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({ from: "2026-01-01", to: "2026-12-31", email: "funder@example.org" }),
+    });
+    const audit = mockFor(baseUrl)
+      .service.listAuditEvents()
+      .filter((event) => event.type === "publication_digest.sent");
+    expect(audit).toHaveLength(1);
+    // The recipient and the range are the whole of what was disclosed and to whom.
+    expect(audit[0]?.details).toMatchObject({
+      recipient: "funder@example.org",
+      from: "2026-01-01",
+      to: "2026-12-31",
+      publications: 1,
+    });
+  });
+
+  it("composes by acceptance at a venue instead of by date, and mails what it previewed", async () => {
+    const sent: Array<{ to: string; subject: string; body: string }> = [];
+    const { baseUrl, token } = await labWithPapers(sent);
+    // A range that excludes everything, to prove the venue composition does not consult it.
+    const preview = await fetch(
+      `${baseUrl}/papers/mailing-list?from=1990-01-01&to=1990-12-31&venue=iclr%202027`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const body = (await preview.json()) as {
+      venue: string;
+      venues: Array<{ label: string; accepted: number; pending: number }>;
+      publications: Array<{ id: string }>;
+      excluded: Array<{ id: string; reason: string }>;
+      pending_count: number;
+      subject: string;
+    };
+    // Spelled as the records spell it, not as the caller typed it.
+    expect(body.venue).toBe("ICLR 2027");
+    expect(body.publications.map((entry) => entry.id)).toEqual(["accepted"]);
+    // The paper aimed there is reported, never silently dropped: it is what explains a thin list.
+    expect(body.excluded).toEqual([
+      { id: "aimed", title: "Aimed At ICLR", reason: "not_accepted" },
+    ]);
+    expect(body.pending_count).toBe(1);
+    expect(body.venues).toContainEqual({
+      key: "iclr 2027",
+      label: "ICLR 2027",
+      accepted: 1,
+      pending: 1,
+    });
+
+    const run = await fetch(`${baseUrl}/papers/mailing-list/send`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({
+        from: "1990-01-01",
+        to: "1990-12-31",
+        venue: "iclr 2027",
+        email: "funder@example.org",
+      }),
+    });
+    expect(run.status).toBe(200);
+    expect(sent[0]?.subject).toBe(body.subject);
+    expect(sent[0]?.body).toContain("Accepted At ICLR");
+    // The date-ranged list is a different email; sending it under a venue preview is the failure
+    // carrying the venue through to the send exists to prevent.
+    expect(sent[0]?.body).not.toContain("In Range");
+    // And the audit trail can tell the two compositions apart.
+    const audit = mockFor(baseUrl)
+      .service.listAuditEvents()
+      .filter((event) => event.type === "publication_digest.sent");
+    expect(audit[0]?.details).toMatchObject({ venue: "ICLR 2027", publications: 1 });
+  });
+
+  it("refuses a venue no paper names rather than mailing an empty list", async () => {
+    const sent: Array<{ to: string; subject: string; body: string }> = [];
+    const { baseUrl, token } = await labWithPapers(sent);
+    const missing = await fetch(
+      `${baseUrl}/papers/mailing-list?from=2026-01-01&to=2026-12-31&venue=ICML%202027`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    // A typo in a venue name would otherwise read back as "the lab got nothing in", which is a
+    // very different statement from "we have no record of that venue".
+    expect(missing.status).toBe(404);
+    expect(sent).toEqual([]);
   });
 });

@@ -453,7 +453,8 @@ describe("OpenResponses HTTP API (e2e)", () => {
         error?: { type?: string; message?: string };
       };
       expect(writeOnlyJson.error?.type).toBe("forbidden");
-      expect(writeOnlyJson.error?.message).toBe("missing scope: operator.admin");
+      expect(writeOnlyJson.error?.message).toMatch(/^missing scope: operator\.admin\b/);
+      expect(writeOnlyJson.error?.message).toContain("x-openclaw-model");
       expect(agentCommand).toHaveBeenCalledTimes(0);
       await ensureResponseConsumed(resWriteOnlyOverride);
 

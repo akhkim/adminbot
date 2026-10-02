@@ -15,9 +15,15 @@ type WorkshopNudgeUnresolved = WorkshopNudgeResult["unresolved_recipients"][numb
 export type WorkshopNudgesProps = {
   state: WorkshopNudgeReviewState;
   onRefresh: () => void;
+  /** Stop the pass in flight. */
+  onCancelRun: () => void;
+  /** Replace the pass in flight with a new one, without waiting out the server's stall window. */
+  onForceRefresh: () => void;
   onToggleRecipient: (memberId: string) => void;
   onSetRecipients: (memberIds: string[], selected: boolean) => void;
   onViewChange: (patch: WorkshopNudgeViewPatch) => void;
+  /** Narrow the next pass to one conference. Empty string means every open workshop. */
+  onConferenceChange: (key: string) => void;
   onSend: () => void;
 };
 
@@ -51,6 +57,7 @@ export function renderWorkshopNudges(props: WorkshopNudgesProps) {
         ? html`<div class="card adminbot-card adminbot-card--wide workshop-nudges__empty">
             <strong>No recommendations yet</strong>
             <span class="muted">Find workshop matches for the current papers.</span>
+            ${renderConferencePicker(props)}
             <button
               class="btn primary"
               type="button"
@@ -61,6 +68,7 @@ export function renderWorkshopNudges(props: WorkshopNudgesProps) {
             </button>
           </div>`
         : nothing}
+      ${renderSendResult(props)}
       ${result
         ? html`${renderResultActions(props, result)} ${renderSummary(result)}
           ${renderQueue(props, result, selectedCount)}`
@@ -76,6 +84,12 @@ export function renderWorkshopNudges(props: WorkshopNudgesProps) {
  * opened, closed and reopened while it works. A bare spinner would say nothing about that -- and
  * after a minute or two it reads as broken rather than busy -- so this says how far along it is
  * and that leaving is safe.
+ *
+ * It also has to offer a way out. A pass whose count has stopped moving looks exactly like a slow
+ * one from here, and for a long time this card was the whole page: no button, nothing to press,
+ * nothing to do but reload and read the same number again. The server now writes a stalled pass
+ * off on its own after half an hour, but an administrator who already knows should not have to
+ * wait for it.
  */
 function renderRunProgress(props: WorkshopNudgesProps) {
   const run = props.state.run;
@@ -84,6 +98,7 @@ function renderRunProgress(props: WorkshopNudgesProps) {
   }
   const done = run.calls_done ?? 0;
   const total = run.calls_total ?? 0;
+  const failed = run.calls_failed ?? 0;
   return html`<div
     class="card adminbot-card adminbot-card--wide workshop-nudges__running"
     data-testid="workshop-nudges-running"
@@ -93,8 +108,100 @@ function renderRunProgress(props: WorkshopNudgesProps) {
       ${total > 0
         ? `${done} of ${total} model calls done.`
         : "Working out how many papers and workshops to compare."}
+      ${failed > 0
+        ? `${failed} call${failed === 1 ? "" : "s"} failed and will be missing from the result.`
+        : ""}
       You can leave this page — the pass keeps running and the result is kept.
     </span>
+    <div class="workshop-nudges__running-actions">
+      <button
+        class="btn"
+        type="button"
+        data-testid="workshop-nudges-cancel"
+        ?disabled=${props.state.loading}
+        @click=${props.onCancelRun}
+      >
+        Stop this pass
+      </button>
+      <button
+        class="btn"
+        type="button"
+        data-testid="workshop-nudges-force-refresh"
+        ?disabled=${props.state.loading}
+        @click=${props.onForceRefresh}
+      >
+        Start over
+      </button>
+    </div>
+  </div>`;
+}
+
+/**
+ * Which conference the next pass covers.
+ *
+ * Rendered only when the service offered a list: an older one has no such route, and an empty
+ * picker would read as "no conferences have workshops" rather than "this deployment cannot narrow".
+ * The default is every open workshop, which is what the pass did before this existed.
+ */
+function renderConferencePicker(props: WorkshopNudgesProps) {
+  const options = props.state.conferences;
+  if (options.length === 0) {
+    return nothing;
+  }
+  return html`<label class="workshop-nudges__conference">
+    <span class="muted">Limit to</span>
+    <select
+      data-testid="workshop-nudges-conference"
+      ?disabled=${props.state.loading || props.state.sending}
+      .value=${props.state.conferenceKey}
+      @change=${(event: Event) =>
+        props.onConferenceChange((event.currentTarget as HTMLSelectElement).value)}
+    >
+      <option value="">Every open workshop</option>
+      ${options.map(
+        (option) => html`<option value=${option.key}>
+          ${option.label} (${option.workshop_count})
+        </option>`,
+      )}
+    </select>
+  </label>`;
+}
+
+/**
+ * What the last Send actually did.
+ *
+ * Every skip carries its own reason and they are shown, not counted: "member is not on the nudge
+ * list" and "member has no slack_user_id" are different problems with different fixes, and a
+ * summary line saying "12 skipped" sends somebody to the audit log to find out which.
+ */
+function renderSendResult(props: WorkshopNudgesProps) {
+  const sent = props.state.sendResult;
+  if (!sent) {
+    return nothing;
+  }
+  const reasons = [...new Set(sent.skipped.map((entry) => entry.reason))];
+  return html`<div
+    class="workshop-nudges__send-result ${sent.skipped.length ? "is-warning" : "is-success"}"
+    role="status"
+    data-testid="workshop-nudges-send-result"
+  >
+    <strong>
+      Sent ${sent.created} workshop nudge${sent.created === 1 ? "" : "s"}${sent.skipped.length
+        ? `, skipped ${sent.skipped.length}`
+        : ""}.
+    </strong>
+    ${reasons.length
+      ? html`<ul class="workshop-nudges__send-reasons">
+          ${reasons.map(
+            (reason) => html`<li>
+              ${reason}
+              <span class="muted"
+                >(${sent.skipped.filter((entry) => entry.reason === reason).length})</span
+              >
+            </li>`,
+          )}
+        </ul>`
+      : nothing}
   </div>`;
 }
 
@@ -102,7 +209,11 @@ function renderResultActions(props: WorkshopNudgesProps, result: WorkshopNudgeRe
   return html`<div class="workshop-nudges__result-actions">
     <span class="muted">
       Updated <time datetime=${result.generated_at}>${dateTimeLabel(result.generated_at)}</time>
+      ${result.conference_label
+        ? html`· limited to <strong>${result.conference_label}</strong>`
+        : nothing}
     </span>
+    ${renderConferencePicker(props)}
     <button
       class="btn"
       type="button"
@@ -227,11 +338,14 @@ function renderRecipientQueue(props: WorkshopNudgesProps, result: WorkshopNudgeR
       searchableRecipient(recipient).includes(query),
   );
   const page = pageSlice(filtered, props.state.view.page);
-  const readyIds = page.items
+  // Every ready recipient that matches the current filters, not just the page in view: with 40
+  // recipients across three pages, a "select all" that only reached the visible ten meant three
+  // rounds of select-and-flip-page, and unticking it silently left the other pages ticked.
+  const readyIds = filtered
     .filter((recipient) => recipient.delivery_ready)
     .map((recipient) => recipient.recipient_member_id);
   const selected = new Set(props.state.selectedRecipientIds);
-  const selectedOnPage = readyIds.filter((id) => selected.has(id)).length;
+  const selectedReady = readyIds.filter((id) => selected.has(id)).length;
   const detail = detailRecipient(result, props.state.view.detailKey);
   return html`<div class="workshop-nudges__master-detail" data-detail=${detail ? "open" : "closed"}>
     <div>
@@ -242,9 +356,9 @@ function renderRecipientQueue(props: WorkshopNudgesProps, result: WorkshopNudgeR
               <th class="data-table-checkbox-col">
                 <input
                   type="checkbox"
-                  aria-label="Select all ready recipients on this page"
-                  .checked=${readyIds.length > 0 && selectedOnPage === readyIds.length}
-                  .indeterminate=${selectedOnPage > 0 && selectedOnPage < readyIds.length}
+                  aria-label="Select all ready recipients"
+                  .checked=${readyIds.length > 0 && selectedReady === readyIds.length}
+                  .indeterminate=${selectedReady > 0 && selectedReady < readyIds.length}
                   ?disabled=${readyIds.length === 0}
                   @change=${(event: Event) =>
                     props.onSetRecipients(

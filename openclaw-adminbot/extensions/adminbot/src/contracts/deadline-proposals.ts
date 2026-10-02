@@ -1,4 +1,5 @@
-import { toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
+import { normalizeCalendarTimezone, toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
+import { validateProposalStage, type DeadlineProposalStage } from "./deadline-proposals.stage.js";
 
 export const deadlineProposalEntryTypes = [
   "main_conference",
@@ -13,6 +14,7 @@ export const deadlineProposalEntryTypes = [
 export type DeadlineProposalEntryType = (typeof deadlineProposalEntryTypes)[number];
 
 export type DeadlineProposalInput = {
+  stage?: DeadlineProposalStage;
   name: string;
   parentConference: string;
   parentYear: string;
@@ -26,11 +28,42 @@ export type DeadlineProposalInput = {
   note: string;
 };
 
+export type DeadlineSubmitterContact = { name?: string; email?: string };
+
+export function validateDeadlineSubmitterContact(
+  input: unknown,
+): { ok: true; value: DeadlineSubmitterContact } | { ok: false; error: string } {
+  if (input === undefined) {
+    return { ok: true, value: {} };
+  }
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, error: "Invalid submitter details." };
+  }
+  const contact = input as Record<string, unknown>;
+  if (
+    (contact.name !== undefined && typeof contact.name !== "string") ||
+    (contact.email !== undefined && typeof contact.email !== "string")
+  ) {
+    return { ok: false, error: "Name and email must be text." };
+  }
+  const name = (contact.name as string | undefined)?.trim() ?? "";
+  const email = (contact.email as string | undefined)?.trim() ?? "";
+  if (name.length > 200) {
+    return { ok: false, error: "Use at most 200 characters for your name." };
+  }
+  if (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email))) {
+    return { ok: false, error: "Enter a valid email address." };
+  }
+  return { ok: true, value: { ...(name ? { name } : {}), ...(email ? { email } : {}) } };
+}
+
 export type DeadlinePublicationPayload = {
+  previous_deadline_aoe?: string;
   proposal_id: string;
   deadline_id: string;
   revision: number;
   submitter_member_id: string;
+  submitter_contact?: DeadlineSubmitterContact;
   duplicate_deadline_ids: string[];
   deadline: DeadlineProposalInput;
 };
@@ -46,10 +79,12 @@ export type DeadlineProposalRevision = {
 };
 
 export type DeadlineProposalView = {
+  previous_deadline_aoe?: string;
   id: string;
   deadline_id: string;
   submitter_member_id: string;
   submitter_name: string;
+  submitter_email?: string;
   status: "pending" | "approved" | "published" | "rejected";
   current_revision: number;
   action_id: string;
@@ -63,6 +98,7 @@ export type DeadlineProposalView = {
 };
 
 export type PublishedDeadlineRecord = {
+  previous_deadline_aoe?: string;
   action_id: string;
   proposal_id: string;
   deadline_id: string;
@@ -121,13 +157,27 @@ export function validateDeadlineProposalInput(
     entryType: input.entryType,
     deadlineDate: input.deadlineDate.trim(),
     deadlineTime: input.deadlineTime.trim(),
-    timezone: input.timezone.trim(),
+    timezone: normalizeCalendarTimezone(input.timezone) ?? input.timezone.trim(),
     homepageUrl: input.homepageUrl.trim(),
     cfpUrl: input.cfpUrl.trim(),
     openReviewUrl: input.openReviewUrl.trim(),
     note: input.note.trim(),
   };
   const errors: Partial<Record<keyof DeadlineProposalInput, string>> = {};
+  if (input.stage !== undefined) {
+    const stage = validateProposalStage(input.stage);
+    if (stage) {
+      value.stage = stage;
+    } else {
+      errors.stage = "Choose a valid stage and correction target.";
+    }
+  }
+  for (const field of Object.keys(value) as Array<keyof DeadlineProposalInput>) {
+    const limit = field === "note" ? 2000 : field.endsWith("Url") ? 2048 : 200;
+    if (typeof value[field] === "string" && value[field].length > limit) {
+      errors[field] = `Use at most ${limit} characters.`;
+    }
+  }
   if (!value.name) {
     errors.name = "Enter the conference or workshop name.";
   }
@@ -140,10 +190,13 @@ export function validateDeadlineProposalInput(
   if (!validDate(value.deadlineDate)) {
     errors.deadlineDate = "Enter a valid date.";
   }
-  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(value.deadlineTime)) {
+  if (value.deadlineTime && !/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(value.deadlineTime)) {
     errors.deadlineTime = "Enter a valid 24-hour time.";
   }
-  if (!value.timezone || !validTimezone(value.timezone)) {
+  if (
+    (value.deadlineTime || value.timezone) &&
+    (!value.timezone || !validTimezone(value.timezone))
+  ) {
     errors.timezone = "Choose a valid time zone.";
   }
   if (!validWebUrl(value.homepageUrl)) {
@@ -157,8 +210,29 @@ export function validateDeadlineProposalInput(
   }
   const instant =
     Object.keys(errors).length === 0
-      ? toAbsoluteRfc3339(`${value.deadlineDate}T${value.deadlineTime}`, value.timezone)
+      ? toAbsoluteRfc3339(
+          `${value.deadlineDate}T${value.deadlineTime || "00:00"}`,
+          value.timezone || "Pacific/Kiritimati",
+        )
       : undefined;
+  if (instant && value.deadlineTime) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: value.timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(instant));
+    const part = (kind: string) => parts.find((p) => p.type === kind)?.value;
+    if (
+      `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}` !==
+      `${value.deadlineDate}T${value.deadlineTime}`
+    ) {
+      errors.deadlineTime = "This local time does not exist on that date.";
+    }
+  }
   if (!instant) {
     errors.deadlineTime = errors.deadlineTime ?? "This local time does not resolve in that zone.";
   }
@@ -189,11 +263,15 @@ export function isDeadlinePublicationPayload(value: unknown): value is DeadlineP
   }
   const payload = value as Partial<DeadlinePublicationPayload>;
   return (
+    (payload.previous_deadline_aoe === undefined ||
+      (typeof payload.previous_deadline_aoe === "string" &&
+        /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(payload.previous_deadline_aoe))) &&
     typeof payload.proposal_id === "string" &&
     typeof payload.deadline_id === "string" &&
     typeof payload.revision === "number" &&
     typeof payload.submitter_member_id === "string" &&
     Array.isArray(payload.duplicate_deadline_ids) &&
+    validateDeadlineSubmitterContact(payload.submitter_contact).ok &&
     Boolean(payload.deadline) &&
     validateDeadlineProposalInput(payload.deadline as DeadlineProposalInput).ok
   );

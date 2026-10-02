@@ -1,13 +1,12 @@
 // What a submitted logistics request has to look like before it is stored, and what "soonest" means
 // once it is.
 //
-// Two jobs live here and both are the service's, not a route's or a browser's. The first is the
+// Two jobs live here. The first is the service's validation
 // boundary: everything on a request arrives as text a member typed, including the bytes of a PDF,
 // so nothing past this file may assume a field is present, a number is a number, or a base64 blob
 // is small. The second is the deadline: a request is read as a queue and a queue needs one
-// ordering, so the soonest instant a request is working towards is resolved once on write rather
-// than re-derived by every reader out of dates, times and zones that each of them would have to
-// interpret the same way.
+// ordering. The shared deadline resolver keeps writes, legacy reads, reminders and the browser
+// consistent while preserving the member's original date, time and timezone for display.
 //
 // Nothing here reaches a connector. A stored request is a record of an ask, and acting on it is an
 // admin's own work -- see the header on the contract types.
@@ -40,7 +39,7 @@ export const MAX_ROWS = 100;
 export const MAX_TEXT_LENGTH = 5_000;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/u;
-const CLOCK_TIME = /^\d{2}:\d{2}$/u;
+const CLOCK_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 const LOCAL_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u;
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/u;
 
@@ -110,8 +109,8 @@ function parseSchool(value: unknown): AdminBotLogisticsSchool | null {
     school: text(record.school, 260),
     ...optionalKey("application_deadline", record.application_deadline, 10),
     ...optionalKey("application_deadline_time", record.application_deadline_time, 5),
-    ...optionalKey("letter_deadline", record.letter_deadline, 10),
-    ...optionalKey("letter_deadline_time", record.letter_deadline_time, 5),
+    ...optionalKey("letter_deadline", record.letter_deadline, 40),
+    ...optionalKey("letter_deadline_time", record.letter_deadline_time, 40),
     ...optionalKey("deadline_timezone", record.deadline_timezone, 80),
     ...optionalKey("application_status", record.application_status, 120),
     ...optionalKey("letter_status", record.letter_status, 120),
@@ -121,7 +120,10 @@ function parseSchool(value: unknown): AdminBotLogisticsSchool | null {
   };
   // A row with nothing in it is a row the member left blank at the bottom of the table, not a
   // school. Dropping it here keeps "how many schools is this request for" honest.
-  return Object.values(school).some((field) => typeof field === "string" && field) ? school : null;
+  const hasContent = Object.entries(school).some(
+    ([key, field]) => key !== "deadline_timezone" && typeof field === "string" && field,
+  );
+  return hasContent ? { ...school, deadline_timezone: school.deadline_timezone || "AoE" } : null;
 }
 
 function optionalKey<K extends string>(
@@ -164,8 +166,27 @@ function parseMeeting(value: unknown): AdminBotLogisticsMeeting | null {
     ...(submittedAt && !Number.isNaN(Date.parse(submittedAt))
       ? { submitted_at: new Date(submittedAt).toISOString() }
       : {}),
+    ...optionalKey("city", record.city, 120),
+    // Kept as typed rather than normalized here. Whether the link is one anybody can open is a
+    // question only the network can answer, so it is asked on the way to the sheet, not on the way
+    // in -- storing a bad link is how the member gets told which link to fix.
+    ...optionalKey("doc_prep_url", record.doc_prep_url, 500),
+    ...(typeof record.whatsapp_hello === "boolean"
+      ? { whatsapp_hello: record.whatsapp_hello }
+      : {}),
+    // Only a calendar date survives: the field answers "how long does this stay worth doing", and
+    // a half-parsed "end of the month" would sort as an instant nobody meant.
+    ...(ISO_DATE.test(text(record.latest_ok_date, 20))
+      ? { latest_ok_date: text(record.latest_ok_date, 20) }
+      : {}),
   };
-  return meeting.purpose || meeting.preferred_time || meeting.length_minutes ? meeting : null;
+  return meeting.purpose ||
+    meeting.preferred_time ||
+    meeting.length_minutes ||
+    meeting.doc_prep_url ||
+    meeting.city
+    ? meeting
+    : null;
 }
 
 export function isLogisticsRequestKind(value: unknown): value is AdminBotLogisticsRequestKind {
@@ -175,26 +196,24 @@ export function isLogisticsRequestKind(value: unknown): value is AdminBotLogisti
   );
 }
 
-/**
- * A wall-clock deadline as an absolute instant.
- *
- * A date with no time is due at the end of that day, not the start of it: a member who writes
- * "December 1" has until December 1 is over, and treating it as midnight would mark a request late
- * a full day early. A blank zone reads as UTC -- the form asks for a zone the moment a time is
- * typed, so a timed deadline with no zone is already the unusual case, and UTC is the one guess
- * that does not silently shift with whoever happens to be reading.
- */
+/** A letter's wall-clock deadline. Blank time means end of day; blank zone means AoE. */
 export function deadlineInstant(date?: string, time?: string, zone?: string): string | undefined {
   const day = (date ?? "").trim();
   if (!ISO_DATE.test(day)) {
     return undefined;
   }
-  const clock = (time ?? "").trim();
-  const wall = `${day}T${CLOCK_TIME.test(clock) ? clock : "23:59"}`;
-  return toAbsoluteRfc3339(wall, (zone ?? "").trim() || "UTC");
+  const calendarDay = new Date(`${day}T00:00:00Z`);
+  if (!Number.isFinite(calendarDay.getTime()) || calendarDay.toISOString().slice(0, 10) !== day) {
+    return undefined;
+  }
+  const clock = (time ?? "").trim() || "23:59";
+  if (!CLOCK_TIME.test(clock)) {
+    return undefined;
+  }
+  return toAbsoluteRfc3339(`${day}T${clock}`, (zone ?? "").trim() || "AoE");
 }
 
-/** The instant a proposed meeting starts, which is the thing a meeting request is working towards. */
+/** The instant a proposed meeting starts. Meeting timezone defaults are unchanged. */
 export function meetingInstant(meeting: AdminBotLogisticsMeeting): string | undefined {
   const preferred = (meeting.preferred_time ?? "").trim();
   if (!LOCAL_DATE_TIME.test(preferred)) {
@@ -203,41 +222,68 @@ export function meetingInstant(meeting: AdminBotLogisticsMeeting): string | unde
   return toAbsoluteRfc3339(preferred, (meeting.timezone ?? "").trim() || "UTC");
 }
 
+export type LogisticsDeadline = { at: string; date: string; time: string; timezone: string };
+
 /**
- * The soonest instant anything on this request is due.
- *
- * Both dates on every school count -- a letter is late if either passes -- and every proposed
- * meeting slot counts. A signature request names no date of its own: the deadline lives in the
- * member's prose, and guessing one out of a sentence would be worse than admitting there is none.
+ * Keep the wall-clock fields alongside the instant used for ordering. A letter's application
+ * cutoff is never the recommender's deadline, and a viewer's timezone must not change the date.
+ * This pure helper is also used by the UI so legacy requests receive the same interpretation.
  */
+export function requestDeadlineDetails(
+  input: AdminBotLogisticsRequestInput,
+): LogisticsDeadline | undefined {
+  const deadlines: LogisticsDeadline[] = [];
+  if (input.kind === "recommendation_letters") {
+    for (const school of input.schools ?? []) {
+      const at = deadlineInstant(
+        school.letter_deadline,
+        school.letter_deadline_time,
+        school.deadline_timezone,
+      );
+      if (at) {
+        deadlines.push({
+          at,
+          date: school.letter_deadline!.trim(),
+          time: school.letter_deadline_time?.trim() || "23:59",
+          timezone: school.deadline_timezone?.trim() || "AoE",
+        });
+      }
+    }
+  }
+  if (input.kind === "book_meeting") {
+    for (const meeting of input.meetings ?? []) {
+      const at = meetingInstant(meeting);
+      if (at) {
+        deadlines.push({
+          at,
+          date: meeting.preferred_time!.slice(0, 10),
+          time: meeting.preferred_time!.slice(11, 16),
+          timezone: meeting.timezone?.trim() || "UTC",
+        });
+      }
+    }
+  }
+  return deadlines.reduce<LogisticsDeadline | undefined>(
+    (earliest, deadline) =>
+      !earliest || Date.parse(deadline.at) < Date.parse(earliest.at) ? deadline : earliest,
+    undefined,
+  );
+}
+
 export function requestDeadline(input: AdminBotLogisticsRequestInput): string | undefined {
-  const instants: string[] = [];
-  for (const school of input.schools ?? []) {
-    const zone = school.deadline_timezone;
-    const application = deadlineInstant(
-      school.application_deadline,
-      school.application_deadline_time,
-      zone,
-    );
-    const letter = deadlineInstant(school.letter_deadline, school.letter_deadline_time, zone);
-    if (application) {
-      instants.push(application);
-    }
-    if (letter) {
-      instants.push(letter);
-    }
+  return requestDeadlineDetails(input)?.at;
+}
+
+/** Read old letter requests with the current rule, without rewriting the member's stored data. */
+export function withCurrentLogisticsDeadline(
+  request: AdminBotLogisticsRequest,
+): AdminBotLogisticsRequest {
+  if (request.kind !== "recommendation_letters") {
+    return request;
   }
-  for (const meeting of input.meetings ?? []) {
-    const instant = meetingInstant(meeting);
-    if (instant) {
-      instants.push(instant);
-    }
-  }
-  // RFC3339 instants from toISOString are all UTC and fixed-width, so the string minimum is the
-  // chronological one.
-  return instants.length
-    ? instants.reduce((soonest, at) => (at < soonest ? at : soonest))
-    : undefined;
+  const { deadline_at: _previous, ...rest } = request;
+  const deadline = requestDeadline(request);
+  return { ...rest, ...(deadline ? { deadline_at: deadline } : {}) };
 }
 
 /**
@@ -311,6 +357,20 @@ export function validateLogisticsRequest(input: AdminBotLogisticsRequestInput): 
     if ((input.schools ?? []).some((school) => !school.school.trim())) {
       return "every school row needs the school's name";
     }
+    for (const school of input.schools ?? []) {
+      if (!school.letter_deadline?.trim()) {
+        return `a letter deadline is required for ${school.school}`;
+      }
+      if (
+        !deadlineInstant(
+          school.letter_deadline,
+          school.letter_deadline_time,
+          school.deadline_timezone,
+        )
+      ) {
+        return `invalid letter deadline, time, or timezone for ${school.school}`;
+      }
+    }
   }
   if (input.kind === "book_meeting") {
     if (!(input.meetings ?? []).length) {
@@ -379,7 +439,7 @@ export function withoutAttachmentBytes(
   const documents = strip(request.documents);
   const attachments = strip(request.attachments);
   return {
-    ...request,
+    ...withCurrentLogisticsDeadline(request),
     ...(documents ? { documents } : {}),
     ...(attachments ? { attachments } : {}),
   };

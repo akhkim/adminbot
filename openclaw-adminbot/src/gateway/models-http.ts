@@ -99,7 +99,10 @@ export async function handleOpenAiModelsHttpRequest(
   const requestedScopes = resolveOpenAiCompatibleHttpOperatorScopes(req, requestAuth);
   const scopeAuth = authorizeOperatorScopesForMethod("models.list", requestedScopes);
   if (!scopeAuth.allowed) {
-    sendMissingScopeForbidden(res, scopeAuth.missingScope);
+    sendMissingScopeForbidden(res, scopeAuth.missingScope, {
+      method: "models.list",
+      presentedScopes: requestedScopes,
+    });
     return true;
   }
 

@@ -30,12 +30,13 @@ Two things stay manual by design:
   submission (research-overlap match, with conflicts and unavailability shown);
   assigning is an explicit click, never automatic.
 
-  Some people are never candidates. Set **`reviewer_exempt`** on a member to keep
-  them out of every suggestion whatever their topic match — a standing commitment
-  about someone's time, so it is admin-only and cannot be set from a member's own
-  profile. The profile the automation runs as is excluded automatically: whoever
-  chairs a submission cannot also review it, so that needs no configuration. Both
-  rules are enforced again when an assignment is actually posted, so the exemption
+  Zhijing is omitted entirely from reviewer suggestions and cannot be assigned.
+  Bernhard is always marked unavailable and cannot be assigned, regardless of the
+  editable roster exemption flag. Set **`reviewer_exempt`** on other members to
+  block assignment; this admin-only flag cannot be set from a member's own profile.
+  The profile the automation runs as is also blocked automatically: whoever chairs
+  a submission cannot also review it. These rules are enforced again when an
+  assignment is actually posted, so the exemption
   holds even if someone calls the route directly. Removing an exempt reviewer stays
   allowed, which is how the rule gets applied to an assignment made earlier.
 
@@ -54,6 +55,12 @@ Two further brakes, independent of the above:
 
 - `ADMINBOT_OPENREVIEW_SEND` must be `1` in the env file or nothing is delivered
   at all — reminders are still composed, recorded, and visible in the console.
+  A reminder withheld this way is recorded as **simulated**, not executed: the
+  proposal stays approved, the audit event is `execution.simulated` and names
+  the switch, and the cycle reports `dry_run` rather than `sent`. Executing it
+  again once the switch is on really delivers. (Until this was fixed, the
+  connector reported a withheld message as a success, so the console and the
+  audit trail both showed deliveries nobody received.)
 - A run that would exceed **50 messages** aborts _before_ sending anything.
 
 ## Setup

@@ -4,10 +4,17 @@
  * This file is the reason to trust the module. Each case is a state the graph can actually
  * reach, and each asserts the behaviour that stops it being a hole. If someone edits the
  * graph and reintroduces a cliff, the test named after it fails.
+ *
+ * `describe`/`it` come from vitest rather than `node:test`, which is what they were written
+ * against. Under `node:test` the suites registered with a runner the repo's lanes do not invoke:
+ * `pnpm test` collected this file, found nothing vitest had registered, reported "No test suite
+ * found" and moved on -- so the one guard against reintroducing a cliff ran nowhere, and the graph
+ * was unprotected for as long as that was true. The assertions stay on `node:assert/strict`: they
+ * are the author's and they read fine under either runner.
  */
 
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import { applyReset, emptyState } from "../src/adapters/backend.ts";
 import { paperflow, resetScope } from "../src/graph/paperflow.ts";
 import { tick, whyBlocked } from "../src/nudge.ts";

@@ -9,6 +9,7 @@
 //
 // Nothing here talks to the network. The calls live in controllers/logistics.ts, for the same
 // reason every other tab's do.
+import { deadlineInstant } from "../../../../../extensions/adminbot/logistics-api.js";
 import type {
   LogisticsAttachment,
   LogisticsFact,
@@ -167,7 +168,7 @@ export function schoolToWire(row: RecommendationSchool): LogisticsSchool {
       application_deadline_time: row.applicationDeadlineTime,
       letter_deadline: row.letterDeadline,
       letter_deadline_time: row.letterDeadlineTime,
-      deadline_timezone: row.deadlineTimezone,
+      deadline_timezone: row.deadlineTimezone.trim() || "AoE",
       application_status: row.applicationStatus,
       letter_status: row.letterStatus,
       program: row.program,
@@ -187,6 +188,13 @@ export function meetingToWire(row: MeetingRequestRow): LogisticsMeeting {
     purpose: row.purpose.trim(),
     ...omitBlank({ preferred_time: row.preferredTime, timezone: row.timezone }),
     ...(Number.isFinite(minutes) && minutes > 0 ? { length_minutes: Math.round(minutes) } : {}),
+    ...omitBlank({ city: row.city, doc_prep_url: row.docPrepUrl }),
+    // Only an answered radio travels. An unanswered one must stay absent rather than become
+    // `false`, because the sheet's column distinguishes "no" from a blank.
+    ...(row.whatsappHello === "yes" || row.whatsappHello === "no"
+      ? { whatsapp_hello: row.whatsappHello === "yes" }
+      : {}),
+    ...omitBlank({ latest_ok_date: row.latestOkDate }),
     // The stamp travels with the row: it is when the member asked, and re-stamping it on submit
     // would make every row on a request look like it was raised at the same moment.
     ...(row.submittedAt > 0 ? { submitted_at: new Date(row.submittedAt).toISOString() } : {}),
@@ -265,7 +273,14 @@ export function describeSubmitBlock(
   kind: LogisticsRequestKind,
   form: SignatureFormState | LettersFormState | MeetingFormState,
 ): {
-  reason: "empty" | "no-name" | "no-purpose" | "file-too-big" | "request-too-big";
+  reason:
+    | "empty"
+    | "no-name"
+    | "letter-deadline"
+    | "no-purpose"
+    | "no-doc-prep"
+    | "file-too-big"
+    | "request-too-big";
   file?: string;
 } | null {
   if (kind === "document_signature") {
@@ -289,13 +304,27 @@ export function describeSubmitBlock(
     if (!schools.length) {
       return { reason: "empty" };
     }
-    return schools.some((row) => !row.school.trim()) ? { reason: "no-name" } : null;
+    if (schools.some((row) => !row.school.trim())) {
+      return { reason: "no-name" };
+    }
+    return schools.some(
+      (row) => !deadlineInstant(row.letterDeadline, row.letterDeadlineTime, row.deadlineTimezone),
+    )
+      ? { reason: "letter-deadline" }
+      : null;
   }
   const meetings = filledMeetings((form as MeetingFormState).rows);
   if (!meetings.length) {
     return { reason: "empty" };
   }
-  return meetings.some((row) => !row.purpose.trim()) ? { reason: "no-purpose" } : null;
+  if (meetings.some((row) => !row.purpose.trim())) {
+    return { reason: "no-purpose" };
+  }
+  // The doc prep document is what the call is spent on, and a request without one cannot go on the
+  // queue anyway -- the push checks the link and drops the row. Refusing it here means the member
+  // finds out while they are still filling the form in, rather than from a note under a request
+  // they thought they had sent.
+  return meetings.some((row) => !row.docPrepUrl.trim()) ? { reason: "no-doc-prep" } : null;
 }
 
 /**
@@ -324,7 +353,7 @@ export function schoolFromWire(school: LogisticsSchool): RecommendationSchool {
     applicationDeadlineTime: school.application_deadline_time ?? "",
     letterDeadline: school.letter_deadline ?? "",
     letterDeadlineTime: school.letter_deadline_time ?? "",
-    deadlineTimezone: school.deadline_timezone ?? "",
+    deadlineTimezone: school.deadline_timezone?.trim() || "AoE",
     applicationStatus: school.application_status ?? "",
     letterStatus: school.letter_status ?? "",
     program: school.program ?? "",
@@ -343,6 +372,11 @@ export function meetingFromWire(meeting: LogisticsMeeting): MeetingRequestRow {
     preferredTime: meeting.preferred_time ?? "",
     timezone: meeting.timezone ?? "",
     lengthMinutes: meeting.length_minutes ? String(meeting.length_minutes) : "",
+    city: meeting.city ?? "",
+    docPrepUrl: meeting.doc_prep_url ?? "",
+    whatsappHello:
+      meeting.whatsapp_hello === undefined ? "" : meeting.whatsapp_hello ? "yes" : "no",
+    latestOkDate: meeting.latest_ok_date ?? "",
     // The stamp is when they asked, and correcting a request is not asking again.
     ...(meeting.submitted_at ? { submittedAt: Date.parse(meeting.submitted_at) } : {}),
   });

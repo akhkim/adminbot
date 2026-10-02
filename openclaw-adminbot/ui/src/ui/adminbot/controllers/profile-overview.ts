@@ -1,15 +1,20 @@
 // The Profile Overview tab's side of the wire.
 //
-// Two calls: read how far along everyone's record is, and run the reminder pass now rather than
-// waiting for the daily cron. Both are admin-only and the service enforces that; nothing here
-// decides who may look.
+// Three calls: read how far along everyone's record is, run the reminder pass now rather than
+// waiting for the daily cron, and populate the nudge list from the roster's member types. All are
+// admin-only and the service enforces that; nothing here decides who may look.
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
+  fetchEscalatedNudges,
+  fetchPiReviewQueue,
   fetchMemberProfileOverview,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   runMandatoryFieldsReminder,
+  seedNudgeList,
+  type EscalatedNudgeRow,
+  type PiReviewRow,
   type MemberAdoptionSummary,
   type MemberProfileOverviewRow,
 } from "../auth/session.ts";
@@ -26,6 +31,10 @@ export type AdminBotProfileOverviewHost = {
   adminBotProfileOverviewLoadedAt: number | null;
   adminBotProfileOverviewReminding: boolean;
   adminBotProfileOverviewNotice: string | null;
+  /** Nudges raised to the head professor and still unanswered. Empty until the first read. */
+  adminBotEscalatedNudges: EscalatedNudgeRow[];
+  adminBotPiReview: PiReviewRow[];
+  adminBotPiReviewError: string | null;
 };
 
 function failureText(result: { kind: string; message?: string }, baseUrl: string): string {
@@ -45,28 +54,56 @@ function session(host: AdminBotProfileOverviewHost): { token: string; baseUrl: s
     : null;
 }
 
+function sameSession(token: string): boolean {
+  return loadStoredMemberSession()?.sessionToken === token;
+}
+
 export async function loadAdminBotProfileOverview(
   host: AdminBotProfileOverviewHost,
 ): Promise<void> {
   const wire = session(host);
   if (!wire) {
     host.adminBotProfileOverviewError = t("profileOverview.error.signIn");
+    host.adminBotPiReviewError = host.adminBotProfileOverviewError;
     return;
   }
   host.adminBotProfileOverviewLoading = true;
   host.adminBotProfileOverviewError = null;
+  host.adminBotPiReviewError = null;
   try {
     const result = await fetchMemberProfileOverview(wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotProfileOverview = [];
       host.adminBotProfileOverviewError = failureText(result, wire.baseUrl);
+      host.adminBotPiReviewError = host.adminBotProfileOverviewError;
       return;
     }
     host.adminBotProfileOverview = result.value.members;
     host.adminBotProfileOverviewFieldCount = result.value.mandatoryFieldCount;
     host.adminBotProfileAdoption = result.value.adoption;
+    // Loaded alongside rather than on its own: the escalation queue and the adoption columns are
+    // read by the same person on the same page, and a second spinner for four rows is worse than
+    // waiting for them together. A failure here does not blank the page it rides on -- the columns
+    // are the reason someone opened it, so the queue simply stays empty.
+    const escalated = await fetchEscalatedNudges(wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
+    host.adminBotEscalatedNudges = escalated.ok ? escalated.value : [];
+    // An unavailable queue is unknown, not evidence that nobody is waiting.
+    const piReview = await fetchPiReviewQueue(wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
+    host.adminBotPiReview = piReview.ok ? piReview.value : [];
+    host.adminBotPiReviewError = piReview.ok ? null : failureText(piReview, wire.baseUrl);
   } finally {
-    host.adminBotProfileOverviewLoading = false;
+    if (sameSession(wire.token)) {
+      host.adminBotProfileOverviewLoading = false;
+    }
   }
 }
 
@@ -93,6 +130,9 @@ export async function remindAdminBotIncompleteProfiles(
   host.adminBotProfileOverviewNotice = null;
   try {
     const result = await runMandatoryFieldsReminder(wire.token, wire.baseUrl, scope);
+    if (!sameSession(wire.token)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotProfileOverviewError = failureText(result, wire.baseUrl);
       return;
@@ -103,6 +143,47 @@ export async function remindAdminBotIncompleteProfiles(
     // Re-read so the "last reminded" column reflects what just happened.
     host.adminBotProfileOverviewLoadedAt = null;
   } finally {
-    host.adminBotProfileOverviewReminding = false;
+    if (sameSession(wire.token)) {
+      host.adminBotProfileOverviewReminding = false;
+    }
+  }
+}
+
+/**
+ * Apply the lab's access design to the nudge list, for a lab that has never had one.
+ *
+ * Shares the reminder's busy flag and notice line: they are the two write buttons on this page and
+ * only one of them should ever be in flight, since this changes who the reminder would reach.
+ */
+export async function seedAdminBotNudgeList(host: AdminBotProfileOverviewHost): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotProfileOverviewError = t("profileOverview.error.signIn");
+    return;
+  }
+  host.adminBotProfileOverviewReminding = true;
+  host.adminBotProfileOverviewError = null;
+  host.adminBotProfileOverviewNotice = null;
+  try {
+    const result = await seedNudgeList(wire.token, wire.baseUrl, false);
+    if (!sameSession(wire.token)) {
+      return;
+    }
+    if (!result.ok) {
+      host.adminBotProfileOverviewError = failureText(result, wire.baseUrl);
+      return;
+    }
+    host.adminBotProfileOverviewNotice =
+      result.value.added || result.value.silenced
+        ? t("profileOverview.nudgeList.seeded", {
+            count: String(result.value.added),
+            silenced: String(result.value.silenced),
+          })
+        : t("profileOverview.nudgeList.seededNone");
+    host.adminBotProfileOverviewLoadedAt = null;
+  } finally {
+    if (sameSession(wire.token)) {
+      host.adminBotProfileOverviewReminding = false;
+    }
   }
 }

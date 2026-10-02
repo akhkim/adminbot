@@ -19,6 +19,7 @@ import {
 } from "../src/api/server.js";
 import { createCompositeAdminBotExecutor } from "../src/connectors/composite.js";
 import {
+  createGogDriveProbe,
   readDriveFileBase64,
   createGogAdminBotExecutor,
   writeGogDocMarkdown,
@@ -26,7 +27,11 @@ import {
 import { createAdminBotMessageExecutor } from "../src/connectors/message.js";
 import { createAdminBotOpenReviewExecutor } from "../src/connectors/openreview.js";
 import { createAdminBotOverleafExecutor } from "../src/connectors/overleaf.js";
-import { createAdminBotSlackAdminExecutor } from "../src/connectors/slack-admin.js";
+import {
+  adminBotSlackBotToken,
+  createAdminBotSlackAdminExecutor,
+  listSlackChannelNames,
+} from "../src/connectors/slack-admin.js";
 import { createAdminBotSocialExecutor } from "../src/connectors/social.js";
 import { adminBotSlackActivityWindowDays } from "../src/contracts/actions.js";
 import { createAdminBotCvScanDeps } from "../src/cv-scan.js";
@@ -60,13 +65,15 @@ export type AdminBotHostDeps = {
       deviceId: string;
       role: string;
       scopes: string[];
-      issuer: string;
+      issuer: { kind: "shared-gateway-auth"; generation: string };
       ownerMemberId?: string;
     }) => Promise<{ token: string; scopes: string[] } | null>;
     requestDevicePairing: (params: Record<string, unknown>) => Promise<{
       request: { requestId: string };
     }>;
-    resolveSharedGatewayAuthIssuer: () => string | undefined;
+    resolveSharedGatewayAuthIssuer: () =>
+      | { kind: "shared-gateway-auth"; generation: string }
+      | undefined;
   };
   /** Mints a Slack Connect invite. Slack lives in another plugin, so the launcher supplies it. */
   inviteToSlackConnect?: (params: { email: string; channelId: string }) => Promise<{ url: string }>;
@@ -117,7 +124,7 @@ export function loadOpenClawEnv(): void {
  * to the shared gateway secret it deliberately no longer holds, and the member's connect frame
  * reaches the Gateway with no auth at all.
  */
-function createDeviceTokenIssuer(deps: AdminBotHostDeps) {
+export function createDeviceTokenIssuer(deps: Pick<AdminBotHostDeps, "devicePairing">) {
   return async function issueMemberDeviceToken(params: {
     deviceId: string;
     publicKey: string;
@@ -198,7 +205,7 @@ function createDeviceTokenIssuer(deps: AdminBotHostDeps) {
  * of the member's login session and capped at `allowedScopes`. The replacement token is minted by
  * the Gateway on the next connect, so nothing is stamped here.
  */
-function createDevicePairingApprover(deps: AdminBotHostDeps) {
+export function createDevicePairingApprover(deps: Pick<AdminBotHostDeps, "devicePairing">) {
   return async function approveMemberDevicePairing(params: {
     requestId: string;
     allowedScopes: readonly string[];
@@ -826,22 +833,37 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     // Lets a LinkedIn draft use the Drive copy the paper already names instead of demanding the
     // author upload the same PDF again. Same gog binary, same account, as every other Google read.
     readDrivePdfBase64: (fileId: string) => readDriveFileBase64(fileId),
+    // Turns a pasted Drive link into something checkable: the evidence pass asks whether the file
+    // is really there rather than trusting that a URL of the right shape means a real artifact.
+    // A metadata read, so nothing is downloaded and no copy of a paper lands on disk.
+    driveProbe: createGogDriveProbe(),
     ...(deps.inviteToSlackConnect ? { inviteToSlackConnect: deps.inviteToSlackConnect } : {}),
     sensitiveInfoPath: path.join(os.homedir(), ".openclaw/adminbot-sensitive-information.md"),
     emailAutomationRunner: deps.runEmailAutomation,
     reimbursementWorkflow: createAdminBotReimbursementWorkflow({
       formScriptPath: path.join(repoRoot, "scripts/adminbot-reimbursement-from-email.py"),
+      mpiScriptPath: path.join(repoRoot, "scripts/adminbot_mpi_reimbursement.py"),
     }),
     cvScanDeps: createAdminBotCvScanDeps({
       extractScriptPath: path.join(repoRoot, "scripts/adminbot-cv-extract.py"),
     }),
     ...(cvDigestPublisher ? { cvDigestPublisher } : {}),
     openReviewScriptPath: path.join(repoRoot, "scripts/adminbot-openreview.py"),
-    dcsFormScriptPath: path.join(repoRoot, "scripts/adminbot-dcs-form-submit.ts"),
     fetchSlackLocations: createSlackLocationReader(repoRoot),
     fetchSlackTimezones: createSlackTimezoneReader(repoRoot),
     fetchSlackMessageCounts: createSlackMessageCounter(repoRoot),
     resolveSlackUserIdsByEmail: createSlackDirectoryEmailResolver(repoRoot),
+    // Reads the workspace's public channel names for the project form's "already exists" check.
+    // Built here rather than in api/server.ts for the same reason the readers above are: reaching
+    // Slack is a composition-layer concern, and the token lives in this process's environment.
+    // The token is read per call, so a deployment that adds SLACK_BOT_TOKEN later starts working
+    // without a restart -- and one without it fails the call, which the route turns into a 503
+    // the form can explain rather than a silent pass.
+    fetchSlackChannelNames: () =>
+      listSlackChannelNames(
+        adminBotSlackBotToken(process.env),
+        globalThis.fetch as Parameters<typeof listSlackChannelNames>[1],
+      ),
     reviewSlackProfilePhoto: createSlackProfilePhotoReviewer(repoRoot),
     polishSlackProfilePhoto: createSlackProfilePhotoPolisher(repoRoot),
     // No `geolocateIp` here on purpose. PR #17 replaced the city-level ipapi.co lookup below with

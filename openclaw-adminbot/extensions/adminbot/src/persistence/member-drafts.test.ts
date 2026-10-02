@@ -1,10 +1,10 @@
-import { createRequire } from "node:module";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { AdminBotSqliteStore } from "./sqlite.js";
 import { createMemberDraftStore } from "./member-drafts.js";
+import { AdminBotSqliteStore } from "./sqlite.js";
 
 it("keeps private drafts and revision checks across a SQLite restart", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "member-drafts-"));

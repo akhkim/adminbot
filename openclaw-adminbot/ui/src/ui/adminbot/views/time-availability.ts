@@ -39,6 +39,8 @@ import { icons } from "../../icons.ts";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
 import {
   availabilityRows,
+  deadlineMilestoneRow,
+  hasDeadlineMilestone,
   milestoneRows,
   timeOffRows,
   tripRows,
@@ -55,23 +57,18 @@ import {
   upcomingMajorDeadlines,
   urgencyOf,
 } from "../data/deadline-time.ts";
-import {
-  AOE_TIMEZONE,
-  localTimezone,
-  timezoneOptions,
-} from "../data/timezones.ts";
+import { AOE_TIMEZONE, localTimezone, timezoneOptions } from "../data/timezones.ts";
 import { renderMemberSelect } from "./member-select.ts";
 import {
-  renderTrips,
-  renderWhereStrip,
-  type TripDraft,
-} from "./time-availability.trips.ts";
-import {
+  CHART_COLORS,
+  CHART_NEUTRAL_COLOR,
   renderTimeAllocationChart,
   type TimeAllocationAwayRange as ChartAwayRange,
   type TimeAllocationInterval,
   type TimeAllocationTask as ChartTask,
+  type TimeChartWindow,
 } from "./time-allocation-chart.ts";
+import { renderTrips, renderWhereStrip, type TripDraft } from "./time-availability.trips.ts";
 
 type TimeAllocationTask = {
   key: string;
@@ -179,6 +176,16 @@ export type TimeAvailabilityDraft = {
   wholeDay: boolean;
   note: string;
   link: string;
+  /**
+   * Which stored row this draft is rewriting, or null when it is a new one.
+   *
+   * The index is into the list the draft's own category writes to -- `availability` for Jinesis
+   * work, `time_off` for everything else -- because that is the list draftToPatch rebuilds. Editing
+   * used to mean removing the row and typing it again from scratch, which for a project whose dates
+   * moved by a week meant re-entering the project, the hours, the note and the link to change one
+   * date.
+   */
+  editingIndex: number | null;
 };
 
 export const EMPTY_TIME_AVAILABILITY_DRAFT: TimeAvailabilityDraft = {
@@ -191,6 +198,7 @@ export const EMPTY_TIME_AVAILABILITY_DRAFT: TimeAvailabilityDraft = {
   wholeDay: true,
   note: "",
   link: "",
+  editingIndex: null,
 };
 
 export type MilestoneDraft = {
@@ -244,23 +252,28 @@ export type SchedulePatch = {
 
 export type AdminBotTimeAvailabilityProps = {
   members: AdminBotLabMember[];
+  collaborators?: AdminBotLabMember[];
+  collaboratorsLoading?: boolean;
+  collaboratorsError?: string | null;
+  onLoadCollaborators?: () => void;
   loading: boolean;
   error: string | null;
+  onRefresh?: () => void;
   selectedMemberId: string;
   onMemberChange: (memberId: string) => void;
   range: TimeAvailabilityRange;
   onRangeChange: (range: TimeAvailabilityRange) => void;
+  /**
+   * The span the chart is currently drawing, which the commitment tables below it follow.
+   *
+   * Null until the chart has reported one -- on that first render the tables show everything,
+   * because filtering to a window nobody has said yet would hide rows for a frame.
+   */
+  chartWindow?: TimeChartWindow | null;
+  onChartWindowChange?: (window: TimeChartWindow) => void;
   /** The signed-in member. The editor renders only when this matches the selected member. */
   viewerMemberId: string | null;
-  /**
-   * Whether the viewer is an admin, which is what decides whose schedule they may read at all.
-   *
-   * A schedule is holidays, courses, other jobs and -- in the overall note -- whatever the member
-   * wrote up about their circumstances. That is planning data for the people who plan, so a plain
-   * member sees their own and nothing else: the picker is not offered to them, and the service
-   * strips the schedule fields from every other member's record on the way out
-   * (adminBotScheduleMemberFields), so this is the affordance for a rule already enforced there.
-   */
+  /** Admins see the roster; members see self and separately authorized collaborator snapshots. */
   viewerIsAdmin: boolean;
   /** The trips log's draft, kept out here so a re-render cannot wipe half-typed input. */
   tripDraft?: TripDraft;
@@ -283,18 +296,6 @@ export type AdminBotTimeAvailabilityProps = {
 };
 
 const DAY_MS = 86_400_000;
-// Copied from EffortStackChart: stable color per task name, assigned in first-seen order.
-const CHART_COLORS = [
-  "#3575DA",
-  "#00676E",
-  "#F6511D",
-  "#188B3E",
-  "#783810",
-  "#F7615D",
-  "#8B5CF6",
-  "#D4A72C",
-] as const;
-const CHART_NEUTRAL_COLOR = "#9AA0AA";
 
 // How many rows the side table shows before it stops being a summary.
 const BIG_DEADLINE_LIMIT = 6;
@@ -381,7 +382,6 @@ function formatNumber(value: number): string {
 function hoursOver(weeklyHours: number, days: number): number {
   return (weeklyHours * days) / 7;
 }
-
 
 /**
  * A bar's total, plus the share of the member's capacity it uses when they have declared one.
@@ -562,7 +562,10 @@ function taskColors(tasks: readonly TimeAllocationTask[]): Map<string, string> {
  * gaps between commitments, and a bar of nothing is not worth an axis slot.
  */
 /** The bins a range covers, starting from today. */
-export function rangeBins(range: TimeAvailabilityRange, now: number): Array<{
+export function rangeBins(
+  range: TimeAvailabilityRange,
+  now: number,
+): Array<{
   startMs: number;
   endMs: number;
   label: string;
@@ -684,8 +687,6 @@ export function allocationBins(
     };
   });
 }
-
-
 
 /**
  * The chart.
@@ -848,42 +849,45 @@ export function draftToPatch(
 ): SchedulePatch {
   const note = draft.note.trim();
   const link = draft.link.trim();
+  const at = draft.editingIndex;
+  // Replace in place when the draft came from a row, append when it did not. Splicing rather than
+  // filter-then-push so an edited commitment keeps its position in the list: these are read as a
+  // schedule, and a row that jumped to the bottom every time its dates were corrected would make
+  // the list order meaningless.
+  const put = <T>(rows: T[], row: T): T[] =>
+    at !== null && at >= 0 && at < rows.length
+      ? rows.map((existingRow, index) => (index === at ? row : existingRow))
+      : [...rows, row];
   if (draft.category === "jinesis") {
     const project = draft.project.trim();
     return {
-      availability: [
-        ...existing.availability,
-        {
-          start: draft.start,
-          end: draft.end,
-          hours_per_week: Number(draft.hoursPerWeek),
-          ...(project ? { project } : {}),
-          ...(note ? { note } : {}),
-          ...(link ? { link } : {}),
-        },
-      ],
+      availability: put(existing.availability, {
+        start: draft.start,
+        end: draft.end,
+        hours_per_week: Number(draft.hoursPerWeek),
+        ...(project ? { project } : {}),
+        ...(note ? { note } : {}),
+        ...(link ? { link } : {}),
+      }),
     };
   }
   const label = draft.customLabel.trim();
   return {
-    time_off: [
-      ...existing.timeOff,
-      {
-        start: draft.start,
-        end: draft.end,
-        kind: draft.category,
-        // Whole day off unless the member says otherwise -- see TimeAvailabilityDraft.wholeDay.
-        // Only "none" suppresses the Jinesis hours underneath; "partial" is recorded and shown but
-        // never subtracted, because no stored figure says by how much.
-        availability: draft.wholeDay ? "none" : "partial",
-        // Only on a partial row: a whole-day row zeroes the week by definition, so hours on it
-        // would be a second answer to a question already settled.
-        ...(draft.wholeDay ? {} : { hours_per_week: Number(draft.hoursPerWeek) }),
-        ...(label ? { label } : {}),
-        ...(note ? { note } : {}),
-        ...(link ? { link } : {}),
-      },
-    ],
+    time_off: put(existing.timeOff, {
+      start: draft.start,
+      end: draft.end,
+      kind: draft.category,
+      // Whole day off unless the member says otherwise -- see TimeAvailabilityDraft.wholeDay.
+      // Only "none" suppresses the Jinesis hours underneath; "partial" is recorded and shown but
+      // never subtracted, because no stored figure says by how much.
+      availability: draft.wholeDay ? "none" : "partial",
+      // Only on a partial row: a whole-day row zeroes the week by definition, so hours on it
+      // would be a second answer to a question already settled.
+      ...(draft.wholeDay ? {} : { hours_per_week: Number(draft.hoursPerWeek) }),
+      ...(label ? { label } : {}),
+      ...(note ? { note } : {}),
+      ...(link ? { link } : {}),
+    }),
   };
 }
 
@@ -907,6 +911,7 @@ type CommitmentFormProps = {
   onDraftChange: (draft: TimeAvailabilityDraft) => void;
   testId: string;
   titleKey: string;
+  editTitleKey: string;
   head: (helpers: {
     draft: TimeAvailabilityDraft;
     update: (patch: Partial<TimeAvailabilityDraft>) => void;
@@ -918,7 +923,9 @@ type CommitmentFormProps = {
 };
 
 function renderCommitmentForm(form: CommitmentFormProps) {
-  const { props, existing, draft, onDraftChange, testId, titleKey, head, footer } = form;
+  const { props, existing, draft, onDraftChange, testId, titleKey, editTitleKey, head, footer } =
+    form;
+  const editing = draft.editingIndex !== null;
   const error = draftError(draft);
   const touched = Boolean(draft.start || draft.end || draft.hoursPerWeek || draft.customLabel);
   const update = (patch: Partial<TimeAvailabilityDraft>) => onDraftChange({ ...draft, ...patch });
@@ -927,7 +934,7 @@ function renderCommitmentForm(form: CommitmentFormProps) {
 
   return html`
     <section class="adminbot-time-availability__editor" data-testid=${testId}>
-      <div class="card-title">${t(titleKey)}</div>
+      <div class="card-title">${t(editing ? editTitleKey : titleKey)}</div>
       <form
         class="adminbot-form adminbot-time-availability__form"
         @submit=${(event: Event) => {
@@ -936,6 +943,9 @@ function renderCommitmentForm(form: CommitmentFormProps) {
             return;
           }
           props.onSaveSchedule(props.selectedMemberId, draftToPatch(draft, existing));
+          // Back to an empty add form. Leaving the row loaded would make the next submit rewrite
+          // the same commitment, which is the opposite of what an empty-looking form implies.
+          onDraftChange({ ...EMPTY_TIME_AVAILABILITY_DRAFT, category: draft.category });
         }}
       >
         ${head({ draft, update, field })}
@@ -968,6 +978,18 @@ function renderCommitmentForm(form: CommitmentFormProps) {
                 >${error}</span
               >`
             : nothing}
+          ${draft.editingIndex !== null
+            ? html`<button
+                type="button"
+                class="btn btn--sm"
+                data-testid=${`${testId}-cancel`}
+                ?disabled=${props.saving}
+                @click=${() =>
+                  onDraftChange({ ...EMPTY_TIME_AVAILABILITY_DRAFT, category: draft.category })}
+              >
+                ${t("common.cancel")}
+              </button>`
+            : nothing}
           <button
             type="submit"
             class="btn primary"
@@ -976,7 +998,9 @@ function renderCommitmentForm(form: CommitmentFormProps) {
           >
             ${props.saving
               ? t("adminbotTimeAvailability.form.saving")
-              : t("adminbotTimeAvailability.form.submit")}
+              : draft.editingIndex !== null
+                ? t("common.save")
+                : t("adminbotTimeAvailability.form.submit")}
           </button>
         </div>
       </form>
@@ -997,13 +1021,19 @@ function renderJinesisEditor(
     onDraftChange: (draft) => props.onDraftChange({ ...draft, category: "jinesis" }),
     testId: "time-availability-editor",
     titleKey: "adminbotTimeAvailability.form.jinesisTitle",
+    editTitleKey: "adminbotTimeAvailability.form.editJinesisTitle",
     head: ({ draft, field }) => html`
+      ${draft.editingIndex === null
+        ? html`<p class="card-sub adminbot-time-availability__form-note">
+            ${t("adminbotTimeAvailability.form.exampleHint")}
+          </p>`
+        : nothing}
       <label class="adminbot-form__field">
         <span>${t("adminbotTimeAvailability.form.project")}</span>
         <input
           type="text"
           .value=${draft.project}
-          placeholder=${t("adminbotTimeAvailability.form.projectPlaceholder")}
+          placeholder=${t("adminbotTimeAvailability.form.projectExample")}
           @input=${field("project")}
         />
       </label>
@@ -1015,6 +1045,7 @@ function renderJinesisEditor(
           max="168"
           step="0.5"
           data-testid="time-availability-hours"
+          placeholder="20"
           .value=${draft.hoursPerWeek}
           @input=${field("hoursPerWeek")}
         />
@@ -1039,6 +1070,7 @@ function renderTimeAwayEditor(
     onDraftChange: props.onAwayDraftChange,
     testId: "time-away-editor",
     titleKey: "adminbotTimeAvailability.form.awayTitle",
+    editTitleKey: "adminbotTimeAvailability.form.editAwayTitle",
     head: ({ draft, update, field }) => html`
       <label class="adminbot-form__field">
         <span>${t("adminbotTimeAvailability.form.category")}</span>
@@ -1201,7 +1233,10 @@ function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: M
     });
 
   return html`
-    <section class="adminbot-time-availability__editor" data-testid="time-availability-milestone-editor">
+    <section
+      class="adminbot-time-availability__editor"
+      data-testid="time-availability-milestone-editor"
+    >
       <div class="card-title">${t("adminbotTimeAvailability.form.milestoneTitle")}</div>
       <p class="adminbot-time-availability__form-hint">
         ${t("adminbotTimeAvailability.milestones.formHint")}
@@ -1396,13 +1431,7 @@ function addableDeadlines(
     if (shown.has(entry.venue.deadline_id)) {
       return false;
     }
-    return !milestones.some(
-      (row) =>
-        row.deadline_id === entry.venue.deadline_id ||
-        (!row.deadline_id &&
-          row.label.trim() === entry.venue.name.trim() &&
-          row.date === entry.venue.deadline_aoe.slice(0, 10)),
-    );
+    return !hasDeadlineMilestone(milestones, entry.venue);
   });
 }
 
@@ -1433,71 +1462,65 @@ function renderAddDeadline(
     <!-- Styled as one of the tab's editors and deliberately not classed as one: it lives in the
          deadlines panel, above them, and .adminbot-time-availability__form is how the commitment
          form is found. Sharing that class would have made "the form" ambiguous. -->
-    <section
+    <details
       class="adminbot-time-availability__deadline-add"
       data-testid="time-availability-add-deadline-section"
     >
-      <div class="card-title">${t("adminbotTimeAvailability.milestones.addConference")}</div>
+      <!-- Shut until asked for. Open, this editor is a title, a two-line explanation, a labelled
+           select and a button -- more than half the height of a panel whose job is to say what is
+           coming. Adding a deadline is something a member does once a term; reading the panel is
+           what they do every time they open the tab. -->
+      <summary class="adminbot-time-availability__deadline-add-summary">
+        ${t("adminbotTimeAvailability.milestones.addConference")}
+      </summary>
       <p class="adminbot-time-availability__form-hint">
         ${t("adminbotTimeAvailability.milestones.addConferenceHint")}
       </p>
-    <form
-      class="adminbot-form adminbot-time-availability__deadline-form"
-      data-testid="time-availability-add-deadline"
-      @submit=${(event: Event) => {
-        event.preventDefault();
-        const form = event.currentTarget as HTMLFormElement;
-        const select = form.querySelector("select");
-        const picked = options.find((entry) => entry.venue.deadline_id === select?.value);
-        if (!picked) {
-          return;
-        }
-        const { venue } = picked;
-        props.onSaveSchedule(props.selectedMemberId, {
-          milestones: [
-            ...milestones,
-            {
-              deadline_id: venue.deadline_id,
-              date: venue.deadline_aoe.slice(0, 10),
-              label: venue.name,
-              // The snapshot states every deadline in AoE, so the clock is copied across with the
-              // zone that makes it mean what the conference said.
-              time: venue.deadline_aoe.slice(11, 16),
-              timezone: AOE_TIMEZONE,
-              ...(venue.link ? { link: venue.link } : {}),
-            },
-          ],
-        });
-      }}
-    >
-      <label class="adminbot-form__field" for="time-availability-deadline-pick">
-        <span>${t("adminbotTimeAvailability.milestones.conference")}</span>
-        <select
-          id="time-availability-deadline-pick"
-          data-testid="time-availability-deadline-pick"
-        >
-          ${options.map(
-            (entry) => html`
-              <option value=${entry.venue.deadline_id}>
-                ${entry.venue.name} · ${entry.venue.deadline_label} · ${tableDate(entry.venue.deadline_aoe.slice(0, 10))}
-              </option>
-            `,
-          )}
-        </select>
-      </label>
-      <div class="adminbot-time-availability__form-actions">
-        <button
-          type="submit"
-          class="btn primary"
-          data-testid="time-availability-deadline-add"
-          ?disabled=${props.saving}
-        >
-          <span aria-hidden="true">${icons.plus}</span>
-          ${t("adminbotTimeAvailability.milestones.submitConference")}
-        </button>
-      </div>
-    </form>
-    </section>
+      <form
+        class="adminbot-form adminbot-time-availability__deadline-form"
+        data-testid="time-availability-add-deadline"
+        @submit=${(event: Event) => {
+          event.preventDefault();
+          const form = event.currentTarget as HTMLFormElement;
+          const select = form.querySelector("select");
+          const picked = options.find((entry) => entry.venue.deadline_id === select?.value);
+          if (!picked) {
+            return;
+          }
+          props.onSaveSchedule(props.selectedMemberId, {
+            milestones: [...milestones, deadlineMilestoneRow(picked.venue)],
+          });
+        }}
+      >
+        <label class="adminbot-form__field" for="time-availability-deadline-pick">
+          <span>${t("adminbotTimeAvailability.milestones.conference")}</span>
+          <select
+            id="time-availability-deadline-pick"
+            data-testid="time-availability-deadline-pick"
+          >
+            ${options.map(
+              (entry) => html`
+                <option value=${entry.venue.deadline_id}>
+                  ${entry.venue.name} · ${entry.venue.deadline_label} ·
+                  ${tableDate(entry.venue.deadline_aoe.slice(0, 10))}
+                </option>
+              `,
+            )}
+          </select>
+        </label>
+        <div class="adminbot-time-availability__form-actions">
+          <button
+            type="submit"
+            class="btn primary"
+            data-testid="time-availability-deadline-add"
+            ?disabled=${props.saving}
+          >
+            <span aria-hidden="true">${icons.plus}</span>
+            ${t("adminbotTimeAvailability.milestones.submitConference")}
+          </button>
+        </div>
+      </form>
+    </details>
   `;
 }
 
@@ -1529,6 +1552,7 @@ function renderBigDeadlines(
     .map((entry) => ({
       date: entry.venue.deadline_aoe.slice(0, 10),
       deadline_id: undefined as string | undefined,
+      venue_deadline_id: entry.venue.deadline_id,
       instant: entry.instant,
       label: entry.venue.name,
       link: entry.venue.link,
@@ -1554,7 +1578,13 @@ function renderBigDeadlines(
   // Conferences are added after the member's own rows are capped, so a full personal list can
   // never push them off the banner. Sorted by instant rather than by date so two things on the
   // same day fall in the order they actually happen.
-  const rows = [...mine, ...conferences].toSorted((left, right) => left.instant - right.instant);
+  // A member can also add one of these four themselves, from the Deadlines board. Their own row is
+  // the one they can remove, so it wins and the lab's copy is not listed a second time.
+  const ownDeadlineIds = new Set(mine.map((row) => row.deadline_id).filter(Boolean));
+  const rows = [
+    ...mine,
+    ...conferences.filter((row) => !ownDeadlineIds.has(row.venue_deadline_id)),
+  ].toSorted((left, right) => left.instant - right.instant);
 
   return html`
     <aside class="adminbot-time-availability__deadlines" data-testid="time-availability-deadlines">
@@ -1566,15 +1596,17 @@ function renderBigDeadlines(
         ${rows.map(
           (row) => html`
             <li data-own=${String(row.own)} data-urgency=${urgencyOf(row.instant, now)}>
-              <!-- Three explicit rows rather than grid placement per span. The link and the remove
-                   button were both pinned to the same cell, so they drew on top of each other, and
-                   the AoE clock was held on one line inside a 15rem tile, so it was cut off at the
-                   border. Countdown and actions share the top row; the name and the date each get
-                   their own and may wrap. -->
+              <!-- Two rows, not three. The countdown and the name are the pair a reader scans, so
+                   they share the top line with the actions; the date and its AoE cutoff share the
+                   second. It was three stacked rows, which made a panel of eight deadlines taller
+                   than the chart it sits above -- and the panel is a banner, not the subject of
+                   the page. Both lines may still wrap: a venue name and a full
+                   "23:59 Anywhere on Earth (UTC-12)" are each too long to promise one line. -->
               <div class="adminbot-time-availability__deadline-top">
                 <span class="adminbot-time-availability__deadline-away">
                   ${daysAwayLabel(row.date, now)}
                 </span>
+                <span class="adminbot-time-availability__deadline-label">${row.label}</span>
                 <span class="adminbot-time-availability__deadline-actions">
                   ${renderLink(row.link)}
                   <!-- Both kinds of row can go. A member's own row is deleted; one of the lab's
@@ -1582,37 +1614,38 @@ function renderBigDeadlines(
                        nobody's panel should edit everyone else's. Re-adding it from the picker
                        below brings it back as their own row. -->
                   ${editable
-                ? html`<button
-                    type="button"
-                    class="btn btn--sm"
-                    data-testid=${`time-availability-deadline-remove-${row.own ? "own" : "preset"}`}
-                    ?disabled=${props.saving}
-                    title=${row.own ? "" : t("adminbotTimeAvailability.milestones.removePresetHint")}
-                    @click=${() =>
-                      props.onSaveSchedule(
-                        props.selectedMemberId,
-                        row.own
-                          ? {
-                              milestones: milestones.filter((candidate) =>
-                                row.deadline_id
-                                  ? candidate.deadline_id !== row.deadline_id
-                                  : !(
-                                      candidate.date === row.date &&
-                                      candidate.label === row.label
-                                    ),
-                              ),
-                            }
-                          : { dismissed_deadlines: [...dismissed, row.label] },
-                      )}
-                  >
-                    ${row.own
-                      ? t("adminbotTimeAvailability.form.remove")
-                      : t("adminbotTimeAvailability.milestones.removePreset")}
-                  </button>`
-                : nothing}
+                    ? html`<button
+                        type="button"
+                        class="btn btn--sm"
+                        data-testid=${`time-availability-deadline-remove-${row.own ? "own" : "preset"}`}
+                        ?disabled=${props.saving}
+                        title=${row.own
+                          ? ""
+                          : t("adminbotTimeAvailability.milestones.removePresetHint")}
+                        @click=${() =>
+                          props.onSaveSchedule(
+                            props.selectedMemberId,
+                            row.own
+                              ? {
+                                  milestones: milestones.filter((candidate) =>
+                                    row.deadline_id
+                                      ? candidate.deadline_id !== row.deadline_id
+                                      : !(
+                                          candidate.date === row.date &&
+                                          candidate.label === row.label
+                                        ),
+                                  ),
+                                }
+                              : { dismissed_deadlines: [...dismissed, row.label] },
+                          )}
+                      >
+                        ${row.own
+                          ? t("adminbotTimeAvailability.form.remove")
+                          : t("adminbotTimeAvailability.milestones.removePreset")}
+                      </button>`
+                    : nothing}
                 </span>
               </div>
-              <span class="adminbot-time-availability__deadline-label">${row.label}</span>
               <div class="adminbot-time-availability__deadline-when">
                 <span class="adminbot-time-availability__deadline-date">
                   ${tableDate(row.date)}
@@ -1632,6 +1665,62 @@ function renderBigDeadlines(
     </aside>
   `;
 }
+
+/**
+ * Open the editor stack on the tab that can service a draft, and scroll it into view.
+ *
+ * The stack is collapsed until something asks for it -- `activeCommitmentType` is null on load, and
+ * while it is null the tab shows only an "Add commitment" button. The tables that carry the Edit
+ * buttons render *above* that, so a button which only sets a draft fills in a form that is not on
+ * the page. That is what "Edit does nothing" was: the draft was landing correctly every time, in an
+ * editor nobody could see.
+ *
+ * The scroll waits a frame because the picker does not exist in the DOM until the type is set;
+ * querying for it in the same turn finds nothing.
+ */
+function revealCommitmentEditor(
+  props: AdminBotTimeAvailabilityProps,
+  type: "jinesis" | "away" | "milestone" | "trip",
+): void {
+  props.onActiveCommitmentChange(type);
+  requestAnimationFrame(() => {
+    const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    globalThis.document
+      ?.querySelector<HTMLElement>(".adminbot-time-availability__commitment-picker")
+      ?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+  });
+}
+
+/**
+ * Whether a dated row is on screen in the chart above.
+ *
+ * Overlap, not containment: a commitment that runs from last term into this one is current work
+ * and belongs in the list, even though it started before the window opens. Both ends are
+ * inclusive dates, so the comparison is against the window's exclusive end.
+ */
+export function withinWindow(
+  row: { start: string; end: string },
+  window: TimeChartWindow | null,
+): boolean {
+  if (!window) {
+    return true;
+  }
+  return row.start < window.end && row.end >= window.start;
+}
+
+/*
+ * The tables follow the chart's window rather than listing everything ever recorded.
+ *
+ * A member two years into the lab has a page of finished courses and holidays under a chart
+ * showing this month, and the two disagreed about what the tab was about: the chart answered
+ * "what is running now" while the list answered "what have you ever told us". Filtering to the
+ * visible span makes them one surface, and the chart's pager is what reaches the past.
+ *
+ * A window with nothing in it draws nothing -- no table, no count of what was filtered out. That
+ * count was tried and it was noise: an empty table under a line explaining its own emptiness took
+ * more room than the rows would have, on a tab that had just been shortened. The chart directly
+ * above already shows the same empty span, so the absence is legible without being narrated.
+ */
 
 function renderJinesisTable(
   tasks: readonly TimeAllocationTask[],
@@ -1672,9 +1761,39 @@ function renderJinesisTable(
                 </td>
                 <td>${tableDate(task.start)}</td>
                 <td>${tableDate(task.end)}</td>
-                <td>${t("adminbotTimeAvailability.hoursValue", { hours: formatNumber(task.hours) })}</td>
+                <td>
+                  ${t("adminbotTimeAvailability.hoursValue", { hours: formatNumber(task.hours) })}
+                </td>
                 <td>
                   ${renderLink(row?.link)}
+                  ${editable && row
+                    ? html`<button
+                        type="button"
+                        class="btn btn--sm"
+                        data-testid=${`time-availability-commitment-edit-${task.key}`}
+                        ?disabled=${props.saving}
+                        @click=${() => {
+                          props.onDraftChange({
+                            ...EMPTY_TIME_AVAILABILITY_DRAFT,
+                            category: "jinesis",
+                            project: row.project ?? "",
+                            start: row.start,
+                            end: row.end,
+                            hoursPerWeek: String(row.hours_per_week ?? ""),
+                            note: row.note ?? "",
+                            link: row.link ?? "",
+                            editingIndex: rows.indexOf(row),
+                          });
+                          // Without this the draft is loaded into a collapsed editor, and the
+                          // press looks like it did nothing. It also re-opens the stack on the
+                          // Jinesis tab when it was left on another one, so the form on screen is
+                          // the one holding the draft just set.
+                          revealCommitmentEditor(props, "jinesis");
+                        }}
+                      >
+                        ${t("adminbotTimeAvailability.form.edit")}
+                      </button>`
+                    : nothing}
                   ${editable
                     ? html`<button
                         type="button"
@@ -1753,6 +1872,46 @@ function renderOtherTable(
                     ? html`<button
                         type="button"
                         class="btn btn--sm"
+                        data-testid=${`time-availability-away-edit-${rows.indexOf(row)}`}
+                        ?disabled=${props.saving}
+                        @click=${() => {
+                          props.onAwayDraftChange({
+                            ...EMPTY_TIME_AVAILABILITY_DRAFT,
+                            // `kind` is stored as free text, and the form's dropdown is a closed
+                            // enum. Anything the enum does not cover loads as "other", which is
+                            // the row the custom label belongs to -- so an unrecognised kind is
+                            // still editable instead of silently becoming a holiday.
+                            category: (TIME_AVAILABILITY_CATEGORIES as readonly string[]).includes(
+                              row.kind ?? "",
+                            )
+                              ? (row.kind as TimeAvailabilityCategory)
+                              : "other",
+                            customLabel: row.label ?? "",
+                            start: row.start,
+                            end: row.end,
+                            // "none" is the whole-day answer; only a partial row stores hours, so
+                            // only a partial row has any to load back into the form.
+                            wholeDay: row.availability !== "partial",
+                            hoursPerWeek:
+                              row.availability === "partial"
+                                ? String(row.hours_per_week ?? "")
+                                : "",
+                            note: row.note ?? "",
+                            link: row.link ?? "",
+                            // Into `time_off`, which is the list this table renders and the one
+                            // draftToPatch rebuilds for a non-Jinesis draft.
+                            editingIndex: rows.indexOf(row),
+                          });
+                          revealCommitmentEditor(props, "away");
+                        }}
+                      >
+                        ${t("adminbotTimeAvailability.form.edit")}
+                      </button>`
+                    : nothing}
+                  ${editable
+                    ? html`<button
+                        type="button"
+                        class="btn btn--sm"
                         ?disabled=${props.saving}
                         @click=${() =>
                           props.onSaveSchedule(props.selectedMemberId, {
@@ -1815,11 +1974,18 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
     ? t("adminbotTimeAvailability.loadingUsers")
     : t("adminbotTimeAvailability.selectUser");
   // Whose schedules this viewer may read. An admin plans for the lab, so they get everyone; anyone
-  // else gets exactly their own record, which is also all the service will send them.
+  // else gets self plus the narrow authorized collaborator snapshots.
   const readableMembers = props.viewerIsAdmin
     ? props.members
-    : props.members.filter((member) => member.id === props.viewerMemberId);
-  const selectedMember = readableMembers.find((member) => member.id === props.selectedMemberId);
+    : [
+        ...props.members.filter((member) => member.id === props.viewerMemberId),
+        ...(props.collaborators ?? []),
+      ];
+  const selectedMember =
+    readableMembers.find((member) => member.id === props.selectedMemberId) ??
+    (props.onLoadCollaborators
+      ? readableMembers.find((member) => member.id === props.viewerMemberId)
+      : undefined);
   const storedAvailability = selectedMember ? availabilityRows(selectedMember.availability) : [];
   const storedTimeOff = selectedMember ? timeOffRows(selectedMember.time_off) : [];
   const storedMilestones = selectedMember ? milestoneRows(selectedMember.milestones) : [];
@@ -1848,9 +2014,43 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
     selectedMember && props.viewerMemberId && selectedMember.id === props.viewerMemberId,
   );
   const hasAnything = tasks.length > 0 || storedTimeOff.length > 0;
+  // What the chart is showing. The tables below are the same schedule in words, so they answer for
+  // the same span -- see withinWindow, and the note each table draws for what it left out.
+  const window = props.chartWindow ?? null;
+  const visibleTasks = tasks.filter((task) => withinWindow(task, window));
+  const visibleTimeOff = storedTimeOff.filter((row) => withinWindow(row, window));
 
   return html`
     <div class="card adminbot-card adminbot-card--wide adminbot-time-availability">
+      ${!props.viewerIsAdmin && props.onLoadCollaborators
+        ? html` <section class="adminbot-form" aria-label="See my collaborator's time availability">
+            <h3>See my collaborator's time availability</h3>
+            <p class="muted">
+              Coauthors on projects with unfinished paper slots. Schedules are read-only; private
+              notes and links are not shared.
+            </p>
+            <button
+              class="btn"
+              ?disabled=${props.collaboratorsLoading}
+              @click=${props.onLoadCollaborators}
+            >
+              ${props.collaboratorsLoading
+                ? "Loading collaborator schedules…"
+                : "Load / refresh collaborator schedules"}
+            </button>
+            ${props.collaboratorsError
+              ? html`<p role="alert">${props.collaboratorsError}</p>`
+              : nothing}
+            ${renderMemberSelect({
+              options: readableMembers.map((m) => ({ id: m.id, name: m.name ?? m.id })),
+              value: selectedMember?.id ?? "",
+              label: "Whose timeline to view",
+              placeholder: "Choose a collaborator",
+              disabled: Boolean(props.collaboratorsLoading),
+              onPick: props.onMemberChange,
+            })}
+          </section>`
+        : nothing}
       <div class="adminbot-form adminbot-time-availability__controls">
         ${props.viewerIsAdmin
           ? html`<label class="adminbot-form__field">
@@ -1872,10 +2072,31 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
               class="adminbot-time-availability__own-only"
               data-testid="time-availability-own-only"
             >
-              ${t("adminbotTimeAvailability.ownScheduleOnly")}
+              ${props.onLoadCollaborators
+                ? "You can edit your own schedule. Collaborator schedules are read-only."
+                : t("adminbotTimeAvailability.ownScheduleOnly")}
             </p>`}
         ${renderRangeSwitch(props)}
+        ${props.onRefresh
+          ? html`<button
+              class="btn btn--sm adminbot-time-availability__refresh"
+              type="button"
+              ?disabled=${props.loading}
+              @click=${props.onRefresh}
+            >
+              ${props.loading ? "Refreshing…" : "Refresh schedules"}
+            </button>`
+          : nothing}
       </div>
+      ${editable && !props.activeCommitmentType
+        ? html`<button
+            type="button"
+            class="btn primary adminbot-time-availability__add-commitment"
+            @click=${() => revealCommitmentEditor(props, "jinesis")}
+          >
+            ${t("adminbotTimeAvailability.form.addCommitment")}
+          </button>`
+        : nothing}
       ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
       ${selectedMember
         ? html`
@@ -1908,16 +2129,19 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                         selectedMember.id,
                         chartInterval(props.range),
                         wholeDayAway,
+                        props.onChartWindowChange,
                       )}
                       ${renderWhereStrip(whereStrip)}
                     </div>`
                   : html`<div class="adminbot-time-availability__empty">
                       ${t("adminbotTimeAvailability.noAllocations")}
                     </div>`}
-                ${tasks.length
-                  ? renderJinesisTable(tasks, storedAvailability, props, editable)
+                ${visibleTasks.length
+                  ? renderJinesisTable(visibleTasks, storedAvailability, props, editable)
                   : nothing}
-                ${storedTimeOff.length ? renderOtherTable(storedTimeOff, props, editable) : nothing}
+                ${visibleTimeOff.length
+                  ? renderOtherTable(visibleTimeOff, props, editable)
+                  : nothing}
                 ${renderOverallNotes(props, storedNotes, editable)}
                 ${!hasAnything && !editable
                   ? html`<div class="adminbot-time-availability__empty">
@@ -2003,8 +2227,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                                         ${props.tripDraft
                                           ? renderTrips({
                                               trips: storedTrips,
-                                              homeLocation:
-                                                selectedMember?.location ?? null,
+                                              homeLocation: selectedMember?.location ?? null,
                                               draft: props.tripDraft,
                                               onDraftChange: (draft) =>
                                                 props.onTripDraftChange?.(draft),
@@ -2031,22 +2254,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                           </div>
                         </div>
                       `
-                    : html`
-                        <button
-                          type="button"
-                          class="btn primary adminbot-time-availability__add-commitment"
-                          @click=${() => {
-                            props.onActiveCommitmentChange("jinesis");
-                            requestAnimationFrame(() => {
-                              document
-                                .querySelector(".adminbot-time-availability__commitment-picker")
-                                ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                            });
-                          }}
-                        >
-                          ${t("adminbotTimeAvailability.form.addCommitment")}
-                        </button>
-                      `}
+                    : nothing}
                 `
               : nothing}
             ${!editable && props.tripDraft
@@ -2058,8 +2266,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                   editable,
                   saving: props.saving,
                   onSave: (trips) =>
-                    selectedMember &&
-                    props.onSaveSchedule(selectedMember.id, { trips }),
+                    selectedMember && props.onSaveSchedule(selectedMember.id, { trips }),
                 })
               : nothing}
           </div>`

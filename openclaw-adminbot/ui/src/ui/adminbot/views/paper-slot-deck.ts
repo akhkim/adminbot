@@ -6,10 +6,9 @@
 
 import { html, LitElement, nothing } from "lit";
 import type { TemplateResult } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
+import { property, state } from "lit/decorators.js";
 import { icons } from "../../icons.ts";
 
-@customElement("adminbot-paper-slot-deck")
 export class AdminBotPaperSlotDeck extends LitElement {
   /** Rendered slot cards, in deck order. */
   @property() items: TemplateResult[] = [];
@@ -77,6 +76,17 @@ export class AdminBotPaperSlotDeck extends LitElement {
       </div>
     `;
   }
+}
+
+// Registered by hand and guarded, like every other element in this tree, rather than through
+// lit's `@customElement`. The decorator defines unconditionally, so the second evaluation of this
+// module throws `NotSupportedError: This name has already been registered` -- which under the
+// jsdom test lane, where many specs share one process and the graph can be instantiated more than
+// once, killed whichever *other* spec happened to import it first. That made the failure look like
+// it belonged to paper-slots, paper-card-dialog or the dashboard depending on file order, which is
+// three suites failing for a reason none of them owned.
+if (!customElements.get("adminbot-paper-slot-deck")) {
+  customElements.define("adminbot-paper-slot-deck", AdminBotPaperSlotDeck);
 }
 
 declare global {

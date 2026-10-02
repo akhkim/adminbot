@@ -21,6 +21,7 @@ describe("feedbackConfigForTab", () => {
     for (const tab of [
       "adminbot",
       "adminbotRegistrations",
+      "adminbotBadges",
       "adminbotOnboarding",
       "adminbotSettings",
       "adminbotPapers",

@@ -61,7 +61,17 @@ describe("AdminBot social executor", () => {
           x: { posts: ["First", "Second"] },
         }),
       ),
-    ).resolves.toEqual({ handled: true });
+      // What it created comes back with the outcome, so the paper's evidence is filled by the act
+      // rather than by somebody pasting the links in a week later.
+    ).resolves.toEqual({
+      handled: true,
+      artifacts: {
+        linkedin_post: "https://www.linkedin.com/feed/update/urn:li:share:1",
+        // The first post of the thread, not the last: the stub numbers ids by call count, and the
+        // LinkedIn call came first.
+        x_post: "https://x.com/i/status/tweet_2",
+      },
+    });
 
     expect(calls.map((call) => call.url)).toEqual([
       "https://api.linkedin.com/rest/posts",

@@ -3,8 +3,15 @@ import type { AdminBotLabMember } from "../../extensions/adminbot/src/contracts/
 import { vectorSponsorRoster } from "../../extensions/adminbot/src/workflows/members/collaborator-subgroups.js";
 import { buildSheetValues, syncVectorRoster } from "../../scripts/adminbot-vector-roster-sync.js";
 
+// `member_type` is what puts somebody on this sheet, not `privilege_level`: privilege says what a
+// person may do, and almost every imported row defaults to `member`.
 const member = (overrides: Partial<AdminBotLabMember> & { id: string }): AdminBotLabMember =>
-  ({ name: overrides.id, privilege_level: "member", ...overrides }) as AdminBotLabMember;
+  ({
+    name: overrides.id,
+    privilege_level: "member",
+    member_type: "full",
+    ...overrides,
+  }) as AdminBotLabMember;
 
 function recordingGog() {
   const calls: string[][] = [];
@@ -15,6 +22,51 @@ const roster = vectorSponsorRoster([
   member({ id: "ada", name: "Ada", email: "ada@utoronto.ca" }),
   member({ id: "bob", name: "Bob", email: "bob@utoronto.ca" }),
 ]);
+
+describe("who the sponsor sheet carries", () => {
+  // The sponsor reads this against university accounts, so the cs address is the one that means
+  // something to him -- and it is not always the address filed as primary.
+  it("prefers a cs.toronto.edu address wherever the member has one", () => {
+    const roster = vectorSponsorRoster([
+      member({
+        id: "ada",
+        name: "Ada",
+        email: "ada@gmail.com",
+        correspondence_email: "ada@cs.toronto.edu",
+      } as never),
+    ]);
+    expect(roster.entries[0]?.email).toBe("ada@cs.toronto.edu");
+  });
+
+  // Somebody without a DCS account is still reachable, and a real address beats an empty cell.
+  it("falls back to the professional address when there is no cs account", () => {
+    const roster = vectorSponsorRoster([
+      member({ id: "bob", name: "Bob", email: "bob@ethz.ch" } as never),
+    ]);
+    expect(roster.entries[0]?.email).toBe("bob@ethz.ch");
+  });
+
+  // The live failure this replaced: alumni keep privilege_level `member` and often keep `full` in
+  // their type, so nothing ever took them off. Twenty-two were on the sheet, which is the sponsor
+  // being told to keep twenty-two accounts that should have been closed.
+  it("drops alumni even when their member type still says full", () => {
+    const roster = vectorSponsorRoster([
+      member({ id: "gone", name: "Gone", email: "gone@cs.toronto.edu", member_type: "full, alumni" } as never),
+      member({ id: "here", name: "Here", email: "here@cs.toronto.edu" } as never),
+    ]);
+    expect(roster.entries.map((entry) => entry.id)).toEqual(["here"]);
+  });
+
+  it("carries coauthor-major, and nobody the type column does not name", () => {
+    const roster = vectorSponsorRoster([
+      member({ id: "major", name: "Major", email: "m@x.test", member_type: "coauthor-major" } as never),
+      member({ id: "minor", name: "Minor", email: "n@x.test", member_type: "coauthor-minor" } as never),
+      // privilege_level alone is what used to put 184 people on a sheet meant for 62.
+      member({ id: "blank", name: "Blank", email: "b@x.test", member_type: "" } as never),
+    ]);
+    expect(roster.entries.map((entry) => entry.id)).toEqual(["major"]);
+  });
+});
 
 describe("vector roster sheet sync", () => {
   it("writes a header plus name and email only", () => {

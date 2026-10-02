@@ -9,24 +9,32 @@ import { promisify } from "node:util";
 import {
   adminBotPaperflowEvidenceMinConfidence,
   createAdminBotSqliteService,
+  ensureAdminBotEmailReviewSchema,
   isAdminBotPaperflowStage,
   looksLikeZoomRecordingNotice,
   noticeToMeeting,
   renderEmailBodyHtml,
 } from "../extensions/adminbot/api.js";
-import { getSlackWriteClient, resolveSlackAccount } from "../extensions/slack/api.js";
+import {
+  getSlackWriteClient,
+  resolveSlackAccount,
+} from "../extensions/slack/api.js";
 import { loadConfig } from "../src/config/config.js";
 import type { OpenClawConfig } from "../src/config/types/openclaw.js";
 import { resolveSecretInputString } from "../src/secrets/resolve-secret-input-string.js";
 import { downloadLinkedDriveFiles } from "./adminbot-drive-download.js";
+import { adminbotServiceDatabasePath } from "./adminbot-service-database.js";
 import {
   AdminBotEmailModel,
-  gmailOneHourQuery,
+  GMAIL_SCAN_DEFAULT_LOOKBACK_MS,
+  gmailScanQuery,
   type EmailReplyPurpose,
   type ModelClassification,
   type ModelEmailDraft,
+  type ModelImage,
   type PaperflowCandidate,
 } from "./adminbot-email-model.js";
+import { isMainModule } from "./lib/is-main-module.mjs";
 
 const execFileAsync = promisify(execFile);
 // Every address, calendar and channel below identifies a specific workspace, so it is deployment
@@ -36,7 +44,9 @@ const execFileAsync = promisify(execFile);
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
-    throw new Error(`${name} is not set — the email automation cannot run without it`);
+    throw new Error(
+      `${name} is not set — the email automation cannot run without it`,
+    );
   }
   return value;
 }
@@ -45,9 +55,23 @@ function requireEnv(name: string): string {
 const botEmail = () => requireEnv("ADMINBOT_BOT_EMAIL");
 /** The shared lab calendar events are written to and read access is granted on. */
 const jinesisCalendar = () => requireEnv("ADMINBOT_LAB_EMAIL");
+/**
+ * Zhijing's personal calendar ("Jin Trips and Advising Meetings"), where her flights and other
+ * travel go -- never the lab calendar. The bot account has writer access to it.
+ *
+ * The id is not a secret, so it is written down here as well as read from the environment: the
+ * point of a default is that a deployment missing the variable still puts a flight on the right
+ * calendar rather than on the lab's, which every member can read.
+ */
+export const PERSONAL_CALENDAR_DEFAULT =
+  "a716d3228cbb947fbf5716598420b8a2ee5e05df9d2505cadcc6455881a985f9@group.calendar.google.com";
+const personalCalendar = () =>
+  process.env.ADMINBOT_PERSONAL_CALENDAR_ID?.trim() ||
+  PERSONAL_CALENDAR_DEFAULT;
 /** Where reimbursement and error reports go; the first configured contact address. */
 const adminRecipient = () =>
-  addressList("ADMINBOT_CONTACT_EMAILS")[0] ?? requireEnv("ADMINBOT_CONTACT_EMAILS");
+  addressList("ADMINBOT_CONTACT_EMAILS")[0] ??
+  requireEnv("ADMINBOT_CONTACT_EMAILS");
 /** The Slack Connect channel onboarding invites land in. */
 const slackChannel = () => requireEnv("ADMINBOT_ONBOARDING_CHANNEL_ID");
 
@@ -60,12 +84,12 @@ function addressList(name: string): string[] {
 
 // Unset means nobody is privileged, not everybody: an unconfigured deployment must classify every
 // sender as untrusted rather than hand a stranger the onboarding path.
-const onboardingSenders = () => new Set(addressList("ADMINBOT_ONBOARDING_SENDERS"));
+const onboardingSenders = () =>
+  new Set(addressList("ADMINBOT_ONBOARDING_SENDERS"));
 const privilegedSenders = () =>
   new Set([...onboardingSenders(), ...addressList("ADMINBOT_CONTACT_EMAILS")]);
 const APPLICATION_FORM =
   "https://docs.google.com/forms/d/e/1FAIpQLSdyRYBiLPFUaaUC5v4ATIUwQpYPgmjRja33qwZFvH6BoIRCAA/viewform";
-const DCS_FORM = "https://forms.office.com/r/TgGWBGWLZa";
 // Onboarding emails cite the launch URL, but `requiredVerbatim` matches the origin: the model writes
 // the link with or without the trailing slash, and the origin is a prefix of both renderings.
 const CONTROL_UI_URL = "https://jinesis-admin.vercel.app/";
@@ -101,7 +125,10 @@ const ALL_OUTCOME_LABELS = Object.values(OUTCOME_LABELS);
  * it is the whole feature: which labels come off matters as much as which goes on, because a
  * message that failed last hour and was handled this hour must not end up carrying both.
  */
-export function outcomeLabelChange(outcome: EmailOutcome): { add: string[]; remove: string[] } {
+export function outcomeLabelChange(outcome: EmailOutcome): {
+  add: string[];
+  remove: string[];
+} {
   const add = OUTCOME_LABELS[outcome];
   const remove = ALL_OUTCOME_LABELS.filter((label) => label !== add);
   // Only a completed message leaves the inbox. What is left in the inbox is then exactly the work
@@ -122,7 +149,7 @@ export type EmailMessage = {
   internalDate?: string;
 };
 
-type OnboardingDecision = "trial" | "direct" | "decline";
+export type OnboardingDecision = "trial" | "direct" | "decline";
 
 type Classification = ModelClassification;
 
@@ -133,6 +160,8 @@ type CalendarEvent = {
   allDay: boolean;
   description?: string;
   location?: string;
+  startTimeZone?: string;
+  endTimeZone?: string;
 };
 
 type TalkEntry = {
@@ -152,6 +181,10 @@ export type EmailAutomationSummary = {
   needs_review: number;
   skipped: number;
   errors: string[];
+  /** Where this pass started reading, so a run that caught up says so in its own output. */
+  scanned_since?: string;
+  /** Where the watermark now stands. Absent when a failure held it back. */
+  scanned_through?: string;
 };
 
 type GuidedDraftRequest = {
@@ -196,11 +229,69 @@ const GWS = findExecutable([
   "gws",
 ]);
 
+/**
+ * What this pass is allowed to do to a calendar, as an allowlist of verbs.
+ *
+ * The automation now creates events from a trusted sender's mail without a person seeing them
+ * first, so the other half of that bargain has to be enforced rather than merely true today: an
+ * automated pass may add to a calendar and read it, and may never take anything off it. An
+ * allowlist rather than a list of forbidden verbs because the forbidden set is open-ended --
+ * `delete`, `remove`, `trash`, `clear`, and whatever the CLI grows next all have to be refused,
+ * and so does an `update` that empties an event out. Everything the automation actually does is
+ * `calendar create` and `calendar acl insert`, so nothing legitimate is on the far side of this.
+ */
+const ALLOWED_CALENDAR_VERBS = new Set([
+  "create",
+  "list",
+  "get",
+  "show",
+  "events",
+  "acl",
+]);
+const ALLOWED_CALENDAR_ACL_VERBS = new Set(["insert", "list", "get"]);
+const ALLOWED_CALENDAR_EVENTS_VERBS = new Set([
+  "list",
+  "get",
+  "insert",
+  "create",
+]);
+
+/**
+ * Why a calendar command is refused, or undefined when it is allowed.
+ *
+ * Pure and exported so the rule can be asserted without a Google account -- the guarantee "this
+ * automation cannot delete a calendar event" is only worth as much as its test.
+ */
+export function calendarCommandRefusal(args: string[]): string | undefined {
+  const [head, verb, next] = args;
+  if (head !== "calendar") {
+    return undefined;
+  }
+  const describe = (): string =>
+    `refusing calendar command "${args.slice(0, 3).join(" ")}": the email automation may create and read calendar entries, never delete or modify them`;
+  if (!verb || !ALLOWED_CALENDAR_VERBS.has(verb)) {
+    return describe();
+  }
+  if (verb === "acl" && !(next && ALLOWED_CALENDAR_ACL_VERBS.has(next))) {
+    return describe();
+  }
+  if (verb === "events" && !(next && ALLOWED_CALENDAR_EVENTS_VERBS.has(next))) {
+    return describe();
+  }
+  return undefined;
+}
+
 async function command(
   executable: string,
   args: string[],
   options: { timeout?: number; env?: NodeJS.ProcessEnv } = {},
 ): Promise<CommandResult> {
+  // Every shell-out in this file funnels through here, which is the only place the rule can be
+  // enforced once rather than remembered at each call site.
+  const refusal = calendarCommandRefusal(args);
+  if (refusal) {
+    throw new Error(refusal);
+  }
   const result = await execFileAsync(executable, args, {
     encoding: "utf8",
     timeout: options.timeout ?? 45_000,
@@ -218,7 +309,8 @@ function parseJson<T>(text: string): T {
   } catch {
     const first = trimmed.indexOf("{");
     const last = trimmed.lastIndexOf("}");
-    if (first >= 0 && last > first) return JSON.parse(trimmed.slice(first, last + 1)) as T;
+    if (first >= 0 && last > first)
+      return JSON.parse(trimmed.slice(first, last + 1)) as T;
     throw new Error("Command did not return valid JSON");
   }
 }
@@ -237,14 +329,17 @@ function displayName(value: string): string | undefined {
 }
 
 function firstName(message: EmailMessage): string {
-  const candidate = message.fromName?.split(/\s+/u)[0] ?? message.from.split("@", 1)[0];
+  const candidate =
+    message.fromName?.split(/\s+/u)[0] ?? message.from.split("@", 1)[0];
   return candidate.replace(/[^\p{L}\p{N}'-]/gu, "") || "there";
 }
 
 function allEmailAddresses(text: string): string[] {
   return [
     ...new Set(
-      (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu) ?? []).map((x) => x.toLowerCase()),
+      (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu) ?? []).map((x) =>
+        x.toLowerCase(),
+      ),
     ),
   ];
 }
@@ -255,7 +350,41 @@ export function authorizeClassification(
   onboardingThread?: { candidate_email: string; decision: OnboardingDecision },
 ): Classification {
   const sender = normalizeAddress(message.from);
-  if (classification.confidence < 0.8) {
+  const privileged = privilegedSenders().has(sender);
+  // A task from one of the handful of configured lab addresses is taken at its word. The confidence
+  // gate exists for mail from strangers, where a misread costs an unwanted action; here the sender
+  // is already trusted for exactly this, and holding their requests meant every "put this in the
+  // calendar" note waited on a human, which is the thing the automation exists to avoid.
+  //
+  // These three are the tasks people hand over by forwarding something -- a seminar announcement,
+  // a talk notice, a receipt -- so the forward is the normal shape of the request and not a reason
+  // to distrust it. What makes that safe is not the sender's certainty but how little each one can
+  // do, and it is worth being explicit about, because "execute what this email says" would not be
+  // safe and this is not that:
+  //
+  //   calendar_event  creates an event and only creates one. Nothing in this pass removes or
+  //                   invites; a misread is a wrong row the same person deletes in the calendar UI.
+  //                   Inviting attendees is `calendar.send_invite`, a separate T3 action.
+  //   talk_entry      writes one row to the talk list. Same shape, same remedy.
+  //   reimbursement   fills the two forms and mails the package to `adminRecipient()` -- the lab's
+  //                   own admin, not a funder -- with the funding source and signature fields
+  //                   deliberately left blank "for human review". The forms arrive needing a person
+  //                   before they go anywhere, so the review is downstream and unavoidable rather
+  //                   than something this gate was providing.
+  //
+  // None of the three can reach an outside party or rewrite a record on the automation's own
+  // authority, which is the line. A category that could would not belong here however well the
+  // sender is known -- and the extraction checks below still hold reimbursement back when the
+  // numbers are incomplete, because a form with the wrong figures wastes the reviewer's time
+  // whoever sent it. Authority still comes from the actual Gmail From header and never from the
+  // forwarded body: the classifier prompt refuses to read instructions out of quoted text, and
+  // nothing here lets content name its own category or its own sender.
+  const trustedRequestCategory =
+    classification.category === "calendar_event" ||
+    classification.category === "talk_entry" ||
+    classification.category === "reimbursement";
+  const trustedRequest = trustedRequestCategory && privileged;
+  if (classification.confidence < 0.8 && !trustedRequest) {
     return {
       ...classification,
       category: "unknown",
@@ -264,17 +393,36 @@ export function authorizeClassification(
   }
   if (classification.category === "onboarding_followup") {
     const tracked = onboardingThread;
-    if (!tracked || sender !== tracked.candidate_email.toLowerCase()) {
+    // No tracked thread is still unknown: with nothing to bind the reply to, there is no candidate
+    // whose record this could update, and guessing one from the sender is how the wrong person's
+    // onboarding advances.
+    if (!tracked) {
       return {
         ...classification,
         category: "unknown",
-        reason: "onboarding follow-up is not from the tracked candidate",
+        reason: "onboarding follow-up matched no tracked onboarding thread",
       };
     }
+    // The address it arrives from no longer has to match. The thread is the identifier: these
+    // threads are looked up by `thread_id OR candidate_email` and are ones AdminBot itself opened
+    // with one candidate, so a reply on one is that candidate's reply. Requiring the sender to
+    // equal the tracked address held up the ordinary case -- somebody reads lab mail in Gmail and
+    // replies from there, or writes back from the new university account the thread is *about* --
+    // and every one of those waited on a human to read it and agree it was the same person.
+    //
+    // Bound to the tracked candidate rather than the sender, so a reply from a second address
+    // updates the candidate the thread names instead of opening a record under whatever address
+    // happened to send it. What the handler then does with the message is unchanged: it still only
+    // accepts a department address that appears in the mail, which is the guard that matters.
     return {
       ...classification,
       decision: tracked.decision,
-      candidateEmail: sender,
+      candidateEmail: tracked.candidate_email.toLowerCase(),
+      ...(sender === tracked.candidate_email.toLowerCase()
+        ? {}
+        : {
+            reason: `${classification.reason} (replied from ${sender}, bound to the thread's candidate ${tracked.candidate_email.toLowerCase()})`,
+          }),
     };
   }
   if (classification.category === "onboarding_instruction") {
@@ -289,7 +437,8 @@ export function authorizeClassification(
       return {
         ...classification,
         category: "unknown",
-        reason: "onboarding instruction is missing a decision or candidate email",
+        reason:
+          "onboarding instruction is missing a decision or candidate email",
       };
     }
     return classification;
@@ -302,7 +451,7 @@ export function authorizeClassification(
     classification.category === "calendar_event" ||
     classification.category === "reimbursement" ||
     classification.category === "talk_entry";
-  if (privilegedCategory && !privilegedSenders().has(sender)) {
+  if (privilegedCategory && !privileged) {
     return {
       ...classification,
       category: "unknown",
@@ -326,25 +475,37 @@ async function draftGuidedEmail(
   const allowedText = request.requiredFacts.join("\n");
   for (const value of request.requiredVerbatim ?? []) {
     if (!draft.body.includes(value)) {
-      throw new Error(`generated ${request.purpose} email omitted required text: ${value}`);
+      throw new Error(
+        `generated ${request.purpose} email omitted required text: ${value}`,
+      );
     }
   }
   for (const url of draft.body.match(/https?:\/\/[^\s)>]+/gu) ?? []) {
     if (!allowedText.includes(url)) {
-      throw new Error(`generated ${request.purpose} email introduced an unapproved link`);
+      throw new Error(
+        `generated ${request.purpose} email introduced an unapproved link`,
+      );
     }
   }
   for (const email of allEmailAddresses(draft.body)) {
     if (!allowedText.toLowerCase().includes(email)) {
-      throw new Error(`generated ${request.purpose} email introduced an unapproved address`);
+      throw new Error(
+        `generated ${request.purpose} email introduced an unapproved address`,
+      );
     }
   }
   if (!draft.body.trimEnd().endsWith("Zhijing")) {
-    throw new Error(`generated ${request.purpose} email omitted the required sender signature`);
+    throw new Error(
+      `generated ${request.purpose} email omitted the required sender signature`,
+    );
   }
   return draft;
 }
-class StateStore {
+/**
+ * Exported for the watermark tests. Whether the mailbox scan resumes is the difference between a
+ * missed hour and a message nobody ever reads, so it is worth pinning without a Gmail account.
+ */
+export class StateStore {
   readonly db: DatabaseSync;
 
   constructor(databasePath: string) {
@@ -357,11 +518,16 @@ class StateStore {
         message_id TEXT PRIMARY KEY,
         thread_id TEXT NOT NULL,
         sender TEXT NOT NULL,
+        subject TEXT,
         category TEXT NOT NULL,
         status TEXT NOT NULL,
         reason TEXT,
         attempts INTEGER NOT NULL DEFAULT 0,
         last_error TEXT,
+        received_at TEXT,
+        resolved_at TEXT,
+        resolved_by TEXT,
+        resolution TEXT,
         updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS adminbot_email_effects (
@@ -380,11 +546,78 @@ class StateStore {
         status TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS adminbot_email_scan (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        scanned_through TEXT NOT NULL
+      );
     `);
+    ensureAdminBotEmailReviewSchema(this.db);
   }
 
   close(): void {
     this.db.close();
+  }
+
+  /**
+   * How far the mailbox has been read, as a point this pass may resume from.
+   *
+   * Undefined on a mailbox this box has never scanned, which the caller turns into the default
+   * one-hour window rather than a first run that reads the whole archive.
+   */
+  scannedThrough(): Date | undefined {
+    const row = this.db
+      .prepare("SELECT scanned_through FROM adminbot_email_scan WHERE id = 1")
+      .get() as { scanned_through?: string } | undefined;
+    const at = row?.scanned_through
+      ? Date.parse(row.scanned_through)
+      : Number.NaN;
+    return Number.isNaN(at) ? undefined : new Date(at);
+  }
+
+  /**
+   * Move the watermark forward, never back.
+   *
+   * Only advanced by a pass that finished with nothing failed: a failure means some message in that
+   * window has not been dealt with, and moving the mark past it is the silent drop this watermark
+   * exists to stop. Monotonic because two passes overlapping -- a manual run beside the cron --
+   * must not rewind the mailbox.
+   */
+  markScannedThrough(at: Date): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_email_scan (id, scanned_through) VALUES (1, ?)
+         ON CONFLICT(id) DO UPDATE SET scanned_through=excluded.scanned_through
+         WHERE excluded.scanned_through > adminbot_email_scan.scanned_through`,
+      )
+      .run(at.toISOString());
+  }
+
+  /**
+   * Whether this message has already reached a terminal state.
+   *
+   * Asked before the classifier rather than only inside `begin`, which is where the same question
+   * used to be settled: the window can now overlap by design, so a message already dealt with must
+   * cost a row lookup and not a 122B model call. `failed` can be retried; `processing` needs
+   * reconciliation before a replay because its external effect may already have happened.
+   */
+  isSettled(messageId: string): boolean {
+    const status = this.status(messageId);
+    return (
+      status === "completed" ||
+      status === "needs_review" ||
+      status === "reviewed"
+    );
+  }
+
+  status(messageId: string): string | undefined {
+    return (this.db.prepare("SELECT status FROM adminbot_email_messages WHERE message_id = ?")
+      .get(messageId) as { status?: string } | undefined)?.status;
+  }
+
+  hasInProgressMessages(): boolean {
+    return Boolean(
+      this.db.prepare("SELECT 1 FROM adminbot_email_messages WHERE status = 'processing' LIMIT 1").get(),
+    );
   }
 
   getOnboarding(
@@ -395,8 +628,7 @@ class StateStore {
         "SELECT candidate_email, decision FROM adminbot_onboarding_threads WHERE thread_id = ? OR candidate_email = ?",
       )
       .get(threadId, threadId) as
-      | { candidate_email: string; decision: OnboardingDecision }
-      | undefined;
+      { candidate_email: string; decision: OnboardingDecision } | undefined;
   }
 
   saveOnboarding(
@@ -406,46 +638,63 @@ class StateStore {
     sourceId: string,
   ): void {
     this.db
-      .prepare(`INSERT INTO adminbot_onboarding_threads
+      .prepare(
+        `INSERT INTO adminbot_onboarding_threads
       (thread_id, candidate_email, decision, source_message_id, status, updated_at)
       VALUES (?, ?, ?, ?, 'waiting', ?)
       ON CONFLICT(thread_id) DO UPDATE SET candidate_email=excluded.candidate_email,
         decision=excluded.decision, source_message_id=excluded.source_message_id,
-        status='waiting', updated_at=excluded.updated_at`)
-      .run(threadId, candidateEmail, decision, sourceId, new Date().toISOString());
+        status='waiting', updated_at=excluded.updated_at`,
+      )
+      .run(
+        threadId,
+        candidateEmail,
+        decision,
+        sourceId,
+        new Date().toISOString(),
+      );
   }
 
   // Takes a bare {category, reason} rather than a Classification: the recording-notice branch below
   // never consults the model, so it has no model classification to hand over.
-  begin(message: EmailMessage, classification: { category: string; reason: string }): boolean {
-    const existing = this.db
-      .prepare("SELECT status FROM adminbot_email_messages WHERE message_id = ?")
-      .get(message.id) as { status?: string } | undefined;
-    if (
-      existing?.status === "completed" ||
-      existing?.status === "needs_review" ||
-      existing?.status === "processing"
-    )
-      return false;
-    this.db
-      .prepare(`INSERT INTO adminbot_email_messages
-      (message_id, thread_id, sender, category, status, reason, attempts, updated_at)
-      VALUES (?, ?, ?, ?, 'processing', ?, 1, ?)
+  begin(
+    message: EmailMessage,
+    classification: { category: string; reason: string },
+  ): boolean {
+    const claimed = this.db
+      .prepare(
+        `INSERT INTO adminbot_email_messages
+      (message_id, thread_id, sender, subject, category, status, reason, attempts, received_at,
+       updated_at)
+      VALUES (?, ?, ?, ?, ?, 'processing', ?, 1, ?, ?)
       ON CONFLICT(message_id) DO UPDATE SET status='processing', category=excluded.category,
-        reason=excluded.reason, attempts=adminbot_email_messages.attempts + 1,
-        last_error=NULL, updated_at=excluded.updated_at`)
+        thread_id=excluded.thread_id, sender=excluded.sender, subject=excluded.subject,
+        reason=excluded.reason, received_at=COALESCE(excluded.received_at, received_at),
+        attempts=adminbot_email_messages.attempts + 1, last_error=NULL,
+        resolved_at=NULL, resolved_by=NULL, resolution=NULL, updated_at=excluded.updated_at
+      WHERE adminbot_email_messages.status NOT IN
+        ('completed', 'needs_review', 'reviewed', 'processing')`,
+      )
       .run(
         message.id,
         message.threadId,
         message.from,
+        message.subject,
         classification.category,
         classification.reason,
+        message.internalDate && Number.isFinite(Number(message.internalDate))
+          ? new Date(Number(message.internalDate)).toISOString()
+          : null,
         new Date().toISOString(),
-      );
-    return true;
+      ).changes;
+    return claimed === 1;
   }
 
-  finish(messageId: string, status: "completed" | "failed" | "needs_review", error?: string): void {
+  finish(
+    messageId: string,
+    status: "completed" | "failed" | "needs_review",
+    error?: string,
+  ): void {
     this.db
       .prepare(
         "UPDATE adminbot_email_messages SET status=?, last_error=?, updated_at=? WHERE message_id=?",
@@ -458,25 +707,40 @@ class StateStore {
     key: string,
     operation: () => Promise<T>,
   ): Promise<T | undefined> {
-    const existing = this.db
+    const claimed = this.db
       .prepare(
-        "SELECT status, result_json FROM adminbot_email_effects WHERE message_id=? AND effect_key=?",
+        `INSERT INTO adminbot_email_effects(message_id,effect_key,status,updated_at)
+      VALUES (?,?,'started',?) ON CONFLICT(message_id,effect_key) DO NOTHING`,
       )
-      .get(messageId, key) as { status: string; result_json?: string } | undefined;
-    if (existing?.status === "completed")
-      return existing.result_json ? (JSON.parse(existing.result_json) as T) : undefined;
-    if (existing?.status === "started")
-      throw new Error(`effect ${key} was started previously; manual review prevents a duplicate`);
-    this.db
-      .prepare(`INSERT INTO adminbot_email_effects(message_id,effect_key,status,updated_at)
-      VALUES (?,?,'started',?) ON CONFLICT(message_id,effect_key) DO UPDATE SET status='started',updated_at=excluded.updated_at`)
-      .run(messageId, key, new Date().toISOString());
+      .run(messageId, key, new Date().toISOString()).changes;
+    if (claimed !== 1) {
+      const existing = this.db
+        .prepare(
+          "SELECT status, result_json FROM adminbot_email_effects WHERE message_id=? AND effect_key=?",
+        )
+        .get(messageId, key) as
+        | { status: string; result_json?: string }
+        | undefined;
+      if (existing?.status === "completed") {
+        return existing.result_json
+          ? (JSON.parse(existing.result_json) as T)
+          : undefined;
+      }
+      throw new Error(
+        `effect ${key} was started previously; manual review prevents a duplicate`,
+      );
+    }
     const result = await operation();
     this.db
       .prepare(
         "UPDATE adminbot_email_effects SET status='completed',result_json=?,updated_at=? WHERE message_id=? AND effect_key=?",
       )
-      .run(JSON.stringify(result ?? null), new Date().toISOString(), messageId, key);
+      .run(
+        JSON.stringify(result ?? null),
+        new Date().toISOString(),
+        messageId,
+        key,
+      );
     return result;
   }
 }
@@ -486,14 +750,14 @@ class GoogleClient {
     return [...args, "--account", botEmail(), "--json", "--no-input"];
   }
 
-  async search(): Promise<EmailMessage[]> {
+  async search(since: Date): Promise<EmailMessage[]> {
     const result = await command(
       GOG,
       this.args([
         "gmail",
         "messages",
         "search",
-        gmailOneHourQuery(),
+        gmailScanQuery(since),
         "--max",
         "100",
         "--full",
@@ -515,7 +779,14 @@ class GoogleClient {
   async raw(messageId: string): Promise<Record<string, unknown>> {
     const result = await command(
       GOG,
-      this.args(["gmail", "raw", messageId, "--format", "full", "--results-only"]),
+      this.args([
+        "gmail",
+        "raw",
+        messageId,
+        "--format",
+        "full",
+        "--results-only",
+      ]),
     );
     return parseJson<Record<string, unknown>>(result.stdout);
   }
@@ -534,7 +805,16 @@ class GoogleClient {
     body: string,
     attachments: string[] = [],
   ): Promise<unknown> {
-    const args = ["gmail", "send", "--to", to, "--subject", subject, "--body", body];
+    const args = [
+      "gmail",
+      "send",
+      "--to",
+      to,
+      "--subject",
+      subject,
+      "--body",
+      body,
+    ];
     // These bodies are model-drafted prose rather than template copy, so they carry no bullet
     // syntax -- but they hit the same delivery wrap, which turns a drafted paragraph into ragged
     // ~70-character lines. The renderer handles a paragraphs-only body fine.
@@ -562,14 +842,20 @@ class GoogleClient {
    * with a confusing message.
    */
   async ensureOutcomeLabels(): Promise<void> {
-    const result = await command(GOG, this.args(["gmail", "labels", "list", "--results-only"]));
+    const result = await command(
+      GOG,
+      this.args(["gmail", "labels", "list", "--results-only"]),
+    );
     const payload = parseJson<unknown>(result.stdout);
     const rows = Array.isArray(payload)
       ? payload
       : ((payload as { labels?: unknown[] })?.labels ?? []);
     const existing = new Set(
       rows.flatMap((row) => {
-        const name = row && typeof row === "object" ? (row as { name?: unknown }).name : undefined;
+        const name =
+          row && typeof row === "object"
+            ? (row as { name?: unknown }).name
+            : undefined;
         return typeof name === "string" && name ? [name] : [];
       }),
     );
@@ -605,19 +891,27 @@ class GoogleClient {
     );
   }
 
-  async createEvent(event: CalendarEvent): Promise<unknown> {
+  async createEvent(
+    event: CalendarEvent,
+    calendarId: string,
+  ): Promise<unknown> {
     const args = [
       "calendar",
       "create",
-      jinesisCalendar(),
+      calendarId,
       "--summary",
       event.summary,
       "--from",
       event.start,
       "--to",
       event.end,
-      "--timezone",
-      DEFAULT_TIMEZONE,
+      "--start-timezone",
+      event.startTimeZone ?? DEFAULT_TIMEZONE,
+      "--end-timezone",
+      event.endTimeZone ?? event.startTimeZone ?? DEFAULT_TIMEZONE,
+      // Silent: AdminBot's calendar writes never email anyone (connectors/gog.ts).
+      "--send-updates",
+      "none",
     ];
     if (event.allDay) args.push("--all-day");
     if (event.description) args.push("--description", event.description);
@@ -634,25 +928,88 @@ class GoogleClient {
         "acl",
         "insert",
         "--params",
-        JSON.stringify({ calendarId: jinesisCalendar(), sendNotifications: true }),
+        // Silent: AdminBot's calendar writes never email anyone (connectors/gog.ts).
+        JSON.stringify({
+          calendarId: jinesisCalendar(),
+          sendNotifications: false,
+        }),
         "--json",
-        JSON.stringify({ role: "reader", scope: { type: "user", value: email } }),
+        JSON.stringify({
+          role: "reader",
+          scope: { type: "user", value: email },
+        }),
       ],
       { timeout: 45_000 },
     );
     return parseJson(result.stdout);
   }
 
-  async downloadAttachments(message: EmailMessage, directory: string): Promise<string[]> {
+  /**
+   * The mail's image attachments, read into memory for the local model.
+   *
+   * Bounded because they go into one request: a handful of screenshots is what a calendar request
+   * carries, and a 40 MB photo dump is not one. Anything over the bounds is skipped rather than
+   * failing the message -- the text may still be enough.
+   */
+  async imageAttachments(message: EmailMessage): Promise<ModelImage[]> {
+    const raw = await this.raw(message.id);
+    const parts = collectAttachmentParts(raw)
+      .filter((part) => IMAGE_MIME_TYPES.has(part.mimeType))
+      .filter((part) => part.size <= MAX_IMAGE_BYTES)
+      .slice(0, MAX_IMAGES);
+    if (parts.length === 0) return [];
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "adminbot-images-"),
+    );
+    try {
+      const images: ModelImage[] = [];
+      for (const [index, part] of parts.entries()) {
+        const destination = path.join(directory, `image-${index + 1}`);
+        await command(
+          GOG,
+          this.args([
+            "gmail",
+            "attachment",
+            message.id,
+            part.attachmentId,
+            "--out",
+            destination,
+          ]),
+          { timeout: 60_000 },
+        );
+        images.push({
+          mimeType: part.mimeType,
+          base64: fs.readFileSync(destination).toString("base64"),
+        });
+      }
+      return images;
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  }
+
+  async downloadAttachments(
+    message: EmailMessage,
+    directory: string,
+  ): Promise<string[]> {
     const raw = await this.raw(message.id);
     const parts = collectAttachmentParts(raw);
     const files: string[] = [];
     for (const [index, part] of parts.entries()) {
-      const safeName = path.basename(part.filename || `attachment-${index + 1}`);
+      const safeName = path.basename(
+        part.filename || `attachment-${index + 1}`,
+      );
       const destination = path.join(directory, safeName);
       await command(
         GOG,
-        this.args(["gmail", "attachment", message.id, part.attachmentId, "--out", destination]),
+        this.args([
+          "gmail",
+          "attachment",
+          message.id,
+          part.attachmentId,
+          "--out",
+          destination,
+        ]),
         {
           timeout: 60_000,
         },
@@ -668,7 +1025,9 @@ function normalizeMessage(value: unknown): EmailMessage | undefined {
   const row = value as Record<string, unknown>;
   const id = String(row.id ?? row.messageId ?? "");
   if (!id) return undefined;
-  const rawFrom = String(row.from ?? row.sender ?? headerValue(row, "From") ?? "");
+  const rawFrom = String(
+    row.from ?? row.sender ?? headerValue(row, "From") ?? "",
+  );
   return {
     id,
     threadId: String(row.threadId ?? row.thread_id ?? id),
@@ -682,38 +1041,115 @@ function normalizeMessage(value: unknown): EmailMessage | undefined {
 
 function headerValue(row: Record<string, unknown>, name: string): unknown {
   const headers = (
-    row.payload as { headers?: Array<{ name?: string; value?: string }> } | undefined
+    row.payload as
+      { headers?: Array<{ name?: string; value?: string }> } | undefined
   )?.headers;
-  return headers?.find((header) => header.name?.toLowerCase() === name.toLowerCase())?.value;
+  return headers?.find(
+    (header) => header.name?.toLowerCase() === name.toLowerCase(),
+  )?.value;
 }
+
+const IMAGE_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_IMAGES = 4;
+
+type AttachmentPart = {
+  filename: string;
+  attachmentId: string;
+  mimeType: string;
+  size: number;
+};
 
 function collectAttachmentParts(
   raw: Record<string, unknown>,
-): Array<{ filename: string; attachmentId: string }> {
-  const result: Array<{ filename: string; attachmentId: string }> = [];
+): AttachmentPart[] {
+  const result: AttachmentPart[] = [];
   const visit = (part: unknown): void => {
     if (!part || typeof part !== "object") return;
     const item = part as Record<string, unknown>;
-    const attachmentId = (item.body as { attachmentId?: string } | undefined)?.attachmentId;
+    const body = item.body as
+      | { attachmentId?: string; size?: number }
+      | undefined;
+    const attachmentId = body?.attachmentId;
     const filename = String(item.filename ?? "");
-    if (attachmentId) result.push({ filename, attachmentId });
-    for (const child of (item.parts as unknown[] | undefined) ?? []) visit(child);
+    if (attachmentId)
+      result.push({
+        filename,
+        attachmentId,
+        mimeType: String(item.mimeType ?? "").toLowerCase(),
+        size: Number(body?.size ?? 0),
+      });
+    for (const child of (item.parts as unknown[] | undefined) ?? [])
+      visit(child);
   };
   visit(raw.payload ?? raw);
   return result;
 }
 
-async function extractCalendarEvent(
+/**
+ * The zone name if the runtime knows it, otherwise undefined.
+ *
+ * The model names zones from its own knowledge and sometimes invents one -- "Europe/Frankfurt" for
+ * a Frankfurt departure. Passed through, that is an event Google rejects or labels wrongly. The
+ * RFC3339 offset already fixes the instant, so dropping a bad name costs only the label.
+ */
+export function validTimeZone(zone: string | null | undefined): string | undefined {
+  if (!zone) return undefined;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return zone;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Which calendar a request may write to.
+ *
+ * The personal calendar is one person's, so only the configured lab senders may put something on
+ * it; anybody else asking for it is held for a person rather than quietly moved onto the lab
+ * calendar, which every member can read -- a flight itinerary landing there is the leak this
+ * whole split exists to prevent.
+ */
+export function resolveCalendarTarget(
+  sender: string,
+  requested: "personal" | "lab",
+  privileged: ReadonlySet<string> = privilegedSenders(),
+): "personal" | "lab" {
+  const address = normalizeAddress(sender);
+  if (requested === "personal" && !privileged.has(address)) {
+    throw new Error(
+      `personal-calendar request from ${address}, who is not a configured sender; queued for review`,
+    );
+  }
+  return requested;
+}
+
+async function extractCalendarRequest(
   message: EmailMessage,
   model: AdminBotEmailModel,
-): Promise<CalendarEvent | undefined> {
-  const event = await model.calendar(message);
-  if (!event.summary || !event.start || !event.end) return undefined;
-  return {
-    ...event,
-    description: event.description ?? undefined,
-    location: event.location ?? undefined,
-  };
+  google: GoogleClient,
+): Promise<{ calendar: "personal" | "lab"; events: CalendarEvent[] }> {
+  const images = await google.imageAttachments(message);
+  const request = await model.calendar(message, images);
+  const events = request.events
+    .filter((event) => event.summary && event.start && event.end)
+    .map((event) => ({
+      summary: event.summary,
+      start: event.start,
+      end: event.end,
+      allDay: event.allDay,
+      description: event.description ?? undefined,
+      location: event.location ?? undefined,
+      startTimeZone: validTimeZone(event.startTimeZone),
+      endTimeZone: validTimeZone(event.endTimeZone),
+    }));
+  return { calendar: request.calendar, events };
 }
 
 async function extractTalk(
@@ -721,7 +1157,10 @@ async function extractTalk(
   model: AdminBotEmailModel,
 ): Promise<TalkEntry | undefined> {
   try {
-    const talk = await model.talk(message, new Date().toISOString().slice(0, 10));
+    const talk = await model.talk(
+      message,
+      new Date().toISOString().slice(0, 10),
+    );
     return talk.title && talk.venue && talk.date ? talk : undefined;
   } catch {
     return undefined;
@@ -744,7 +1183,9 @@ async function extractText(files: string[]): Promise<string> {
     path.dirname(new URL(import.meta.url).pathname),
     "adminbot-reimbursement-from-email.py",
   );
-  const result = await command("python3", [helper, "extract", ...files], { timeout: 90_000 });
+  const result = await command("python3", [helper, "extract", ...files], {
+    timeout: 90_000,
+  });
   return result.stdout;
 }
 
@@ -774,16 +1215,23 @@ async function prepareReimbursement(
   ]
     .filter(([, value]) => !String(value ?? "").trim())
     .map(([label]) => label);
-  if (!data.expenses.length || data.expenses.every((expense) => expense.amount === 0)) {
+  if (
+    !data.expenses.length ||
+    data.expenses.every((expense) => expense.amount === 0)
+  ) {
     missing.push("at least one non-zero expense");
   }
   const requestedCurrency =
-    data.currency === "OTHER" ? data.other_currency?.trim().toUpperCase() : data.currency;
+    data.currency === "OTHER"
+      ? data.other_currency?.trim().toUpperCase()
+      : data.currency;
   if (!requestedCurrency) {
     missing.push("requested reimbursement currency");
   }
   if (missing.length) {
-    throw new Error(`reimbursement requires manual review; missing ${missing.join(", ")}`);
+    throw new Error(
+      `reimbursement requires manual review; missing ${missing.join(", ")}`,
+    );
   }
   if (data.expenses.length > 30) {
     throw new Error(
@@ -792,7 +1240,9 @@ async function prepareReimbursement(
   }
   const mismatchedCurrencies = data.expenses
     .map((expense) => expense.currency?.trim().toUpperCase())
-    .filter((currency): currency is string => Boolean(currency && currency !== requestedCurrency));
+    .filter((currency): currency is string =>
+      Boolean(currency && currency !== requestedCurrency),
+    );
   if (mismatchedCurrencies.length) {
     throw new Error(
       `reimbursement requires manual review; expense amounts must be converted to ${requestedCurrency} before the forms are filled`,
@@ -811,12 +1261,19 @@ async function prepareReimbursement(
   );
   const outputDir = path.join(directory, "forms");
   fs.mkdirSync(outputDir, { recursive: true });
-  const result = await command("python3", [helper, "fill", input, outputDir], { timeout: 90_000 });
+  const result = await command("python3", [helper, "fill", input, outputDir], {
+    timeout: 90_000,
+  });
   const output = parseJson<{ files: string[] }>(result.stdout);
   return [...output.files, ...supportingFiles];
 }
 
-const SLACK_SECRET_FIELDS = ["botToken", "appToken", "userToken", "signingSecret"] as const;
+const SLACK_SECRET_FIELDS = [
+  "botToken",
+  "appToken",
+  "userToken",
+  "signingSecret",
+] as const;
 
 async function resolveSlackSecretRefs(
   sourceConfig: OpenClawConfig,
@@ -828,7 +1285,9 @@ async function resolveSlackSecretRefs(
 
   const entries: Array<Record<string, unknown>> = [
     slack as Record<string, unknown>,
-    ...Object.values(slack.accounts ?? {}).map((account) => account as Record<string, unknown>),
+    ...Object.values(slack.accounts ?? {}).map(
+      (account) => account as Record<string, unknown>,
+    ),
   ];
   for (const entry of entries) {
     for (const field of SLACK_SECRET_FIELDS) {
@@ -852,23 +1311,30 @@ export async function resolveEmailAutomationSlackAccount(
   } = {},
 ) {
   const sourceConfig = params.cfg ?? loadConfig({ skipPluginValidation: true });
-  const resolvedConfig = await resolveSlackSecretRefs(sourceConfig, params.env ?? process.env);
+  const resolvedConfig = await resolveSlackSecretRefs(
+    sourceConfig,
+    params.env ?? process.env,
+  );
   return resolveSlackAccount({ cfg: resolvedConfig });
 }
 
 async function inviteTrial(email: string): Promise<unknown> {
   const account = await resolveEmailAutomationSlackAccount();
   if (!account.botToken) throw new Error("Slack bot token is not configured");
-  return getSlackWriteClient(account.botToken).apiCall("conversations.inviteShared", {
-    channel: slackChannel(),
-    emails: [email],
-    external_limited: true,
-  });
+  return getSlackWriteClient(account.botToken).apiCall(
+    "conversations.inviteShared",
+    {
+      channel: slackChannel(),
+      emails: [email],
+      external_limited: true,
+    },
+  );
 }
 
 async function inviteFullMember(email: string): Promise<unknown> {
   const account = await resolveEmailAutomationSlackAccount();
-  if (!account.userToken) throw new Error("Slack user token is required for admin.users.invite");
+  if (!account.userToken)
+    throw new Error("Slack user token is required for admin.users.invite");
   const client = getSlackWriteClient(account.userToken);
   const auth = await client.auth.test();
   const teamId = auth.team_id;
@@ -907,7 +1373,9 @@ async function recordPaperflowBcc(
   model: AdminBotEmailModel,
   databasePath: string,
 ): Promise<{ paperId: string; stage: string; confidence: number }> {
-  const { service, store, close } = createAdminBotSqliteService({ databasePath });
+  const { service, store, close } = createAdminBotSqliteService({
+    databasePath,
+  });
   try {
     const sender = normalizeAddress(message.from);
     const known = store
@@ -931,7 +1399,9 @@ async function recordPaperflowBcc(
       const paper = store.getPaper(item.paper_id);
       const submissionId = store
         .listPaperSlots(item.paper_id)
-        .find((row) => row.slot === "submission_id" && row.status === "provided")?.value_text;
+        .find(
+          (row) => row.slot === "submission_id" && row.status === "provided",
+        )?.value_text;
       const candidate: PaperflowCandidate = {
         paperId: item.paper_id,
         title: item.title,
@@ -952,11 +1422,15 @@ async function recordPaperflowBcc(
 
     const match = await model.paperflowEvidence(message, candidates);
     if (!match.paperId || !match.stage) {
-      throw new Error(`paperflow bcc matched no open paper (${match.reason}); queued for review`);
+      throw new Error(
+        `paperflow bcc matched no open paper (${match.reason}); queued for review`,
+      );
     }
     // The model was constrained to this set, but a constrained decode is a strong hint rather than
     // a guarantee, and the cost of trusting it wrongly is a paper nobody chases again.
-    const candidate = candidates.find((entry) => entry.paperId === match.paperId);
+    const candidate = candidates.find(
+      (entry) => entry.paperId === match.paperId,
+    );
     if (!candidate) {
       throw new Error(
         `paperflow bcc named a paper that has no open stage (${match.paperId}); queued for review`,
@@ -966,7 +1440,9 @@ async function recordPaperflowBcc(
     // and "that is not a stage" is only useful if it says which one was meant.
     const namedStage: string = match.stage;
     if (!isAdminBotPaperflowStage(match.stage)) {
-      throw new Error(`${namedStage} is not a PaperFlow stage; queued for review`);
+      throw new Error(
+        `${namedStage} is not a PaperFlow stage; queued for review`,
+      );
     }
     if (match.stage !== candidate.openStage) {
       throw new Error(
@@ -992,7 +1468,11 @@ async function recordPaperflowBcc(
     if (!recorded.ok) {
       throw new Error(recorded.error.message);
     }
-    return { paperId: match.paperId, stage: match.stage, confidence: match.confidence };
+    return {
+      paperId: match.paperId,
+      stage: match.stage,
+      confidence: match.confidence,
+    };
   } finally {
     close();
   }
@@ -1006,10 +1486,10 @@ async function processMessage(
   model: AdminBotEmailModel,
   databasePath: string,
 ): Promise<boolean> {
-  if (!state.begin(message, classification)) return false;
+  if (!(await state.begin(message, classification))) return false;
   try {
     if (classification.category === "unknown") {
-      state.finish(message.id, "needs_review", classification.reason);
+      await state.finish(message.id, "needs_review", classification.reason);
       return true;
     }
     if (classification.category === "student_reachout") {
@@ -1024,37 +1504,53 @@ async function processMessage(
         ],
         requiredVerbatim: [APPLICATION_FORM],
       });
-      await state.effect(message.id, "student_reply", () => google.reply(message.id, draft.body));
+      await state.effect(message.id, "student_reply", () =>
+        google.reply(message.id, draft.body),
+      );
     } else if (classification.category === "onboarding_instruction") {
       const email = classification.candidateEmail;
       if (!email || !classification.decision) {
-        throw new Error("trusted onboarding email is missing a candidate email or decision");
+        throw new Error(
+          "trusted onboarding email is missing a candidate email or decision",
+        );
       }
       if (classification.decision === "trial") {
-        await state.effect(message.id, "slack_connect", () => inviteTrial(email));
-        await state.effect(message.id, "calendar_reader", () => google.addCalendarReader(email));
+        await state.effect(message.id, "slack_connect", () =>
+          inviteTrial(email),
+        );
+        await state.effect(message.id, "calendar_reader", () =>
+          google.addCalendarReader(email),
+        );
       } else if (classification.decision === "direct") {
         const draft = await draftGuidedEmail(message, model, {
           purpose: "direct_onboarding",
           recipientName: classification.candidateName ?? undefined,
           guidance:
             "Welcome the candidate and clearly sequence the department-email, reply, Slack, calendar, and member-account onboarding steps.",
+          // The lab files the CS account request itself (the DCS roster sheet, see
+          // extensions/adminbot/src/workflows/onboarding/dcs-roster-sheet.ts), so this copy must
+          // not send anybody to a form. It used to name the Microsoft form and pin its URL in
+          // requiredVerbatim, which would now be an instruction to duplicate a request the lab has
+          // already made -- under a username the lab did not choose.
           requiredFacts: [
             `The recipient is ${email}.`,
-            `Create a @cs.toronto.edu account through ${DCS_FORM}.`,
-            `Send the new @cs.toronto.edu address from this same mailbox — reply to this thread, or email ${botEmail()} — before the full Slack invitation is sent.`,
+            "The lab requests their @cs.toronto.edu account for them. There is no form for them to fill in and nothing for them to do yet.",
+            `The account name and a temporary password arrive in a separate email from ${botEmail()} once the request is filed; the department creates the account from it, which usually takes a few working days.`,
+            `Once the account works, send the @cs.toronto.edu address from this same mailbox — reply to this thread, or email ${botEmail()} — before the full Slack invitation is sent.`,
             "The Slack invitation is issued automatically on that reply; no lab admin has to be emailed.",
             `Create a member account at ${CONTROL_UI_URL} and work through the onboarding guide there.`,
             "Calendar access is part of onboarding.",
           ],
-          requiredVerbatim: [DCS_FORM, "@cs.toronto.edu", botEmail(), CONTROL_UI_ORIGIN],
+          requiredVerbatim: ["@cs.toronto.edu", botEmail(), CONTROL_UI_ORIGIN],
         });
         const sent = await state.effect(message.id, "direct_instructions", () =>
           google.send(email, draft.subject, draft.body),
         );
         const threadId = extractResultThreadId(sent) ?? message.threadId;
-        state.saveOnboarding(threadId, email, "direct", message.id);
-        await state.effect(message.id, "calendar_reader", () => google.addCalendarReader(email));
+        await state.saveOnboarding(threadId, email, "direct", message.id);
+        await state.effect(message.id, "calendar_reader", () =>
+          google.addCalendarReader(email),
+        );
       } else {
         const draft = await draftGuidedEmail(message, model, {
           purpose: "decline_candidate",
@@ -1071,7 +1567,10 @@ async function processMessage(
         );
       }
     } else if (classification.category === "onboarding_followup") {
-      const addresses = [normalizeAddress(message.from), ...allEmailAddresses(message.body)];
+      const addresses = [
+        normalizeAddress(message.from),
+        ...allEmailAddresses(message.body),
+      ];
       const dcs = addresses.find((email) => email.endsWith("@cs.toronto.edu"));
       if (!dcs) {
         const draft = await draftGuidedEmail(message, model, {
@@ -1090,8 +1589,12 @@ async function processMessage(
           google.reply(message.id, draft.body),
         );
       } else {
-        await state.effect(message.id, "full_slack_invite", () => inviteFullMember(dcs));
-        await state.effect(message.id, "calendar_reader_dcs", () => google.addCalendarReader(dcs));
+        await state.effect(message.id, "full_slack_invite", () =>
+          inviteFullMember(dcs),
+        );
+        await state.effect(message.id, "calendar_reader_dcs", () =>
+          google.addCalendarReader(dcs),
+        );
         const draft = await draftGuidedEmail(message, model, {
           purpose: "confirm_onboarding",
           recipientName: firstName(message),
@@ -1109,12 +1612,28 @@ async function processMessage(
         );
       }
     } else if (classification.category === "calendar_event") {
-      const event = await extractCalendarEvent(message, model);
-      if (!event) throw new Error("calendar request is missing a parseable event title or date");
-      await state.effect(message.id, "calendar_create", () => google.createEvent(event));
+      const request = await extractCalendarRequest(message, model, google);
+      if (request.events.length === 0)
+        throw new Error(
+          "calendar request is missing a parseable event title or date",
+        );
+      const target = resolveCalendarTarget(message.from, request.calendar);
+      const calendarId =
+        target === "personal" ? personalCalendar() : jinesisCalendar();
+      // One effect per event. The first keeps the old key, so a message that was mid-retry across
+      // this change is not created twice; the rest are numbered after it.
+      for (const [index, event] of request.events.entries()) {
+        await state.effect(
+          message.id,
+          index === 0 ? "calendar_create" : `calendar_create_${index + 1}`,
+          () => google.createEvent(event, calendarId),
+        );
+      }
     } else if (classification.category === "talk_entry") {
       if (!privilegedSenders().has(normalizeAddress(message.from))) {
-        throw new Error("talk-entry automation requires a trusted sender; queued for review");
+        throw new Error(
+          "talk-entry automation requires a trusted sender; queued for review",
+        );
       }
       const talk = await extractTalk(message, model);
       if (!talk) throw new Error("talk email is missing title, venue, or date");
@@ -1135,10 +1654,19 @@ async function processMessage(
       );
     } else if (classification.category === "reimbursement") {
       if (!privilegedSenders().has(normalizeAddress(message.from))) {
-        throw new Error("reimbursement automation requires a trusted sender; queued for review");
+        throw new Error(
+          "reimbursement automation requires a trusted sender; queued for review",
+        );
       }
-      const directory = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-reimbursement-"));
-      const files = await prepareReimbursement(message, google, directory, model);
+      const directory = fs.mkdtempSync(
+        path.join(os.tmpdir(), "adminbot-reimbursement-"),
+      );
+      const files = await prepareReimbursement(
+        message,
+        google,
+        directory,
+        model,
+      );
       const draft = await draftGuidedEmail(message, model, {
         purpose: "deliver_reimbursement",
         guidance:
@@ -1161,12 +1689,14 @@ async function processMessage(
         recordPaperflowBcc(message, model, databasePath),
       );
     }
-    await state.effect(message.id, "mark_read", () => google.markRead(message.id));
-    state.finish(message.id, "completed");
+    await state.effect(message.id, "mark_read", () =>
+      google.markRead(message.id),
+    );
+    await state.finish(message.id, "completed");
     return true;
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    state.finish(
+    await state.finish(
       message.id,
       reason.includes("manual review") || reason.includes("queued for review")
         ? "needs_review"
@@ -1187,11 +1717,11 @@ async function processMessage(
  * Returns false when the mail turns out not to be a notice after all, so the caller falls through
  * to the normal path rather than swallowing the message.
  */
-function fileRecordingNotice(
+async function fileRecordingNotice(
   message: EmailMessage,
   state: StateStore,
   databasePath: string,
-): boolean {
+): Promise<boolean> {
   const meeting = noticeToMeeting({
     id: message.id,
     subject: message.subject,
@@ -1204,14 +1734,17 @@ function fileRecordingNotice(
     return false;
   }
   if (
-    !state.begin(message, { category: "meeting_recording", reason: "Zoom cloud recording notice" })
+    !(await state.begin(message, {
+      category: "meeting_recording",
+      reason: "Zoom cloud recording notice",
+    }))
   ) {
     return true;
   }
   const { service, close } = createAdminBotSqliteService({ databasePath });
   try {
     const result = service.upsertMeeting(meeting);
-    state.finish(
+    await state.finish(
       message.id,
       result.ok ? "completed" : "needs_review",
       result.ok ? undefined : result.error.message,
@@ -1225,10 +1758,17 @@ function fileRecordingNotice(
 export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   loadDotEnv(path.join(os.homedir(), ".openclaw", ".env"));
   process.env.GOG_ACCOUNT = botEmail();
-  const databasePath =
-    process.env.ADMINBOT_DB_PATH ??
+  // The message ledger stays where it has always been: moving it would make every message since
+  // the last time the two files agreed look unread, and re-run its replies and onboarding. What
+  // the pass files for the lab -- meetings, paper stages -- goes to the database the service
+  // reads, or nobody ever sees it.
+  // A blank value is unset, not "": SQLite opens "" as a private temporary database, which would
+  // forget every settled message at the end of the run and replay it on the next.
+  const ledgerPath =
+    process.env.ADMINBOT_DB_PATH?.trim() ||
     path.join(os.homedir(), ".openclaw", "state", "adminbot.sqlite");
-  const state = new StateStore(databasePath);
+  const databasePath = adminbotServiceDatabasePath();
+  const state = new StateStore(ledgerPath);
   const google = new GoogleClient();
   const model = new AdminBotEmailModel();
   const summary: EmailAutomationSummary = {
@@ -1239,9 +1779,16 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
     skipped: 0,
     errors: [],
   };
+  const runStart = new Date();
+  // Where this pass starts reading: the watermark when there is one, an hour back when there is
+  // not. gmailScanQuery clamps how far back a long outage may reach.
   try {
-    const messages = await google.search();
+    const since =
+      (await state.scannedThrough()) ??
+      new Date(runStart.getTime() - GMAIL_SCAN_DEFAULT_LOOKBACK_MS);
+    const messages = await google.search(since);
     summary.found = messages.length;
+    summary.scanned_since = since.toISOString();
     // Nothing to file if nothing arrived, and an empty hour is most hours -- so the label check
     // is skipped rather than run on a pass that will not use it.
     if (messages.length > 0) {
@@ -1251,9 +1798,14 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
     // rather than in each branch. Its own failure is recorded and swallowed: a message that was
     // genuinely handled must not be reported as failed because a label could not be written, and
     // the label is a filing aid rather than part of the work.
-    const file = async (messageId: string, outcome: EmailOutcome): Promise<void> => {
+    const file = async (
+      messageId: string,
+      outcome: EmailOutcome,
+    ): Promise<void> => {
       try {
-        await state.effect(messageId, `file_${outcome}`, () => google.file(messageId, outcome));
+        await state.effect(messageId, `file_${outcome}`, () =>
+          google.file(messageId, outcome),
+        );
       } catch (error) {
         summary.errors.push(
           `${messageId}: could not file as ${outcome}: ${error instanceof Error ? error.message : String(error)}`,
@@ -1261,15 +1813,20 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
       }
     };
     for (const message of messages) {
+      // Already dealt with on an earlier pass. The window overlaps on purpose now, so this is the
+      // common case for most of what a resumed scan returns -- and it has to cost a row lookup
+      // rather than a classification, or a catching-up pass would re-bill the model for a week of
+      // settled mail.
+      if (await state.isSettled(message.id)) {
+        summary.skipped += 1;
+        continue;
+      }
       // Deterministic branch first: a recording notice is machine-readable and must never reach
       // the classifier, which would file it as unknown and park it for a human.
       if (looksLikeZoomRecordingNotice(message.subject, message.body)) {
         try {
-          if (fileRecordingNotice(message, state, databasePath)) {
-            const outcome = state.db
-              .prepare("SELECT status FROM adminbot_email_messages WHERE message_id=?")
-              .get(message.id) as { status?: string } | undefined;
-            if (outcome?.status === "needs_review") {
+          if (await fileRecordingNotice(message, state, databasePath)) {
+            if ((await state.status(message.id)) === "needs_review") {
               summary.needs_review += 1;
               await file(message.id, "needs_review");
             } else {
@@ -1288,11 +1845,19 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
         }
       }
       const onboarding =
-        state.getOnboarding(message.threadId) ??
-        state.getOnboarding(normalizeAddress(message.from));
+        (await state.getOnboarding(message.threadId)) ??
+        (await state.getOnboarding(normalizeAddress(message.from)));
       try {
-        const modelClassification = await model.classify(message, onboarding);
-        const classification = authorizeClassification(message, modelClassification, onboarding);
+        const modelClassification = await model.classify(
+          message,
+          onboarding,
+          privilegedSenders().has(normalizeAddress(message.from)),
+        );
+        const classification = authorizeClassification(
+          message,
+          modelClassification,
+          onboarding,
+        );
         const processed = await processMessage(
           message,
           classification,
@@ -1307,22 +1872,17 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
           summary.skipped += 1;
           continue;
         }
-        const status = state.db
-          .prepare("SELECT status FROM adminbot_email_messages WHERE message_id=?")
-          .get(message.id) as { status?: string } | undefined;
-        if (status?.status === "completed") {
+        const status = await state.status(message.id);
+        if (status === "completed") {
           summary.completed += 1;
           await file(message.id, "completed");
         }
-        if (status?.status === "needs_review") {
+        if (status === "needs_review") {
           summary.needs_review += 1;
           await file(message.id, "needs_review");
         }
       } catch (error) {
-        const status = state.db
-          .prepare("SELECT status FROM adminbot_email_messages WHERE message_id=?")
-          .get(message.id) as { status?: string } | undefined;
-        if (status?.status === "needs_review") {
+        if ((await state.status(message.id)) === "needs_review") {
           summary.needs_review += 1;
           await file(message.id, "needs_review");
         } else {
@@ -1334,21 +1894,40 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
         }
       }
     }
+    // Only a pass that dealt with everything it found may move the watermark. A failure left in the
+    // window is a message that still has to be seen again, and advancing past it is exactly the
+    // silent drop this is here to stop. The mark is the moment the scan *started*, so mail that
+    // landed while the pass was running is read by the next one rather than skipped.
+    // A crashed pass can leave a message in processing. begin() refuses to replay it because its
+    // external effect may have happened, so keep the scan window open for manual reconciliation.
+    if (await state.hasInProgressMessages()) {
+      summary.failed += 1;
+      summary.errors.push("an email remains in processing; review its effects before retrying");
+    }
+    if (summary.failed === 0) {
+      await state.markScannedThrough(runStart);
+      summary.scanned_through = runStart.toISOString();
+    }
   } finally {
     state.close();
   }
   return summary;
 }
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   void runEmailAutomation()
     .then((summary) => {
       console.log(JSON.stringify(summary));
-      if (summary.failed > 0 && process.env.ADMINBOT_EMAIL_ALLOW_PARTIAL !== "1") {
+      if (
+        summary.failed > 0 &&
+        process.env.ADMINBOT_EMAIL_ALLOW_PARTIAL !== "1"
+      ) {
         process.exitCode = 1;
       }
     })
     .catch((error) => {
-      console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+      console.error(
+        error instanceof Error ? (error.stack ?? error.message) : String(error),
+      );
       process.exitCode = 1;
     });
 }

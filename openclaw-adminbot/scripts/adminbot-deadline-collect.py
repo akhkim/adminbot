@@ -2,7 +2,7 @@
 """
 AdminBot deadline collector (Output 0 data source).
 
-Refreshes extensions/adminbot/content/deadlines/venues.json with the lab's tracked
+Refreshes extensions/adminbot/content/deadlines with the lab's tracked
 Existing records are merged by stable id: expired or disappeared records remain,
 and changed dates append revisions while the top-level fields stay the current
 projection consumed by ordinary workflows.
@@ -12,14 +12,17 @@ projection consumed by ordinary workflows.
       IASEAI whose OpenReview venue can be checked directly.
 
 Times are AoE (UTC-12). Run:  python3 scripts/adminbot-deadline-collect.py
-Writes venues.json and its generated UI datasets; nothing is sent.
+Writes deadlines.json and its generated UI datasets; nothing is sent.
 """
 import concurrent.futures
 import datetime
+import html as html_module
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -28,7 +31,15 @@ from html.parser import HTMLParser
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from adminbot_conference_deadlines import (
+    CONFERENCE_INVITATIONS,
+    fetch_invitation_observations as read_invitation_observations,
+    refresh_configured_conferences as refresh_conference_milestones,
+)
+from adminbot_workshop_notifications import migrate_workshop_dates
 from adminbot_deadlines import AoEClock, is_sweep_due
+from adminbot_deadline_time import TIME_FIELDS, timing_fields
+from adminbot_abstract_requirements import ABSTRACT_FIELDS, requirement_from_text, merge_requirements, attach_abstract_requirements
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 sys.path.insert(0, HERE)
@@ -46,7 +57,17 @@ from adminbot_deadlines import (  # noqa: E402
     is_archival,
     venue_priority_of,
 )
-OUT  = os.path.join(DEADLINES_DIR, "venues.json")
+from adminbot_workshop_deadlines import (  # noqa: E402
+    deadline_candidates_from_html,
+    deadline_texts_from_html,
+    deadline_candidates_from_text,
+    group_final_submission_deadline,
+    reconcile_deadline_candidates,
+    select_official_candidate,
+    split_workshop_milestones,
+    _candidate_is_abstract,
+)
+OUT = os.environ.get("ADMINBOT_DEADLINE_DATASET_PATH") or os.path.join(DEADLINES_DIR, "deadlines.json")
 
 # --- curated, source-verified conference milestones (AoE 23:59:59) ---
 #
@@ -89,10 +110,13 @@ CONFERENCES = [
          notification_aoe="2026-09-07 23:59:59",
          link="https://2026.aaclnet.org/calls/main_conference_papers/"),
     # Source: https://2026.aaclnet.org/calls/demos/
+    # The demo track's own page now names 14 September for notification, where this
+    # row carried 1 September. Corrected here rather than in the generated data, so
+    # the change lands as a dated revision on the next sweep like any other.
     dict(id="aacl2026_demo", name="AACL-IJCNLP 2026 (system demonstrations)",
          venue_type="conference", venue_group="AACL-IJCNLP 2026", track="demo",
          venue_family="AACL", deadline_label="demo submission",
-         deadline_aoe="2026-07-15 23:59:59", notification_aoe="2026-09-01 23:59:59",
+         deadline_aoe="2026-07-15 23:59:59", notification_aoe="2026-09-14 23:59:59",
          link="https://2026.aaclnet.org/calls/demos/"),
     dict(id="emnlp2026_commitment", name="EMNLP 2026 (main, ARR commitment)",
          venue_type="conference", venue_group="EMNLP 2026", track="main",
@@ -118,6 +142,23 @@ CONFERENCES = [
          venue_type="conference", venue_group="ARR August 2026", track="cycle",
          venue_family="ARR", submission_type="direct",
          deadline_label="ARR submission", deadline_aoe="2026-08-03 23:59:59",
+         notification_aoe="", link="https://aclrollingreview.org/dates"),
+    # The August cycle's author response is its own row, for the same reason the NeurIPS
+    # rebuttal above is: the board counts down to one date per row, and a window the lab is
+    # inside right now is not planning information -- it is the next thing that can be missed.
+    #
+    # The date is the *initial* response, not the end of the window. ARR's table gives the
+    # period as "September 14-September 24" and then says "the initial author response is due
+    # on September 19", because "in August 2026 cycle, the author response period is split into
+    # 3 phases" with the later phases emailed to authors individually. Counting down to the
+    # 24th would sail an author straight past the obligation that actually falls first, and the
+    # phases after it are not public, so this is the one public date worth a countdown. The
+    # full window rides alongside in SCHEDULES below.
+    # Source: https://aclrollingreview.org/dates
+    dict(id="arr_2026_august_rebuttal", name="ARR — August 2026 cycle (author response)",
+         venue_type="rebuttal", venue_group="ARR August 2026", track="rebuttal",
+         venue_family="ARR",
+         deadline_label="initial author response", deadline_aoe="2026-09-19 23:59:59",
          notification_aoe="", link="https://aclrollingreview.org/dates"),
     dict(id="arr_2026_october", name="ARR — October 2026 cycle (direct submission)",
          venue_type="conference", venue_group="ARR October 2026", track="cycle",
@@ -149,7 +190,7 @@ CONFERENCES = [
          submission_type="commitment",
          deadline_label="commitment", deadline_aoe="2026-10-11 23:59:59",
          notification_aoe="2026-11-12 23:59:59", link="https://2027.eacl.org/calls/papers/"),
-    # NAACL 2027 runs on the October cycle: submit into it by Oct 12, commit by Dec 20.
+    # NAACL 2027 runs on the October cycle: submit into it by Oct 12, commit by Dec 23.
     # Source: https://aclrollingreview.org/dates and https://2027.naacl.org/
     dict(id="naacl2027_paper", name="NAACL 2027 (main, ARR submission)",
          venue_type="conference", venue_group="NAACL 2027", track="main",
@@ -159,9 +200,186 @@ CONFERENCES = [
     dict(id="naacl2027_commitment", name="NAACL 2027 (main, ARR commitment)",
          venue_type="conference", venue_group="NAACL 2027", track="main",
          submission_type="commitment",
-         deadline_label="commitment", deadline_aoe="2026-12-20 23:59:59",
+         deadline_label="commitment", deadline_aoe="2026-12-23 23:59:00",
          notification_aoe="", link="https://2027.naacl.org/"),
 ]
+
+# --- the rest of each venue's calendar, off the same official pages ---
+#
+# The board counts down to one date per row: the submission. Everything a venue
+# publishes *after* that -- when reviews land, when the rebuttal window opens and
+# closes, when decisions come out, when the camera-ready is due, when the
+# conference itself runs -- is planning information, not a countdown, and it used
+# to live nowhere at all. `deadline_label`/`deadline_aoe` stay the submission, so
+# the board's sorting, urgency and hero are untouched; these ride alongside and
+# render as a quiet list under the card's own date.
+#
+# Rules, same as CONFERENCES above:
+#   * every date comes off the venue's own page, and each list says which one;
+#   * a milestone the venue has not announced is absent, never guessed. "TBA" on
+#     the source means no entry here -- an empty row is readable, a wrong
+#     camera-ready date is planned against;
+#   * `kind` says how to read the date, because these are not all the same thing:
+#       deadline -- an AoE cutoff the author has to hit ("11:59pm AoE")
+#       date     -- a day the venue acts on ("decisions released Dec 16")
+#       period   -- a span with both ends ("author response Sep 14-19")
+#     Only `deadline` is AoE; printing "AoE" on a conference's opening day would
+#     be a false precision.
+#
+# Keyed by deadline id so a demo track can carry its own dates: EACL 2027's demos
+# notify in December and go camera-ready in January, a month either side of the
+# main track. Rows that genuinely share a calendar share a list by name.
+
+ICLR_2027_SCHEDULE = [
+    # Source: https://iclr.cc/Conferences/2027/CallForPapers and /Dates
+    dict(milestone="reviews", label="Reviews released", date="2026-11-05", kind="date"),
+    dict(milestone="rebuttal", label="Author-reviewer discussion",
+         starts="2026-11-05", ends="2026-11-18", kind="period"),
+    dict(milestone="notification", label="Final decisions", date="2026-12-16", kind="date"),
+    dict(milestone="conference", label="Conference", starts="2027-04-26", ends="2027-04-30",
+         kind="period"),
+]
+
+# Sydney, Atlanta and Paris are one conference on three sets of dates, so the
+# schedule carries three entries rather than a single invented range.
+# Source: https://neurips.cc/Conferences/2026/Dates
+NEURIPS_2026_SCHEDULE = [
+    dict(milestone="reviews", label="Reviews released", date="2026-07-22 23:59:59",
+         kind="deadline"),
+    dict(milestone="rebuttal", label="Author-reviewer-AC discussion",
+         starts="2026-07-27", ends="2026-08-03", kind="period"),
+    dict(milestone="notification", label="Author notifications", date="2026-09-24 23:59:59",
+         kind="deadline"),
+    dict(milestone="conference", label="Main conference — Sydney",
+         starts="2026-12-08", ends="2026-12-10", kind="period"),
+    dict(milestone="conference", label="Main conference — Atlanta",
+         starts="2026-12-10", ends="2026-12-11", kind="period"),
+    dict(milestone="conference", label="Main conference — Paris",
+         starts="2026-12-09", ends="2026-12-11", kind="period"),
+]
+
+# Source: https://2026.aaclnet.org/ (main track calendar, shared by both commitments)
+AACL_2026_SCHEDULE = [
+    dict(milestone="rebuttal", label="Author response and discussion",
+         starts="2026-07-07", ends="2026-07-13", kind="period"),
+    dict(milestone="camera_ready", label="Camera-ready due", date="2026-09-30 23:59:59",
+         kind="deadline"),
+    dict(milestone="conference", label="Main conference (Hengqin, China)",
+         starts="2026-11-06", ends="2026-11-10", kind="period"),
+]
+
+# Source: https://2027.eacl.org/ and /calls/papers/
+EACL_2027_CONFERENCE = dict(
+    milestone="conference", label="Main conference (Athens)",
+    starts="2027-03-09", ends="2027-03-14", kind="period",
+)
+
+SCHEDULES = {
+    # Source: https://aclrollingreview.org/dates -- the cycle's own table. A cycle
+    # has no camera-ready or conference of its own: the venue a paper commits to
+    # owns those, and each of those rows carries them.
+    "arr_2026_may": [
+        dict(milestone="reviews", label="Reviews due", date="2026-07-02", kind="date"),
+        dict(milestone="rebuttal", label="Author response",
+             starts="2026-07-08", ends="2026-07-14", kind="period"),
+        dict(milestone="notification", label="Meta-reviews released", date="2026-07-30",
+             kind="date"),
+        dict(milestone="cycle_end", label="Cycle ends", date="2026-08-02", kind="date"),
+    ],
+    "arr_2026_august": [
+        dict(milestone="reviews", label="Reviews due", date="2026-09-07", kind="date"),
+        dict(milestone="rebuttal", label="Author response",
+             starts="2026-09-14", ends="2026-09-24", kind="period"),
+        # Inside that window, and the only phase ARR names publicly; see the rebuttal row above.
+        dict(milestone="rebuttal", label="Initial author response due", date="2026-09-19",
+             kind="date"),
+        dict(milestone="notification", label="Meta-reviews released", date="2026-10-08",
+             kind="date"),
+        dict(milestone="cycle_end", label="Cycle ends", date="2026-10-11", kind="date"),
+    ],
+    # The October cycle's middle is still TBA on the ARR table; only its end is
+    # published, so only its end is here.
+    "arr_2026_october": [
+        dict(milestone="cycle_end", label="Cycle ends", date="2026-12-20", kind="date"),
+    ],
+    "aacl2026_commitment": AACL_2026_SCHEDULE,
+    "aacl2026_commitment_second": AACL_2026_SCHEDULE,
+    # Source: https://2026.aaclnet.org/calls/demos/ -- the demo track reviews
+    # single-blind with no rebuttal, so it has no author-response window.
+    "aacl2026_demo": [
+        dict(milestone="camera_ready", label="Camera-ready due", date="2026-10-01 23:59:59",
+             kind="deadline"),
+        dict(milestone="conference", label="Main conference (Hengqin, China)",
+             starts="2026-11-06", ends="2026-11-10", kind="period"),
+    ],
+    # Source: https://2026.emnlp.org/
+    "emnlp2026_commitment": [
+        dict(milestone="rebuttal", label="Author response and discussion",
+             starts="2026-07-07", ends="2026-07-13", kind="period"),
+        dict(milestone="camera_ready", label="Camera-ready due", date="2026-08-30 23:59:59",
+             kind="deadline"),
+        dict(milestone="conference", label="Main conference",
+             starts="2026-10-24", ends="2026-10-29", kind="period"),
+    ],
+    "arr_2026_august_rebuttal": [
+        dict(milestone="rebuttal", label="Author response period",
+             starts="2026-09-14", ends="2026-09-24", kind="period"),
+        dict(milestone="notification", label="Meta-reviews released", date="2026-10-08",
+             kind="date"),
+        dict(milestone="cycle_end", label="Cycle ends", date="2026-10-11", kind="date"),
+    ],
+    "neurips2026_rebuttal": NEURIPS_2026_SCHEDULE,
+    "iclr2027_abstract": ICLR_2027_SCHEDULE,
+    "iclr2027_paper": ICLR_2027_SCHEDULE,
+    # Source: https://2027.eacl.org/calls/papers/
+    "eacl2027_commitment": [
+        dict(milestone="rebuttal", label="Author response",
+             starts="2026-09-14", ends="2026-09-19", kind="period"),
+        dict(milestone="camera_ready", label="Camera-ready due", date="2026-11-26 23:59:59",
+             kind="deadline"),
+        EACL_2027_CONFERENCE,
+    ],
+    # Source: https://2027.eacl.org/calls/demos/ -- "there is no rebuttal stage".
+    "eacl2027_demo": [
+        dict(milestone="camera_ready", label="Camera-ready due", date="2027-01-06 23:59:59",
+             kind="deadline"),
+        EACL_2027_CONFERENCE,
+    ],
+    # Source: https://2027.naacl.org/ -- the site has published its conference week
+    # and its ARR submission date; notification and camera-ready are not up yet.
+    "naacl2027_paper": [
+        dict(milestone="conference", label="Main conference",
+             starts="2027-06-01", ends="2027-06-05", kind="period"),
+    ],
+    "naacl2027_commitment": [
+        dict(milestone="conference", label="Main conference",
+             starts="2027-06-01", ends="2027-06-05", kind="period"),
+    ],
+}
+
+# Ordering for the rendered list. A schedule is read as a story -- reviews, then
+# the window to answer them, then the decision, then the work, then the trip -- so
+# it is sorted by stage first and date second. Sorting by date alone reads oddly
+# whenever two stages share a day (ICLR releases reviews and opens discussion both
+# on Nov 5).
+SCHEDULE_ORDER = (
+    "reviews", "rebuttal", "notification", "cycle_end", "camera_ready", "conference",
+)
+
+
+def attach_schedules(items):
+    """Stamp the curated post-submission calendar onto each entry it belongs to.
+
+    Applied on every write, including a rewrite of the generated outputs, so the
+    table above is the only place these dates are maintained. Entries are copied
+    rather than shared, because two rows point at one Python list (ICLR's abstract
+    and paper rows) and a consumer that mutated one would silently edit the other.
+    """
+    for item in items:
+        schedule = SCHEDULES.get(item.get("id", ""))
+        item["schedule"] = [dict(entry) for entry in schedule] if schedule else []
+    return items
+
 
 # Tracked by the guidebook, but the next round has published no date yet. Listed so the
 # gap is visible: an absent venue otherwise looks exactly like a venue nobody wants
@@ -229,7 +447,6 @@ WORKSHOP_POLICY_OVERRIDES = {
         cfp_url="https://realm-workshop.github.io/call_for_papers/"),
 }
 
-NEURIPS_WS_SUBMISSION = "2026-08-29 23:59:59"   # official recommended (AoE)
 NEURIPS_WS_NOTIF      = "2026-09-29 23:59:59"   # official hard accept/reject (AoE)
 
 # OpenReview group prefix per family, with {year} filled from a rolling window
@@ -252,10 +469,11 @@ WORKSHOP_PARENTS = {
     "EACL": "eacl.org/EACL/{year}/Workshop",
 }
 
-# Rounds whose whole workshop track shares one published date, keyed (family, year).
-# Everything else takes each workshop's own stamp off its OpenReview group.
-UNIFIED_ROUND_DEADLINES = {
-    ("NeurIPS", 2026): (NEURIPS_WS_SUBMISSION, NEURIPS_WS_NOTIF),
+# Conference-wide notification cutoffs remain shared, but contribution deadlines
+# come from each workshop's live Submission invitation. NeurIPS publishes only a
+# suggested contribution date; workshops may choose and extend their own date.
+ROUND_NOTIFICATION_DEADLINES = {
+    ("NeurIPS", 2026): NEURIPS_WS_NOTIF,
 }
 
 # Sweep this year and next. Recent past rows remain in the generated dataset when
@@ -272,7 +490,8 @@ def workshop_sources(today=None):
             continue
         for offset in range(WORKSHOP_YEAR_SPAN):
             year = today.year + offset
-            submission, notification = UNIFIED_ROUND_DEADLINES.get((family, year), ("", ""))
+            submission = ""
+            notification = ROUND_NOTIFICATION_DEADLINES.get((family, year), "")
             out.append(dict(
                 family=family, year=year,
                 group=f"{family} {year} Workshops",
@@ -282,18 +501,17 @@ def workshop_sources(today=None):
     return out
 
 
-# OpenReview rate-limits, and this sweep is now one request per workshop on top of
-# one per family-year -- a few hundred in a burst, which earns a 429 partway
-# through and silently truncates the board. A small gap between calls plus backoff
-# on 429 keeps the whole sweep inside the budget. It runs weekly and unattended, so
-# slow-and-complete beats fast-and-partial.
+# OpenReview rate-limits. Workshop invitations are fetched in bounded multi-ID
+# batches on top of one group request per family-year; a small gap between calls
+# plus backoff on 429 keeps the unattended sweep complete.
 OPENREVIEW_GAP_SECONDS = 1.1
 OPENREVIEW_RETRIES = 4
+OPENREVIEW_INVITATION_BATCH_SIZE = 40
 
 HTTP_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
     ),
     "Accept-Language": "en-US,en;q=0.9",
 }
@@ -380,6 +598,35 @@ PARENT_CONFERENCE_LOCATIONS = {
     ("EMNLP", "2026"): "Budapest, Hungary",
     ("NeurIPS", "2026"): "Sydney, Australia; Atlanta, USA; Paris, France",
 }
+
+
+def conference_sites(location):
+    """The sites in a `conference_location`, which stores them semicolon-separated."""
+    return [site.strip() for site in (location or "").split(";") if site.strip()]
+
+
+def site_named_on_page(html, sites):
+    """Which one of a conference's sites a workshop's own page names, if exactly one.
+
+    A multi-site conference is several meetings, and a workshop belongs to one of them. The
+    workshop's own site is the only place that says which, and it says it in prose -- "Location
+    Sydney, Australia", "join us in Paris" -- rather than in a field.
+
+    The question is deliberately "which of *these three*" rather than "what city is on this
+    page". Lifting an arbitrary "City, Country" out of prose reads a sponsor's address as a
+    venue: measured over 40 NeurIPS 2026 workshops it resolved 6 and got 3 of those wrong,
+    including an "Austrian Institute" that is not a city at all. Matching against the closed set
+    the parent already published cannot make that mistake, and resolved 35 of the same 40.
+
+    Silence is the answer whenever the page names none of the sites or more than one, because
+    both mean the page has not said. The caller falls back to listing every site, which is what
+    the board did before it could tell them apart.
+    """
+    if len(sites) < 2:
+        return ""
+    text = _visible_text(html)
+    named = [site for site in sites if re.search(rf"\b{re.escape(site.split(',')[0].strip())}\b", text)]
+    return named[0] if len(named) == 1 else ""
 
 
 def is_generic_conference_cfp(url):
@@ -499,16 +746,23 @@ def topic_profile_from_html(html):
     return topics, evidence
 
 
-def workshop_profile_from_html(html, source_url):
+def workshop_profile_from_html(html, source_url, year=None):
     topics, topic_evidence = topic_profile_from_html(html)
     status, policy_evidence = cross_submission_from_html(html)
+    year = year or datetime.date.today().year
+    deadline_candidates, script_urls = deadline_candidates_from_html(html, source_url, year)
+    visible = deadline_texts_from_html(html)[0][0][1]
+    requirement = requirement_from_text(visible, normalize_url(source_url), year)
     return dict(
+        **requirement,
         topic_profile=topics,
         topic_evidence=topic_evidence,
         cross_submission_status=status,
         cross_submission_evidence=policy_evidence,
         cross_submission_source_url=normalize_url(source_url),
         profile_extracted_at=checked_at(),
+        _deadline_candidates=deadline_candidates,
+        _deadline_script_urls=script_urls,
     )
 
 
@@ -528,8 +782,257 @@ def _fetch_html(url, timeout=15):
         return response.geturl(), body.decode(charset, errors="replace")
 
 
-def discover_workshop_profile(homepage, existing="", existing_status="unknown"):
-    """Return the dedicated CFP, publication policy, and bounded matching profile."""
+def _fetch_text_asset(url, timeout=15):
+    headers = {**HTTP_HEADERS, "Accept": "text/javascript,application/javascript,text/plain,*/*"}
+    request = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = response.read(6_000_000)
+        charset = response.headers.get_content_charset() or "utf-8"
+        return response.geturl(), body.decode(charset, errors="replace")
+
+
+def _visible_text(html):
+    """Readable text from a page, with script and style bodies dropped."""
+    text = re.sub(r"<script.*?</script>|<style.*?</style>", " ", html, flags=re.S | re.I)
+    return re.sub(r"\s+", " ", html_module.unescape(re.sub(r"<[^>]+>", " ", text)))
+
+
+def _profile_with_deadline_assets(html, source_url, year):
+    profile = workshop_profile_from_html(html, source_url, year)
+    if profile["_deadline_candidates"]:
+        return profile
+    for raw_url in profile.pop("_deadline_script_urls", [])[:10]:
+        asset_url = normalize_url(urllib.parse.urljoin(source_url, raw_url))
+        if not asset_url:
+            continue
+        try:
+            final_asset, text = _fetch_text_asset(asset_url)
+        except Exception:
+            continue
+        asset_candidates = deadline_candidates_from_text(text, source_url, year, final_asset)
+        for candidate in asset_candidates:
+            candidate["extraction_kind"] = "script_asset"
+        profile["_deadline_candidates"].extend(asset_candidates)
+    return profile
+
+
+def _merge_workshop_profiles(homepage_profile, cfp_profile):
+    """Prefer CFP metadata while retaining deadline evidence from both pages."""
+    merged = dict(homepage_profile)
+    for key, value in cfp_profile.items():
+        if key not in {"_deadline_candidates", "_deadline_script_urls"} and value not in ("", []):
+            merged[key] = value
+    for key in ABSTRACT_FIELDS:
+        merged.pop(key, None)
+    merged.update(merge_requirements(homepage_profile, cfp_profile))
+    merged["_deadline_candidates"] = (
+        homepage_profile.get("_deadline_candidates", [])
+        + cfp_profile.get("_deadline_candidates", [])
+    )
+    return merged
+
+
+def _github_pages_repository(source_url):
+    """Derive a public GitHub Pages repository without a per-workshop mapping."""
+    parsed = urllib.parse.urlsplit(normalize_url(source_url))
+    hostname = (parsed.hostname or "").lower()
+    if not hostname.endswith(".github.io"):
+        return None
+    owner = hostname.removesuffix(".github.io")
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if segments:
+        repository = segments[0]
+        remainder = "/".join(segments[1:])
+        page_path = (
+            f"{remainder}/index.html"
+            if remainder and parsed.path.endswith("/")
+            else remainder or "index.html"
+        )
+    else:
+        repository = f"{owner}.github.io"
+        page_path = "index.html"
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", owner) or not re.fullmatch(
+        r"[A-Za-z0-9_.-]+", repository
+    ):
+        return None
+    return owner, repository, page_path
+
+
+def _git_output(arguments, checkout, timeout=45, allow_empty=False):
+    result = subprocess.run(
+        ["git", *arguments],
+        cwd=checkout,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        timeout=timeout,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+    if result.returncode and allow_empty:
+        return ""
+    if result.returncode:
+        raise RuntimeError(f"git {' '.join(arguments[:2])} failed")
+    return result.stdout
+
+
+def _github_history_document_matches_target(text, target_hint, year, html_document=True):
+    """Keep a reused workshop site inside the requested conference edition."""
+    event_matches = re.findall(
+        rf"\b([A-Za-z][A-Za-z0-9-]{{1,}})\s+{year}\b",
+        target_hint or "",
+        flags=re.IGNORECASE,
+    )
+    if not event_matches:
+        return True
+    event = event_matches[-1]
+    event_pattern = re.compile(
+        rf"(?i)\b{re.escape(event)}\s*@?\s*{year}\b|"
+        rf"\b{re.escape(event)}\.cc/{year}/|"
+        rf"\b{re.escape(event)}\s+{year}\b"
+    )
+    if not html_document:
+        heading = "\n".join(
+            line for line in (text or "").splitlines()[:80] if re.match(r"^\s*#", line)
+        )
+        return bool(event_pattern.search(heading))
+    identity = " ".join(
+        re.findall(r"(?is)<(?:title|h1)\b[^>]*>(.*?)</(?:title|h1)>", text or "")
+    )
+    identity += " " + " ".join(
+        re.findall(r"(?i)https?://openreview\.net/group\?id=[^\s\"'<>]+", text or "")
+    )
+    return bool(event_pattern.search(re.sub(r"<[^>]+>", " ", identity)))
+
+
+def _github_pages_deadline_history(source_url, current_stamp, year, target_hint):
+    """Recover old advertised dates from a deterministically discoverable site repo."""
+    repository = _github_pages_repository(source_url)
+    if not repository:
+        return []
+    owner, name, requested_path = repository
+    with tempfile.TemporaryDirectory(prefix="adminbot-deadline-history-") as temporary:
+        checkout = os.path.join(temporary, "site")
+        try:
+            _git_output(
+                [
+                    "-c", "credential.helper=", "clone", "--filter=blob:none", "--quiet",
+                    f"https://github.com/{owner}/{name}.git", checkout,
+                ],
+                temporary,
+                timeout=90,
+            )
+            tree = set(_git_output(["ls-tree", "-r", "--name-only", "HEAD"], checkout).splitlines())
+            preferred = [requested_path]
+            if requested_path.endswith("index.html"):
+                stem = requested_path.removesuffix("index.html")
+                preferred.extend([f"{stem}index.md", f"{stem}index.markdown"])
+            files = [path for path in preferred if path in tree]
+            preferred_candidates = []
+            for path in files:
+                text = _git_output(["show", f"HEAD:{path}"], checkout, allow_empty=True)
+                if not _github_history_document_matches_target(
+                    text, target_hint, year, path.endswith(".html")
+                ):
+                    continue
+                if path.endswith(".html"):
+                    parsed, _ = deadline_candidates_from_html(text, source_url, year)
+                    preferred_candidates.extend(parsed)
+                else:
+                    preferred_candidates.extend(
+                        deadline_candidates_from_text(text, source_url, year, f"HEAD:{path}")
+                    )
+            preferred_deadline, _ = select_official_candidate(
+                preferred_candidates, "", year, target_hint
+            )
+            if not preferred_deadline:
+                grep = _git_output(
+                    [
+                        "grep", "-I", "-l", "-E",
+                        "([Ss]ubmission|[Pp]aper).{0,80}[Dd]eadline|[Dd]eadline.{0,80}([Ss]ubmission|[Pp]aper)",
+                        "HEAD", "--", "*.html", "*.md", "*.markdown", "*.js", "*.jsx", "*.ts", "*.tsx",
+                    ],
+                    checkout,
+                    allow_empty=True,
+                ).splitlines()
+                files.extend(path for path in grep if path not in files)
+            files = files[:6]
+            if not files:
+                return []
+            log = _git_output(
+                ["log", "--max-count=40", "--format=%H%x09%cI", "--", *files], checkout
+            )
+            observations = []
+            for line in log.splitlines():
+                commit, separator, committed_at = line.partition("\t")
+                if not separator:
+                    continue
+                candidates = []
+                for path in files:
+                    text = _git_output(["show", f"{commit}:{path}"], checkout, allow_empty=True)
+                    if not text or len(text) > 2_000_000:
+                        continue
+                    if not _github_history_document_matches_target(
+                        text, target_hint, year, path.endswith(".html")
+                    ):
+                        continue
+                    if path.endswith(".html"):
+                        parsed, _ = deadline_candidates_from_html(text, source_url, year)
+                        candidates.extend(parsed)
+                    else:
+                        candidates.extend(
+                            deadline_candidates_from_text(text, source_url, year, f"{commit}:{path}")
+                        )
+                selected, _ = select_official_candidate(
+                    candidates, "", year, target_hint
+                )
+                if not selected:
+                    continue
+                stamp = selected["stamp"]
+                if len(stamp) == 10:
+                    stamp = f"{stamp} {current_stamp[11:19]}"
+                observations.append((stamp, committed_at, commit))
+            # git log is newest first. Collapse same-date edits, then reverse into
+            # the old -> new sequence the UI presents.
+            changes = []
+            for observation in observations:
+                if not changes or observation[0][:16] != changes[-1][0][:16]:
+                    changes.append(observation)
+            timeline = list(reversed(changes))
+            timeline = [item for item in timeline if item[0][:16] <= current_stamp[:16]]
+            if not timeline or timeline[-1][0][:16] != current_stamp[:16]:
+                timeline.append((current_stamp, checked_at(), ""))
+            increasing = []
+            for item in timeline:
+                if not increasing or item[0][:16] > increasing[-1][0][:16]:
+                    increasing.append(item)
+            timeline = increasing[-5:]
+            if len(timeline) < 2:
+                return []
+            return [
+                dict(
+                    observed_at=committed_at,
+                    deadline_aoe=stamp,
+                    link=(
+                        f"https://github.com/{owner}/{name}/commit/{commit}"
+                        if commit else source_url
+                    ),
+                )
+                for stamp, committed_at, commit in timeline
+            ]
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            return []
+
+
+def discover_workshop_profile(
+    homepage, existing="", existing_status="unknown", year=None, sites=()
+):
+    """Return the dedicated CFP, publication policy, and bounded matching profile.
+
+    `sites` is the parent conference's published sites. When it names more than one, the
+    workshop's own page is asked which of them it meets at -- see `site_named_on_page`.
+    """
+    year = year or datetime.date.today().year
     homepage = normalize_url(homepage)
     previous = normalize_url(existing)
     if previous == homepage or is_generic_conference_cfp(previous):
@@ -544,18 +1047,20 @@ def discover_workshop_profile(homepage, existing="", existing_status="unknown"):
     parser = _CfpParser()
     parser.feed(html)
     homepage_status = archival_status_from_html(html)
+    homepage_profile = _profile_with_deadline_assets(html, final_homepage, year)
+    homepage_profile["_site"] = site_named_on_page(html, sites)
     base = urllib.parse.urldefrag(final_homepage)[0]
     if parser.anchors:
         anchor = urllib.parse.quote(parser.anchors[0], safe="-._~")
         source = f"{base}#{anchor}"
-        return source, homepage_status, workshop_profile_from_html(html, source)
+        return source, homepage_status, homepage_profile
 
-    candidates = []
+    candidates = [previous] if previous else []
     for href, text in parser.links:
         absolute = normalize_url(urllib.parse.urljoin(final_homepage, href))
         candidate_base, fragment = urllib.parse.urldefrag(absolute)
         if candidate_base == base and fragment and CFP_SIGNAL.search(fragment.replace("-", " ")):
-            return absolute, homepage_status, workshop_profile_from_html(html, absolute)
+            return absolute, homepage_status, homepage_profile
         if not absolute or candidate_base == base:
             continue
         signal = f"{text} {urllib.parse.urlsplit(absolute).path} {urllib.parse.urlsplit(absolute).fragment}"
@@ -569,11 +1074,19 @@ def discover_workshop_profile(homepage, existing="", existing_status="unknown"):
                     final_candidate,
                     _merge_archival_status(homepage_status,
                                            archival_status_from_html(candidate_html)),
-                    workshop_profile_from_html(candidate_html, final_candidate),
+                    _merge_workshop_profiles(
+                        homepage_profile,
+                        {
+                            **_profile_with_deadline_assets(
+                                candidate_html, final_candidate, year
+                            ),
+                            "_site": site_named_on_page(candidate_html, sites),
+                        },
+                    ),
                 )
         except Exception:
             continue
-    return previous, homepage_status, workshop_profile_from_html(html, final_homepage)
+    return previous, homepage_status, homepage_profile
 
 
 def discover_workshop_metadata(homepage, existing="", existing_status="unknown"):
@@ -587,30 +1100,49 @@ def discover_cfp_url(homepage, existing=""):
     return discover_workshop_metadata(homepage, existing)[0]
 
 
-def enrich_workshop_sources(items, previous_by_id, clock=None):
+def cached_workshop_metadata(previous):
+    """Reuse parsed website evidence without claiming another website observation."""
+    profile = {key: previous[key] for key in (
+        "topic_profile", "topic_evidence", "cross_submission_status",
+        "cross_submission_evidence", "cross_submission_source_url", "profile_extracted_at", *ABSTRACT_FIELDS,
+    ) if key in previous}
+    profile["_deadline_candidates"] = previous["website_deadline_candidates"]
+    profile["_site"] = previous.get("workshop_location", "")
+    return previous.get("cfp_url", ""), previous.get("archival_status", "unknown"), profile
+
+
+def enrich_workshop_sources(items, previous_by_id, clock=None, force_refresh=False):
     """Re-read workshop CFP sites, on the cadence rather than all of them every run.
 
     This is the expensive half of the sweep -- one HTTP request per workshop site, 140 of them --
-    and the half that earns a 429. A workshop within three days of its deadline is re-read daily,
-    because a late extension is exactly what the board exists to catch; everything else waits a
-    fortnight. A skipped workshop keeps every value the last sweep established, `profile_extracted_at`
-    included, so its clock measures from the last real read.
+    and the half that earns a 429. Near-deadline and recently expired milestones are checked
+    daily; other workshops wait a week. Cached website candidates are reconciled with fresh
+    OpenReview observations without advancing the website extraction clock.
     """
     skipped = 0
     due_ids = set()
     jobs = {}
+    cached_profiles = {}
     for item in items:
         if item.get("venue_type") != "workshop":
             continue
         previous = previous_by_id.get(item.get("id"), {})
-        if clock and not is_sweep_due(
-            clock,
-            "workshop",
-            item.get("deadline_aoe", "") or previous.get("deadline_aoe", ""),
-            previous.get("profile_extracted_at"),
+        stages = [previous_by_id.get(item.get("id", "") + "_abstract", {}), item]
+        if clock and not force_refresh and not any(
+            stage and is_sweep_due(clock, "workshop", stage.get("deadline_aoe", ""),
+                                   previous.get("profile_extracted_at")) for stage in stages
         ):
-            skipped += 1
-            continue
+            if not item.get("_source_observed"):
+                skipped += 1
+                continue
+            if "website_deadline_candidates" in previous:
+                # Keep the website evidence and its age, but reconcile the new portal read.
+                cached_profiles[item["id"]] = cached_workshop_metadata(previous)
+                due_ids.add(item["id"])
+                skipped += 1
+                continue
+            # Older datasets have no reusable candidate evidence. Read the page once rather
+            # than assigning a possibly abstract-only portal cutoff to the full-paper row.
         due_ids.add(item.get("id"))
         homepage = normalize_url(item.get("homepage_url", ""))
         if not homepage:
@@ -621,45 +1153,113 @@ def enrich_workshop_sources(items, previous_by_id, clock=None):
         if existing == homepage:
             existing = ""
         status = item.get("archival_status") or previous.get("archival_status", "unknown")
-        jobs.setdefault(homepage, (existing, status))
+        year_match = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
+        year = int(year_match.group(1)) if year_match else datetime.date.today().year
+        sites = tuple(
+            conference_sites(
+                PARENT_CONFERENCE_LOCATIONS.get(
+                    (item.get("venue_family", ""), str(year)), ""
+                )
+            )
+        )
+        jobs.setdefault((homepage, year), (existing, status, sites))
 
     found = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
         futures = {
-            executor.submit(discover_workshop_profile, homepage, existing, status): homepage
-            for homepage, (existing, status) in jobs.items()
+            executor.submit(
+                discover_workshop_profile, homepage, existing, status, year, sites
+            ): key
+            for key, (existing, status, sites) in jobs.items()
+            for homepage, year in [key]
         }
         for future in concurrent.futures.as_completed(futures):
-            homepage = futures[future]
+            key = futures[future]
             try:
-                found[homepage] = future.result()
+                found[key] = future.result()
             except Exception:
-                existing, status = jobs[homepage]
-                found[homepage] = (existing, status, {})
+                existing, status, _sites = jobs[key]
+                found[key] = (existing, status, {})
+
+    expanded = []
+    for item in items:
+        if item.get("venue_type") != "workshop" or item.get("id") not in due_ids:
+            expanded.append(item)
+            previous_abstract = previous_by_id.get(item.get("id", "") + "_abstract")
+            if previous_abstract:
+                expanded.append(dict(previous_abstract))
+            continue
+        homepage = normalize_url(item.get("homepage_url", ""))
+        year_match = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
+        year = int(year_match.group(1)) if year_match else datetime.date.today().year
+        metadata = cached_profiles.get(item["id"], found.get((homepage, year), ("", "", {})))
+        previous = previous_by_id.get(item["id"], {})
+        if not metadata[2].get("profile_extracted_at") and "website_deadline_candidates" in previous:
+            # A failed website request must not discard the evidence needed to match stages.
+            metadata = cached_workshop_metadata(previous)
+            cached_profiles[item["id"]] = metadata
+        profile = metadata[2]
+        if profile.get("profile_extracted_at"):
+            item["website_deadline_candidates"] = profile.get("_deadline_candidates", [])
+        rows = split_workshop_milestones(item, profile.get("_deadline_candidates", []), year)
+        if item["id"] in cached_profiles:
+            cached_profiles.update((row["id"], metadata) for row in rows)
+        expanded.extend(rows)
+        due_ids.update(row["id"] for row in rows)
+    items[:] = expanded
+    history_requests = []
+
+    def finish_deadline_history(item, deadline, source_revisions):
+        item["_source_revisions"] = source_revisions
+        item["deadline_history_status"] = (
+            "source_history"
+            if len(source_revisions) > 1
+            else "extended_prior_unavailable"
+            if deadline["deadline_extended"]
+            else "not_extended"
+        )
+        if item.get("_source_observed") or item.get("profile_extracted_at") == checked_at():
+            item["_source_observed"] = True
+            item["source_checked_at"] = checked_at()
 
     for item in items:
         if item.get("venue_type") != "workshop":
             continue
         homepage = normalize_url(item.get("homepage_url", ""))
         previous = previous_by_id.get(item.get("id"), {})
-        if clock and item.get("id") not in due_ids:
+        if clock and not force_refresh and item.get("id") not in due_ids:
             # Not due: carry the last sweep's answers forward verbatim. Falling through would
             # overwrite them with the empty default and read as "this workshop lost its CFP".
+            item["source_checked_at"] = previous.get("source_checked_at", "")
+            item["deadline_label"] = previous.get("deadline_label", item.get("deadline_label", "submission"))
             item["cfp_url"] = previous.get("cfp_url", item.get("cfp_url", ""))
             item["archival_status"] = previous.get(
                 "archival_status", item.get("archival_status", "unknown")
             )
             for key in ("topic_profile", "topic_evidence", "cross_submission_status",
                         "cross_submission_evidence", "cross_submission_source_url",
-                        "profile_extracted_at"):
-                default = [] if key == "topic_profile" else ""
+                        "profile_extracted_at", "deadline_aoe", "source_url",
+                        "deadline_source_kind", "deadline_source_status",
+                        "deadline_source_precision", "deadline_source_evidence",
+                        "deadline_official_url", "deadline_official_evidence",
+                        "deadline_extended", "deadline_history_status",
+                        "workshop_location"):
+                default = [] if key == "topic_profile" else False if key == "deadline_extended" else ""
                 item[key] = previous.get(key, item.get(key, default))
+            item.update({key: previous[key] for key in (*TIME_FIELDS, *ABSTRACT_FIELDS, "deadline_observations") if key in previous})
+            if "website_deadline_candidates" in previous:
+                item["website_deadline_candidates"] = previous["website_deadline_candidates"]
             item["link"] = (item["cfp_url"] or homepage
                             or normalize_url(item.get("openreview_url", "")))
             continue
-        cfp_url, archival_status, profile = found.get(
-            homepage, ("", item.get("archival_status", "unknown"), {})
-        )
+        year_match = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
+        year = int(year_match.group(1)) if year_match else datetime.date.today().year
+        cfp_url, archival_status, profile = cached_profiles.get(item["id"], found.get(
+            (homepage, year), ("", item.get("archival_status", "unknown"), {})
+        ))
+        for key in ABSTRACT_FIELDS:
+            item.pop(key, None)
+        item.update({key: profile[key] for key in ABSTRACT_FIELDS if key in profile})
         item["cfp_url"] = cfp_url
         item["archival_status"] = archival_status
         for key in ("topic_profile", "topic_evidence", "cross_submission_status",
@@ -667,7 +1267,100 @@ def enrich_workshop_sources(items, previous_by_id, clock=None):
                     "profile_extracted_at"):
             default = [] if key == "topic_profile" else ""
             item[key] = profile.get(key, previous.get(key, default))
+        # Which of the parent's sites this workshop meets at, when its page said. An empty
+        # answer keeps the previous sweep's: a page that stopped naming its city has not
+        # moved the workshop to another continent.
+        item["workshop_location"] = profile.get("_site", "") or previous.get(
+            "workshop_location", ""
+        )
+        candidates = profile.get("_deadline_candidates", [])
+        deadline = reconcile_deadline_candidates(
+            candidates,
+            item.get("_openreview_deadline", ""),
+            item.get("openreview_url", ""),
+            year,
+            item.get("_group_final_deadline", ""),
+            item.get("_group_final_evidence", ""),
+            f"{item.get('id', '')} {item.get('name', '')} {item.get('_stage', '')}",
+        )
+        item["deadline_observations"] = deadline["deadline_observations"]
+        if deadline["deadline_aoe"]:
+            item.update({key: deadline[key] for key in TIME_FIELDS})
+            for key in (
+                "deadline_aoe", "source_url", "deadline_source_kind",
+                "deadline_source_status", "deadline_source_precision",
+                "deadline_source_evidence", "deadline_official_url",
+                "deadline_official_evidence", "deadline_extended",
+            ):
+                item[key] = deadline[key]
+            revision_link = deadline["deadline_official_url"] or deadline["source_url"]
+            source_revisions = [
+                dict(
+                    observed_at=checked_at(),
+                    deadline_aoe=stamp,
+                    notification_aoe=item.get("notification_aoe", ""),
+                    deadline_label=item.get("deadline_label", "submission"),
+                    link=revision_link,
+                )
+                for stamp in deadline["source_revisions"]
+            ]
+            if (
+                force_refresh
+                and deadline["deadline_extended"]
+                and len(source_revisions) < 2
+                and deadline["deadline_official_url"]
+            ):
+                history_requests.append(
+                    (
+                        item,
+                        deadline,
+                        source_revisions,
+                        deadline["deadline_official_url"],
+                        deadline["deadline_aoe"],
+                        year,
+                        f"{item.get('id', '')} {item.get('name', '')}",
+                    )
+                )
+            else:
+                finish_deadline_history(item, deadline, source_revisions)
+        else:
+            for key in (
+                "deadline_source_kind", "deadline_source_status",
+                "deadline_source_precision", "deadline_source_evidence",
+                "deadline_official_url", "deadline_official_evidence",
+                "deadline_extended", "deadline_history_status",
+            ):
+                item[key] = previous.get(key, item.get(key, ""))
         item["link"] = item["cfp_url"] or homepage or normalize_url(item.get("openreview_url", ""))
+
+    if history_requests:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(history_requests))) as executor:
+            futures = {
+                executor.submit(
+                    _github_pages_deadline_history, source_url, current_stamp, year, target_hint
+                ): (item, deadline, source_revisions)
+                for (
+                    item,
+                    deadline,
+                    source_revisions,
+                    source_url,
+                    current_stamp,
+                    year,
+                    target_hint,
+                ) in history_requests
+            }
+            for future in concurrent.futures.as_completed(futures):
+                item, deadline, source_revisions = futures[future]
+                try:
+                    recovered = future.result()
+                except Exception:
+                    recovered = []
+                if recovered:
+                    source_revisions = recovered
+                    for revision in source_revisions:
+                        revision.setdefault("notification_aoe", item.get("notification_aoe", ""))
+                        revision.setdefault("deadline_label", item.get("deadline_label", "submission"))
+                finish_deadline_history(item, deadline, source_revisions)
     if skipped:
         print(f"CFP discovery: skipped {skipped} workshop(s) still inside their sweep interval")
     print(
@@ -716,6 +1409,20 @@ def _group_value(content, key):
     return v.get("value") if isinstance(v, dict) else v
 
 
+def _group_final_submission_deadline(content):
+    """Compatibility name for the pure workshop-deadline parser."""
+    return group_final_submission_deadline(content)
+
+
+def fetch_invitation_observations(invitation_ids):
+    return read_invitation_observations(invitation_ids, _openreview_get, _aoe_stamp, OPENREVIEW_INVITATION_BATCH_SIZE)
+
+
+def refresh_configured_conferences(items, previous_by_id, clock, force_refresh=False):
+    return refresh_conference_milestones(items, previous_by_id, clock, force_refresh,
+        read_invitations=fetch_invitation_observations, fetch_html=_fetch_html, checked_at=checked_at)
+
+
 def fetch_workshop_source(source, previous_by_id=None):
     """Every workshop under one family-year's OpenReview parent group."""
     parent = source["parent"]
@@ -723,27 +1430,48 @@ def fetch_workshop_source(source, previous_by_id=None):
     pref = parent + "/"
     out = {}
     previous_by_id = previous_by_id or {}
-    for g in data.get("groups", []):
+    groups = [
+        group for group in data.get("groups", [])
+        if group.get("id", "").startswith(pref)
+        and "/" not in group.get("id", "")[len(pref):]
+    ]
+    invitation_metadata = {}
+    observed_deadlines = (
+        {} if source["deadline_aoe"]
+        else _openreview_submission_deadlines(
+            [group["id"] for group in groups],
+            include_expired=True,
+            metadata=invitation_metadata,
+        )
+    )
+    full_ids = {
+        group["id"]: _group_value(group.get("content", {}), "full_submission_invitation_id")
+        for group in groups
+    }
+    full_observations = fetch_invitation_observations([value for value in full_ids.values() if isinstance(value, str) and value])
+    for g in groups:
         gid = g.get("id", "")
-        if not gid.startswith(pref):
-            continue
         rest = gid[len(pref):]
-        if "/" in rest:          # skip /Authors, /Reviewers, ... subgroups
-            continue
         c = g.get("content", {}) or {}
-        # A round without a unified date takes each workshop's own stamp when
-        # OpenReview carries one. No date means no countdown to show, so it is left
-        # out rather than published with a placeholder somebody would plan against.
+        # Discovery does not require a deadline; an empty stamp stays explicitly unknown.
         item_id = source["id_prefix"] + rest
         previous = previous_by_id.get(item_id, {})
-        observed_deadline = source["deadline_aoe"] or _openreview_submission_deadline(gid)
-        deadline = observed_deadline or previous.get("deadline_aoe", "")
-        if not deadline:
-            continue
         route = _submission_type(source["family"], rest)
+        observed_deadline = source["deadline_aoe"] or observed_deadlines.get(gid, "")
+        allow_official_only = source["family"] == "NeurIPS" and source.get("year") == 2026
+        if (observed_deadline and not previous and not allow_official_only
+                and AoEClock.resolve().has_passed(observed_deadline)):
+            # Expired invitations are needed to recheck tracked cutoffs, not to backfill every old track.
+            continue
+        final_submission_deadline = (
+            _group_final_submission_deadline(c)
+            if route != SUBMISSION_COMMITMENT
+            else ""
+        )
+        deadline = final_submission_deadline or observed_deadline or previous.get("deadline_aoe", "")
         homepage = normalize_url(_group_value(c, "web") or _group_value(c, "website"))
         review_url = openreview_url(gid)
-        out[rest] = dict(
+        item = dict(
             id=item_id,
             name=_group_value(c, "title") or _group_value(c, "name") or rest,
             venue_type="workshop", venue_group=source["group"], track="workshop",
@@ -755,10 +1483,17 @@ def fetch_workshop_source(source, previous_by_id=None):
             cfp_url="",
             openreview_url=review_url,
             source_url=review_url,
-            _source_observed=bool(observed_deadline),
-            source_checked_at=(checked_at() if observed_deadline
+            _openreview_deadline=observed_deadline,
+            _full_submission_deadline=full_observations.get(full_ids.get(gid), {}).get("duedate_aoe", ""),
+            openreview_full_invitation=full_observations.get(full_ids.get(gid), {}),
+            openreview_invitation=invitation_metadata.get(gid, {}),
+            _group_final_deadline=final_submission_deadline,
+            _group_final_evidence=str(_group_value(c, "date") or "")[:700],
+            _source_observed=bool(observed_deadline or final_submission_deadline or not deadline),
+            source_checked_at=(checked_at() if observed_deadline or final_submission_deadline or not deadline
                                else previous.get("source_checked_at", "")),
             link=homepage or review_url)
+        out[rest] = item
     return [out[k] for k in sorted(out)]
 
 
@@ -795,6 +1530,34 @@ def _openreview_submission_deadline(group_id):
         if isinstance(duedate, (int, float)) and duedate > 0:
             return _aoe_stamp(duedate)
     return ""
+
+
+def _openreview_submission_deadlines(group_ids, include_expired=False, metadata=None):
+    """AoE deadlines for public Submission invitations, fetched in bounded batches."""
+    deadlines = {}
+    for start in range(0, len(group_ids), OPENREVIEW_INVITATION_BATCH_SIZE):
+        batch = group_ids[start:start + OPENREVIEW_INVITATION_BATCH_SIZE]
+        parameters = [("ids", f"{group_id}/-/Submission") for group_id in batch]
+        if include_expired:
+            parameters.insert(0, ("expired", "true"))
+        query = urllib.parse.urlencode(parameters)
+        try:
+            data = _openreview_get(f"https://api2.openreview.net/invitations?{query}", timeout=60)
+        except Exception:
+            continue
+        for invitation in data.get("invitations") or []:
+            invitation_id = invitation.get("id", "")
+            suffix = "/-/Submission"
+            duedate = invitation.get("duedate")
+            if invitation_id.endswith(suffix) and isinstance(duedate, (int, float)) and duedate > 0:
+                group_id = invitation_id[:-len(suffix)]
+                deadlines[group_id] = _aoe_stamp(duedate)
+                if metadata is not None:
+                    metadata[group_id] = {"id": invitation_id, "duedate_aoe": _aoe_stamp(duedate)}
+                    expiration = invitation.get("expdate")
+                    if isinstance(expiration, (int, float)) and expiration > 0:
+                        metadata[group_id]["expdate_aoe"] = _aoe_stamp(expiration)
+    return deadlines
 
 
 def fetch_openreview_conferences(previous_by_id=None, clock=None):
@@ -834,6 +1597,7 @@ def fetch_openreview_conferences(previous_by_id=None, clock=None):
         entries.append(dict(
             **{key: value for key, value in source.items() if key != "group_id"},
             deadline_aoe=deadline,
+            deadline_timezone="UTC",
             homepage_url=homepage,
             cfp_url="",
             openreview_url=review_url,
@@ -887,8 +1651,12 @@ def classify(item):
     set on each of them is a field that will be wrong. An entry may still declare
     `venue_family` itself when the name does not carry it (IASEAI, ARR).
     """
+    if item.get("deadline_time_precision") != "date_only" and item.get("deadline_aoe"):
+        item.update(timing_fields(item["deadline_aoe"], timezone=item.get("deadline_timezone", "")))
     item.pop("group_label", None)
     item.pop("_source_observed", None)
+    for key in ("_openreview_deadline", "_full_submission_deadline", "_group_final_deadline", "_group_final_evidence"):
+        item.pop(key, None)
     family = item.get("venue_family") or family_of(item.get("venue_group", ""), item.get("name", ""))
     item["venue_family"] = family
     item.setdefault("submission_type", "")
@@ -913,6 +1681,22 @@ def classify(item):
     # Kept while older calendar/matcher consumers migrate. New surfaces use the
     # explicit status above so an unknown venue is never presented as safe.
     item["archival"] = item["archival_status"] == "archival"
+    # Where the event meets, for every entry type rather than workshops only. A workshop inherits
+    # this from the conference it is attached to, but so does the conference's own main track,
+    # demo track and rebuttal window — leaving it on the workshop branch meant the board could
+    # name three cities against a NeurIPS workshop and none against NeurIPS itself. Families the
+    # table does not carry stay empty rather than guessing a city.
+    group_year = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
+    item["conference_location"] = PARENT_CONFERENCE_LOCATIONS.get(
+        (family, group_year.group(1) if group_year else "unknown"), ""
+    )
+    # The one site this workshop meets at, where its own page named one. Only ever a member of
+    # conference_location above, never a city from somewhere else, and empty for a single-site
+    # conference because there the inherited value is already the answer.
+    site = str(item.get("workshop_location", "")).strip()
+    item["workshop_location"] = (
+        site if site in conference_sites(item["conference_location"]) else ""
+    )
     if item["entry_type"] == "workshop":
         legacy_link = normalize_url(item.get("link", ""))
         homepage = normalize_url(policy_override.get("homepage_url", item.get("homepage_url", "")))
@@ -935,7 +1719,6 @@ def classify(item):
         year_match = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
         year = year_match.group(1) if year_match else "unknown"
         item["parent_conference_key"] = f"{family.lower()}-{year}"
-        item["conference_location"] = PARENT_CONFERENCE_LOCATIONS.get((family, year), "")
         topics = item.get("topic_profile")
         item["topic_profile"] = topics if isinstance(topics, list) and topics else [item["name"]]
         if not str(item.get("topic_evidence", "")).strip():
@@ -955,12 +1738,25 @@ def classify(item):
         item["link"] = normalize_url(item.get("link", ""))
         item["source_url"] = normalize_url(item.get("source_url", "")) or item["link"]
         item.setdefault("source_checked_at", "")
+    item["deadline_source_kind"] = str(item.get("deadline_source_kind", ""))
+    item["deadline_source_status"] = str(item.get("deadline_source_status", ""))
+    item["deadline_source_precision"] = str(item.get("deadline_source_precision", ""))
+    item["deadline_source_evidence"] = str(item.get("deadline_source_evidence", ""))[:700]
+    item["deadline_official_url"] = normalize_url(item.get("deadline_official_url", ""))
+    item["deadline_official_evidence"] = str(item.get("deadline_official_evidence", ""))[:700]
+    item["deadline_extended"] = bool(item.get("deadline_extended", False))
+    item["deadline_history_status"] = str(
+        item.get(
+            "deadline_history_status",
+            "extended_prior_unavailable" if item["deadline_extended"] else "not_extended",
+        )
+    )
     item["milestone"] = milestone_of(item.get("deadline_label", ""), item["submission_type"])
     return item
 
 
-REVISION_FIELDS = ("deadline_aoe", "notification_aoe", "deadline_label", "link")
-REVISION_CHANGE_FIELDS = ("deadline_aoe", "notification_aoe", "deadline_label")
+REVISION_FIELDS = ("deadline_aoe", "notification_aoe", "deadline_label", "link") + TIME_FIELDS
+REVISION_CHANGE_FIELDS = ("deadline_aoe", "deadline_time_precision", "deadline_date")
 
 
 def canonical_venue_identity(item):
@@ -981,32 +1777,78 @@ def canonical_venue_identity(item):
     return deadline_id
 
 
-def merge_history(item, previous=None, stale=False):
+def _revision_change_value(revision, key):
+    value = revision.get(key, "")
+    if key == "deadline_time_precision":
+        return value or "exact"
+    if key == "deadline_date":
+        return value or revision.get("deadline_aoe", "")[:10]
+    return value[:16] if key.endswith("_aoe") else value
+
+
+def _same_revision(left, right):
+    return all(
+        _revision_change_value(left, key) == _revision_change_value(right, key)
+        for key in REVISION_CHANGE_FIELDS
+    )
+
+
+def merge_history(item, previous=None, stale=False, reset_previous=False):
     """Keep one current projection while retaining every observed deadline revision."""
     previous = previous or {}
-    revisions = []
-    for raw_revision in previous.get("revisions", []):
-        revision = dict(raw_revision)
-        if revisions and all(
-            revisions[-1].get(key, "") == revision.get(key, "")
-            for key in REVISION_CHANGE_FIELDS
-        ):
-            revisions[-1] = revision
-        else:
-            revisions.append(revision)
-    if previous and not revisions:
+    source_revisions_present = "_source_revisions" in item
+    source_revisions = [dict(revision) for revision in item.pop("_source_revisions", [])]
+    revisions = [
+        dict(revision)
+        for revision in ([] if reset_previous else previous.get("revisions", []))
+    ]
+    if previous and not reset_previous and not revisions:
         revisions.append(dict(
             observed_at=previous.get("source_checked_at") or checked_at(),
             **{key: previous.get(key, "") for key in REVISION_FIELDS},
         ))
+    if source_revisions:
+        # Source-explicit or repository-recovered chains are already old -> new.
+        # Union by displayed minute so a second force-refresh is idempotent and a
+        # prior current projection cannot be left in front of its recovered past.
+        by_minute = {revision.get("deadline_aoe", "")[:16]: revision for revision in revisions}
+        for revision in source_revisions:
+            by_minute[revision.get("deadline_aoe", "")[:16]] = revision
+        revisions = [by_minute[key] for key in sorted(by_minute) if key]
+    else:
+        deduplicated = []
+        for revision in revisions:
+            if any(_same_revision(existing, revision) for existing in deduplicated):
+                continue
+            deduplicated.append(revision)
+        revisions = deduplicated
     projection = {key: item.get(key, "") for key in REVISION_FIELDS}
-    if not revisions or any(
-        revisions[-1].get(key, "") != projection[key]
-        for key in REVISION_CHANGE_FIELDS
-    ):
+    projection["link"] = item.get("source_url") or projection["link"]
+    matching = next(
+        (index for index, revision in enumerate(revisions) if _same_revision(revision, projection)),
+        None,
+    )
+    if matching is None:
         revisions.append(dict(observed_at=checked_at(), **projection))
     else:
-        revisions[-1]["link"] = projection["link"]
+        revisions[matching]["link"] = projection["link"]
+        timing = (timing_fields(revisions[matching]["deadline_aoe"], timezone=item.get("deadline_timezone", ""))
+                  if item.get("deadline_time_precision") != "date_only" else projection)
+        revisions[matching].update({key: timing[key] for key in TIME_FIELDS})
+    if source_revisions_present and source_revisions:
+        revisions.sort(key=lambda revision: revision.get("deadline_aoe", "")[:16])
+
+    distinct_deadlines = list(dict.fromkeys(revision["deadline_aoe"][:16] for revision in revisions if revision.get("deadline_aoe")))
+    if (len(distinct_deadlines) > 1
+            and all(revision.get("deadline_time_precision") != "date_only" for revision in revisions)
+            and all(
+        later > earlier for earlier, later in zip(distinct_deadlines, distinct_deadlines[1:])
+    )):
+        item["deadline_extended"] = True
+        if item.get("deadline_history_status") == "not_extended":
+            item["deadline_history_status"] = "observed_history"
+    else:
+        item["deadline_extended"] = bool(item.get("deadline_extended", False))
 
     deadline_id = item["id"]
     venue_id = canonical_venue_identity(item)
@@ -1023,26 +1865,221 @@ def merge_history(item, previous=None, stale=False):
     return item
 
 
-def main():
+def _load_previous_document(baseline_git_ref=""):
+    if not baseline_git_ref:
+        try:
+            return json.load(open(OUT))
+        except Exception:
+            return {}
+    repository = _git_output(["rev-parse", "--show-toplevel"], HERE).strip()
+    relative_output = os.path.relpath(OUT, repository)
+    document = _git_output(
+        ["show", f"{baseline_git_ref}:{relative_output}"], repository, timeout=20
+    )
+    return json.loads(document)
+
+
+def write_outputs(items):
+    """Write deadlines.json and its service and UI projections.
+
+    Split out of main() so the outputs can be rebuilt from an existing deadlines.json
+    without a sweep -- see --rewrite-outputs. Every writer runs from the one list,
+    which keeps the service and Control UI datasets in sync.
+    """
+    attach_schedules(items)
+    migrate_workshop_dates(items)
+    attach_abstract_requirements(items)
+    items.sort(key=lambda x: (not bool(x["deadline_aoe"]), x["deadline_aoe"], x["name"]))
+    doc = dict(history_version=4, timezone="AoE (UTC-12)",
+               note=("Current projections with append-only deadline revisions. "
+                     "Workshop contribution deadlines are reconciled deterministically from "
+                     "official CFP pages, explicit OpenReview final-paper summaries, and live "
+                     "OpenReview cutoffs; source conflicts remain in each record's provenance. "
+                     "Workshop notification policies are separate from individual decision dates."),
+               count=len(items), items=items)
+    # Readers must see a complete old or new snapshot, never a partially written file.
+    descriptor, temporary = tempfile.mkstemp(dir=os.path.dirname(OUT), prefix=".venues-", suffix=".json")
     try:
-        previous_doc = json.load(open(OUT))
-    except Exception:
-        previous_doc = {}
+        with os.fdopen(descriptor, "w") as handle:
+            json.dump(doc, handle, indent=2, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o644)
+        os.replace(temporary, OUT)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    print(f"wrote {OUT} with {len(items)} items")
+
+    # Keep the service dataset projection in sync.
+    ds = os.path.join(HERE, "..", "extensions", "adminbot", "src", "workflows", "deadlines", "generated", "dataset.ts")
+    with open(ds, "w") as f:
+        f.write("// Generated from extensions/adminbot/content/deadlines by\n"
+                "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
+                "export const DEADLINE_VENUES = "
+                + json.dumps(items, ensure_ascii=False, indent=2) + " as const;\n")
+    print(f"wrote {ds}")
+
+    # keep the bundled Control-UI tab dataset in sync (ui/src/ui/adminbot/data/deadlines.ts)
+    keys = ["id", "name", "venue_type", "venue_group", "track", "venue_family",
+            "conference_location", "workshop_location",
+            "entry_type", "archival_status", "venue_priority", "archival",
+            "submission_type", "milestone", "schedule", "schedule_status", "schedule_issues",
+            "schedule_checked_at", "schedule_extracted_at",
+            "notification_policy", "notification_status", "notification_previous_aoe", "notification_issues",
+            "deadline_label", "deadline_aoe", "notification_aoe", "link",
+            "homepage_url", "cfp_url", "openreview_url", "source_url", "source_checked_at",
+            "deadline_source_kind", "deadline_source_status", "deadline_source_precision",
+            "deadline_official_url",
+            "deadline_extended", "deadline_history_status",
+            "deadline_id", "venue_id", "venue_aliases", "revisions", "stale", "deadline_observations", *TIME_FIELDS, *ABSTRACT_FIELDS]
+    # "" is the right empty for every string field here; `schedule` is a list, and a
+    # bare "" in it would typecheck as neither.
+    slim = [{k: it.get(k, [] if k in {"schedule", "schedule_issues"} else "") for k in keys
+             if (k not in (*TIME_FIELDS, *ABSTRACT_FIELDS, "deadline_observations") or k in it)
+             and (not k.startswith(("schedule_", "notification_")) or k == "notification_aoe" or k in it)} for it in items]
+    ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
+    with open(ui_ds, "w") as f:
+        f.write("// Generated from extensions/adminbot/content/deadlines by\n"
+                "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
+                "export type DeadlineRevision = {\n"
+                "  observed_at: string;\n  deadline_aoe: string;\n"
+                "  deadline_at?: string;\n  deadline_date?: string;\n  deadline_timezone?: string;\n"
+                "  deadline_time_precision?: string;\n  deadline_planning_at?: string;\n"
+                "  notification_aoe?: string;\n  deadline_label?: string;\n  link?: string;\n};\n\n"
+                "/** One dated stage of a venue's calendar, other than the submission itself. */\n"
+                "export type DeadlineMilestone = {\n"
+                "  /** reviews | rebuttal | notification | cycle_end | camera_ready | conference */\n"
+                "  milestone: string;\n  label: string;\n"
+                "  /** How to read the date: an AoE cutoff, a day the venue acts on, or a span. */\n"
+                "  kind: \"deadline\" | \"date\" | \"period\";\n"
+                "  /** Set for kind \"deadline\" and \"date\". */\n"
+                "  date?: string;\n"
+                "  /** Both set for kind \"period\". */\n"
+                "  starts?: string;\n  ends?: string;\n  timezone?: string;\n  planning_at?: string;\n};\n\n"
+                "export type DeadlineVenue = {\n"
+                "  notification_policy?: DeadlineMilestone & { status: string; checked_at?: string; evidence?: string };\n"
+                "  notification_status?: string;\n  notification_previous_aoe?: string;\n  notification_issues?: string[];\n"
+
+                "  deadline_observations?: { date: string; precision: string; source_url: string; document_id: string; extraction_kind: string; milestone: string; evidence: string; decision: string }[];\n"
+                "  abstract_requirement?: \"required\" | \"not_required\" | \"unknown\";\n"
+                "  abstract_requirement_evidence?: string;\n  abstract_requirement_source_url?: string;\n"
+                "  abstract_requirement_conflict?: boolean;\n  abstract_deadline_id?: string;\n"
+                "  id: string;\n  name: string;\n  venue_type: string;\n  venue_group: string;\n"
+                "  deadline_at?: string;\n  deadline_date?: string;\n  deadline_timezone?: string;\n"
+                "  deadline_time_precision?: string;\n  deadline_planning_at?: string;\n"
+                "  /** Stable dated-deadline identity; equal to the legacy id. */\n"
+                "  deadline_id: string;\n"
+                "  /** Canonical venue identity, with every accepted legacy form listed below. */\n"
+                "  venue_id: string;\n  venue_aliases: string[];\n"
+                "  revisions: DeadlineRevision[];\n  stale: boolean;\n"
+                "  track?: string;\n"
+                "  /** Conference family, e.g. \"EMNLP\". Empty when it is not one the lab tracks. */\n"
+                "  venue_family?: string;\n"
+                "  /** Where the parent conference meets, e.g. \"Budapest, Hungary\". A workshop\n"
+                "   *  inherits its conference's location. A multi-site event lists every site,\n"
+                "   *  separated by \"; \" — NeurIPS 2026 runs in Sydney, Atlanta and Paris at once.\n"
+                "   *  Empty for a venue with no fixed location (ARR cycles) or none published. */\n"
+                "  conference_location?: string;\n"
+                "  /** The one site a workshop meets at, when its own page named one —\n"
+                "   *  always one of the sites in `conference_location`, never a city from\n"
+                "   *  anywhere else. Empty when the parent has a single site (the inherited\n"
+                "   *  value already answers it), when the page named none of them, or when it\n"
+                "   *  named several and so has not said which. Read it in preference to\n"
+                "   *  `conference_location`, and fall back to that when it is empty. */\n"
+                "  workshop_location?: string;\n"
+                "  entry_type: \"main_conference\" | \"demo_track\" | \"workshop\" |\n"
+                "    \"arr_direct_submission\" | \"arr_commitment\" | \"rebuttal\" | \"other\";\n"
+                "  archival_status: \"archival\" | \"non_archival\" | \"mixed\" | \"unknown\";\n"
+                "  venue_priority: \"primary\" | \"secondary\" | \"standard\";\n"
+                "  /** Compatibility boolean. New consumers use archival_status. */\n"
+                "  archival?: boolean;\n"
+                "  /** ARR route: \"direct\" submits fresh, \"commitment\" attaches existing reviews. */\n"
+                "  submission_type?: string;\n"
+                "  /** Which sub-deadline this row is: abstract, full_paper, camera_ready, ...\n"
+                "   *  See MILESTONES in scripts/adminbot_deadlines.py. Empty when unclassified. */\n"
+                "  milestone?: string;\n"
+                "  /** The rest of this venue's calendar after the submission above: reviews,\n"
+                "   *  rebuttal window, decisions, camera-ready, the conference itself. Empty\n"
+                "   *  when the venue has published none of it. The board counts down to the\n"
+                "   *  submission only; these render as a quiet list beside it. */\n"
+                "  schedule: DeadlineMilestone[];\n"
+                "  deadline_label: string;\n  deadline_aoe: string;\n"
+                "  notification_aoe?: string;\n  link?: string;\n"
+                "  homepage_url?: string;\n  cfp_url?: string;\n  openreview_url?: string;\n"
+                "  source_url?: string;\n  source_checked_at?: string;\n"
+                "  deadline_source_kind?: string;\n  deadline_source_status?: string;\n"
+                "  deadline_source_precision?: string;\n"
+                "  deadline_official_url?: string;\n"
+                "  deadline_extended: boolean;\n  deadline_history_status?: string;\n};\n\n"
+                "export const DEADLINE_VENUES: DeadlineVenue[] = "
+                + json.dumps(slim, ensure_ascii=False, indent=2) + ";\n")
+    print(f"wrote {ui_ds}")
+
+    # The dashboard, availability, and paper controls load on every signed-in visit. Keep their
+    # deadline projection out of the full board chunk. Revision history belongs to the lazy board;
+    # source excerpts are kept in the canonical dataset because no Control UI view reads them.
+    summary_keys = ["id", "deadline_id", "venue_id", "venue_aliases", "name",
+                    "venue_type", "venue_group", "entry_type", "archival_status", "archival",
+                    "milestone", "schedule",
+                    "deadline_label", "deadline_aoe", "notification_aoe", "link", *TIME_FIELDS]
+    summaries = [{key: item.get(key, [] if key in ("venue_aliases", "schedule") else "")
+                  for key in summary_keys if key not in TIME_FIELDS or key in item} for item in items]
+    summary_path = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines-summary.ts")
+    with open(summary_path, "w") as f:
+        f.write("// Generated from extensions/adminbot/content/deadlines/deadlines.json by\n"
+                "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
+                'import type { DeadlineVenue } from "./deadlines.ts";\n\n'
+                "export type DeadlineSummaryVenue = Pick<DeadlineVenue,\n  "
+                + " |\n  ".join(json.dumps(key) for key in summary_keys)
+                + ">;\n\n"
+                "export const DEADLINE_SUMMARIES: DeadlineSummaryVenue[] = [\n  "
+                + ",\n  ".join(json.dumps(row, ensure_ascii=False, separators=(",", ": "))
+                                for row in summaries) + "\n];\n")
+    print(f"wrote {summary_path}")
+
+
+
+def main():
+    baseline_args = [
+        arg.removeprefix("--baseline-git-ref=")
+        for arg in sys.argv[1:]
+        if arg.startswith("--baseline-git-ref=")
+    ]
+    unknown_args = [
+        arg
+        for arg in sys.argv[1:]
+        if arg not in {"--force-refresh", "--rewrite-outputs"}
+        and not arg.startswith("--baseline-git-ref=")
+    ]
+    if unknown_args:
+        raise SystemExit(f"unknown argument(s): {' '.join(unknown_args)}")
+    if len(baseline_args) > 1 or (baseline_args and not baseline_args[0]):
+        raise SystemExit("--baseline-git-ref requires exactly one non-empty ref")
+    force_refresh = "--force-refresh" in sys.argv[1:]
+    # Rebuild the generated artifacts from the deadlines.json already on disk, with no
+    # network and no revision bookkeeping. This is for a change to the *shape* of the
+    # output -- a new field, a new consumer -- where a full sweep would bury it under a
+    # hundred moved dates. It cannot change a deadline: only a real sweep does that, so
+    # that every change to a date still arrives as a dated revision.
+    if "--rewrite-outputs" in sys.argv[1:]:
+        existing = json.load(open(OUT))
+        write_outputs(existing["items"])
+        return
+    previous_doc = _load_previous_document(baseline_args[0] if baseline_args else "")
     previous_items = previous_doc.get("items", [])
-    previous_has_history = previous_doc.get("history_version") == 1
+    migrate_workshop_dates(previous_items)
+    previous_history_version = previous_doc.get("history_version")
+    previous_has_history = previous_history_version == 4
     previous_by_id = {item.get("id"): item for item in previous_items if item.get("id")}
     # One clock for the whole run, so every cadence decision agrees about "now" and a sweep that
     # straddles midnight cannot re-read half the board on one interval and half on another.
     clock = AoEClock.resolve()
-    items = list(CONFERENCES) + list(EMNLP_WORKSHOPS) + fetch_openreview_conferences(
+    items = refresh_configured_conferences([dict(item) for item in CONFERENCES], previous_by_id, clock, force_refresh) + list(EMNLP_WORKSHOPS) + fetch_openreview_conferences(
         previous_by_id, clock
     )
     fetched, failures = fetch_workshops(previous_by_id)
     items += fetched
-    observed_ids = {
-        item["id"] for item in items
-        if item.get("_source_observed", True)
-    }
     fallback_ids = set()
     # Fail soft per family: one conference's OpenReview group being absent (its
     # workshop round has not opened yet, which is the normal state for most of the
@@ -1061,7 +2098,12 @@ def main():
         except Exception:
             pass
 
-    enrich_workshop_sources(items, previous_by_id, clock)
+    enrich_workshop_sources(items, previous_by_id, clock, force_refresh)
+    items = [item for item in items if item.get("deadline_aoe") or item.get("venue_type") == "workshop"]
+    observed_ids = {
+        item["id"] for item in items
+        if item.get("_source_observed", True)
+    }
     items = [classify(x) for x in items]
     # Ids must stay unique: a family kept from the previous sweep can collide with
     # one that was also fetched this time.
@@ -1080,91 +2122,23 @@ def main():
             previous_by_id.get(item["id"]),
             (bool(previous_by_id.get(item["id"], {}).get("stale")) and previous_has_history
              if item["id"] in fallback_ids else item["id"] not in observed_ids),
+            (previous_history_version != 4 and item["id"].startswith("neurips2026_ws_")),
         )
         for item in unique
     ]
     current_ids = {item["id"] for item in items}
     for deadline_id, previous in previous_by_id.items():
         if deadline_id not in current_ids:
-            items.append(merge_history(classify(dict(previous)), previous, stale=True))
-    items.sort(key=lambda x: (x["deadline_aoe"], x["name"]))
-    doc = dict(history_version=1, timezone="AoE (UTC-12)",
-               note=("Current projections with append-only deadline revisions. "
-                     "NeurIPS 2026 workshops use the official unified "
-                     "deadline (submission 2026-08-29, hard accept/reject 2026-09-29)."),
-               count=len(items), items=items)
-    json.dump(doc, open(OUT, "w"), indent=2, ensure_ascii=False)
-    print(f"wrote {OUT} with {len(items)} items")
-
-    # The checked-in HTML is also directly runnable, so keep its embedded data in
-    # lockstep with the canonical JSON. The generated TypeScript wrapper replaces
-    # this array at request time, but the standalone file has no such injection.
-    board_path = os.path.join(DEADLINES_DIR, "deadlines-board.html")
-    board = open(board_path).read()
-    board, replacements = re.subn(
-        r"const DATA = \[.*?\];\n",
-        "const DATA = " + json.dumps(items, ensure_ascii=False, indent=2) + ";\n",
-        board,
-        count=1,
-        flags=re.DOTALL,
-    )
-    if replacements != 1:
-        raise RuntimeError("standalone deadline board has no replaceable DATA array")
-    open(board_path, "w").write(board)
-    print(f"wrote {board_path}")
-
-    # keep the served-page dataset (Output 0 Control-UI surface) in sync
-    ds = os.path.join(HERE, "..", "extensions", "adminbot", "src", "workflows", "deadlines", "generated", "dataset.ts")
-    with open(ds, "w") as f:
-        f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
-                "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
-                "export const DEADLINE_VENUES = "
-                + json.dumps(items, ensure_ascii=False, indent=2) + " as const;\n")
-    print(f"wrote {ds}")
-
-    # keep the bundled Control-UI tab dataset in sync (ui/src/ui/adminbot/data/deadlines.ts)
-    keys = ["id", "name", "venue_type", "venue_group", "track", "venue_family",
-            "entry_type", "archival_status", "venue_priority", "archival",
-            "submission_type", "milestone",
-            "deadline_label", "deadline_aoe", "notification_aoe", "link",
-            "homepage_url", "cfp_url", "openreview_url", "source_url", "source_checked_at",
-            "deadline_id", "venue_id", "venue_aliases", "revisions", "stale"]
-    slim = [{k: it.get(k, "") for k in keys} for it in items]
-    ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
-    with open(ui_ds, "w") as f:
-        f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
-                "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
-                "export type DeadlineRevision = {\n"
-                "  observed_at: string;\n  deadline_aoe: string;\n"
-                "  notification_aoe?: string;\n  deadline_label?: string;\n  link?: string;\n};\n\n"
-                "export type DeadlineVenue = {\n"
-                "  id: string;\n  name: string;\n  venue_type: string;\n  venue_group: string;\n"
-                "  /** Stable dated-deadline identity; equal to the legacy id. */\n"
-                "  deadline_id: string;\n"
-                "  /** Canonical venue identity, with every accepted legacy form listed below. */\n"
-                "  venue_id: string;\n  venue_aliases: string[];\n"
-                "  revisions: DeadlineRevision[];\n  stale: boolean;\n"
-                "  track?: string;\n"
-                "  /** Conference family, e.g. \"EMNLP\". Empty when it is not one the lab tracks. */\n"
-                "  venue_family?: string;\n"
-                "  entry_type: \"main_conference\" | \"demo_track\" | \"workshop\" |\n"
-                "    \"arr_direct_submission\" | \"arr_commitment\" | \"rebuttal\" | \"other\";\n"
-                "  archival_status: \"archival\" | \"non_archival\" | \"mixed\" | \"unknown\";\n"
-                "  venue_priority: \"primary\" | \"secondary\" | \"standard\";\n"
-                "  /** Compatibility boolean. New consumers use archival_status. */\n"
-                "  archival?: boolean;\n"
-                "  /** ARR route: \"direct\" submits fresh, \"commitment\" attaches existing reviews. */\n"
-                "  submission_type?: string;\n"
-                "  /** Which sub-deadline this row is: abstract, full_paper, camera_ready, ...\n"
-                "   *  See MILESTONES in scripts/adminbot_deadlines.py. Empty when unclassified. */\n"
-                "  milestone?: string;\n"
-                "  deadline_label: string;\n  deadline_aoe: string;\n"
-                "  notification_aoe?: string;\n  link?: string;\n"
-                "  homepage_url?: string;\n  cfp_url?: string;\n  openreview_url?: string;\n"
-                "  source_url?: string;\n  source_checked_at?: string;\n};\n\n"
-                "export const DEADLINE_VENUES: DeadlineVenue[] = "
-                + json.dumps(slim, ensure_ascii=False, indent=2) + ";\n")
-    print(f"wrote {ui_ds}")
+            items.append(merge_history(
+                classify(dict(previous)),
+                previous,
+                stale=True,
+                reset_previous=(
+                    previous_history_version != 4
+                    and deadline_id.startswith("neurips2026_ws_")
+                ),
+            ))
+    write_outputs(items)
 
     # Coverage report, not a failure: these are venues the guidebook tracks whose next
     # round has not announced a date. Printed every run so the gap stays visible.

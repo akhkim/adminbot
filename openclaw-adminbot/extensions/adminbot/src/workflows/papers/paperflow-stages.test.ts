@@ -246,7 +246,7 @@ describe("paperflowStageEmail", () => {
     prioritized: false,
   };
 
-  it("names the mailbox to bcc, which is the entire payload of the message", () => {
+  it("names the mailbox and the trusted forwarding address requirement", () => {
     const mail = paperflowStageEmail({
       paper: paper({ venue: "ARR" }),
       stage: "reviews_out",
@@ -257,6 +257,8 @@ describe("paperflowStageEmail", () => {
     expect(mail.body).toContain("adminbot@example.org");
     expect(mail.body).toContain("Have the reviews come back yet?");
     expect(mail.body).toContain("ARR");
+    expect(mail.body).toContain("from an email address saved on your AdminBot profile");
+    expect(mail.body).toContain("Do not only bcc the original venue message");
   });
 
   it("explains why this person got it when they are not the listed first author", () => {

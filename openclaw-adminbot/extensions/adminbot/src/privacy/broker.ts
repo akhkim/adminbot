@@ -1,8 +1,8 @@
-import { createGatewayFetch } from "./broker.gateway.js";
 import type {
   AdminBotPrivacyTaskRequest,
   AdminBotPrivacyTaskResult,
 } from "../contracts/actions.js";
+import { createGatewayFetch } from "./broker.gateway.js";
 
 export type PrivacyBrokerFetch = (
   input: string | URL,

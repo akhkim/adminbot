@@ -220,7 +220,7 @@ describe("what the matcher will and will not ask the model to do", () => {
 
   it("reports progress as it goes, so a caller can persist it", async () => {
     // A pass is thousands of calls; without this a page opened mid-pass can only say "running".
-    const seen: Array<[number, number]> = [];
+    const seen: Array<[number, number, number]> = [];
     const fetchImpl = vi.fn(async () => reply({ matches: [] })) as unknown as GuidebookFetch;
     const match = createLocalWorkshopMatcher({
       fetchImpl,
@@ -231,16 +231,24 @@ describe("what the matcher will and will not ask the model to do", () => {
     await match({
       workshops: [profile("a"), profile("b")],
       papers: [paper("p-1")],
-      onProgress: (done, total) => seen.push([done, total]),
+      onProgress: (done, total, failed) => seen.push([done, total, failed]),
     });
 
+    // The leading zero is the total becoming known: until the jobs are built the page can only say
+    // "working out how many papers and workshops to compare", and it should stop saying that as
+    // soon as there is a number rather than after the first model call comes back.
     expect(seen).toEqual([
-      [1, 2],
-      [2, 2],
+      [0, 2, 0],
+      [1, 2, 0],
+      [2, 2, 0],
     ]);
   });
 
-  it("keeps going when one batch fails, and says nothing about it in the results", async () => {
+  it("retries a call that fails, so one blip does not silently drop a workshop", async () => {
+    // The per-call timeout stops an unanswered request from holding a concurrency slot forever. It
+    // does not get the answer. A tunnel that blips for a second would otherwise cost a whole
+    // (workshop, batch) pair, and the page cannot tell a dropped pair from a workshop that matched
+    // nothing.
     let call = 0;
     const fetchImpl = vi.fn(async () => {
       call += 1;
@@ -254,14 +262,68 @@ describe("what the matcher will and will not ask the model to do", () => {
       fetchImpl,
       papersPerRequest: 1,
       maxConcurrentRequests: 1,
+      retryBackoffMs: 0,
     });
     const matches = await match({
       workshops: [profile("a"), profile("b")],
       papers: [paper("p-1")],
     });
 
+    expect(matches.map((entry) => entry.workshop_id)).toEqual(["a", "b"]);
+  });
+
+  it("keeps going when one batch fails for good, and reports it as a failed call", async () => {
+    const seen: Array<[number, number, number]> = [];
+    const fetchImpl = vi.fn(async (_url: string, init?: { body?: string }) => {
+      if (init?.body?.includes("Workshop a")) {
+        throw new Error("one bad batch");
+      }
+      return reply({ matches: [{ paper_id: "p-1", relevance: 90, reason: "On scope." }] });
+    }) as unknown as GuidebookFetch;
+
+    const match = createLocalWorkshopMatcher({
+      fetchImpl,
+      papersPerRequest: 1,
+      maxConcurrentRequests: 1,
+      retryBackoffMs: 0,
+    });
+    const matches = await match({
+      workshops: [profile("a"), profile("b")],
+      papers: [paper("p-1")],
+      onProgress: (done, total, failed) => seen.push([done, total, failed]),
+    });
+
     // The surviving workshop still produced its recommendation.
     expect(matches.map((entry) => entry.workshop_id)).toEqual(["b"]);
+    // And the failure counted toward `done`. A failed call that did not advance the count is how a
+    // pass reaches 1671 of 2540 and stops: the total is fixed at the start, so a job that reports
+    // nothing leaves a hole the count can never close, and the tab spins forever.
+    expect(seen.at(-1)).toEqual([2, 2, 1]);
+  });
+
+  it("stops when the pass is cancelled, and says it was cancelled", async () => {
+    // Waiting out the thirty-minute stall window is the right default for a pass nobody is
+    // watching. An administrator standing in front of a pass they know is broken should not have
+    // to restart the service to reclaim the model.
+    const controller = new AbortController();
+    const fetchImpl = vi.fn(async () => {
+      controller.abort();
+      return reply({ matches: [] });
+    }) as unknown as GuidebookFetch;
+
+    const match = createLocalWorkshopMatcher({
+      fetchImpl,
+      papersPerRequest: 1,
+      maxConcurrentRequests: 1,
+      retryBackoffMs: 0,
+    });
+    await expect(
+      match({
+        workshops: [profile("a"), profile("b")],
+        papers: [paper("p-1")],
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow(/cancelled/u);
   });
 
   it("raises the real cause when every call fails", async () => {
@@ -271,9 +333,93 @@ describe("what the matcher will and will not ask the model to do", () => {
       throw new Error("connect ECONNREFUSED");
     }) as unknown as GuidebookFetch;
 
-    const match = createLocalWorkshopMatcher({ fetchImpl });
+    const match = createLocalWorkshopMatcher({ fetchImpl, retryBackoffMs: 0 });
     await expect(match({ workshops: [profile("a")], papers: [paper("p-1")] })).rejects.toThrow(
       /ECONNREFUSED/u,
     );
+  });
+});
+
+/**
+ * What the request asks of the server, given what the server is.
+ *
+ * Aurora's vLLM runs a reasoning model with two sequence slots. A pass that let the model think
+ * at length, six requests at a time, with no output ceiling and no schema, lost 24 of its first
+ * 37 calls to timeouts and unparseable replies. These pin the settings that stop that.
+ */
+describe("keeping calls short enough to answer", () => {
+  function requestBody(fetchImpl: ReturnType<typeof vi.fn>): Record<string, unknown> {
+    const init = fetchImpl.mock.calls[0]?.[1] as { body?: string } | undefined;
+    return JSON.parse(init?.body ?? "{}") as Record<string, unknown>;
+  }
+
+  it("turns thinking off, caps the output, and asks vLLM to enforce the reply shape", async () => {
+    const fetchImpl = vi.fn(async () => reply({ matches: [] }));
+    const match = createLocalWorkshopMatcher({ fetchImpl: fetchImpl as unknown as GuidebookFetch });
+    await match({ workshops: [profile("a")], papers: [paper("p-1")] });
+
+    const body = requestBody(fetchImpl);
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(body.max_tokens).toBe(1024);
+    expect(body.temperature).toBe(0);
+    const format = body.response_format as {
+      type: string;
+      json_schema: { strict: boolean; schema: { required: string[] } };
+    };
+    expect(format.type).toBe("json_schema");
+    expect(format.json_schema.strict).toBe(true);
+    expect(format.json_schema.schema.required).toEqual(["matches"]);
+  });
+
+  it("runs two calls at a time unless the environment says the server admits more", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const fetchImpl = vi.fn(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return reply({ matches: [] });
+    }) as unknown as GuidebookFetch;
+    const workshops = ["a", "b", "c", "d", "e", "f"].map((id) => profile(id));
+
+    await createLocalWorkshopMatcher({ fetchImpl, env: {} })({ workshops, papers: [paper("p-1")] });
+    expect(peak).toBe(2);
+
+    peak = 0;
+    await createLocalWorkshopMatcher({
+      fetchImpl,
+      env: { ADMINBOT_WORKSHOP_MATCH_CONCURRENCY: "4" },
+    })({ workshops, papers: [paper("p-1")] });
+    expect(peak).toBe(4);
+  });
+
+  it("says which workshop failed and why, alongside the count", async () => {
+    const seen: Array<string | undefined> = [];
+    const fetchImpl = vi.fn(async (_url: string, init?: { body?: string }) => {
+      if (init?.body?.includes("Workshop a")) {
+        const error = new Error("The operation was aborted due to timeout");
+        error.name = "TimeoutError";
+        throw error;
+      }
+      return reply({ matches: [] });
+    }) as unknown as GuidebookFetch;
+
+    await createLocalWorkshopMatcher({
+      fetchImpl,
+      maxConcurrentRequests: 1,
+      retryBackoffMs: 0,
+    })({
+      workshops: [profile("a"), profile("b")],
+      papers: [paper("p-1")],
+      onProgress: (_done, _total, _failed, detail) => seen.push(detail),
+    });
+
+    // The first report is the total becoming known; the failure names its workshop and spells
+    // the timeout out as what it was, and the detail stays on later reports so the last one --
+    // the one that ends up on the run -- still carries it.
+    expect(seen[0]).toBeUndefined();
+    expect(seen[1]).toBe("Workshop a: the model did not answer in time");
+    expect(seen.at(-1)).toBe("Workshop a: the model did not answer in time");
   });
 });

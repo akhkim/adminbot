@@ -2,6 +2,63 @@
 import type { TranslationMap } from "../lib/types.ts";
 
 export const en: TranslationMap = {
+  paperFeedback: {
+    title: "Request paper feedback",
+    blurb: "Queue a draft for PI feedback. Publication approval is a separate decision.",
+    unspecified: "Not specified",
+    soft: "Feedback by (soft):",
+    hard: "Submission cutoff (hard):",
+    late: "Past submission cutoff — soft submission. Feedback is still queued.",
+    open: "Open manuscript",
+    remove: "Remove from feedback queue",
+    url: "Manuscript link (required)",
+    reason: "Why is feedback needed? (required, visible to paper authors and admins)",
+    softInput: "Feedback by — personal soft deadline",
+    hardInput: "Official submission cutoff — hard deadline",
+    hint: "Times use your browser’s local time zone. A passed cutoff does not block a request.",
+    invalid:
+      "Use an HTTPS manuscript link and valid times; feedback-by cannot follow the submission cutoff.",
+    saving: "Saving…",
+    queued: "Queued: {label}",
+    queue: "Queue {label}",
+    feedback_arr: "ARR / Overleaf feedback",
+    feedback_arxiv: "arXiv feedback",
+    feedback_camera_ready: "Camera-ready feedback",
+  },
+  deadlineStageProposal: {
+    chooseVenue:
+      "Select a conference or workshop from the list, or choose New conference or workshop.",
+    venue: "Conference or workshop",
+    newVenue: "New conference or workshop",
+    stage: "Stage",
+    stageName: "Stage name",
+    original: "Original date",
+    correct: "Suggest deadline correction",
+    timeUnknown: "Time unknown",
+    kinds: {
+      submission: "Paper submission",
+      abstract: "Abstract registration",
+      notification: "Decisions",
+      camera_ready: "Camera-ready",
+      author_response: "Author response",
+      registration: "Registration",
+      conference: "Conference",
+      other: "Other",
+    },
+  },
+  deadlineStageFilter: {
+    label: "Filter by stage",
+    all: "All stages",
+    submission: "Submission",
+    abstract: "Abstract registration",
+    notification: "Decisions",
+    author_response: "Author response",
+    camera_ready: "Camera-ready",
+    conference: "Conference",
+    commitment: "Commitment",
+    registration: "Registration",
+    discussion: "Discussion",
+  },
   common: {
     health: "Health",
     ok: "OK",
@@ -391,7 +448,7 @@ export const en: TranslationMap = {
     myInfo: "My Info",
     generalTools: "General Tools",
     requestsToZhijing: "Requests to Zhijing",
-    labSharing: "Lab Sharing",
+    labSharing: "Collaborate",
     admin: "Admin",
     openclaw: "OpenClaw",
     settings: "Settings",
@@ -412,17 +469,81 @@ export const en: TranslationMap = {
   },
 
   professor: {
+    broadcast: {
+      title: "Broadcast to the lab",
+      hint: "Shown at the top of every member's dashboard until the date below.",
+      placeholder: "e.g. Reviewing submissions this week. Available for meetings Thursday.",
+      none: "Nothing being broadcast",
+      until: "Showing until {date}",
+      showsUntil: "Show until",
+      availability: "Status",
+      timezone: "Zhijing’s time zone (optional)",
+      timezoneLabel: "Time zone: {timezone}",
+      availability_away: "Away",
+      availability_busy: "Busy",
+      availability_available: "Available",
+      availability_unknown: "Not stated",
+      post: "Post to the lab",
+      update: "Update broadcast",
+      takeDown: "Take it down",
+    },
     loading: "Reading…",
-    more: "+{count} more",
+    showMore: "Show {count} more",
+    showFewer: "Show fewer",
+    // Said only when an opened list is still holding rows back, so the number above it is never
+    // the size of a list you are looking at all of.
+    showing: "Showing {shown} of {total}",
+    newTab: "opens in a new tab",
+    piReview: {
+      // Each of the three paper queues below names the job it is asking for, because "a list of
+      // papers" was true of all three and told her nothing about which to open. This one is a
+      // decision on a finished thing.
+      title: "Paper feedback and publication approval",
+      blurb:
+        "Feedback requests ask for comments; publication approval remains a separate decision. Nothing is posted until you say yes.",
+      empty: "No paper is waiting on your approval.",
+      open: "Open the papers",
+      since: "ready {date}",
+      pdf: "Read the PDF",
+      incomplete: "paper password still missing",
+    },
+    escalated: {
+      // Not a paper queue: what is missing here is information, and the only thing left to try is
+      // her asking the person directly.
+      title: "Missing information — needs a word from you",
+      blurb:
+        "AdminBot asked these people repeatedly and got nothing back. It has stopped asking; a message from you is what is left.",
+      items: "{count} things outstanding",
+      empty: "Nobody has ignored a nudge long enough to reach you.",
+      open: "Write to them",
+    },
     letters: {
       title: "Rec letter queue",
       schools: "{count} school(s)",
       noSchools: "No schools listed yet",
       empty: "Nothing outstanding.",
       open: "Open the request queue",
+      // Relative windows, not months: the section has to say the same thing in November as in June.
+      bucket: {
+        overdue: "Overdue",
+        week: "Next 7 days",
+        month: "Next 30 days",
+        later: "Later this term",
+        undated: "No deadline yet",
+      },
+      due: {
+        today: "due today",
+        in: "in {count} day(s)",
+        ago: "{count} day(s) ago",
+        none: "no deadline given",
+      },
     },
     drafts: {
-      title: "Overleaf reading queue",
+      // The other paper queue, and the one nothing is blocked on. Named for the reading rather
+      // than for Overleaf, which is only where the draft happens to live.
+      title: "Read and comment while they are still writing",
+      blurb:
+        "Drafts still being written, on Overleaf. Nobody is blocked on you here — this is the window where your comments can still change the paper.",
       empty: "No drafts are waiting to be read.",
       open: "Open Active Papers",
     },
@@ -441,26 +562,72 @@ export const en: TranslationMap = {
     },
   },
 
+  tabUsage: {
+    title: "Which tabs the lab opens",
+    blurb:
+      "Every tab switch, counted. The other pages here count what members filled in; this counts what they came to look at, which is the only way to tell an unwanted tab from an unfindable one.",
+    window: "Window",
+    days: "{count} days",
+    loading: "Reading\u2026",
+    empty: "No tab visits recorded in this window yet.",
+    refresh: "Refresh",
+    export: "Download CSV",
+    exporting: "Preparing\u2026",
+    untimed: "\u2014",
+    seconds: "{count}s",
+    minutes: "{count}m",
+    minutesSeconds: "{minutes}m {seconds}s",
+    totals: {
+      visits: "visits",
+      members: "people",
+      tabs: "tabs opened",
+      impersonated: "while viewing as",
+    },
+    column: {
+      tab: "Tab",
+      visits: "Visits",
+      members: "People",
+      perDay: "Per day",
+      dwell: "Median time",
+      last: "Last opened",
+    },
+    // Said on the page, not left for whoever reads the numbers next year: each clause is a way the
+    // table can be over-read, and the export is what a real analysis should start from.
+    caveat:
+      "Time on a tab is inferred from the gap to that person's next tab, capped at 30 minutes, so the last tab of a sitting is counted as a visit but not timed. A visit is one tab switch, not one read. Rows recorded while an admin was viewing as somebody are counted here and flagged in the CSV.",
+    error: {
+      signIn: "Sign in to read tab usage.",
+      unreachable: "Could not reach AdminBot at {url}.",
+      forbidden: "Tab usage is admin-only.",
+      failed: "Could not read tab usage.",
+    },
+  },
+
   pages: {
     labOverview: "Lab Overview",
     nudges: "Nudges",
     membership: "Membership",
+    myDesk: "My Desk",
   },
 
   tabs: {
     dashboard: "Dashboard",
     profile: "My Profile",
+    gettingStarted: "Getting Started",
     myWork: "My Projects & Papers",
-    labSharing: "Lab Sharing",
+    labSharing: "Collaborate",
     agents: "Agents",
     adminbot: "Pending Actions",
     adminbotRegistrations: "Requests",
+    adminbotBadges: "Badges",
     adminbotOnboarding: "Onboarding",
     adminbotReimbursements: "Reimbursement Form Prep",
     adminbotSettings: "Settings",
     adminbotMembers: "Lab Members",
     adminbotProfileOverview: "Profile Completeness",
+    adminbotTabUsage: "Tab Usage",
     adminbotProfessor: "My Desk",
+    adminbotTravel: "Travel",
     adminbotTimeAvailability: "Time Availability",
     adminbotMeetings: "Meeting Recordings",
     adminbotSignatures: "Signatures for You",
@@ -470,8 +637,10 @@ export const en: TranslationMap = {
     adminbotWorkshopNudges: "Workshop Matches",
     adminbotAnnouncements: "Announcements",
     adminbotConferencePapers: "Find Interesting Papers",
+    adminbotReferenceChecker: "PDF Reference Checker",
     adminbotCalendar: "Calendar",
     adminbotGrantReport: "Grant Report",
+    adminbotMailingList: "Mailing List",
     adminbotDeadlines: "Deadlines",
     adminbotOpportunities: "Opportunities",
     activity: "Activity",
@@ -500,17 +669,21 @@ export const en: TranslationMap = {
   subtitles: {
     dashboard: "What needs you, and where the lab stands.",
     profile: "Your details, and anything still blank.",
+    gettingStarted: "Your setup checklist — what is left, and what you have already done.",
     myWork: "What you are working on, and anything holding it up.",
     labSharing: "Coming soon — share resources, ideas, and collaborate.",
     agents: "Workspaces, tools, identities.",
     adminbot: "Approval queue and execution controls.",
     adminbotRegistrations: "Approve or reject pending member signups and roster claims.",
+    adminbotBadges: "Manage badge definitions, assignments, and nominations.",
     adminbotOnboarding: "Send a member or collaborator their onboarding guide.",
     adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
     adminbotSettings: "Lab defaults and escalation policy.",
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotProfileOverview: "Who has filled in their profile and planned their term.",
+    adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
     adminbotProfessor: "What is waiting on you, across every queue.",
+    adminbotTravel: "Where you have been, from your own sign-ins.",
     adminbotTimeAvailability: "Who is committed to what, and when.",
     adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",
     adminbotSignatures: "Send a document over for signing, and follow where it got to.",
@@ -520,11 +693,13 @@ export const en: TranslationMap = {
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
+    adminbotReferenceChecker: "Check PDF references against scholarly databases.",
     adminbotConferencePapers:
       "Search a conference's accepted papers, ranked against what you work on.",
     adminbotCalendar: "Draft an event, and invite the people the roster can describe.",
     adminbotGrantReport:
       "Every paper mapped to a safety area, and the track record behind each ask.",
+    adminbotMailingList: "Mail our publications for a date range to one address.",
     adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
     adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
     activity: "Browser-local tool activity summaries.",
@@ -1034,6 +1209,86 @@ export const en: TranslationMap = {
       notes: "Notes",
     },
   },
+  adminbotBadges: {
+    title: "Badges",
+    sub: "Create badges, assign them to members, and review nominations.",
+    refresh: "Refresh",
+    create: "Create badge",
+    save: "Save badge",
+    assign: "Assign",
+    edit: "Edit",
+    remove: "Remove",
+    approve: "Approve",
+    reject: "Reject",
+    loading: "Loading badges…",
+    catalog: "Badge catalog",
+    assignments: "Assignments",
+    nominations: "Pending nominations",
+    emptyAssignments: "No badges assigned yet.",
+    emptyNominations: "No pending badge nominations.",
+    emptyCatalog: "No badges defined yet.",
+    pickMember: "Select member",
+    pickBadge: "Select badge",
+    newBadge: "New badge",
+    addTier: "Add tier",
+    pickMemberToView: "Search members by name",
+    notice: {
+      saved: "Badge saved.",
+      assigned: "Badge assigned.",
+      removed: "Badge removed.",
+      approved: "Nomination approved.",
+      rejected: "Nomination rejected.",
+    },
+    suggestion: {
+      title: "Suggested badges",
+      sub: "Badges members have asked the lab to add. Approving one creates it exactly as written, and it becomes nominable straight away.",
+      emptyPending: "No suggested badges waiting.",
+      rationale: "Why",
+      unknownSuggester: "Suggested by a member who has since left",
+      approve: "Add badge",
+      reject: "Decline",
+      decidedTitle: "Already decided",
+      approved: "Badge added to the catalog.",
+      rejected: "Suggestion declined.",
+      decideFailed: "Couldn't record that decision.",
+    },
+    empty: {
+      title: "Couldn't load badges",
+      noSession: "Sign in with your member account to manage badges.",
+      expired: "Your session has expired. Sign in again to continue.",
+      forbidden: "Only admins can manage badges.",
+      unreachable: "The AdminBot service is unreachable. Check that it's running, then retry.",
+      notDeployed:
+        "This AdminBot service doesn't have badges yet — the Control UI is newer than the service it's talking to. Deploy the service, then retry.",
+      failed: "Couldn't load badges. Retry in a moment.",
+    },
+    error: {
+      unreachable: "The AdminBot service is unreachable. Check that it's running and try again.",
+      forbidden: "Only admins can manage badges.",
+      notDeployed:
+        "This AdminBot service doesn't have badges yet — deploy the service and try again.",
+      saveFailed: "Couldn't save that badge.",
+      assignFailed: "Couldn't assign that badge.",
+      removeFailed: "Couldn't remove that badge.",
+      decisionFailed: "Couldn't record that nomination decision.",
+    },
+    field: {
+      id: "Badge ID",
+      category: "Category",
+      name: "Name",
+      tier: "Tier",
+      description: "Description",
+      criteriaUrl: "Criteria link",
+      evidence: "Evidence",
+      count: "Count (total awards)",
+      assignEvidence: "Evidence (optional)",
+      submittedBy: "Submitted by",
+      submittedAt: "Submitted",
+      nominatedBy: "Nominated by {name}",
+      selfNominated: "Self-nominated",
+      currentBadges: "Current badges",
+    },
+  },
   adminbotWelcome: {
     required: "Required",
     status: {
@@ -1055,8 +1310,21 @@ export const en: TranslationMap = {
     markDone: "Mark done",
     blockedNote: "This step is required, mark it done to continue.",
   },
+  gettingStarted: {
+    stillToDo: "Still to do",
+    done: "Already done ({count})",
+    requiredLeft: "{count} required",
+    empty: "You have no setup checklist. Nothing is waiting on you here.",
+    profilePointer: "{count} setup step(s) left",
+    profilePointerDone: "Your setup checklist is finished.",
+    open: "Open Getting Started",
+  },
   dashboard: {
     more: "+{count} more",
+    broadcast: {
+      title: "Broadcast from Zhijing",
+      posted: "Posted {when}",
+    },
     nudgeWarning: {
       unread: "{count} thing(s) the lab has asked you for",
       important: "{count} important thing(s) still outstanding",
@@ -1076,6 +1344,11 @@ export const en: TranslationMap = {
       subtitle:
         "This checklist stays here until you acknowledge it, whether or not every step is done.",
       acknowledge: "I have read the onboarding checklist",
+    },
+    nextDeadlines: {
+      title: "Next deadlines",
+      open: "Open the deadline board",
+      yours: "yours",
     },
     mandatoryFields: {
       title: "Your profile is missing required fields",
@@ -1121,6 +1394,11 @@ export const en: TranslationMap = {
     },
   },
   adminbotMeetings: {
+    archive: {
+      title: "Where recordings live",
+      sub: "This tab lists the meetings AdminBot has a summary for. The videos themselves are posted in {channel}, and collected in an unlisted YouTube playlist.",
+      playlist: "Open the recordings playlist",
+    },
     actionItems: "Action items",
     attendance: "Attendance",
     decisions: "Decisions",
@@ -1135,6 +1413,10 @@ export const en: TranslationMap = {
     headcount: "{count} present",
     loading: "Loading meetings…",
     minutes: "{minutes} min",
+    // Under an hour and not a round number of minutes -- a short clip reads "1m 38s" rather than
+    // rounding to a minute count that is either 0 or wrong.
+    duration: "{minutes}m {seconds}s",
+    durationHours: "{hours}h {minutes}m",
     noTranscript: "No transcript has been attached, so there is no summary.",
     nudge: {
       title: "Who has stopped coming",
@@ -1167,10 +1449,11 @@ export const en: TranslationMap = {
     capacity: "{hours} hours/week capacity",
     // The chart's own footnote, restored with the recharts chart it explains.
     capacityNote:
-      "Dashed line marks 100% average allocation. Hover a period for daily capacity details.",
+      "Dashed line marks 100% average allocation. Partial weeks and months show a lower average; commitments stop on their saved end date. Tap or hover a bar for active days and daily capacity details.",
     capacityNoteUnset:
       "No weekly capacity set on this profile, so there is nothing to compare these hours against.",
     chartAria: "Time allocation chart for {member}",
+    chartPhoneHint: "Swipe sideways to see more dates. Tap a bar for details.",
     chartSubtitle: "Hours committed per period. Overlapping commitments are stacked.",
     empty: "Select a user to view their time allocation.",
     endDate: "End date",
@@ -1258,7 +1541,7 @@ export const en: TranslationMap = {
       title: "Overall notes for admins",
       hint: "Anything the rows above cannot say \u2014 a situation that is complicated, dates that may move, weeks that are hard to predict. Only you and the lab's admins can read this.",
       placeholder:
-        "e.g. I am my grandmother's carer on alternating weeks, so the hours above are an average rather than a fixed schedule.",
+        "e.g. My project meetings alternate between weeks, so the hours above are an average rather than a fixed schedule.",
       submit: "Save notes",
     },
     legendTimeOff: "Outside Jinesis commitments",
@@ -1279,15 +1562,20 @@ export const en: TranslationMap = {
       category: "Category",
       customLabel: "Name this category",
       project: "Project",
+      projectExample: "Project XXX",
+      exampleHint:
+        "Example: 20 hours per week on Project XXX. Enter your own project, hours and dates below; the example is not saved.",
       projectPlaceholder: "Leave blank for term baseline",
       hours: "Hours per week",
       link: "Link (optional)",
       linkPlaceholder: "https://\u2026 class schedule, project board",
       note: "Note",
       jinesisTitle: "Add a Jinesis commitment",
+      editJinesisTitle: "Edit Jinesis commitment",
       milestoneTitle: "Add a big deadline",
       tripTitle: "Add a trip away from home",
       awayTitle: "Add something outside your Jinesis commitments",
+      editAwayTitle: "Edit commitment outside Jinesis",
       wholeDay: "Away the whole day",
       wholeDayHint:
         "Recorded as a whole day off, so it clears any Jinesis hours booked over these dates.",
@@ -1295,6 +1583,8 @@ export const en: TranslationMap = {
       partialHint:
         "Recorded as reduced availability. The hours you give here are stacked on your chart alongside your Jinesis work, so the two are read against the same week.",
       submit: "Add commitment",
+      edit: "Edit",
+      editTitle: "Edit this commitment",
       addCommitment: "Add commitment",
       hide: "Hide",
       saving: "Saving\u2026",
@@ -1394,6 +1684,84 @@ export const en: TranslationMap = {
     },
   },
 
+  impersonation: {
+    viewAs: "View as",
+    viewAsTitle: "Open a session that sees the lab exactly as {name} does",
+    banner: "You are viewing the lab as {member}. Anything you change is recorded as {admin}.",
+    back: "Back to my account",
+    unreachable: "AdminBot is unreachable, so the view could not be opened.",
+    refused:
+      "That view could not be opened. Only admins can view as another member, and not as themselves.",
+  },
+  mailingList: {
+    title: "Publication mailing list",
+    sub: "Every publication in our records for a date range, or every paper accepted at one venue, mailed to one address.",
+    compose: "Compose from",
+    composeByRange: "A date range",
+    composeByVenue: "{venue} — {accepted} accepted, {pending} awaiting a decision",
+    from: "From",
+    to: "To",
+    recipient: "Send to",
+    preview: "Preview",
+    previewing: "Reading…",
+    empty:
+      "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
+    summary: "{count} publications between {from} and {to}.",
+    venueSummary: "{count} papers accepted at {venue}, by our records.",
+    noneInRange: "No publications in our records fall in this range.",
+    noneAccepted: "No paper in our records is recorded as accepted at {venue}.",
+    noAuthors: "Authors not recorded",
+    noDate: "Date not recorded",
+    pending: "{count} papers aimed at {venue} with no decision recorded",
+    pendingWhy:
+      "These papers name {venue} as their venue, but nothing in our records says whether they were accepted. They are not in the email. If the lab has heard back, the decision belongs on the paper.",
+    undated: "{count} papers left out for having no date",
+    undatedWhy:
+      "We date a paper from its arXiv id, or from its accepted year. A paper with neither has no date we can place in a range, so it is not in the email.",
+    showEmail: "Show the email as it will be sent",
+    send: "Send to {email}",
+    sending: "Sending…",
+    sent: "Sent {count} publications to {email}.",
+    source: {
+      arxiv: "arXiv",
+      accepted_year: "accepted year",
+    },
+    error: {
+      signIn: "Sign in as an admin to use the mailing list.",
+      forbidden: "The mailing list is admin-only.",
+      unreachable: "AdminBot is unreachable at {url}.",
+      failed: "The mailing list request failed.",
+    },
+  },
+  adminbotTravel: {
+    error: {
+      signIn: "Sign in to read your travel history.",
+      forbidden: "You can only read your own travel history.",
+      unreachable: "Could not reach the AdminBot service at {url}.",
+      notDeployed:
+        "This service build has no travel history yet — the Control UI ships on merge and the service is deployed separately.",
+      failed: "Could not read your travel history.",
+    },
+  },
+  recentEdits: {
+    title: "Recent edits",
+    loading: "reading…",
+    empty: "No edits recorded yet.",
+    paperRecord: "Paper record",
+    source: {
+      member: "By the member",
+      admin: "By an admin",
+      import: "Imported",
+    },
+    error: {
+      signIn: "Sign in to read the edit log.",
+      forbidden: "Only admins can read the edit log.",
+      unreachable: "Could not reach the AdminBot service at {url}.",
+      notDeployed:
+        "This service build has no edit log yet — the Control UI ships on merge and the service is deployed separately.",
+      failed: "Could not read the edit log.",
+    },
+  },
   profileOverview: {
     title: "Profile Overview",
     sub: "Every active member, least finished first. Both columns are things only the member can fill in.",
@@ -1417,10 +1785,10 @@ export const en: TranslationMap = {
     },
     activity: {
       column: "Actually used it",
-      counts: "{logins} in · {edits} edits · {papers} papers",
+      counts: "{logins} sign-ins · {edits} profile saves · {papers} paper/slot edits",
       lastActive: "last active {day}",
       breakdown:
-        "{logins} sign-in(s), {edits} profile save(s), {papers} paper update(s). Last active {lastActive}. Counts come from the audit trail, which is pruned on a rolling window — older activity is not shown, so these are floors.",
+        "{logins} sign-in(s), {edits} profile save(s), {papers} paper-record or presentation-slot edit(s). Last active {lastActive}. Counts come from the audit trail, which is pruned on a rolling window — older activity is not shown, so these are floors.",
       summaryActive: "members have actually used AdminBot",
     },
     loading: "Reading profiles…",
@@ -1433,6 +1801,7 @@ export const en: TranslationMap = {
       searchLabel: "Search members by name",
       searchPlaceholder: "Search a name…",
       activityLabel: "Filter by whether they have ever signed in",
+      memberTypeLabel: "Filter by member type",
       any: "Anything outstanding",
       profile: "Missing profile fields",
       timeline: "No timeline",
@@ -1454,6 +1823,13 @@ export const en: TranslationMap = {
     reminded: "Reminder sent to {count} member(s).",
     remindedNone:
       "Nobody was due a reminder — everyone incomplete was already nudged in the last few days.",
+    nudgeList: {
+      seed: "Apply access levels to the nudge list",
+      seedHint:
+        "AdminBot only writes to people on the nudge list. This adds full members, own-pace advisees, coauthor-majors and anyone in an onboarding batch; takes off alumni and any access level with no portal to act in; and leaves every choice you have already made alone.",
+      seeded: "Added {count} member(s) to the nudge list and took {silenced} off it.",
+      seededNone: "Nothing changed — everyone the access levels can answer for is already decided.",
+    },
     error: {
       signIn: "Sign in as an admin to read the profile overview.",
       unreachable: "Could not reach the AdminBot service at {url}. Check that it is running.",
@@ -1481,14 +1857,14 @@ export const en: TranslationMap = {
       mineEmpty: "You have not sent a request yet.",
       user: "User",
       type: "Type of Request",
-      deadline: "Most Recent Deadline",
+      earliestDeadline: "Earliest deadline",
       statusColumn: "Status",
       noDeadline: "No deadline",
       noSchools: "No schools listed.",
       none: "None",
       back: "All requests",
       detailSub: "{type} · sent {saved}",
-      detailDeadline: "most recent deadline {date}",
+      detailEarliestDeadline: "earliest deadline {date}",
       documents: "Documents to sign",
       withdraw: "Withdraw this request",
       edit: "Correct this request",
@@ -1504,6 +1880,17 @@ export const en: TranslationMap = {
         declined: "Declined",
         withdrawn: "Withdrawn",
       },
+      // Letter requests are named for the letter, not the request. "Submitted" on a signature
+      // request means the member filed it; on a letter request every reader takes it to mean the
+      // letter has gone to the school, which is the one thing it never means -- a letter nobody has
+      // written yet showed as "Submitted" and a letter already uploaded showed as "Done".
+      recLetterStatus: {
+        submitted: "To submit",
+        inProgress: "In progress",
+        completed: "Submitted",
+        declined: "Declined",
+        withdrawn: "Withdrawn",
+      },
       error: {
         signIn: "Sign in to send and read logistics requests.",
         unreachable: "Could not reach the AdminBot service at {url}. Check that it is running.",
@@ -1513,7 +1900,13 @@ export const en: TranslationMap = {
     },
     queue: {
       title: "Request Queue",
-      sub: "Everything the lab has been asked for, soonest deadline first. Download what needs signing, upload it back signed, and the member is emailed automatically.",
+      searchPlaceholder: "Name or school",
+      allTypes: "All request types",
+      allStatuses: "All statuses",
+      awaitingAction: "Awaiting action",
+      noMatches: "No requests match these filters.",
+      instructions:
+        "Letters use the earliest letter deadline, in the entered timezone. Click a column heading to sort or a name to open the full request.",
       submitted: "Submitted",
       context: "What it is for",
       signed: "Signed Document",
@@ -1537,8 +1930,16 @@ export const en: TranslationMap = {
     },
     signature: {
       title: "Document Signature",
-      sub: "Signature requests are filed on a Google Form now. It asks for the documents and everything the signer needs to know.",
-      openForm: "Open the signature form",
+      sub: "Fill this in and AdminBot files it on the lab's signature form for you. Your name is taken from the roster.",
+      driveUrl: "Link to the document",
+      deadline: "Deadline",
+      context: "Context of signing (optional)",
+      contextPlaceholder:
+        "Example: this is the visa letter for the Montreal workshop — the deadline is the 8th.",
+      send: "Send the signature request",
+      sending: "Sending…",
+      submitted: "Filed on the lab's signature form.",
+      openForm: "Open the form yourself",
       dropTitle: "Drop documents here, or click to choose",
       dropHint: "PDF, Word, or a photo of the page.",
       remove: "Remove {name}",
@@ -1556,6 +1957,24 @@ export const en: TranslationMap = {
       remove: "Remove {name}",
       clear: "Remove all",
     },
+    lettersGuide: {
+      title: "Before requesting a recommendation letter",
+      sub: "Please follow the Guidebook's preparation steps before submitting this request.",
+      open: "Open the Guidebook: How to ask for Rec Letters",
+      folder:
+        "Create grad_app_[yourname] with edit access for your letter writer, ideally also linked from your shared Zhijing-[yourname] folder.",
+      schools:
+        "Prepare a school/program spreadsheet sorted by the earliest deadline, including application and letter deadlines, statuses, program links, and any special requirements.",
+      materials:
+        "Include your transcript, editable CV, Statement of Purpose, information about your other letter writers, and any supporting materials you want to highlight.",
+      facts:
+        "Prepare concrete facts about your project contributions and a factual first draft of the letter, following the Guidebook's letter-writing guidance.",
+      reminders:
+        "The section also covers reminder emails with deadline times and time zones, a presentation when needed, and optional Interfolio use subject to university rules.",
+      portal:
+        "For Zhijing's application-portal invitations, use zjin.admin@cs.toronto.edu. Her main email does not handle letter requests.",
+      portalLink: "Check the Guidebook's recommender details",
+    },
     schools: {
       title: "List of Schools",
       sub: "Every school this request covers, and where each one stands.",
@@ -1565,10 +1984,11 @@ export const en: TranslationMap = {
       applicationDeadlineTime: "Time",
       letterDeadline: "Letter deadline",
       letterDeadlineHint: "if different",
+      letterDeadlineRequired: "Required",
       letterDeadlineTime: "Time",
       deadlineTimezone: "Time zone",
-      deadlineTimezoneHint: "for both times on this row",
-      deadlineTimezonePlaceholder: "ex. America/New_York",
+      aoeHint: "AoE (UTC−12) by default",
+      aoePlaceholder: "AoE or America/New_York",
       applicationStatus: "Application status",
       applicationStatusPlaceholder: "ex. submitted",
       letterStatus: "Letter status",
@@ -1603,7 +2023,11 @@ export const en: TranslationMap = {
     },
     meeting: {
       title: "Meetings to book",
-      sub: "One row per call. Soonest-submitted first is how these get scheduled, so the time you asked is stamped for you.",
+      sub: "Ask for a call. Each row is checked and then added to the call queue for review.",
+      openSheet: "Open the call queue",
+      // The one thing a member can leave blank and not find out until nobody schedules their call.
+      mandatory:
+        "The doc prep link is mandatory, and it has to open for anyone with the link — a row without one is not queued.",
       submitted: "Submitted",
       notSubmitted: "Not yet",
       purpose: "What the call is for",
@@ -1612,6 +2036,15 @@ export const en: TranslationMap = {
       timezone: "Time zone",
       length: "Call length (min)",
       lengthPlaceholder: "ex. 30",
+      city: "Your city / when you can take calls",
+      cityPlaceholder: "ex. Toronto, or evenings IST",
+      docPrep: "Doc prep of your questions",
+      docPrepPlaceholder: "https://docs.google.com/document/d/…",
+      whatsappHello: "Said hello on WhatsApp?",
+      whatsappUnanswered: "—",
+      whatsappYes: "Yes",
+      whatsappNo: "Not yet",
+      latestOk: "Call still useful until",
       add: "Add a meeting",
       removeRow: "Remove meeting row {row}",
       empty: "No meetings requested yet. Add a row to ask for one.",
@@ -1641,8 +2074,13 @@ export const en: TranslationMap = {
       discard: "Discard",
       blocked: {
         empty: "Fill the request in before sending it.",
+        letterDeadline:
+          "Every school needs a valid letter deadline. Check the date, time, and timezone (AoE by default).",
         noName: "Every school needs its name filled in.",
         noPurpose: "Every meeting needs a purpose.",
+        noDocPrep:
+          "Every meeting needs a doc prep link. It is what the call is spent on, and a request " +
+          "without one cannot go on the queue.",
         fileTooBig: "{name} is larger than 5MB. Send a smaller copy or a link to it.",
         requestTooBig: "The files on this request come to more than 20MB altogether.",
         signedOut: "Sign in to send this request.",
@@ -1697,10 +2135,11 @@ export const en: TranslationMap = {
       searchPrompt: "Type to search for a member by name, project, or interests.",
     },
     invites: {
-      title: "Your invites",
+      title: "Invitations you have asked for",
       view: "View",
-      viewTitle: "Project details",
+      viewTitle: "Invitation details",
       from: "Invited by {name}",
+      to: "To {name}",
       owner: "Owner",
       membersNeeded: "Members needed",
       hoursPerWeek: "Hours / week",
@@ -1725,11 +2164,19 @@ export const en: TranslationMap = {
     },
     announcements: {
       title: "Announcements",
+      // The only panel on this tab with no service behind it, and it says so on its face.
+      sample: "Sample data — nothing here is saved",
       add: "Add",
       composeTitle: "New announcement",
       bodyPlaceholder: "What do people need to know?",
       send: "Send announcement",
       cancel: "Cancel",
+      // Nothing is seeded, because a seeded post has to be signed by somebody and every name here
+      // would be a person who never said it.
+      empty: "No announcements yet.",
+      justNow: "just now",
+      // Only before the viewer's own profile read lands; their real name is what normally signs it.
+      authorFallback: "You",
     },
   },
   profile: {
@@ -1753,6 +2200,7 @@ export const en: TranslationMap = {
       countryCodeNone: "Code",
       example: "ex. {example}",
       autosaveHint: "Changes save automatically.",
+      noProjects: "No projects on file yet.",
     },
     blanks: {
       title: "Fill in the blanks",
@@ -1767,15 +2215,76 @@ export const en: TranslationMap = {
       failed: "Couldn't save",
     },
     badges: {
+      title: "Badges",
+      subtitle: "What the lab has recognised so far. Hover a badge for what it means.",
       empty: "No badges yet, they arrive as you finish onboarding and ship work.",
       onboarded: "Onboarded",
       profileComplete: "Profile complete",
       author: "Author",
       mentor: "Mentor",
+      managedTitle: "Lab badges",
+      nominateTitle: "Nominate for badges",
+      nominateHint:
+        "For yourself, or for somebody whose work you have seen. Pick who it is for, choose a badge, say what they did, and an admin will review it.",
+      nominateButton: "Submit nomination",
+      nominateSubmitted: "Nomination submitted for review.",
+      nominateFailed: "Couldn't submit that nomination.",
+      nominateWho: "Who is this for?",
+      nominateSelf: "Myself",
+      nominateSearch: "Search the lab roster…",
+      nominateFor: "Nominating {name}. They will see it once an admin decides it.",
+      nominateSelect: "Choose a badge",
+      nominateEvidence: "Evidence",
+      nominateNoneAvailable: "No badge families are available to nominate right now.",
+      nominateNoneAvailableFor: "{name} already holds or is queued for every badge family.",
+      nominationsTitle: "Badge nominations",
+      nominationFor: "You nominated {name}.",
+      nominationBy: "Nominated by {name}.",
+      criteriaLink: "Criteria",
+      submittedAt: "Submitted {date}",
+      decidedAt: "Decided {date}",
+      status: {
+        pending: "Pending",
+        approved: "Approved",
+        rejected: "Rejected",
+      },
+      suggestOpen: "Suggest a new badge",
+      suggestClose: "Cancel",
+      suggestTitle: "Suggest a new badge",
+      suggestHint:
+        "Is there something this lab does that no badge covers? Describe it and say why it is worth recognising. An admin decides whether it joins the list — nothing is added automatically.",
+      suggestName: "Badge name",
+      suggestNamePlaceholder: "Reviewer Rescue",
+      suggestCategory: "Category",
+      suggestCategoryPlaceholder: "Team Contributor",
+      suggestCategoryHint: "An existing group where it fits, or a new one.",
+      suggestDescription: "What it recognises",
+      suggestDescriptionPlaceholder:
+        "Turned around an emergency review for a lab paper in 48 hours.",
+      suggestDescriptionHint: "One line, as it would read on somebody's profile.",
+      suggestTier: "Tier (optional)",
+      suggestTierPlaceholder: "Level 1",
+      suggestTierHint: "Only for badges that come in levels, like Causality.",
+      suggestCriteria: "Criteria link (optional)",
+      suggestRationale: "Why the lab should have it",
+      suggestRationalePlaceholder:
+        "Three people did this for the ICML batch and none of it shows up anywhere.",
+      suggestButton: "Send suggestion",
+      suggestSubmitted: "Suggestion sent. An admin will decide on it.",
+      suggestFailed: "Couldn't send that suggestion.",
+      suggestionsTitle: "Badges you have suggested",
+      suggestionsEmpty: "You haven't suggested a badge yet.",
+      suggestionAdded: "Added to the badge list.",
     },
     completeness: {
       label: "Complete",
       hint: "Share of required fields you've filled in.",
+      // Shown only at 100%, and only while the timeline half is still short. The ring counts
+      // fields, but the lab's reminder chases fields *and* the term timeline -- so without this a
+      // finished profile reads as "nothing left to do" and the next reminder looks like a bug.
+      timelinePending:
+        "Your fields are all in. The lab also asks for your term timeline — add when you are working, when you are away, and the deadlines you are aiming at, or reminders will keep coming.",
+      timelineAction: "Open Time Availability",
     },
     groups: {
       account: "Account",
@@ -1803,9 +2312,6 @@ export const en: TranslationMap = {
     },
     suggestions: {
       title: "Onboarding steps",
-      gpuTitle: "Get GPU access",
-      gpuBody: "You have not recorded compute access yet. The guidebook walks through the request.",
-      gpuLink: "Guidebook: GPU onboarding",
       websiteTitle: "Add your website",
       websiteBody: "Lab pages link to member sites. Yours is blank.",
       websiteLink: "Guidebook: member pages",
@@ -1824,11 +2330,11 @@ export const en: TranslationMap = {
       name: "Name",
       preferredName: "Preferred name",
       email: "Email (@cs.toronto.edu)",
-      role: "Role",
+      role: "Career stage",
       calendarEmail: "Calendar email",
       affiliation: "Main affiliation",
       location: "Resident location",
-      currentCity: "Current city",
+      currentCity: "Current city (if traveling)",
       timezone: "Timezone",
       slackUserId: "Slack",
       personalWebsite: "Website",
@@ -1836,20 +2342,27 @@ export const en: TranslationMap = {
       avatarUrl: "Profile picture",
       correspondenceEmail: "Correspondence email",
       whatsapp: "WhatsApp",
-      personalCircumstances: "Medical conditions",
+      merchRequests: "Merch requests",
+      nextPosition: "Next position you're looking for",
+      personalCircumstances: "Personal circumstances and/or medical conditions",
+      birthday: "Birthday (month and day)",
       joinedMonth: "Joined month",
       graduatedMonth: "Potential offboarding month",
       lesswrong: "LessWrong",
       otherSocials: "Other social media",
-      cvUrl: "CV (PDF link)",
+      cvUrl: "CV",
       intakeFormUrl: "Application form response link",
+      oneOnOneFolderUrl: "Link to 1:1 Folder",
       linkedin: "LinkedIn",
       linkedinUrn: "LinkedIn member ID (URN)",
       twitter: "X / Twitter",
+      twitterFollowers: "X followers (self-reported)",
+      linkedinFollowers: "LinkedIn followers (self-reported)",
       github: "GitHub",
       scholar: "Google Scholar",
       openreviewId: "OpenReview ID",
       researchTopics: "Research topics",
+      elevatorPitch: "Elevator pitch that Zhijing can use when recommending you to other prof/recruiter",
       projects: "Projects",
       notes: "Notes",
     },
@@ -1876,6 +2389,8 @@ export const en: TranslationMap = {
     },
     help: {
       trigger: "What is {field}?",
+      nextPosition:
+        "What is the next position/thing in life you are looking for? And when is your ideal move? How can Zhijing help you?",
       personalCircumstances:
         "Anything about your health or your family that would help Zhijing support you — a condition that affects how you work, a caring responsibility, a situation that may need flexibility. Entirely optional, and leaving it blank is never read as an answer. Only you and lab admins can see it: the lab roster that every member loads has this field stripped out of it.",
       linkedinUrn:
@@ -1886,23 +2401,44 @@ export const en: TranslationMap = {
         "Where you are based right now, if that is not your resident location above — a conference trip, a term abroad, an internship. The lab uses it to organize events and in-person meetups: it decides who gets invited to something happening in a given city, and which time of day a session is scheduled for.",
       cvUrl:
         'A link to your CV. A Google Drive link is completely fine — if you use one, set the sharing to "anyone with the link can view", otherwise it will open for you but not for anyone else.',
+      oneOnOneFolderUrl:
+        "The Google Drive folder holding the notes from your one-on-ones. Open the folder in Drive and copy the address — it looks like drive.google.com/drive/folders/… A link to a single document is not it: the notes are one file per meeting, so the folder is the part that keeps being right. Only you and lab admins can see this field.",
+      elevatorPitch:
+        "A short paragraph about your achievements that Zhijing can use when recommending you to professors or recruiters.",
     },
     // The shapes the service accepts, stated where the answer is typed. Each one mirrors a rule in
     // SOCIAL_URL_FIELDS or validateOpenReviewId; keep them in step if those change.
     hints: {
       calendarEmail: "The Google account your calendar invites should go to.",
-      correspondenceEmail: "Where the lab writes to you. Often not your @cs.toronto.edu address.",
-      github: "Your profile page, not a repository: github.com/username",
+      correspondenceEmail:
+        "This is your official organizational email. Imagine we contact government sectors or external collaborators. Usually you need to be cc’ed via your institutional email.",
+      github: "A username, link, or note about your GitHub account.",
       linkedin: "Your profile page: linkedin.com/in/username",
       twitter: "Your profile page: x.com/username",
+      followers:
+        "Enter your current follower count, or 0 to clear it. Media Impact uses your higher count and requires more than 1,000 followers.",
       scholar: "Your citations page, including the ?user= part of the address.",
-      intakeFormUrl: "The “edit your response” link Google Forms emailed you after you applied.",
+      intakeFormUrl:
+        "Paste the response link if you have it, or mark that you cannot find it below.",
+      // One line instead of two sentences, and it leans on the label above rather than repeating
+      // "application form response" a third time on the same row.
+      intakeFormSearch:
+        "Search your email for your form response — it helps us understand your goals and support you in achieving them.",
+      intakeFormUnavailable: "I can't find it",
+      oneOnOneFolderUrl:
+        "The Google Drive folder your 1:1 notes live in — a folder link, not a document.",
       openreviewId: "The id in your OpenReview profile address, like ~Zhijing_Jin1",
       hoursPerWeek:
         "How many hours a week you can give Jinesis in total, across every project. The Time Availability chart measures your commitments against this.",
       month: "Year and month, like 2026-03.",
+      birthday:
+        "Month and day, like 03-14 — no year, so your age stays yours. Filling this in adds a recurring all-day event to the shared lab calendar so people can wish you a happy birthday. Leave it blank if you would rather not.",
       offboardingMonth:
         "The year and month you plan on leaving Jinesis for a new job or stage, like 2027-06. An estimate is fine — it is not a commitment.",
+      elevatorPitch:
+        "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
+      merchRequests:
+        "What you would like from the next lab merch order — item, size, quantity. Leave it blank if you would rather not have anything.",
     },
   },
   // My Projects & Papers' evidence checklist, and the global nudge that chases it.
@@ -1949,6 +2485,9 @@ export const en: TranslationMap = {
       hint: "Removes its checklist, drafts and weekly updates too. This cannot be undone.",
       confirm:
         "Delete \u201c{title}\u201d?\n\nIts evidence checklist, social drafts, weekly updates and conference rows go with it. This cannot be undone.",
+    },
+    details: {
+      autosaveHint: "Changes save automatically.",
     },
     items: {
       title: "Projects & Papers",
@@ -2034,7 +2573,7 @@ export const en: TranslationMap = {
         sent: "If that email has an account, a reset link is on its way. The link expires in an hour.",
         confirmIntro: "Choose a new password for your account.",
         setPassword: "Set new password",
-        done: "Your password has been changed. Signp in with your new password.",
+        done: "Password updated. All sessions were signed out; sign in with your new password.",
         errorInvalidLink:
           "This reset link is invalid or has expired. Request a new one from the sign-in screen.",
         errorUnreachable: "Could not reach the AdminBot service. Try again in a moment.",
@@ -2051,7 +2590,8 @@ export const en: TranslationMap = {
         submit: "Update password",
         submitting: "Updating…",
         cancel: "Cancel",
-        success: "Password updated.",
+        success:
+          "Password updated. All sessions were signed out; sign in again with your new password.",
         errorRequired: "Enter your current and new password.",
         errorAuthFailed: "Your current password is incorrect.",
         errorRateLimited: "Too many attempts. Try again later.",
@@ -2069,7 +2609,7 @@ export const en: TranslationMap = {
       signup: {
         name: "Name",
         namePlaceholder: "Your full name",
-        role: "Role",
+        role: "Career stage",
         rolePlaceholder: "e.g. PhD student (optional)",
         affiliation: "Affiliation",
         affiliationPlaceholder: "Lab, department, or organization (optional)",
@@ -2096,6 +2636,8 @@ export const en: TranslationMap = {
     public: {
       hint: "Sign in to see the lab roster, active papers, and everything else you have access to.",
       continueWithoutSignIn: "Continue without signing in",
+      themeDark: "Switch to dark mode",
+      themeLight: "Switch to light mode",
     },
     guest: {
       reimbursements: "Submit a reimbursement",

@@ -15,7 +15,15 @@ export const TAB_GROUPS = [
   // on it, and the work it is attached to. Time Availability sits here rather than in the shared
   // tools because it is the viewer's own schedule that they edit, and only incidentally other
   // people's that they read.
-  { label: "myInfo", tabs: ["profile", "adminbotTimeAvailability", "myWork"] },
+  //
+  // Getting Started leads the group and outranks the record itself, because for the only people who
+  // need it -- the ones who just arrived -- it is the first thing to do. It used to be the last two
+  // sections of My Profile, which put a checklist somebody walks once at the bottom of a page they
+  // edit every week.
+  {
+    label: "myInfo",
+    tabs: ["gettingStarted", "profile", "adminbotTimeAvailability", "myWork"],
+  },
   // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
   // which is what someone browsing the lab's shared surface came to look at.
   { label: "labSharing", tabs: ["labSharing", "adminbotMeetings", "adminbotMembers"] },
@@ -38,11 +46,12 @@ export const TAB_GROUPS = [
       "adminbotDeadlines",
       "adminbotOpportunities",
       "adminbotConferencePapers",
+      "adminbotReferenceChecker",
     ],
   },
   // Only the landing tab of each multi-tab page is listed (see TAB_PAGES): the sidebar names the
-  // job -- Nudges, Membership -- and the page names the surfaces inside it. Ten entries here read
-  // as ten unrelated tools; seven read as what an administrator actually does.
+  // job -- Nudges, Membership -- and the page names the surfaces inside it. A dozen entries here
+  // read as a dozen unrelated tools; eight read as what an administrator actually does.
   {
     label: "admin",
     tabs: [
@@ -52,7 +61,6 @@ export const TAB_GROUPS = [
       "adminbotAnnouncements",
       "adminbotRegistrations",
       "adminbotCalendar",
-      "adminbotGrantReport",
       // Tasks & Tools (the `cron` tab) sits with lab governance rather than under OpenClaw: what
       // it actually lists here is the lab's own scheduled passes -- the OpenReview cadence, the
       // daily Slack timezone sync, the CV digest -- plus the on-demand jobs an admin presses. An
@@ -94,14 +102,40 @@ export const TAB_GROUPS = [
  * entries; requests, onboarding and profile completeness are three views of one person's arrival.
  */
 export const TAB_PAGES = [
-  // Where the lab stands, in its two halves. Profile Completeness is not a smaller version of
+  // Where the lab stands, in its three halves. Profile Completeness is not a smaller version of
   // Active Papers: it counts a member's own fields, their timeline entries and how many of their
   // papers carry an update they wrote themselves, while Active Papers is the pipeline across every
   // paper in the lab. Neither answers the other's question, and an administrator taking stock wants
   // both, so they sit on one page rather than two entries that look interchangeable and are not.
-  { page: "labOverview", tabs: ["adminbotPapers", "adminbotProfileOverview"] },
+  //
+  // The grant report is the third: it is that same standing written out for an outside reader,
+  // assembled from the papers and people the other two tabs count. Reached from its own sidebar
+  // entry it read as a separate tool; it is the export of this page.
+  {
+    page: "labOverview",
+    tabs: [
+      "adminbotPapers",
+      "adminbotProfileOverview",
+      "adminbotGrantReport",
+      "adminbotMailingList",
+      // Which parts of AdminBot the lab opens. It sits with the completeness columns because it is
+      // the other half of that question: those count what members filled in, this counts what they
+      // came to look at, and a blank column next to an unopened tab is a different problem from a
+      // blank column next to a busy one.
+      "adminbotTabUsage",
+    ],
+  },
   { page: "nudges", tabs: ["adminbotAnnouncements", "adminbotWorkshopNudges"] },
-  { page: "membership", tabs: ["adminbotRegistrations", "adminbotOnboarding"] },
+  // My Desk and Travel are one page because they are the same reader asking about themselves --
+  // what is waiting on me, and where have I been. Travel does not belong in the Admin group beside
+  // the lab-wide boards: it is nobody's queue, it names one person, and a sidebar entry of its own
+  // would read as a surveillance tool sitting next to the roster rather than as the professor's own
+  // record of their own year.
+  { page: "myDesk", tabs: ["adminbotProfessor", "adminbotTravel"] },
+  // Who is in the lab, from the outside in: who is asking to join, who is being brought up to
+  // speed, and what the people already here have earned. Badges were a sidebar entry of their own,
+  // which put "award Ada a badge" a page away from the roster that says who Ada is.
+  { page: "membership", tabs: ["adminbotRegistrations", "adminbotOnboarding", "adminbotBadges"] },
 ] as const satisfies ReadonlyArray<{ page: string; tabs: readonly Tab[] }>;
 
 type TabPage = (typeof TAB_PAGES)[number];
@@ -165,18 +199,22 @@ export type Tab =
   | "agents"
   | "dashboard"
   | "profile"
+  | "gettingStarted"
   | "myWork"
   | "labSharing"
   | "activity"
   | "adminbot"
   | "adminbotRegistrations"
+  | "adminbotBadges"
   | "adminbotOnboarding"
   | "adminbotReimbursements"
   | "adminbotSettings"
   | "adminbotMembers"
   | "adminbotOpportunities"
   | "adminbotProfileOverview"
+  | "adminbotTabUsage"
   | "adminbotProfessor"
+  | "adminbotTravel"
   | "adminbotTimeAvailability"
   | "adminbotMeetings"
   | "adminbotSignatures"
@@ -186,8 +224,10 @@ export type Tab =
   | "adminbotWorkshopNudges"
   | "adminbotAnnouncements"
   | "adminbotConferencePapers"
+  | "adminbotReferenceChecker"
   | "adminbotCalendar"
   | "adminbotGrantReport"
+  | "adminbotMailingList"
   | "adminbotDeadlines"
   | "overview"
   | "channels"
@@ -249,18 +289,22 @@ const TAB_PATHS: Record<Tab, string> = {
   agents: "/agents",
   dashboard: "/dashboard",
   profile: "/profile",
+  gettingStarted: "/getting-started",
   myWork: "/my-work",
   labSharing: "/lab-sharing",
   activity: "/activity",
   adminbot: "/pending-actions",
   adminbotRegistrations: "/registrations",
+  adminbotBadges: "/badges",
   adminbotOnboarding: "/onboarding",
   adminbotReimbursements: "/reimbursements",
   adminbotSettings: "/settings",
   adminbotMembers: "/members",
   adminbotOpportunities: "/opportunities",
   adminbotProfileOverview: "/profile-overview",
+  adminbotTabUsage: "/tab-usage",
   adminbotProfessor: "/professor",
+  adminbotTravel: "/travel",
   adminbotTimeAvailability: "/time-availability",
   adminbotMeetings: "/meetings",
   adminbotSignatures: "/signatures",
@@ -270,8 +314,10 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotWorkshopNudges: "/workshop-nudges",
   adminbotAnnouncements: "/announcements",
   adminbotConferencePapers: "/conference-papers",
+  adminbotReferenceChecker: "/reference-checker",
   adminbotCalendar: "/calendar",
   adminbotGrantReport: "/grant-report",
+  adminbotMailingList: "/mailing-list",
   adminbotDeadlines: "/deadlines",
   overview: "/overview",
   channels: "/channels",
@@ -306,6 +352,8 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/calendar": "adminbotCalendar",
   "/adminbot/conference-papers": "adminbotConferencePapers",
   "/adminbot/deadlines": "adminbotDeadlines",
+  "/adminbot/grant-report": "adminbotGrantReport",
+  "/adminbot/mailing-list": "adminbotMailingList",
   "/adminbot/meeting-requests": "adminbotMeetingRequests",
   "/adminbot/meetings": "adminbotMeetings",
   "/adminbot/members": "adminbotMembers",
@@ -313,9 +361,12 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/opportunities": "adminbotOpportunities",
   "/adminbot/papers": "adminbotPapers",
   "/adminbot/professor": "adminbotProfessor",
+  "/adminbot/travel": "adminbotTravel",
   "/adminbot/profile-overview": "adminbotProfileOverview",
+  "/adminbot/tab-usage": "adminbotTabUsage",
   "/adminbot/rec-letters": "adminbotRecLetters",
   "/adminbot/registrations": "adminbotRegistrations",
+  "/adminbot/badges": "adminbotBadges",
   "/adminbot/reimbursements": "adminbotReimbursements",
   "/adminbot/settings": "adminbotSettings",
   "/adminbot/signatures": "adminbotSignatures",
@@ -381,7 +432,23 @@ export function isTabInGroup(group: (typeof TAB_GROUPS)[number], tab: Tab): bool
   return group.label === "openclaw" && isSettingsTab(tab);
 }
 
-export function tabFromPath(pathname: string, basePath = ""): Tab | null {
+/**
+ * The sidebar group a tab sits under, as the header breadcrumb says it.
+ *
+ * `home` returns null: the dashboard is a group of one, so naming it would print the same word
+ * twice. The breadcrumb names a group rather than the gateway's own identity because
+ * "OpenClaw > main" told a member which upstream agent process was serving the page -- not a
+ * place they can navigate to, and not a fact they can act on.
+ */
+export function groupTitleForTab(tab: Tab): string | null {
+  const group = TAB_GROUPS.find((candidate) => isTabInGroup(candidate, tab));
+  if (!group || group.label === "home") {
+    return null;
+  }
+  return t(`nav.${group.label}`);
+}
+
+function normalizedTabPath(pathname: string, basePath: string): string {
   const base = normalizeBasePath(basePath);
   let path = pathname || "/";
   if (base) {
@@ -391,16 +458,31 @@ export function tabFromPath(pathname: string, basePath = ""): Tab | null {
       path = path.slice(base.length);
     }
   }
-  let normalized = normalizeLowercaseStringOrEmpty(normalizePath(path));
-  if (normalized.endsWith("/index.html")) {
-    normalized = "/";
-  }
+  const normalized = normalizeLowercaseStringOrEmpty(normalizePath(path));
+  return normalized.endsWith("/index.html") ? "/" : normalized;
+}
+
+export function tabFromPath(pathname: string, basePath = ""): Tab | null {
+  const normalized = normalizedTabPath(pathname, basePath);
   // The root is home: the dashboard for anyone signed in. Because a visitor may not see it, the
   // coercion in app-render turns the same resolution into the landing page for them.
   if (normalized === "/") {
     return "dashboard";
   }
   return PATH_TO_TAB.get(normalized) ?? null;
+}
+
+/**
+ * Whether the path is the root rather than a named tab.
+ *
+ * `tabFromPath` answers the root with `dashboard`, which is the right tab to show and the wrong
+ * answer to "did this visitor ask for a surface". Home is a default standing in for a choice
+ * nobody made, and the two cases part company once a viewer has a home of their own: see
+ * `defaultTabForViewer`. The URL is rewritten to the resolved tab on load, so this has to be read
+ * from the address the visit arrived on, before that happens.
+ */
+export function pathIsRoot(pathname: string, basePath = ""): boolean {
+  return normalizedTabPath(pathname, basePath) === "/";
 }
 
 export function inferBasePathFromPathname(pathname: string): string {
@@ -433,6 +515,8 @@ export function iconForTab(tab: Tab): IconName {
       return "barChart";
     case "profile":
       return "user";
+    case "gettingStarted":
+      return "check";
     case "myWork":
       return "book";
     case "labSharing":
@@ -448,6 +532,8 @@ export function iconForTab(tab: Tab): IconName {
     // The landing tab of the Membership page: who is in the lab, not just who is waiting.
     case "adminbotRegistrations":
       return "user";
+    case "adminbotBadges":
+      return "spark";
     case "adminbotOnboarding":
       return "send";
     case "adminbotReimbursements":
@@ -456,11 +542,18 @@ export function iconForTab(tab: Tab): IconName {
       return "settings";
     case "adminbotProfileOverview":
       return "check";
+    case "adminbotTabUsage":
+      return "barChart";
     case "adminbotProfessor":
       return "lobster";
+    case "adminbotTravel":
+      return "globe";
     // A document assembled out of the lab's own record, not a live board.
     case "adminbotGrantReport":
       return "scrollText";
+    // The same record as the grant report, addressed to one reader and put in the post.
+    case "adminbotMailingList":
+      return "send";
     case "adminbotMembers":
       return "folder";
     case "adminbotTimeAvailability":
@@ -482,6 +575,7 @@ export function iconForTab(tab: Tab): IconName {
     case "adminbotAnnouncements":
       return "send";
     case "adminbotConferencePapers":
+    case "adminbotReferenceChecker":
       return "fileText";
     case "adminbotCalendar":
       return "clock";

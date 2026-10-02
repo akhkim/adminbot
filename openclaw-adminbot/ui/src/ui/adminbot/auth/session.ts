@@ -1,3 +1,7 @@
+import {
+  parsePaperFeedback,
+  type PaperFeedback,
+} from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 // Control UI module implements per-member AdminBot email+password auth.
 //
 // Talks to the standalone AdminBot service (default `http://<host>:8765`).
@@ -8,6 +12,10 @@ import { getSafeLocalStorage } from "../../../local-storage.ts";
 import type { UiSettings } from "../../storage.ts";
 import { normalizeOptionalString } from "../../string-coerce.ts";
 import type { AvailabilityRow, TimeOffRow } from "../data/availability.js";
+import type {
+  AdminBotOpportunityDraft,
+  AdminBotOpportunityView,
+} from "../data/opportunities-data.ts";
 import { configureDraftSync } from "../offline/draft-sync.ts";
 import {
   cacheAdminBotGet,
@@ -82,8 +90,144 @@ export type ProfilePhotoReviewState = {
   selected_variant_id?: string;
 };
 
+export type AssignedBadge = {
+  member_id: string;
+  badge_id: string;
+  family_key: string;
+  awarded_at: string;
+  awarded_by: string;
+  source: "admin" | "nomination" | "self_report";
+  count?: number;
+  follower_count?: number;
+  nomination_id?: string;
+  evidence?: string;
+  category: string;
+  name: string;
+  description: string;
+  criteria_url?: string;
+  tier?: string;
+  sort_order: number;
+};
+
+export type BadgeDefinitionInput = {
+  id?: string;
+  category: string;
+  name: string;
+  description: string;
+  criteria_url?: string;
+  tier?: string;
+};
+
+export type BadgeDefinition = BadgeDefinitionInput & {
+  id: string;
+  family_key: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BadgeNominationStatus = "pending" | "approved" | "rejected";
+
+/** What a member fills in to propose a badge the catalogue does not have. */
+export type BadgeSuggestionInput = {
+  category: string;
+  name: string;
+  description: string;
+  criteria_url?: string;
+  tier?: string;
+  rationale: string;
+};
+
+export type BadgeSuggestionStatus = "pending" | "approved" | "rejected";
+
+export type BadgeSuggestionView = BadgeSuggestionInput & {
+  id: string;
+  /** Absent once the suggester has been purged from the roster. */
+  suggested_by?: string;
+  suggested_by_name?: string;
+  status: BadgeSuggestionStatus;
+  created_at: string;
+  decided_at?: string;
+  decided_by?: string;
+  /** The badge it became, on an approval. */
+  created_badge_id?: string;
+};
+
+export type BadgeNominationView = {
+  id: string;
+  badge_id: string;
+  family_key: string;
+  /** Who the badge would go to, which is not always who asked for it. */
+  member_id: string;
+  /** Who put it forward, absent when the member put it forward themselves. */
+  nominated_by?: string;
+  evidence?: string;
+  status: BadgeNominationStatus;
+  created_at: string;
+  decided_at?: string;
+  decided_by?: string;
+  badge_category: string;
+  badge_name: string;
+  badge_description: string;
+  badge_tier?: string;
+  badge_criteria_url?: string;
+  member_name?: string;
+  nominator_name?: string;
+};
+
 // Lab member record returned by the AdminBot service. Extra fields beyond these
 // are preserved but not consumed by the UI.
+/**
+ * One of the lab calendar's standing meetings (Monday, `Theme:`, `Proj:`) and who is on it.
+ * Mirrors `AdminBotStandingMeeting` (extensions/adminbot/src/workflows/calendar/standing-meetings.ts).
+ */
+export type StandingMeeting = {
+  id: string;
+  title: string;
+  kind: "group" | "theme" | "project";
+  event_ids: string[];
+  /** Lowercased addresses. */
+  attendees: string[];
+};
+
+/** The Meetings checkboxes' options. Admin session only; a failed read is an error, not []. */
+export async function fetchStandingMeetings(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<StandingMeeting[]>> {
+  const result = await authedJson(baseUrl, "/lab/meetings", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const meetings = (result.body as { meetings?: unknown }).meetings;
+  return { ok: true, value: Array.isArray(meetings) ? (meetings as StandingMeeting[]) : [] };
+}
+
+/**
+ * What a Member Type change on the Lab Members tab did, step by step. Mirrors the service's
+ * `MemberTypeChangeResult` (extensions/adminbot/src/api/server.member-type-change.ts).
+ */
+export type MemberTypeChangeSummary = {
+  from?: string;
+  to?: string;
+  privilege_level: { from: string; to: string };
+  collaborator_subgroup: { from?: string; to?: string };
+  steps: Array<{
+    step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "alumni_mail" | "meeting";
+    target?: string;
+    /** `queued`: filed in Pending Actions because nobody approved it on the spot. */
+    status: "done" | "queued" | "skipped" | "failed";
+    detail?: string;
+    proposal_id?: string;
+  }>;
+};
+
 export type LabMember = {
   id?: string;
   name?: string | null;
@@ -113,14 +257,18 @@ export type LabMember = {
   openreview_id?: string | null;
   cv_url?: string | null;
   intake_form_url?: string | null;
+  intake_form_unavailable?: boolean;
   linkedin_url?: string | null;
   twitter_url?: string | null;
+  twitter_followers?: number;
+  linkedin_followers?: number;
   github_url?: string | null;
   scholar_url?: string | null;
   avatar_url?: string | null;
   profile_photo_review?: ProfilePhotoReviewState | null;
   notes?: string | null;
   onboarding?: MemberOnboarding | null;
+  assigned_badges?: AssignedBadge[] | null;
   [key: string]: unknown;
 };
 
@@ -148,6 +296,7 @@ export type MemberProfileUpdate = {
   // set it could hide or invent their own career changes.
   cv_url?: string;
   intake_form_url?: string;
+  intake_form_unavailable?: boolean;
   linkedin_url?: string;
   twitter_url?: string;
   github_url?: string;
@@ -172,6 +321,11 @@ export type ProfilePhotoPolishResult = {
 // member self-edit), so this type being permissive here is not itself a trust
 // boundary.
 export type AdminLabMemberUpdate = {
+  /**
+   * Ids of the standing meetings to be on, from the Meetings checkboxes. Applied to the calendar,
+   * never stored on the record; sent only when the list was loaded.
+   */
+  meetings?: string[];
   name?: string;
   email?: string;
   slack_user_id?: string;
@@ -203,23 +357,26 @@ export type MemberGateway = {
   // Optional: the service omits it unless an operator configured one, because it cannot know how
   // this browser reaches the gateway. See resolveAdvertisedGatewayUrl.
   url?: string;
-  // The OpenClaw gateway token for the WS connection. Never persist to
-  // localStorage — it flows only into sessionStorage-scoped token plumbing.
-  token: string;
 };
 
 export type MemberSession = {
   session_token: string;
   expires_at: string;
   member: LabMember;
-  gateway: MemberGateway;
+  gateway?: MemberGateway;
+  impersonated_by?: MemberImpersonator;
 };
+
+// The admin behind a "view as" session. Present on GET /auth/session only while one is open, so
+// the banner is driven by its presence rather than by the client remembering what it did.
+export type MemberImpersonator = { id: string; name: string };
 
 // Session view returned by GET /auth/session (no session_token echoed back).
 export type MemberSessionInfo = {
   expires_at: string;
   member: LabMember;
-  gateway: MemberGateway;
+  gateway?: MemberGateway;
+  impersonated_by?: MemberImpersonator;
 };
 
 // Unclaimed roster entry surfaced in the claim picker (GET /auth/roster).
@@ -278,7 +435,8 @@ export type AuthErrorKind =
   // to do with credentials: a long-lived dev service outliving the console that calls it. It used
   // to fall through to auth-failed, which sent people to check their login for a problem that was
   // really a process needing a restart.
-  | "not-found";
+  | "not-found"
+  | "invalid-response";
 
 export type AuthResult<T> =
   | { ok: true; value: T; cached?: boolean }
@@ -378,13 +536,14 @@ async function postJson(
 }
 
 let lastAuthedCall:
-  | { baseUrl: string; token: string; offlineScope?: AdminBotOfflineScope }
+  | { baseUrl: string; token: string | null; offlineScope?: AdminBotOfflineScope }
   | undefined;
 
 async function resolveOfflineScope(
   baseUrl: string,
-  token: string,
+  token: string | null,
 ): Promise<AdminBotOfflineScope | undefined> {
+  if (!token) return undefined;
   if (typeof crypto === "undefined" || !crypto.subtle) {
     return undefined;
   }
@@ -430,26 +589,33 @@ async function authedJson(
   baseUrl: string,
   path: string,
   method: "GET" | "POST" | "PUT" | "DELETE",
-  token: string,
+  // Null for the handful of routes that are open to visitors (ANONYMOUS_ROUTES in the service).
+  // The header is then omitted rather than sent empty: `Bearer ` with nothing after it is a
+  // malformed credential, and the service would be right to treat it as one.
+  token: string | null,
   payload?: unknown,
+  signal?: AbortSignal,
 ): Promise<{ response: Response; body: unknown; fromCache?: boolean } | { unreachable: true }> {
-  const offlineScope = await resolveOfflineScope(baseUrl, token);
-  lastAuthedCall = { baseUrl, token, ...(offlineScope ? { offlineScope } : {}) };
+  const offlineScopePromise = resolveOfflineScope(baseUrl, token);
+  const call = { baseUrl, token };
+  lastAuthedCall = call;
   let response: Response;
   try {
     response = await fetch(`${baseUrl}${path}`, {
       method,
       credentials: "omit",
+      ...(signal ? { signal } : {}),
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-        Authorization: `Bearer ${token}`,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       // GET and DELETE carry no body; every other member-session call sends JSON. A DELETE with
       // a JSON body is legal but pointless here, and some proxies drop it.
       ...(method === "GET" || method === "DELETE" ? {} : { body: JSON.stringify(payload) }),
     });
   } catch {
+    const offlineScope = await offlineScopePromise;
     if (method === "GET") {
       const cached = offlineScope
         ? await readCachedAdminBotGet(offlineScope, path).catch(() => undefined)
@@ -460,13 +626,21 @@ async function authedJson(
     }
     return { unreachable: true };
   }
-  if (method === "GET" && [502, 503, 504].includes(response.status) && offlineScope) {
+  const offlineScope = await offlineScopePromise;
+  if (lastAuthedCall === call && offlineScope) lastAuthedCall = { ...call, offlineScope };
+  const body = await readJson(response);
+  const serviceMessage = (body as { error?: { message?: unknown } } | null)?.error?.message;
+  if (
+    method === "GET" &&
+    [502, 503, 504].includes(response.status) &&
+    offlineScope &&
+    typeof serviceMessage !== "string"
+  ) {
     const cached = await readCachedAdminBotGet(offlineScope, path).catch(() => undefined);
     if (cached !== undefined) {
       return { response: { ok: true, status: 200 } as Response, body: cached, fromCache: true };
     }
   }
-  const body = await readJson(response);
   if (method === "GET" && response.ok && offlineScope) {
     void cacheAdminBotGet(offlineScope, path, body).catch(() => {});
   }
@@ -634,13 +808,21 @@ export async function upsertLabMemberAsAdmin(
   fields: AdminLabMemberUpdate,
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<LabMember>> {
+  create = false,
+): Promise<
+  AuthResult<
+    LabMember & {
+      member_type_change?: MemberTypeChangeSummary;
+      meeting_changes?: MemberTypeChangeSummary["steps"];
+    }
+  >
+> {
   const result = await authedJson(
     baseUrl,
-    `/lab/members/${encodeURIComponent(memberId)}`,
-    "PUT",
+    create ? "/lab/members" : `/lab/members/${encodeURIComponent(memberId)}`,
+    create ? "POST" : "PUT",
     sessionToken,
-    fields,
+    create ? { ...fields, ...(memberId ? { id: memberId } : {}) } : fields,
   );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -654,7 +836,13 @@ export async function upsertLabMemberAsAdmin(
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  return { ok: true, value: result.body as LabMember };
+  return {
+    ok: true,
+    value: result.body as LabMember & {
+      member_type_change?: MemberTypeChangeSummary;
+      meeting_changes?: MemberTypeChangeSummary["steps"];
+    },
+  };
 }
 
 /**
@@ -716,6 +904,251 @@ export async function submitFeedback(
 }
 
 /**
+ * The workspace's open public channel names, for the project form's "already exists" check.
+ *
+ * A 503 is a configured-off deployment and is reported as its own kind, because the form has to
+ * say "the check is unavailable" rather than "no channel matches" -- telling somebody their
+ * correct alias is wrong is the one outcome this must never produce.
+ */
+export async function fetchSlackChannelNames(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ channels: string[] }> | { ok: false; kind: "unconfigured" }> {
+  const result = await authedJson(baseUrl, "/slack/channels", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (result.response.status === 503) {
+    return { ok: false, kind: "unconfigured" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as { channels: string[] } };
+}
+
+/**
+ * Delete one roster row and everything that named it.
+ *
+ * Member session only, for a stronger version of the merge's reason: a merge keeps the person's
+ * history under the surviving id and this keeps none of it. `force` is the caller passing on an
+ * admin's explicit second decision about an account that can still be signed into -- never a
+ * retry the UI sends by itself when the first call comes back 409.
+ */
+export async function deleteLabMemberAsAdmin(
+  memberId: string,
+  sessionToken: string,
+  baseUrl: string,
+  options: { force?: boolean } = {},
+): Promise<
+  AuthResult<{ deleted_id: string; deleted_name: string; removed: Record<string, number> }>
+> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/${encodeURIComponent(memberId)}`,
+    "DELETE",
+    sessionToken,
+    { force: options.force === true },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as {
+      deleted_id: string;
+      deleted_name: string;
+      removed: Record<string, number>;
+    },
+  };
+}
+
+/**
+ * The roster rows the lab holds no address for, and which of them may go.
+ *
+ * A read, so the page can show the list before anybody presses anything. `blocked` is the half
+ * that matters on screen: it is where the shared `admin` login turns up, and an admin who cannot
+ * see why a row survived the purge will assume the purge is broken.
+ */
+/** One paper in the publication digest, as the preview returns it. */
+export type PublicationDigestEntry = {
+  id: string;
+  title: string;
+  authors: string[];
+  venue?: string;
+  url?: string;
+  /** Absent only in venue mode, where acceptance puts a paper in the list rather than its date. */
+  date?: { iso: string; precision: "month" | "year"; source: "arxiv" | "accepted_year" };
+};
+
+/** A venue the picker offers, with what a digest for it would hold. */
+export type PublicationDigestVenue = {
+  key: string;
+  label: string;
+  accepted: number;
+  pending: number;
+};
+
+export type PublicationDigestPreview = {
+  from: string;
+  to: string;
+  /** The venue this digest was composed from, spelled as the records spell it. Absent = by date. */
+  venue?: string;
+  /** Every venue the records mention. Always returned, so one call fills the picker. */
+  venues: PublicationDigestVenue[];
+  publications: PublicationDigestEntry[];
+  excluded: Array<{
+    id: string;
+    title: string;
+    reason: "no_date" | "out_of_range" | "not_accepted";
+    date?: PublicationDigestEntry["date"];
+  }>;
+  undated_count: number;
+  /** Venue mode: papers naming the venue with no decision recorded. */
+  pending_count: number;
+  subject: string;
+  body: string;
+};
+
+/**
+ * What the digest for this range would contain. Read-only.
+ *
+ * The tab shows this before anything is sent, and the send recomputes it from the same function --
+ * so the preview is the email rather than a rehearsal of it.
+ */
+export async function fetchPublicationDigest(
+  params: { from: string; to: string; venue?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PublicationDigestPreview>> {
+  const search = new URLSearchParams({ from: params.from, to: params.to });
+  if (params.venue) {
+    search.set("venue", params.venue);
+  }
+  const result = await authedJson(
+    baseUrl,
+    `/papers/mailing-list?${search.toString()}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as PublicationDigestPreview };
+}
+
+/** Mails the digest for this range to one address. */
+export async function sendPublicationDigest(
+  params: { from: string; to: string; email: string; venue?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ sent: true; recipient: string; publications: number }>> {
+  const result = await authedJson(
+    baseUrl,
+    "/papers/mailing-list/send",
+    "POST",
+    sessionToken,
+    params,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as { sent: true; recipient: string; publications: number },
+  };
+}
+
+export async function fetchMembersWithoutEmail(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<
+  AuthResult<{
+    deletable: Array<{ id: string; name: string; attached_rows: number }>;
+    blocked: Array<{ id: string; name: string; reason: string }>;
+  }>
+> {
+  const result = await authedJson(baseUrl, "/lab/members/without-email", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as {
+      deletable: Array<{ id: string; name: string; attached_rows: number }>;
+      blocked: Array<{ id: string; name: string; reason: string }>;
+    },
+  };
+}
+
+/**
+ * Delete every member the lab has no address for.
+ *
+ * `dryRun` defaults to true here as well as in the service, so a caller that forgets the argument
+ * previews rather than deletes -- the destructive reading of an ambiguous call is the wrong one to
+ * make twice.
+ */
+export async function purgeMembersWithoutEmailAsAdmin(
+  sessionToken: string,
+  baseUrl: string,
+  options: { dryRun?: boolean } = {},
+): Promise<
+  AuthResult<{
+    deleted: Array<{ id: string; name: string }>;
+    blocked: Array<{ id: string; name: string; reason: string }>;
+    removed: Record<string, number>;
+    dry_run: boolean;
+  }>
+> {
+  const result = await authedJson(
+    baseUrl,
+    "/lab/members/without-email/purge",
+    "POST",
+    sessionToken,
+    { dry_run: options.dryRun !== false },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as {
+      deleted: Array<{ id: string; name: string }>;
+      blocked: Array<{ id: string; name: string; reason: string }>;
+      removed: Record<string, number>;
+      dry_run: boolean;
+    },
+  };
+}
+
+/**
  * Fold one roster row into another.
  *
  * Member session only, like every other governance write: the service refuses this to the shared
@@ -757,6 +1190,204 @@ export async function mergeLabMembersAsAdmin(
       moved: Record<string, number>;
     },
   };
+}
+
+export type MemberOnboardingGuideQueued = {
+  status?: "done" | "queued";
+  proposal_id: string;
+  template_id: string;
+  email: string;
+};
+
+// Puts one roster member through onboarding: the service composes nothing here, it files an
+// `onboarding.send_guide` proposal. Standard full-member guides are approved and sent immediately;
+// other guides wait for review. Admin Bearer session only, like every other write
+// on this page that reaches a person -- the shared service principal is refused (403) by the route
+// itself.
+//
+// A refusal is expected traffic rather than a fault: no address (422), a Member Type whose
+// onboarding is the backend access grant (422), or a guide already sent or already queued (409).
+// Each one names what it refused, and that sentence is the whole value of the notice -- so the
+// message is carried up from any status here, not only from the 400 `mapErrorResponse` keeps it
+// for.
+export async function queueMemberOnboardingGuide(
+  memberId: string,
+  sessionToken: string,
+  baseUrl: string,
+  slackChannels?: string[],
+): Promise<AuthResult<MemberOnboardingGuideQueued>> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/${encodeURIComponent(memberId)}/onboarding/guide`,
+    "POST",
+    sessionToken,
+    slackChannels?.length ? { slack_project_channels: slackChannels } : {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    const refusal = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    return {
+      ok: false,
+      ...mapErrorResponse(result.response, result.body, { weakOn400: false }),
+      ...(typeof refusal === "string" && refusal.trim() ? { message: refusal.trim() } : {}),
+    };
+  }
+  return { ok: true, value: result.body as MemberOnboardingGuideQueued };
+}
+
+/**
+ * A request to add somebody to the roster, as GET /lab/members/requests returns it. Mirrors
+ * `AdminBotMemberRequest` (extensions/adminbot/src/contracts/member-requests.ts) plus the two
+ * fields the route adds for the reader.
+ */
+export type MemberRequestView = {
+  id: string;
+  status: "pending" | "approved" | "rejected";
+  requested_by: string;
+  requested_by_name?: string;
+  profile: {
+    name: string;
+    email: string;
+    member_type?: string;
+    affiliation?: string;
+    research_topics?: string;
+    personal_website?: string;
+  };
+  meetings?: string[];
+  note?: string;
+  created_at: string;
+  updated_at?: string;
+  decided_at?: string;
+  decided_by?: string;
+  decision_note?: string;
+  member_id?: string;
+  /** The access level approving would grant, worked out from the requested Member Type. */
+  access_level?: string;
+};
+
+export type MemberRequestInput = MemberRequestView["profile"] & { note?: string };
+
+/**
+ * One call to /lab/members/requests. Every refusal the service makes here names the problem --
+ * "already on the roster", "already waiting for review", "this request was already approved" --
+ * so its sentence is passed through whatever the status, as queueMemberOnboardingGuide does.
+ */
+async function memberRequestCall<T>(
+  baseUrl: string,
+  path: string,
+  method: "GET" | "POST" | "DELETE",
+  sessionToken: string,
+  body?: unknown,
+): Promise<AuthResult<T>> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/requests${path}`,
+    method,
+    sessionToken,
+    body,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const refusal = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    const message = typeof refusal === "string" && refusal.trim() ? refusal.trim() : undefined;
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden", ...(message ? { message } : {}) };
+    }
+    return {
+      ok: false,
+      ...mapErrorResponse(result.response, result.body, { weakOn400: false }),
+      ...(message ? { message } : {}),
+    };
+  }
+  return { ok: true, value: result.body as T };
+}
+
+export async function fetchMemberRequests(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberRequestView[]>> {
+  const result = await memberRequestCall<{ requests?: MemberRequestView[] }>(
+    baseUrl,
+    "",
+    "GET",
+    sessionToken,
+  );
+  return result.ok
+    ? { ok: true, value: Array.isArray(result.value.requests) ? result.value.requests : [] }
+    : result;
+}
+
+export async function submitMemberRequest(
+  input: MemberRequestInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView }>> {
+  return await memberRequestCall(baseUrl, "", "POST", sessionToken, input);
+}
+
+export async function editMemberRequest(
+  request: MemberRequestView,
+  input: MemberRequestInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(request.id)}/edit`,
+    "POST",
+    sessionToken,
+    { ...input, expected_updated_at: request.updated_at ?? request.created_at },
+  );
+}
+
+export async function approveMemberRequest(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+  expectedUpdatedAt?: string,
+): Promise<AuthResult<{ request: MemberRequestView; member: LabMember }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(requestId)}/approve`,
+    "POST",
+    sessionToken,
+    { expected_updated_at: expectedUpdatedAt },
+  );
+}
+
+export async function rejectMemberRequest(
+  requestId: string,
+  note: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ request: MemberRequestView }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(requestId)}/reject`,
+    "POST",
+    sessionToken,
+    note ? { note } : {},
+  );
+}
+
+export async function withdrawMemberRequest(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ withdrawn: true }>> {
+  return await memberRequestCall(
+    baseUrl,
+    `/${encodeURIComponent(requestId)}`,
+    "DELETE",
+    sessionToken,
+  );
 }
 
 // Approvals go over the member session rather than the gateway tool: the service records the
@@ -817,7 +1448,22 @@ async function privilegedActionCall<T>(
     if (result.response.status === 403) {
       return { ok: false, kind: "forbidden" };
     }
-    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+    const mapped = mapErrorResponse(result.response, result.body, { weakOn400: false });
+    // A refused execute is almost always the connector's own sentence -- "You are trying to edit a
+    // protected cell", "gog: token expired" -- and a conflict names what changed under the
+    // approval. mapErrorResponse keeps a message only for a 400, which left the operator with
+    // "Couldn't record this approval" and nothing to act on. The route is privileged, so the
+    // service's text is safe to show.
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (
+      !mapped.message &&
+      (result.response.status === 409 || result.response.status >= 500) &&
+      typeof message === "string" &&
+      message.trim()
+    ) {
+      return { ok: false, ...mapped, message: message.trim() };
+    }
+    return { ok: false, ...mapped };
   }
   return { ok: true, value: result.body as T };
 }
@@ -877,86 +1523,238 @@ export async function nudgeOnboardingStep(
   return { ok: true, value: result.body as MemberNudgeResult };
 }
 
-export type OnboardingGuideRequest = {
-  templateId: string;
-  name: string;
-  email: string;
-  values: Record<string, string>;
-  preview: boolean;
-  /** Left out entirely when the tab has no opinion, so the service applies its own default. */
-  submitDcsForm?: boolean;
-  /**
-   * The copy as the operator edited it in the preview. Sent only when it differs from what the
-   * preview returned, so an untouched preview still sends the stored template.
-   */
-  subjectOverride?: string;
-  bodyOverride?: string;
-  /** Channels the send should invite them to, by name or id; empty means none. */
-  projectChannels?: readonly string[];
+/** The lab's member spreadsheet as the Membership grid shows it. */
+export type MemberSheetView = {
+  spreadsheet_id: string;
+  tab: string;
+  url: string;
+  header: string[];
+  rows: { sheet_row: number; cells: string[] }[];
+  read_at: string;
 };
 
-export type OnboardingGuideResult = {
-  template_id: string;
-  subject: string;
-  body: string;
-  sent: boolean;
-  drive_folder_link?: string;
-  slack_connect_link?: string;
-  project_channel_invites?: { channel: string; url: string }[];
+export type MemberSheetEditResult = {
+  proposal?: { id: string; status: string };
+  updates: { range: string; values: string[][] }[];
+  conflicts: {
+    sheet_row: number;
+    column: number;
+    header: string;
+    expected: string;
+    actual: string;
+  }[];
+  unchanged: number;
+  touches_access: boolean;
+};
+
+export type MemberSheetOnboardResult = {
+  /** `sent`: already mailed on this admin's approval. `queued`: waiting in Pending Actions. */
+  created: {
+    sheet_row: number;
+    email: string;
+    template_id: string;
+    proposal_id: string;
+    status?: "sent" | "queued";
+  }[];
+  /** Rows not yet on the roster, added with the access their Member Type grants. */
+  enrolled?: {
+    sheet_row: number;
+    member_id: string;
+    member_type_change?: MemberTypeChangeSummary;
+  }[];
+  skipped: { sheet_row: number; reason: string; missing?: string[] }[];
 };
 
 /**
- * Previews or sends an onboarding guide as the signed-in admin.
+ * The service's own sentence about why a member-sheet call failed.
  *
- * The 422 carries the exact list of values the service is still waiting on, which is the whole
- * point of the endpoint refusing rather than sending a half-filled email; it is surfaced verbatim
- * so the form can name the fields instead of guessing.
+ * The three routes here fail for reasons only the service can name -- a spreadsheet it cannot read
+ * because the host's Google token expired (502), a deployment pointed at a sheet that does not
+ * exist -- and `mapErrorResponse` carries a message only for 400. Without this the grid answered
+ * every one of them with "The member sheet could not be reached", which is true and useless.
  */
-export async function sendOnboardingGuide(
-  request: OnboardingGuideRequest,
+function memberSheetFailure(
+  response: Response,
+  body: unknown,
+): { ok: false; kind: AuthErrorKind; message?: string } {
+  const mapped = mapErrorResponse(response, body, { weakOn400: false });
+  if (mapped.message) {
+    return { ok: false, ...mapped };
+  }
+  const raw = (body as { error?: { message?: unknown } } | null)?.error?.message;
+  const message = typeof raw === "string" ? raw.trim() : "";
+  // The service's catch-all 404 for an unrouted path. The Control UI ships from Vercel and the
+  // service from Aurora, so the UI is routinely ahead: a Membership tab talking to a service that
+  // predates /membership/sheet answered with the word "not found", which reads as a missing sheet
+  // and sent people looking at Google. It is a missing deployment.
+  if (response.status === 404 && (!message || message === "not found")) {
+    return {
+      ok: false,
+      ...mapped,
+      message:
+        "This AdminBot service has no /membership/sheet route, so it is older than this page. The sheet is fine; the service needs a deploy.",
+    };
+  }
+  return message ? { ok: false, ...mapped, message } : { ok: false, ...mapped };
+}
+
+export async function fetchMemberSheet(
   sessionToken: string,
   baseUrl: string,
-): Promise<
-  | AuthResult<OnboardingGuideResult>
-  | { ok: false; kind: "missing"; missing: string[] }
-  | { ok: false; kind: "rejected"; message: string }
-> {
-  const result = await authedJson(baseUrl, "/onboarding/guide", "POST", sessionToken, {
-    template_id: request.templateId,
-    name: request.name,
-    email: request.email,
-    values: request.values,
-    preview: request.preview,
-    ...(request.submitDcsForm === undefined ? {} : { submit_dcs_form: request.submitDcsForm }),
-    ...(request.subjectOverride ? { subject_override: request.subjectOverride } : {}),
-    ...(request.bodyOverride ? { body_override: request.bodyOverride } : {}),
-    ...(request.projectChannels?.length ? { slack_project_channels: request.projectChannels } : {}),
+): Promise<AuthResult<MemberSheetView>> {
+  const result = await authedJson(baseUrl, "/membership/sheet", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return memberSheetFailure(result.response, result.body);
+  }
+  return { ok: true, value: result.body as MemberSheetView };
+}
+
+/**
+ * `expected` carries what each edited cell held when the grid was drawn, so the service can refuse
+ * a write against a cell somebody else has changed since. Sending the edits without it would let
+ * this tab silently revert whoever was editing the sheet in Google at the same time.
+ */
+export async function proposeMemberSheetEdits(
+  edits: { sheet_row: number; column: number; value: string }[],
+  expected: Record<string, string>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberSheetEditResult>> {
+  const result = await authedJson(baseUrl, "/membership/sheet", "POST", sessionToken, {
+    edits,
+    expected,
   });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
-    const error = (result.body as { error?: { missing?: string[]; message?: string } } | undefined)
-      ?.error;
-    if (result.response.status === 422 && error?.missing?.length) {
-      return { ok: false, kind: "missing", missing: error.missing };
-    }
-    if (result.response.status === 403) {
-      return { ok: false, kind: "forbidden" };
-    }
-    // Everything else this route refuses -- an unconfigured mail account (503), Drive or Slack
-    // provisioning that is not wired up (501), an unknown template (404), a rejected name or
-    // address (400) -- arrives with a message that says exactly which one it was. Passing it
-    // through matters more here than on most routes: only 400 is about what the admin typed, so
-    // the generic "check the details" advice is wrong for every other case, and an operator who
-    // follows it re-types a correct form until they give up.
-    const message = normalizeOptionalString(error?.message);
-    if (message) {
-      return { ok: false, kind: "rejected", message };
-    }
-    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+    return memberSheetFailure(result.response, result.body);
   }
-  return { ok: true, value: result.body as OnboardingGuideResult };
+  return { ok: true, value: result.body as MemberSheetEditResult };
+}
+
+/** One row's mail, fully composed, exactly as executing the onboarding would queue it. */
+export type PlannedOnboardEmail = {
+  sheet_row: number;
+  name: string;
+  email: string;
+  template_id: string;
+  subject: string;
+  body: string;
+  reply_to: string;
+};
+
+/** A row whose Member Type is onboarded by its access alone, with no email. */
+export type PlannedAccessOnly = {
+  sheet_row: number;
+  name: string;
+  email: string;
+  member_type: string;
+  reason: string;
+};
+
+export type MemberSheetOnboardPreview = {
+  planned: PlannedOnboardEmail[];
+  /** Absent from a service older than the shared onboarding. */
+  access_only?: PlannedAccessOnly[];
+  skipped: MemberSheetOnboardResult["skipped"];
+};
+
+/**
+ * What onboarding the selected rows would do (POST /membership/sheet/onboard/preview) — the
+ * composed mails and the rows that would be skipped, with nothing queued.
+ *
+ * Deliberately its own route rather than a flag on the executing one: against a service too old
+ * to know it, a flag would be dropped and the "preview" would quietly onboard people. A 404 here
+ * is reported as the missing deploy it is.
+ */
+export async function previewOnboardFromMemberSheet(
+  sheetRows: number[],
+  values: Record<string, Record<string, string>>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberSheetOnboardPreview>> {
+  const result = await authedJson(
+    baseUrl,
+    "/membership/sheet/onboard/preview",
+    "POST",
+    sessionToken,
+    {
+      sheet_rows: sheetRows,
+      ...(Object.keys(values).length > 0 ? { values } : {}),
+    },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return memberSheetFailure(result.response, result.body);
+  }
+  return { ok: true, value: result.body as MemberSheetOnboardPreview };
+}
+
+export async function onboardFromMemberSheet(
+  sheetRows: number[],
+  values: Record<string, Record<string, string>>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberSheetOnboardResult>> {
+  const result = await authedJson(baseUrl, "/membership/sheet/onboard", "POST", sessionToken, {
+    sheet_rows: sheetRows,
+    ...(Object.keys(values).length > 0 ? { values } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return memberSheetFailure(result.response, result.body);
+  }
+  return { ok: true, value: result.body as MemberSheetOnboardResult };
+}
+
+export type MemberSheetAddRowInput = {
+  name: string;
+  member_type: string;
+  email: string;
+  slack_email?: string;
+  member_attributes?: string;
+};
+
+/** How one of Add row's three steps went. Mirrors the service's `MemberSheetAddRowStep`. */
+export type MemberSheetAddRowStep =
+  | { status: "done"; proposal_id?: string; detail?: string; template_id?: string }
+  | { status: "skipped"; reason: string }
+  | { status: "failed"; reason: string; proposal_id?: string; template_id?: string };
+
+export type MemberSheetAddRowResult = {
+  member_id: string;
+  sheet: MemberSheetAddRowStep;
+  member: MemberSheetAddRowStep;
+  /** The rooms, meetings and calendar access the new member's type grants. */
+  member_type_change?: MemberTypeChangeSummary;
+  onboarding: MemberSheetAddRowStep;
+};
+
+/**
+ * Adds a person to the roster and onboards them, now: the service appends the row, creates the
+ * member and sends the guide, each approved as the signed-in admin.
+ */
+export async function addMemberSheetRow(
+  input: MemberSheetAddRowInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberSheetAddRowResult>> {
+  const result = await authedJson(baseUrl, "/membership/sheet/rows", "POST", sessionToken, input);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return memberSheetFailure(result.response, result.body);
+  }
+  return { ok: true, value: result.body as MemberSheetAddRowResult };
 }
 
 export type MemberNudgeChannel = "slack" | "email";
@@ -1329,7 +2127,20 @@ export async function updateCalendarEvent(
 
 export async function inviteToCalendarEvent(
   eventId: string,
-  request: { attendees: string[]; summary?: string; rationale?: string },
+  request: {
+    attendees: string[];
+    /**
+     * Addresses to take off the event, for an exclusive send.
+     *
+     * Paired with `remaining_attendees` and never sent alone: the calendar write behind a removal
+     * replaces the guest list rather than subtracting from it, so the route refuses a removal that
+     * does not say what should be left.
+     */
+    remove?: string[];
+    remaining_attendees?: string[];
+    summary?: string;
+    rationale?: string;
+  },
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<CalendarActionResult>> {
@@ -1380,6 +2191,37 @@ async function calendarWrite(
   return { ok: true, value: (result.body ?? {}) as CalendarActionResult };
 }
 
+/** Dedicated local route: never the gateway agent or privacy broker. */
+export async function sendLocalChat(
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  sessionToken: string,
+  baseUrl: string,
+  signal?: AbortSignal,
+): Promise<AuthResult<{ output: string; model: string; route: "local" }>> {
+  const result = await authedJson(
+    baseUrl,
+    "/local-chat",
+    "POST",
+    sessionToken,
+    { messages },
+    signal,
+  );
+  if ("unreachable" in result) return { ok: false, kind: "unreachable" };
+  const body = result.body as { output?: unknown; model?: unknown; route?: unknown } | null;
+  if (
+    !result.response.ok ||
+    typeof body?.output !== "string" ||
+    typeof body.model !== "string" ||
+    body.route !== "local"
+  )
+    return {
+      ok: false,
+      kind: "draft-failed",
+      message: "Local chat could not answer. No external model was used.",
+    };
+  return { ok: true, value: { output: body.output, model: body.model, route: "local" } };
+}
+
 export async function fetchMemberResource(
   path: string,
   sessionToken: string,
@@ -1400,7 +2242,7 @@ export async function fetchMemberResource(
 
 /** Lists the conferences an admin has made searchable, with how fresh each index is. */
 export async function fetchVenueSources(
-  sessionToken: string,
+  sessionToken: string | null,
   baseUrl: string,
 ): Promise<AuthResult<unknown>> {
   const result = await authedJson(baseUrl, "/venue-papers/sources", "GET", sessionToken);
@@ -1413,6 +2255,54 @@ export async function fetchVenueSources(
   return { ok: true, value: result.body };
 }
 
+export type VenuePaperCategory = { id: string; label: string; paper_count: number };
+
+export async function fetchVenueCategories(
+  venueId: string,
+  sessionToken: string | null,
+  baseUrl: string,
+): Promise<AuthResult<{ venue_id: string; categories: VenuePaperCategory[] }>> {
+  const query = new URLSearchParams({ venue_id: venueId });
+  const result = await authedJson(
+    baseUrl,
+    `/venue-papers/categories?${query.toString()}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { venue_id?: unknown; categories?: unknown } | null;
+  if (typeof body?.venue_id !== "string" || !Array.isArray(body.categories)) {
+    return { ok: false, kind: "draft-failed", message: "The category list was malformed." };
+  }
+  const categories = body.categories.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return [];
+    }
+    const category = entry as Record<string, unknown>;
+    return typeof category.id === "string" &&
+      category.id.trim().length > 0 &&
+      typeof category.label === "string" &&
+      category.label.trim().length > 0 &&
+      typeof category.paper_count === "number" &&
+      Number.isInteger(category.paper_count) &&
+      category.paper_count >= 0
+      ? [
+          {
+            id: category.id.trim(),
+            label: category.label.trim(),
+            paper_count: category.paper_count,
+          },
+        ]
+      : [];
+  });
+  return { ok: true, value: { venue_id: body.venue_id, categories } };
+}
+
 /**
  * Ranks one conference's accepted papers against what the member says they work on.
  *
@@ -1421,13 +2311,14 @@ export async function fetchVenueSources(
  * reader can act on, and the generic copy would throw them away.
  */
 export async function searchVenuePapers(
-  params: { venueId: string; interests: string },
-  sessionToken: string,
+  params: { venueId: string; interests: string; categoryId?: string },
+  sessionToken: string | null,
   baseUrl: string,
 ): Promise<AuthResult<unknown>> {
   const result = await authedJson(baseUrl, "/venue-papers/search", "POST", sessionToken, {
     venue_id: params.venueId,
     interests: params.interests,
+    ...(params.categoryId ? { category_id: params.categoryId } : {}),
   });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -1440,6 +2331,82 @@ export async function searchVenuePapers(
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
   return { ok: true, value: result.body };
+}
+
+/**
+ * Ranks the lab's own papers against a topic, a keyword, or a whole research proposal.
+ *
+ * Needs a session where the conference search does not: that one ranks a published programme, this
+ * one returns our own paper titles and where they sit. Carries the service's sentence up for the
+ * same reason -- "the embedding model is not reachable" (502) is the common failure here and it is
+ * something the reader can act on.
+ */
+export async function searchLabPaperRelevance(
+  params: { query: string },
+  sessionToken: string | null,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/lab-papers/relevance", "POST", sessionToken, {
+    query: params.query,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/**
+ * Fill in run fields an older service does not send.
+ *
+ * Vercel ships this UI ahead of the Aurora service as a matter of routine, so every run field
+ * added on the server arrives as `undefined` here for however long that gap lasts. Defaulting at
+ * the boundary is what keeps a page that renders "3 of 2540 calls failed" from rendering
+ * "undefined of 2540 calls failed" against a service that has never heard of failed calls.
+ */
+function withWorkshopRunDefaults(body: unknown): unknown {
+  if (!body || typeof body !== "object") {
+    return body;
+  }
+  const run = body as Record<string, unknown>;
+  if (typeof run.status !== "string") {
+    return body;
+  }
+  return {
+    ...run,
+    calls_failed: typeof run.calls_failed === "number" ? run.calls_failed : 0,
+  };
+}
+
+/**
+ * Stop the pass in flight (POST /workshop-nudges/cancel).
+ *
+ * A service too old to know this route answers 404, which `mapErrorResponse` turns into an error
+ * the page shows rather than a crash -- the right outcome while Vercel is ahead of Aurora, because
+ * the stall window still recovers the run on its own, just more slowly.
+ */
+export async function cancelWorkshopNudges(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/workshop-nudges/cancel", "POST", sessionToken, {});
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: withWorkshopRunDefaults(result.body) };
 }
 
 /** Computes the current native-paper workshop preview. Admin only; it sends nothing. */
@@ -1458,7 +2425,38 @@ export async function previewWorkshopNudges(
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  return { ok: true, value: result.body };
+  return { ok: true, value: withWorkshopRunDefaults(result.body) };
+}
+
+export type WorkshopConferenceOption = {
+  key: string;
+  label: string;
+  workshop_count: number;
+};
+
+/**
+ * The conferences a pass may be narrowed to (GET /workshop-nudges/conferences).
+ *
+ * Cheap on the service side -- no model calls -- so the page asks on open. An older service has no
+ * such route; the caller treats that as "no picker" rather than as an error, so the tab keeps
+ * working against a deployment that has not been updated yet.
+ */
+export async function fetchWorkshopConferences(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<WorkshopConferenceOption[]>> {
+  const result = await authedJson(baseUrl, "/workshop-nudges/conferences", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const rows = (result.body as { conferences?: unknown } | null)?.conferences;
+  return {
+    ok: true,
+    value: Array.isArray(rows) ? (rows as WorkshopConferenceOption[]) : [],
+  };
 }
 
 /**
@@ -1470,8 +2468,17 @@ export async function previewWorkshopNudges(
 export async function refreshWorkshopNudges(
   sessionToken: string,
   baseUrl: string,
+  // `force` replaces a pass that still claims to be running. An older service ignores the field
+  // and applies its own stall window, which is slower but not wrong.
+  force = false,
+  // The conference the admin narrowed the pass to. An older service ignores the field and runs the
+  // whole open season, which is the pre-existing behaviour rather than a wrong one.
+  conferenceKey?: string,
 ): Promise<AuthResult<unknown>> {
-  const result = await authedJson(baseUrl, "/workshop-nudges/refresh", "POST", sessionToken, {});
+  const result = await authedJson(baseUrl, "/workshop-nudges/refresh", "POST", sessionToken, {
+    ...(force ? { force: true } : {}),
+    ...(conferenceKey?.trim() ? { conference_key: conferenceKey.trim() } : {}),
+  });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
@@ -1482,7 +2489,7 @@ export async function refreshWorkshopNudges(
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  return { ok: true, value: result.body };
+  return { ok: true, value: withWorkshopRunDefaults(result.body) };
 }
 
 /** Recomputes selected recipients and sends one server-generated Slack nudge to each. */
@@ -1508,6 +2515,40 @@ export async function sendWorkshopNudges(
 }
 
 /** Rebuilds every configured conference index (POST /venue-papers/index). Admin only. */
+/**
+ * Runs the Slack channel-naming sweep (POST /slack/channel-naming/sweep/run).
+ *
+ * Files a rename proposal for every channel still non-compliant 48 hours after its owner was
+ * reminded. It renames nothing itself -- the proposals wait on the Actions tab -- which is why
+ * this is safe to offer as a button an admin can press whenever they are tidying up.
+ */
+export async function runChannelNamingSweep(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    "/slack/channel-naming/sweep/run",
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
 export async function rebuildVenueIndexes(
   sessionToken: string,
   baseUrl: string,
@@ -1565,6 +2606,30 @@ export async function publishCvDigest(
 // the member Bearer rather than the gateway tool path because the service decides there what a
 // plain member may touch -- their own submissions, without the governance fields -- and because a
 // member's paired device holds read-only gateway scopes, so `tools.invoke` is not open to them.
+/**
+ * Asks the service to place the import columns the local pass could not.
+ *
+ * Nothing is written by this call: what comes back is a suggested mapping the grid shows for
+ * review. A failure is not an error the member needs to see -- the local pass has already produced
+ * a usable mapping -- so the caller treats an empty answer and a dead tunnel the same way.
+ */
+export async function mapImportColumns(
+  unmapped: Array<{ header: string; samples: string[] }>,
+  available: string[],
+  sessionToken: string,
+  baseUrl: string,
+): Promise<Record<string, string>> {
+  const result = await authedJson(baseUrl, "/papers/import/columns", "POST", sessionToken, {
+    unmapped,
+    available,
+  });
+  if ("unreachable" in result || !result.response.ok) {
+    return {};
+  }
+  const mapping = (result.body as { mapping?: Record<string, string> } | null)?.mapping;
+  return mapping && typeof mapping === "object" ? mapping : {};
+}
+
 export async function saveOwnPaper(
   paperId: string,
   body: Record<string, unknown>,
@@ -1830,6 +2895,432 @@ export function rejectRegistration(
   return decideRegistration(registrationId, "reject", sessionToken, baseUrl);
 }
 
+export async function fetchBadges(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeDefinition[]>> {
+  const result = await authedJson(baseUrl, "/badges", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const badges = (result.body as { badges?: BadgeDefinition[] } | null)?.badges ?? [];
+  return { ok: true, value: badges };
+}
+
+export async function createBadge(
+  input: BadgeDefinitionInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeDefinition>> {
+  const result = await authedJson(baseUrl, "/badges", "POST", sessionToken, input);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const badge = (result.body as { badge?: BadgeDefinition } | null)?.badge;
+  return badge ? { ok: true, value: badge } : { ok: false, kind: "auth-failed" };
+}
+
+export async function updateBadge(
+  badgeId: string,
+  input: Partial<BadgeDefinitionInput>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeDefinition>> {
+  const result = await authedJson(
+    baseUrl,
+    `/badges/${encodeURIComponent(badgeId)}`,
+    "PUT",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const badge = (result.body as { badge?: BadgeDefinition } | null)?.badge;
+  return badge ? { ok: true, value: badge } : { ok: false, kind: "auth-failed" };
+}
+
+export async function assignBadgeToMember(
+  memberId: string,
+  badgeId: string,
+  sessionToken: string,
+  baseUrl: string,
+  evidence?: string,
+  count?: number,
+): Promise<AuthResult<AssignedBadge>> {
+  const result = await authedJson(baseUrl, "/badges/assignments", "POST", sessionToken, {
+    member_id: memberId,
+    badge_id: badgeId,
+    ...(count !== undefined ? { count } : {}),
+    ...(evidence ? { evidence } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const assignment = (result.body as { assignment?: AssignedBadge } | null)?.assignment;
+  return assignment ? { ok: true, value: assignment } : { ok: false, kind: "auth-failed" };
+}
+
+export async function removeBadgeFromMember(
+  memberId: string,
+  badgeId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<void>> {
+  const result = await authedJson(
+    baseUrl,
+    `/badges/assignments/${encodeURIComponent(memberId)}/${encodeURIComponent(badgeId)}`,
+    "DELETE",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: undefined };
+}
+
+export async function fetchBadgeNominations(
+  sessionToken: string,
+  baseUrl: string,
+  params: { memberId?: string; status?: BadgeNominationStatus } = {},
+): Promise<AuthResult<BadgeNominationView[]>> {
+  const query = new URLSearchParams();
+  if (params.memberId) {
+    query.set("member_id", params.memberId);
+  }
+  if (params.status) {
+    query.set("status", params.status);
+  }
+  const path = query.size ? `/badges/nominations?${query.toString()}` : "/badges/nominations";
+  const result = await authedJson(baseUrl, path, "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const nominations = (result.body as { nominations?: BadgeNominationView[] } | null)?.nominations;
+  return { ok: true, value: nominations ?? [] };
+}
+
+/**
+ * The board's member-contributed entries.
+ *
+ * `token` is nullable because this tab renders for signed-out visitors: the service serves the
+ * approved rows to an anonymous caller and adds the caller's own pending ones when there is a
+ * session. What comes back is already filtered for who asked -- the UI does not get to widen it.
+ */
+export async function fetchOpportunities(
+  baseUrl: string,
+  token: string | null,
+): Promise<AuthResult<AdminBotOpportunityView[]>> {
+  const result = await authedJson(baseUrl, "/opportunities", "GET", token);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const opportunities = (result.body as { opportunities?: AdminBotOpportunityView[] } | null)
+    ?.opportunities;
+  return { ok: true, value: opportunities ?? [] };
+}
+
+export async function submitOpportunity(
+  input: AdminBotOpportunityDraft,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<AdminBotOpportunityView>> {
+  const result = await authedJson(baseUrl, "/opportunities", "POST", sessionToken, input);
+  return readOpportunityResult(result);
+}
+
+export async function updateOpportunity(
+  opportunityId: string,
+  input: AdminBotOpportunityDraft,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<AdminBotOpportunityView>> {
+  const result = await authedJson(
+    baseUrl,
+    `/opportunities/${encodeURIComponent(opportunityId)}`,
+    "PUT",
+    sessionToken,
+    input,
+  );
+  return readOpportunityResult(result);
+}
+
+export async function decideOpportunity(
+  opportunityId: string,
+  decision: "approve" | "reject",
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<AdminBotOpportunityView>> {
+  const result = await authedJson(
+    baseUrl,
+    `/opportunities/${encodeURIComponent(opportunityId)}/${decision}`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  return readOpportunityResult(result);
+}
+
+/**
+ * Accept the refresh sweep's date onto the board, or throw the proposal away.
+ *
+ * The sweep may only ever propose (see the service), so this is the only path by which a swept
+ * date reaches a board members plan against.
+ */
+export async function decideOpportunityDeadline(
+  opportunityId: string,
+  accept: boolean,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<AdminBotOpportunityView>> {
+  const result = await authedJson(
+    baseUrl,
+    `/opportunities/${encodeURIComponent(opportunityId)}/deadline-proposal/decision`,
+    "POST",
+    sessionToken,
+    { accept },
+  );
+  return readOpportunityResult(result);
+}
+
+export async function deleteOpportunity(
+  opportunityId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<true>> {
+  const result = await authedJson(
+    baseUrl,
+    `/opportunities/${encodeURIComponent(opportunityId)}`,
+    "DELETE",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: true };
+}
+
+function readOpportunityResult(
+  result: { response: Response; body: unknown } | { unreachable: true },
+): AuthResult<AdminBotOpportunityView> {
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const opportunity = (result.body as { opportunity?: AdminBotOpportunityView } | null)
+    ?.opportunity;
+  return opportunity ? { ok: true, value: opportunity } : { ok: false, kind: "auth-failed" };
+}
+
+/**
+ * Put a badge forward, for yourself or for a colleague.
+ *
+ * `memberId` names who the badge is *for*; who it is from is the session, which is why it is not in
+ * this payload. Omitted for a self-nomination so the service files it as one.
+ */
+export async function submitBadgeNomination(
+  input: { badgeId: string; evidence: string; memberId?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeNominationView>> {
+  const result = await authedJson(baseUrl, "/badges/nominations", "POST", sessionToken, {
+    badge_id: input.badgeId,
+    evidence: input.evidence,
+    ...(input.memberId ? { member_id: input.memberId } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const nomination = (result.body as { nomination?: BadgeNominationView } | null)?.nomination;
+  return nomination ? { ok: true, value: nomination } : { ok: false, kind: "auth-failed" };
+}
+
+async function decideBadgeNomination(
+  nominationId: string,
+  decision: "approve" | "reject",
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeNominationView>> {
+  const result = await authedJson(
+    baseUrl,
+    `/badges/nominations/${encodeURIComponent(nominationId)}/${decision}`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const nomination = (result.body as { nomination?: BadgeNominationView } | null)?.nomination;
+  return nomination ? { ok: true, value: nomination } : { ok: false, kind: "auth-failed" };
+}
+
+export function approveBadgeNomination(
+  nominationId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeNominationView>> {
+  return decideBadgeNomination(nominationId, "approve", sessionToken, baseUrl);
+}
+
+export function rejectBadgeNomination(
+  nominationId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeNominationView>> {
+  return decideBadgeNomination(nominationId, "reject", sessionToken, baseUrl);
+}
+
+/**
+ * Badge suggestions: what the catalogue should contain, as opposed to who holds what.
+ *
+ * The service decides the scope, not this call. A plain member gets their own suggestions back and
+ * an admin gets the whole queue, from the same URL -- passing a member id here would be the client
+ * asking for somebody else's, which the service would ignore anyway.
+ */
+export async function fetchBadgeSuggestions(
+  sessionToken: string,
+  baseUrl: string,
+  params: { status?: BadgeSuggestionStatus } = {},
+): Promise<AuthResult<BadgeSuggestionView[]>> {
+  const path = params.status
+    ? `/badges/suggestions?status=${encodeURIComponent(params.status)}`
+    : "/badges/suggestions";
+  const result = await authedJson(baseUrl, path, "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const suggestions = (result.body as { suggestions?: BadgeSuggestionView[] } | null)?.suggestions;
+  return { ok: true, value: suggestions ?? [] };
+}
+
+export async function submitBadgeSuggestion(
+  input: BadgeSuggestionInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeSuggestionView>> {
+  const result = await authedJson(baseUrl, "/badges/suggestions", "POST", sessionToken, {
+    category: input.category,
+    name: input.name,
+    description: input.description,
+    rationale: input.rationale,
+    ...(input.criteria_url ? { criteria_url: input.criteria_url } : {}),
+    ...(input.tier ? { tier: input.tier } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const suggestion = (result.body as { suggestion?: BadgeSuggestionView } | null)?.suggestion;
+  return suggestion ? { ok: true, value: suggestion } : { ok: false, kind: "auth-failed" };
+}
+
+async function decideBadgeSuggestion(
+  suggestionId: string,
+  decision: "approve" | "reject",
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeSuggestionView>> {
+  const result = await authedJson(
+    baseUrl,
+    `/badges/suggestions/${encodeURIComponent(suggestionId)}/${decision}`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const suggestion = (result.body as { suggestion?: BadgeSuggestionView } | null)?.suggestion;
+  return suggestion ? { ok: true, value: suggestion } : { ok: false, kind: "auth-failed" };
+}
+
+export function approveBadgeSuggestion(
+  suggestionId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeSuggestionView>> {
+  return decideBadgeSuggestion(suggestionId, "approve", sessionToken, baseUrl);
+}
+
+export function rejectBadgeSuggestion(
+  suggestionId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<BadgeSuggestionView>> {
+  return decideBadgeSuggestion(suggestionId, "reject", sessionToken, baseUrl);
+}
+
 export async function loginMember(
   email: string,
   password: string,
@@ -1885,14 +3376,20 @@ export async function signupMember(
 }
 
 // Public roster of unclaimed members backing the claim picker (no auth).
-export async function fetchRoster(baseUrl: string): Promise<AuthResult<RosterMember[]>> {
+export async function fetchRoster(
+  baseUrl: string,
+  query = "",
+): Promise<AuthResult<RosterMember[]>> {
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/auth/roster`, {
-      method: "GET",
-      credentials: "omit",
-      headers: { Accept: "application/json" },
-    });
+    response = await fetch(
+      `${baseUrl}/auth/roster${query ? `?q=${encodeURIComponent(query)}` : ""}`,
+      {
+        method: "GET",
+        credentials: "omit",
+        headers: { Accept: "application/json" },
+      },
+    );
   } catch {
     return { ok: false, kind: "unreachable" };
   }
@@ -1957,10 +3454,56 @@ export async function fetchMemberSession(
         await cacheAdminBotGet(scope, "/offline-identity", null).catch(() => {});
       }
     }
-    return { ok: false, ...mapErrorResponse(response, body, { weakOn400: false }) };
+    // Only an explicit authentication rejection invalidates a stored login. Proxy outages,
+    // rate limits and rolling-deploy 404s must not turn a refresh into a forced sign-in.
+    if (response.status !== 401 && response.status !== 403) {
+      return { ok: false, kind: "unreachable" };
+    }
+    return { ok: false, kind: "auth-failed" };
   }
   await cacheOfflineMemberSession(token, baseUrl, body as MemberSessionInfo);
   return { ok: true, value: body as MemberSessionInfo };
+}
+
+/**
+ * Open a session that sees the lab as `memberId`. Admin-only; the service enforces that.
+ *
+ * The returned token is a *different* session, not a mutation of the caller's -- the admin's own
+ * stays valid, which is what makes the way back a matter of putting it down rather than signing in
+ * again. See saveStoredMemberSession for where it is parked meanwhile.
+ */
+export async function startImpersonation(
+  memberId: string,
+  token: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberSession>> {
+  const result = await authedJson(baseUrl, "/auth/impersonate", "POST", token, {
+    member_id: memberId,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as MemberSession };
+}
+
+/**
+ * Close a "view as" session. Best-effort, like logoutMember: the local swap back has to happen
+ * whether or not the service is reachable, or an admin whose network blipped is stuck as somebody
+ * else with no way out.
+ */
+export async function stopImpersonation(token: string, baseUrl: string): Promise<void> {
+  try {
+    await fetch(`${baseUrl}/auth/impersonate/stop`, {
+      method: "POST",
+      credentials: "omit",
+      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    // Best-effort; the session expires on its own within the half hour regardless.
+  }
 }
 
 export async function logoutMember(token: string, baseUrl: string): Promise<void> {
@@ -1984,7 +3527,15 @@ export async function logoutMember(token: string, baseUrl: string): Promise<void
 
 // Only non-secret fields are persisted; the gateway token is intentionally
 // excluded and re-fetched from GET /auth/session on resume.
-export type StoredMemberSession = { sessionToken: string; expiresAt: string };
+//
+// `impersonator` is the admin's own session, parked here while they view the lab as somebody else.
+// It has to survive a reload: an admin who refreshes the page mid-view would otherwise be left
+// holding only the impersonated token, with their own account reachable again only by signing in.
+export type StoredMemberSession = {
+  sessionToken: string;
+  expiresAt: string;
+  impersonator?: { sessionToken: string; expiresAt: string };
+};
 
 export function loadStoredMemberSession(): StoredMemberSession | null {
   const storage = getSafeLocalStorage();
@@ -1998,7 +3549,19 @@ export function loadStoredMemberSession(): StoredMemberSession | null {
     if (!sessionToken) {
       return null;
     }
-    return { sessionToken, expiresAt: normalizeOptionalString(parsed.expiresAt) ?? "" };
+    const parkedToken = normalizeOptionalString(parsed.impersonator?.sessionToken);
+    return {
+      sessionToken,
+      expiresAt: normalizeOptionalString(parsed.expiresAt) ?? "",
+      ...(parkedToken
+        ? {
+            impersonator: {
+              sessionToken: parkedToken,
+              expiresAt: normalizeOptionalString(parsed.impersonator?.expiresAt) ?? "",
+            },
+          }
+        : {}),
+    };
   } catch {
     return null;
   }
@@ -2009,7 +3572,11 @@ export function saveStoredMemberSession(next: StoredMemberSession): void {
   try {
     storage?.setItem(
       SESSION_STORAGE_KEY,
-      JSON.stringify({ sessionToken: next.sessionToken, expiresAt: next.expiresAt }),
+      JSON.stringify({
+        sessionToken: next.sessionToken,
+        expiresAt: next.expiresAt,
+        ...(next.impersonator ? { impersonator: next.impersonator } : {}),
+      }),
     );
   } catch {
     // best-effort — quota/security failures must not block the in-memory session.
@@ -2085,6 +3652,8 @@ export type MeetingRecord = {
   topic: string;
   started_at: string;
   duration_minutes?: number;
+  /** Recording length to the second, as the Zoom notice stated it. Exact where minutes round. */
+  duration_seconds?: number;
   recording: { share_url?: string; passcode?: string; drive_url?: string };
   transcript?: { processed_at: string; speaker_names: string[]; duration_seconds?: number };
   summary?: {
@@ -2101,19 +3670,43 @@ export type MeetingRecord = {
   notes?: string;
 };
 
+export type MeetingCursor = Pick<MeetingRecord, "started_at" | "id">;
+
+export type MeetingPage = { meetings: MeetingRecord[]; next_cursor?: MeetingCursor };
+
 export async function fetchMeetings(
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<MeetingRecord[]>> {
-  const result = await authedJson(baseUrl, "/meetings", "GET", sessionToken);
+  page?: { limit: number; before?: MeetingCursor },
+): Promise<AuthResult<MeetingPage>> {
+  const params = new URLSearchParams();
+  if (page) {
+    params.set("limit", String(page.limit));
+    if (page.before) {
+      params.set("before_started_at", page.before.started_at);
+      params.set("before_id", page.before.id);
+    }
+  }
+  const result = await authedJson(
+    baseUrl,
+    `/meetings${page ? `?${params}` : ""}`,
+    "GET",
+    sessionToken,
+  );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as { meetings?: MeetingRecord[] } | null;
-  return { ok: true, value: body?.meetings ?? [] };
+  const body = result.body as MeetingPage | null;
+  return {
+    ok: true,
+    value: {
+      meetings: body?.meetings ?? [],
+      ...(body?.next_cursor ? { next_cursor: body.next_cursor } : {}),
+    },
+  };
 }
 
 export async function saveMeetingAttendance(
@@ -2218,6 +3811,77 @@ export async function sendMeetingAttendanceNudges(
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   return { ok: true, value: result.body as MeetingAttendanceNudgeResult };
+}
+
+/**
+ * One lab-wide broadcast from the head of the lab.
+ *
+ * Mirrors LabDirectorStatus in extensions/adminbot/src/contracts/lab-sharing-status.ts. `id` and
+ * `retracted_at` are optional here and not there: a service older than the archive answers without
+ * them, and this page should render that rather than crash on it.
+ */
+export type LabBroadcast = {
+  timezone?: string;
+  id?: string;
+  availability: "available" | "busy" | "away" | "unknown";
+  message: string;
+  expires_at: string;
+  updated_at: string;
+  updated_by: string;
+  retracted_at?: string;
+};
+
+/**
+ * The current broadcast and the archive behind it.
+ *
+ * Both come from one read, because the banner and the "Zhijing's updates" list are two views of the
+ * same answer and a second round trip would let them disagree about which entry is current.
+ */
+export async function fetchLabBroadcasts(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ status: LabBroadcast | null; history: LabBroadcast[] }>> {
+  const result = await authedJson(baseUrl, "/lab-sharing/status", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { status?: LabBroadcast | null; history?: LabBroadcast[] } | null;
+  return {
+    ok: true,
+    value: { status: body?.status ?? null, history: body?.history ?? [] },
+  };
+}
+
+/**
+ * Publish a broadcast, or take the current one down.
+ *
+ * Admin-only server-side; this is the write half of `fetchLabBroadcasts`. `clear` retracts rather
+ * than deletes -- see the contract note -- so the archive keeps it either way.
+ */
+export async function publishLabBroadcast(
+  draft: {
+    availability: LabBroadcast["availability"];
+    message: string;
+    expires_at: string;
+    timezone?: string;
+  } | null,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ status: LabBroadcast | null; history: LabBroadcast[] }>> {
+  const result = draft
+    ? await authedJson(baseUrl, "/lab-sharing/status", "PUT", sessionToken, draft)
+    : await authedJson(baseUrl, "/lab-sharing/status/clear", "POST", sessionToken, {});
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { status?: LabBroadcast | null; history?: LabBroadcast[] } | null;
+  return { ok: true, value: { status: body?.status ?? null, history: body?.history ?? [] } };
 }
 
 export type MemberNotification = {
@@ -2400,6 +4064,13 @@ export type LogisticsMeeting = {
   timezone?: string;
   length_minutes?: number;
   submitted_at?: string;
+  /** Free-text location, which is what the call sheet's city column actually holds. */
+  city?: string;
+  doc_prep_url?: string;
+  /** Tri-state: absent is "not answered", which is not the same as "no". */
+  whatsapp_hello?: boolean;
+  /** yyyy-mm-dd after which the call stops being worth placing. */
+  latest_ok_date?: string;
 };
 
 export type LogisticsRequestInput = {
@@ -2470,11 +4141,21 @@ export async function fetchLogisticsRequest(
   return { ok: true, value: result.body as LogisticsRequest };
 }
 
+/**
+ * A submitted request, plus what the automatic call-sheet push made of it.
+ *
+ * Only a `book_meeting` carries `call_sheet`, and only where the deployment has the queue wired
+ * up -- so it is optional, and its absence means "no call sheet was involved", never "it failed".
+ */
+export type SubmittedLogisticsRequest = LogisticsRequest & {
+  call_sheet?: { queued: boolean; message: string };
+};
+
 export async function submitLogisticsRequest(
   input: LogisticsRequestInput,
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<LogisticsRequest>> {
+): Promise<AuthResult<SubmittedLogisticsRequest>> {
   const result = await authedJson(baseUrl, "/logistics/requests", "POST", sessionToken, input);
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -2482,7 +4163,34 @@ export async function submitLogisticsRequest(
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  return { ok: true, value: result.body as LogisticsRequest };
+  return { ok: true, value: result.body as SubmittedLogisticsRequest };
+}
+
+/**
+ * Files the signature request on the lab's Google Form.
+ *
+ * Posted through AdminBot rather than from the browser: the form's first column is who is asking,
+ * and the service answers it from the roster instead of trusting whatever the page sends.
+ */
+export async function submitSignatureFormRequest(
+  input: { drive_url: string; deadline: string; context?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ submitted: boolean }>> {
+  const result = await authedJson(
+    baseUrl,
+    "/logistics/signature-form",
+    "POST",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as { submitted: boolean } };
 }
 
 /** Replaces the content of a request nobody has picked up yet. The service refuses the rest. */
@@ -2600,6 +4308,11 @@ export type MemberTimelineCounts = {
 };
 
 export type MemberProfileOverviewRow = {
+  /**
+   * What the lab calls this person: "full", "alumni", "coauthor-major", or a comma-separated
+   * combination. The axis the Lab Overview type filter reads; see the service's overview row.
+   */
+  member_type?: string;
   id: string;
   name: string;
   status?: string;
@@ -2669,6 +4382,133 @@ export type MemberProfileOverview = {
   mandatoryFieldCount: number;
 };
 
+/** One tab's share of a usage window, as the page reads it. */
+export type TabVisitRate = {
+  tab: string;
+  visits: number;
+  members: number;
+  visitsPerDay: number;
+  dwellSecondsMedian: number;
+  dwellSecondsTotal: number;
+  dwellSamples: number;
+  firstAt: string;
+  lastAt: string;
+};
+
+export type TabVisitReport = {
+  from: string;
+  to: string;
+  days: number;
+  visits: number;
+  members: number;
+  impersonatedVisits: number;
+  tabs: TabVisitRate[];
+};
+
+/** One row of the log, as the CSV writes it. Deliberately the service's own field names. */
+export type TabVisitRow = {
+  id: string;
+  member_id: string;
+  tab: string;
+  at: string;
+  impersonated?: boolean;
+};
+
+/**
+ * Tell the service a tab was opened.
+ *
+ * Returns nothing and throws nothing: navigation must not wait on this and must not break when it
+ * fails. A dropped visit is a gap in a usage log; a navigation that stalls or a page that errors
+ * because analytics was unreachable is a broken tool, and the second is much worse than the first.
+ */
+export async function recordTabVisit(
+  sessionToken: string,
+  baseUrl: string,
+  tab: string,
+): Promise<void> {
+  try {
+    await authedJson(baseUrl, "/ui/tab-visits", "POST", sessionToken, { tab });
+  } catch {
+    // Same reasoning as the unreachable branch: a usage log is never worth a visible failure.
+  }
+}
+
+export async function fetchTabVisitReport(
+  sessionToken: string,
+  baseUrl: string,
+  days: number,
+): Promise<AuthResult<TabVisitReport>> {
+  const result = await authedJson(
+    baseUrl,
+    `/ui/tab-visits?days=${encodeURIComponent(String(days))}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as {
+    from?: string;
+    to?: string;
+    days?: number;
+    visits?: number;
+    members?: number;
+    impersonated_visits?: number;
+    tabs?: Array<Record<string, unknown>>;
+  } | null;
+  return {
+    ok: true,
+    value: {
+      from: body?.from ?? "",
+      to: body?.to ?? "",
+      days: body?.days ?? days,
+      visits: body?.visits ?? 0,
+      members: body?.members ?? 0,
+      impersonatedVisits: body?.impersonated_visits ?? 0,
+      tabs: (body?.tabs ?? []).map((row) => ({
+        tab: typeof row.tab === "string" ? row.tab : "",
+        visits: numberOr(row.visits),
+        members: numberOr(row.members),
+        visitsPerDay: numberOr(row.visits_per_day),
+        dwellSecondsMedian: numberOr(row.dwell_seconds_median),
+        dwellSecondsTotal: numberOr(row.dwell_seconds_total),
+        dwellSamples: numberOr(row.dwell_samples),
+        firstAt: typeof row.first_at === "string" ? row.first_at : "",
+        lastAt: typeof row.last_at === "string" ? row.last_at : "",
+      })),
+    },
+  };
+}
+
+/** The raw rows behind the report, for the analysis that happens outside this tool. */
+export async function fetchTabVisitRows(
+  sessionToken: string,
+  baseUrl: string,
+  days: number,
+): Promise<AuthResult<TabVisitRow[]>> {
+  const result = await authedJson(
+    baseUrl,
+    `/ui/tab-visits/rows?days=${encodeURIComponent(String(days))}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { visits?: TabVisitRow[] } | null;
+  return { ok: true, value: body?.visits ?? [] };
+}
+
+function numberOr(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
 export async function fetchMemberProfileOverview(
   sessionToken: string,
   baseUrl: string,
@@ -2703,6 +4543,160 @@ export async function fetchMemberProfileOverview(
   };
 }
 
+/** One person the head professor is being asked to chase, and everything they are sitting on. */
+export type EscalatedNudgeRow = {
+  memberId: string;
+  name: string;
+  slackUserId?: string;
+  /** When the oldest of these was raised. What the queue is ordered by. */
+  escalatedAt: string;
+  items: Array<{ id: string; title: string; body: string; createdAt: string; tab?: string }>;
+};
+
+/** One paper waiting on the head professor's yes to post. */
+export type PiReviewRow = {
+  feedback?: PaperFeedback & { label: string; slot: string };
+  paperId: string;
+  title: string;
+  authors: string[];
+  venue?: string;
+  /** When the package became ready, which is what the queue is ordered by. */
+  waitingSince?: string;
+  /** The lab's copy of the exact PDF that would go public. */
+  drivePdfUrl?: string;
+  /** Whether everything else the arXiv package needs is on file. */
+  packageComplete: boolean;
+};
+
+/**
+ * The papers at the PI gate (GET /papers/pi-review).
+ *
+ * A missing endpoint or invalid response leaves approval status unknown; only a successful
+ * queue response can establish that nobody is waiting.
+ */
+export async function fetchPiReviewQueue(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PiReviewRow[]>> {
+  const result = await authedJson(baseUrl, "/papers/pi-review", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (result.response.status === 404) {
+    return {
+      ok: false,
+      kind: "not-found",
+      message: "The backend does not support the PI review queue yet.",
+    };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { papers?: Array<Record<string, unknown>> } | null;
+  if (
+    !body ||
+    !Array.isArray(body.papers) ||
+    body.papers.some(
+      (row) =>
+        !row ||
+        typeof row.paper_id !== "string" ||
+        !row.paper_id.trim() ||
+        typeof row.title !== "string" ||
+        !row.title.trim(),
+    )
+  ) {
+    return {
+      ok: false,
+      kind: "invalid-response",
+      message: "The backend returned an invalid PI review queue.",
+    };
+  }
+  const rows = (body.papers ?? []).flatMap((row) => {
+    const paperId = typeof row.paper_id === "string" ? row.paper_id : "";
+    const title = typeof row.title === "string" ? row.title : "";
+    if (!paperId || !title) {
+      return [];
+    }
+    const authors = Array.isArray(row.authors)
+      ? row.authors.filter((name): name is string => typeof name === "string")
+      : [];
+    return [
+      {
+        paperId,
+        title,
+        authors,
+        ...(typeof row.venue === "string" ? { venue: row.venue } : {}),
+        ...(typeof row.waiting_since === "string" ? { waitingSince: row.waiting_since } : {}),
+        ...(typeof row.drive_pdf_url === "string" ? { drivePdfUrl: row.drive_pdf_url } : {}),
+        ...(row.feedback &&
+        typeof row.feedback === "object" &&
+        parsePaperFeedback(JSON.stringify(row.feedback)) &&
+        typeof (row.feedback as Record<string, unknown>).label === "string" &&
+        typeof (row.feedback as Record<string, unknown>).slot === "string"
+          ? { feedback: row.feedback as PiReviewRow["feedback"] }
+          : {}),
+        packageComplete: row.package_complete === true,
+      },
+    ];
+  });
+  return { ok: true, value: rows };
+}
+
+/**
+ * The escalation queue (GET /nudges/escalated).
+ *
+ * A 404 is read as an empty queue rather than an error. This route is newer than the page that
+ * calls it, and the UI ships from Vercel on merge while the service waits for a run on the host --
+ * so a service that predates the route is the ordinary case for a while, and it should render as
+ * "nothing outstanding", not as a broken panel.
+ */
+export async function fetchEscalatedNudges(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<EscalatedNudgeRow[]>> {
+  const result = await authedJson(baseUrl, "/nudges/escalated", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (result.response.status === 404) {
+    return { ok: true, value: [] };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as {
+    members?: Array<{
+      member_id?: unknown;
+      name?: unknown;
+      slack_user_id?: unknown;
+      escalated_at?: unknown;
+      notifications?: Array<Record<string, unknown>>;
+    }>;
+  } | null;
+  const rows = (body?.members ?? []).flatMap((row) => {
+    const memberId = typeof row.member_id === "string" ? row.member_id : "";
+    if (!memberId) {
+      return [];
+    }
+    return [
+      {
+        memberId,
+        name: typeof row.name === "string" && row.name ? row.name : memberId,
+        ...(typeof row.slack_user_id === "string" ? { slackUserId: row.slack_user_id } : {}),
+        escalatedAt: typeof row.escalated_at === "string" ? row.escalated_at : "",
+        items: (row.notifications ?? []).map((entry) => ({
+          id: typeof entry.id === "string" ? entry.id : "",
+          title: typeof entry.title === "string" ? entry.title : "",
+          body: typeof entry.body === "string" ? entry.body : "",
+          createdAt: typeof entry.created_at === "string" ? entry.created_at : "",
+          ...(typeof entry.tab === "string" ? { tab: entry.tab } : {}),
+        })),
+      },
+    ];
+  });
+  return { ok: true, value: rows };
+}
+
 /**
  * One row with every counted field present.
  *
@@ -2731,6 +4725,73 @@ function profileOverviewRow(row: Partial<MemberProfileOverviewRow>): MemberProfi
       trips: 0,
       total: 0,
     },
+  };
+}
+
+// --- Held-email review ---
+
+export type AdminBotEmailReviewItem = {
+  message_id: string;
+  thread_id: string;
+  sender: string;
+  subject?: string;
+  category: string;
+  reason?: string;
+  received_at?: string;
+  updated_at: string;
+};
+
+export type AdminBotEmailReviewPaperflowCandidate = {
+  paper_id: string;
+  title: string;
+  stage: string;
+  stage_label: string;
+  venue?: string;
+};
+
+export type AdminBotEmailReviewData = {
+  reviews: AdminBotEmailReviewItem[];
+  paperflow_candidates: AdminBotEmailReviewPaperflowCandidate[];
+  recent_resolutions: AdminBotResolvedEmailReviewItem[];
+};
+
+export type AdminBotEmailReviewResolution =
+  | { kind: "paperflow_evidence"; paper_id: string; stage: string }
+  | { kind: "dismissed" };
+
+export type AdminBotResolvedEmailReviewItem = AdminBotEmailReviewItem & {
+  resolution: AdminBotEmailReviewResolution["kind"];
+  resolved_at: string;
+  resolved_by: string;
+  resolved_by_name?: string;
+  paper_id?: string;
+  paper_title?: string;
+  stage?: string;
+  stage_label?: string;
+};
+
+export async function resolveEmailReviewAsAdmin(
+  messageId: string,
+  resolution: AdminBotEmailReviewResolution,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ resolution: string; evidence_recorded: boolean }>> {
+  const result = await authedJson(
+    baseUrl,
+    `/automation/email/review/${encodeURIComponent(messageId)}`,
+    "POST",
+    sessionToken,
+    resolution,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as { resolution: string; evidence_recorded: boolean },
   };
 }
 
@@ -2776,6 +4837,376 @@ export async function fetchPaperSlotOverview(
   return { ok: true, value: body?.papers ?? [] };
 }
 
+/** One person at one conference. Mirrors ConferenceAttendancePerson in the service. */
+export type ConferenceRosterPerson = {
+  attendee_key: string;
+  member_id?: string;
+  name: string;
+  attending: "yes" | "no" | "unknown";
+  papers: Array<{ paper_id: string; title: string; attending: "yes" | "no" | "unknown" }>;
+};
+
+/** One conference the lab has an accepted paper at, and everyone on its roll-call. */
+export type ConferenceRoster = {
+  key: string;
+  venue: string;
+  year: number;
+  label: string;
+  paper_count: number;
+  people: ConferenceRosterPerson[];
+  going_count: number;
+  unanswered_count: number;
+  papers_awaiting: Array<{ paper_id: string; title: string; unanswered: number }>;
+};
+
+/**
+ * Who is going to each conference, across every accepted paper.
+ *
+ * A 404 means the service predates this route -- the Control UI ships on merge and the service is
+ * deployed separately, so a new tab can reach a server that has never heard of it. Empty rather
+ * than an error, so the page says "nothing recorded" instead of "unreachable".
+ */
+export async function fetchConferenceRosters(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<ConferenceRoster[]>> {
+  const result = await authedJson(baseUrl, "/papers/conference-rosters", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (result.response.status === 404) {
+    return { ok: true, value: [] };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { conferences?: ConferenceRoster[] } | null;
+  return { ok: true, value: body?.conferences ?? [] };
+}
+
+/** Not going is the absence of a row, never a value. Withdrawing deletes; see deleteConferenceTrip. */
+export type ConferenceTripIntent = "going" | "undecided";
+export type ConferenceFundingNeed = "none" | "fee_only" | "flight_only" | "full_travel";
+
+/** One member's own plan for one conference. Mirrors AdminBotConferenceTripRecord. */
+export type ConferenceTrip = {
+  conference_key: string;
+  member_id: string;
+  intent: ConferenceTripIntent;
+  funding: ConferenceFundingNeed;
+  needs_lodging: boolean;
+  arrival_on?: string;
+  departure_on?: string;
+  needs_visa_letter: boolean;
+  paper_id?: string;
+  notes?: string;
+  updated_at: string;
+};
+
+/** One conference card. `roster` arrives only for an admin; see listConferenceOverview. */
+export type ConferenceSummary = {
+  key: string;
+  label: string;
+  family: string;
+  year?: number;
+  location?: string;
+  description: string;
+  homepage_url?: string;
+  next_deadline_aoe?: string;
+  next_deadline_label?: string;
+  workshop_count: number;
+  roster?: {
+    going: number;
+    undecided: number;
+    funding: Record<ConferenceFundingNeed, number>;
+    visa_letters: number;
+    lodging: {
+      guests: number;
+      first_night?: string;
+      last_night?: string;
+      members: Array<{
+        member_id: string;
+        name: string;
+        arrival_on?: string;
+        departure_on?: string;
+      }>;
+    };
+    trips: Array<ConferenceTrip & { member_name: string; paper_title?: string }>;
+  };
+};
+
+export type ConferenceOverview = {
+  conferences: ConferenceSummary[];
+  /** The viewer's own trips. Empty when signed out. */
+  mine: ConferenceTrip[];
+};
+
+/**
+ * The conference overview.
+ *
+ * Readable signed out, like the deadline board it is derived from -- so this takes an optional
+ * token rather than requiring one, and the service narrows the payload to whoever is asking.
+ */
+export async function fetchConferenceOverview(
+  sessionToken: string | null,
+  baseUrl: string,
+): Promise<AuthResult<ConferenceOverview>> {
+  // `authedJson` takes a null token, which is how the Opportunities board reads publicly too.
+  const result = await authedJson(baseUrl, "/conferences", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (result.response.status === 404) {
+    // The service predates this route: the Control UI ships on merge and the service is deployed
+    // separately, so a new tab can reach a host that has never heard of it.
+    return { ok: true, value: { conferences: [], mine: [] } };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as Partial<ConferenceOverview> | null;
+  return { ok: true, value: { conferences: body?.conferences ?? [], mine: body?.mine ?? [] } };
+}
+
+/** Sign the signed-in member up, or change what they said. Always their own row. */
+export async function saveConferenceTrip(
+  conferenceKey: string,
+  input: {
+    intent: ConferenceTripIntent;
+    funding: ConferenceFundingNeed;
+    needs_lodging: boolean;
+    needs_visa_letter: boolean;
+    arrival_on?: string;
+    departure_on?: string;
+    paper_id?: string;
+    notes?: string;
+  },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<ConferenceTrip>> {
+  const result = await authedJson(
+    baseUrl,
+    `/conferences/${encodeURIComponent(conferenceKey)}/trip`,
+    "PUT",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: (result.body as { trip: ConferenceTrip }).trip };
+}
+
+/**
+ * Withdraw from a conference: the member's row is removed and they are simply not going.
+ *
+ * Idempotent on the service side, so a double press is not an error.
+ */
+export async function deleteConferenceTrip(
+  conferenceKey: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ withdrawn: boolean }>> {
+  const result = await authedJson(
+    baseUrl,
+    `/conferences/${encodeURIComponent(conferenceKey)}/trip`,
+    "DELETE",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as { withdrawn: boolean } };
+}
+
+/**
+ * Ask AdminBot to mail a cleared reimbursement package to the funder's office.
+ *
+ * Sends only the artifacts and which funder they are for. The recipient and the reply-to are the
+ * service's to resolve -- from settings and from the member's own record -- so a browser cannot
+ * redirect somebody's financial paperwork by editing a request.
+ */
+export async function submitReimbursementPackage(
+  input: {
+    funder: "DCS" | "MPI-IS";
+    artifacts: Array<{ filename: string; data_base64: string }>;
+    trip_title?: string;
+  },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ proposal_id: string; to: string; reply_to: string }>> {
+  const result = await authedJson(baseUrl, "/reimbursements/submit", "POST", sessionToken, input);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as { proposal_id: string; to: string; reply_to: string } };
+}
+
+export async function checkDriveEditAccess(
+  url: string,
+  sessionToken: string,
+  baseUrl: string,
+  signal?: AbortSignal,
+): Promise<AuthResult<{ status: "editable" | "not_editable" | "unverified"; message: string }>> {
+  const result = await authedJson(
+    baseUrl,
+    "/drive/check-edit-access",
+    "POST",
+    sessionToken,
+    { url },
+    signal,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return {
+    ok: true,
+    value: result.body as { status: "editable" | "not_editable" | "unverified"; message: string },
+  };
+}
+
+/** One row of the recent-edits feed. Mirrors AdminBotRecentUpdate in contracts/activity-log.ts. */
+export type RecentUpdateRow = {
+  id: string;
+  at: string;
+  subject: "profile" | "paper" | "paper_slot";
+  source: "member" | "admin" | "import";
+  actor_member_id: string;
+  actor_name?: string;
+  subject_member_id?: string;
+  subject_member_name?: string;
+  paper_id?: string;
+  paper_title?: string;
+  field_key?: string;
+  slot_id: string;
+};
+
+/**
+ * Who changed what on one member's record, newest first.
+ *
+ * Your own, or an admin's read of anyone's. A 404 means the service predates this route -- the
+ * Control UI ships on merge and the service is deployed separately, so a new panel can reach a
+ * server that has never heard of it.
+ */
+export async function fetchMemberRecentEdits(
+  memberId: string,
+  sessionToken: string,
+  baseUrl: string,
+  limit = 20,
+): Promise<AuthResult<RecentUpdateRow[]>> {
+  return readRecentUpdates(
+    await authedJson(
+      baseUrl,
+      `/lab/members/${encodeURIComponent(memberId)}/recent-edits?limit=${encodeURIComponent(String(limit))}`,
+      "GET",
+      sessionToken,
+    ),
+  );
+}
+
+/** The same, for one paper: its record and every evidence slot on it. */
+export async function fetchPaperRecentEdits(
+  paperId: string,
+  sessionToken: string,
+  baseUrl: string,
+  limit = 20,
+): Promise<AuthResult<RecentUpdateRow[]>> {
+  return readRecentUpdates(
+    await authedJson(
+      baseUrl,
+      `/papers/${encodeURIComponent(paperId)}/recent-edits?limit=${encodeURIComponent(String(limit))}`,
+      "GET",
+      sessionToken,
+    ),
+  );
+}
+
+function readRecentUpdates(
+  result: Awaited<ReturnType<typeof authedJson>>,
+): AuthResult<RecentUpdateRow[]> {
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { updates?: RecentUpdateRow[] } | null;
+  return { ok: true, value: body?.updates ?? [] };
+}
+
+/**
+ * One run of sign-ins from a single place. Mirrors AdminBotTravelStay in the service, which is
+ * where the collapse from raw logins to stays happens and where the reasoning for it lives.
+ */
+export type TravelStayRow = {
+  id: string;
+  city?: string;
+  country?: string;
+  continent?: string;
+  timezone?: string;
+  first_seen: string;
+  last_seen: string;
+  login_count: number;
+  observed_days: number;
+  away: boolean;
+};
+
+/** Mirrors AdminBotTravelHistory. */
+export type TravelHistoryRow = {
+  member_id: string;
+  member_name?: string;
+  home_city?: string;
+  home_country?: string;
+  stays: TravelStayRow[];
+  login_count: number;
+  unlocated_login_count: number;
+};
+
+/**
+ * One member's travel timeline, derived from their sign-in log.
+ *
+ * The range is passed to the service rather than applied here: a stay is a run of consecutive
+ * sign-ins, so trimming the log after the collapse would cut a stay in half and report a departure
+ * that never happened.
+ */
+export async function fetchMemberTravelHistory(
+  memberId: string,
+  sessionToken: string,
+  baseUrl: string,
+  range?: { fromIso?: string; toIso?: string },
+): Promise<AuthResult<TravelHistoryRow | null>> {
+  const query = new URLSearchParams();
+  if (range?.fromIso) query.set("from", range.fromIso);
+  if (range?.toIso) query.set("to", range.toIso);
+  const suffix = query.size ? `?${query.toString()}` : "";
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/${encodeURIComponent(memberId)}/travel${suffix}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { travel?: TravelHistoryRow } | null;
+  return { ok: true, value: body?.travel ?? null };
+}
+
 export type PaperSlotRow = {
   paper_id: string;
   slot: string;
@@ -2786,6 +5217,11 @@ export type PaperSlotRow = {
   /** The free-text half of an enum slot. */
   value_note?: string;
   provided_at?: string;
+  verified_by?: string;
+  verified_at?: string;
+  verified_title?: string;
+  previous_submission_id?: string;
+  identity_review?: import("../../../../../extensions/adminbot/src/contracts/paper-artifact-links.js").OpenReviewIdentityReview;
   invalid_reason?: string;
   waived_reason?: string;
 };
@@ -2865,6 +5301,10 @@ export type PaperCycle = {
   weeklyUpdates: PaperWeeklyUpdate[];
   cycleClosed: boolean;
   missingAcceptanceDetails: string[];
+  /** The conference this paper goes to. Absent until the acceptance details are in. */
+  conferenceKey?: string;
+  /** The reader's own trip to that conference, when they have recorded one. */
+  myTrip?: ConferenceTrip;
 };
 
 /** One paper's slots and venue ladder, blanks included -- the card renders the whole cycle. */
@@ -2895,6 +5335,8 @@ export async function fetchPaperSlots(
     weekly_updates?: PaperWeeklyUpdate[];
     cycle_closed?: boolean;
     missing_acceptance_details?: string[];
+    conference_key?: string;
+    my_trip?: ConferenceTrip;
   } | null;
   return {
     ok: true,
@@ -2908,6 +5350,8 @@ export async function fetchPaperSlots(
       weeklyUpdates: body?.weekly_updates ?? [],
       cycleClosed: Boolean(body?.cycle_closed),
       missingAcceptanceDetails: body?.missing_acceptance_details ?? [],
+      ...(body?.conference_key ? { conferenceKey: body.conference_key } : {}),
+      ...(body?.my_trip ? { myTrip: body.my_trip } : {}),
     },
   };
 }
@@ -3119,6 +5563,41 @@ export async function runPaperSlotReminder(
   return {
     ok: true,
     value: { created: body?.created?.length ?? 0, skipped: body?.skipped?.length ?? 0 },
+  };
+}
+
+/**
+ * Applies the lab's access design to the nudge list, once.
+ *
+ * Server-computed like the reminder above: this sends no names. It adds people already marked as
+ * full lab members, writes off anybody whose access level has no portal to act on a nudge in, and
+ * never overrides a decision an admin has made -- so pressing it twice is the same as pressing it
+ * once.
+ */
+export async function seedNudgeList(
+  sessionToken: string,
+  baseUrl: string,
+  dryRun: boolean,
+): Promise<AuthResult<{ added: number; silenced: number; alreadyDecided: number }>> {
+  const result = await authedJson(baseUrl, "/members/nudge-list/seed", "POST", sessionToken, {
+    dry_run: dryRun,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as
+    | { members_added?: number; members_silenced?: number; already_decided?: number }
+    | undefined;
+  return {
+    ok: true,
+    value: {
+      added: body?.members_added ?? 0,
+      silenced: body?.members_silenced ?? 0,
+      alreadyDecided: body?.already_decided ?? 0,
+    },
   };
 }
 

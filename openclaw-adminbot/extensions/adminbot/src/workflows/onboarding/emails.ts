@@ -35,6 +35,10 @@ export type AdminBotOnboardingTemplate = {
   required: readonly string[];
 };
 
+// `acquaintance`, `coauthor_discussant_designer` and `external_prof` deliberately have no
+// onboarding template. Those collaborations do not open with a welcome mail: the access-level
+// algorithm (collaborator-subgroups.ts) grants the subgroup's access items in the backend, and
+// that is the whole onboarding. Do not re-add one without Zhijing asking for it.
 export const ADMINBOT_ONBOARDING_TEMPLATES = [
   {
     // The proofread "top1" variant: a 30-minute conversation with Zhijing. Two sibling variants
@@ -63,14 +67,17 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "interview_invite_theme_meeting",
     kind: "candidate",
     subject: `Interview with the Jinesis Lab`,
-    required: [],
+    // Declared, so a send that cannot mint the invite refuses instead of going out promising one.
+    required: ["slack_connect_link"],
     body: `Hi!
 
 Thank you for your interest in working with the Jinesis Lab! We have reviewed your Google Form response and would like to have a trial period for us to match your interests and skill sets to appropriate projects in our lab.
 
 Roughly, this will be a 3-4 week interaction with our existing project members and project meetings to see how seamlessly you integrate into our projects.
 
-You will be invited to the relevant discussion Slack channel and receive a calendar invite to the discussion meeting on the relevant topic. If you have never used Slack before, please join our temporary workspace through the link below to be invited to our main UofT Slack: {slack_invite_url}
+You will be invited to the relevant discussion Slack channel and receive a calendar invite to the discussion meeting on the relevant topic. Here is your Slack invitation: {slack_connect_link}
+
+If you have never used Slack before, you can join our temporary workspace through this link instead, and we will invite you to our main UofT Slack from there: {slack_invite_url}
 
 If you have any questions, feel free to ask Zhijing on Slack after the group meeting. We look forward to speaking with you!
 
@@ -83,15 +90,28 @@ Jinesis Lab by Prof. Zhijing Jin`,
     // forwarded to a project lead who is cc'd on the thread and becomes their point of contact.
     id: "interview_invite_project_matching",
     kind: "candidate",
-    subject: `Your application to the Jinesis Lab`,
-    required: ["application_form_link", "task_doc_link"],
+    // Rev (3) names the take-home task in the subject. It says no more about the applicant's
+    // standing than the old line did, so rule 2 -- subjects never name the tier -- still holds.
+    subject: `Jinesis Lab: Take-home Test Task(s)`,
+    // `task_recommendation` is the whole personalised sentence, not a fragment: it names the lead
+    // and the task, carries the task doc inline when the lead has one, and numbers the parts
+    // "(1) ... and (2) ..." when two leads share the applicant. It is written per applicant by
+    // AdminBotEmailModel.projectMatch(), which owns that wording.
+    //
+    // `application_form_link` must be the applicant's *own* response
+    // (.../viewform?edit2=<token>), never the bare form and never the response sheet: the mail is
+    // addressed to one applicant and cc's the lead, so a link to everyone's answers would put the
+    // rest of the batch in front of both.
+    required: ["application_form_link", "task_recommendation", "slack_connect_link"],
     body: `Hi!
 
-Thank you for your interest in working with the Jinesis Lab! Zhijing has personally reviewed your Google Form response. Although she will not directly personally work with you, we may have opportunities for you to work on some test tasks to help with other ongoing projects in the lab.
+Thank you for your interest in working with the Jinesis Lab! Zhijing has personally reviewed your Google Form response. Although she will not directly work with you, we may have opportunities for you to work on some test tasks to help with other ongoing projects in the lab.
 
-If you have the capacity to do a small research contribution (e.g., for about 4 weeks with us), we have forwarded your application form {application_form_link} and skill sets to our Jinesis project lead cc'ed. They will review and reach out if they welcome a helping hand. Zhijing's personal recommendation is to match you with the WordPlay RL training modular task, where you can try implementing 1-2 environments following this doc {task_doc_link}.
+If you have the capacity to do a small research contribution (e.g., for about 4 weeks with us), we have forwarded your application form {application_form_link} and skill sets to our Jinesis project lead, cc'ed. They will review and reach out if they welcome a helping hand. {task_recommendation}
 
 If the lead finds it a fit, they will reply to this email thread. Your main point of contact will be the lead cc'ed, who will check your technical contributions after you share your code implementation and report with them. There might still be a chance that either they are at full capacity or the project is not a match.
+
+So you can reach the team while that happens, here is your Slack invitation: {slack_connect_link}
 
 Good luck!
 
@@ -103,14 +123,14 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "rejection",
     kind: "candidate",
     subject: `Interview Result: Jinesis Lab`,
-    required: ["first_name"],
+    required: [],
     body: `Dear {first_name},
 
 Thank you for taking the time to interview with the Jinesis Lab and for sharing your experience, projects, and research interests with us.
 
 After careful consideration, we have decided not to move forward at this time. We were unable to identify a strong match between your current experience and the lab's present research needs.
 
-If helpful, you may also find this public collection of resources on research skills, mentorship programs, applications, and academic career development useful: NLP PhD Global Equality.
+If helpful, you may also find this public collection of resources on research skills, mentorship programs, applications, and academic career development useful: [NLP PhD Global Equality](https://github.com/zhijing-jin/nlp-phd-global-equality).
 
 We sincerely appreciate your interest in the lab and wish you the best in your academic and professional path.
 
@@ -122,12 +142,12 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "trial_phase",
     kind: "candidate",
     subject: `Next Steps: Trial Phase with the Jinesis Lab`,
-    required: ["drive_folder_link", "first_name"],
+    required: ["drive_folder_link"],
     body: `Hi {first_name},
 
 Thank you for taking the time to try out research projects with the Jinesis Lab. As per our lab tradition, before fully committing to a project collaboration, we try matching researchers with various projects to find the perfect way to make use of your talents and maximize our synergy.
 
-Over the next three weeks you'll work on a research or engineering task, which gives both you and the team a chance to see how your skills, working style, and interests line up.
+Over the next three weeks, you'll work on a research or engineering task, which gives both you and the team a chance to see how your skills, working style, and interests line up.
 
 Two things are set up for you already:
 
@@ -147,7 +167,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "outreach_reply",
     kind: "candidate",
     subject: `Thank You for Reaching Out`,
-    required: ["application_form_link", "first_name"],
+    required: ["application_form_link"],
     body: `Hi {first_name},
 
 Thanks so much for getting in touch! To help us review your information and make sure nothing gets missed, please fill out our application form here: {application_form_link}
@@ -162,7 +182,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "collaboration_rhythm_reminder",
     kind: "supplement",
     subject: `Where we are on {project_or_context}`,
-    required: ["first_name", "project_or_context", "update_due_date"],
+    required: ["project_or_context", "update_due_date"],
     body: `Dear {first_name},
 
 A quick note on rhythm, since email can make quiet periods look like disinterest when the opposite is true. On our side, work on {project_or_context} is ongoing; our next substantive update will reach you by {update_due_date}. Between updates, please read silence as work in progress. Naturally, if anything urgent comes up on your side, write any time and we will respond.
@@ -170,101 +190,114 @@ A quick note on rhythm, since email can make quiet periods look like disinterest
 Best regards,`,
   },
   {
-    id: "acquaintance",
-    kind: "subgroup",
-    subject: `Joining our collaborators channel`,
-    required: [
-      "drive_folder_link",
-      "first_name",
-      "project_or_context",
-      "sender_name",
-      "slack_connect_link",
-    ],
-    body: `Hi {first_name},
-
-Good to be working alongside you on {project_or_context}. A few things to connect you properly:
-
-- Slack Connect to #jinesis-with-friends-and-collaborators, where our wider circle keeps in touch: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
-- Our project Google Drive folder: {drive_folder_link}
-- If you want to follow what we publish: Zhijing on LinkedIn ({pi_linkedin_url}), the lab at https://www.linkedin.com/company/jinesis-lab/, and {lab_x_url}
-
-We also run city-based dinners and team building events, and would be glad to have you at the next one near you.
-
-Best,
-{sender_name}`,
-  },
-  {
-    // The template doc's version says only that a Slack Connect invitation is on its way. The link
-    // token is kept in the copy regardless: the send path provisions the invite only when the body
-    // still mentions {slack_connect_link}, so removing it would promise an invitation that no
-    // longer gets minted.
+    // The Slack paragraph is the 2026-08-07 doc's: a standing invitation and the workspace join
+    // link, with no per-person Connect link in it.
+    //
+    // Read this before reinstating `{slack_connect_link}`. That token was doing two jobs. Besides
+    // naming the invite, its presence in the body is what made the send *mint* one -- guide-sender
+    // provisions from what the outgoing copy asks for. Alumni mail therefore no longer creates a
+    // Slack Connect invitation; the recipient joins through the workspace link instead, which is
+    // what the doc describes.
     id: "alumni",
     kind: "subgroup",
     subject: `Staying Connected with the Jinesis Lab`,
-    required: ["first_name", "slack_connect_link"],
+    required: [],
     body: `Hi {first_name},
 
 This is Professor Zhijing Jin's research lab, now known as Jinesis Lab at the University of Toronto, Department of Computer Science.
 
 You are receiving this email because you have worked with us in the past, and Zhijing would like to add you to our alumni network.
 
-We welcome you to keep an active profile on our lab portal {dashboard_url}
+To keep connected, we welcome you to keep an active profile on our lab portal {dashboard_url}
 
-1. If you have used the lab portal in the past, your account will remain valid. Otherwise, create an account using your personal email.
+1. If you have used the lab portal in the past, your account will remain valid. Otherwise, feel free to create an account using your personal email, which you can have permanent access to.
 
-2. Feel free to keep updating your profile in the "My Profile" tab, especially the "CV", "your residence city", and LinkedIn fields, so we can connect and keep posted on your latest updates, and may organize gatherings in your local city and invite you by calendar.
+2. Feel free to keep your profile updated in the "My Profile" tab, especially the "CV", "Resident Location", and LinkedIn fields, so we can connect and keep posted on your latest updates, and may organize gatherings in your local city and invite you by calendar. You can also update your "current_city" in the "My Profile" tab whenever you attend conferences, because during each big conference, we will have a calendar invite to organize a gathering for all Jinesis members and friends, based on the info collected in your portal.
 
-3. Also, you can use the portal for the following features: request a recommendation letter from Zhijing; check conference deadline countdown at https://jinesis-admin.vercel.app/adminbot/deadlines (no login needed); and find interesting papers at https://jinesis-admin.vercel.app/adminbot/conference-papers (no login needed).
+3. Also, you can use the portal for the following features: request a recommendation letter from Zhijing; check conference deadline countdown at https://jinesis-admin.vercel.app/deadlines (no login needed); and find interesting papers at https://jinesis-admin.vercel.app/adminbot/conference-papers (no login needed).
 
-4. Slack: If you still use Slack, we will send a Slack Connect invitation to our Jinesis friends and alumni channel: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
+4. Slack: If you still use Slack, you are welcome to join us in our Jinesis friends and alumni channel via Slack Connect, or you can click this link {slack_invite_url}
 
 5. Keep updated by following our social media accounts:
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
-You are welcome to join any of our gathering events too. Hope to see you at one!
+Best of luck to the next stage of your career and life, and we look forward to keeping in touch!
 
 Warmly,
-Jinesis Lab by Prof. Zhijing Jin, University of Toronto`,
+Admin Team
+Jinesis Lab by Prof. Zhijing Jin
+University of Toronto`,
   },
+  {
+    // The Slack Connect invitation for an alumnus, as its own email.
+    //
+    // Split out rather than carried in the alumni mail. That mail follows the 2026-08-07 doc, which
+    // points alumni at the workspace join link and says nothing about a per-person invite -- but the
+    // lab does still want them in the friends-and-alumni channel, and a Connect invite is the only
+    // way in for somebody whose Slack lives in another workspace. So the doc's mail stays as
+    // written and the invitation travels separately, sent automatically straight after it.
+    //
+    // Its own template rather than a paragraph appended to the first, because minting the invite is
+    // a Slack call that can fail on its own: as a second email an outage costs the invitation, not
+    // the welcome.
+    id: "alumni_slack_connect",
+    kind: "supplement",
+    // Names no tier, per rule 2 -- "alumni channel" in a subject line tells the reader which
+    // internal bucket they are in. The body may say it; the header a mail client previews may not.
+    subject: `Your Slack invitation from the Jinesis Lab`,
+    required: ["slack_connect_link"],
+    body: `Hi {first_name},
+
+As mentioned, here is your Slack Connect invitation to our Jinesis friends and alumni channel: {slack_connect_link}
+
+Not already on Slack? Join our free Jinesis space first, or the invitation cannot go through: {slack_invite_url}
+
+If you prefer a different email address for Slack, so it can link with your main workspace, feel free to say so in the "My Email for Slack" field on your portal "My Profile" tab.
+
+Warmly,
+Admin Team
+Jinesis Lab by Prof. Zhijing Jin`,
+  },
+
   {
     // The portal credential is a per-send value rather than copy: the lab hands out a starting
     // password on this mail, and a shared literal in the tree would be a checked-in credential.
-    // The Drive step is not in the template doc's version of this mail but is kept, because the
-    // access matrix grants coauthor_major both the project folder and the file-practice guide
-    // outright (google_file_practice_guide is a plain `yes` for this subgroup, not `yes_separate`),
-    // and dropping {drive_folder_link} would also stop the send provisioning the folder at all.
+    // No Drive step: the 2026-08-07 template doc does not have one, and the copy follows the doc.
+    //
+    // Read this before adding it back. `{drive_folder_link}` was doing two jobs, and only one of
+    // them was visible. Besides naming the folder, its presence in the body is what made the send
+    // *create* the folder -- guide-sender provisions from what the outgoing copy asks for, not
+    // from the stored template. So this subgroup no longer gets a project folder made for it at
+    // send time. The access matrix still grants `project_drive_folder`, but that row is a
+    // description; nothing acts on it. Provisioning for coauthor_major needs its own trigger.
     id: "coauthor_major",
     kind: "subgroup",
     subject: `Welcome to the Jinesis Lab: your onboarding steps`,
-    required: [
-      "drive_folder_link",
-      "drive_guide_link",
-      "first_name",
-      "member_email",
-      "portal_password",
-    ],
+    // `portal_password` is absent on purpose: it is the same seeded string for every account, so
+    // it is a configured deployment token (guide.ts) rather than something an operator retypes.
+    required: ["member_email"],
     body: `Hi {first_name},
 
-A very warm welcome to the Jinesis Lab! Here's how to get set up with the lab, which we would appreciate if you could do in the upcoming 5 days:
+A very warm welcome to the Jinesis Lab! Here's how to get set up with the lab. Since you have major roles in Jinesis projects, if possible, we would appreciate it if you could do the following items in the upcoming 5 days or so:
 
-1. Member portal: Log into our lab portal {dashboard_url} using {member_email} and password {portal_password}. You should complete everything under "My Info", including your profile info, onboarding steps, time availability registration, and your project list.
+1. Member portal: Log into our lab portal {dashboard_url} using {member_email} and the password "{portal_password}". You should complete everything under "My Info", including your profile info, onboarding steps, time availability registration, and your project list.
 
 2. Slack: You should have access to various channels in our Slack workspace. Day-to-day coordination happens there rather than over email.
 
-3. Meetings: You may sometimes receive calendar invites for lab events. Two habits worth adopting early: (a) always RSVP on Google Calendar events, and (b) use the graphic interface of your calendar app (and we suggest Google Calendar), as meeting times may move spontaneously, and might need time-zone conversion including daylight savings.
+3. Meetings: You may sometimes receive calendar invites for lab events. Two habits worth adopting early: (a) always RSVP on Google Calendar events, and (b) use the graphical interface of your calendar app (and we suggest Google Calendar), as meeting times may move spontaneously and might need time-zone conversion, including daylight saving time.
 
-4. Google Drive: your project folder is here: {drive_folder_link}. Please also read the short "Google file common practice" guide {drive_guide_link}; it keeps everyone's files findable.
+4. What to expect: Our lab's expectations for you and an example project cycle that you can expect from us can be found in [What to Expect]({what_to_expect_link})
 
 5. Keep updated by following our social media accounts:
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
-If you spot errors for any of the above system automation, or have questions, please reply here, and we will be happy to help.
+If you spot errors in any of the above system automation, or have questions, please reply here, and we will be happy to help.
 
 Best regards,
 Jinesis Lab by Prof. Zhijing Jin`,
@@ -276,27 +309,33 @@ Jinesis Lab by Prof. Zhijing Jin`,
     // pinned in the Slack project channel rather than as a provisioned 1:1 workspace, which is why
     // this mail carries no {drive_folder_link}. The file-practice guide is `yes_separate` for this
     // subgroup in the access matrix, so it follows in its own mail rather than appearing here.
+    //
+    // `what_to_expect_link` is the "Rough Expectation Doc" step the 2026-08-07 template doc adds.
+    // It is one document for the whole lab, so it is a configured deployment token (guide.ts) and
+    // not something an operator retypes on every send.
     id: "coauthor_minor",
     kind: "subgroup",
     subject: `Welcome to the Jinesis Lab: your onboarding steps`,
-    required: ["first_name"],
+    required: [],
     body: `Hi {first_name},
 
-A very warm welcome to the Jinesis Lab! To facilitate our project collaboration, we recommend the following onboarding setup at the lab:
+A very warm welcome to the Jinesis Lab! To facilitate our project collaboration, we recommend the following onboarding setup with us:
 
-1. Slack: You will be invited to various channels in our workspace. Day-to-day coordination happens there rather than over email. Also, your main communication is to message in the group, or ask personal questions to your project lead or senior Jinesis members in our project.
+1. Slack: You are welcome to be connected to our Jinesis Slack workspace. Day-to-day coordination happens there rather than over email. Feel free to directly post in the project group chat or ask personal questions to your main collaborators or senior Jinesis members in your project.
 
-2. Google Drive for Project Collaboration: For any research project in our lab, we have the practice of putting all project-related files in one project folder. This one will be pinned to your Slack project group chat. (Or please ask in the channel if you cannot see it in our group chat.)
+2. Google Drive for Project Collaboration: For any research project in our lab, we have the practice of putting all project-related files in one project folder. This will be pinned to your Slack project group chat. (Or please ask in the channel if this is not set up in our group chat for your project.)
 
-3. Meetings: You may sometimes receive calendar invites for lab events. Two habits worth adopting early: (a) always RSVP on Google Calendar events, and (b) use the graphic interface of your calendar app (and we suggest Google Calendar), as meeting times may move spontaneously, and might need time-zone conversion including daylight savings.
+3. Meetings: You may sometimes receive calendar invites for lab events. Two habits worth adopting early: (a) always RSVP on Google Calendar events, and (b) use the graphical interface of your calendar app (and we suggest Google Calendar), as meeting times may move spontaneously and might need time-zone conversion, including daylight saving time.
 
-4. Keep updated by following our social media accounts:
+4. What to expect: Our lab's expectations for you and an example project cycle that you can expect from us can be found in [What to Expect]({what_to_expect_link})
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+5. Keep updated by following our social media accounts:
+
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
-If you spot errors for any of the above system automation, or have questions, please reply here, and we will be happy to help.
+If you spot errors in any of the above system automation, or have questions, please reply here, and we will be happy to help.
 
 Best regards,
 Jinesis Lab by Prof. Zhijing Jin`,
@@ -306,7 +345,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "disappearing_coauthor",
     kind: "subgroup",
     subject: `Checking in about your Jinesis involvement`,
-    required: ["first_name", "project_or_context"],
+    required: ["project_or_context"],
     body: `Hi {first_name},
 
 We hope things are going well on your side. We have not heard from you for a while regarding {project_or_context} and wanted to check what level of involvement currently works for you.
@@ -325,13 +364,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "interviewee",
     kind: "subgroup",
     subject: `Following up after our conversation`,
-    required: [
-      "drive_folder_link",
-      "first_name",
-      "project_or_context",
-      "sender_name",
-      "slack_connect_link",
-    ],
+    required: ["drive_folder_link", "project_or_context", "sender_name", "slack_connect_link"],
     body: `Hi {first_name},
 
 Thanks for taking the time to talk with us about {project_or_context}. So the conversation can keep going, we have set a few things up for you:
@@ -348,43 +381,12 @@ Best,
 {sender_name}`,
   },
   {
-    id: "external_prof",
-    kind: "subgroup",
-    subject: `Starting our collaboration on {project_or_context}`,
-    required: [
-      "contact_name",
-      "first_name",
-      "next_steps",
-      "project_or_context",
-      "sender_name",
-      "slack_connect_link",
-      "update_cadence",
-    ],
-    body: `Dear {first_name},
-
-We are very glad to be starting this collaboration on {project_or_context}, and thank you for the materials and context you have shared so far.
-
-To make the collaboration smooth, a brief note on how our lab works. Research setup on our side takes some time: we prefer to come back with something well considered. So that quiet periods are never misread, we work on a simple rhythm: we will send you a substantive update roughly every {update_cadence}, and between updates you can safely assume the project is moving. You are of course welcome to write to us at any point!
-
-Your main contact for day-to-day matters is {contact_name} (cc'd), and Zhijing remains involved throughout. As immediate next steps, we suggest: {next_steps}.
-
-Two practical things. You are invited to our Slack workspace through Slack Connect, in #jinesis-with-friends-and-collaborators, which is low traffic and a good way to reach us without a formal email: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
-
-We will also email you at the points that matter on the projects you are attached to: when a paper is submitted or resubmitted, and when a social media draft goes out for review, so nothing goes public with your name on it without you having seen it. If you would rather we narrowed or widened that, just say.
-
-We are looking forward to this!
-
-Best regards,
-{sender_name}, on behalf of the Jinesis AI Lab`,
-  },
-  {
     id: "slightly_better_than_emails",
     kind: "subgroup",
     subject: `Collaborating with us on {project_or_context}`,
     required: [
       "contact_name",
       "deliverable",
-      "first_name",
       "project_channel_or_meeting",
       "project_or_context",
       "slack_connect_link",
@@ -405,7 +407,7 @@ AdminBot`,
     id: "member_rejection",
     kind: "privilege",
     subject: `Update on your Jinesis AI Research Lab application`,
-    required: ["first_name"],
+    required: [],
     body: `Dear {first_name},
 
 Thank you for your interest in joining the Jinesis Lab and for taking the time to share your experience with us.
@@ -438,8 +440,8 @@ If the call time doesn't work, just decline the call and the suggestion and an a
     id: "member",
     kind: "privilege",
     subject: `Welcome to the Jinesis Lab – Onboarding Steps`,
-    // `first_name` is deliberately absent: it is an optional value token, so an unnamed recipient
-    // gets "Hi," rather than a refusal. See OPTIONAL_VALUE_TOKENS in guide.ts.
+    // No template lists `first_name`: it is an optional value token, so an unnamed recipient gets
+    // "Hi!" rather than a refusal. See OPTIONAL_VALUE_TOKENS in guide.ts.
     required: [],
     // Interim wording: accounts were bulk-created for the roster with one shared temporary
     // password, so this tells people to sign in and change it rather than to sign up. It goes back
@@ -448,7 +450,7 @@ If the call time doesn't work, just decline the call and the suggestion and an a
 
 Thank you for your interest in joining the Jinesis Lab with Prof. Zhijing Jin! We're excited to have you on board. Our lab has recently developed an online lab management portal. Please follow the steps below:
 
-If you already have an @cs.toronto.edu email, an account has already been created for you. Sign in at https://jinesis-admin.vercel.app with that email address and the temporary password "jinesis", then change it from Change password in the sidebar. Once you are in, follow the onboarding guide in the portal.
+If you already have an @cs.toronto.edu email, an account has already been created for you. Sign in at https://jinesis-admin.vercel.app with that email address and the temporary password "{portal_password}", then change it from Change password in the sidebar. Once you are in, follow the onboarding guide in the portal.
 
 If you do not have an @cs.toronto.edu email yet, you will receive an email asking about your preferred email username. If possible, feel free to prioritize a username like "firstname@cs.toronto.edu" or "lastname@cs.toronto.edu". If those are taken, you can try {first_letter_of_first_name}{full_last_name}@cs.toronto.edu, e.g., "{email_format_example}". If all of the above are taken, feel free to customize a username that reflects your first and last name reasonably well, so we can use it for professional communications with senior external collaborators.
 
@@ -463,29 +465,36 @@ Jinesis Lab`,
   {
     id: "own_pace_advisee",
     kind: "subgroup",
-    subject: `Welcome to Jinesis: a few onboarding steps`,
-    required: ["drive_folder_link", "first_name"],
+    // Rev (3) of the template doc makes this the coauthor-major mail word for word: same subject,
+    // same five steps, same sign-off. Kept as its own template rather than aliased -- the doc lists
+    // them separately and the two have diverged before, so a shared string would make the next
+    // divergence a code change instead of a copy edit.
+    subject: `Welcome to the Jinesis Lab: your onboarding steps`,
+    // No `drive_folder_link` any more: rev (3) drops the Google Drive step from this mail. That
+    // token was also what made the send provision a folder, so own-pace advisees no longer get one
+    // created at send time -- the same trade coauthor-major already made.
+    required: ["member_email"],
     body: `Hi {first_name},
 
-A very warm welcome to the Jinesis Lab with Prof. Zhijing Jin! We are very happy to have you with us.
+A very warm welcome to the Jinesis Lab! Here's how to get set up with the lab. Since you have major roles in Jinesis projects, if possible, we would appreciate it if you could do the following items in the upcoming 5 days or so:
 
-A few things to get you set up:
+1. Member portal: Log into our lab portal {dashboard_url} using {member_email} and the password "{portal_password}". You should complete everything under "My Info", including your profile info, onboarding steps, time availability registration, and your project list.
 
-1. Member portal: Create your account at {dashboard_url}signup and complete "My Profile." Please include a personal email address that you expect to retain if your institutional affiliation changes.
+2. Slack: You should have access to various channels in our Slack workspace. Day-to-day coordination happens there rather than over email.
 
-2. Slack: Invitations to the workspace and your relevant channels are on their way. Most of our everyday conversation happens there.
+3. Meetings: You may sometimes receive calendar invites for lab events. Two habits worth adopting early: (a) always RSVP on Google Calendar events, and (b) use the graphical interface of your calendar app (and we suggest Google Calendar), as meeting times may move spontaneously and might need time-zone conversion, including daylight saving time.
 
-3. Google Drive: Your shared project folder is here: {drive_folder_link}. All files related to the project will be stored and shared in this folder.
+4. What to expect: Our lab's expectations for you and an example project cycle that you can expect from us can be found in [What to Expect]({what_to_expect_link})
 
-4. Keep updated by following our social media accounts:
+5. Keep updated by following our social media accounts:
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
-If an invitation has not arrived within a week, or if anything is unclear, please reply here, and we will be happy to help.
+If you spot errors in any of the above system automation, or have questions, please reply here, and we will be happy to help.
 
-Warmly,
+Best regards,
 Jinesis Lab by Prof. Zhijing Jin`,
   },
 
@@ -493,7 +502,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "own_pace_advisee_norms",
     kind: "supplement",
     subject: `How we work at Jinesis: communication and meetings`,
-    required: ["drive_folder_link", "first_name"],
+    required: ["drive_folder_link"],
     body: `Hi {first_name},
 
 We would like to share a few habits that help research collaborations run smoothly at Jinesis.
@@ -508,8 +517,8 @@ Please communicate changes in your availability early. If coursework, co-supervi
 
 Keep updated by following our social media accounts:
 
-- LinkedIn: Zhijing-Jin, Jinesis-Lab, EuroSafeAI
-- X / Twitter: ZhijingJin, JinesisLab, EuroSafeAI
+- LinkedIn: [Zhijing-Jin](https://www.linkedin.com/in/zhijing-jin/), [Jinesis-Lab](https://www.linkedin.com/company/jinesis-lab/), [EuroSafeAI](https://www.linkedin.com/company/eurosafeai)
+- X / Twitter: [ZhijingJin](https://x.com/ZhijingJin), [JinesisLab](https://x.com/JinesisLab), [EuroSafeAI](https://x.com/EuroSafeAI)
 - Subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com
 
 We're glad to have you working with us and looking forward to seeing the project develop!
@@ -522,7 +531,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "coauthor_major_norms",
     kind: "supplement",
     subject: `Your project team at the Jinesis Lab`,
-    required: ["contact_name", "first_name", "project_or_context", "team_lead_role"],
+    required: ["contact_name", "project_or_context", "team_lead_role"],
     body: `Hi {first_name},
 
 We are delighted to have you on {project_or_context}. Here's how the team around you works.
@@ -538,6 +547,7 @@ Logistics. For venue choice, authorship, deadlines, and reimbursements, the guid
 We are excited to work with you and see the project develop.
 
 Warmly,
+Admin Team
 Jinesis Lab by Prof. Zhijing Jin`,
   },
 
@@ -550,7 +560,6 @@ Jinesis Lab by Prof. Zhijing Jin`,
     subject: `Your project team at the Jinesis Lab`,
     required: [
       "contact_name",
-      "first_name",
       "guidance_coauthors",
       "main_doers",
       "project_or_context",
@@ -574,6 +583,7 @@ Logistics. For venue choice, authorship, deadlines, and reimbursements, the guid
 We are excited to work with you and see the project develop.
 
 Warmly,
+Admin Team
 Jinesis Lab by Prof. Zhijing Jin`,
   },
 
@@ -581,7 +591,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "disappearing_coauthor_paper",
     kind: "supplement",
     subject: `Next steps for {paper_short_title}`,
-    required: ["delegate_name", "first_name", "paper_short_title", "paper_title", "reply_by_date"],
+    required: ["delegate_name", "paper_short_title", "paper_title", "reply_by_date"],
     body: `Hi {first_name},
 
 We hope things are going well on your side. We would like to agree on how to move "{paper_title}" forward. Please choose one of the following arrangements:
@@ -604,7 +614,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "disappearing_coauthor_rec_letter",
     kind: "supplement",
     subject: `Re: your recommendation letter request`,
-    required: ["first_name"],
+    required: [],
     body: `Hi {first_name},
 
 Thank you for reaching out, and for the work you have done with Jinesis.
@@ -626,7 +636,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "external_prof_slack_connect",
     kind: "supplement",
     subject: `Slack invitation from the Jinesis Lab`,
-    required: ["collaborator_names", "first_name", "project_channel", "project_or_context"],
+    required: ["collaborator_names", "project_channel", "project_or_context"],
     body: `Dear {first_name},
 
 To make day-to-day coordination on {project_or_context} easier, we would like to connect on Slack. You should shortly receive a Slack Connect invitation to the Jinesis workspace, which will add you to two channels:
@@ -646,7 +656,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     subject: `Shared folder for {project_or_context}`,
     // `project_folder_link`, not `drive_folder_link`: that token makes the send path provision a
     // new 1:1 workspace folder, and this mail shares a project folder that already exists.
-    required: ["first_name", "folder_contents", "project_folder_link", "project_or_context"],
+    required: ["folder_contents", "project_folder_link", "project_or_context"],
     body: `Dear {first_name},
 
 We have shared the project folder for {project_or_context} with this email address: {project_folder_link}
@@ -666,7 +676,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "external_prof_records_check",
     kind: "supplement",
     subject: `One-minute check: our contact record for you`,
-    required: ["first_name", "record_email", "record_name", "record_projects", "record_role"],
+    required: ["record_email", "record_name", "record_projects", "record_role"],
     body: `Dear {first_name},
 
 As part of our collaboration records, we currently have you as:

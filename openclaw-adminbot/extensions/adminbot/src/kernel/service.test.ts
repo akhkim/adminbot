@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  adminBotMandatoryProfileFields,
+  adminBotAdminOwnedProfileFields,
+  adminBotMemberAnswerableProfileFields,
   adminBotSlackActivityOf,
   redactConfidentialMemberFields,
+  adminBotProjectChannelName,
 } from "../contracts/actions.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
-import { AdminBotService, payloadHash } from "./service.js";
+import { AdminBotMemoryStore, AdminBotService, payloadHash } from "./service.js";
 
 function unwrap<T>(
   result: { ok: true; payload: T } | { ok: false; error: { message: string } },
@@ -16,8 +18,15 @@ function unwrap<T>(
   return result.payload;
 }
 
-function completeMember(fields: { id: string; privilege_level: string }) {
+function completeMember(
+  fields: { id: string; privilege_level: string } & Partial<
+    Parameters<AdminBotService["upsertLabMember"]>[0]
+  >,
+) {
   return {
+    // On the nudge list: these fixtures exist to be chased, and the list is opt-in (see
+    // adminBotReceivesNudges). A member without it is silent by design, which is a different test.
+    receives_nudges: true,
     name: `Complete ${fields.id}`,
     slack_user_id: `U-${fields.id}`,
     calendar_email: "complete@gmail.com",
@@ -26,10 +35,15 @@ function completeMember(fields: { id: string; privilege_level: string }) {
     correspondence_email: "complete@cs.toronto.edu",
     whatsapp: "(+1) 555 0100",
     joined_month: "2026-03",
+    affiliation: "University of Toronto",
+    hours_per_week: 20,
+    graduated_month: "2027-06",
+    next_position: "Considering research positions",
     github_url: "https://github.com/complete",
     linkedin_url: "https://www.linkedin.com/in/complete",
     linkedin_urn: "ACoAAB1234567",
     cv_url: "https://example.com/cv.pdf",
+    one_on_one_folder_url: "https://drive.google.com/drive/folders/complete",
     intake_form_url: "https://docs.google.com/forms/d/e/complete/viewform",
     openreview_id: "~Complete_Member1",
     ...fields,
@@ -47,6 +61,7 @@ describe("AdminBotService pre-registration nudges", () => {
     // batch 1, not a full member -- addressable by batch alone.
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "batched",
         name: "Batched Person",
         slack_user_id: "U1",
@@ -58,6 +73,7 @@ describe("AdminBotService pre-registration nudges", () => {
     // full in the spreadsheet's own column, no batch -- batch 3 by the rule.
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "full",
         name: "Full Member",
         slack_user_id: "U2",
@@ -71,6 +87,7 @@ describe("AdminBotService pre-registration nudges", () => {
     // never addressed.
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "untouched",
         name: "Visiting Professor",
         slack_user_id: "U3",
@@ -219,6 +236,7 @@ describe("AdminBotService pre-registration nudges", () => {
     // "full, coauthor-minor" is full; "alumni, coauthor-major" is not.
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "alum",
         name: "Former Member",
         slack_user_id: "U8",
@@ -239,6 +257,7 @@ describe("AdminBotService pre-registration nudges", () => {
     const service = lab();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "left-but-batched",
         name: "Left But Batched",
         slack_user_id: "U7",
@@ -258,6 +277,7 @@ describe("AdminBotService pre-registration nudges", () => {
     const service = lab();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "pi",
         name: "The PI",
         slack_user_id: "U9",
@@ -315,7 +335,15 @@ describe("AdminBotService paper coauthors", () => {
       ["andrew-kim", "Andrew Kim", "akim@cs.toronto.edu"],
       ["zhijing-jin", "Zhijing Jin", "zjin@cs.toronto.edu"],
     ] as const) {
-      unwrap(service.upsertLabMember({ id, name, email, privilege_level: "member" }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id,
+          name,
+          email,
+          privilege_level: "member",
+        }),
+      );
     }
     return service;
   }
@@ -363,10 +391,148 @@ describe("AdminBotService paper coauthors", () => {
       service.upsertOwnPaper("andrew-kim", { id: "adminbot", title: "AdminBot v2" }),
     ).toMatchObject({ ok: true });
     // Somebody who is not on it still cannot.
-    unwrap(service.upsertLabMember({ id: "stranger", name: "Stranger" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "stranger", name: "Stranger" }));
     expect(service.upsertOwnPaper("stranger", { id: "adminbot", title: "Mine now" })).toMatchObject(
       { ok: false },
     );
+  });
+
+  // A project is renamed as the work finds its shape, so the three answers the create form insists
+  // on have to stay editable afterwards. The service already allowed this; nothing exercised it.
+  it("lets an author revise the title, short name and start date after filing", () => {
+    const service = lab();
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot",
+        alias: "adminbot",
+        started_on: "2026-01-15",
+        authors: ["Joeun Yook", "Andrew Kim"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+
+    unwrap(
+      service.upsertOwnPaper("andrew-kim", {
+        id: "adminbot",
+        title: "AdminBot, revisited",
+        alias: "adminbot-two",
+        started_on: "2026-02-01",
+      }),
+    );
+    const revised = unwrap(service.listPapers()).papers.find((paper) => paper.id === "adminbot");
+    expect(revised).toMatchObject({
+      title: "AdminBot, revisited",
+      alias: "adminbot-two",
+      started_on: "2026-02-01",
+    });
+
+    // Blank clears the alias rather than failing validation -- the record allows a project with no
+    // channel name, and the card's editor sends "" for exactly that.
+    unwrap(
+      service.upsertOwnPaper("andrew-kim", {
+        id: "adminbot",
+        title: "AdminBot, revisited",
+        alias: "",
+      }),
+    );
+    expect(
+      unwrap(service.listPapers()).papers.find((paper) => paper.id === "adminbot")?.alias,
+    ).toBeUndefined();
+
+    // A short name Slack could not take is still refused, on the edit path as on the create one.
+    expect(
+      service.upsertOwnPaper("andrew-kim", {
+        id: "adminbot",
+        title: "AdminBot, revisited",
+        alias: "Bob's Project",
+      }),
+    ).toMatchObject({ ok: false });
+  });
+
+  // The bulk grid writes the same fields to the same row as the card. This is the service half of
+  // that claim: everything the grid offers as editable has to survive a member write.
+  it("stores every field the bulk grid can edit", () => {
+    const service = lab();
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot",
+        authors: ["Joeun Yook"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot, renamed",
+        alias: "adminbot",
+        started_on: "2026-02-01",
+        current_step: "overleaf_writing",
+        venue: "ICLR 2027",
+        author_roles: "Joeun writes, Andrew reviews",
+        feedback_givers: ["Rahul Shrestha"],
+        author_links: [{ name: "Joeun Yook", member_id: "joeun-yook" }, { name: "Someone New" }],
+        artifacts: {
+          topic: "causal abstraction",
+          submission_url: "https://openreview.net/forum?id=abc",
+          arxiv_paper_password: "ab12cd",
+          venue_targets: JSON.stringify([
+            { venue_id: "iclr 2027", label: "ICLR 2027", confidence: 80 },
+          ]),
+        },
+      }),
+    );
+
+    const stored = unwrap(service.listPapers()).papers.find((entry) => entry.id === "adminbot");
+    expect(stored).toMatchObject({
+      title: "AdminBot, renamed",
+      alias: "adminbot",
+      started_on: "2026-02-01",
+      current_step: "overleaf_writing",
+      venue: "ICLR 2027",
+      author_roles: "Joeun writes, Andrew reviews",
+      feedback_givers: ["Rahul Shrestha"],
+    });
+    expect(stored?.artifacts).toMatchObject({
+      topic: "causal abstraction",
+      submission_url: "https://openreview.net/forum?id=abc",
+      // The column that used to accept text and drop it.
+      arxiv_paper_password: "ab12cd",
+    });
+    // The roster link the grid preserves has to survive the write, not just the UI merge.
+    expect(stored?.author_links).toEqual([
+      { name: "Joeun Yook", member_id: "joeun-yook" },
+      { name: "Someone New" },
+    ]);
+  });
+
+  // What the venue said is a fact the authors report, so an author may record it on their own
+  // paper -- the card and the sheet both offer the control, and until #147 both got a 400 for it.
+  // The workflow fields beside it stay privileged, which is the boundary this asserts.
+  it("takes a venue decision from an author, and still refuses the workflow fields", () => {
+    const service = lab();
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot",
+        authors: ["Joeun Yook"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+    const stored = unwrap(
+      service.upsertOwnPaper("joeun-yook", { id: "adminbot", venue_decision: "accept" }),
+    );
+    expect(stored?.venue_decision).toBe("accept");
+    // Not everything on the record travelled with it: who gets nudged, and which attempt this is,
+    // are the paper flow's to set.
+    expect(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        first_author_member_id: "joeun-yook",
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
   });
 
   it("records an external coauthor and gives them nothing else", () => {
@@ -403,8 +569,8 @@ describe("AdminBotService paper coauthors", () => {
 
   it("does not put a paper on the page of somebody who merely shares a name", () => {
     const service = lab();
-    unwrap(service.upsertLabMember({ id: "wei-one", name: "Wei Chen" }));
-    unwrap(service.upsertLabMember({ id: "wei-two", name: "Wei Chen" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "wei-one", name: "Wei Chen" }));
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "wei-two", name: "Wei Chen" }));
     unwrap(
       service.upsertOwnPaper("joeun-yook", {
         id: "ambiguous",
@@ -451,8 +617,22 @@ describe("AdminBotService weekly updates", () => {
   function labWithPaper() {
     const executor = { execute: vi.fn(async () => ({ handled: true })) };
     const service = new AdminBotService(undefined, { executor });
-    unwrap(service.upsertLabMember({ id: "ada", name: "Ada Lovelace", slack_user_id: "U1" }));
-    unwrap(service.upsertLabMember({ id: "rahul", name: "Rahul Shrestha", slack_user_id: "U2" }));
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "ada",
+        name: "Ada Lovelace",
+        slack_user_id: "U1",
+      }),
+    );
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "rahul",
+        name: "Rahul Shrestha",
+        slack_user_id: "U2",
+      }),
+    );
     unwrap(
       service.upsertPaper({
         id: "paper",
@@ -553,6 +733,44 @@ describe("AdminBotService weekly updates", () => {
     expect(unwrap(await service.sendWeeklyUpdateNudges("cron", sunday)).created).toEqual([]);
   });
 
+  it("never asks the head professor for a weekly line, on any paper", async () => {
+    const service = labWithPaper();
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "zhijing",
+        name: "Zhijing Jin",
+        slack_user_id: "U3",
+      }),
+    );
+    unwrap(service.updateSettings({ head_professor_member_id: "zhijing" } as never));
+    // On the paper as a supervising coauthor, which is where she sits on nearly all of them.
+    unwrap(
+      service.upsertPaper({
+        id: "paper",
+        title: "Causal agents",
+        authors: ["Ada Lovelace", "Rahul Shrestha", "Zhijing Jin"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+    // Out of the preview an admin reads, not merely out of the send: being listed as owing a line
+    // on every paper in the lab is the visible half of the problem.
+    const gaps = unwrap(service.collectWeeklyUpdateGaps(sunday));
+    expect(gaps.gaps.map((gap) => gap.member_id).sort()).toEqual(["ada", "rahul"]);
+
+    const sent = unwrap(await service.sendWeeklyUpdateNudges("cron", sunday));
+    expect(sent.asked.sort()).toEqual(["ada", "rahul"]);
+    // And no skip line for her either: she is not a delivery that failed, she was never owed one.
+    expect(sent.skipped).toEqual([]);
+  });
+
+  it("still asks everyone else when no head professor is configured", async () => {
+    const service = labWithPaper();
+    unwrap(service.updateSettings({ head_professor_member_id: "" } as never));
+    const gaps = unwrap(service.collectWeeklyUpdateGaps(sunday));
+    expect(gaps.gaps.map((gap) => gap.member_id).sort()).toEqual(["ada", "rahul"]);
+  });
+
   it("keeps the prose out of the audit line", () => {
     const service = labWithPaper();
     unwrap(
@@ -643,6 +861,7 @@ describe("AdminBotService member merge", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "terry-jingchen-zhang",
         name: "Terry Jingchen Zhang",
         email: "tzkpgc@gmail.com",
@@ -654,6 +873,7 @@ describe("AdminBotService member merge", () => {
     );
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "terry-zhang",
         name: "Terry Zhang",
         email: "zjingchen@cs.toronto.edu",
@@ -668,7 +888,9 @@ describe("AdminBotService member merge", () => {
 
   it("pairs the two halves up without pairing distinct people", () => {
     const service = twoHalves();
-    unwrap(service.upsertLabMember({ id: "someone-else", name: "Ada Lovelace" }));
+    unwrap(
+      service.upsertLabMember({ receives_nudges: true, id: "someone-else", name: "Ada Lovelace" }),
+    );
     const { pairs } = unwrap(service.listDuplicateMembers());
     expect(pairs).toHaveLength(1);
     expect([pairs[0]?.left.id, pairs[0]?.right.id].toSorted()).toEqual([
@@ -772,6 +994,147 @@ describe("AdminBotService member merge", () => {
     expect(
       (event?.details as { retired_record?: { slack_user_id?: string } })?.retired_record,
     ).toMatchObject({ slack_user_id: "U09QKBM74M6" });
+  });
+});
+
+describe("AdminBotService member deletion", () => {
+  function roster() {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "andrew-kim",
+        name: "Andrew Kim",
+        email: "akim@cs.toronto.edu",
+      }),
+    );
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "zhijing-jin",
+        name: "Zhijing Jin",
+        email: "zhijing@cs.toronto.edu",
+      }),
+    );
+    // The import artefacts: a name and nothing to reach them by.
+    unwrap(service.upsertLabMember({ id: "ghost-row", name: "Ghost Row" }));
+    // Reachable at one address each, and so not address-less.
+    unwrap(
+      service.upsertLabMember({
+        id: "calendar-only",
+        name: "Calendar Only",
+        calendar_email: "calendar-only@gmail.com",
+      }),
+    );
+    unwrap(
+      service.upsertLabMember({
+        id: "correspondence-only",
+        name: "Correspondence Only",
+        correspondence_email: "corr@gmail.com",
+      }),
+    );
+    unwrap(service.updateSettings({ head_professor_member_id: "zhijing-jin" }));
+    return { service, store };
+  }
+
+  const ids = (service: AdminBotService) =>
+    unwrap(service.listLabMembers()).members.map((member) => member.id);
+
+  it("deletes a member and the rows that named them", () => {
+    const { service, store } = roster();
+    store.saveMemberNotification({
+      id: "notif_ghost",
+      member_id: "ghost-row",
+      kind: "profile",
+      title: "Your profile is missing required fields",
+      body: "...",
+      created_at: "2026-08-27T09:20:00.000Z",
+    });
+    expect(store.listMemberNotifications("ghost-row")).toHaveLength(1);
+
+    const result = unwrap(
+      service.deleteLabMember({ memberId: "ghost-row", actorId: "andrew-kim" }),
+    );
+    expect(result.deleted_id).toBe("ghost-row");
+    expect(result.removed).toMatchObject({ member_notifications: 1 });
+    expect(ids(service)).not.toContain("ghost-row");
+    expect(store.listMemberNotifications("ghost-row")).toHaveLength(0);
+  });
+
+  it("refuses to delete the actor, the head professor, or somebody who does not exist", () => {
+    const { service } = roster();
+    expect(
+      service.deleteLabMember({ memberId: "andrew-kim", actorId: "andrew-kim" }),
+    ).toMatchObject({ ok: false, status: 400 });
+    expect(
+      service.deleteLabMember({ memberId: "zhijing-jin", actorId: "andrew-kim" }),
+    ).toMatchObject({ ok: false, status: 409 });
+    expect(service.deleteLabMember({ memberId: "nobody", actorId: "andrew-kim" })).toMatchObject({
+      ok: false,
+      status: 404,
+    });
+  });
+
+  it("records the whole deleted record in the audit, because a delete has no undo", () => {
+    const { service } = roster();
+    unwrap(service.deleteLabMember({ memberId: "ghost-row", actorId: "andrew-kim" }));
+    const event = service.listAuditEvents().find((entry) => entry.type === "lab_member.deleted");
+    expect(event?.actor).toBe("andrew-kim");
+    expect(
+      (event?.details as { deleted_record?: { name?: string } })?.deleted_record,
+    ).toMatchObject({ name: "Ghost Row" });
+  });
+
+  it("counts any of the three addresses as reachable, so only the truly address-less are listed", () => {
+    const { service } = roster();
+    const { deletable } = unwrap(service.listMembersWithoutEmail("andrew-kim"));
+    expect(deletable.map((row) => row.id)).toEqual(["ghost-row"]);
+  });
+
+  it("previews by default and deletes nobody until asked", () => {
+    const { service } = roster();
+    const preview = unwrap(service.deleteMembersWithoutEmail({ actorId: "andrew-kim" }));
+    expect(preview.dry_run).toBe(true);
+    expect(preview.deleted.map((row) => row.id)).toEqual(["ghost-row"]);
+    expect(ids(service)).toContain("ghost-row");
+
+    const done = unwrap(
+      service.deleteMembersWithoutEmail({ actorId: "andrew-kim", dryRun: false }),
+    );
+    expect(done.dry_run).toBe(false);
+    expect(done.deleted.map((row) => row.id)).toEqual(["ghost-row"]);
+    expect(ids(service)).not.toContain("ghost-row");
+    // The reachable rows are untouched, whichever of the three addresses reaches them.
+    expect(ids(service)).toEqual(expect.arrayContaining(["calendar-only", "correspondence-only"]));
+  });
+
+  it("never bulk-deletes an account somebody can still sign in to", () => {
+    const { service, store } = roster();
+    // The shared `admin` login: no address on the roster row, but a working credential.
+    store.saveCredential({
+      member_id: "ghost-row",
+      email: "admin",
+      password_scrypt: "scrypt$16384$8$1$salt$hash",
+      claimed_at: "2026-08-21T07:35:21.366Z",
+      updated_at: "2026-08-21T07:35:21.366Z",
+    });
+    const preview = unwrap(service.listMembersWithoutEmail("andrew-kim"));
+    expect(preview.deletable.map((row) => row.id)).not.toContain("ghost-row");
+    expect(preview.blocked.map((row) => row.id)).toContain("ghost-row");
+
+    const done = unwrap(
+      service.deleteMembersWithoutEmail({ actorId: "andrew-kim", dryRun: false }),
+    );
+    expect(done.deleted).toHaveLength(0);
+    expect(ids(service)).toContain("ghost-row");
+
+    // A named delete still refuses, and only `force` takes it.
+    expect(service.deleteLabMember({ memberId: "ghost-row", actorId: "andrew-kim" })).toMatchObject(
+      { ok: false, status: 409 },
+    );
+    unwrap(service.deleteLabMember({ memberId: "ghost-row", actorId: "andrew-kim", force: true }));
+    expect(ids(service)).not.toContain("ghost-row");
   });
 });
 
@@ -950,6 +1313,43 @@ describe("AdminBotService", () => {
     );
   });
 
+  it("serializes concurrent executions across action ids by idempotency key", async () => {
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const execute = vi.fn(async () => {
+      await blocked;
+      return { handled: true };
+    });
+    const service = new AdminBotService(undefined, { executor: { execute } });
+    const proposals = ["first", "second"].map((summary) =>
+      unwrap(service.createProposal({ type: "email.send", summary })),
+    );
+    for (const proposal of proposals) {
+      unwrap(
+        service.approve(proposal.id, {
+          payload_hash: proposal.payload_hash,
+          approver_role: "admin",
+        }),
+      );
+    }
+
+    const first = service.execute(proposals[0]!.id, {
+      dry_run: false,
+      idempotency_key: "one-external-email",
+    });
+    const second = service.execute(proposals[1]!.id, {
+      dry_run: false,
+      idempotency_key: "one-external-email",
+    });
+    release();
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult).toEqual(secondResult);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   it("removes a pending proposal while retaining rejected audit state", () => {
     const service = new AdminBotService();
     const proposal = unwrap(
@@ -998,8 +1398,82 @@ describe("AdminBotService", () => {
     expect(unwrap(service.listPending()).proposals).toEqual([]);
   });
 
+  // A connector that recognizes an action and declines to deliver it (a delivery kill switch) must
+  // not leave the system claiming it happened -- the audit trail is the product's whole promise.
+  describe("a connector that withholds delivery", () => {
+    const withholding = {
+      execute: vi.fn(async () => ({
+        handled: true,
+        delivered: false,
+        reason: "ADMINBOT_OPENREVIEW_SEND is not set to 1",
+      })),
+    };
+
+    function approvedProposal(service: AdminBotService) {
+      return unwrap(
+        service.createProposal({
+          type: "slack.send_message",
+          summary: "Tell the group",
+          proposed_payload: { channel: "slack", target: "C1", message: "hello" },
+        }),
+      );
+    }
+
+    it("records it as simulated, not executed, and says why", async () => {
+      const service = new AdminBotService(undefined, { executor: withholding });
+      const proposal = approvedProposal(service);
+      unwrap(
+        service.approve(proposal.id, {
+          payload_hash: proposal.payload_hash,
+          approver_role: "admin",
+          approver_id: "zhijing",
+        }),
+      );
+
+      const executed = unwrap(await service.execute(proposal.id, { dry_run: false }));
+      expect(executed.status).toBe("simulated");
+
+      // The proposal is still approved and waiting, never executed.
+      expect(
+        unwrap(service.listPending()).proposals.find((p) => p.id === proposal.id)?.status,
+      ).not.toBe("executed");
+
+      const audit = service.listAuditEvents();
+      expect(audit.some((event) => event.type === "execution.executed")).toBe(false);
+      const simulated = audit.find((event) => event.type === "execution.simulated");
+      expect(simulated).toBeDefined();
+      expect(JSON.stringify(simulated?.details)).toContain("ADMINBOT_OPENREVIEW_SEND");
+    });
+
+    // No execution result is stored for a withheld send, so flipping the switch and executing
+    // again really delivers instead of replaying the cached "simulated" answer.
+    it("still delivers when the same proposal is executed after the switch is on", async () => {
+      const executor = {
+        execute: vi.fn(async () => ({ handled: true, delivered: false, reason: "off" })),
+      };
+      const service = new AdminBotService(undefined, { executor });
+      const proposal = approvedProposal(service);
+      unwrap(
+        service.approve(proposal.id, {
+          payload_hash: proposal.payload_hash,
+          approver_role: "admin",
+          approver_id: "zhijing",
+        }),
+      );
+
+      expect(unwrap(await service.execute(proposal.id, { dry_run: false })).status).toBe(
+        "simulated",
+      );
+
+      executor.execute.mockImplementation(async () => ({ handled: true }));
+      expect(unwrap(await service.execute(proposal.id, { dry_run: false })).status).toBe(
+        "executed",
+      );
+    });
+  });
+
   describe("Slack channel naming enforcement", () => {
-    it("reminds owner on invalid names, then renames after 48 hours", async () => {
+    it("reminds owner on invalid names, then proposes a rename after 48 hours", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
 
@@ -1021,7 +1495,7 @@ describe("AdminBotService", () => {
       );
       expect(beforeDue).toMatchObject({
         ok: true,
-        payload: { reminders_pending: 1, renamed: 0 },
+        payload: { reminders_pending: 1, renames_proposed: 0 },
       });
 
       const due = await service.runSlackChannelNamingSweep(
@@ -1030,10 +1504,53 @@ describe("AdminBotService", () => {
       );
       expect(due).toMatchObject({
         ok: true,
-        payload: { renamed: 1, skipped: 0 },
+        payload: { renames_proposed: 1, skipped: 0 },
       });
-      // reminder DM + rename + post-rename DM
-      expect(executor.execute).toHaveBeenCalledTimes(3);
+
+      // The reminder DM, and nothing else: renaming somebody's channel is a T3 action an admin
+      // approves, so the sweep leaves it on the Actions tab rather than executing it.
+      expect(executor.execute).toHaveBeenCalledTimes(1);
+      const pending = unwrap(service.listPending()).proposals;
+      const rename = pending.find((proposal) => proposal.type === "slack.rename_channel");
+      // "pending" is what puts it on the Actions tab waiting for an admin. It used to be a T1
+      // auto policy, which is what let the old sweep approve its own rename.
+      expect(rename).toMatchObject({
+        status: "pending",
+        risk_tier: "T3",
+        proposed_payload: { channel_id: "C1", new_name: "proj-eu-post-training" },
+      });
+      expect(rename?.approval_requirement).toMatchObject({
+        requires_approval: true,
+        approver_roles: ["admin"],
+      });
+      // The owner is named in the rationale, so whoever approves knows who was already asked.
+      expect(rename?.rationale).toContain("U1");
+    });
+
+    // The sweep is a button somebody can press twice in a morning, and a second press must not
+    // file a second rename for a channel already waiting on an answer.
+    it("reports a rename already awaiting approval instead of filing another", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      await service.processSlackChannelNamingEvent({
+        event_type: "channel_created",
+        channel_id: "C3",
+        channel_name: "eu-post-training",
+        owner_user_id: "U3",
+      });
+      const due = new Date(Date.now() + 49 * 60 * 60 * 1000).toISOString();
+
+      expect(await service.runSlackChannelNamingSweep("admin", due)).toMatchObject({
+        payload: { renames_proposed: 1 },
+      });
+      expect(await service.runSlackChannelNamingSweep("admin", due)).toMatchObject({
+        payload: { renames_proposed: 0, renames_awaiting_approval: 1 },
+      });
+
+      const renames = unwrap(service.listPending()).proposals.filter(
+        (proposal) => proposal.type === "slack.rename_channel",
+      );
+      expect(renames).toHaveLength(1);
     });
 
     it("clears pending enforcement when the channel is renamed to a compliant name", async () => {
@@ -1054,7 +1571,7 @@ describe("AdminBotService", () => {
       expect(renamed).toMatchObject({ ok: true, payload: { status: "compliant" } });
 
       const sweep = await service.runSlackChannelNamingSweep("cron", "2099-01-01T00:00:00.000Z");
-      expect(sweep).toMatchObject({ ok: true, payload: { scanned: 0, renamed: 0 } });
+      expect(sweep).toMatchObject({ ok: true, payload: { scanned: 0, renames_proposed: 0 } });
     });
   });
 
@@ -1068,6 +1585,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     const member = unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "zhijing",
         name: "Zhijing",
         email: "zhijing@cs.toronto.edu",
@@ -1110,6 +1628,7 @@ describe("AdminBotService", () => {
 
     expect(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "invalid-availability",
         name: "Invalid Availability",
         availability: [
@@ -1121,18 +1640,47 @@ describe("AdminBotService", () => {
     // of "PhD student" made those counts lie.
     expect(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "invalid-role",
         name: "Invalid Role",
         role: "Chief Scientist",
       }),
     ).toMatchObject({ ok: false, status: 400 });
     expect(
-      service.upsertLabMember({ id: "vocab-role", name: "Vocab Role", role: "PhD Student" }).ok,
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "vocab-role",
+        name: "Vocab Role",
+        role: "Predoctoral gap-year researcher",
+      }).ok,
     ).toBe(true);
-    // A role nobody has recorded yet is different from a wrong one.
-    expect(service.upsertLabMember({ id: "no-role", name: "No Role", role: "" }).ok).toBe(true);
+    // Several roles at once: people here are routinely two things, and every part is checked
+    // against the same vocabulary so the counts stay honest.
     expect(
       service.upsertLabMember({
+        receives_nudges: true,
+        id: "multi-role",
+        name: "Multi Role",
+        role: "PhD Student, Lab Manager",
+      }).ok,
+    ).toBe(true);
+    // One good half does not carry a bad one.
+    expect(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "half-invalid-role",
+        name: "Half Invalid Role",
+        role: "PhD Student, Chief Scientist",
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
+    // A role nobody has recorded yet is different from a wrong one.
+    expect(
+      service.upsertLabMember({ receives_nudges: true, id: "no-role", name: "No Role", role: "" })
+        .ok,
+    ).toBe(true);
+    expect(
+      service.upsertLabMember({
+        receives_nudges: true,
         id: "invalid-hours",
         name: "Invalid Hours",
         hours_per_week: 169,
@@ -1140,6 +1688,7 @@ describe("AdminBotService", () => {
     ).toMatchObject({ ok: false, status: 400 });
     expect(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "invalid-status",
         name: "Invalid Status",
         status: "away" as never,
@@ -1151,6 +1700,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     const collaborator = unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "sub",
         name: "Sub",
         privilege_level: "external_collaborator",
@@ -1161,14 +1711,26 @@ describe("AdminBotService", () => {
 
     // The stored level is enough: an edit that does not resend privilege_level still validates.
     expect(
-      unwrap(service.upsertLabMember({ id: "sub", name: "Sub", collaborator_subgroup: "alumni" }))
-        .collaborator_subgroup,
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "sub",
+          name: "Sub",
+          collaborator_subgroup: "alumni",
+        }),
+      ).collaborator_subgroup,
     ).toBe("alumni");
 
     // A promotion drops the subgroup rather than leaving a stale one on the record.
     expect(
-      unwrap(service.upsertLabMember({ id: "sub", name: "Sub", privilege_level: "member" }))
-        .collaborator_subgroup,
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "sub",
+          name: "Sub",
+          privilege_level: "member",
+        }),
+      ).collaborator_subgroup,
     ).toBeUndefined();
 
     for (const rejected of [
@@ -1195,6 +1757,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "self-edit",
         name: "Self Edit",
         email: "self-edit@cs.toronto.edu",
@@ -1226,6 +1789,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "photo",
         name: "Photo Member",
         email: "photo@cs.toronto.edu",
@@ -1266,10 +1830,14 @@ describe("AdminBotService", () => {
   // The URN is looked up by the lab, not typed by the member, so a self update carrying one is
   // dropped like any other non-whitelisted key -- the disabled control on the profile page is the
   // label for this rule, never the rule itself.
-  it("ignores a linkedin_urn sent through a self profile update, but lets an admin set it", () => {
+  // It used to be dropped from a self update, which made the profile page's disabled control a
+  // rule rather than a hint. Both are gone: the field's own help text tells the member to look
+  // their URN up in the collector tool and paste it here, and now they can.
+  it("takes a linkedin_urn a member pasted in, and still lets an admin set it", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "urn-member",
         name: "URN Member",
         email: "urn-member@cs.toronto.edu",
@@ -1283,12 +1851,12 @@ describe("AdminBotService", () => {
         role: "Postdoc",
       }),
     );
-    expect(selfEdited.linkedin_urn ?? "").toBe("");
-    // The rest of the same update still lands: the key is dropped, the request is not refused.
+    expect(selfEdited.linkedin_urn).toBe("ACoAAB7654321");
     expect(selfEdited.role).toBe("Postdoc");
 
     const byAdmin = unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "urn-member",
         name: "URN Member",
         email: "urn-member@cs.toronto.edu",
@@ -1299,9 +1867,619 @@ describe("AdminBotService", () => {
     expect(byAdmin.linkedin_urn).toBe("ACoAAB1234567");
   });
 
+  describe("topic channels", () => {
+    const CHANNELS = [
+      "discussion-causal-inference",
+      "discussion-mechanism-design",
+      "meeting-causal-inference",
+    ];
+
+    function labWith(members: Array<Record<string, unknown>>) {
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store, {
+        executor: { execute: async () => ({ handled: true }) },
+      });
+      for (const member of members) {
+        unwrap(
+          service.upsertLabMember({
+            receives_nudges: true,
+            privilege_level: "external_collaborator",
+            slack_user_id: `U-${member.id}`,
+            ...member,
+          } as never),
+        );
+      }
+      return { service, store };
+    }
+
+    // The matrix gives discussion channels to four subgroups and the weekly meeting to
+    // coauthor-major alone, so the same person matches different families by subgroup.
+    it("offers discussion channels widely and the meeting channel only to coauthor-major", () => {
+      const { service } = labWith([
+        {
+          id: "major",
+          name: "Major",
+          collaborator_subgroup: "coauthor_major",
+          research_topics: ["causal inference"],
+        },
+        {
+          id: "minor",
+          name: "Minor",
+          collaborator_subgroup: "coauthor_minor",
+          research_topics: ["causal inference"],
+        },
+      ]);
+      const roster = service.topicChannelRoster(CHANNELS);
+      expect(roster.find((r) => r.member_id === "major")?.channels).toEqual([
+        "discussion-causal-inference",
+        "meeting-causal-inference",
+      ]);
+      // No meeting channel: the matrix does not give coauthor-minor the weekly meeting.
+      expect(roster.find((r) => r.member_id === "minor")?.channels).toEqual([
+        "discussion-causal-inference",
+      ]);
+    });
+
+    it("leaves out subgroups the matrix does not name, and alumni", () => {
+      const { service } = labWith([
+        {
+          id: "prof",
+          name: "Prof",
+          collaborator_subgroup: "external_prof",
+          research_topics: ["causal inference"],
+        },
+        {
+          id: "gone",
+          name: "Gone",
+          collaborator_subgroup: "coauthor_major",
+          member_type: "alumni",
+          research_topics: ["causal inference"],
+        },
+      ]);
+      expect(service.topicChannelRoster(CHANNELS)).toEqual([]);
+    });
+
+    it("invites into each matched channel", async () => {
+      const { service, store } = labWith([
+        {
+          id: "major",
+          name: "Major",
+          collaborator_subgroup: "coauthor_major",
+          research_topics: ["causal inference"],
+        },
+      ]);
+      const result = unwrap(await service.syncTopicChannels("cron", CHANNELS));
+      expect(result.invited).toEqual([
+        { member_id: "major", channel: "discussion-causal-inference" },
+        { member_id: "major", channel: "meeting-causal-inference" },
+      ]);
+      expect(store.listProposalsByType("slack.invite_to_channel")).toHaveLength(2);
+    });
+
+    // A caller could pass anything; only our two families are acted on.
+    it("ignores channels outside the topic families", async () => {
+      const { service } = labWith([
+        {
+          id: "major",
+          name: "Major",
+          collaborator_subgroup: "coauthor_major",
+          research_topics: ["causal inference"],
+        },
+      ]);
+      const result = unwrap(
+        await service.syncTopicChannels("cron", ["proj-cais", "jinesis-active", "random-active"]),
+      );
+      expect(result.invited).toEqual([]);
+    });
+  });
+
+  describe("themed meeting invites", () => {
+    const MEETINGS = [{ event_id: "e1", summary: "Theme: Causal Inference" }];
+
+    function labWith(members: Array<Record<string, unknown>>) {
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store, {
+        executor: { execute: async () => ({ handled: true }) },
+      });
+      for (const member of members) {
+        unwrap(
+          service.upsertLabMember({
+            receives_nudges: true,
+            privilege_level: "external_collaborator",
+            ...member,
+          } as never),
+        );
+      }
+      return { service, store };
+    }
+
+    // The channel is the source of truth for who attends: whoever the lab put in the room. That
+    // picks up somebody added by hand, and does not re-invite somebody who left.
+    it("invites the calendar address of whoever is in the meeting channel", async () => {
+      const { service, store } = labWith([
+        {
+          id: "ada",
+          name: "Ada",
+          slack_user_id: "U-ADA",
+          email: "ada@cs.toronto.edu",
+          calendar_email: "ada.personal@gmail.com",
+        },
+      ]);
+      const result = unwrap(
+        await service.syncThemedMeetingInvites("cron", {
+          meetings: MEETINGS,
+          channels: [{ channel: "meeting-causal-inference", slack_user_ids: ["U-ADA"] }],
+          calendarId: "cal-1",
+        }),
+      );
+      // The calendar address, not the institutional one: a Google invite has to reach the account
+      // the person keeps their calendar in.
+      expect(result.invited).toEqual([
+        {
+          event_id: "e1",
+          channel: "meeting-causal-inference",
+          attendees: ["ada.personal@gmail.com"],
+        },
+      ]);
+      const proposal = store.listProposalsByType("calendar.add_attendees")[0];
+      expect(proposal?.proposed_payload).toMatchObject({
+        calendar_id: "cal-1",
+        event_id: "e1",
+        attendees: ["ada.personal@gmail.com"],
+      });
+      // T3 in the policy table: an admin approves before anybody lands on a recurring invite.
+      expect(proposal?.status).not.toBe("executed");
+    });
+
+    it("reports somebody with no calendar address rather than guessing one", async () => {
+      const { service } = labWith([
+        { id: "ada", name: "Ada", slack_user_id: "U-ADA", email: "ada@cs.toronto.edu" },
+      ]);
+      const result = unwrap(
+        await service.syncThemedMeetingInvites("cron", {
+          meetings: MEETINGS,
+          channels: [{ channel: "meeting-causal-inference", slack_user_ids: ["U-ADA"] }],
+          calendarId: "cal-1",
+        }),
+      );
+      expect(result.invited).toEqual([]);
+      expect(result.skipped[0]?.reason).toContain("calendar_email");
+    });
+
+    // Guests and the bot itself are in channels and are not on the roster. Not an error.
+    it("passes over channel members the roster does not know, and alumni", async () => {
+      const { service } = labWith([
+        {
+          id: "gone",
+          name: "Gone",
+          slack_user_id: "U-GONE",
+          member_type: "alumni",
+          calendar_email: "gone@x.test",
+        },
+      ]);
+      const result = unwrap(
+        await service.syncThemedMeetingInvites("cron", {
+          meetings: MEETINGS,
+          channels: [
+            { channel: "meeting-causal-inference", slack_user_ids: ["U-GONE", "U-STRANGER"] },
+          ],
+          calendarId: "cal-1",
+        }),
+      );
+      expect(result.invited).toEqual([]);
+      expect(result.skipped).toEqual([]);
+    });
+
+    it("refuses to choose when one channel matches two meetings", async () => {
+      const { service } = labWith([
+        { id: "ada", name: "Ada", slack_user_id: "U-ADA", calendar_email: "ada@x.test" },
+      ]);
+      const result = unwrap(
+        await service.syncThemedMeetingInvites("cron", {
+          meetings: [
+            { event_id: "a", summary: "Theme: Causal Inference" },
+            { event_id: "b", summary: "Theme: Causal Inference (bi-weekly)" },
+          ],
+          channels: [{ channel: "meeting-causal-inference", slack_user_ids: ["U-ADA"] }],
+          calendarId: "cal-1",
+        }),
+      );
+      expect(result.invited).toEqual([]);
+      expect(result.skipped[0]?.reason).toContain("matches 2 themed meetings");
+    });
+  });
+
+  describe("per-project Slack channels", () => {
+    function labWithProject(
+      authors: Array<{ id: string; subgroup?: string; slack?: string; member_type?: string }>,
+      paper: Record<string, unknown> = {},
+    ) {
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store, {
+        executor: { execute: async () => ({ handled: true }) },
+      });
+      for (const author of authors) {
+        unwrap(
+          service.upsertLabMember({
+            receives_nudges: true,
+            id: author.id,
+            name: author.id,
+            privilege_level: "external_collaborator",
+            ...(author.subgroup ? { collaborator_subgroup: author.subgroup } : {}),
+            ...(author.member_type ? { member_type: author.member_type } : {}),
+            ...(author.slack === undefined ? { slack_user_id: `U-${author.id}` } : {}),
+          } as never),
+        );
+      }
+      unwrap(
+        service.upsertPaper({
+          id: "p1",
+          title: "Causal AI Scientist",
+          alias: "CAIS",
+          current_step: "brainstorming_docs",
+          authors: authors.map((a) => a.id),
+          author_links: authors.map((a) => ({ name: a.id, member_id: a.id })),
+          ...paper,
+        } as never),
+      );
+      return { service, store };
+    }
+
+    // The channel name comes from the alias somebody chose, so it is knowable from the record --
+    // no directory lookup, and it does not change when the title does.
+    it("names the channel from the project alias", () => {
+      const { service } = labWithProject([{ id: "kim", subgroup: "coauthor_major" }]);
+      const roster = service.projectChannelRoster();
+      expect(roster).toHaveLength(1);
+      expect(roster[0]?.channel).toBe("proj-cais");
+      expect(roster[0]?.members.map((m) => m.member_id)).toEqual(["kim"]);
+    });
+
+    // The access matrix decides: coauthor-minor, coauthor-major and discussant/designer, nobody else.
+    it("invites the subgroups the matrix names and no others", () => {
+      const { service } = labWithProject([
+        { id: "major", subgroup: "coauthor_major" },
+        { id: "minor", subgroup: "coauthor_minor" },
+        { id: "designer", subgroup: "coauthor_discussant_designer" },
+        { id: "prof", subgroup: "external_prof" },
+        { id: "acq", subgroup: "acquaintance" },
+      ]);
+      expect(service.projectChannelRoster()[0]?.members.map((m) => m.member_id)).toEqual([
+        "designer",
+        "major",
+        "minor",
+      ]);
+    });
+
+    // A slugged title would be long, wrong the moment the title changed, and not what anyone calls
+    // the project. No alias, no channel.
+    it("skips a project with no alias rather than guessing one", () => {
+      const { service } = labWithProject([{ id: "kim", subgroup: "coauthor_major" }], {
+        alias: undefined,
+      });
+      expect(service.projectChannelRoster()).toEqual([]);
+    });
+
+    it("leaves alumni out, and reports somebody with no Slack account", () => {
+      const { service } = labWithProject([
+        { id: "gone", subgroup: "coauthor_major", member_type: "alumni" },
+        { id: "noslack", subgroup: "coauthor_major", slack: "" },
+        { id: "here", subgroup: "coauthor_major" },
+      ]);
+      const row = service.projectChannelRoster()[0];
+      expect(row?.members.map((m) => m.member_id)).toEqual(["here"]);
+      expect(row?.skipped.map((s) => s.member_id)).toEqual(["noslack"]);
+    });
+
+    // Create first and every time: Slack's own name_taken is what says it already exists, which is
+    // why this needs no directory of what channels there are.
+    it("opens the channel, then invites into it", async () => {
+      const { service, store } = labWithProject([{ id: "kim", subgroup: "coauthor_major" }]);
+      const result = unwrap(await service.syncProjectChannels("cron"));
+
+      expect(result.channels).toEqual([{ channel: "proj-cais", paper_id: "p1", invited: ["kim"] }]);
+      const created = store.listProposalsByType("slack.create_channel")[0];
+      expect(created?.proposed_payload).toMatchObject({ name: "proj-cais" });
+      expect(created?.status).toBe("executed");
+      expect(store.listProposalsByType("slack.invite_to_channel")[0]?.status).toBe("executed");
+    });
+  });
+
+  describe("the recommendation-letter help channel", () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const iso = (offsetDays: number) => new Date(Date.now() + offsetDays * DAY).toISOString();
+
+    /**
+     * Requests are seeded through the store rather than through submitLogisticsRequest, because the
+     * whole point of these tests is *when* a request settled, and setLogisticsRequestStatus stamps
+     * `updated_at` with the wall clock. The store is the one place a chosen timestamp can go.
+     */
+    function labWithLetters(
+      requests: Array<{ status: string; updated_at: string }>,
+      member: Record<string, unknown> = {},
+    ) {
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store, {
+        executor: { execute: async () => ({ handled: true }) },
+      });
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "ada",
+          name: "Ada Lovelace",
+          privilege_level: "member",
+          slack_user_id: "U-ADA",
+          ...member,
+        } as never),
+      );
+      for (const [index, request] of requests.entries()) {
+        store.saveLogisticsRequest({
+          id: `logreq_${index}`,
+          kind: "recommendation_letters",
+          member_id: "ada",
+          member_name: "Ada Lovelace",
+          schools: [{ school: "Example", letter_deadline: request.updated_at.slice(0, 10) }],
+          status: request.status,
+          submitted_at: request.updated_at,
+          updated_at: request.updated_at,
+        } as never);
+      }
+      return { service, store };
+    }
+
+    it("adds applicants near their letter deadline", () => {
+      const { service } = labWithLetters([{ status: "submitted", updated_at: iso(-1) }]);
+      const roster = service.recLetterChannelRoster();
+      expect(roster.add.map((row) => row.member_id)).toEqual(["ada"]);
+      expect(roster.remove).toEqual([]);
+    });
+
+    // The subtlety the window exists for. A season runs about two months across different school
+    // deadlines, so one request closes while another is still open; reading the earliest settled
+    // date would drop somebody in the middle of their own season.
+    it("keeps applicants while any deadline window is active", () => {
+      const { service } = labWithLetters([
+        { status: "completed", updated_at: iso(-200) },
+        { status: "submitted", updated_at: iso(-1) },
+      ]);
+      const roster = service.recLetterChannelRoster();
+      expect(roster.add.map((row) => row.member_id)).toEqual(["ada"]);
+      expect(roster.remove).toEqual([]);
+    });
+
+    it("measures expiry from the latest deadline window", () => {
+      const { service } = labWithLetters([
+        { status: "completed", updated_at: iso(-200) },
+        { status: "completed", updated_at: iso(-60) },
+      ]);
+      // The latest deadline remains inside its three-calendar-month window.
+      expect(service.recLetterChannelRoster().remove).toEqual([]);
+      expect(service.recLetterChannelRoster().add.map((row) => row.member_id)).toEqual(["ada"]);
+
+      const later = new Date(Date.now() + 40 * DAY).toISOString();
+      expect(
+        service.recLetterChannelRoster({ nowIso: later }).remove.map((row) => row.member_id),
+      ).toEqual(["ada"]);
+    });
+
+    it("uses inclusive calendar-month boundaries and clamps month ends", () => {
+      const { service, store } = labWithLetters([
+        { status: "completed", updated_at: "2026-05-31T00:00:00Z" },
+      ]);
+      const request = store.listLogisticsRequests()[0]!;
+      store.saveLogisticsRequest({
+        ...request,
+        schools: [
+          {
+            school: "Example",
+            letter_deadline: "2026-05-31",
+            letter_deadline_time: "12:00",
+            deadline_timezone: "UTC",
+          },
+        ],
+      });
+      expect(service.recLetterChannelRoster({ nowIso: "2026-02-28T11:59:59Z" }).add).toEqual([]);
+      expect(service.recLetterChannelRoster({ nowIso: "2026-02-28T12:00:00Z" }).add).toHaveLength(
+        1,
+      );
+      expect(service.recLetterChannelRoster({ nowIso: "2026-08-31T12:00:00Z" }).add).toHaveLength(
+        1,
+      );
+      expect(
+        service.recLetterChannelRoster({ nowIso: "2026-08-31T12:00:01Z" }).remove[0]
+          ?.window_ends_at,
+      ).toBe("2026-08-31T12:00:00.000Z");
+    });
+
+    it("uses any school deadline and its timezone, without application-date fallback", () => {
+      const { service, store } = labWithLetters([
+        { status: "submitted", updated_at: "2026-01-01T00:00:00Z" },
+      ]);
+      const request = store.listLogisticsRequests()[0]!;
+      store.saveLogisticsRequest({
+        ...request,
+        schools: [
+          { school: "Old", letter_deadline: "2025-01-01" },
+          {
+            school: "Current",
+            letter_deadline: "2026-06-01",
+            letter_deadline_time: "09:00",
+            deadline_timezone: "America/New_York",
+          },
+        ],
+      });
+      expect(service.recLetterChannelRoster({ nowIso: "2026-03-01T13:59:59Z" }).add).toEqual([]);
+      expect(service.recLetterChannelRoster({ nowIso: "2026-03-01T14:00:00Z" }).add).toHaveLength(
+        1,
+      );
+      store.saveLogisticsRequest({
+        ...request,
+        schools: [{ school: "Legacy", application_deadline: "2026-06-01" }],
+      });
+      expect(service.recLetterChannelRoster({ nowIso: "2026-06-01T00:00:00Z" }).add).toEqual([]);
+      expect(service.recLetterChannelRoster({ nowIso: "2026-06-01T00:00:00Z" }).remove).toEqual([]);
+      store.saveLogisticsRequest({
+        ...request,
+        schools: [{ school: "Invalid", letter_deadline: "2026-02-30" }],
+      });
+      expect(service.recLetterChannelRoster({ nowIso: "2026-03-01T00:00:00Z" }).add).toEqual([]);
+    });
+
+    it("does not invite declined or withdrawn applicants", () => {
+      for (const status of ["declined", "withdrawn"]) {
+        const { service } = labWithLetters([{ status, updated_at: iso(-1) }]);
+        expect(service.recLetterChannelRoster().add).toEqual([]);
+      }
+    });
+
+    it("skips a member with no Slack account rather than proposing anything", () => {
+      const { service } = labWithLetters([{ status: "submitted", updated_at: iso(-1) }], {
+        slack_user_id: "",
+      });
+      const roster = service.recLetterChannelRoster();
+      expect(roster.add).toEqual([]);
+      expect(roster.skipped[0]?.reason).toContain("slack_user_id");
+    });
+
+    // Invites go out; removals wait for a person. An unwanted invite is noise somebody can leave; a
+    // wrong removal takes away a conversation they were in and is noticed only by its absence.
+    it("executes invites but only proposes removals", async () => {
+      const { service, store } = labWithLetters([
+        { status: "submitted", updated_at: iso(-1) },
+        { status: "completed", updated_at: iso(-200) },
+      ]);
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "mei",
+          name: "Mei Chen",
+          privilege_level: "member",
+          slack_user_id: "U-MEI",
+        } as never),
+      );
+      store.saveLogisticsRequest({
+        id: "logreq_old",
+        kind: "recommendation_letters",
+        member_id: "mei",
+        member_name: "Mei Chen",
+        schools: [{ school: "Example", letter_deadline: iso(-200).slice(0, 10) }],
+        status: "completed",
+        submitted_at: iso(-260),
+        updated_at: iso(-200),
+      } as never);
+
+      const result = unwrap(await service.syncRecLetterChannel("cron"));
+      expect(result.channel).toBe("help-rec-letters");
+      expect(result.invited.map((row) => row.member_id)).toEqual(["ada"]);
+      expect(result.removal_proposals.map((row) => row.member_id)).toEqual(["mei"]);
+
+      const removal = store.listProposalsByType("slack.remove_from_channel")[0];
+      expect(removal).toBeDefined();
+      expect(removal?.status).not.toBe("executed");
+      expect(removal?.approval_requirement?.requires_approval).toBe(true);
+      // And the invite really did go, so the asymmetry is between the two and not a dead sweep.
+      expect(store.listProposalsByType("slack.invite_to_channel")[0]?.status).toBe("executed");
+    });
+
+    // The sweep runs hourly. The roster is rebuilt from the request log rather than from who is in
+    // the channel, so without this every run re-invited Ada and filed another removal card for Mei.
+    it("files each move once, however often it runs", async () => {
+      const { service, store } = labWithLetters([{ status: "submitted", updated_at: iso(-1) }]);
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "mei",
+          name: "Mei Chen",
+          privilege_level: "member",
+          slack_user_id: "U-MEI",
+        } as never),
+      );
+      store.saveLogisticsRequest({
+        id: "logreq_old",
+        kind: "recommendation_letters",
+        member_id: "mei",
+        member_name: "Mei Chen",
+        schools: [{ school: "Example", letter_deadline: iso(-200).slice(0, 10) }],
+        status: "completed",
+        submitted_at: iso(-260),
+        updated_at: iso(-200),
+      } as never);
+
+      unwrap(await service.syncRecLetterChannel("cron"));
+      const again = unwrap(await service.syncRecLetterChannel("cron"));
+      expect(again.invited).toEqual([]);
+      expect(again.removal_proposals).toEqual([]);
+      expect(store.listProposalsByType("slack.invite_to_channel")).toHaveLength(1);
+      expect(store.listProposalsByType("slack.remove_from_channel")).toHaveLength(1);
+
+      // An admin who turns the removal down has answered; the next run does not ask again.
+      const removal = store.listProposalsByType("slack.remove_from_channel")[0]!;
+      unwrap(service.removePending(removal.id, { actor: "admin" }));
+      const afterReject = unwrap(await service.syncRecLetterChannel("cron"));
+      expect(afterReject.removal_proposals).toEqual([]);
+    });
+  });
+
+  // The alias becomes the project's Slack channel `proj-<alias>`, so it is stored in the shape that
+  // name is read off directly rather than transformed at the point of use.
+  it("stores a paper alias lowercased, and its start date, from a member write", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "ada",
+        name: "Ada Lovelace",
+        privilege_level: "member",
+      }),
+    );
+    const saved = unwrap(
+      service.upsertOwnPaper("ada", {
+        id: "causal-ai-scientist",
+        title: "Causal AI Scientist",
+        authors: ["Ada Lovelace"],
+        alias: "CAIS",
+        started_on: "2026-01-15",
+      } as never),
+    );
+    expect(saved.alias).toBe("cais");
+    expect(saved.started_on).toBe("2026-01-15");
+    expect(adminBotProjectChannelName(saved.alias!)).toBe("proj-cais");
+  });
+
+  // Refused, not rewritten: "C.A.I.S. v2" would become "c-a-i-s-v2", which is a different name, and
+  // an author should not discover what their channel was called after the fact.
+  it("refuses an alias Slack could not take, and a malformed start date", () => {
+    const service = new AdminBotService();
+    const base = {
+      id: "p1",
+      title: "A paper",
+      authors: ["Ada Lovelace"],
+      current_step: "brainstorming_docs",
+    };
+    const badAlias = service.upsertPaper({ ...base, alias: "C.A.I.S. v2" } as never);
+    expect(badAlias.ok).toBe(false);
+    if (!badAlias.ok) {
+      expect(badAlias.error.message).toContain("letters, digits and hyphens");
+    }
+    const badDate = service.upsertPaper({ ...base, started_on: "15/01/2026" } as never);
+    expect(badDate.ok).toBe(false);
+    if (!badDate.ok) {
+      expect(badDate.error.message).toContain("2026-09-01");
+    }
+    // Absent stays fine: the alias is only insisted on by the creation form.
+    expect(service.upsertPaper(base as never).ok).toBe(true);
+  });
+
   it("lets a member self-edit availability and time off, and validates both", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "sched", name: "Sched", privilege_level: "member" }));
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "sched",
+        name: "Sched",
+        privilege_level: "member",
+      }),
+    );
 
     const saved = unwrap(
       service.updateOwnProfile("sched", {
@@ -1347,7 +2525,14 @@ describe("AdminBotService", () => {
   // corrected later because nobody knows which one was meant -- so the pair is all-or-nothing.
   it("takes an exact cutoff on a milestone only as a time and a zone together", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "clock", name: "Clock", privilege_level: "member" }));
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "clock",
+        name: "Clock",
+        privilege_level: "member",
+      }),
+    );
 
     const saved = unwrap(
       service.updateOwnProfile("clock", {
@@ -1378,7 +2563,14 @@ describe("AdminBotService", () => {
   it("accepts board-linked milestones, refreshes their copy and rejects unknown ids", () => {
     const service = new AdminBotService();
     const deadline = DEADLINE_VENUES.find((entry) => entry.link)!;
-    unwrap(service.upsertLabMember({ id: "linked", name: "Linked", privilege_level: "member" }));
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "linked",
+        name: "Linked",
+        privilege_level: "member",
+      }),
+    );
 
     const saved = unwrap(
       service.updateOwnProfile("linked", {
@@ -1411,7 +2603,14 @@ describe("AdminBotService", () => {
   // and no admin could plan against.
   it("takes hours on a partial time-off row and refuses them on a whole-day one", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "hours", name: "Hours", privilege_level: "member" }));
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "hours",
+        name: "Hours",
+        privilege_level: "member",
+      }),
+    );
 
     const saved = unwrap(
       service.updateOwnProfile("hours", {
@@ -1459,7 +2658,14 @@ describe("AdminBotService", () => {
 
   it("lets a member self-edit milestones, links and the non-Jinesis time-off kinds", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "plan", name: "Plan", privilege_level: "member" }));
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "plan",
+        name: "Plan",
+        privilege_level: "member",
+      }),
+    );
 
     const saved = unwrap(
       service.updateOwnProfile("plan", {
@@ -1537,7 +2743,14 @@ describe("AdminBotService", () => {
 
   it("restricts the availability doc link to https Google Docs or Drive hosts", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "doc", name: "Doc", privilege_level: "member" }));
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "doc",
+        name: "Doc",
+        privilege_level: "member",
+      }),
+    );
 
     const saved = unwrap(
       service.updateOwnProfile("doc", {
@@ -1571,7 +2784,14 @@ describe("AdminBotService", () => {
 
   it("saves an OpenReview id shaped like a real tilde id and rejects everything else", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "or", name: "OR", privilege_level: "member" }));
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "or",
+        name: "OR",
+        privilege_level: "member",
+      }),
+    );
 
     const saved = unwrap(service.updateOwnProfile("or", { openreview_id: "~Jane_Doe1" }));
     expect(saved.openreview_id).toBe("~Jane_Doe1");
@@ -1593,7 +2813,14 @@ describe("AdminBotService", () => {
 
   it("validates each social link against its own platform's URL shape", () => {
     const service = new AdminBotService();
-    unwrap(service.upsertLabMember({ id: "social", name: "Social", privilege_level: "member" }));
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "social",
+        name: "Social",
+        privilege_level: "member",
+      }),
+    );
 
     const saved = unwrap(
       service.updateOwnProfile("social", {
@@ -1616,13 +2843,10 @@ describe("AdminBotService", () => {
     expect(unwrap(service.updateOwnProfile("social", { github_url: "" })).github_url).toBe("");
 
     for (const bad of [
-      { github_url: "https://gitlab.com/octocat" }, // wrong platform for the field
-      { github_url: "https://github.com/" }, // no username
       { twitter_url: "https://github.com/octocat" }, // GitHub link in the Twitter field
       { linkedin_url: "https://linkedin.com/company/openai" }, // company page, not a personal profile
       { scholar_url: "https://scholar.google.com/citations" }, // missing ?user=
       { scholar_url: "http://scholar.google.com/citations?user=abc123" }, // not https
-      { cv_url: "not a url" },
       // Only the member's own Forms response link belongs here; a stray link filed under it would
       // read on the profile as "these are their intake answers" when it is nothing of the sort.
       { intake_form_url: "https://example.com/my-answers" },
@@ -1632,11 +2856,78 @@ describe("AdminBotService", () => {
     }
   });
 
-  it("requires a @cs.toronto.edu email for core members, but exempts external collaborators", () => {
+  it("takes a Google Drive folder for the 1:1 folder link and nothing else", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "oneone",
+        name: "One One",
+        privilege_level: "member",
+      }),
+    );
+
+    const folder = "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz";
+    expect(
+      unwrap(service.updateOwnProfile("oneone", { one_on_one_folder_url: folder }))
+        .one_on_one_folder_url,
+    ).toBe(folder);
+
+    // The address bar's multi-account form is the same folder, and is what most people copy.
+    const multiAccount = "https://drive.google.com/drive/u/1/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz";
+    expect(
+      unwrap(service.updateOwnProfile("oneone", { one_on_one_folder_url: multiAccount }))
+        .one_on_one_folder_url,
+    ).toBe(multiAccount);
+
+    // A query string is how Drive's own Share dialog hands the link over.
+    expect(
+      unwrap(
+        service.updateOwnProfile("oneone", {
+          one_on_one_folder_url: `${folder}?usp=drive_link`,
+        }),
+      ).one_on_one_folder_url,
+    ).toBe(`${folder}?usp=drive_link`);
+
+    // Empty clears it, like every other link on the record.
+    expect(
+      unwrap(service.updateOwnProfile("oneone", { one_on_one_folder_url: "" }))
+        .one_on_one_folder_url,
+    ).toBe("");
+
+    for (const bad of [
+      // The notes from one meeting, filed as if they were the series.
+      "https://docs.google.com/document/d/abc/edit",
+      // A Drive file, not a Drive folder.
+      "https://drive.google.com/file/d/1AbCdEf/view",
+      // Right host, wrong route.
+      "https://drive.google.com/drive/my-drive",
+      // A folder somewhere that is not Drive.
+      "https://dropbox.com/drive/folders/1AbCdEf",
+      "http://drive.google.com/drive/folders/1AbCdEf",
+      "not a url",
+    ]) {
+      expect(service.updateOwnProfile("oneone", { one_on_one_folder_url: bad })).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+    }
+
+    // The rejection has to name the actual mistake: the default shape message talks about
+    // usernames, which tells somebody who pasted a Doc nothing they can act on.
+    const rejected = service.updateOwnProfile("oneone", {
+      one_on_one_folder_url: "https://docs.google.com/document/d/abc/edit",
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.ok ? "" : rejected.error.message).toContain("Drive folder");
+  });
+
+  it("prefers a @cs.toronto.edu email but stores whatever address the lab actually has", () => {
     const service = new AdminBotService();
 
     const student = unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "student",
         name: "Student",
         privilege_level: "member",
@@ -1645,18 +2936,24 @@ describe("AdminBotService", () => {
     );
     expect(student.email).toBe("student@cs.toronto.edu");
 
-    expect(
+    // Members routinely arrive with a CMU or ETH address months before a departmental account
+    // exists. Refusing it left the record blank, which is worse than storing the address that
+    // works -- nothing downstream depends on the domain, and vectorRosterEmail still prefers the
+    // cs one when a member carries both.
+    const incoming = unwrap(
       service.upsertLabMember({
-        id: "wrong-domain",
-        name: "Wrong Domain",
+        receives_nudges: true,
+        id: "incoming",
+        name: "Incoming",
         privilege_level: "member",
-        email: "wrong-domain@gmail.com",
+        email: "korinna@cmu.edu",
       }),
-    ).toMatchObject({ ok: false, status: 400 });
+    );
+    expect(incoming.email).toBe("korinna@cmu.edu");
 
-    // The whole point of external_collaborator is people outside the department directory.
     const collaborator = unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "collab",
         name: "Collaborator",
         privilege_level: "external_collaborator",
@@ -1666,10 +2963,28 @@ describe("AdminBotService", () => {
     expect(collaborator.email).toBe("collab@otheruni.edu");
   });
 
+  it("still refuses something that is not an email address at all", () => {
+    // Dropping the domain rule must not drop the format check with it. It also closes a gap: the
+    // old rule short-circuited for external collaborators, so their addresses were never checked.
+    const service = new AdminBotService();
+    for (const privilege_level of ["member", "external_collaborator"] as const) {
+      expect(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: `bad-${privilege_level}`,
+          name: "Bad",
+          privilege_level,
+          email: "not-an-email",
+        }),
+      ).toMatchObject({ ok: false, status: 400 });
+    }
+  });
+
   it("re-saving an unrelated field does not re-trigger email validation", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "resave",
         name: "Resave",
         privilege_level: "member",
@@ -1688,6 +3003,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "cal",
         name: "Cal",
         privilege_level: "member",
@@ -1713,7 +3029,14 @@ describe("AdminBotService", () => {
     try {
       vi.setSystemTime(new Date("2026-08-01T00:00:00Z"));
       const service = new AdminBotService();
-      unwrap(service.upsertLabMember({ id: "stamp", name: "Stamp", privilege_level: "member" }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "stamp",
+          name: "Stamp",
+          privilege_level: "member",
+        }),
+      );
 
       const first = unwrap(
         service.updateOwnProfile("stamp", {
@@ -1752,6 +3075,7 @@ describe("AdminBotService", () => {
     const service = new AdminBotService();
     const member = unwrap(
       service.upsertLabMember({
+        receives_nudges: true,
         id: "unspecified-member",
         name: "Unspecified Member",
       }),
@@ -1942,8 +3266,15 @@ describe("AdminBotService", () => {
   it("sends a member nudge over Slack immediately (no approval step), skipping members without a slack_user_id", async () => {
     const executor = { execute: vi.fn(async () => ({ handled: true })) };
     const service = new AdminBotService(undefined, { executor });
-    unwrap(service.upsertLabMember({ id: "with-slack", name: "With Slack", slack_user_id: "U1" }));
-    unwrap(service.upsertLabMember({ id: "no-slack", name: "No Slack" }));
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "with-slack",
+        name: "With Slack",
+        slack_user_id: "U1",
+      }),
+    );
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "no-slack", name: "No Slack" }));
 
     const result = unwrap(
       await service.sendMemberNudge(
@@ -1966,7 +3297,9 @@ describe("AdminBotService", () => {
       proposed_payload: {
         channel: "slack",
         target: "U1",
-        message: "Reminder: submit your progress update.",
+        // The portal address is appended to every outbound nudge -- see sendMemberNudge. Members
+        // are being asked to go and do something there, and most have not bookmarked it.
+        message: "Reminder: submit your progress update.\n\nhttps://jinesis-admin.vercel.app",
       },
     });
     expect(executor.execute).toHaveBeenCalledTimes(1);
@@ -1977,11 +3310,573 @@ describe("AdminBotService", () => {
     expect(service.listAuditEvents().map((event) => event.type)).toContain("member_nudge.sent");
   });
 
+  // The allowlist. The roster is not a list of lab members -- it carries coauthors at other
+  // institutions, people interviewed once, and 92 rows with no member type at all, and every one of
+  // them was being DMed because eligibility was opt-out. Checked here rather than in the sweeps
+  // because here is the one place all fifteen of them pass through.
+  describe("nudge list", () => {
+    async function nudge(service: AdminBotService, id: string) {
+      return unwrap(
+        await service.sendMemberNudge(
+          { channel: "slack", recipient_member_ids: [id], message: "Ping." },
+          "admin-1",
+        ),
+      );
+    }
+
+    function labWith(member: Record<string, unknown>): AdminBotService {
+      const service = new AdminBotService(undefined, {
+        executor: { execute: vi.fn(async () => ({ handled: true })) },
+      });
+      unwrap(service.upsertLabMember(member as never));
+      return service;
+    }
+
+    it("says nothing to somebody nobody put on it", async () => {
+      const service = labWith({ id: "guest", name: "Guest Coauthor", slack_user_id: "U1" });
+      const result = await nudge(service, "guest");
+      expect(result.created).toEqual([]);
+      expect(result.skipped).toEqual([
+        { member_id: "guest", reason: "member is not on the nudge list" },
+      ]);
+    });
+
+    // Not even the in-app copy. A portal notification is still AdminBot addressing somebody, and
+    // the dashboard would nag them with it on their next sign-in.
+    it("files no notification for somebody it may not write to", async () => {
+      const service = labWith({ id: "guest", name: "Guest Coauthor", slack_user_id: "U1" });
+      await nudge(service, "guest");
+      expect(unwrap(service.listMemberNotifications("guest")).notifications).toEqual([]);
+    });
+
+    it("sends to somebody the lab added", async () => {
+      const service = labWith({
+        id: "mei",
+        name: "Mei Chen",
+        slack_user_id: "U1",
+        receives_nudges: true,
+      });
+      expect((await nudge(service, "mei")).created).toHaveLength(1);
+    });
+
+    // Off the list is a decision, not a gap: an admin who removed somebody must not have them
+    // quietly restored by anything that writes the record afterwards.
+    it("treats an explicit false as off", async () => {
+      const service = labWith({
+        id: "mei",
+        name: "Mei Chen",
+        slack_user_id: "U1",
+        receives_nudges: false,
+      });
+      expect((await nudge(service, "mei")).created).toEqual([]);
+    });
+
+    // Row 7 of the access design sheet, applied: an access level with no portal is an access level
+    // that cannot act on a nudge, so those people are written *off* the list rather than left
+    // merely absent from it.
+    it("silences the access levels that have no portal to act in", () => {
+      const service = new AdminBotService();
+      for (const [id, type] of [
+        ["acq", "acquaintance"],
+        ["minor", "coauthor-minor"],
+        ["prof", "external-prof"],
+        ["seen-once", "interviewee"],
+      ] as const) {
+        unwrap(service.upsertLabMember({ id, name: id, member_type: type }));
+      }
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.silenced.toSorted()).toEqual(["acq", "minor", "prof", "seen-once"]);
+      expect(
+        unwrap(service.listLabMembers()).members.every(
+          (member) => member.receives_nudges === false,
+        ),
+      ).toBe(true);
+    });
+
+    // Ten days after the welcome, not with it. The delay is measured off the welcome's own audit
+    // row, so there is no queue table to fall out of step with it.
+    it("holds an alumnus's Slack invitation until the tenth day", () => {
+      const service = labWith({
+        id: "yuen",
+        name: "Yuen Chen",
+        email: "yuen@example.com",
+        member_type: "alumni",
+        receives_nudges: true,
+      });
+      service.recordOnboardingGuideSent({
+        actor: "admin-1",
+        template_id: "alumni",
+        email: "yuen@example.com",
+        sent: true,
+      });
+
+      const day = 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      expect(
+        service.dueAlumniSlackInvites({
+          nowIso: new Date(now + 9 * day).toISOString(),
+        }),
+      ).toEqual([]);
+
+      const due = service.dueAlumniSlackInvites({
+        nowIso: new Date(now + 11 * day).toISOString(),
+      });
+      expect(due.map((entry) => entry.member_id)).toEqual(["yuen"]);
+      expect(due[0]?.email).toBe("yuen@example.com");
+    });
+
+    // The ledger is what stops a nightly sweep minting a fresh Connect link every night for the
+    // same person -- the failure mode a delayed send invites that an immediate one does not.
+    it("stops offering one once it has been sent", () => {
+      const service = labWith({
+        id: "yuen",
+        name: "Yuen Chen",
+        email: "yuen@example.com",
+        member_type: "alumni",
+        receives_nudges: true,
+      });
+      service.recordOnboardingGuideSent({
+        actor: "admin-1",
+        template_id: "alumni",
+        email: "yuen@example.com",
+        sent: true,
+      });
+      const later = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString();
+      expect(service.dueAlumniSlackInvites({ nowIso: later })).toHaveLength(1);
+
+      service.markAlumniSlackInviteSent("yuen");
+      expect(service.dueAlumniSlackInvites({ nowIso: later })).toEqual([]);
+    });
+
+    // Alumni are mailed at whichever address they still read, which is routinely not the one their
+    // record is keyed by. Matching only on the primary would leave those invitations unsent.
+    it("finds the member behind the address the welcome actually went to", () => {
+      const service = labWith({
+        id: "yuen",
+        name: "Yuen Chen",
+        email: "yuen@cs.toronto.edu",
+        correspondence_email: "yuenc2@illinois.edu",
+        member_type: "alumni",
+        receives_nudges: true,
+      });
+      service.recordOnboardingGuideSent({
+        actor: "admin-1",
+        template_id: "alumni",
+        email: "yuenc2@illinois.edu",
+        sent: true,
+      });
+      const later = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString();
+      expect(service.dueAlumniSlackInvites({ nowIso: later }).map((e) => e.member_id)).toEqual([
+        "yuen",
+      ]);
+    });
+
+    // A welcome that never left is not a welcome, so nothing follows it.
+    it("ignores a welcome the send could not deliver", () => {
+      const service = labWith({
+        id: "yuen",
+        name: "Yuen Chen",
+        email: "yuen@example.com",
+        member_type: "alumni",
+        receives_nudges: true,
+      });
+      service.recordOnboardingGuideSent({
+        actor: "admin-1",
+        template_id: "alumni",
+        email: "yuen@example.com",
+        sent: false,
+      });
+      const later = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString();
+      expect(service.dueAlumniSlackInvites({ nowIso: later })).toEqual([]);
+    });
+
+    // Ayush's report: "profile shows 100% but it keeps messaging about incompleteness". The 100% was
+    // right. A notification is a point-in-time copy, and nothing used to take one back, so the copy
+    // sent before the blanks were filled stayed unread forever -- lighting the bell, re-toasting on
+    // every session, and eventually escalating to the professor about work already done.
+    it("takes back a profile reminder once the member has closed the gap", async () => {
+      const service = labWith({
+        id: "ayush",
+        name: "Ayush Nangia",
+        slack_user_id: "U-AY",
+        receives_nudges: true,
+        member_type: "full",
+        status: "active",
+      });
+      const outstanding = unwrap(
+        await service.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: ["ayush"],
+            message: "Your profile is missing required fields.",
+            kind: "profile",
+            title: "Your profile is missing required fields",
+            important: true,
+          },
+          "cron",
+        ),
+      );
+      expect(outstanding.created).toHaveLength(1);
+      expect(
+        unwrap(service.listMemberNotifications("ayush")).notifications[0]?.read_at,
+      ).toBeUndefined();
+
+      // Every mandatory field, and enough timeline for the second half of the rule.
+      unwrap(
+        service.updateOwnProfile("ayush", {
+          calendar_email: "ayush@lab.test",
+          location: "Toronto",
+          research_topics: ["causality"],
+          correspondence_email: "ayush@lab.test",
+          whatsapp: "+1 555 0100",
+          joined_month: "2026-01",
+          affiliation: "University of Toronto",
+          hours_per_week: 20,
+          graduated_month: "2027-06",
+          next_position: "Considering research positions",
+          github_url: "https://github.com/ayush",
+          linkedin_url: "https://linkedin.com/in/ayush",
+          linkedin_urn: "ACoAAB1234567",
+          cv_url: "https://example.test/cv.pdf",
+          one_on_one_folder_url: "https://drive.google.com/drive/folders/ayush",
+          intake_form_url: "https://docs.google.com/forms/d/e/1FAIpQL/viewform",
+          openreview_id: "~Ayush_Nangia1",
+          trips: [{ city: "Toronto", start: "2026-09-01", end: "2026-09-05" }],
+          milestones: [{ date: "2026-10-01", label: "Thesis draft" }],
+        } as never),
+      );
+
+      // Two mechanisms now converge on this, and the member-visible contract is what both promise:
+      // nothing is still chasing them. retractSettledProfileNudges marks the reminder read on the
+      // save that closed the gap; clearResolvedProfileNotifications deletes the ones whose title is
+      // on its allowlist when the list is next read. Either way the outstanding reminder is gone.
+      const after = unwrap(service.listMemberNotifications("ayush")).notifications;
+      expect(after.filter((entry) => entry.kind === "profile" && !entry.read_at)).toEqual([]);
+    });
+
+    // The half retractSettledProfileNudges adds on its own: a profile reminder whose title is not
+    // on the delete allowlist is retracted rather than left outstanding forever. It stays in the
+    // log -- the member keeps the record of what they were asked and when -- but reads as settled.
+    it("retracts a profile reminder the title allowlist does not cover", async () => {
+      const service = labWith({
+        id: "ayush",
+        name: "Ayush Nangia",
+        slack_user_id: "U-AY",
+        receives_nudges: true,
+        member_type: "full",
+        status: "active",
+      });
+      unwrap(
+        await service.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: ["ayush"],
+            message: "Two fields left on your profile.",
+            kind: "profile",
+            title: "Two fields left on your profile",
+            important: true,
+          },
+          "cron",
+        ),
+      );
+
+      unwrap(
+        service.updateOwnProfile("ayush", {
+          calendar_email: "ayush@lab.test",
+          location: "Toronto",
+          research_topics: ["causality"],
+          correspondence_email: "ayush@lab.test",
+          whatsapp: "+1 555 0100",
+          joined_month: "2026-01",
+          affiliation: "University of Toronto",
+          hours_per_week: 20,
+          graduated_month: "2027-06",
+          next_position: "Considering research positions",
+          github_url: "https://github.com/ayush",
+          linkedin_url: "https://linkedin.com/in/ayush",
+          linkedin_urn: "ACoAAB1234567",
+          cv_url: "https://example.test/cv.pdf",
+          one_on_one_folder_url: "https://drive.google.com/drive/folders/ayush",
+          intake_form_url: "https://docs.google.com/forms/d/e/1FAIpQL/viewform",
+          openreview_id: "~Ayush_Nangia1",
+          trips: [{ city: "Toronto", start: "2026-09-01", end: "2026-09-05" }],
+          milestones: [{ date: "2026-10-01", label: "Thesis draft" }],
+        } as never),
+      );
+
+      const after = unwrap(service.listMemberNotifications("ayush")).notifications;
+      const reminder = after.find((entry) => entry.title === "Two fields left on your profile");
+      expect(reminder).toBeDefined();
+      expect(reminder?.read_at).toBeTruthy();
+    });
+
+    // The headshot reminder settles on different evidence, so filling in a blank field must not
+    // mark it dealt with. It is why the two carry different kinds.
+    it("leaves a photo reminder alone when the fields are filled in", async () => {
+      const service = labWith({
+        id: "ayush",
+        name: "Ayush Nangia",
+        slack_user_id: "U-AY",
+        receives_nudges: true,
+        member_type: "full",
+        status: "active",
+      });
+      unwrap(
+        await service.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: ["ayush"],
+            message: "Your profile photo needs replacing.",
+            kind: "profile_photo",
+            title: "Your profile photo needs replacing",
+          },
+          "cron",
+        ),
+      );
+      unwrap(service.updateOwnProfile("ayush", { location: "Toronto" } as never));
+      const after = unwrap(service.listMemberNotifications("ayush")).notifications;
+      expect(after[0]?.kind).toBe("profile_photo");
+      expect(after[0]?.read_at).toBeUndefined();
+    });
+
+    // The bug this rule exists for. The professor is typed `full` on the sheet like everybody else
+    // in the lab, so the member-type rule opted them in -- and the first Sunday pass afterwards
+    // named every paper they coauthor, which for a PI is every paper in the lab, as a Slack DM and
+    // a dashboard toast.
+    it("silences the head professor even though the sheet types them full", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "zhijing", name: "Zhijing Jin", member_type: "full" }));
+      unwrap(service.upsertLabMember({ id: "mei", name: "Mei Chen", member_type: "full" }));
+      unwrap(service.updateSettings({ head_professor_member_id: "zhijing" } as never));
+
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.silenced).toEqual(["zhijing"]);
+      expect(result.added).toEqual(["mei"]);
+      // Stored as a decision, so a second run cannot read the absence as "nobody has chosen yet".
+      const stored = unwrap(service.listLabMembers()).members;
+      expect(stored.find((member) => member.id === "zhijing")?.receives_nudges).toBe(false);
+    });
+
+    // Belt and braces to the seeding rule above: the flag is a per-person choice an admin makes,
+    // but "AdminBot does not chase the PI" is a property of the system, so a hand edit or a stale
+    // import that ticks the box still cannot produce a message.
+    it("refuses the head professor even when somebody has put them on the list", async () => {
+      const service = labWith({
+        id: "zhijing",
+        name: "Zhijing Jin",
+        slack_user_id: "U-ZJ",
+        receives_nudges: true,
+      });
+      unwrap(service.updateSettings({ head_professor_member_id: "zhijing" } as never));
+
+      const result = await nudge(service, "zhijing");
+      expect(result.created).toEqual([]);
+      expect(result.skipped).toEqual([
+        { member_id: "zhijing", reason: "member is the head professor" },
+      ]);
+      // And no portal notification either: the toast is AdminBot addressing them just the same.
+      expect(unwrap(service.listMemberNotifications("zhijing")).notifications).toEqual([]);
+    });
+
+    // Access is the union of somebody's levels, but alumni are off the list regardless of which
+    // other levels they carry -- having left outranks having coauthored.
+    it("silences an alumnus whatever else they are", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "both",
+          name: "Both",
+          member_type: "alumni, coauthor-major",
+        }),
+      );
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.silenced).toEqual(["both"]);
+    });
+
+    // The rule predates the list and does not go through it: ticking somebody's box cannot start
+    // messaging an alumnus, on Slack or anywhere else.
+    it("refuses an alumnus even when somebody has put them on the list", async () => {
+      const service = labWith({
+        id: "gone",
+        name: "Gone",
+        slack_user_id: "U1",
+        member_type: "alumni",
+        receives_nudges: true,
+      });
+      const result = await nudge(service, "gone");
+      expect(result.created).toEqual([]);
+      expect(result.skipped).toEqual([{ member_id: "gone", reason: "member is alumni" }]);
+    });
+
+    // The roster records having left in two fields and the imported rows use `member_type`. A
+    // check that reads only `status` sees none of the 22 alumni who carry the type alone.
+    it("refuses an alumnus recorded by status too", async () => {
+      const service = labWith({
+        id: "gone",
+        name: "Gone",
+        slack_user_id: "U1",
+        status: "alumni",
+        receives_nudges: true,
+      });
+      expect((await nudge(service, "gone")).created).toEqual([]);
+    });
+
+    // 94 of the 200 roster rows carry no member type. Reading that gap as "no access" would turn a
+    // hole in the spreadsheet into a decision about a person; they stay silent by default instead,
+    // which is the same outcome without the false record of a choice nobody made.
+    it("leaves a row the sheet cannot answer for undecided", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "blank", name: "Blank Row" }));
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.silenced).toEqual([]);
+      expect(result.added).toEqual([]);
+      expect(result.undecided).toBe(1);
+      expect(unwrap(service.listLabMembers()).members[0]?.receives_nudges).toBeUndefined();
+    });
+
+    // The people the lab chases: its own members, plus the two external levels doing enough of the
+    // work that the reminders are about them too. Everyone else is left out or written off.
+    it("seeds the three nudgeable levels and nobody else", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "mei", name: "Mei Chen", member_type: "full" }));
+      unwrap(
+        service.upsertLabMember({
+          id: "kai",
+          name: "Kai Ito",
+          member_type: "full, coauthor-major",
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({ id: "major", name: "Major", member_type: "coauthor-major" }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          id: "advisee",
+          name: "Advisee",
+          member_type: "own-pace-advisee",
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({ id: "minor", name: "Minor", member_type: "coauthor-minor" }),
+      );
+      unwrap(service.upsertLabMember({ id: "blank", name: "Blank Row" }));
+      unwrap(
+        service.upsertLabMember({
+          id: "gone",
+          name: "Gone",
+          member_type: "full",
+          status: "alumni",
+        }),
+      );
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.added.toSorted()).toEqual(["advisee", "kai", "major", "mei"]);
+      expect(result.silenced.toSorted()).toEqual(["gone", "minor"]);
+      expect(service.listAuditEvents().map((event) => event.type)).toContain("nudge_list.seeded");
+    });
+
+    // The Member Type column is blank for 94 of the 200 roster rows, one of whom is an active
+    // author holding a paper's venue cycle. A test-onboard batch is the lab saying "we are
+    // onboarding this person", which answers the question that column left open.
+    it("seeds somebody the lab is onboarding even with no member type", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "khai", name: "Khai", test_onboard_batch: 2 }));
+      expect(
+        unwrap(service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false })).added,
+      ).toEqual(["khai"]);
+    });
+
+    // A batch does not outrank having left, or an access level with no portal to act in. Four of
+    // the twenty-one batched people on the live roster are alumni.
+    it("does not let a batch override an exclusion", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "gone",
+          name: "Gone",
+          member_type: "alumni",
+          test_onboard_batch: 3,
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          id: "guest",
+          name: "Guest",
+          member_type: "acquaintance",
+          test_onboard_batch: 1,
+        }),
+      );
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.added).toEqual([]);
+      expect(result.silenced.toSorted()).toEqual(["gone", "guest"]);
+    });
+
+    it("reports without writing when it is only asked to simulate", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "mei", name: "Mei Chen", member_type: "full" }));
+      expect(
+        unwrap(service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: true })).added,
+      ).toEqual(["mei"]);
+      expect(
+        unwrap(service.listLabMembers()).members.find((member) => member.id === "mei")
+          ?.receives_nudges,
+      ).toBeUndefined();
+    });
+
+    // Safe to run twice: it fills in the absence of a decision and never overrides one, so an
+    // admin who took somebody off the list does not get them back on the next run.
+    it("leaves a decision already made alone", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "removed",
+          name: "Removed",
+          member_type: "full",
+          receives_nudges: false,
+        }),
+      );
+      const result = unwrap(
+        service.seedNudgeListFromMemberTypes({ actor: "admin-1", dryRun: false }),
+      );
+      expect(result.added).toEqual([]);
+      expect(result.already_decided).toBe(1);
+    });
+
+    it("refuses to let a member add themselves", () => {
+      const service = labWith({ id: "guest", name: "Guest", slack_user_id: "U1" });
+      const result = service.updateOwnProfile("guest", { receives_nudges: true });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toBe(
+          "receives_nudges cannot be changed from a self profile update",
+        );
+      }
+    });
+  });
+
   it("sends a member nudge over email, requiring a subject and skipping members without an email", async () => {
     const executor = { execute: vi.fn(async () => ({ handled: true })) };
     const service = new AdminBotService(undefined, { executor });
-    unwrap(service.upsertLabMember({ id: "e1", name: "Has Email", email: "e1@example.test" }));
-    unwrap(service.upsertLabMember({ id: "e2", name: "No Email" }));
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "e1",
+        name: "Has Email",
+        email: "e1@example.test",
+      }),
+    );
+    unwrap(service.upsertLabMember({ receives_nudges: true, id: "e2", name: "No Email" }));
 
     const missingSubject = await service.sendMemberNudge(
       { channel: "email", recipient_member_ids: ["e1"], message: "hi" },
@@ -2009,17 +3904,70 @@ describe("AdminBotService", () => {
         channel: "email",
         to: "e1@example.test",
         subject: "Schedule change",
-        body: "Announcement: lab meeting moved to Friday.",
+        body: "Announcement: lab meeting moved to Friday.\n\nhttps://jinesis-admin.vercel.app",
       },
     });
-    expect(result.skipped).toEqual([{ member_id: "e2", reason: "member has no email" }]);
+    expect(result.skipped).toEqual([
+      { member_id: "e2", reason: "member has no correspondence or account email" },
+    ]);
+  });
+
+  it("writes to the correspondence address, and reaches a member who has only that one", async () => {
+    // `email` is the departmental identity the account is keyed by. It is not necessarily a mailbox
+    // anybody reads, and the roster says so: the correspondence address is the one the lab writes
+    // to for outreach, and several members have no departmental address at all.
+    const executor = { execute: vi.fn(async () => ({ handled: true })) };
+    const service = new AdminBotService(undefined, { executor });
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "c1",
+        name: "Reads Elsewhere",
+        email: "c1@cs.toronto.edu",
+        correspondence_email: "elsewhere@example.test",
+      }),
+    );
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "c2",
+        name: "No Departmental Mailbox",
+        correspondence_email: "only@example.test",
+      }),
+    );
+
+    const result = unwrap(
+      await service.sendMemberNudge(
+        {
+          channel: "email",
+          recipient_member_ids: ["c1", "c2"],
+          message: "Add the Overleaf link to your ICLR paper.",
+          subject: "Overleaf link",
+        },
+        "admin-1",
+      ),
+    );
+
+    expect(result.skipped).toEqual([]);
+    expect(
+      result.created.map((proposal) => (proposal.proposed_payload as { to?: string }).to),
+    ).toEqual(["elsewhere@example.test", "only@example.test"]);
+    // The approval card and the audit row name the same address the send used.
+    expect(result.created[0]?.target).toMatchObject({ target: "elsewhere@example.test" });
   });
 
   it("skips a recipient whose send actually fails at execution, without failing the rest of the batch", async () => {
     const service = new AdminBotService(undefined, {
       executor: { execute: vi.fn(async () => ({ handled: false })) },
     });
-    unwrap(service.upsertLabMember({ id: "with-slack", name: "With Slack", slack_user_id: "U1" }));
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "with-slack",
+        name: "With Slack",
+        slack_user_id: "U1",
+      }),
+    );
 
     const result = unwrap(
       await service.sendMemberNudge(
@@ -2157,7 +4105,15 @@ describe("AdminBotService", () => {
   // checklist stayed permanently unfinished and could not drive a reminder.
   describe("onboarding step tracking", () => {
     function seed(service: AdminBotService, id: string, extra: Record<string, unknown> = {}) {
-      return unwrap(service.upsertLabMember({ id, name: id, slack_user_id: `U-${id}`, ...extra }));
+      return unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id,
+          name: id,
+          slack_user_id: `U-${id}`,
+          ...extra,
+        }),
+      );
     }
 
     it("starts every member with the LinkedIn step outstanding", () => {
@@ -2207,7 +4163,9 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       seed(service, "sam");
       unwrap(service.setOnboardingStep("sam", "linkedin", true, "sam"));
-      const edited = unwrap(service.upsertLabMember({ id: "sam", name: "Sam Student" }));
+      const edited = unwrap(
+        service.upsertLabMember({ receives_nudges: true, id: "sam", name: "Sam Student" }),
+      );
       expect(edited.onboarding?.steps.find((step) => step.id === "linkedin")?.status).toBe(
         "complete",
       );
@@ -2245,9 +4203,30 @@ describe("AdminBotService", () => {
     it("nudges each outstanding member once, with the step's own links", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
-      unwrap(service.upsertLabMember({ id: "sam", name: "Sam", slack_user_id: "U1" }));
-      unwrap(service.upsertLabMember({ id: "kai", name: "Kai", slack_user_id: "U2" }));
-      unwrap(service.upsertLabMember({ id: "done", name: "Done", slack_user_id: "U3" }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "sam",
+          name: "Sam",
+          slack_user_id: "U1",
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "kai",
+          name: "Kai",
+          slack_user_id: "U2",
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "done",
+          name: "Done",
+          slack_user_id: "U3",
+        }),
+      );
       unwrap(service.setOnboardingStep("done", "linkedin", true, "done"));
 
       const result = unwrap(
@@ -2266,7 +4245,14 @@ describe("AdminBotService", () => {
     it("sends nothing when everyone has already done the step", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
-      unwrap(service.upsertLabMember({ id: "sam", name: "Sam", slack_user_id: "U1" }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "sam",
+          name: "Sam",
+          slack_user_id: "U1",
+        }),
+      );
       unwrap(service.setOnboardingStep("sam", "linkedin", true, "sam"));
 
       expect(
@@ -2277,8 +4263,15 @@ describe("AdminBotService", () => {
     it("skips members with no route on the chosen channel instead of failing the batch", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
-      unwrap(service.upsertLabMember({ id: "sam", name: "Sam", slack_user_id: "U1" }));
-      unwrap(service.upsertLabMember({ id: "noslack", name: "No Slack" }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "sam",
+          name: "Sam",
+          slack_user_id: "U1",
+        }),
+      );
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "noslack", name: "No Slack" }));
 
       const result = unwrap(
         await service.nudgeOnboardingStep({ step_id: "linkedin", channel: "slack" }, "admin-1"),
@@ -2290,7 +4283,14 @@ describe("AdminBotService", () => {
     it("carries a subject on the email channel and honours an override message", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
-      unwrap(service.upsertLabMember({ id: "sam", name: "Sam", email: "sam@example.com" }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "sam",
+          name: "Sam",
+          email: "sam@example.com",
+        }),
+      );
 
       const result = unwrap(
         await service.nudgeOnboardingStep(
@@ -2309,6 +4309,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "m1",
           name: "Ada",
           notes: "Joined month: 2026-03\nWhatsApp: +1 555 0100\nPrefers async check-ins.",
@@ -2330,6 +4331,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "m1",
           name: "Ada",
           location: "Toronto",
@@ -2350,6 +4352,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "m1",
           name: "Ada",
           notes: "Research interests: reasoning, alignment",
@@ -2366,7 +4369,14 @@ describe("AdminBotService", () => {
 
     it("is a no-op on a second run", () => {
       const service = new AdminBotService();
-      unwrap(service.upsertLabMember({ id: "m1", name: "Ada", notes: "Joined month: 2026-03" }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "m1",
+          name: "Ada",
+          notes: "Joined month: 2026-03",
+        }),
+      );
 
       unwrap(service.migrateMemberNotesToFields("admin"));
       const second = unwrap(service.migrateMemberNotesToFields("admin"));
@@ -2379,7 +4389,14 @@ describe("AdminBotService", () => {
 
     it("leaves a member with only free-text notes completely alone", () => {
       const service = new AdminBotService();
-      unwrap(service.upsertLabMember({ id: "m1", name: "Ada", notes: "Just a note." }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "m1",
+          name: "Ada",
+          notes: "Just a note.",
+        }),
+      );
 
       const result = unwrap(service.migrateMemberNotesToFields("admin"));
 
@@ -2420,6 +4437,20 @@ describe("AdminBotService", () => {
       expect(
         "personal_circumstances" in redactConfidentialMemberFields(ada, { isAdmin: false }),
       ).toBe(false);
+    });
+    it("hides where a member's 1:1 notes live from the rest of the lab", () => {
+      const withFolder = {
+        ...ada,
+        one_on_one_folder_url: "https://drive.google.com/drive/folders/1AbCdEf",
+      };
+      expect(
+        "one_on_one_folder_url" in
+          redactConfidentialMemberFields(withFolder, { memberId: "bob", isAdmin: false }),
+      ).toBe(false);
+      expect(
+        redactConfidentialMemberFields(withFolder, { memberId: "ada", isAdmin: false })
+          .one_on_one_folder_url,
+      ).toBe("https://drive.google.com/drive/folders/1AbCdEf");
     });
   });
 
@@ -2487,9 +4518,23 @@ describe("AdminBotService", () => {
 
     it("stamps counts onto the linked members it measured", async () => {
       const service = new AdminBotService();
-      unwrap(service.upsertLabMember({ id: "chatty", name: "Chatty", slack_user_id: "U1" }));
-      unwrap(service.upsertLabMember({ id: "quiet", name: "Quiet", slack_user_id: "U2" }));
-      unwrap(service.upsertLabMember({ id: "unlinked", name: "Unlinked" }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "chatty",
+          name: "Chatty",
+          slack_user_id: "U1",
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "quiet",
+          name: "Quiet",
+          slack_user_id: "U2",
+        }),
+      );
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "unlinked", name: "Unlinked" }));
 
       const result = unwrap(
         await service.refreshMemberDirectoryFromSlack(
@@ -2519,7 +4564,14 @@ describe("AdminBotService", () => {
     // whole lab inactive on one bad night.
     it("leaves the previous reading alone for a member it could not measure", async () => {
       const service = new AdminBotService();
-      unwrap(service.upsertLabMember({ id: "chatty", name: "Chatty", slack_user_id: "U1" }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "chatty",
+          name: "Chatty",
+          slack_user_id: "U1",
+        }),
+      );
       unwrap(
         await service.refreshMemberDirectoryFromSlack(
           { fetchSlackMessageCounts: async () => new Map([["U1", 5]]) },
@@ -2545,6 +4597,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "ada",
           name: "Ada Lovelace",
           privilege_level: "admin",
@@ -2558,6 +4611,7 @@ describe("AdminBotService", () => {
       const service = seeded();
       const saved = unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "ada",
           availability: [
             { start: "2026-04-01", end: "2026-04-30", hours_per_week: 10, project: "Writing" },
@@ -2573,6 +4627,7 @@ describe("AdminBotService", () => {
       const service = seeded();
       const saved = unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "ada",
           time_off: [
             { start: "2026-12-24", end: "2027-01-02", kind: "vacation", availability: "none" },
@@ -2587,7 +4642,11 @@ describe("AdminBotService", () => {
     // never as a thrown TypeError.
     it("refuses a new member with no name, without throwing", () => {
       const service = new AdminBotService();
-      const result = service.upsertLabMember({ id: "ghost", availability: [] } as never);
+      const result = service.upsertLabMember({
+        receives_nudges: true,
+        id: "ghost",
+        availability: [],
+      } as never);
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.status).toBe(400);
@@ -2597,7 +4656,11 @@ describe("AdminBotService", () => {
 
     it("still refuses a patch that blanks the name outright", () => {
       const service = seeded();
-      const result = service.upsertLabMember({ id: "ada", name: "   " } as never);
+      const result = service.upsertLabMember({
+        receives_nudges: true,
+        id: "ada",
+        name: "   ",
+      } as never);
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toBe("member name is required");
@@ -2610,6 +4673,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "blank",
           name: "Blank",
           privilege_level: "member",
@@ -2618,6 +4682,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "full",
           name: "Full",
           privilege_level: "member",
@@ -2627,15 +4692,27 @@ describe("AdminBotService", () => {
           correspondence_email: "full@cs.toronto.edu",
           whatsapp: "(+1) 555 0100",
           joined_month: "2026-03",
+          affiliation: "University of Toronto",
+          hours_per_week: 20,
+          graduated_month: "2027-06",
+          next_position: "Considering research positions",
           github_url: "https://github.com/full",
           linkedin_url: "https://www.linkedin.com/in/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
+          one_on_one_folder_url: "https://drive.google.com/drive/folders/full",
           intake_form_url: "https://docs.google.com/forms/d/e/full/viewform",
           openreview_id: "~Full_Member1",
         }),
       );
-      unwrap(service.upsertLabMember({ id: "gone", name: "Gone", status: "alumni" }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "gone",
+          name: "Gone",
+          status: "alumni",
+        }),
+      );
 
       const result = unwrap(service.listMembersWithIncompleteMandatoryFields());
       expect(result.members.map((member) => member.id)).toEqual(["blank"]);
@@ -2646,26 +4723,129 @@ describe("AdminBotService", () => {
           "research_topics",
           "correspondence_email",
           "whatsapp",
-          "joined_month",
           "github_url",
           "linkedin_url",
-          "linkedin_urn",
           "cv_url",
-          "intake_form_url",
           "openreview_id",
         ]),
       );
     });
 
     // The reminder and the profile page's required marks are one list now. Chasing a field the
-    // page calls optional is the bug this pins shut; `name` is the sole documented exception,
-    // because validateLabMember refuses a nameless member outright.
-    it("chases exactly the fields the profile page marks required, less name", () => {
+    // page calls optional is the bug this pins shut; `name` and the admin-owned fields are the
+    // documented exceptions -- validateLabMember refuses a nameless member outright, and the page
+    // renders an admin-owned control disabled.
+    it("chases exactly the fields the page marks required and lets a member fill in", () => {
       const service = new AdminBotService();
-      unwrap(service.upsertLabMember({ id: "blank", name: "Blank", privilege_level: "member" }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "blank",
+          name: "Blank",
+          privilege_level: "member",
+        }),
+      );
       const missing = unwrap(service.listMembersWithIncompleteMandatoryFields()).members[0]
         ?.missing_fields;
-      expect(missing).toEqual(adminBotMandatoryProfileFields.filter((field) => field !== "name"));
+      expect(missing).toEqual(adminBotMemberAnswerableProfileFields);
+    });
+
+    // The rule that used to exempt `linkedin_urn`: a field the member's own page will not let them
+    // answer must not be chased, or they get a message every three days they can do nothing about.
+    // adminBotAdminOwnedProfileFields is empty now, so this asserts the rule over an empty set --
+    // kept because the rule is what makes that list safe to repopulate.
+    it("leaves alone a member whose only blank is one the lab owes", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember(completeMember({ id: "done", privilege_level: "member" })));
+      for (const field of adminBotAdminOwnedProfileFields) {
+        unwrap(service.upsertLabMember({ id: "done", [field]: "" } as never));
+      }
+      expect(unwrap(service.listMembersWithIncompleteMandatoryFields()).members).toEqual([]);
+    });
+
+    // The other half of the same change: the URN is no longer one of those fields. The member can
+    // look it up from the collector link beside the input, so a blank one is chased like any other.
+    it("chases a member whose only blank is the LinkedIn URN", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember(completeMember({ id: "urnless", privilege_level: "member" })));
+      unwrap(service.upsertLabMember({ id: "urnless", linkedin_urn: "" } as never));
+      const result = unwrap(service.listMembersWithIncompleteMandatoryFields());
+      expect(result.members.map((member) => member.id)).toEqual(["urnless"]);
+      expect(result.members[0]?.missing_fields).toEqual(["linkedin_urn"]);
+    });
+
+    // And the field this change added: a member with no 1:1 folder on file is incomplete.
+    it("chases a member whose only blank is the 1:1 folder link", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember(completeMember({ id: "nofolder", privilege_level: "member" })),
+      );
+      unwrap(service.upsertLabMember({ id: "nofolder", one_on_one_folder_url: "" } as never));
+      const result = unwrap(service.listMembersWithIncompleteMandatoryFields());
+      expect(result.members[0]?.missing_fields).toEqual(["one_on_one_folder_url"]);
+    });
+
+    it("removes an earlier incomplete-profile notification when the last field is filled", async () => {
+      const service = new AdminBotService(undefined, {
+        executor: { execute: async () => ({ handled: true }) },
+      });
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "resolved",
+          name: "Resolved",
+          slack_user_id: "U-RESOLVED",
+          privilege_level: "member",
+        }),
+      );
+      unwrap(await service.sendMandatoryFieldsReminders("cron", { include: "profile" }));
+      expect(unwrap(service.listMemberNotifications("resolved")).notifications).toHaveLength(1);
+
+      unwrap(
+        service.upsertLabMember({
+          id: "resolved",
+          calendar_email: "resolved@gmail.com",
+          location: "Toronto",
+          research_topics: ["nlp"],
+          correspondence_email: "resolved@cs.toronto.edu",
+          whatsapp: "+1 555 0100",
+          joined_month: "2026-03",
+          affiliation: "University of Toronto",
+          hours_per_week: 20,
+          graduated_month: "2027-06",
+          next_position: "Considering research positions",
+          github_url: "https://github.com/resolved",
+          linkedin_url: "https://www.linkedin.com/in/resolved",
+          linkedin_urn: "ACoAAB1234567",
+          cv_url: "https://example.com/cv.pdf",
+          one_on_one_folder_url: "https://drive.google.com/drive/folders/resolved",
+          intake_form_url: "https://docs.google.com/forms/d/e/resolved/viewform",
+          openreview_id: "~Resolved_Member1",
+        }),
+      );
+
+      expect(unwrap(service.listMemberNotifications("resolved")).notifications).toEqual([]);
+      expect(
+        unwrap(await service.sendMandatoryFieldsReminders("cron", { include: "profile" })).created,
+      ).toEqual([]);
+    });
+
+    it("reconciles a legacy incomplete-profile notification when a complete member next reads it", () => {
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store);
+      unwrap(
+        service.upsertLabMember(completeMember({ id: "already-done", privilege_level: "member" })),
+      );
+      store.saveMemberNotification({
+        id: "legacy-profile-warning",
+        member_id: "already-done",
+        kind: "profile",
+        title: "Your profile needs some info",
+        body: "Old warning",
+        created_at: "2026-08-01T00:00:00.000Z",
+      });
+
+      expect(unwrap(service.listMemberNotifications("already-done")).notifications).toEqual([]);
     });
 
     it("sends one Slack reminder per member with an incomplete profile", async () => {
@@ -2673,6 +4853,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService(undefined, { executor });
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "blank1",
           name: "Blank One",
           slack_user_id: "U1",
@@ -2680,6 +4861,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "blank2",
           name: "Blank Two",
           slack_user_id: "U2",
@@ -2687,6 +4869,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "full",
           name: "Full",
           calendar_email: "full@gmail.com",
@@ -2696,10 +4879,15 @@ describe("AdminBotService", () => {
           correspondence_email: "full@cs.toronto.edu",
           whatsapp: "(+1) 555 0100",
           joined_month: "2026-03",
+          affiliation: "University of Toronto",
+          hours_per_week: 20,
+          graduated_month: "2027-06",
+          next_position: "Considering research positions",
           github_url: "https://github.com/full",
           linkedin_url: "https://www.linkedin.com/in/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
+          one_on_one_folder_url: "https://drive.google.com/drive/folders/full",
           intake_form_url: "https://docs.google.com/forms/d/e/full/viewform",
           openreview_id: "~Full_Member1",
         }),
@@ -2726,8 +4914,31 @@ describe("AdminBotService", () => {
       const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
       expect(result.created).toHaveLength(1);
       const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
-      expect(message).toContain("Your timeline is empty");
+      expect(message).toContain("Your required profile fields are complete");
+      expect(message).toContain("Your term timeline has 0 of 2 needed entries");
       expect(message).not.toContain("missing one or more required fields");
+      expect(unwrap(service.listMemberNotifications("planner")).notifications[0]?.title).toBe(
+        "Your profile is complete — add your term timeline",
+      );
+    });
+
+    it("states the exact remaining timeline target when one entry is already saved", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(
+        service.upsertLabMember(
+          completeMember({
+            id: "one-entry",
+            privilege_level: "member",
+            availability: [{ start: "2026-08-03", end: "2026-08-09", hours_per_week: 20 }],
+          }),
+        ),
+      );
+
+      const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
+      const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
+      expect(message).toContain("Your term timeline has 1 of 2 needed entries");
+      expect(message).toContain("Add 1 more entry");
     });
 
     it("does not ask a collaborator when they are working", async () => {
@@ -2746,6 +4957,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService(undefined, { executor });
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "both",
           name: "Both",
           slack_user_id: "U9",
@@ -2755,8 +4967,29 @@ describe("AdminBotService", () => {
       const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
       expect(result.created).toHaveLength(1);
       const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
-      expect(message).toContain("missing one or more required fields");
-      expect(message).toContain("Your timeline is empty");
+      expect(message).toContain("missing 16 required fields");
+      expect(message).toContain("Your term timeline has 0 of 2 needed entries");
+    });
+
+    // The message names this member's own gap, not the lab-wide checklist. Telling somebody who is
+    // short one field about eleven others is what made these reminders read as untargeted noise.
+    it("names only the fields the recipient is actually missing", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(
+        service.upsertLabMember(
+          completeMember({ id: "nearly", slack_user_id: "U7", privilege_level: "member" }),
+        ),
+      );
+      unwrap(
+        service.upsertLabMember({ receives_nudges: true, id: "nearly", whatsapp: "" } as never),
+      );
+      const result = unwrap(
+        await service.sendMandatoryFieldsReminders("cron", { include: "profile" }),
+      );
+      const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
+      expect(message).toContain("missing one required field — WhatsApp.");
+      expect(message).not.toContain("Calendar email");
     });
 
     it("chases only the gap the caller asked for, and only the people it named", async () => {
@@ -2765,6 +4998,7 @@ describe("AdminBotService", () => {
       unwrap(service.upsertLabMember(completeMember({ id: "planner", privilege_level: "member" })));
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "blank",
           name: "Blank",
           slack_user_id: "U8",
@@ -2799,7 +5033,14 @@ describe("AdminBotService", () => {
     it("leaves a member alone for three days after reminding them", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
-      unwrap(service.upsertLabMember({ id: "blank1", name: "Blank One", slack_user_id: "U1" }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "blank1",
+          name: "Blank One",
+          slack_user_id: "U1",
+        }),
+      );
 
       const first = unwrap(await service.sendMandatoryFieldsReminders("cron"));
       expect(first.created).toHaveLength(1);
@@ -2813,7 +5054,14 @@ describe("AdminBotService", () => {
     it("reminds again once the window has passed", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
-      unwrap(service.upsertLabMember({ id: "blank1", name: "Blank One", slack_user_id: "U1" }));
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "blank1",
+          name: "Blank One",
+          slack_user_id: "U1",
+        }),
+      );
 
       unwrap(await service.sendMandatoryFieldsReminders("cron"));
       // Four days on, the same still-incomplete profile is fair game again.
@@ -2831,6 +5079,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService(undefined, { executor });
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "full",
           name: "Full",
           calendar_email: "full@gmail.com",
@@ -2840,10 +5089,15 @@ describe("AdminBotService", () => {
           correspondence_email: "full@cs.toronto.edu",
           whatsapp: "(+1) 555 0100",
           joined_month: "2026-03",
+          affiliation: "University of Toronto",
+          hours_per_week: 20,
+          graduated_month: "2027-06",
+          next_position: "Considering research positions",
           github_url: "https://github.com/full",
           linkedin_url: "https://www.linkedin.com/in/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
+          one_on_one_folder_url: "https://drive.google.com/drive/folders/full",
           intake_form_url: "https://docs.google.com/forms/d/e/full/viewform",
           openreview_id: "~Full_Member1",
         }),
@@ -2870,6 +5124,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService(undefined, { executor, reviewSlackProfilePhoto });
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "bad",
           name: "Needs Update",
           status: "active",
@@ -2878,6 +5133,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "good",
           name: "Compliant",
           status: "part_time",
@@ -2886,6 +5142,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "skip",
           name: "Alumni",
           status: "alumni",
@@ -2916,6 +5173,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService(undefined, { executor, polishSlackProfilePhoto });
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "sam",
           name: "Sam",
           slack_user_id: "U-SAM",
@@ -2936,11 +5194,350 @@ describe("AdminBotService", () => {
     });
   });
 
+  describe("sweepResearchThemeInvites", () => {
+    const meetings = [
+      { event_id: "multi", summary: "Theme: Multi-Agent Weekly" },
+      { event_id: "causal", summary: "Theme: Causal LLM Meeting" },
+    ];
+
+    // slack.invite_to_channel is an auto policy, so these never sit in the pending queue. The
+    // audit trail is where an auto-approved proposal is observable.
+    function channelInvites(service: AdminBotService) {
+      return service
+        .listAuditEvents()
+        .filter(
+          (event) =>
+            event.type === "proposal.created" &&
+            String(event.details?.action_type ?? "") === "slack.invite_to_channel",
+        );
+    }
+
+    function seed(service: AdminBotService): void {
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "full-multi",
+          name: "Full Multi",
+          member_type: "full",
+          calendar_email: "full-multi@example.com",
+          research_topics: ["Multi-Agent Systems"],
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "coauthor-major-causal",
+          name: "Major Causal",
+          member_type: "coauthor-major",
+          calendar_email: "major-causal@example.com",
+          research_topics: ["Causal Inference"],
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "coauthor-minor",
+          name: "Minor Coauthor",
+          member_type: "coauthor-minor",
+          calendar_email: "minor@example.com",
+          research_topics: ["Multi-Agent Systems"],
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "departed",
+          name: "Departed",
+          member_type: "full, alumni",
+          calendar_email: "departed@example.com",
+          research_topics: ["Multi-Agent Systems"],
+        }),
+      );
+    }
+
+    it("invites eligible members to the meeting for each theme they match", () => {
+      const service = new AdminBotService();
+      seed(service);
+
+      const result = unwrap(
+        service.sweepResearchThemeInvites({ calendarId: "lab@example.com", meetings }, "cron"),
+      );
+
+      const multi = result.invited.find((row) => row.event_id === "multi");
+      // The minor coauthor and the departed member both list multi-agent and are both excluded.
+      expect(multi?.attendees).toEqual(["full-multi@example.com"]);
+      expect(result.invited.find((row) => row.event_id === "causal")?.attendees).toEqual([
+        "major-causal@example.com",
+      ]);
+    });
+
+    it("proposes nothing on a second sweep once everyone is already on the event", () => {
+      const service = new AdminBotService();
+      seed(service);
+      const settled = [
+        { ...meetings[0]!, attendees: ["full-multi@example.com"] },
+        { ...meetings[1]!, attendees: ["major-causal@example.com"] },
+      ];
+
+      const result = unwrap(
+        service.sweepResearchThemeInvites(
+          { calendarId: "lab@example.com", meetings: settled },
+          "cron",
+        ),
+      );
+
+      // A weekly sweep must be silent when the roster has not moved.
+      expect(result.invited).toEqual([]);
+    });
+
+    it("skips a theme with two meetings rather than picking one", () => {
+      const service = new AdminBotService();
+      seed(service);
+      const doubled = [...meetings, { event_id: "causal-2", summary: "Theme: Causal LLM Meeting" }];
+
+      const result = unwrap(
+        service.sweepResearchThemeInvites(
+          { calendarId: "lab@example.com", meetings: doubled },
+          "cron",
+        ),
+      );
+
+      expect(result.invited.map((row) => row.event_id)).toEqual(["multi"]);
+      expect(result.skipped.some((skip) => skip.member_id === "causal_llm")).toBe(true);
+    });
+
+    it("proposes the #meeting-xxx invite for each theme, using the channel the lab actually uses", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "causal-person",
+          name: "Causal Person",
+          member_type: "full",
+          slack_user_id: "U-CAUSAL",
+          calendar_email: "causal@example.com",
+          research_topics: ["Causal Inference", "LLM Post-training"],
+        }),
+      );
+
+      const result = unwrap(
+        service.sweepResearchThemeInvites({ calendarId: "lab@example.com" }, "cron"),
+      );
+
+      // Neither channel is named after its theme: causal LLM meets in #meeting-causality and
+      // post-training in #meeting-training. Guessing from the theme name puts people elsewhere.
+      expect(result.joined.map((row) => row.channel).toSorted()).toEqual([
+        "meeting-causality",
+        "meeting-training",
+      ]);
+    });
+
+    it("does not re-invite somebody the directory already saw in the channel", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "already-in",
+          name: "Already In",
+          member_type: "full",
+          slack_user_id: "U-IN",
+          research_topics: ["Mechanistic Interpretability"],
+          slack_channels: ["meeting-mech-interp"],
+        }),
+      );
+
+      const result = unwrap(
+        service.sweepResearchThemeInvites({ calendarId: "lab@example.com" }, "cron"),
+      );
+
+      expect(result.joined).toEqual([]);
+    });
+
+    it("does the Slack half even with no calendar events passed in", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "interp",
+          name: "Interp",
+          member_type: "coauthor-major",
+          slack_user_id: "U-INTERP",
+          research_topics: ["Interp"],
+        }),
+      );
+
+      // A theme's channel is a fixed name this service knows; it does not need Wednesday's calendar.
+      const result = unwrap(service.sweepResearchThemeInvites({ calendarId: "lab@x" }, "cron"));
+
+      expect(result.invited).toEqual([]);
+      expect(result.joined.map((row) => row.channel)).toEqual(["meeting-mech-interp"]);
+    });
+
+    it("proposes channel invites the moment a member describes their research", () => {
+      const service = new AdminBotService();
+      // Onboarding: the member arrives with no interests, so there is nothing to classify yet.
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "newcomer",
+          name: "Newcomer",
+          member_type: "full",
+          slack_user_id: "U-NEW",
+        }),
+      );
+      expect(channelInvites(service)).toEqual([]);
+
+      // They fill in the profile. No sweep has run; the invite is proposed on the write itself.
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "newcomer",
+          name: "Newcomer",
+          member_type: "full",
+          slack_user_id: "U-NEW",
+          research_topics: ["Adversarial Robustness"],
+        }),
+      );
+      expect(channelInvites(service)).toHaveLength(1);
+    });
+
+    it("proposes nothing on a re-save, and removes nobody when a topic is dropped", () => {
+      const service = new AdminBotService();
+      const write = (topics: string[]) =>
+        unwrap(
+          service.upsertLabMember({
+            receives_nudges: true,
+            id: "shifting",
+            name: "Shifting",
+            member_type: "full",
+            slack_user_id: "U-SHIFT",
+            research_topics: topics,
+          }),
+        );
+      write(["Adversarial Robustness"]);
+      write(["Adversarial Robustness"]);
+      // Dropping the topic is not a reason to take somebody out of a room they have been in.
+      write(["Reasoning"]);
+
+      expect(channelInvites(service)).toHaveLength(1);
+    });
+
+    it("proposes no channel invite for somebody outside the eligible types", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "minor",
+          name: "Minor",
+          member_type: "coauthor-minor",
+          slack_user_id: "U-MINOR",
+          research_topics: ["Adversarial Robustness"],
+        }),
+      );
+      expect(channelInvites(service)).toEqual([]);
+    });
+
+    it("reports a member with no calendar_email instead of dropping them silently", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "no-email",
+          name: "No Email",
+          member_type: "full",
+          research_topics: ["Multi-Agent"],
+        }),
+      );
+
+      const result = unwrap(
+        service.sweepResearchThemeInvites({ calendarId: "lab@example.com", meetings }, "cron"),
+      );
+
+      expect(result.invited).toEqual([]);
+      expect(result.skipped).toContainEqual({
+        member_id: "no-email",
+        reason: "member has no calendar_email",
+      });
+    });
+  });
+
+  describe("birthday", () => {
+    function birthdayProposals(service: AdminBotService) {
+      return unwrap(service.listPending()).proposals.filter(
+        (proposal) => proposal.type === "calendar.create_birthday",
+      );
+    }
+
+    it("proposes a calendar event when a birthday is first set, and not on an unrelated re-save", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "ada",
+          name: "Ada",
+          birthday: "03-14",
+        }),
+      );
+      expect(birthdayProposals(service)).toHaveLength(1);
+
+      // Saving the profile again without touching the birthday must not stack a second card on an
+      // admin's approval queue.
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "ada",
+          name: "Ada Attendee",
+          birthday: "03-14",
+        }),
+      );
+      expect(birthdayProposals(service)).toHaveLength(1);
+    });
+
+    it("proposes again when the date is corrected", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "ada",
+          name: "Ada",
+          birthday: "03-14",
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "ada",
+          name: "Ada",
+          birthday: "03-15",
+        }),
+      );
+      expect(birthdayProposals(service)).toHaveLength(2);
+    });
+
+    it("proposes nothing for a member without a birthday", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ receives_nudges: true, id: "ada", name: "Ada" }));
+      expect(birthdayProposals(service)).toHaveLength(0);
+    });
+
+    it("rejects a birthday carrying a year", () => {
+      const service = new AdminBotService();
+      const result = service.upsertLabMember({
+        receives_nudges: true,
+        id: "ada",
+        name: "Ada",
+        birthday: "1990-03-14",
+      });
+      expect(result.ok).toBe(false);
+    });
+  });
+
   describe("refreshMemberDirectoryFromSlack", () => {
     it("backfills slack_user_id by email match and leaves an already-linked member alone", async () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "unlinked",
           name: "Unlinked",
           email: "unlinked@cs.toronto.edu",
@@ -2948,6 +5545,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "already-linked",
           name: "Already Linked",
           email: "already@cs.toronto.edu",
@@ -2979,6 +5577,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "m1",
           name: "Ada",
           slack_user_id: "U1",
@@ -3004,6 +5603,7 @@ describe("AdminBotService", () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "stale-tz",
           name: "Stale Timezone",
           email: "stale@cs.toronto.edu",
@@ -3013,6 +5613,7 @@ describe("AdminBotService", () => {
       );
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "no-slack-tz",
           name: "No Slack Timezone",
           email: "noslacktz@cs.toronto.edu",
@@ -3040,10 +5641,69 @@ describe("AdminBotService", () => {
       expect(members.find((m) => m.id === "no-slack-tz")?.timezone).toBeUndefined();
     });
 
+    it("appends a slack_timezone observation when the zone changes, and none when it repeats", async () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "traveller",
+          name: "Zhijing",
+          slack_user_id: "U-ZJ",
+          timezone: "America/Toronto",
+        }),
+      );
+      const zone = { value: "Europe/Amsterdam" };
+      const fetchSlackTimezones = async () =>
+        new Map<string, string | null>([["U-ZJ", zone.value]]);
+
+      unwrap(await service.refreshMemberDirectoryFromSlack({ fetchSlackTimezones }, "cron"));
+      const afterMove = unwrap(service.listMemberLocations("traveller")).locations;
+      expect(afterMove).toHaveLength(1);
+      expect(afterMove[0]?.source).toBe("slack_timezone");
+      // Stored as a zone, under a source that says where it came from -- never as a country.
+      expect(afterMove[0]?.timezone).toBe("Europe/Amsterdam");
+      expect(afterMove[0]?.country).toBeUndefined();
+      // The Slack zone is itself the clock, so the collection instant is stamped in it: a local
+      // stamp that ends in the observed zone's offset, not a bare UTC Z.
+      expect(afterMove[0]?.observed_at_local).toMatch(/[+-]\d{2}:\d{2}$/u);
+
+      // A daily sync of somebody who has not moved must append nothing.
+      unwrap(await service.refreshMemberDirectoryFromSlack({ fetchSlackTimezones }, "cron"));
+      expect(unwrap(service.listMemberLocations("traveller")).locations).toHaveLength(1);
+
+      zone.value = "America/Toronto";
+      unwrap(await service.refreshMemberDirectoryFromSlack({ fetchSlackTimezones }, "cron"));
+      expect(unwrap(service.listMemberLocations("traveller")).locations).toHaveLength(2);
+    });
+
+    it("records no observation when Slack clears the zone", async () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "cleared",
+          name: "Cleared",
+          slack_user_id: "U-C",
+          timezone: "Europe/Zurich",
+        }),
+      );
+
+      // Slack having no answer is not evidence that anyone went anywhere.
+      unwrap(
+        await service.refreshMemberDirectoryFromSlack(
+          { fetchSlackTimezones: async () => new Map<string, string | null>([["U-C", null]]) },
+          "cron",
+        ),
+      );
+
+      expect(unwrap(service.listMemberLocations("cleared")).locations).toEqual([]);
+    });
+
     it("leaves timezone untouched for a member with no slack_user_id", async () => {
       const service = new AdminBotService();
       unwrap(
         service.upsertLabMember({
+          receives_nudges: true,
           id: "no-slack",
           name: "No Slack",
           email: "noslack@cs.toronto.edu",

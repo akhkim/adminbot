@@ -57,15 +57,7 @@ export type RecommendationSchool = {
   applicationDeadlineTime: string;
   letterDeadline: string;
   letterDeadlineTime: string;
-  /**
-   * The zone both times on this row are read in, as an IANA name.
-   *
-   * One zone per row rather than one per deadline: a school states both its cutoffs on its own
-   * clock, and two zone pickers on one row would be two chances to disagree about the same
-   * campus. Blank means the dates are whole-day, which is how every row read before the times
-   * existed -- and a time typed with no zone is exactly the ambiguity that makes a member submit
-   * a day late from another country, so the form asks for it as soon as a time appears.
-   */
+  /** Zone entered for the school's deadlines; a blank or new value defaults to AoE (UTC−12). */
   deadlineTimezone: string;
   applicationStatus: string;
   letterStatus: string;
@@ -118,7 +110,8 @@ export type RecommendationLettersDraftHost = {
 /**
  * One row of the Book Meeting request table.
  *
- * A meeting request is four facts and a timestamp, which is a spreadsheet and not a form: the
+ * A meeting request is a handful of facts and a timestamp, which is a spreadsheet and not a form:
+ * the
  * people who schedule these are reading many at once, and a form per request made them open each
  * one to find out whether it was a fifteen-minute check-in or an hour-long committee call.
  *
@@ -137,6 +130,15 @@ export type MeetingRequestRow = {
   // Minutes, as a string: it is typed, and the same "everything is a string" rule the schools
   // table follows keeps the parser one-path.
   lengthMinutes: string;
+  // Where they are, in their own words. Separate from `timezone` because "Toronto" and "flexible
+  // after 6pm" are both answers somebody placing a call can use, and neither is an IANA zone.
+  city: string;
+  // The document of questions to read before the call. Whether it opens is checked server-side.
+  docPrepUrl: string;
+  // "yes" | "no" | "", stored as a string like every other cell here. Empty is unanswered.
+  whatsappHello: string;
+  // yyyy-mm-dd, as typed into a date input.
+  latestOkDate: string;
 };
 
 export type MeetingRequestDraft = {
@@ -154,13 +156,17 @@ export type MeetingRequestDraftHost = {
   adminBotMeetingSaveError: string | null;
 };
 
+function scopeStillActive(host: object, scope: string): boolean {
+  return !("adminBotLogisticsDraftScope" in host) || host.adminBotLogisticsDraftScope === scope;
+}
+
 const EMPTY_SCHOOL: Omit<RecommendationSchool, "id"> = {
   school: "",
   applicationDeadline: "",
   applicationDeadlineTime: "",
   letterDeadline: "",
   letterDeadlineTime: "",
-  deadlineTimezone: "",
+  deadlineTimezone: "AoE",
   applicationStatus: "",
   letterStatus: "",
   program: "",
@@ -177,11 +183,16 @@ let schoolRowCount = 0;
 export function createSchoolRow(fields: Partial<RecommendationSchool> = {}): RecommendationSchool {
   schoolRowCount += 1;
   // Id assigned last so copying an existing row's fields cannot copy its identity too.
-  return { ...EMPTY_SCHOOL, ...fields, id: `school-${schoolRowCount}` };
+  return {
+    ...EMPTY_SCHOOL,
+    ...fields,
+    deadlineTimezone: fields.deadlineTimezone?.trim() || "AoE",
+    id: `school-${schoolRowCount}`,
+  };
 }
 
 export function isEmptySchoolRow(row: RecommendationSchool): boolean {
-  return SCHOOL_FIELD_KEYS.every((key) => !row[key].trim());
+  return SCHOOL_FIELD_KEYS.every((key) => key === "deadlineTimezone" || !row[key].trim());
 }
 
 function parseSchoolRow(value: unknown): RecommendationSchool | null {
@@ -266,6 +277,10 @@ export function createMeetingRow(fields: Partial<MeetingRequestRow> = {}): Meeti
     preferredTime: "",
     timezone: localTimezone(),
     lengthMinutes: "",
+    city: "",
+    docPrepUrl: "",
+    whatsappHello: "",
+    latestOkDate: "",
     // Stamped here, not on save: the column answers "when did they ask", and a save-time stamp
     // would move every row forward each time the member touched any other one.
     submittedAt: Date.now(),
@@ -275,7 +290,16 @@ export function createMeetingRow(fields: Partial<MeetingRequestRow> = {}): Meeti
 }
 
 export function isEmptyMeetingRow(row: MeetingRequestRow): boolean {
-  return !row.purpose.trim() && !row.preferredTime.trim() && !row.lengthMinutes.trim();
+  // A row carrying only a doc prep link is not empty: pasting the link first and writing the topic
+  // second is a normal order to fill this in, and discarding it would lose the harder half.
+  return (
+    !row.purpose.trim() &&
+    !row.preferredTime.trim() &&
+    !row.lengthMinutes.trim() &&
+    !row.city.trim() &&
+    !row.docPrepUrl.trim() &&
+    !row.latestOkDate.trim()
+  );
 }
 
 function parseMeetingRow(value: unknown): MeetingRequestRow | null {
@@ -291,6 +315,10 @@ function parseMeetingRow(value: unknown): MeetingRequestRow | null {
   const preferredTime = text("preferredTime");
   const timezone = text("timezone");
   const lengthMinutes = text("lengthMinutes");
+  const city = text("city");
+  const docPrepUrl = text("docPrepUrl");
+  const whatsappHello = text("whatsappHello");
+  const latestOkDate = text("latestOkDate");
   return createMeetingRow({
     ...(purpose === undefined ? {} : { purpose }),
     ...(preferredTime === undefined ? {} : { preferredTime }),
@@ -298,6 +326,10 @@ function parseMeetingRow(value: unknown): MeetingRequestRow | null {
     // it on purpose, and putting the browser's zone back would silently answer for them.
     ...(timezone === undefined ? {} : { timezone }),
     ...(lengthMinutes === undefined ? {} : { lengthMinutes }),
+    ...(city === undefined ? {} : { city }),
+    ...(docPrepUrl === undefined ? {} : { docPrepUrl }),
+    ...(whatsappHello === undefined ? {} : { whatsappHello }),
+    ...(latestOkDate === undefined ? {} : { latestOkDate }),
     // A stored stamp is kept as it is; only a row that never had one gets today's clock, which is
     // the least wrong answer available for a record written before the column existed.
     ...(typeof record.submittedAt === "number" && record.submittedAt > 0
@@ -464,7 +496,7 @@ export async function restoreAdminBotLogisticsDraft(
     !draft ||
     editVersion(host, "Logistics") !== version ||
     host.adminBotLogisticsDescription !== before ||
-    ("adminBotLogisticsDraftScope" in host && host.adminBotLogisticsDraftScope !== scope)
+    !scopeStillActive(host, scope)
   ) {
     return;
   }
@@ -528,7 +560,7 @@ export async function restoreAdminBotLettersDraft(
     !draft ||
     editVersion(host, "Letters") !== version ||
     host.adminBotLettersSchools !== before ||
-    ("adminBotLogisticsDraftScope" in host && host.adminBotLogisticsDraftScope !== scope)
+    !scopeStillActive(host, scope)
   ) {
     return;
   }
@@ -590,7 +622,7 @@ export async function restoreAdminBotMeetingDraft(
     !draft ||
     editVersion(host, "Meeting") !== version ||
     host.adminBotMeetingRows !== before ||
-    ("adminBotLogisticsDraftScope" in host && host.adminBotLogisticsDraftScope !== scope)
+    !scopeStillActive(host, scope)
   ) {
     return;
   }

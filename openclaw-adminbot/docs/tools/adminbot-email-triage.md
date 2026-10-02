@@ -4,14 +4,67 @@
 message it touches ends up in exactly one of three states, and the state is written back to Gmail
 as a label. Only one of the three leaves the inbox.
 
-| Outcome | Label | Stays in the inbox? | Means |
-| --- | --- | --- | --- |
-| completed | `AdminBot/Handled` | no — archived | Every effect landed. Nothing for a person to do. |
-| needs review | `AdminBot/Needs Review` | **yes** | Understood, but deliberately not automated: an unrecognized email, an untrusted sender asking for a privileged action, a bcc that matched no paper. |
-| failed | `AdminBot/Error` | **yes** | Something broke mid-pass. The reason is in the run's JSON summary and in `adminbot_email_messages.last_error`. |
+| Outcome      | Label                   | Stays in the inbox? | Means                                                                                                                                               |
+| ------------ | ----------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| completed    | `AdminBot/Handled`      | no — archived       | Every effect landed. Nothing for a person to do.                                                                                                    |
+| needs review | `AdminBot/Needs Review` | **yes**             | Understood, but deliberately not automated: an unrecognized email, an untrusted sender asking for a privileged action, a bcc that matched no paper. |
+| failed       | `AdminBot/Error`        | **yes**             | Something broke mid-pass. The reason is in the run's JSON summary and in `adminbot_email_messages.last_error`.                                      |
 
 So **the inbox is the to-do list**. What is left in it after a pass is exactly the work that still
 needs a person, and each piece of it carries a label saying which kind it is.
+
+Administrators also see the `AdminBot/Needs Review` queue in Control UI under **Pending Actions →
+Emails needing review**. Each card names the sender, subject, classification, and the exact reason
+automation stopped. For venue evidence, the administrator can attach the message to one of the
+currently open PaperFlow stages; this records the Gmail message id on the stage and stops its
+reminders. `Not paper evidence` settles the review without changing a paper. Both decisions are
+audited.
+
+The Control UI decision deliberately does not alter or archive the Gmail message. Gmail remains the
+human-readable source record, with its original `AdminBot/Needs Review` label, while the database
+records that an administrator resolved the item so it does not remain in AdminBot's queue.
+
+The queue keeps the 20 most recent decisions under **Recently reviewed**. That history names the
+administrator and decision time and, for PaperFlow evidence, the paper and stage the message closed.
+It is an inspection surface rather than an undo button: reversing a stage close is a separate paper
+decision, while the original Gmail thread remains linked from every history row.
+
+## Calendar requests from the lab's own addresses
+
+The configured senders — `ADMINBOT_ONBOARDING_SENDERS` plus `ADMINBOT_CONTACT_EMAILS` — are taken
+at their word when they ask for a calendar event. The classifier's confidence threshold, which
+holds everything else below 0.8 for a person, does not apply to that one pairing of category and
+sender, and the classifier is now told outright whether the real `From` header is on the list
+rather than being left to infer authority from the writing. A note from one of those addresses
+saying "put this on the calendar" becomes an event on the lab calendar in the same pass, with no
+review step.
+
+That is a deliberate trade, and it is bounded on the only side that matters: **this pass can add to
+a calendar and read one, and can never remove anything from one.** The rule is an allowlist of
+verbs (`calendarCommandRefusal` in `scripts/adminbot-email-automation.ts`) applied at the single
+point every shell-out goes through, so a delete, a clear, or an event-emptying update is refused
+before it reaches the CLI — including one a wrongly-classified or spoofed-looking email asked for.
+A wrong event is a line somebody deletes by hand; a wrong deletion is a meeting nobody knows they
+have lost.
+
+### Which calendar
+
+Two calendars take events. The lab calendar (`ADMINBOT_LAB_EMAIL`) is readable by every member.
+Zhijing's personal calendar (`ADMINBOT_PERSONAL_CALENDAR_ID`, "Jin Trips and Advising Meetings",
+with a hardcoded default in the script) is where her flights and other travel go. The extractor
+picks `personal` for travel and for requests that ask for "my" or the personal calendar, or say not
+to use the lab one; `lab` otherwise. Only a configured sender may target the personal calendar —
+anyone else asking for it is held for review rather than moved onto the lab calendar, where an
+itinerary would be visible to the whole lab.
+
+The extractor reads image attachments as well as text, on the same local model, because these
+requests are often one line and a screenshot. One request can produce several events (a round trip
+is two flights), each with its own start and end time zone; a zone name the runtime does not
+recognize is dropped and the event keeps its RFC3339 offsets.
+
+Everything else a trusted sender can ask for — reimbursement forms, a CV talk entry, an onboarding
+decision — keeps the confidence threshold. Those write to forms, a CV, and people's accounts, where
+a low-confidence read is worth a human's glance.
 
 ## Why labels rather than deleting
 

@@ -6,11 +6,15 @@ import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import type { WorkshopMatcher } from "../workflows/papers/workshop-nudges.js";
 import {
   matchWorkshopNudges,
+  workshopConferenceOptions,
   workshopNudgeInputsFromAdminBot,
+  workshopProfilesForConference,
   workshopProfilesFromDeadlines,
+  type WorkshopConferenceOption,
   type WorkshopNudgeCoverage,
   type WorkshopNudgeResult,
 } from "../workflows/papers/workshop-nudges.js";
+import { conferencesDueForWorkshopNudge } from "../workflows/papers/workshop-schedule.js";
 
 export type WorkshopNudgePreview = Omit<WorkshopNudgeResult, "recipients"> & {
   recipients: Array<
@@ -20,6 +24,13 @@ export type WorkshopNudgePreview = Omit<WorkshopNudgeResult, "recipients"> & {
     }
   >;
   coverage: WorkshopNudgeCoverage;
+  /**
+   * The conference this pass was limited to, when the admin picked one. Carried on the preview so
+   * a stored answer says what it covers -- without it, a narrowed run and a whole-season one look
+   * identical on the page, and the narrow one reads as a matcher that missed most of the workshops.
+   */
+  conference_key?: string;
+  conference_label?: string;
 };
 
 export type WorkshopNudgeSendResult = {
@@ -34,11 +45,20 @@ export type WorkshopNudgeSendResult = {
  * Reading is free and never starts work. A pass is thousands of model calls and tens of minutes;
  * making page-open trigger it is what put a batch job inside a request in the first place.
  */
-export function readWorkshopNudgeRun(service: AdminBotService): WorkshopNudgeRunView {
-  const run = service.latestWorkshopMatchRun();
-  if (!run) {
+export function readWorkshopNudgeRun(service: AdminBotService, now?: Date): WorkshopNudgeRunView {
+  const stored = service.latestWorkshopMatchRun();
+  if (!stored) {
     return { status: "none" };
   }
+  // Reading *does* close out a pass that has stopped moving. Deciding that only when somebody
+  // presses Find recommendations was the remaining half of the wedged tab: the page polls this
+  // route every few seconds, so a stalled run kept being reported as `running` to every poll,
+  // forever, and an administrator watching "1671 of 2540 model calls done" was watching a number
+  // that could never change. Staleness is a fact about the row; the cheapest reader is as entitled
+  // to notice it as the most expensive one.
+  const run = workshopRunIsAbandoned(stored, now ?? new Date())
+    ? abandonWorkshopRun(service, stored)
+    : stored;
   return {
     status: run.status,
     started_at: run.started_at,
@@ -46,6 +66,7 @@ export function readWorkshopNudgeRun(service: AdminBotService): WorkshopNudgeRun
     ...(run.started_by ? { started_by: run.started_by } : {}),
     calls_done: run.calls_done,
     calls_total: run.calls_total,
+    calls_failed: run.calls_failed ?? 0,
     ...(run.error ? { error: run.error } : {}),
     ...(run.payload_json ? { preview: JSON.parse(run.payload_json) as WorkshopNudgePreview } : {}),
   };
@@ -58,9 +79,110 @@ export type WorkshopNudgeRunView = {
   started_by?: string;
   calls_done?: number;
   calls_total?: number;
+  /** How many of `calls_done` gave up rather than answered. */
+  calls_failed?: number;
   error?: string;
   preview?: WorkshopNudgePreview;
 };
+
+/**
+ * How long a pass may go without finishing a single model call before it is presumed dead.
+ *
+ * Generous on purpose: a batch against a busy model can take minutes, and killing a pass that is
+ * merely slow costs the whole run. What this catches is the other case -- a pass whose process is
+ * gone, or whose model endpoint stopped answering entirely -- where the row would otherwise say
+ * `running` forever and every later pass would be refused in its name.
+ */
+const ABANDONED_AFTER_MS = 30 * 60 * 1000;
+
+/** Whether a run claiming to be in flight has stopped moving. */
+export function workshopRunIsAbandoned(
+  run: Pick<AdminBotWorkshopMatchRun, "status" | "started_at" | "progress_at">,
+  now: Date,
+): boolean {
+  if (run.status !== "running") {
+    return false;
+  }
+  const movedAt = Date.parse(run.progress_at ?? run.started_at);
+  if (!Number.isFinite(movedAt)) {
+    // A row with no readable clock is older than this column; it cannot be shown to be alive.
+    return true;
+  }
+  return now.getTime() - movedAt > ABANDONED_AFTER_MS;
+}
+
+export const WORKSHOP_RUN_STALLED_MESSAGE =
+  "This pass stopped answering and was abandoned. Its counts say how far it got; start a new one.";
+
+/**
+ * Write a stalled run off as failed, and return the row as it now reads.
+ *
+ * The counts are left exactly as they were: they are the only record of how far the pass got, and
+ * a stalled pass that reported 1671 of 2540 is more useful to whoever has to explain it than one
+ * reset to zero.
+ */
+function abandonWorkshopRun(
+  service: AdminBotService,
+  run: AdminBotWorkshopMatchRun,
+): AdminBotWorkshopMatchRun {
+  // If the task is somehow still alive in this process, stop it before declaring it dead --
+  // otherwise it can wake up later and overwrite the row it was evicted from.
+  abortWorkshopRun(run.id);
+  const closed: AdminBotWorkshopMatchRun = {
+    ...run,
+    status: "failed",
+    finished_at: run.finished_at ?? new Date().toISOString(),
+    error: run.error ?? WORKSHOP_RUN_STALLED_MESSAGE,
+  };
+  service.saveWorkshopMatchRun(closed);
+  return closed;
+}
+
+/**
+ * Passes running in this process, so one can be stopped without stopping the service.
+ *
+ * Deliberately in-memory and not persisted: an entry here is a claim about a task in *this*
+ * process, and the whole failure this file keeps running into is a persisted row outliving the
+ * work it describes. A cancel that finds no controller still writes the row off -- the run is
+ * gone either way, and the storage is only about reclaiming the model time too.
+ */
+const inFlightWorkshopRuns = new Map<string, AbortController>();
+
+function abortWorkshopRun(runId: string): boolean {
+  const controller = inFlightWorkshopRuns.get(runId);
+  if (!controller) {
+    return false;
+  }
+  controller.abort();
+  inFlightWorkshopRuns.delete(runId);
+  return true;
+}
+
+/**
+ * Stop the pass in flight, if there is one.
+ *
+ * "Wait for the thirty-minute stall window" is the right default for a pass nobody is watching and
+ * the wrong answer for an administrator standing in front of one they know is broken.
+ */
+export function cancelWorkshopNudgeRun(params: {
+  service: AdminBotService;
+  actor?: string;
+}): WorkshopNudgeRunView {
+  const existing = params.service.latestWorkshopMatchRun();
+  if (existing?.status !== "running") {
+    return readWorkshopNudgeRun(params.service);
+  }
+  abortWorkshopRun(existing.id);
+  params.service.saveWorkshopMatchRun({
+    ...existing,
+    status: "failed",
+    finished_at: new Date().toISOString(),
+    error: params.actor
+      ? `This pass was stopped by ${params.actor} after ${existing.calls_done} of ${existing.calls_total} model calls.`
+      : `This pass was stopped after ${existing.calls_done} of ${existing.calls_total} model calls.`,
+  });
+  return readWorkshopNudgeRun(params.service);
+}
 
 /**
  * Start a pass, and return immediately.
@@ -77,10 +199,34 @@ export function startWorkshopNudgeRun(params: {
   match: WorkshopMatcher;
   now: Date;
   startedBy?: string;
+  /**
+   * Start a pass even though one claims to be running.
+   *
+   * The stall window is thirty minutes because killing a merely slow pass throws away real model
+   * time. That is the right call for a guess and the wrong one for an administrator looking at a
+   * progress count they have watched sit still: this is them saying they already know.
+   */
+  force?: boolean;
+  /** Narrow this pass to one parent conference. Blank means the whole open season. */
+  conferenceKey?: string;
 }): WorkshopNudgeRunView {
   const existing = params.service.latestWorkshopMatchRun();
   if (existing?.status === "running") {
-    return readWorkshopNudgeRun(params.service);
+    if (!params.force && !workshopRunIsAbandoned(existing, params.now)) {
+      return readWorkshopNudgeRun(params.service);
+    }
+    // It stopped moving, or an administrator says to replace it regardless. Close it out rather
+    // than leaving two rows claiming to be in flight, and say why: an operator pressing Refresh
+    // again on a wedged tab deserves better than silence.
+    abortWorkshopRun(existing.id);
+    params.service.saveWorkshopMatchRun({
+      ...existing,
+      status: "failed",
+      finished_at: new Date().toISOString(),
+      error:
+        existing.error ??
+        "This pass stopped answering and was abandoned; the pass below replaces it.",
+    });
   }
   const run: AdminBotWorkshopMatchRun = {
     id: `wsm_${randomUUID()}`,
@@ -89,64 +235,147 @@ export function startWorkshopNudgeRun(params: {
     ...(params.startedBy ? { started_by: params.startedBy } : {}),
     calls_done: 0,
     calls_total: 0,
+    calls_failed: 0,
   };
   params.service.saveWorkshopMatchRun(run);
+  const controller = new AbortController();
+  inFlightWorkshopRuns.set(run.id, controller);
 
   // Deliberately not awaited: see the note above.
   void (async () => {
+    // The last progress this pass reported. Carried forward onto the terminal row so a run that
+    // finished with failures still says how many, and a cancelled one still says how far it got.
+    let progress: { done: number; total: number; failed: number; detail?: string } = {
+      done: 0,
+      total: 0,
+      failed: 0,
+    };
+    /**
+     * Persist only while this run is still the one the store believes in.
+     *
+     * A pass that was cancelled or aged out has already had its row written off. If its task then
+     * wakes up -- a model call returning after the abort, a straggler finishing its batch -- and
+     * writes `running` back, the tab returns to exactly the state this whole change exists to
+     * end. The row is not this task's to touch any more.
+     */
+    const saveIfCurrent = (next: AdminBotWorkshopMatchRun): boolean => {
+      const latest = params.service.latestWorkshopMatchRun();
+      if (latest?.id !== run.id || latest.status !== "running") {
+        return false;
+      }
+      params.service.saveWorkshopMatchRun(next);
+      return true;
+    };
     try {
       const preview = await previewWorkshopNudges({
         service: params.service,
         match: params.match,
         now: params.now,
-        onProgress: (done, total) => {
-          params.service.saveWorkshopMatchRun({
+        ...(params.conferenceKey?.trim() ? { conferenceKey: params.conferenceKey.trim() } : {}),
+        signal: controller.signal,
+        onProgress: (done, total, failed, detail) => {
+          progress = { done, total, failed: failed ?? 0, detail: detail ?? progress.detail };
+          saveIfCurrent({
             ...run,
             calls_done: done,
             calls_total: total,
+            calls_failed: progress.failed,
           });
         },
       });
-      params.service.saveWorkshopMatchRun({
+      saveIfCurrent({
         ...run,
         status: "ready",
         finished_at: new Date().toISOString(),
+        calls_done: progress.done,
+        calls_total: progress.total,
+        calls_failed: progress.failed,
         payload_json: JSON.stringify(preview),
+        // A pass that answered can still be missing workshops. Saying so on a `ready` run is the
+        // difference between "no workshop matched these papers" and "we never asked about them".
+        ...(progress.failed > 0
+          ? {
+              error:
+                `${progress.failed} of ${progress.total} model calls failed, so some workshops were not scored.` +
+                (progress.detail ? ` Last failure — ${progress.detail}.` : "") +
+                " The results below are what did answer.",
+            }
+          : {}),
       });
     } catch (error) {
-      params.service.saveWorkshopMatchRun({
+      saveIfCurrent({
         ...run,
         status: "failed",
         finished_at: new Date().toISOString(),
+        calls_done: progress.done,
+        calls_total: progress.total,
+        calls_failed: progress.failed,
         error: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      inFlightWorkshopRuns.delete(run.id);
     }
   })();
 
   return readWorkshopNudgeRun(params.service);
 }
 
+/** The conferences a pass may be narrowed to. Cheap: no model calls, so a page open may ask. */
+export function listWorkshopConferences(now: Date): WorkshopConferenceOption[] {
+  return workshopConferenceOptions(DEADLINE_VENUES, now);
+}
+
 export async function previewWorkshopNudges(params: {
   service: AdminBotService;
   match: WorkshopMatcher;
   now: Date;
-  onProgress?: (done: number, total: number) => void;
+  /** Narrow the pass to one parent conference. Blank or unknown means the whole open season. */
+  conferenceKey?: string;
+  onProgress?: (done: number, total: number, failed: number, detail?: string) => void;
+  signal?: AbortSignal;
 }): Promise<WorkshopNudgePreview> {
   const papers = servicePayload(params.service.listPapers()).papers;
   const members = servicePayload(params.service.listLabMembers()).members;
   const attendees = servicePayload(params.service.listConferenceAttendance()).attendees;
-  const workshops = workshopProfilesFromDeadlines(DEADLINE_VENUES, params.now);
-  if (!workshops.length) {
+  const allWorkshops = workshopProfilesFromDeadlines(DEADLINE_VENUES, params.now);
+  if (!allWorkshops.length) {
     throw new Error("no upcoming workshop profiles are available");
   }
-  const source = workshopNudgeInputsFromAdminBot({ papers, members, attendees, workshops });
+  const conferenceKey = params.conferenceKey?.trim();
+  const workshops = workshopProfilesForConference(allWorkshops, conferenceKey);
+  // Refused rather than silently widened. An admin who picked a conference and got the whole season
+  // back would read every other conference's workshops as the matcher ignoring them.
+  if (conferenceKey && !workshops.length) {
+    throw new Error(`no upcoming workshops are available for ${conferenceKey}`);
+  }
+  const conferenceLabel = conferenceKey
+    ? workshops[0]?.parent_conference?.trim() || conferenceKey
+    : undefined;
+  const headProfessorMemberId = servicePayload(
+    params.service.getSettings(),
+  ).head_professor_member_id;
+  const source = workshopNudgeInputsFromAdminBot({
+    papers,
+    members,
+    attendees,
+    workshops,
+    headProfessorMemberId,
+  });
   const matched = await matchWorkshopNudges({
     papers: source.papers,
     workshops,
     attendance: source.attendance,
-    match: params.onProgress
-      ? (request) => params.match({ ...request, onProgress: params.onProgress })
-      : params.match,
+    // matchWorkshopNudges calls the matcher with only the papers and workshops it worked out, so
+    // progress reporting and cancellation are threaded in here rather than through its signature.
+    match:
+      params.onProgress || params.signal
+        ? (request) =>
+            params.match({
+              ...request,
+              ...(params.onProgress ? { onProgress: params.onProgress } : {}),
+              ...(params.signal ? { signal: params.signal } : {}),
+            })
+        : params.match,
     now: params.now,
   });
   const membersById = new Map(members.map((member) => [member.id, member]));
@@ -167,9 +396,23 @@ export async function previewWorkshopNudges(params: {
       };
     }),
     coverage: source.coverage,
+    ...(conferenceKey ? { conference_key: conferenceKey } : {}),
+    ...(conferenceLabel ? { conference_label: conferenceLabel } : {}),
   };
 }
 
+/**
+ * Send the recommendations an administrator picked, from the pass they were looking at.
+ *
+ * Reads the stored run rather than recomputing. This used to call previewWorkshopNudges, which is
+ * the whole cross-product match -- thousands of model calls, tens of minutes -- inside the request
+ * that Send makes. Behind Cloudflare that is a 524 at a hundred seconds, so Send simply never
+ * worked on a lab-sized roster; the same mistake was fixed in the preview route and left here.
+ *
+ * Correctness, not only cost. The matcher is a language model and its output is not deterministic,
+ * so a recomputed draft is not necessarily the draft that was reviewed. Pressing Nudge is an
+ * approval of specific text, and it has to send that text.
+ */
 export async function sendWorkshopNudges(params: {
   service: AdminBotService;
   match: WorkshopMatcher;
@@ -177,43 +420,214 @@ export async function sendWorkshopNudges(params: {
   actor: string;
   recipientMemberIds: readonly string[];
 }): Promise<WorkshopNudgeSendResult> {
-  const preview = await previewWorkshopNudges(params);
+  const stored = readWorkshopNudgeRun(params.service, params.now);
+  const preview = stored.preview;
+  if (!preview) {
+    // Refused rather than quietly starting one. A pass is tens of minutes; an administrator who
+    // pressed Nudge is not waiting for one, and silently running it is what produced the timeout.
+    throw new Error(
+      stored.status === "running"
+        ? "a workshop match is still running; wait for it to finish before sending"
+        : "no workshop recommendations have been produced yet; run a match first",
+    );
+  }
   const recipients = new Map(
     preview.recipients.map((recipient) => [recipient.recipient_member_id, recipient]),
   );
   const created: WorkshopNudgeSendResult["created"] = [];
   const skipped: WorkshopNudgeSendResult["skipped"] = [];
   for (const memberId of [...new Set(params.recipientMemberIds)]) {
-    const recipient = recipients.get(memberId);
-    if (!recipient?.draft || !recipient.delivery_ready) {
+    const outcome = await deliverWorkshopNudge({
+      service: params.service,
+      actor: params.actor,
+      memberId,
+      recipient: recipients.get(memberId),
+    });
+    created.push(...outcome.created);
+    skipped.push(...outcome.skipped);
+  }
+  // The pass these drafts came from, not the moment Send was pressed: what the reader wants to know
+  // is which answer went out.
+  return { recomputed_at: preview.generated_at, created, skipped };
+}
+
+export type ScheduledWorkshopNudgeResult = {
+  /** The conference this tick handled, or null when none was due. */
+  conference: { key: string; label: string; first_deadline_aoe: string; days_until: number } | null;
+  /** Why nothing happened, when nothing did. */
+  reason?: string;
+  created: WorkshopNudgeSendResult["created"];
+  skipped: WorkshopNudgeSendResult["skipped"];
+  /** Conferences inside the window that this tick did not get to. They keep until the next one. */
+  deferred: string[];
+};
+
+/**
+ * The scheduled pass: match and message one conference's workshops, once, ever.
+ *
+ * Called from cron (scripts/adminbot-workshop-nudge-cron.sh). Everything that decides whether it
+ * does anything is a lookup -- the deadline dataset for the window, the nudge ledger for whether
+ * this conference has already been done -- so running it twice in a minute, or every hour, sends
+ * nothing the second time. That is the guarantee the lab asked for and it lives here rather than
+ * in the crontab, because a cadence is not a guarantee.
+ *
+ * One conference per tick, even when three are due. A pass is thousands of model calls and tens of
+ * minutes; three back to back inside one cron invocation is a request that times out and a job
+ * that looks hung. The rest are named in `deferred` and taken by the next tick, which on a daily
+ * cron costs a day and stays comfortably inside a fourteen-day window.
+ *
+ * The order of the two ledger writes matters. Each member is stamped the moment their own send
+ * succeeds, so a crash mid-pass loses at most the marker and never re-texts somebody already
+ * reached; the conference marker is written at the end, whether or not anybody was messaged, so a
+ * pass that matched nothing is not re-run nightly until the deadline.
+ */
+export async function runScheduledWorkshopNudges(params: {
+  service: AdminBotService;
+  match: WorkshopMatcher;
+  now: Date;
+  actor: string;
+  /** Override the fortnight, for tests. */
+  leadDays?: number;
+}): Promise<ScheduledWorkshopNudgeResult> {
+  const history = params.service.workshopNudgeHistory();
+  const due = conferencesDueForWorkshopNudge({
+    records: DEADLINE_VENUES,
+    now: params.now,
+    alreadyNudged: history.passed,
+    ...(params.leadDays === undefined ? {} : { leadDays: params.leadDays }),
+  });
+  const target = due[0];
+  if (!target) {
+    return { conference: null, created: [], skipped: [], deferred: [] };
+  }
+  // An administrator's own pass is in flight. Stand down rather than run a second one beside it:
+  // the model time is real, and the conference keeps -- the window is two weeks and this job ticks
+  // daily, so there is no urgency that justifies doubling the load on a shared matcher.
+  const running = params.service.latestWorkshopMatchRun();
+  if (running?.status === "running" && !workshopRunIsAbandoned(running, params.now)) {
+    return {
+      conference: null,
+      reason: "a workshop match is already running; standing down until the next tick",
+      created: [],
+      skipped: [],
+      deferred: due.map((entry) => entry.key),
+    };
+  }
+
+  const preview = await previewWorkshopNudges({
+    service: params.service,
+    match: params.match,
+    now: params.now,
+    conferenceKey: target.key,
+  });
+  const nowIso = params.now.toISOString();
+  const alreadyMessaged = history.messaged.get(target.key) ?? new Set<string>();
+  const created: WorkshopNudgeSendResult["created"] = [];
+  const skipped: WorkshopNudgeSendResult["skipped"] = [];
+
+  for (const recipient of preview.recipients) {
+    const memberId = recipient.recipient_member_id;
+    if (alreadyMessaged.has(memberId)) {
+      // Only reachable when an earlier pass for this conference died after sending to them but
+      // before its marker was written. Saying so rather than silently skipping: a sweep that
+      // quietly drops recipients is indistinguishable from one that matched nobody.
       skipped.push({
         member_id: memberId,
-        reason:
-          recipient?.delivery_blocked_reason ?? "No current workshop recommendation is available.",
+        reason: `Already told about ${target.label} workshops.`,
       });
       continue;
     }
-    const sent = await params.service.sendMemberNudge(
-      {
-        channel: "slack",
-        recipient_member_ids: [memberId],
-        message: recipient.draft.text,
-        kind: "workshop",
-        title: "Workshops that may fit your papers",
-        tab: "myWork",
-        // Not important: this is a suggestion an administrator chose to pass on, not something the
-        // lab is owed. Escalating an unread suggestion would be the lab chasing its own idea.
-      },
-      params.actor,
-    );
-    if (!sent.ok) {
-      skipped.push({ member_id: memberId, reason: sent.error.message });
-      continue;
+    const outcome = await deliverWorkshopNudge({
+      service: params.service,
+      actor: params.actor,
+      memberId,
+      recipient,
+    });
+    created.push(...outcome.created);
+    skipped.push(...outcome.skipped);
+    if (outcome.delivered) {
+      params.service.recordWorkshopNudgeSent({
+        conferenceKey: target.key,
+        memberId,
+        nowIso,
+      });
     }
-    created.push(...sent.payload.created.map((proposal) => sentProposal(memberId, proposal)));
-    skipped.push(...sent.payload.skipped);
   }
-  return { recomputed_at: preview.generated_at, created, skipped };
+  params.service.recordWorkshopNudgeSent({ conferenceKey: target.key, nowIso });
+
+  return {
+    conference: {
+      key: target.key,
+      label: target.label,
+      first_deadline_aoe: target.first_deadline_aoe,
+      days_until: target.days_until,
+    },
+    created,
+    skipped,
+    deferred: due.slice(1).map((entry) => entry.key),
+  };
+}
+
+/**
+ * One recipient's message, composed and sent.
+ *
+ * Shared by the administrator's Send button and the scheduled sweep so the two cannot drift: the
+ * lab should not be able to tell, from the message, whether a person pressed the button. The
+ * delivery decision -- ready, or blocked and why -- stays with the preview that computed it.
+ */
+async function deliverWorkshopNudge(params: {
+  service: AdminBotService;
+  actor: string;
+  memberId: string;
+  recipient: WorkshopNudgePreview["recipients"][number] | undefined;
+}): Promise<{
+  created: WorkshopNudgeSendResult["created"];
+  skipped: WorkshopNudgeSendResult["skipped"];
+  delivered: boolean;
+}> {
+  const { recipient, memberId } = params;
+  if (!recipient?.draft || !recipient.delivery_ready) {
+    return {
+      created: [],
+      skipped: [
+        {
+          member_id: memberId,
+          reason:
+            recipient?.delivery_blocked_reason ??
+            "No current workshop recommendation is available.",
+        },
+      ],
+      delivered: false,
+    };
+  }
+  const sent = await params.service.sendMemberNudge(
+    {
+      channel: "slack",
+      recipient_member_ids: [memberId],
+      message: recipient.draft.text,
+      kind: "workshop",
+      title: "Workshops that may fit your papers",
+      tab: "myWork",
+      // Not important: this is a suggestion, not something the lab is owed. Escalating an unread
+      // suggestion would be the lab chasing its own idea.
+    },
+    params.actor,
+  );
+  if (!sent.ok) {
+    return {
+      created: [],
+      skipped: [{ member_id: memberId, reason: sent.error.message }],
+      delivered: false,
+    };
+  }
+  return {
+    created: sent.payload.created.map((proposal) => sentProposal(memberId, proposal)),
+    skipped: [...sent.payload.skipped],
+    // Whether a message actually reached them, which is the only thing worth stamping a ledger
+    // for: a member with no Slack id on file has not been told, and recording them as told would
+    // permanently suppress the one message this conference ever gets.
+    delivered: sent.payload.created.length > 0,
+  };
 }
 
 function servicePayload<T>(

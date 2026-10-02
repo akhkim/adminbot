@@ -99,15 +99,106 @@ function draw(
   const props: WorkshopNudgesProps = {
     state: value,
     onRefresh: vi.fn(),
+    onCancelRun: vi.fn(),
+    onForceRefresh: vi.fn(),
     onToggleRecipient: vi.fn(),
     onSetRecipients: vi.fn(),
     onViewChange: vi.fn(),
+    onConferenceChange: vi.fn(),
     onSend: vi.fn(),
     ...handlers,
   };
   render(renderWorkshopNudges(props), container);
   return { container, props };
 }
+
+describe("what Send reports", () => {
+  // The reported bug: Send finished instantly, said nothing, and sent nothing. The outcome was
+  // written to adminBotNotice, which the admin view renders and this one never has.
+  it("names each skip reason rather than only counting them", () => {
+    const { container } = draw({
+      ...createEmptyWorkshopNudgeReviewState(),
+      sendResult: {
+        created: 1,
+        skipped: [
+          { member_id: "a", reason: "member is not on the nudge list" },
+          { member_id: "b", reason: "member is not on the nudge list" },
+          { member_id: "c", reason: "member has no slack_user_id" },
+        ],
+      },
+    });
+    const panel = container.querySelector('[data-testid="workshop-nudges-send-result"]');
+    expect(panel?.textContent).toContain("Sent 1 workshop nudge, skipped 3.");
+    // Two different problems with two different fixes, so both are named and counted.
+    expect(panel?.textContent).toContain("member is not on the nudge list");
+    expect(panel?.textContent).toContain("member has no slack_user_id");
+  });
+
+  it("says so plainly when everything went", () => {
+    const { container } = draw({
+      ...createEmptyWorkshopNudgeReviewState(),
+      sendResult: { created: 2, skipped: [] },
+    });
+    const panel = container.querySelector('[data-testid="workshop-nudges-send-result"]');
+    expect(panel?.textContent).toContain("Sent 2 workshop nudges.");
+    expect(panel?.querySelector("ul")).toBeNull();
+  });
+
+  it("shows nothing before a send", () => {
+    const { container } = draw(createEmptyWorkshopNudgeReviewState());
+    expect(container.querySelector('[data-testid="workshop-nudges-send-result"]')).toBeNull();
+  });
+});
+
+describe("the conference picker", () => {
+  const conferences = [
+    { key: "emnlp-2035", label: "EMNLP 2035", workshop_count: 4 },
+    { key: "iclr-2035", label: "ICLR 2035", workshop_count: 1 },
+  ];
+
+  it("offers every open workshop plus each conference, and reports a pick", () => {
+    const onConferenceChange = vi.fn();
+    const { container } = draw(
+      { ...createEmptyWorkshopNudgeReviewState(), conferences },
+      { onConferenceChange },
+    );
+    const picker = container.querySelector<HTMLSelectElement>(
+      "[data-testid='workshop-nudges-conference']",
+    );
+    expect([...(picker?.options ?? [])].map((option) => option.value)).toEqual([
+      "",
+      "emnlp-2035",
+      "iclr-2035",
+    ]);
+    // The count is what tells an admin how much a narrowed pass is worth running.
+    expect(picker?.textContent).toContain("EMNLP 2035 (4)");
+
+    picker!.value = "iclr-2035";
+    picker!.dispatchEvent(new Event("change"));
+    expect(onConferenceChange).toHaveBeenCalledWith("iclr-2035");
+  });
+
+  // A service too old to have the route returns no list. An empty dropdown would read as "no
+  // conferences have workshops"; no dropdown reads as "this deployment cannot narrow", which is
+  // the truth, and the pass still runs over everything.
+  it("is absent when the service offered no list", () => {
+    const { container } = draw(createEmptyWorkshopNudgeReviewState());
+    expect(container.querySelector("[data-testid='workshop-nudges-conference']")).toBeNull();
+  });
+
+  it("names the scope of a stored narrowed result", () => {
+    const value = state();
+    value.result = {
+      ...value.result!,
+      conference_key: "emnlp-2035",
+      conference_label: "EMNLP 2035",
+    };
+
+    const { container } = draw(value);
+
+    expect(container.textContent).toContain("limited to EMNLP 2035");
+  });
+});
 
 describe("renderWorkshopNudges", () => {
   it("opens a recipient detail with evidence and the exact server text", () => {
@@ -235,9 +326,40 @@ describe("renderWorkshopNudges", () => {
     expect(onViewChange).toHaveBeenCalledWith({ tab: "unresolved", page: 0, detailKey: null });
 
     const selectAll = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Select all ready recipients on this page"]',
+      'input[aria-label="Select all ready recipients"]',
     );
     selectAll?.click();
     expect(onSetRecipients).toHaveBeenCalledWith(["member-1"], false);
+  });
+
+  // "Matching in progress… 1671 of 2540 model calls done" with no button on the card was the whole
+  // page for an administrator whose pass had died: nothing to press, nothing to do but reload and
+  // read the same number again.
+  it("offers a way out of a pass that is not moving", () => {
+    const onCancelRun = vi.fn();
+    const onForceRefresh = vi.fn();
+    const value = createEmptyWorkshopNudgeReviewState();
+    value.run = { status: "running", calls_done: 1671, calls_total: 2540, calls_failed: 3 };
+    const { container } = draw(value, { onCancelRun, onForceRefresh });
+
+    expect(container.textContent).toContain("1671 of 2540 model calls done");
+    expect(container.textContent).toContain("3 calls failed");
+    container.querySelector<HTMLButtonElement>('[data-testid="workshop-nudges-cancel"]')?.click();
+    expect(onCancelRun).toHaveBeenCalledOnce();
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="workshop-nudges-force-refresh"]')
+      ?.click();
+    expect(onForceRefresh).toHaveBeenCalledOnce();
+  });
+
+  // Vercel ships this UI ahead of the Aurora service as a matter of routine, so a run arriving
+  // without the newer counts must render as a pass with nothing wrong, not as "undefined failed".
+  it("renders a run from a service that does not send failed-call counts", () => {
+    const value = createEmptyWorkshopNudgeReviewState();
+    value.run = { status: "running", calls_done: 10, calls_total: 20 };
+    const { container } = draw(value);
+    expect(container.textContent).toContain("10 of 20 model calls done");
+    expect(container.textContent).not.toContain("undefined");
+    expect(container.textContent).not.toContain("calls failed");
   });
 });

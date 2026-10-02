@@ -4,6 +4,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import { createAdminBotMockService } from "./server.js";
+import {
+  cancelWorkshopNudgeRun,
+  readWorkshopNudgeRun,
+  startWorkshopNudgeRun,
+  WORKSHOP_RUN_STALLED_MESSAGE,
+  workshopRunIsAbandoned,
+} from "./server.workshop-nudges.js";
 
 const SERVICE_TOKEN = "test-service-token";
 const running: Array<{
@@ -52,7 +59,11 @@ async function startService(executed: AdminBotStoredProposal[] = []) {
     },
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
-    dcsFormRunner: async () => {},
+    dcsRosterRecorder: async () => ({
+      username: "stub@cs.toronto.edu",
+      password: "stub",
+      candidates: ["stub@cs.toronto.edu"],
+    }),
   });
   await new Promise<void>((resolve, reject) => {
     mock.server.once("error", reject);
@@ -95,7 +106,7 @@ async function adminHeaders(baseUrl: string, mock: ReturnType<typeof createAdmin
   if (!pending) {
     throw new Error("missing pending admin claim");
   }
-  const approved = mock.auth.approveRegistration(pending.id, "test-admin");
+  const approved = await mock.auth.approveRegistration(pending.id, "test-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }
@@ -112,7 +123,8 @@ function seedMember(
   mock: ReturnType<typeof createAdminBotMockService>,
   member: Parameters<typeof mock.service.upsertLabMember>[0],
 ) {
-  const result = mock.service.upsertLabMember(member);
+  // On the nudge list unless the case overrides it: these fixtures exist to receive nudges.
+  const result = mock.service.upsertLabMember({ receives_nudges: true, ...member });
   if (!result.ok) {
     throw new Error(result.error.message);
   }
@@ -212,7 +224,11 @@ describe("workshop nudge HTTP flow", () => {
     });
   });
 
-  it("recomputes current messages on Nudge and sends one member_nudge.send", async () => {
+  // Send delivers the pass the administrator was looking at, not a fresh one. Recomputing here ran
+  // the whole cross-product inside the Send request -- a Cloudflare 524 at a hundred seconds -- and
+  // could put out a draft nobody had read, since the matcher is a language model and its output is
+  // not deterministic.
+  it("sends the reviewed draft, not a recomputed one, as one member_nudge.send", async () => {
     const executed: AdminBotStoredProposal[] = [];
     const { baseUrl, mock } = await startService(executed);
     const headers = await adminHeaders(baseUrl, mock);
@@ -228,6 +244,8 @@ describe("workshop nudge HTTP flow", () => {
     const preview = await runAndRead(baseUrl, headers);
     expect(JSON.stringify(await preview.json())).toContain("Old meta agents title");
 
+    // A paper added after the pass. It must not appear in what goes out: the administrator approved
+    // the earlier answer, and this one has never been on screen.
     seedPaper(mock, "Current meta agents title");
     const response = await fetch(`${baseUrl}/workshop-nudges/send`, {
       method: "POST",
@@ -246,9 +264,40 @@ describe("workshop nudge HTTP flow", () => {
     expect(executed[0]?.type).toBe("member_nudge.send");
     expect(executed[0]?.proposed_payload).toMatchObject({
       target: "U-MIRA",
-      message: expect.stringContaining("Current meta agents title"),
+      message: expect.stringContaining("Old meta agents title"),
     });
+    expect(JSON.stringify(executed[0]?.proposed_payload)).not.toContain(
+      "Current meta agents title",
+    );
+    // Still true, and still the point of the route taking only a recipient list: the browser cannot
+    // choose the text.
     expect(JSON.stringify(executed[0]?.proposed_payload)).not.toContain("browser-controlled");
+  });
+
+  // Refused rather than quietly starting a pass. One is tens of minutes; an administrator pressing
+  // Nudge is not waiting for it, and starting one silently is what produced the timeout.
+  it("refuses to send when no pass has produced recommendations yet", async () => {
+    const executed: AdminBotStoredProposal[] = [];
+    const { baseUrl, mock } = await startService(executed);
+    const headers = await adminHeaders(baseUrl, mock);
+    seedMember(mock, {
+      id: "member-1",
+      name: "Mira Member",
+      email: "mira@cs.toronto.edu",
+      slack_user_id: "U-MIRA",
+      privilege_level: "member",
+      status: "active",
+    });
+    seedPaper(mock, "Never matched");
+
+    const response = await fetch(`${baseUrl}/workshop-nudges/send`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ recipient_member_ids: ["member-1"] }),
+    });
+    expect(response.status).not.toBe(200);
+    expect(JSON.stringify(await response.json())).toContain("run a match first");
+    expect(executed).toHaveLength(0);
   });
 
   it("reports a missing Slack identity and refuses both routes to the service principal", async () => {
@@ -278,7 +327,7 @@ describe("workshop nudge HTTP flow", () => {
 
     // Reading, starting a pass and sending are all lab-internal: a service token is insufficient
     // for every one of them.
-    for (const pathname of ["preview", "refresh", "send"]) {
+    for (const pathname of ["preview", "refresh", "send", "cancel"]) {
       const response = await fetch(`${baseUrl}/workshop-nudges/${pathname}`, {
         method: "POST",
         headers: {
@@ -289,5 +338,198 @@ describe("workshop nudge HTTP flow", () => {
       });
       expect(response.status).toBe(403);
     }
+  });
+});
+
+// The pass is an un-awaited task inside the service, so a row saying `running` is only evidence
+// that one started. The tab that reported 1671 of 2540 model calls for days was reading a run
+// whose process had been gone since the count stopped moving, and "one pass at a time" then
+// refused every attempt to start a new one -- in the dead run's name.
+describe("a pass that stopped moving", () => {
+  const stale = (progressAt?: string) => ({
+    status: "running" as const,
+    started_at: "2026-08-30T00:00:00.000Z",
+    ...(progressAt ? { progress_at: progressAt } : {}),
+  });
+  const now = new Date("2026-08-30T02:00:00.000Z");
+
+  it("is abandoned once it has gone quiet for long enough", () => {
+    expect(workshopRunIsAbandoned(stale("2026-08-30T01:59:00.000Z"), now)).toBe(false);
+    expect(workshopRunIsAbandoned(stale("2026-08-30T01:00:00.000Z"), now)).toBe(true);
+  });
+
+  it("falls back to the start time for a run written before the clock existed", () => {
+    expect(workshopRunIsAbandoned(stale(), now)).toBe(true);
+  });
+
+  it("leaves a finished pass alone", () => {
+    expect(
+      workshopRunIsAbandoned({ ...stale(), status: "ready" as unknown as "running" }, now),
+    ).toBe(false);
+  });
+});
+
+/**
+ * Noticing a stalled pass on the cheap route, not only on the expensive one.
+ *
+ * `workshopRunIsAbandoned` was only ever consulted by `startWorkshopNudgeRun`, which is what a
+ * press of Find recommendations calls. But the tab does not press anything: it polls the read
+ * route every few seconds, and that route handed back `status: "running"` verbatim. So an
+ * administrator watching "1671 of 2540 model calls done" was watching a number that no code path
+ * they were exercising could ever change. Staleness is a fact about the row; the reader is
+ * entitled to act on it.
+ */
+describe("reading a pass that stopped moving", () => {
+  const wedged = (id: string) => ({
+    id,
+    status: "running" as const,
+    started_at: new Date().toISOString(),
+    calls_done: 1671,
+    calls_total: 2540,
+  });
+
+  it("closes out a stalled run instead of reporting it as running forever", async () => {
+    const { mock } = await startService();
+    mock.service.saveWorkshopMatchRun(wedged("wsm_stalled"));
+
+    const view = readWorkshopNudgeRun(mock.service, new Date(Date.now() + 61 * 60 * 1000));
+    expect(view.status).toBe("failed");
+    expect(view.error).toBe(WORKSHOP_RUN_STALLED_MESSAGE);
+    // The counts stay put: they are the only record of how far it got, and resetting them to zero
+    // would leave nobody able to say what happened.
+    expect(view.calls_done).toBe(1671);
+    expect(view.calls_total).toBe(2540);
+    // And the closing is persisted, so the next poll does not have to rediscover it.
+    expect(mock.service.latestWorkshopMatchRun()?.status).toBe("failed");
+  });
+
+  it("leaves a pass that is still moving alone", async () => {
+    const { mock } = await startService();
+    mock.service.saveWorkshopMatchRun(wedged("wsm_live"));
+    expect(readWorkshopNudgeRun(mock.service, new Date()).status).toBe("running");
+  });
+
+  it("lets an administrator stop a pass without waiting out the stall window", async () => {
+    const { mock } = await startService();
+    mock.service.saveWorkshopMatchRun(wedged("wsm_wedged"));
+
+    const view = cancelWorkshopNudgeRun({ service: mock.service, actor: "admin-1" });
+    expect(view.status).toBe("failed");
+    expect(view.error).toContain("stopped by admin-1");
+    expect(view.error).toContain("1671 of 2540");
+  });
+
+  it("starts a fresh pass over a wedged one when the administrator forces it", async () => {
+    const { mock } = await startService();
+    const now = new Date();
+    mock.service.saveWorkshopMatchRun(wedged("wsm_wedged"));
+
+    // Without `force` the guard hands back the wedged run: it has not gone quiet long enough yet,
+    // which is the right default for a pass nobody is watching and the wrong one for an
+    // administrator who has been staring at a still count.
+    const refused = startWorkshopNudgeRun({ service: mock.service, match: async () => [], now });
+    expect(refused.calls_done).toBe(1671);
+    expect(mock.service.latestWorkshopMatchRun()?.id).toBe("wsm_wedged");
+
+    const forced = startWorkshopNudgeRun({
+      service: mock.service,
+      match: async () => [],
+      now,
+      force: true,
+    });
+    expect(forced.calls_done).toBe(0);
+    expect(mock.service.latestWorkshopMatchRun()?.id).not.toBe("wsm_wedged");
+  });
+});
+
+describe("the scheduled once-per-conference pass", () => {
+  /** The sweep as cron reaches it: service token, no body, no recipient list. */
+  async function runSweep(baseUrl: string) {
+    const response = await fetch(`${baseUrl}/workshop-nudges/run`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+    });
+    return {
+      status: response.status,
+      body: (await response.json()) as {
+        conference: { key: string; label: string; days_until: number } | null;
+        reason?: string;
+        created: Array<{ member_id: string }>;
+        skipped: Array<{ member_id: string; reason: string }>;
+        deferred: string[];
+      },
+    };
+  }
+
+  async function serviceWithAuthor() {
+    const { baseUrl, mock } = await startService();
+    seedMember(mock, {
+      id: "member-1",
+      name: "Mira Member",
+      email: "mira@cs.toronto.edu",
+      slack_user_id: "U-MIRA",
+      privilege_level: "member",
+      status: "active",
+    });
+    seedPaper(mock);
+    return { baseUrl, mock };
+  }
+
+  it("takes the conference nearest its first workshop deadline and messages its authors", async () => {
+    const { baseUrl } = await serviceWithAuthor();
+    const first = await runSweep(baseUrl);
+    expect(first.status).toBe(200);
+    expect(first.body.conference?.key).toBeTruthy();
+    expect(first.body.created.map((entry) => entry.member_id)).toEqual(["member-1"]);
+    // Two conferences are inside the window in the shipped dataset at this clock. One pass is tens
+    // of minutes of model calls, so the other waits for tomorrow rather than doubling this run.
+    expect(first.body.deferred.length).toBeGreaterThan(0);
+  });
+
+  it("sends nothing the second time, however often it is called", async () => {
+    const { baseUrl } = await serviceWithAuthor();
+    const first = await runSweep(baseUrl);
+    const firstKey = first.body.conference?.key;
+    expect(first.body.created).toHaveLength(1);
+
+    // The whole guarantee. A daily cron fires on every one of the fourteen days in the window;
+    // what stops fourteen messages is the ledger, not the cadence.
+    const second = await runSweep(baseUrl);
+    expect(second.body.conference?.key).not.toBe(firstKey);
+    const third = await runSweep(baseUrl);
+    expect(third.body.conference).toBeNull();
+    expect(third.body.created).toEqual([]);
+  });
+
+  it("records the conference even when it matched nobody, so it is not retried nightly", async () => {
+    // No members and no papers: the pass runs, finds nothing, and must still be written off.
+    const { baseUrl } = await startService();
+    const first = await runSweep(baseUrl);
+    expect(first.body.created).toEqual([]);
+    const firstKey = first.body.conference?.key;
+    expect(firstKey).toBeTruthy();
+    const second = await runSweep(baseUrl);
+    expect(second.body.conference?.key).not.toBe(firstKey);
+  });
+
+  it("never texts a member twice for one conference", async () => {
+    const { baseUrl, mock } = await serviceWithAuthor();
+    const first = await runSweep(baseUrl);
+    const key = first.body.conference?.key as string;
+    expect(first.body.created).toHaveLength(1);
+
+    // Reach past the marker to the state an interrupted pass would leave: this member was told,
+    // but the conference was never written off. The retry must skip them rather than repeat.
+    const ledger = mock.service.listNudgeLedgerForTest("workshop_nudge");
+    expect(ledger.some((entry) => entry.member_id === "member-1")).toBe(true);
+    const history = mock.service.workshopNudgeHistory();
+    expect(history.passed.has(key)).toBe(true);
+    expect([...(history.messaged.get(key) ?? [])]).toEqual(["member-1"]);
+  });
+
+  it("refuses a caller without the service token", async () => {
+    const { baseUrl } = await startService();
+    const response = await fetch(`${baseUrl}/workshop-nudges/run`, { method: "POST" });
+    expect(response.status).toBe(401);
   });
 });

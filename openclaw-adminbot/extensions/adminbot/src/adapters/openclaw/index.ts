@@ -1,5 +1,6 @@
 import { AdminBotClient, type AdminBotClientConfig, type FetchLike } from "../../api/client.js";
 import { readGogSheetRows } from "../../connectors/gog.js";
+import { createLinkedInDraftRunner } from "../../connectors/social-draft.js";
 import type {
   AdminBotActionProposal,
   AdminBotActionType,
@@ -10,7 +11,9 @@ import type {
   AdminBotLabMember,
   AdminBotPaperRecordInput,
   AdminBotPaperRecord,
+  AdminBotPaperPresentationType,
   AdminBotPaperStep,
+  AdminBotPaperVenueDecision,
   AdminBotPrivilegeLevel,
   AdminBotRiskTier,
   AdminBotSensitiveInfoRecord,
@@ -26,7 +29,6 @@ import {
   buildPaperSocialPayload,
   type AdminBotSocialPlatform,
 } from "../../workflows/papers/social-posting.js";
-import { createLinkedInDraftRunner } from "../../connectors/social-draft.js";
 import type {
   AdminBotReimbursementMessage,
   AdminBotReimbursementReceipt,
@@ -179,6 +181,11 @@ type PaperParams = {
   title: string;
   authors: string[];
   currentStep: AdminBotPaperStep;
+  venueDecision?: AdminBotPaperVenueDecision;
+  acceptedVenue?: string;
+  acceptedYear?: number | "";
+  isArchival?: boolean | "";
+  presentationType?: AdminBotPaperPresentationType | "";
   artifacts?: AdminBotPaperRecordInput["artifacts"];
   mentorMemberId?: string;
   checks?: AdminBotPaperRecordInput["checks"];
@@ -380,7 +387,19 @@ export function createAdminBotToolHandlers(
         ...resolved,
         evidence: resolved.evidence,
       });
-      return await client.createProposal(calendarProposal(normalized), signal);
+      const proposal = await client.createProposal(calendarProposal(normalized), signal);
+      const proposalFields =
+        proposal && typeof proposal === "object" && !Array.isArray(proposal)
+          ? (proposal as Record<string, unknown>)
+          : { proposal };
+      return {
+        ...proposalFields,
+        outcome: "proposal_created",
+        approval_status: "pending",
+        external_mutation_performed: false,
+        user_message:
+          "Calendar change proposed for approval. It has not been scheduled or changed yet.",
+      };
     },
     proposeSlackMessage: (params: SlackMessageParams) =>
       client.createProposal(slackMessageProposal(params), signal),
@@ -561,12 +580,19 @@ function paperRecord(params: PaperParams): AdminBotPaperRecordInput {
     title: params.title,
     authors: params.authors,
     current_step: params.currentStep,
+    ...(params.venueDecision ? { venue_decision: params.venueDecision } : {}),
+    ...(params.acceptedVenue === undefined ? {} : { accepted_venue: params.acceptedVenue }),
+    ...(params.acceptedYear === undefined ? {} : { accepted_year: params.acceptedYear }),
+    ...(params.isArchival === undefined ? {} : { is_archival: params.isArchival }),
+    ...(params.presentationType === undefined
+      ? {}
+      : { presentation_type: params.presentationType }),
     ...(params.artifacts ? { artifacts: params.artifacts } : {}),
     ...(params.mentorMemberId ? { mentor_member_id: params.mentorMemberId } : {}),
     ...(params.checks ? { checks: params.checks } : {}),
     ...(params.reminder ? { reminder: params.reminder } : {}),
     ...(params.notes ? { notes: params.notes } : {}),
-  };
+  } as AdminBotPaperRecordInput;
 }
 
 function readArray<T>(value: unknown, key: string): T[] {

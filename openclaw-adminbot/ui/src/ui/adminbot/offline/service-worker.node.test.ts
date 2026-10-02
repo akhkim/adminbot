@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 
 const source = readFileSync(
-  fileURLToPath(new URL("../../../../public/sw.js", import.meta.url)),
+  path.resolve(process.cwd().endsWith("/ui") ? "public/sw.js" : "ui/public/sw.js"),
   "utf8",
 );
 function worker(fetcher = vi.fn()) {

@@ -12,17 +12,47 @@
 // whitelist drops governance fields. Nothing here can write privilege_level, status, or email.
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { ref } from "lit/directives/ref.js";
 import {
+  adminBotMemberFieldVisibility,
   adminBotSlackActivityOf,
   adminBotSlackActivityThreshold,
   adminBotSlackActivityWindowDays,
+  adminBotTimelineEntryTarget,
+  isAdminBotFullMember,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
-import { adminBotMemberFieldVisibility } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import {
+  adminBotBadgeEmoji,
+  ADMINBOT_BADGE_DESCRIPTION_MAX,
+  ADMINBOT_BADGE_RATIONALE_MAX,
+} from "../../../../../extensions/adminbot/src/contracts/badges.js";
+import { adminBotDriveFileId } from "../../../../../extensions/adminbot/src/contracts/drive-links.js";
+import {
+  MEMBER_CITY_OPTIONS,
+  MEMBER_AFFILIATION_OPTIONS,
+} from "../../../../../extensions/adminbot/src/contracts/member-profile-values.js";
+import {
+  formatAdminBotMemberRoles,
+  parseAdminBotMemberRoles,
+} from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
 import { t } from "../../../i18n/index.ts";
+import { toggleAdminBotPaperCard } from "../../adminbot/controllers/paper-slots.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
-import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
+import type { Tab } from "../../navigation.ts";
+import {
+  checkDriveEditAccess,
+  loadStoredMemberSession,
+  resolveAdminBotBaseUrl,
+  type AssignedBadge,
+  type BadgeDefinition,
+  type BadgeSuggestionInput,
+  type LabMember,
+  type MemberProfileUpdate,
+} from "../auth/session.ts";
+import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
+import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
 import {
   joinPhoneNumber,
   resolvePhoneDial,
@@ -36,13 +66,28 @@ import {
   type ProfileField,
   type ProfileFieldGroup,
 } from "../member-fields.ts";
+import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
+import { renderMemberBadgeSymbols, badgeCountLabel } from "./badge-symbols.ts";
 import { renderCountrySelect } from "./country-select.ts";
+import { renderMemberSelect } from "./member-select.ts";
+import { ownPapers } from "./my-work.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
+import { renderRecentEdits } from "./recent-edits.ts";
 
 export type ProfileProps = {
   onSave: (memberId: string, fields: MemberProfileUpdate) => void;
-  onPolishPhoto: () => void;
-  onApplyPolishedPhoto: (variantId: string) => void;
+  /** Fetches this record's edit history, called when the panel is opened. */
+  onLoadRecentEdits?: (subject: "member" | "paper", id: string) => void;
+  onPolishPhoto?: () => void;
+  onApplyPolishedPhoto?: (variantId: string) => void;
+  /** `memberId` is who the badge is for; omitted means the viewer themselves. */
+  onSubmitBadgeNomination?: (badgeId: string, evidence: string, memberId?: string) => void;
+  onPickBadgeNominee?: (memberId: string) => void;
+  onOpenBadgeNominee?: () => void;
+  /** Propose a badge the catalogue does not have. An admin decides whether it joins. */
+  onSubmitBadgeSuggestion?: (input: BadgeSuggestionInput) => void;
+  onToggleBadgeSuggestForm?: (open: boolean) => void;
+  onNavigateToTab?: (tab: Tab) => void;
 };
 
 const EDITABLE_FIELDS = PROFILE_FIELDS;
@@ -72,11 +117,7 @@ function groupFields(fields: EditableField[]): Array<{
   })).filter((group) => group.fields.length > 0);
 }
 
-// Autosave: a section commits itself a beat after the member stops typing anywhere in its form,
-// or immediately on leaving it (focus moving outside the form). One shared timer per section --
-// not per field -- so a pause commits every field together in one request instead of racing one
-// PUT per keystroke-field.
-const AUTOSAVE_DEBOUNCE_MS = 900;
+// One timer for the basics form -- see adminbot/autosave.ts for the shared timing rules.
 let basicsSaveTimer: ReturnType<typeof setTimeout> | undefined;
 
 // PROFILE_FIELDS carries its keys as plain `string` (it is data, not a `const`-narrowed
@@ -86,46 +127,6 @@ let basicsSaveTimer: ReturnType<typeof setTimeout> | undefined;
 // accepted; this only exists to satisfy the compiler about a key that's already known-dynamic.
 function setField(fields: MemberProfileUpdate, key: string, value: unknown): void {
   (fields as Record<string, unknown>)[key] = value;
-}
-
-function scheduleAutosave(
-  timer: ReturnType<typeof setTimeout> | undefined,
-  set: (next: ReturnType<typeof setTimeout> | undefined) => void,
-  commit: () => void,
-): void {
-  if (timer) {
-    clearTimeout(timer);
-  }
-  set(
-    setTimeout(() => {
-      set(undefined);
-      commit();
-    }, AUTOSAVE_DEBOUNCE_MS),
-  );
-}
-
-// Commits an edit that is still inside its debounce window, because focus leaving the form means
-// the member is done with it. With no timer pending there is nothing to flush: leaving a form
-// nobody typed in used to fire a full-record PUT, a "saved" toast for a save that changed nothing,
-// and an outbound account check per checkable field -- so merely tabbing through the page burned
-// GitHub's 60-request unauthenticated hourly budget, which a whole lab shares behind one campus IP.
-function flushAutosave(
-  timer: ReturnType<typeof setTimeout> | undefined,
-  set: (next: ReturnType<typeof setTimeout> | undefined) => void,
-  commit: () => void,
-): void {
-  if (!timer) {
-    return;
-  }
-  clearTimeout(timer);
-  set(undefined);
-  commit();
-}
-
-// True once focus has actually left the form -- not merely moved between two fields inside it.
-function focusLeftForm(form: HTMLFormElement, event: FocusEvent): boolean {
-  const next = event.relatedTarget as Node | null;
-  return !next || !form.contains(next);
 }
 
 // Fires alongside every autosave commit for the fields that have a real "does this account
@@ -161,10 +162,7 @@ function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
       continue;
     }
     // Already answered for this exact value, and not still in flight.
-    if (
-      accountCheckedValues.get(field) === value &&
-      state.profileAccountChecks[field]?.status !== "checking"
-    ) {
+    if (accountCheckedValues.get(field) === value && state.profileAccountChecks[field]) {
       continue;
     }
     accountCheckAborts.get(field)?.abort();
@@ -182,10 +180,69 @@ function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
       state.profileAccountChecks = { ...state.profileAccountChecks, [field]: result };
     });
   }
+  runDriveChecks(form, state);
+}
+
+function runDriveChecks(form: HTMLFormElement, state: AppViewState): void {
+  const data = new FormData(form);
+  const session = loadStoredMemberSession();
+  if (!session) {
+    return;
+  }
+  for (const field of ["cv_url", "one_on_one_folder_url", "availability_doc_url"] as const) {
+    if (!data.has(field)) {
+      continue;
+    }
+    const value = String(data.get(field) ?? "").trim();
+    if (!adminBotDriveFileId(value)) {
+      accountCheckAborts.get(field)?.abort();
+      accountCheckedValues.delete(field);
+      if (state.profileAccountChecks[field]) {
+        const next = { ...state.profileAccountChecks };
+        delete next[field];
+        state.profileAccountChecks = next;
+      }
+      continue;
+    }
+    if (accountCheckedValues.get(field) === value && state.profileAccountChecks[field]) {
+      continue;
+    }
+    accountCheckAborts.get(field)?.abort();
+    const controller = new AbortController();
+    accountCheckAborts.set(field, controller);
+    accountCheckedValues.set(field, value);
+    state.profileAccountChecks = { ...state.profileAccountChecks, [field]: { status: "checking" } };
+    void checkDriveEditAccess(
+      value,
+      session.sessionToken,
+      resolveAdminBotBaseUrl(state.settings),
+      controller.signal,
+    ).then((result) => {
+      if (controller.signal.aborted) {
+        return;
+      }
+      state.profileAccountChecks = {
+        ...state.profileAccountChecks,
+        [field]: result.ok
+          ? {
+              status: result.value.status === "editable" ? "verified" : "warning",
+              message: result.value.message,
+            }
+          : {
+              status: "warning",
+              message:
+                "Could not check Drive access. Make sure Jinesis.adminbot@gmail.com can edit this file.",
+            },
+      };
+    });
+  }
 }
 
 function renderAccountCheckStatus(state: AppViewState, field: EditableField) {
-  if (!isCheckableField(field.key)) {
+  if (
+    !isCheckableField(field.key) &&
+    !["cv_url", "one_on_one_folder_url", "availability_doc_url"].includes(field.key)
+  ) {
     return nothing;
   }
   const check = state.profileAccountChecks[field.key];
@@ -200,7 +257,7 @@ function renderAccountCheckStatus(state: AppViewState, field: EditableField) {
       ${check.status === "checking"
         ? t("profile.accountCheck.checking")
         : check.status === "verified"
-          ? t("profile.accountCheck.verified")
+          ? (check.message ?? t("profile.accountCheck.verified"))
           : check.message}
     </span>
   `;
@@ -282,11 +339,14 @@ function prefilledTimezone(member: LabMember): string | null {
  * nothing left to check against.
  */
 const FIELD_HELP: Record<string, string> = {
+  next_position: "profile.help.nextPosition",
   personal_circumstances: "profile.help.personalCircumstances",
   current_city: "profile.help.currentCity",
   linkedin_urn: "profile.help.linkedinUrn",
   intake_form_url: "profile.help.intakeFormUrl",
   cv_url: "profile.help.cvUrl",
+  one_on_one_folder_url: "profile.help.oneOnOneFolderUrl",
+  elevator_pitch: "profile.help.elevatorPitch",
 };
 
 // Hover or focus reveals it; `aria-describedby` is what makes it reachable without a pointer.
@@ -498,6 +558,54 @@ export function badgesFor(state: AppViewState, member: LabMember): string[] {
   return badges;
 }
 
+function assignedBadgeLabel(badge: Pick<AssignedBadge, "name" | "tier">): string {
+  return badge.tier ? `${badge.name} · ${badge.tier}` : badge.name;
+}
+
+/**
+ * The badges still open to whoever the form is currently about.
+ *
+ * Keyed on the nominee rather than the viewer: a family the nominee already holds, or already has
+ * queued, is not nominable for them, and those are different sets for different people. The pending
+ * side is only as complete as what this viewer can see -- a member reads their own nominations and
+ * the ones they filed, not the whole queue -- so a badge somebody else has already put forward can
+ * still be offered here. The service refuses that with a 409, which is the right place for it: the
+ * alternative is publishing the pending queue to the whole lab to save one rejected submit.
+ */
+function availableBadgeDefinitions(state: AppViewState, nominee: LabMember): BadgeDefinition[] {
+  const assignedFamilies = new Set(
+    ((nominee.assigned_badges ?? []) as AssignedBadge[]).map((badge) => badge.family_key),
+  );
+  const pendingFamilies = new Set(
+    (state.profileBadgeNominations ?? [])
+      .filter(
+        (nomination) => nomination.status === "pending" && nomination.member_id === nominee.id,
+      )
+      .map((nomination) => nomination.family_key),
+  );
+  return (state.adminBotBadgeDefinitions ?? []).filter(
+    (badge) => !assignedFamilies.has(badge.family_key) && !pendingFamilies.has(badge.family_key),
+  );
+}
+
+/**
+ * Who the nomination form is about right now.
+ *
+ * Falls back to the viewer whenever the picked id names nobody the roster knows -- a stale
+ * selection left over from a roster reload should put the form back on the safe, self case rather
+ * than render a badge list for a member who is not there.
+ */
+function badgeNominee(state: AppViewState, member: LabMember): LabMember {
+  const pickedId = state.profileBadgeNomineeId ?? "";
+  if (!pickedId || pickedId === member.id) {
+    return member;
+  }
+  return (
+    ((state.adminBotData?.members ?? []) as LabMember[]).find((row) => row.id === pickedId) ??
+    member
+  );
+}
+
 // Collects whatever the basics form holds. Governed fields have no input to read, so they cannot
 // be submitted even by hand-editing the DOM -- the same reason the service whitelists them.
 function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
@@ -521,6 +629,14 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
           value,
         ),
       );
+    } else if (field.type === "multi_dropdown") {
+      // getAll, not get: every checked box shares the field's name, and `get` would keep only the
+      // first -- which is the single-answer limit this field exists to undo.
+      setField(
+        fields,
+        field.key,
+        formatAdminBotMemberRoles(data.getAll(field.key).map((entry) => String(entry))),
+      );
     } else if (field.type === "list") {
       setField(
         fields,
@@ -541,6 +657,7 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
       setField(fields, field.key, value);
     }
   }
+  fields.intake_form_unavailable = !fields.intake_form_url && data.has("intake_form_unavailable");
   return fields;
 }
 
@@ -596,17 +713,88 @@ const PHONE_CODE_SUFFIX = "__dial";
 // can't hold letters, a date input can't hold "next Tuesday". The server re-validates all of it
 // regardless (a form is a UI convenience, never the trust boundary), but the earlier and more
 // specific the feedback, the less a bad save ever gets that far.
+
+const PROJECT_CHIPS_MAX_VISIBLE = 4;
+
+function renderProjectChips(state: AppViewState, props: ProfileProps): ReturnType<typeof html> {
+  const papers = ownPapers(state);
+  if (papers.length === 0) {
+    return html`<span class="profile__project-empty">${t("profile.basics.noProjects")}</span>`;
+  }
+  const visible = papers.slice(0, PROJECT_CHIPS_MAX_VISIBLE);
+  const overflow = papers.length - PROJECT_CHIPS_MAX_VISIBLE;
+  return html`
+    <div class="profile__project-chips">
+      ${visible.map(
+        (paper) => html`
+          <button
+            type="button"
+            class="profile__project-chip"
+            @click=${(e: Event) => {
+              e.preventDefault();
+              void toggleAdminBotPaperCard(state, paper.id);
+              props.onNavigateToTab?.("myWork");
+            }}
+          >
+            ${paper.alias || paper.title}
+          </button>
+        `,
+      )}
+      ${overflow > 0
+        ? html`<span class="profile__project-overflow">+${overflow} more</span>`
+        : nothing}
+    </div>
+  `;
+}
+
+/**
+ * One field of the fill-in form: its label, its control, and everything hanging off it.
+ *
+ * A `<label>` for every field but the multi-answer ones. A label forwards a click anywhere inside
+ * it to the first labelable control it contains, so a row whose control is a menu of checkboxes
+ * would tick a role -- possibly one behind a closed dropdown -- when somebody clicked the word
+ * "Role". Those rows get a plain container, and the checkbox group carries its own accessible name.
+ */
+function renderProfileFormRow(state: AppViewState, member: LabMember, field: EditableField) {
+  const body = html`
+    <span class="profile__form-label">
+      ${labelFor(field.key)}${renderMandatoryMark(
+        field,
+        displayValue(member, field),
+      )}${renderFieldHelp(field)}
+      ${field.adminOnly
+        ? html`<span class="profile__optional">${t("profile.basics.adminFilled")}</span>`
+        : isOptionalMemberField(field)
+          ? html`<span class="profile__optional">${t("profile.basics.optional")}</span>`
+          : nothing}
+    </span>
+    ${renderFieldInput(field, displayValue(member, field))} ${renderUrnStatus(member, field)}
+    ${renderFieldAction(field)} ${renderFieldHint(field)} ${renderFieldVisibility(field)}
+    ${renderPrefillHint(member, field)} ${renderWhatsappHint(member, field)}
+    ${renderAccountCheckStatus(state, field)}
+  `;
+  return field.type === "multi_dropdown"
+    ? html`<div class="profile__form-row">${body}</div>`
+    : html`<label class="profile__form-row">${body}</label>`;
+}
+
 function renderFieldInput(field: EditableField, currentValue: string) {
-  // An admin-owned answer is shown, never offered for editing. `disabled` also keeps the key out
-  // of the form's own collection, so an autosave cannot carry a value the service would drop.
+  // An admin-owned answer the member may still supply: shown, typable and pasteable, but outside
+  // the required marks and the completion denominator (see adminBotAdminOwnedProfileFields, which
+  // is empty at present -- `linkedin_urn` was its last entry and is now asked of the member like
+  // any other field). An ordinary input rather than `disabled` or `readonly`, because a disabled
+  // input cannot be focused, selected or pasted into: a member who had looked a value up somewhere
+  // the help text sent them would have nowhere to put it, and could not copy the stored one out
+  // either. Read-only fixes the copy half and not the paste half.
   if (field.adminOnly) {
     return html`
       <input
         class="input"
         name=${field.key}
         type="text"
+        maxlength=${SHORT_TEXT_MAX_LENGTH}
+        placeholder=${ifDefined(exampleFor(field))}
         .value=${currentValue}
-        disabled
         data-testid=${`profile-admin-only-${field.key}`}
       />
     `;
@@ -642,13 +830,32 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           )}
         </select>
       `;
+    case "multi_dropdown": {
+      // A dropdown that opens checkboxes, rather than a `<select multiple>`: the list box hides how
+      // many options there are behind a scroll and needs ctrl-click to pick a second one, which is
+      // exactly the interaction somebody recording "PhD Student" and "Lab Manager" would never
+      // guess at. Closed by default, because eleven boxes standing open are taller than the rest of
+      // the identity group put together and read as eleven separate questions.
+      const held = parseAdminBotMemberRoles(currentValue);
+      return renderMultiSelectField({
+        name: field.key,
+        label: t(field.labelKey),
+        placeholder: t("profile.basics.empty"),
+        options: multiSelectOptionsFor(field.options ?? [], held),
+        selected: new Set(held.map((entry) => entry.toLowerCase())),
+        rootClass: "profile__multi",
+        optionClass: "profile__multi-option",
+        legacyOptionClass: "profile__multi-option--legacy",
+        testId: `profile-multi-${field.key}`,
+      });
+    }
     case "paragraph":
       return html`
         <textarea
           class="input"
           name=${field.key}
           rows="3"
-          maxlength=${PARAGRAPH_MAX_LENGTH}
+          maxlength=${field.maxLength ?? PARAGRAPH_MAX_LENGTH}
           placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
         ></textarea>
@@ -697,12 +904,30 @@ function renderFieldInput(field: EditableField, currentValue: string) {
         <input
           class="input"
           name=${field.key}
+          list=${ifDefined(
+            field.key === "location"
+              ? "profile-city-options"
+              : field.key === "affiliation"
+                ? "profile-affiliation-options"
+                : undefined,
+          )}
           type="text"
           maxlength=${SHORT_TEXT_MAX_LENGTH}
           placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
           autocomplete="off"
         />
+        ${field.key === "location"
+          ? html`<datalist id="profile-city-options">
+              ${MEMBER_CITY_OPTIONS.map((option) => html`<option value=${option}></option>`)}
+            </datalist>`
+          : field.key === "affiliation"
+            ? html`<datalist id="profile-affiliation-options">
+                ${MEMBER_AFFILIATION_OPTIONS.map(
+                  (option) => html`<option value=${option}></option>`,
+                )}
+              </datalist>`
+            : nothing}
       `;
   }
 }
@@ -761,6 +986,15 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
       </div>
       <form
         class="profile__form"
+        ${ref((element) => {
+          if (element instanceof HTMLFormElement) {
+            queueMicrotask(() => {
+              if (element.isConnected) {
+                runDriveChecks(element, state);
+              }
+            });
+          }
+        })}
         @submit=${(event: SubmitEvent) => event.preventDefault()}
         @input=${(event: Event) => {
           const form = event.currentTarget as HTMLFormElement;
@@ -798,28 +1032,47 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
               <div class="profile__field-grid">
                 ${group.fields.map(
                   (field) => html`
-                    <label class="profile__form-row">
-                      <span class="profile__form-label">
-                        ${labelFor(field.key)}${renderMandatoryMark(
-                          field,
-                          displayValue(member, field),
-                        )}${renderFieldHelp(field)}
-                        ${field.adminOnly
-                          ? html`<span class="profile__optional"
-                              >${t("profile.basics.adminFilled")}</span
-                            >`
-                          : isOptionalMemberField(field)
-                            ? html`<span class="profile__optional"
-                                >${t("profile.basics.optional")}</span
-                              >`
-                            : nothing}
-                      </span>
-                      ${renderFieldInput(field, displayValue(member, field))}
-                      ${renderUrnStatus(member, field)} ${renderFieldAction(field)}
-                      ${renderFieldHint(field)} ${renderFieldVisibility(field)}
-                      ${renderPrefillHint(member, field)} ${renderWhatsappHint(member, field)}
-                      ${renderAccountCheckStatus(state, field)}
-                    </label>
+                    ${field.key === "projects"
+                      ? html`
+                          <div class="profile__form-row">
+                            <span class="profile__form-label">
+                              ${labelFor(field.key)}${renderMandatoryMark(
+                                field,
+                                displayValue(member, field),
+                              )}${renderFieldHelp(field)}
+                            </span>
+                            ${renderProjectChips(state, props)}
+                          </div>
+                        `
+                      : renderProfileFormRow(state, member, field)}
+                    <!-- A note and a checkbox about the field above, not a field of its own. It
+                         used to be a profile__form-row wrapped in a label, which rendered the
+                         explanation at label weight -- as loud as the questions around it -- and
+                         put a two-line paragraph inside the checkbox's hit area, so trying to
+                         select that text toggled the box. Now the sentence is an ordinary hint and
+                         only the checkbox's own words sit inside the label. -->
+                    ${field.key === "intake_form_url"
+                      ? html`<div class="profile__intake-note">
+                          <span class="profile__field-hint" data-testid="profile-intake-note"
+                            >${t("profile.hints.intakeFormSearch")}</span
+                          >
+                          <label class="profile__intake-check">
+                            <input
+                              type="checkbox"
+                              name="intake_form_unavailable"
+                              .checked=${member.intake_form_unavailable === true}
+                              @change=${(event: Event) => {
+                                const input = event.currentTarget as HTMLInputElement;
+                                const link = input.form?.querySelector<HTMLInputElement>(
+                                  '[name="intake_form_url"]',
+                                );
+                                if (input.checked && link) link.value = "";
+                              }}
+                            />
+                            <span>${t("profile.hints.intakeFormUnavailable")}</span>
+                          </label>
+                        </div>`
+                      : nothing}
                   `,
                 )}
               </div>
@@ -860,7 +1113,22 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
 // The ticks are decoration to a screen reader on purpose. The accessible read is the same
 // "{count} of {total}" sentence the bar used to carry, and the fields themselves -- with their
 // required marks -- are the real interface for acting on it.
-function renderCompletionLedger(member: LabMember) {
+/**
+ * Whether the lab is still waiting on this member's term timeline.
+ *
+ * The same rule the service's reminder applies (membersNeedingProfileAttention), read here so the
+ * page cannot claim somebody is finished while the sweep still has a reason to write to them.
+ */
+function timelineStillShort(member: LabMember): boolean {
+  const entries =
+    (member.availability?.length ?? 0) +
+    (member.time_off?.length ?? 0) +
+    (member.milestones?.length ?? 0) +
+    (member.trips?.length ?? 0);
+  return isAdminBotFullMember(member as never) && entries < adminBotTimelineEntryTarget;
+}
+
+function renderCompletionLedger(member: LabMember, state?: AppViewState) {
   const blanks = new Set(blankFields(member).map((field) => field.key));
   const total = requiredFieldCount();
   const done = total - blanks.size;
@@ -902,6 +1170,20 @@ function renderCompletionLedger(member: LabMember) {
         )}
       </div>
     </div>
+    ${percent === 100 && timelineStillShort(member)
+      ? html`<p class="profile__completeness-pending" data-testid="profile-timeline-pending">
+          ${t("profile.completeness.timelinePending")}
+          ${state
+            ? html`<button
+                type="button"
+                class="btn btn--sm"
+                @click=${() => state.setTab("adminbotTimeAvailability")}
+              >
+                ${t("profile.completeness.timelineAction")}
+              </button>`
+            : nothing}
+        </p>`
+      : nothing}
   `;
 }
 
@@ -945,15 +1227,44 @@ function renderSlackActivity(member: LabMember) {
 }
 
 function renderBadges(state: AppViewState, member: LabMember) {
-  const badges = badgesFor(state, member);
-  if (!badges.length) {
+  const computed = badgesFor(state, member);
+  const assigned = ((member.assigned_badges ?? []) as AssignedBadge[]).toSorted(
+    (left, right) =>
+      left.sort_order - right.sort_order ||
+      left.category.localeCompare(right.category) ||
+      left.name.localeCompare(right.name),
+  );
+  if (!assigned.length && !computed.length) {
     return html`<p class="profile__badges-empty">${t("profile.badges.empty")}</p>`;
   }
   return html`
     <div class="profile__badges" data-testid="profile-badges">
-      ${badges.map(
+      ${assigned.map(
+        (badge) => html`<span class="profile-badge profile-badge--managed" tabindex="0">
+          <span class="profile-badge__icon" aria-hidden="true"
+            >${adminBotBadgeEmoji(badge.name)}</span
+          >
+          <span>${badgeCountLabel(badge)}</span>
+          <span class="profile-badge__popover" role="tooltip">
+            <strong>${badge.category}</strong>
+            <span>${badge.description}</span>
+            ${badge.criteria_url
+              ? html`<a
+                  class="profile-badge__link"
+                  href=${badge.criteria_url}
+                  target=${EXTERNAL_LINK_TARGET}
+                  rel=${buildExternalLinkRel()}
+                  >${t("profile.badges.criteriaLink")}</a
+                >`
+              : nothing}
+          </span>
+        </span>`,
+      )}
+      ${computed.map(
         (badge) => html`<span class="profile-badge">
-          <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
+          <span class="profile-badge__icon" aria-hidden="true"
+            >${adminBotBadgeEmoji(badge.split(" · ")[0])}</span
+          >
           ${badge}
         </span>`,
       )}
@@ -961,12 +1272,390 @@ function renderBadges(state: AppViewState, member: LabMember) {
   `;
 }
 
-// The Slack photo rules, the last automated check, and the polish controls that act on them.
+// Keep earned badge details near the member identity, ahead of profile fields.
+function renderBadgesSection(state: AppViewState, member: LabMember) {
+  return html`
+    <section class="profile__section" data-testid="profile-badges-section">
+      <h2 class="profile__section-title">${t("profile.badges.title")}</h2>
+      <p class="profile__section-subtitle">${t("profile.badges.subtitle")}</p>
+      ${renderBadges(state, member)}
+    </section>
+  `;
+}
+
+/**
+ * Propose a badge the catalogue does not have.
+ *
+ * Nominating and suggesting are deliberately two forms rather than one with a "something else"
+ * option. They ask different questions -- who should hold this, versus what should exist -- they
+ * are decided on different evidence, and only one of them changes lab vocabulary. Folding them
+ * together would put the rarer, heavier action in front of everybody filing the common one.
+ *
+ * Shut by default, behind one button, for the same reason: most visits to this page are not this.
+ * Open, it is the badge's own fields plus the argument for it, because an admin approving this
+ * creates the badge exactly as written -- see submitBadgeSuggestion, which validates the fields
+ * here rather than at approval so nothing reaches the queue that cannot be accepted.
+ */
+function renderBadgeSuggestion(state: AppViewState, props: ProfileProps) {
+  const open = state.profileBadgeSuggestOpen === true;
+  const busy = state.badgeSuggestionBusy === true;
+  const mine = state.adminBotBadgeSuggestions ?? [];
+  return html`
+    <section class="profile__section" data-testid="profile-badge-suggestions">
+      <h2 class="profile__section-title">${t("profile.badges.suggestTitle")}</h2>
+      <p class="profile__section-subtitle">${t("profile.badges.suggestHint")}</p>
+      <div class="profile__form-actions">
+        <button
+          class="btn btn--sm"
+          type="button"
+          data-testid="profile-badge-suggest-toggle"
+          aria-expanded=${open ? "true" : "false"}
+          @click=${() => props.onToggleBadgeSuggestForm?.(!open)}
+        >
+          ${t(open ? "profile.badges.suggestClose" : "profile.badges.suggestOpen")}
+        </button>
+      </div>
+      ${state.badgeSuggestionNotice
+        ? html`<div
+            class="callout ${state.badgeSuggestionNotice.kind === "error" ? "danger" : "success"}"
+            role="status"
+            data-testid="profile-badge-suggest-notice"
+          >
+            ${state.badgeSuggestionNotice.text}
+          </div>`
+        : nothing}
+      ${open
+        ? html`<form
+            class="profile-badge-form"
+            data-testid="profile-badge-suggest-form"
+            @submit=${(event: Event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget as HTMLFormElement);
+              const text = (key: string) => String(data.get(key) ?? "").trim();
+              const criteriaUrl = text("criteria_url");
+              const tier = text("tier");
+              props.onSubmitBadgeSuggestion?.({
+                category: text("category"),
+                name: text("name"),
+                description: text("description"),
+                rationale: text("rationale"),
+                // Left off rather than sent empty: the service treats an absent optional field and
+                // a blank one the same way, and an absent one keeps the stored record clean.
+                ...(criteriaUrl ? { criteria_url: criteriaUrl } : {}),
+                ...(tier ? { tier } : {}),
+              });
+            }}
+          >
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.suggestName")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <input
+                class="input"
+                name="name"
+                type="text"
+                maxlength=${SHORT_TEXT_MAX_LENGTH}
+                placeholder=${t("profile.badges.suggestNamePlaceholder")}
+                ?disabled=${busy}
+                required
+              />
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.suggestCategory")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <input
+                class="input"
+                name="category"
+                type="text"
+                list="profile-badge-categories"
+                maxlength=${SHORT_TEXT_MAX_LENGTH}
+                placeholder=${t("profile.badges.suggestCategoryPlaceholder")}
+                ?disabled=${busy}
+                required
+              />
+              <!-- The categories already in use, offered rather than enforced: a suggestion that
+                   needs a new category is exactly the kind this form exists for. -->
+              <datalist id="profile-badge-categories">
+                ${[
+                  ...new Set((state.adminBotBadgeDefinitions ?? []).map((badge) => badge.category)),
+                ]
+                  .toSorted()
+                  .map((category) => html`<option value=${category}></option>`)}
+              </datalist>
+              <span class="profile__field-hint">${t("profile.badges.suggestCategoryHint")}</span>
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.suggestDescription")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <input
+                class="input"
+                name="description"
+                type="text"
+                maxlength=${ADMINBOT_BADGE_DESCRIPTION_MAX}
+                placeholder=${t("profile.badges.suggestDescriptionPlaceholder")}
+                ?disabled=${busy}
+                required
+              />
+              <span class="profile__field-hint">${t("profile.badges.suggestDescriptionHint")}</span>
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label">${t("profile.badges.suggestTier")}</span>
+              <input
+                class="input"
+                name="tier"
+                type="text"
+                maxlength=${SHORT_TEXT_MAX_LENGTH}
+                placeholder=${t("profile.badges.suggestTierPlaceholder")}
+                ?disabled=${busy}
+              />
+              <span class="profile__field-hint">${t("profile.badges.suggestTierHint")}</span>
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label">${t("profile.badges.suggestCriteria")}</span>
+              <input class="input" name="criteria_url" type="url" ?disabled=${busy} />
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.suggestRationale")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <textarea
+                class="input adminbot-badge-textarea--compact"
+                name="rationale"
+                rows="2"
+                maxlength=${ADMINBOT_BADGE_RATIONALE_MAX}
+                placeholder=${t("profile.badges.suggestRationalePlaceholder")}
+                ?disabled=${busy}
+                required
+              ></textarea>
+            </label>
+            <div class="profile__form-actions">
+              <button class="btn primary" type="submit" ?disabled=${busy}>
+                ${t("profile.badges.suggestButton")}
+              </button>
+            </div>
+          </form>`
+        : nothing}
+      <div class="profile-badge-nominations">
+        <h3 class="profile__group-title">${t("profile.badges.suggestionsTitle")}</h3>
+        ${mine.length
+          ? html`<ul class="profile-badge-nominations__list">
+              ${mine.map(
+                (suggestion) => html`<li
+                  class="profile-badge-nominations__item"
+                  data-testid="profile-badge-suggestion"
+                >
+                  <div class="profile-badge-nominations__head">
+                    <span class="profile-badge">
+                      <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
+                      ${suggestion.tier
+                        ? `${suggestion.name} · ${suggestion.tier}`
+                        : suggestion.name}
+                    </span>
+                    <span class=${`ab-chip ab-chip--${suggestion.status}`}>
+                      ${t(`profile.badges.status.${suggestion.status}`)}
+                    </span>
+                  </div>
+                  <div>${suggestion.description}</div>
+                  <div class="profile-badge-nominations__meta">
+                    <span>${suggestion.category}</span>
+                    ${nominationMeta("submittedAt", suggestion.created_at)}
+                    ${nominationMeta("decidedAt", suggestion.decided_at)}
+                    <!-- Says what approval actually did. "Approved" alone leaves somebody
+                         wondering whether the badge exists yet. -->
+                    ${suggestion.created_badge_id
+                      ? html`<span>${t("profile.badges.suggestionAdded")}</span>`
+                      : nothing}
+                  </div>
+                </li>`,
+              )}
+            </ul>`
+          : html`<p class="profile__badges-empty">${t("profile.badges.suggestionsEmpty")}</p>`}
+      </div>
+    </section>
+  `;
+}
+
+function nominationMeta(labelKey: "submittedAt" | "decidedAt", value: string | undefined) {
+  if (!value) {
+    return nothing;
+  }
+  const parsed = new Date(value);
+  const text = Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  return html`<span>${t(`profile.badges.${labelKey}`, { date: text })}</span>`;
+}
+
+/**
+ * The nomination form. Past and pending nominations are not listed on the profile.
+ *
+ * It used to be self-only, which quietly made the board a record of what people were willing to
+ * claim about themselves. Most of what these badges recognise is somebody else's to notice -- the
+ * colleague who caught the error in your paper is not the person who writes that up -- so the form
+ * now opens with who it is about, defaulting to the viewer so the self case still costs no clicks.
+ * Nothing about approval changes: it is still an admin who decides.
+ */
+function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props: ProfileProps) {
+  const nominee = badgeNominee(state, member);
+  const forSelf = nominee.id === member.id;
+  const nomineeName = nominee.name ?? nominee.id ?? "";
+  const available = availableBadgeDefinitions(state, nominee);
+  // Alumni are on the roster and can absolutely be nominated for something they did; only the
+  // viewer is filtered out, because they are already the default and a picker that lists you twice
+  // is a picker that reads as broken.
+  // A roster row with no id is not addressable, so it is dropped rather than offered as an option
+  // that cannot be submitted; a row with no name falls back to its id, which is at least searchable.
+  const rosterOptions = ((state.adminBotData?.members ?? []) as LabMember[])
+    .flatMap((row) =>
+      row.id && row.id !== member.id
+        ? [{ id: row.id, name: row.name ?? row.id, ...(row.email ? { hint: row.email } : {}) }]
+        : [],
+    )
+    .toSorted((left, right) => left.name.localeCompare(right.name));
+  return html`
+    <section class="profile__section" data-testid="profile-badge-nominations">
+      <h2 class="profile__section-title">${t("profile.badges.nominateTitle")}</h2>
+      <p class="profile__section-subtitle">${t("profile.badges.nominateHint")}</p>
+      <div class="profile__form-row" data-testid="profile-badge-nominee">
+        <span class="profile__form-label">${t("profile.badges.nominateWho")}</span>
+        <div class="profile-badge-nominee">
+          <button
+            class=${`btn btn--sm ${forSelf ? "primary" : ""}`}
+            type="button"
+            data-testid="profile-badge-nominee-self"
+            ?disabled=${state.profileBadgeBusy}
+            @click=${() => props.onPickBadgeNominee?.("")}
+          >
+            ${t("profile.badges.nominateSelf")}
+          </button>
+          ${renderMemberSelect({
+            options: rosterOptions,
+            value: forSelf ? "" : (nominee.id ?? ""),
+            placeholder: t("profile.badges.nominateSearch"),
+            label: t("profile.badges.nominateWho"),
+            disabled: state.profileBadgeBusy,
+            onPick: (memberId: string) => props.onPickBadgeNominee?.(memberId),
+            onOpen: () => props.onOpenBadgeNominee?.(),
+          })}
+        </div>
+        ${state.adminBotRosterLoading
+          ? html`<p class="profile__section-subtitle" role="status">Loading lab members…</p>`
+          : state.adminBotRosterError
+            ? html`<p class="profile__section-subtitle" role="alert">
+                Could not load lab members.
+                <button
+                  class="btn btn--sm"
+                  type="button"
+                  @click=${() => props.onOpenBadgeNominee?.()}
+                >
+                  Try again
+                </button>
+              </p>`
+            : nothing}
+        ${forSelf
+          ? nothing
+          : html`<p class="profile__section-subtitle" data-testid="profile-badge-nominee-name">
+              ${t("profile.badges.nominateFor", { name: nomineeName })}
+            </p>`}
+      </div>
+      ${state.profileBadgeNotice
+        ? html`<div
+            class="callout ${state.profileBadgeNotice.kind === "error" ? "danger" : "success"}"
+            role="status"
+          >
+            ${state.profileBadgeNotice.text}
+          </div>`
+        : nothing}
+      ${available.length
+        ? html`<form
+            class="profile-badge-form"
+            @submit=${(event: Event) => {
+              event.preventDefault();
+              const form = event.currentTarget as HTMLFormElement;
+              props.onSubmitBadgeNomination?.(
+                String(new FormData(form).get("badge_id") ?? ""),
+                String(new FormData(form).get("evidence") ?? ""),
+                forSelf ? undefined : nominee.id,
+              );
+            }}
+          >
+            <div class="profile__form-row">
+              <span class="profile__form-label">${t("profile.badges.nominateSelect")}</span>
+              <div class="profile-badge-picker">
+                ${available.map(
+                  (badge) => html`
+                    <label
+                      class="profile-badge-picker__card"
+                      data-testid="profile-badge-picker-card"
+                    >
+                      <input
+                        type="radio"
+                        name="badge_id"
+                        class="sr-only"
+                        value=${badge.id}
+                        ?disabled=${state.profileBadgeBusy}
+                        required
+                      />
+                      <span class="profile-badge-picker__title">
+                        ${assignedBadgeLabel(badge)}
+                      </span>
+                      <p class="profile-badge-picker__description">${badge.description}</p>
+                    </label>
+                  `,
+                )}
+              </div>
+            </div>
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.nominateEvidence")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <textarea
+                class="input adminbot-badge-textarea--compact"
+                name="evidence"
+                rows="1"
+                ?disabled=${state.profileBadgeBusy}
+                required
+              ></textarea>
+            </label>
+            <div class="profile__form-actions">
+              <button class="btn primary" type="submit" ?disabled=${state.profileBadgeBusy}>
+                ${t("profile.badges.nominateButton")}
+              </button>
+            </div>
+          </form>`
+        : html`<p class="profile__badges-empty">
+            ${forSelf
+              ? t("profile.badges.nominateNoneAvailable")
+              : t("profile.badges.nominateNoneAvailableFor", { name: nomineeName })}
+          </p>`}
+    </section>
+  `;
+}
+
+// The Slack photo rules and the polish controls that act on them.
 //
 // Its own section, directly after the record: the rules are reference a member reads once and the
 // polish controls are a real action, which is more than a card in the suggestions stack carries.
 // It sits after the fields rather than before them so the thing people came to this page to do is
 // still the first thing they meet.
+//
+// A note, not a warning. There is a photo review pass on the service
+// (`/profile-photo/review/run`) that can DM members whose photo misses the guidelines, and it is
+// deliberately left off the cron manifest: a headshot is not a deadline, and chasing people about
+// how they look is a worse trade than letting them read the rules when they are already on the
+// page that changes them. So a member meets these guidelines by visiting their own profile, and
+// the assessment block below renders only when a review actually ran -- its absence is the normal
+// case and says nothing, rather than reading as a check still pending.
 function renderPhotoCompliance(state: AppViewState, member: LabMember, props: ProfileProps) {
   const review = member.profile_photo_review;
   const assessment = review?.assessment;
@@ -1000,21 +1689,21 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
       ${assessment
         ? html`
             <p>
-              <strong>Latest check:</strong>
-              ${assessment.compliant ? "Compliant" : "Needs update"} (${assessment.source})
-              ${assessment.summary ? `- ${assessment.summary}` : ""}
+              <strong>Last look at your photo:</strong>
+              ${assessment.compliant ? "matches the guidelines" : "could be improved"}
+              (${assessment.source})${assessment.summary ? ` - ${assessment.summary}` : ""}
             </p>
             ${assessment.issues.length
-              ? html`<p><strong>Issues:</strong> ${assessment.issues.join(", ")}</p>`
+              ? html`<p><strong>What stood out:</strong> ${assessment.issues.join(", ")}</p>`
               : nothing}
           `
-        : html`<p>No automated check result is available yet.</p>`}
+        : nothing}
       <div class="profile__form-actions">
         <button
           type="button"
           class="btn"
           ?disabled=${state.adminBotPhotoPolishBusy}
-          @click=${() => props.onPolishPhoto()}
+          @click=${() => props.onPolishPhoto?.()}
         >
           ${state.adminBotPhotoPolishBusy
             ? "Polishing..."
@@ -1046,7 +1735,7 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
                               type="button"
                               class="btn btn--sm primary"
                               ?disabled=${state.adminBotPhotoApplyBusy || variant.id === selectedId}
-                              @click=${() => props.onApplyPolishedPhoto(variant.id)}
+                              @click=${() => props.onApplyPolishedPhoto?.(variant.id)}
                             >
                               ${variant.id === selectedId
                                 ? "Applied"
@@ -1068,134 +1757,40 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
   `;
 }
 
-// What is still outstanding for this person, in one place: the onboarding steps they have not
-// finished, then the guidebook pointers derived from what their record is missing.
+// A line pointing at Getting Started, not the checklist itself.
 //
-// The onboarding steps come first because they are the lab actually waiting on someone, where a
-// guidebook pointer is only advice. Their labels, detail and links all come from the checklist the
-// service generated for this member, so this list and the checklist itself can never drift. The
-// section is named for them, not for the advice underneath: "Suggested for you" over a stack whose
-// top half is a list of things somebody is waiting on read as optional, which they are not.
-function renderSuggestions(state: AppViewState, member: LabMember) {
-  const blanks = new Set(blankFields(member).map((field) => field.key));
-
-  type Suggestion = {
-    id: string;
-    title: string;
-    body: string;
-    label: string;
-    href: string;
-    status?: string;
-  };
-
-  const onboardingSuggestions: Suggestion[] = [];
-  const otherSuggestions: Suggestion[] = [];
-
-  const onboarding = state.adminBotOnboarding;
-  const outstanding = [
-    ...(onboarding?.current_step ? [onboarding.current_step] : []),
-    ...(onboarding?.remaining ?? []),
-  ].filter(
-    (step, index, all) =>
-      step.status !== "complete" && all.findIndex((other) => other.id === step.id) === index,
-  );
-  for (const step of outstanding) {
-    const link = step.links?.[0];
-    onboardingSuggestions.push({
-      id: `onboarding-${step.id}`,
-      title: step.label,
-      body: step.detail ?? "",
-      label: link?.label ?? "",
-      href: link?.url ?? "",
-      status:
-        step.status === "current"
-          ? t("adminbotWelcome.status.current")
-          : t("adminbotWelcome.status.remaining"),
-    });
+// This page used to end in two stacked versions of the same list: an "Onboarding steps" section
+// that only linked out, and under it the folded checklist that was the only place a step could be
+// ticked off. Both live on the Getting Started tab now, which is a tracker rather than an appendix
+// to a page somebody edits every week. What stays here is the one fact a member reading their own
+// record wants: whether anything is still waiting on them.
+function renderOnboardingPointer(state: AppViewState, props: ProfileProps) {
+  const steps = state.adminBotOnboarding?.steps ?? [];
+  if (!steps.length) {
+    return nothing;
   }
-
-  const coveredByOnboarding = outstanding
-    .map((step) => `${step.id} ${step.label}`.toLowerCase())
-    .join(" ");
-
-  // No URN card here any more: the collector hand-off sits on the field it feeds (see
-  // renderFieldAction), where it stays reachable after the field is filled.
-
-  // The intake form used to be pushed here unconditionally. It never had a "done" state, so it sat
-  // permanently in a stack whose whole meaning is "still outstanding" and quietly taught people to
-  // read past it. It lives with the links now, where a permanent destination belongs.
-  const topics = (member.research_topics ?? []).join(" ").toLowerCase();
-  if (
-    !coveredByOnboarding.includes("gpu") &&
-    !topics.includes("gpu") &&
-    !String(member.notes ?? "")
-      .toLowerCase()
-      .includes("gpu")
-  ) {
-    otherSuggestions.push({
-      id: "gpu",
-      title: t("profile.suggestions.gpuTitle"),
-      body: t("profile.suggestions.gpuBody"),
-      label: t("profile.suggestions.gpuLink"),
-      href: "https://github.com/akhkim/openclaw-adminbot-lab#gpu-onboarding",
-    });
-  }
-  if (blanks.has("personal_website") && !coveredByOnboarding.includes("website")) {
-    otherSuggestions.push({
-      id: "website",
-      title: t("profile.suggestions.websiteTitle"),
-      body: t("profile.suggestions.websiteBody"),
-      label: t("profile.suggestions.websiteLink"),
-      href: "https://github.com/akhkim/openclaw-adminbot-lab#member-pages",
-    });
-  }
-
-  const renderCard = (suggestion: Suggestion) => html`
-    <article class="profile-suggestion" data-testid=${`suggestion-${suggestion.id}`}>
-      <h3 class="profile-suggestion__title">
-        ${suggestion.title}
-        ${suggestion.status
-          ? html`<span class="ab-chip profile-suggestion__status">${suggestion.status}</span>`
-          : nothing}
-      </h3>
-      ${suggestion.body
-        ? html`<p class="profile-suggestion__body">${suggestion.body}</p>`
-        : nothing}
-      ${suggestion.href
-        ? html`
-            <a
-              class="profile-suggestion__link"
-              href=${suggestion.href}
-              target=${EXTERNAL_LINK_TARGET}
-              rel=${buildExternalLinkRel()}
-            >
-              ${suggestion.label}
-              <span class="profile-suggestion__icon" aria-hidden="true">
-                ${icons.externalLink}
-              </span>
-            </a>
-          `
-        : nothing}
-    </article>
-  `;
-
+  const outstanding = steps.filter((step) => step.status !== "complete").length;
   return html`
-    <section class="profile__section" data-testid="profile-suggestions">
-      <h2 class="profile__section-title">${t("profile.suggestions.title")}</h2>
-      ${onboardingSuggestions.length
-        ? html`
-            <div class="profile__suggestions-group">
-              <h3 class="profile__suggestions-group-title">
-                ${t("profile.suggestions.fromOnboarding")}
-              </h3>
-              <div class="profile__suggestions">${onboardingSuggestions.map(renderCard)}</div>
-            </div>
-          `
-        : nothing}
-      <div class="profile__suggestions-group">
-        <h3 class="profile__suggestions-group-title">${t("profile.suggestions.other")}</h3>
-        <div class="profile__suggestions">${otherSuggestions.map(renderCard)}</div>
+    <section
+      class="profile__section profile__onboarding-pointer"
+      data-testid="profile-onboarding-pointer"
+    >
+      <div class="profile__onboarding-pointer-copy">
+        <h2 class="profile__section-title">${t("tabs.gettingStarted")}</h2>
+        <p class="profile__onboarding-pointer-line">
+          ${outstanding
+            ? t("gettingStarted.profilePointer", { count: String(outstanding) })
+            : t("gettingStarted.profilePointerDone")}
+        </p>
       </div>
+      <button
+        type="button"
+        class="btn ${outstanding ? "primary" : ""} profile__onboarding-pointer-action"
+        data-testid="profile-onboarding-pointer-open"
+        @click=${() => props.onNavigateToTab?.("gettingStarted")}
+      >
+        ${t("gettingStarted.open")}
+      </button>
     </section>
   `;
 }
@@ -1237,15 +1832,20 @@ function renderLinks(member: LabMember) {
   if (!cv && !socials.length && !site && !openReviewId) {
     return nothing;
   }
-  const link = (label: string, href: string, strong = false) => html`
-    <a
-      class=${`profile__link ${strong ? "profile__link--strong" : ""}`}
-      href=${href}
-      target=${EXTERNAL_LINK_TARGET}
-      rel=${buildExternalLinkRel()}
-      >${label}</a
-    >
-  `;
+  const link = (label: string, href: string, strong = false) => {
+    if (!/^https?:\/\//iu.test(href)) {
+      return html`<span class="profile__link">${label}: ${href}</span>`;
+    }
+    return html`
+      <a
+        class=${`profile__link ${strong ? "profile__link--strong" : ""}`}
+        href=${href}
+        target=${EXTERNAL_LINK_TARGET}
+        rel=${buildExternalLinkRel()}
+        >${label}</a
+      >
+    `;
+  };
   return html`
     <span class="profile__links" data-testid="profile-links">
       ${cv ? link(t("profile.social.cv"), cv, true) : nothing}
@@ -1268,6 +1868,24 @@ function renderLinks(member: LabMember) {
 const SAVE_TOAST_MS = 2600;
 let toastNoticeText: string | null = null;
 let toastDismissTimer: ReturnType<typeof setTimeout> | undefined;
+
+export function resetProfileSessionState(): void {
+  if (basicsSaveTimer) {
+    clearTimeout(basicsSaveTimer);
+    basicsSaveTimer = undefined;
+  }
+  for (const controller of accountCheckAborts.values()) {
+    controller.abort();
+  }
+  accountCheckAborts.clear();
+  accountCheckedValues.clear();
+  pendingFocusFieldKey = null;
+  if (toastDismissTimer) {
+    clearTimeout(toastDismissTimer);
+    toastDismissTimer = undefined;
+  }
+  toastNoticeText = null;
+}
 
 function renderSaveToast(state: AppViewState) {
   const notice = state.adminBotNotice;
@@ -1320,18 +1938,35 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         <div class="profile__identity-copy">
           <div class="profile__identity-top">
             <span class="profile__name">${name}</span>
-            ${member.role?.trim()
-              ? html`<span class="profile__role-pill">${member.role.trim()}</span>`
-              : nothing}
+            ${renderMemberBadgeSymbols(member.assigned_badges ?? [])}
+            <!-- One pill per role. Somebody who is both a PhD student and the lab manager reads as
+                 two facts about them, where a single pill holding "PhD Student, Lab Manager" reads
+                 as one oddly punctuated job title. -->
+            ${parseAdminBotMemberRoles(member.role).map(
+              (role) => html`<span class="profile__role-pill">${role}</span>`,
+            )}
             ${renderSlackActivity(member)}
           </div>
           <span class="profile__email">${member.email?.trim() ?? ""}</span>
-          ${renderLinks(member)} ${renderBadges(state, member)}
+          ${renderLinks(member)}
         </div>
-        ${renderCompletionLedger(member)}
+        ${renderCompletionLedger(member, state)}
       </header>
+      ${renderBadgesSection(state, member)}
       ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
-      ${renderSuggestions(state, member)}
+      ${renderBadgeSelfNomination(state, member, props)}
+      ${renderBadgeSuggestion(state, props)} ${renderOnboardingPointer(state, props)}
+      <!-- Who has been in this record. Last, and shut: it is history about the fields above, and
+           the answer to a question somebody asks occasionally rather than on every visit. Since
+           "view as" landed, an admin editing this profile is a thing that happens, and this is
+           where a member can see that it did. -->
+      ${renderRecentEdits({
+        // Optional-chained for the reason the paper card is: this view is rendered against
+        // partial state doubles in tests and against a host that may predate the field.
+        ...(state.adminBotRecentEdits?.[recentEditsKey("member", member.id)] ?? EMPTY_RECENT_EDITS),
+        subject: "member",
+        onOpen: () => props.onLoadRecentEdits?.("member", member.id),
+      })}
     </div>
   `;
 }

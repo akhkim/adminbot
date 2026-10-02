@@ -2,12 +2,16 @@ import { Type } from "typebox";
 import {
   adminBotActionTypes,
   adminBotExternalCollaboratorSubgroups,
+  adminBotPaperPresentationTypes,
   adminBotPaperSteps,
+  adminBotPaperVenueDecisions,
   adminBotPrivilegeLevels,
   adminBotRiskTiers,
   type AdminBotActionType,
   type AdminBotExternalCollaboratorSubgroup,
   type AdminBotPaperStep,
+  type AdminBotPaperPresentationType,
+  type AdminBotPaperVenueDecision,
   type AdminBotPrivilegeLevel,
   type AdminBotRiskTier,
 } from "./actions.js";
@@ -39,6 +43,16 @@ export const paperStepSchema = Type.Unsafe<AdminBotPaperStep>({
   enum: [...adminBotPaperSteps],
 });
 
+export const paperVenueDecisionSchema = Type.Unsafe<AdminBotPaperVenueDecision>({
+  type: "string",
+  enum: [...adminBotPaperVenueDecisions],
+});
+
+export const paperPresentationTypeSchema = Type.Unsafe<AdminBotPaperPresentationType>({
+  type: "string",
+  enum: [...adminBotPaperPresentationTypes],
+});
+
 export const accessGrantSchema = Type.Object(
   {
     service: Type.String(),
@@ -63,6 +77,9 @@ export const settingsSchema = Type.Object(
       }),
     ),
     head_professor_member_id: Type.Optional(Type.String()),
+    location_audience_city: Type.Optional(Type.String()),
+    location_audience_zone: Type.Optional(Type.String()),
+    location_audience_event_id: Type.Optional(Type.String()),
     applicant_sheet_id: Type.Optional(Type.String()),
     applicant_last_reviewed_at: Type.Optional(Type.String()),
   },
@@ -83,6 +100,7 @@ export const paperArtifactsSchema = Type.Object(
     brainstorming_doc_url: Type.Optional(Type.String()),
     overleaf_view_url: Type.Optional(Type.String()),
     overleaf_edit_url: Type.Optional(Type.String()),
+    overleaf_share_url: Type.Optional(Type.String()),
     submission_url: Type.Optional(Type.String()),
     google_drive_pdf_url: Type.Optional(Type.String()),
     arxiv_url: Type.Optional(Type.String()),
@@ -109,6 +127,9 @@ export const paperReminderSchema = Type.Object(
     next_nudge_at: Type.Optional(Type.String()),
     escalation_after_business_days: Type.Optional(Type.Integer({ minimum: 1 })),
     head_professor_member_id: Type.Optional(Type.String()),
+    location_audience_city: Type.Optional(Type.String()),
+    location_audience_zone: Type.Optional(Type.String()),
+    location_audience_event_id: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );

@@ -2,6 +2,7 @@ import {
   deadlineProposalEntryTypes,
   validateDeadlineProposalInput,
   type DeadlineProposalInput,
+  type DeadlineSubmitterContact,
   type DeadlineProposalView,
 } from "../../../../../extensions/adminbot/src/contracts/deadline-proposals.js";
 import type { UiSettings } from "../../storage.ts";
@@ -10,15 +11,40 @@ import type { DeadlineVenue } from "./deadlines.ts";
 
 export const DEADLINE_PROPOSAL_ENTRY_TYPES = deadlineProposalEntryTypes;
 export const validateDeadlineProposal = validateDeadlineProposalInput;
-export type { DeadlineProposalInput };
+export type { DeadlineProposalInput, DeadlineSubmitterContact };
 export type DeadlineProposal = DeadlineProposalView;
 
 export interface DeadlineProposalStore {
   list(): Promise<DeadlineProposal[]>;
   listPublished(): Promise<DeadlineVenue[]>;
-  submit(input: DeadlineProposalInput, idempotencyKey: string): Promise<DeadlineProposal>;
+  submit(
+    input: DeadlineProposalInput,
+    idempotencyKey: string,
+    targetDeadlineId?: string,
+  ): Promise<DeadlineProposal>;
+  submitPublic(
+    input: DeadlineProposalInput,
+    idempotencyKey: string,
+    contact?: DeadlineSubmitterContact,
+  ): Promise<void>;
   revise(proposalId: string, input: DeadlineProposalInput): Promise<DeadlineProposal>;
   decide(proposal: DeadlineProposal, decision: "published" | "rejected"): Promise<DeadlineProposal>;
+}
+
+class DeadlineServiceError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+function publishedItems(body: unknown): DeadlineVenue[] | undefined {
+  if (body && typeof body === "object" && "items" in body && Array.isArray(body.items)) {
+    return body.items as DeadlineVenue[];
+  }
+  return undefined;
 }
 
 type FetchLike = typeof fetch;
@@ -51,17 +77,47 @@ export class AdminBotDeadlineProposalStore implements DeadlineProposalStore {
   }
 
   async listPublished(): Promise<DeadlineVenue[]> {
-    const body = await this.request("/deadlines/venues.json", { method: "GET" });
-    return (body as { items?: DeadlineVenue[] }).items ?? [];
+    try {
+      const items = publishedItems(await this.request("/deadlines", { method: "GET" }));
+      if (items) {
+        return items;
+      }
+    } catch (error) {
+      if (!(error instanceof DeadlineServiceError) || error.status !== 404) {
+        throw error;
+      }
+    }
+    // Older deployments still serve HTML at /deadlines and JSON at this route.
+    const items = publishedItems(await this.request("/deadlines/venues.json", { method: "GET" }));
+    if (!items) {
+      throw new Error("Deadline service returned an invalid dataset.");
+    }
+    return items;
   }
 
-  async submit(input: DeadlineProposalInput, idempotencyKey: string): Promise<DeadlineProposal> {
+  async submit(
+    input: DeadlineProposalInput,
+    idempotencyKey: string,
+    targetDeadlineId?: string,
+  ): Promise<DeadlineProposal> {
     return (await this.request("/deadline-proposals", {
       method: "POST",
       authenticated: true,
-      body: input,
+      body: { ...input, ...(targetDeadlineId ? { targetDeadlineId } : {}) },
       headers: { "Idempotency-Key": idempotencyKey },
     })) as DeadlineProposal;
+  }
+
+  async submitPublic(
+    input: DeadlineProposalInput,
+    idempotencyKey: string,
+    contact?: DeadlineSubmitterContact,
+  ): Promise<void> {
+    await this.request("/public/deadline-proposals", {
+      method: "POST",
+      body: { ...input, submitter_contact: contact },
+      headers: { "Idempotency-Key": idempotencyKey },
+    });
   }
 
   async revise(proposalId: string, input: DeadlineProposalInput): Promise<DeadlineProposal> {
@@ -113,7 +169,10 @@ export class AdminBotDeadlineProposalStore implements DeadlineProposalStore {
       error?: { message?: string };
     } | null;
     if (!response.ok) {
-      throw new Error(body?.error?.message ?? `Deadline service returned ${response.status}.`);
+      throw new DeadlineServiceError(
+        response.status,
+        body?.error?.message ?? `Deadline service returned ${response.status}.`,
+      );
     }
     return body;
   }

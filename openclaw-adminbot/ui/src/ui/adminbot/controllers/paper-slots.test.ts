@@ -8,6 +8,7 @@ import type { UiSettings } from "../../storage.ts";
 import { saveStoredMemberSession, type PaperNudgeBatch } from "../auth/session.ts";
 import {
   loadAdminBotNudgeBatches,
+  loadAdminBotPaperSlotOverview,
   nudgeAdminBotPaperAuthors,
   nudgeableBatches,
   type AdminBotPaperSlotsHost,
@@ -26,6 +27,11 @@ function batch(memberId: string, name = memberId): PaperNudgeBatch {
 
 function member(id: string, privilege: string, status?: string) {
   return { id, name: id, privilege_level: privilege, ...(status ? { status } : {}) };
+}
+
+/** An alumnus the way the roster actually records one: the type says so, the status is absent. */
+function typedAlumnus(id: string, memberType = "alumni") {
+  return { id, name: id, privilege_level: "member", member_type: memberType };
 }
 
 function createHost(members = ROSTER): AdminBotPaperSlotsHost {
@@ -74,6 +80,22 @@ describe("who the nudge pass may message", () => {
     expect(kept).toEqual(["ada", "grace"]);
   });
 
+  // How 22 of the lab's 24 alumni are actually recorded: the imported spreadsheet spells it in
+  // `member_type` and leaves `status` empty, so a status-only test let nearly all of them into the
+  // preview. They never received anything -- the send asks the same helper this now does -- so the
+  // count and the list of names simply disagreed with what pressing the button would do.
+  it("drops alumni the roster spells in member_type, with no status", () => {
+    const host = createHost([
+      member("ada", "member"),
+      typedAlumnus("alum-ann"),
+      typedAlumnus("alum-bo", "full, alumni"),
+    ]);
+    const kept = nudgeableBatches(host, [batch("ada"), batch("alum-ann"), batch("alum-bo")]).map(
+      (entry) => entry.member_id,
+    );
+    expect(kept).toEqual(["ada"]);
+  });
+
   it("never messages the head of the lab", () => {
     const host = createHost();
     expect(nudgeableBatches(host, [batch("zhijing-jin"), batch("ada")]).map((e) => e.member_id)) //
@@ -108,6 +130,26 @@ describe("nudge pass", () => {
     await loadAdminBotNudgeBatches(host);
     expect(host.adminBotPaperNudgeBatches?.map((entry) => entry.member_id)).toEqual(["ada"]);
     expect(host.adminBotPaperNudgeSelected).toEqual(["ada"]);
+  });
+
+  it("does not repopulate another member's slots after a session switch", async () => {
+    let finish: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const host = createHost();
+    const loading = loadAdminBotPaperSlotOverview(host);
+    expect(host.adminBotPaperSlotsLoading).toBe(true);
+    saveStoredMemberSession({ sessionToken: "next", memberId: "ada" } as never);
+    host.adminBotPaperSlotOverview = [];
+    host.adminBotPaperSlotsLoading = false;
+    finish?.(json({ papers: [{ paper_id: "private-paper" }] }));
+    await loading;
+    expect(host.adminBotPaperSlotOverview).toEqual([]);
+    expect(host.adminBotPaperSlotsLoading).toBe(false);
   });
 
   it("sends one request per recipient instead of one long one", async () => {

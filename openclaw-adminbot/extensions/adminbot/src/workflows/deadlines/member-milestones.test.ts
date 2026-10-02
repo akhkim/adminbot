@@ -69,3 +69,37 @@ describe("deadline-linked member milestones", () => {
     expect(isDeadlineMilestoneId("missing")).toBe(false);
   });
 });
+
+it("labels a copied date-only boundary as a planning cutoff", () => {
+  const record = {
+    id: "example",
+    deadline_id: "example",
+    name: "Example",
+    deadline_aoe: "2035-01-30 22:00:00",
+    deadline_time_precision: "date_only",
+  };
+  expect(
+    reconcileDeadlineMilestones(
+      [{ deadline_id: "example", date: "2035-02-01", label: "Example" }],
+      [record],
+    )?.[0],
+  ).toMatchObject({
+    date: "2035-01-30",
+    time: "22:00",
+    label: "Example — planning cutoff (time unknown)",
+  });
+});
+
+it("preserves an existing personal date when a linked workshop has no current deadline", () => {
+  const row: AdminBotMemberMilestone = {
+    deadline_id: "unknown",
+    date: "2035-09-20",
+    label: "My plan",
+  };
+  expect(
+    reconcileDeadlineMilestones(
+      [row],
+      [{ id: "unknown", deadline_id: "unknown", deadline_aoe: "", name: "Workshop" }],
+    ),
+  ).toEqual([row]);
+});

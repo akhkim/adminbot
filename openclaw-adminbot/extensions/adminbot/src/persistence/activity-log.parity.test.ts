@@ -71,6 +71,31 @@ describe.each(stores)("%s store: activity log", (_name, makeStore) => {
     expect(store.listLoginEvents("ada").map((event) => event.id)).toEqual(["b", "a"]);
   });
 
+  it("attaches a partial login location without erasing known fields", () => {
+    const store = makeStore();
+    store.appendLoginEvent({
+      id: "located",
+      member_id: "ada",
+      at: "2026-08-03T00:00:00.000Z",
+    });
+    store.attachLoginEventLocation("located", { country: "Canada", city: "Toronto" });
+    store.attachLoginEventLocation("located", { continent: "North America", city: "" });
+    store.attachLoginEventLocation("missing", { country: "France" });
+    expect(store.listLoginEvents("ada")).toEqual([
+      {
+        id: "located",
+        member_id: "ada",
+        at: "2026-08-03T00:00:00.000Z",
+        country: "Canada",
+        continent: "North America",
+        city: "Toronto",
+      },
+    ]);
+    expect(store.listLoginEventsSince("2026-08-01T00:00:00.000Z")).toEqual(
+      store.listLoginEvents("ada"),
+    );
+  });
+
   it("honors a limit and keeps the newest rows, not the first ones written", () => {
     const store = makeStore();
     store.appendLoginEvent({
@@ -97,6 +122,62 @@ describe.each(stores)("%s store: activity log", (_name, makeStore) => {
       "second",
       "first",
     ]);
+  });
+
+  it("returns tab visits in the window, newest first", () => {
+    const store = makeStore();
+    store.appendTabVisit({
+      id: "old",
+      member_id: "ada",
+      tab: "dashboard",
+      at: "2026-08-01T00:00:00.000Z",
+    });
+    store.appendTabVisit({
+      id: "new",
+      member_id: "ada",
+      tab: "adminbotPapers",
+      at: "2026-08-09T00:00:00.000Z",
+    });
+    expect(store.listTabVisitsSince("2026-08-05T00:00:00.000Z").map((v) => v.id)).toEqual(["new"]);
+    expect(store.listTabVisitsSince("2026-07-01T00:00:00.000Z").map((v) => v.id)).toEqual([
+      "new",
+      "old",
+    ]);
+  });
+
+  it("leaves a tab visit's impersonated flag absent rather than false", () => {
+    // The SQLite column is NOT NULL DEFAULT 0, so without the mapping every ordinary visit comes
+    // back carrying `impersonated: 0` -- falsy, and still a different object shape from the memory
+    // store's. `in`, not truthiness, for the same reason the self-edit case above uses it.
+    const store = makeStore();
+    store.appendTabVisit({
+      id: "plain",
+      member_id: "ada",
+      tab: "dashboard",
+      at: "2026-08-01T00:00:00.000Z",
+    });
+    store.appendTabVisit({
+      id: "viewed",
+      member_id: "grace",
+      tab: "profile",
+      at: "2026-08-02T00:00:00.000Z",
+      impersonated: true,
+    });
+    const visits = new Map(
+      store.listTabVisitsSince("2026-07-01T00:00:00.000Z").map((v) => [v.id, v]),
+    );
+    expect(visits.get("plain") && "impersonated" in visits.get("plain")!).toBe(false);
+    expect(visits.get("viewed")?.impersonated).toBe(true);
+  });
+
+  it("orders same-millisecond tab visits by insertion, newest first", () => {
+    // Two clicks inside one millisecond is rarer here than on a profile save, but the two stores
+    // still have to agree, and a timestamp alone cannot resolve it.
+    const store = makeStore();
+    const at = "2026-08-26T10:00:00.000Z";
+    store.appendTabVisit({ id: "first", member_id: "ada", tab: "dashboard", at });
+    store.appendTabVisit({ id: "second", member_id: "ada", tab: "profile", at });
+    expect(store.listTabVisitsSince(at).map((v) => v.id)).toEqual(["second", "first"]);
   });
 
   it("leaves subject_member_id absent rather than null when the edit was a self-edit", () => {
@@ -150,10 +231,99 @@ describe("sqlite store: activity log durability", () => {
       member_id: "ada",
       at: "2026-08-26T10:00:00.000Z",
     });
+    first.attachLoginEventLocation("login", { city: "Toronto", country: "Canada" });
     first.appendUpdateEvent(updateEvent({ id: "update" }));
 
     const second = sqliteStore(databasePath);
-    expect(second.listLoginEvents("ada").map((event) => event.id)).toEqual(["login"]);
+    expect(second.listLoginEvents("ada")).toEqual([
+      {
+        id: "login",
+        member_id: "ada",
+        at: "2026-08-26T10:00:00.000Z",
+        city: "Toronto",
+        country: "Canada",
+      },
+    ]);
     expect(second.listUpdateEventsByMember("ada").map((event) => event.id)).toEqual(["update"]);
+  });
+});
+
+// The lab-wide read, asserted against both stores for the same reason as the rest of this file:
+// the service cannot tell them apart, and "newest first" is exactly the kind of thing an array
+// filter and an ORDER BY disagree about.
+describe.each(stores)("%s store: the recent-edits feed", (_name, makeStore) => {
+  it("returns the newest edits first, across every member", () => {
+    const store = makeStore();
+    store.appendUpdateEvent(updateEvent({ id: "a", at: "2026-03-01T10:00:00.000Z" }));
+    store.appendUpdateEvent(
+      updateEvent({ id: "b", at: "2026-03-03T10:00:00.000Z", member_id: "grace" }),
+    );
+    store.appendUpdateEvent(updateEvent({ id: "c", at: "2026-03-02T10:00:00.000Z" }));
+    expect(store.listRecentUpdateEvents(10).map((row) => row.id)).toEqual(["b", "c", "a"]);
+  });
+
+  it("honours the cap", () => {
+    const store = makeStore();
+    store.appendUpdateEvent(updateEvent({ id: "a", at: "2026-03-01T10:00:00.000Z" }));
+    store.appendUpdateEvent(updateEvent({ id: "b", at: "2026-03-02T10:00:00.000Z" }));
+    expect(store.listRecentUpdateEvents(1).map((row) => row.id)).toEqual(["b"]);
+  });
+
+  // One save writes a row per changed field, so a whole page of these shares a timestamp.
+  it("keeps a stable order for edits made in the same millisecond", () => {
+    const store = makeStore();
+    const at = "2026-03-01T10:00:00.000Z";
+    store.appendUpdateEvent(updateEvent({ id: "a", at }));
+    store.appendUpdateEvent(updateEvent({ id: "b", at }));
+    expect(store.listRecentUpdateEvents(10).map((row) => row.id)).toEqual(["b", "a"]);
+  });
+});
+
+// The two per-object reads. Both have a case an array filter and a SQL clause disagree about: the
+// self-edit that carries no subject, and a paper id that looks like a LIKE pattern.
+describe.each(stores)("%s store: one object's history", (_name, makeStore) => {
+  it("counts a self-edit as part of that member's record", () => {
+    const store = makeStore();
+    store.appendUpdateEvent(updateEvent({ id: "self", member_id: "ada" }));
+    store.appendUpdateEvent(
+      updateEvent({ id: "byadmin", member_id: "grace", subject_member_id: "ada" }),
+    );
+    store.appendUpdateEvent(updateEvent({ id: "elsewhere", member_id: "grace" }));
+    expect(
+      store
+        .listUpdateEventsForMemberRecord("ada", 10)
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual(["byadmin", "self"]);
+  });
+
+  it("takes the record and every slot on one paper", () => {
+    const store = makeStore();
+    store.appendUpdateEvent(updateEvent({ id: "record", subject: "paper", slot_id: "paper:cais" }));
+    store.appendUpdateEvent(
+      updateEvent({ id: "slot", subject: "paper_slot", slot_id: "paper_slot:cais:arxiv" }),
+    );
+    store.appendUpdateEvent(
+      updateEvent({ id: "other", subject: "paper_slot", slot_id: "paper_slot:other:arxiv" }),
+    );
+    expect(
+      store
+        .listUpdateEventsForPaper("cais", 10)
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual(["record", "slot"]);
+  });
+
+  // A paper id is a slug, but the prefix match is a LIKE and "%" in one would otherwise match
+  // every paper in the lab.
+  it("does not let a wildcard in a paper id widen the match", () => {
+    const store = makeStore();
+    store.appendUpdateEvent(
+      updateEvent({ id: "mine", subject: "paper_slot", slot_id: "paper_slot:a%b:arxiv" }),
+    );
+    store.appendUpdateEvent(
+      updateEvent({ id: "theirs", subject: "paper_slot", slot_id: "paper_slot:axxb:arxiv" }),
+    );
+    expect(store.listUpdateEventsForPaper("a%b", 10).map((row) => row.id)).toEqual(["mine"]);
   });
 });

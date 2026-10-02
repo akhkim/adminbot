@@ -1,15 +1,14 @@
 /**
  * Answers a question from the guidebook, entirely on this machine.
  *
- * Retrieval and synthesis both run against loopback endpoints, and only the prose
- * the local model writes is returned to the caller. Guidebook passages are never
- * part of the return value, so they cannot reach the main agent context and from
- * there a hosted model. Every failure mode returns `answered: false` rather than
- * degrading to a remote call.
+ * Retrieval and synthesis run against loopback endpoints. The answer can quote
+ * source text, so callers must enforce the audience before returning it. Local
+ * generation is not sanitization and does not authorize forwarding to hosted models.
  */
 import { completeLocally, embedLocally, type GuidebookFetch } from "./local-client.js";
 import { rankGuidebookChunks } from "./retrieve.js";
 import { readGuidebookIndex, resolveGuidebookIndexPath } from "./store.js";
+import type { GuidebookIndex } from "./types.js";
 
 export type GuidebookAskConfig = {
   embeddingBaseUrl: string;
@@ -37,7 +36,7 @@ export const defaultGuidebookAskConfig: GuidebookAskConfig = {
 
 export type GuidebookAskResult = {
   answered: boolean;
-  /** Prose written by the local model. Safe to hand to the main agent. */
+  /** Prose written by the local model; may contain verbatim source text. */
   answer: string;
   /** Heading trails the answer drew on, so the reader can find the source. */
   sources: string[];
@@ -69,6 +68,8 @@ export async function askGuidebook(
     fetchImpl?: GuidebookFetch;
     env?: NodeJS.ProcessEnv;
     signal?: AbortSignal;
+    /** A caller-specific audience gate, evaluated before retrieval or model calls. */
+    allowIndex?: (index: GuidebookIndex) => boolean;
   } = {},
 ): Promise<GuidebookAskResult> {
   const config = options.config ?? defaultGuidebookAskConfig;
@@ -98,6 +99,14 @@ export async function askGuidebook(
       answer: "",
       sources: [],
       reason: `no guidebook index at ${indexPath}; run scripts/adminbot-guidebook-sync.ts`,
+    };
+  }
+  if (options.allowIndex && !options.allowIndex(index)) {
+    return {
+      answered: false,
+      answer: "",
+      sources: [],
+      reason: "Guidebook content is not approved for this audience.",
     };
   }
   if (index.embeddingModel !== config.embeddingModel) {

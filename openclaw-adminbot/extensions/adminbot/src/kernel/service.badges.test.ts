@@ -1,0 +1,376 @@
+import { describe, expect, it } from "vitest";
+import { adminBotDefaultBadgeDefinitions } from "../contracts/badges.js";
+import { AdminBotMemoryStore } from "../persistence/memory.js";
+import { AdminBotService } from "./service.js";
+
+function unwrap<T>(
+  result: { ok: true; payload: T } | { ok: false; error: { message: string } },
+): T {
+  if (!result.ok) {
+    throw new Error(result.error.message);
+  }
+  return result.payload;
+}
+
+describe("AdminBotService badges", () => {
+  it("preserves self-reported follower counts and rejects invalid values", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        id: "audience",
+        name: "Example",
+        twitter_followers: 10000,
+        linkedin_followers: 1200,
+      }),
+    );
+    unwrap(service.upsertLabMember({ id: "audience", name: "Example" }));
+    expect(unwrap(service.listLabMembers()).members[0]).toMatchObject({
+      twitter_followers: 10000,
+      linkedin_followers: 1200,
+    });
+    for (const value of [-1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(
+        service.upsertLabMember({ id: "audience", name: "Example", twitter_followers: value }).ok,
+      ).toBe(false);
+    }
+    expect(
+      service.upsertLabMember({ id: "audience", name: "Example", linkedin_followers: -1 }).ok,
+    ).toBe(false);
+  });
+  it("derives the higher follower count without changing historical awards", () => {
+    const service = new AdminBotService();
+    const member = { id: "audience", name: "Example" };
+    const badges = () => unwrap(service.listLabMembers()).members[0].assigned_badges ?? [];
+    unwrap(
+      service.upsertLabMember({ ...member, twitter_followers: 1000, linkedin_followers: 900 }),
+    );
+    expect(badges()).toHaveLength(0);
+    unwrap(service.upsertLabMember({ ...member, linkedin_followers: 1001 }));
+    expect(badges()).toMatchObject([{ source: "self_report", follower_count: 1001 }]);
+    unwrap(service.upsertLabMember({ ...member, twitter_followers: 10000 }));
+    expect(badges()).toMatchObject([{ follower_count: 10000 }]);
+    unwrap(service.upsertLabMember({ ...member, twitter_followers: 0, linkedin_followers: 0 }));
+    expect(badges()).toHaveLength(0);
+    unwrap(
+      service.assignBadge("audience", "community_building__media_impact", "admin", undefined, 3),
+    );
+    unwrap(service.upsertLabMember({ ...member, twitter_followers: 10000 }));
+    expect(badges()).toMatchObject([{ source: "self_report", follower_count: 10000 }]);
+    unwrap(service.upsertLabMember({ ...member, twitter_followers: 0 }));
+    expect(badges()).toMatchObject([{ source: "admin", count: 3 }]);
+  });
+  it("upgrades only stock Media Impact wording and preserves customized definitions", () => {
+    const seed = adminBotDefaultBadgeDefinitions.find(
+      (b) => b.id === "community_building__media_impact",
+    )!;
+    for (const customized of [false, true]) {
+      const store = new AdminBotMemoryStore();
+      const description = customized
+        ? "Lab-specific criteria"
+        : "Research was covered by press or cited in a policy or industry document.";
+      store.saveBadgeDefinition({
+        ...seed,
+        description,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+      const service = new AdminBotService(store);
+      expect(store.getBadgeDefinition(seed.id)?.description).toBe(
+        customized ? description : seed.description,
+      );
+      expect(unwrap(service.listBadgeDefinitions()).badges.some((b) => b.id === seed.id)).toBe(
+        true,
+      );
+      const updated = store.getBadgeDefinition(seed.id);
+      const restarted = new AdminBotService(store);
+      expect(unwrap(restarted.listBadgeDefinitions()).badges.find((b) => b.id === seed.id)).toEqual(
+        updated,
+      );
+    }
+  });
+  it("seeds the default badge catalog including tiered families", () => {
+    const service = new AdminBotService();
+
+    const badges = unwrap(service.listBadgeDefinitions()).badges;
+
+    expect(badges.map((badge) => badge.id)).toContain("team_contributor__infra_builder");
+    expect(badges.find((badge) => badge.id === "community_building__lab_engagement")).toMatchObject(
+      {
+        category: "Community Building",
+        name: "Lab Engagement",
+        description:
+          "Has talked to Zhijing face-to-face in at least three group meeting occasions, including in person and online.",
+      },
+    );
+    expect(
+      badges.filter((badge) => badge.family_key === "causality").map((badge) => badge.tier),
+    ).toEqual(["Level 1", "Level 2", "Level 3"]);
+  });
+
+  it("offers exclusive Good and Advanced Infra Builder and Pro Writer tiers", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+    const definitions = unwrap(service.listBadgeDefinitions()).badges;
+    for (const name of ["Infra Builder", "Pro Writer"]) {
+      const tiers = definitions.filter((b) => b.name === name);
+      expect(tiers.map((b) => b.tier)).toEqual(["Good", "Advanced"]);
+      expect(new Set(tiers.map((b) => b.family_key)).size).toBe(1);
+      unwrap(service.assignBadge("pat", tiers[0].id, "admin"));
+      unwrap(service.assignBadge("pat", tiers[1].id, "admin"));
+      const held = unwrap(service.listLabMembers()).members[0].assigned_badges!.filter(
+        (b) => b.name === name,
+      );
+      expect(held).toHaveLength(1);
+      expect(held[0].tier).toBe("Advanced");
+    }
+  });
+
+  it("upgrades only the unchanged legacy Infra Builder definition", () => {
+    for (const customized of [false, true]) {
+      const store = new AdminBotMemoryStore();
+      const seed = adminBotDefaultBadgeDefinitions.find(
+        (b) => b.id === "team_contributor__infra_builder",
+      )!;
+      store.saveBadgeDefinition({
+        ...seed,
+        tier: undefined,
+        family_key: "legacy-infra",
+        sort_order: 10,
+        description: customized ? "Lab-specific criteria" : seed.description,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+      const service = new AdminBotService(store);
+      const definitions = unwrap(service.listBadgeDefinitions()).badges;
+      expect(definitions.find((b) => b.id === seed.id)?.tier).toBe(customized ? undefined : "Good");
+      expect(
+        definitions.find((b) => b.id === "team_contributor__infra_builder_advanced")?.family_key,
+      ).toBe("legacy-infra");
+      new AdminBotService(store);
+      expect(store.listBadgeDefinitions().filter((b) => b.name === "Infra Builder")).toHaveLength(
+        2,
+      );
+    }
+  });
+
+  it("sets an explicit count idempotently and preserves it on legacy saves", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+    const id = "community_building__referral_bonus";
+    expect(unwrap(service.assignBadge("pat", id, "admin")).assignment.count).toBe(1);
+    for (let retry = 0; retry < 2; retry++) {
+      expect(unwrap(service.assignBadge("pat", id, "admin", undefined, 3)).assignment.count).toBe(
+        3,
+      );
+    }
+    expect(unwrap(service.assignBadge("pat", id, "admin")).assignment.count).toBe(3);
+    for (const invalid of [0, -1, 1.5, "3", null, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(service.assignBadge("pat", id, "admin", undefined, invalid)).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+    }
+    expect(
+      unwrap(service.listLabMembers()).members.find((m) => m.id === "pat")?.assigned_badges?.[0]
+        .count,
+    ).toBe(3);
+  });
+
+  it("keeps badge tiers exclusive per family when an admin reassigns one", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+
+    unwrap(service.assignBadge("pat", "causality__level_1", "admin-1"));
+    unwrap(service.assignBadge("pat", "causality__level_2", "admin-1"));
+
+    const member = unwrap(service.listLabMembers()).members.find((entry) => entry.id === "pat");
+    expect(member?.assigned_badges).toHaveLength(1);
+    expect(member?.assigned_badges?.[0]).toMatchObject({
+      badge_id: "causality__level_2",
+      family_key: "causality",
+    });
+  });
+
+  it("holds self-nominations pending until an admin decides them", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+
+    const nomination = unwrap(
+      service.submitBadgeNomination("pat", {
+        badge_id: "community_building__ambassador",
+        evidence: "Organized the NeurIPS booth.",
+      }),
+    ).nomination;
+
+    const blocked = service.assignBadge("pat", "community_building__ambassador", "admin-1");
+    expect(blocked).toMatchObject({
+      ok: false,
+      status: 409,
+    });
+
+    const approved = unwrap(service.decideBadgeNomination(nomination.id, "approved", "admin-1"));
+    expect(approved.nomination.status).toBe("approved");
+    expect(approved.assignment).toMatchObject({
+      badge_id: "community_building__ambassador",
+      source: "nomination",
+      evidence: "Organized the NeurIPS booth.",
+    });
+  });
+
+  it("generates a badge id on create instead of requiring one from the caller", () => {
+    const service = new AdminBotService();
+
+    const badge = unwrap(
+      service.createBadgeDefinition(
+        { category: "Team Contributor", name: "Docs Champion", description: "Wrote the docs." },
+        "admin-1",
+      ),
+    ).badge;
+
+    expect(badge.id).toMatch(/^badge_/u);
+  });
+
+  it("rejects a self-nomination submitted without evidence", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+
+    const result = service.submitBadgeNomination("pat", {
+      badge_id: "community_building__ambassador",
+    });
+
+    expect(result).toMatchObject({ ok: false, status: 400 });
+  });
+
+  // Most of what these badges recognise is not something the person who did it writes up about
+  // themselves, so a colleague has to be able to put it forward.
+  describe("nominating somebody else", () => {
+    const lab = () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+      unwrap(service.upsertLabMember({ id: "mei", name: "Mei", privilege_level: "member" }));
+      return service;
+    };
+
+    it("records who put it forward and who it is for", () => {
+      const service = lab();
+
+      const nomination = unwrap(
+        service.submitBadgeNomination("pat", {
+          badge_id: "team_contributor__bug_hunter",
+          member_id: "mei",
+          evidence: "Caught the sign error in the causal effect proof before submission.",
+        }),
+      ).nomination;
+
+      expect(nomination).toMatchObject({
+        member_id: "mei",
+        nominated_by: "pat",
+        member_name: "Mei",
+        nominator_name: "Pat",
+        status: "pending",
+      });
+    });
+
+    it("awards the badge to the nominee, not the nominator, once an admin approves", () => {
+      const service = lab();
+      const nomination = unwrap(
+        service.submitBadgeNomination("pat", {
+          badge_id: "team_contributor__bug_hunter",
+          member_id: "mei",
+          evidence: "Caught the sign error before submission.",
+        }),
+      ).nomination;
+
+      const approved = unwrap(service.decideBadgeNomination(nomination.id, "approved", "admin-1"));
+
+      expect(approved.assignment).toMatchObject({ member_id: "mei", source: "nomination" });
+      const members = unwrap(service.listLabMembers()).members;
+      expect(members.find((entry) => entry.id === "pat")?.assigned_badges ?? []).toHaveLength(0);
+    });
+
+    it("leaves a self-nomination with no nominator, so the two stay distinguishable", () => {
+      const service = lab();
+
+      const nomination = unwrap(
+        service.submitBadgeNomination("pat", {
+          badge_id: "team_contributor__bug_hunter",
+          member_id: "pat",
+          evidence: "Found it myself.",
+        }),
+      ).nomination;
+
+      expect(nomination.nominated_by).toBeUndefined();
+    });
+
+    it("checks the family clash against the nominee rather than the nominator", () => {
+      const service = lab();
+      unwrap(service.assignBadge("mei", "causality__level_1", "admin-1"));
+
+      const forHolder = service.submitBadgeNomination("pat", {
+        badge_id: "causality__level_2",
+        member_id: "mei",
+        evidence: "Three causality papers now.",
+      });
+      expect(forHolder).toMatchObject({ ok: false, status: 409 });
+
+      // Pat holds nothing in that family, so the same badge is still nominable for Pat.
+      expect(
+        service.submitBadgeNomination("mei", {
+          badge_id: "causality__level_2",
+          member_id: "pat",
+          evidence: "Main-conference causality paper.",
+        }).ok,
+      ).toBe(true);
+    });
+
+    it("refuses a nomination for somebody who is not on the roster", () => {
+      const service = lab();
+
+      const result = service.submitBadgeNomination("pat", {
+        badge_id: "team_contributor__bug_hunter",
+        member_id: "ghost",
+        evidence: "Nobody by that name.",
+      });
+
+      expect(result).toMatchObject({ ok: false, status: 404 });
+    });
+
+    it("shows a member both what was put forward for them and what they put forward", () => {
+      const service = lab();
+      unwrap(
+        service.submitBadgeNomination("pat", {
+          badge_id: "team_contributor__bug_hunter",
+          member_id: "mei",
+          evidence: "Caught the proof error.",
+        }),
+      );
+      unwrap(
+        service.submitBadgeNomination("mei", {
+          badge_id: "community_building__ambassador",
+          member_id: "pat",
+          evidence: "Ran the booth.",
+        }),
+      );
+
+      const forPat = unwrap(service.listBadgeNominations({ involvingMemberId: "pat" })).nominations;
+
+      expect(forPat.map((entry) => entry.member_id).toSorted()).toEqual(["mei", "pat"]);
+    });
+  });
+
+  it("lets an admin attach optional evidence when directly assigning a badge", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+
+    const assignment = unwrap(
+      service.assignBadge(
+        "pat",
+        "community_building__ambassador",
+        "admin-1",
+        "Ran the outreach booth solo.",
+      ),
+    ).assignment;
+
+    expect(assignment.evidence).toBe("Ran the outreach booth solo.");
+  });
+});

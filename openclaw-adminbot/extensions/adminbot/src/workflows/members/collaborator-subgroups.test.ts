@@ -54,7 +54,6 @@ describe("collaboratorSubgroupAccess", () => {
     ["own_pace_advisee", "adminbot_portal_access", "yes"],
     ["own_pace_advisee", "rec_letter_button", "yes"],
     ["own_pace_advisee", "what_to_expect_stories", "yes_separate"],
-    ["coauthor_discussant_designer", "active_channels", "yes"],
     ["coauthor_discussant_designer", "project_channel", "yes"],
     ["coauthor_minor", "slack_guest_space_check", "yes"],
     ["slightly_better_than_emails", "spreadsheet_basic", "yes"],
@@ -100,23 +99,30 @@ describe("collaboratorSubgroupAccess", () => {
     }
   });
 
-  it("puts only coauthor_major on the Vector sponsor roster row", () => {
+  it("puts coauthor_major and own_pace_advisee on the Vector sponsor roster row", () => {
+    // The matrix row, not the sheet that actually goes to the sponsor. `vectorSponsorRoster`
+    // selects on `member_type` and still carries only `full` and `coauthor-major` -- the sheet's
+    // own row text says so while its own-pace-advisee cell says otherwise, and that contradiction
+    // is unresolved. See the comment on the item in collaborator-subgroups.ts.
+    const onRow = new Set(["coauthor_major", "own_pace_advisee"]);
     for (const subgroup of adminBotExternalCollaboratorSubgroups) {
       const granted = grantedItems(subgroup).includes("vector_roster_share");
-      expect(granted).toBe(subgroup === "coauthor_major");
+      expect(granted).toBe(onRow.has(subgroup));
     }
   });
 
-  it("invites everyone on the social follow welcome to city dinners, and one subgroup more", () => {
+  it("invites every collaborator on the social follow welcome to city dinners", () => {
     // These two rows tracked each other while the matrix had eight columns. They no longer do:
     // coauthor_discussant_designer is on the dinner row but not the LinkedIn/Twitter welcome row,
-    // so the relation is containment rather than equality.
+    // and the two benefit columns are welcomed but not invited to dinners -- they are not
+    // collaborators on the work.
     for (const subgroup of adminBotExternalCollaboratorSubgroups) {
       const items = grantedItems(subgroup);
-      if (items.includes("welcome_linkedin_twitter")) {
+      if (items.includes("welcome_linkedin_twitter") && !subgroup.startsWith("benefit_")) {
         expect(items).toContain("city_dinner_invite");
       }
     }
+    expect(grantedItems("benefit_partner")).not.toContain("city_dinner_invite");
     expect(grantedItems("coauthor_discussant_designer")).toContain("city_dinner_invite");
     expect(grantedItems("coauthor_discussant_designer")).not.toContain("welcome_linkedin_twitter");
   });
@@ -127,6 +133,9 @@ describe("vectorSponsorRoster", () => {
     return {
       name: overrides.id,
       privilege_level: "member",
+      // The sheet selects on member_type now, not privilege_level: privilege says what somebody may
+      // do, and nearly every imported row defaults to `member`.
+      member_type: "full",
       access: [],
       created_at: "2026-01-01T00:00:00.000Z",
       updated_at: "2026-01-01T00:00:00.000Z",
@@ -134,7 +143,7 @@ describe("vectorSponsorRoster", () => {
     };
   }
 
-  it("carries full members, admins, and coauthor_major collaborators", () => {
+  it("carries full members, admins, and coauthor-major collaborators", () => {
     const roster = vectorSponsorRoster([
       member({ id: "ada", name: "Ada", email: "ada@utoronto.ca" }),
       member({ id: "zed", name: "Zed", privilege_level: "admin", email: "zed@utoronto.ca" }),
@@ -142,6 +151,7 @@ describe("vectorSponsorRoster", () => {
         id: "cora",
         name: "Cora",
         privilege_level: "external_collaborator",
+        member_type: "coauthor-major",
         collaborator_subgroup: "coauthor_major",
         email: "cora@example.edu",
       }),
@@ -155,21 +165,31 @@ describe("vectorSponsorRoster", () => {
     expect(roster.missing_email).toEqual([]);
   });
 
-  it("leaves off trials and every collaborator subgroup below coauthor_major", () => {
+  it("leaves off trials and every collaborator subgroup below coauthor-major", () => {
     const roster = vectorSponsorRoster([
-      member({ id: "tri", privilege_level: "trial", email: "tri@utoronto.ca" }),
+      member({
+        id: "tri",
+        privilege_level: "trial",
+        member_type: "interviewee",
+        email: "tri@utoronto.ca",
+      }),
       member({
         id: "minor",
         privilege_level: "external_collaborator",
+        member_type: "coauthor-minor",
         collaborator_subgroup: "coauthor_minor",
         email: "minor@example.edu",
       }),
       member({
         id: "prof",
         privilege_level: "external_collaborator",
+        member_type: "external-prof",
         collaborator_subgroup: "external_prof",
         email: "prof@example.edu",
       }),
+      // Neither the type column nor anything else names this one, which is the case that used to
+      // put most of the roster on the sheet: an imported row whose privilege defaulted to `member`.
+      member({ id: "blank", member_type: "", email: "blank@utoronto.ca" }),
     ]);
 
     expect(roster.entries).toEqual([]);

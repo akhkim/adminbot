@@ -40,7 +40,17 @@ describe("renderPaperWeeklyUpdates", () => {
   it("asks for this week by name", () => {
     const { container } = draw([], { memberId: "ada" });
     expect(container.textContent).toContain("17–23 Aug");
-    expect(container.textContent).toContain("What did you do on this paper this week?");
+    // The week is named in the question itself, not just in the header beside it: "this week" left
+    // members guessing which week an entry belonged to when they filled one in late.
+    expect(container.textContent).toContain("What did you do on this paper during 17–23 Aug?");
+  });
+
+  // What the box is for was the second half of the report. It now says who reads it, that it is one
+  // entry per paper per week, and -- because the textarea only commits on blur -- when it saves.
+  it("says who reads the entry and when it saves", () => {
+    const { container } = draw([], { memberId: "ada" });
+    expect(container.textContent).toContain("One entry per paper, per week, written by you.");
+    expect(container.textContent).toContain("It saves when you click outside the box.");
   });
 
   it("puts the member's own entry in the box, not in the log", () => {

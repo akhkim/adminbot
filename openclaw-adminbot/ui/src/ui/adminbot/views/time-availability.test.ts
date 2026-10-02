@@ -2,6 +2,7 @@ import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
 import { allUpcomingVenues, aoeInstantMs, upcomingMajorDeadlines } from "../data/deadline-time.ts";
+import { EMPTY_TRIP_DRAFT } from "./time-availability.trips.ts";
 import {
   allocationBins,
   rangeBins,
@@ -12,10 +13,10 @@ import {
   milestoneDraftError,
   milestoneToRow,
   renderAdminBotTimeAvailability,
+  withinWindow,
   type AdminBotTimeAvailabilityProps,
   type MilestoneDraft,
 } from "./time-availability.ts";
-import { EMPTY_TRIP_DRAFT } from "./time-availability.trips.ts";
 
 // 40h capacity is the reference line the chart draws; commitments are shown in raw hours/week.
 function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
@@ -75,6 +76,11 @@ function renderView(overrides: Partial<AdminBotTimeAvailabilityProps> = {}): HTM
 
 const NOW = Date.UTC(2026, 2, 2); // Monday 2 March 2026
 
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
 describe("rangeBins", () => {
   it("gives a week seven day-long bins from today", () => {
     const bins = rangeBins("week", NOW);
@@ -117,7 +123,9 @@ describe("allocationBins", () => {
   });
 
   it("counts only the days a commitment actually covers in the bin", () => {
-    const late = tasks([{ key: "a", name: "A", start: "2026-03-05", end: "2026-03-31", hours: 21 }]);
+    const late = tasks([
+      { key: "a", name: "A", start: "2026-03-05", end: "2026-03-31", hours: 21 },
+    ]);
     expect(allocationBins(late, [], "month", NOW)[0].total).toBeCloseTo((21 * 4) / 7, 5);
   });
 
@@ -185,16 +193,89 @@ describe("draftError", () => {
 });
 
 describe("renderAdminBotTimeAvailability", () => {
+  it("offers authorized collaborators read-only without arbitrary roster schedules", () => {
+    const peer = member({ id: "peer", name: "Coauthor" });
+    const stranger = member({
+      id: "stranger",
+      name: "Unrelated",
+      availability: [
+        { start: "2026-03-02", end: "2026-03-15", project: "Secret", hours_per_week: 5 },
+      ],
+    });
+    const load = vi.fn();
+    const view = renderView({
+      members: [member(), stranger],
+      collaborators: [peer],
+      selectedMemberId: "peer",
+      onLoadCollaborators: load,
+    });
+    expect(view.textContent).toContain("See my collaborator's time availability");
+    expect(view.textContent).toContain("Coauthor");
+    expect(view.textContent).not.toContain("Secret");
+    expect(view.textContent).not.toContain("Add commitment");
+    const refresh = [...view.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Load / refresh"),
+    );
+    refresh?.click();
+    expect(load).toHaveBeenCalledOnce();
+  });
+
+  it("offers a manual schedule refresh and disables it while loading", () => {
+    const onRefresh = vi.fn();
+    renderView({ onRefresh })
+      .querySelector<HTMLButtonElement>(".adminbot-time-availability__refresh")
+      ?.click();
+    expect(onRefresh).toHaveBeenCalledOnce();
+    const loadingView = renderView({ onRefresh, loading: true });
+    expect(
+      loadingView.querySelector<HTMLButtonElement>(".adminbot-time-availability__refresh")
+        ?.disabled,
+    ).toBe(true);
+    expect(
+      loadingView.querySelector("[data-testid=time-availability-jinesis-table]"),
+    ).not.toBeNull();
+  });
+
   // Editing is self-only: the service routes a member session to its own record, so showing the
   // form on someone else's schedule would only ever produce a 403.
   it("shows the add-commitment button on your own schedule and hides it on someone else's", () => {
-    expect(renderView().querySelector(".adminbot-time-availability__add-commitment")).not.toBeNull();
+    expect(
+      renderView().querySelector(".adminbot-time-availability__add-commitment"),
+    ).not.toBeNull();
     expect(
       renderView({ viewerMemberId: "someone-else" }).querySelector(
         ".adminbot-time-availability__add-commitment",
       ),
     ).toBeNull();
   });
+
+  it.each([
+    { reducedMotion: true, behavior: "auto" },
+    { reducedMotion: false, behavior: "smooth" },
+  ] as const)(
+    "scrolls to the editor with $behavior behavior when reduced motion is $reducedMotion",
+    ({ reducedMotion, behavior }) => {
+      const scrollIntoView = vi.fn();
+      const picker = document.createElement("div");
+      picker.className = "adminbot-time-availability__commitment-picker";
+      picker.scrollIntoView = scrollIntoView;
+      document.body.append(picker);
+      vi.stubGlobal("matchMedia", () => ({ matches: reducedMotion }));
+      vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) => {
+        callback(0);
+        return 1;
+      });
+
+      try {
+        renderView()
+          .querySelector<HTMLButtonElement>('[data-testid^="time-availability-commitment-edit-"]')
+          ?.click();
+        expect(scrollIntoView).toHaveBeenCalledWith({ behavior, block: "start" });
+      } finally {
+        picker.remove();
+      }
+    },
+  );
 
   it("appends the drafted commitment to the existing rows on submit", () => {
     const onSaveSchedule = vi.fn();
@@ -224,6 +305,50 @@ describe("renderAdminBotTimeAvailability", () => {
       project: "Writing",
       note: "thesis",
     });
+  });
+
+  it("opens the editor when a stored commitment is edited", () => {
+    // The regression: the tables render above the editor stack, and the stack is collapsed until
+    // `activeCommitmentType` is set -- which is its state on load. An Edit button that only loaded
+    // the draft filled in a form that was not on the page, so the press looked like it did nothing.
+    const onDraftChange = vi.fn();
+    const onActiveCommitmentChange = vi.fn();
+    const container = renderView({
+      activeCommitmentType: null,
+      onDraftChange,
+      onActiveCommitmentChange,
+    });
+    const edit = container.querySelector<HTMLButtonElement>(
+      '[data-testid^="time-availability-commitment-edit-"]',
+    );
+    expect(edit).not.toBeNull();
+    edit?.click();
+
+    expect(onDraftChange).toHaveBeenCalledTimes(1);
+    expect(onDraftChange.mock.calls[0][0]).toMatchObject({
+      category: "jinesis",
+      project: "Alignment",
+      start: "2026-03-02",
+      end: "2026-03-15",
+      hoursPerWeek: "20",
+      // The index is what makes this replace the stored row instead of appending a copy.
+      editingIndex: 0,
+    });
+    expect(onActiveCommitmentChange).toHaveBeenCalledWith("jinesis");
+  });
+
+  it("re-opens the Jinesis tab when the editor was left on another one", () => {
+    // Loading a Jinesis draft while the away form is on screen is the same failure wearing a
+    // different hat: the draft lands somewhere the member cannot see it.
+    const onActiveCommitmentChange = vi.fn();
+    const container = renderView({
+      activeCommitmentType: "away",
+      onActiveCommitmentChange,
+    });
+    container
+      .querySelector<HTMLButtonElement>('[data-testid^="time-availability-commitment-edit-"]')
+      ?.click();
+    expect(onActiveCommitmentChange).toHaveBeenCalledWith("jinesis");
   });
 
   it("does not submit an invalid draft", () => {
@@ -354,15 +479,11 @@ describe("the chart", () => {
   it("offers the member picker to an admin and not to a plain member", () => {
     const asAdmin = renderView({ viewerIsAdmin: true });
     expect(asAdmin.querySelector("adminbot-member-select")).not.toBeNull();
-    expect(
-      asAdmin.querySelector('[data-testid="time-availability-own-only"]'),
-    ).toBeNull();
+    expect(asAdmin.querySelector('[data-testid="time-availability-own-only"]')).toBeNull();
 
     const asMember = renderView();
     expect(asMember.querySelector("adminbot-member-select")).toBeNull();
-    expect(
-      asMember.querySelector('[data-testid="time-availability-own-only"]'),
-    ).not.toBeNull();
+    expect(asMember.querySelector('[data-testid="time-availability-own-only"]')).not.toBeNull();
   });
 
   it("shows a plain member only their own schedule, whoever else is on the roster", () => {
@@ -382,16 +503,9 @@ describe("the chart", () => {
   it("selects nothing when a non-admin's selection is not their own record", () => {
     const container = renderView({
       selectedMemberId: "other",
-      members: [
-        member(),
-        member({ id: "other", name: "Bo" } as Partial<AdminBotLabMember>),
-      ],
+      members: [member(), member({ id: "other", name: "Bo" } as Partial<AdminBotLabMember>)],
     });
-    expect(
-      container.querySelector(
-        '[data-testid="time-availability-jinesis-table"]',
-      ),
-    ).toBeNull();
+    expect(container.querySelector('[data-testid="time-availability-jinesis-table"]')).toBeNull();
   });
 
   // The rows say when and how much; this is the sentence that explains the ones that need one.
@@ -405,23 +519,19 @@ describe("the chart", () => {
       .querySelector<HTMLFormElement>(".adminbot-time-availability__notes-form")
       ?.requestSubmit();
     expect(onSaveSchedule).toHaveBeenCalledWith("m1", {
-      availability_notes:
-        "Carer on alternating weeks, so these hours are an average.",
+      availability_notes: "Carer on alternating weeks, so these hours are an average.",
     });
   });
 
   it("leaves the note save disabled until the text actually changes", () => {
     const stored = "Away most Fridays.";
     const unchanged = renderView({
-      members: [
-        member({ availability_notes: stored } as Partial<AdminBotLabMember>),
-      ],
+      members: [member({ availability_notes: stored } as Partial<AdminBotLabMember>)],
       notesDraft: stored,
     });
     expect(
-      unchanged.querySelector<HTMLButtonElement>(
-        '[data-testid="time-availability-notes-save"]',
-      )?.disabled,
+      unchanged.querySelector<HTMLButtonElement>('[data-testid="time-availability-notes-save"]')
+        ?.disabled,
     ).toBe(true);
   });
 
@@ -438,20 +548,15 @@ describe("the chart", () => {
       ],
     });
     expect(
-      withNote.querySelector('[data-testid="time-availability-notes-text"]')
-        ?.textContent,
+      withNote.querySelector('[data-testid="time-availability-notes-text"]')?.textContent,
     ).toContain("Visa interview may move.");
-    expect(
-      withNote.querySelector('[data-testid="time-availability-notes-input"]'),
-    ).toBeNull();
+    expect(withNote.querySelector('[data-testid="time-availability-notes-input"]')).toBeNull();
 
     const withoutNote = renderView({
       viewerIsAdmin: true,
       viewerMemberId: "admin",
     });
-    expect(
-      withoutNote.querySelector('[data-testid="time-availability-notes"]'),
-    ).toBeNull();
+    expect(withoutNote.querySelector('[data-testid="time-availability-notes"]')).toBeNull();
   });
 
   it("offers the three ranges and marks the active one", () => {
@@ -580,6 +685,54 @@ describe("draftToPatch", () => {
     ]);
   });
 
+  // Angelo's report: changing a project's dates meant removing the row and typing the whole thing
+  // in again. An editing draft rewrites the row it came from instead of appending a second one.
+  it("rewrites the row an editing draft came from, in place", () => {
+    const existing = {
+      availability: [
+        { start: "2026-01-01", end: "2026-02-01", hours_per_week: 10, project: "Atlas" },
+        { start: "2026-03-02", end: "2026-03-15", hours_per_week: 20, project: "Borealis" },
+      ],
+      timeOff: [],
+    };
+    const patch = draftToPatch(
+      {
+        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+        category: "jinesis",
+        project: "Atlas",
+        // The dates are what moved; everything else is carried over from the row.
+        start: "2026-01-08",
+        end: "2026-02-14",
+        hoursPerWeek: "10",
+        editingIndex: 0,
+      },
+      existing,
+    );
+    expect(patch.availability).toEqual([
+      { start: "2026-01-08", end: "2026-02-14", hours_per_week: 10, project: "Atlas" },
+      // Untouched, and still second: an edited row keeps its place in the schedule.
+      { start: "2026-03-02", end: "2026-03-15", hours_per_week: 20, project: "Borealis" },
+    ]);
+  });
+
+  // An index that no longer addresses a row (the list changed underneath the form) appends rather
+  // than throwing away the member's typing or overwriting whatever now sits at that position.
+  it("appends when the editing index is out of range", () => {
+    const patch = draftToPatch(
+      {
+        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+        category: "jinesis",
+        project: "Atlas",
+        start: "2026-03-02",
+        end: "2026-03-15",
+        hoursPerWeek: "20",
+        editingIndex: 7,
+      },
+      empty,
+    );
+    expect(patch.availability).toHaveLength(1);
+  });
+
   // Everything that is not Jinesis work is time away, and defaults to a whole day off.
   it("writes any other category to time off as a whole day off", () => {
     const patch = draftToPatch(
@@ -643,6 +796,30 @@ describe("draftToPatch", () => {
       },
     );
     expect(patch.time_off).toHaveLength(2);
+  });
+
+  it("replaces the selected commitment when editing dates", () => {
+    const patch = draftToPatch(
+      {
+        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+        category: "jinesis",
+        project: "Atlas",
+        start: "2026-04-01",
+        end: "2026-07-31",
+        hoursPerWeek: "18",
+        editingIndex: 0,
+      },
+      {
+        availability: [
+          { start: "2026-03-01", end: "2026-06-30", project: "Atlas", hours_per_week: 20 },
+        ],
+        timeOff: [],
+      },
+    );
+
+    expect(patch.availability).toEqual([
+      { start: "2026-04-01", end: "2026-07-31", project: "Atlas", hours_per_week: 18 },
+    ]);
   });
 });
 
@@ -741,6 +918,89 @@ describe("the split tables and the deadline panel", () => {
       milestones: [{ date: "2027-06-12", label: "Graduation" }],
     });
 
+  it("loads a non-Jinesis commitment into the away editor and opens it", () => {
+    const onAwayDraftChange = vi.fn();
+    const onActiveCommitmentChange = vi.fn();
+    const container = renderView({
+      members: [scheduled()],
+      activeCommitmentType: null,
+      onAwayDraftChange,
+      onActiveCommitmentChange,
+    });
+    const edit = container.querySelector<HTMLButtonElement>(
+      '[data-testid="time-availability-away-edit-0"]',
+    );
+    expect(edit).not.toBeNull();
+    edit?.click();
+
+    expect(onAwayDraftChange).toHaveBeenCalledTimes(1);
+    expect(onAwayDraftChange.mock.calls[0][0]).toMatchObject({
+      category: "vacation",
+      start: "2026-12-24",
+      end: "2027-01-02",
+      // "none" on the row is the whole-day answer, and it carries no hours to load back.
+      wholeDay: true,
+      hoursPerWeek: "",
+      // Into `time_off`, so submitting replaces this row rather than appending a copy.
+      editingIndex: 0,
+    });
+    expect(onActiveCommitmentChange).toHaveBeenCalledWith("away");
+  });
+
+  it("carries a partial row's hours back into the away editor", () => {
+    const onAwayDraftChange = vi.fn();
+    const container = renderView({
+      members: [
+        member({
+          time_off: [
+            {
+              start: "2026-05-01",
+              end: "2026-05-31",
+              kind: "course_load",
+              label: "Compilers",
+              availability: "partial",
+              hours_per_week: 12,
+              note: "evenings",
+            },
+          ],
+        }),
+      ],
+      onAwayDraftChange,
+    });
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-away-edit-0"]')
+      ?.click();
+    expect(onAwayDraftChange.mock.calls[0][0]).toMatchObject({
+      category: "course_load",
+      customLabel: "Compilers",
+      wholeDay: false,
+      hoursPerWeek: "12",
+      note: "evenings",
+      editingIndex: 0,
+    });
+  });
+
+  it("loads a kind the dropdown does not know as 'other' rather than dropping it", () => {
+    // `kind` is free text on the record and the form's dropdown is a closed enum, so a stored row
+    // can name something the form cannot select. Falling back to "other" -- the category the custom
+    // label belongs to -- keeps the row editable; picking the first enum value would silently
+    // retype somebody's internship as a holiday.
+    const onAwayDraftChange = vi.fn();
+    renderView({
+      members: [
+        member({
+          time_off: [
+            { start: "2026-07-01", end: "2026-07-10", kind: "sabbatical", availability: "none" },
+          ],
+        }),
+      ],
+      onAwayDraftChange,
+    })
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-away-edit-0"]')
+      ?.click();
+    expect(onAwayDraftChange.mock.calls[0][0]).toMatchObject({ category: "other" });
+  });
+
   it("separates Jinesis commitments from everything else", () => {
     const container = renderView({ members: [scheduled()] });
     const jinesis = container.querySelector('[data-testid="time-availability-jinesis-table"]');
@@ -757,6 +1017,27 @@ describe("the split tables and the deadline panel", () => {
     expect(
       container.querySelector('[data-testid="time-availability-jinesis-table"]')?.textContent,
     ).toContain("20 h");
+  });
+
+  it("opens an existing Jinesis row in the edit form", () => {
+    const onDraftChange = vi.fn();
+    const onActiveCommitmentChange = vi.fn();
+    const container = renderView({ onDraftChange, onActiveCommitmentChange });
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid^="time-availability-commitment-edit-"]')
+      ?.click();
+
+    expect(onDraftChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project: "Alignment",
+        start: "2026-03-02",
+        end: "2026-03-15",
+        hoursPerWeek: "20",
+        editingIndex: 0,
+      }),
+    );
+    expect(onActiveCommitmentChange).toHaveBeenCalledWith("jinesis");
   });
 
   // The member's own dates plus the four nearest archival conference deadlines. Archival because
@@ -791,6 +1072,34 @@ describe("the split tables and the deadline panel", () => {
     for (const entry of upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true })) {
       expect(panel?.textContent).toContain(entry.venue.name);
     }
+  });
+
+  // The Deadlines board can add one of the four to a member's own list. Listing it again as the
+  // lab's row would show the same deadline twice; the member's copy is the removable one, so it wins.
+  it("lists a conference once when the member has also added it themselves", () => {
+    const { venue } = upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true })[0];
+    const panel = renderView({
+      members: [
+        member({
+          milestones: [
+            {
+              deadline_id: venue.deadline_id,
+              date: venue.deadline_aoe.slice(0, 10),
+              label: venue.name,
+              time: venue.deadline_aoe.slice(11, 16),
+              timezone: "Etc/GMT+12",
+            },
+          ],
+        } as Partial<AdminBotLabMember>),
+      ],
+    }).querySelector('[data-testid="time-availability-deadlines"]')!;
+    const rows = [...panel.querySelectorAll("li")].filter(
+      (row) =>
+        row.querySelector(".adminbot-time-availability__deadline-label")?.textContent?.trim() ===
+        venue.name,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].dataset.own).toBe("true");
   });
 
   // Four archival conferences is the right default and a bad restriction: the venue somebody needs
@@ -883,9 +1192,10 @@ describe("the split tables and the deadline panel", () => {
   });
 
   it("reminds the member on the add form that thesis deadlines belong here too", () => {
-    const editor = renderView({ members: [scheduled()], activeCommitmentType: "milestone" }).querySelector(
-      '[data-testid="time-availability-milestone-editor"]',
-    );
+    const editor = renderView({
+      members: [scheduled()],
+      activeCommitmentType: "milestone",
+    }).querySelector('[data-testid="time-availability-milestone-editor"]');
     expect(editor?.querySelector(".card-title")?.textContent).toContain("Add a big deadline");
     expect(editor?.textContent).toContain("thesis");
   });
@@ -896,7 +1206,9 @@ describe("the split tables and the deadline panel", () => {
     const soon = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
     const panel = renderView({
       members: [
-        member({ milestones: [{ date: soon, label: "Thesis proposal" }] } as Partial<AdminBotLabMember>),
+        member({
+          milestones: [{ date: soon, label: "Thesis proposal" }],
+        } as Partial<AdminBotLabMember>),
       ],
     }).querySelector('[data-testid="time-availability-deadlines"]')!;
     const own = [...panel.querySelectorAll("li")].find((row) =>
@@ -1110,7 +1422,9 @@ describe("the split tables and the deadline panel", () => {
 
   it("asks for a custom name only for the 'other' category", () => {
     expect(
-      renderView({ activeCommitmentType: "away" }).querySelector('[data-testid="time-availability-custom-label"]'),
+      renderView({ activeCommitmentType: "away" }).querySelector(
+        '[data-testid="time-availability-custom-label"]',
+      ),
     ).toBeNull();
     expect(
       renderView({
@@ -1139,7 +1453,9 @@ describe("the trips editor's place on the tab", () => {
     const view = renderView({
       viewerIsAdmin: true,
       viewerMemberId: "admin",
-      members: [member({ id: "m1", trips: [{ start: "2026-09-01", end: "2026-09-30", city: "Berlin" }] })],
+      members: [
+        member({ id: "m1", trips: [{ start: "2026-09-01", end: "2026-09-30", city: "Berlin" }] }),
+      ],
     });
     expect(view.querySelector('[data-testid="time-availability-trip-editor"]')).not.toBeNull();
     expect(view.querySelector('[data-testid="time-availability-trip-form"]')).toBeNull();
@@ -1176,9 +1492,9 @@ describe("the where-strip under the chart", () => {
   }
 
   it("names a city per period, at the granularity the range switch chose", () => {
-    const cells = [
-      ...renderOn("2026-09-15").querySelectorAll(".adminbot-where-strip__cell"),
-    ].map((cell) => cell.textContent?.replace(/\s+/gu, " ").trim());
+    const cells = [...renderOn("2026-09-15").querySelectorAll(".adminbot-where-strip__cell")].map(
+      (cell) => cell.textContent?.replace(/\s+/gu, " ").trim(),
+    );
     // "year" is twelve monthly bins, anchored to the start of this month.
     expect(cells).toHaveLength(12);
     expect(cells[0]).toContain("Berlin");
@@ -1288,10 +1604,17 @@ describe("the big-deadlines panel", () => {
     );
   });
 
-  it("presents the picker as one of the tab's editors", () => {
+  // A disclosure now, not an open form: the panel is a banner about what is coming, and the editor
+  // was more than half its height. Everything it held is still one click away.
+  it("keeps the picker shut until it is asked for", () => {
     const view = renderView({ members: [scheduled()] });
     const section = view.querySelector('[data-testid="time-availability-add-deadline-section"]');
-    expect(section?.querySelector(".card-title")?.textContent).toContain("Add a deadline");
+    expect(section?.tagName).toBe("DETAILS");
+    expect((section as HTMLDetailsElement | null)?.open).toBe(false);
+    expect(
+      section?.querySelector(".adminbot-time-availability__deadline-add-summary")?.textContent,
+    ).toContain("Add a deadline");
+    // Shut, not absent: the form is in the DOM and opens without a round trip.
     expect(section?.querySelector("button.primary")).not.toBeNull();
     // Deliberately not classed as an editor: it lives in the deadlines panel, and the commitment
     // form is found by .adminbot-time-availability__form.
@@ -1407,5 +1730,110 @@ describe("the big-deadlines panel", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ── the tables follow the chart ─────────────────────────────────────────────────────────────
+//
+// The chart pages through time and the tables are the same schedule in words, so they answer for
+// the same span. What is finished drops out of the list until the pager reaches it again.
+
+describe("commitments follow the chart's window", () => {
+  const spanning = () =>
+    member({
+      availability: [
+        { start: "2025-09-01", end: "2025-12-15", project: "Last term", hours_per_week: 10 },
+        { start: "2026-03-01", end: "2026-06-30", project: "This term", hours_per_week: 20 },
+      ],
+      time_off: [{ start: "2025-10-01", end: "2025-10-08", kind: "vacation" }],
+    } as Partial<AdminBotLabMember>);
+
+  const window = { start: "2026-03-01", end: "2026-04-12" };
+
+  it("lists only what the window covers", () => {
+    const container = renderView({ members: [spanning()], chartWindow: window });
+    const table = container.querySelector('[data-testid="time-availability-jinesis-table"]');
+    expect(table?.textContent).toContain("This term");
+    expect(table?.textContent).not.toContain("Last term");
+  });
+
+  // A window with nothing in it says nothing. An empty table under a line explaining why it is
+  // empty was more page than the rows would have been, and the chart above shows the same gap.
+  it("draws no table at all when the window holds nothing", () => {
+    const container = renderView({
+      members: [spanning()],
+      chartWindow: { start: "2024-01-01", end: "2024-02-12" },
+    });
+    expect(container.querySelector('[data-testid="time-availability-jinesis-table"]')).toBeNull();
+    expect(container.querySelector('[data-testid="time-availability-other-table"]')).toBeNull();
+  });
+
+  it("brings the finished ones back when the pager reaches them", () => {
+    const container = renderView({
+      members: [spanning()],
+      chartWindow: { start: "2025-09-01", end: "2025-10-13" },
+    });
+    const table = container.querySelector('[data-testid="time-availability-jinesis-table"]');
+    expect(table?.textContent).toContain("Last term");
+    expect(table?.textContent).not.toContain("This term");
+  });
+
+  // Before the chart has reported a window there is nothing to filter against, and hiding rows on
+  // that first frame would be a flash of a shorter list.
+  it("shows everything until the chart says what it is drawing", () => {
+    const container = renderView({ members: [spanning()], chartWindow: null });
+    const table = container.querySelector('[data-testid="time-availability-jinesis-table"]');
+    expect(table?.textContent).toContain("This term");
+    expect(table?.textContent).toContain("Last term");
+  });
+});
+
+describe("withinWindow", () => {
+  const window = { start: "2026-03-01", end: "2026-04-01" };
+
+  it("keeps a commitment that straddles the window's start", () => {
+    expect(withinWindow({ start: "2026-01-01", end: "2026-03-10" }, window)).toBe(true);
+  });
+
+  it("keeps one that runs past the end", () => {
+    expect(withinWindow({ start: "2026-03-20", end: "2026-09-01" }, window)).toBe(true);
+  });
+
+  it("drops one that finished before it opens", () => {
+    expect(withinWindow({ start: "2026-01-01", end: "2026-02-28" }, window)).toBe(false);
+  });
+
+  // The window's end is exclusive: a commitment starting on it belongs to the next page.
+  it("drops one that starts on the exclusive end", () => {
+    expect(withinWindow({ start: "2026-04-01", end: "2026-04-30" }, window)).toBe(false);
+  });
+});
+
+describe("commitment entry point", () => {
+  it("puts the primary add action before the report and opens the existing editor", () => {
+    const onActiveCommitmentChange = vi.fn();
+    const container = renderView({ activeCommitmentType: null, onActiveCommitmentChange });
+    const button = container.querySelector<HTMLButtonElement>(
+      ".adminbot-time-availability__add-commitment",
+    )!;
+    const report = container.querySelector(".adminbot-time-availability__report")!;
+    expect(button.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    button.click();
+    expect(onActiveCommitmentChange).toHaveBeenCalledWith("jinesis");
+  });
+  it("shows an editable example without filling or saving a commitment", () => {
+    const onSaveSchedule = vi.fn();
+    const container = renderView({
+      activeCommitmentType: "jinesis",
+      draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT },
+      onSaveSchedule,
+    });
+    expect(container.textContent).toContain("Example: 20 hours per week on Project XXX.");
+    const hours = container.querySelector<HTMLInputElement>(
+      '[data-testid="time-availability-hours"]',
+    )!;
+    expect(hours.placeholder).toBe("20");
+    expect(hours.value).toBe("");
+    expect(onSaveSchedule).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,11 @@
-# Aurora push — ready to run
+# Aurora push — historical notes, not a current runbook
 
-Everything below is prepared but **not executed**. Deploying restarts AdminBot and the Gateway on
-Aurora, and the reference-check tool sends outward email once approved, so this is yours to run.
+This note records a past rollout. Use [the current Aurora runbook](docs/deploy/aurora-adminbot.md)
+for storage and database-migration requirements before running any command below.
+
+The commands below were prepared for an earlier rollout and are retained as historical context.
+They are not a current deployment plan. Deploying affects AdminBot and the Gateway, and the
+reference-check tool sends outward email once approved.
 
 Ref to deploy: **`cb927f8a579`** (`feat(adminbot): branch the paper timeline and derive conferences from active papers`),
 the same commit the live Vercel bundle was built from. It is committed, so the "never deploy from a
@@ -46,13 +50,14 @@ machine, which is why the tab looks empty on the hosted UI.
 ## 2b. Push the papers database (needed — the 92 sheet-sourced papers live here)
 
 ```bash
-scripts/aurora-adminbot-host.sh --user <cs-user> sync-adminbot-data
+scripts/aurora-adminbot-host.sh --user <cs-user> \
+  --confirm-db-replacement --confirm-source-quiesced sync-adminbot-data
 ```
 
-The conference/stage backfill from the mentee survey was written to the **local** AdminBot
-database. jinesis-admin.vercel.app reads _Aurora's_ AdminBot, so until this runs the site still
-shows the old 37 papers with "Unspecified" conferences. The command snapshots with VACUUM INTO,
-stops the service, backs up the old database with a timestamp, and swaps atomically.
+The local database must first be verified as authoritative and quiescent. The command refuses
+unsupported storage, stops all known writer units, creates verified snapshots and a remote
+backup, then swaps the database while leaving writers stopped for operator review. This archived
+rollout note is not evidence that the local source is still authoritative.
 
 ## Why Aurora matters for the new timeline
 

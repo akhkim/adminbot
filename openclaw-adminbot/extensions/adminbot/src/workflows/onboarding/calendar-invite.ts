@@ -16,7 +16,27 @@ const GWS_MAX_OUTPUT_BYTES = 1024 * 1024;
 // deployment approves members without a calendar invite instead of failing the approval.
 export const ADMINBOT_LAB_EMAIL_ENV = "ADMINBOT_LAB_EMAIL";
 
+/**
+ * Grants reader access to the lab calendar, silently.
+ *
+ * Google's "shared a calendar with you" email is never sent: AdminBot's calendar writes do not
+ * email anyone (see CALENDAR_SEND_UPDATES in connectors/gog.ts). The calendar still appears in the
+ * member's calendar list; the onboarding checklist is what tells them it is there.
+ */
 export type CalendarInviteRunner = (email: string) => Promise<void>;
+
+/**
+ * The configured lab calendar, or undefined when this deployment has none.
+ *
+ * Exported so the composition root can say so *once, at startup*, rather than leaving the answer
+ * to be discovered one failed approval at a time. It was: the runner is always constructed, so an
+ * unconfigured deployment accepted every approval, fired the invite, failed, and wrote an audit
+ * row nobody reads -- 17 times across four months, every one of them the same missing variable,
+ * while the checklist told each of those members they had been added to the calendar.
+ */
+export function adminBotLabCalendarId(env?: NodeJS.ProcessEnv): string | undefined {
+  return (env ?? process.env)[ADMINBOT_LAB_EMAIL_ENV]?.trim() || undefined;
+}
 
 // The AdminBot service's systemd unit runs with a minimal PATH that doesn't include the npm
 // global bin directory `gws` installs into, so a bare "gws" lookup fails with ENOENT there even
@@ -48,7 +68,7 @@ export function createCalendarInviteRunner(env?: NodeJS.ProcessEnv): CalendarInv
     if (!trimmed) {
       throw new Error("calendar invite requires a non-empty email");
     }
-    const calendarId = (env ?? process.env)[ADMINBOT_LAB_EMAIL_ENV]?.trim();
+    const calendarId = adminBotLabCalendarId(env);
     if (!calendarId) {
       throw new Error(
         `the lab calendar is not configured: set ${ADMINBOT_LAB_EMAIL_ENV} to grant calendar access`,
@@ -62,7 +82,7 @@ export function createCalendarInviteRunner(env?: NodeJS.ProcessEnv): CalendarInv
           "acl",
           "insert",
           "--params",
-          JSON.stringify({ calendarId, sendNotifications: true }),
+          JSON.stringify({ calendarId, sendNotifications: false }),
           "--json",
           JSON.stringify({ role: "reader", scope: { type: "user", value: trimmed } }),
         ],

@@ -57,7 +57,53 @@ export function createAdminBotSlackAdminExecutor(
         await inviteToSlackChannel(token, payload.channel, payload.user_id, fetchImpl);
         return { handled: true };
       }
-      if (proposal.type === "member_nudge.escalate") {
+      if (proposal.type === "slack.create_channel") {
+        const payload = readCreatePayload(proposal);
+        const token = resolveSlackBotToken(env);
+        await createSlackChannel(token, payload.name, fetchImpl);
+        return { handled: true };
+      }
+      if (proposal.type === "slack.remove_from_channel") {
+        const payload = readInvitePayload(proposal, "slack.remove_from_channel");
+        await removeFromSlackChannel(
+          resolveSlackBotToken(env),
+          resolveSlackUserToken(env),
+          payload.channel,
+          payload.user_id,
+          fetchImpl,
+        );
+        return { handled: true };
+      }
+      if (proposal.type === "deadline.recommend") {
+        const payload = readGroupDmPayload(proposal);
+        if (
+          payload.user_ids.length !== 2 ||
+          !payload.user_ids.every((id) => /^[UW][A-Z0-9]+$/u.test(id))
+        ) {
+          throw new Error("deadline.recommend requires two distinct Slack users");
+        }
+        const token = resolveSlackBotToken(env);
+        await notifySlackOwner(
+          token,
+          payload.user_ids.join(","),
+          payload.message,
+          fetchImpl,
+          proposal.id,
+        );
+        return { handled: true };
+      }
+      // The hourly digest can instead live in a channel as one message, edited each hour.
+      if (proposal.type === "paper_integrity.report" && readChannelTarget(proposal)) {
+        const target = readChannelTarget(proposal)!;
+        const token = resolveSlackBotToken(env);
+        const ts = await postOrUpdateChannelMessage(token, target, fetchImpl);
+        return { handled: true, artifacts: { slack_channel: target.channel_id, slack_ts: ts } };
+      }
+      if (
+        proposal.type === "member_nudge.escalate" ||
+        proposal.type === "paper_integrity.alert" ||
+        proposal.type === "paper_integrity.report"
+      ) {
         const payload = readGroupDmPayload(proposal);
         const token = resolveSlackBotToken(env);
         await notifySlackOwner(token, payload.user_ids.join(","), payload.message, fetchImpl);
@@ -75,13 +121,18 @@ export function createAdminBotSlackAdminExecutor(
  * quietly became a private message to the professor is the failure mode this whole shape exists to
  * avoid -- the member has to be in the room.
  */
-function readInvitePayload(proposal: AdminBotStoredProposal): {
+function readInvitePayload(
+  proposal: AdminBotStoredProposal,
+  // Shared by the invite and the removal, which carry the same two fields. Named so the refusal
+  // says which one was malformed rather than always blaming the invite.
+  typeName = "slack.invite_to_channel",
+): {
   channel: string;
   user_id: string;
 } {
   const payload = proposal.proposed_payload;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("slack.invite_to_channel requires an object proposed_payload");
+    throw new Error(`${typeName} requires an object proposed_payload`);
   }
   const record = payload as Record<string, unknown>;
   return {
@@ -100,15 +151,55 @@ function readInvitePayload(proposal: AdminBotStoredProposal): {
  * Already-in-channel is not an error. The sweep is idempotent by design and a member who joined on
  * their own before AdminBot got to them is the success case, not a failure to report.
  */
-async function inviteToSlackChannel(
+/**
+ * The id behind a channel name, which is what every conversations.* call actually takes.
+ *
+ * Extracted so the invite and the removal resolve names the same way. They have to: a sweep that
+ * added somebody to the channel it found and removed them from a different one -- because the two
+ * lookups disagreed about archived channels, say -- is worse than either failing outright.
+ */
+/**
+ * A Slack conversation id, as opposed to a channel name.
+ *
+ * C is a public channel, G a private one, D a DM. Names cannot take this shape -- Slack channel
+ * names are lowercase -- so there is no value that could be read as either.
+ */
+const SLACK_CONVERSATION_ID = /^[CGD][A-Z0-9]{7,}$/u;
+
+/**
+ * Every open public channel in the workspace, by name.
+ *
+ * Exported because two callers need the same walk: `resolveChannelId` looks one up, and the
+ * project form asks for the whole set so it can tell somebody their alias does not match any
+ * channel *before* they file a project under a name nobody will find.
+ *
+ * Public and unarchived only, which is the same slice `resolveChannelId` has always searched. A
+ * private channel the bot cannot see is not a name the lab can be asked to match: the answer
+ * "there is no such channel" would be wrong, and wrong in the direction that blocks a legitimate
+ * project.
+ *
+ * Paginated to exhaustion rather than capped. A cap would silently answer "no such channel" for
+ * every channel past the limit, which is the one failure this must not have.
+ */
+export async function listSlackChannelNames(
   token: string,
-  channelName: string,
-  userId: string,
   fetchImpl: SlackAdminFetch,
-): Promise<void> {
-  const wanted = channelName.replace(/^#/u, "");
+): Promise<string[]> {
+  const names: string[] = [];
+  for await (const channel of walkPublicChannels(token, fetchImpl)) {
+    if (channel.name) {
+      names.push(channel.name);
+    }
+  }
+  return names;
+}
+
+/** The shared pagination walk. One loop, so a lookup and a listing cannot disagree about scope. */
+async function* walkPublicChannels(
+  token: string,
+  fetchImpl: SlackAdminFetch,
+): AsyncGenerator<{ id?: string; name?: string }> {
   let cursor: string | undefined;
-  let channelId: string | undefined;
   do {
     const params = new URLSearchParams({
       types: "public_channel",
@@ -125,14 +216,54 @@ async function inviteToSlackChannel(
       const detail = payload?.error?.trim() || response.statusText || "unknown error";
       throw new Error(`Slack channel lookup failed ${response.status}: ${detail}`);
     }
-    channelId = payload.channels?.find((channel) => channel.name === wanted)?.id;
+    for (const channel of payload.channels ?? []) {
+      yield channel;
+    }
     cursor = payload.response_metadata?.next_cursor?.trim() || undefined;
-  } while (!channelId && cursor);
+  } while (cursor);
+}
+
+/** The env read, exported so a caller outside the executor can fail the same way it does. */
+export function adminBotSlackBotToken(env: NodeJS.ProcessEnv): string {
+  return resolveSlackBotToken(env);
+}
+
+async function resolveChannelId(
+  token: string,
+  channelName: string,
+  fetchImpl: SlackAdminFetch,
+): Promise<string> {
+  const wanted = channelName.replace(/^#/u, "");
+  // Already an id: hand it back rather than searching the directory for a channel *named*
+  // "C0A06H6K6DV", which is what a configured id used to do -- and since these invites run before
+  // the mail, that lookup failing refused the whole send. Both forms are legitimate config: the
+  // city sweep names its channels, and a fixed channel is more safely pinned by id, which survives
+  // a rename.
+  if (SLACK_CONVERSATION_ID.test(wanted)) {
+    return wanted;
+  }
+  let channelId: string | undefined;
+  for await (const channel of walkPublicChannels(token, fetchImpl)) {
+    if (channel.name === wanted) {
+      channelId = channel.id;
+      break;
+    }
+  }
   if (!channelId) {
     // Refused rather than created. Opening a channel is a decision about the workspace's shape, and
     // a sweep that quietly makes rooms is how a directory fills with them.
     throw new Error(`Slack has no open channel named #${wanted}`);
   }
+  return channelId;
+}
+
+async function inviteToSlackChannel(
+  token: string,
+  channelName: string,
+  userId: string,
+  fetchImpl: SlackAdminFetch,
+): Promise<void> {
+  const channelId = await resolveChannelId(token, channelName, fetchImpl);
   const invite = await fetchImpl("https://slack.com/api/conversations.invite", {
     method: "POST",
     headers: {
@@ -151,20 +282,134 @@ async function inviteToSlackChannel(
   }
 }
 
+/**
+ * The channel a create proposal may open.
+ *
+ * Only `proj-<alias>`. This is the whole safety story for auto-approving creation: the action
+ * cannot open a `lab-`, `group-` or arbitrarily named room however it is called, so the worst a bug
+ * upstream can do is create a project channel for a project. The shape matches the alias rule in
+ * contracts/actions.ts, which is what generated the name.
+ */
+const PROJECT_CHANNEL_NAME = /^proj-[a-z0-9][a-z0-9-]*$/u;
+
+function readCreatePayload(proposal: AdminBotStoredProposal): { name: string } {
+  const payload = proposal.proposed_payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("slack.create_channel requires an object proposed_payload");
+  }
+  const name = requireString(payload as Record<string, unknown>, "name").replace(/^#/u, "");
+  if (!PROJECT_CHANNEL_NAME.test(name)) {
+    throw new Error(
+      `slack.create_channel refuses ${name}: only proj-<alias> channels may be opened this way`,
+    );
+  }
+  return { name };
+}
+
+/**
+ * Opens one project channel, or accepts that it is already open.
+ *
+ * `name_taken` is success, not failure, and that is what lets this run without first asking Slack
+ * what exists: the sweep says "there should be a channel called this" every time it runs, and Slack
+ * decides whether that means creating one. It is the same idempotence `already_in_channel` gives
+ * the invite, and it is why no channel directory is needed to make project channels work.
+ */
+async function createSlackChannel(
+  token: string,
+  name: string,
+  fetchImpl: SlackAdminFetch,
+): Promise<void> {
+  const response = await fetchImpl("https://slack.com/api/conversations.create", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({ name, is_private: false }),
+  });
+  const payload = parseSlackJson<SlackRenameResponse>(await response.text());
+  if (payload?.error === "name_taken") {
+    return;
+  }
+  if (!response.ok || !payload?.ok) {
+    const detail = payload?.error?.trim() || response.statusText || "unknown error";
+    throw new Error(`Slack channel create failed ${response.status}: ${detail}`);
+  }
+}
+
+/**
+ * Takes one member back out of one public channel.
+ *
+ * `not_in_channel` is not an error, for the same reason `already_in_channel` is not one above: the
+ * sweep is idempotent by design, and somebody who left of their own accord has already reached the
+ * state this is asking for. Treating it as a failure would make every later run of the sweep
+ * report a problem that no longer exists.
+ *
+ * `cant_kick_self` is left as an error deliberately. It means the bot was asked to remove itself,
+ * which is never something a roster sweep should be doing and is worth surfacing rather than
+ * swallowing alongside the benign cases.
+ */
+/*
+ * Two tokens, and not interchangeably.
+ *
+ * Slack refuses `conversations.kick` for a bot token on a public channel and answers
+ * `restricted_action` -- HTTP 200 with `ok: false`, so it reads as a success to anything not
+ * checking the body. Removing somebody from a public channel is a workspace-admin action, and no
+ * bot scope grants it; `#jinesis-active` and `#random-active` are both public, so adding scopes to
+ * the bot would not have fixed it. The kick therefore goes out on the user token, which is the
+ * same one `admin.users.invite` already runs on.
+ *
+ * The directory lookup stays on the bot token: it is the identity holding `channels:read` and
+ * `groups:read`, and the user token is not guaranteed to carry them.
+ *
+ * Worth knowing when reading Slack's own audit log: the removal is attributed to whoever owns the
+ * user token, not to the admin who approved the action. AdminBot's audit log records the approver.
+ */
+async function removeFromSlackChannel(
+  botToken: string,
+  userToken: string,
+  channelName: string,
+  userId: string,
+  fetchImpl: SlackAdminFetch,
+): Promise<void> {
+  const channelId = await resolveChannelId(botToken, channelName, fetchImpl);
+  const removal = await fetchImpl("https://slack.com/api/conversations.kick", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${userToken}`,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({ channel: channelId, user: userId }),
+  });
+  const removalPayload = parseSlackJson<SlackRenameResponse>(await removal.text());
+  if (removalPayload?.error === "not_in_channel") {
+    return;
+  }
+  if (!removal.ok || !removalPayload?.ok) {
+    const detail = removalPayload?.error?.trim() || removal.statusText || "unknown error";
+    throw new Error(`Slack channel removal failed ${removal.status}: ${detail}`);
+  }
+}
+
 function readGroupDmPayload(proposal: AdminBotStoredProposal): {
   user_ids: string[];
   message: string;
 } {
   const payload = proposal.proposed_payload;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("member_nudge.escalate requires an object proposed_payload");
+    throw new Error(`${proposal.type} requires an object proposed_payload`);
   }
   const raw = (payload as Record<string, unknown>).user_ids;
   const userIds = Array.isArray(raw)
     ? [...new Set(raw.filter((id): id is string => typeof id === "string" && Boolean(id.trim())))]
     : [];
-  if (userIds.length < 2) {
-    throw new Error("member_nudge.escalate requires at least two Slack user ids");
+  // One is now legitimate. This used to demand two, guarding against the escalation quietly
+  // becoming a private message *to the professor* with the member not in the room. That failure is
+  // gone by construction: the professor is no longer a recipient at all -- their copy is the
+  // escalation queue on their own page -- so the only person this can reach is the member it is
+  // about, which is the direction the old rule was protecting.
+  if (userIds.length < 1) {
+    throw new Error(`${proposal.type} requires at least one Slack user id`);
   }
   return {
     user_ids: userIds,
@@ -193,6 +438,25 @@ function resolveSlackBotToken(env: NodeJS.ProcessEnv): string {
   return token;
 }
 
+/**
+ * The workspace-admin token, required by the one action a bot may not perform.
+ *
+ * Deliberately a separate resolver rather than a fallback to the bot token: a removal that
+ * silently ran as the bot would come back `restricted_action` from Slack with a 200, and the point
+ * of failing here is that a misconfigured deployment refuses the action instead of recording an
+ * approval against a call that was never going to work.
+ */
+function resolveSlackUserToken(env: NodeJS.ProcessEnv): string {
+  const token = env.SLACK_USER_TOKEN?.trim();
+  if (!token) {
+    throw new Error(
+      "SLACK_USER_TOKEN is required to remove somebody from a channel: Slack refuses " +
+        "conversations.kick for a bot token with restricted_action",
+    );
+  }
+  return token;
+}
+
 function readRenamePayload(proposal: AdminBotStoredProposal): {
   channel_id: string;
   new_name: string;
@@ -214,11 +478,85 @@ function requireString(payload: Record<string, unknown>, key: string): string {
   return value.trim();
 }
 
+type ChannelTarget = { channel_id: string; message: string; update_ts?: string };
+
+/** A `channel_id` payload: a channel message, optionally replacing the one at `update_ts`. */
+function readChannelTarget(proposal: AdminBotStoredProposal): ChannelTarget | undefined {
+  const payload = proposal.proposed_payload as Record<string, unknown> | undefined;
+  const channelId = typeof payload?.channel_id === "string" ? payload.channel_id.trim() : "";
+  if (!payload || !channelId) {
+    return undefined;
+  }
+  if (!/^[CG][A-Z0-9]{2,}$/u.test(channelId)) {
+    throw new Error(`${proposal.type} channel_id must be a Slack channel id`);
+  }
+  const updateTs = typeof payload.update_ts === "string" ? payload.update_ts.trim() : "";
+  return {
+    channel_id: channelId,
+    message: requireString(payload, "message"),
+    ...(/^\d+\.\d+$/u.test(updateTs) ? { update_ts: updateTs } : {}),
+  };
+}
+
+// Slack's answers for "that message cannot be edited": deleted by a person, or otherwise gone.
+// Posting a fresh one is the right recovery; anything else is a real failure.
+const REPLACEABLE_UPDATE_ERRORS = new Set([
+  "message_not_found",
+  "cant_update_message",
+  "edit_window_closed",
+]);
+
+/** Edits the message at `update_ts`, or posts a new one; returns the ts of the message shown. */
+async function postOrUpdateChannelMessage(
+  token: string,
+  target: ChannelTarget,
+  fetchImpl: SlackAdminFetch,
+): Promise<string> {
+  const call = async (method: string, body: Record<string, unknown>) => {
+    const response = await fetchImpl(`https://slack.com/api/${method}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify(body),
+    });
+    return {
+      response,
+      payload: parseSlackJson<{ ok?: boolean; ts?: string; error?: string }>(await response.text()),
+    };
+  };
+  if (target.update_ts) {
+    const updated = await call("chat.update", {
+      channel: target.channel_id,
+      ts: target.update_ts,
+      text: target.message,
+    });
+    if (updated.response.ok && updated.payload?.ok) {
+      return updated.payload.ts || target.update_ts;
+    }
+    const error = updated.payload?.error?.trim() || updated.response.statusText || "unknown error";
+    if (!REPLACEABLE_UPDATE_ERRORS.has(error)) {
+      throw new Error(`Slack message update failed ${updated.response.status}: ${error}`);
+    }
+  }
+  const posted = await call("chat.postMessage", {
+    channel: target.channel_id,
+    text: target.message,
+  });
+  if (!posted.response.ok || !posted.payload?.ok || !posted.payload.ts) {
+    const error = posted.payload?.error?.trim() || posted.response.statusText || "unknown error";
+    throw new Error(`Slack channel post failed ${posted.response.status}: ${error}`);
+  }
+  return posted.payload.ts;
+}
+
 async function notifySlackOwner(
   token: string,
   ownerUserId: string,
   message: string,
   fetchImpl: SlackAdminFetch,
+  messageId?: string,
 ): Promise<void> {
   const openResponse = await fetchImpl("https://slack.com/api/conversations.open", {
     method: "POST",
@@ -239,7 +577,19 @@ async function notifySlackOwner(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json; charset=utf-8",
     },
-    body: JSON.stringify({ channel: openPayload.channel.id, text: message }),
+    body: JSON.stringify({
+      channel: openPayload.channel.id,
+      text: message,
+      ...(messageId
+        ? {
+            client_msg_id: messageId.replace(/^act_/u, ""),
+            mrkdwn: false,
+            parse: "none",
+            unfurl_links: false,
+            unfurl_media: false,
+          }
+        : {}),
+    }),
   });
   const postPayload = parseSlackJson<SlackRenameResponse>(await postResponse.text());
   if (!postResponse.ok || !postPayload?.ok) {

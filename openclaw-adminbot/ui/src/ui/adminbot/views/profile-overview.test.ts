@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { MemberAdoptionSummary, MemberProfileOverviewRow } from "../auth/session.ts";
 import {
   EMPTY_PROFILE_OVERVIEW_FILTER,
+  filterOverviewRows,
   renderAdminBotProfileOverview,
   type ProfileOverviewFilter,
 } from "./profile-overview.ts";
@@ -23,6 +24,7 @@ function draw(options: DrawOptions = {}) {
   const reminds: Array<{ include: string; memberIds: string[] }> = [];
   const opened: string[] = [];
   const filters: ProfileOverviewFilter[] = [];
+  const seeds: boolean[] = [];
   const container = document.createElement("div");
   document.body.append(container);
   render(
@@ -37,11 +39,12 @@ function draw(options: DrawOptions = {}) {
       filter: { ...EMPTY_PROFILE_OVERVIEW_FILTER, gap: "all", ...options.filter },
       onFilterChange: (next) => filters.push(next),
       onRemind: (scope) => reminds.push(scope),
+      onSeedNudgeList: () => seeds.push(true),
       onOpenMember: (id) => opened.push(id),
     }),
     container,
   );
-  return { container, reminds, opened, filters };
+  return { container, reminds, opened, filters, seeds };
 }
 
 function member(fields: Partial<MemberProfileOverviewRow> = {}): MemberProfileOverviewRow {
@@ -429,6 +432,58 @@ describe("profile overview filters", () => {
     expect(drawn.container.textContent).toContain("caught up");
   });
 
+  it("shows every member type until one is ticked, then the union of those ticked", () => {
+    const roster = [
+      member({ id: "f", name: "Full Person", member_type: "full" }),
+      member({ id: "a", name: "Alum Person", member_type: "alumni" }),
+      member({ id: "o", name: "Advisee Person", member_type: "own-pace-advisee" }),
+      member({ id: "c", name: "Coauthor Person", member_type: "coauthor-major" }),
+      member({ id: "x", name: "Acquaintance Person", member_type: "acquaintance" }),
+      member({ id: "n", name: "Untyped Person" }),
+    ];
+    const base = { ...EMPTY_PROFILE_OVERVIEW_FILTER, gap: "all" as const };
+
+    // Nothing ticked is the unset control, not an empty table.
+    expect(filterOverviewRows(roster, base)).toHaveLength(6);
+
+    expect(
+      filterOverviewRows(roster, { ...base, memberTypes: ["alumni"] }).map((row) => row.id),
+    ).toEqual(["a"]);
+
+    // A union, because these are labels somebody holds rather than a hierarchy.
+    expect(
+      filterOverviewRows(roster, {
+        ...base,
+        memberTypes: ["alumni", "coauthor-major"],
+      }).map((row) => row.id),
+    ).toEqual(["a", "c"]);
+  });
+
+  it("matches one type of a member who holds several, without matching on a prefix", () => {
+    const roster = [
+      member({ id: "both", name: "Both", member_type: "alumni, coauthor-major" }),
+      member({ id: "minor", name: "Minor", member_type: "coauthor-minor" }),
+    ];
+    const base = { ...EMPTY_PROFILE_OVERVIEW_FILTER, gap: "all" as const };
+    expect(
+      filterOverviewRows(roster, { ...base, memberTypes: ["alumni"] }).map((row) => row.id),
+    ).toEqual(["both"]);
+    // "coauthor-major" must not also select the coauthor-minor row.
+    expect(
+      filterOverviewRows(roster, { ...base, memberTypes: ["coauthor-major"] }).map((row) => row.id),
+    ).toEqual(["both"]);
+  });
+
+  it("sends a ticked type through the filter rather than mutating the table", () => {
+    const drawn = draw({ members: people, filter: { gap: "all" } });
+    drawn.container
+      .querySelector<HTMLInputElement>('[data-testid="profile-overview-type-alumni"]')
+      ?.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(drawn.filters).toEqual([
+      { ...EMPTY_PROFILE_OVERVIEW_FILTER, gap: "all", memberTypes: ["alumni"] },
+    ]);
+  });
+
   it("sends the search through the filter rather than mutating the table", () => {
     const drawn = draw({ members: people, filter: { gap: "all" } });
     const search = drawn.container.querySelector<HTMLInputElement>(
@@ -439,5 +494,35 @@ describe("profile overview filters", () => {
     expect(drawn.filters).toEqual([
       { ...EMPTY_PROFILE_OVERVIEW_FILTER, gap: "all", search: "ben" },
     ]);
+  });
+});
+
+// The nudge list is what decides whether the reminder button can reach anybody at all, so the page
+// that runs the reminder is where it is populated from.
+describe("nudge list seeding", () => {
+  it("offers the seed alongside the reminder", () => {
+    const { container } = draw({ members: [member()] });
+    expect(
+      container.querySelector('[data-testid="profile-overview-seed-nudge-list"]'),
+    ).not.toBeNull();
+  });
+
+  it("asks the service to seed, sending no names of its own", () => {
+    const { container, seeds } = draw({ members: [member()] });
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="profile-overview-seed-nudge-list"]')
+      ?.click();
+    expect(seeds).toEqual([true]);
+  });
+
+  // Shares the reminder's busy flag: seeding changes who the reminder would reach, so the two must
+  // never be in flight together.
+  it("is disabled while a send is in flight", () => {
+    const { container } = draw({ members: [member()], reminding: true });
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        '[data-testid="profile-overview-seed-nudge-list"]',
+      )?.disabled,
+    ).toBe(true);
   });
 });

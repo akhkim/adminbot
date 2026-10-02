@@ -1,0 +1,361 @@
+import { render } from "lit";
+import { describe, expect, it, vi } from "vitest";
+import { renderAdminBotBadges } from "./badges.ts";
+
+describe("renderAdminBotBadges", () => {
+  it("offers an explicit positive total in the assignment editor", () => {
+    const props = {
+      ...baseProps(),
+      assignRowId: "pat",
+      members: [{ id: "pat", name: "Pat", assigned_badges: [] }],
+    };
+    const container = document.createElement("div");
+    render(renderAdminBotBadges(props), container);
+    const count = container.querySelector('input[name="count"]') as HTMLInputElement;
+    expect(count.type).toBe("number");
+    expect(count.value).toBe("1");
+    expect(count.min).toBe("1");
+    expect(count.required).toBe(true);
+    count.value = "3";
+    const form = count.form!;
+    (form.querySelector('input[type="hidden"]') as HTMLInputElement).value = "referral";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(props.onAssign).toHaveBeenCalledWith("pat", "referral", undefined, 3);
+  });
+
+  // A colleague's account of somebody's work and a claim about your own read differently, and the
+  // queue used to present them identically because only the second kind could exist.
+  it("names the colleague who put a nomination forward", () => {
+    const container = document.createElement("div");
+    render(
+      renderAdminBotBadges({
+        ...baseProps(),
+        nominations: [
+          {
+            id: "nom-2",
+            badge_id: "team_contributor__bug_hunter",
+            family_key: "team_contributor__bug_hunter",
+            member_id: "pat",
+            member_name: "Pat Doe",
+            nominated_by: "mei",
+            nominator_name: "Mei Chen",
+            status: "pending",
+            created_at: "2026-08-03T00:00:00.000Z",
+            badge_category: "Team Contributor",
+            badge_name: "Bug Hunter",
+            badge_description: "Found a substantive error.",
+          },
+        ],
+      }),
+      container,
+    );
+
+    expect(
+      container.querySelector('[data-testid="adminbot-badge-nominator"]')?.textContent,
+    ).toContain("Nominated by Mei Chen");
+  });
+
+  it("renders the badge catalog, assignments, and nomination queue", () => {
+    const container = document.createElement("div");
+    render(
+      renderAdminBotBadges({
+        definitions: [
+          {
+            id: "causality__level_1",
+            family_key: "causality",
+            category: "Causality",
+            name: "Causality",
+            tier: "Level 1",
+            description: "Passed the CausalTutor curriculum.",
+            sort_order: 10,
+            created_at: "2026-08-01T00:00:00.000Z",
+            updated_at: "2026-08-01T00:00:00.000Z",
+          },
+        ],
+        definitionsLoading: false,
+        definitionsError: null,
+        nominations: [
+          {
+            id: "nom-1",
+            badge_id: "causality__level_1",
+            family_key: "causality",
+            member_id: "pat",
+            member_name: "Pat Doe",
+            status: "pending",
+            created_at: "2026-08-03T00:00:00.000Z",
+            badge_category: "Causality",
+            badge_name: "Causality",
+            badge_tier: "Level 1",
+            badge_description: "Passed the CausalTutor curriculum.",
+          },
+        ],
+        nominationsLoading: false,
+        nominationsError: null,
+        busyKey: null,
+        notice: null,
+        assignRowId: "",
+        onToggleAssignRow: vi.fn(),
+        memberQuery: "",
+        onMemberQueryChange: vi.fn(),
+        members: [
+          {
+            id: "pat",
+            name: "Pat Doe",
+            assigned_badges: [
+              {
+                member_id: "pat",
+                badge_id: "causality__level_1",
+                family_key: "causality",
+                awarded_at: "2026-08-02T00:00:00.000Z",
+                awarded_by: "admin",
+                source: "admin",
+                category: "Causality",
+                name: "Causality",
+                tier: "Level 1",
+                description: "Passed the CausalTutor curriculum.",
+                sort_order: 10,
+              },
+            ],
+          },
+        ],
+        onRefresh: vi.fn(),
+        onSaveDefinition: vi.fn(),
+        onAssign: vi.fn(),
+        onRemove: vi.fn(),
+        onDecide: vi.fn(),
+        suggestions: [],
+        suggestionsLoading: false,
+        suggestionsError: null,
+        suggestionBusy: false,
+        onDecideSuggestion: vi.fn(),
+      }),
+      container,
+    );
+
+    expect(container.textContent).toContain("Badges");
+    expect(container.textContent).toContain("Causality · Level 1");
+    expect(container.textContent).toContain("Pat Doe");
+    expect(container.textContent).toContain("Pending nominations");
+    // A nomination with no nominator is one the member filed themselves, which is a different
+    // thing for a reviewer to read than a colleague's account of somebody's work.
+    expect(
+      container.querySelector('[data-testid="adminbot-badge-nominator"]')?.textContent,
+    ).toContain("Self-nominated");
+  });
+
+  it("shows the selected member's badges, including evidence, in the per-member view", () => {
+    const container = document.createElement("div");
+    render(
+      renderAdminBotBadges({
+        definitions: [],
+        definitionsLoading: false,
+        definitionsError: null,
+        nominations: [],
+        nominationsLoading: false,
+        nominationsError: null,
+        busyKey: null,
+        notice: null,
+        assignRowId: "",
+        onToggleAssignRow: vi.fn(),
+        memberQuery: "",
+        onMemberQueryChange: vi.fn(),
+        members: [
+          {
+            id: "pat",
+            name: "Pat Doe",
+            assigned_badges: [
+              {
+                member_id: "pat",
+                badge_id: "causality__level_1",
+                family_key: "causality",
+                awarded_at: "2026-08-02T00:00:00.000Z",
+                awarded_by: "admin",
+                source: "admin",
+                evidence: "Ran the outreach booth solo.",
+                category: "Causality",
+                name: "Causality",
+                tier: "Level 1",
+                description: "Passed the CausalTutor curriculum.",
+                sort_order: 10,
+              },
+            ],
+          },
+        ],
+        onRefresh: vi.fn(),
+        onSaveDefinition: vi.fn(),
+        onAssign: vi.fn(),
+        onRemove: vi.fn(),
+        onDecide: vi.fn(),
+        suggestions: [],
+        suggestionsLoading: false,
+        suggestionsError: null,
+        suggestionBusy: false,
+        onDecideSuggestion: vi.fn(),
+      }),
+      container,
+    );
+
+    expect(container.textContent).toContain("Ran the outreach booth solo.");
+  });
+
+  // The Control UI ships from Vercel ahead of the service on Aurora, so an admin opening this tab
+  // against an older service gets a 404. That has to read as "the service needs a deploy", not as
+  // the sign-in problem the generic copy used to claim.
+  it("names the missing deploy when the service has no badge routes", () => {
+    const container = document.createElement("div");
+    const onRefresh = vi.fn();
+    render(renderAdminBotBadges(errorProps("not-deployed", onRefresh)), container);
+
+    expect(container.textContent).toContain("doesn't have badges yet");
+    expect(container.textContent).not.toContain("session has expired");
+    const retry = container.querySelector("button");
+    expect(retry).not.toBeNull();
+    retry?.click();
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the sign-in prompt for a genuinely expired session, with no retry button", () => {
+    const container = document.createElement("div");
+    render(renderAdminBotBadges(errorProps("expired", vi.fn())), container);
+
+    expect(container.textContent).toContain("session has expired");
+    expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("says the catalog is empty rather than showing nothing at all", () => {
+    const container = document.createElement("div");
+    render(renderAdminBotBadges(baseProps()), container);
+
+    expect(container.textContent).toContain("No badges defined yet.");
+  });
+
+  // Suggested badges: what the catalogue should contain, next to the nomination queue that says
+  // who should hold what.
+  it("lists a suggested badge with the case for it, and offers both answers", () => {
+    const onDecideSuggestion = vi.fn();
+    const container = document.createElement("div");
+    render(
+      renderAdminBotBadges({
+        ...baseProps(),
+        onDecideSuggestion,
+        suggestions: [
+          {
+            id: "sug_1",
+            category: "Team Contributor",
+            name: "Reviewer Rescue",
+            description: "Turned around an emergency review in 48 hours.",
+            rationale: "Three people did this for ICML and none of it is recorded.",
+            suggested_by: "pat",
+            suggested_by_name: "Pat Doe",
+            status: "pending",
+            created_at: "2026-09-01T10:00:00.000Z",
+          },
+        ],
+      }),
+      container,
+    );
+
+    const card = container.querySelector('[data-testid="adminbot-badge-suggestion"]');
+    expect(card?.textContent).toContain("Reviewer Rescue");
+    // The rationale is the part the decision turns on, so it is on the card rather than behind a
+    // disclosure -- the description says what the badge is, not why the lab needs one.
+    expect(card?.textContent).toContain("Three people did this for ICML");
+    expect(card?.textContent).toContain("Pat Doe");
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="adminbot-badge-suggestion-approve-sug_1"]')
+      ?.click();
+    expect(onDecideSuggestion).toHaveBeenCalledWith("sug_1", "approve");
+  });
+
+  it("names the suggester as gone rather than blank once they have left", () => {
+    const container = document.createElement("div");
+    render(
+      renderAdminBotBadges({
+        ...baseProps(),
+        suggestions: [
+          {
+            id: "sug_2",
+            category: "Community Building",
+            name: "Reading Group Host",
+            description: "Ran the weekly reading group for a term.",
+            rationale: "Somebody does this every term and it is invisible.",
+            status: "pending",
+            created_at: "2026-09-01T10:00:00.000Z",
+          },
+        ],
+      }),
+      container,
+    );
+
+    expect(
+      container.querySelector('[data-testid="adminbot-badge-suggester"]')?.textContent,
+    ).toContain("since left");
+  });
+
+  it("keeps decided suggestions out of the queue without discarding them", () => {
+    const container = document.createElement("div");
+    render(
+      renderAdminBotBadges({
+        ...baseProps(),
+        suggestions: [
+          {
+            id: "sug_3",
+            category: "Team Contributor",
+            name: "Reviewer Rescue",
+            description: "Turned around an emergency review in 48 hours.",
+            rationale: "Worth recording.",
+            status: "approved",
+            created_at: "2026-09-01T10:00:00.000Z",
+            decided_at: "2026-09-02T10:00:00.000Z",
+            created_badge_id: "badge_1",
+          },
+        ],
+      }),
+      container,
+    );
+
+    const panel = container.querySelector('[data-testid="adminbot-badge-suggestions"]');
+    // Nothing waiting, but the decision is still readable under the disclosure.
+    expect(panel?.textContent).toContain("No suggested badges waiting.");
+    expect(panel?.querySelector("details")?.textContent).toContain("Reviewer Rescue");
+    expect(panel?.querySelector('[data-testid="adminbot-badge-suggestion"]')).toBeNull();
+  });
+});
+
+function baseProps(): Parameters<typeof renderAdminBotBadges>[0] {
+  return {
+    definitions: [],
+    definitionsLoading: false,
+    definitionsError: null,
+    nominations: [],
+    nominationsLoading: false,
+    nominationsError: null,
+    busyKey: null,
+    notice: null,
+    members: [],
+    assignRowId: "",
+    onToggleAssignRow: vi.fn(),
+    memberQuery: "",
+    onMemberQueryChange: vi.fn(),
+    editBadgeId: "",
+    onToggleEditBadge: vi.fn(),
+    onRefresh: vi.fn(),
+    onSaveDefinition: vi.fn(),
+    onAssign: vi.fn(),
+    onRemove: vi.fn(),
+    onDecide: vi.fn(),
+    suggestions: [],
+    suggestionsLoading: false,
+    suggestionsError: null,
+    suggestionBusy: false,
+    onDecideSuggestion: vi.fn(),
+  };
+}
+
+function errorProps(
+  definitionsError: NonNullable<Parameters<typeof renderAdminBotBadges>[0]["definitionsError"]>,
+  onRefresh: () => void,
+): Parameters<typeof renderAdminBotBadges>[0] {
+  return { ...baseProps(), definitionsError, onRefresh };
+}

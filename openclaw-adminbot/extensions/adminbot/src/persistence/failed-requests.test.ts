@@ -27,7 +27,10 @@ describe("failed external request ledger", () => {
   });
 
   it("persists rows in sqlite", () => {
-    const databasePath = path.join(mkdtempSync(path.join(tmpdir(), "adminbot-fail-")), "ledger.sqlite");
+    const databasePath = path.join(
+      mkdtempSync(path.join(tmpdir(), "adminbot-fail-")),
+      "ledger.sqlite",
+    );
     const ledger = createSqliteFailedRequestLedger(databasePath);
     const saved = ledger.record({
       serviceType: "dcs_form",

@@ -18,13 +18,7 @@
 // by pointing at the next venue rather than by closing the paper.
 
 import { html, nothing } from "lit";
-import type {
-  AdminBotLabMember,
-  AdminBotPaperRecord,
-  AdminBotPaperSaveInput,
-} from "./controllers/admin.ts";
 import type { AdminBotPaperStep } from "../../../../extensions/adminbot/src/contracts/actions.js";
-import { PRE_REGISTRATION_VENUES } from "./venue-targets.ts";
 import {
   ADMINBOT_BCC,
   buildCoauthorEmail,
@@ -33,19 +27,19 @@ import {
   hasPlaceholders,
   unreachableAuthors,
 } from "./coauthor-email.ts";
-
+import type {
+  AdminBotLabMember,
+  AdminBotPaperRecord,
+  AdminBotPaperSaveInput,
+} from "./controllers/admin.ts";
+import { PUBLICATION_TRACKS, PRESENTATION_FORMATS } from "./paper-classification.ts";
+import { PRE_REGISTRATION_VENUES } from "./venue-targets.ts";
 
 /** Set once the author has seen the popup for this decision, so it never reopens. */
 const SEEN_KEY = "decision_seen";
+const EMAIL_SENT_KEY = "decision_coauthor_email_sent";
 
-export const PRESENTATION_TYPES = [
-  "main",
-  "findings",
-  "poster",
-  "spotlight",
-  "oral",
-  "award",
-] as const;
+export const PRESENTATION_TYPES = PRESENTATION_FORMATS;
 
 /** The venue's answer, if it has given one. Independent of whether the author has replied. */
 export function decisionOf(paper: AdminBotPaperRecord): "accept" | "reject" | null {
@@ -83,6 +77,16 @@ function seenStamp(paper: AdminBotPaperRecord, decision: string): string {
   return `${decision}:${paper.accepted_venue ?? paper.artifacts?.conference ?? ""}`;
 }
 
+/** The acknowledgement belongs to this decision, not permanently to the paper. */
+export function decisionEmailSentStamp(paper: AdminBotPaperRecord): string {
+  const decision = decisionOf(paper);
+  return decision ? seenStamp(paper, decision) : "";
+}
+
+export function isDecisionEmailSent(paper: AdminBotPaperRecord): boolean {
+  const stamp = decisionEmailSentStamp(paper);
+  return Boolean(stamp && paper.artifacts?.[EMAIL_SENT_KEY] === stamp);
+}
 
 /**
  * What to call the venue on the banner.
@@ -105,12 +109,11 @@ export function displayVenue(paper: AdminBotPaperRecord): string {
   return /committed to\s+(.+)$/iu.exec(raw)?.[1]?.trim() || raw;
 }
 
-
 export type DecisionBannerProps = {
   paper: AdminBotPaperRecord;
   decision: "accept" | "reject";
   /** What the author has picked so far. Held by the caller so a re-render does not lose it. */
-  draft: { presentation: string; attending: "yes" | "no" | ""; nextVenue: string };
+  draft: { track?: string; presentation: string; attending: "yes" | "no" | ""; nextVenue: string };
   onDraft: (patch: Partial<DecisionBannerProps["draft"]>) => void;
   /** Puts every choice back to unselected. The write still needs Update. */
   onReset: () => void;
@@ -120,9 +123,12 @@ export type DecisionBannerProps = {
   isEmailOwner: boolean;
   /** The email task panel, open or shut, and the body as edited. */
   email: { open: boolean; body: string } | null;
+  /** Human acknowledgement for this exact venue decision; copying text is never treated as sent. */
+  emailSent: boolean;
   onToggleEmail: () => void;
   onEmailBody: (body: string) => void;
   onResetEmail: () => void;
+  onSetEmailSent: (sent: boolean) => void;
   onSavePaper: (input: AdminBotPaperSaveInput) => void;
   /** "unknown" is a real answer here: it is what a cleared attendance means, and what the nudge
    *  sweep looks for. */
@@ -131,6 +137,15 @@ export type DecisionBannerProps = {
   /** Shrunk to a single line. Still unanswered -- only Save records it for good. */
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  /**
+   * Close it for good.
+   *
+   * Distinct from "Not now", which shrinks the banner and leaves the news on the page. This is the
+   * author saying they are done with it, so it writes the seen stamp on the way out -- the same
+   * one Save writes -- and the banner does not come back on the next load. The paper card still
+   * carries the decision; what goes away is the prompt about it.
+   */
+  onDismiss: () => void;
   /**
    * Already recorded, and nothing changed since.
    *
@@ -160,6 +175,7 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
       // Always sent, empty included: what is on screen is what gets written, so clearing a
       // choice and pressing Update removes it rather than silently keeping the old one.
       input.presentationType = draft.presentation;
+      input.publicationTrack = draft.track ?? "";
     }
     props.onSavePaper(input);
     if (decision === "accept") {
@@ -172,10 +188,46 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
     }
   };
 
-  const hasAnswer = Boolean(draft.presentation || draft.attending || draft.nextVenue);
+  // Dismissing an answer that was never recorded still has to persist, or the banner is back on
+  // the next load and "close" meant nothing. Saving the stamp alone leaves every other field as it
+  // was: closing is not an answer, and must not write one.
+  const dismiss = () => {
+    if (!props.saved) {
+      props.onSavePaper({
+        id: paper.id,
+        title: paper.title,
+        authors: paper.authors ?? [],
+        currentStep: paper.current_step as AdminBotPaperStep,
+        decisionSeen: seenStamp(paper, decision),
+      });
+    }
+    props.onDismiss();
+  };
+
+  const dismissButton = html`
+    <button
+      type="button"
+      class="btn btn--sm"
+      data-testid=${`decision-dismiss-${paper.id}`}
+      aria-label="Close this decision"
+      title="Close"
+      @click=${dismiss}
+    >
+      ✕
+    </button>
+  `;
+
+  const hasAnswer = Boolean(
+    draft.track || draft.presentation || draft.attending || draft.nextVenue,
+  );
 
   const choice = (label: string, on: boolean, pick: () => void) => html`
-    <button type="button" class="decision__choice ${on ? "is-on" : ""}" @click=${pick}>
+    <button
+      type="button"
+      class="decision__choice ${on ? "is-on" : ""}"
+      aria-pressed=${on}
+      @click=${pick}
+    >
       ${label}
     </button>
   `;
@@ -190,14 +242,17 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
           ${decision === "accept" ? html`Accepted to ${venue}` : html`Not accepted at ${venue}`} ·
           <span class="decision-banner__paper">${paper.title}</span>
         </span>
-        <button
-          type="button"
-          class="btn btn--sm"
-          data-testid=${`decision-expand-${paper.id}`}
-          @click=${props.onToggleCollapsed}
-        >
-          Open
-        </button>
+        <div class="decision-banner__actions">
+          <button
+            type="button"
+            class="btn btn--sm"
+            data-testid=${`decision-expand-${paper.id}`}
+            @click=${props.onToggleCollapsed}
+          >
+            Open
+          </button>
+          ${dismissButton}
+        </div>
       </section>
     `;
   }
@@ -217,20 +272,31 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
           </div>
           <div class="decision-banner__paper">${paper.title}</div>
         </div>
-        <button
-          type="button"
-          class="btn btn--sm"
-          data-testid=${`decision-collapse-${paper.id}`}
-          @click=${props.onToggleCollapsed}
-        >
-          Not now
-        </button>
+        <div class="decision-banner__actions">
+          <button
+            type="button"
+            class="btn btn--sm"
+            data-testid=${`decision-collapse-${paper.id}`}
+            @click=${props.onToggleCollapsed}
+          >
+            Not now
+          </button>
+          ${dismissButton}
+        </div>
       </div>
 
       ${decision === "accept"
         ? html`
             <div class="decision-banner__row">
-              <span class="decision-banner__label">Track</span>
+              <span class="decision-banner__label">Publication track</span>
+              ${PUBLICATION_TRACKS.map((track) =>
+                choice(`${track[0].toUpperCase()}${track.slice(1)}`, draft.track === track, () =>
+                  props.onDraft({ track }),
+                ),
+              )}
+            </div>
+            <div class="decision-banner__row">
+              <span class="decision-banner__label">Presentation format</span>
               ${PRESENTATION_TYPES.map((type) =>
                 choice(
                   `${type[0]?.toUpperCase()}${type.slice(1)}`,
@@ -243,7 +309,6 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
               <span class="decision-banner__label">Going?</span>
               ${choice("Yes", draft.attending === "yes", () => props.onDraft({ attending: "yes" }))}
               ${choice("No", draft.attending === "no", () => props.onDraft({ attending: "no" }))}
-
             </div>
           `
         : html`
@@ -254,7 +319,6 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
                   props.onDraft({ nextVenue: option.venue_id }),
                 ),
               )}
-
             </div>
           `}
 
@@ -283,9 +347,7 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
               Reset
             </button>`
           : nothing}
-        ${props.saved
-          ? html`<span class="decision-banner__note">Recorded.</span>`
-          : nothing}
+        ${props.saved ? html`<span class="decision-banner__note">Recorded.</span>` : nothing}
         ${props.isEmailOwner
           ? html`<button
               type="button"
@@ -293,17 +355,14 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
               data-testid=${`decision-email-toggle-${paper.id}`}
               @click=${props.onToggleEmail}
             >
-              TODO · email the coauthors
+              ${props.emailSent ? "Coauthor email sent ✓" : "TODO · email the coauthors"}
             </button>`
           : renderEmailOwnerNote(props)}
       </div>
-      ${props.isEmailOwner && props.email?.open
-        ? renderEmailTask(props, venue)
-        : nothing}
+      ${props.isEmailOwner && props.email?.open ? renderEmailTask(props, venue) : nothing}
     </section>
   `;
 }
-
 
 /**
  * What the other coauthors see where the sender sees a TODO.
@@ -352,7 +411,9 @@ function renderEmailTask(props: DecisionBannerProps, venue: string) {
 
       <div class="decision-todo__row">
         <span class="decision-banner__label">To</span>
-        <code class="decision-todo__addresses">${recipients.join(", ") || "no addresses on file"}</code>
+        <code class="decision-todo__addresses"
+          >${recipients.join(", ") || "no addresses on file"}</code
+        >
         <button
           type="button"
           class="btn btn--sm"
@@ -404,10 +465,22 @@ function renderEmailTask(props: DecisionBannerProps, venue: string) {
           Reset draft
         </button>
         ${hasPlaceholders(body)
-          ? html`<span class="decision-todo__warn">
-              Still has [BRACKETS] to fill in.
-            </span>`
+          ? html`<span class="decision-todo__warn"> Still has [BRACKETS] to fill in. </span>`
           : nothing}
+        <button
+          type="button"
+          class="btn ${props.emailSent ? "btn--sm" : "primary"}"
+          data-testid=${`decision-email-sent-${paper.id}`}
+          aria-pressed=${props.emailSent ? "true" : "false"}
+          @click=${() => props.onSetEmailSent(!props.emailSent)}
+        >
+          ${props.emailSent ? "Undo sent mark" : "Mark sent"}
+        </button>
+        <span class="decision-banner__note">
+          ${props.emailSent
+            ? "Recorded for this venue decision."
+            : "Use this only after you send the message."}
+        </span>
       </div>
     </section>
   `;

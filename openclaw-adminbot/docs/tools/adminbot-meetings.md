@@ -30,15 +30,33 @@ attendance — never the transcript text.
 
 ## 1. One-time setup
 
-**Forward the notices.** In the Zoom-hosting Google account, add a filter:
+**Forward the notices.** Zoom mails the recording notice to whoever hosted, and that mail is the
+whole integration — so every host who records needs a rule on their own mailbox, pointed at
+`<ADMINBOT_BOT_EMAIL alias>+zoom@…`.
 
-- Matches: `from:no-reply@zoom.us subject:("cloud recording")`
+Match on the **sender**, not the subject. Zoom's subject wording is not a contract and has already
+moved: an account may send `Cloud Recording - <topic> is now available` or
+`Meeting assets for <topic> are ready!`, and a rule keyed on "cloud recording" silently stops
+forwarding the day the template changes. `from:no-reply@zoom.us` survives both.
+
+In Gmail (Settings → Filters):
+
+- Matches: `from:no-reply@zoom.us has:"zoom.us/rec/"`
 - Action: forward to `<ADMINBOT_BOT_EMAIL alias>+zoom@…`
 
-Forward to the plus-alias, not the bare address. Gmail rewrites the sender on a forward, so
-nothing downstream may key on it; the parser keys on the zoom.us recording URL in the body, and
-the alias keeps recording mail identifiable in the inbox. Every host who records needs this filter
-on their own account.
+In Outlook / Microsoft 365 (Settings → Mail → Rules → Add new rule):
+
+- Condition: **From** → `no-reply@zoom.us`
+- Action: **Forward to** (or **Redirect to**) → `<ADMINBOT_BOT_EMAIL alias>+zoom@…`
+
+Either action works: the parser keys on the zoom.us recording URL in the body precisely because a
+forward rewrites the sender and may re-wrap the body as HTML with `>` quoting. Forward to the
+plus-alias rather than the bare address — it keeps recording mail identifiable in the bot inbox.
+
+One thing to check on a university tenant: Microsoft 365 blocks automatic external forwarding by
+default through its outbound anti-spam policy, and when it does the rule fails silently. If notices
+stop arriving with the rule visibly enabled, that is the first thing to rule out — it needs a
+tenant exception from IT rather than a change here.
 
 **Create the drop folder.** A Drive folder the bot account can read, shared with everyone who
 hosts. Put its id in the AdminBot env file:

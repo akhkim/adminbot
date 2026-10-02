@@ -1,0 +1,415 @@
+import { rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import type { AdminBotLabMemberInput } from "../contracts/actions.js";
+import { createAdminBotMockService } from "./server.js";
+
+const SERVICE_TOKEN = "test-service-token";
+
+type RunningService = {
+  baseUrl: string;
+  mock: ReturnType<typeof createAdminBotMockService>;
+  cleanupPaths: string[];
+};
+
+const running: RunningService[] = [];
+
+afterEach(async () => {
+  while (running.length > 0) {
+    const entry = running.pop();
+    if (!entry) {
+      continue;
+    }
+    await new Promise<void>((resolve, reject) => {
+      entry.mock.server.close((error) => (error ? reject(error) : resolve()));
+    });
+    entry.mock.close();
+    for (const cleanupPath of entry.cleanupPaths) {
+      await rm(cleanupPath, { force: true });
+    }
+  }
+});
+
+async function startService() {
+  const sensitiveInfoPath = path.join(
+    os.tmpdir(),
+    `adminbot-badges-sensitive-info-${Date.now()}-${Math.random().toString(16).slice(2)}.md`,
+  );
+  const mock = createAdminBotMockService({
+    serviceToken: SERVICE_TOKEN,
+    sensitiveInfoPath,
+    calendarInviteRunner: async () => {},
+    accountApprovedEmailRunner: async () => {},
+    dcsRosterRecorder: async () => ({
+      username: "stub@cs.toronto.edu",
+      password: "stub",
+      candidates: ["stub@cs.toronto.edu"],
+    }),
+  });
+  await new Promise<void>((resolve, reject) => {
+    mock.server.once("error", reject);
+    mock.server.listen(0, "127.0.0.1", () => {
+      mock.server.off("error", reject);
+      resolve();
+    });
+  });
+  const address = mock.server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("missing mock service address");
+  }
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  running.push({ baseUrl, mock, cleanupPaths: [sensitiveInfoPath] });
+  return { baseUrl, mock };
+}
+
+function jsonHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return { "Content-Type": "application/json", ...extra };
+}
+
+function seedMember(
+  mock: ReturnType<typeof createAdminBotMockService>,
+  input: AdminBotLabMemberInput,
+): void {
+  const result = mock.service.upsertLabMember(input);
+  if (!result.ok) {
+    throw new Error(result.error.message);
+  }
+}
+
+async function approveClaim(
+  mock: ReturnType<typeof createAdminBotMockService>,
+  baseUrl: string,
+  memberId: string,
+  email: string,
+): Promise<void> {
+  await fetch(`${baseUrl}/auth/claim`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ member_id: memberId, email, password: "correcthorse" }),
+  });
+  const pending = await fetch(`${baseUrl}/auth/registrations?status=pending`, {
+    headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+  });
+  const registration = (
+    (await pending.json()) as { registrations: Array<{ id: string; member_id?: string }> }
+  ).registrations.find((entry) => entry.member_id === memberId);
+  if (!registration) {
+    throw new Error(`no pending registration for ${memberId}`);
+  }
+  const approved = await mock.auth.approveRegistration(registration.id, "seed-admin");
+  if (!approved.ok) {
+    throw new Error(approved.error.message);
+  }
+}
+
+async function loginToken(baseUrl: string, email: string): Promise<string> {
+  const res = await fetch(`${baseUrl}/auth/login`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ email, password: "correcthorse" }),
+  });
+  return ((await res.json()) as { session_token: string }).session_token;
+}
+
+describe("AdminBot badge routes", () => {
+  it("lets members self-nominate and admins approve the nomination", async () => {
+    const { baseUrl, mock } = await startService();
+    seedMember(mock, {
+      id: "admin",
+      name: "Admin",
+      email: "admin@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    seedMember(mock, {
+      id: "pat",
+      name: "Pat",
+      email: "pat@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(mock, baseUrl, "admin", "admin@cs.toronto.edu");
+    await approveClaim(mock, baseUrl, "pat", "pat@cs.toronto.edu");
+    const adminToken = await loginToken(baseUrl, "admin@cs.toronto.edu");
+    const memberToken = await loginToken(baseUrl, "pat@cs.toronto.edu");
+
+    const nominate = await fetch(`${baseUrl}/badges/nominations`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${memberToken}` }),
+      body: JSON.stringify({
+        badge_id: "community_building__ambassador",
+        evidence: "Organized a conference outreach booth.",
+      }),
+    });
+    expect(nominate.status).toBe(200);
+    const nomination = ((await nominate.json()) as { nomination: { id: string; status: string } })
+      .nomination;
+    expect(nomination.status).toBe("pending");
+
+    const pending = await fetch(`${baseUrl}/badges/nominations?status=pending`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(pending.status).toBe(200);
+    await expect(pending.json()).resolves.toMatchObject({
+      nominations: [expect.objectContaining({ id: nomination.id, member_id: "pat" })],
+    });
+
+    const approve = await fetch(`${baseUrl}/badges/nominations/${nomination.id}/approve`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({}),
+    });
+    expect(approve.status).toBe(200);
+    await expect(approve.json()).resolves.toMatchObject({
+      nomination: expect.objectContaining({ status: "approved" }),
+      assignment: expect.objectContaining({ badge_id: "community_building__ambassador" }),
+    });
+
+    const members = await fetch(`${baseUrl}/lab/members`, {
+      headers: { Authorization: `Bearer ${memberToken}` },
+    });
+    await expect(members.json()).resolves.toMatchObject({
+      members: [
+        expect.objectContaining({
+          id: "admin",
+        }),
+        expect.objectContaining({
+          id: "pat",
+          assigned_badges: [
+            expect.objectContaining({ badge_id: "community_building__ambassador" }),
+          ],
+        }),
+      ],
+    });
+  });
+
+  it("keeps the shared service principal out of member-specific nomination routes", async () => {
+    const { baseUrl } = await startService();
+
+    const res = await fetch(`${baseUrl}/badges/nominations`, {
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it("generates a badge id at the backend and rejects nominations without evidence", async () => {
+    const { baseUrl, mock } = await startService();
+    seedMember(mock, {
+      id: "admin",
+      name: "Admin",
+      email: "admin@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    seedMember(mock, {
+      id: "pat",
+      name: "Pat",
+      email: "pat@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(mock, baseUrl, "admin", "admin@cs.toronto.edu");
+    await approveClaim(mock, baseUrl, "pat", "pat@cs.toronto.edu");
+    const adminToken = await loginToken(baseUrl, "admin@cs.toronto.edu");
+    const memberToken = await loginToken(baseUrl, "pat@cs.toronto.edu");
+
+    const created = await fetch(`${baseUrl}/badges`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({
+        category: "Team Contributor",
+        name: "Docs Champion",
+        description: "Wrote the docs.",
+      }),
+    });
+    expect(created.status).toBe(200);
+    const badge = ((await created.json()) as { badge: { id: string } }).badge;
+    expect(badge.id).toMatch(/^badge_/u);
+
+    const assign = await fetch(`${baseUrl}/badges/assignments`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({
+        member_id: "pat",
+        badge_id: badge.id,
+        evidence: "Shipped the guide.",
+        count: 2,
+      }),
+    });
+    expect(assign.status).toBe(200);
+    await expect(assign.json()).resolves.toMatchObject({
+      assignment: expect.objectContaining({ evidence: "Shipped the guide.", count: 2 }),
+    });
+
+    for (const [token, count, status] of [
+      [memberToken, 2, 403],
+      [adminToken, "2", 400],
+      [adminToken, 0, 400],
+    ] as const) {
+      const invalid = await fetch(`${baseUrl}/badges/assignments`, {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+        body: JSON.stringify({ member_id: "pat", badge_id: badge.id, count }),
+      });
+      expect(invalid.status).toBe(status);
+    }
+
+    const noEvidence = await fetch(`${baseUrl}/badges/nominations`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${memberToken}` }),
+      body: JSON.stringify({ badge_id: "community_building__ambassador" }),
+    });
+    expect(noEvidence.status).toBe(400);
+  });
+
+  // The suggestion routes, which are about what the catalogue contains rather than who holds what.
+  it("lets a member suggest a badge and an admin accept it into the catalogue", async () => {
+    const { baseUrl, mock } = await startService();
+    seedMember(mock, {
+      id: "admin",
+      name: "Admin",
+      email: "admin@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    seedMember(mock, {
+      id: "pat",
+      name: "Pat",
+      email: "pat@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(mock, baseUrl, "admin", "admin@cs.toronto.edu");
+    await approveClaim(mock, baseUrl, "pat", "pat@cs.toronto.edu");
+    const adminToken = await loginToken(baseUrl, "admin@cs.toronto.edu");
+    const memberToken = await loginToken(baseUrl, "pat@cs.toronto.edu");
+
+    const suggest = await fetch(`${baseUrl}/badges/suggestions`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${memberToken}` }),
+      body: JSON.stringify({
+        category: "Team Contributor",
+        name: "Reviewer Rescue",
+        description: "Turned around an emergency review inside 48 hours.",
+        rationale: "Three people did this for ICML and none of it is on anyone's record.",
+      }),
+    });
+    expect(suggest.status).toBe(200);
+    const suggestion = ((await suggest.json()) as { suggestion: { id: string; status: string } })
+      .suggestion;
+    expect(suggestion.status).toBe("pending");
+
+    const queue = await fetch(`${baseUrl}/badges/suggestions?status=pending`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    await expect(queue.json()).resolves.toMatchObject({
+      suggestions: [expect.objectContaining({ id: suggestion.id, suggested_by_name: "Pat" })],
+    });
+
+    const approve = await fetch(`${baseUrl}/badges/suggestions/${suggestion.id}/approve`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({}),
+    });
+    expect(approve.status).toBe(200);
+    const decided = (await approve.json()) as {
+      suggestion: { status: string; created_badge_id?: string };
+      badge: { id: string; name: string };
+    };
+    expect(decided.suggestion.status).toBe("approved");
+    expect(decided.badge.name).toBe("Reviewer Rescue");
+    expect(decided.suggestion.created_badge_id).toBe(decided.badge.id);
+
+    // The catalogue every member reads now carries it, which is what approval is for.
+    const catalogue = await fetch(`${baseUrl}/badges`, {
+      headers: { Authorization: `Bearer ${memberToken}` },
+    });
+    await expect(catalogue.json()).resolves.toMatchObject({
+      badges: expect.arrayContaining([expect.objectContaining({ name: "Reviewer Rescue" })]),
+    });
+  });
+
+  it("shows a member their own suggestions and nobody else's", async () => {
+    const { baseUrl, mock } = await startService();
+    seedMember(mock, {
+      id: "pat",
+      name: "Pat",
+      email: "pat@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    seedMember(mock, {
+      id: "sam",
+      name: "Sam",
+      email: "sam@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(mock, baseUrl, "pat", "pat@cs.toronto.edu");
+    await approveClaim(mock, baseUrl, "sam", "sam@cs.toronto.edu");
+    const patToken = await loginToken(baseUrl, "pat@cs.toronto.edu");
+    const samToken = await loginToken(baseUrl, "sam@cs.toronto.edu");
+
+    await fetch(`${baseUrl}/badges/suggestions`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${patToken}` }),
+      body: JSON.stringify({
+        category: "Team Contributor",
+        name: "Reviewer Rescue",
+        description: "Turned around an emergency review inside 48 hours.",
+        rationale: "Nobody gets credit for this.",
+      }),
+    });
+
+    const mine = await fetch(`${baseUrl}/badges/suggestions`, {
+      headers: { Authorization: `Bearer ${patToken}` },
+    });
+    await expect(mine.json()).resolves.toMatchObject({
+      suggestions: [expect.objectContaining({ name: "Reviewer Rescue" })],
+    });
+
+    const theirs = await fetch(`${baseUrl}/badges/suggestions`, {
+      headers: { Authorization: `Bearer ${samToken}` },
+    });
+    await expect(theirs.json()).resolves.toMatchObject({ suggestions: [] });
+  });
+
+  it("keeps deciding a suggestion to the privileged, and the routes to member sessions", async () => {
+    const { baseUrl, mock } = await startService();
+    seedMember(mock, {
+      id: "pat",
+      name: "Pat",
+      email: "pat@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(mock, baseUrl, "pat", "pat@cs.toronto.edu");
+    const memberToken = await loginToken(baseUrl, "pat@cs.toronto.edu");
+
+    const suggest = await fetch(`${baseUrl}/badges/suggestions`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${memberToken}` }),
+      body: JSON.stringify({
+        category: "Team Contributor",
+        name: "Reviewer Rescue",
+        description: "Turned around an emergency review inside 48 hours.",
+        rationale: "Nobody gets credit for this.",
+      }),
+    });
+    const { id } = ((await suggest.json()) as { suggestion: { id: string } }).suggestion;
+
+    // A plain member cannot decide their own suggestion, which is the whole point of the queue.
+    const selfApprove = await fetch(`${baseUrl}/badges/suggestions/${id}/approve`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${memberToken}` }),
+      body: JSON.stringify({}),
+    });
+    expect(selfApprove.status).toBe(403);
+
+    // And the shared service principal is not a member, so it gets nowhere near either route.
+    const asService = await fetch(`${baseUrl}/badges/suggestions`, {
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+    });
+    expect(asService.status).toBe(401);
+
+    const anonymous = await fetch(`${baseUrl}/badges/suggestions`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ category: "x", name: "y", description: "z", rationale: "w" }),
+    });
+    expect(anonymous.status).toBe(401);
+  });
+});

@@ -13,7 +13,19 @@ export type SocialFetch = (
     headers?: Record<string, string>;
     body?: string;
   },
-) => Promise<{ ok: boolean; status: number; statusText: string; text(): Promise<string> }>;
+) => Promise<{
+  ok: boolean;
+  status: number;
+  statusText: string;
+  text(): Promise<string>;
+  /**
+   * Present on a real `fetch` and optional here, because the stubs in tests are hand-rolled.
+   *
+   * Read for one thing: LinkedIn returns the new post's URN in `x-restli-id` rather than in the
+   * body, and that URN is what makes the published post addressable as evidence.
+   */
+  headers?: { get(name: string): string | null };
+}>;
 
 export type AdminBotSocialExecutorOptions = {
   env?: NodeJS.ProcessEnv;
@@ -34,13 +46,22 @@ export function createAdminBotSocialExecutor(
       }
       const payload = readSocialPayload(proposal);
       assertSocialPayloadReady(payload);
+      // What the connector created, reported back so the paper's evidence is filled by the act
+      // rather than by somebody pasting the link in a week later. See AdminBotExecutorOutcome.
+      const artifacts: Record<string, string> = {};
       if (payload.platforms.includes("linkedin")) {
-        await postLinkedIn(payload, env, fetchImpl);
+        const url = await postLinkedIn(payload, env, fetchImpl);
+        if (url) {
+          artifacts.linkedin_post = url;
+        }
       }
       if (payload.platforms.includes("x")) {
-        await postXThread(payload, env, fetchImpl);
+        const url = await postXThread(payload, env, fetchImpl);
+        if (url) {
+          artifacts.x_post = url;
+        }
       }
-      return { handled: true };
+      return { handled: true, ...(Object.keys(artifacts).length ? { artifacts } : {}) };
     },
   };
 }
@@ -57,11 +78,12 @@ function readSocialPayload(proposal: AdminBotStoredProposal): AdminBotPaperSocia
   return socialPayload;
 }
 
+/** Posts, and returns the public URL of what it posted when LinkedIn names one. */
 async function postLinkedIn(
   payload: AdminBotPaperSocialPayload,
   env: NodeJS.ProcessEnv,
   fetchImpl: SocialFetch,
-): Promise<void> {
+): Promise<string | undefined> {
   const accessToken = requireEnv(env, "LINKEDIN_ACCESS_TOKEN");
   const author = requireEnv(env, "LINKEDIN_AUTHOR_URN");
   // LinkedIn deactivates a version roughly a year after release, and a deactivated version fails
@@ -96,16 +118,30 @@ async function postLinkedIn(
       isReshareDisabledByAuthor: false,
     }),
   });
-  await assertOk(response, "LinkedIn post");
+  const body = await assertOk(response, "LinkedIn post");
+  // The post's URN, which LinkedIn returns in a header on this API and sometimes in the body. The
+  // feed URL built from it is the one a reader can open, and the shape the evidence slot accepts.
+  const urn = readLinkedInUrn(body) ?? response.headers?.get("x-restli-id") ?? undefined;
+  return urn ? `https://www.linkedin.com/feed/update/${urn}` : undefined;
 }
 
+function readLinkedInUrn(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") {
+    return undefined;
+  }
+  const id = (body as { id?: unknown }).id;
+  return typeof id === "string" && id.startsWith("urn:") ? id : undefined;
+}
+
+/** Posts the thread, and returns the URL of its first post -- the one a reader is sent to. */
 async function postXThread(
   payload: AdminBotPaperSocialPayload,
   env: NodeJS.ProcessEnv,
   fetchImpl: SocialFetch,
-): Promise<void> {
+): Promise<string | undefined> {
   const accessToken = requireEnv(env, "X_ACCESS_TOKEN");
   let replyToId: string | undefined;
+  let firstId: string | undefined;
   for (const post of payload.x?.posts ?? []) {
     const response = await fetchImpl("https://api.x.com/2/tweets", {
       method: "POST",
@@ -120,7 +156,11 @@ async function postXThread(
     });
     const body = await assertOk(response, "X post");
     replyToId = readTweetId(body);
+    firstId ??= replyToId;
   }
+  // `/i/status/<id>` rather than a handle: the account that posted is whichever token was
+  // configured, and X redirects this form to the real permalink.
+  return firstId ? `https://x.com/i/status/${firstId}` : undefined;
 }
 
 async function assertOk(

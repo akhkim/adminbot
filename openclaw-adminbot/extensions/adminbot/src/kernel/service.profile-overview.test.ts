@@ -23,10 +23,15 @@ const COMPLETE = {
   correspondence_email: "ada@cs.toronto.edu",
   whatsapp: "+1 555 0100",
   joined_month: "2026-01",
+  affiliation: "University of Toronto",
+  hours_per_week: 20,
+  graduated_month: "2027-06",
+  next_position: "Considering research positions",
   github_url: "https://github.com/ada",
   linkedin_url: "https://linkedin.com/in/ada",
   linkedin_urn: "urn:li:person:ada",
   cv_url: "https://overleaf.com/read/ada",
+  one_on_one_folder_url: "https://drive.google.com/drive/folders/ada",
   intake_form_url: "https://docs.google.com/forms/d/e/ada/viewform",
   openreview_id: "~Ada_Lovelace1",
 };
@@ -45,20 +50,32 @@ function serviceWith(
       })
     : new AdminBotService();
   for (const member of members) {
-    unwrap(service.upsertLabMember(member as never));
+    // Opted onto the nudge list unless a case says otherwise -- the overview reads every active
+    // member, but only somebody on the list can actually be sent the reminder it counts.
+    unwrap(service.upsertLabMember({ receives_nudges: true, ...member } as never));
   }
   return service;
+}
+
+/** Profile edits credited to one member, for tests that assert on the change rather than a total. */
+function edits(
+  rows: Map<string, { activity: { profile_edits: number } }>,
+  memberId: string,
+): number {
+  return rows.get(memberId)?.activity.profile_edits ?? 0;
 }
 
 describe("listMemberProfileOverview", () => {
   it("carries the denominator so no client has to count the mandatory fields itself", () => {
     const service = serviceWith([{ id: "ada", ...COMPLETE, privilege_level: "member" }]);
     const overview = unwrap(service.listMemberProfileOverview());
-    // Deliberately not `adminBotMandatoryProfileFields.length`: the service does not check `name`,
-    // because a member cannot be created without one, so the honest denominator is one smaller.
-    // A client counting the exported list would show everybody stuck one field short forever --
-    // which is exactly why the count is carried rather than derived.
-    expect(overview.mandatory_field_count).toBe(12);
+    // Deliberately not `adminBotMandatoryProfileFields.length`: the service checks neither `name`,
+    // because a member cannot be created without one, nor the admin-owned fields, because the
+    // member's own page will not let them type those -- so the honest denominator is smaller than
+    // the exported list. (Only `name` is dropped today; adminBotAdminOwnedProfileFields is empty.)
+    // A client counting the exported list would show everybody stuck short forever, which is
+    // exactly why the count is carried rather than derived.
+    expect(overview.mandatory_field_count).toBe(16);
     expect(overview.members[0]?.filled_field_count).toBe(overview.mandatory_field_count);
     expect(overview.members[0]?.missing_fields).toEqual([]);
   });
@@ -80,6 +97,26 @@ describe("listMemberProfileOverview", () => {
     const [row] = overview.members;
     expect(row?.missing_fields).toEqual(["cv_url", "openreview_id"]);
     expect(row?.filled_field_count).toBe(overview.mandatory_field_count - 2);
+  });
+
+  it("includes missing work fields while accepting zero committed hours", () => {
+    const service = serviceWith([
+      {
+        id: "ada",
+        ...COMPLETE,
+        affiliation: "",
+        hours_per_week: 0,
+        joined_month: "",
+        graduated_month: "",
+        next_position: "",
+      },
+    ]);
+    expect(unwrap(service.listMemberProfileOverview()).members[0]?.missing_fields).toEqual([
+      "affiliation",
+      "joined_month",
+      "graduated_month",
+      "next_position",
+    ]);
   });
 
   it("counts an empty list as missing, the way the reminder pass already does", () => {
@@ -307,6 +344,51 @@ describe("the activity counts", () => {
     expect(ada?.activity.profile_edits).toBe(1);
     expect(ada?.activity.last_active_at).toBe("2026-08-22T11:00:00.000Z");
     expect(overview.adoption.active_ever).toBe(1);
+  });
+
+  it("credits an admin's correction to the admin, not to the member it was made on", () => {
+    const service = serviceWith([
+      { id: "ada", ...COMPLETE, privilege_level: "member" },
+      { id: "root", ...COMPLETE, name: "Root", privilege_level: "admin" },
+    ]);
+    const before = new Map(
+      unwrap(service.listMemberProfileOverview()).members.map((member) => [member.id, member]),
+    );
+    // The write an admin makes from somebody else's profile page: source "admin", actor themselves.
+    unwrap(
+      service.upsertLabMember({ id: "ada", location: "Vancouver" } as never, {
+        source: "admin",
+        actor: "root",
+      }),
+    );
+    const members = new Map(
+      unwrap(service.listMemberProfileOverview()).members.map((member) => [member.id, member]),
+    );
+    // Counted as a delta over `before`, because creating the two members is itself a profile write
+    // and lands in the same table -- the assertion is about where *this* edit went, not about the
+    // fixture. The whole point: the edit lands on whoever typed it. Before this it landed on Ada
+    // and read back as her editing her own profile, which is exactly the row the page exists to
+    // find.
+    expect(edits(members, "root")).toBe(edits(before, "root") + 1);
+    expect(edits(members, "ada")).toBe(edits(before, "ada"));
+    // And it is still not adoption: an admin filling a field in is not the member arriving.
+    expect(members.get("ada")?.last_self_edit_at).toBeUndefined();
+  });
+
+  it("still credits a member's own save to themselves", () => {
+    const service = serviceWith([{ id: "ada", ...COMPLETE, privilege_level: "member" }]);
+    const before = unwrap(service.listMemberProfileOverview()).members[0]?.activity.profile_edits;
+    unwrap(
+      service.upsertLabMember({ id: "ada", location: "Vancouver" } as never, {
+        source: "member",
+        actor: "ada",
+      }),
+    );
+    const ada = unwrap(service.listMemberProfileOverview()).members.find(
+      (member) => member.id === "ada",
+    );
+    expect(ada?.activity.profile_edits).toBe((before ?? 0) + 1);
+    expect(ada?.last_self_edit_at).toBeDefined();
   });
 
   it("gives a member with nothing recorded a zeroed row rather than an absent one", () => {

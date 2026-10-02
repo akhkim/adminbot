@@ -554,6 +554,21 @@ export function adminBotConsoleScript(): string {
       return Object.fromEntries(new FormData(form).entries());
     }
 
+    // Roles are the one field that submits several values under one name, so formData above --
+    // which keeps the last entry per key -- cannot read it. Stored in the vocabulary's own order
+    // rather than click order, so two people who picked the same pair store the same string.
+    function readRoles(form) {
+      const picked = new Set(new FormData(form).getAll("role").map((entry) => String(entry)));
+      return memberRoles.filter((role) => picked.has(role)).join(", ");
+    }
+
+    function writeRoles(form, value) {
+      const held = new Set(String(value || "").split(",").map((entry) => entry.trim().toLowerCase()).filter(Boolean));
+      form.querySelectorAll('input[name="role"]').forEach((box) => {
+        box.checked = held.has(box.value.toLowerCase());
+      });
+    }
+
     function setStatus(id, message, kind) {
       const el = document.getElementById(id);
       el.textContent = message;
@@ -612,7 +627,7 @@ export function adminBotConsoleScript(): string {
       const data = formData(form);
       const body = {
         name: data.name,
-        role: data.role,
+        role: readRoles(form),
         status: data.status,
         research_branch: data.research_branch,
         research_topics: commaList(data.research_topics),
@@ -674,7 +689,6 @@ export function adminBotConsoleScript(): string {
       const values = {
         id: member.id,
         name: member.name,
-        role: profile.role,
         status: profile.status,
         research_branch: profile.branch,
         research_topics: profile.topics.join(", "),
@@ -695,6 +709,9 @@ export function adminBotConsoleScript(): string {
         const field = form.elements.namedItem(name);
         if (field) field.value = value;
       });
+      // Several boxes share the name "role", so namedItem hands back the list rather than one
+      // control and assigning .value to it would do nothing at all.
+      writeRoles(form, profile.role);
       syncSubgroupField();
       // Checkboxes carry state on .checked, not .value, so they are set apart from the
       // text fields above; a missing one would silently read as "not exempt".
@@ -1517,11 +1534,12 @@ export function adminBotConsoleScript(): string {
       }
     }
 
+    let rosterRequest = 0;
+    let rosterTimer;
+
     function renderRoster() {
-      const filter = String(document.getElementById("claim-filter").value || "").trim().toLowerCase();
       const selected = document.getElementById("claim-member-id").value;
-      const matches = state.roster.filter((member) =>
-        !filter || String(member.name || "").toLowerCase().includes(filter));
+      const matches = state.roster;
       document.getElementById("claim-list").innerHTML = matches.length
         ? matches.map((member) =>
             '<button type="button" class="roster-option' + (member.id === selected ? " selected" : "") +
@@ -1530,10 +1548,15 @@ export function adminBotConsoleScript(): string {
     }
 
     async function loadRoster() {
+      const request = ++rosterRequest;
+      const query = String(document.getElementById("claim-filter").value || "").trim();
+      document.getElementById("claim-list").textContent = "Searching…";
       try {
-        const roster = await api("/auth/roster");
+        const roster = await api("/auth/roster" + (query ? "?q=" + encodeURIComponent(query) : ""));
+        if (request !== rosterRequest) return;
         state.roster = roster.members || [];
       } catch (error) {
+        if (request !== rosterRequest) return;
         state.roster = [];
         setStatus("auth-status", "Could not load the roster. " + error.message, "error");
       }
@@ -1544,7 +1567,14 @@ export function adminBotConsoleScript(): string {
     document.getElementById("auth-to-signup").addEventListener("click", () => setAuthMode("signup"));
     document.getElementById("auth-to-login").addEventListener("click", () => setAuthMode("login"));
 
-    document.getElementById("claim-filter").addEventListener("input", renderRoster);
+    document.getElementById("claim-filter").addEventListener("input", () => {
+      clearTimeout(rosterTimer);
+      rosterRequest += 1;
+      state.roster = [];
+      document.getElementById("claim-member-id").value = "";
+      document.getElementById("claim-list").textContent = "Searching…";
+      rosterTimer = setTimeout(loadRoster, 200);
+    });
 
     document.getElementById("claim-list").addEventListener("click", (event) => {
       const option = event.target.closest(".roster-option");
@@ -1629,7 +1659,10 @@ export function adminBotConsoleScript(): string {
       showAuthNotice(PENDING_NOTICE);
     }
 
-    async function submitSignup(email, password, confirm, data) {
+    // roles arrives separately from data: it is the one field submitted as several values under
+    // one name, which formData cannot represent. (No backticks in this file -- the whole script is
+    // one template literal.)
+    async function submitSignup(email, password, confirm, data, roles) {
       if (!String(data.name || "").trim()) {
         setStatus("auth-status", "Name is required.", "error");
         return;
@@ -1645,7 +1678,7 @@ export function adminBotConsoleScript(): string {
       const topics = commaList(data.research_topics);
       const profile = {
         name: data.name.trim(),
-        ...(String(data.role || "").trim() ? { role: data.role.trim() } : {}),
+        ...(roles ? { role: roles } : {}),
         ...(String(data.affiliation || "").trim() ? { affiliation: data.affiliation.trim() } : {}),
         ...(String(data.research_branch || "").trim() ? { research_branch: data.research_branch.trim() } : {}),
         ...(topics.length ? { research_topics: topics } : {})
@@ -1676,7 +1709,7 @@ export function adminBotConsoleScript(): string {
         } else if (authMode === "claim") {
           await submitClaim(email, password, data.confirm_password);
         } else {
-          await submitSignup(email, password, data.confirm_password, data);
+          await submitSignup(email, password, data.confirm_password, data, readRoles(form));
         }
       } catch (error) {
         setStatus("auth-status", error.message, "error");
@@ -1922,11 +1955,16 @@ export function adminBotConsoleScript(): string {
       reimbursement.messages.push({ role: "user", text: message });
       // One vocabulary for both surfaces: the options come from adminBotMemberRoles in contracts.ts
     // rather than being retyped in markup, so the console and the Control UI cannot drift.
-    const roleOptions = (placeholder) =>
-      '<option value="">' + placeholder + "</option>" +
-      memberRoles.map((role) => '<option value="' + escapeHtml(role) + '">' + escapeHtml(role) + "</option>").join("");
-    document.getElementById("signup-role").innerHTML = roleOptions("Select a role…");
-    document.getElementById("member-role-select").innerHTML = roleOptions("Not set");
+    //
+    // Checkboxes, not a select: somebody can hold several roles at once, and the record keeps them
+    // as one comma-joined string (see ADMINBOT_MEMBER_ROLE_SEPARATOR in contracts.ts).
+    const roleChoices = (label) =>
+      "<span>" + label + "</span>" +
+      memberRoles.map((role) =>
+        '<label class="role-choice"><input type="checkbox" name="role" value="' +
+        escapeHtml(role) + '"><span>' + escapeHtml(role) + "</span></label>").join("");
+    document.getElementById("signup-role").innerHTML = roleChoices("Role");
+    document.getElementById("member-role-select").innerHTML = roleChoices("Role");
 
     renderReimbursementLog();
       form.reset();

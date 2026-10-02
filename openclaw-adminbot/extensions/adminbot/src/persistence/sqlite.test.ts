@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../contracts/actions.js";
+import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
 import { createAdminBotSqliteService } from "./sqlite.js";
 
 const tempDirs: string[] = [];
@@ -29,6 +31,205 @@ function unwrap<T>(
 }
 
 describe("AdminBotSqliteStore", () => {
+  it("retains explicit badge counts after reopening SQLite", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(first.service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+    unwrap(
+      first.service.assignBadge("pat", "community_building__referral_bonus", "admin", undefined, 4),
+    );
+    first.store.close();
+    const reopened = createAdminBotSqliteService({ databasePath });
+    expect(unwrap(reopened.service.listLabMembers()).members[0].assigned_badges?.[0].count).toBe(4);
+    reopened.store.close();
+  });
+
+  it("searches only eligible roster names before applying the public result cap", () => {
+    const instance = createAdminBotSqliteService({ databasePath: tempDbPath() });
+    for (let index = 0; index < 26; index += 1) {
+      unwrap(
+        instance.service.upsertLabMember({
+          id: `m-${String(index).padStart(2, "0")}`,
+          name: `Ada ${String(index).padStart(2, "0")}`,
+          privilege_level: "member",
+        }),
+      );
+    }
+    unwrap(
+      instance.service.upsertLabMember({
+        id: "unicode",
+        name: "Δelta",
+        privilege_level: "member",
+      }),
+    );
+    instance.store.saveCredential({
+      member_id: "m-00",
+      email: "m0@example.invalid",
+      password_scrypt: "synthetic",
+      claimed_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    });
+    instance.store.saveAccountRegistration({
+      id: "pending-1",
+      kind: "claim",
+      member_id: "m-01",
+      email: "m1@example.invalid",
+      password_scrypt: "synthetic",
+      status: "pending",
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+    const first = instance.store.searchUnclaimedRoster("", 20);
+    expect(first).toHaveLength(20);
+    expect(first[0]?.id).toBe("m-02");
+    expect(first.every((entry) => Object.keys(entry).join(",") === "id,name")).toBe(true);
+    expect(instance.store.searchUnclaimedRoster("ada 2", 20)).toHaveLength(6);
+    expect(instance.store.searchUnclaimedRoster("δEL", 20)).toEqual([
+      { id: "unicode", name: "Δelta" },
+    ]);
+    instance.close();
+  });
+
+  it("pages past filtered recordings and orders equal timestamps by id", () => {
+    const lab = createAdminBotSqliteService({ databasePath: tempDbPath() });
+    const file = (id: string, startedAt: string, minutes: number) =>
+      unwrap(
+        lab.service.upsertMeeting({
+          id,
+          topic: `Synthetic ${id}`,
+          started_at: startedAt,
+          duration_minutes: minutes,
+          recording: { share_url: `https://example.test/${id}` },
+          source: "manual",
+        }),
+      );
+    file("newest", "2026-09-10T14:00:00Z", 30);
+    for (let index = 0; index < 80; index++) {
+      file(`short-${index}`, new Date(Date.UTC(2026, 8, 9, 0, index)).toISOString(), 1);
+    }
+    file("older-a", "2026-08-01T14:00:00Z", 30);
+    file("older-b", "2026-08-01T14:00:00Z", 30);
+    const first = unwrap(lab.service.listMeetingsPage({ limit: 2 }));
+    expect(first.meetings.map((meeting) => meeting.id)).toEqual(["newest", "older-b"]);
+    expect(first.next_cursor).toEqual({ started_at: "2026-08-01T14:00:00.000Z", id: "older-b" });
+    const second = unwrap(lab.service.listMeetingsPage({ limit: 2, before: first.next_cursor }));
+    expect(second.meetings.map((meeting) => meeting.id)).toEqual(["older-a"]);
+    expect(second.next_cursor).toBeUndefined();
+    lab.close();
+  });
+
+  it("pages through old rows with unparseable or blank timestamps", () => {
+    const lab = createAdminBotSqliteService({ databasePath: tempDbPath() });
+    const result = lab.service.upsertMeeting({
+      id: "dated",
+      topic: "Synthetic meeting",
+      started_at: "2026-09-10T14:00:00Z",
+      duration_minutes: 30,
+      recording: { share_url: "https://example.test/dated" },
+      source: "manual",
+    });
+    const dated = unwrap(result);
+    for (const [id, started_at] of [
+      ["z-invalid", "not-a-date"],
+      ["y-blank", ""],
+      ["x-invalid", "malformed"],
+    ]) {
+      lab.store.saveMeeting({ ...dated, id, started_at });
+    }
+
+    const seen: string[] = [];
+    let cursor: { started_at: string; id: string } | undefined;
+    for (let pageNumber = 0; pageNumber < 5; pageNumber++) {
+      const page = unwrap(
+        lab.service.listMeetingsPage({ limit: 1, ...(cursor ? { before: cursor } : {}) }),
+      );
+      seen.push(...page.meetings.map((meeting) => meeting.id));
+      cursor = page.next_cursor;
+      if (!cursor) {
+        break;
+      }
+    }
+    expect(seen).toEqual(["dated", "z-invalid", "y-blank", "x-invalid"]);
+    expect(cursor).toBeUndefined();
+    lab.close();
+  });
+
+  it("stores new offset dates in UTC while leaving an unchanged historical date alone", () => {
+    const lab = createAdminBotSqliteService({ databasePath: tempDbPath() });
+    const save = (id: string, started_at: string) =>
+      lab.service.upsertMeeting({
+        id,
+        topic: `Synthetic ${id}`,
+        started_at,
+        duration_minutes: 30,
+        recording: { share_url: `https://example.test/${id}` },
+        source: "manual",
+      });
+    const offset = unwrap(save("offset", "2026-09-10T14:00:00+02:00"));
+    expect(offset.started_at).toBe("2026-09-10T12:00:00.000Z");
+    unwrap(save("newer", "2026-09-10T13:00:00Z"));
+    expect(
+      unwrap(lab.service.listMeetingsPage({ limit: 2 })).meetings.map((row) => row.id),
+    ).toEqual(["newer", "offset"]);
+
+    const legacy = { ...offset, id: "legacy", started_at: "September 10, 2026" };
+    lab.store.saveMeeting(legacy);
+    const updated = unwrap(save("legacy", legacy.started_at));
+    expect(updated.started_at).toBe(legacy.started_at);
+    expect(lab.store.getMeeting("legacy")?.started_at).toBe(legacy.started_at);
+    expect(save("new-bad", legacy.started_at)).toMatchObject({ ok: false, status: 400 });
+    expect(save("", "2026-09-10T14:00:00Z")).toMatchObject({ ok: false, status: 400 });
+    lab.close();
+  });
+
+  it("adds an expiry index to existing databases so session cleanup avoids a table scan", () => {
+    const databasePath = tempDbPath();
+    createAdminBotSqliteService({ databasePath }).close();
+    const legacy = new DatabaseSync(databasePath);
+    legacy.exec("DROP INDEX adminbot_sessions_expiry_idx");
+    legacy.close();
+
+    createAdminBotSqliteService({ databasePath }).close();
+    const migrated = new DatabaseSync(databasePath);
+    const plan = migrated
+      .prepare("EXPLAIN QUERY PLAN DELETE FROM adminbot_sessions WHERE expires_at < ?")
+      .all("2026-09-24T00:00:00.000Z") as Array<{ detail: string }>;
+    expect(
+      plan.some((step) => step.detail.includes("USING INDEX adminbot_sessions_expiry_idx")),
+    ).toBe(true);
+    migrated.close();
+  });
+
+  it("keeps verified submission metadata across restarts and removes stale metadata", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    first.store.savePaperSlot({
+      paper_id: "p1",
+      slot: "submission",
+      status: "provided",
+      url: "https://openreview.net/forum?id=Paper123",
+      verified_by: "openreview",
+      verified_at: "2026-09-19T00:00:00Z",
+      verified_title: "A revised title",
+      previous_submission_id: "Older123",
+      identity_review: {
+        status: "limited",
+        examined: 2,
+        abstract_excerpt: "Current abstract",
+        candidates: [],
+      },
+    });
+    first.close();
+    const second = createAdminBotSqliteService({ databasePath });
+    expect(second.store.listPaperSlots("p1")[0]).toMatchObject({
+      verified_title: "A revised title",
+      previous_submission_id: "Older123",
+      identity_review: { status: "limited", examined: 2 },
+    });
+    second.store.savePaperSlot({ paper_id: "p1", slot: "submission", status: "missing" });
+    expect(second.store.listPaperSlots("p1")[0].verified_title).toBeUndefined();
+    expect(second.store.listPaperSlots("p1")[0].identity_review).toBeUndefined();
+    second.close();
+  });
   it("keeps a paper's evidence slots across service instances, and drops them with the paper", () => {
     const databasePath = tempDbPath();
     const first = createAdminBotSqliteService({ databasePath });
@@ -80,6 +281,58 @@ describe("AdminBotSqliteStore", () => {
     expect(
       unwrap(second.service.listPaperSlots("p1")).slots.every((slot) => slot.status === "missing"),
     ).toBe(true);
+    second.close();
+  });
+
+  it("keeps PaperMentor runs across service instances, and files each review once", () => {
+    const databasePath = tempDbPath();
+    const projectUrl = `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`;
+    const run = {
+      project_id: "65f2a1c9d4e3b7a801f6",
+      reviewed_at: "2026-09-12T11:04:09.221Z",
+      model: "gpt-5.2-chat-latest",
+      comments_total: 3,
+      by_severity: { critical: 1, warning: 2 },
+      by_category: { abstract: 1, results: 2 },
+      by_document: [{ path: "main.tex", comments: 3 }],
+      failed_agents: ["figures"],
+    };
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(first.service.upsertLabMember({ id: "ada", name: "Ada", privilege_level: "member" }));
+    unwrap(
+      first.service.upsertPaper({
+        id: "p1",
+        title: "Causal abstraction",
+        authors: ["Ada"],
+        current_step: "overleaf_writing",
+        artifacts: { overleaf_edit_url: projectUrl },
+      }),
+    );
+    unwrap(first.service.recordPaperMentorRun("cron", run));
+    // The second post is the collector re-reading the same cached review, which is its ordinary
+    // state between reviews rather than news.
+    expect(unwrap(first.service.recordPaperMentorRun("cron", run)).recorded).toBe(false);
+    first.close();
+
+    const second = createAdminBotSqliteService({ databasePath });
+    const { runs } = unwrap(second.service.listPaperMentorRuns("p1"));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      paper_id: "p1",
+      comments_total: 3,
+      by_severity: { critical: 1, warning: 2 },
+      by_document: [{ path: "main.tex", comments: 3 }],
+      failed_agents: ["figures"],
+    });
+    // The evidence slot the review ticks survives with it, so a restart does not un-review a paper.
+    expect(
+      unwrap(second.service.listPaperSlots("p1")).slots.find(
+        (slot) => slot.slot === "papermentor_review",
+      )?.status,
+    ).toBe("provided");
+
+    unwrap(second.service.deletePaper("p1"));
+    expect(unwrap(second.service.listPaperMentorRuns()).runs).toEqual([]);
     second.close();
   });
 
@@ -215,6 +468,74 @@ describe("AdminBotSqliteStore", () => {
     second.close();
   });
 
+  it("claims an idempotency key across concurrent sqlite service instances", async () => {
+    const databasePath = tempDbPath();
+    let releaseExecutor!: () => void;
+    const executorGate = new Promise<void>((resolve) => {
+      releaseExecutor = resolve;
+    });
+    let executorCalls = 0;
+    const executor = {
+      execute: async () => {
+        executorCalls += 1;
+        await executorGate;
+        return { handled: true };
+      },
+    };
+    const first = createAdminBotSqliteService({ databasePath, executor });
+    const firstProposal = unwrap(
+      first.service.createProposal({
+        type: "calendar.create_tentative_hold",
+        summary: "Hold first interview slot",
+      }),
+    );
+    const secondProposal = unwrap(
+      first.service.createProposal({
+        type: "calendar.create_tentative_hold",
+        summary: "Hold second interview slot",
+      }),
+    );
+    for (const proposal of [firstProposal, secondProposal]) {
+      unwrap(
+        first.service.approve(proposal.id, {
+          payload_hash: proposal.payload_hash,
+          approver_role: "admin",
+          approver_id: "andrew",
+        }),
+      );
+    }
+
+    const second = createAdminBotSqliteService({ databasePath, executor });
+    const executing = first.service.execute(firstProposal.id, {
+      dry_run: false,
+      idempotency_key: "shared-hold-key",
+    });
+    const blocked = await second.service.execute(secondProposal.id, {
+      dry_run: false,
+      idempotency_key: "shared-hold-key",
+    });
+    expect(blocked).toMatchObject({
+      ok: false,
+      status: 409,
+      error: { message: expect.stringContaining("already in progress") },
+    });
+    expect(executorCalls).toBe(1);
+
+    releaseExecutor();
+    const result = unwrap(await executing);
+    expect(
+      unwrap(
+        await second.service.execute(secondProposal.id, {
+          dry_run: false,
+          idempotency_key: "shared-hold-key",
+        }),
+      ),
+    ).toEqual(result);
+    expect(executorCalls).toBe(1);
+    first.close();
+    second.close();
+  });
+
   it("prunes audit events when retention is configured", () => {
     const databasePath = tempDbPath();
     const first = createAdminBotSqliteService({
@@ -267,6 +588,11 @@ describe("AdminBotSqliteStore", () => {
         title: "Paper One",
         authors: ["alice"],
         current_step: "overleaf_writing",
+        venue_decision: "accept",
+        accepted_venue: "ICLR 2027",
+        accepted_year: 2027,
+        is_archival: true,
+        presentation_type: "spotlight",
         artifacts: {
           overleaf_edit_url: "https://overleaf.example/edit",
         },
@@ -291,6 +617,11 @@ describe("AdminBotSqliteStore", () => {
       expect.objectContaining({
         id: "paper-1",
         current_step: "overleaf_writing",
+        venue_decision: "accept",
+        accepted_venue: "ICLR 2027",
+        accepted_year: 2027,
+        is_archival: true,
+        presentation_type: "spotlight",
         artifacts: { overleaf_edit_url: "https://overleaf.example/edit" },
       }),
     ]);
@@ -385,7 +716,9 @@ describe("AdminBotSqliteStore", () => {
       await second.service.runSlackChannelNamingSweep("cron", "2099-01-01T00:00:00.000Z"),
     );
     expect(sweep.scanned).toBe(1);
-    expect(sweep.renamed).toBe(1);
+    // The record survived the restart, so the sweep can still act on it -- by filing a rename for
+    // an admin to approve, which is all it does now.
+    expect(sweep.renames_proposed).toBe(1);
     second.close();
   });
 

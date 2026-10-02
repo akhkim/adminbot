@@ -1,0 +1,16 @@
+{
+  "note": [
+    "Hub pages the discovery sweep reads, and the category it should file what it finds under.",
+    "Empty on purpose. Which sites this lab trusts enough to crawl weekly from its own address is",
+    "a decision for the lab, not a default somebody inherits -- and every entry here becomes a",
+    "recurring outbound request in the lab's name. Add the aggregators you already read.",
+    "Each source is { name, url, category, link_pattern? }. `category` is one of the board's own:",
+    "phd, internship, grants_awards, rising_stars, faculty -- taken from the hub rather than",
+    "guessed per link, because a page of fellowships is a page of fellowships. `link_pattern` is an",
+    "optional regex the candidate links must match, for a hub that lists more than opportunities.",
+    "Example:",
+    "  { \"name\": \"CRA-WP programs\", \"url\": \"https://cra.org/cra-wp/programs/\",",
+    "    \"category\": \"rising_stars\", \"link_pattern\": \"cra\\\\.org/cra-wp/\" }"
+  ],
+  "sources": []
+}

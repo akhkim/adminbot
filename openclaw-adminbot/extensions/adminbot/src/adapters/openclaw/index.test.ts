@@ -66,7 +66,7 @@ describe("AdminBot tool handlers", () => {
     const { fetchImpl, calls } = captureFetch();
     const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl });
 
-    await tools.suggestCalendarChange({
+    const result = await tools.suggestCalendarChange({
       changeType: "send_invite",
       summary: "Invite candidate to interview",
       attendees: ["candidate@example.test"],
@@ -83,6 +83,14 @@ describe("AdminBot tool handlers", () => {
       expect.objectContaining({
         type: "calendar.send_invite",
         risk_tier: "T3",
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        outcome: "proposal_created",
+        approval_status: "pending",
+        external_mutation_performed: false,
+        user_message: expect.stringContaining("not been scheduled"),
       }),
     );
   });
@@ -522,6 +530,11 @@ describe("AdminBot tool handlers", () => {
       title: "Paper One",
       authors: ["alice"],
       currentStep: "social_posts",
+      venueDecision: "accept",
+      acceptedVenue: "ICLR 2027",
+      acceptedYear: 2027,
+      isArchival: true,
+      presentationType: "spotlight",
       artifacts: {
         google_drive_pdf_url: "https://drive.example/pdf",
         twitter_draft_url: "https://x.example/draft",
@@ -540,6 +553,11 @@ describe("AdminBot tool handlers", () => {
         title: "Paper One",
         authors: ["alice"],
         current_step: "social_posts",
+        venue_decision: "accept",
+        accepted_venue: "ICLR 2027",
+        accepted_year: 2027,
+        is_archival: true,
+        presentation_type: "spotlight",
         artifacts: {
           google_drive_pdf_url: "https://drive.example/pdf",
           twitter_draft_url: "https://x.example/draft",

@@ -8,7 +8,7 @@ import {
   type DeadlineVenue,
 } from "../../ui/src/ui/adminbot/data/deadlines.js";
 
-// venues.json is the source of truth; both TS modules are generated from it by
+// deadlines.json is the source of truth; both TS modules are generated from it by
 // scripts/adminbot-deadline-collect.py. They drifted once already — the plugin dataset sat at 78
 // venues while the collector's own output had 106 — and nothing failed, because no test compared
 // them. Regenerate with `python3 scripts/adminbot-deadline-collect.py` rather than hand-editing.
@@ -16,14 +16,14 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 
 const venuesDoc = JSON.parse(
   fs.readFileSync(
-    path.join(repoRoot, "extensions", "adminbot", "content", "deadlines", "venues.json"),
+    path.join(repoRoot, "extensions", "adminbot", "content", "deadlines", "deadlines.json"),
     "utf8",
   ),
 ) as { history_version: number; count: number; items: DeadlineVenue[] };
 
 describe("AdminBot deadline dataset generation", () => {
-  it("keeps venues.json self-consistent", () => {
-    expect(venuesDoc.history_version).toBe(1);
+  it("keeps deadlines.json self-consistent", () => {
+    expect(venuesDoc.history_version).toBe(4);
     expect(venuesDoc.items).not.toHaveLength(0);
     expect(venuesDoc.count).toBe(venuesDoc.items.length);
   });
@@ -32,12 +32,30 @@ describe("AdminBot deadline dataset generation", () => {
     const nlp4pi = venuesDoc.items.find((item) => item.id === "emnlp2026_ws_nlp4pi");
     expect(nlp4pi).toMatchObject({
       deadline_aoe: "2026-08-03 23:59:59",
-      notification_aoe: "2026-08-15 23:59:59",
+      notification_aoe: "",
+      notification_previous_aoe: "2026-08-15 23:59:59",
+      notification_status: "unverified",
       submission_type: "commitment",
       venue_group: "EMNLP 2026 Workshops",
       openreview_url: "https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment",
     });
     expect(nlp4pi?.cfp_url).toMatch(/^https?:\/\//u);
+  });
+
+  it("keeps legacy shared workshop cutoffs out of actual decision dates", () => {
+    const workshops = venuesDoc.items.filter(
+      (item) => item.venue_group === "NeurIPS 2026 Workshops",
+    );
+    expect(workshops.length).toBeGreaterThan(0);
+    for (const item of workshops) {
+      expect(item.notification_aoe).toBe("");
+      if (item.notification_previous_aoe) {
+        expect(item.notification_policy).toMatchObject({
+          milestone: "notification_by",
+          status: "unverified",
+        });
+      }
+    }
   });
 
   it("keeps one current projection with dated history and explicit venue aliases", () => {
@@ -51,25 +69,94 @@ describe("AdminBot deadline dataset generation", () => {
       expect(item.venue_aliases).toContain(item.deadline_id);
       expect(item.venue_aliases).toContain(item.venue_id);
       expect(item.revisions.length).toBeGreaterThan(0);
-      expect(item.revisions.at(-1)?.deadline_aoe).toBe(item.deadline_aoe);
+      // The projection has to be an observation the history actually records -- a current date
+      // nothing ever saw is the bug worth catching. It is *not* always the last revision, and it
+      // is not compared to the second:
+      //
+      //   * the collector's identity for a revision is the displayed minute (_revision_change_value
+      //     truncates *_aoe to [:16]), so a projection differing only in seconds is the same
+      //     observation and no revision is appended for it;
+      //   * revisions sort by deadline, so a venue whose CFP and OpenReview disagree
+      //     (deadline_source_status "cfp_disagrees_with_openreview") keeps the earlier CFP date as
+      //     its projection while the later OpenReview date sits behind it in the list.
+      //
+      // Asserting exact equality with revisions.at(-1) encoded neither rule and failed on both.
+      expect(item.revisions.map((revision) => revision.deadline_aoe.slice(0, 16))).toContain(
+        item.deadline_aoe!.slice(0, 16),
+      );
       expect(typeof item.stale).toBe("boolean");
     }
   });
 
   it("retains a real changed deadline without treating source-link updates as revisions", () => {
     const revised = venuesDoc.items.filter((item) => item.revisions.length > 1);
-    expect(revised).toHaveLength(1);
-    expect(revised[0]).toMatchObject({
+    const mint = revised.find((item) => item.id === "emnlp2026_ws_MINT_ARR_Commitment");
+    expect(mint).toMatchObject({
       id: "emnlp2026_ws_MINT_ARR_Commitment",
       deadline_aoe: "2026-08-31 23:59:00",
     });
-    expect(revised[0]?.revisions.map((revision) => revision.deadline_aoe)).toEqual([
+    expect(mint?.revisions.map((revision) => revision.deadline_aoe)).toEqual([
       "2026-08-24 23:59:00",
       "2026-08-31 23:59:00",
     ]);
+
+    // Below here the subject is the NeurIPS workshop sweep, which is live data: workshops appear
+    // as their OpenReview rounds open and their dates move until they close. This used to pin the
+    // family's size (119) and six workshops' exact deadlines, so every sweep that did its job
+    // broke the test -- the count reached 125 and three of the six had moved again. A snapshot of
+    // a moving dataset tests the sweep's date, not its behaviour. What is asserted now is the
+    // behaviour the test is named for, which does not rot.
+    const neurips = venuesDoc.items.filter((item) => item.id.startsWith("neurips2026_ws_"));
+    expect(neurips.length).toBeGreaterThan(100);
+    // A source that disappears is retained and flagged, never dropped: ML4PS's OpenReview group
+    // is gone (404 "Group Not Found"), so it keeps its row, its history and a stale flag.
+    const stale = neurips
+      .filter((item) => item.stale)
+      .map((item) => item.id)
+      .toSorted();
+    expect(stale).toEqual(["neurips2026_ws_ML4PS"]);
+    // Whatever the newest sweep's date is, it is one date and nearly every live row carries it;
+    // a row left behind on an older one is what staleness is for.
+    const checkedAt = new Set(
+      neurips.filter((item) => !item.stale).map((item) => item.source_checked_at),
+    );
+    expect(checkedAt.size).toBe(1);
+
+    const changedNeurips = neurips.filter((item) => item.revisions.length > 1);
+    expect(changedNeurips.length).toBeGreaterThan(0);
+    for (const item of changedNeurips) {
+      const minuteKeys = item.revisions.map((revision) => revision.deadline_aoe.slice(0, 16));
+      const distinct = [...new Set(minuteKeys)];
+      const ascending = distinct.every((key, index) => index === 0 || key > distinct[index - 1]!);
+      // "Extended" means later, not merely changed, and this used to assert that every workshop
+      // with a history had been extended -- which assumes deadlines only ever move outwards.
+      // Interp4Discovery pulled its own in (23:59 -> 23:29 on the same day) and is correctly not
+      // extended. An ascending chain is the one case the collector decides for itself; anything
+      // else keeps what the source said (WMHS carries "extended_prior_unavailable" over a chain
+      // that is not monotonic), so that is where the assertion stops.
+      if (ascending) {
+        expect(item.deadline_extended).toBe(true);
+      }
+      expect(minuteKeys).toContain(item.deadline_aoe!.slice(0, 16));
+    }
+
+    // Each way a deadline can be established still has to be represented, because that
+    // classification is what the board shows and what the reminders trust. The venues carrying
+    // each one change from sweep to sweep; that the collector still produces them does not.
+    const statuses = new Set(neurips.map((item) => item.deadline_source_status));
+    for (const status of [
+      "openreview_final_submission",
+      "official_date_conflicts_with_openreview",
+    ]) {
+      expect(statuses).toContain(status);
+    }
+    const kinds = new Set(neurips.map((item) => item.deadline_source_kind));
+    for (const kind of ["official", "openreview_group"]) {
+      expect(kinds).toContain(kind);
+    }
   });
 
-  it("keeps both generated datasets in step with venues.json", () => {
+  it("keeps both generated datasets in step with deadlines.json", () => {
     expect(pluginVenues.map((venue) => venue.id)).toEqual(venuesDoc.items.map((item) => item.id));
     expect(controlUiVenues.map((venue) => venue.id)).toEqual(
       venuesDoc.items.map((item) => item.id),
@@ -120,8 +207,12 @@ describe("AdminBot deadline dataset generation", () => {
     for (const workshop of workshops) {
       expect(workshop.cfp_url || workshop.homepage_url).toMatch(/^https?:\/\//u);
       expect(workshop.openreview_url).toMatch(/^https:\/\/openreview\.net\/group\?id=/u);
-      expect(workshop.source_url).toBe(workshop.openreview_url);
+      expect(workshop.source_url).toMatch(/^https?:\/\//u);
       expect(workshop.source_checked_at).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00Z$/u);
+      expect(["official", "openreview", "openreview_group", ""]).toContain(
+        workshop.deadline_source_kind,
+      );
+      expect(typeof workshop.deadline_extended).toBe("boolean");
     }
   });
 
@@ -188,7 +279,15 @@ describe("AdminBot deadline dataset generation", () => {
       expect(venue.venue_priority).toBe("standard");
     }
     expect(workshops.some((venue) => venue.archival_status === "mixed")).toBe(true);
-    expect(workshops.some((venue) => venue.archival_status === "unknown")).toBe(false);
+    // `unknown` is a real answer, not a hole. The README reserves it for a CFP that states no
+    // applicable publication policy, and says absence from an archival list is never evidence
+    // that a submission is safe -- so forbidding it outright (as this did) would push the
+    // collector to invent a policy the page does not have. What it must not become is a quiet
+    // stand-in for "the page could not be read", so each one still has to show its work.
+    for (const venue of workshops.filter((candidate) => candidate.archival_status === "unknown")) {
+      expect(venue.cfp_url || venue.homepage_url).toMatch(/^https?:\/\//u);
+      expect(venue.stale).toBe(false);
+    }
   });
 
   it("tags each ARR-family entry with the route it opens", () => {

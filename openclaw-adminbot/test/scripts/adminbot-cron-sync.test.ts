@@ -63,14 +63,14 @@ describe("scripts/adminbot-cron-sync.sh", () => {
   });
 
   it("edits what is already there instead of adding it twice", () => {
-    const existing = JSON.stringify({ jobs: manifest.jobs.slice(0, 3) }).replaceAll("'", "");
+    const existing = JSON.stringify({ jobs: manifest.jobs.slice(0, 3).map((job, i) => ({ ...job, id: `job-${i}` })) }).replaceAll("'", "");
     const output = run(greedyStub(existing));
     expect([...output.matchAll(/^CALL edit (\S+)$/gmu)]).toHaveLength(3);
     expect([...output.matchAll(/^CALL add (\S+)$/gmu)]).toHaveLength(manifest.jobs.length - 3);
   });
 
   it("names a job it did not put there, and leaves it alone", () => {
-    const output = run(greedyStub(JSON.stringify({ jobs: [{ name: "someones-own-job" }] })));
+    const output = run(greedyStub(JSON.stringify({ jobs: [{ name: "someones-own-job", id: "unmanaged" }] })));
     expect(output).toContain("someones-own-job is in the store but not in the manifest");
     expect(output).not.toContain("CALL add someones-own-job");
   });
@@ -87,4 +87,20 @@ describe("scripts/adminbot-cron-sync.sh", () => {
       "adminbot-nudge-escalation",
     ]);
   });
+  it("refuses malformed listings and unknown job names", () => {
+    expect(() => run(greedyStub("not-json"))).toThrow();
+    expect(() => run(greedyStub("[]"), ["--only", "missing-job"])).toThrow();
+  });
+
+  it("edits a paused job without creating a replacement or enabling it", () => {
+    const output = run(greedyStub(JSON.stringify([{ name: "adminbot-deadline-refresh-venues", id: "paused", enabled: false }])), ["--only", "adminbot-deadline-refresh-venues"]);
+    expect(output).toContain("CALL edit");
+    expect(output).not.toContain("CALL add");
+  });
+
+  it("refuses duplicate names", () => {
+    const row = { name: "adminbot-deadline-refresh-venues", id: "one" };
+    expect(() => run(greedyStub(JSON.stringify([row, { ...row, id: "two" }])))).toThrow();
+  });
+
 });

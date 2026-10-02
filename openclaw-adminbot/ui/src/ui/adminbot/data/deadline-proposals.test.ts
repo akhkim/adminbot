@@ -30,6 +30,15 @@ describe("deadline proposal validation", () => {
     });
   });
 
+  it("stores the human-readable AoE label as its IANA value", () => {
+    expect(
+      validateDeadlineProposal(input({ timezone: "Anywhere on Earth (AoE, UTC−12)" })),
+    ).toMatchObject({
+      ok: true,
+      value: { timezone: "Etc/GMT+12" },
+    });
+  });
+
   it("rejects invalid dates, time zones, and URLs", () => {
     expect(
       validateDeadlineProposal(
@@ -57,6 +66,78 @@ describe("deadline proposal validation", () => {
 });
 
 describe("AdminBot deadline proposal store", () => {
+  it.each([
+    ["old HTML page", () => new Response("<html>Deadlines</html>")],
+    ["missing route", () => new Response("Not found", { status: 404 })],
+    ["null payload", () => new Response("null")],
+  ])("falls back to the legacy dataset for a %s", async (_name, response) => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ id: "legacy" }] })));
+    const store = new AdminBotDeadlineProposalStore(
+      () => "https://admin.example",
+      () => undefined,
+      fetchImpl,
+    );
+    await expect(store.listPublished()).resolves.toEqual([{ id: "legacy" }]);
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      "https://admin.example/deadlines",
+      "https://admin.example/deadlines/venues.json",
+    ]);
+  });
+
+  it("keeps an empty current dataset without falling back", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [] })));
+    const store = new AdminBotDeadlineProposalStore(
+      () => "https://admin.example",
+      () => undefined,
+      fetchImpl,
+    );
+    await expect(store.listPublished()).resolves.toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a malformed dataset instead of silently clearing the board", async () => {
+    const fetchImpl = vi.fn().mockImplementation(async () => new Response("null"));
+    const store = new AdminBotDeadlineProposalStore(
+      () => "https://admin.example",
+      () => undefined,
+      fetchImpl,
+    );
+    await expect(store.listPublished()).rejects.toThrow("invalid dataset");
+  });
+
+  it.each([401, 403, 500])("does not hide HTTP %s with a legacy fallback", async (status) => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response("{}", { status }));
+    const store = new AdminBotDeadlineProposalStore(
+      () => "https://admin.example",
+      () => undefined,
+      fetchImpl,
+    );
+    await expect(store.listPublished()).rejects.toThrow(`Deadline service returned ${status}`);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads public deadline data without a session", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ items: [{ id: "example" }] }), {
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const store = new AdminBotDeadlineProposalStore(
+      () => "https://admin.example",
+      () => undefined,
+      fetchImpl as typeof fetch,
+    );
+    await expect(store.listPublished()).resolves.toEqual([{ id: "example" }]);
+    expect(fetchImpl).toHaveBeenCalledWith("https://admin.example/deadlines", {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+  });
+
   it("submits through the authenticated API with a stable idempotency key", async () => {
     const fetchImpl = vi.fn(
       async () =>
@@ -99,4 +180,42 @@ describe("AdminBot deadline proposal store", () => {
     await expect(store.submit(input(), "submit-key-1")).rejects.toThrow("Sign in");
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+});
+
+it("submits a visitor request without credentials and surfaces rate-limit failures", async () => {
+  const fetchImpl = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ status: "received" }), { status: 202 }))
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: { message: "Too many deadline proposals. Please try again later." },
+        }),
+        { status: 429 },
+      ),
+    );
+  const store = new AdminBotDeadlineProposalStore(
+    () => "https://admin.example",
+    () => "unused-session",
+    fetchImpl,
+  );
+  await store.submitPublic(input(), "public-key", { name: "Taylor", email: "taylor@example.org" });
+  expect(fetchImpl).toHaveBeenCalledWith(
+    "https://admin.example/public/deadline-proposals",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({
+        ...input(),
+        submitter_contact: { name: "Taylor", email: "taylor@example.org" },
+      }),
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": "public-key",
+      },
+    }),
+  );
+  await expect(
+    store.submitPublic(input(), "public-key", { name: "Taylor", email: "taylor@example.org" }),
+  ).rejects.toThrow("Too many deadline proposals");
 });

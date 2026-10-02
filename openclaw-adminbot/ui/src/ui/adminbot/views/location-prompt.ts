@@ -55,7 +55,7 @@ export function renderLocationPrompt(props: LocationPromptProps) {
       </p>
       ${props.error ? html`<p class="notice notice--error">${props.error}</p>` : nothing}
       <form class="location-prompt__form" @submit=${submit}>
-        <label class="location-prompt__field">
+        <label class="adminbot-form adminbot-form__field location-prompt__field">
           <span>Where you are now</span>
           <input name="current_city" .value=${place} ?disabled=${props.saving} />
         </label>

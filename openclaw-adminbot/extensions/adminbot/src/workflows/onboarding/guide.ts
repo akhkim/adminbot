@@ -4,6 +4,7 @@
 // the same code to preview, and the route calls it again before touching Gmail. A placeholder that
 // survives into a delivered email is the failure this exists to prevent -- "{contact_name}" reaching
 // a collaborator is worse than the send not happening.
+import { ADMINBOT_SEEDED_PORTAL_PASSWORD } from "../identity/auth.js";
 import { findOnboardingTemplate, type AdminBotOnboardingTemplate } from "./emails.js";
 
 // Written into the DCS-address example in the member template as literal copy, not as a value the
@@ -47,6 +48,22 @@ const DEFAULTED_DEPLOYMENT_TOKENS = {
     varName: "ADMINBOT_DASHBOARD_URL",
     fallback: "https://jinesis-admin.vercel.app/",
   },
+  // The temporary password every seeded portal account starts with. It is the same string for
+  // everyone, so asking an operator to retype it per send was a field that could only be got
+  // wrong -- and a typo here locks somebody out of their own onboarding. Configured rather than
+  // constant so a deployment that reseeds with a different password says so in one place.
+  portal_password: {
+    varName: "ADMINBOT_SEEDED_PORTAL_PASSWORD",
+    fallback: ADMINBOT_SEEDED_PORTAL_PASSWORD,
+  },
+  // The "Jinesis What to Expect" handbook the coauthor-minor mail points at. One document for the
+  // whole lab, like the portal address above, so it is configured here rather than retyped per
+  // send -- a link an operator has to paste is a link that eventually goes out wrong or blank.
+  what_to_expect_link: {
+    varName: "ADMINBOT_WHAT_TO_EXPECT_URL",
+    fallback:
+      "https://docs.google.com/document/d/1wKAZCWfyXypKvP9hG7XUcDsdVqD3TqLDES-lQJL48UY/edit?usp=drive_link",
+  },
 } as const;
 
 /**
@@ -61,14 +78,22 @@ export const ADMINBOT_DEPLOYMENT_TOKENS: readonly string[] = [
 ];
 
 /**
- * Values the *sender* may leave blank. Unlike a `required` token these never refuse the send: the
- * placeholder and one space in front of it disappear together, so "Hi {first_name}," degrades to
- * "Hi," rather than to "Hi ," or to a literal "{first_name}" reaching a recipient.
- *
- * A template that cannot read without one keeps it in `required` instead -- that check runs first,
- * so listing a token here does not weaken any template that demands it.
+ * Values the *sender* may leave blank. These never refuse the send, even if a template lists one
+ * in `required`: a roster row with no name is still somebody to onboard, and holding their guide
+ * back over a greeting is the worse outcome. A greeting that opens on the token -- "Hi
+ * {first_name}," or "Dear {first_name}," -- becomes "Hi!" (see `unnamedGreeting`); anywhere else
+ * the placeholder and one space in front of it disappear together, so a literal "{first_name}"
+ * never reaches a recipient.
  */
 export const ADMINBOT_OPTIONAL_VALUE_TOKENS: readonly string[] = ["first_name"];
+
+/** An opening "Hi {first_name}," / "Dear {first_name}," line, for a recipient with no name. */
+const NAMED_GREETING = /^(?:Hi|Hello|Dear) \{first_name\},/gmu;
+
+/** Rewrites a name-led greeting to "Hi!" when there is no name to put in it. */
+function unnamedGreeting(text: string, values: AdminBotOnboardingValues): string {
+  return values.first_name?.trim() ? text : text.replaceAll(NAMED_GREETING, "Hi!");
+}
 
 const OPTIONAL_VALUE_TOKENS = new Set(ADMINBOT_OPTIONAL_VALUE_TOKENS);
 
@@ -225,7 +250,10 @@ export function missingGuideValues(
   text?: string,
 ): string[] {
   return template.required.filter(
-    (token) => (text === undefined || text.includes(`{${token}}`)) && !values[token]?.trim(),
+    (token) =>
+      !OPTIONAL_VALUE_TOKENS.has(token) &&
+      (text === undefined || text.includes(`{${token}}`)) &&
+      !values[token]?.trim(),
   );
 }
 
@@ -264,7 +292,10 @@ export function composeOnboardingGuide(
     guide: {
       template_id: template.id,
       subject,
-      body: fill(dropUnresolvedLines(bodySource, deployment.unresolvedOptional), resolved),
+      body: fill(
+        unnamedGreeting(dropUnresolvedLines(bodySource, deployment.unresolvedOptional), resolved),
+        resolved,
+      ),
     },
   };
 }

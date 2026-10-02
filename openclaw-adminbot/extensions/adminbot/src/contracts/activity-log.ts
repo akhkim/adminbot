@@ -13,12 +13,39 @@
  * running; a row is a fact about a moment, and the moment does not change.
  */
 
-/** One sign-in. Written on the login itself, never on a session refresh or a background sweep. */
+/**
+ * One sign-in. Written on the login itself, never on a session refresh or a background sweep.
+ *
+ * The location fields are the same IPinfo lookup that stamps `last_login_city` on the member row,
+ * kept here as well for the one thing a single overwritten field can never answer: where somebody
+ * was in March. They are attached a moment *after* the row is inserted (the lookup is a network
+ * call and login must not wait on it), so a row with no location is the normal shape for a
+ * geolocation that was slow, unconfigured, or looking at a private IP -- not a corruption.
+ *
+ * Inferred, never stated. A member's own `location` / `current_city` is a different fact and this
+ * never becomes it; see the location-source contract in contracts/actions.ts.
+ */
 export type AdminBotLoginEvent = {
   id: string;
   member_id: string;
   /** ISO-8601. When the credential check succeeded. */
   at: string;
+} & AdminBotLoginLocation;
+
+/**
+ * Where a sign-in came from, as far as the IP said.
+ *
+ * Split out from the event because it arrives separately: the row is written first and this is
+ * attached when the lookup returns. Every field is optional independently -- the Lite tier of the
+ * provider answers with a country and no city, and a country-only stamp is still a usable travel
+ * record.
+ */
+export type AdminBotLoginLocation = {
+  country?: string;
+  continent?: string;
+  city?: string;
+  /** IANA zone. Only ever a region/city name -- a bare UTC offset is dropped at the connector. */
+  timezone?: string;
 };
 
 /**
@@ -80,4 +107,65 @@ export function paperSlotId(paperId: string, slot: string): string {
  */
 export function paperRecordSlotId(paperId: string): string {
   return `paper:${paperId}`;
+}
+
+/**
+ * One row of the recent-edits feed: a stored event with the names filled in.
+ *
+ * The event itself is all ids -- who, which slot, whose record -- because ids survive a rename.
+ * A reader wants names, and resolving them in the browser would mean shipping the roster to draw
+ * a list of forty edits, so the service joins the two it owns: member names and paper titles.
+ *
+ * What it deliberately does not resolve is the *field label*. "Location", "arXiv abstract page" is
+ * display copy, and the profile field list lives in the Control UI (member-fields.ts) while the
+ * slot registry lives in contracts. Sending the key and letting the reader name it keeps the
+ * service out of the business of what a field is called this month.
+ */
+export type AdminBotRecentUpdate = {
+  id: string;
+  at: string;
+  subject: AdminBotUpdateSubject;
+  source: AdminBotUpdateSource;
+  /** Who typed it. The name is absent when the id is nobody on the roster any more. */
+  actor_member_id: string;
+  actor_name?: string;
+  /** Whose record it was, when that is somebody other than the actor. */
+  subject_member_id?: string;
+  subject_member_name?: string;
+  /** The paper it landed on, for the two paper subjects. */
+  paper_id?: string;
+  paper_title?: string;
+  /** `location` for a profile field, `arxiv` for a paper slot, absent for a paper record edit. */
+  field_key?: string;
+  /** The raw slot id, so a reader can group or link by it without re-deriving it. */
+  slot_id: string;
+};
+
+/**
+ * The pieces of a `slot_id`, or undefined when it is not one this build knows how to read.
+ *
+ * Built rather than split at the call site: the three id shapes are declared right above, and a
+ * reader that splits on ":" by hand gets `paper_slot:paper-1:arxiv` wrong the moment a paper id
+ * contains a colon.
+ */
+export function parseSlotId(
+  slotId: string,
+): { subject: AdminBotUpdateSubject; paperId?: string; field?: string } | undefined {
+  if (slotId.startsWith("profile:")) {
+    return { subject: "profile", field: slotId.slice("profile:".length) };
+  }
+  if (slotId.startsWith("paper_slot:")) {
+    const rest = slotId.slice("paper_slot:".length);
+    // The slot name is the last segment; everything before it is the paper id, which may itself
+    // contain a colon.
+    const cut = rest.lastIndexOf(":");
+    if (cut === -1) {
+      return undefined;
+    }
+    return { subject: "paper_slot", paperId: rest.slice(0, cut), field: rest.slice(cut + 1) };
+  }
+  if (slotId.startsWith("paper:")) {
+    return { subject: "paper", paperId: slotId.slice("paper:".length) };
+  }
+  return undefined;
 }

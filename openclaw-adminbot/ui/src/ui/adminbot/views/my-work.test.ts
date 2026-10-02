@@ -1,10 +1,19 @@
 // My Projects & Papers: the card list, what a closed card says, and the global nudge above it.
 import { render } from "lit";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
-import { renderMyWork, type MyWorkProps, ownPapers } from "./my-work.ts";
+import { loadHistory, recordHistory } from "../paper-grid.ts";
+import {
+  renderMyWork,
+  resetMyWorkSessionState,
+  resetMyWorkViewModeForTest,
+  resetPaperSheetChoice,
+  showMyWorkCardsForTest,
+  type MyWorkProps,
+  ownPapers,
+} from "./my-work.ts";
 
 function paper(overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecord {
   return {
@@ -47,6 +56,7 @@ function overviewRow(overrides: Partial<PaperSlotOverviewRow> = {}): PaperSlotOv
 }
 
 type DrawOptions = {
+  onSaveBlocker?: MyWorkProps["onSaveBlocker"];
   papers?: AdminBotPaperRecord[];
   /** Passed straight through as MyWorkProps.papers -- the Active Papers scoping. */
   scopedPapers?: AdminBotPaperRecord[];
@@ -54,6 +64,8 @@ type DrawOptions = {
   onDeletePaper?: boolean;
   title?: string;
   projectDraft?: string | null;
+  /** Omitted by default, so the checkbox's absence without a check state is the tested default. */
+  channelCheck?: import("../controllers/admin.ts").SlackChannelCheck;
   overview?: PaperSlotOverviewRow[];
   slots?: Record<string, PaperCycle>;
   openIds?: string[];
@@ -64,11 +76,16 @@ type DrawOptions = {
   notice?: string | null;
   error?: string | null;
   personal?: boolean;
+  /** Omitted by default, so a plain member is what every other test in this file draws as. */
+  viewerIsAdmin?: boolean;
   /** Reuse a state object across two draws, for the controls that keep a draft in view state. */
   state?: AppViewState;
+  /** Wires the trip handlers, which is what makes the card draw the reader's own trip. */
+  trip?: boolean;
 };
 
 function draw(options: DrawOptions = {}) {
+  const channelToggles: boolean[] = [];
   // Every draw starts from an empty document. Containers used to pile up in `document.body`, and
   // an `#id` selector resolves through the document's id map before it checks containment -- so a
   // second card carrying the same id as an earlier test's found the earlier element, failed the
@@ -92,14 +109,29 @@ function draw(options: DrawOptions = {}) {
       settings: { adminBotUrl: "https://admin.safe.eu" },
       myWorkBlockerDraft: null,
       myWorkProjectDraft: options.projectDraft ?? null,
+      myWorkProjectAlias: "",
+      myWorkProjectError: null,
+      myWorkProjectEdits: {},
       myWorkProjectVenues: [],
     } as unknown as AppViewState);
   const props: MyWorkProps = {
     onSavePaper: (input: AdminBotPaperSaveInput) => saved.push(input),
+    onSaveBlocker:
+      options.onSaveBlocker ??
+      (async (input) => {
+        saved.push(input);
+        return true;
+      }),
     ...(options.onDeletePaper
       ? { onDeletePaper: (record: AdminBotPaperRecord) => deleted.push(record.id) }
       : {}),
     ...(options.scopedPapers ? { papers: options.scopedPapers } : {}),
+    ...(options.channelCheck
+      ? {
+          channelCheck: options.channelCheck,
+          onChannelCheckToggle: (enabled: boolean) => channelToggles.push(enabled),
+        }
+      : {}),
     ...(options.title ? { title: options.title } : {}),
     overview: options.overview ?? [overviewRow()],
     slots: options.slots ?? {},
@@ -119,18 +151,100 @@ function draw(options: DrawOptions = {}) {
     onNudgeAuthors: () => nudges.push(1),
     memberId: "ada",
     personal: options.personal ?? false,
+    viewerIsAdmin: options.viewerIsAdmin ?? false,
     memberName: (id: string) => id,
     onSaveDraft: () => {},
     onCirculateDraft: () => {},
     onConsent: () => {},
     onSetAttendee: () => {},
     onSetReimbursement: () => {},
+    ...(options.trip
+      ? { onEditTrip: () => {}, onSaveTrip: () => {}, onWithdrawTrip: () => {} }
+      : {}),
   };
   const container = document.createElement("div");
   document.body.append(container);
   render(renderMyWork(state, props), container);
-  return { container, toggled, nudges, reviews, picked, saved, state, deleted };
+  return {
+    container,
+    toggled,
+    nudges,
+    reviews,
+    picked,
+    saved,
+    state,
+    deleted,
+    channelToggles,
+    rerender: () => render(renderMyWork(state, props), container),
+  };
 }
+
+// The page opens on the flat view, so every spec below that is about the card list, the sheet, or
+// one of the banners above them has to say so -- otherwise it would be asserting against a surface
+// it never meant to draw. Said once here rather than by clicking "Back to cards" in a hundred
+// places, and the specs that are about the default undo it themselves.
+beforeEach(() => showMyWorkCardsForTest());
+
+describe("the surface the page opens on, before anybody asks", () => {
+  // These are the ones about the default, so they put back what the hook above just cleared.
+  beforeEach(() => resetMyWorkViewModeForTest());
+  afterEach(() => resetMyWorkViewModeForTest());
+
+  const onLegacy = (container: HTMLElement) =>
+    container.querySelector('[data-testid="paper-legacy"]') !== null;
+
+  it("opens on the flat view", () => {
+    const { container } = draw();
+    expect(onLegacy(container)).toBe(true);
+    expect(container.querySelector('[data-testid="my-work-item-p1"]')).toBeNull();
+  });
+
+  // The sheet's own default -- an admin, or anybody carrying five papers -- used to decide this.
+  // It still decides cards against sheet; it just no longer decides what the page opens on.
+  it("outranks the sheet's own default", () => {
+    const papers = Array.from({ length: 6 }, (_unused, index) => paper({ id: `p${index + 1}` }));
+    const { container } = draw({ papers, viewerIsAdmin: true });
+    expect(onLegacy(container)).toBe(true);
+    expect(container.querySelector(".my-work")?.classList.contains("my-work--sheet")).toBe(false);
+  });
+
+  // An empty flat form says "Nothing here yet" and nothing else. The card list says it too and
+  // offers the form that fixes it, so a member with no papers still lands there.
+  it("leaves somebody with no papers on the cards", () => {
+    const { container } = draw({ scopedPapers: [] });
+    expect(onLegacy(container)).toBe(false);
+  });
+
+  // Worth pinning because it surprises: leaving the flat view hands back whatever the page would
+  // have opened on before the flat view moved in front of it, and for an administrator that is the
+  // sheet. The alternative -- forcing the cards here -- would make the sheet's own default
+  // unreachable, since the flat view now occupies the first screen it used to open on.
+  it("hands an admin back the sheet their own default asks for", () => {
+    const papers = Array.from({ length: 4 }, (_unused, index) => paper({ id: `p${index + 1}` }));
+    const first = draw({ papers, viewerIsAdmin: true });
+    first.container.querySelector<HTMLButtonElement>('[data-testid="paper-legacy-exit"]')!.click();
+
+    const second = draw({ papers, viewerIsAdmin: true });
+    expect(second.container.querySelector(".my-work")?.classList.contains("my-work--sheet")).toBe(
+      true,
+    );
+  });
+
+  // The whole reason the choice is remembered: a default that reasserted itself on the next render
+  // would make "Back to cards" a button that does nothing.
+  it("keeps the cards once the reader asks for them, and reopens on request", () => {
+    const first = draw();
+    first.container.querySelector<HTMLButtonElement>('[data-testid="paper-legacy-exit"]')!.click();
+
+    const second = draw();
+    expect(onLegacy(second.container)).toBe(false);
+    second.container
+      .querySelector<HTMLButtonElement>('[data-testid="my-work-open-legacy"]')!
+      .click();
+
+    expect(onLegacy(draw().container)).toBe(true);
+  });
+});
 
 describe("renderMyWork", () => {
   it("opens as a list of cards with the form closed", () => {
@@ -427,8 +541,11 @@ describe("target venue", () => {
       String(year + 1),
       String(year + 2),
     ]);
+    // Three groups, not two: workshops are their own, because "is this archival" is a question the
+    // CFP answers per workshop rather than something the catalog can state for the venue. The
+    // ICLR-workshop assertion below has always depended on that group existing.
     const groups = [...(venue?.querySelectorAll("optgroup") ?? [])].map((group) => group.label);
-    expect(groups).toEqual(["Archival", "Non-archival"]);
+    expect(groups).toEqual(["Archival", "Non-archival", "Workshops (check the CFP)"]);
     expect([...(venue?.options ?? [])].map((option) => option.value)).toContain("EMNLP-main");
     expect([...(venue?.options ?? [])].map((option) => option.value)).toContain("ICLR-workshop");
   });
@@ -490,6 +607,215 @@ describe("target venue", () => {
     expect(order).toEqual(["register-venue-0", "register-venue-year-0", "register-venue-odds-0"]);
   });
 
+  /**
+   * Fill the two answers the create form insists on.
+   *
+   * The alias becomes the project's Slack channel and the start date is a fact about the project
+   * rather than about when it was typed in, so the form refuses without them -- these tests are
+   * about venue rows, and would otherwise be blocked by a rule they are not testing.
+   */
+  function fillProjectBasics(container: Element) {
+    const alias = container.querySelector<HTMLInputElement>('[data-testid="my-work-add-alias"]');
+    const started = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-add-started-on"]',
+    );
+    alias!.value = "cais";
+    started!.value = "2026-01-15";
+  }
+
+  // The alias is what the project's Slack channel gets named after, so it is collected when the
+  // project is created rather than chased for afterwards.
+  it("files the alias lowercased and the start date as typed", () => {
+    const { container, saved } = draw({ projectDraft: "Causal AI Scientist" });
+    const alias = container.querySelector<HTMLInputElement>('[data-testid="my-work-add-alias"]');
+    const started = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-add-started-on"]',
+    );
+    // Typed the way a person says it; stored the way Slack needs it.
+    alias!.value = "CAIS";
+    started!.value = "2026-01-15";
+    container
+      .querySelector<HTMLFormElement>("#my-work-add-form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+
+    expect(saved.at(-1)?.alias).toBe("cais");
+    expect(saved.at(-1)?.startedOn).toBe("2026-01-15");
+  });
+
+  // The reported bug: "if you try to add a new project where the title is the same as the short
+  // name, it fails and no project is created". The short name is the thing at fault, not the match
+  // -- copying the title into that box brings its punctuation and its length along, and neither can
+  // be a Slack channel name. What made it a bug rather than a validation message is that the submit
+  // handler returned without saying anything, so the member saw a filled-in form and no project.
+  it.each([
+    ["an apostrophe", "Bob's Project"],
+    ["a colon", "Agents: a survey"],
+    ["more than the alias limit", "A Very Long Project Title That Goes On"],
+  ])("says why it refused a short name carrying %s", (_label, text) => {
+    const { container, saved, rerender } = draw({ projectDraft: text });
+    container.querySelector<HTMLInputElement>('[data-testid="my-work-add-alias"]')!.value = text;
+    container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+      "2026-01-15";
+    container
+      .querySelector<HTMLFormElement>("#my-work-add-form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+    rerender();
+
+    expect(saved).toHaveLength(0);
+    const error = container.querySelector('[data-testid="my-work-add-error"]');
+    expect(error?.textContent ?? "").toContain("cannot be a Slack channel name");
+  });
+
+  // A title and a short name that happen to be the same word were never the problem, and still are
+  // not: the pair below is what the reporter thought they were hitting.
+  it("files a project whose title and short name are the same word", () => {
+    const { container, saved } = draw({ projectDraft: "CAIS" });
+    container.querySelector<HTMLInputElement>('[data-testid="my-work-add-alias"]')!.value = "CAIS";
+    container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+      "2026-01-15";
+    container
+      .querySelector<HTMLFormElement>("#my-work-add-form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+
+    expect(saved).toHaveLength(1);
+    expect(saved.at(-1)).toMatchObject({ title: "CAIS", alias: "cais", id: "cais" });
+    expect(container.querySelector('[data-testid="my-work-add-error"]')).toBeNull();
+  });
+
+  it("names the missing answer rather than doing nothing", () => {
+    const { container, saved, rerender } = draw({ projectDraft: "Causal AI Scientist" });
+    container
+      .querySelector<HTMLFormElement>("#my-work-add-form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+    rerender();
+
+    expect(saved).toHaveLength(0);
+    expect(
+      container.querySelector('[data-testid="my-work-add-error"]')?.textContent ?? "",
+    ).toContain("short name");
+  });
+
+  // Both are conditions on creating the project, not fields to fill in later: a start date typed a
+  // month afterwards is a guess, and a project with no alias has no channel name.
+  it("refuses to file a project with no alias or no start date", () => {
+    const { container, saved } = draw({ projectDraft: "Causal AI Scientist" });
+    const form = container.querySelector<HTMLFormElement>("#my-work-add-form");
+    form?.dispatchEvent(new Event("submit", { cancelable: true }));
+    expect(saved).toHaveLength(0);
+
+    // An alias Slack could not take is refused rather than quietly rewritten -- an author should
+    // not discover what their channel was called afterwards.
+    container.querySelector<HTMLInputElement>('[data-testid="my-work-add-alias"]')!.value =
+      "C.A.I.S. v2";
+    container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+      "2026-01-15";
+    form?.dispatchEvent(new Event("submit", { cancelable: true }));
+    expect(saved).toHaveLength(0);
+  });
+
+  describe("the Slack channel already-exists check", () => {
+    const check = (over: Partial<import("../controllers/admin.ts").SlackChannelCheck> = {}) => ({
+      enabled: false,
+      channels: null,
+      loading: false,
+      error: null,
+      ...over,
+    });
+    const typeAlias = (container: HTMLElement, value: string, rerender: () => void) => {
+      const input = container.querySelector<HTMLInputElement>('[data-testid="my-work-add-alias"]')!;
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      rerender();
+    };
+
+    it("is not offered when the page has no way to answer it", () => {
+      const { container } = draw({ projectDraft: "Causal abstraction" });
+      expect(container.querySelector('[data-testid="my-work-channel-exists"]')).toBeNull();
+    });
+
+    it("reports the tick so the channel names can be loaded", () => {
+      const { container, channelToggles } = draw({
+        projectDraft: "Causal abstraction",
+        channelCheck: check(),
+      });
+      container.querySelector<HTMLInputElement>('[data-testid="my-work-channel-exists"]')!.click();
+      expect(channelToggles).toEqual([true]);
+    });
+
+    it("confirms an alias that matches a real channel", () => {
+      const { container, rerender } = draw({
+        projectDraft: "Causal abstraction",
+        channelCheck: check({ enabled: true, channels: ["proj-cais", "random-active"] }),
+      });
+      typeAlias(container, "CAIS", rerender);
+      expect(container.querySelector('[data-testid="my-work-channel-check-ok"]')).not.toBeNull();
+    });
+
+    it("refuses a submit whose alias names no channel, and says what is near it", () => {
+      const { container, saved, rerender } = draw({
+        projectDraft: "Causal abstraction",
+        channelCheck: check({ enabled: true, channels: ["proj-cais"] }),
+      });
+      typeAlias(container, "cais2", rerender);
+      container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+        "2026-01-15";
+      const mismatch = container.querySelector('[data-testid="my-work-channel-check-mismatch"]');
+      expect(mismatch?.textContent).toContain("proj-cais");
+
+      container
+        .querySelector<HTMLFormElement>("#my-work-add-form")
+        ?.dispatchEvent(new Event("submit", { cancelable: true }));
+      expect(saved).toHaveLength(0);
+    });
+
+    it("files the project when the box is ticked and the channel is there", () => {
+      const { container, saved, rerender } = draw({
+        projectDraft: "Causal abstraction",
+        channelCheck: check({ enabled: true, channels: ["proj-cais"] }),
+      });
+      typeAlias(container, "cais", rerender);
+      container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+        "2026-01-15";
+      container
+        .querySelector<HTMLFormElement>("#my-work-add-form")
+        ?.dispatchEvent(new Event("submit", { cancelable: true }));
+      expect(saved).toHaveLength(1);
+      expect(saved[0]?.alias).toBe("cais");
+    });
+
+    it("never blocks a submit when the lookup could not run", () => {
+      // The failure this must not have: refusing a correct alias because Slack was unreachable.
+      const { container, saved, rerender } = draw({
+        projectDraft: "Causal abstraction",
+        channelCheck: check({ enabled: true, channels: null, error: "Slack is unreachable." }),
+      });
+      typeAlias(container, "cais", rerender);
+      container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+        "2026-01-15";
+      expect(
+        container.querySelector('[data-testid="my-work-channel-check-unavailable"]')?.textContent,
+      ).toContain("still file");
+      container
+        .querySelector<HTMLFormElement>("#my-work-add-form")
+        ?.dispatchEvent(new Event("submit", { cancelable: true }));
+      expect(saved).toHaveLength(1);
+    });
+
+    it("checks nothing while the box is unticked", () => {
+      const { container, saved, rerender } = draw({
+        projectDraft: "Causal abstraction",
+        channelCheck: check({ enabled: false, channels: ["proj-cais"] }),
+      });
+      typeAlias(container, "brand-new", rerender);
+      container.querySelector<HTMLInputElement>('[data-testid="my-work-add-started-on"]')!.value =
+        "2026-01-15";
+      container
+        .querySelector<HTMLFormElement>("#my-work-add-form")
+        ?.dispatchEvent(new Event("submit", { cancelable: true }));
+      expect(saved).toHaveLength(1);
+    });
+  });
+
   it("registers a paper against the venue and year picked on the row", () => {
     const { container, saved, state } = draw({ projectDraft: "Causal abstraction" });
     const form = container.querySelector<HTMLFormElement>("#my-work-add-form");
@@ -498,6 +824,7 @@ describe("target venue", () => {
       '[data-testid="register-venue-year-0"]',
     );
     expect(venue).not.toBeNull();
+    fillProjectBasics(container);
     // The rows report through change into view state rather than through FormData, so that adding
     // a second venue does not lose what was typed into the first.
     yearSelect!.value = String(year + 1);
@@ -523,6 +850,7 @@ describe("target venue", () => {
     container.querySelector<HTMLButtonElement>('[data-testid="register-venue-add"]')?.click();
     expect(state.myWorkProjectVenues).toHaveLength(2);
 
+    fillProjectBasics(container);
     // Submitted straight from state rather than after a re-render: the handlers read live state,
     // so a form that has not been redrawn still files what was actually picked.
     container
@@ -537,6 +865,62 @@ describe("target venue", () => {
     // The first target still lands in the legacy pair the deadline board and stage nudges read.
     expect(saved.at(-1)?.conference).toContain("COLM");
     expect(saved.at(-1)?.confidence).toBe("80");
+  });
+});
+
+describe("project acceptance", () => {
+  it("sends the venue decision selected on an author's project card", () => {
+    const { container, saved } = draw({ openIds: ["p1"], papers: [paper()] });
+    const decision = container.querySelector<HTMLSelectElement>(
+      '[data-testid="paper-decision-p1"]',
+    )!;
+    decision.value = "accept";
+    decision.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(saved.at(-1)).toMatchObject({
+      id: "p1",
+      title: "Causal abstraction",
+      venueDecision: "accept",
+    });
+  });
+
+  it("sends every acceptance detail, including explicit clears", () => {
+    const accepted = paper({
+      venue_decision: "accept",
+      accepted_venue: "ICLR 2027",
+      accepted_year: 2027,
+      is_archival: true,
+      presentation_type: "spotlight",
+    });
+    const { container, saved } = draw({ openIds: ["p1"], papers: [accepted] });
+
+    const venue = container.querySelector<HTMLInputElement>(
+      '[data-testid="paper-accepted-venue-p1"]',
+    )!;
+    venue.value = "";
+    venue.dispatchEvent(new Event("change", { bubbles: true }));
+    const year = container.querySelector<HTMLInputElement>(
+      '[data-testid="paper-accepted-year-p1"]',
+    )!;
+    year.value = "";
+    year.dispatchEvent(new Event("change", { bubbles: true }));
+    const archival = container.querySelector<HTMLSelectElement>(
+      '[data-testid="paper-archival-p1"]',
+    )!;
+    archival.value = "";
+    archival.dispatchEvent(new Event("change", { bubbles: true }));
+    const presentation = container.querySelector<HTMLSelectElement>(
+      '[data-testid="paper-presentation-p1"]',
+    )!;
+    presentation.value = "";
+    presentation.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(saved.slice(-4)).toEqual([
+      expect.objectContaining({ acceptedVenue: "" }),
+      expect.objectContaining({ acceptedYear: "" }),
+      expect.objectContaining({ isArchival: "" }),
+      expect.objectContaining({ presentationType: "" }),
+    ]);
   });
 });
 
@@ -646,14 +1030,17 @@ describe("Active Papers draws the same workspace", () => {
 });
 
 describe("the banners above the list", () => {
-  const decided = {
+  // The fields, and the cast, kept apart: the tests below build variants by spreading this, and a
+  // value already cast to `never` cannot be spread.
+  const decidedFields = {
     id: "d1",
     title: "A decided paper",
     authors: ["Ada Lovelace"],
     current_step: "submission",
     venue_decision: "accept",
     accepted_venue: "EMNLP 2026",
-  } as never;
+  };
+  const decided = decidedFields as never;
 
   it("draws the decision banner on the member's own page", () => {
     const { container } = draw({ scopedPapers: [decided], personal: true });
@@ -667,6 +1054,97 @@ describe("the banners above the list", () => {
     const { container } = draw({ scopedPapers: [decided] });
     expect(container.querySelector('[data-testid="decision-banner-d1"]')).toBeNull();
     expect(container.querySelector('[data-testid="prereg-open"]')).toBeNull();
+  });
+
+  it("records sent only when the assigned owner explicitly confirms it", () => {
+    const owned = {
+      ...decidedFields,
+      id: "decision-email",
+      submitted_by_member_id: "ada",
+    } as never;
+    const state = {
+      memberId: "ada",
+      adminBotData: {
+        papers: [owned],
+        members: [
+          {
+            id: "ada",
+            name: "Ada Lovelace",
+            privilege_level: "member",
+            correspondence_email: "ada@example.edu",
+            access: [],
+          },
+        ],
+        settings: {},
+      },
+      settings: { adminBotUrl: "https://admin.safe.eu" },
+    } as unknown as AppViewState;
+    const { container, saved, rerender } = draw({
+      scopedPapers: [owned],
+      personal: true,
+      state,
+    });
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="decision-email-toggle-decision-email"]')
+      ?.click();
+    rerender();
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="decision-email-sent-decision-email"]')
+      ?.click();
+
+    expect(saved.at(-1)).toMatchObject({
+      id: "decision-email",
+      decisionEmailSent: "accept:EMNLP 2026",
+    });
+  });
+
+  it("can undo an accidental sent mark", () => {
+    const acknowledged = {
+      ...decidedFields,
+      id: "decision-email-undo",
+      submitted_by_member_id: "ada",
+      artifacts: { decision_coauthor_email_sent: "accept:EMNLP 2026" },
+    } as never;
+    const state = {
+      memberId: "ada",
+      adminBotData: {
+        papers: [acknowledged],
+        members: [
+          {
+            id: "ada",
+            name: "Ada Lovelace",
+            privilege_level: "member",
+            correspondence_email: "ada@example.edu",
+            access: [],
+          },
+        ],
+        settings: {},
+      },
+      settings: { adminBotUrl: "https://admin.safe.eu" },
+    } as unknown as AppViewState;
+    const { container, saved, rerender } = draw({
+      scopedPapers: [acknowledged],
+      personal: true,
+      state,
+    });
+
+    expect(
+      container.querySelector('[data-testid="decision-email-toggle-decision-email-undo"]')
+        ?.textContent,
+    ).toContain("sent");
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="decision-email-toggle-decision-email-undo"]')
+      ?.click();
+    rerender();
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="decision-email-sent-decision-email-undo"]')
+      ?.click();
+
+    expect(saved.at(-1)).toMatchObject({
+      id: "decision-email-undo",
+      decisionEmailSent: "",
+    });
   });
 });
 
@@ -834,4 +1312,613 @@ describe("hiding a paper from your own list", () => {
     const { container } = draw({ papers: twoPapers() });
     expect(container.querySelector('[data-testid="my-work-hidden-line"]')).toBeNull();
   });
+});
+
+// A project's title changes as the work finds its shape, and the three answers the create form
+// insists on used to be fixed from the moment it was filed. The service always allowed them
+// through OWN_PAPER_EDITABLE_FIELDS; there was simply nowhere to type them.
+describe("editing a project's own details", () => {
+  const openCard = () => draw({ openIds: ["p1"], papers: [paper()] });
+
+  it("saves a new title, short name and start date", () => {
+    const { container, saved, rerender } = openCard();
+    const title = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-title-p1"]',
+    )!;
+    title.value = "A better title";
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    const alias = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-alias-p1"]',
+    )!;
+    alias.value = "Renamed";
+    alias.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    container.querySelector<HTMLButtonElement>('[data-testid="my-work-details-save-p1"]')!.click();
+
+    expect(saved.at(-1)).toMatchObject({
+      id: "p1",
+      title: "A better title",
+      // Stored the way Slack needs it, the same as on the create form.
+      alias: "renamed",
+    });
+  });
+
+  it("refuses a short name Slack could not take, and says why", () => {
+    const { container, saved, rerender } = openCard();
+    const alias = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-alias-p1"]',
+    )!;
+    alias.value = "Bob's Project";
+    alias.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    container.querySelector<HTMLButtonElement>('[data-testid="my-work-details-save-p1"]')!.click();
+    rerender();
+
+    expect(saved).toHaveLength(0);
+    expect(
+      container.querySelector('[data-testid="my-work-details-error-p1"]')?.textContent ?? "",
+    ).toContain("cannot be a Slack channel name");
+  });
+
+  it("refuses an empty title", () => {
+    const { container, saved, rerender } = openCard();
+    const title = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-title-p1"]',
+    )!;
+    title.value = "   ";
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    container.querySelector<HTMLButtonElement>('[data-testid="my-work-details-save-p1"]')!.click();
+    rerender();
+
+    expect(saved).toHaveLength(0);
+    expect(
+      container.querySelector('[data-testid="my-work-details-error-p1"]')?.textContent ?? "",
+    ).toContain("title");
+  });
+
+  // Nothing typed yet is nothing to save: the button would otherwise re-file the record unchanged.
+  it("keeps the save button inert until something changes", () => {
+    const { container, rerender } = openCard();
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-testid="my-work-details-save-p1"]')
+        ?.disabled,
+    ).toBe(true);
+
+    const title = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-title-p1"]',
+    )!;
+    title.value = "Changed";
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-testid="my-work-details-save-p1"]')
+        ?.disabled,
+    ).toBe(false);
+  });
+});
+
+// Saving the way the profile page saves: a beat after typing stops, or on the way out. The explicit
+// button stays, so these cover what it does not -- see adminbot/autosave.ts for the shared timing.
+// The sheet is the page, not a column in it. `.my-work` caps itself at a readable measure for the
+// card list; a sixty-column table wants the window, and the cap was leaving a third of it empty.
+describe("the sheet's width", () => {
+  // The surface is module state that outlives a render, so it is cleared rather than left for the
+  // next test in this file to inherit.
+  afterEach(() => resetPaperSheetChoice());
+
+  it("drops the reading-measure cap the card list keeps", () => {
+    const papers = [paper(), paper({ id: "p2" }), paper({ id: "p3" })];
+    const first = draw({ papers });
+    // Three papers and a plain member: still opt-in, so the press is what opens it.
+    first.container.querySelector<HTMLButtonElement>('[data-testid="my-work-open-grid"]')!.click();
+    const { container } = draw({ papers });
+    expect(container.querySelector(".my-work")?.classList.contains("my-work--sheet")).toBe(true);
+  });
+
+  it("keeps the cap on the card list", () => {
+    const { container } = draw({ papers: [paper()] });
+    const cards = container.querySelector(".my-work");
+    expect(cards?.classList.contains("my-work--sheet")).toBe(false);
+  });
+});
+
+// Which surface the page opens on. The sheet stopped being purely opt-in: an administrator gets it
+// as soon as it exists, and so does anybody carrying five papers, because at that size the visit is
+// a sweep across every row rather than a read of one card. Nobody loses the other surface -- the
+// button and "Back to cards" are the same two presses they always were.
+// Reached by pressing "Back to cards" off the flat view, which the hook at the top of this file
+// does for every spec here: the sheet's default answers cards against sheet, which is a question
+// the page only asks once the reader has left the flat view.
+describe("the surface the page opens on", () => {
+  afterEach(() => resetPaperSheetChoice());
+
+  const papers = (count: number) =>
+    Array.from({ length: count }, (_unused, index) => paper({ id: `p${index + 1}` }));
+  const onSheet = (container: HTMLElement) =>
+    container.querySelector(".my-work")?.classList.contains("my-work--sheet") ?? false;
+
+  it("opens a member on the cards below five papers, and still offers the sheet", () => {
+    const { container } = draw({ papers: papers(4) });
+    expect(onSheet(container)).toBe(false);
+    expect(container.querySelector('[data-testid="my-work-open-grid"]')).not.toBeNull();
+  });
+
+  it("opens a member on the sheet at five papers", () => {
+    const { container } = draw({ papers: papers(5) });
+    expect(onSheet(container)).toBe(true);
+  });
+
+  it("opens an admin on the sheet as soon as it is offered at all", () => {
+    const { container } = draw({ papers: papers(3), viewerIsAdmin: true });
+    expect(onSheet(container)).toBe(true);
+  });
+
+  // Two papers is below the offer threshold, and the default cannot reach past it: a sheet of two
+  // rows is worse than two cards for an administrator too.
+  it("leaves an admin on the cards when the sheet is not offered", () => {
+    const { container } = draw({ papers: papers(2), viewerIsAdmin: true });
+    expect(onSheet(container)).toBe(false);
+    expect(container.querySelector('[data-testid="my-work-open-grid"]')).toBeNull();
+  });
+
+  // A decision waiting for an answer is addressed to the reader, and the sheet is now where the
+  // reader lands. Losing the prompt behind a press would be the one real cost of opening here.
+  it("carries a waiting venue decision onto the sheet", () => {
+    const decided = {
+      id: "p1",
+      title: "A decided paper",
+      authors: ["Ada Lovelace"],
+      current_step: "submission",
+      // The page reads the member's own papers out of state, so the fixture has to be one.
+      submitted_by_member_id: "ada",
+      venue_decision: "accept",
+      accepted_venue: "EMNLP 2026",
+    } as never;
+    const { container } = draw({
+      papers: [decided, ...papers(5).slice(1)],
+      personal: true,
+    });
+    expect(onSheet(container)).toBe(true);
+    expect(container.querySelector('[data-testid="decision-banner-p1"]')).not.toBeNull();
+  });
+
+  // The whole reason the choice is remembered: a default that reasserted itself on the next render
+  // would make "Back to cards" a button that does nothing.
+  it("keeps the cards once the reader asks for them, and reopens on request", () => {
+    const list = papers(6);
+    const first = draw({ papers: list });
+    expect(onSheet(first.container)).toBe(true);
+    first.container
+      .querySelector<HTMLButtonElement>(".paper-grid__tools .btn:last-of-type")!
+      .click();
+
+    const second = draw({ papers: list });
+    expect(onSheet(second.container)).toBe(false);
+    second.container.querySelector<HTMLButtonElement>('[data-testid="my-work-open-grid"]')!.click();
+
+    expect(onSheet(draw({ papers: list }).container)).toBe(true);
+  });
+});
+
+describe("project details autosave", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const typeInto = (
+    container: HTMLElement,
+    testid: string,
+    value: string,
+    rerender: () => void,
+  ) => {
+    const input = container.querySelector<HTMLInputElement>(`[data-testid="${testid}"]`)!;
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+  };
+
+  const leaveForm = (container: HTMLElement) => {
+    container
+      .querySelector<HTMLFormElement>(".my-work-details__form")!
+      .dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: null }));
+  };
+
+  it("commits a beat after typing stops, with nothing pressed", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-title-p1", "A better title", rerender);
+
+    // Still inside the debounce: a keystroke is not a decision.
+    vi.advanceTimersByTime(500);
+    expect(saved).toHaveLength(0);
+
+    vi.advanceTimersByTime(500);
+    expect(saved.at(-1)).toMatchObject({ id: "p1", title: "A better title" });
+  });
+
+  it("does not save an old member's pending edit after the session changes", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-title-p1", "Private draft", rerender);
+
+    resetMyWorkSessionState();
+    vi.advanceTimersByTime(1000);
+
+    expect(saved).toHaveLength(0);
+  });
+
+  it("restarts the timer on every keystroke rather than saving mid-word", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    for (const value of ["A", "Ab", "Abc"]) {
+      typeInto(container, "my-work-details-title-p1", value, rerender);
+      vi.advanceTimersByTime(600);
+    }
+    expect(saved).toHaveLength(0);
+
+    vi.advanceTimersByTime(900);
+    expect(saved).toHaveLength(1);
+    expect(saved.at(-1)).toMatchObject({ title: "Abc" });
+  });
+
+  it("keeps the focused editor when a saved paper updates the cached list", () => {
+    const { container, state, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-title-p1"]',
+    )!;
+    input.focus();
+    input.value = "A better title";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    state.adminBotData = {
+      ...state.adminBotData,
+      papers: [paper({ title: "A better title" })],
+    };
+    rerender();
+
+    expect(input.isConnected).toBe(true);
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe("A better title");
+  });
+
+  it("holds a draft it cannot write instead of firing a doomed request", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-alias-p1", "Bob's Project", rerender);
+    vi.advanceTimersByTime(5000);
+
+    expect(saved).toHaveLength(0);
+    // And says nothing yet: the member may be three characters into typing it.
+    expect(container.querySelector('[data-testid="my-work-details-error-p1"]')).toBeNull();
+  });
+
+  // The case that made the create form lose a project silently: a draft that cannot be written has
+  // no pending timer, so a plain flush would do nothing and the member would leave none the wiser.
+  it("explains an unwritable draft when focus leaves, rather than dropping it", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-alias-p1", "Bob's Project", rerender);
+    leaveForm(container);
+    rerender();
+
+    expect(saved).toHaveLength(0);
+    expect(
+      container.querySelector('[data-testid="my-work-details-error-p1"]')?.textContent ?? "",
+    ).toContain("cannot be a Slack channel name");
+  });
+
+  it("commits immediately when focus leaves mid-debounce", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-title-p1", "Left early", rerender);
+    leaveForm(container);
+
+    expect(saved.at(-1)).toMatchObject({ title: "Left early" });
+  });
+
+  it("writes once when the debounce and the blur both come due", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-title-p1", "Once only", rerender);
+    vi.advanceTimersByTime(900);
+    expect(saved).toHaveLength(1);
+
+    // The record has not come back yet, so the draft still differs from what is stored.
+    leaveForm(container);
+    expect(saved).toHaveLength(1);
+  });
+
+  // A failed write leaves the signature recorded, so the automatic paths would suppress the retry.
+  // The button is a deliberate act and must always reach the service.
+  it("re-sends on an explicit press even when the values have not changed since", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-title-p1", "Retry me", rerender);
+    vi.advanceTimersByTime(900);
+    expect(saved).toHaveLength(1);
+
+    rerender();
+    container.querySelector<HTMLButtonElement>('[data-testid="my-work-details-save-p1"]')!.click();
+    expect(saved).toHaveLength(2);
+    expect(saved.at(-1)).toMatchObject({ title: "Retry me" });
+  });
+
+  it("leaves a form nobody touched alone", () => {
+    const { container, saved } = draw({ openIds: ["p1"], papers: [paper()] });
+    leaveForm(container);
+    vi.advanceTimersByTime(5000);
+    expect(saved).toHaveLength(0);
+  });
+
+  it("still says changes save themselves", () => {
+    const { container } = draw({ openIds: ["p1"], papers: [paper()] });
+    expect(container.querySelector(".my-work-details__autosave-hint")?.textContent?.trim()).toBe(
+      "Changes save automatically.",
+    );
+  });
+});
+
+describe("the flat view", () => {
+  // Both full-page modes are module state the app never resets, so a spec that opens one would
+  // otherwise leave every later spec looking at it.
+  afterEach(() => {
+    resetMyWorkViewModeForTest();
+  });
+
+  it("drops an old member's flat-form draft and pending autosave on session reset", () => {
+    vi.useFakeTimers();
+    try {
+      resetMyWorkViewModeForTest();
+      const first = draw();
+      const title = first.container.querySelector<HTMLInputElement>(
+        '[data-testid="paper-legacy-p1-title"]',
+      )!;
+      title.value = "Private draft";
+      title.dispatchEvent(new Event("input", { bubbles: true }));
+      first.rerender();
+      expect(title.value).toBe("Private draft");
+      recordHistory([
+        {
+          at: new Date().toISOString(),
+          paperTitle: "Private paper",
+          column: "Title",
+          from: "",
+          to: "Private draft",
+          kind: "added",
+        },
+      ]);
+
+      resetMyWorkSessionState();
+      vi.advanceTimersByTime(1000);
+      expect(first.saved).toHaveLength(0);
+      expect(loadHistory()).toEqual([]);
+
+      const second = draw();
+      expect(
+        second.container.querySelector<HTMLInputElement>('[data-testid="paper-legacy-p1-title"]')
+          ?.value,
+      ).toBe("Causal abstraction");
+    } finally {
+      resetMyWorkSessionState();
+      vi.useRealTimers();
+    }
+  });
+
+  // The flat view is where the page opens, so anything only the card draws is something a member
+  // never sees. The conference branch is the one that mattered: an accepted paper's attendance,
+  // trip and aid request, and reimbursements lived on the card alone.
+  it("carries the card's conference branch once a paper is accepted", () => {
+    resetMyWorkViewModeForTest();
+    const accepted = paper({
+      venue_decision: "accept",
+      accepted_venue: "EMNLP",
+      accepted_year: 2026,
+      is_archival: true,
+      presentation_type: "poster",
+    });
+    const cycle = {
+      slots: [],
+      stages: [],
+      drafts: [],
+      consents: [],
+      attendees: [],
+      reimbursements: [],
+      weeklyUpdates: [],
+      cycleClosed: false,
+      missingAcceptanceDetails: [],
+      conferenceKey: "emnlp-2026",
+    } as PaperCycle;
+    const { container } = draw({ papers: [accepted], slots: { p1: cycle }, trip: true });
+    expect(container.querySelector('[data-testid="paper-legacy"]')).not.toBeNull();
+    const extras = container.querySelector('[data-testid="paper-legacy-extras-p1"]');
+    expect(extras?.querySelector('[data-testid="paper-attendee-add-p1"]')).not.toBeNull();
+    expect(extras?.querySelector('[data-testid="paper-trip-intent-p1"]')).not.toBeNull();
+    expect(extras?.querySelector('[data-testid="paper-completion-p1"]')).not.toBeNull();
+    // The step picker is already a legacy row; the card's second copy of it stays off this page.
+    expect(container.querySelector('[data-testid="my-work-step-p1"]')).toBeNull();
+    expect(container.querySelector('[data-testid="my-work-map-p1"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-legacy-report-p1"]')).not.toBeNull();
+  });
+
+  it("keeps the conference branch shut until the paper is accepted", () => {
+    resetMyWorkViewModeForTest();
+    const cycle = {
+      slots: [],
+      stages: [],
+      drafts: [],
+      consents: [],
+      attendees: [],
+      reimbursements: [],
+      weeklyUpdates: [],
+      cycleClosed: false,
+      missingAcceptanceDetails: [],
+      conferenceKey: "emnlp-2026",
+    } as PaperCycle;
+    const { container } = draw({ slots: { p1: cycle }, trip: true });
+    expect(container.querySelector('[data-testid="paper-cycle-p1"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-attendee-add-p1"]')).toBeNull();
+    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
+  });
+
+  it("offers the button beside the spreadsheet one", () => {
+    const { container } = draw();
+    expect(container.querySelector('[data-testid="my-work-open-legacy"]')).not.toBeNull();
+  });
+
+  it("offers it on a single paper, unlike the sheet", () => {
+    // The sheet is a bulk tool and is worse than one card; this is the same card drawn flat.
+    const { container } = draw({ papers: [paper()] });
+    expect(container.querySelector('[data-testid="my-work-open-grid"]')).toBeNull();
+    expect(container.querySelector('[data-testid="my-work-open-legacy"]')).not.toBeNull();
+  });
+
+  it("swaps the card list for the flat form and back", () => {
+    const drawn = draw();
+    drawn.container
+      .querySelector<HTMLButtonElement>('[data-testid="my-work-open-legacy"]')
+      ?.click();
+    drawn.rerender();
+    expect(drawn.container.querySelector('[data-testid="paper-legacy"]')).not.toBeNull();
+    expect(drawn.container.querySelector('[data-testid="my-work-item-p1"]')).toBeNull();
+
+    drawn.container.querySelector<HTMLButtonElement>('[data-testid="paper-legacy-exit"]')?.click();
+    drawn.rerender();
+    expect(drawn.container.querySelector('[data-testid="paper-legacy"]')).toBeNull();
+    expect(drawn.container.querySelector('[data-testid="my-work-item-p1"]')).not.toBeNull();
+  });
+
+  it("hides nothing: every paper on the list is on the flat form", () => {
+    const drawn = draw({ papers: [paper(), paper({ id: "p2", title: "Second paper" })] });
+    drawn.container
+      .querySelector<HTMLButtonElement>('[data-testid="my-work-open-legacy"]')
+      ?.click();
+    drawn.rerender();
+    expect(drawn.container.querySelector('[data-testid="paper-legacy-paper-p1"]')).not.toBeNull();
+    expect(drawn.container.querySelector('[data-testid="paper-legacy-paper-p2"]')).not.toBeNull();
+  });
+});
+
+describe("a decision banner that has done its job", () => {
+  const decided = (id: string, extra: Record<string, unknown> = {}) =>
+    ({
+      id,
+      title: "A decided paper",
+      authors: ["Ada Lovelace"],
+      current_step: "submission",
+      venue_decision: "accept",
+      accepted_venue: "EMNLP 2026",
+      ...extra,
+    }) as never;
+
+  // The answer lives on the paper card afterwards. A prompt that outlives its own answer turns the
+  // page into a list that never empties, which is how the real prompts stop being read.
+  it("leaves out a decision answered before this session", () => {
+    const { container } = draw({
+      scopedPapers: [decided("done-1", { artifacts: { decision_seen: "accept:EMNLP 2026" } })],
+      personal: true,
+    });
+    expect(container.querySelector('[data-testid="decision-banner-done-1"]')).toBeNull();
+  });
+
+  // The other half of the same rule: vanishing under the button that recorded it reads as the page
+  // eating the answer, so the banner stays until the page is loaded again.
+  it("keeps one answered in this session", () => {
+    const { container, saved, rerender } = draw({
+      scopedPapers: [decided("live-1")],
+      personal: true,
+    });
+    container.querySelector<HTMLButtonElement>('[data-testid="decision-save-live-1"]')?.click();
+    rerender();
+    expect(container.querySelector('[data-testid="decision-banner-live-1"]')).not.toBeNull();
+    expect(saved.at(-1)?.decisionSeen).toBe("accept:EMNLP 2026");
+  });
+
+  it("closes on the close button and records that it was seen", () => {
+    const { container, saved, rerender } = draw({
+      scopedPapers: [decided("close-1")],
+      personal: true,
+    });
+    container.querySelector<HTMLButtonElement>('[data-testid="decision-dismiss-close-1"]')?.click();
+    rerender();
+    expect(container.querySelector('[data-testid="decision-banner-close-1"]')).toBeNull();
+    // Closing is not an answer: the stamp travels, the track and format do not.
+    expect(saved.at(-1)?.decisionSeen).toBe("accept:EMNLP 2026");
+    expect(saved.at(-1)?.presentationType).toBeUndefined();
+  });
+});
+
+describe("blocker report validation", () => {
+  it("explains an empty or whitespace-only title without discarding the draft", () => {
+    resetMyWorkViewModeForTest();
+    const view = draw();
+    view.container
+      .querySelector<HTMLButtonElement>('[data-testid="paper-legacy-report-p1"]')!
+      .click();
+    view.rerender();
+    const title = view.container.querySelector<HTMLInputElement>(
+      '[data-testid="blocker-title-p1"]',
+    )!;
+    expect(title.required).toBe(true);
+    expect(title.checkValidity()).toBe(false);
+    title.value = "   ";
+    title.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(title.validationMessage).toBe("Enter a short description of what is blocked.");
+    expect(view.saved).toHaveLength(0);
+    expect(view.state.myWorkBlockerDraft?.paperId).toBe("p1");
+    title.value = "Review for arXiv";
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(title.checkValidity()).toBe(true);
+  });
+});
+
+describe("blocker save feedback", () => {
+  it.each([false, true])(
+    "waits for the save result (%s), keeping failed drafts",
+    async (success) => {
+      resetMyWorkViewModeForTest();
+      let finish!: (value: boolean) => void;
+      const onSaveBlocker = vi.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const view = draw({ onSaveBlocker });
+      view.container
+        .querySelector<HTMLButtonElement>('[data-testid="paper-legacy-report-p1"]')!
+        .click();
+      view.rerender();
+      const form = view.container.querySelector<HTMLFormElement>(".blocker-form")!;
+      (form.elements.namedItem("title") as HTMLInputElement).value = "Review for arXiv";
+      (form.elements.namedItem("note") as HTMLTextAreaElement).value = "Synthetic details";
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      view.rerender();
+      expect(view.state.myWorkBlockerDraft?.saving).toBe(true);
+      expect(
+        view.container.querySelector<HTMLButtonElement>('.blocker-form button[type="submit"]')
+          ?.disabled,
+      ).toBe(true);
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      expect(onSaveBlocker).toHaveBeenCalledTimes(1);
+      finish(success);
+      await Promise.resolve();
+      view.rerender();
+      if (success) expect(view.state.myWorkBlockerDraft).toBeNull();
+      else {
+        expect(view.container.querySelector('[role="alert"]')?.textContent).toContain(
+          "Your draft is kept",
+        );
+        expect(
+          view.container.querySelector<HTMLInputElement>('[data-testid="blocker-title-p1"]')?.value,
+        ).toBe("Review for arXiv");
+        expect(
+          view.container.querySelector<HTMLTextAreaElement>(".blocker-form textarea")?.value,
+        ).toBe("Synthetic details");
+      }
+    },
+  );
 });

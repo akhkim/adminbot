@@ -150,7 +150,62 @@ export const adminBotNudgeDomains = [
   // is already hearing from AdminBot about handovers.
   "graduation",
   "profile_field",
+  // The Slack Connect invitation an alumnus gets ten days after their welcome. In the ledger for
+  // the same reason as the rest -- and because the ledger is what stops a sweep that runs nightly
+  // from minting a second invitation every night for the same person.
+  "alumni_slack_invite",
+  // A member who has never signed in, chased on its own clock. Same ledger as the rest so somebody
+  // dormant is not also being Slacked about a poster in the same hour.
+  "dormant_account",
+  // The ladder after a manual onboarding email: two Slack reminders, then the professor. Separate
+  // from `dormant_account` because it is a bounded sequence with an end, not a standing reminder --
+  // and while it is running it owns the member, so the two cannot both chase the same person.
+  "onboarding_followup",
+  // The workshop recommendations for one conference, sent in the fortnight before its first
+  // workshop deadline. A say-once domain rather than a counting one: this is an announcement about
+  // an event, not a request repeated until somebody answers, so the ledger question is "have we
+  // told them about this conference" and the answer is permanent. `subject_id` is the parent
+  // conference key, which is what makes "once per conference" a lookup rather than a convention.
+  "workshop_nudge",
+  // Telling the head professor that a paper has reached her gate. A say-once domain: the arXiv
+  // package is prepared once, and the queue on her own page is what keeps the ask alive after
+  // that. The subject carries when the package became ready, so a paper prepared again -- revised,
+  // re-submitted, a second arXiv version -- announces itself again rather than staying silent
+  // because it was announced a year ago.
+  "pi_review",
+  // The three-day warning before a recommendation letter is due, said once per request per
+  // deadline. A say-once domain rather than a counting one, like `workshop_nudge`: this is an
+  // announcement about a date, not a request repeated until somebody answers, and the `subject_id`
+  // carries the deadline so a school date that moves re-arms it against the new one.
+  "rec_letter_reminder",
+  // One message the inbox pass could not decide, put to the reviewer once as an approval. Say-once
+  // like the two above, and for the sharper reason: the hourly pass sees the same held message
+  // every hour it runs, so without the ledger a single undecided email would mint a fresh approval
+  // in Slack every hour until somebody answered it. The `subject_id` carries the message id and
+  // the time the pass last touched it, so a message the pass re-examines and holds again asks
+  // again, while one sitting untouched stays asked exactly once.
+  "email_review",
 ] as const;
+
+/**
+ * How long after the alumni welcome the Slack Connect invitation follows.
+ *
+ * Not immediate. The welcome is a lot to take in at once, and the invitation is the half that asks
+ * for an action; separating them by a week and a half gives it its own arrival. Comfortably inside
+ * the fortnight a Connect link stays fresh, which is why the link is minted when this fires rather
+ * than when the welcome went out.
+ */
+export const adminBotAlumniSlackInviteDelayDays = 10;
+
+/**
+ * The alumni welcome, and the invitation that follows it ten days later.
+ *
+ * Here rather than beside the templates because both the sender and the service need them, and the
+ * sender already imports from the service -- naming them there and reading them back would be an
+ * import cycle. Contracts is the layer both sides may depend on.
+ */
+export const ADMINBOT_ALUMNI_TEMPLATE_ID = "alumni";
+export const ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID = "alumni_slack_connect";
 
 export type AdminBotNudgeDomain = (typeof adminBotNudgeDomains)[number];
 
@@ -190,6 +245,23 @@ export type AdminBotWorkshopMatchRun = {
   /** Model calls finished and total, so a page open mid-pass can say how far along it is. */
   calls_done: number;
   calls_total: number;
+  /**
+   * Model calls that were counted as done because they gave up, not because they answered.
+   *
+   * A failed call still advances `calls_done` -- it has to, or a pass with one bad batch never
+   * reaches its total and the page spins forever. That makes `calls_done` alone a lie about how
+   * much of the answer is real, so the count of the ones that failed travels beside it and the
+   * page says "2540 of 2540, 37 failed" rather than pretending to a complete sweep.
+   */
+  calls_failed?: number;
+  /**
+   * When this run last moved.
+   *
+   * A pass is a fire-and-forget async task inside the service process, so a restart leaves its row
+   * saying `running` with nobody working on it -- and the "one pass at a time" guard then refuses
+   * every new pass forever. Progress time is what tells a stuck row from a live one.
+   */
+  progress_at?: string;
   /** The preview payload, once the pass finished. */
   payload_json?: string;
   /** Why it failed, when it did. */
@@ -214,6 +286,17 @@ export const adminBotNudgeMaxSnoozeDays = 14;
 export function adminBotPaperSlotSubjectId(paperId: string, slot: string): string {
   return `${paperId}:${slot}`;
 }
+
+/**
+ * The `member_id` on the row that records a workshop pass having run for a conference.
+ *
+ * Not a member, and deliberately shaped so it can never collide with one. The per-member rows
+ * beside it say who was messaged; this one says the pass happened at all, which is the difference
+ * between "nobody has been told" and "the pass ran and matched nobody". Without it a conference
+ * whose pass found no recipients would look untouched and be re-run -- tens of minutes of model
+ * time, every night, until its deadline passed.
+ */
+export const ADMINBOT_WORKSHOP_NUDGE_PASS_MARKER = "__pass__";
 
 /**
  * A stable key for an attendee who may or may not be on the roster.

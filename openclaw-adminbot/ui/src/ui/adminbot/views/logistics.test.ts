@@ -9,6 +9,7 @@ import {
   type MeetingRequestRow,
   type RecommendationSchool,
 } from "../data/logistics-draft.ts";
+import { DEFAULT_LOGISTICS_QUEUE_OPTIONS } from "../data/logistics-queue.ts";
 import type { LogisticsRequest, LogisticsRequestStatus } from "../data/logistics-requests.ts";
 import {
   renderAdminBotLogistics,
@@ -35,9 +36,15 @@ type DrawOptions = {
   submitting?: boolean;
   submitError?: string | null;
   submitted?: boolean;
+  submittedNote?: string;
+  signatureForm?: { driveUrl: string; deadline: string; context: string };
+  sendingForm?: boolean;
+  formError?: string | null;
+  formSent?: boolean;
   submitBlocked?: SubmitBlock | null;
   hasContent?: boolean;
   editing?: boolean;
+  meetingEditing?: boolean;
   template?: LogisticsTemplate;
   signatureFiles?: File[];
   attachments?: File[];
@@ -97,6 +104,7 @@ function submitProps(options: DrawOptions, onSubmit: () => void) {
     submitting: options.submitting ?? false,
     submitError: options.submitError ?? null,
     submitted: options.submitted ?? false,
+    ...(options.submittedNote ? { submittedNote: options.submittedNote } : {}),
     hasContent: options.hasContent ?? true,
     editing: options.editing ?? false,
     onCancelEdit: () => {
@@ -117,6 +125,12 @@ function draw(options: DrawOptions = {}): Drawn {
   discardCount = 0;
   cancelEditCount = 0;
   const signatureChanges: File[][] = [];
+  const signatureFormPatches: Partial<{
+    driveUrl: string;
+    deadline: string;
+    context: string;
+  }>[] = [];
+  let signatureSends = 0;
   const attachmentChanges: File[][] = [];
   const descriptionChanges: string[] = [];
   const schoolChanges: RecommendationSchool[][] = [];
@@ -131,7 +145,6 @@ function draw(options: DrawOptions = {}): Drawn {
   const settledToggles: boolean[] = [];
   const signedNoteChanges: string[] = [];
   const signedUploads: { id: string; files: File[] }[] = [];
-  const downloads: { id: string; name: string }[] = [];
   const answers: {
     id: string;
     status: LogisticsRequestStatus;
@@ -153,14 +166,14 @@ function draw(options: DrawOptions = {}): Drawn {
       mode: options.mode ?? "make",
       onModeChange: (next) => modeChanges.push(next),
       queue: {
+        options: { ...DEFAULT_LOGISTICS_QUEUE_OPTIONS },
+        onOptionsChange: () => {},
         requests: options.requests ?? [],
         loading: options.requestsLoading ?? false,
         error: options.requestsError ?? null,
         showSettled: options.showSettled ?? false,
         onShowSettledChange: (next) => settledToggles.push(next),
         signingId: options.signingId ?? null,
-        downloadingId: null,
-        onDownload: (id, name) => downloads.push({ id, name }),
         signedNote: options.signedNote ?? "",
         onSignedNoteChange: (next) => signedNoteChanges.push(next),
         onSendSigned: (id, files) => signedUploads.push({ id, files }),
@@ -190,6 +203,15 @@ function draw(options: DrawOptions = {}): Drawn {
         onDescriptionChange: (next) => descriptionChanges.push(next),
         attachments: options.attachments ?? [],
         onAttachmentsChange: (next) => attachmentChanges.push(next),
+        form: options.signatureForm ?? { driveUrl: "", deadline: "", context: "" },
+        onForm: (patch) => signatureFormPatches.push(patch),
+        onSendForm: () => {
+          signatureSends += 1;
+          return true;
+        },
+        sendingForm: options.sendingForm ?? false,
+        formError: options.formError ?? null,
+        formSent: options.formSent ?? false,
         saving: options.saving ?? false,
         savedAt: options.savedAt ?? null,
         saveError: options.saveError ?? null,
@@ -216,6 +238,10 @@ function draw(options: DrawOptions = {}): Drawn {
         ...submitProps(options, () => {
           meetingSubmits += 1;
         }),
+        // Same shape as the signature form above, and for the same reason: meeting requests are
+        // filed on the contact spreadsheet now, so the table only renders on the correction path.
+        // Tests covering the link pass `meetingEditing: false`.
+        editing: options.meetingEditing ?? true,
       },
       letters: {
         schools: options.schools ?? [],
@@ -257,6 +283,10 @@ function draw(options: DrawOptions = {}): Drawn {
     answers,
     noteChanges,
     signatureChanges,
+    signatureFormPatches,
+    get signatureSends() {
+      return signatureSends;
+    },
     attachmentChanges,
     descriptionChanges,
     schoolChanges,
@@ -505,10 +535,92 @@ describe("the signature Google Form signpost", () => {
   });
 
   // Nothing is filed from this tab any more, so none of the request controls belong on the card.
+  // It files a row on the lab's Google Form, not a logistics request, so the request's own Save and
+  // Submit have nothing to do here -- only the button that sends the form.
   it("carries no Save or Submit, since the form is what files the request", () => {
     const { container } = draw({ signatureEditing: false });
     expect(container.querySelector("[data-testid='logistics-submit']")).toBeNull();
-    expect(container.querySelector(".logistics-request__actions")).toBeNull();
+    expect(container.querySelector("[data-testid='logistics-save']")).toBeNull();
+    expect(container.querySelector("[data-testid='logistics-signature-submit']")).not.toBeNull();
+  });
+
+  // It sits under Supporting Content on the same page, so it wears the same shell: a section with a
+  // card title, stacked label-over-control fields, and controls the page styles rather than the
+  // browser. `adminbot-form__field` alone is not that -- those rules need an `.adminbot-form`
+  // ancestor this section does not have.
+  it("wears the section shell the rest of the tab uses", () => {
+    const { container } = draw({ signatureEditing: false });
+    const section = container.querySelector('[data-testid="logistics-signature-section"]');
+    expect(section?.classList.contains("logistics-request__section")).toBe(true);
+    expect(section?.querySelector(".card-title")).not.toBeNull();
+    for (const testId of [
+      "logistics-signature-drive-url",
+      "logistics-signature-deadline",
+      "logistics-signature-context",
+    ]) {
+      const control = container.querySelector(`[data-testid="${testId}"]`);
+      expect(control?.className).toMatch(/logistics-signature__(input|note)/u);
+      expect(control?.closest(".logistics-signature__field")).not.toBeNull();
+    }
+  });
+
+  // The form's three member-answered questions. The fourth, their name, is the service's to answer.
+  it("collects the link, the deadline and the optional context", () => {
+    const { container, signatureFormPatches } = draw({ signatureEditing: false });
+    const link = container.querySelector<HTMLInputElement>(
+      "[data-testid='logistics-signature-drive-url']",
+    );
+    link!.value = "https://drive.google.com/file/d/abc/view";
+    link!.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(signatureFormPatches.at(-1)).toEqual({
+      driveUrl: "https://drive.google.com/file/d/abc/view",
+    });
+    expect(
+      container.querySelector<HTMLInputElement>("[data-testid='logistics-signature-deadline']")
+        ?.type,
+    ).toBe("date");
+    expect(container.querySelector("[data-testid='logistics-signature-context']")).not.toBeNull();
+  });
+
+  it("will not send until the link and the deadline are both there", () => {
+    const bare = draw({ signatureEditing: false });
+    expect(
+      bare.container.querySelector<HTMLButtonElement>("[data-testid='logistics-signature-submit']")
+        ?.disabled,
+    ).toBe(true);
+    const ready = draw({
+      signatureEditing: false,
+      signatureForm: {
+        driveUrl: "https://drive.google.com/x",
+        deadline: "2026-09-30",
+        context: "",
+      },
+    });
+    const button = ready.container.querySelector<HTMLButtonElement>(
+      "[data-testid='logistics-signature-submit']",
+    );
+    expect(button?.disabled).toBe(false);
+    button?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(ready.signatureSends).toBe(1);
+  });
+
+  // Google can refuse, and the link out is the door the member had before this existed.
+  it("says what the form answered, and keeps the link out", () => {
+    const { container } = draw({
+      signatureEditing: false,
+      formError: "the form answered 401",
+    });
+    expect(
+      container.querySelector("[data-testid='logistics-signature-error']")?.textContent,
+    ).toContain("401");
+    expect(container.querySelector("[data-testid='logistics-signature-form-link']")).not.toBeNull();
+  });
+
+  it("says so once it landed", () => {
+    const { container } = draw({ signatureEditing: false, formSent: true });
+    expect(
+      container.querySelector("[data-testid='logistics-signature-submitted']")?.textContent,
+    ).toContain("signature form");
   });
 
   // The one case that still needs the old editor: a request filed before the switch, being fixed.
@@ -526,19 +638,24 @@ describe("request actions", () => {
 
   // Read off Book Meeting rather than the signature form: the signature card only renders a form
   // while correcting an already-sent request, and a correction relabels these very buttons.
-  it("puts Discard, Save and Submit at the bottom of the shared container", () => {
+  // The meeting table now renders only on the correction path, so its actions say so: a request
+  // reached through "edit" is being re-sent, not sent.
+  it("puts Discard, Save and the send action at the bottom of the shared container", () => {
     const { container } = draw({ template: "bookMeeting" });
     const request = container.querySelector<HTMLElement>(
       "[data-testid='logistics-meeting-request']",
     );
     const actions = request?.querySelector(".logistics-request__actions");
     expect(actions).not.toBeNull();
-    // Last thing in the card, after both sections.
-    expect(request?.lastElementChild).toBe(actions);
+    // After the table it acts on. It is no longer the last thing in the card: the link that opens
+    // the queue for reading sits below it, because reading the queue is not part of filing a row.
+    expect(request?.querySelector(".logistics-schools")?.compareDocumentPosition(actions!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     expect(actionButtons(container).map((button) => button.textContent?.trim())).toEqual([
       "Discard",
       "Save",
-      "Submit",
+      "Send the correction",
     ]);
   });
 
@@ -607,6 +724,26 @@ describe("request actions", () => {
       "Sent to the lab.",
     );
     expect(container.querySelector("[data-testid='logistics-blocked']")).toBeNull();
+  });
+
+  // The request landed; the row it proposes for itself may not have. Both are true at once, so the
+  // confirmation keeps its place and the call sheet's sentence sits under it.
+  it("carries what the call sheet made of a meeting request", () => {
+    const { container } = draw({
+      submitted: true,
+      submittedNote: "a row with this name and topic is already in the queue",
+    });
+    expect(container.querySelector("[data-testid='logistics-submitted']")?.textContent).toContain(
+      "Sent to the lab.",
+    );
+    expect(
+      container.querySelector("[data-testid='logistics-submitted-note']")?.textContent,
+    ).toContain("already in the queue");
+  });
+
+  it("says nothing about the call sheet when there is nothing to say", () => {
+    const { container } = draw({ submitted: true });
+    expect(container.querySelector("[data-testid='logistics-submitted-note']")).toBeNull();
   });
 
   it("shows a submit failure ahead of anything the local draft has to say", () => {
@@ -684,10 +821,10 @@ describe("list of schools", () => {
     ];
   }
 
-  it("leads the letters container, above Save and Submit", () => {
+  it("follows the Guidebook guidance, above Save and Submit", () => {
     const { container } = drawLetters();
     const card = container.querySelector<HTMLElement>("[data-testid='logistics-letters']");
-    expect(card?.firstElementChild?.querySelector(".card-title")?.textContent?.trim()).toBe(
+    expect(card?.children[1]?.querySelector(".card-title")?.textContent?.trim()).toBe(
       "List of Schools",
     );
     expect(card?.lastElementChild?.classList.contains("logistics-request__actions")).toBe(true);
@@ -717,8 +854,8 @@ describe("list of schools", () => {
     const { container } = drawLetters();
     const hints = [...schoolsTable(container).querySelectorAll(".logistics-schools__head-hint")];
     expect(hints.map((hint) => hint.textContent?.trim())).toEqual([
-      "if different",
-      "for both times on this row",
+      "Required",
+      "AoE (UTC−12) by default",
       "If it is not a regular program, what it looks for.",
     ]);
   });
@@ -839,7 +976,19 @@ describe("list of schools", () => {
     actions[1].click();
     expect(drawn.lettersSaves).toBe(1);
     expect(drawn.saves).toBe(0);
-    // Submit is the letters form's own too, not the signature form's.
+    // Saving remains available, but submitting requires explicit email confirmation.
+    actions[2].click();
+    expect(drawn.lettersSubmits).toBe(0);
+    const confirmation = drawn.container.querySelector<HTMLInputElement>(
+      "[data-testid='logistics-email-confirmation']",
+    )!;
+    expect(
+      confirmation.closest("label")?.querySelector(".cron-required-marker")?.textContent?.trim(),
+    ).toBe("*");
+    expect(confirmation.closest("label")?.textContent).not.toContain("Required:");
+    expect(confirmation.required).toBe(true);
+    expect(confirmation.checked).toBe(false);
+    confirmation.checked = true;
     actions[2].click();
     expect(drawn.lettersSubmits).toBe(1);
     expect(drawn.submits).toBe(0);
@@ -875,6 +1024,7 @@ describe("letter request links", () => {
     const card = section(container, "logistics-letters");
     const sections = [...card.querySelectorAll(":scope > .logistics-request__section")];
     expect(sections.map((entry) => entry.getAttribute("data-testid"))).toEqual([
+      "logistics-letters-guide",
       "logistics-schools",
       // What the member did comes before where the letter is written and stored: it is the part
       // only they can supply, and the two links are plumbing for it.
@@ -997,7 +1147,7 @@ describe("request modes", () => {
       [...container.querySelectorAll(".logistics-requests__head")].map((head) =>
         head.textContent?.trim(),
       ),
-    ).toEqual(["Type of Request", "Most Recent Deadline", "Status"]);
+    ).toEqual(["Type of Request", "Earliest deadline", "Status"]);
   });
 
   it("offers an admin the two modes above the templates", () => {
@@ -1050,15 +1200,18 @@ describe("request modes", () => {
     const headings = [...container.querySelectorAll(".logistics-requests__head")];
     expect(headings.map((heading) => heading.textContent?.trim())).toEqual([
       "Type of Request",
-      "Most Recent Deadline",
+      "Earliest deadline",
       "Status",
     ]);
     const rows = [...container.querySelectorAll(".logistics-requests__row")];
     expect(rows.map((row) => row.textContent?.replace(/\s+/gu, " ").trim())).toEqual([
-      "Recommendation Letters Dec 1, 2026 Submitted",
+      // All three are stored as the same `submitted`/`in_progress`, and the letter row is the one
+      // that must not read "Submitted": the request has been sent, the letter has not. The other
+      // two kinds are the thing being asked for, so they still say it. See logistics-status.ts.
+      "Recommendation Letters No deadline To submit",
       // A signature request names no date, so it says so rather than inventing one.
       "Document Signature No deadline In progress",
-      "Book Meeting Sep 1, 2026 Submitted",
+      "Book Meeting Sep 1, 2026, 14:00 America/Toronto Submitted",
     ]);
   });
 
@@ -1319,8 +1472,36 @@ describe("correcting a request already sent", () => {
     expect(drawn.cancelledEdits).toBe(1);
   });
 
+  it("offers the form for a new meeting request, and the sheet only for reading the queue", () => {
+    const { container } = draw({ template: "bookMeeting", meetingEditing: false });
+    const link = container.querySelector<HTMLAnchorElement>(
+      "[data-testid='logistics-meeting-sheet-link']",
+    );
+    // The gid is the tab. Without it the workbook opens on whichever sheet was last viewed, which
+    // for a member following this link is somebody else's.
+    expect(link?.getAttribute("href")).toBe(
+      "https://docs.google.com/spreadsheets/d/1ZqdaRzev6fFHxGbaAn_NDAPgv-Wi-hklHrT5jB68m68/edit?gid=1633153118#gid=1633153118",
+    );
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.getAttribute("rel")).toContain("noopener");
+    // The table is the point of the tab now: the doc prep link has to be collected somewhere the
+    // service can check it before it reaches her queue.
+    expect(container.querySelector("[data-testid='logistics-meeting']")).not.toBeNull();
+  });
+
+  // The one field somebody can leave blank and not find out until their call never gets scheduled.
+  // Named by what it is rather than by its column letter, since it is now filled in here.
+  it("says the doc prep link is mandatory, and that it has to open", () => {
+    const { container } = draw({ template: "bookMeeting", meetingEditing: false });
+    const mandatory = container.querySelector(
+      "[data-testid='logistics-meeting-mandatory']",
+    )?.textContent;
+    expect(mandatory).toContain("doc prep link is mandatory");
+    expect(mandatory).toContain("open for anyone with the link");
+  });
+
   it("says nothing about correcting on a form holding a new request", () => {
-    const { container } = draw({ template: "bookMeeting" });
+    const { container } = draw({ template: "bookMeeting", meetingEditing: false });
     expect(container.querySelector("[data-testid='logistics-editing']")).toBeNull();
   });
 });
@@ -1422,7 +1603,8 @@ describe("book meeting", () => {
     return draw({ ...options, template: "bookMeeting" });
   }
 
-  it("lays a request out as a row: when they asked, what for, when, on whose clock, how long", () => {
+  // Every column the call queue needs, in the order the queue reads them.
+  it("lays a request out as a row, through to the columns the call queue needs", () => {
     const { container } = drawMeeting({ meetings: [createMeetingRow()] });
     const names = [...container.querySelectorAll(".logistics-schools__head-name")];
     expect(names.map((name) => name.textContent?.trim())).toEqual([
@@ -1431,6 +1613,10 @@ describe("book meeting", () => {
       "Preferred time",
       "Time zone",
       "Call length (min)",
+      "Your city / when you can take calls",
+      "Doc prep of your questions",
+      "Said hello on WhatsApp?",
+      "Call still useful until",
     ]);
   });
 
@@ -1441,8 +1627,9 @@ describe("book meeting", () => {
     const row = container.querySelector<HTMLElement>(".logistics-schools__row")!;
     expect(row.querySelector(".logistics-meeting__submitted input")).toBeNull();
     expect(row.querySelector(".logistics-meeting__submitted")?.textContent?.trim()).not.toBe("");
-    // The four columns a member fills in, and no fifth.
-    expect(row.querySelectorAll("input")).toHaveLength(4);
+    // The seven typed columns plus the WhatsApp select, and nothing for the stamp.
+    expect(row.querySelectorAll("input")).toHaveLength(7);
+    expect(row.querySelectorAll("select")).toHaveLength(1);
   });
 
   it("prefills the zone from the browser so a proposed time means a real instant", () => {
@@ -1486,4 +1673,97 @@ describe("book meeting", () => {
     const { container } = drawMeeting();
     expect(container.querySelector(".logistics-schools__empty")).not.toBeNull();
   });
+});
+
+describe("recommendation letter Guidebook guidance", () => {
+  it("requires email confirmation again when resubmitting or discarding", () => {
+    const drawn = drawLetters({ editing: true });
+    const confirmation = drawn.container.querySelector<HTMLInputElement>(
+      "[data-testid='logistics-email-confirmation']",
+    )!;
+    const submit = drawn.container.querySelector<HTMLButtonElement>(
+      "[data-testid='logistics-submit']",
+    )!;
+    submit.click();
+    expect(drawn.lettersSubmits).toBe(0);
+    confirmation.checked = true;
+    submit.click();
+    expect(drawn.lettersSubmits).toBe(1);
+    drawn.container.querySelector<HTMLButtonElement>(".logistics-request__actions .btn")!.click();
+    expect(confirmation.checked).toBe(false);
+    submit.click();
+    expect(drawn.lettersSubmits).toBe(1);
+  });
+  it("shows preparation and exact section links before school fields, including edits", () => {
+    for (const editing of [false, true]) {
+      const { container } = drawLetters({ editing });
+      const guide = container.querySelector<HTMLElement>(
+        "[data-testid='logistics-letters-guide']",
+      )!;
+      expect(guide).not.toBeNull();
+      expect(guide.textContent).toContain("before submitting this request");
+      expect(guide.textContent).toContain("grad_app_[yourname]");
+      expect(guide.textContent).toContain("earliest deadline");
+      expect(guide.textContent).toContain("Statement of Purpose");
+      expect(guide.textContent).toContain("zjin.admin@cs.toronto.edu");
+      const links = [...guide.querySelectorAll<HTMLAnchorElement>("a")];
+      expect(links.map((link) => link.href)).toEqual([
+        "https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.7kpgc8qat88o",
+        "https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.ypvr8psn5zdy",
+      ]);
+      for (const link of links) {
+        expect(link.target).toBe("_blank");
+        expect(link.rel).toContain("noopener");
+      }
+      const schoolSection = container.querySelector("[data-testid='logistics-schools']")!;
+      expect(
+        guide.compareDocumentPosition(schoolSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  it("does not show recommendation instructions on other request forms or the request list", () => {
+    for (const options of [
+      { template: "documentSignature" },
+      { template: "bookMeeting" },
+      { template: "recommendationLetters", mode: "view" },
+    ] as DrawOptions[]) {
+      const { container } = draw(options);
+      expect(container.querySelector("[data-testid='logistics-letters-guide']")).toBeNull();
+    }
+  });
+});
+
+it("makes letter deadline required and defaults a new school to AoE", () => {
+  const { container } = draw({
+    template: "recommendationLetters",
+    schools: [createSchoolRow({ school: "Example" })],
+  });
+  expect(
+    container.querySelector<HTMLInputElement>(".logistics-schools__cell--letterDeadline input")
+      ?.required,
+  ).toBe(true);
+  expect(
+    container.querySelector<HTMLInputElement>(".logistics-schools__cell--deadlineTimezone input")
+      ?.value,
+  ).toBe("AoE");
+});
+
+// The same fields become stacked cards on phones. Their visible labels must survive without
+// relying on a table header that is above/offscreen while somebody edits a row.
+it("provides visible phone labels for every editable request cell", () => {
+  const letters = drawLetters({ schools: [createSchoolRow()], facts: [createFactRow()] }).container;
+  const meeting = draw({ template: "bookMeeting", meetings: [createMeetingRow()] }).container;
+  for (const view of [letters, meeting]) {
+    const cells = [...view.querySelectorAll(".logistics-schools__cell")].filter((cell) =>
+      cell.querySelector("input, select, textarea"),
+    );
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of cells) {
+      expect(cell.getAttribute("data-label")?.trim()).toBeTruthy();
+      expect(
+        cell.querySelector("input, select, textarea")?.getAttribute("aria-label")?.trim(),
+      ).toBeTruthy();
+    }
+  }
 });

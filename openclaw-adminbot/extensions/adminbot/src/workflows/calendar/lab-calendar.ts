@@ -10,6 +10,8 @@
 // working defaults, so a box that sets neither still operates on the calendar the lab actually
 // uses rather than on the bot's own `primary`.
 
+import { normalizeCalendarTimezone } from "./time.js";
+
 export const ADMINBOT_LAB_CALENDAR_ID_ENV = "ADMINBOT_LAB_CALENDAR_ID";
 export const ADMINBOT_LAB_CALENDAR_TZ_ENV = "ADMINBOT_LAB_CALENDAR_TIMEZONE";
 
@@ -30,6 +32,11 @@ export function labCalendarEmbedUrl(id: string, timezone: string): string {
 
 export function resolveLabCalendar(env: NodeJS.ProcessEnv = process.env): AdminBotLabCalendar {
   const id = env[ADMINBOT_LAB_CALENDAR_ID_ENV]?.trim() || DEFAULT_LAB_CALENDAR_ID;
-  const timezone = env[ADMINBOT_LAB_CALENDAR_TZ_ENV]?.trim() || DEFAULT_LAB_CALENDAR_TIMEZONE;
+  const configuredTimezone =
+    env[ADMINBOT_LAB_CALENDAR_TZ_ENV]?.trim() || DEFAULT_LAB_CALENDAR_TIMEZONE;
+  // Canonicalise the human-readable AoE labels used in conference material. Preserve any other
+  // invalid value so the write route can identify the deployment error instead of silently moving
+  // an event to the default zone.
+  const timezone = normalizeCalendarTimezone(configuredTimezone) ?? configuredTimezone;
   return { id, timezone, embed_url: labCalendarEmbedUrl(id, timezone) };
 }

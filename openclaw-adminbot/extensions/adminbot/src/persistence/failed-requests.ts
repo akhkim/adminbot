@@ -32,7 +32,9 @@ export type FailedExternalRequestLedger = {
   }): AdminBotFailedExternalRequest;
   update(
     id: string,
-    patch: Partial<Pick<AdminBotFailedExternalRequest, "status" | "error_message" | "attempt_count">>,
+    patch: Partial<
+      Pick<AdminBotFailedExternalRequest, "status" | "error_message" | "attempt_count">
+    >,
   ): AdminBotFailedExternalRequest | undefined;
   list(limit?: number): AdminBotFailedExternalRequest[];
 };
@@ -83,7 +85,9 @@ export function createSqliteFailedRequestLedger(databasePath: string): FailedExt
   return createFailedRequestLedgerFromDatabase(db);
 }
 
-export function createFailedRequestLedgerFromDatabase(db: DatabaseSync): FailedExternalRequestLedger {
+export function createFailedRequestLedgerFromDatabase(
+  db: DatabaseSync,
+): FailedExternalRequestLedger {
   const insert = db.prepare(`
     INSERT INTO adminbot_failed_external_requests
       (id, service_type, payload_json, error_message, status, attempt_count, created_at, updated_at)

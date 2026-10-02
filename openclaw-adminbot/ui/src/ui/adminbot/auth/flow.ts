@@ -2,12 +2,34 @@ import { t } from "../../../i18n/index.ts";
 import { resolveAdvertisedGatewayUrl } from "../../advertised-gateway-url.ts";
 import { clearDeviceAuthToken, storeDeviceAuthToken } from "../../device-auth.ts";
 import { loadOrCreateDeviceIdentity } from "../../device-identity.ts";
-import { clearSignedOutView } from "../../signed-out-view.ts";
+import { clearSignedOutView, goToSignedOutView } from "../../signed-out-view.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
   createEmptyAdminBotDashboardData,
+  createEmptyAdminBotMemberList,
+  createEmptyAdminBotStandingMeetings,
+  createEmptyAdminBotMemberNudgeState,
+  createEmptyAdminBotReimbursementState,
+  createEmptyLabPapersState,
+  createEmptyVenuePapersState,
+  createEmptyWorkshopNudgeReviewState,
+  EMPTY_SLACK_CHANNEL_CHECK,
   type AdminBotDashboardData,
+  type AdminBotCvDigestJobState,
+  type AdminBotLabPapersState,
+  type AdminBotMemberListState,
+  type AdminBotMemberNudgeState,
+  type AdminBotReimbursementState,
+  type AdminBotVenuePapersState,
+  type SlackChannelCheck,
+  type WorkshopNudgeReviewState,
 } from "../controllers/admin.ts";
+import { createEmptyAdminBotMemberRequests } from "../controllers/member-requests.ts";
+import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
+import { invalidateMemberMap } from "../data/member-map.ts";
+import { localTimezone } from "../data/timezones.ts";
+import type { TripDraft } from "../views/time-availability.trips.ts";
+import type { MilestoneDraft, TimeAvailabilityDraft } from "../views/time-availability.ts";
 // Control UI module orchestrates member auth against the app view state.
 //
 // Bridges the pure AdminBot API client (`adminbot-auth.ts`) into the running
@@ -17,6 +39,7 @@ import {
 import {
   type AuthErrorKind,
   acknowledgeOnboardingStep,
+  type MemberImpersonator,
   type MemberOnboarding,
   type MemberSession,
   type RosterMember,
@@ -39,6 +62,8 @@ import {
   saveStoredMemberSession,
   setOnboardingStep,
   signupMember,
+  startImpersonation,
+  stopImpersonation,
 } from "./session.ts";
 
 const MIN_CLAIM_PASSWORD_LENGTH = 10;
@@ -103,11 +128,210 @@ export type MemberAuthHost = {
   memberNotes: string;
   memberPrivilegeLevel: string | null;
   memberId: string | null;
-  // Cleared on sign-out. The roster and paper list now load off the *session* rather than off
-  // opening the Members tab (see app-render.ts), and the load is latched on `loadedAt` -- so
-  // leaving the previous member's data in place would make the next person to sign in on this
-  // browser land on a page showing it, with nothing to trigger a refetch.
+  // The admin behind the session, while one of them is viewing the lab as somebody else. Null in
+  // the ordinary case. Driven off what GET /auth/session reports rather than off what this client
+  // last did, so a reload -- or a session that expired on its own -- lands in the right state.
+  memberImpersonatedBy?: MemberImpersonator | null;
+  // Set while the swap in either direction is in flight, so the banner and the members tab can
+  // disable their buttons rather than let a double click open two sessions.
+  memberImpersonationBusy?: boolean;
+  memberImpersonationError?: string | null;
+  // Cleared on session change. The self record and paper list load off the session; the full
+  // roster loads on pages that need it. Both paths latch their reads, so an old member's data
+  // must be removed before the next session renders.
   adminBotData?: AdminBotDashboardData;
+  adminBotRosterLoadedAt?: number | null;
+  adminBotRosterLoading?: boolean;
+  adminBotRosterError?: string | null;
+  adminBotRosterRequestId?: number;
+  adminBotMemberMap?: import("../data/member-map.ts").MemberMap | null;
+  adminBotMemberMapLoading?: boolean;
+  adminBotMemberMapRequestId?: number;
+  adminBotLoading?: boolean;
+  adminBotError?: string | null;
+  adminBotMemberList?: AdminBotMemberListState;
+  adminBotStandingMeetings?: import("../controllers/admin.ts").AdminBotStandingMeetingsState;
+  adminBotMemberRequests?: import("../controllers/member-requests.ts").AdminBotMemberRequestsState;
+  adminBotMemberNudge?: AdminBotMemberNudgeState;
+  resetMemberViewSessionState?: () => void;
+  adminBotBusyActionId?: string | null;
+  adminBotSelectedActionIds?: string[];
+  adminBotBulkActionBusy?: boolean;
+  adminBotTimeAvailabilityMemberId?: string;
+  adminBotTimeAvailabilityRange?: import("../views/time-availability.ts").TimeAvailabilityRange;
+  adminBotTimeChartWindow?: import("../views/time-allocation-chart.ts").TimeChartWindow | null;
+  adminBotTimeAwayDraft?: TimeAvailabilityDraft;
+  adminBotTimeAvailabilityDraft?: TimeAvailabilityDraft;
+  adminBotMilestoneDraft?: MilestoneDraft;
+  adminBotTripDraft?: TripDraft;
+  adminBotAvailabilityNotesDraft?: string | null;
+  adminBotActiveCommitmentType?: string | null;
+  adminBotTimeAvailabilitySaving?: boolean;
+  myWorkCoauthorDraft?: Record<string, { email: string; name: string; twitter: string }>;
+  myWorkBlockerDraft?: import("../views/my-work.ts").BlockerDraft | null;
+  myWorkBlockers?: import("../views/my-work.ts").Blocker[];
+  myWorkProjectDraft?: string | null;
+  myWorkProjectAlias?: string;
+  myWorkProjectError?: string | null;
+  myWorkProjectEdits?: Record<
+    string,
+    { title: string; alias: string; startedOn: string; error: string | null }
+  >;
+  myWorkChannelCheck?: SlackChannelCheck;
+  myWorkProjectVenues?: Array<{ venueId: string; year: number; confidence: number }>;
+  profileEditingSection?: "basics" | null;
+  profileAccountChecks?: Record<
+    string,
+    import("../views/profile-account-check.ts").ProfileAccountCheck
+  >;
+  adminBotVenueFilter?: string;
+  adminBotPreregMissingEdit?: boolean;
+  adminBotPaperCardId?: string | null;
+  profileBadgeNomineeId?: string;
+  adminBotBadgeAssignRowId?: string;
+  adminBotBadgeMemberQuery?: string;
+  adminBotBadgeEditId?: string;
+  adminBotBadgeBusyKey?: string | null;
+  adminBotBadgeNotice?: { kind: "success" | "error"; text: string } | null;
+  profileBadgeBusy?: boolean;
+  profileBadgeNotice?: { kind: "success" | "error"; text: string } | null;
+  badgeSuggestionBusy?: boolean;
+  badgeSuggestionNotice?: { kind: "success" | "error"; text: string } | null;
+  profileBadgeSuggestOpen?: boolean;
+  adminBotCvDigestJob?: AdminBotCvDigestJobState;
+  adminBotVenueIndexJob?: AdminBotCvDigestJobState;
+  adminBotChannelNamingJob?: AdminBotCvDigestJobState;
+  adminBotVenuePapers?: AdminBotVenuePapersState;
+  adminBotLabPapers?: AdminBotLabPapersState;
+  adminBotWorkshopNudges?: WorkshopNudgeReviewState;
+  registrations?: import("./session.ts").MemberRegistration[];
+  registrationsLoading?: boolean;
+  registrationsError?: import("../data/registrations.ts").RegistrationsLoadError | null;
+  registrationsBusyId?: string | null;
+  registrationsNotice?: { kind: "success" | "error"; text: string } | null;
+  adminBotNotifications?: import("./session.ts").MemberNotification[];
+  adminBotNotificationsError?: string | null;
+  adminBotBroadcast?: import("./session.ts").LabBroadcast | null;
+  adminBotBroadcastHistory?: import("./session.ts").LabBroadcast[];
+  adminBotBroadcastDraft?: string;
+  adminBotBroadcastExpiry?: string;
+  adminBotBroadcastAvailability?: string;
+  adminBotBroadcastTimezone?: string;
+  adminBotBroadcastBusy?: boolean;
+  adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
+  adminBotNotice?: { kind: "success" | "error"; text: string } | null;
+  professorExpandedLists?: Set<string>;
+  memberSheet?: import("./session.ts").MemberSheetView | null;
+  memberSheetLoadedAt?: number | null;
+  memberSheetBusy?: boolean;
+  memberSheetError?: string | null;
+  memberSheetEdits?: Record<string, string>;
+  memberSheetBaseline?: Record<string, string>;
+  memberSheetSelection?: number[];
+  memberSheetSaveResult?: import("./session.ts").MemberSheetEditResult | null;
+  memberSheetOnboardResult?: import("./session.ts").MemberSheetOnboardResult | null;
+  memberSheetAddRowResult?: import("./session.ts").MemberSheetAddRowResult | null;
+  adminBotProfileOverview?: import("./session.ts").MemberProfileOverviewRow[];
+  adminBotProfileOverviewLoadedAt?: number | null;
+  adminBotProfileOverviewLoading?: boolean;
+  adminBotProfileOverviewError?: string | null;
+  adminBotProfileOverviewFieldCount?: number;
+  adminBotProfileOverviewReminding?: boolean;
+  adminBotProfileOverviewNotice?: string | null;
+  adminBotProfileAdoption?: import("./session.ts").MemberAdoptionSummary | null;
+  adminBotEscalatedNudges?: import("./session.ts").EscalatedNudgeRow[];
+  adminBotPiReview?: import("./session.ts").PiReviewRow[];
+  adminBotPiReviewError?: string | null;
+  adminBotTravel?: TravelState;
+  adminBotLocationDrift?: import("./session.ts").LocationDrift | null;
+  adminBotLocationDrifts?: import("./session.ts").LocationDrift[];
+  adminBotLocationSaving?: boolean;
+  adminBotLocationError?: string | null;
+  adminBotMeetings?: import("./session.ts").MeetingRecord[];
+  adminBotMeetingsRequestVersion?: number;
+  adminBotMeetingsNextCursor?: import("./session.ts").MeetingCursor | null;
+  adminBotMeetingsLoadingMore?: boolean;
+  adminBotMeetingsVisibleCount?: number;
+  adminBotMeetingsLoading?: boolean;
+  adminBotMeetingsSaving?: boolean;
+  adminBotMeetingsError?: string | null;
+  adminBotMeetingNudgePreview?: import("./session.ts").MeetingAttendanceNudgePreview | null;
+  adminBotMeetingNudgeResult?: import("./session.ts").MeetingAttendanceNudgeResult | null;
+  adminBotMeetingNudgeBusy?: boolean;
+  adminBotMeetingNudgeError?: string | null;
+  calendarEvents?: import("./session.ts").CalendarEvent[];
+  calendarEventsLoading?: boolean;
+  calendarEventsError?: string | null;
+  calendarSource?: import("./session.ts").LabCalendar | null;
+  calendarMonth?: string;
+  calendarPrompt?: string;
+  calendarMessages?: Array<{ role: "user" | "assistant"; content: string }>;
+  calendarDraft?: import("./session.ts").CalendarEventDraft | null;
+  calendarDraftBusy?: boolean;
+  calendarDraftError?: string | null;
+  calendarSelectedEventId?: string | null;
+  calendarOpenDay?: string | null;
+  calendarOpenEventId?: string | null;
+  calendarEditingEventId?: string | null;
+  calendarAudience?: Record<string, unknown>;
+  calendarExcludedMemberIds?: string[];
+  calendarBusy?: boolean;
+  calendarConfirming?: "save" | "invite" | null;
+  adminBotPaperSlotOverview?: import("./session.ts").PaperSlotOverviewRow[];
+  adminBotPaperSlots?: Record<string, import("./session.ts").PaperCycle>;
+  adminBotPaperSlotsOpen?: string[];
+  adminBotPaperSlotsLoadedAt?: number | null;
+  adminBotPaperSlotsLoading?: boolean;
+  adminBotPaperSlotsError?: string | null;
+  adminBotPaperSlotsNudging?: boolean;
+  adminBotPaperSlotsNotice?: string | null;
+  adminBotPaperSlotsBusyId?: string | null;
+  adminBotPaperNudgeBatches?: import("./session.ts").PaperNudgeBatch[] | null;
+  adminBotPaperNudgeLoading?: boolean;
+  adminBotPaperNudgeSelected?: string[];
+  adminBotTripDrafts?: Record<string, import("../views/paper-cycle.ts").PaperTripDraft>;
+  adminBotTripSavingKey?: string | null;
+  adminBotTabUsage?: import("./session.ts").TabVisitReport | null;
+  adminBotTabUsageLoadedAt?: number | null;
+  adminBotTabUsageLoading?: boolean;
+  adminBotTabUsageError?: string | null;
+  adminBotTabUsageExporting?: boolean;
+  adminBotReimbursement?: AdminBotReimbursementState;
+  adminBotLogisticsRequests?: import("./session.ts").LogisticsRequest[];
+  adminBotLogisticsRequestsLoading?: boolean;
+  adminBotLogisticsRequestsError?: string | null;
+  adminBotLogisticsRequestsLoadedAt?: number | null;
+  adminBotLogisticsOpenRequestId?: string | null;
+  adminBotLogisticsOpenRequest?: import("./session.ts").LogisticsRequest | null;
+  adminBotLogisticsOpenLoading?: boolean;
+  adminBotLogisticsDraftScope?: string | null;
+  adminBotLogisticsDescription?: string;
+  adminBotLogisticsSignatureFiles?: File[];
+  adminBotLogisticsAttachments?: File[];
+  adminBotLogisticsSavedAt?: number | null;
+  adminBotLettersSchools?: import("../data/logistics-draft.ts").RecommendationSchool[];
+  adminBotLettersFacts?: import("../data/logistics-draft.ts").LetterFact[];
+  adminBotLettersCvOverleafUrl?: string;
+  adminBotLettersDriveFolderUrl?: string;
+  adminBotLettersSavedAt?: number | null;
+  adminBotMeetingRows?: import("../data/logistics-draft.ts").MeetingRequestRow[];
+  adminBotMeetingSavedAt?: number | null;
+  adminBotSignatureForm?: { driveUrl: string; deadline: string; context: string };
+  adminBotLogisticsSignedNote?: string;
+  adminBotLogisticsStatusNote?: string;
+  adminBotLogisticsEditingId?: string | null;
+  adminBotBadgeDefinitions?: import("./session.ts").BadgeDefinition[];
+  adminBotBadgeDefinitionsLoadedAt?: number | null;
+  adminBotBadgeDefinitionsError?: import("../data/badges.ts").BadgeLoadError | null;
+  adminBotBadgeNominations?: import("./session.ts").BadgeNominationView[];
+  adminBotBadgeNominationsLoadedAt?: number | null;
+  adminBotBadgeNominationsError?: import("../data/badges.ts").BadgeLoadError | null;
+  profileBadgeNominations?: import("./session.ts").BadgeNominationView[];
+  profileBadgeNominationsLoadedAt?: number | null;
+  profileBadgeNominationsError?: import("../data/badges.ts").BadgeLoadError | null;
+  adminBotBadgeSuggestions?: import("./session.ts").BadgeSuggestionView[];
+  adminBotBadgeSuggestionsLoadedAt?: number | null;
+  adminBotBadgeSuggestionsError?: import("../data/badges.ts").BadgeLoadError | null;
   adminBotOnboarding: MemberOnboarding | null;
   // Whether the signed-in member has explicitly clicked "I have read this" on the dashboard's
   // onboarding warning card, in this browser. False (and the card showing) is the default
@@ -115,6 +339,20 @@ export type MemberAuthHost = {
   adminBotOnboardingAcknowledged: boolean;
   adminBotOnboardingBusyStepId: string | null;
   adminBotOnboardingError: string | null;
+  // Collaborate's state, declared here only so signing out can drop it. All optional: the hosts
+  // that drive this flow without rendering the tab (tests, the console) never set any of them.
+  labSharing?: import("../data/lab-sharing.ts").LabSharingSnapshot | undefined;
+  labSharingLoading?: boolean;
+  labSharingErrors?: string[];
+  labSharingMembers?: import("../data/lab-sharing.ts").LabSharingMemberMatch[];
+  labSharingAnnouncements?: import("../views/lab-sharing.ts").Announcement[];
+  labSharingNotice?: string | null;
+  labSharingSearchQuery?: string;
+  labSharingAskProjectId?: string;
+  labSharingAskComment?: string;
+  labSharingAskTags?: string[];
+  labSharingInvitedMemberIds?: string[];
+  labSharingRespondedInviteIds?: string[];
   // Optional so the auth flow can be driven by hosts that never render the gate (tests, the
   // console). Signing out closes it so the visitor lands on the public shell, not the form.
   authGateVisible?: boolean;
@@ -200,12 +438,19 @@ function buildSignupProfile(host: MemberAuthHost): SignupProfile {
 // Loads the unclaimed roster for the claim picker. Called when the user enters
 // claim mode; leaves an existing selection untouched on refresh.
 export async function loadRoster(host: MemberAuthHost): Promise<void> {
+  const query = host.rosterFilter.trim();
   host.rosterLoading = true;
   host.memberAuthFailure = null;
   try {
-    const result = await fetchRoster(resolveAdminBotBaseUrl(host.settings));
+    const result = await fetchRoster(resolveAdminBotBaseUrl(host.settings), query);
+    if (host.rosterFilter.trim() !== query) {
+      return;
+    }
     if (result.ok) {
-      host.rosterMembers = result.value;
+      const selected = host.rosterMembers.find((member) => member.id === host.selectedMemberId);
+      host.rosterMembers = selected
+        ? [selected, ...result.value.filter((member) => member.id !== selected.id)]
+        : result.value;
       host.rosterError = null;
       return;
     }
@@ -216,7 +461,9 @@ export async function loadRoster(host: MemberAuthHost): Promise<void> {
       host.memberAuthFailure = { kind: "adminbot-unreachable" };
     }
   } finally {
-    host.rosterLoading = false;
+    if (host.rosterFilter.trim() === query) {
+      host.rosterLoading = false;
+    }
   }
 }
 
@@ -225,17 +472,21 @@ export async function loadRoster(host: MemberAuthHost): Promise<void> {
 // is the whole point — no member ever has to hold (or paste) the shared gateway secret.
 //
 // Returns false whenever the token can't be minted (insecure context with no crypto.subtle, an
-// AdminBot that predates the route, or a gateway with no shared secret to bind to) so the caller
-// falls back to the token the session handed it instead of leaving the user stranded offline.
+// AdminBot that predates the route, or a gateway with no shared secret to bind to). The caller then
+// fails closed rather than handing a browser the service-wide gateway credential.
 async function ensureMemberDeviceToken(
   host: MemberAuthHost,
   sessionToken: string,
+  isCurrent?: () => boolean,
 ): Promise<boolean> {
-  if (typeof crypto === "undefined" || !crypto.subtle) {
+  if (isCurrent?.() === false || typeof crypto === "undefined" || !crypto.subtle) {
     return false;
   }
   try {
     const identity = await loadOrCreateDeviceIdentity();
+    if (isCurrent?.() === false) {
+      return false;
+    }
     const result = await issueDeviceToken(
       {
         deviceId: identity.deviceId,
@@ -246,6 +497,9 @@ async function ensureMemberDeviceToken(
       resolveAdminBotBaseUrl(host.settings),
     );
     if (!result.ok) {
+      return false;
+    }
+    if (isCurrent?.() === false || loadStoredMemberSession()?.sessionToken !== sessionToken) {
       return false;
     }
     // Stored under the same key the gateway client reads at connect, so the client picks it up
@@ -262,15 +516,24 @@ async function ensureMemberDeviceToken(
   }
 }
 
-// Applies the gateway settings a signed-in member connects with. The shared gateway token from the
-// session is only injected when this browser could not get a device token of its own — otherwise
-// settings.token stays empty, which is what makes the client authenticate as the device.
+// Applies the gateway settings a signed-in member connects with. A member session is never allowed
+// to carry the shared gateway secret: if device-token issuance is unavailable, fail closed instead
+// of turning every browser session into a copy of the server credential.
 async function connectAsMember(
   host: MemberAuthHost,
-  session: { session_token?: string; gateway?: { url?: string; token?: string } },
+  session: { session_token?: string; gateway?: { url?: string } },
   sessionToken: string,
+  isCurrent?: () => boolean,
 ) {
-  const hasDeviceToken = await ensureMemberDeviceToken(host, sessionToken);
+  const hasDeviceToken = await ensureMemberDeviceToken(host, sessionToken, isCurrent);
+  if (isCurrent?.() === false || loadStoredMemberSession()?.sessionToken !== sessionToken) {
+    return;
+  }
+  if (!hasDeviceToken) {
+    host.memberFormError =
+      "This browser could not obtain its device credential. Try signing in again or contact an administrator.";
+    return;
+  }
   host.applySettings({
     ...host.settings,
     gatewayUrl: resolveAdvertisedGatewayUrl({
@@ -278,12 +541,252 @@ async function connectAsMember(
       current: host.settings.gatewayUrl,
       ...(typeof window === "undefined" ? {} : { pageHref: window.location?.href }),
     }),
-    token: hasDeviceToken ? "" : (session.gateway?.token ?? host.settings.token),
+    token: "",
   });
   host.connect();
 }
 
+function clearMemberScopedData(host: MemberAuthHost): void {
+  host.adminBotRosterRequestId = (host.adminBotRosterRequestId ?? 0) + 1;
+  host.adminBotRosterLoadedAt = null;
+  host.adminBotRosterLoading = false;
+  host.adminBotRosterError = null;
+  invalidateMemberMap(host);
+  if (host.adminBotData) {
+    host.adminBotData = createEmptyAdminBotDashboardData();
+  }
+  host.adminBotLoading = false;
+  host.adminBotError = null;
+  if (host.adminBotMemberList) {
+    host.adminBotMemberList = createEmptyAdminBotMemberList();
+  }
+  // Guest lists name people; the next session on this browser reads its own.
+  if (host.adminBotStandingMeetings) {
+    host.adminBotStandingMeetings = createEmptyAdminBotStandingMeetings();
+  }
+  // Requests name the people proposed and who proposed them; the next session reads its own.
+  if (host.adminBotMemberRequests) {
+    host.adminBotMemberRequests = createEmptyAdminBotMemberRequests();
+  }
+  host.adminBotMemberNudge = createEmptyAdminBotMemberNudgeState();
+  host.resetMemberViewSessionState?.();
+  host.adminBotBusyActionId = null;
+  host.adminBotSelectedActionIds = [];
+  host.adminBotBulkActionBusy = false;
+  host.adminBotTimeAvailabilityMemberId = "";
+  host.adminBotTimeAvailabilityRange = "month";
+  host.adminBotTimeChartWindow = null;
+  const emptyScheduleDraft: TimeAvailabilityDraft = {
+    category: "jinesis",
+    customLabel: "",
+    project: "",
+    start: "",
+    end: "",
+    hoursPerWeek: "",
+    wholeDay: true,
+    note: "",
+    link: "",
+    editingIndex: null,
+  };
+  host.adminBotTimeAwayDraft = { ...emptyScheduleDraft, category: "vacation" };
+  host.adminBotTimeAvailabilityDraft = { ...emptyScheduleDraft };
+  host.adminBotMilestoneDraft = {
+    date: "",
+    label: "",
+    link: "",
+    time: "",
+    timezone: localTimezone(),
+  };
+  host.adminBotTripDraft = {
+    city: "",
+    start: "",
+    end: "",
+    timezone: "",
+    note: "",
+    editingIndex: null,
+  };
+  host.adminBotAvailabilityNotesDraft = null;
+  host.adminBotActiveCommitmentType = null;
+  host.adminBotTimeAvailabilitySaving = false;
+  host.myWorkCoauthorDraft = {};
+  host.myWorkBlockerDraft = null;
+  host.myWorkBlockers = [];
+  host.myWorkProjectDraft = null;
+  host.myWorkProjectAlias = "";
+  host.myWorkProjectError = null;
+  host.myWorkProjectEdits = {};
+  host.myWorkChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
+  host.myWorkProjectVenues = [];
+  host.profileEditingSection = null;
+  host.profileAccountChecks = {};
+  host.adminBotVenueFilter = "";
+  host.adminBotPreregMissingEdit = false;
+  host.adminBotPaperCardId = null;
+  host.profileBadgeNomineeId = "";
+  host.adminBotBadgeAssignRowId = "";
+  host.adminBotBadgeMemberQuery = "";
+  host.adminBotBadgeEditId = "";
+  host.adminBotBadgeBusyKey = null;
+  host.adminBotBadgeNotice = null;
+  host.profileBadgeBusy = false;
+  host.profileBadgeNotice = null;
+  host.badgeSuggestionBusy = false;
+  host.badgeSuggestionNotice = null;
+  host.profileBadgeSuggestOpen = false;
+  host.adminBotCvDigestJob = { status: "idle" };
+  host.adminBotVenueIndexJob = { status: "idle" };
+  host.adminBotChannelNamingJob = { status: "idle" };
+  host.adminBotVenuePapers = createEmptyVenuePapersState();
+  host.adminBotLabPapers = createEmptyLabPapersState();
+  host.adminBotWorkshopNudges = createEmptyWorkshopNudgeReviewState();
+  host.registrations = [];
+  host.registrationsLoading = false;
+  host.registrationsError = null;
+  host.registrationsBusyId = null;
+  host.registrationsNotice = null;
+  host.adminBotNotifications = undefined;
+  host.adminBotNotificationsError = null;
+  host.adminBotBroadcast = undefined;
+  host.adminBotBroadcastHistory = undefined;
+  host.adminBotBroadcastDraft = undefined;
+  host.adminBotBroadcastExpiry = undefined;
+  host.adminBotBroadcastAvailability = undefined;
+  host.adminBotBroadcastTimezone = undefined;
+  host.adminBotBroadcastBusy = false;
+  host.adminBotBroadcastNotice = null;
+  host.adminBotNotice = null;
+  host.professorExpandedLists = new Set();
+  host.memberSheet = null;
+  host.memberSheetLoadedAt = null;
+  host.memberSheetBusy = false;
+  host.memberSheetError = null;
+  host.memberSheetEdits = {};
+  host.memberSheetBaseline = {};
+  host.memberSheetSelection = [];
+  host.memberSheetSaveResult = null;
+  host.memberSheetOnboardResult = null;
+  host.memberSheetAddRowResult = null;
+  host.adminBotProfileOverview = [];
+  host.adminBotProfileOverviewLoadedAt = null;
+  host.adminBotProfileOverviewLoading = false;
+  host.adminBotProfileOverviewError = null;
+  host.adminBotProfileOverviewFieldCount = 0;
+  host.adminBotProfileOverviewReminding = false;
+  host.adminBotProfileOverviewNotice = null;
+  host.adminBotProfileAdoption = null;
+  host.adminBotEscalatedNudges = [];
+  host.adminBotPiReview = [];
+  host.adminBotPiReviewError = null;
+  host.adminBotTravel = { ...EMPTY_TRAVEL };
+  host.adminBotLocationDrift = undefined;
+  host.adminBotLocationDrifts = undefined;
+  host.adminBotLocationSaving = false;
+  host.adminBotLocationError = null;
+  host.adminBotMeetings = undefined;
+  host.adminBotMeetingsRequestVersion = (host.adminBotMeetingsRequestVersion ?? 0) + 1;
+  host.adminBotMeetingsNextCursor = null;
+  host.adminBotMeetingsLoadingMore = false;
+  host.adminBotMeetingsVisibleCount = 12;
+  host.adminBotMeetingsLoading = false;
+  host.adminBotMeetingsSaving = false;
+  host.adminBotMeetingsError = null;
+  host.adminBotMeetingNudgePreview = null;
+  host.adminBotMeetingNudgeResult = null;
+  host.adminBotMeetingNudgeBusy = false;
+  host.adminBotMeetingNudgeError = null;
+  host.calendarEvents = undefined;
+  host.calendarEventsLoading = false;
+  host.calendarEventsError = null;
+  host.calendarSource = null;
+  host.calendarMonth = undefined;
+  host.calendarPrompt = "";
+  host.calendarMessages = [];
+  host.calendarDraft = null;
+  host.calendarDraftBusy = false;
+  host.calendarDraftError = null;
+  host.calendarSelectedEventId = null;
+  host.calendarOpenDay = null;
+  host.calendarOpenEventId = null;
+  host.calendarEditingEventId = null;
+  host.calendarAudience = {};
+  host.calendarExcludedMemberIds = [];
+  host.calendarBusy = false;
+  host.calendarConfirming = null;
+  host.adminBotPaperSlotOverview = [];
+  host.adminBotPaperSlots = {};
+  host.adminBotPaperSlotsOpen = [];
+  host.adminBotPaperSlotsLoadedAt = null;
+  host.adminBotPaperSlotsLoading = false;
+  host.adminBotPaperSlotsError = null;
+  host.adminBotPaperSlotsNudging = false;
+  host.adminBotPaperSlotsNotice = null;
+  host.adminBotPaperSlotsBusyId = null;
+  host.adminBotPaperNudgeBatches = null;
+  host.adminBotPaperNudgeLoading = false;
+  host.adminBotPaperNudgeSelected = [];
+  host.adminBotTripDrafts = {};
+  host.adminBotTripSavingKey = null;
+  host.adminBotTabUsage = null;
+  host.adminBotTabUsageLoadedAt = null;
+  host.adminBotTabUsageLoading = false;
+  host.adminBotTabUsageError = null;
+  host.adminBotTabUsageExporting = false;
+  if (host.adminBotReimbursement) {
+    host.adminBotReimbursement = createEmptyAdminBotReimbursementState();
+  }
+  if (host.adminBotLogisticsRequests) {
+    host.adminBotLogisticsRequests = [];
+  }
+  host.adminBotLogisticsRequestsLoading = false;
+  host.adminBotLogisticsRequestsError = null;
+  host.adminBotLogisticsRequestsLoadedAt = null;
+  host.adminBotLogisticsOpenRequestId = null;
+  host.adminBotLogisticsOpenRequest = null;
+  host.adminBotLogisticsOpenLoading = false;
+  host.adminBotLogisticsDraftScope = null;
+  host.adminBotLogisticsDescription = "";
+  host.adminBotLogisticsSignatureFiles = [];
+  host.adminBotLogisticsAttachments = [];
+  host.adminBotLogisticsSavedAt = null;
+  host.adminBotLettersSchools = [];
+  host.adminBotLettersFacts = [];
+  host.adminBotLettersCvOverleafUrl = "";
+  host.adminBotLettersDriveFolderUrl = "";
+  host.adminBotLettersSavedAt = null;
+  host.adminBotMeetingRows = [];
+  host.adminBotMeetingSavedAt = null;
+  host.adminBotSignatureForm = { driveUrl: "", deadline: "", context: "" };
+  host.adminBotLogisticsSignedNote = "";
+  host.adminBotLogisticsStatusNote = "";
+  host.adminBotLogisticsEditingId = null;
+  host.adminBotBadgeDefinitions = [];
+  host.adminBotBadgeDefinitionsLoadedAt = null;
+  host.adminBotBadgeDefinitionsError = null;
+  host.adminBotBadgeNominations = [];
+  host.adminBotBadgeNominationsLoadedAt = null;
+  host.adminBotBadgeNominationsError = null;
+  host.profileBadgeNominations = [];
+  host.profileBadgeNominationsLoadedAt = null;
+  host.profileBadgeNominationsError = null;
+  host.adminBotBadgeSuggestions = [];
+  host.adminBotBadgeSuggestionsLoadedAt = null;
+  host.adminBotBadgeSuggestionsError = null;
+  host.labSharing = undefined;
+  host.labSharingLoading = false;
+  host.labSharingErrors = [];
+  host.labSharingMembers = [];
+  host.labSharingAnnouncements = [];
+  host.labSharingNotice = null;
+  host.labSharingSearchQuery = "";
+  host.labSharingAskProjectId = "";
+  host.labSharingAskComment = "";
+  host.labSharingAskTags = [];
+  host.labSharingInvitedMemberIds = [];
+  host.labSharingRespondedInviteIds = [];
+}
+
 async function applyMemberSession(host: MemberAuthHost, session: MemberSession) {
+  clearMemberScopedData(host);
   await cacheOfflineMemberSession(
     session.session_token,
     resolveAdminBotBaseUrl(host.settings),
@@ -301,6 +804,7 @@ async function applyMemberSession(host: MemberAuthHost, session: MemberSession) 
   // of assuming admin for every signed-in member.
   host.memberPrivilegeLevel = session.member?.privilege_level ?? null;
   host.memberId = session.member?.id ?? null;
+  host.memberImpersonatedBy = session.impersonated_by ?? null;
   // A rejected device token before sign-in cannot recover — recoverFromRejectedDeviceToken needs a
   // member session and returns false without one — but it still burns the once-per-session latch.
   // Signing in is exactly the event that makes recovery possible, so re-arm it here; otherwise the
@@ -313,6 +817,7 @@ async function applyMemberSession(host: MemberAuthHost, session: MemberSession) 
   host.adminBotOnboardingAcknowledged = host.memberId
     ? hasAcknowledgedOnboardingChecklist(host.memberId)
     : true;
+  clearSignedOutView(host);
   await connectAsMember(host, session, session.session_token);
 }
 
@@ -454,28 +959,42 @@ export async function submitMemberAuth(host: MemberAuthHost): Promise<void> {
 // Resume outcome kinds let the init path decide whether to fall back to the gate.
 export type ResumeOutcome = "no-session" | "resumed" | "unreachable" | "cleared";
 
-export async function resumeMemberSession(host: MemberAuthHost): Promise<ResumeOutcome> {
+export async function resumeMemberSession(
+  host: MemberAuthHost,
+  isCurrent?: () => boolean,
+): Promise<ResumeOutcome> {
   const stored = loadStoredMemberSession();
   if (!stored) {
     return "no-session";
   }
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   const result = await fetchMemberSession(stored.sessionToken, baseUrl);
+  if (isCurrent?.() === false || loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+    return "no-session";
+  }
   if (result.ok) {
+    if (
+      host.memberId !== result.value.member?.id ||
+      host.memberPrivilegeLevel !== (result.value.member?.privilege_level ?? null)
+    ) {
+      clearMemberScopedData(host);
+    }
     saveStoredMemberSession({
       sessionToken: stored.sessionToken,
       expiresAt: result.value.expires_at,
     });
     host.memberPrivilegeLevel = result.value.member?.privilege_level ?? null;
     host.memberId = result.value.member?.id ?? null;
+    host.memberImpersonatedBy = result.value.impersonated_by ?? null;
     // Refreshed on every resume, not just a fresh sign-in: the dashboard warning card is meant
     // to keep appearing on reload after reload until the member actually acknowledges it.
     host.adminBotOnboarding = result.value.member?.onboarding ?? null;
     host.adminBotOnboardingAcknowledged = host.memberId
       ? hasAcknowledgedOnboardingChecklist(host.memberId)
       : true;
+    clearSignedOutView(host);
     if (!result.cached) {
-      await connectAsMember(host, result.value, stored.sessionToken);
+      await connectAsMember(host, result.value, stored.sessionToken, isCurrent);
     }
     return "resumed";
   }
@@ -485,9 +1004,116 @@ export async function resumeMemberSession(host: MemberAuthHost): Promise<ResumeO
     host.memberAuthFailure = { kind: "adminbot-unreachable" };
     return "unreachable";
   }
-  // 401 / rejected: the stored session is dead — drop it and show the gate.
-  clearStoredMemberSession();
+  // 401 / rejected: the stored session is dead. Remove its data and gateway access before
+  // returning to the gate; clearing only the browser token leaves an authenticated view alive.
+  clearLocalMemberSession(host);
+  await clearMemberDeviceToken(() => loadStoredMemberSession() === null);
   return "cleared";
+}
+
+/**
+ * Start viewing the lab as another member.
+ *
+ * The admin's own session is parked in storage rather than dropped, and the impersonated one takes
+ * its place as the active token -- so every existing call site keeps reading "the session" without
+ * knowing anything has happened, which is what makes the whole app render the member's view rather
+ * than only the pages that were taught about impersonation.
+ *
+ * Everything else about this is `applyMemberSession`, the same path a fresh sign-in takes: the
+ * gateway reconnects with the member's privileges, the dashboard reloads against their data, and
+ * the onboarding card resolves for them. Reusing it is the point -- a bespoke half-swap is how a
+ * page ends up showing one member's roster and another's papers.
+ */
+export async function beginViewAs(host: MemberAuthHost, memberId: string): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored || host.memberImpersonationBusy) {
+    return;
+  }
+  // Refuse to nest locally as well as server-side, so the button cannot get an admin into a state
+  // whose way back is ambiguous even briefly.
+  if (stored.impersonator) {
+    return;
+  }
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  host.memberImpersonationBusy = true;
+  host.memberImpersonationError = null;
+  try {
+    const result = await startImpersonation(memberId, stored.sessionToken, baseUrl);
+    if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+      if (result.ok) {
+        await logoutMember(result.value.session_token, baseUrl);
+      }
+      return;
+    }
+    if (!result.ok) {
+      host.memberImpersonationError =
+        result.kind === "unreachable"
+          ? t("adminbot.impersonation.unreachable")
+          : t("adminbot.impersonation.refused");
+      return;
+    }
+    await applyMemberSession(host, result.value);
+    if (loadStoredMemberSession()?.sessionToken !== result.value.session_token) {
+      // Sign-out may have happened while the new device credential was being minted.
+      await Promise.all([
+        logoutMember(result.value.session_token, baseUrl),
+        logoutMember(stored.sessionToken, baseUrl),
+      ]);
+      return;
+    }
+    // After applyMemberSession, which has just written the new token: parking the admin's own has
+    // to be the last write, or the save inside it would drop it again.
+    saveStoredMemberSession({
+      sessionToken: result.value.session_token,
+      expiresAt: result.value.expires_at,
+      impersonator: { sessionToken: stored.sessionToken, expiresAt: stored.expiresAt },
+    });
+  } finally {
+    host.memberImpersonationBusy = false;
+  }
+}
+
+/**
+ * Stop viewing as another member and go back to the admin's own account.
+ *
+ * The parked token is picked up and re-resumed through the normal path, so the admin lands exactly
+ * where a reload would have put them. If there is nothing parked -- a session restored from an
+ * older client, say -- signing out is the honest fallback: staying in a member's view with no way
+ * back would be worse than asking for a password.
+ */
+export async function endViewAs(host: MemberAuthHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored || host.memberImpersonationBusy) {
+    return;
+  }
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  host.memberImpersonationBusy = true;
+  host.memberImpersonationError = null;
+  try {
+    // Told to the service first, so the audit trail closes the view even if the local restore then
+    // fails. Best-effort by contract -- see stopImpersonation.
+    await stopImpersonation(stored.sessionToken, baseUrl);
+    if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+      return;
+    }
+    if (!stored.impersonator) {
+      host.memberImpersonatedBy = null;
+      await signOutMember(host);
+      return;
+    }
+    saveStoredMemberSession({
+      sessionToken: stored.impersonator.sessionToken,
+      expiresAt: stored.impersonator.expiresAt,
+    });
+    if ((await resumeMemberSession(host)) !== "resumed") {
+      // The admin's own session died while they were away (expired, or revoked elsewhere). There
+      // is nothing left to go back to, so land on the gate rather than on a half-restored view.
+      host.memberImpersonatedBy = null;
+      await signOutMember(host);
+    }
+  } finally {
+    host.memberImpersonationBusy = false;
+  }
 }
 
 export function hasStoredMemberSession(): boolean {
@@ -510,9 +1136,13 @@ export async function loadMemberPrivilege(host: MemberAuthHost): Promise<void> {
     stored.sessionToken,
     resolveAdminBotBaseUrl(host.settings),
   );
+  if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+    return;
+  }
   if (result.ok) {
     host.memberPrivilegeLevel = result.value.member?.privilege_level ?? null;
     host.memberId = result.value.member?.id ?? null;
+    host.memberImpersonatedBy = result.value.impersonated_by ?? null;
     host.adminBotOnboarding = result.value.member?.onboarding ?? null;
     host.adminBotOnboardingAcknowledged = host.memberId
       ? hasAcknowledgedOnboardingChecklist(host.memberId)
@@ -520,13 +1150,9 @@ export async function loadMemberPrivilege(host: MemberAuthHost): Promise<void> {
   }
 }
 
-export async function signOutMember(host: MemberAuthHost): Promise<void> {
-  const stored = loadStoredMemberSession();
-  const baseUrl = resolveAdminBotBaseUrl(host.settings);
-  if (stored) {
-    await logoutMember(stored.sessionToken, baseUrl);
-  }
+function clearLocalMemberSession(host: MemberAuthHost): void {
   clearStoredMemberSession();
+  clearMemberScopedData(host);
   host.memberAuthFailure = null;
   host.memberFormError = null;
   host.loginPendingNotice = false;
@@ -549,14 +1175,11 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.memberNotes = "";
   host.memberPrivilegeLevel = null;
   host.memberId = null;
-  if (host.adminBotData) {
-    host.adminBotData = createEmptyAdminBotDashboardData();
-  }
+  host.memberImpersonatedBy = null;
+  host.memberImpersonationError = null;
   host.adminBotOnboarding = null;
   host.adminBotOnboardingAcknowledged = true;
   host.loginMode = "signin";
-  // Back to the landing page, and drop `?signedOut=login` so a reload does not reopen the gate.
-  clearSignedOutView(host);
   // Tear down the live gateway connection and drop the gateway token from the
   // in-memory + sessionStorage-scoped plumbing.
   host.client?.stop();
@@ -565,7 +1188,25 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.hello = null;
   host.password = "";
   host.applySettings({ ...host.settings, token: "" });
-  await clearMemberDeviceToken();
+}
+
+export async function signOutMember(host: MemberAuthHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  clearLocalMemberSession(host);
+  // Back to the landing page, and drop `?signedOut=login` so a reload does not reopen the gate.
+  clearSignedOutView(host);
+  // Local state must be gone before the first await. A new sign-in can finish while old token
+  // revocation is pending; its identity and connection must not be cleared by that completion.
+  await clearMemberDeviceToken(() => loadStoredMemberSession() === null);
+  if (stored) {
+    await logoutMember(stored.sessionToken, baseUrl);
+    // Signing out while viewing as somebody else ends both sessions. Leaving the parked one alive
+    // would keep an admin signed in on a token this browser has just forgotten it holds.
+    if (stored.impersonator) {
+      await logoutMember(stored.impersonator.sessionToken, baseUrl);
+    }
+  }
 }
 
 // Recovers a connect the gateway refused for want of a credential it accepts: it rejected this
@@ -574,11 +1215,8 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
 // revoked, the shared secret rotated so the issuer stamp is stale, or the token was never minted.
 // The member is still signed in, which is the one credential that can produce a new one.
 //
-// Minting a replacement comes first: it keeps the member off the shared gateway secret, which is
-// the whole point of per-device tokens. The session's shared token is the fallback for a service
-// that cannot mint (no issuer configured, or a build predating the route) -- the gateway then
-// re-pairs the device and returns a device token in its hello, so the browser still ends up
-// device-bound.
+// Minting a replacement is the only recovery path. Falling back to the shared gateway secret
+// would put a server-wide bearer credential back into a member-facing response.
 //
 // Returns true when the caller should reconnect.
 export async function recoverFromRejectedDeviceToken(host: MemberAuthHost): Promise<boolean> {
@@ -593,28 +1231,21 @@ export async function recoverFromRejectedDeviceToken(host: MemberAuthHost): Prom
     host.applySettings({ ...host.settings, token: "" });
     return true;
   }
-  const result = await fetchMemberSession(
-    stored.sessionToken,
-    resolveAdminBotBaseUrl(host.settings),
-  );
-  const gatewayToken = result.ok ? result.value.gateway?.token : undefined;
-  if (!gatewayToken) {
-    return false;
-  }
-  host.applySettings({ ...host.settings, token: gatewayToken });
-  return true;
+  return false;
 }
 
 // Signing out must also drop the device's gateway token: it outlives the member session otherwise,
 // leaving a credential on the machine that still reaches the gateway with the signed-out member's
 // scopes. Best-effort — a browser with no device identity has nothing to clear.
-async function clearMemberDeviceToken(): Promise<void> {
+async function clearMemberDeviceToken(shouldClear: () => boolean = () => true): Promise<void> {
   if (typeof crypto === "undefined" || !crypto.subtle) {
     return;
   }
   try {
     const identity = await loadOrCreateDeviceIdentity();
-    clearDeviceAuthToken({ deviceId: identity.deviceId, role: "operator" });
+    if (shouldClear()) {
+      clearDeviceAuthToken({ deviceId: identity.deviceId, role: "operator" });
+    }
   } catch {
     // No device identity to clear.
   }
@@ -673,7 +1304,11 @@ export async function submitChangePassword(host: MemberAuthHost): Promise<void> 
     host.changePasswordCurrent = "";
     host.changePasswordNew = "";
     host.changePasswordConfirm = "";
-    host.changePasswordNotice = t("login.member.changePassword.success");
+    await signOutMember(host);
+    host.loginMode = "signin";
+    host.memberFormError = null;
+    host.passwordResetDone = true;
+    goToSignedOutView(host, "login");
   } finally {
     host.changePasswordBusy = false;
   }

@@ -91,6 +91,38 @@
   gap: var(--space-2);
 }
 
+/* Role on the signup form takes several answers, so it is a group of boxes rather than one select.
+   Wrapping chips keep eleven options to three lines inside a 440px card. */
+.login-gate__multi-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.login-gate__multi-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.login-gate__multi-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--text-strong);
+}
+
+.login-gate__multi-option input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .login-gate .field input {
   width: 100%;
   height: var(--control-h-lg);
@@ -150,6 +182,7 @@
 }
 
 .login-gate__spinner {
+  display: inline-block;
   width: 14px;
   height: 14px;
   margin-right: var(--space-2);
@@ -173,6 +206,58 @@
    but is a hair larger so it stands apart as its own escape hatch. */
 .login-gate .login-gate__forgot {
   font-size: calc(var(--control-ui-text-sm) + 0.0625rem);
+}
+
+/* The way out of a reset step. The arrow points back the way the member came, so the link reads
+   as a step backwards rather than as one more thing to sign up for. */
+.login-gate .login-gate__reset-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-strong);
+}
+
+.login-gate .login-gate__reset-back:hover {
+  color: var(--text);
+}
+
+.login-gate__reset-back-icon {
+  display: inline-flex;
+}
+
+.login-gate__reset-back-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Both reset notices answer "did that work?", so they lead with a mark and sit on their own
+   tinted panel rather than arriving as one more line of grey text in the form's own column. */
+.login-gate__reset-sent,
+.login-gate__reset-done {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  text-align: left;
+}
+
+.login-gate__reset-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  /* Optical alignment with the first line of the notice, which sits on a 1.55 line-height. */
+  margin-top: 1px;
+}
+
+.login-gate__reset-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.login-gate__reset-sent .login-gate__reset-icon {
+  color: var(--accent);
+}
+
+.login-gate__reset-done .login-gate__reset-icon {
+  color: var(--ok);
 }
 
 .login-gate .login-gate__mode-toggle:focus-visible {
@@ -944,11 +1029,121 @@
   min-width: 0;
 }
 
+.adminbot-form__field--wide {
+  grid-column: 1 / -1;
+}
+
 .adminbot-form__field span {
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
   letter-spacing: var(--tracking-tight);
+}
+
+/* The multi-answer control (role), same shape as the member's own page so an admin and the member
+   are looking at one kind of answer: a summary line naming what is held, with the chips behind it.
+
+   `.adminbot-multiselect` carries the dropdown and each surface keeps its own chip styling, which
+   is why the classes are split. The menu sits in normal flow rather than floating over the fields
+   below: both forms that use this live inside a card that scrolls (`.adminbot-popover` sets
+   `overflow: auto`), and an absolutely positioned menu opened on a field near the bottom of one
+   would be clipped by that card. */
+.adminbot-multiselect {
+  min-width: 0;
+}
+
+.adminbot-multiselect__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--control-ui-input-text-size);
+  cursor: pointer;
+  user-select: none;
+  /* No disclosure triangle: the chevron already tracks the open state, and both at once reads as
+     two controls. Needs the standard property and the WebKit pseudo-element. */
+  list-style: none;
+}
+
+.adminbot-multiselect__summary::-webkit-details-marker {
+  display: none;
+}
+
+.adminbot-multiselect__summary:hover {
+  border-color: var(--border-hover);
+}
+
+.adminbot-multiselect__summary:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+  outline: none;
+}
+
+/* One line, truncated: somebody holding four roles must not get a summary that reflows the form. */
+.adminbot-multiselect__value {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.adminbot-multiselect__caret {
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-bottom: 0.15rem;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 120ms ease;
+}
+
+.adminbot-multiselect[open] .adminbot-multiselect__caret {
+  margin-top: 0.15rem;
+  margin-bottom: 0;
+  transform: rotate(-135deg);
+}
+
+.adminbot-multiselect__menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  max-height: 15rem;
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+.adminbot-form__multi-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--text);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  letter-spacing: normal;
+  cursor: pointer;
+}
+
+.adminbot-form__multi-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.adminbot-form__multi-option input {
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .adminbot-form :is(input, select, textarea) {
@@ -1172,7 +1367,7 @@
   padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--surface-muted);
+  background: var(--bg-muted);
 }
 
 .workshop-nudges__detail {
@@ -1248,7 +1443,7 @@
 }
 
 .workshop-nudges .chip[data-status="allowed"] {
-  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--border));
 }
 
 .workshop-nudges .chip[data-status="prohibited"] {
@@ -1307,7 +1502,7 @@
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--surface-muted);
+  background: var(--bg-muted);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: inherit;
@@ -1372,6 +1567,43 @@
   color: var(--text-strong);
   font-size: var(--control-ui-text-sm);
   line-height: 1.5;
+}
+
+/* Bulk-clear bar above the pending-action list. Sits outside .adminbot-action-list so the
+   list keeps its own top margin and the bar reads as a header for it rather than a first row. */
+.adminbot-action-bulk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-accent);
+}
+
+.adminbot-action-bulk__all {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  cursor: pointer;
+}
+
+/* The list's own top margin would double the gap under the bulk bar. */
+.adminbot-action-bulk + .adminbot-action-list {
+  margin-top: var(--space-2);
+}
+
+.adminbot-action__select {
+  display: flex;
+  align-items: center;
+  padding-top: 2px;
+  flex-shrink: 0;
+  cursor: pointer;
 }
 
 .adminbot-action-list,
@@ -1774,6 +2006,22 @@
   gap: var(--space-2);
 }
 
+.adminbot-member-filters__search {
+  display: flex;
+  align-items: end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.adminbot-member-filters__search label {
+  flex: 1;
+}
+
+.adminbot-member-sheet > nav.adminbot-form__actions {
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
 .adminbot-member-filters label,
 .adminbot-paper-filters label {
   display: grid;
@@ -1897,6 +2145,380 @@
   margin-top: 2px;
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
+}
+
+/* The member roster: the live spreadsheet as a grid. It shares the scroller, sticky heading and
+   drag-to-pan with the Lab Members table above, but its columns come from the sheet -- thirty of
+   them, sized from what they hold -- so the fixed table width and the "first column is the
+   person" pinning of the members grid do not apply. The checkbox, row number and name are pinned
+   instead, each offset by the ones before it, so a row still says who it is at column AD. */
+.adminbot-member-roster table.adminbot-member-roster__table {
+  min-width: 0;
+  width: max-content;
+  table-layout: fixed;
+}
+
+.adminbot-member-roster__col-pick {
+  width: 40px;
+}
+
+.adminbot-member-roster__col-row {
+  width: 56px;
+}
+
+.adminbot-member-roster :is(th, td) {
+  padding: 0;
+}
+
+.adminbot-member-roster :is(th, td):first-child {
+  min-width: 0;
+}
+
+.adminbot-member-roster thead th {
+  padding: 8px var(--space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adminbot-member-roster
+  :is(.adminbot-member-roster__pick, .adminbot-member-roster__row, .adminbot-member-roster__name) {
+  position: sticky;
+  z-index: 2;
+  background: var(--card);
+}
+
+.adminbot-member-roster
+  thead
+  :is(.adminbot-member-roster__pick, .adminbot-member-roster__row, .adminbot-member-roster__name) {
+  z-index: 3;
+  background: var(--bg-muted);
+}
+
+.adminbot-member-roster .adminbot-member-roster__pick {
+  left: 0;
+  text-align: center;
+}
+
+.adminbot-member-roster .adminbot-member-roster__pick input {
+  margin: 10px 0;
+}
+
+.adminbot-member-roster .adminbot-member-roster__row {
+  left: 40px;
+  padding: 10px var(--space-2);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  text-align: right;
+}
+
+.adminbot-member-roster .adminbot-member-roster__name {
+  left: 96px;
+  box-shadow: 1px 0 0 var(--border);
+}
+
+.adminbot-member-roster td.adminbot-member-roster__name input {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+/* A cell is its input. Borderless until focused so the grid reads as a sheet rather than a form
+   of three thousand boxes; the edited tint stays on the cell, and hovering it says what it held. */
+.adminbot-member-roster td input[type="text"] {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 38px;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 9px var(--space-2);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-overflow: ellipsis;
+  outline: none;
+}
+
+.adminbot-member-roster td input[type="text"]:hover {
+  border-color: var(--border-hover);
+}
+
+.adminbot-member-roster td input[type="text"]:focus-visible {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--focus);
+  background: var(--bg);
+  text-overflow: clip;
+}
+
+.adminbot-member-roster td.is-edited {
+  background: var(--warn-muted, rgba(234, 179, 8, 0.14));
+}
+
+.adminbot-member-roster td.is-edited input[type="text"] {
+  font-weight: 500;
+}
+
+/* The Member Type cell is a select, not a text box, so it has to look like the cells beside it
+   rather than like a form control dropped into a table: same invisible border until hovered, same
+   focus treatment, same height. The native arrow is left alone -- `color-scheme: dark` themes it,
+   and the redraw that a background chevron needs is what smeared the other selects in this app. */
+.adminbot-member-roster td .adminbot-member-roster__type {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 38px;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 9px var(--space-1) 9px var(--space-2);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.adminbot-member-roster td .adminbot-member-roster__type:hover {
+  border-color: var(--border-hover);
+}
+
+.adminbot-member-roster td .adminbot-member-roster__type:focus-visible {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--focus);
+  background: var(--bg);
+}
+
+.adminbot-member-roster td.is-edited .adminbot-member-roster__type {
+  font-weight: 500;
+}
+
+.adminbot-member-roster tbody tr.is-selected :is(td, th) {
+  background: var(--accent-muted, var(--bg-hover));
+}
+
+.adminbot-member-roster__count {
+  align-self: center;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.adminbot-member-roster__none {
+  padding: var(--space-4);
+  color: var(--muted);
+  text-align: center;
+}
+
+/* The roster's header: identity on the left, the three verbs on the right, instead of a link and
+   three unstyled buttons sharing one baseline. */
+.adminbot-member-roster__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.adminbot-member-roster__titles {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.adminbot-member-roster__titles h3 {
+  margin: 0;
+}
+
+.adminbot-member-roster__titles a {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  white-space: nowrap;
+}
+
+.adminbot-member-roster__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* The onboarding preview: each selected member's composed mail, read before anything is queued. */
+.adminbot-onboard-preview {
+  display: grid;
+  gap: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  background: var(--card);
+}
+
+.adminbot-onboard-preview__head {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.adminbot-onboard-preview__head span {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-onboard-preview__mail {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.adminbot-onboard-preview__mail summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.adminbot-onboard-preview__who {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+.adminbot-onboard-preview__meta {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-onboard-preview__fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-3) 0;
+}
+
+.adminbot-onboard-preview__fields dt {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+}
+
+.adminbot-onboard-preview__fields dd {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.adminbot-onboard-preview__body {
+  margin: var(--space-2) var(--space-3) var(--space-3);
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--bg);
+  font-size: var(--control-ui-text-xs);
+  white-space: pre-wrap;
+}
+
+.adminbot-onboard-preview__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/*
+ * The "you are viewing as somebody else" bar.
+ *
+ * Pinned to the bottom of the viewport rather than pushed into the page flow: the admin navigates
+ * the whole app inside the view, and a banner that scrolled away would be missing at exactly the
+ * moment it matters. Bottom rather than top so it does not fight the header on any of the tabs,
+ * and it sits above the feedback widget's corner for the same reason.
+ *
+ * Warn colours, not danger: viewing as a member is a normal, reversible thing to be doing. It has
+ * to be impossible to miss, not alarming.
+ */
+/* The Mailing List tab's range/recipient row, and the preview under it. */
+/* Row, not column: `adminbot-form` stacks its fields by default, which is right for a composer
+   and wrong for two dates and an address that belong on one line. The fields keep the form's own
+   input styling either way -- that is what the class is here for. */
+.adminbot-mailing-list__controls {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: var(--space-3);
+}
+
+/* Both dates take their natural width; the recipient takes the rest of the line. */
+.adminbot-mailing-list__controls .adminbot-form__field {
+  flex: 0 0 auto;
+}
+
+/* The button sits on the baseline of the boxes rather than under its own invisible label. */
+.adminbot-mailing-list__preview-action {
+  margin: 0;
+}
+
+/* The recipient is the one field whose value is worth reading back at a glance before sending. */
+.adminbot-mailing-list__controls .adminbot-mailing-list__email {
+  flex: 1 1 18rem;
+}
+
+.adminbot-mailing-list__papers {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-4);
+}
+
+.adminbot-mailing-list__papers li {
+  margin-bottom: var(--space-2);
+}
+
+.adminbot-mailing-list__papers small {
+  display: block;
+}
+
+/* Left out for want of a date. Collapsed, but never off the page -- see the view's header. */
+.adminbot-mailing-list__undated,
+.adminbot-mailing-list__body {
+  margin-bottom: var(--space-3);
+}
+
+.adminbot-mailing-list__body pre {
+  overflow-x: auto;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+  white-space: pre-wrap;
+}
+
+.adminbot-mailing-list__send {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.adminbot-impersonation-banner {
+  position: fixed;
+  z-index: 40;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  left: var(--space-4);
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--warn-muted);
+  border-radius: var(--radius-md);
+  background: var(--warn-subtle);
+  color: var(--warn);
+  box-shadow: var(--shadow-md);
 }
 
 .adminbot-member-sheet__edit {
@@ -2349,8 +2971,14 @@
 
 .adminbot-nudge-recipients__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin: var(--space-3) 0;
+}
+
+.adminbot-nudge-recipients > nav.adminbot-form__actions {
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
 }
 
 .adminbot-nudge-recipients__missing {
@@ -2449,6 +3077,12 @@
 }
 
 @media (max-width: 640px) {
+  .adminbot-member-sheet :is(th, td):first-child {
+    /* Keep the pinned name and its actions inside the sheet's mobile viewport. */
+    width: min(280px, calc(100vw - 96px));
+    max-width: 280px;
+  }
+
   .adminbot-member-filters,
   .adminbot-paper-filters {
     grid-template-columns: 1fr;
@@ -3474,7 +4108,7 @@
 }
 
 .cron-error {
-  color: var(--danger-color);
+  color: var(--danger);
 }
 
 .cron-required-legend {
@@ -3484,7 +4118,7 @@
 }
 
 .cron-required-marker {
-  color: var(--danger-color);
+  color: var(--danger);
   font-weight: 700;
   margin-left: 3px;
 }
@@ -3717,6 +4351,10 @@
   flex: 0 0 16rem;
 }
 
+.conference-papers__controls .adminbot-form__field.conference-papers__category {
+  flex: 0 0 14rem;
+}
+
 .conference-papers__controls .adminbot-form__field.conference-papers__interests {
   flex: 1 1 20rem;
   max-width: 28rem;
@@ -3735,6 +4373,30 @@
   min-height: 3.2em;
   resize: vertical;
   font-size: var(--control-ui-text-md);
+}
+
+/*
+ * The two halves of Find Interesting Papers. Sits above both panels rather than inside either, so
+ * switching tabs does not move the control that switched them.
+ */
+.conference-papers__tabs {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+/* The uncovered sections, and one paper's other matched sections. Both are read, not scanned. */
+.lab-papers__gaps,
+.lab-papers__sections {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.lab-papers__sections {
+  font-size: 0.9em;
 }
 
 .conference-papers__actions {
@@ -9066,6 +9728,174 @@ details[open] > .ov-expandable-toggle::after {
   }
 }
 
+.adminbot-reimbursement-warning {
+  margin-bottom: var(--space-5);
+}
+
+.adminbot-reimbursement-warning__title {
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: var(--space-2);
+}
+
+.adminbot-reimbursement-warning__lede {
+  margin: 0 0 var(--space-3);
+}
+
+.adminbot-reimbursement-warning__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.adminbot-reimbursement-warning__list a {
+  color: inherit;
+}
+
+/* Which finance office is paying. First on the page and deliberately prominent: the two rulesets
+   contradict each other in places, so this is not a preference but the thing that decides which
+   rules run and which form comes out. */
+.adminbot-reimbursement-funder {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.adminbot-reimbursement-funder__options {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+.adminbot-reimbursement-funder__option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  flex: 1 1 16rem;
+}
+
+.adminbot-reimbursement-funder__option--on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
+
+.adminbot-reimbursement-funder__option small {
+  display: block;
+  color: var(--muted);
+}
+
+.adminbot-reimbursement-funder__locked {
+  margin: var(--space-2) 0 0;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+/* The pre-submission report. Shown whether it passed or failed: a panel that only appeared on
+   failure would leave a reader unable to tell "cleared" from "never ran". */
+.adminbot-reimbursement-check {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.adminbot-reimbursement-check--blocked {
+  border-color: color-mix(in srgb, var(--danger, #b42318) 45%, transparent);
+  background: color-mix(in srgb, var(--danger, #b42318) 6%, var(--bg));
+}
+
+.adminbot-reimbursement-check--ready {
+  border-color: color-mix(in srgb, #22c55e 40%, transparent);
+  background: color-mix(in srgb, #22c55e 7%, var(--bg));
+}
+
+.adminbot-reimbursement-check__funder {
+  margin-left: var(--space-2);
+  color: var(--muted);
+  font-size: 0.8em;
+  font-weight: 400;
+}
+
+.adminbot-reimbursement-check__lead {
+  margin: var(--space-1) 0 var(--space-2);
+}
+
+.adminbot-reimbursement-check__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.adminbot-reimbursement-check__list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--space-3);
+  border-left: 2px solid color-mix(in srgb, var(--danger, #b42318) 40%, transparent);
+  font-size: 0.9em;
+}
+
+.adminbot-reimbursement-check__list--warn li {
+  border-left-color: color-mix(in srgb, var(--warn, #a67c00) 45%, transparent);
+}
+
+/* The rule id, because the finance office quotes them back. */
+.adminbot-reimbursement-check__id {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+.adminbot-reimbursement-check__list small {
+  color: var(--muted);
+}
+
+.adminbot-reimbursement-check__unrecoverable {
+  color: var(--danger, #b42318);
+  font-size: 0.9em;
+}
+
+.adminbot-reimbursement-check__amounts {
+  margin: var(--space-2) 0 0;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+/* The send. Sits under the downloads because it is the step after them, and carries its own
+   explanation: this mails an external finance office under the lab's name, and a button that does
+   not say where it goes is one people press without knowing what they did. */
+.adminbot-reimbursement-submit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+.adminbot-reimbursement-submit small {
+  flex: 1 1 18rem;
+  color: var(--muted);
+}
+
+.adminbot-reimbursement-sent {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, #22c55e 10%, var(--bg));
+  font-size: 0.9em;
+}
+
 .adminbot-reimbursement-workspace {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);
@@ -9368,6 +10198,10 @@ details[open] > .ov-expandable-toggle::after {
   grid-template-columns: minmax(220px, 1fr);
   gap: var(--space-3);
   max-width: 520px;
+}
+
+.adminbot-time-availability__refresh {
+  justify-self: start;
 }
 
 .adminbot-time-availability__report {
@@ -9686,7 +10520,7 @@ details[open] > .ov-expandable-toggle::after {
   align-self: flex-start;
   min-width: 1.4em;
   padding: 1px 5px;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-variant-numeric: tabular-nums;
   text-align: center;
@@ -9836,7 +10670,7 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-calendar__card-description {
   display: grid;
   gap: var(--space-2);
-  color: var(--text-muted);
+  color: var(--muted);
   overflow-wrap: anywhere;
 }
 
@@ -9931,7 +10765,7 @@ details[open] > .ov-expandable-toggle::after {
    does. Not a warning colour: this is the normal path, not a mistake. */
 .adminbot-calendar__confirm {
   margin-right: auto;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: var(--control-ui-text-xs);
 }
 
@@ -9975,7 +10809,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-calendar__event-when,
 .adminbot-calendar__match-email {
-  color: var(--text-muted);
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -10023,7 +10857,7 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-time-allocation-table th {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -10079,7 +10913,7 @@ details[open] > .ov-expandable-toggle::after {
   gap: var(--space-1, 4px);
   cursor: pointer;
   list-style: none;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .adminbot-time-allocation-table__note summary::-webkit-details-marker {
@@ -10123,6 +10957,19 @@ details[open] > .ov-expandable-toggle::after {
   flex-direction: row;
   gap: var(--space-2);
   align-items: center;
+  flex-wrap: wrap;
+}
+
+/* A toggle whose consequence is not guessable from its label carries a sentence saying what it
+   does -- the nudge list is one. It wraps onto its own line under the box rather than stretching
+   the row, and it indents past the checkbox so it reads as belonging to that label. */
+.adminbot-form__field--check small {
+  flex-basis: 100%;
+  margin-left: calc(1.1rem + var(--space-2));
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.4;
+  text-wrap: pretty;
 }
 
 /* Stacked, Jinesis first. Side by side made them compete for which one you were meant to use, and
@@ -10155,20 +11002,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-time-availability__add-commitment {
   width: 100%;
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--control-ui-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg) 90%, var(--bg-accent));
-  transition: all 0.15s ease;
-  text-align: center;
-}
-
-.adminbot-time-availability__add-commitment:hover {
-  background: color-mix(in srgb, var(--bg) 80%, var(--bg-accent));
-  border-style: solid;
+  min-height: 44px;
 }
 
 .adminbot-time-availability__commitment-picker {
@@ -10308,11 +11142,11 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-time-chart__off {
-  fill: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  fill: color-mix(in srgb, var(--muted) 18%, transparent);
 }
 
 .adminbot-time-chart__legend-off {
-  background: color-mix(in srgb, var(--text-muted) 40%, transparent);
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
 }
 
 .adminbot-time-allocation-table__task--off {
@@ -10323,7 +11157,7 @@ details[open] > .ov-expandable-toggle::after {
   display: inline-flex;
   align-items: center;
   margin-right: var(--space-2);
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 /* The icon carries no intrinsic size, so without this the anchor laid out at zero and a row's
@@ -10342,11 +11176,19 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--text);
 }
 
+/* Tightened deliberately. This panel sits above the timeline the page is actually about, so every
+   row of it is a row of chart the member has to scroll past; with a full personal list plus the
+   lab's conferences it was taking most of a screen to say four dates. The density is the whole
+   change -- the three-row tile below is left alone, because those rows are what stopped the link
+   and the remove button drawing on top of each other and the AoE clock being clipped. */
+/* A banner, not the subject of the page: it says what is coming so the timeline below can be read
+   against it. Every measure here is the smaller of the two that were tried -- the panel was taller
+   than the chart it introduces. */
 .adminbot-time-availability__deadlines {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-1);
   align-content: start;
-  padding: var(--space-4);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
@@ -10361,14 +11203,15 @@ details[open] > .ov-expandable-toggle::after {
    ("23:59 Anywhere on Earth (UTC-12)"), and at 15rem that was clipped at the tile's own border. */
 .adminbot-time-availability__deadlines .adminbot-time-availability__deadline-list {
   grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr));
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 /* Sits under the panel title, above the list: it explains what belongs in the list, so it has to
    be read before the list rather than after it. */
 .adminbot-time-availability__deadline-hint {
-  margin: 0 0 var(--space-3);
-  font-size: var(--control-ui-text-sm);
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.3;
   color: var(--muted);
 }
 
@@ -10389,18 +11232,35 @@ details[open] > .ov-expandable-toggle::after {
    same cell, so they drew on top of each other. */
 .adminbot-time-availability__deadline-list li {
   display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3);
+  gap: 0;
+  padding: 6px var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg);
 }
 
+/* Countdown, name, actions on one line. The name takes the slack, so the countdown stays hard
+   against the left edge where a column of them lines up and the actions stay hard against the
+   right. */
 .adminbot-time-availability__deadline-top {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+  align-items: baseline;
+  gap: var(--space-2);
+  /* The countdown is the only thing here on a read-only panel, and it is uppercase 11px text; at
+     the button's height the row was mostly empty space above the name. */
+  min-height: 0;
+}
+
+.adminbot-time-availability__deadline-top .adminbot-time-availability__deadline-away {
+  flex: 0 0 auto;
+}
+
+.adminbot-time-availability__deadline-top .adminbot-time-availability__deadline-label {
+  flex: 1 1 auto;
+}
+
+.adminbot-time-availability__deadline-top .adminbot-time-availability__deadline-actions {
+  margin-left: auto;
 }
 
 .adminbot-time-availability__deadline-actions {
@@ -10432,7 +11292,7 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-time-availability__deadline-label {
   min-width: 0;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
@@ -10488,12 +11348,19 @@ details[open] > .ov-expandable-toggle::after {
   li[data-own="false"]
   .adminbot-time-availability__deadline-label {
   font-weight: 500;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .adminbot-time-availability__deadline-list li[data-own="true"] {
   border-color: color-mix(in srgb, var(--deadline-urgency, var(--border)) 40%, var(--border));
   background: color-mix(in srgb, var(--bg-accent) 40%, var(--bg));
+}
+
+/* Shrunk with the tile: at the shared button padding these two set the row height for every
+   deadline, including the ones with no button at all next to them. */
+.adminbot-time-availability__deadline-actions .btn {
+  padding-block: 2px;
+  line-height: 1.2;
 }
 
 .adminbot-time-availability__deadline-list li .btn {
@@ -10510,7 +11377,7 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-time-availability__own-only,
 .adminbot-time-availability__empty-note {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--muted);
   /* Hints were the smallest thing on the page; on this view they carry real guidance, so they
      sit at the scoped --control-ui-text-sm (14px) rather than the caption size. */
   font-size: var(--control-ui-text-sm);
@@ -10561,23 +11428,21 @@ details[open] > .ov-expandable-toggle::after {
   resize: vertical;
 }
 
-/* The primary actions read as muted stone instead of the app-wide accent blue: on this dark page
-   a brighter fill reads as the action color without shouting, and it keeps the same neutral
-   family as the cards around it. Text stays light on it, so the button is elevated but not loud. */
-.adminbot-time-availability .btn.primary {
-  border-color: #45454d;
-  background: #2e2e34;
-  color: #e4e4e7;
+/* Neutral primary actions follow the same palette in light, dark and custom themes. */
+.adminbot-time-availability .btn.primary:not(.adminbot-time-availability__add-commitment) {
+  border-color: var(--border-strong);
+  background: var(--secondary);
+  color: var(--text);
 }
 
-.adminbot-time-availability .btn.primary:hover {
-  background: #3a3a42;
-  border-color: #505059;
+.adminbot-time-availability .btn.primary:not(.adminbot-time-availability__add-commitment):hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
 }
 
-.adminbot-time-availability .btn.primary:active {
-  background: #26262b;
-  border-color: #45454d;
+.adminbot-time-availability .btn.primary:not(.adminbot-time-availability__add-commitment):active {
+  background: var(--bg-muted);
+  border-color: var(--border-strong);
 }
 
 /* The conference button's plus icon sits in an inline span, so the SVG rides the text baseline
@@ -10592,7 +11457,7 @@ details[open] > .ov-expandable-toggle::after {
    format). Used by the member form and the onboarding panel, neither of which had a rule for it. */
 .adminbot-form__hint {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: var(--control-ui-text-xs);
   line-height: 1.45;
 }
@@ -10947,6 +11812,61 @@ select.input:focus {
   text-align: center;
 }
 
+/* Member requests above the Lab Members roster: an admin's review queue, or a member's own
+   requests. One card per person, laid out like the duplicate-records panel below it, so the two
+   roster-wide lists on the tab read as the same kind of thing. */
+.adminbot-member-requests-panel {
+  margin-block: var(--space-4);
+}
+
+.adminbot-member-requests {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+.adminbot-member-request {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.adminbot-member-request__note {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.adminbot-member-request .adminbot-form__actions {
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
+}
+
+.adminbot-member-request .adminbot-form__field--check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.adminbot-member-request__reason {
+  flex: 1 1 18rem;
+  min-width: 12rem;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-strong);
+  font: inherit;
+}
+
 /* Possible duplicate roster records.
    The lab's roster is written down two paths that do not know about each other -- the Quick-Start
    survey and the Slack member export -- so one person can be two half-records. The panel is a
@@ -10959,6 +11879,21 @@ select.input:focus {
   list-style: none;
   margin: var(--space-3) 0 0;
   padding: 0;
+}
+
+.adminbot-duplicates > nav {
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+.adminbot-duplicates > nav label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.adminbot-duplicates > nav input {
+  width: 5rem;
 }
 
 .adminbot-duplicate {
@@ -11076,4 +12011,190 @@ select.input:focus {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
+}
+
+/* What the last Send did. Warning-toned when anything was skipped, because a send that reached
+   nobody is the case this panel exists for -- it used to finish silently. */
+.workshop-nudges__send-result {
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ok);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  font-size: var(--control-ui-text-sm);
+}
+
+.workshop-nudges__send-result.is-warning {
+  border-left-color: var(--warn);
+}
+
+.workshop-nudges__send-reasons {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  color: var(--muted);
+}
+
+/* The deadline picker is a disclosure, not a permanently open form: see the comment in
+   renderAddDeadline. The summary reads as one of the panel's own small actions rather than as a
+   section heading, since that is what it now is. */
+.adminbot-time-availability__deadline-add[open] {
+  padding-bottom: var(--space-2);
+}
+
+.adminbot-time-availability__deadline-add-summary {
+  cursor: pointer;
+  padding: var(--space-1) 0;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: var(--text);
+  list-style-position: inside;
+}
+
+.adminbot-time-availability__deadline-add-summary::marker {
+  color: var(--muted);
+}
+
+.adminbot-time-availability__deadline-add-summary:hover {
+  color: var(--accent, var(--text));
+}
+
+/* ── the member-type filter, on Active Papers, Profile Completeness and the Calendar ────────
+   A <fieldset> of checkboxes with two class names that had no rules behind them: it drew with the
+   browser's own fieldset border and default boxes, next to toolbars built out of the app's chips.
+   It is the same control it was -- checkboxes, because four options fit on screen at once and a
+   multi-select hides the state it is holding -- wearing the vocabulary the rest of the page uses. */
+
+.profile-overview__type-filter {
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.profile-overview__type-option {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Ticked reads as filled, not only as a ticked box: the row's job is to say at a glance how narrow
+   the filter currently is, and a checkmark at 12px does not carry that across four chips. */
+.profile-overview__type-option:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+  color: var(--text);
+}
+
+.profile-overview__type-option:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+/* ── Recent edits ───────────────────────────────────────────────────────────────────────────
+   A history panel under the object it is about -- a profile, a paper -- not a page of its own.
+   Shut by default and quiet when open: the record above it is the subject, and this is the
+   footnote. */
+
+.recent-edits {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+}
+
+/* In the roster popover the panel is the whole card, so the rule and gap that separate it from
+   the record above it on a profile have nothing to separate it from. */
+.recent-edits--flat {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.recent-edits__summary {
+  cursor: pointer;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: var(--muted);
+  list-style-position: inside;
+}
+
+.recent-edits__summary:hover {
+  color: var(--text);
+}
+
+.recent-edits__loading {
+  margin-left: var(--space-2);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.recent-edits__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recent-edits__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.recent-edits__row:last-child {
+  border-bottom: 0;
+}
+
+.recent-edits__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* The two names carry the sentence, so they are the only things at full strength. */
+.recent-edits__actor {
+  font-weight: 600;
+}
+
+.recent-edits__field {
+  color: var(--text);
+}
+
+.recent-edits__subject,
+.recent-edits__paper {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.recent-edits__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* An admin editing somebody else's record is the row worth noticing: it is the one a member did
+   not do themselves, and the one that explains a field they do not remember filling in. */
+.recent-edits__row[data-source="admin"] .recent-edits__source {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text);
+}
+
+.recent-edits__empty {
+  margin: 0;
+  color: var(--muted);
 }

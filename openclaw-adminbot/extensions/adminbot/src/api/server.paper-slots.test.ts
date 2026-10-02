@@ -12,6 +12,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAdminBotMessageExecutor } from "../connectors/message.js";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
+import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -90,7 +91,11 @@ async function startLab(): Promise<{ baseUrl: string; sent: string[][] }> {
     { id: "bob", name: "Bob Coauthor", privilege_level: "member", slack_user_id: "U-BOB" },
     { id: "zhijing", name: "Zhijing Jin", privilege_level: "admin", slack_user_id: "U-ZJ" },
   ]) {
-    const result = mock.service.upsertLabMember(member as AdminBotLabMemberInput);
+    // On the nudge list: the list is opt-in, and these three exist to be chased about slots.
+    const result = mock.service.upsertLabMember({
+      receives_nudges: true,
+      ...member,
+    } as AdminBotLabMemberInput);
     if (!result.ok) {
       throw new Error(`seed ${member.id}: ${result.error.message}`);
     }
@@ -131,6 +136,7 @@ async function call(
 async function adminHeaders(baseUrl: string): Promise<Record<string, string>> {
   const mock = mockFor(baseUrl);
   const seeded = mock.service.upsertLabMember({
+    receives_nudges: true,
     id: "zhijing",
     name: "Zhijing Jin",
     email: "zhijing@cs.toronto.edu",
@@ -159,7 +165,7 @@ async function adminHeaders(baseUrl: string): Promise<Record<string, string>> {
   if (!pending) {
     throw new Error("no pending claim for zhijing");
   }
-  const approved = mock.auth.approveRegistration(pending.id, "test-admin");
+  const approved = await mock.auth.approveRegistration(pending.id, "test-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }
@@ -212,11 +218,11 @@ describe("the paper-evidence reads", () => {
     });
   });
 
-  it("returns all 24 slots for one paper, blanks included", async () => {
+  it("returns all 28 slots for one paper, blanks included", async () => {
     const { baseUrl } = await startLab();
     const result = await call(baseUrl, "GET", "/papers/p1/slots");
     expect(result.status).toBe(200);
-    expect(result.body.slots).toHaveLength(24);
+    expect(result.body.slots).toHaveLength(28);
   });
 });
 
@@ -267,6 +273,66 @@ describe("writing a slot over HTTP", () => {
       reason: "no poster session",
     });
     expect(result.status).toBe(403);
+  });
+});
+
+describe("the PaperMentor collector's route", () => {
+  const PROJECT = "65f2a1c9d4e3b7a801f6";
+
+  async function linkProject(baseUrl: string): Promise<void> {
+    const linked = await call(baseUrl, "PUT", "/papers/p1/slots/overleaf_edit", {
+      url: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/${PROJECT}`,
+    });
+    expect(linked.status).toBe(200);
+  }
+
+  it("records a review against the paper carrying that project, and reads it back", async () => {
+    const { baseUrl } = await startLab();
+    await linkProject(baseUrl);
+
+    const posted = await call(baseUrl, "POST", "/papers/papermentor/runs", {
+      project_id: PROJECT,
+      reviewed_at: "2026-09-12T11:04:09.221Z",
+      comments_total: 3,
+      by_severity: { critical: 1, warning: 2 },
+      by_document: [{ path: "main.tex", comments: 3 }],
+    });
+
+    expect(posted.status).toBe(200);
+    expect(posted.body).toMatchObject({ paper_id: "p1", recorded: true, review_slot: "provided" });
+    const read = await call(baseUrl, "GET", "/papers/papermentor/runs?paper_id=p1");
+    expect(read.body.runs).toHaveLength(1);
+    expect(read.body.runs[0]).toMatchObject({ comments_total: 3, project_id: PROJECT });
+    // The evidence slot the card shows is the one the review ticked.
+    const slots = await call(baseUrl, "GET", "/papers/p1/slots");
+    expect(
+      slots.body.slots.find((slot: { slot: string }) => slot.slot === "papermentor_review").status,
+    ).toBe("provided");
+  });
+
+  it("refuses a body that is not a review, before anything is stored", async () => {
+    const { baseUrl } = await startLab();
+    await linkProject(baseUrl);
+
+    const posted = await call(baseUrl, "POST", "/papers/papermentor/runs", { comments_total: 3 });
+
+    expect(posted.status).toBe(400);
+    expect((await call(baseUrl, "GET", "/papers/papermentor/runs")).body.runs).toEqual([]);
+  });
+
+  // The collector authenticates as the service principal like every other machine-driven pass.
+  // Nothing about this route is open: an unauthenticated post reaches no service code at all.
+  it("is not an open route", async () => {
+    const { baseUrl } = await startLab();
+
+    const posted = await fetch(`${baseUrl}/papers/papermentor/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: PROJECT, reviewed_at: "2026-09-12T11:04:09.221Z" }),
+    });
+
+    expect(posted.status).toBe(401);
+    expect((await call(baseUrl, "GET", "/papers/papermentor/runs")).body.runs).toEqual([]);
   });
 });
 
@@ -430,6 +496,7 @@ describe("the global nudge, end to end", () => {
   it("says up front that somebody cannot be reached", async () => {
     const { baseUrl } = await startLab();
     mockFor(baseUrl).service.upsertLabMember({
+      receives_nudges: true,
       id: "ada",
       name: "Ada Lovelace",
       privilege_level: "member",
@@ -523,7 +590,7 @@ describe("the global nudge, end to end", () => {
     });
     expect(ledger[0]?.last_nudged_at).toBeTruthy();
     // Nothing was stamped for the slot that is already in, or for anything still gated.
-    expect(slots.length).toBe(24);
+    expect(slots.length).toBe(28);
   });
 
   it("keeps its cadence, so a doubled cron cannot nag", async () => {

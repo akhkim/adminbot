@@ -1,5 +1,7 @@
 /** Admin console body markup: the auth gate, the shell, and one section per panel. */
 import { ADMINBOT_BOT_EMAIL_ENV, resolveAdminBotDriveAccount } from "../../contracts/actions.js";
+import { resolveAdminBotControlUiUrl } from "../../contracts/control-ui.js";
+import { resolveAdminBotLabOverleafHost } from "../../contracts/overleaf.js";
 
 // The importer account the callout tells members to share their planning doc with. Resolved here
 // rather than baked into the copy so the page can never name an account this deployment does not
@@ -12,6 +14,10 @@ function driveShareCallout(): string {
 }
 
 export function adminBotConsoleMarkup(): string {
+  const deadlineBoardUrl = `${resolveAdminBotControlUiUrl()}/deadlines`
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;");
   return `<body>
   <div class="auth-gate" id="auth-gate" hidden>
     <div class="auth-card">
@@ -26,7 +32,7 @@ export function adminBotConsoleMarkup(): string {
         </div>
         <div id="signup-fields" hidden>
           <label>Name<input name="name" autocomplete="name" placeholder="Zhijing"></label>
-          <label>Role<select name="role" id="signup-role"></select></label>
+          <div class="role-choices" id="signup-role" role="group" aria-label="Role"><span>Role</span></div>
           <label>Affiliation<input name="affiliation" placeholder="Jinesis / MIT"></label>
           <label>Research branch<input name="research_branch" placeholder="Embodied intelligence"></label>
           <label>Research topics<input name="research_topics" placeholder="robot learning, world models"></label>
@@ -116,7 +122,7 @@ export function adminBotConsoleMarkup(): string {
             <form id="member-form">
               <label>Member id<input name="id" required placeholder="zhijing"></label>
               <label>Name<input name="name" required placeholder="Zhijing"></label>
-              <label>Role<select name="role" id="member-role-select"></select></label>
+              <div class="role-choices" id="member-role-select" role="group" aria-label="Role"><span>Role</span></div>
               <label>Status<select name="status" id="member-status-select"></select></label>
               <label>Research branch<input name="research_branch" placeholder="Embodied intelligence"></label>
               <label class="wide">Research topics<input name="research_topics" placeholder="robot learning, world models"></label>
@@ -204,7 +210,7 @@ export function adminBotConsoleMarkup(): string {
               <label>Title<input name="title" required placeholder="Causal Garden Planning"></label>
               <label>Authors<input name="authors" required placeholder="alice, bob"></label>
               <label>Current step<select name="current_step" id="paper-step"></select></label>
-              <label>Overleaf edit URL<input name="overleaf_edit_url" placeholder="https://www.overleaf.com/..."></label>
+              <label>Overleaf edit URL<input name="overleaf_edit_url" placeholder="https://${resolveAdminBotLabOverleafHost()}/project/..."></label>
               <label>Google Drive PDF<input name="google_drive_pdf_url" placeholder="https://drive.google.com/..."></label>
               <label>Reminder status
                 <select name="reminder_status">
@@ -406,9 +412,8 @@ export function adminBotConsoleMarkup(): string {
       </section>
       <section class="section" id="deadlines">
         <div class="panel">
-          <h2>Upcoming deadlines</h2>
-          <p class="subtle">Times are AoE (UTC-12). The same board the lab channel digest reads.</p>
-          <iframe class="public-frame" id="deadlines-frame" title="Deadline board" src="/deadlines"></iframe>
+          <h2>Deadlines</h2>
+          <a href="${deadlineBoardUrl}">Open deadline board</a>
         </div>
       </section>
 

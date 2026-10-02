@@ -5,7 +5,14 @@ import type { AdminBotEmailPayload, AdminBotStoredProposal } from "../contracts/
 import { emailPayloadSchema } from "../contracts/tool-schemas.js";
 import { AdminBotService } from "../kernel/service.js";
 import { renderEmailBodyHtml } from "./email-html.js";
-import { createGogAdminBotExecutor, readGogSheetRows } from "./gog.js";
+import {
+  createGogAdminBotExecutor,
+  createGogDriveProbe,
+  appendGogSheetRows,
+  buildIntegrityScoreArgs,
+  readGogSheetRows,
+  readGogSheetTabs,
+} from "./gog.js";
 
 function proposal(
   type: AdminBotStoredProposal["type"],
@@ -58,7 +65,7 @@ describe("createGogAdminBotExecutor", () => {
     ]);
   });
 
-  it("maps calendar invites and cancellations with explicit notifications", async () => {
+  it("maps calendar invites and cancellations without emailing anyone", async () => {
     const run = vi.fn(async () => {});
     const executor = createGogAdminBotExecutor({ run });
 
@@ -78,11 +85,52 @@ describe("createGogAdminBotExecutor", () => {
     );
 
     expect(run.mock.calls[0]?.[0]).toEqual(
-      expect.arrayContaining(["calendar.create", "--send-updates", "all"]),
+      expect.arrayContaining(["calendar.create", "--send-updates", "none"]),
     );
     expect(run.mock.calls[1]?.[0]).toEqual(
-      expect.arrayContaining(["calendar.delete", "--force", "event-1", "--send-updates", "all"]),
+      expect.arrayContaining(["calendar.delete", "--force", "event-1", "--send-updates", "none"]),
     );
+  });
+
+  // No calendar action emails anyone: guests see the change on their calendar, and nothing lands
+  // in their inbox. One place pins every type, so a new calendar action cannot quietly opt in.
+  it.each([
+    [
+      "calendar.create_tentative_hold",
+      { summary: "Hold", from: "2026-06-22T14:00:00-04:00", to: "2026-06-22T15:00:00-04:00" },
+    ],
+    [
+      "calendar.create_birthday",
+      { summary: "Ada's birthday", from: "2026-06-22", to: "2026-06-23", all_day: true },
+    ],
+    [
+      "calendar.send_invite",
+      {
+        summary: "Review",
+        from: "2026-06-22T14:00:00-04:00",
+        to: "2026-06-22T14:30:00-04:00",
+        attendees: ["a@example.com"],
+      },
+    ],
+    [
+      "calendar.reschedule",
+      { event_id: "event-1", from: "2026-06-23T14:00:00-04:00", to: "2026-06-23T14:30:00-04:00" },
+    ],
+    ["calendar.add_attendees", { event_id: "event-1", attendees: ["a@example.com"] }],
+    ["calendar.cancel", { event_id: "event-1" }],
+  ] as const)("sends no email for %s", async (type, payload) => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({
+      run,
+      capture: async () => JSON.stringify({ attendees: [] }),
+    });
+
+    await executor.execute(proposal(type, payload));
+
+    const args = run.mock.calls[0]?.[0] as string[];
+    expect(args[args.indexOf("--send-updates") + 1]).toBe("none");
+    expect(args).not.toContain("all");
+    expect(args).not.toContain("externalOnly");
   });
 
   // Inviting people to a standing meeting must not uninvite everyone already on it, which is what
@@ -90,7 +138,10 @@ describe("createGogAdminBotExecutor", () => {
   // move the event or rewrite its title as a side effect.
   it("adds attendees to an existing event without replacing the guest list", async () => {
     const run = vi.fn(async () => {});
-    const executor = createGogAdminBotExecutor({ run });
+    const executor = createGogAdminBotExecutor({
+      run,
+      capture: async () => JSON.stringify({ attendees: [] }),
+    });
 
     await executor.execute(
       proposal("calendar.add_attendees", {
@@ -109,12 +160,172 @@ describe("createGogAdminBotExecutor", () => {
         "--add-attendee",
         "ada@cs.toronto.edu,mei@cs.toronto.edu",
         "--send-updates",
-        "all",
+        "none",
       ]),
     );
     expect(args).not.toContain("--attendees");
     expect(args).not.toContain("--summary");
     expect(args).not.toContain("--from");
+  });
+
+  it("skips existing attendees and adds only missing addresses on retries", async () => {
+    const run = vi.fn(async () => {});
+    const capture = vi.fn(async () =>
+      JSON.stringify({ attendees: [{ email: "ADA@example.com" }] }),
+    );
+    const executor = createGogAdminBotExecutor({ run, capture });
+    await executor.execute(
+      proposal("calendar.add_attendees", { event_id: "event-9", attendees: ["ada@example.com"] }),
+    );
+    expect(run).not.toHaveBeenCalled();
+    await executor.execute(
+      proposal("calendar.add_attendees", {
+        event_id: "event-9",
+        attendees: ["ada@example.com", "mei@example.com", "MEI@example.com"],
+      }),
+    );
+    expect(run).toHaveBeenCalledTimes(1);
+    const args = run.mock.calls[0]?.[0] as string[];
+    expect(args[args.indexOf("--add-attendee") + 1]).toBe("mei@example.com");
+  });
+
+  it.each(["not json", JSON.stringify({}), JSON.stringify({ event: { id: "wrong-event" } })])(
+    "does not write when the live attendee read is invalid: %s",
+    async (response) => {
+      const run = vi.fn(async () => {});
+      const executor = createGogAdminBotExecutor({ run, capture: async () => response });
+      await expect(
+        executor.execute(
+          proposal("calendar.add_attendees", {
+            event_id: "event-9",
+            attendees: ["ada@example.com"],
+          }),
+        ),
+      ).rejects.toThrow();
+      expect(run).not.toHaveBeenCalled();
+    },
+  );
+  it("can add the first guest to an event with no attendee list", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({
+      run,
+      capture: async () => JSON.stringify({ event: { id: "event-9" } }),
+    });
+    await executor.execute(
+      proposal("calendar.add_attendees", { event_id: "event-9", attendees: ["ada@example.com"] }),
+    );
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  describe("calendar.remove_attendees", () => {
+    const liveEvent = (attendees: Array<Record<string, unknown>>) =>
+      JSON.stringify({ event: { id: "event-9", attendees } });
+
+    // The removal rewrites the whole guest list, so notifying would re-send the invite to everyone
+    // still on the meeting each time one person is dropped.
+    it("subtracts the named people from the live guest list, silently", async () => {
+      const run = vi.fn(async () => {});
+      const capture = vi.fn(async () =>
+        liveEvent([
+          { email: "ada@cs.toronto.edu", responseStatus: "accepted" },
+          { email: "Gone@cs.toronto.edu" },
+          { email: "late@cs.toronto.edu" },
+          { email: "room@resource.test", resource: true },
+          { email: "maybe@cs.toronto.edu", optional: true },
+        ]),
+      );
+      const executor = createGogAdminBotExecutor({ run, capture });
+
+      await executor.execute(
+        proposal("calendar.remove_attendees", {
+          calendar_id: "jinesis.lab@gmail.com",
+          event_id: "event-9",
+          // A stale snapshot: late@ was added after the plan. Writing this back would drop them.
+          remaining_attendees: ["ada@cs.toronto.edu"],
+          removed_attendees: ["gone@cs.toronto.edu"],
+        }),
+      );
+
+      expect(capture.mock.calls[0]?.[0]).toEqual(
+        expect.arrayContaining(["calendar", "event", "jinesis.lab@gmail.com", "event-9"]),
+      );
+      const args = run.mock.calls[0]?.[0] as string[];
+      expect(args[args.indexOf("--attendees") + 1]).toBe(
+        "ada@cs.toronto.edu,late@cs.toronto.edu,room@resource.test;resource,maybe@cs.toronto.edu;optional",
+      );
+      expect(args[args.indexOf("--send-updates") + 1]).toBe("none");
+    });
+
+    // Re-approving, retrying after a timeout, or approving a duplicate proposal must not touch the
+    // event again once the people are gone.
+    it("does not write an event none of the named people are on", async () => {
+      const run = vi.fn(async () => {});
+      const capture = vi.fn(async () => liveEvent([{ email: "ada@cs.toronto.edu" }]));
+      const executor = createGogAdminBotExecutor({ run, capture });
+
+      await executor.execute(
+        proposal("calendar.remove_attendees", {
+          event_id: "event-9",
+          removed_attendees: ["gone@cs.toronto.edu"],
+        }),
+      );
+
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it("removes from every series a split meeting lives on", async () => {
+      const run = vi.fn(async () => {});
+      const capture = vi.fn(async (args: string[]) =>
+        args.includes("series-a")
+          ? liveEvent([{ email: "ada@cs.toronto.edu" }, { email: "gone@cs.toronto.edu" }])
+          : liveEvent([{ email: "ada@cs.toronto.edu" }]),
+      );
+      const executor = createGogAdminBotExecutor({ run, capture });
+
+      await executor.execute(
+        proposal("calendar.remove_attendees", {
+          event_id: "series-a",
+          event_ids: ["series-a", "series-b"],
+          removed_attendees: ["gone@cs.toronto.edu"],
+        }),
+      );
+
+      expect(capture).toHaveBeenCalledTimes(2);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(run.mock.calls[0]?.[0]).toContain("series-a");
+    });
+
+    it("refuses a removal that would empty the guest list", async () => {
+      const run = vi.fn(async () => {});
+      const capture = vi.fn(async () => liveEvent([{ email: "gone@cs.toronto.edu" }]));
+      const executor = createGogAdminBotExecutor({ run, capture });
+
+      await expect(
+        executor.execute(
+          proposal("calendar.remove_attendees", {
+            event_id: "event-9",
+            removed_attendees: ["gone@cs.toronto.edu"],
+          }),
+        ),
+      ).rejects.toThrow("refuses to empty");
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it("refuses an event read that carries no guest list", async () => {
+      const run = vi.fn(async () => {});
+      const capture = vi.fn(async () => JSON.stringify({ event: { id: "event-9" } }));
+      const executor = createGogAdminBotExecutor({ run, capture });
+
+      await expect(
+        executor.execute(
+          proposal("calendar.remove_attendees", {
+            event_id: "event-9",
+            removed_attendees: ["gone@cs.toronto.edu"],
+          }),
+        ),
+      ).rejects.toThrow("no attendee list");
+      expect(run).not.toHaveBeenCalled();
+    });
   });
 
   it("refuses an add-attendees action that names nobody", async () => {
@@ -222,6 +433,47 @@ describe("createGogAdminBotExecutor", () => {
   });
 });
 
+describe("appendGogSheetRows", () => {
+  it("appends as RAW and as inserted rows", async () => {
+    const run = vi.fn(async () => {});
+    await appendGogSheetRows("sheet-1", [["a", "b"]], { run, env: {} });
+    expect(run).toHaveBeenCalledWith([
+      "--json",
+      "--no-input",
+      "--enable-commands-exact",
+      "sheets.append",
+      "sheets",
+      "append",
+      "sheet-1",
+      "A:ZZ",
+      // Not USER_ENTERED: under it Sheets parses each string the way it parses typing, and a
+      // generated credential it decided was a formula or a number is not the credential any more.
+      "--input",
+      "RAW",
+      // Not OVERWRITE: that writes into whatever a human parked below the last populated row.
+      "--insert",
+      "INSERT_ROWS",
+      "--values-json",
+      JSON.stringify([["a", "b"]]),
+    ]);
+  });
+
+  it("refuses an empty row set rather than reporting a no-op as an append", async () => {
+    const run = vi.fn(async () => {});
+    await expect(appendGogSheetRows("sheet-1", [], { run, env: {} })).rejects.toThrow(
+      /empty row set/u,
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("requires a spreadsheet id", async () => {
+    const run = async () => {};
+    await expect(appendGogSheetRows("  ", [["a"]], { run, env: {} })).rejects.toThrow(
+      /requires a spreadsheet id/u,
+    );
+  });
+});
+
 describe("readGogSheetRows", () => {
   it("reads the applicant sheet through a read-only exact gog command", async () => {
     const capture = vi.fn(async () =>
@@ -285,6 +537,58 @@ describe("readGogSheetRows", () => {
     );
     await expect(
       readGogSheetRows("sheet-3", { capture: async () => "", env: {} }),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe("readGogSheetTabs", () => {
+  it("lists every tab as a title and a gid, through a read-only exact gog command", async () => {
+    const capture = vi.fn(async () =>
+      JSON.stringify({
+        properties: { title: "Jinesis Contact/Paper list with Zhijing" },
+        sheets: [
+          { properties: { title: "Paper submissions", sheetId: 846550934, index: 0 } },
+          { properties: { title: "Full Slack Member List", sheetId: 764749323, index: 5 } },
+        ],
+      }),
+    );
+
+    await expect(readGogSheetTabs("sheet-1", { capture, env: {} })).resolves.toEqual([
+      { title: "Paper submissions", gid: 846550934 },
+      { title: "Full Slack Member List", gid: 764749323 },
+    ]);
+    expect(capture).toHaveBeenCalledWith([
+      "--json",
+      "--no-input",
+      "--enable-commands-exact",
+      "sheets.metadata",
+      "--readonly",
+      "sheets",
+      "metadata",
+      "sheet-1",
+    ]);
+  });
+
+  it("accepts the flattened envelope some gog builds emit", async () => {
+    // gog's envelope shape varies per command, and a gid arrives as a string in some of them.
+    const capture = vi.fn(async () =>
+      JSON.stringify({ result: { sheets: [{ title: "Members", gid: "7" }] } }),
+    );
+    await expect(readGogSheetTabs("sheet-2", { capture, env: {} })).resolves.toEqual([
+      { title: "Members", gid: 7 },
+    ]);
+  });
+
+  it("rejects an empty spreadsheet id and non-JSON gog output", async () => {
+    const capture = vi.fn(async () => "not json");
+    await expect(readGogSheetTabs("  ", { capture, env: {} })).rejects.toThrow(
+      "gog sheets metadata requires a spreadsheet id",
+    );
+    await expect(readGogSheetTabs("sheet-3", { capture, env: {} })).rejects.toThrow(
+      "gog sheets metadata did not return JSON output",
+    );
+    await expect(
+      readGogSheetTabs("sheet-3", { capture: async () => "", env: {} }),
     ).resolves.toEqual([]);
   });
 });
@@ -371,5 +675,244 @@ describe("logistics.send_signed_document", () => {
         proposed_payload: { to: "ada@cs.toronto.edu", subject: "Signed", body: "Attached." },
       } as never),
     ).rejects.toThrow(/attachment/u);
+  });
+});
+
+describe("sheet.update_cells", () => {
+  it("writes every edited range in one batch-update, restricted to that exact command", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+
+    await expect(
+      executor.execute(
+        proposal("sheet.update_cells", {
+          spreadsheet_id: "1ZqdaRze",
+          updates: [
+            { range: "Full Slack Member List!S169", values: [["coauthor-minor"]] },
+            { range: "Full Slack Member List!R170", values: [["3"]] },
+          ],
+          // Carried for the approval card, so it can show what is being overwritten. Never sent.
+          before: [{ range: "Full Slack Member List!S169", values: [["alumni"]] }],
+        }),
+      ),
+    ).resolves.toEqual({ handled: true });
+
+    expect(run).toHaveBeenCalledWith([
+      "--json",
+      "--no-input",
+      "--enable-commands-exact",
+      "sheets.batch-update",
+      "sheets",
+      "batch-update",
+      "--data-json",
+      JSON.stringify([
+        { range: "Full Slack Member List!S169", values: [["coauthor-minor"]] },
+        { range: "Full Slack Member List!R170", values: [["3"]] },
+      ]),
+      "--input",
+      "RAW",
+      "1ZqdaRze",
+    ]);
+  });
+
+  // USER_ENTERED would turn this into a live formula reaching into whatever sheet the text names.
+  it("writes a leading-equals cell as text rather than as a formula", async () => {
+    const calls: string[][] = [];
+    const executor = createGogAdminBotExecutor({ run: async (args) => void calls.push(args) });
+
+    await executor.execute(
+      proposal("sheet.update_cells", {
+        spreadsheet_id: "1ZqdaRze",
+        updates: [{ range: "Sheet1!A1", values: [['=IMPORTRANGE("other","A1")']] }],
+      }),
+    );
+
+    expect(calls[0]).toContain("RAW");
+    expect(calls[0]).not.toContain("USER_ENTERED");
+  });
+
+  it("refuses an empty or malformed edit rather than calling gog", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+
+    await expect(
+      executor.execute(proposal("sheet.update_cells", { spreadsheet_id: "1ZqdaRze", updates: [] })),
+    ).rejects.toThrow(/non-empty/u);
+
+    await expect(
+      executor.execute(
+        proposal("sheet.update_cells", {
+          spreadsheet_id: "1ZqdaRze",
+          updates: [{ range: "Sheet1!A1", values: "not a matrix" }],
+        }),
+      ),
+    ).rejects.toThrow(/row matrix/u);
+
+    await expect(
+      executor.execute(
+        proposal("sheet.update_cells", {
+          spreadsheet_id: "1ZqdaRze",
+          updates: [{ range: "   ", values: [["x"]] }],
+        }),
+      ),
+    ).rejects.toThrow(/range is required/u);
+
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("appends a roster row as typed, inserting rather than overwriting", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+
+    await executor.execute(
+      proposal("sheet.append_rows", {
+        spreadsheet_id: "1ZqdaRze",
+        range: "'Full Slack Member List'!A:ZZ",
+        rows: [["Ada Lovelace", "full", "=1+1"]],
+      }),
+    );
+
+    const args = run.mock.calls[0]?.[0] as string[];
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "--enable-commands-exact",
+        "sheets.append",
+        "sheets",
+        "append",
+        "1ZqdaRze",
+        "'Full Slack Member List'!A:ZZ",
+      ]),
+    );
+    expect(args[args.indexOf("--input") + 1]).toBe("RAW");
+    expect(args[args.indexOf("--insert") + 1]).toBe("INSERT_ROWS");
+    expect(JSON.parse(args[args.indexOf("--values-json") + 1] ?? "")).toEqual([
+      ["Ada Lovelace", "full", "=1+1"],
+    ]);
+  });
+
+  it("refuses an append with no rows rather than calling gog", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+    await expect(
+      executor.execute(
+        proposal("sheet.append_rows", { spreadsheet_id: "1ZqdaRze", range: "A:ZZ", rows: [] }),
+      ),
+    ).rejects.toThrow(/row matrix/u);
+    expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe("the Drive probe", () => {
+  it("reads a file it can see, and says what it is called", async () => {
+    const probe = createGogDriveProbe({
+      command: process.execPath,
+      commandArgsPrefix: [
+        "-e",
+        // Stands in for gog: records nothing, answers the metadata shape.
+        'process.stdout.write(JSON.stringify({ result: { id: "x", name: "Paper.pdf", capabilities: { canEdit: false } } }))',
+        "--",
+      ],
+    });
+
+    await expect(probe("1PdF9xAbCdEfGhIjKlMnOpQrStUv")).resolves.toEqual({
+      status: "found",
+      name: "Paper.pdf",
+      canEdit: false,
+    });
+  });
+
+  it("requires both edit and add-file rights for a folder", async () => {
+    const probe = createGogDriveProbe({
+      command: process.execPath,
+      commandArgsPrefix: [
+        "-e",
+        'process.stdout.write(JSON.stringify({ result: { mimeType: "application/vnd.google-apps.folder", capabilities: { canEdit: true, canAddChildren: false } } }))',
+        "--",
+      ],
+    });
+    await expect(probe("1PdF9xAbCdEfGhIjKlMnOpQrStUv")).resolves.toMatchObject({
+      status: "found",
+      canEdit: false,
+    });
+    const cannotEdit = createGogDriveProbe({
+      command: process.execPath,
+      commandArgsPrefix: [
+        "-e",
+        'process.stdout.write(JSON.stringify({ result: { mimeType: "application/vnd.google-apps.folder", capabilities: { canEdit: false, canAddChildren: true } } }))',
+        "--",
+      ],
+    });
+    await expect(cannotEdit("1PdF9xAbCdEfGhIjKlMnOpQrStUv")).resolves.toMatchObject({
+      status: "found",
+      canEdit: false,
+    });
+  });
+
+  it("keeps Google's ambiguous 404 separate from probe failures", async () => {
+    const missing = createGogDriveProbe({
+      command: process.execPath,
+      commandArgsPrefix: [
+        "-e",
+        'process.stderr.write("File not found: 404"); process.exit(1)',
+        "--",
+      ],
+    });
+    await expect(missing("1PdF9xAbCdEfGhIjKlMnOpQrStUv")).resolves.toEqual({ status: "missing" });
+
+    const blocked = createGogDriveProbe({
+      command: process.execPath,
+      commandArgsPrefix: ["-e", 'process.stderr.write("permission denied"); process.exit(1)', "--"],
+    });
+    await expect(blocked("1PdF9xAbCdEfGhIjKlMnOpQrStUv")).resolves.toMatchObject({
+      status: "unreadable",
+    });
+  });
+
+  // The id is checked here as well as by the caller: this is the last point before it becomes a
+  // command-line argument.
+  it("refuses an id that is not one without shelling out at all", async () => {
+    const probe = createGogDriveProbe({ command: "definitely-not-a-command" });
+    await expect(probe("../../etc/passwd")).resolves.toEqual({
+      status: "unreadable",
+      reason: "not a Drive file id",
+    });
+  });
+});
+
+describe("paper_integrity.sheet_scores", () => {
+  const proposal = (payload: Record<string, unknown>) =>
+    ({ type: "paper_integrity.sheet_scores", proposed_payload: payload }) as never;
+  const cell = (range: string, value = "82% AI") => ({ range, values: [[value]] });
+
+  it("writes single cells in the score and citation columns", () => {
+    const args = buildIntegrityScoreArgs(
+      proposal({
+        spreadsheet_id: "sheet-1",
+        columns: ["H", "I"],
+        updates: [cell("'Papers-iclr-feedback'!H2"), cell("'Papers-iclr-feedback'!I2", "Ref.")],
+      }),
+    );
+    expect(args).toContain("batch-update");
+    expect(args).toContain("RAW");
+  });
+
+  // Auto-approved, so this is the boundary: nothing but those two columns, one cell at a time.
+  it.each([
+    ["another column", { columns: ["H"], updates: [cell("'Tab'!A2")] }],
+    ["a range", { columns: ["H"], updates: [cell("'Tab'!H2:H9")] }],
+    [
+      "a block of values",
+      { columns: ["H"], updates: [{ range: "'Tab'!H2", values: [["a", "b"]] }] },
+    ],
+    ["an unquoted tab", { columns: ["H"], updates: [cell("Tab!H2")] }],
+    [
+      "nine columns",
+      { columns: ["A", "B", "C", "D", "E", "F", "G", "H", "I"], updates: [cell("'Tab'!H2")] },
+    ],
+    ["no columns", { columns: [], updates: [cell("'Tab'!H2")] }],
+  ])("refuses %s", (_label, payload) => {
+    expect(() =>
+      buildIntegrityScoreArgs(proposal({ spreadsheet_id: "sheet-1", ...payload })),
+    ).toThrow(/paper_integrity\.sheet_scores/u);
   });
 });

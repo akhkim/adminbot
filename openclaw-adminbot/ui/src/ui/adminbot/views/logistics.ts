@@ -31,6 +31,7 @@ import {
   APPLICATION_STATUS_SUGGESTIONS,
   LETTER_STATUS_LIST_ID,
   LETTER_STATUS_SUGGESTIONS,
+  MEETING_SHEET_URL,
   SCHOOL_FIELDS,
   SIGNATURE_FORM_URL,
   TEMPLATE_FOLDER_URL,
@@ -49,7 +50,15 @@ import {
 
 /** What `describeSubmitBlock` found, as the view needs it: a reason and, for a file, which one. */
 export type SubmitBlock = {
-  reason: "empty" | "no-name" | "no-purpose" | "file-too-big" | "request-too-big" | "signed-out";
+  reason:
+    | "empty"
+    | "no-name"
+    | "letter-deadline"
+    | "no-purpose"
+    | "no-doc-prep"
+    | "file-too-big"
+    | "request-too-big"
+    | "signed-out";
   file?: string;
 };
 
@@ -86,6 +95,14 @@ type RequestSaveProps = {
   submitError: string | null;
   /** Set once a request landed, so the form can say so instead of looking like nothing happened. */
   submitted: boolean;
+  /**
+   * What became of the call-sheet row a meeting request proposes for itself.
+   *
+   * The service's own sentence, not a UI string: it names the thing to fix -- a doc prep link
+   * nobody can open, a duplicate already in the queue -- and this is the one moment its author is
+   * looking at the form.
+   */
+  submittedNote?: string;
   /** Clears everything typed into this form, draft included. */
   onDiscard: () => void;
   hasContent: boolean;
@@ -116,6 +133,18 @@ export type AdminBotLogisticsProps = {
     onDescriptionChange: (description: string) => void;
     attachments: File[];
     onAttachmentsChange: (files: File[]) => void;
+    /**
+     * The three answers the lab's Google Form asks of the member. The fourth -- their name -- is
+     * answered by the service from the roster, so it is deliberately not here.
+     */
+    form: { driveUrl: string; deadline: string; context: string };
+    onForm: (patch: Partial<{ driveUrl: string; deadline: string; context: string }>) => void;
+    /** Files it on the Google Form. Named apart from RequestSaveProps' own submit, which belongs
+     *  to the upload path this replaced and is still used when correcting a sent request. */
+    onSendForm: () => Promise<boolean> | void;
+    sendingForm: boolean;
+    formError: string | null;
+    formSent: boolean;
   };
   meeting: RequestSaveProps & {
     rows: MeetingRequestRow[];
@@ -374,8 +403,14 @@ function submitBlockText(block: SubmitBlock): string {
   if (block.reason === "no-name") {
     return t("logistics.request.blocked.noName");
   }
+  if (block.reason === "letter-deadline") {
+    return t("logistics.request.blocked.letterDeadline");
+  }
   if (block.reason === "no-purpose") {
     return t("logistics.request.blocked.noPurpose");
+  }
+  if (block.reason === "no-doc-prep") {
+    return t("logistics.request.blocked.noDocPrep");
   }
   if (block.reason === "signed-out") {
     return t("logistics.request.blocked.signedOut");
@@ -422,8 +457,14 @@ function renderRequestActions(props: RequestSaveProps) {
     ? html`<span class="logistics-request__status--error">${props.submitError}</span>`
     : props.submitted
       ? html`<span class="logistics-request__status--ok" data-testid="logistics-submitted"
-          >${t("logistics.request.submitted")}</span
-        >`
+            >${t("logistics.request.submitted")}</span
+          >${props.submittedNote
+            ? html`<span
+                class="logistics-request__status--note"
+                data-testid="logistics-submitted-note"
+                >${props.submittedNote}</span
+              >`
+            : nothing}`
       : props.saveError
         ? html`<span class="logistics-request__status--error">${props.saveError}</span>`
         : saved
@@ -461,7 +502,15 @@ function renderRequestActions(props: RequestSaveProps) {
         class="btn btn--sm"
         type="button"
         ?disabled=${!props.hasContent || props.saving || props.submitting}
-        @click=${props.onDiscard}
+        @click=${(event: Event) => {
+          const confirmation = (event.currentTarget as HTMLButtonElement)
+            .closest(".logistics-request")
+            ?.querySelector<HTMLInputElement>("[data-testid='logistics-email-confirmation']");
+          if (confirmation) {
+            confirmation.checked = false;
+          }
+          props.onDiscard();
+        }}
       >
         ${t("logistics.request.discard")}
       </button>
@@ -481,7 +530,16 @@ function renderRequestActions(props: RequestSaveProps) {
         type="button"
         data-testid="logistics-submit"
         ?disabled=${props.submitting}
-        @click=${props.onSubmit}
+        @click=${(event: Event) => {
+          const button = event.currentTarget as HTMLButtonElement;
+          const confirmation = button
+            .closest(".logistics-request")
+            ?.querySelector<HTMLInputElement>("[data-testid='logistics-email-confirmation']");
+          if (confirmation && !confirmation.reportValidity()) {
+            return;
+          }
+          props.onSubmit();
+        }}
       >
         ${props.submitting
           ? t("logistics.request.submitting")
@@ -540,7 +598,7 @@ function renderSchoolCell(
   });
   const placeholder = field.placeholderKey ? t(field.placeholderKey) : nothing;
   return html`
-    <td class="logistics-schools__cell logistics-schools__cell--${field.key}">
+    <td class="logistics-schools__cell logistics-schools__cell--${field.key}" data-label=${label}>
       ${field.control === "notes"
         ? html`
             <textarea
@@ -562,6 +620,7 @@ function renderSchoolCell(
                   : field.control === "url"
                     ? "url"
                     : "text"}
+              ?required=${field.required ?? false}
               list=${field.listId ?? nothing}
               aria-label=${label}
               placeholder=${placeholder}
@@ -603,7 +662,7 @@ function renderSchoolsSection(props: LettersProps) {
 
       ${renderStatusOptions(APPLICATION_STATUS_LIST_ID, APPLICATION_STATUS_SUGGESTIONS)}
       ${renderStatusOptions(LETTER_STATUS_LIST_ID, LETTER_STATUS_SUGGESTIONS)}
-      ${renderStatusOptions(TIMEZONE_LIST_ID, timezoneSuggestions())}
+      ${renderStatusOptions(TIMEZONE_LIST_ID, ["AoE", ...timezoneSuggestions()])}
 
       <!-- Eight columns do not fit a laptop, and squeezing them would leave every field too narrow
            to read what was typed in it. The table keeps its width and this wrapper scrolls. -->
@@ -717,7 +776,10 @@ function renderFactsSection(props: LettersProps) {
                   (row) => row.id,
                   (row, index) => html`
                     <tr class="logistics-schools__row">
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.facts.project")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="text"
@@ -730,7 +792,10 @@ function renderFactsSection(props: LettersProps) {
                           @input=${update(row, "project")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.facts.contribution")}
+                      >
                         <textarea
                           class="logistics-schools__input logistics-schools__notes"
                           rows="2"
@@ -802,20 +867,36 @@ function submittedLabel(submittedAt: number): string {
 /**
  * Book Meeting, as a spreadsheet rather than a form.
  *
- * A meeting request is four short facts, and the people who schedule them read many at once: which
- * call, when it suits, on whose clock, and how long. A form per request meant opening each one to
+ * A meeting request is a handful of short facts, and the people who schedule them read many at
+ * once: which call, when it suits, on whose clock, how long, and -- for the calls placed at a trip
+ * break rather than booked into a slot -- where the person is, until when the call is still worth
+ * making, and the document of questions to read first. A form per request meant opening each one to
  * find out whether it was a fifteen-minute check-in or an hour-long committee call, which is the
- * question that decides where it goes in a week. One row per request puts all four side by side.
+ * question that decides where it goes in a week. One row per request puts them side by side.
+ *
+ * The doc prep link is the one column with a consequence beyond this table: a request whose link
+ * nobody can open never reaches the call queue, so it is asked for here rather than chased later.
  *
  * "Submitted" is stamped when the row is created and shown read-only. It is the column that decides
  * order of service, so it is the one field a requester must not be able to write.
  */
 function renderMeetingSection(props: MeetingProps) {
   const update =
-    (row: MeetingRequestRow, key: "purpose" | "preferredTime" | "timezone" | "lengthMinutes") =>
+    (
+      row: MeetingRequestRow,
+      key:
+        | "purpose"
+        | "preferredTime"
+        | "timezone"
+        | "lengthMinutes"
+        | "city"
+        | "docPrepUrl"
+        | "whatsappHello"
+        | "latestOkDate",
+    ) =>
     (event: Event) => {
       const control = event.currentTarget;
-      if (!(control instanceof HTMLInputElement)) {
+      if (!(control instanceof HTMLInputElement) && !(control instanceof HTMLSelectElement)) {
         return;
       }
       props.onRowsChange(
@@ -843,6 +924,10 @@ function renderMeetingSection(props: MeetingProps) {
                 t("logistics.meeting.preferredTime"),
                 t("logistics.meeting.timezone"),
                 t("logistics.meeting.length"),
+                t("logistics.meeting.city"),
+                t("logistics.meeting.docPrep"),
+                t("logistics.meeting.whatsappHello"),
+                t("logistics.meeting.latestOk"),
               ].map(
                 (heading) => html`
                   <th scope="col" class="logistics-schools__head">
@@ -862,10 +947,16 @@ function renderMeetingSection(props: MeetingProps) {
                   (row) => row.id,
                   (row, index) => html`
                     <tr class="logistics-schools__row">
-                      <td class="logistics-schools__cell logistics-meeting__submitted">
+                      <td
+                        class="logistics-schools__cell logistics-meeting__submitted"
+                        data-label=${t("logistics.meeting.submitted")}
+                      >
                         ${submittedLabel(row.submittedAt)}
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.purpose")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="text"
@@ -875,7 +966,10 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "purpose")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.preferredTime")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="datetime-local"
@@ -884,7 +978,10 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "preferredTime")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.timezone")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="text"
@@ -894,7 +991,10 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "timezone")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.length")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="number"
@@ -905,6 +1005,56 @@ function renderMeetingSection(props: MeetingProps) {
                           placeholder=${t("logistics.meeting.lengthPlaceholder")}
                           .value=${row.lengthMinutes}
                           @input=${update(row, "lengthMinutes")}
+                        />
+                      </td>
+                      <td class="logistics-schools__cell" data-label=${t("logistics.meeting.city")}>
+                        <input
+                          class="logistics-schools__input"
+                          type="text"
+                          aria-label=${cellLabel(t("logistics.meeting.city"), index)}
+                          placeholder=${t("logistics.meeting.cityPlaceholder")}
+                          .value=${row.city}
+                          @input=${update(row, "city")}
+                        />
+                      </td>
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.docPrep")}
+                      >
+                        <input
+                          class="logistics-schools__input"
+                          type="url"
+                          aria-label=${cellLabel(t("logistics.meeting.docPrep"), index)}
+                          placeholder=${t("logistics.meeting.docPrepPlaceholder")}
+                          .value=${row.docPrepUrl}
+                          @input=${update(row, "docPrepUrl")}
+                        />
+                      </td>
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.whatsappHello")}
+                      >
+                        <select
+                          class="logistics-schools__input"
+                          aria-label=${cellLabel(t("logistics.meeting.whatsappHello"), index)}
+                          .value=${row.whatsappHello}
+                          @change=${update(row, "whatsappHello")}
+                        >
+                          <option value="">${t("logistics.meeting.whatsappUnanswered")}</option>
+                          <option value="yes">${t("logistics.meeting.whatsappYes")}</option>
+                          <option value="no">${t("logistics.meeting.whatsappNo")}</option>
+                        </select>
+                      </td>
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.latestOk")}
+                      >
+                        <input
+                          class="logistics-schools__input"
+                          type="date"
+                          aria-label=${cellLabel(t("logistics.meeting.latestOk"), index)}
+                          .value=${row.latestOkDate}
+                          @input=${update(row, "latestOkDate")}
                         />
                       </td>
                       <td class="logistics-schools__cell logistics-schools__cell--remove">
@@ -925,7 +1075,7 @@ function renderMeetingSection(props: MeetingProps) {
                 )
               : html`
                   <tr>
-                    <td class="logistics-schools__empty" colspan="6">
+                    <td class="logistics-schools__empty" colspan="10">
                       ${t("logistics.meeting.empty")}
                     </td>
                   </tr>
@@ -1025,7 +1175,16 @@ function renderDriveFolderSection(props: LettersProps) {
 // One container for the whole request: the documents, the optional context that travels with them,
 // and the two actions that close it out.
 /**
- * Signature requests are filed on a Google Form now, so this is a signpost rather than a form.
+ * Signature requests are filed on the lab's Google Form, and this tab fills it in.
+ *
+ * It used to be a signpost -- a link, and the member typed the same four answers into Google
+ * themselves. The form asks exactly four questions (name, a link to the document, a deadline, and
+ * optional context), so the tab asks the three that are the member's to answer and AdminBot posts
+ * the row. The name is not asked for here: the service answers it from the roster, because the
+ * form's first column is who is asking and that is not a field to let a browser fill in.
+ *
+ * The link to the form stays, under the button. This posts to Google over the network and Google
+ * can refuse; a member who cannot get past that needs the door they had before, not a dead end.
  *
  * The upload path is kept for one case only: a request that was already submitted and is being
  * corrected. Those were filed with documents attached, and dropping the editor would strand the
@@ -1044,24 +1203,95 @@ function renderSignatureRequest(props: SignatureProps) {
       </div>
     `;
   }
+  const form = props.form;
+  const ready = Boolean(form.driveUrl.trim() && form.deadline.trim());
   return html`
     <div
       class="card adminbot-card adminbot-card--wide logistics-request"
       data-testid="logistics-signature-form"
     >
-      <section class="logistics-request__section">
+      <section
+        class="logistics-request__section logistics-signature"
+        data-testid="logistics-signature-section"
+      >
         <h3 class="card-title">${t("logistics.signature.title")}</h3>
         <p class="card-sub">${t("logistics.signature.sub")}</p>
-        <a
-          class="btn primary logistics-signature__link"
-          href=${SIGNATURE_FORM_URL}
-          target="_blank"
-          rel="noreferrer noopener"
-          data-testid="logistics-signature-form-link"
+        <label class="adminbot-form__field logistics-signature__field">
+          <span>${t("logistics.signature.driveUrl")}</span>
+          <input
+            class="logistics-signature__input"
+            type="url"
+            data-testid="logistics-signature-drive-url"
+            .value=${form.driveUrl}
+            placeholder="https://drive.google.com/..."
+            @input=${(event: Event) =>
+              props.onForm({ driveUrl: (event.target as HTMLInputElement).value })}
+          />
+        </label>
+        <label
+          class="adminbot-form__field logistics-signature__field logistics-signature__field--short"
         >
-          ${t("logistics.signature.openForm")}
-          <span aria-hidden="true">${icons.externalLink}</span>
-        </a>
+          <span>${t("logistics.signature.deadline")}</span>
+          <input
+            class="logistics-signature__input"
+            type="date"
+            data-testid="logistics-signature-deadline"
+            .value=${form.deadline}
+            @input=${(event: Event) =>
+              props.onForm({ deadline: (event.target as HTMLInputElement).value })}
+          />
+        </label>
+        <label class="adminbot-form__field logistics-signature__field">
+          <span>${t("logistics.signature.context")}</span>
+          <textarea
+            class="logistics-signature__note"
+            rows="3"
+            placeholder=${t("logistics.signature.contextPlaceholder")}
+            data-testid="logistics-signature-context"
+            .value=${form.context}
+            @input=${(event: Event) =>
+              props.onForm({ context: (event.target as HTMLTextAreaElement).value })}
+          ></textarea>
+        </label>
+
+        ${props.formError
+          ? html`<p
+              class="logistics-request__status--error logistics-signature__status"
+              data-testid="logistics-signature-error"
+            >
+              ${props.formError}
+            </p>`
+          : nothing}
+        ${props.formSent
+          ? html`<p
+              class="logistics-request__status--ok logistics-signature__status"
+              data-testid="logistics-signature-submitted"
+            >
+              ${t("logistics.signature.submitted")}
+            </p>`
+          : nothing}
+
+        <div class="logistics-request__actions logistics-signature__actions">
+          <button
+            type="button"
+            class="btn primary"
+            data-testid="logistics-signature-submit"
+            ?disabled=${!ready || props.sendingForm}
+            @click=${() => void props.onSendForm()}
+          >
+            ${props.sendingForm ? t("logistics.signature.sending") : t("logistics.signature.send")}
+          </button>
+          <a
+            class="logistics-signature__link"
+            href=${SIGNATURE_FORM_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            data-testid="logistics-signature-form-link"
+          >
+            ${t("logistics.signature.openForm")}
+            <span aria-hidden="true">${icons.externalLink}</span>
+          </a>
+        </div>
       </section>
     </div>
   `;
@@ -1075,6 +1305,57 @@ function renderLettersRequest(props: LettersProps) {
       class="card adminbot-card adminbot-card--wide logistics-request"
       data-testid="logistics-letters"
     >
+      <section
+        class="logistics-request__section"
+        aria-labelledby="logistics-letters-guide-title"
+        data-testid="logistics-letters-guide"
+      >
+        <h3 class="card-title" id="logistics-letters-guide-title">
+          ${t("logistics.lettersGuide.title")}
+        </h3>
+        <p class="card-sub">${t("logistics.lettersGuide.sub")}</p>
+        <p>
+          <a
+            href="https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.7kpgc8qat88o"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            ${t("logistics.lettersGuide.open")}
+          </a>
+        </p>
+        <ul>
+          <li>${t("logistics.lettersGuide.folder")}</li>
+          <li>${t("logistics.lettersGuide.schools")}</li>
+          <li>${t("logistics.lettersGuide.materials")}</li>
+          <li>${t("logistics.lettersGuide.facts")}</li>
+        </ul>
+        <p class="card-sub">${t("logistics.lettersGuide.reminders")}</p>
+        <p>
+          <label style="display:flex;gap:12px;align-items:flex-start;cursor:pointer">
+            <input
+              type="checkbox"
+              required
+              data-testid="logistics-email-confirmation"
+              style="flex-shrink:0;margin-top:5px"
+            />
+            <span
+              >I confirm that I have sent all application-portal invitations for this request to
+              <strong>zjin.admin@cs.toronto.edu</strong>, not Zhijing's main email.<span
+                class="cron-required-marker"
+                aria-hidden="true"
+                >*</span
+              ></span
+            >
+          </label>
+          <a
+            href="https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.ypvr8psn5zdy"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            ${t("logistics.lettersGuide.portalLink")}
+          </a>
+        </p>
+      </section>
       ${renderSchoolsSection(props)} ${renderFactsSection(props)} ${renderCvOverleafSection(props)}
       ${renderDriveFolderSection(props)} ${renderRequestActions(props)}
     </div>
@@ -1082,13 +1363,42 @@ function renderLettersRequest(props: LettersProps) {
 }
 
 // The same container shape again for Book Meeting: one table, then Save and Submit.
+/**
+ * The meeting tab, which collects again.
+ *
+ * It used to point at the call spreadsheet and collect nothing, on the reasoning that duplicating
+ * four columns into the service bought nothing the sheet did not already do. That held only while
+ * the columns were four and the sheet was the only reader. It now collects all of them, because
+ * the doc prep link has to be checked before it reaches Zhijing -- a link that opens for its author
+ * and nobody else is the failure that wastes the call, and only the service can tell the two apart.
+ * A request filed here is checked and then proposed onto her tab; one filed by hand on the sheet
+ * still works and is left alone.
+ *
+ * The link to the sheet stays, demoted: it is how somebody reads the queue, which is a different
+ * job from joining it.
+ */
 function renderMeetingRequest(props: MeetingProps) {
   return html`
     <div
       class="card adminbot-card adminbot-card--wide logistics-request"
       data-testid="logistics-meeting-request"
     >
+      <p class="logistics-meeting__mandatory" data-testid="logistics-meeting-mandatory">
+        <strong>${t("logistics.meeting.mandatory")}</strong>
+      </p>
       ${renderMeetingSection(props)} ${renderRequestActions(props)}
+      <section class="logistics-request__section">
+        <a
+          class="btn logistics-signature__link"
+          href=${MEETING_SHEET_URL}
+          target="_blank"
+          rel="noreferrer noopener"
+          data-testid="logistics-meeting-sheet-link"
+        >
+          ${t("logistics.meeting.openSheet")}
+          <span aria-hidden="true">${icons.externalLink}</span>
+        </a>
+      </section>
     </div>
   `;
 }

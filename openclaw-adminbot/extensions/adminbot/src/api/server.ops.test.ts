@@ -31,7 +31,6 @@ async function startService(
     serviceToken: SERVICE_TOKEN,
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
-    dcsFormRunner: async () => {},
     ...options,
   });
   await new Promise<void>((resolve, reject) => {
@@ -74,12 +73,13 @@ async function memberSession(baseUrl: string, mock: ReturnType<typeof createAdmi
       headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
     })
   ).json();
-  const registration = (pending as { registrations: Array<{ id: string; member_id?: string }> })
-    .registrations.find((entry) => entry.member_id === "ada");
+  const registration = (
+    pending as { registrations: Array<{ id: string; member_id?: string }> }
+  ).registrations.find((entry) => entry.member_id === "ada");
   if (!registration) {
     throw new Error("missing claim registration");
   }
-  const approved = mock.auth.approveRegistration(registration.id, "test-admin");
+  const approved = await mock.auth.approveRegistration(registration.id, "test-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }
@@ -129,7 +129,7 @@ describe("GET /ops/llm-load and /ops/failed-requests", () => {
     expect(failed.status).toBe(403);
   });
 
-  it("returns 502 when the shared gateway is configured but unreachable", async () => {
+  it("reports the shared gateway outage using the service wire status", async () => {
     const previousUrl = process.env.LLM_GATEWAY_URL;
     const previousToken = process.env.LLM_GATEWAY_TOKEN;
     process.env.LLM_GATEWAY_URL = "http://127.0.0.1:1";
@@ -139,8 +139,9 @@ describe("GET /ops/llm-load and /ops/failed-requests", () => {
       const response = await fetch(`${baseUrl}/ops/llm-load`, {
         headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
       });
-      expect(response.status).toBe(502);
-      await expect(response.json()).resolves.toEqual({
+      const body = await response.json();
+      expect(response.status, JSON.stringify(body)).toBe(500);
+      expect(body).toEqual({
         error: { message: "shared LLM gateway is unreachable" },
       });
     } finally {

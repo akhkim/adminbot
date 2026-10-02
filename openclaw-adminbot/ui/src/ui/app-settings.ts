@@ -1,3 +1,4 @@
+import { ADMINBOT_PASSWORD_RESET_PATH } from "../../../extensions/adminbot/src/contracts/control-ui.js";
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
@@ -10,6 +11,7 @@ import {
   loadAdminBotRegistrations,
   type AdminBotRegistrationsHost,
 } from "./adminbot/data/registrations.ts";
+import { needsLabPapers } from "./adminbot/papers-required.ts";
 import { refreshChat } from "./app-chat.ts";
 import {
   startLogsPolling,
@@ -65,6 +67,7 @@ import {
   normalizeBasePath,
   normalizePath,
   pathForTab,
+  pathIsRoot,
   tabFromPath,
   type Tab,
 } from "./navigation.ts";
@@ -121,6 +124,9 @@ type SettingsHost = {
   controlUiOverviewRefreshSeq?: number;
   controlUiCronRefreshSeq?: number;
   sessionsChangedReloadTimer?: number | ReturnType<typeof globalThis.setTimeout> | null;
+  // This visit arrived on the root and has not been navigated since, so the tab on screen is a
+  // default nobody chose. Read once the session says who is looking -- see applyViewerHome.
+  landedWithoutATab?: boolean;
 };
 
 type LocalUserIdentityHost = {
@@ -323,9 +329,29 @@ export function applySettingsFromUrl(host: SettingsHost) {
     if (token) {
       host.passwordResetToken = token;
       host.loginMode = "reset-confirm";
+      // The lifecycle synchronizes signed-out UI from the cleaned URL immediately after this pass.
+      // Keep the login surface in that URL or the reset state remains in memory behind the landing
+      // page, which looks like the link redirected to the wrong place.
+      host.authGateVisible = true;
+      params.set("signedOut", "login");
     }
     params.delete("passwordReset");
     hashParams.delete("passwordReset");
+    shouldCleanUrl = true;
+  }
+
+  // /reset-password, the path reset emails now point at. The token above is what actually opens the
+  // confirm form; this handles the rest of the journey -- a link opened twice, or after the token
+  // expired, lands on "ask me for a new one" rather than on the landing page with no explanation of
+  // why the member is looking at it. Checked after the token so a good link still wins the mode.
+  if (
+    typeof window !== "undefined" &&
+    window.location?.pathname?.replace(/\/+$/, "") === ADMINBOT_PASSWORD_RESET_PATH
+  ) {
+    host.authGateVisible = true;
+    if (!host.passwordResetToken) {
+      host.loginMode = "reset-request";
+    }
     shouldCleanUrl = true;
   }
 
@@ -436,6 +462,18 @@ function loadConfigSchemaAfterPrimary(
 
 export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?: boolean }) {
   const app = host as unknown as SettingsAppHost;
+  // Navigation should reuse the session's dashboard read where the page has its own Refresh button.
+  const needsPapers = needsLabPapers(host.tab);
+  const loadAdminBotOnce = () =>
+    app.adminBotLoading ||
+    (app.adminBotData?.loadedAt && (!needsPapers || app.adminBotData.papersLoadedAt))
+      ? Promise.resolve()
+      : loadAdminBot(
+          app,
+          "admin",
+          needsPapers,
+          Boolean(app.adminBotData?.loadedAt && needsPapers && !app.adminBotData.papersLoadedAt),
+        );
   const refreshRun = beginControlUiRefresh(host, host.tab);
   try {
     switch (host.tab) {
@@ -460,21 +498,19 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "adminbotMembers":
       case "adminbotPapers":
       case "adminbotAnnouncements":
-      // From `luke/time-allocation`: the tab reads the roster, so refreshing on it has to reload
-      // the roster. Without a case here the refresh control was inert on that surface.
       case "adminbotTimeAvailability":
-        await loadAdminBot(app);
+        await loadAdminBotOnce();
         break;
       // Needs the roster too: the interests box is prefilled from the viewer's own topics, which
       // only exist once the member list has loaded.
       case "adminbotConferencePapers":
-        await loadAdminBot(app);
+        await loadAdminBotOnce();
         await loadAdminBotVenueSources(app);
         break;
       // The audience filters read the roster and the papers; the event list is a separate read.
       case "adminbotCalendar": {
         const loadEvents = (app as { loadCalendarEvents?: () => Promise<void> }).loadCalendarEvents;
-        await Promise.all([loadAdminBot(app), loadEvents?.() ?? Promise.resolve()]);
+        await Promise.all([loadAdminBotOnce(), loadEvents?.call(app) ?? Promise.resolve()]);
         break;
       }
       case "adminbotRegistrations":
@@ -663,8 +699,13 @@ export function syncTabWithLocation(host: SettingsHost, replace: boolean) {
   if (typeof window === "undefined") {
     return;
   }
+  const fromRoot = pathIsRoot(window.location.pathname, host.basePath);
   const resolved = tabFromPath(window.location.pathname, host.basePath) ?? "chat";
   setTabFromRoute(host, resolved);
+  // After the selection above, which clears the flag as any navigation does. The member session
+  // has not resumed yet, so who is looking is not knowable here; this records that the question is
+  // still open so applyViewerHome can answer it when the roster arrives.
+  host.landedWithoutATab = fromRoot;
   syncUrlWithTab(host, resolved, replace);
 }
 
@@ -719,6 +760,9 @@ function applyTabSelection(
 ) {
   const prev = host.tab;
   host.tab = next;
+  // Whatever brought us here -- a click, Back, a deep link -- the tab on screen is now a choice,
+  // so the viewer's home no longer gets to replace it.
+  host.landedWithoutATab = false;
   if (prev !== next) {
     scheduleControlUiTabVisibleTiming(host, prev, next);
     clearPendingSessionsChangedReload(host);

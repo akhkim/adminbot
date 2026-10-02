@@ -43,6 +43,13 @@ export type {
 } from "./src/workflows/papers/openreview-workflow.js";
 export { createCompositeAdminBotExecutor } from "./src/connectors/composite.js";
 export { createAdminBotSqliteService, AdminBotSqliteStore } from "./src/persistence/sqlite.js";
+export { ensureAdminBotEmailReviewSchema } from "./src/persistence/email-review.js";
+export type {
+  AdminBotEmailReviewItem,
+  AdminBotEmailReviewPaperflowCandidate,
+  AdminBotEmailReviewResolution,
+  AdminBotResolvedEmailReviewItem,
+} from "./src/contracts/email-review.js";
 // PaperFlow venue-cycle stages. Exported for scripts/adminbot-email-automation.ts, which reads the
 // open stages to hand the classifier a closed set to choose from, and writes back the evidence
 // when a bcc closes one.
@@ -76,13 +83,16 @@ export {
   defaultAdminBotPrivacyBrokerConfig,
 } from "./src/privacy/broker.js";
 export type { AdminBotPrivacyBroker, AdminBotPrivacyBrokerConfig } from "./src/privacy/broker.js";
-export { createLlmLoadRouter, parseLlmNodes, sharedLlmLoadRouter } from "./src/kernel/llm-router.js";
+export {
+  createLlmLoadRouter,
+  parseLlmNodes,
+  sharedLlmLoadRouter,
+} from "./src/kernel/llm-router.js";
 export type { LlmLoadRouter } from "./src/kernel/llm-router.js";
 export {
   createMemoryFailedRequestLedger,
   createSqliteFailedRequestLedger,
 } from "./src/persistence/failed-requests.js";
-export { withDcsFormFailover, submitDcsFormViaAwsFallback } from "./src/workflows/onboarding/dcs-form.js";
 export type {
   AdminBotFailedExternalRequest,
   AdminBotLlmLoadStatus,

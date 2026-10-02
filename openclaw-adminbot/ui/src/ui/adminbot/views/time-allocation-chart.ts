@@ -17,6 +17,7 @@ import {
   type FocusEvent as ReactFocusEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  useEffect,
   useId,
   useState,
 } from "react";
@@ -115,18 +116,25 @@ type TimeAllocationTooltipProps = {
 export type TimeAllocationInterval = "day" | "week" | "month";
 const DAY_MS = 86_400_000;
 const TIME_CHART_ELEMENT = "adminbot-effort-stack-chart";
-// Keep the standalone EffortStackChart palette and its stable first-seen color assignment.
-const CHART_COLORS = [
-  "#3575DA",
-  "#00676E",
-  "#F6511D",
-  "#188B3E",
-  "#783810",
-  "#F7615D",
-  "#8B5CF6",
-  "#D4A72C",
+// The palette lives in styles/time-allocation-chart.css, not here, because the two themes need
+// different steps of the same hue and a hex in this file can only be one of them. Read as CSS
+// variables: recharts passes `fill` straight onto the SVG element, so `var(...)` resolves there
+// like anywhere else, and switching theme repaints the chart with no JavaScript and no re-render.
+//
+// Order is the assignment order and is stable per category (first seen, first slot). Nothing here
+// cycles past the eighth: a ninth category takes the neutral rather than a second turn at blue,
+// which would put one colour on two series in the same stack.
+export const CHART_COLORS = [
+  "var(--adminbot-chart-series-1)",
+  "var(--adminbot-chart-series-2)",
+  "var(--adminbot-chart-series-3)",
+  "var(--adminbot-chart-series-4)",
+  "var(--adminbot-chart-series-5)",
+  "var(--adminbot-chart-series-6)",
+  "var(--adminbot-chart-series-7)",
+  "var(--adminbot-chart-series-8)",
 ] as const;
-const CHART_NEUTRAL_COLOR = "#9AA0AA";
+export const CHART_NEUTRAL_COLOR = "var(--adminbot-chart-neutral)";
 const AWAY_BACKGROUND_KEY = "__away_background__";
 // Recharts omits a Bar's background when that series is exactly zero. A tiny transparent value,
 // held to one rendered pixel, gives the whole-day background an anchor without changing any
@@ -231,16 +239,12 @@ function tableDate(iso: string): string {
   }).format(new Date(dateMs(iso)));
 }
 
-
 function formatPercentage(value: number): string {
   return new Intl.NumberFormat(i18n.getLocale(), {
     style: "percent",
     maximumFractionDigits: 1,
   }).format(value / 100);
 }
-
-
-
 
 function taskCategories(tasks: readonly TimeAllocationTask[]): TimeAllocationCategory[] {
   return [
@@ -315,7 +319,7 @@ export function allocationSegments(
 ): TimeAllocationSegment[] {
   const categories = taskCategories(tasks);
   const segments: TimeAllocationSegment[] = [];
-  for (let bucketOffset = 0; bucketOffset < 7; bucketOffset += 1) {
+  for (let bucketOffset = 0; bucketOffset < CHART_WINDOW_BUCKETS; bucketOffset += 1) {
     const start = addIntervals(windowStart, interval, bucketOffset);
     const end = addIntervals(start, interval, 1);
     const days = Array.from(
@@ -414,9 +418,16 @@ function TimeAllocationTooltip({
   const awayDays = Number(segment?.awayDays ?? 0);
   const dayCount = Number(segment?.dayCount ?? 0);
   const awayRanges = segment?.awayRanges ?? [];
-  return createElement(
+  const mobile =
+    typeof window !== "undefined" &&
+    window.matchMedia?.(
+      "(max-width: 600px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape)",
+    ).matches;
+  const tooltip = createElement(
     "div",
-    { className: "adminbot-time-chart__tooltip" },
+    {
+      className: `adminbot-time-chart__tooltip${mobile ? " adminbot-time-chart__tooltip--mobile" : ""}`,
+    },
     createElement("div", { className: "adminbot-time-chart__tooltip-label" }, label),
     ...jinesisAllocations.map((entry) =>
       createElement(
@@ -451,11 +462,7 @@ function TimeAllocationTooltip({
           createElement(
             "div",
             null,
-            createElement(
-              "strong",
-              null,
-              t("adminbotTimeAvailability.legendTimeOff"),
-            ),
+            createElement("strong", null, t("adminbotTimeAvailability.legendTimeOff")),
             ...outsideAllocations.map((entry) =>
               createElement(
                 "div",
@@ -539,6 +546,8 @@ function TimeAllocationTooltip({
       ),
     ),
   );
+  // The plot scrolls on phones; its overflow must not crop the selected period details.
+  return mobile ? createPortal(tooltip, document.body) : tooltip;
 }
 
 function ChartPageButton({
@@ -706,27 +715,75 @@ function TimeAllocationLegend({
   );
 }
 
+/** How many buckets one page of the chart shows. The pager moves by exactly this many. */
+export const CHART_WINDOW_BUCKETS = 7;
+
+/** The half-open span a window covers, as the rest of the tab reads it. */
+export type TimeChartWindow = { start: string; end: string };
+
+export function chartWindowFor(
+  windowStart: string,
+  interval: TimeAllocationInterval,
+): TimeChartWindow {
+  return {
+    start: windowStart,
+    end: addIntervals(windowStart, interval, CHART_WINDOW_BUCKETS),
+  };
+}
+
+/**
+ * Which page the chart opens on.
+ *
+ * The window containing today, so the first thing a reader sees is what is running now. It used to
+ * open on the oldest row in the schedule, which for anyone with a year of history meant the chart
+ * -- and now the commitment tables that follow it -- opened on a term that finished long ago.
+ *
+ * The exception keeps the panel from opening blank: a schedule that is entirely in the past has
+ * nothing to show at today, so it opens on the page holding its most recent row instead. Somebody
+ * whose commitments have all ended should see the last of them, not an empty chart.
+ */
+export function defaultWindowStart(
+  tasks: readonly TimeAllocationTask[],
+  awayRanges: readonly TimeAllocationAwayRange[],
+  interval: TimeAllocationInterval,
+  now: number = Date.now(),
+): string {
+  const today = isoDate(now);
+  const todayWindow = alignIntervalStart(today, interval);
+  const ends = [...tasks.map((task) => task.end), ...awayRanges.map((range) => range.end)];
+  const latest = ends.toSorted().at(-1);
+  if (!latest || latest >= today) {
+    return todayWindow;
+  }
+  // Everything has ended. Land the last row on the final bucket of the page rather than the first,
+  // so the run up to it is on screen too.
+  return addIntervals(alignIntervalStart(latest, interval), interval, -(CHART_WINDOW_BUCKETS - 1));
+}
+
 function EffortStackChart({
   tasks,
   awayRanges,
   memberName,
   interval,
+  onWindowChange,
 }: {
   tasks: readonly TimeAllocationTask[];
   awayRanges: readonly TimeAllocationAwayRange[];
   memberName: string;
   interval: TimeAllocationInterval;
+  /** Told the visible span on mount and on every page, so the tables below can follow it. */
+  onWindowChange?: (window: TimeChartWindow) => void;
 }): ReactNode {
   const patternPrefix = `adminbot-time-chart-${useId().replace(/[^\dA-Z_-]/giu, "")}`;
   const [windowStart, setWindowStart] = useState(() =>
-    alignIntervalStart(
-      [
-        ...tasks.map((task) => task.start),
-        ...awayRanges.map((range) => range.start),
-      ].toSorted()[0] ?? isoDate(Date.now()),
-      interval,
-    ),
+    defaultWindowStart(tasks, awayRanges, interval),
   );
+  // Reported through an effect rather than from the click handler: the first window is chosen here
+  // and never clicked, and a listener that only heard about pages would filter the tables against
+  // a span the chart is not drawing.
+  useEffect(() => {
+    onWindowChange?.(chartWindowFor(windowStart, interval));
+  }, [windowStart, interval, onWindowChange]);
   const segments = allocationSegments(tasks, awayRanges, windowStart, interval);
   const taskNotes = new Map(
     tasks.flatMap((task) =>
@@ -736,9 +793,7 @@ function EffortStackChart({
   const colors = taskColors(tasks);
   const categories = taskCategories(tasks);
   const outsideKeys = new Set(
-    categories
-      .filter((category) => category.source === "outside")
-      .map((category) => category.key),
+    categories.filter((category) => category.source === "outside").map((category) => category.key),
   );
   // Recharts draws a Bar's background across the complete plot height. Keep that responsibility on
   // an invisible series rather than the first task: a fully-away day has no task bar to attach to.
@@ -837,17 +892,26 @@ function EffortStackChart({
     { className: "adminbot-time-chart" },
     createElement("span", { className: "adminbot-time-chart__summary" }, segmentSummary),
     createElement(
+      "p",
+      { className: "adminbot-time-chart__phone-hint" },
+      t("adminbotTimeAvailability.chartPhoneHint"),
+    ),
+    createElement(
       "div",
       { className: "adminbot-time-chart__pager" },
       createElement(ChartPageButton, {
         direction: "previous",
-        label: `Previous 7 ${intervalPlural(interval)}`,
-        onClick: () => setWindowStart((currentStart) => addIntervals(currentStart, interval, -7)),
+        label: `Previous ${CHART_WINDOW_BUCKETS} ${intervalPlural(interval)}`,
+        onClick: () =>
+          setWindowStart((currentStart) =>
+            addIntervals(currentStart, interval, -CHART_WINDOW_BUCKETS),
+          ),
       }),
       createElement(
         "div",
         {
           className: "adminbot-time-chart__plot",
+          tabIndex: 0,
           role: "img",
           "aria-label": t("adminbotTimeAvailability.chartAria", { member: memberName }),
         },
@@ -888,11 +952,14 @@ function EffortStackChart({
                     createElement("rect", {
                       width: 8,
                       height: 8,
-                      fill: "#4B5563",
+                      // Tokens, not fixed greys: a slate block and a pale hatch were picked against
+                      // the dark theme, and on the light one they landed as a dark bar with a hatch
+                      // that had nothing to show through it.
+                      fill: "var(--bg-muted)",
                     }),
                     createElement("path", {
                       d: "M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6",
-                      stroke: "#CBD5E1",
+                      stroke: "var(--muted)",
                       strokeWidth: 1.5,
                     }),
                   ),
@@ -915,7 +982,7 @@ function EffortStackChart({
                         createElement("rect", { width: 8, height: 8, fill: color }),
                         createElement("path", {
                           d: "M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6",
-                          stroke: "#FFFFFF",
+                          stroke: "var(--bg-elevated)",
                           strokeOpacity: 0.68,
                           strokeWidth: 1.5,
                         }),
@@ -925,25 +992,25 @@ function EffortStackChart({
                 ),
                 createElement(CartesianGrid, {
                   strokeDasharray: "3 3",
-                  stroke: "#2A2E35",
+                  stroke: "var(--border)",
                   vertical: false,
                 }),
                 createElement(XAxis, {
                   dataKey: "label",
-                  tick: { fontSize: 11, fill: "#9AA0AA" },
+                  tick: { fontSize: 11, fill: "var(--muted)" },
                   interval: 0,
                 }),
                 createElement(YAxis, {
-                  tick: { fontSize: 12, fill: "#9AA0AA" },
+                  tick: { fontSize: 12, fill: "var(--muted)" },
                   domain: [0, () => yAxisMaximum(segments)],
                   tickFormatter: (value: number) => formatPercentage(value),
                 }),
                 createElement(Tooltip, {
                   content: createElement(TimeAllocationTooltip, { notes: taskNotes, outsideKeys }),
-                  cursor: { fill: "rgba(255,255,255,0.04)" },
+                  cursor: { fill: "var(--bg-hover)", fillOpacity: 0.5 },
                 }),
                 createElement(Legend, {
-                  wrapperStyle: { fontSize: 12, color: "#9AA0AA" },
+                  wrapperStyle: { fontSize: 12, color: "var(--muted)" },
                   content: createElement(TimeAllocationLegend, {
                     categories,
                     colors,
@@ -952,7 +1019,9 @@ function EffortStackChart({
                 }),
                 createElement(ReferenceLine, {
                   y: 100,
-                  stroke: "#F7615D",
+                  // A threshold, so it wears the status token rather than a hue out of the series
+                  // palette -- which is where this red came from, and it was still slot 6 there.
+                  stroke: "var(--danger)",
                   strokeDasharray: "4 4",
                   strokeOpacity: 0.6,
                 }),
@@ -998,8 +1067,11 @@ function EffortStackChart({
       ),
       createElement(ChartPageButton, {
         direction: "next",
-        label: `Next 7 ${intervalPlural(interval)}`,
-        onClick: () => setWindowStart((currentStart) => addIntervals(currentStart, interval, 7)),
+        label: `Next ${CHART_WINDOW_BUCKETS} ${intervalPlural(interval)}`,
+        onClick: () =>
+          setWindowStart((currentStart) =>
+            addIntervals(currentStart, interval, CHART_WINDOW_BUCKETS),
+          ),
       }),
     ),
     createElement(
@@ -1060,6 +1132,23 @@ class AdminBotEffortStackChartElement extends HTMLElement {
     this.renderChart();
   }
 
+  /**
+   * Announce the span the chart is drawing.
+   *
+   * A DOM event rather than a callback property: the window belongs to the chart's own paging
+   * state, and an event is what a lit template can already listen for without the two sides
+   * sharing a function identity across re-renders.
+   */
+  private readonly reportWindow = (window: TimeChartWindow): void => {
+    this.dispatchEvent(
+      new CustomEvent<TimeChartWindow>("time-window-change", {
+        detail: window,
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  };
+
   connectedCallback() {
     this.renderChart();
   }
@@ -1087,6 +1176,7 @@ class AdminBotEffortStackChartElement extends HTMLElement {
           awayRanges: this.chartAwayRanges,
           memberName: this.chartMemberName,
           interval: this.chartInterval,
+          onWindowChange: this.reportWindow,
         }),
       );
     });
@@ -1103,6 +1193,7 @@ export function renderTimeAllocationChart(
   memberId: string,
   interval: TimeAllocationInterval,
   awayRanges: readonly TimeAllocationAwayRange[] = [],
+  onWindowChange?: (window: TimeChartWindow) => void,
 ) {
   return html`
     <adminbot-effort-stack-chart
@@ -1111,7 +1202,8 @@ export function renderTimeAllocationChart(
       .tasks=${tasks}
       .awayRanges=${awayRanges}
       .memberName=${memberName}
+      @time-window-change=${(event: Event) =>
+        onWindowChange?.((event as CustomEvent<TimeChartWindow>).detail)}
     ></adminbot-effort-stack-chart>
   `;
 }
-

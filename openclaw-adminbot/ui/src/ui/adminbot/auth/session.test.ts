@@ -8,6 +8,7 @@ import {
   clearStoredMemberSession,
   fetchMemberSession,
   fetchMemberResource,
+  fetchMemberSheet,
   fetchRelevantPapers,
   fetchRoster,
   flushQueuedAdminBotWrites,
@@ -20,8 +21,8 @@ import {
   pairDevice,
   pendingQueuedAdminBotWriteCount,
   resolveAdminBotBaseUrl,
+  resolveEmailReviewAsAdmin,
   saveStoredMemberSession,
-  sendOnboardingGuide,
   signupMember,
   nudgeOnboardingStep,
   setOnboardingStep,
@@ -201,6 +202,13 @@ describe("fetchRoster", () => {
     expect(result).toEqual({ ok: true, value: members });
   });
 
+  it("sends a search query without credentials", async () => {
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, { members: [] }));
+    await fetchRoster(BASE_URL, "Ada Δ");
+    expect(spy.mock.calls[0]?.[0]).toBe(`${BASE_URL}/auth/roster?q=Ada%20%CE%94`);
+    expect(spy.mock.calls[0]?.[1]?.credentials).toBe("omit");
+  });
+
   it("defaults to an empty list when members are absent", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, {}));
     const result = await fetchRoster(BASE_URL);
@@ -217,6 +225,36 @@ describe("fetchRoster", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(429, { retry_after_seconds: 15 }));
     const result = await fetchRoster(BASE_URL);
     expect(result).toEqual({ ok: false, kind: "rate-limited", retryAfterSeconds: 15 });
+  });
+});
+
+describe("fetchMemberSheet", () => {
+  it("returns the grid the service read", async () => {
+    const view = { spreadsheet_id: "1ZqdaRze", tab: "Full Slack Member List", rows: [] };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, view));
+    expect(await fetchMemberSheet("session-token", BASE_URL)).toEqual({ ok: true, value: view });
+  });
+
+  it("reports a bare 404 as a service that predates the route, not a missing sheet", async () => {
+    // The Control UI ships from Vercel and the service from Aurora, so the UI is routinely ahead.
+    // "not found" here is the catch-all for an unrouted path, and reading it as a missing
+    // spreadsheet sent people looking at Google for a deployment problem.
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(404, { error: { message: "not found" } }),
+    );
+    const result = await fetchMemberSheet("session-token", BASE_URL);
+    expect(result).toMatchObject({ ok: false, kind: "not-found" });
+    expect((result as { message?: string }).message).toContain("needs a deploy");
+  });
+
+  it("carries the service's own sentence when it has one", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(502, {
+        error: { message: 'the spreadsheet has no tab named "Full Slack Member List"' },
+      }),
+    );
+    const result = await fetchMemberSheet("session-token", BASE_URL);
+    expect((result as { message?: string }).message).toContain("no tab named");
   });
 });
 
@@ -447,80 +485,6 @@ describe("onboarding step completion", () => {
   });
 });
 
-describe("sending an onboarding guide", () => {
-  const request = {
-    templateId: "member",
-    name: "Ada Lovelace",
-    email: "ada@cs.toronto.edu",
-    values: {},
-    preview: false,
-  };
-
-  it("surfaces the service's own refusal instead of blaming the operator's input", async () => {
-    // The service says exactly which of its several refusals this was -- unconfigured mail, Drive
-    // or Slack provisioning that is not wired up, an unknown template, or a handler that threw.
-    // Only a 400 is about what the admin typed, so collapsing all of them into "check the details
-    // and try again" sent an operator round a loop nothing they could type would break.
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(503, {
-        error: { message: "onboarding email is not configured: set ADMINBOT_CONTACT_EMAILS" },
-      }),
-    );
-
-    await expect(sendOnboardingGuide(request, "sess-tok", BASE_URL)).resolves.toEqual({
-      ok: false,
-      kind: "rejected",
-      message: "onboarding email is not configured: set ADMINBOT_CONTACT_EMAILS",
-    });
-  });
-
-  it("carries through the message from a handler that threw", async () => {
-    // routeRequest's top-level catch answers 500 with the thrown error's message, which is how a
-    // missing `gog` CLI on the service host reaches the operator at all.
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(500, { error: { message: "spawn gog ENOENT" } }),
-    );
-
-    await expect(sendOnboardingGuide(request, "sess-tok", BASE_URL)).resolves.toEqual({
-      ok: false,
-      kind: "rejected",
-      message: "spawn gog ENOENT",
-    });
-  });
-
-  it("still reports the missing values a 422 names, so the form can mark those fields", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(422, { error: { missing: ["drive_folder_link"] } }),
-    );
-
-    await expect(sendOnboardingGuide(request, "sess-tok", BASE_URL)).resolves.toEqual({
-      ok: false,
-      kind: "missing",
-      missing: ["drive_folder_link"],
-    });
-  });
-
-  it("keeps forbidden distinct, since that one is about who is asking", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(403, { error: { message: "insufficient privileges" } }),
-    );
-
-    await expect(sendOnboardingGuide(request, "sess-tok", BASE_URL)).resolves.toEqual({
-      ok: false,
-      kind: "forbidden",
-    });
-  });
-
-  it("falls back to the generic failure when the service says nothing at all", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(500, {}));
-
-    await expect(sendOnboardingGuide(request, "sess-tok", BASE_URL)).resolves.toEqual({
-      ok: false,
-      kind: "auth-failed",
-    });
-  });
-});
-
 describe("onboarding step nudge", () => {
   it("POSTs the channel to the step's nudge route", async () => {
     const value = { created: [{ id: "act_1" }], skipped: [] };
@@ -630,5 +594,31 @@ describe("offline GET cache and mutation outbox", () => {
 
     await expect(flushQueuedAdminBotWrites()).resolves.toEqual({ flushed: 0, remaining: 0 });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("email review resolution", () => {
+  it("posts the administrator's exact paper and stage decision", async () => {
+    const value = { resolution: "paperflow_evidence", evidence_recorded: true };
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, value));
+
+    const result = await resolveEmailReviewAsAdmin(
+      "gmail/message-1",
+      { kind: "paperflow_evidence", paper_id: "paper-1", stage: "reviews_out" },
+      "sess-tok",
+      BASE_URL,
+    );
+
+    expect(result).toEqual({ ok: true, value });
+    expect(spy.mock.calls[0]?.[0]).toBe(`${BASE_URL}/automation/email/review/gmail%2Fmessage-1`);
+    expect(spy.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({ Authorization: "Bearer sess-tok" }),
+    });
+    expect(JSON.parse(String(spy.mock.calls[0]?.[1]?.body))).toEqual({
+      kind: "paperflow_evidence",
+      paper_id: "paper-1",
+      stage: "reviews_out",
+    });
   });
 });

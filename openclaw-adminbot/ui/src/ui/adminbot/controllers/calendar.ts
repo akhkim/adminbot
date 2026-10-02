@@ -31,6 +31,10 @@ import type { AdminBotHost } from "./admin.ts";
 
 const SIGN_IN_FIRST = "Sign in with an admin account to use the calendar.";
 
+function sameSession(token: string): boolean {
+  return loadStoredMemberSession()?.sessionToken === token;
+}
+
 /**
  * What to tell the operator when a calendar call fails.
  *
@@ -93,6 +97,9 @@ export async function loadAdminBotCalendar(host: AdminBotHost): Promise<void> {
       stored.sessionToken,
       baseUrl,
     );
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.calendarEventsError = failureText(result, "Could not read the calendar.", baseUrl);
       host.calendarEvents = [];
@@ -103,7 +110,9 @@ export async function loadAdminBotCalendar(host: AdminBotHost): Promise<void> {
       host.calendarSource = result.value.calendar;
     }
   } finally {
-    host.calendarEventsLoading = false;
+    if (sameSession(stored.sessionToken)) {
+      host.calendarEventsLoading = false;
+    }
   }
 }
 
@@ -169,6 +178,9 @@ export async function requestAdminBotCalendarDraft(host: AdminBotHost): Promise<
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       const text = failureText(
         result,
@@ -184,7 +196,9 @@ export async function requestAdminBotCalendarDraft(host: AdminBotHost): Promise<
     host.calendarDraft = result.value;
     say(host, "assistant", describeDraft(result.value, Boolean(editing)));
   } finally {
-    host.calendarDraftBusy = false;
+    if (sameSession(stored.sessionToken)) {
+      host.calendarDraftBusy = false;
+    }
   }
 }
 
@@ -228,6 +242,9 @@ export async function saveAdminBotCalendarEvent(host: AdminBotHost): Promise<voi
           stored.sessionToken,
           baseUrl,
         );
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotNotice = {
         kind: "error",
@@ -252,15 +269,26 @@ export async function saveAdminBotCalendarEvent(host: AdminBotHost): Promise<voi
     }
     await loadAdminBotCalendar(host);
   } finally {
-    host.calendarBusy = false;
+    if (sameSession(stored.sessionToken)) {
+      host.calendarBusy = false;
+    }
   }
 }
 
 export async function inviteAdminBotCalendarAudience(
   host: AdminBotHost,
-  params: { event: CalendarEvent; emails: string[]; reason: string },
+  params: {
+    event: CalendarEvent;
+    emails: string[];
+    remove?: string[];
+    remaining?: string[];
+    reason: string;
+  },
 ): Promise<void> {
-  if (!params.emails.length) {
+  // A send that removes people but adds none is a real send -- syncing a guest list down to the
+  // filters is the whole point of the exclusive pass -- so an empty invite list alone is no longer
+  // a reason to do nothing.
+  if (!params.emails.length && !params.remove?.length) {
     return;
   }
   const stored = loadStoredMemberSession();
@@ -275,6 +303,9 @@ export async function inviteAdminBotCalendarAudience(
       params.event.id,
       {
         attendees: params.emails,
+        ...(params.remove?.length
+          ? { remove: params.remove, remaining_attendees: params.remaining ?? [] }
+          : {}),
         summary: params.event.summary,
         // The filter that produced this list, recorded on the action so the ledger says who was
         // mailed and why without reconstructing it from the address list.
@@ -283,6 +314,9 @@ export async function inviteAdminBotCalendarAudience(
       stored.sessionToken,
       baseUrl,
     );
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotNotice = {
         kind: "error",
@@ -290,14 +324,31 @@ export async function inviteAdminBotCalendarAudience(
       };
       return;
     }
+    // The service answers 200 for work it did not do: a dry run, or a connector that recognized the
+    // action and declined to deliver it, both come back ok with status "simulated" (kernel/
+    // service.ts, the two `execution.simulated` branches). Reporting those as "removed 5 people"
+    // is how a guest list that never changed reads as a guest list that did -- and a removal is
+    // exactly the half nobody re-checks against Google afterwards.
+    if (result.value.status !== "executed") {
+      host.adminBotNotice = {
+        kind: "error",
+        text: `The calendar action was filed as ${result.value.status}, not executed — nobody was added or removed. Action ${result.value.action_id} on the Actions tab says why.`,
+      };
+      return;
+    }
+    const removed = params.remove?.length ?? 0;
+    const invited = params.emails.length
+      ? `Invited ${params.emails.length} ${params.emails.length === 1 ? "person" : "people"}`
+      : "";
+    const dropped = removed ? `removed ${removed} ${removed === 1 ? "person" : "people"}` : "";
     host.adminBotNotice = {
       kind: "success",
-      text: `Invited ${params.emails.length} ${
-        params.emails.length === 1 ? "person" : "people"
-      } to "${params.event.summary}".`,
+      text: `${[invited, dropped].filter(Boolean).join(" and ")} — "${params.event.summary}".`,
     };
     await loadAdminBotCalendar(host);
   } finally {
-    host.calendarBusy = false;
+    if (sameSession(stored.sessionToken)) {
+      host.calendarBusy = false;
+    }
   }
 }

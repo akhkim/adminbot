@@ -11,6 +11,7 @@ import {
   normalizePath,
   pathForTab,
   subtitleForTab,
+  pathIsRoot,
   tabFromPath,
   titleForTab,
   type Tab,
@@ -55,6 +56,7 @@ describe("iconForTab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, iconForTab(tab)]))).toEqual({
       dashboard: "barChart",
       profile: "user",
+      gettingStarted: "check",
       myWork: "book",
       labSharing: "link",
       adminbotOpportunities: "zap",
@@ -62,12 +64,17 @@ describe("iconForTab", () => {
       overview: "barChart",
       adminbot: "brain",
       adminbotRegistrations: "user",
+      adminbotBadges: "spark",
       adminbotOnboarding: "send",
       adminbotReimbursements: "fileText",
       adminbotSettings: "settings",
       adminbotMembers: "folder",
       adminbotProfileOverview: "check",
+      adminbotTabUsage: "barChart",
+      adminbotGrantReport: "scrollText",
+      adminbotMailingList: "send",
       adminbotProfessor: "lobster",
+      adminbotTravel: "globe",
       adminbotMeetings: "play",
       adminbotTimeAvailability: "clock",
       adminbotSignatures: "penLine",
@@ -76,6 +83,7 @@ describe("iconForTab", () => {
       adminbotPapers: "barChart",
       adminbotWorkshopNudges: "send",
       adminbotConferencePapers: "fileText",
+      adminbotReferenceChecker: "fileText",
       adminbotAnnouncements: "send",
       adminbotCalendar: "clock",
       adminbotDeadlines: "loader",
@@ -111,18 +119,24 @@ describe("titleForTab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, titleForTab(tab)]))).toEqual({
       dashboard: "Dashboard",
       profile: "My Profile",
+      gettingStarted: "Getting Started",
       myWork: "My Projects & Papers",
-      labSharing: "Lab Sharing",
+      labSharing: "Collaborate",
       adminbotOpportunities: "Opportunities",
       chat: "Chat",
       overview: "Overview",
       adminbot: "Pending Actions",
       adminbotRegistrations: "Requests",
+      adminbotBadges: "Badges",
       adminbotOnboarding: "Onboarding",
       adminbotSettings: "Settings",
       adminbotMembers: "Lab Members",
       adminbotProfileOverview: "Profile Completeness",
+      adminbotTabUsage: "Tab Usage",
+      adminbotGrantReport: "Grant Report",
+      adminbotMailingList: "Mailing List",
       adminbotProfessor: "My Desk",
+      adminbotTravel: "Travel",
       adminbotMeetings: "Meeting Recordings",
       adminbotTimeAvailability: "Time Availability",
       adminbotSignatures: "Signatures for You",
@@ -132,6 +146,7 @@ describe("titleForTab", () => {
       adminbotPapers: "Active Papers",
       adminbotWorkshopNudges: "Workshop Matches",
       adminbotConferencePapers: "Find Interesting Papers",
+      adminbotReferenceChecker: "PDF Reference Checker",
       adminbotAnnouncements: "Announcements",
       adminbotCalendar: "Calendar",
       adminbotDeadlines: "Deadlines",
@@ -161,6 +176,7 @@ describe("subtitleForTab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, subtitleForTab(tab)]))).toEqual({
       dashboard: "What needs you, and where the lab stands.",
       profile: "Your details, and anything still blank.",
+      gettingStarted: "Your setup checklist — what is left, and what you have already done.",
       myWork: "What you are working on, and anything holding it up.",
       // Corrected to the shipped string: the tab has said "Coming soon" for a while and this
       // expectation had not followed, leaving the suite red for a reason unrelated to it.
@@ -170,11 +186,17 @@ describe("subtitleForTab", () => {
       overview: "Status, entry points, health.",
       adminbot: "Approval queue and execution controls.",
       adminbotRegistrations: "Approve or reject pending member signups and roster claims.",
+      adminbotBadges: "Manage badge definitions, assignments, and nominations.",
       adminbotOnboarding: "Send a member or collaborator their onboarding guide.",
       adminbotSettings: "Lab defaults and escalation policy.",
       adminbotMembers: "Privilege levels and access profiles.",
       adminbotProfileOverview: "Who has filled in their profile and planned their term.",
+      adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
+      adminbotGrantReport:
+        "Every paper mapped to a safety area, and the track record behind each ask.",
+      adminbotMailingList: "Mail our publications for a date range to one address.",
       adminbotProfessor: "What is waiting on you, across every queue.",
+      adminbotTravel: "Where you have been, from your own sign-ins.",
       adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",
       adminbotTimeAvailability: "Who is committed to what, and when.",
       adminbotSignatures: "Send a document over for signing, and follow where it got to.",
@@ -184,6 +206,7 @@ describe("subtitleForTab", () => {
       adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
       adminbotPapers: "PaperPublish records and current steps.",
       adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
+      adminbotReferenceChecker: "Check PDF references against scholarly databases.",
       adminbotConferencePapers:
         "Search a conference's accepted papers, ranked against what you work on.",
       adminbotAnnouncements: "Nudge members or send a general announcement.",
@@ -260,12 +283,35 @@ describe("pathForTab", () => {
   });
 });
 
+// `tabFromPath` answers the root with a tab, which is the right thing to show and the wrong answer
+// to "did this visitor ask for a surface". Anything that lands a viewer somewhere of their own has
+// to be able to tell the two apart.
+describe("pathIsRoot", () => {
+  it("separates the root from a path that names a tab", () => {
+    expect(pathIsRoot("/")).toBe(true);
+    expect(pathIsRoot("")).toBe(true);
+    expect(pathIsRoot("/index.html")).toBe(true);
+    expect(pathIsRoot("/dashboard")).toBe(false);
+    expect(pathIsRoot("/my-desk")).toBe(false);
+    // The root still resolves to a tab; that is the case this exists to distinguish.
+    expect(tabFromPath("/")).toBe("dashboard");
+  });
+
+  it("reads the root through a base path", () => {
+    expect(pathIsRoot("/control", "/control")).toBe(true);
+    expect(pathIsRoot("/control/", "/control")).toBe(true);
+    expect(pathIsRoot("/control/index.html", "/control")).toBe(true);
+    expect(pathIsRoot("/control/dashboard", "/control")).toBe(false);
+  });
+});
+
 describe("tabFromPath", () => {
   it("returns tab for valid path", () => {
     expect(tabFromPath("/chat")).toBe("chat");
     expect(tabFromPath("/overview")).toBe("overview");
     expect(tabFromPath("/pending-actions")).toBe("adminbot");
     expect(tabFromPath("/registrations")).toBe("adminbotRegistrations");
+    expect(tabFromPath("/badges")).toBe("adminbotBadges");
     expect(tabFromPath("/settings")).toBe("adminbotSettings");
     expect(tabFromPath("/members")).toBe("adminbotMembers");
     expect(tabFromPath("/papers")).toBe("adminbotPapers");
@@ -283,12 +329,14 @@ describe("tabFromPath", () => {
     const renamed: Record<string, string> = {
       "/adminbot": "adminbot",
       "/adminbot/registrations": "adminbotRegistrations",
+      "/adminbot/badges": "adminbotBadges",
       "/adminbot/onboarding": "adminbotOnboarding",
       "/adminbot/reimbursements": "adminbotReimbursements",
       "/adminbot/settings": "adminbotSettings",
       "/adminbot/members": "adminbotMembers",
       "/adminbot/opportunities": "adminbotOpportunities",
       "/adminbot/profile-overview": "adminbotProfileOverview",
+      "/adminbot/tab-usage": "adminbotTabUsage",
       "/adminbot/professor": "adminbotProfessor",
       "/adminbot/time-availability": "adminbotTimeAvailability",
       "/adminbot/meetings": "adminbotMeetings",

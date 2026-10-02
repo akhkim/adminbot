@@ -11,6 +11,7 @@
 // invents a field, or hands back an end before its start is a failed parse with a reason, not a
 // half-filled form.
 import type { AdminBotPrivacyTaskResult } from "../../contracts/actions.js";
+import { normalizeCalendarTimezone } from "./time.js";
 
 export type AdminBotCalendarEventDraft = {
   summary: string;
@@ -75,6 +76,7 @@ export function buildEventDraftPrompt(request: AdminBotCalendarDraftRequest): st
     '  "location"    — omit unless the instruction names a place.',
     '  "description" — omit unless there is detail beyond the title.',
     '  "attendees"   — array of email addresses the instruction names. Omit if none.',
+    "Do not return a timezone key; the service supplies the trusted timezone above.",
     "",
     "Never invent an attendee, a room, or a video link that was not asked for.",
     editing
@@ -184,7 +186,13 @@ export function parseEventDraft(
     return { ok: false, error: "the draft ends before it starts" };
   }
   const attendees = readAttendees(raw.attendees);
-  const timezone = asTrimmed(raw.timezone) ?? fallbackTimezone?.trim();
+  // The prompt defines no model-owned timezone field: every local clock above is explicitly in
+  // the operator zone supplied with the request. Trusting an invented field here let prose such as
+  // "Anywhere on Earth (AoE, UTC−12)" override that IANA value and crash the later Intl conversion.
+  const timezone = normalizeCalendarTimezone(fallbackTimezone);
+  if (fallbackTimezone?.trim() && !timezone) {
+    return { ok: false, error: "the operator time zone is not a valid IANA time zone" };
+  }
   return {
     ok: true,
     draft: {

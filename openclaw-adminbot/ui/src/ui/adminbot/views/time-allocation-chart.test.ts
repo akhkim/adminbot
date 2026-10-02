@@ -6,6 +6,8 @@ import { render } from "lit";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   allocationSegments,
+  chartWindowFor,
+  defaultWindowStart,
   renderTimeAllocationChart,
   type TimeAllocationAwayRange,
   type TimeAllocationTask,
@@ -57,7 +59,11 @@ describe("the time allocation chart element", () => {
     // recharts needs layout to draw bars, which jsdom does not do -- but the surrounding chrome
     // React renders unconditionally is proof the root mounted and the component ran.
     expect(chart.querySelector(".adminbot-time-chart__pager")).not.toBeNull();
+    expect(chart.querySelector(".adminbot-time-chart__phone-hint")?.textContent).toBe(
+      "Swipe sideways to see more dates. Tap a bar for details.",
+    );
     expect(chart.querySelectorAll(".adminbot-time-chart__page-button").length).toBe(2);
+    expect(chart.querySelector(".adminbot-time-chart__plot")?.getAttribute("tabindex")).toBe("0");
   });
 
   it("reads back the properties the view set on it", () => {
@@ -102,6 +108,22 @@ describe("the time allocation chart element", () => {
 });
 
 describe("whole-day availability in chart intervals", () => {
+  it("does not extend a commitment past October 12 in any chart interval", () => {
+    const task = { ...TASKS[0], start: "2026-09-21", end: "2026-10-12", effort: 50 };
+    for (const interval of ["day", "week", "month"] as const) {
+      const segments = allocationSegments([task], [], "2026-10-01", interval);
+      for (const segment of segments.filter((row) => row.start > task.end)) {
+        expect(segment.total).toBe(0);
+        expect(segment.allocations).toEqual([]);
+      }
+    }
+    const [lastWeek, nextWeek] = allocationSegments([task], [], "2026-10-12", "week");
+    expect(lastWeek.activeDays).toBe(1);
+    expect(lastWeek.total).toBeCloseTo(50 / 7);
+    expect(nextWeek.total).toBe(0);
+    expect(task.end).toBe("2026-10-12");
+  });
+
   it("clears allocations on away days before averaging the interval", () => {
     const fullWeek: TimeAllocationTask = {
       ...TASKS[0],
@@ -132,5 +154,38 @@ describe("whole-day availability in chart intervals", () => {
     expect(week.awayDays).toBe(0);
     expect(week.total).toBe(25);
     expect(week.allocations[0]?.name).toBe("Course load");
+  });
+});
+
+// Which page the chart opens on. It used to open on the oldest row in the schedule, so anyone with
+// a term of history landed on a window that finished months ago -- and now that the commitment
+// tables follow this window, that would have been the list they landed on too.
+describe("defaultWindowStart", () => {
+  const now = Date.UTC(2026, 2, 2); // 2 March 2026
+  const task = (start: string, end: string): TimeAllocationTask => ({
+    ...(TASKS[0] as TimeAllocationTask),
+    start,
+    end,
+  });
+
+  it("opens on the window holding today when anything is still running", () => {
+    const start = defaultWindowStart([task("2025-09-01", "2026-06-30")], [], "week", now);
+    const window = chartWindowFor(start, "week");
+    expect(start <= "2026-03-02").toBe(true);
+    expect(window.end > "2026-03-02").toBe(true);
+  });
+
+  it("opens on today for a schedule that has not started yet", () => {
+    const start = defaultWindowStart([task("2026-08-01", "2026-09-01")], [], "month", now);
+    expect(start <= "2026-03-02").toBe(true);
+  });
+
+  // The one case that must not open on today: everything has ended, so today's page is empty and
+  // the panel would look broken rather than finished.
+  it("falls back to the last page with something on it", () => {
+    const start = defaultWindowStart([task("2024-01-01", "2024-03-01")], [], "month", now);
+    const window = chartWindowFor(start, "month");
+    expect(start < "2024-03-01").toBe(true);
+    expect(window.end > "2024-03-01").toBe(true);
   });
 });

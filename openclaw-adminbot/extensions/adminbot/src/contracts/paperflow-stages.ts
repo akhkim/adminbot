@@ -4,9 +4,9 @@
 // These are deliberately not `paper_slots`. A slot is an artifact somebody in the lab produces
 // and can be asked to paste a link to; a stage here is an event the *venue* causes, which nobody
 // in the lab controls and nobody can be asked to produce. The only thing an author can do is tell
-// us it happened -- and the way the lab already tells AdminBot things is by bcc'ing it on the
-// mail the venue sent. So the unit of state is "have we seen that mail yet", which is a different
-// question from "is this artifact on file" and gets its own table.
+// us it happened -- and the way the lab tells AdminBot is by forwarding the venue mail from an
+// address on the member's profile. So the unit of state is "have we seen that mail yet", which is
+// a different question from "is this artifact on file" and gets its own table.
 //
 // The stages mirror PaperFlow's venue branch (packages/nudge-engine/src/graph/paperflow.ts):
 // RV -> RB/RS -> DC -> AC -> CM and CA. Ids are the PaperFlow node names lowercased so the two
@@ -42,12 +42,8 @@ export type AdminBotPaperflowStageDefinition = {
   label: string;
   /** The one sentence the nudge opens with. Written as a question, because it is one. */
   question: string;
-  /**
-   * What the author is asked to bcc. Naming the actual mail matters: "bcc us on the decision"
-   * gets forwarded threads and hand-written summaries, "bcc us on the mail the venue sent" gets
-   * the mail the venue sent.
-   */
-  bccAsk: string;
+  /** What evidence the author is asked to forward from an address on their AdminBot profile. */
+  handoffAsk: string;
   /** Lower sorts first. The venue branch outranks everything, and a hard clock outranks that. */
   priority: number;
   /**
@@ -65,7 +61,7 @@ export const adminBotPaperflowStageRegistry: Record<
     node: "RV",
     label: "Reviews",
     question: "Have the reviews come back yet?",
-    bccAsk: "bcc this address on the notification the venue sent",
+    handoffAsk: "forward the review notification the venue sent",
     priority: -1,
     deadlineBearing: false,
   },
@@ -75,7 +71,7 @@ export const adminBotPaperflowStageRegistry: Record<
     question: "Is there a rebuttal window open on this, and when does it close?",
     // The rebuttal is the one stage where the useful artifact is ours rather than the venue's,
     // so the ask is for the thread rather than for a notification.
-    bccAsk: "bcc this address on the rebuttal you file, or reply saying no rebuttal is due",
+    handoffAsk: "send either the rebuttal you filed or a note that no rebuttal is due",
     priority: -2,
     deadlineBearing: true,
   },
@@ -83,7 +79,7 @@ export const adminBotPaperflowStageRegistry: Record<
     node: "DC",
     label: "Decision",
     question: "Has the decision come out yet?",
-    bccAsk: "bcc this address on the decision mail the venue sent",
+    handoffAsk: "forward the decision email the venue sent",
     priority: -1,
     deadlineBearing: false,
   },
@@ -91,7 +87,7 @@ export const adminBotPaperflowStageRegistry: Record<
     node: "CM",
     label: "Camera ready",
     question: "Is the camera-ready in, and when is it due?",
-    bccAsk: "bcc this address on the camera-ready confirmation",
+    handoffAsk: "forward the camera-ready confirmation",
     priority: -2,
     deadlineBearing: true,
   },
@@ -102,7 +98,7 @@ export const adminBotPaperflowStageRegistry: Record<
     // Travel is the one stage with several receipts rather than one notification, and the
     // reimbursement flow needs them anyway -- so ask for whichever lands first rather than
     // for a complete set that would keep the stage open for weeks.
-    bccAsk: "bcc this address on the registration or booking confirmation",
+    handoffAsk: "forward the registration or booking confirmation",
     priority: -2,
     deadlineBearing: true,
   },

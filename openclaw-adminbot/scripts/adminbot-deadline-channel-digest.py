@@ -4,7 +4,7 @@ AdminBot deadline digest (Output 1).
 
 Posts a short "upcoming deadlines" summary to #jinesis-active. Schedule it
 weekly via OpenClaw cron. Reads the same dataset as Outputs 0/2
-(extensions/adminbot/content/deadlines/venues.json). Times are AoE (UTC-12).
+(extensions/adminbot/content/deadlines). Times are AoE (UTC-12).
 
 Dry-run by default (prints the message). Use --send to post.
 
@@ -22,6 +22,7 @@ from collections import defaultdict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from adminbot_deadlines import AoEClock, DeadlineDataset, SlackNotifier, urgency_marker
+from adminbot_deadline_time import deadline_label
 
 CHANNEL = os.environ.get("ADMINBOT_ACTIVE_CHANNEL", "#jinesis-active")
 
@@ -31,7 +32,7 @@ def digest_line(venue, clock):
     days = clock.days_until(venue["deadline_aoe"])
     link = f"  <{venue['link']}|↗>" if venue.get("link") else ""
     return (
-        f"{urgency_marker(days)} *{AoEClock.calendar_label(venue['deadline_aoe'])}* "
+        f"{urgency_marker(days)} *{deadline_label(venue) if venue.get('deadline_time_precision') == 'date_only' else AoEClock.calendar_label(venue['deadline_aoe'])}* "
         f"({days}d) — {venue['name']}{link}"
     )
 
@@ -61,7 +62,7 @@ def build_message(venues, clock, window_days):
         entries.append((
             first["deadline_aoe"],
             first["name"],
-            f"{urgency_marker(days)} *{AoEClock.calendar_label(first['deadline_aoe'])}* "
+            f"{urgency_marker(days)} *{deadline_label(first) if first.get('deadline_time_precision') == 'date_only' else AoEClock.calendar_label(first['deadline_aoe'])}* "
             f"({days}d) — *{len(members)} {group}* (unified deadline)",
         ))
     # Same ordering DeadlineDataset.upcoming applies, re-established because collapsing

@@ -8,16 +8,19 @@ type DeadlineRecord = {
   deadline_id: string;
   name: string;
   deadline_aoe: string;
+  deadline_time_precision?: string;
   link?: string;
   revisions?: readonly { deadline_aoe?: string }[];
 };
 
 const deadlines = DEADLINE_VENUES as readonly DeadlineRecord[];
-const deadlinesById = new Map(
-  deadlines.flatMap((deadline) =>
-    [deadline.id, deadline.deadline_id].map((id) => [id, deadline] as const),
-  ),
-);
+function indexDeadlines(deadlines: readonly DeadlineRecord[]) {
+  return new Map(
+    deadlines.flatMap((deadline) =>
+      [deadline.id, deadline.deadline_id].map((id) => [id, deadline] as const),
+    ),
+  );
+}
 
 function deadlineDate(deadline: DeadlineRecord): string {
   return deadline.deadline_aoe.slice(0, 10);
@@ -28,14 +31,20 @@ function deadlineMilestone(deadline: DeadlineRecord): AdminBotMemberMilestone {
   return {
     deadline_id: deadline.deadline_id,
     date: deadlineDate(deadline),
-    label: deadline.name,
+    label:
+      deadline.deadline_time_precision === "date_only"
+        ? `${deadline.name} — planning cutoff (time unknown)`
+        : deadline.name,
     ...(link ? { link } : {}),
     time: deadline.deadline_aoe.slice(11, 16),
     timezone: AOE_TIMEZONE,
   };
 }
 
-function legacyDeadline(row: AdminBotMemberMilestone): DeadlineRecord | undefined {
+function legacyDeadline(
+  row: AdminBotMemberMilestone,
+  deadlines: readonly DeadlineRecord[],
+): DeadlineRecord | undefined {
   const label = row.label.trim();
   const matches = deadlines.filter(
     (deadline) =>
@@ -46,8 +55,11 @@ function legacyDeadline(row: AdminBotMemberMilestone): DeadlineRecord | undefine
   return matches.length === 1 ? matches[0] : undefined;
 }
 
-export function isDeadlineMilestoneId(value: string): boolean {
-  return deadlinesById.has(value);
+export function isDeadlineMilestoneId(
+  value: string,
+  records: readonly unknown[] = deadlines,
+): boolean {
+  return indexDeadlines(records as readonly DeadlineRecord[]).has(value);
 }
 
 /**
@@ -59,16 +71,21 @@ export function isDeadlineMilestoneId(value: string): boolean {
  */
 export function reconcileDeadlineMilestones(
   rows: AdminBotMemberMilestone[] | undefined,
+  records: readonly unknown[] = deadlines,
 ): AdminBotMemberMilestone[] | undefined {
   if (!rows) {
     return undefined;
   }
+  const currentDeadlines = records as readonly DeadlineRecord[];
+  const deadlinesById = indexDeadlines(currentDeadlines);
   const seen = new Set<string>();
   const reconciled: AdminBotMemberMilestone[] = [];
   let changed = false;
   for (const row of rows) {
-    const deadline = row.deadline_id ? deadlinesById.get(row.deadline_id) : legacyDeadline(row);
-    if (!deadline) {
+    const deadline = row.deadline_id
+      ? deadlinesById.get(row.deadline_id)
+      : legacyDeadline(row, currentDeadlines);
+    if (!deadline || !deadline.deadline_aoe) {
       reconciled.push(row);
       continue;
     }

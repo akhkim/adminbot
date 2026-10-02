@@ -13,6 +13,7 @@ import {
   type AdminBotSocialConsentRecord,
   type AdminBotSocialDraftRecord,
 } from "../../contracts/paper-cycle.js";
+import { parsePaperFeedback } from "../../contracts/paper-feedback.js";
 import {
   adminBotPaperSlotBranchPriority,
   adminBotPaperSlotEscalateAfterNudges,
@@ -29,6 +30,13 @@ import {
   type AdminBotPaperSlotOwner,
   type AdminBotPaperSlotRecord,
 } from "../../contracts/paper-slots.js";
+import {
+  isPaperMentorReviewStale,
+  paperMentorFixesDetail,
+  paperMentorReviewDetail,
+  paperMentorReviewState,
+  type PaperMentorContext,
+} from "./papermentor-nudges.js";
 
 /** A paper this old is dormant: it is not late, it is resting, and nudging it trains people to ignore nudges. */
 const DORMANT_MONTHS = 24;
@@ -100,7 +108,7 @@ export function redactPaperSlots(
     return rows;
   }
   return rows.map((row) => {
-    if (!isConfidentialPaperSlot(row.slot)) {
+    if (!isConfidentialPaperSlot(row.slot) && !row.slot.startsWith("feedback_")) {
       return row;
     }
     const { value_text: _dropped, ...rest } = row;
@@ -166,6 +174,21 @@ export function applyPaperSlotWrite(params: {
         ? { ok: true, record: provided({ value_text: value }) }
         : { ok: true, record: clearedSlot(existing) };
     }
+    case "feedback": {
+      const value = (input.value_text ?? "").trim();
+      if (!value) {
+        return { ok: true, record: clearedSlot(existing) };
+      }
+      const feedback = parsePaperFeedback(value);
+      if (!feedback) {
+        return {
+          ok: false,
+          error:
+            "Feedback needs a reason, an HTTPS manuscript link and valid deadline times; feedback-by cannot follow submission cutoff.",
+        };
+      }
+      return { ok: true, record: provided({ value_text: JSON.stringify(feedback) }) };
+    }
     case "secret6": {
       const value = (input.value_text ?? "").trim();
       if (!value) {
@@ -199,6 +222,17 @@ export function applyPaperSlotWrite(params: {
     }
     case "link": {
       const value = (input.url ?? "").trim();
+      // Verification belongs to the URL, not to the field that happens to hold it.
+      const verification =
+        value === existing.url
+          ? {}
+          : {
+              verified_by: undefined,
+              verified_at: undefined,
+              verified_title: undefined,
+              previous_submission_id: undefined,
+              identity_review: undefined,
+            };
       if (!value) {
         return { ok: true, record: clearedSlot(existing) };
       }
@@ -208,6 +242,7 @@ export function applyPaperSlotWrite(params: {
           ok: true,
           record: {
             ...existing,
+            ...verification,
             status: "invalid",
             url: value,
             provided_by_member_id: memberId,
@@ -217,7 +252,7 @@ export function applyPaperSlotWrite(params: {
           },
         };
       }
-      return { ok: true, record: provided({ url: value, validated_at: nowIso }) };
+      return { ok: true, record: provided({ ...verification, url: value, validated_at: nowIso }) };
     }
   }
 }
@@ -334,6 +369,9 @@ export type NudgeItem = {
  *   - open means `missing` or `invalid`; provided and waived are done
  *   - a slot is only actionable once everything upstream of it is settled, so nobody is asked for
  *     an arXiv link on a paper that has not been submitted
+ *   - and once everything in its `chaseAfter` is settled, which is how a field can be open on the
+ *     card without being anybody's next move: the social drafts may be written off the PDF, but
+ *     nobody is chased for an announcement before there is a link to announce
  *   - advisory slots (`required: false`) never appear: they block nothing, so chasing them spends
  *     the lab's attention on bookkeeping
  *
@@ -345,6 +383,7 @@ export function actionablePaperSlots(
   stored: AdminBotPaperSlotRecord[],
   now: Date,
   drafts: AdminBotSocialDraftRecord[] = [],
+  papermentor: PaperMentorContext = {},
 ): NudgeItem[] {
   if (isPaperDormant(paper, now) || isPaperClosed(paper)) {
     return [];
@@ -353,6 +392,13 @@ export function actionablePaperSlots(
   const settled = (slot: AdminBotPaperSlot) =>
     isAdminBotPaperSlotSettled(rows.get(slot)?.status ?? "missing");
 
+  // What the reviewer has said about this paper, which two of the slots below speak for. A review
+  // that has gone stale re-opens its own slot -- and only while the paper is unsubmitted, because
+  // asking somebody to re-review a paper that is already with a venue is asking for work that
+  // cannot change anything. The stored row keeps saying the review happened: it did.
+  const reviewState = paperMentorReviewState(papermentor, now);
+  const reviewStale = isPaperMentorReviewStale(reviewState) && !settled("submission");
+
   const out: NudgeItem[] = [];
   for (const slot of adminBotPaperSlots) {
     const definition = adminBotPaperSlotRegistry[slot];
@@ -360,20 +406,36 @@ export function actionablePaperSlots(
       continue;
     }
     const record = rows.get(slot);
-    if (!record || isAdminBotPaperSlotSettled(record.status)) {
+    if (!record) {
       continue;
     }
-    if (!definition.upstream.every(settled)) {
+    const reopened = slot === "papermentor_review" && reviewStale;
+    if (isAdminBotPaperSlotSettled(record.status) && !reopened) {
       continue;
     }
+    // Both lists, not either: `chaseAfter` says when the lab starts asking, `upstream` says when
+    // the field is fillable at all, and asking for something that cannot yet be filled in is the
+    // one combination neither list should be able to produce. For almost every slot `chaseAfter`
+    // is absent and this is exactly the upstream check it has always been.
+    if (![...definition.upstream, ...(definition.chaseAfter ?? [])].every(settled)) {
+      continue;
+    }
+    // Three sources for the line under the label, in the order they matter: a value the service
+    // refused, what the reviewer said, and nothing.
+    const detail =
+      record.status === "invalid" && record.invalid_reason
+        ? `the value on file was rejected: ${record.invalid_reason}`
+        : slot === "papermentor_review"
+          ? paperMentorReviewDetail(reviewState)
+          : slot === "fixes_merged"
+            ? paperMentorFixesDetail(papermentor.latest, now)
+            : undefined;
     out.push({
       domain: "paper_slot",
       subjectId: adminBotPaperSlotSubjectId(paper.id, slot),
       owner: definition.owner,
       label: definition.label,
-      ...(record.status === "invalid" && record.invalid_reason
-        ? { detail: `the value on file was rejected: ${record.invalid_reason}` }
-        : {}),
+      ...(detail ? { detail } : {}),
       priority: adminBotPaperSlotBranchPriority[definition.branch],
       deadlineBearing: definition.deadlineBearing,
       slot,
@@ -454,10 +516,15 @@ export function paperSlotProgress(
 /**
  * Is this paper finished?
  *
- * Every required artifact in, and every author who actually went to the conference square on their
- * expenses. The second half is the one that matters: "the paper looks done" is a judgement someone
- * makes and then forgets to revisit, and the reimbursement is the thing that is genuinely
- * outstanding for weeks after everything else is finished.
+ * Every required artifact in, everybody on the paper accounted for at the conference, and every
+ * author who actually went square on their expenses. The last two are the ones that matter: "the
+ * paper looks done" is a judgement someone makes and then forgets to revisit, and travel is what
+ * stays genuinely outstanding for weeks after everything else is finished.
+ *
+ * `attendees` is the merged roll-call from workflows/papers/conference-attendance.ts, not the
+ * stored rows -- an author nobody has answered for arrives here as `unknown`, which is what lets
+ * an unanswered roll-call hold the cycle open. Passing raw store rows would read a paper nobody
+ * has filled in as one where nobody is travelling.
  *
  * Derived, never stored -- see the note at the top of contracts/paper-slots.ts.
  */
@@ -470,6 +537,15 @@ export function isCycleClosed(params: {
 }): boolean {
   const { provided, total } = paperSlotProgress(params.paper.id, params.slots, params.drafts);
   if (provided < total) {
+    return false;
+  }
+  // Only once the branch is open. Before that nobody has been asked who is travelling, so an
+  // unanswered roll-call is the acceptance details being missing, not the authors being slow --
+  // and the card already says so through `missingAcceptanceDetails`.
+  if (
+    isConferenceBranchOpen(params.paper) &&
+    params.attendees.some((entry) => entry.attending === "unknown")
+  ) {
     return false;
   }
   const attending = params.attendees.filter((entry) => entry.attending === "yes");

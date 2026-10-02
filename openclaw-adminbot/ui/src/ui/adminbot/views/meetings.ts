@@ -14,6 +14,7 @@
 // fields of an admin's recovery form.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
+import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import type {
   MeetingAttendanceNudgePreview,
   MeetingAttendanceNudgeResult,
@@ -25,6 +26,10 @@ export type MeetingsRosterMember = { id: string; name: string };
 
 export type AdminBotMeetingsProps = {
   meetings: MeetingRecord[];
+  visibleCount: number;
+  onShowMore: (nextCount: number) => void;
+  hasMore: boolean;
+  loadingMore: boolean;
   loading: boolean;
   saving: boolean;
   error: string | null;
@@ -61,13 +66,32 @@ function formatStart(startedAt: string): string {
     : parsed.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
+/**
+ * How long the recording runs.
+ *
+ * Three sources, most exact first: the length the Zoom notice stated, the transcript's own, and a
+ * meeting length typed by hand. The first two are seconds and are rendered as such, because the
+ * lab's recordings are routinely short -- a 98-second clip rounded to minutes reads "2 min", and
+ * one under thirty seconds rounds to nothing at all and disappears from the card.
+ *
+ * `duration_minutes` stays the last resort rather than the first: it is the length of the
+ * *meeting* somebody filed by hand, which is a different number from the length of the recording.
+ */
 function formatDuration(meeting: MeetingRecord): string | undefined {
-  const minutes =
-    meeting.duration_minutes ??
-    (meeting.transcript?.duration_seconds
-      ? Math.round(meeting.transcript.duration_seconds / 60)
-      : undefined);
-  return minutes ? t("adminbotMeetings.minutes", { minutes: String(minutes) }) : undefined;
+  const seconds = meeting.duration_seconds ?? meeting.transcript?.duration_seconds;
+  if (seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return hours
+      ? t("adminbotMeetings.durationHours", { hours: String(hours), minutes: String(minutes) })
+      : t("adminbotMeetings.duration", {
+          minutes: String(minutes),
+          seconds: String(seconds % 60),
+        });
+  }
+  return meeting.duration_minutes
+    ? t("adminbotMeetings.minutes", { minutes: String(meeting.duration_minutes) })
+    : undefined;
 }
 
 /**
@@ -293,20 +317,26 @@ function renderFileForm(props: AdminBotMeetingsProps) {
     <details class="card adminbot-card adminbot-card--wide meetings__file">
       <summary>${t("adminbotMeetings.fileManually")}</summary>
       <p class="card-sub">${t("adminbotMeetings.fileManuallyHint")}</p>
-      <form @submit=${submit}>
-        <label>${t("adminbotMeetings.topic")} <input name="topic" required /></label>
-        <label>
-          ${t("adminbotMeetings.startedAt")}
+      <form class="adminbot-form" @submit=${submit}>
+        <label class="adminbot-form__field"
+          ><span>${t("adminbotMeetings.topic")}</span> <input name="topic" required
+        /></label>
+        <label class="adminbot-form__field">
+          <span>${t("adminbotMeetings.startedAt")}</span>
           <input name="started_at" type="datetime-local" required />
         </label>
-        <label>
-          ${t("adminbotMeetings.shareUrl")}
+        <label class="adminbot-form__field">
+          <span>${t("adminbotMeetings.shareUrl")}</span>
           <input name="share_url" type="url" required />
         </label>
-        <label>${t("adminbotMeetings.passcode")} <input name="passcode" /></label>
-        <button class="btn btn--sm" type="submit" ?disabled=${props.saving}>
-          ${t("adminbotMeetings.file")}
-        </button>
+        <label class="adminbot-form__field"
+          ><span>${t("adminbotMeetings.passcode")}</span> <input name="passcode"
+        /></label>
+        <div class="adminbot-form__actions">
+          <button class="btn btn--sm primary" type="submit" ?disabled=${props.saving}>
+            ${t("adminbotMeetings.file")}
+          </button>
+        </div>
       </form>
     </details>
   `;
@@ -401,19 +431,83 @@ function renderNudgePanel(nudge: NonNullable<AdminBotMeetingsProps["nudge"]>) {
   `;
 }
 
+/**
+ * Where recordings live outside this tab.
+ *
+ * This page lists the meetings AdminBot has summaries for. It is not the whole archive: the videos
+ * themselves sit in an unlisted YouTube playlist, and #jinesis-share is where they are posted and
+ * talked about. Somebody looking for a meeting this tab has no row for was, until now, given no
+ * indication either exists.
+ *
+ * The playlist link renders only when a URL is set. An empty href is a link that looks live and
+ * goes nowhere, so the guard stays even now that there is one -- it is what keeps a deployment
+ * that blanks this constant from shipping a dead button.
+ *
+ * Unlisted, not private: the link is the access control, which is why it lives here rather than
+ * behind a lookup. Anyone who can read this tab is already a signed-in member.
+ */
+const MEETING_PLAYLIST_URL =
+  "https://www.youtube.com/playlist?list=PLtVBX_ld338VkH1UzdXs03LTKZp8-FBDL";
+const MEETING_SHARE_CHANNEL = "#jinesis-share";
+
+function renderArchiveLinks() {
+  return html`
+    <aside class="meetings__archive" data-testid="meetings-archive">
+      <h3 class="card-title">${t("adminbotMeetings.archive.title")}</h3>
+      <p class="card-sub">
+        ${t("adminbotMeetings.archive.sub", { channel: MEETING_SHARE_CHANNEL })}
+      </p>
+      ${MEETING_PLAYLIST_URL
+        ? html`<a
+            class="btn btn--sm"
+            href=${MEETING_PLAYLIST_URL}
+            target=${EXTERNAL_LINK_TARGET}
+            rel=${buildExternalLinkRel()}
+            data-testid="meetings-playlist-link"
+          >
+            ${t("adminbotMeetings.archive.playlist")}
+          </a>`
+        : nothing}
+    </aside>
+  `;
+}
+
 export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
+  const visibleCount = Math.min(props.meetings.length, props.visibleCount);
   return html`
     <section class="meetings">
       ${props.error ? html`<p class="notice notice--error">${props.error}</p>` : nothing}
+      ${renderArchiveLinks()}
       ${props.viewerIsAdmin && props.nudge ? renderNudgePanel(props.nudge) : nothing}
       ${props.viewerIsAdmin ? renderFileForm(props) : nothing}
       ${props.loading && props.meetings.length === 0
         ? html`<p class="muted">${t("adminbotMeetings.loading")}</p>`
         : nothing}
-      ${!props.loading && props.meetings.length === 0
+      ${!props.loading && !props.error && props.meetings.length === 0
         ? html`<p class="muted">${t("adminbotMeetings.empty")}</p>`
         : nothing}
-      ${props.meetings.map((meeting) => renderMeeting(props, meeting))}
+      ${props.meetings.slice(0, visibleCount).map((meeting) => renderMeeting(props, meeting))}
+      ${visibleCount < props.meetings.length || props.hasMore
+        ? html`<button
+            class="btn meetings__more"
+            type="button"
+            data-testid="meetings-show-more"
+            ?disabled=${props.loadingMore}
+            aria-busy=${props.loadingMore ? "true" : "false"}
+            @click=${() =>
+              props.onShowMore(
+                visibleCount < props.meetings.length
+                  ? Math.min(props.meetings.length, visibleCount + 12)
+                  : visibleCount + 12,
+              )}
+          >
+            ${props.loadingMore
+              ? t("adminbotMeetings.loading")
+              : t("professor.showMore", {
+                  count: String(Math.min(12, props.meetings.length - visibleCount || 12)),
+                })}
+          </button>`
+        : nothing}
     </section>
   `;
 }

@@ -7,6 +7,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AdminBotServiceResponse } from "../kernel/service.js";
 
+// Typed API requests are small. Routes carrying files pass a larger explicit ceiling; making the
+// ordinary default finite prevents a newly added or anonymous JSON route from silently buffering
+// an attacker-controlled amount of memory.
+export const DEFAULT_JSON_BODY_LIMIT_BYTES = 1024 * 1024;
+
 export function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
@@ -16,10 +21,12 @@ export function asString(value: unknown): string {
  *
  * `maxBytes` is for the routes that carry member-supplied files: without it the only ceiling on a
  * POST is the process's memory, and the buffer is built before any validator gets to see it, so a
- * cap enforced in the service would arrive far too late to matter. Routes that carry only typed
- * fields pass nothing and keep the old behaviour.
+ * cap enforced in the service would arrive far too late to matter.
  */
-export async function readJson(req: IncomingMessage, maxBytes?: number): Promise<unknown> {
+export async function readJson(
+  req: IncomingMessage,
+  maxBytes = DEFAULT_JSON_BODY_LIMIT_BYTES,
+): Promise<unknown> {
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of req) {
@@ -39,7 +46,10 @@ export async function readJson(req: IncomingMessage, maxBytes?: number): Promise
  * For routes where the body is entirely optional -- a button that posts nothing when it means
  * "all of it" -- so the common press is not the one that has to send `{}` to work.
  */
-export async function readJsonOrEmpty(req: IncomingMessage, maxBytes?: number): Promise<unknown> {
+export async function readJsonOrEmpty(
+  req: IncomingMessage,
+  maxBytes = DEFAULT_JSON_BODY_LIMIT_BYTES,
+): Promise<unknown> {
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of req) {
@@ -68,8 +78,24 @@ export function readRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+/**
+ * The status a JSON response goes out with: 502 and 504 leave as 500.
+ *
+ * The service answers 502 when a connector refuses -- Google rejecting a protected cell, gog's
+ * token expired -- and the message it carries is the whole diagnosis. But the Control UI reaches
+ * the service through a Cloudflare tunnel, and Cloudflare replaces an origin 502 or 504 with its
+ * own error page. That page has none of this service's CORS headers, so the browser's fetch
+ * rejects outright and the console reports "Couldn't reach the AdminBot service" for a service
+ * that answered in milliseconds. 500 passes through the tunnel untouched. The service results,
+ * audit rows and callers inside this process keep 502; only the wire changes, and nothing
+ * client-side distinguishes 502 from any other 5xx.
+ */
+export function wireStatus(status: number): number {
+  return status === 502 || status === 504 ? 500 : status;
+}
+
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.statusCode = status;
+  res.statusCode = wireStatus(status);
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   // Every JSON response here reflects live, mutable state (roster, sessions, map places...);
   // without this a browser can silently serve a stale GET from its disk cache instead of
@@ -99,9 +125,9 @@ export function sendRedirect(res: ServerResponse, location: string): void {
   res.end();
 }
 
-export function sendServiceResult<T>(
+export function sendServiceResult(
   res: ServerResponse,
-  result: AdminBotServiceResponse<T>,
+  result: AdminBotServiceResponse<unknown>,
 ): void {
   if (result.ok) {
     sendJson(res, result.status, result.payload);

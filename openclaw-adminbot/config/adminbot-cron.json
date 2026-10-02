@@ -27,6 +27,20 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-citation-checks",
+      "description": "Check the citations of each new OpenReview submission version, every half hour",
+      "cron": "25,55 * * * *",
+      "argv": ["bash", "scripts/adminbot-citation-check-cron.sh"],
+      "timeoutSeconds": 300
+    },
+    {
+      "name": "adminbot-iclr-integrity",
+      "description": "Score each new ICLR submission version with Pangram and alert Slack on AI text or hallucinated citations, hourly",
+      "cron": "12 * * * *",
+      "argv": ["bash", "scripts/adminbot-iclr-integrity-cron.sh"],
+      "timeoutSeconds": 300
+    },
+    {
       "name": "adminbot-meeting-artifacts",
       "description": "Meeting artifact drop-folder pass",
       "cron": "20 * * * *",
@@ -89,6 +103,78 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-venue-index",
+      "description": "Rebuild a conference's paper index on the day its accepted list changes; embeds nothing when nothing moved",
+      "cron": "0 4 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-venue-index-cron.sh"
+      ],
+      "timeoutSeconds": 3600
+    },
+    {
+      "name": "adminbot-member-map",
+      "description": "Re-read Slack profile locations, the member map's top-priority source and the only one that cannot refresh itself",
+      "cron": "10 6 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-member-map-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-deadline-calendar",
+      "description": "Publish conference deadlines to the lab calendar, after the venue refresh they read",
+      "cron": "40 6 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-deadline-cron.sh",
+        "calendar-conferences"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-roster-sync",
+      "description": "Reconcile roster membership and Member Type against the lab spreadsheet, and propose the access removals a type change implies",
+      "cron": "10 6 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-roster-sync-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-onboarding-sheet-sweep",
+      "description": "Daily: create members for new contact-spreadsheet rows and report who is owed an onboarding mail",
+      "cron": "40 6 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-onboarding-sheet-sweep-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-meeting-membership",
+      "description": "Reconcile the standing invite against the roster and file the removals as proposals",
+      "cron": "35 6 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-meeting-membership-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-deadline-reminders",
+      "description": "DM each author the deadlines their papers were matched to, after the match pass has run",
+      "cron": "30 7 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-deadline-cron.sh",
+        "reminders"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-graduations",
       "description": "Confirm finishing months, chase alumni transitions, and arrange the ceremony",
       "cron": "0 8 * * 1",
@@ -109,9 +195,29 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-email-templates",
+      "description": "Check the email-template doc against the shipped copy",
+      "cron": "30 8 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-email-templates-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-workshop-nudges",
+      "description": "Workshop matches for one conference, two weeks before its first workshop deadline",
+      "cron": "0 7 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-workshop-nudge-cron.sh"
+      ],
+      "timeoutSeconds": 3600
+    },
+    {
       "name": "adminbot-paperflow-nudges",
-      "description": "PaperFlow venue-stage nudges",
-      "cron": "0 9 * * 1-5",
+      "description": "PaperFlow venue-stage nudges, once a week",
+      "cron": "0 9 * * 1",
       "argv": [
         "bash",
         "scripts/adminbot-paperflow-nudge-cron.sh"
@@ -145,6 +251,96 @@
       "argv": [
         "bash",
         "scripts/adminbot-onboarding-chase-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-disengagement",
+      "description": "Onboarding follow-up ladder, and the standing reminder for accounts never signed into",
+      "cron": "50 10 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-disengagement-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-alumni-slack-invites",
+      "description": "Send the alumni Slack Connect invitation ten days after their welcome",
+      "cron": "10 10 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-alumni-slack-invites-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-topic-channels",
+      "description": "Invite collaborators into the #discussion-xxx and #meeting-xxx channels their work matches",
+      "cron": "40 10 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-topic-channels-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-meeting-invites",
+      "description": "Put each #meeting-xxx and #proj-xxx channel's members on that meeting's calendar invite; proposes, never invites",
+      "cron": "50 10 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-meeting-invites-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-project-channels",
+      "description": "Open #proj-<alias> for each project and invite its external collaborators",
+      "cron": "30 10 * * 1-5",
+      "argv": [
+        "bash",
+        "scripts/adminbot-project-channels-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-rec-letter-channel",
+      "description": "Add applicants to #help-rec-letters within three months of letter deadlines; propose expired removals",
+      "cron": "20 * * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-rec-letter-channel-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-paper-stages",
+      "description": "Verify paper evidence, advance each paper on it, and queue the ones at the PI's gate",
+      "cron": "45 * * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-paper-stages-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-papermentor-runs",
+      "description": "Collect PaperMentor's cached reviews and record them against their papers",
+      "cron": "35 * * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-papermentor-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-rec-letter-reminders",
+      "description": "Mail the head professor the letters due within three days",
+      "cron": "25 10 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-rec-letter-reminder-cron.sh"
       ],
       "timeoutSeconds": 900
     },
@@ -189,6 +385,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-local-event-audience",
+      "description": "Reconcile the Zurich lunch guest list with where members are",
+      "cron": "0 7 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-local-event-audience-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-onboarding-confirm",
       "description": "Onboarding-step confirmation loop",
       "cron": "10 */2 * * *",
@@ -208,6 +414,28 @@
         "scripts/adminbot-nudge-escalation-cron.sh"
       ],
       "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-opportunity-refresh",
+      "description": "Weekly re-read of each Opportunities page; files proposals, never publishes",
+      "cron": "40 6 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-opportunity-cron.sh",
+        "refresh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-opportunity-discover",
+      "description": "Weekly hub-page crawl; files new candidates as pending, publishes nothing",
+      "cron": "50 6 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-opportunity-cron.sh",
+        "discover"
+      ],
+      "timeoutSeconds": 1800
     }
   ]
 }

@@ -17,14 +17,18 @@
 // so a personal address that only ever existed in `email` survives the swap.
 import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { verifyPassword } from "../extensions/adminbot/src/workflows/identity/auth.ts";
+import {
+  ADMINBOT_SEEDED_PORTAL_PASSWORD,
+  verifyPassword,
+} from "../extensions/adminbot/src/workflows/identity/auth.ts";
 
-const SEEDED_PASSWORD = "jinesis";
+const SEEDED_PASSWORD = ADMINBOT_SEEDED_PORTAL_PASSWORD;
 const CS_DOMAIN = "@cs.toronto.edu";
 // Columns are found by header text, not position, so an inserted column upstream cannot silently
 // shift which field is read. Q first, then E.
 const SLACK_EMAIL_HEADER = "Slack email";
-const CORRESPONDENCE_HEADER = "Email for correspondence (the more professional the better)";
+const CORRESPONDENCE_HEADER =
+  "Email for correspondence (the more professional the better)";
 const SLACK_ID_HEADER = "Slack ID";
 
 /** Minimal RFC-4180 reader: quoted fields, doubled quotes, embedded commas and newlines. */
@@ -79,16 +83,26 @@ function normalizeName(name: string): string {
     .trim();
 }
 
-type Export = { name: string; slackId: string; email: string; source: "Q" | "E" };
+type Export = {
+  name: string;
+  slackId: string;
+  email: string;
+  source: "Q" | "E";
+};
 
-function readExport(path: string): { bySlackId: Map<string, Export>; byName: Map<string, Export> } {
+function readExport(path: string): {
+  bySlackId: Map<string, Export>;
+  byName: Map<string, Export>;
+} {
   const rows = parseCsv(fs.readFileSync(path, "utf8").replace(/^﻿/u, ""));
   const header = rows[0] ?? [];
   const emailAt = header.indexOf(SLACK_EMAIL_HEADER);
   const correspondenceAt = header.indexOf(CORRESPONDENCE_HEADER);
   const slackAt = header.indexOf(SLACK_ID_HEADER);
   if (emailAt < 0 || slackAt < 0) {
-    throw new Error(`export is missing "${SLACK_EMAIL_HEADER}" or "${SLACK_ID_HEADER}" columns`);
+    throw new Error(
+      `export is missing "${SLACK_EMAIL_HEADER}" or "${SLACK_ID_HEADER}" columns`,
+    );
   }
   if (correspondenceAt < 0) {
     throw new Error(`export is missing "${CORRESPONDENCE_HEADER}" column`);
@@ -104,7 +118,12 @@ function readExport(path: string): { bySlackId: Map<string, Export>; byName: Map
     if (!name || !email) {
       continue;
     }
-    const entry: Export = { name, slackId, email, source: slackEmail ? "Q" : "E" };
+    const entry: Export = {
+      name,
+      slackId,
+      email,
+      source: slackEmail ? "Q" : "E",
+    };
     if (slackId) {
       bySlackId.set(slackId, entry);
     }
@@ -122,25 +141,44 @@ function main(): void {
   const write = args.includes("--write");
   const [databasePath, csvPath] = args.filter((arg) => !arg.startsWith("--"));
   if (!databasePath || !csvPath) {
-    throw new Error("usage: adminbot-apply-slack-emails.ts <db> <slack-export.csv> [--write]");
+    throw new Error(
+      "usage: adminbot-apply-slack-emails.ts <db> <slack-export.csv> [--write]",
+    );
   }
 
   const { bySlackId, byName } = readExport(csvPath);
   const db = new DatabaseSync(databasePath);
 
   const credentials = db
-    .prepare("SELECT member_id, email, password_scrypt FROM adminbot_member_credentials")
-    .all() as unknown as Array<{ member_id: string; email: string; password_scrypt: string }>;
+    .prepare(
+      "SELECT member_id, email, password_scrypt FROM adminbot_member_credentials",
+    )
+    .all() as unknown as Array<{
+    member_id: string;
+    email: string;
+    password_scrypt: string;
+  }>;
   const members = new Map(
     (
-      db.prepare("SELECT id, payload_json FROM adminbot_lab_members").all() as unknown as Array<{
+      db
+        .prepare("SELECT id, payload_json FROM adminbot_lab_members")
+        .all() as unknown as Array<{
         id: string;
         payload_json: string;
       }>
-    ).map((row) => [row.id, JSON.parse(row.payload_json) as Record<string, unknown>]),
+    ).map((row) => [
+      row.id,
+      JSON.parse(row.payload_json) as Record<string, unknown>,
+    ]),
   );
 
-  type Change = { memberId: string; name: string; from: string; to: string; source?: "Q" | "E" };
+  type Change = {
+    memberId: string;
+    name: string;
+    from: string;
+    to: string;
+    source?: "Q" | "E";
+  };
   const changes: Change[] = [];
   const claimedSkips: Change[] = [];
   const collisions: string[] = [];
@@ -149,16 +187,20 @@ function main(): void {
   // run leaves alone still owns its address, and `email` is UNIQUE -- an earlier version only
   // checked claimed logins, so a second roster record pointing at an address a *seeded* one
   // already held would reach the INSERT and roll the whole transaction back.
-  const takenEmails = new Set(credentials.map((credential) => credential.email.toLowerCase()));
+  const takenEmails = new Set(
+    credentials.map((credential) => credential.email.toLowerCase()),
+  );
 
   for (const credential of credentials) {
     const member = members.get(credential.member_id);
     if (!member) {
       continue;
     }
-    const name = typeof member.name === "string" ? member.name : credential.member_id;
+    const name =
+      typeof member.name === "string" ? member.name : credential.member_id;
     const match =
-      bySlackId.get(String(member.slack_user_id ?? "")) ?? byName.get(normalizeName(name));
+      bySlackId.get(String(member.slack_user_id ?? "")) ??
+      byName.get(normalizeName(name));
     const target = match?.email;
     if (!target) {
       continue;
@@ -190,7 +232,9 @@ function main(): void {
     if (stillTaken.has(target)) {
       // Two roster records resolving to one address is the duplicate-person case again. The email
       // column is UNIQUE, so the second one cannot be written; it is reported instead.
-      collisions.push(`${name} [${credential.member_id}] -> ${target} (held by another record)`);
+      collisions.push(
+        `${name} [${credential.member_id}] -> ${target} (held by another record)`,
+      );
       continue;
     }
     changes.push(change);
@@ -199,25 +243,40 @@ function main(): void {
   console.log(`database: ${databasePath}`);
   console.log(`export:   ${csvPath}`);
   const demotions = changes.filter(
-    (change) => change.from.endsWith(CS_DOMAIN) && !change.to.endsWith(CS_DOMAIN),
+    (change) =>
+      change.from.endsWith(CS_DOMAIN) && !change.to.endsWith(CS_DOMAIN),
   );
   console.log(`logins to repoint from the export: ${changes.length}`);
-  console.log(`  from column Q: ${changes.filter((c) => c.source === "Q").length}`);
-  console.log(`  from column E: ${changes.filter((c) => c.source === "E").length}\n`);
+  console.log(
+    `  from column Q: ${changes.filter((c) => c.source === "Q").length}`,
+  );
+  console.log(
+    `  from column E: ${changes.filter((c) => c.source === "E").length}\n`,
+  );
   for (const change of changes) {
     // A move off a lab address is flagged rather than hidden: it is what the export says, but it
     // is the one direction someone is likely to have meant the other way round.
-    const note = demotions.includes(change) ? "  !! leaves a cs.toronto.edu address" : "";
-    console.log(`  ${change.name.padEnd(30)} ${change.from}  ->  ${change.to}  [${change.source}]${note}`);
+    const note = demotions.includes(change)
+      ? "  !! leaves a cs.toronto.edu address"
+      : "";
+    console.log(
+      `  ${change.name.padEnd(30)} ${change.from}  ->  ${change.to}  [${change.source}]${note}`,
+    );
   }
   if (claimedSkips.length) {
-    console.log(`\nleft alone (password already changed, so the account is in use):`);
+    console.log(
+      `\nleft alone (password already changed, so the account is in use):`,
+    );
     for (const skip of claimedSkips) {
-      console.log(`  ${skip.name.padEnd(30)} ${skip.from}  (export says ${skip.to})`);
+      console.log(
+        `  ${skip.name.padEnd(30)} ${skip.from}  (export says ${skip.to})`,
+      );
     }
   }
   if (collisions.length) {
-    console.log(`\nnot applied (two records want one address -- merge them on the roster):`);
+    console.log(
+      `\nnot applied (two records want one address -- merge them on the roster):`,
+    );
     for (const collision of collisions) {
       console.log(`  ${collision}`);
     }
@@ -241,7 +300,8 @@ function main(): void {
       const member = members.get(change.memberId)!;
       // The roster's own `email` is the login identity the profile page shows, so the two move
       // together; leaving them different would show a member an address they cannot sign in with.
-      const previous = typeof member.email === "string" ? member.email.trim() : "";
+      const previous =
+        typeof member.email === "string" ? member.email.trim() : "";
       if (previous && !member.correspondence_email) {
         member.correspondence_email = previous;
       }

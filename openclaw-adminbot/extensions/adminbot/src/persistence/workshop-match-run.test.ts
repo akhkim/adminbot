@@ -85,6 +85,28 @@ describe.each(stores)("%s store: workshop match runs", (_name, makeStore) => {
     expect(store.latestWorkshopMatchRun()?.id).toBe("new");
   });
 
+  it("returns the replacement when both runs started in the same millisecond", () => {
+    // Not hypothetical: replacing a wedged pass writes the old row off and inserts the new one in
+    // the same tick, so they share a timestamp. Ordering on `started_at` alone then hands back
+    // whichever was written first -- the dead run -- and the tab stays wedged on the pass that was
+    // just replaced, which is the exact failure the replacement exists to end.
+    const store = makeStore();
+    const sameMoment = "2026-08-27T11:00:00.000Z";
+    store.saveWorkshopMatchRun(
+      run({ id: "abandoned", started_at: sameMoment, status: "failed", calls_done: 1671 }),
+    );
+    store.saveWorkshopMatchRun(run({ id: "replacement", started_at: sameMoment }));
+    expect(store.latestWorkshopMatchRun()?.id).toBe("replacement");
+  });
+
+  it("keeps how many calls failed", () => {
+    const store = makeStore();
+    store.saveWorkshopMatchRun(run({ calls_done: 2540, calls_total: 2540, calls_failed: 37 }));
+    // A failed call still advances `calls_done`, so without this the page cannot tell a complete
+    // sweep from one that gave up on 37 workshops and reported the total anyway.
+    expect(store.latestWorkshopMatchRun()?.calls_failed).toBe(37);
+  });
+
   it("keeps why a pass failed", () => {
     const store = makeStore();
     store.saveWorkshopMatchRun(run({ status: "failed", error: "connect ECONNREFUSED" }));
@@ -102,6 +124,16 @@ describe.each(stores)("%s store: workshop match runs", (_name, makeStore) => {
   });
 });
 
+describe.each(stores)("%s store: a pass in flight", (_name, makeStore) => {
+  it("stamps when it last moved", () => {
+    const store = makeStore();
+    store.saveWorkshopMatchRun(run({ calls_done: 40, calls_total: 2540 }));
+    // Without this, a row that says `running` cannot be told from one whose process is gone, and
+    // the "one pass at a time" guard refuses every later pass in the dead one's name.
+    expect(Date.parse(store.latestWorkshopMatchRun()?.progress_at ?? "")).toBeGreaterThan(0);
+  });
+});
+
 describe("sqlite store: durability", () => {
   it("keeps a finished pass across a restart", () => {
     const databasePath = tempDbPath();
@@ -113,5 +145,26 @@ describe("sqlite store: durability", () => {
     const reopened = sqliteStore(databasePath).latestWorkshopMatchRun();
     expect(reopened?.status).toBe("ready");
     expect(JSON.parse(reopened?.payload_json ?? "{}")).toEqual({ paper_count: 7 });
+  });
+
+  // A pass is an un-awaited task inside the service, so it cannot outlive the process that started
+  // it. Before this, a restart mid-pass left the row saying `running` forever: the tab sat on
+  // "Matching in progress..." counting calls nobody was making, and every later pass was refused.
+  it("closes out a pass its process did not survive", () => {
+    const databasePath = tempDbPath();
+    sqliteStore(databasePath).saveWorkshopMatchRun(run({ calls_done: 1671, calls_total: 2540 }));
+
+    const reopened = sqliteStore(databasePath).latestWorkshopMatchRun();
+    expect(reopened?.status).toBe("failed");
+    expect(reopened?.error).toContain("restarted");
+    expect(reopened?.finished_at).toBeTruthy();
+    // The counts stay as they were: they say how far it got before it died.
+    expect(reopened?.calls_done).toBe(1671);
+  });
+
+  it("leaves a pass that finished properly alone", () => {
+    const databasePath = tempDbPath();
+    sqliteStore(databasePath).saveWorkshopMatchRun(run({ status: "ready" }));
+    expect(sqliteStore(databasePath).latestWorkshopMatchRun()?.status).toBe("ready");
   });
 });
