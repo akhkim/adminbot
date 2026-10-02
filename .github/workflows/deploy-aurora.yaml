@@ -43,7 +43,9 @@ jobs:
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_branch == 'main' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
-    runs-on: [self-hosted, aurora-deploy]
+    # Only the installer's label: it registers with --no-default-labels, so the runner has no
+    # `self-hosted` label and a job that asks for one queues forever.
+    runs-on: [aurora-deploy]
     environment: aurora
     timeout-minutes: 45
     steps:
