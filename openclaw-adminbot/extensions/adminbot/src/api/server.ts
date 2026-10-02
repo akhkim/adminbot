@@ -253,6 +253,8 @@ const DEFAULT_ALLOWED_ORIGINS = [
 ];
 const SESSION_COOKIE = "adminbot_session";
 const SESSION_COOKIE_MAX_AGE_SECONDS = 604800;
+// 20 MB of PDF, plus base64's third and the JSON around it. Matches the Control UI's own check.
+const LINKEDIN_DRAFT_BODY_LIMIT_BYTES = Math.ceil(20 * 1024 * 1024 * 1.4);
 
 /**
  * The lab's member spreadsheet, as the Membership grid reads it.
@@ -4361,7 +4363,9 @@ async function handleAuthenticatedRoute(
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
-    const body = readRecord(await readJson(req));
+    // A paper PDF can be attached here, so the default 1 MB JSON ceiling would refuse most real
+    // papers once base64 has added its third.
+    const body = readRecord(await readJson(req, LINKEDIN_DRAFT_BODY_LIMIT_BYTES));
     let pdfBase64 = typeof body.pdf_base64 === "string" ? body.pdf_base64 : "";
     // An upload is no longer required. The author has usually already given the lab this exact
     // file -- `drive_pdf_arxiv` is the Drive copy of the PDF they intend to post, and the card

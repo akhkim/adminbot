@@ -928,7 +928,9 @@ export async function readDriveFileBase64(
   fileId: string,
   options: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {},
 ): Promise<string> {
-  const command = options.command ?? "gog";
+  // Resolved rather than bare: under the systemd unit's minimal PATH a bare "gog" ENOENTs, which
+  // surfaced as "could not read the Drive copy (spawn gog ENOENT)" on every LinkedIn draft.
+  const command = options.command ?? resolveGogExecutable(options.env);
   const output = path.join(
     os.tmpdir(),
     `adminbot-drive-${fileId.replace(/[^a-zA-Z0-9_-]/gu, "")}-${Date.now()}.pdf`,

@@ -10555,6 +10555,24 @@ adminbot-deadline-timezone {
   color: var(--muted);
 }
 
+/* The logistics drop zone, tightened to sit between the context inputs and the draft box. Both
+   classes, because logistics.css loads after this file and would otherwise win the tie. */
+.logistics-upload__drop.paper-cycle__pdf-drop {
+  margin-top: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+/* Outside the logistics page nothing sizes or strokes a bare icon svg, so it rendered at 0x0. */
+.paper-cycle__pdf-drop .logistics-upload__drop-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* Generate sits left; sign-off rides the right edge, matching how the card's action rows read. */
 .paper-cycle__draft-actions {
   display: flex;
