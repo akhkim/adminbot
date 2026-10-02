@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# One pass of the #help-rec-letter-request channel roster, shaped for an OpenClaw cron job.
+# One pass of the #help-rec-letters channel roster, shaped for an OpenClaw cron job.
 #
-# Adds anybody with an open recommendation-letter request, and proposes removing anybody whose
-# letters have all been settled for longer than the retention window. Membership is computed from
+# Adds applicants within three calendar months of a letter deadline, and proposes removal after
+# their last deadline window ends. Membership is computed from
 # the request log rather than stored, so the pass is idempotent and there is no second list to fall
 # out of step with it.
 #
@@ -67,7 +67,7 @@ for entry in invited:
     print(f"  invited {entry.get('member_id')}")
 # Proposed, not done: an admin approves each one in Pending actions.
 for entry in removals:
-    print(f"  removal proposed for {entry.get('member_id')} (settled {entry.get('settled_at')})")
+    print(f"  removal proposed for {entry.get('member_id')} (deadline window ended {entry.get('window_ends_at')})")
 # A skip is one alumnus's invitation, not the run: somebody Slack refused (not_in_channel is the
 # usual one) must not turn every other invitation in the pass red.
 for entry in skipped:

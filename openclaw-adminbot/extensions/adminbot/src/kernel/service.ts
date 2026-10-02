@@ -9,8 +9,7 @@ import {
   adminBotDormantChaseMemberTypes,
   adminBotIsAlumniMember,
   adminBotProjectChannelName,
-  adminBotLogisticsSettledStatuses,
-  adminBotRecLetterChannelRetentionDays,
+  adminBotRecLetterChannelWindowMonths,
   adminBotNormalizePaperAlias,
   adminBotPaperAliasMaxLength,
   adminBotNudgeRosterDecision,
@@ -274,6 +273,7 @@ import {
 } from "../workflows/logistics/rec-letter-reminders.js";
 import {
   byUrgency,
+  deadlineInstant,
   prepareLogisticsRequest,
   withoutAttachmentBytes,
   withCurrentLogisticsDeadline,
@@ -12508,19 +12508,8 @@ export class AdminBotService {
   /**
    * Who belongs in the recommendation-letter help channel right now, and who no longer does.
    *
-   * In: anybody with a letter request the lab has not finished with. Out: anybody whose letters
-   * have all been settled for longer than the retention window.
-   *
-   * The window is measured from the *latest* settled request, not the first, and that is the whole
-   * subtlety. An application season runs about two months across different school deadlines, so a
-   * member routinely has one request closed in November and another still open in January. Reading
-   * the earliest settled date would take them out of the channel halfway through their own season,
-   * which is exactly when they need it. Any unsettled request keeps them in regardless of how old
-   * their others are.
-   *
-   * Computed, never stored: membership is a function of the request log and the clock, so there is
-   * no second list to fall out of step with it. That also makes the sweep idempotent -- Slack's own
-   * already_in_channel and not_in_channel are treated as success by the connector.
+   * Eligibility uses each letter deadline, including its timezone, rather than request status
+   * or edit timestamps. Completed applicants still have access during their deadline window.
    */
   recLetterChannelRoster(options: { nowIso?: string } = {}): {
     add: Array<{ member_id: string; member_name: string; slack_user_id: string }>;
@@ -12528,30 +12517,52 @@ export class AdminBotService {
       member_id: string;
       member_name: string;
       slack_user_id: string;
-      settled_at: string;
+      window_ends_at: string;
     }>;
     skipped: AdminBotMemberNudgeSkip[];
   } {
     const now = options.nowIso ? new Date(options.nowIso) : new Date();
-    const cutoff = now.getTime() - adminBotRecLetterChannelRetentionDays * 24 * 60 * 60 * 1000;
-    const settled = new Set<string>(adminBotLogisticsSettledStatuses);
-
-    /** Per member: is anything still open, and when did the most recent one settle. */
-    const state = new Map<string, { open: boolean; lastSettled: number }>();
+    const state = new Map<string, { eligible: boolean; lastEnd: number }>();
     for (const request of this.store.listLogisticsRequests()) {
       if (request.kind !== "recommendation_letters") {
         continue;
       }
-      const entry = state.get(request.member_id) ?? { open: false, lastSettled: 0 };
-      if (settled.has(request.status)) {
-        // `updated_at` is when it reached that status, which is the moment the lab finished with
-        // it. `submitted_at` would start the clock when the member asked, which is backwards.
-        const at = Date.parse(request.updated_at);
-        if (Number.isFinite(at) && at > entry.lastSettled) {
-          entry.lastSettled = at;
+      const entry = state.get(request.member_id) ?? { eligible: false, lastEnd: 0 };
+      if (request.status !== "declined" && request.status !== "withdrawn") {
+        for (const school of request.schools ?? []) {
+          if (
+            !deadlineInstant(
+              school.letter_deadline,
+              school.letter_deadline_time,
+              school.deadline_timezone,
+            )
+          ) {
+            continue;
+          }
+          const boundary = (months: number) => {
+            const date = new Date(`${school.letter_deadline}T00:00:00Z`);
+            const day = date.getUTCDate();
+            date.setUTCDate(1);
+            date.setUTCMonth(date.getUTCMonth() + months);
+            const lastDay = new Date(
+              Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0),
+            ).getUTCDate();
+            date.setUTCDate(Math.min(day, lastDay));
+            return Date.parse(
+              deadlineInstant(
+                date.toISOString().slice(0, 10),
+                school.letter_deadline_time,
+                school.deadline_timezone,
+              ) ?? "",
+            );
+          };
+          const start = boundary(-adminBotRecLetterChannelWindowMonths);
+          const end = boundary(adminBotRecLetterChannelWindowMonths);
+          if (Number.isFinite(start) && Number.isFinite(end)) {
+            entry.eligible ||= start <= now.getTime() && now.getTime() <= end;
+            entry.lastEnd = Math.max(entry.lastEnd, end);
+          }
         }
-      } else {
-        entry.open = true;
       }
       state.set(request.member_id, entry);
     }
@@ -12561,7 +12572,7 @@ export class AdminBotService {
       member_id: string;
       member_name: string;
       slack_user_id: string;
-      settled_at: string;
+      window_ends_at: string;
     }> = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
     for (const [memberId, entry] of state) {
@@ -12580,10 +12591,10 @@ export class AdminBotService {
         member_name: member.name,
         slack_user_id: member.slack_user_id.trim(),
       };
-      if (entry.open) {
+      if (entry.eligible) {
         add.push(row);
-      } else if (entry.lastSettled > 0 && entry.lastSettled <= cutoff) {
-        remove.push({ ...row, settled_at: new Date(entry.lastSettled).toISOString() });
+      } else if (entry.lastEnd > 0 && entry.lastEnd < now.getTime()) {
+        remove.push({ ...row, window_ends_at: new Date(entry.lastEnd).toISOString() });
       }
     }
     const byName = <T extends { member_name: string }>(left: T, right: T) =>
@@ -12607,7 +12618,7 @@ export class AdminBotService {
     AdminBotServiceResponse<{
       channel: string;
       invited: Array<{ member_id: string; proposal_id: string }>;
-      removal_proposals: Array<{ member_id: string; proposal_id: string; settled_at: string }>;
+      removal_proposals: Array<{ member_id: string; proposal_id: string; window_ends_at: string }>;
       skipped: AdminBotMemberNudgeSkip[];
     }>
   > {
@@ -12617,12 +12628,12 @@ export class AdminBotService {
     const removalProposals: Array<{
       member_id: string;
       proposal_id: string;
-      settled_at: string;
+      window_ends_at: string;
     }> = [];
     const skipped: AdminBotMemberNudgeSkip[] = [...roster.skipped];
 
     // The roster is rebuilt from the request log, not from who is in the channel, so without these
-    // two checks every run re-invited everybody with an open request and re-proposed every removal
+    // two checks every run re-invited everybody with an eligible deadline and re-proposed every removal
     // -- once a weekday that was clutter, hourly it would flood Pending Actions with copies.
     const history = (type: "slack.invite_to_channel" | "slack.remove_from_channel") =>
       this.store.listProposalsByType(type).filter((proposal) => {
@@ -12640,10 +12651,10 @@ export class AdminBotService {
         .toSorted((left, right) => left.updated_at.localeCompare(right.updated_at));
       return moves.at(-1)?.type === "slack.invite_to_channel";
     };
-    // One removal per settlement, whatever became of it: pending waits for an admin, executed is
+    // One removal per expired deadline window, whatever became of it: pending waits for an admin, executed is
     // done, and rejected is an admin's answer that should not be asked again every hour.
-    const removalFiledSince = (userId: string, settledAt: string) =>
-      removals.some((proposal) => userOf(proposal) === userId && proposal.created_at >= settledAt);
+    const removalFiledSince = (userId: string, windowEnd: string) =>
+      removals.some((proposal) => userOf(proposal) === userId && proposal.created_at >= windowEnd);
 
     for (const person of roster.add) {
       if (alreadyIn(person.slack_user_id)) {
@@ -12651,7 +12662,7 @@ export class AdminBotService {
       }
       const proposed = this.createProposal({
         type: "slack.invite_to_channel",
-        summary: `Add ${person.member_name} to #${channel} (letter request open)`,
+        summary: `Add ${person.member_name} to #${channel} (within three months of a letter deadline)`,
         target: {
           service: "slack",
           channel: "slack",
@@ -12674,13 +12685,13 @@ export class AdminBotService {
     }
 
     for (const person of roster.remove) {
-      if (removalFiledSince(person.slack_user_id, person.settled_at)) {
+      if (removalFiledSince(person.slack_user_id, person.window_ends_at)) {
         continue;
       }
       // Proposed only. Nothing here executes it -- see the header and the policy table.
       const proposed = this.createProposal({
         type: "slack.remove_from_channel",
-        summary: `Remove ${person.member_name} from #${channel} (letters settled ${person.settled_at.slice(0, 10)})`,
+        summary: `Remove ${person.member_name} from #${channel} (deadline window ended ${person.window_ends_at.slice(0, 10)})`,
         target: {
           service: "slack",
           channel: "slack",
@@ -12697,7 +12708,7 @@ export class AdminBotService {
       removalProposals.push({
         member_id: person.member_id,
         proposal_id: proposed.payload.id,
-        settled_at: person.settled_at,
+        window_ends_at: person.window_ends_at,
       });
     }
 
@@ -12706,7 +12717,7 @@ export class AdminBotService {
       actor,
       details: {
         channel,
-        retention_days: adminBotRecLetterChannelRetentionDays,
+        deadline_window_months: adminBotRecLetterChannelWindowMonths,
         invited: invited.length,
         removals_proposed: removalProposals.length,
         skipped: skipped.length,
