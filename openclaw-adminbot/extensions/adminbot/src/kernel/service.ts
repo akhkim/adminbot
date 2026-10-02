@@ -5942,6 +5942,7 @@ export class AdminBotService {
         at: now,
       });
     }
+    this.syncConferenceChannel(stored);
     return { ok: true, status: 200, payload: stored };
   }
 
@@ -7204,6 +7205,7 @@ export class AdminBotService {
       actor: params.actorId,
       details: { paper_id: params.paperId, attending: params.attending },
     });
+    this.syncConferenceChannel(paper);
     return { ok: true, status: 200, payload: { attendee } };
   }
 
@@ -7243,7 +7245,91 @@ export class AdminBotService {
         paper,
         attendees: this.store.listConferenceAttendees(paper.id),
       }));
-    return { ok: true, status: 200, payload: { conferences: buildConferenceAttendance(entries) } };
+    const conferences = buildConferenceAttendance(entries).map((conference) => ({
+      ...conference,
+      people: conference.people.map((person) => ({
+        ...person,
+        avatar_url: person.member_id
+          ? this.store.getLabMember(person.member_id)?.avatar_url
+          : undefined,
+      })),
+    }));
+    return { ok: true, status: 200, payload: { conferences } };
+  }
+
+  private syncConferenceChannel(paper: AdminBotPaperRecord): void {
+    const key = paperConferenceKey(paper);
+    if (!key) return;
+    // Persist the approved proposal before yielding. Slack outages must not fail a paper save;
+    // the existing action audit retains failures for retry, and execution deduplicates saves.
+    void this.inviteConferenceAttendees(key).catch(() => {});
+  }
+
+  /** Uses the existing Slack proposal/approval/execution gate. */
+  async inviteConferenceAttendees(conferenceKey: string): Promise<
+    AdminBotServiceResponse<{
+      channel: string;
+      invited: number;
+      skipped: number;
+      failed: number;
+    }>
+  > {
+    const roster = this.listConferenceRosters();
+    if (!roster.ok) return roster;
+    const conference = roster.payload.conferences.find((entry) => entry.key === conferenceKey);
+    if (!conference) return serviceError(404, "accepted conference not found");
+    // Use the exact recorded venue/year, never a caller-supplied channel or user ID.
+    const venue = conference.venue
+      .replace(new RegExp(`\\b${conference.year}\\b`, "gu"), "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, "-")
+      .replace(/^-|-$/gu, "");
+    if (!venue) return serviceError(400, "conference venue has no channel name");
+    const channel = `conf-${venue}-${conference.year}`;
+    let invited = 0,
+      skipped = 0,
+      failed = 0;
+    for (const person of conference.people) {
+      const member = person.member_id ? this.store.getLabMember(person.member_id) : undefined;
+      if (
+        person.attending !== "yes" ||
+        !member?.slack_user_id ||
+        member.slack_channels?.some((name) => name.replace(/^#/u, "").toLowerCase() === channel)
+      ) {
+        skipped++;
+        continue;
+      }
+      const proposal = this.createProposal({
+        type: "slack.invite_to_channel",
+        summary: `Add ${member.name} to #${channel}`,
+        target: {
+          service: "slack",
+          channel: "slack",
+          target: channel,
+          recipientMemberId: member.id,
+        },
+        proposed_payload: { channel, user_id: member.slack_user_id },
+        rationale: `Confirmed going to ${conference.label} on an accepted paper.`,
+        undo_plan: "The member can leave the channel, or an admin can remove them.",
+        idempotency_key: `conference-channel:${conference.key}:${member.id}`,
+      });
+      if (!proposal.ok) {
+        failed++;
+        continue;
+      }
+      try {
+        const executed = await this.execute(proposal.payload.id, {
+          dry_run: false,
+          idempotency_key: proposal.payload.idempotency_key,
+        });
+        if (executed.ok && executed.payload.status === "executed") invited++;
+        else failed++;
+      } catch {
+        failed++;
+      }
+    }
+    return { ok: true, status: 200, payload: { channel, invited, skipped, failed } };
   }
 
   /**
