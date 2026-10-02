@@ -251,6 +251,7 @@ export type AdminBotAccessGrant = {
 export const adminBotMemberRoles = [
   "Undergraduate Student",
   "Master's Student",
+  "Predoctoral gap-year researcher",
   "PhD Student",
   "Postdoc",
   "Research Assistant",

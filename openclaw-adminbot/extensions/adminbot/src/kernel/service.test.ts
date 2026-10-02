@@ -1651,7 +1651,7 @@ describe("AdminBotService", () => {
         receives_nudges: true,
         id: "vocab-role",
         name: "Vocab Role",
-        role: "PhD Student",
+        role: "Predoctoral gap-year researcher",
       }).ok,
     ).toBe(true);
     // Several roles at once: people here are routinely two things, and every part is checked
