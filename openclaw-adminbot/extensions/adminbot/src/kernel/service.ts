@@ -419,6 +419,7 @@ import {
   reviewProvesFixesMerged,
   type PaperMentorContext,
 } from "../workflows/papers/papermentor-nudges.js";
+import { paperFeedbackQueue } from "../workflows/papers/pi-review.js";
 import {
   buildPiReviewNotice,
   isAwaitingPiReview,
@@ -6810,13 +6811,15 @@ export class AdminBotService {
 
   /** The papers waiting on the head professor's yes, oldest wait first. */
   listPiReviewQueue(): AdminBotServiceResponse<{ papers: PiReviewRow[] }> {
-    const papers = piReviewQueue(
-      this.store
-        .listPapers()
-        .filter((paper) => !isPaperClosed(paper))
-        .map((paper) => ({ paper, slots: this.store.listPaperSlots(paper.id) })),
-    );
-    return { ok: true, status: 200, payload: { papers } };
+    const candidates = this.store
+      .listPapers()
+      .filter((paper) => !isPaperClosed(paper))
+      .map((paper) => ({ paper, slots: this.store.listPaperSlots(paper.id) }));
+    return {
+      ok: true,
+      status: 200,
+      payload: { papers: [...paperFeedbackQueue(candidates), ...piReviewQueue(candidates)] },
+    };
   }
 
   /**

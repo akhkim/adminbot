@@ -382,7 +382,7 @@ describe("renderProfessorView", () => {
     const { container } = draw();
     const title = (id: string) =>
       container.querySelector(`[data-testid="professor-${id}"] .card-title`)?.textContent ?? "";
-    expect(title("pi-review")).toBe("Approve before it goes public");
+    expect(title("pi-review")).toBe("Paper feedback and publication approval");
     expect(title("drafts")).toBe("Read and comment while they are still writing");
     expect(title("escalated")).toBe("Missing information — needs a word from you");
   });
@@ -924,4 +924,28 @@ it("allows publishing a time-zone-only edit and reports the input", () => {
   expect(button.disabled).toBe(false);
   button.click();
   expect(published[0]).toMatchObject({ timezone: "UTC" });
+});
+
+it("shows feedback reason and both deadlines separately from publication approval", () => {
+  const { container } = draw({
+    piReview: [
+      piReviewRow({
+        feedback: {
+          slot: "feedback_arr",
+          label: "ARR / Overleaf feedback",
+          reason: "Check experimental claims",
+          url: "https://example.com/draft",
+          soft_deadline: "2000-01-01T00:00:00Z",
+          hard_deadline: "2000-01-02T00:00:00Z",
+        },
+      }),
+      piReviewRow({ paperId: "p2", title: "Publication package" }),
+    ],
+  });
+  const queue = container.querySelector('[data-testid="professor-pi-review"]') ?? container;
+  expect(queue.textContent).toContain("Check experimental claims");
+  expect(queue.textContent).toContain("Feedback by (soft)");
+  expect(queue.textContent).toContain("Submission cutoff (hard)");
+  expect(queue.textContent).toContain("Past submission cutoff");
+  expect(queue.textContent).toContain("Publication approval");
 });

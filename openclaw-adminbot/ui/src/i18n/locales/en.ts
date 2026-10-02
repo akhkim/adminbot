@@ -2,6 +2,29 @@
 import type { TranslationMap } from "../lib/types.ts";
 
 export const en: TranslationMap = {
+  paperFeedback: {
+    title: "Request paper feedback",
+    blurb: "Queue a draft for PI feedback. Publication approval is a separate decision.",
+    unspecified: "Not specified",
+    soft: "Feedback by (soft):",
+    hard: "Submission cutoff (hard):",
+    late: "Past submission cutoff — soft submission. Feedback is still queued.",
+    open: "Open manuscript",
+    remove: "Remove from feedback queue",
+    url: "Manuscript link (required)",
+    reason: "Why is feedback needed? (required, visible to paper authors and admins)",
+    softInput: "Feedback by — personal soft deadline",
+    hardInput: "Official submission cutoff — hard deadline",
+    hint: "Times use your browser’s local time zone. A passed cutoff does not block a request.",
+    invalid:
+      "Use an HTTPS manuscript link and valid times; feedback-by cannot follow the submission cutoff.",
+    saving: "Saving…",
+    queued: "Queued: {label}",
+    queue: "Queue {label}",
+    feedback_arr: "ARR / Overleaf feedback",
+    feedback_arxiv: "arXiv feedback",
+    feedback_camera_ready: "Camera-ready feedback",
+  },
   deadlineStageProposal: {
     chooseVenue:
       "Select a conference or workshop from the list, or choose New conference or workshop.",
@@ -475,9 +498,9 @@ export const en: TranslationMap = {
       // Each of the three paper queues below names the job it is asking for, because "a list of
       // papers" was true of all three and told her nothing about which to open. This one is a
       // decision on a finished thing.
-      title: "Approve before it goes public",
+      title: "Paper feedback and publication approval",
       blurb:
-        "The package is finished and the PDF is final. Nothing is posted until you say yes, so these are stopped until you look.",
+        "Feedback requests ask for comments; publication approval remains a separate decision. Nothing is posted until you say yes.",
       empty: "No paper is waiting on your approval.",
       open: "Open the papers",
       since: "ready {date}",

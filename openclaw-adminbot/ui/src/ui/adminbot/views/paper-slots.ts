@@ -37,8 +37,9 @@ import {
 import { icons } from "../../icons.ts";
 import type { PaperflowStageRow, PaperSlotRow } from "../auth/session.ts";
 import type { MemberOption } from "./member-select.ts";
-import "./paper-slot-deck.ts";
 import { renderPaperCoauthors, type PaperAuthorLink } from "./paper-coauthors.ts";
+import "./paper-slot-deck.ts";
+import { renderPaperFeedback } from "./paper-feedback.ts";
 
 export type PaperDetailsProps = {
   authors: string[];
@@ -1022,15 +1023,18 @@ export function renderPaperSlots(props: PaperSlotsProps) {
   return html`
     <div class="paper-slots" data-testid=${`paper-slots-${props.paperId}`}>
       ${renderOpenReviewIdentity(props)} ${renderDetails(props)}
+      ${props.slots.some((row) => row.slot.startsWith("feedback_"))
+        ? renderPaperFeedback(props)
+        : nothing}
       <div class="paper-slots__filter">
         <span class="paper-slots__filter-text">
-          All ${adminBotPaperSlots.length} fields are available at any project stage.
+          All ${adminBotPaperSlots.length - 3} fields are available at any project stage.
         </span>
       </div>
       ${adminBotPaperSlotChartOrder.map((branch) => {
         // Every field stays in the deck once shown -- settled ones keep rendering with their
         // done pill rather than vanishing, so flipping through reviews history too.
-        const slots = topLevelSlots(branch);
+        const slots = topLevelSlots(branch).filter((slot) => !slot.startsWith("feedback_"));
         const branchNumber = adminBotPaperFlowBranchNumber[branch];
         // The venue section still draws when it has no open field left: the ladder below it is
         // the half of that branch nobody fills in, and hiding it would hide the paper's position

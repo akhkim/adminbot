@@ -794,6 +794,30 @@ export function renderProfessorView(props: ProfessorViewProps) {
                     onOpen: () => props.onOpen("adminbotPapers"),
                     body: html`<strong>${row.title}</strong>
                       <span class="muted">${row.authors.join(", ")}</span>
+                      ${row.feedback
+                        ? html`<strong>${row.feedback.label}</strong
+                            ><span>${row.feedback.reason}</span>
+                            <span
+                              >Feedback by (soft):
+                              ${row.feedback.soft_deadline
+                                ? new Date(row.feedback.soft_deadline).toLocaleString(undefined, {
+                                    timeZoneName: "short",
+                                  })
+                                : "Not specified"}</span
+                            >
+                            <span
+                              >Submission cutoff (hard):
+                              ${row.feedback.hard_deadline
+                                ? new Date(row.feedback.hard_deadline).toLocaleString(undefined, {
+                                    timeZoneName: "short",
+                                  })
+                                : "Not specified"}</span
+                            >
+                            ${row.feedback.hard_deadline &&
+                            Date.parse(row.feedback.hard_deadline) < Date.now()
+                              ? html`<strong>Past submission cutoff — soft submission</strong>`
+                              : nothing} `
+                        : html`<span>Publication approval</span>`}
                       ${row.packageComplete
                         ? nothing
                         : html`<span class="muted">${t("professor.piReview.incomplete")}</span>`}
@@ -812,7 +836,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
                           href=${row.drivePdfUrl}
                           target="_blank"
                           rel="noreferrer noopener"
-                          >${t("professor.piReview.pdf")}</a
+                          >${row.feedback ? "Open manuscript" : t("professor.piReview.pdf")}</a
                         >`
                       : undefined,
                   }),
