@@ -6,7 +6,9 @@ import {
 import { t } from "../../../i18n/index.ts";
 import type { PaperSlotsProps } from "./paper-slots.ts";
 
-export function renderPaperFeedback(props: PaperSlotsProps) {
+export function renderPaperFeedback(
+  props: Pick<PaperSlotsProps, "slots" | "loading" | "onSaveSlot">,
+) {
   return html`<section class="card" data-testid="paper-feedback">
     <h4>${t("paperFeedback.title")}</h4>
     <p>${t("paperFeedback.blurb")}</p>

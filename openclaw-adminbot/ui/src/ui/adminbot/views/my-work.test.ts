@@ -97,6 +97,7 @@ function draw(options: DrawOptions = {}) {
   const picked: string[] = [];
   const saved: AdminBotPaperSaveInput[] = [];
   const deleted: string[] = [];
+  const slotWrites: Array<{ paperId: string; slot: string; input: Record<string, unknown> }> = [];
   const state =
     options.state ??
     ({
@@ -147,7 +148,7 @@ function draw(options: DrawOptions = {}) {
     onReviewNudges: () => reviews.push(1),
     onToggleNudgeRecipient: (id: string) => picked.push(id),
     onToggleCard: (id) => toggled.push(id),
-    onSaveSlot: () => {},
+    onSaveSlot: (paperId, slot, input) => slotWrites.push({ paperId, slot, input }),
     onNudgeAuthors: () => nudges.push(1),
     memberId: "ada",
     personal: options.personal ?? false,
@@ -174,6 +175,7 @@ function draw(options: DrawOptions = {}) {
     saved,
     state,
     deleted,
+    slotWrites,
     channelToggles,
     rerender: () => render(renderMyWork(state, props), container),
   };
@@ -1742,6 +1744,49 @@ describe("the flat view", () => {
     expect(container.querySelector('[data-testid="my-work-step-p1"]')).toBeNull();
     expect(container.querySelector('[data-testid="my-work-map-p1"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="paper-legacy-report-p1"]')).not.toBeNull();
+  });
+
+  // Regression: the feedback slots joined the registry, so the flat view -- where the page opens --
+  // drew them as plain text boxes whose autosave the service rejects, and the real request form was
+  // only on the cards.
+  it("offers the feedback request form, not raw feedback fields, on the page it opens on", () => {
+    resetMyWorkViewModeForTest();
+    const cycle = {
+      slots: ["feedback_arr", "feedback_arxiv", "feedback_camera_ready"].map((slot) => ({
+        paper_id: "p1",
+        slot,
+        status: "missing",
+      })),
+      stages: [],
+      drafts: [],
+      consents: [],
+      attendees: [],
+      reimbursements: [],
+      weeklyUpdates: [],
+      cycleClosed: false,
+      missingAcceptanceDetails: [],
+    } as unknown as PaperCycle;
+    const { container, slotWrites } = draw({ slots: { p1: cycle } });
+    expect(container.querySelector('[data-testid="paper-legacy"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-legacy-p1-feedback_arr"]')).toBeNull();
+    const card = container.querySelector(
+      '[data-testid="paper-legacy-paper-p1"] [data-testid="paper-feedback"]',
+    );
+    expect(card).not.toBeNull();
+
+    const form = card!.querySelector("form")!;
+    form.querySelector<HTMLInputElement>('input[name="url"]')!.value =
+      "https://example.com/draft.pdf";
+    form.querySelector<HTMLTextAreaElement>('textarea[name="reason"]')!.value = "Ready for a read";
+    form.dispatchEvent(new Event("submit", { cancelable: true }));
+
+    expect(slotWrites).toHaveLength(1);
+    expect(slotWrites[0]!.paperId).toBe("p1");
+    expect(slotWrites[0]!.slot).toBe("feedback_arr");
+    expect(JSON.parse(slotWrites[0]!.input.value_text as string)).toEqual({
+      reason: "Ready for a read",
+      url: "https://example.com/draft.pdf",
+    });
   });
 
   it("keeps the conference branch shut until the paper is accepted", () => {
