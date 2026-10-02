@@ -1217,7 +1217,7 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
     // The old dialog's generate path, minus the PDF picker: the service reads the Drive copy the
     // card already chases. Result lands in the panel's textarea as a stored draft, so the usual
     // sign-off row takes over from there.
-    onGenerateLinkedInDraft: async (venue: string, note: string) => {
+    onGenerateLinkedInDraft: async (venue: string, note: string, pdfBase64?: string) => {
       const stored = loadStoredMemberSession();
       if (!stored) {
         globalThis.alert?.("Sign in first — drafting runs against your own session.");
@@ -1227,6 +1227,7 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
         const result = await draftLinkedInPost(
           {
             paperId: paper.id,
+            ...(pdfBase64 ? { pdfBase64 } : {}),
             ...(paper.artifacts?.arxiv_url ? { url: paper.artifacts.arxiv_url } : {}),
             ...(venue ? { venue } : {}),
             ...(note ? { note } : {}),
