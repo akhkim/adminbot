@@ -97,6 +97,10 @@ import {
   adminBotResolvedEmailReviewFromRow,
   ensureAdminBotEmailReviewSchema,
 } from "./email-review.js";
+import {
+  createFailedRequestLedgerFromDatabase,
+  type FailedExternalRequestLedger,
+} from "./failed-requests.js";
 import { discoverHelpRequests } from "./lab-sharing-discovery.js";
 import {
   ensureLabInterestSchema,
@@ -110,6 +114,7 @@ import {
   readDirectorStatus,
 } from "./lab-sharing-status.js";
 import { ensureLabSharingSchema, saveHelpRequest, listHelpRequests } from "./lab-sharing.js";
+import { createMemberDraftStore } from "./member-drafts.js";
 import {
   ensureOpenReviewCitationCheckSchema,
   getOpenReviewCitationCheck,
@@ -182,7 +187,12 @@ function serviceOptions(options: AdminBotSqliteServiceOptions): AdminBotServiceO
 }
 
 export class AdminBotSqliteStore implements AdminBotServiceStore {
+  memberDraftStore() {
+    return createMemberDraftStore(this.db);
+  }
+
   private readonly db: DatabaseSync;
+  private readonly failedRequests: FailedExternalRequestLedger;
 
   constructor(readonly databasePath: string) {
     ensureDatabaseDirectory(databasePath);
@@ -863,6 +873,19 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       -- Every read is "the newest pass", whether to show its answer or its progress.
       CREATE INDEX IF NOT EXISTS adminbot_workshop_match_runs_started_idx
         ON adminbot_workshop_match_runs(started_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_failed_external_requests (
+        id TEXT PRIMARY KEY,
+        service_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        error_message TEXT NOT NULL,
+        status TEXT NOT NULL,
+        attempt_count INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS adminbot_failed_external_requests_updated_idx
+        ON adminbot_failed_external_requests(updated_at DESC);
     `);
     ensureLabSharingSchema(this.db);
     ensureDirectorStatusSchema(this.db);
@@ -874,6 +897,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
     this.migratePaperSlotColumns();
+    this.failedRequests = createFailedRequestLedgerFromDatabase(this.db);
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
     this.migrateBadgeNominationColumns();
@@ -990,6 +1014,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           WHERE status = 'running'`,
       )
       .run(new Date().toISOString());
+  }
+
+  failedRequestLedger(): FailedExternalRequestLedger {
+    return this.failedRequests;
   }
 
   /**

@@ -753,7 +753,7 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
   }
   return html`
     <div class="dashboard">
-      ${renderBroadcast(state)} ${renderOneOffNotice(state, role)}
+      ${renderOfflineBanner(state)} ${renderBroadcast(state)} ${renderOneOffNotice(state, role)}
       ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
@@ -762,5 +762,31 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
       </section>
       ${renderNextDeadlines(state)}
     </div>
+  `;
+}
+
+function renderOfflineBanner(state: AppViewState) {
+  const pending = state.adminBotOfflinePendingWrites ?? 0;
+  const cached = Boolean(state.adminBotUsingCachedReads);
+  if (!cached && pending === 0) {
+    return nothing;
+  }
+  const reads = cached
+    ? "Showing the last copy saved on this device. You can still read and edit supported drafts. Submit requests when AdminBot is reachable."
+    : "";
+  const writes =
+    pending > 0
+      ? `${pending} edit${pending === 1 ? "" : "s"} retained from the old queue. Review and submit again when connected; these will not send automatically.`
+      : "";
+  return html`
+    <section
+      class="dashboard__nudge-warning"
+      data-tone="warn"
+      data-testid="dashboard-offline"
+      role="status"
+    >
+      <strong>Working offline</strong>
+      <p>${[reads, writes].filter(Boolean).join(" ")}</p>
+    </section>
   `;
 }

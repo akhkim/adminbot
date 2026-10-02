@@ -80,6 +80,8 @@ import {
   type AdminBotCvScanDeps,
 } from "../cv-scan.js";
 import { askGuidebook } from "../guidebook/ask.js";
+import { readLlmGatewayStatus } from "../kernel/llm-gateway-client.js";
+import { createLlmLoadRouter, parseLlmNodes, type LlmLoadRouter } from "../kernel/llm-router.js";
 import { ReferenceScans } from "../kernel/reference-scans.js";
 import {
   AdminBotMemoryStore,
@@ -92,7 +94,12 @@ import {
   type AdminBotServiceStore,
   type AdminBotSlackChannelNamingEvent,
 } from "../kernel/service.js";
-import { createAdminBotSqliteService } from "../persistence/sqlite.js";
+import {
+  createMemoryFailedRequestLedger,
+  type FailedExternalRequestLedger,
+} from "../persistence/failed-requests.js";
+import { createMemberDraftStore, type MemberDraftStore } from "../persistence/member-drafts.js";
+import { AdminBotSqliteStore, createAdminBotSqliteService } from "../persistence/sqlite.js";
 import { createAdminBotPrivacyBroker, type AdminBotPrivacyBroker } from "../privacy/broker.js";
 import { createLocalChat, localChatMessages } from "../privacy/local-chat.js";
 import {
@@ -204,6 +211,7 @@ import {
 import { prepareInterviewInvitation } from "./server.interview-invitation.js";
 import { handleLabSharingRoute } from "./server.lab-sharing.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
+import { handleMemberDraft } from "./server.member-drafts.js";
 import {
   enrollNewMember,
   type NewMemberOnboardingDeps,
@@ -395,6 +403,8 @@ export type AdminBotMockServiceOptions = {
   // filing unwired (no attempt, no audit event) rather than half-working -- the same shape the
   // retired DCS form script had, for the same reason.
   dcsRosterSheetId?: string;
+  llmRouter?: LlmLoadRouter;
+  failedRequestLedger?: FailedExternalRequestLedger;
   // Approves a pending gateway device pairing on behalf of a signed-in member. Injected from the
   // repo-root composition layer (start-adminbot.mjs) so the extension never imports core
   // device-pairing internals. `allowedScopes` is the ceiling derived from the member's privilege;
@@ -585,6 +595,7 @@ function createAnonymousRateLimiter(): AnonymousRateLimiter {
 }
 
 type AdminBotRouteContext = {
+  memberDrafts: MemberDraftStore;
   service: AdminBotService;
   // The raw store, for the CV change ledger. Everything else goes through the service; this is
   // append-only bookkeeping with no policy of its own, so it does not earn a service method.
@@ -653,6 +664,8 @@ type AdminBotRouteContext = {
   // etc.) that sets X-Forwarded-For itself. Otherwise a caller could hand-write that header to
   // spoof the IP rate-limiting and login-location keys off of — see remoteIp().
   trustProxyHeaders: boolean;
+  llmRouter: LlmLoadRouter;
+  failedRequestLedger: FailedExternalRequestLedger;
 };
 
 /**
@@ -910,6 +923,20 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store = new AdminBotMemoryStore();
     service = new AdminBotService(store, wiredOptions);
   }
+  const memberDrafts =
+    store instanceof AdminBotSqliteStore ? store.memberDraftStore() : createMemberDraftStore();
+  const failedRequestLedger =
+    options.failedRequestLedger ??
+    (store instanceof AdminBotSqliteStore
+      ? store.failedRequestLedger()
+      : createMemoryFailedRequestLedger());
+  const llmRouter =
+    options.llmRouter ??
+    createLlmLoadRouter({
+      maxLocal: envInteger("ADMINBOT_LLM_MAX_LOCAL", 8),
+      maxPublic: envInteger("ADMINBOT_LLM_MAX_PUBLIC", 100),
+      nodes: parseLlmNodes(process.env.ADMINBOT_LLM_NODES),
+    });
   const referenceDependencies = options.referenceScanDependencies ?? {
     readPdf: createPublicOpenReviewPdfReader(),
     scanPdf: createGptZeroBibliographyScanner(),
@@ -1096,6 +1123,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     options.privacyBroker ??
     createAdminBotPrivacyBroker(undefined, {
       sensitiveTermsProvider: () => sensitiveInfo.listSensitiveTerms(),
+      llmRouter,
     });
   let activeEmailAutomation: Promise<unknown> | undefined;
   const emailAutomationRunner = options.emailAutomationRunner;
@@ -1120,6 +1148,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   const ctx: AdminBotRouteContext = {
     service,
     store,
+    memberDrafts,
     auth,
     privacyBroker,
     localChat: options.localChat ?? createLocalChat(),
@@ -1182,6 +1211,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     publicDeadlineLimiter: createPublicDeadlineLimiter(),
     trustProxyHeaders:
       options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
+    llmRouter,
+    failedRequestLedger,
   };
   // Needs the route context -- the member sheet, the Monday meeting reader -- so it is bound last.
   onboardingArms.enroll = (proposal) =>
@@ -1936,6 +1967,20 @@ async function handleAuthenticatedRoute(
   // anonymous callers unless it is explicitly added to ANONYMOUS_ROUTES.
   if (principal.kind === "anonymous" && !isAnonymousRoute(req.method, url.pathname)) {
     sendJson(res, 401, { error: { message: "authentication required" } });
+    return;
+  }
+  if (url.pathname.startsWith("/member-drafts/")) {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "Member session required" } });
+      return;
+    }
+    await handleMemberDraft(
+      req,
+      res,
+      ctx.memberDrafts,
+      principal.member.id,
+      url.pathname.slice("/member-drafts/".length),
+    );
     return;
   }
   const { service, privacyBroker, sensitiveInfo } = ctx;
@@ -3307,7 +3352,33 @@ async function handleAuthenticatedRoute(
   }
   if (req.method === "POST" && url.pathname === "/privacy/tasks") {
     const body = (await readJson(req)) as AdminBotPrivacyTaskRequest;
-    sendJson(res, 200, await privacyBroker.handle(body));
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    res.once("close", cancel);
+    try {
+      sendJson(res, 200, await privacyBroker.handle(body, controller.signal));
+    } finally {
+      res.off("close", cancel);
+    }
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/ops/llm-load") {
+    if (!process.env.LLM_GATEWAY_URL) {
+      sendJson(res, 200, ctx.llmRouter.status());
+      return;
+    }
+    try {
+      sendJson(res, 200, await readLlmGatewayStatus());
+    } catch {
+      sendJson(res, 502, { error: { message: "shared LLM gateway is unreachable" } });
+    }
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/ops/failed-requests") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendJson(res, 200, { requests: ctx.failedRequestLedger.list(100) });
     return;
   }
   if (req.method === "GET" && url.pathname === "/proposals/pending") {
@@ -7263,6 +7334,15 @@ function constantTimeEqual(left: string, right: string): boolean {
     return false;
   }
   return timingSafeEqual(leftBuf, rightBuf);
+}
+
+function envInteger(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function trimmedEnv(value: string | undefined): string | undefined {

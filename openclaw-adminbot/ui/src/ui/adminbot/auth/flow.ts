@@ -49,6 +49,7 @@ import {
   clearStoredMemberSession,
   confirmPasswordReset,
   fetchMemberSession,
+  cacheOfflineMemberSession,
   fetchRoster,
   hasAcknowledgedOnboardingChecklist,
   issueDeviceToken,
@@ -786,6 +787,11 @@ function clearMemberScopedData(host: MemberAuthHost): void {
 
 async function applyMemberSession(host: MemberAuthHost, session: MemberSession) {
   clearMemberScopedData(host);
+  await cacheOfflineMemberSession(
+    session.session_token,
+    resolveAdminBotBaseUrl(host.settings),
+    session,
+  );
   saveStoredMemberSession({
     sessionToken: session.session_token,
     expiresAt: session.expires_at,
@@ -987,7 +993,9 @@ export async function resumeMemberSession(
       ? hasAcknowledgedOnboardingChecklist(host.memberId)
       : true;
     clearSignedOutView(host);
-    await connectAsMember(host, result.value, stored.sessionToken, isCurrent);
+    if (!result.cached) {
+      await connectAsMember(host, result.value, stored.sessionToken, isCurrent);
+    }
     return "resumed";
   }
   if (result.kind === "unreachable") {

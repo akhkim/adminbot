@@ -1,3 +1,4 @@
+import "./adminbot/offline/offline-access.ts";
 // oxlint-disable max-lines -- grandfathered at 3976 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
@@ -157,7 +158,6 @@ import {
   createSchoolRow,
   clearMeetingRequestDraft,
   clearRecommendationLettersDraft,
-  logisticsDraftScope,
   restoreAdminBotLettersDraft,
   restoreAdminBotLogisticsDraft,
   restoreAdminBotMeetingDraft,
@@ -186,8 +186,18 @@ import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
+import "./components/feedback-widget.ts";
 import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
+import {
+  configureDraftSync,
+  downloadDraftCopies,
+  importLegacyDraft,
+  draftScope,
+  draftSyncStatus,
+  resolveDraftConflict,
+  retryDraftSync,
+} from "./adminbot/offline/draft-sync.ts";
 import { needsLabPapers } from "./adminbot/papers-required.ts";
 import { needsLabRoster } from "./adminbot/roster-required.ts";
 import { renderAdminBot, type AdminBotPanel } from "./adminbot/views/admin.ts";
@@ -438,7 +448,7 @@ function tripFor(state: AppViewState, conferenceKey: string) {
 }
 
 function adminBotLogisticsScope(state: AppViewState): string {
-  return logisticsDraftScope(state.memberId);
+  return draftScope(resolveAdminBotBaseUrl(state.settings), state.memberId ?? "anonymous");
 }
 
 /** The three form states, in the shape the request builders and the "can this be sent" check want. */
@@ -505,6 +515,7 @@ function resetAdminBotLogisticsForm(state: AppViewState, template: LogisticsTemp
     state.adminBotLogisticsSignatureFiles = [];
     state.adminBotLogisticsDescription = "";
     state.adminBotLogisticsAttachments = [];
+    state.adminBotLogisticsSaving = false;
     state.adminBotLogisticsSavedAt = null;
     state.adminBotLogisticsSaveError = null;
     return;
@@ -515,6 +526,7 @@ function resetAdminBotLogisticsForm(state: AppViewState, template: LogisticsTemp
     state.adminBotLettersFacts = [createFactRow()];
     state.adminBotLettersCvOverleafUrl = "";
     state.adminBotLettersDriveFolderUrl = "";
+    state.adminBotLettersSaving = false;
     state.adminBotLettersSavedAt = null;
     state.adminBotLettersSaveError = null;
     return;
@@ -522,6 +534,7 @@ function resetAdminBotLogisticsForm(state: AppViewState, template: LogisticsTemp
   // Book Meeting opens empty on purpose: creating a row stamps "submitted", so a blank one would
   // claim a request nobody made.
   state.adminBotMeetingRows = [];
+  state.adminBotMeetingSaving = false;
   state.adminBotMeetingSavedAt = null;
   state.adminBotMeetingSaveError = null;
 }
@@ -2049,12 +2062,8 @@ export function renderApp(state: AppViewState) {
       ${renderGatewayUrlConfirmation(state)}
     `;
   }
-  // Meeting recordings are read through the verified member session, so a slow or unavailable
-  // gateway connection must not send an already signed-in member back to the login form.
-  if (
-    !state.connected &&
-    !(state.tab === "adminbotMeetings" && state.memberId && loadStoredMemberSession())
-  ) {
+  // Signed-in members can edit local drafts without a gateway socket.
+  if (!state.connected && !(state.memberId && loadStoredMemberSession())) {
     if (restoringProtectedSession) {
       return html` ${renderSessionRestorePending(state)} ${renderGatewayUrlConfirmation(state)} `;
     }
@@ -2941,6 +2950,39 @@ export function renderApp(state: AppViewState) {
   // member's own drafts. Doing it here rather than at connect time is what makes a sign-in that
   // happens after first paint restore anything at all.
   const logisticsScope = adminBotLogisticsScope(state);
+  const draftSession = loadStoredMemberSession();
+  configureDraftSync(
+    logisticsScope,
+    draftSession && state.memberId
+      ? {
+          baseUrl: resolveAdminBotBaseUrl(state.settings),
+          token: draftSession.sessionToken,
+          changed: (key, data) => {
+            if (state.adminBotLogisticsDraftScope !== logisticsScope) {
+              return;
+            }
+            if (data !== undefined) {
+              const template =
+                key === "document-signature"
+                  ? "documentSignature"
+                  : key === "recommendation-letters"
+                    ? "recommendationLetters"
+                    : "bookMeeting";
+              resetAdminBotLogisticsForm(state, template);
+              const restore =
+                key === "document-signature"
+                  ? restoreAdminBotLogisticsDraft
+                  : key === "recommendation-letters"
+                    ? restoreAdminBotLettersDraft
+                    : restoreAdminBotMeetingDraft;
+              void restore(state, logisticsScope).finally(() => requestHostUpdate?.());
+            }
+            requestHostUpdate?.();
+          },
+        }
+      : null,
+  );
+
   // Gated on the tab so a member who never opens Logistics never pays for an IndexedDB read. The
   // scope comparison is what re-runs it when the signed-in member changes underneath an open tab.
   if (isLogisticsTab(state.tab) && state.adminBotLogisticsDraftScope !== logisticsScope) {
@@ -2959,7 +3001,10 @@ export function renderApp(state: AppViewState) {
       restoreAdminBotLogisticsDraft(state, logisticsScope),
       restoreAdminBotLettersDraft(state, logisticsScope),
       restoreAdminBotMeetingDraft(state, logisticsScope),
-    ]).finally(() => requestHostUpdate?.());
+    ]).finally(() => {
+      requestHostUpdate?.();
+      retryDraftSync();
+    });
   }
   if (
     state.tab === "adminbotTabUsage" &&
@@ -3494,6 +3539,7 @@ export function renderApp(state: AppViewState) {
           ? "content--logs"
           : ""} ${state.tab === "adminbotDeadlines" ? "content--deadlines" : ""}"
       >
+        <adminbot-offline-access .scope=${logisticsScope}></adminbot-offline-access>
         <!-- Settings only. The text is git and install plumbing -- "Update skipped:
              not-git-install. Not a git checkout. Run openclaw update from the CLI" -- and it was
              rendering above every page, including a member's own profile. Nobody but the admin who
@@ -3866,14 +3912,37 @@ export function renderApp(state: AppViewState) {
                 files: state.adminBotLogisticsSignatureFiles,
                 onFilesChange: (files) => {
                   state.adminBotLogisticsSignatureFiles = files;
+                  void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(
+                    () => requestHostUpdate?.(),
+                  );
                 },
                 description: state.adminBotLogisticsDescription,
                 onDescriptionChange: (description) => {
                   state.adminBotLogisticsDescription = description;
+                  void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(
+                    () => requestHostUpdate?.(),
+                  );
                 },
                 attachments: state.adminBotLogisticsAttachments,
                 onAttachmentsChange: (files) => {
                   state.adminBotLogisticsAttachments = files;
+                  void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(
+                    () => requestHostUpdate?.(),
+                  );
+                },
+                sync: {
+                  ...draftSyncStatus(logisticsScope, "document-signature"),
+                  onImportLegacy: () => {
+                    void importLegacyDraft(logisticsScope, "document-signature");
+                  },
+                  onDownload: () => {
+                    void downloadDraftCopies(logisticsScope, "document-signature");
+                  },
+                  onResolve: (choice: "mine" | "server") => {
+                    void resolveDraftConflict(logisticsScope, "document-signature", choice).finally(
+                      () => requestHostUpdate?.(),
+                    );
+                  },
                 },
                 form: state.adminBotSignatureForm,
                 onForm: (patch) => {
@@ -3902,6 +3971,23 @@ export function renderApp(state: AppViewState) {
                 rows: state.adminBotMeetingRows,
                 onRowsChange: (rows) => {
                   state.adminBotMeetingRows = rows;
+                  void saveAdminBotMeetingDraft(state, adminBotLogisticsScope(state)).finally(() =>
+                    requestHostUpdate?.(),
+                  );
+                },
+                sync: {
+                  ...draftSyncStatus(logisticsScope, "book-meeting"),
+                  onImportLegacy: () => {
+                    void importLegacyDraft(logisticsScope, "book-meeting");
+                  },
+                  onDownload: () => {
+                    void downloadDraftCopies(logisticsScope, "book-meeting");
+                  },
+                  onResolve: (choice: "mine" | "server") => {
+                    void resolveDraftConflict(logisticsScope, "book-meeting", choice).finally(() =>
+                      requestHostUpdate?.(),
+                    );
+                  },
                 },
                 saving: state.adminBotMeetingSaving,
                 savedAt: state.adminBotMeetingSavedAt,
@@ -3916,19 +4002,47 @@ export function renderApp(state: AppViewState) {
                 schools: state.adminBotLettersSchools,
                 onSchoolsChange: (schools) => {
                   state.adminBotLettersSchools = schools;
+                  void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
+                    requestHostUpdate?.(),
+                  );
                 },
                 facts: state.adminBotLettersFacts,
                 onFactsChange: (facts) => {
                   state.adminBotLettersFacts = facts;
+                  void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
+                    requestHostUpdate?.(),
+                  );
                 },
                 onOpenMyProjects: () => state.setTab("myWork"),
                 cvOverleafUrl: state.adminBotLettersCvOverleafUrl,
                 onCvOverleafUrlChange: (url) => {
                   state.adminBotLettersCvOverleafUrl = url;
+                  void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
+                    requestHostUpdate?.(),
+                  );
                 },
                 driveFolderUrl: state.adminBotLettersDriveFolderUrl,
                 onDriveFolderUrlChange: (url) => {
                   state.adminBotLettersDriveFolderUrl = url;
+                  void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
+                    requestHostUpdate?.(),
+                  );
+                },
+                sync: {
+                  ...draftSyncStatus(logisticsScope, "recommendation-letters"),
+                  onImportLegacy: () => {
+                    void importLegacyDraft(logisticsScope, "recommendation-letters");
+                  },
+                  onDownload: () => {
+                    void downloadDraftCopies(logisticsScope, "recommendation-letters");
+                  },
+                  onResolve: (choice: "mine" | "server") => {
+                    void resolveDraftConflict(
+                      logisticsScope,
+                      "recommendation-letters",
+                      choice,
+                    ).finally(() => requestHostUpdate?.());
+                  },
                 },
                 saving: state.adminBotLettersSaving,
                 savedAt: state.adminBotLettersSavedAt,

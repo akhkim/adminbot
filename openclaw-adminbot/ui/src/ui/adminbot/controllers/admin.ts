@@ -55,6 +55,7 @@ import {
   updateSettingsAsAdmin,
   updateOwnSchedule,
   mergeLabMembersAsAdmin,
+  pendingQueuedAdminBotWriteCount,
   fetchSlackChannelNames,
   deleteLabMemberAsAdmin,
   fetchMembersWithoutEmail,
@@ -865,6 +866,8 @@ export type AdminBotHost = {
   adminBotMemberMapRequestId?: number;
   adminBotLoading: boolean;
   adminBotError: string | null;
+  adminBotUsingCachedReads?: boolean;
+  adminBotOfflinePendingWrites?: number;
   adminBotData: AdminBotDashboardData;
   adminBotRosterLoadedAt?: number | null;
   adminBotRosterLoading?: boolean;
@@ -1267,6 +1270,8 @@ async function loadAdminBotOverSession(
   const isCurrent = () => loadStoredMemberSession()?.sessionToken === session.sessionToken;
   host.adminBotLoading = true;
   host.adminBotError = null;
+  host.adminBotUsingCachedReads = false;
+  let usedCache = false;
   const read = async (path: string): Promise<unknown> => {
     const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
     if (!result.ok) {
@@ -1274,10 +1279,16 @@ async function loadAdminBotOverSession(
         result.kind === "unreachable" ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE : result.kind,
       );
     }
+    if (result.cached) {
+      usedCache = true;
+    }
     return result.value;
   };
   const optional = async (path: string): Promise<unknown> => {
     const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
+    if (result.ok && result.cached) {
+      usedCache = true;
+    }
     return result.ok ? result.value : undefined;
   };
   const readSelf = async (): Promise<unknown> => {
@@ -1287,6 +1298,7 @@ async function loadAdminBotOverSession(
       session.baseUrl,
     );
     if (result.ok) {
+      if (result.cached) usedCache = true;
       return result.value;
     }
     if (result.kind !== "not-found" || !host.memberId) {
@@ -1334,6 +1346,7 @@ async function loadAdminBotOverSession(
       loadedAt: mode === "general" ? Date.now() : null,
     };
     host.requestUpdate?.();
+    host.adminBotUsingCachedReads = usedCache;
     if (mode === "general") {
       return;
     }
@@ -1374,6 +1387,7 @@ async function loadAdminBotOverSession(
       sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,
       loadedAt: Date.now(),
     };
+    host.adminBotUsingCachedReads = usedCache;
   } catch (err) {
     if (isCurrent()) {
       host.adminBotError = err instanceof Error ? err.message : String(err);
@@ -1381,6 +1395,11 @@ async function loadAdminBotOverSession(
   } finally {
     if (isCurrent()) {
       host.adminBotLoading = false;
+      const pendingCount = await pendingQueuedAdminBotWriteCount(
+        session.sessionToken,
+        session.baseUrl,
+      );
+      if (isCurrent()) host.adminBotOfflinePendingWrites = pendingCount;
     }
   }
 }

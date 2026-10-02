@@ -670,6 +670,18 @@ describe("notifications on the dashboard", () => {
     expect(read).toEqual([[NOTIFICATION.id]]);
     expect(tabs).toEqual(["adminbotMeetings"]);
   });
+
+  it("explains cached reads and queued writes when the service is offline", () => {
+    const container = renderPage(
+      createState({
+        adminBotUsingCachedReads: true,
+        adminBotOfflinePendingWrites: 2,
+      }),
+    );
+    const banner = container.querySelector('[data-testid="dashboard-offline"]');
+    expect(banner?.textContent).toContain("Working offline");
+    expect(banner?.textContent).toContain("2 edits retained from the old queue");
+  });
 });
 
 // The one channel the lab has for telling everybody something at once. Top of the page, above the
