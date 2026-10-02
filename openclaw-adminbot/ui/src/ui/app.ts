@@ -43,7 +43,7 @@ import type {
   PaperSlotOverviewRow,
   TabVisitReport,
 } from "./adminbot/auth/session.ts";
-import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
+import type { AudienceFilter, InviteMode } from "./adminbot/calendar-audience.ts";
 import type { AdminBotLabMember } from "./adminbot/controllers/admin.ts";
 import {
   createEmptyAdminBotDashboardData,
@@ -428,6 +428,7 @@ export class OpenClawApp extends LitElement {
   @state() calendarEditingEventId: string | null = null;
   @state() calendarAudience: AudienceFilter = {};
   @state() calendarExcludedMemberIds: string[] = [];
+  @state() calendarInviteMode: InviteMode = "add";
   @state() calendarBusy = false;
   @state() calendarConfirming: "save" | "invite" | null = null;
   @state() rosterMembers: RosterMember[] = [];
