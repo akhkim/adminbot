@@ -1300,7 +1300,8 @@ function renderLettersRequest(props: LettersProps) {
               style="flex-shrink:0;margin-top:5px"
             />
             <span
-              >I confirm that I have sent all application-portal invitations for this request to
+              ><strong><span aria-hidden="true">*</span> ${t("adminbotWelcome.required")}:</strong>
+              I confirm that I have sent all application-portal invitations for this request to
               <strong>zjin.admin@cs.toronto.edu</strong>, not Zhijing's main email.</span
             >
           </label>

@@ -982,6 +982,7 @@ describe("list of schools", () => {
     const confirmation = drawn.container.querySelector<HTMLInputElement>(
       "[data-testid='logistics-email-confirmation']",
     )!;
+    expect(confirmation.closest("label")?.textContent).toContain("* Required:");
     expect(confirmation.required).toBe(true);
     expect(confirmation.checked).toBe(false);
     confirmation.checked = true;
