@@ -1230,6 +1230,11 @@ function renderRegistryField(
         return html`<input
             name=${field.key}
             placeholder=${field.example}
+            pattern=${ifDefined(
+              field.key === "joined_month" || field.key === "graduated_month"
+                ? "[0-9]{4}-(0[1-9]|1[0-2])"
+                : undefined,
+            )}
             .value=${value}
             ?required=${field.key === "name" && !member}
             list=${ifDefined(

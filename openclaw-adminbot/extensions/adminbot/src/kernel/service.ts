@@ -3070,6 +3070,18 @@ export class AdminBotService {
     }
     member = normalizeMemberProfileValues(member);
     const existing = this.store.getLabMember(member.id);
+    for (const field of ["joined_month", "graduated_month"] as const) {
+      const value = member[field];
+      // Full-record editors may resend legacy values. Preserve those until explicitly corrected.
+      if (
+        value !== undefined &&
+        value !== "" &&
+        value !== existing?.[field] &&
+        (typeof value !== "string" || !/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(value))
+      ) {
+        return serviceError(400, `${field} must be a valid year-month (YYYY-MM)`);
+      }
+    }
     const privilegeLevel =
       member.privilege_level ?? existing?.privilege_level ?? DEFAULT_MEMBER_PRIVILEGE_LEVEL;
     // This is a patch, not a replace: `stored` below is {...existing, ...member}, and callers send

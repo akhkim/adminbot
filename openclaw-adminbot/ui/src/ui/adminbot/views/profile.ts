@@ -617,6 +617,13 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
       continue;
     }
     const value = String(data.get(field.key) ?? "").trim();
+    if (field.key === "joined_month" || field.key === "graduated_month") {
+      const input = form.elements.namedItem(field.key) as HTMLInputElement | null;
+      // Keep an invalid legacy value visible, but never autosave it or erase it silently.
+      if (input && !input.checkValidity()) {
+        continue;
+      }
+    }
     if (field.type === "phone") {
       // The two controls are a country box and a number box; the record keeps one string. The
       // country box is free text with a suggestion list, so what it holds is resolved back to a
@@ -913,6 +920,11 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           )}
           type="text"
           maxlength=${SHORT_TEXT_MAX_LENGTH}
+          pattern=${ifDefined(
+            field.key === "joined_month" || field.key === "graduated_month"
+              ? "[0-9]{4}-(0[1-9]|1[0-2])"
+              : undefined,
+          )}
           placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
           autocomplete="off"

@@ -1745,3 +1745,19 @@ describe("suggesting a new badge", () => {
     expect(notice?.className).toContain("danger");
   });
 });
+
+it("validates year-month fields without hiding legacy values", () => {
+  const container = renderPage(createState(createMember({ joined_month: "Jan-26" })), vi.fn());
+  for (const key of ["joined_month", "graduated_month"]) {
+    const input = container.querySelector(`input[name="${key}"]`) as HTMLInputElement;
+    if (key === "joined_month") expect(input.value).toBe("Jan-26");
+    for (const value of ["Jan-26", "2026-00", "2026-13", "2026-1"]) {
+      input.value = value;
+      expect(input.checkValidity()).toBe(false);
+    }
+    input.value = "2026-01";
+    expect(input.checkValidity()).toBe(true);
+    input.value = "";
+    expect(input.checkValidity()).toBe(true);
+  }
+});
