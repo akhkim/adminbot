@@ -976,7 +976,15 @@ describe("list of schools", () => {
     actions[1].click();
     expect(drawn.lettersSaves).toBe(1);
     expect(drawn.saves).toBe(0);
-    // Submit is the letters form's own too, not the signature form's.
+    // Saving remains available, but submitting requires explicit email confirmation.
+    actions[2].click();
+    expect(drawn.lettersSubmits).toBe(0);
+    const confirmation = drawn.container.querySelector<HTMLInputElement>(
+      "[data-testid='logistics-email-confirmation']",
+    )!;
+    expect(confirmation.required).toBe(true);
+    expect(confirmation.checked).toBe(false);
+    confirmation.checked = true;
     actions[2].click();
     expect(drawn.lettersSubmits).toBe(1);
     expect(drawn.submits).toBe(0);
@@ -1664,6 +1672,24 @@ describe("book meeting", () => {
 });
 
 describe("recommendation letter Guidebook guidance", () => {
+  it("requires email confirmation again when resubmitting or discarding", () => {
+    const drawn = drawLetters({ editing: true });
+    const confirmation = drawn.container.querySelector<HTMLInputElement>(
+      "[data-testid='logistics-email-confirmation']",
+    )!;
+    const submit = drawn.container.querySelector<HTMLButtonElement>(
+      "[data-testid='logistics-submit']",
+    )!;
+    submit.click();
+    expect(drawn.lettersSubmits).toBe(0);
+    confirmation.checked = true;
+    submit.click();
+    expect(drawn.lettersSubmits).toBe(1);
+    drawn.container.querySelector<HTMLButtonElement>(".logistics-request__actions .btn")!.click();
+    expect(confirmation.checked).toBe(false);
+    submit.click();
+    expect(drawn.lettersSubmits).toBe(1);
+  });
   it("shows preparation and exact section links before school fields, including edits", () => {
     for (const editing of [false, true]) {
       const { container } = drawLetters({ editing });

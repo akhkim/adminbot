@@ -463,7 +463,15 @@ function renderRequestActions(props: RequestSaveProps) {
         class="btn btn--sm"
         type="button"
         ?disabled=${!props.hasContent || props.saving || props.submitting}
-        @click=${props.onDiscard}
+        @click=${(event: Event) => {
+          const confirmation = (event.currentTarget as HTMLButtonElement)
+            .closest(".logistics-request")
+            ?.querySelector<HTMLInputElement>("[data-testid='logistics-email-confirmation']");
+          if (confirmation) {
+            confirmation.checked = false;
+          }
+          props.onDiscard();
+        }}
       >
         ${t("logistics.request.discard")}
       </button>
@@ -483,7 +491,16 @@ function renderRequestActions(props: RequestSaveProps) {
         type="button"
         data-testid="logistics-submit"
         ?disabled=${props.submitting}
-        @click=${props.onSubmit}
+        @click=${(event: Event) => {
+          const button = event.currentTarget as HTMLButtonElement;
+          const confirmation = button
+            .closest(".logistics-request")
+            ?.querySelector<HTMLInputElement>("[data-testid='logistics-email-confirmation']");
+          if (confirmation && !confirmation.reportValidity()) {
+            return;
+          }
+          props.onSubmit();
+        }}
       >
         ${props.submitting
           ? t("logistics.request.submitting")
@@ -1275,7 +1292,18 @@ function renderLettersRequest(props: LettersProps) {
         </ul>
         <p class="card-sub">${t("logistics.lettersGuide.reminders")}</p>
         <p>
-          ${t("logistics.lettersGuide.portal")}
+          <label style="display:flex;gap:12px;align-items:flex-start;cursor:pointer">
+            <input
+              type="checkbox"
+              required
+              data-testid="logistics-email-confirmation"
+              style="flex-shrink:0;margin-top:5px"
+            />
+            <span
+              >I confirm that I have sent all application-portal invitations for this request to
+              <strong>zjin.admin@cs.toronto.edu</strong>, not Zhijing's main email.</span
+            >
+          </label>
           <a
             href="https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.ypvr8psn5zdy"
             target="_blank"
