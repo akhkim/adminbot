@@ -2623,7 +2623,7 @@ it("keeps only actions passed within 14 days, deduplicates shared stages and res
   expect(recentDeadlineActions(entries, now, "UTC", [], "conference")).toEqual([]);
 });
 
-it("shows recent actions above the headline and makes the action the primary heading", async () => {
+it("keeps recent passed actions in Past and upcoming actions in Upcoming", async () => {
   const venue = {
     ...DEADLINE_VENUES[0],
     id: "attention-ui",
@@ -2647,18 +2647,19 @@ it("shows recent actions above the headline and makes the action the primary hea
   document.body.append(container);
   render(renderDeadlines({ proposalStore: store }), container);
   await settle(container);
+  expect(container.querySelector(".deadline-recent")).toBeNull();
+  expect(
+    container.querySelector(".deadline-board__hero .deadline-action__title")?.textContent,
+  ).toContain("Camera-ready due");
+  buttonNamed(container, "Past").click();
+  await settle(container);
   const recent = container.querySelector<HTMLDetailsElement>("details.deadline-recent")!;
   expect(recent.open).toBe(false);
   expect(recent.querySelector("summary")?.textContent).toContain("Passed in the last 14 days");
   expect(recent.textContent).toContain("Paper submission");
   expect(recent.textContent).not.toContain("Attend conference");
-  expect(
-    container.querySelector(".deadline-board__hero .deadline-action__title")?.textContent,
-  ).toContain("Camera-ready due");
-  expect(
-    recent.compareDocumentPosition(container.querySelector(".deadline-board__overview")!) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
+  buttonNamed(container, "Upcoming").click();
+  await settle(container);
   const summary = container.querySelector(".deadline-group__summary")!;
   expect(Array.from(summary.children).map((child) => child.className)).toEqual([
     "deadline-group__chevron",
@@ -2686,9 +2687,9 @@ it("shows recent actions above the headline and makes the action the primary hea
   stageFilter.value = "submission";
   stageFilter.dispatchEvent(new Event("change"));
   await settle(container);
-  expect(container.querySelector(".deadline-recent")?.textContent).toContain("Paper submission");
+  expect(container.querySelector(".deadline-recent")).toBeNull();
   expect(container.querySelector(".deadline-board__empty")?.textContent).toContain(
-    "No upcoming deadlines match",
+    "No deadlines match",
   );
-  expect(container.textContent).not.toContain("Nothing matches this filter");
+
 });

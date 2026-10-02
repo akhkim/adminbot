@@ -3331,7 +3331,7 @@ class AdminbotDeadlinesView extends LitElement {
     ];
     this.recommendationScope = JSON.stringify(this.recommendationIds);
     const recent =
-      this.period === "upcoming"
+      this.period === "past"
         ? recentDeadlineActions(
             filterDeadlineBoardEntries(all, this.activeGroup, this.query, filters),
             this.now,
