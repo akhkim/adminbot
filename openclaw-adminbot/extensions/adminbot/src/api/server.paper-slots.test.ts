@@ -609,3 +609,15 @@ describe("the global nudge, end to end", () => {
     expect(sent).toHaveLength(0);
   });
 });
+
+describe("conference channel invites", () => {
+  it("requires a real admin session before an external action and rejects unknown conferences", async () => {
+    const { baseUrl } = await startLab();
+    const route = "/papers/conference-rosters/emnlp%3A2026/channel-invites";
+    expect((await fetch(`${baseUrl}${route}`, { method: "POST" })).status).toBe(401);
+    expect((await call(baseUrl, "POST", route, {})).status).toBe(403);
+    expect((await callAs(await adminHeaders(baseUrl), baseUrl, "POST", route, {})).status).toBe(
+      404,
+    );
+  });
+});

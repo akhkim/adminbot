@@ -4803,6 +4803,17 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  const conferenceInvites = url.pathname.match(
+    /^\/papers\/conference-rosters\/([^/]+)\/channel-invites$/u,
+  );
+  if (req.method === "POST" && conferenceInvites) {
+    if (!requireMemberPrivileged(res, principal)) return;
+    sendServiceResult(
+      res,
+      await service.inviteConferenceAttendees(decodeURIComponent(conferenceInvites[1])),
+    );
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/papers/conference-rosters") {
     // Who is going to each conference the lab has a paper at. Privileged: a member's own papers'
     // rolls are on their own cards, and the whole lab's travel -- including who has not answered
