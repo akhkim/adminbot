@@ -10,7 +10,6 @@ import {
   resolveAdminBotBaseUrl,
   loadStoredMemberSession,
   fetchConferenceRosters,
-  inviteConferenceAttendees,
   type ConferenceRoster,
 } from "../auth/session.ts";
 import {
@@ -1157,13 +1156,10 @@ class AdminbotDeadlinesView extends LitElement {
   private conferenceRosters: ConferenceRoster[] = [];
   private conferenceLoad = 0;
   private conferenceError = "";
-  private conferenceBusy = "";
-  private conferenceNotice = new Map<string, string>();
   private async loadConferenceRosters() {
     const generation = ++this.conferenceLoad;
     this.conferenceRosters = [];
     this.conferenceError = "";
-    this.conferenceNotice.clear();
     const token = loadStoredMemberSession()?.sessionToken;
     if (this.accessRole !== "admin" || !token) {
       this.requestUpdate();
@@ -1179,26 +1175,6 @@ class AdminbotDeadlinesView extends LitElement {
       this.conferenceError =
         "Conference attendance is unavailable. Check the backend release and connection.";
     this.requestUpdate();
-  }
-  private async addConferenceAuthors(key: string) {
-    const token = loadStoredMemberSession()?.sessionToken;
-    if (this.accessRole !== "admin" || !token || this.conferenceBusy) return;
-    this.conferenceBusy = key;
-    this.requestUpdate();
-    try {
-      const result = await inviteConferenceAttendees(token, this.conferenceBaseUrl, key);
-      this.conferenceNotice.set(
-        key,
-        result.ok
-          ? `${result.value.invited} invited · ${result.value.skipped} skipped · ${result.value.failed} failed`
-          : "Invites failed. Check the action audit and channel access before retrying.",
-      );
-    } catch {
-      this.conferenceNotice.set(key, "Invites failed. Check the action audit before retrying.");
-    } finally {
-      this.conferenceBusy = "";
-      this.requestUpdate();
-    }
   }
   accessRole: AccessRole = "anonymous";
   memberId = "";
@@ -3330,14 +3306,7 @@ class AdminbotDeadlinesView extends LitElement {
                 )}</span
               >
             </button>
-            ${attendance
-              ? renderConferenceAttendance(
-                  attendance,
-                  this.conferenceBusy === attendance.key,
-                  this.conferenceNotice.get(attendance.key) ?? "",
-                  () => void this.addConferenceAuthors(attendance.key),
-                )
-              : nothing}
+            ${attendance ? renderConferenceAttendance(attendance) : nothing}
             <div class="deadline-group__panel" id=${panelId} ?hidden=${!open}>
               ${notificationPolicy
                 ? html`<p class="deadline-group__shared-policy">

@@ -5930,6 +5930,7 @@ export class AdminBotService {
         at: now,
       });
     }
+    this.syncConferenceChannel(stored);
     return { ok: true, status: 200, payload: stored };
   }
 
@@ -7192,6 +7193,7 @@ export class AdminBotService {
       actor: params.actorId,
       details: { paper_id: params.paperId, attending: params.attending },
     });
+    this.syncConferenceChannel(paper);
     return { ok: true, status: 200, payload: { attendee } };
   }
 
@@ -7243,7 +7245,15 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: { conferences } };
   }
 
-  /** Explicit admin action; uses the existing Slack proposal/approval/execution gate. */
+  private syncConferenceChannel(paper: AdminBotPaperRecord): void {
+    const key = paperConferenceKey(paper);
+    if (!key) return;
+    // Persist the approved proposal before yielding. Slack outages must not fail a paper save;
+    // the existing action audit retains failures for retry, and execution deduplicates saves.
+    void this.inviteConferenceAttendees(key).catch(() => {});
+  }
+
+  /** Uses the existing Slack proposal/approval/execution gate. */
   async inviteConferenceAttendees(conferenceKey: string): Promise<
     AdminBotServiceResponse<{
       channel: string;

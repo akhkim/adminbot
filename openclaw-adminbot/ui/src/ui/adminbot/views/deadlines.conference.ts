@@ -29,24 +29,13 @@ export function conferenceRosterFor(
   return undefined;
 }
 
-export function renderConferenceAttendance(
-  roster: ConferenceRoster,
-  busy: boolean,
-  notice: string,
-  invite: () => void,
-) {
-  const labels = { yes: "Going", no: "Not going", unknown: "Not confirmed" };
-  const venue = roster.venue
-    .replace(new RegExp(`\\b${roster.year}\\b`, "gu"), "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, "-")
-    .replace(/^-|-$/gu, "");
+export function renderConferenceAttendance(roster: ConferenceRoster) {
+  const labels = { yes: "Going" };
   return html`<section
     class="deadline-conference-attendance"
     aria-label=${`${roster.label} attendance`}
   >
-    ${(["yes", "unknown", "no"] as const).map((state) => {
+    ${(["yes"] as const).map((state) => {
       const people = roster.people.filter((person) => person.attending === state);
       return people.length
         ? html`<div>
@@ -76,11 +65,5 @@ export function renderConferenceAttendance(
           </div>`
         : nothing;
     })}
-    ${roster.going_count
-      ? html`<button class="btn" type="button" ?disabled=${busy} @click=${invite}>
-          ${busy ? "Adding…" : `Add going authors to #conf-${venue}-${roster.year}`}
-        </button>`
-      : nothing}
-    ${notice ? html`<p role="status">${notice}</p>` : nothing}
   </section>`;
 }
