@@ -1272,19 +1272,7 @@ function renderBadges(state: AppViewState, member: LabMember) {
   `;
 }
 
-/**
- * The member's own badges, as a section rather than a strip of chips in the header.
- *
- * They were rendered inline beside the name, which made them decoration: the hover popover carrying
- * the category, the description and the criteria link was the only way to read what a badge
- * actually meant, and a popover is not something anyone opens for each of five chips. The admin
- * badges tab has always shown the full picture; this is the same thing scoped to one person, and it
- * sits directly above the nomination form so "what I have" and "what I could ask for" read as one
- * subject rather than two halves at opposite ends of the page.
- *
- * Not duplicated back into the header. Stating the same fact twice on one page is how the two
- * copies eventually disagree.
- */
+// Keep earned badge details near the member identity, ahead of profile fields.
 function renderBadgesSection(state: AppViewState, member: LabMember) {
   return html`
     <section class="profile__section" data-testid="profile-badges-section">
@@ -1964,8 +1952,9 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         </div>
         ${renderCompletionLedger(member, state)}
       </header>
+      ${renderBadgesSection(state, member)}
       ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
-      ${renderBadgesSection(state, member)} ${renderBadgeSelfNomination(state, member, props)}
+      ${renderBadgeSelfNomination(state, member, props)}
       ${renderBadgeSuggestion(state, props)} ${renderOnboardingPointer(state, props)}
       <!-- Who has been in this record. Last, and shut: it is history about the fields above, and
            the answer to a question somebody asks occasionally rather than on every visit. Since
