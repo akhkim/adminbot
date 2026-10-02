@@ -4839,6 +4839,7 @@ export async function fetchPaperSlotOverview(
 
 /** One person at one conference. Mirrors ConferenceAttendancePerson in the service. */
 export type ConferenceRosterPerson = {
+  avatar_url?: string;
   attendee_key: string;
   member_id?: string;
   name: string;
@@ -4859,13 +4860,7 @@ export type ConferenceRoster = {
   papers_awaiting: Array<{ paper_id: string; title: string; unanswered: number }>;
 };
 
-/**
- * Who is going to each conference, across every accepted paper.
- *
- * A 404 means the service predates this route -- the Control UI ships on merge and the service is
- * deployed separately, so a new tab can reach a server that has never heard of it. Empty rather
- * than an error, so the page says "nothing recorded" instead of "unreachable".
- */
+/** Privileged attendance read; an unavailable backend is not an empty roster. */
 export async function fetchConferenceRosters(
   sessionToken: string,
   baseUrl: string,
@@ -4874,14 +4869,31 @@ export async function fetchConferenceRosters(
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
-  if (result.response.status === 404) {
-    return { ok: true, value: [] };
-  }
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   const body = result.body as { conferences?: ConferenceRoster[] } | null;
   return { ok: true, value: body?.conferences ?? [] };
+}
+
+export async function inviteConferenceAttendees(
+  sessionToken: string,
+  baseUrl: string,
+  key: string,
+): Promise<AuthResult<{ channel: string; invited: number; skipped: number; failed: number }>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/conference-rosters/${encodeURIComponent(key)}/channel-invites`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) return { ok: false, kind: "unreachable" };
+  if (!result.response.ok) return { ok: false, ...calendarFailure(result.response, result.body) };
+  return {
+    ok: true,
+    value: result.body as { channel: string; invited: number; skipped: number; failed: number },
+  };
 }
 
 /** Not going is the absence of a row, never a value. Withdrawing deletes; see deleteConferenceTrip. */
