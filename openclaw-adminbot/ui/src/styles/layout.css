@@ -12333,8 +12333,9 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   padding: 16px;
   margin: 16px 0;
 }
-.deadline-recent h2 {
-  margin: 0 0 8px;
+.deadline-recent summary {
+  cursor: pointer;
+  font-weight: 600;
 }
 .deadline-recent p {
   color: var(--muted);

@@ -3410,8 +3410,8 @@ class AdminbotDeadlinesView extends LitElement {
         ${this.renderProposalDrawer()} ${this.renderModes()}
         ${this.renderControls(matching, periodEntries, filters)}
         ${recent.length
-          ? html`<section class="deadline-recent" aria-label="Recently passed actions">
-              <h2>Passed in the last 14 days</h2>
+          ? html`<details class="deadline-recent" aria-label="Recently passed actions">
+              <summary>Passed in the last 14 days (${recent.length})</summary>
               <p>
                 Recently passed action dates. Check your submission status and the venue’s rules.
               </p>
@@ -3428,7 +3428,7 @@ class AdminbotDeadlinesView extends LitElement {
                   </li>`,
                 )}
               </ul>
-            </section>`
+            </details>`
           : nothing}
         ${next || !recent.length
           ? html`<div class="deadline-board__overview">${this.renderHero(next)}</div>`

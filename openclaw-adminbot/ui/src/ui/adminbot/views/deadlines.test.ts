@@ -2647,7 +2647,9 @@ it("shows recent actions above the headline and makes the action the primary hea
   document.body.append(container);
   render(renderDeadlines({ proposalStore: store }), container);
   await settle(container);
-  const recent = container.querySelector(".deadline-recent")!;
+  const recent = container.querySelector<HTMLDetailsElement>("details.deadline-recent")!;
+  expect(recent.open).toBe(false);
+  expect(recent.querySelector("summary")?.textContent).toContain("Passed in the last 14 days");
   expect(recent.textContent).toContain("Paper submission");
   expect(recent.textContent).not.toContain("Attend conference");
   expect(
