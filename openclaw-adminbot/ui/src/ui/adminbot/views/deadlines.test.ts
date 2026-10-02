@@ -2659,6 +2659,17 @@ it("shows recent actions above the headline and makes the action the primary hea
     recent.compareDocumentPosition(container.querySelector(".deadline-board__overview")!) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+  const summary = container.querySelector(".deadline-group__summary")!;
+  expect(Array.from(summary.children).map((child) => child.className)).toEqual([
+    "deadline-group__chevron",
+    "deadline-group__summary-countdown",
+    "deadline-group__heading",
+    "deadline-group__count",
+  ]);
+  expect(summary.querySelector(".deadline-group__heading strong")?.textContent).toContain(
+    "Camera-ready due",
+  );
+  expect(summary.querySelector(".deadline-group__heading")?.textContent).toContain("Example venue");
   buttonNamed(container, "Cards").click();
   await settle(container);
   expect(container.querySelector(".deadline-card .deadline-action__title")?.textContent).toContain(

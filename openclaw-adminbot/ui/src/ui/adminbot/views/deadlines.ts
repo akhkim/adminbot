@@ -3224,25 +3224,18 @@ class AdminbotDeadlinesView extends LitElement {
                       )}</span
               >
               <span class="deadline-group__heading">
-                <strong
+                <strong class=${leadPending ? "deadline-group__next-stage" : nothing}
                   >${leadStage?.label ??
                   capitalize(group.entries[0].venue.deadline_label || "Submission")}</strong
                 >
+                <span aria-hidden="true">|</span>
                 <span class="deadline-action__venue">${group.label}</span>
-                <small>
-                  ${group.kind === "conference" || leadPending
-                    ? html`<span class="deadline-group__next-stage"
-                        >${leadPending
-                          ? leadPending.label
-                          : capitalize(group.entries[0].venue.deadline_label)}</span
-                      >`
-                    : nothing}
-                </small>
-              </span>
-              <span class="deadline-group__summary-date">
-                ${leadPending
-                  ? renderDeadlineDateLabel(leadPending.dateLabel)
-                  : renderDeadlineDate(group.entries[0].venue, this.displayZone)}
+                <span aria-hidden="true">|</span>
+                <span class="deadline-group__summary-date">
+                  ${leadPending
+                    ? renderDeadlineDateLabel(leadPending.dateLabel)
+                    : renderDeadlineDate(group.entries[0].venue, this.displayZone)}
+                </span>
               </span>
               <span class="deadline-group__count"
                 >${counts.map(

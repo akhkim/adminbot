@@ -5198,7 +5198,7 @@ adminbot-deadline-timezone {
 .deadline-group__summary {
   display: grid;
   position: relative;
-  grid-template-columns: 7.75rem minmax(0, 1fr) 15rem 14rem;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: var(--space-3);
   width: 100%;
@@ -5249,8 +5249,9 @@ adminbot-deadline-timezone {
 .deadline-group__heading {
   display: flex;
   min-width: 0;
-  flex-direction: column;
-  gap: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1);
 }
 
 .deadline-group__heading strong {
@@ -5258,8 +5259,8 @@ adminbot-deadline-timezone {
   color: var(--text-strong);
   font-size: var(--control-ui-text-lg);
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .deadline-group__heading small,
@@ -5270,7 +5271,7 @@ adminbot-deadline-timezone {
 
 .deadline-group__count {
   white-space: normal;
-  text-align: right;
+  text-align: left;
   padding: 0;
   border: 0;
   border-radius: var(--radius-full);
@@ -6176,36 +6177,6 @@ adminbot-deadline-timezone {
 .deadline-archival__explanation strong {
   display: block;
   margin-bottom: var(--space-1);
-}
-
-@container deadline-board (max-width: 64em) {
-  .deadline-group__summary {
-    grid-template-columns: max-content minmax(0, 1fr);
-    gap: var(--space-1) var(--space-2);
-  }
-
-  .deadline-group__summary-countdown {
-    grid-row: 3;
-    grid-column: 1;
-  }
-
-  .deadline-group__heading {
-    grid-row: 1;
-    grid-column: 1 / -1;
-  }
-
-  .deadline-group__summary-date {
-    grid-row: 2;
-    grid-column: 1 / -1;
-  }
-
-  .deadline-group__count {
-    grid-row: 3;
-    grid-column: 2;
-    max-width: 10rem;
-    text-align: right;
-    justify-self: end;
-  }
 }
 
 @container deadline-board (max-width: 96em) {
@@ -12087,7 +12058,7 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   color: var(--muted);
 }
 .deadline-board .deadline-group__heading {
-  display: grid;
+  display: flex;
   gap: 4px;
 }
 .deadline-board .deadline-group__heading > strong,
@@ -12165,7 +12136,7 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   box-sizing: border-box;
 }
 .deadline-board .deadline-group__heading {
-  gap: var(--deadline-row-gap);
+  gap: var(--space-1);
 }
 .deadline-board .deadline-group__heading > strong,
 .deadline-board .deadline-group__heading > small {
