@@ -36,6 +36,7 @@ export type ProfileFieldType =
   // has to learn a second shape.
   | "multi_dropdown"
   | "date"
+  | "month"
   | "link"
   | "numeric"
   | "list"
@@ -90,6 +91,7 @@ export type ProfileField = {
   // Text-only ceiling, for the fields the service caps tighter than the generic paragraph limit.
   // Same reason as min/max: the rule belongs where the answer is typed, not in a rejected save.
   maxLength?: number;
+  pattern?: string;
   group: ProfileFieldGroup;
 };
 
@@ -204,8 +206,7 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
   {
     key: "elevator_pitch",
     labelKey: "profile.fields.elevatorPitch",
-    example:
-      "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
+    example: "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
     type: "paragraph",
     hintKey: "profile.hints.elevatorPitch",
     // The service's own ceiling (validateLabMember in extensions/adminbot/src/kernel/service.ts).
@@ -261,6 +262,8 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     // event on the shared lab calendar. A field whose whole purpose is to publish something should
     // say so where it is typed, not in a changelog.
     key: "birthday",
+    pattern:
+      "((01|03|05|07|08|10|12)-(0[1-9]|[12][0-9]|3[01])|(04|06|09|11)-(0[1-9]|[12][0-9]|30)|02-(0[1-9]|1[0-9]|2[0-9]))",
     labelKey: "profile.fields.birthday",
     example: "03-14",
     type: "short_text",
@@ -269,18 +272,20 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
   },
   {
     key: "joined_month",
+    pattern: "[0-9]{4}-(0[1-9]|1[0-2])",
     labelKey: "profile.fields.joinedMonth",
     example: "2026-03",
-    type: "short_text",
+    type: "month",
     hintKey: "profile.hints.month",
     group: "work",
   },
   {
     // Ask for an expected offboarding month, rather than claiming the member has already left.
     key: "graduated_month",
+    pattern: "[0-9]{4}-(0[1-9]|1[0-2])",
     labelKey: "profile.fields.graduatedMonth",
     example: "2027-06",
-    type: "short_text",
+    type: "month",
     hintKey: "profile.hints.offboardingMonth",
     group: "work",
   },

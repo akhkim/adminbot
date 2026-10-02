@@ -1210,6 +1210,13 @@ function renderRegistryField(
           max=${ifDefined(field.max)}
           .value=${value}
         />`;
+      case "month":
+        return html`<input
+          name=${field.key}
+          type=${!value || /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(value) ? "month" : "text"}
+          pattern=${ifDefined(field.pattern)}
+          .value=${value}
+        />`;
       case "date":
         return html`<input name=${field.key} type="date" .value=${value} />`;
       case "link":
@@ -1230,6 +1237,7 @@ function renderRegistryField(
         return html`<input
             name=${field.key}
             placeholder=${field.example}
+            pattern=${ifDefined(field.pattern)}
             .value=${value}
             ?required=${field.key === "name" && !member}
             list=${ifDefined(

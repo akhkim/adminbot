@@ -617,6 +617,13 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
       continue;
     }
     const value = String(data.get(field.key) ?? "").trim();
+    if (field.pattern || field.type === "date") {
+      const input = form.elements.namedItem(field.key) as HTMLInputElement | null;
+      // Keep an invalid legacy value visible, but never autosave it or erase it silently.
+      if (input && !input.checkValidity()) {
+        continue;
+      }
+    }
     if (field.type === "phone") {
       // The two controls are a country box and a number box; the record keeps one string. The
       // country box is free text with a suggestion list, so what it holds is resolved back to a
@@ -860,6 +867,16 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           .value=${currentValue}
         ></textarea>
       `;
+    case "month":
+      // Preserve invalid legacy text; native month inputs silently clear it.
+      return html`<input
+        class="input"
+        name=${field.key}
+        type=${!currentValue || /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(currentValue) ? "month" : "text"}
+        pattern=${ifDefined(field.pattern)}
+        .value=${currentValue}
+        @change=${(event: Event) => (event.currentTarget as HTMLInputElement).reportValidity()}
+      />`;
     case "date":
       return html` <input class="input" name=${field.key} type="date" .value=${currentValue} /> `;
     case "link":
@@ -913,6 +930,10 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           )}
           type="text"
           maxlength=${SHORT_TEXT_MAX_LENGTH}
+          pattern=${ifDefined(field.pattern)}
+          @change=${field.pattern
+            ? (event: Event) => (event.currentTarget as HTMLInputElement).reportValidity()
+            : nothing}
           placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
           autocomplete="off"
@@ -1952,10 +1973,10 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         </div>
         ${renderCompletionLedger(member, state)}
       </header>
-      ${renderBadgesSection(state, member)}
-      ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
-      ${renderBadgeSelfNomination(state, member, props)}
-      ${renderBadgeSuggestion(state, props)} ${renderOnboardingPointer(state, props)}
+      ${renderBadgesSection(state, member)} ${renderBasics(state, member, props)}
+      ${renderPhotoCompliance(state, member, props)}
+      ${renderBadgeSelfNomination(state, member, props)} ${renderBadgeSuggestion(state, props)}
+      ${renderOnboardingPointer(state, props)}
       <!-- Who has been in this record. Last, and shut: it is history about the fields above, and
            the answer to a question somebody asks occasionally rather than on every visit. Since
            "view as" landed, an admin editing this profile is a thing that happens, and this is
