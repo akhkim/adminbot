@@ -1300,9 +1300,12 @@ function renderLettersRequest(props: LettersProps) {
               style="flex-shrink:0;margin-top:5px"
             />
             <span
-              ><strong><span aria-hidden="true">*</span> ${t("adminbotWelcome.required")}:</strong>
-              I confirm that I have sent all application-portal invitations for this request to
-              <strong>zjin.admin@cs.toronto.edu</strong>, not Zhijing's main email.</span
+              >I confirm that I have sent all application-portal invitations for this request to
+              <strong>zjin.admin@cs.toronto.edu</strong>, not Zhijing's main email.<span
+                class="cron-required-marker"
+                aria-hidden="true"
+                >*</span
+              ></span
             >
           </label>
           <a
