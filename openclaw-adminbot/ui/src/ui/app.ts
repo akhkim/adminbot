@@ -686,6 +686,8 @@ export class OpenClawApp extends LitElement {
   @state() agentsSelectedId: string | null = null;
   @state() adminBotLoading = false;
   @state() adminBotError: string | null = null;
+  @state() adminBotUsingCachedReads = false;
+  @state() adminBotOfflinePendingWrites = 0;
   @state() adminBotData: AdminBotDashboardData = createEmptyAdminBotDashboardData();
   @state() adminBotRosterLoadedAt: number | null = null;
   @state() adminBotRosterLoading = false;

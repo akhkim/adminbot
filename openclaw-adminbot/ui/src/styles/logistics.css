@@ -1715,6 +1715,22 @@
   margin-top: var(--space-5);
 }
 
+.logistics-sync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.logistics-sync > span {
+  display: flex;
+  flex: 1 1 220px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 /* Tab Usage: which parts of AdminBot the lab opens.
    A table of eleven-odd rows read by comparing them to each other, so the bar under each tab name
    is doing the real work and the digits are there to check it. */

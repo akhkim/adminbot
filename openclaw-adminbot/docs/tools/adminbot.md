@@ -103,7 +103,7 @@ environment restricted to `main`. Trigger a deploy by hand with
 
 The AdminBot service classifies every `adminbot_reason` request with local
 Ollama `gemma4:e4b` before any remote call. Generic tasks can use NVIDIA NIM
-`minimaxai/minimax-m3`. Private tasks are replaced with opaque placeholders;
+`nvidia/nemotron-3-ultra-550b-a55b`. Private tasks are replaced with opaque placeholders;
 only the sanitized task reaches NIM, and Gemma fills the placeholders locally.
 Use `privacy="private"` or `sensitiveTerms` to force private handling. Missing
 keys, uncertain or malformed classification, unsafe sanitization, and model
@@ -124,6 +124,26 @@ pnpm tsx start-adminbot.ts
 Vercel should serve static Control UI assets only. Prompts must connect directly
 to the VM gateway over authenticated TLS; do not proxy or log prompts through a
 Vercel Function, analytics collector, or other hosted middleware.
+
+### Load, failover, and offline
+
+The [shared LLM gateway](llm-gateway.md) coordinates AdminBot and PaperMentor across
+processes. Public requests wait when either 100 public or 8 local calls are active.
+Local privacy calls remain capped at 8. Set `LLM_GATEWAY_URL` and `LLM_GATEWAY_TOKEN`
+in participating services and run one gateway with `node --import tsx start-llm-gateway.ts`.
+Without that configuration, the in-process allocator is development-only and cannot
+coordinate separate services. See the gateway guide for GPU tunnels, streaming,
+cancellation, and deployment checks.
+
+Department account filing uses the DCS roster sheet described below; the retired form
+failover is not enabled. Privileged operators can inspect the external-request ledger at
+`GET /ops/failed-requests`; signed-in members can read `GET /ops/llm-load`.
+
+The Control UI caches successful member GETs in account-scoped IndexedDB.
+Recommendation-letter, meeting-request, and signature drafts save locally and sync
+private working copies on reconnect. Final requests and approvals require an explicit
+connected action; legacy queued mutations are retained for recovery and never replayed.
+An on-device SLM is not shipped.
 
 ### Connect Gmail and Calendar with gog
 

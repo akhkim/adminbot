@@ -16,6 +16,13 @@ import type {
   AdminBotOpportunityDraft,
   AdminBotOpportunityView,
 } from "../data/opportunities-data.ts";
+import { configureDraftSync } from "../offline/draft-sync.ts";
+import {
+  cacheAdminBotGet,
+  type AdminBotOfflineScope,
+  pendingAdminBotOutboxCount,
+  readCachedAdminBotGet,
+} from "../offline/outbox.ts";
 
 const SESSION_STORAGE_KEY = "openclaw.adminbot.session.v1";
 // v2: the onboarding checklist moved from a post-login popup (dismiss = "seen it") to a standing
@@ -432,7 +439,7 @@ export type AuthErrorKind =
   | "invalid-response";
 
 export type AuthResult<T> =
-  | { ok: true; value: T }
+  | { ok: true; value: T; cached?: boolean }
   // `message` carries the service's own explanation, and is only ever populated for a 400 --
   // a validation refusal names the field it rejected ("LinkedIn link must be a profile URL"),
   // which no generic client-side string can. Auth and rate-limit failures deliberately keep
@@ -528,6 +535,54 @@ async function postJson(
   return { response, body: await readJson(response) };
 }
 
+let lastAuthedCall:
+  | { baseUrl: string; token: string | null; offlineScope?: AdminBotOfflineScope }
+  | undefined;
+
+async function resolveOfflineScope(
+  baseUrl: string,
+  token: string | null,
+): Promise<AdminBotOfflineScope | undefined> {
+  if (!token) return undefined;
+  if (typeof crypto === "undefined" || !crypto.subtle) {
+    return undefined;
+  }
+  let digest: ArrayBuffer;
+  try {
+    digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  } catch {
+    // Offline storage must never make an otherwise-valid online request unusable. If the
+    // browser cannot derive a non-secret session identity, fail closed by disabling cache/outbox.
+    return undefined;
+  }
+  const principalKey = [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  return {
+    baseUrl: baseUrl.replace(/\/+$/u, ""),
+    principalKey,
+  };
+}
+
+export async function pendingQueuedAdminBotWriteCount(
+  token: string,
+  baseUrl: string,
+): Promise<number> {
+  const scope = await resolveOfflineScope(baseUrl, token);
+  return scope ? pendingAdminBotOutboxCount(scope) : 0;
+}
+
+export async function flushQueuedAdminBotWrites(): Promise<{ flushed: number; remaining: number }> {
+  const auth = lastAuthedCall;
+  if (!auth?.offlineScope) {
+    return { flushed: 0, remaining: 0 };
+  }
+  // Old generic outbox entries may represent approvals or non-idempotent submissions.
+  // Retain them for recovery, but never execute them on reconnect. Only revisioned
+  // member drafts have an automatic synchronization contract.
+  return { flushed: 0, remaining: await pendingAdminBotOutboxCount(auth.offlineScope) };
+}
+
 // Bearer-authenticated POST/PUT for member-session routes. Same unreachable
 // sentinel + credentials:"omit" contract as postJson.
 async function authedJson(
@@ -540,7 +595,10 @@ async function authedJson(
   token: string | null,
   payload?: unknown,
   signal?: AbortSignal,
-): Promise<{ response: Response; body: unknown } | { unreachable: true }> {
+): Promise<{ response: Response; body: unknown; fromCache?: boolean } | { unreachable: true }> {
+  const offlineScopePromise = resolveOfflineScope(baseUrl, token);
+  const call = { baseUrl, token };
+  lastAuthedCall = call;
   let response: Response;
   try {
     response = await fetch(`${baseUrl}${path}`, {
@@ -557,9 +615,36 @@ async function authedJson(
       ...(method === "GET" || method === "DELETE" ? {} : { body: JSON.stringify(payload) }),
     });
   } catch {
+    const offlineScope = await offlineScopePromise;
+    if (method === "GET") {
+      const cached = offlineScope
+        ? await readCachedAdminBotGet(offlineScope, path).catch(() => undefined)
+        : undefined;
+      if (cached !== undefined) {
+        return { response: { ok: true, status: 200 } as Response, body: cached, fromCache: true };
+      }
+    }
     return { unreachable: true };
   }
-  return { response, body: await readJson(response) };
+  const offlineScope = await offlineScopePromise;
+  if (lastAuthedCall === call && offlineScope) lastAuthedCall = { ...call, offlineScope };
+  const body = await readJson(response);
+  const serviceMessage = (body as { error?: { message?: unknown } } | null)?.error?.message;
+  if (
+    method === "GET" &&
+    [502, 503, 504].includes(response.status) &&
+    offlineScope &&
+    typeof serviceMessage !== "string"
+  ) {
+    const cached = await readCachedAdminBotGet(offlineScope, path).catch(() => undefined);
+    if (cached !== undefined) {
+      return { response: { ok: true, status: 200 } as Response, body: cached, fromCache: true };
+    }
+  }
+  if (method === "GET" && response.ok && offlineScope) {
+    void cacheAdminBotGet(offlineScope, path, body).catch(() => {});
+  }
+  return { response, body };
 }
 
 // Self-service profile edit (PUT /lab/members/:id) with the member session. Only
@@ -2152,7 +2237,7 @@ export async function fetchMemberResource(
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  return { ok: true, value: result.body };
+  return { ok: true, value: result.body, ...(result.fromCache ? { cached: true } : {}) };
 }
 
 /** Lists the conferences an admin has made searchable, with how fresh each index is. */
@@ -3316,6 +3401,27 @@ export async function fetchRoster(
   return { ok: true, value: members };
 }
 
+export async function cacheOfflineMemberSession(
+  token: string,
+  baseUrl: string,
+  session: MemberSessionInfo,
+): Promise<void> {
+  const scope = await resolveOfflineScope(baseUrl, token);
+  if (!scope) {
+    return;
+  }
+  // Never persist gateway credentials with the offline identity snapshot.
+  await cacheAdminBotGet(scope, "/offline-identity", {
+    expires_at: session.expires_at,
+    member: {
+      id: session.member.id,
+      privilege_level: session.member.privilege_level,
+      onboarding: session.member.onboarding,
+    },
+    gateway: { token: "" },
+  }).catch(() => {});
+}
+
 export async function fetchMemberSession(
   token: string,
   baseUrl: string,
@@ -3324,14 +3430,30 @@ export async function fetchMemberSession(
   try {
     response = await fetch(`${baseUrl}/auth/session`, {
       method: "GET",
+      signal: AbortSignal.timeout(5000),
       credentials: "omit",
       headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
     });
   } catch {
+    const scope = await resolveOfflineScope(baseUrl, token);
+    const cached = scope
+      ? ((await readCachedAdminBotGet(scope, "/offline-identity").catch(() => undefined)) as
+          | MemberSessionInfo
+          | undefined)
+      : undefined;
+    if (cached?.member?.id && Date.parse(cached.expires_at) > Date.now()) {
+      return { ok: true, value: cached, cached: true };
+    }
     return { ok: false, kind: "unreachable" };
   }
   const body = await readJson(response);
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      const scope = await resolveOfflineScope(baseUrl, token);
+      if (scope) {
+        await cacheAdminBotGet(scope, "/offline-identity", null).catch(() => {});
+      }
+    }
     // Only an explicit authentication rejection invalidates a stored login. Proxy outages,
     // rate limits and rolling-deploy 404s must not turn a refresh into a forced sign-in.
     if (response.status !== 401 && response.status !== 403) {
@@ -3339,6 +3461,7 @@ export async function fetchMemberSession(
     }
     return { ok: false, kind: "auth-failed" };
   }
+  await cacheOfflineMemberSession(token, baseUrl, body as MemberSessionInfo);
   return { ok: true, value: body as MemberSessionInfo };
 }
 
@@ -3392,6 +3515,13 @@ export async function logoutMember(token: string, baseUrl: string): Promise<void
     });
   } catch {
     // Best-effort: local session is cleared regardless of server reachability.
+  } finally {
+    if (
+      lastAuthedCall?.token === token &&
+      lastAuthedCall.baseUrl.replace(/\/+$/u, "") === baseUrl.replace(/\/+$/u, "")
+    ) {
+      lastAuthedCall = undefined;
+    }
   }
 }
 
@@ -3454,6 +3584,8 @@ export function saveStoredMemberSession(next: StoredMemberSession): void {
 }
 
 export function clearStoredMemberSession(): void {
+  configureDraftSync("signed-out", null);
+  lastAuthedCall = undefined;
   const storage = getSafeLocalStorage();
   try {
     storage?.removeItem(SESSION_STORAGE_KEY);

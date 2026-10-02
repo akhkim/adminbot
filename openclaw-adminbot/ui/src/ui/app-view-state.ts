@@ -446,6 +446,10 @@ export type AppViewState = {
   agentsSelectedId: string | null;
   adminBotLoading: boolean;
   adminBotError: string | null;
+  /** Last dashboard GETs were served from the device cache because the service was unreachable. */
+  adminBotUsingCachedReads?: boolean;
+  /** Mutations queued while the AdminBot service was offline. */
+  adminBotOfflinePendingWrites?: number;
   adminBotData: AdminBotDashboardData;
   adminBotRosterLoadedAt: number | null;
   adminBotRosterLoading: boolean;
