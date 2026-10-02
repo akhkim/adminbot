@@ -3025,20 +3025,11 @@ export const adminBotLogisticsSettledStatuses = [
   "withdrawn",
 ] as const satisfies readonly AdminBotLogisticsRequestStatus[];
 
-/**
- * How long somebody stays in the recommendation-letter help channel after their last letter is
- * settled.
- *
- * Three months, measured from the most recent settled request rather than the first. An application
- * season runs roughly two months across different school deadlines, so a member routinely has one
- * request closed while another is still open; a shorter window, or one measured from the earliest
- * close, would take them out of the channel in the middle of their own season. The extra month past
- * a two-month season is the margin for a late deadline or a school that comes back with questions.
- */
-export const adminBotRecLetterChannelRetentionDays = 90;
+/** Calendar months on either side of a letter deadline. */
+export const adminBotRecLetterChannelWindowMonths = 3;
 
-/** The channel the letter-request sweep manages. A name, because that is what the connector takes. */
-export const ADMINBOT_REC_LETTER_CHANNEL = "help-rec-letter-request";
+/** The existing Slack channel managed by the letter-request sweep. */
+export const ADMINBOT_REC_LETTER_CHANNEL = "help-rec-letters";
 
 /**
  * A file travelling with a request, bytes and all.

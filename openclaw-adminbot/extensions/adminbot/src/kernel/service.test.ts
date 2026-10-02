@@ -2218,6 +2218,7 @@ describe("AdminBotService", () => {
           kind: "recommendation_letters",
           member_id: "ada",
           member_name: "Ada Lovelace",
+          schools: [{ school: "Example", letter_deadline: request.updated_at.slice(0, 10) }],
           status: request.status,
           submitted_at: request.updated_at,
           updated_at: request.updated_at,
@@ -2226,7 +2227,7 @@ describe("AdminBotService", () => {
       return { service, store };
     }
 
-    it("puts anybody with an open letter request in the channel", () => {
+    it("adds applicants near their letter deadline", () => {
       const { service } = labWithLetters([{ status: "submitted", updated_at: iso(-1) }]);
       const roster = service.recLetterChannelRoster();
       expect(roster.add.map((row) => row.member_id)).toEqual(["ada"]);
@@ -2236,7 +2237,7 @@ describe("AdminBotService", () => {
     // The subtlety the window exists for. A season runs about two months across different school
     // deadlines, so one request closes while another is still open; reading the earliest settled
     // date would drop somebody in the middle of their own season.
-    it("keeps somebody whose season is still running, however old their first close", () => {
+    it("keeps applicants while any deadline window is active", () => {
       const { service } = labWithLetters([
         { status: "completed", updated_at: iso(-200) },
         { status: "submitted", updated_at: iso(-1) },
@@ -2246,19 +2247,89 @@ describe("AdminBotService", () => {
       expect(roster.remove).toEqual([]);
     });
 
-    it("measures the window from the most recently settled request", () => {
+    it("measures expiry from the latest deadline window", () => {
       const { service } = labWithLetters([
         { status: "completed", updated_at: iso(-200) },
         { status: "completed", updated_at: iso(-60) },
       ]);
-      // Sixty days on from the latest close: inside the ninety-day window, so nothing happens.
+      // The latest deadline remains inside its three-calendar-month window.
       expect(service.recLetterChannelRoster().remove).toEqual([]);
-      expect(service.recLetterChannelRoster().add).toEqual([]);
+      expect(service.recLetterChannelRoster().add.map((row) => row.member_id)).toEqual(["ada"]);
 
-      const later = new Date(Date.now() + 31 * DAY).toISOString();
+      const later = new Date(Date.now() + 40 * DAY).toISOString();
       expect(
         service.recLetterChannelRoster({ nowIso: later }).remove.map((row) => row.member_id),
       ).toEqual(["ada"]);
+    });
+
+    it("uses inclusive calendar-month boundaries and clamps month ends", () => {
+      const { service, store } = labWithLetters([
+        { status: "completed", updated_at: "2026-05-31T00:00:00Z" },
+      ]);
+      const request = store.listLogisticsRequests()[0]!;
+      store.saveLogisticsRequest({
+        ...request,
+        schools: [
+          {
+            school: "Example",
+            letter_deadline: "2026-05-31",
+            letter_deadline_time: "12:00",
+            deadline_timezone: "UTC",
+          },
+        ],
+      });
+      expect(service.recLetterChannelRoster({ nowIso: "2026-02-28T11:59:59Z" }).add).toEqual([]);
+      expect(service.recLetterChannelRoster({ nowIso: "2026-02-28T12:00:00Z" }).add).toHaveLength(
+        1,
+      );
+      expect(service.recLetterChannelRoster({ nowIso: "2026-08-31T12:00:00Z" }).add).toHaveLength(
+        1,
+      );
+      expect(
+        service.recLetterChannelRoster({ nowIso: "2026-08-31T12:00:01Z" }).remove[0]
+          ?.window_ends_at,
+      ).toBe("2026-08-31T12:00:00.000Z");
+    });
+
+    it("uses any school deadline and its timezone, without application-date fallback", () => {
+      const { service, store } = labWithLetters([
+        { status: "submitted", updated_at: "2026-01-01T00:00:00Z" },
+      ]);
+      const request = store.listLogisticsRequests()[0]!;
+      store.saveLogisticsRequest({
+        ...request,
+        schools: [
+          { school: "Old", letter_deadline: "2025-01-01" },
+          {
+            school: "Current",
+            letter_deadline: "2026-06-01",
+            letter_deadline_time: "09:00",
+            deadline_timezone: "America/New_York",
+          },
+        ],
+      });
+      expect(service.recLetterChannelRoster({ nowIso: "2026-03-01T13:59:59Z" }).add).toEqual([]);
+      expect(service.recLetterChannelRoster({ nowIso: "2026-03-01T14:00:00Z" }).add).toHaveLength(
+        1,
+      );
+      store.saveLogisticsRequest({
+        ...request,
+        schools: [{ school: "Legacy", application_deadline: "2026-06-01" }],
+      });
+      expect(service.recLetterChannelRoster({ nowIso: "2026-06-01T00:00:00Z" }).add).toEqual([]);
+      expect(service.recLetterChannelRoster({ nowIso: "2026-06-01T00:00:00Z" }).remove).toEqual([]);
+      store.saveLogisticsRequest({
+        ...request,
+        schools: [{ school: "Invalid", letter_deadline: "2026-02-30" }],
+      });
+      expect(service.recLetterChannelRoster({ nowIso: "2026-03-01T00:00:00Z" }).add).toEqual([]);
+    });
+
+    it("does not invite declined or withdrawn applicants", () => {
+      for (const status of ["declined", "withdrawn"]) {
+        const { service } = labWithLetters([{ status, updated_at: iso(-1) }]);
+        expect(service.recLetterChannelRoster().add).toEqual([]);
+      }
     });
 
     it("skips a member with no Slack account rather than proposing anything", () => {
@@ -2291,13 +2362,14 @@ describe("AdminBotService", () => {
         kind: "recommendation_letters",
         member_id: "mei",
         member_name: "Mei Chen",
+        schools: [{ school: "Example", letter_deadline: iso(-200).slice(0, 10) }],
         status: "completed",
         submitted_at: iso(-260),
         updated_at: iso(-200),
       } as never);
 
       const result = unwrap(await service.syncRecLetterChannel("cron"));
-      expect(result.channel).toBe("help-rec-letter-request");
+      expect(result.channel).toBe("help-rec-letters");
       expect(result.invited.map((row) => row.member_id)).toEqual(["ada"]);
       expect(result.removal_proposals.map((row) => row.member_id)).toEqual(["mei"]);
 
@@ -2327,6 +2399,7 @@ describe("AdminBotService", () => {
         kind: "recommendation_letters",
         member_id: "mei",
         member_name: "Mei Chen",
+        schools: [{ school: "Example", letter_deadline: iso(-200).slice(0, 10) }],
         status: "completed",
         submitted_at: iso(-260),
         updated_at: iso(-200),
