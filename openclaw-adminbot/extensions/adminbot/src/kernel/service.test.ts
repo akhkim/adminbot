@@ -40,6 +40,8 @@ function completeMember(
     graduated_month: "2027-06",
     next_position: "Considering research positions",
     github_url: "https://github.com/complete",
+    twitter_url: "https://x.com/complete",
+    personal_website: "https://example.com/complete",
     linkedin_url: "https://www.linkedin.com/in/complete",
     linkedin_urn: "ACoAAB1234567",
     cv_url: "https://example.com/cv.pdf",
@@ -2838,7 +2840,9 @@ describe("AdminBotService", () => {
     expect(saved.linkedin_url).toBe("https://www.linkedin.com/in/octocat");
     expect(saved.scholar_url).toBe("https://scholar.google.com/citations?user=abc123");
     expect(saved.acl_anthology_url).toBe("https://aclanthology.org/people/jane-doe/");
-    expect(unwrap(service.updateOwnProfile("social", { acl_anthology_url: "" })).acl_anthology_url).toBe("");
+    expect(
+      unwrap(service.updateOwnProfile("social", { acl_anthology_url: "" })).acl_anthology_url,
+    ).toBe("");
     expect(saved.cv_url).toBe("https://example.com/jane-doe-cv.pdf");
     expect(saved.intake_form_url).toContain("docs.google.com/forms/");
 
@@ -3544,6 +3548,8 @@ describe("AdminBotService", () => {
           next_position: "Considering research positions",
           github_url: "https://github.com/ayush",
           linkedin_url: "https://linkedin.com/in/ayush",
+          twitter_url: "https://x.com/ayush",
+          personal_website: "https://example.test/ayush",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.test/cv.pdf",
           one_on_one_folder_url: "https://drive.google.com/drive/folders/ayush",
@@ -3602,6 +3608,8 @@ describe("AdminBotService", () => {
           next_position: "Considering research positions",
           github_url: "https://github.com/ayush",
           linkedin_url: "https://linkedin.com/in/ayush",
+          twitter_url: "https://x.com/ayush",
+          personal_website: "https://example.test/ayush",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.test/cv.pdf",
           one_on_one_folder_url: "https://drive.google.com/drive/folders/ayush",
@@ -4675,6 +4683,32 @@ describe("AdminBotService", () => {
   });
 
   describe("mandatory profile fields", () => {
+    it("accepts an unavailable intake response but reports missing required social links", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember(
+          completeMember({
+            id: "intake",
+            privilege_level: "member",
+            intake_form_url: "",
+            intake_form_unavailable: true,
+          }),
+        ),
+      );
+      expect(unwrap(service.listMembersWithIncompleteMandatoryFields()).members).toEqual([]);
+      unwrap(
+        service.upsertLabMember({
+          id: "intake",
+          intake_form_unavailable: false,
+          twitter_url: "",
+          personal_website: "",
+        }),
+      );
+      expect(
+        unwrap(service.listMembersWithIncompleteMandatoryFields()).members[0]?.missing_fields,
+      ).toEqual(expect.arrayContaining(["intake_form_url", "twitter_url", "personal_website"]));
+    });
+
     it("lists current members missing a required field, and skips alumni/external", () => {
       const service = new AdminBotService();
       unwrap(
@@ -4703,7 +4737,11 @@ describe("AdminBotService", () => {
           graduated_month: "2027-06",
           next_position: "Considering research positions",
           github_url: "https://github.com/full",
+          twitter_url: "https://x.com/full",
+          personal_website: "https://example.com/full",
           linkedin_url: "https://www.linkedin.com/in/full",
+          twitter_url: "https://x.com/full",
+          personal_website: "https://example.com/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
           one_on_one_folder_url: "https://drive.google.com/drive/folders/full",
@@ -4822,6 +4860,8 @@ describe("AdminBotService", () => {
           next_position: "Considering research positions",
           github_url: "https://github.com/resolved",
           linkedin_url: "https://www.linkedin.com/in/resolved",
+          twitter_url: "https://x.com/resolved",
+          personal_website: "https://example.com/resolved",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
           one_on_one_folder_url: "https://drive.google.com/drive/folders/resolved",
@@ -4891,6 +4931,8 @@ describe("AdminBotService", () => {
           next_position: "Considering research positions",
           github_url: "https://github.com/full",
           linkedin_url: "https://www.linkedin.com/in/full",
+          twitter_url: "https://x.com/full",
+          personal_website: "https://example.com/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
           one_on_one_folder_url: "https://drive.google.com/drive/folders/full",
@@ -4973,7 +5015,7 @@ describe("AdminBotService", () => {
       const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
       expect(result.created).toHaveLength(1);
       const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
-      expect(message).toContain("missing 16 required fields");
+      expect(message).toContain("missing 19 required fields");
       expect(message).toContain("Your term timeline has 0 of 2 needed entries");
     });
 
@@ -5101,6 +5143,8 @@ describe("AdminBotService", () => {
           next_position: "Considering research positions",
           github_url: "https://github.com/full",
           linkedin_url: "https://www.linkedin.com/in/full",
+          twitter_url: "https://x.com/full",
+          personal_website: "https://example.com/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
           one_on_one_folder_url: "https://drive.google.com/drive/folders/full",

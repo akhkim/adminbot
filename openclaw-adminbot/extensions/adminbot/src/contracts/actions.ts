@@ -531,6 +531,9 @@ export const adminBotMandatoryProfileFields = [
   "github_url",
   "linkedin_url",
   "linkedin_urn",
+  "twitter_url",
+  "personal_website",
+  "intake_form_url",
   "cv_url",
   // Where the member's one-on-one notes live. Required of the record because the folder is what
   // every later one-on-one is filed into: a blank here is not "this person has no meetings", it is
@@ -811,6 +814,9 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   github_url: "GitHub",
   linkedin_url: "LinkedIn",
   linkedin_urn: "LinkedIn URN",
+  twitter_url: "X / Twitter",
+  personal_website: "Website",
+  intake_form_url: "Application form response link (or mark that you cannot find it)",
   cv_url: "CV",
   one_on_one_folder_url: "Link to 1:1 Folder",
   openreview_id: "OpenReview",

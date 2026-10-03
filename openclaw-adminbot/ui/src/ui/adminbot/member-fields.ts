@@ -102,8 +102,8 @@ export type ProfileField = {
 // this page called optional, and this page marked eight the reminder never mentioned.
 //
 // Everything not on that list is optional, and being optional keeps a field out of the blanks
-// count, the fill-in prompt and the "profile complete" badge. Not everyone has a Twitter, and a
-// checklist that can never reach zero stops being a checklist -- it just nags.
+// count, the fill-in prompt and the "profile complete" badge. Intake responses also accept the
+// explicit unavailable answer, which the UI and reminder treat as completion.
 export const MANDATORY_FIELD_KEYS = new Set<string>(adminBotMandatoryProfileFields);
 
 /** Every field not on the mandatory list, which is what keeps the blanks count honest. */
