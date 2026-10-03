@@ -1,9 +1,3 @@
-// The parts of a paper card that are lists rather than single fields: the social drafts and who
-// has signed off on them, who is going to the conference, and who has been reimbursed.
-//
-// Kept apart from the slot checklist above it because they behave differently. A slot is one
-// answer with one owner; each of these is a set of rows about several people, and the useful
-// question is "who has not answered yet" rather than "is it filled in".
 import { html, nothing } from "lit";
 import { icons } from "../../icons.ts";
 import type {
@@ -12,6 +6,13 @@ import type {
   PaperSocialConsent,
   PaperSocialDraft,
 } from "../auth/session.ts";
+// The parts of a paper card that are lists rather than single fields: the social drafts and who
+// has signed off on them, who is going to the conference, and who has been reimbursed.
+//
+// Kept apart from the slot checklist above it because they behave differently. A slot is one
+// answer with one owner; each of these is a set of rows about several people, and the useful
+// question is "who has not answered yet" rather than "is it filled in".
+import { renderDateControl } from "../date-control.ts";
 
 export type PaperCycleProps = {
   paperId: string;
@@ -550,25 +551,31 @@ function renderMyTrip(props: PaperCycleProps) {
                          many beds *and* for which nights. -->
                     <label class="paper-trip__field">
                       <span>Arriving</span>
-                      <input
-                        class="input"
-                        type="date"
-                        data-testid=${`paper-trip-arrival-${props.paperId}`}
-                        .value=${draft.arrival_on}
-                        @input=${(event: Event) =>
-                          edit({ arrival_on: (event.target as HTMLInputElement).value })}
-                      />
+                      ${renderDateControl(
+                        html`<input
+                          class="input"
+                          type="date"
+                          data-testid=${`paper-trip-arrival-${props.paperId}`}
+                          .value=${draft.arrival_on}
+                          @input=${(event: Event) =>
+                            edit({ arrival_on: (event.target as HTMLInputElement).value })}
+                        />`,
+                        draft.arrival_on,
+                      )}
                     </label>
                     <label class="paper-trip__field">
                       <span>Leaving</span>
-                      <input
-                        class="input"
-                        type="date"
-                        data-testid=${`paper-trip-departure-${props.paperId}`}
-                        .value=${draft.departure_on}
-                        @input=${(event: Event) =>
-                          edit({ departure_on: (event.target as HTMLInputElement).value })}
-                      />
+                      ${renderDateControl(
+                        html`<input
+                          class="input"
+                          type="date"
+                          data-testid=${`paper-trip-departure-${props.paperId}`}
+                          .value=${draft.departure_on}
+                          @input=${(event: Event) =>
+                            edit({ departure_on: (event.target as HTMLInputElement).value })}
+                        />`,
+                        draft.departure_on,
+                      )}
                     </label>
                   `
                 : nothing}

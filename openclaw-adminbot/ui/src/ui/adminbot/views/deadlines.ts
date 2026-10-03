@@ -3,8 +3,8 @@ import { html, nothing, LitElement, type TemplateResult } from "lit";
 // Stays in the app document flow so the page owns one vertical scroll.
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
-import "./deadlines.recommendation.ts";
 import type { UiSettings } from "../../storage.ts";
+import "./deadlines.recommendation.ts";
 import type { AccessRole } from "../access.ts";
 import {
   resolveAdminBotBaseUrl,
@@ -53,6 +53,7 @@ import {
 } from "../data/deadline-time.ts";
 import { DEADLINE_VENUES, type DeadlineMilestone, type DeadlineVenue } from "../data/deadlines.ts";
 import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
+import { renderDateControl } from "../date-control.ts";
 import { renderDeadlineDate, renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderDeadlineParentConferenceSelect } from "./deadline-parent-conference-select.ts";
 import { wrapSeparator } from "./deadline-separator.ts";
@@ -1820,14 +1821,17 @@ class AdminbotDeadlinesView extends LitElement {
           <div class="deadline-proposal__datetime deadline-proposal__wide">
             <label>
               <span>Deadline date</span>
-              <input
-                name="deadlineDate"
-                ?autofocus=${Boolean(target)}
-                type="date"
-                required
-                .value=${value?.deadlineDate ?? ""}
-                aria-invalid=${String(Boolean(this.proposalErrors.deadlineDate))}
-              />
+              ${renderDateControl(
+                html`<input
+                  name="deadlineDate"
+                  ?autofocus=${Boolean(target)}
+                  type="date"
+                  required
+                  .value=${value?.deadlineDate ?? ""}
+                  aria-invalid=${String(Boolean(this.proposalErrors.deadlineDate))}
+                />`,
+                value?.deadlineDate ?? "",
+              )}
               ${this.renderProposalFieldError("deadlineDate")}
             </label>
             <label>

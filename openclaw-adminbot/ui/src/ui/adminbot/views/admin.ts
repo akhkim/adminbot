@@ -1,9 +1,9 @@
-import "./interview-invite.ts";
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
-import "./member-guide-status.ts";
+import "./interview-invite.ts";
 import { ifDefined } from "lit/directives/if-defined.js";
+import "./member-guide-status.ts";
 import {
   adminBotIsAlumniMember,
   adminBotMemberTypes,
@@ -67,6 +67,7 @@ import {
 } from "../controllers/recent-edits.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
+import { renderDateControl } from "../date-control.ts";
 import { saveMemberInBackground, waitForMemberSave } from "../member-autosave.ts";
 import { PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
@@ -1230,7 +1231,10 @@ function renderRegistryField(
           .value=${value}
         />`;
       case "date":
-        return html`<input name=${field.key} type="date" .value=${value} />`;
+        return html`${renderDateControl(
+          html`<input name=${field.key} type="date" .value=${value} />`,
+          value,
+        )}`;
       case "link":
         return html`<input
           name=${field.key}

@@ -864,6 +864,17 @@ describe("the sheet as drawn", () => {
     return { host, state, loaded, saved, slotWrites, props };
   }
 
+  it("shows and edits native dates without losing the grid save path", () => {
+    const { host, state } = draw({ papers: [{ ...paperRow2(), started_on: "2026-11-03" }] });
+    const input = host.querySelector<HTMLInputElement>('input[type="date"]')!;
+    expect(input.value).toBe("2026-11-03");
+    expect(input.parentElement!.querySelector("output")!.textContent).toBe("2026-11-03");
+    input.value = "2026-03-11";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(input.parentElement!.querySelector("output")!.textContent).toBe("2026-03-11");
+    expect(pendingSaves(state, [paperRow2()])[0]).toMatchObject({ startedOn: "2026-03-11" });
+  });
+
   it("draws a chip per band, with the evidence one off", () => {
     const { host } = draw();
     for (const group of COLUMN_GROUPS) {
