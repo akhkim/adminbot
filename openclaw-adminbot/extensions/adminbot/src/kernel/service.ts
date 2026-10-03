@@ -7257,6 +7257,72 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: { conferences } };
   }
 
+  /** Admin export: attendance is not a lodging commitment. No free-text travel notes. */
+  listConferenceTravelExport() {
+    const rosters = this.listConferenceRosters();
+    if (!rosters.ok) return rosters;
+    const rows = new Map<
+      string,
+      {
+        conference_key: string;
+        conference: string;
+        member_id: string;
+        name: string;
+        going_source: string;
+        trip_intent: string;
+        needs_lodging: boolean | null;
+        arrival_on: string;
+        departure_on: string;
+      }
+    >();
+    for (const conference of rosters.payload.conferences) {
+      for (const person of conference.people.filter((person) => person.attending === "yes")) {
+        rows.set(`${conference.key}/${person.attendee_key}`, {
+          conference_key: conference.key,
+          conference: conference.label,
+          member_id: person.member_id ?? "",
+          name: person.name,
+          going_source: "paper attendance",
+          trip_intent: "",
+          needs_lodging: null,
+          arrival_on: "",
+          departure_on: "",
+        });
+      }
+    }
+    for (const trip of this.store.listConferenceTrips()) {
+      const key = `${trip.conference_key}/member:${trip.member_id}`;
+      const existing = rows.get(key);
+      // Undecided plans cannot create a Going attendee or a confirmed bed request.
+      if (!existing && trip.intent !== "going") continue;
+      rows.set(key, {
+        conference_key: trip.conference_key,
+        conference: existing?.conference ?? trip.conference_key,
+        member_id: trip.member_id,
+        name: this.store.getLabMember(trip.member_id)?.name ?? trip.member_id,
+        going_source: existing
+          ? trip.intent === "going"
+            ? "paper attendance and personal trip"
+            : "paper attendance"
+          : "personal trip",
+        trip_intent: trip.intent,
+        needs_lodging: trip.intent === "going" ? trip.needs_lodging : null,
+        arrival_on: trip.arrival_on ?? "",
+        departure_on: trip.departure_on ?? "",
+      });
+    }
+    return {
+      ok: true as const,
+      status: 200,
+      payload: {
+        rows: [...rows.values()].sort(
+          (a, b) =>
+            a.conference_key.localeCompare(b.conference_key) || a.name.localeCompare(b.name),
+        ),
+      },
+    };
+  }
+
   private syncConferenceChannel(paper: AdminBotPaperRecord): void {
     const key = paperConferenceKey(paper);
     if (!key) return;
