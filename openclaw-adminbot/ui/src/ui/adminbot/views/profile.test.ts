@@ -542,7 +542,7 @@ describe("renderProfile mandatory fields", () => {
     expect(nameRow?.querySelector(".profile__mandatory")).not.toBeNull();
 
     const websiteRow = container
-      .querySelector('input[name="personal_website"]')
+      .querySelector('input[name="scholar_url"]')
       ?.closest(".profile__form-row");
     expect(websiteRow?.querySelector(".profile__mandatory")).toBeNull();
     expect(websiteRow?.querySelector(".profile__optional")).not.toBeNull();
@@ -987,7 +987,7 @@ describe("renderProfile LinkedIn URN and intake form", () => {
   // It is the member's own answers, not the lab's blank form. Google Forms only ever hands the
   // edit link to the respondent, so nobody else can produce it for them -- which is why this is a
   // field they paste into rather than a link the profile could render.
-  it("collects the member's own application form URL as an optional field, not a shared link", () => {
+  it("requires the member's own application form response without publishing it", () => {
     const complete = createMember({
       linkedin_urn: "ACoAAB1234567",
       personal_website: "https://ada.dev",
@@ -1001,8 +1001,8 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     const input = basics.querySelector<HTMLInputElement>('[name="intake_form_url"]');
     expect(input).not.toBeNull();
     const row = input?.closest(".profile__form-row");
-    expect(row?.querySelector(".profile__optional")).not.toBeNull();
-    expect(row?.querySelector(".profile__mandatory")).toBeNull();
+    expect(row?.querySelector(".profile__optional")).toBeNull();
+    expect(row?.querySelector(".profile__mandatory")).not.toBeNull();
   });
 });
 
@@ -1575,7 +1575,7 @@ describe("the LinkedIn URN", () => {
   });
 });
 
-it("renders free-form CV and GitHub safely and keeps intake responses optional", () => {
+it("renders free-form CV and GitHub safely with intake responses required", () => {
   const member = createMember({ cv_url: "Available on request", github_url: "@pat" });
   const container = renderPage(createState(member), vi.fn());
   const links = container.querySelector('[data-testid="profile-links"]')!;
@@ -1583,7 +1583,7 @@ it("renders free-form CV and GitHub safely and keeps intake responses optional",
   expect(links.textContent).toContain("@pat");
   expect(links.querySelector('a[href="@pat"]')).toBeNull();
   expect(adminBotMandatoryProfileFields).toContain("joined_month");
-  expect(adminBotMandatoryProfileFields).not.toContain("intake_form_url");
+  expect(adminBotMandatoryProfileFields).toContain("intake_form_url");
   expect(adminBotMandatoryProfileFields).toContain("github_url");
   expect(adminBotMandatoryProfileFields).toContain("cv_url");
 });
@@ -1825,5 +1825,28 @@ it("uses native month selectors for valid and empty year-month values", () => {
     input.value = "2027-06";
     expect(input.checkValidity()).toBe(true);
     expect(input.value).toBe("2027-06");
+  }
+});
+
+it("requires social/website links and accepts either intake response answer for completion", () => {
+  const empty = createMember();
+  expect(blankFields(empty).map((field) => field.key)).toEqual(
+    expect.arrayContaining(["twitter_url", "personal_website", "intake_form_url"]),
+  );
+  expect(
+    blankFields(createMember({ intake_form_unavailable: true })).map((field) => field.key),
+  ).not.toContain("intake_form_url");
+  expect(
+    blankFields(
+      createMember({
+        intake_form_url: "https://docs.google.com/forms/d/e/sample/viewform?edit2=sample",
+      }),
+    ).map((field) => field.key),
+  ).not.toContain("intake_form_url");
+  const container = renderPage(createState(empty), vi.fn());
+  for (const name of ["twitter_url", "personal_website", "intake_form_url"]) {
+    const row = container.querySelector(`[name="${name}"]`)!.closest(".profile__form-row")!;
+    expect(row.querySelector(".profile__mandatory")).not.toBeNull();
+    expect(row.querySelector(".profile__optional")).toBeNull();
   }
 });

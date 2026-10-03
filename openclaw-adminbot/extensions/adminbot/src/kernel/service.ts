@@ -14756,6 +14756,9 @@ function memberHasAnyEmail(member: AdminBotLabMember): boolean {
 
 function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
   return MANDATORY_PROFILE_FIELDS.filter((key) => {
+    if (key === "intake_form_url" && member.intake_form_unavailable === true) {
+      return false;
+    }
     const value = member[key];
     if (Array.isArray(value)) {
       return value.filter(Boolean).length === 0;
