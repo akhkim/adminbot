@@ -1,16 +1,3 @@
-// Control UI view renders the AdminBot Opportunities board: PhD programs, internships, grants and
-// awards, and Rising Stars workshops, split across sub-tabs.
-//
-// Two sources, merged at read time. The bundled OPPORTUNITIES snapshot is lab-vetted and ships with
-// the build. Member-contributed entries come from the service, which decides what this caller may
-// see: approved entries for everybody including a signed-out visitor, plus the caller's own
-// submissions whatever state they are in. The board is a public tab, so the add/edit/delete
-// controls only render for a member with a session -- and the service re-checks every one of them,
-// because the hidden control is visibility, not security.
-//
-// Undated entries are first-class here rather than filtered out: an annual program whose next
-// cycle has not been announced is still the thing a member wants to know exists. They render as
-// "Deadline TBA" and sort last, never as an expired or invented date.
 import { html, nothing, LitElement } from "lit";
 import {
   deleteOpportunity,
@@ -32,6 +19,20 @@ import {
   type Opportunity,
   type OpportunityCategory,
 } from "../data/opportunities-data.ts";
+// Control UI view renders the AdminBot Opportunities board: PhD programs, internships, grants and
+// awards, and Rising Stars workshops, split across sub-tabs.
+//
+// Two sources, merged at read time. The bundled OPPORTUNITIES snapshot is lab-vetted and ships with
+// the build. Member-contributed entries come from the service, which decides what this caller may
+// see: approved entries for everybody including a signed-out visitor, plus the caller's own
+// submissions whatever state they are in. The board is a public tab, so the add/edit/delete
+// controls only render for a member with a session -- and the service re-checks every one of them,
+// because the hidden control is visibility, not security.
+//
+// Undated entries are first-class here rather than filtered out: an annual program whose next
+// cycle has not been announced is still the thing a member wants to know exists. They render as
+// "Deadline TBA" and sort last, never as an expired or invented date.
+import { renderDateControl } from "../date-control.ts";
 
 const MS_DAY = 86_400_000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -459,15 +460,18 @@ class AdminbotOpportunitiesView extends LitElement {
               ${this.deadlineTba
                 ? html`<span class="opp-tba-badge">TBA</span>`
                 : html`
-                    <input
-                      class="opp-form-input opp-form-input--grow"
-                      type="datetime-local"
-                      .value=${this.form.deadline_aoe?.slice(0, 16) ?? ""}
-                      @input=${(e: Event) => {
-                        const v = (e.target as HTMLInputElement).value;
-                        this.updateField("deadline_aoe", v ? `${v.replace("T", " ")}:00` : "");
-                      }}
-                    />
+                    ${renderDateControl(
+                      html`<input
+                        class="opp-form-input opp-form-input--grow"
+                        type="datetime-local"
+                        .value=${this.form.deadline_aoe?.slice(0, 16) ?? ""}
+                        @input=${(e: Event) => {
+                          const v = (e.target as HTMLInputElement).value;
+                          this.updateField("deadline_aoe", v ? `${v.replace("T", " ")}:00` : "");
+                        }}
+                      />`,
+                      this.form.deadline_aoe?.slice(0, 16) ?? "",
+                    )}
                   `}
               <button
                 type="button"

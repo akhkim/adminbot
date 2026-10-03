@@ -1,16 +1,3 @@
-// Templates that start a logistics request -- the routine asks a member makes of the lab, each of
-// which always takes the same shape (a signature, a letter, a meeting slot).
-//
-// Which of the three is on screen is decided by the sidebar tab (see LOGISTICS_TAB_TEMPLATES in
-// navigation.ts) and arrives as `template`. Each form proposes a typed action from
-// contracts/actions.ts, so none of them may reach a connector directly -- propose -> approve ->
-// execute is the only path out of here.
-//
-// Each form has two ways out. Save keeps a draft on the member's own device so a half-filled
-// request survives a reload; Submit sends it to the service (POST /logistics/requests), which
-// stores it, stamps it with the session's member and puts it in the queue an admin works through
-// on the other tab. Storing a request has no external effect, which is why it needs no approval
-// gate -- the day AdminBot sends the letter or books the room, that send is the typed action.
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
@@ -25,6 +12,20 @@ import {
   type RecommendationSchool,
 } from "../data/logistics-draft.ts";
 import { formatFileSize } from "../data/logistics-requests.ts";
+// Templates that start a logistics request -- the routine asks a member makes of the lab, each of
+// which always takes the same shape (a signature, a letter, a meeting slot).
+//
+// Which of the three is on screen is decided by the sidebar tab (see LOGISTICS_TAB_TEMPLATES in
+// navigation.ts) and arrives as `template`. Each form proposes a typed action from
+// contracts/actions.ts, so none of them may reach a connector directly -- propose -> approve ->
+// execute is the only path out of here.
+//
+// Each form has two ways out. Save keeps a draft on the member's own device so a half-filled
+// request survives a reload; Submit sends it to the service (POST /logistics/requests), which
+// stores it, stamps it with the session's member and puts it in the queue an admin works through
+// on the other tab. Storing a request has no external effect, which is why it needs no approval
+// gate -- the day AdminBot sends the letter or books the room, that send is the typed action.
+import { renderDateControl } from "../date-control.ts";
 import type { DraftStatus } from "../offline/draft-sync.ts";
 import {
   APPLICATION_STATUS_LIST_ID,
@@ -597,6 +598,22 @@ function renderSchoolCell(
     row: String(index + 1),
   });
   const placeholder = field.placeholderKey ? t(field.placeholderKey) : nothing;
+  const input = html`<input
+    class="logistics-schools__input"
+    type=${field.control === "date"
+      ? "date"
+      : field.control === "time"
+        ? "time"
+        : field.control === "url"
+          ? "url"
+          : "text"}
+    ?required=${field.required ?? false}
+    list=${field.listId ?? nothing}
+    aria-label=${label}
+    placeholder=${placeholder}
+    .value=${row[field.key]}
+    @input=${onInput}
+  />`;
   return html`
     <td class="logistics-schools__cell logistics-schools__cell--${field.key}" data-label=${label}>
       ${field.control === "notes"
@@ -610,24 +627,7 @@ function renderSchoolCell(
               @input=${onInput}
             ></textarea>
           `
-        : html`
-            <input
-              class="logistics-schools__input"
-              type=${field.control === "date"
-                ? "date"
-                : field.control === "time"
-                  ? "time"
-                  : field.control === "url"
-                    ? "url"
-                    : "text"}
-              ?required=${field.required ?? false}
-              list=${field.listId ?? nothing}
-              aria-label=${label}
-              placeholder=${placeholder}
-              .value=${row[field.key]}
-              @input=${onInput}
-            />
-          `}
+        : html` ${field.control === "date" ? renderDateControl(input, row[field.key]) : input} `}
     </td>
   `;
 }
@@ -970,13 +970,16 @@ function renderMeetingSection(props: MeetingProps) {
                         class="logistics-schools__cell"
                         data-label=${t("logistics.meeting.preferredTime")}
                       >
-                        <input
-                          class="logistics-schools__input"
-                          type="datetime-local"
-                          aria-label=${cellLabel(t("logistics.meeting.preferredTime"), index)}
-                          .value=${row.preferredTime}
-                          @input=${update(row, "preferredTime")}
-                        />
+                        ${renderDateControl(
+                          html`<input
+                            class="logistics-schools__input"
+                            type="datetime-local"
+                            aria-label=${cellLabel(t("logistics.meeting.preferredTime"), index)}
+                            .value=${row.preferredTime}
+                            @input=${update(row, "preferredTime")}
+                          />`,
+                          row.preferredTime,
+                        )}
                       </td>
                       <td
                         class="logistics-schools__cell"
@@ -1049,13 +1052,16 @@ function renderMeetingSection(props: MeetingProps) {
                         class="logistics-schools__cell"
                         data-label=${t("logistics.meeting.latestOk")}
                       >
-                        <input
-                          class="logistics-schools__input"
-                          type="date"
-                          aria-label=${cellLabel(t("logistics.meeting.latestOk"), index)}
-                          .value=${row.latestOkDate}
-                          @input=${update(row, "latestOkDate")}
-                        />
+                        ${renderDateControl(
+                          html`<input
+                            class="logistics-schools__input"
+                            type="date"
+                            aria-label=${cellLabel(t("logistics.meeting.latestOk"), index)}
+                            .value=${row.latestOkDate}
+                            @input=${update(row, "latestOkDate")}
+                          />`,
+                          row.latestOkDate,
+                        )}
                       </td>
                       <td class="logistics-schools__cell logistics-schools__cell--remove">
                         <button
@@ -1232,14 +1238,17 @@ function renderSignatureRequest(props: SignatureProps) {
           class="adminbot-form__field logistics-signature__field logistics-signature__field--short"
         >
           <span>${t("logistics.signature.deadline")}</span>
-          <input
-            class="logistics-signature__input"
-            type="date"
-            data-testid="logistics-signature-deadline"
-            .value=${form.deadline}
-            @input=${(event: Event) =>
-              props.onForm({ deadline: (event.target as HTMLInputElement).value })}
-          />
+          ${renderDateControl(
+            html`<input
+              class="logistics-signature__input"
+              type="date"
+              data-testid="logistics-signature-deadline"
+              .value=${form.deadline}
+              @input=${(event: Event) =>
+                props.onForm({ deadline: (event.target as HTMLInputElement).value })}
+            />`,
+            form.deadline,
+          )}
         </label>
         <label class="adminbot-form__field logistics-signature__field">
           <span>${t("logistics.signature.context")}</span>

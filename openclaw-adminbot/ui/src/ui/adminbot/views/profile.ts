@@ -1,15 +1,3 @@
-// The signed-in member's own record: what the lab knows about them, what it does not yet, and
-// what they might do about it.
-//
-// Three jobs, in the order a person meets them:
-//   1. Basic info and badges  -- what is on file.
-//   2. Fill in the blanks     -- a form containing only the fields still empty, so completing a
-//                                profile is a short task rather than a hunt through a full editor.
-//   3. Suggestions            -- guidebook pointers derived from what is missing, so the advice is
-//                                about this person rather than a generic welcome.
-//
-// Saving goes through the same self-edit path the Lab Members table uses, whose server-side
-// whitelist drops governance fields. Nothing here can write privilege_level, status, or email.
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
 import { ref } from "lit/directives/ref.js";
@@ -59,6 +47,19 @@ import {
   splitPhoneNumber,
 } from "../data/phone-country-codes.ts";
 import { timezoneForLocation } from "../data/timezone-for-location.ts";
+// The signed-in member's own record: what the lab knows about them, what it does not yet, and
+// what they might do about it.
+//
+// Three jobs, in the order a person meets them:
+//   1. Basic info and badges  -- what is on file.
+//   2. Fill in the blanks     -- a form containing only the fields still empty, so completing a
+//                                profile is a short task rather than a hunt through a full editor.
+//   3. Suggestions            -- guidebook pointers derived from what is missing, so the advice is
+//                                about this person rather than a generic welcome.
+//
+// Saving goes through the same self-edit path the Lab Members table uses, whose server-side
+// whitelist drops governance fields. Nothing here can write privilege_level, status, or email.
+import { renderDateControl } from "../date-control.ts";
 import {
   isOptionalMemberField,
   PROFILE_FIELD_GROUPS,
@@ -879,7 +880,12 @@ function renderFieldInput(field: EditableField, currentValue: string) {
         @change=${(event: Event) => (event.currentTarget as HTMLInputElement).reportValidity()}
       />`;
     case "date":
-      return html` <input class="input" name=${field.key} type="date" .value=${currentValue} /> `;
+      return html`
+        ${renderDateControl(
+          html`<input class="input" name=${field.key} type="date" .value=${currentValue} />`,
+          currentValue,
+        )}
+      `;
     case "link":
       return html`
         <input

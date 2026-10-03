@@ -1,26 +1,5 @@
-// The signed-in member's own work: one card per project or paper, and inside each card the whole
-// list of what that paper still owes.
-//
-// Shaped like the profile page on purpose. A member's own record is a list of typed fields with a
-// required mark, a hint about the shape each accepts, and autosave; the evidence a paper collects
-// is the same kind of list, so it is rendered the same way rather than as a second vocabulary for
-// the same idea. Closed, a card is a title and a progress line. Open, it is the form.
-//
-// The global nudge at the top is the same button Profile Overview carries, pointed at papers: it
-// composes nothing and picks nobody. The service walks every live paper, finds the artifacts whose
-// upstream evidence is already in, and messages whoever the slot registry says owes each one --
-// the first author for nearly all of them. Admin-only, because it messages the whole lab.
-//
-// Projects and papers are the same thing here because they are the same record in AdminBot: a
-// paper row moves through the PaperPublish steps from brainstorming to poster. Advancing one from
-// this page writes `current_step` through the same endpoint the Active Papers page uses, so the
-// two pages can never disagree about where something is -- they share both the step vocabulary
-// (`stepLabels` / `paperSteps`) and the write path.
-//
-// Blockers are real records now, not browser state: they are written onto the paper the same way
-// the step is, so an admin sees a report the moment it is filed. See blockers.ts.
-import "../paper-visibility.ts";
 import { html, nothing } from "lit";
+import "../paper-visibility.ts";
 import { ref } from "lit/directives/ref.js";
 import {
   adminBotNormalizePaperAlias,
@@ -67,6 +46,28 @@ import {
   parseVenue,
   venueYears,
 } from "../data/venue-catalog.ts";
+// The signed-in member's own work: one card per project or paper, and inside each card the whole
+// list of what that paper still owes.
+//
+// Shaped like the profile page on purpose. A member's own record is a list of typed fields with a
+// required mark, a hint about the shape each accepts, and autosave; the evidence a paper collects
+// is the same kind of list, so it is rendered the same way rather than as a second vocabulary for
+// the same idea. Closed, a card is a title and a progress line. Open, it is the form.
+//
+// The global nudge at the top is the same button Profile Overview carries, pointed at papers: it
+// composes nothing and picks nobody. The service walks every live paper, finds the artifacts whose
+// upstream evidence is already in, and messages whoever the slot registry says owes each one --
+// the first author for nearly all of them. Admin-only, because it messages the whole lab.
+//
+// Projects and papers are the same thing here because they are the same record in AdminBot: a
+// paper row moves through the PaperPublish steps from brainstorming to poster. Advancing one from
+// this page writes `current_step` through the same endpoint the Active Papers page uses, so the
+// two pages can never disagree about where something is -- they share both the step vocabulary
+// (`stepLabels` / `paperSteps`) and the write path.
+//
+// Blockers are real records now, not browser state: they are written onto the paper the same way
+// the step is, so an admin sees a report the moment it is filed. See blockers.ts.
+import { renderDateControl } from "../date-control.ts";
 import {
   decisionEmailSentStamp,
   decisionOf,
@@ -845,14 +846,17 @@ function renderProjectDetails(
           </label>
           <label class="my-work-details__field">
             <span>Started on</span>
-            <input
-              class="input"
-              type="date"
-              data-testid=${`my-work-details-started-${paper.id}`}
-              .value=${draft.startedOn}
-              @input=${(event: Event) =>
-                edited({ startedOn: (event.target as HTMLInputElement).value })}
-            />
+            ${renderDateControl(
+              html`<input
+                class="input"
+                type="date"
+                data-testid=${`my-work-details-started-${paper.id}`}
+                .value=${draft.startedOn}
+                @input=${(event: Event) =>
+                  edited({ startedOn: (event.target as HTMLInputElement).value })}
+              />`,
+              draft.startedOn,
+            )}
           </label>
         </div>
         ${draft.error
@@ -2172,13 +2176,13 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
 
       <label class="register__field">
         <span class="register__label">Started on</span>
-        <input
+        ${renderDateControl(html`<input
           class="input"
           name="started_on"
           type="date"
           required
           data-testid="my-work-add-started-on"
-        />
+        />`)}
         <span class="register__hint">
           When work actually began, which is often well before the paper is filed here.
         </span>
