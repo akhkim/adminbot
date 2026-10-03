@@ -3,6 +3,10 @@
 // reaches the right one of the two stores behind it.
 import { html, render } from "lit";
 import { describe, expect, it } from "vitest";
+import {
+  isPaperFeedbackSlot,
+  paperFeedbackSlots,
+} from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 import { adminBotPaperSlots } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import type { PaperCycle } from "../auth/session.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
@@ -104,9 +108,15 @@ describe("legacyGroups", () => {
         .filter((field) => field.kind === "slot")
         .map((field) => field.key),
     );
-    expect(keys.size).toBe(adminBotPaperSlots.length);
-    for (const slot of adminBotPaperSlots) {
+    // Feedback requests are the exception: their value is a request only the feedback form can
+    // build, and My Projects draws that form beside this list instead.
+    const evidence = adminBotPaperSlots.filter((slot) => !isPaperFeedbackSlot(slot));
+    expect(keys.size).toBe(evidence.length);
+    for (const slot of evidence) {
       expect(keys.has(slot)).toBe(true);
+    }
+    for (const slot of Object.keys(paperFeedbackSlots)) {
+      expect(keys.has(slot)).toBe(false);
     }
   });
 

@@ -4,6 +4,19 @@ export const paperFeedbackSlots = {
   feedback_arxiv: "arXiv feedback",
   feedback_camera_ready: "Camera-ready feedback",
 } as const;
+
+/**
+ * Whether a slot is a feedback request rather than a piece of evidence.
+ *
+ * These live in the slot registry for storage only. Their value is a JSON request that just the
+ * feedback form builds, so any view that draws every slot as a generic field has to leave them out:
+ * a text box there autosaves something the service rejects, and a link cell writes `url`, which
+ * the feedback kind ignores and clears the slot over.
+ */
+export function isPaperFeedbackSlot(slot: string): slot is keyof typeof paperFeedbackSlots {
+  return Object.hasOwn(paperFeedbackSlots, slot);
+}
+
 export type PaperFeedback = {
   reason: string;
   url: string;

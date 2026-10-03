@@ -27,6 +27,7 @@ import {
   adminBotPaperAliasMaxLength,
   adminBotProjectChannelName,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import { isPaperFeedbackSlot } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -115,6 +116,7 @@ import {
 } from "../venue-targets.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { paperTripDraftFrom, renderPaperCycle, type PaperTripDraft } from "./paper-cycle.ts";
+import { renderPaperFeedback } from "./paper-feedback.ts";
 import {
   cancelPaperLegacyAutosave,
   emptyPaperLegacyState,
@@ -1482,7 +1484,7 @@ function renderLegacyExtras(state: AppViewState, paper: AdminBotPaperRecord, pro
         slots: props.slots[paper.id]?.slots ?? [],
         paper,
       })}
-      ${renderNextStep(paper)}
+      ${renderNextStep(paper)} ${renderLegacyFeedback(paper, props)}
     `,
     bottom: html`
       ${renderCompletion(paper, props)} ${renderWeeklyUpdates(paper, props)}
@@ -1495,6 +1497,26 @@ function renderLegacyExtras(state: AppViewState, paper: AdminBotPaperRecord, pro
       ${renderDeletePaper(paper, props)}
     `,
   };
+}
+
+/**
+ * The card's feedback-request form, drawn in the legacy view.
+ *
+ * The legacy view is where My Projects opens, and its field list skips the feedback slots because
+ * a generic text box cannot build the request the service validates -- so without this the form
+ * would only be reachable by leaving the default view. Gated on the slots having loaded, as the
+ * card gates it, so an unfetched paper does not offer a form for rows it has not seen.
+ */
+function renderLegacyFeedback(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const slots = props.slots[paper.id]?.slots ?? [];
+  if (!slots.some((row) => isPaperFeedbackSlot(row.slot))) {
+    return nothing;
+  }
+  return renderPaperFeedback({
+    slots,
+    loading: props.slotsBusyId === paper.id,
+    onSaveSlot: (slot, input) => props.onSaveSlot(paper.id, slot, input),
+  });
 }
 
 /**
