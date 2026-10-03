@@ -885,7 +885,7 @@ export function createGogDriveProbe(
         ...(options.env ? { env: options.env } : {}),
       });
       const payload = JSON.parse(stdout) as Record<string, unknown>;
-      const file = (payload.result ?? payload) as Record<string, unknown>;
+      const file = (payload.file ?? payload.result ?? payload) as Record<string, unknown>;
       const name = typeof file.name === "string" ? file.name : undefined;
       const capabilities = file.capabilities as Record<string, unknown> | undefined;
       const editable =
