@@ -267,6 +267,19 @@
   background: color-mix(in srgb, var(--text) 6%, var(--bg));
 }
 
+/* A calendar cell needs room for the explicit date below its native picker. */
+.paper-grid__cell:has(input[type="date"]) {
+  height: auto;
+  padding: var(--sheet-pad);
+}
+
+.paper-grid__cell input[type="date"],
+.paper-grid__cell input[type="date"]:focus {
+  position: static;
+  width: 100%;
+  min-height: calc(var(--sheet-row) - (var(--sheet-pad) * 2));
+}
+
 /* The active cell: blue ring, raised, and wide enough to read a whole URL. */
 
 .paper-grid__cell input:focus {

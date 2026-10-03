@@ -143,6 +143,21 @@ describe("renderPaperLegacy", () => {
     expect(container.querySelectorAll(".profile__field-group").length).toBeGreaterThan(1);
   });
 
+  it("keeps the legacy date edit and explicit calendar value in sync", () => {
+    const record = paper({ started_on: "2026-11-03" });
+    const { container, state } = draw({ papers: [record] });
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-testid="paper-legacy-p1-startedOn"]',
+    )!;
+    expect(input.type).toBe("date");
+    expect(input.parentElement!.querySelector("output")!.textContent).toBe("2026-11-03");
+    type(container, "paper-legacy-p1-startedOn", "2026-03-11");
+    expect(input.parentElement!.querySelector("output")!.textContent).toBe("2026-03-11");
+    expect(collectLegacyWrites(state, record, cycle()).record).toMatchObject({
+      startedOn: "2026-03-11",
+    });
+  });
+
   it("shows the stored value in each control", () => {
     const { container } = draw({
       papers: [paper({ alias: "cais", venue: "EMNLP 2026" })],

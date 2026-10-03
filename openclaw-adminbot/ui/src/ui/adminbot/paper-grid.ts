@@ -22,6 +22,7 @@ import {
   type AdminBotPaperSlot,
 } from "../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "./controllers/admin.ts";
+import { renderDateControl } from "./date-control.ts";
 import {
   COLUMN_GROUPS,
   COLUMNS,
@@ -1464,6 +1465,41 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
                     ]
                       .filter(Boolean)
                       .join(" ");
+                    const input = html`<input
+                      type=${column.kind === "date"
+                        ? "date"
+                        : column.kind === "number"
+                          ? "number"
+                          : "text"}
+                      .value=${value}
+                      ?disabled=${!isWritable(column) || unloaded}
+                      ?readonly=${column.kind === "readonly"}
+                      placeholder=${unloaded ? "…" : ""}
+                      title=${error ?? column.label}
+                      data-row=${rowIndex}
+                      data-col=${columnIndex}
+                      @input=${(event: Event) => {
+                        setEdit(
+                          state,
+                          paper.id,
+                          String(column.key),
+                          (event.target as HTMLInputElement).value,
+                        );
+                      }}
+                      @blur=${() => props.onChange()}
+                      @paste=${(event: ClipboardEvent) => {
+                        const text = event.clipboardData?.getData("text/plain") ?? "";
+                        // A single cell with no tabs or newlines is an ordinary paste; let
+                        // the browser handle it so undo keeps working.
+                        if (!text.includes("\t") && !text.includes("\n")) {
+                          return;
+                        }
+                        event.preventDefault();
+                        const filled = applyPaste(state, papers, rowIndex, columnIndex, text);
+                        state.notice = `Pasted ${filled} cell(s). Nothing is saved until you press Update.`;
+                        props.onChange();
+                      }}
+                    />`;
                     return html`
                       <td class=${cellClass} data-band=${column.group}>
                         <div class="paper-grid__cell">
@@ -1494,47 +1530,9 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
                                     </option>`,
                                 )}
                               </select>`
-                            : html`<input
-                                type=${column.kind === "date"
-                                  ? "date"
-                                  : column.kind === "number"
-                                    ? "number"
-                                    : "text"}
-                                .value=${value}
-                                ?disabled=${!isWritable(column) || unloaded}
-                                ?readonly=${column.kind === "readonly"}
-                                placeholder=${unloaded ? "…" : ""}
-                                title=${error ?? column.label}
-                                data-row=${rowIndex}
-                                data-col=${columnIndex}
-                                @input=${(event: Event) => {
-                                  setEdit(
-                                    state,
-                                    paper.id,
-                                    String(column.key),
-                                    (event.target as HTMLInputElement).value,
-                                  );
-                                }}
-                                @blur=${() => props.onChange()}
-                                @paste=${(event: ClipboardEvent) => {
-                                  const text = event.clipboardData?.getData("text/plain") ?? "";
-                                  // A single cell with no tabs or newlines is an ordinary paste; let
-                                  // the browser handle it so undo keeps working.
-                                  if (!text.includes("\t") && !text.includes("\n")) {
-                                    return;
-                                  }
-                                  event.preventDefault();
-                                  const filled = applyPaste(
-                                    state,
-                                    papers,
-                                    rowIndex,
-                                    columnIndex,
-                                    text,
-                                  );
-                                  state.notice = `Pasted ${filled} cell(s). Nothing is saved until you press Update.`;
-                                  props.onChange();
-                                }}
-                              />`}
+                            : column.kind === "date"
+                              ? renderDateControl(input, value)
+                              : input}
                           ${isWritable(column) && !unloaded
                             ? html`<span
                                 class="paper-grid__fill"

@@ -42,6 +42,7 @@ import { icons } from "../../icons.ts";
 import type { PaperCycle, PaperSlotRow } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
+import { renderDateControl } from "../date-control.ts";
 import {
   PRESENTATION_FORMATS,
   PUBLICATION_TRACKS,
@@ -714,7 +715,7 @@ function renderControl(
       @input=${(event: Event) => onEdit((event.target as HTMLTextAreaElement).value)}
     ></textarea>`;
   }
-  return html`<input
+  const input = html`<input
     class="input"
     type=${field.control === "date" ? "date" : field.control === "number" ? "number" : "text"}
     placeholder=${ifDefined(field.example)}
@@ -722,6 +723,7 @@ function renderControl(
     .value=${value}
     @input=${(event: Event) => onEdit((event.target as HTMLInputElement).value)}
   />`;
+  return field.control === "date" ? renderDateControl(input, value) : input;
 }
 
 function renderRow(
