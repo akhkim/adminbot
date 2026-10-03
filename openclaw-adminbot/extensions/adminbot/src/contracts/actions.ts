@@ -1545,6 +1545,7 @@ export type AdminBotLabMemberInput = {
   linkedin_followers?: number;
   github_url?: string;
   scholar_url?: string;
+  acl_anthology_url?: string;
   // Never propose or assign this person as an emergency reviewer, whatever their topic
   // match. Governance-owned: it encodes a standing commitment about someone's time, so
   // it is deliberately absent from the fields a member may edit on their own profile.
