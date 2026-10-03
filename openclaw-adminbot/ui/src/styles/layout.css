@@ -11340,10 +11340,15 @@ adminbot-paper-visibility {
 }
 .deadline-board
   [data-entry-type="workshop"]
-  :is(.btn, .deadline-card__source, .deadline-card__actions, deadline-recommendation) {
+  :is(
+    .btn:not(.primary),
+    .deadline-card__source,
+    .deadline-card__actions,
+    deadline-recommendation
+  ) {
   color: var(--muted);
 }
-.deadline-board [data-entry-type="workshop"] :is(.btn, .deadline-card__source):hover {
+.deadline-board [data-entry-type="workshop"] :is(.btn:not(.primary), .deadline-card__source):hover {
   color: var(--text-strong);
 }
 .deadline-board .deadline-group[data-group-kind="workshops"] .deadline-group__heading strong {
