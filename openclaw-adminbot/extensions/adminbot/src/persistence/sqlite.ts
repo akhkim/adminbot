@@ -41,6 +41,7 @@ import type {
 } from "../contracts/badges.js";
 import type { AdminBotConferenceTripRecord } from "../contracts/conference-trips.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
+import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewResolution,
@@ -156,6 +157,7 @@ export type AdminBotSqliteServiceOptions = {
   databasePath: string;
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
+  driveProbe?: AdminBotDriveProbe;
 };
 
 export function createAdminBotSqliteService(options: AdminBotSqliteServiceOptions) {
@@ -174,6 +176,7 @@ function serviceOptions(options: AdminBotSqliteServiceOptions): AdminBotServiceO
       ? { auditRetentionDays: options.auditRetentionDays }
       : {}),
     ...(options.executor ? { executor: options.executor } : {}),
+    ...(options.driveProbe ? { driveProbe: options.driveProbe } : {}),
     // Read here rather than in the kernel so the service stays free of process globals: both
     // callers (the API server and the hourly email script) build the service through this factory
     // and both already load ~/.openclaw/.env before they do.
