@@ -1031,7 +1031,7 @@ describe("AdminBotService member deletion", () => {
       service.upsertLabMember({
         id: "correspondence-only",
         name: "Correspondence Only",
-        correspondence_email: "corr@gmail.com",
+        correspondence_email: "corr@company.example",
       }),
     );
     unwrap(service.updateSettings({ head_professor_member_id: "zhijing-jin" }));

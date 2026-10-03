@@ -129,6 +129,7 @@ import {
   type AdminBotConferenceTripRecord,
 } from "../contracts/conference-trips.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
+import { adminBotIsPersonalCorrespondenceEmail } from "../contracts/correspondence-email.js";
 import {
   deadlineProposalDuplicateKey,
   isDeadlinePublicationPayload,
@@ -3090,6 +3091,24 @@ export class AdminBotService {
     // `availability` and nothing else, and validating the patch alone read that as a member with no
     // name at all. Every other check in validateLabMember is already guarded on `!== undefined`, so
     // it still only inspects what this request actually sent.
+    if (
+      member.correspondence_email !== undefined &&
+      member.correspondence_email !== existing?.correspondence_email
+    ) {
+      const correspondenceError = validateEmailFormat(
+        member.correspondence_email,
+        "correspondence email",
+      );
+      if (correspondenceError) {
+        return serviceError(400, correspondenceError);
+      }
+      if (adminBotIsPersonalCorrespondenceEmail(member.correspondence_email)) {
+        return serviceError(
+          400,
+          "Use an institutional or company email for correspondence, rather than a personal email address.",
+        );
+      }
+    }
     const validation = validateLabMember(
       { ...member, name: member.name ?? existing?.name ?? "" },
       privilegeLevel,
