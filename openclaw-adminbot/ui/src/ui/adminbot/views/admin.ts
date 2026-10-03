@@ -614,7 +614,7 @@ function saveMemberForm(
         : {}),
     },
   );
-  return saved instanceof Promise ? saved : true;
+  return saved instanceof Promise ? saved : saved !== false;
 }
 
 /**
@@ -1553,6 +1553,11 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
                 .memberId=${member.id}
               ></adminbot-member-guide-status>
               ${renderMemberFormFields(member, props.standingMeetings)}
+              ${props.notice?.kind === "error"
+                ? html`<div class="callout danger" role="alert" style="grid-column: 1 / -1">
+                    ${props.notice.text}
+                  </div>`
+                : nothing}
               <div class="adminbot-form__actions">
                 <button class="btn btn--sm primary" type="submit">Save member</button>
               </div>

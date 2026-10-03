@@ -1073,6 +1073,34 @@ describe("saveAdminBotOwnProfile", () => {
     expect(host.adminBotLoading).toBe(false);
   });
 
+  it("shows correspondence validation errors without replacing saved profile or roster values", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const member = { id: "pat", name: "Pat", correspondence_email: "pat@institute.example" };
+    host.adminBotData.members = [member as never];
+    host.adminBotMemberList = {
+      ...createEmptyAdminBotMemberList(),
+      rows: [member as never],
+      loadedAt: 12,
+    };
+    const message =
+      "Use an institutional or company email for correspondence, rather than a personal email address.";
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ error: { message } }), { status: 400 }));
+
+    await saveAdminBotOwnProfile(host, "pat", { correspondence_email: "pat@gmail.com" });
+
+    expect(host.adminBotNotice).toEqual({ kind: "error", text: message });
+    expect(host.adminBotData.members[0]).toEqual(member);
+    expect(host.adminBotMemberList.rows[0]).toEqual(member);
+    expect(host.adminBotMemberList.loadedAt).toBe(12);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)).toEqual({
+      correspondence_email: "pat@gmail.com",
+    });
+  });
+
   it("serializes autosaves so an older slow profile write cannot win", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});

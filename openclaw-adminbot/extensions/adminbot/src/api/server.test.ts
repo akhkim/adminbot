@@ -815,6 +815,41 @@ describe("AdminBot mock service", () => {
     await expect(loginCookie(true, "https")).resolves.toContain("SameSite=Lax");
   });
 
+  it("returns correspondence validation errors over HTTP without changing the saved member", async () => {
+    const { baseUrl } = await startService();
+    await seedMember(baseUrl, "email-self", {
+      name: "Email Self",
+      email: "email-self@cs.toronto.edu",
+      correspondence_email: "self@institute.example",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "email-self", "email-self@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "email-self@cs.toronto.edu");
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    const rejected = await fetch(`${baseUrl}/lab/members/email-self`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ correspondence_email: "self@gmail.com" }),
+    });
+    expect(rejected.status).toBe(400);
+    await expect(rejected.json()).resolves.toMatchObject({
+      error: {
+        message:
+          "Use an institutional or company email for correspondence, rather than a personal email address.",
+      },
+    });
+    const accepted = await fetch(`${baseUrl}/lab/members/email-self`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ name: "Email Self Updated" }),
+    });
+    expect(accepted.status).toBe(200);
+    await expect(accepted.json()).resolves.toMatchObject({
+      name: "Email Self Updated",
+      correspondence_email: "self@institute.example",
+    });
+  });
+
   it("guards member self-profile edits", async () => {
     const { baseUrl } = await startService();
     await seedMember(baseUrl, "self", {
