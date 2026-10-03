@@ -493,6 +493,27 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(container.querySelector("#adminbot-add-member")).not.toBeNull();
   });
 
+  it("keeps a rejected member draft and its validation message inside the editor", async () => {
+    const message =
+      "Use an institutional or company email for correspondence, rather than a personal email address.";
+    const props = baseProps({ mode: "admin", onSaveMember: () => false });
+    const container = renderToDiv(props);
+    const editor = container.querySelector<HTMLElement>("#adminbot-edit-member-0")!;
+    const form = editor.querySelector<HTMLFormElement>("form")!;
+    const email = form.querySelector<HTMLInputElement>('[name="correspondence_email"]')!;
+    email.value = "pat@gmail.com";
+    const hide = vi.fn();
+    editor.hidePopover = hide;
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+    props.notice = { kind: "error", text: message };
+    render(renderAdminBot(props), container);
+
+    expect(hide).not.toHaveBeenCalled();
+    expect(editor.querySelector('[role="alert"]')?.textContent).toContain(message);
+    expect(email.value).toBe("pat@gmail.com");
+  });
+
   it("asks for Member type as checkboxes, with no Privilege or subgroup field", () => {
     const container = renderToDiv(baseProps({ mode: "admin" }));
     const form = container.querySelector<HTMLElement>("#adminbot-add-member");
