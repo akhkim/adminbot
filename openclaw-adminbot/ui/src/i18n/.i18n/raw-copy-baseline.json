@@ -1991,6 +1991,41 @@
     },
     {
       "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/offline/offline-access.ts",
+      "text": "AI is not needed for reading or editing. On-device AI is not installed."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/offline/offline-access.ts",
+      "text": "Keep offline data on this device"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/offline/offline-access.ts",
+      "text": "On your phone, open this portal online, then use your browser menu to install it or add it to your Home Screen. Open the installed app and your work once online before traveling. Downloads belong to this browser or installed app and account."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/offline/offline-access.ts",
+      "text": "Previously loaded records are available for reading. Recommendation letters, meeting requests, and signature corrections save manual edits on this device and sync when you reconnect. Check the save status above each form before closing it. Requests still need an explicit submission while connected."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/offline/offline-access.ts",
+      "text": "Sync drafts now"
+    },
+    {
+      "count": 1,
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/adminbot/paper-columns.ts",
@@ -4010,7 +4045,21 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/calendar.ts",
+      "text": "When sending"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/calendar.ts",
       "text": "Working on it…"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/calendar.ts",
+      "text": "Add invitees"
     },
     {
       "count": 1,
@@ -4025,6 +4074,13 @@
       "name": "label",
       "path": "ui/src/ui/adminbot/views/calendar.ts",
       "text": "Currently in"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/calendar.ts",
+      "text": "Limit invitees to this list only"
     },
     {
       "count": 1,
@@ -4200,6 +4256,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/dashboard.ts",
       "text": "Try again"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/dashboard.ts",
+      "text": "Working offline"
     },
     {
       "count": 1,
@@ -4752,13 +4815,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
-      "text": "Passed in the last 14 days"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Past"
     },
     {
@@ -4955,6 +5011,13 @@
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Archival papers & ARR submissions"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Archival status unknown"
     },
     {
@@ -5012,6 +5075,13 @@
       "name": "label",
       "path": "ui/src/ui/adminbot/views/deadlines.ts",
       "text": "Other"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/adminbot/views/deadlines.ts",
+      "text": "Paper deadlines (excluding workshops)"
     },
     {
       "count": 1,
@@ -6415,6 +6485,62 @@
     },
     {
       "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/logistics.ts",
+      "text": ", not Zhijing's main email."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/logistics.ts",
+      "text": "Download both versions"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/logistics.ts",
+      "text": "Download saved copies"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/logistics.ts",
+      "text": "I confirm that I have sent all application-portal invitations for this request to"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/logistics.ts",
+      "text": "Replace server copy with mine"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/logistics.ts",
+      "text": "Restore draft saved by the previous version"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/logistics.ts",
+      "text": "Use server copy"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/logistics.ts",
+      "text": "zjin.admin@cs.toronto.edu"
+    },
+    {
+      "count": 1,
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/mailing-list.ts",
@@ -7706,6 +7832,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Drop the paper PDF here"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Everyone who travelled being square is what closes this paper — not somebody deciding it looks finished."
     },
     {
@@ -7777,6 +7910,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Nobody added yet."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Optional — or click to choose. Used instead of the Drive copy on the card."
     },
     {
       "count": 1,

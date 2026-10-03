@@ -435,6 +435,13 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     group: "links",
   },
   {
+    key: "acl_anthology_url",
+    labelKey: "profile.fields.aclAnthology",
+    example: "https://aclanthology.org/people/jane-doe/",
+    type: "link",
+    group: "links",
+  },
+  {
     key: "scholar_url",
     labelKey: "profile.fields.scholar",
     example: "https://scholar.google.com/citations?user=Mdr6wjUAAAAJ",

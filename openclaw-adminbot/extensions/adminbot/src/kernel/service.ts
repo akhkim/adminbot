@@ -14438,6 +14438,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "linkedin_followers",
   "github_url",
   "scholar_url",
+  "acl_anthology_url",
   "calendar_email",
   "joined_month",
   "graduated_month",
@@ -15034,7 +15035,8 @@ type SocialUrlFieldSpec = {
     | "linkedin_url"
     | "twitter_url"
     | "github_url"
-    | "scholar_url";
+    | "scholar_url"
+    | "acl_anthology_url";
   label: string;
   freeText?: true;
   // Omitted for personal_website/cv_url: those genuinely point anywhere the member likes.
@@ -15081,6 +15083,13 @@ function validateInlineImage(value: string, spec: SocialUrlFieldSpec): string | 
 }
 
 const SOCIAL_URL_FIELDS: SocialUrlFieldSpec[] = [
+  {
+    field: "acl_anthology_url",
+    label: "ACL Anthology",
+    hosts: new Set(["aclanthology.org"]),
+    path: /^\/people\/[A-Za-z0-9_-]+\/?$/u,
+    shapeMessage: "ACL Anthology link must be a profile URL (https://aclanthology.org/people/...)",
+  },
   { field: "personal_website", label: "personal website" },
   { field: "avatar_url", label: "profile photo", allowInlineImage: true },
   { field: "cv_url", label: "CV", freeText: true },

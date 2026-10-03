@@ -2828,6 +2828,7 @@ describe("AdminBotService", () => {
         twitter_url: "https://x.com/octocat",
         linkedin_url: "https://www.linkedin.com/in/octocat",
         scholar_url: "https://scholar.google.com/citations?user=abc123",
+        acl_anthology_url: "https://aclanthology.org/people/jane-doe/",
         cv_url: "https://example.com/jane-doe-cv.pdf",
         intake_form_url: "https://docs.google.com/forms/d/e/1FAIpQLSc/viewform?edit2=2_ABaOnud",
       }),
@@ -2836,6 +2837,8 @@ describe("AdminBotService", () => {
     expect(saved.twitter_url).toBe("https://x.com/octocat");
     expect(saved.linkedin_url).toBe("https://www.linkedin.com/in/octocat");
     expect(saved.scholar_url).toBe("https://scholar.google.com/citations?user=abc123");
+    expect(saved.acl_anthology_url).toBe("https://aclanthology.org/people/jane-doe/");
+    expect(unwrap(service.updateOwnProfile("social", { acl_anthology_url: "" })).acl_anthology_url).toBe("");
     expect(saved.cv_url).toBe("https://example.com/jane-doe-cv.pdf");
     expect(saved.intake_form_url).toContain("docs.google.com/forms/");
 
@@ -2843,6 +2846,9 @@ describe("AdminBotService", () => {
     expect(unwrap(service.updateOwnProfile("social", { github_url: "" })).github_url).toBe("");
 
     for (const bad of [
+      { acl_anthology_url: "https://example.com/people/jane-doe/" },
+      { acl_anthology_url: "https://aclanthology.org/2026.acl-long.1/" },
+      { acl_anthology_url: "http://aclanthology.org/people/jane-doe/" },
       { twitter_url: "https://github.com/octocat" }, // GitHub link in the Twitter field
       { linkedin_url: "https://linkedin.com/company/openai" }, // company page, not a personal profile
       { scholar_url: "https://scholar.google.com/citations" }, // missing ?user=

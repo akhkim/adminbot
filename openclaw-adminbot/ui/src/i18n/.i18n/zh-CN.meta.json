@@ -1062,6 +1062,7 @@
     "profile.completeness.label",
     "profile.completeness.timelineAction",
     "profile.completeness.timelinePending",
+    "profile.fields.aclAnthology",
     "profile.fields.affiliation",
     "profile.fields.avatarUrl",
     "profile.fields.birthday",
@@ -1138,6 +1139,7 @@
     "profile.picture.remove",
     "profile.picture.replace",
     "profile.picture.tooLarge",
+    "profile.social.aclAnthology",
     "profile.social.cv",
     "profile.social.github",
     "profile.social.linkedin",
@@ -1315,12 +1317,12 @@
     "tabUsage.untimed",
     "tabUsage.window"
   ],
-  "generatedAt": "2026-10-02T09:55:35.572Z",
+  "generatedAt": "2026-10-03T08:03:27.003Z",
   "locale": "zh-CN",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "9f7be0c9b26c74cd8c1bd080cd6ced361d4cd4d75cf0af85f86770405953d5d0",
-  "totalKeys": 2460,
+  "sourceHash": "79dd9ffad9ca9f4f23c48767bcfa002287fe948a7a9caeab9dce197fb6439fbb",
+  "totalKeys": 2462,
   "translatedKeys": 1146,
   "workflow": 1
 }

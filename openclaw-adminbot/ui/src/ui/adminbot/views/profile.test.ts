@@ -200,6 +200,24 @@ describe("renderProfile autosave", () => {
 
   // The folder, not a document: the service only accepts a Drive /drive/folders/ URL, and the hint
   // says which shape that is before anyone pastes last week's meeting notes into it.
+  it("shows and autosaves the optional ACL Anthology profile link", () => {
+    const url = "https://aclanthology.org/people/jane-doe/";
+    const onSave = vi.fn();
+    const container = renderPage(
+      createState(createMember({ acl_anthology_url: url } as Partial<LabMember>)),
+      onSave,
+    );
+    const input = container.querySelector<HTMLInputElement>('input[name="acl_anthology_url"]')!;
+    expect(input.value).toBe(url);
+    expect(input.required).toBe(false);
+    expect(container.textContent).toContain("ACL Anthology profile");
+    expect(container.querySelector(`a[href="${url}"]`)).not.toBeNull();
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1000);
+    expect(onSave).toHaveBeenCalledWith("pat", expect.objectContaining({ acl_anthology_url: "" }));
+  });
+
   it("collects the 1:1 folder as a Drive folder link", () => {
     const member = createMember();
     const state = createState(member);

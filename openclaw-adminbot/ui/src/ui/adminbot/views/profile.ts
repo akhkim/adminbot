@@ -99,6 +99,7 @@ const SOCIAL_FIELDS = [
   { key: "twitter_url", labelKey: "profile.social.twitter" },
   { key: "github_url", labelKey: "profile.social.github" },
   { key: "scholar_url", labelKey: "profile.social.scholar" },
+  { key: "acl_anthology_url", labelKey: "profile.social.aclAnthology" },
 ] as const;
 
 type EditableField = ProfileField;
