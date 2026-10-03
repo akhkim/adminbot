@@ -160,6 +160,9 @@ export type AppViewState = {
   // Ids the operator unticked from the matched list, so a filter that is right for 39 of 40 people
   // does not have to be abandoned for the one exception.
   calendarExcludedMemberIds?: string[];
+  // Whether a send only adds the chosen people or makes them the whole guest list. Unset reads as
+  // "add", so the send that can uninvite somebody is always one the operator picked.
+  calendarInviteMode?: import("./adminbot/calendar-audience.ts").InviteMode;
   calendarBusy?: boolean;
   loadCalendarEvents?: () => Promise<void>;
   loadMeetings?: () => Promise<void>;

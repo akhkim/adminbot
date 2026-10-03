@@ -245,6 +245,14 @@ function addressesOf(member: AdminBotLabMember): string[] {
     .filter(Boolean);
 }
 
+/**
+ * What a send does to the people already on the event.
+ *
+ * "add" only ever invites. "limit" makes the filters the whole guest list and takes off roster
+ * members they no longer match -- the exclusive pass described on `reconcileAudience`.
+ */
+export type InviteMode = "add" | "limit";
+
 /** Somebody on the event who is coming off it, and why. */
 export type AudienceRemoval = {
   /** The address exactly as the event spells it, so the write can match it back. */
@@ -331,6 +339,11 @@ export function reconcileAudience(params: {
   excludedMemberIds?: readonly string[];
   /** Addresses that must survive whatever the filters say -- organizer, calendar, rooms. */
   protectedEmails?: readonly string[];
+  /**
+   * "limit" (the default here) makes the chosen audience the whole guest list. "add" only invites:
+   * everybody already on the event stays, whatever the filters say about them.
+   */
+  mode?: InviteMode;
 }): AudiencePlan {
   // No filter set is "no audience has been chosen", not "the audience is nobody". Read the second
   // way -- which is what falling through to the loop below would do -- this returns a plan that
@@ -426,6 +439,25 @@ export function reconcileAudience(params: {
     }
     invite.push(match.email);
     onEvent.add(normalizeEmail(match.email));
+  }
+
+  // Additive: the same invite arithmetic, but the removals and the blank-member-type holdouts are
+  // simply people who stay. Folded into `keep` rather than skipped above, so the invite list is
+  // computed by exactly one code path in both modes.
+  if (params.mode === "add") {
+    const stays = [
+      ...keep,
+      ...undecided.map((person) => person.email),
+      ...remove.map((person) => person.email),
+    ];
+    return {
+      invite,
+      keep: stays,
+      remove: [],
+      unrecognized,
+      undecided: [],
+      remaining: [...stays, ...unrecognized, ...invite],
+    };
   }
 
   return {
