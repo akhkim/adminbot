@@ -610,6 +610,25 @@ describe("the global nudge, end to end", () => {
   });
 });
 
+describe("conference travel export", () => {
+  it("keeps lab travel private and exposes an authenticated read without sending anything", async () => {
+    const { baseUrl, sent } = await startLab();
+    const route = "/papers/conference-travel-export";
+    expect((await fetch(`${baseUrl}${route}`)).status).toBe(401);
+    const headers = await adminHeaders(baseUrl);
+    const result = await callAs(headers, baseUrl, "GET", route);
+    expect(result.status).toBe(200);
+    expect(result.body.rows).toEqual([]);
+    mockFor(baseUrl).service.upsertLabMember({
+      id: "zhijing",
+      name: "Zhijing Jin",
+      privilege_level: "member",
+    } as AdminBotLabMemberInput);
+    expect((await callAs(headers, baseUrl, "GET", route)).status).toBe(403);
+    expect(sent).toHaveLength(0);
+  });
+});
+
 describe("conference channel invites", () => {
   it("requires a real admin session before an external action and rejects unknown conferences", async () => {
     const { baseUrl } = await startLab();
