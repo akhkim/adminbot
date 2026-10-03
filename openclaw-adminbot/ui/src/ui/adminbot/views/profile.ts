@@ -494,7 +494,10 @@ function isMemberAnswerable(field: EditableField): boolean {
 
 export function blankFields(member: LabMember): EditableField[] {
   return EDITABLE_FIELDS.filter(
-    (field) => isMemberAnswerable(field) && !valueOf(member, field).trim(),
+    (field) =>
+      isMemberAnswerable(field) &&
+      !(field.key === "intake_form_url" && member.intake_form_unavailable === true) &&
+      !valueOf(member, field).trim(),
   );
 }
 

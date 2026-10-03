@@ -408,7 +408,7 @@ describe("renderDashboard", () => {
           proposals: [],
           members: [
             {
-              // The mandatory set is the member sheet's own columns, plus the CV.
+              // All required profile questions have answers.
               id: "m1",
               name: "Ada",
               location: "Toronto",
@@ -424,6 +424,8 @@ describe("renderDashboard", () => {
               openreview_id: "~Ada_Lovelace1",
               github_url: "https://github.com/ada",
               linkedin_url: "https://www.linkedin.com/in/ada",
+              twitter_url: "https://x.com/ada",
+              personal_website: "https://ada.dev",
               cv_url: "https://ada.dev/cv.pdf",
               one_on_one_folder_url: "https://drive.google.com/drive/folders/ada",
               intake_form_url: "https://docs.google.com/forms/d/e/ada/viewform",
