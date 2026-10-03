@@ -806,6 +806,29 @@ describe("sheet.update_cells", () => {
 });
 
 describe("the Drive probe", () => {
+  it.each([
+    [true, true, true],
+    [true, false, false],
+    [false, true, false],
+  ])(
+    "reads gog's file envelope with folder rights %s/%s",
+    async (canEdit, canAddChildren, editable) => {
+      const probe = createGogDriveProbe({
+        command: process.execPath,
+        commandArgsPrefix: [
+          "-e",
+          `process.stdout.write(JSON.stringify({file:{name:"Synthetic folder",mimeType:"application/vnd.google-apps.folder",capabilities:{canEdit:${canEdit},canAddChildren:${canAddChildren}}}}))`,
+          "--",
+        ],
+      });
+      expect(await probe("1SyntheticEditableFolder")).toEqual({
+        status: "found",
+        name: "Synthetic folder",
+        canEdit: editable,
+      });
+    },
+  );
+
   it("uses GOG_BIN on the service's restricted PATH for metadata reads", async () => {
     const probe = createGogDriveProbe({
       env: { ...process.env, GOG_BIN: process.execPath, PATH: "/nonexistent" },
