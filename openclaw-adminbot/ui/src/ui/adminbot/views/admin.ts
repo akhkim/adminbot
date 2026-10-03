@@ -346,6 +346,18 @@ const memberStatusOptions: Array<{ value: string; label: string }> = [
   { value: "alumni", label: "Alumni" },
 ];
 
+/**
+ * The status the roster shows, filters on and preselects in the edit form.
+ *
+ * The importers write the spreadsheet's Member Type and never `status`, so nearly every alumnus has
+ * `member_type: "alumni"` and no status at all. Defaulting a missing status to "active" therefore
+ * listed all of them as Full time -- and the edit form preselected "active", so saving one wrote
+ * that back. Either field saying alumni is enough, as it is for `adminBotIsAlumniMember` server-side.
+ */
+function memberDisplayStatus(member: AdminBotLabMember): string {
+  return adminBotIsAlumniMember(member) ? "alumni" : (member.status ?? "active");
+}
+
 function friendly(value: string | undefined | null): string {
   if (!value) {
     return "n/a";
@@ -1446,7 +1458,7 @@ function renderMemberFormFields(
             (option) =>
               html`<option
                 value=${option.value}
-                ?selected=${option.value === (member?.status ?? "active")}
+                ?selected=${option.value === (member ? memberDisplayStatus(member) : "active")}
               >
                 ${option.label}
               </option>`,
@@ -1694,7 +1706,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
     ownMember !== undefined &&
     !members.some((member) => member.id === ownMember.id);
   const total = page?.total ?? members.length;
-  const statuses = [...new Set(members.map((member) => member.status ?? "active"))].sort();
+  const statuses = [...new Set(members.map((member) => memberDisplayStatus(member)))].sort();
   const projects = [...new Set(members.flatMap((member) => member.projects ?? []))].sort();
   const paperTitles = [...new Set(papers.map((paper) => paper.title))].sort();
   // Only conferences someone on the roster is actually submitting to, so the options match what
@@ -1838,7 +1850,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 .toLocaleLowerCase();
               return html`<tr
                 data-search=${search}
-                data-status=${member.status ?? "active"}
+                data-status=${memberDisplayStatus(member)}
                 data-projects=${(member.projects ?? []).join("|")}
                 data-papers=${memberPapers.map((entry) => entry.title).join("|")}
                 data-conferences=${[...new Set(memberPapers.map(paperConference))].join("|")}
@@ -1910,8 +1922,8 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                   friendly(member.privilege_level)}
                 </td>
                 <td>
-                  <span class="adminbot-status adminbot-status--${member.status ?? "active"}"
-                    >${friendly(member.status ?? "active")}</span
+                  <span class="adminbot-status adminbot-status--${memberDisplayStatus(member)}"
+                    >${friendly(memberDisplayStatus(member))}</span
                   >
                 </td>
                 <td>
@@ -3539,7 +3551,7 @@ function matchesRecipient(
   papers: AdminBotPaperRecord[],
   filters: RecipientFilters,
 ): boolean {
-  if (filters.status && (member.status ?? "active") !== filters.status) {
+  if (filters.status && memberDisplayStatus(member) !== filters.status) {
     return false;
   }
   if (filters.branch && member.research_branch !== filters.branch) {
@@ -3591,7 +3603,7 @@ function renderAnnouncementRecipients(
   );
   const offset = view.page * RECIPIENT_PAGE_SIZE;
   const pageMembers = filtered.slice(offset, offset + RECIPIENT_PAGE_SIZE);
-  const statuses = [...new Set(members.map((member) => member.status ?? "active"))].toSorted();
+  const statuses = [...new Set(members.map((member) => memberDisplayStatus(member)))].toSorted();
   const branches = [
     ...new Set(
       members.flatMap((member) => (member.research_branch ? [member.research_branch] : [])),
@@ -3730,7 +3742,7 @@ function renderAnnouncementRecipients(
               const hasContact = announceChannelHasContact(member, channel);
               return html`<tr
                 data-search=${search}
-                data-status=${member.status ?? "active"}
+                data-status=${memberDisplayStatus(member)}
                 data-branch=${member.research_branch ?? ""}
                 data-privilege=${member.privilege_level}
                 data-projects=${(member.projects ?? []).join("|")}
@@ -3763,8 +3775,8 @@ function renderAnnouncementRecipients(
                       html`<span class="adminbot-nudge-recipients__missing">no email</span>`)}
                 </td>
                 <td>
-                  <span class="adminbot-status adminbot-status--${member.status ?? "active"}"
-                    >${friendly(member.status ?? "active")}</span
+                  <span class="adminbot-status adminbot-status--${memberDisplayStatus(member)}"
+                    >${friendly(memberDisplayStatus(member))}</span
                   >
                 </td>
                 <td>${member.research_branch ?? "—"}</td>

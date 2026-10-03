@@ -648,6 +648,47 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(container.querySelector("tbody tr")?.textContent).not.toContain("Alumni");
   });
 
+  // Regression: the importers record leaving in Member Type and never set `status`, so every
+  // alumnus rendered as the "active" default -- and the edit form preselected it, so a save wrote
+  // "active" back.
+  it("shows an alumni Member Type as Alumni when no status is set", () => {
+    const { status: _status, ...withoutStatus } = members[0]!;
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [{ ...withoutStatus, member_type: "alumni" }],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+    const row = container.querySelector<HTMLTableRowElement>("tbody tr");
+
+    expect(row?.getAttribute("data-status")).toBe("alumni");
+    expect(row?.querySelector(".adminbot-status")?.textContent?.trim()).toBe("Alumni");
+    expect(
+      container.querySelector<HTMLSelectElement>('#adminbot-edit-member-0 select[name="status"]')
+        ?.value,
+    ).toBe("alumni");
+  });
+
+  it("still defaults a member with neither field to active", () => {
+    const { status: _status, ...withoutStatus } = members[0]!;
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [withoutStatus],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+
+    expect(container.querySelector("tbody tr")?.getAttribute("data-status")).toBe("active");
+  });
+
   // Regression: the Slack user ID is self-editable but had no cell in the Lab
   // Members spreadsheet, so a saved edit looked like it never landed.
   it("renders the Slack user id in the roster Contact column and search index", () => {
