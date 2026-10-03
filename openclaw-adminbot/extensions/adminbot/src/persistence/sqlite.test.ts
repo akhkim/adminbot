@@ -31,6 +31,18 @@ function unwrap<T>(
 }
 
 describe("AdminBotSqliteStore", () => {
+  it("retains a self-edited ACL Anthology link after reopening SQLite", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(first.service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+    const url = "https://aclanthology.org/people/pat-doe/";
+    unwrap(first.service.updateOwnProfile("pat", { acl_anthology_url: url }));
+    first.store.close();
+    const reopened = createAdminBotSqliteService({ databasePath });
+    expect(unwrap(reopened.service.listLabMembers()).members[0].acl_anthology_url).toBe(url);
+    reopened.store.close();
+  });
+
   it("retains explicit badge counts after reopening SQLite", () => {
     const databasePath = tempDbPath();
     const first = createAdminBotSqliteService({ databasePath });
