@@ -31,6 +31,30 @@ function unwrap<T>(
 }
 
 describe("AdminBotSqliteStore", () => {
+  it("preserves the injected Drive checker in the durable service", async () => {
+    const seen: string[] = [];
+    const durable = createAdminBotSqliteService({
+      databasePath: tempDbPath(),
+      driveProbe: async (id) => {
+        seen.push(id);
+        return { status: "found", canEdit: true };
+      },
+    });
+    try {
+      expect(
+        await durable.service.checkDriveEditAccess(
+          "https://drive.google.com/drive/folders/1SyntheticEditableFolder",
+        ),
+      ).toMatchObject({
+        ok: true,
+        payload: { status: "editable" },
+      });
+      expect(seen).toEqual(["1SyntheticEditableFolder"]);
+    } finally {
+      durable.close();
+    }
+  });
+
   it("retains a self-edited ACL Anthology link after reopening SQLite", () => {
     const databasePath = tempDbPath();
     const first = createAdminBotSqliteService({ databasePath });

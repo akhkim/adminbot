@@ -147,6 +147,44 @@ async function loginToken(baseUrl: string, email: string): Promise<string> {
 }
 
 describe("AdminBot mock service", () => {
+  it("checks link-wide Drive edit capability through the authenticated durable API", async () => {
+    const databasePath = path.join(
+      os.tmpdir(),
+      `adminbot-drive-api-${Date.now()}-${Math.random().toString(16).slice(2)}.sqlite`,
+    );
+    const seen: string[] = [];
+    const { baseUrl, mock } = await startService({
+      databasePath,
+      driveProbe: async (id) => {
+        seen.push(id);
+        return { status: "found", canEdit: true };
+      },
+    });
+    const entry = running.find((candidate) => candidate.baseUrl === baseUrl)!;
+    entry.cleanupPaths.push(databasePath, `${databasePath}-wal`, `${databasePath}-shm`);
+    seedMember(baseUrl, "pat", { name: "Pat", email: "pat@institute.example" });
+    await approveClaim(baseUrl, "pat", "pat@institute.example");
+    const token = await loginToken(baseUrl, "pat@institute.example");
+    const before = mock.service.listLabMembers();
+    const url = "https://drive.google.com/drive/folders/1SyntheticEditableFolder";
+    const response = await fetch(`${baseUrl}/drive/check-edit-access`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "editable" });
+    expect(seen).toEqual(["1SyntheticEditableFolder"]);
+    expect(mock.service.listLabMembers()).toEqual(before);
+    const denied = await fetch(`${baseUrl}/drive/check-edit-access`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ url }),
+    });
+    expect(denied.status).toBe(401);
+    expect(seen).toHaveLength(1);
+  });
+
   it("serves the management UI and state endpoints for the service principal", async () => {
     const { baseUrl } = await startService();
 

@@ -862,7 +862,7 @@ function buildCalendarDeleteArgs(proposal: AdminBotStoredProposal): string[] {
 export function createGogDriveProbe(
   options: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {},
 ): AdminBotDriveProbe {
-  const command = options.command ?? "gog";
+  const command = options.command ?? resolveGogExecutable(options.env);
   return async (fileId) => {
     // The id comes from `adminBotDriveFileId`, which accepts a closed charset -- but this is the
     // last point before it becomes an argument, so it is checked here too rather than trusted.
