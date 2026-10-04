@@ -7586,6 +7586,7 @@ export class AdminBotService {
       proposed_payload: {
         to,
         reply_to: replyTo,
+        cc: [replyTo],
         subject: `Reimbursement claim — ${member.name} — ${label}`,
         body: reimbursementSubmissionBody({
           memberName: member.name,
