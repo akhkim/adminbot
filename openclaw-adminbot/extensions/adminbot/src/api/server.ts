@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import path from "node:path";
@@ -597,6 +597,8 @@ function createAnonymousRateLimiter(): AnonymousRateLimiter {
 }
 
 type AdminBotRouteContext = {
+  // A restart invalidates outstanding packages: regenerate and review against the current rules.
+  reimbursementSigningKey: Buffer;
   memberDrafts: MemberDraftStore;
   service: AdminBotService;
   // The raw store, for the CV change ledger. Everything else goes through the service; this is
@@ -1148,6 +1150,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       })
     : undefined;
   const ctx: AdminBotRouteContext = {
+    reimbursementSigningKey: randomBytes(32),
     service,
     store,
     memberDrafts,
@@ -2904,6 +2907,19 @@ async function handleAuthenticatedRoute(
             : [];
         })
       : [];
+    const proof = typeof body.submission_proof === "string" ? body.submission_proof : "";
+    const expected = reimbursementPackageProof(ctx.reimbursementSigningKey, funder, artifacts);
+    if (
+      !/^[a-f0-9]{64}$/u.test(proof) ||
+      !timingSafeEqual(Buffer.from(proof), Buffer.from(expected))
+    ) {
+      sendJson(res, 422, {
+        error: {
+          message: "Generate and review the reimbursement forms again before sending them.",
+        },
+      });
+      return;
+    }
     sendServiceResult(
       res,
       await service.submitReimbursement({
@@ -2922,7 +2938,20 @@ async function handleAuthenticatedRoute(
     }
     const body = (await readJson(req)) as AdminBotReimbursementRequest;
     try {
-      sendJson(res, 200, await ctx.reimbursementWorkflow.generate(body));
+      const generated = await ctx.reimbursementWorkflow.generate(body);
+      const funder = body.funder ?? readRecord(body.draft).funder;
+      sendJson(res, 200, {
+        ...generated,
+        ...(funder === "DCS" || funder === "MPI-IS"
+          ? {
+              submission_proof: reimbursementPackageProof(
+                ctx.reimbursementSigningKey,
+                funder,
+                generated.artifacts,
+              ),
+            }
+          : {}),
+      });
     } catch (error) {
       // A blocked package is an answer, not a fault: 422 with the report, so the page can name
       // every rule that failed and what to supply. Letting this fall through to a 500 would tell
@@ -7363,6 +7392,21 @@ function envInteger(name: string, fallback: number): number {
   }
   const parsed = Number(raw);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function reimbursementPackageProof(
+  key: Buffer,
+  funder: "DCS" | "MPI-IS",
+  artifacts: Array<{ filename: string; data_base64: string }>,
+): string {
+  return createHmac("sha256", key)
+    .update(
+      JSON.stringify({
+        funder,
+        artifacts: artifacts.map(({ filename, data_base64 }) => ({ filename, data_base64 })),
+      }),
+    )
+    .digest("hex");
 }
 
 function trimmedEnv(value: string | undefined): string | undefined {

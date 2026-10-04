@@ -7533,10 +7533,8 @@ export class AdminBotService {
   /**
    * Mail a cleared reimbursement package to the funder's office.
    *
-   * Only ever called after the ruleset cleared: the workflow refuses to produce forms for a
-   * package with an outstanding blocker, so there is nothing to send for one. The check is not
-   * re-run here because there is nothing left to check -- the artifacts are the evidence that it
-   * passed.
+   * The HTTP caller verifies the server-issued proof of the generated package before calling
+   * this method. Artifacts alone do not establish that the ruleset cleared.
    *
    * Reply-to is the member's correspondence address, not the bot's. A finance office that reads
    * this and has a question has to be able to answer the person whose claim it is; a reply landing
