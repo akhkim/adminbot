@@ -281,6 +281,8 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
   },
   {
     // Ask for an expected offboarding month, rather than claiming the member has already left.
+    // Optional: most members cannot name the month they will move on, and a required box would
+    // only collect guesses.
     key: "graduated_month",
     pattern: "[0-9]{4}-(0[1-9]|1[0-2])",
     labelKey: "profile.fields.graduatedMonth",
@@ -304,7 +306,8 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     // Career direction, asked as a question rather than a label: where this person wants to go
     // next, when, and what the lab can actually do about it. It sits with the other timeline
     // facts (joined/graduated month) because the answer is usually pinned to those dates, and it
-    // is required for profile completion. An uncertain plan can be described in free text.
+    // is optional -- "I don't know yet" is a normal answer at any point in a research career, and
+    // a required field would only teach people to type something they don't mean.
     // Confidential (adminBotConfidentialMemberFields): a job search is not roster material, so
     // only this member and the admins read it.
     key: "next_position",

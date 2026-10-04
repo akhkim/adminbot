@@ -30,7 +30,7 @@ import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.
 import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
 import {
-  checkDriveEditAccess,
+  checkDriveAccess,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   type AssignedBadge,
@@ -214,7 +214,7 @@ function runDriveChecks(form: HTMLFormElement, state: AppViewState): void {
     accountCheckAborts.set(field, controller);
     accountCheckedValues.set(field, value);
     state.profileAccountChecks = { ...state.profileAccountChecks, [field]: { status: "checking" } };
-    void checkDriveEditAccess(
+    void checkDriveAccess(
       value,
       session.sessionToken,
       resolveAdminBotBaseUrl(state.settings),
@@ -227,13 +227,13 @@ function runDriveChecks(form: HTMLFormElement, state: AppViewState): void {
         ...state.profileAccountChecks,
         [field]: result.ok
           ? {
-              status: result.value.status === "editable" ? "verified" : "warning",
+              status: result.value.status === "accessible" ? "verified" : "warning",
               message: result.value.message,
             }
           : {
               status: "warning",
               message:
-                "Could not check Drive access. Make sure Jinesis.adminbot@gmail.com can edit this file.",
+                "Could not check Drive access. Make sure Jinesis.adminbot@gmail.com or anyone with the link can view this file.",
             },
       };
     });

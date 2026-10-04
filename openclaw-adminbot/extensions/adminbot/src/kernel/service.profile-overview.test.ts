@@ -77,7 +77,7 @@ describe("listMemberProfileOverview", () => {
     // the exported list. (Only `name` is dropped today; adminBotAdminOwnedProfileFields is empty.)
     // A client counting the exported list would show everybody stuck short forever, which is
     // exactly why the count is carried rather than derived.
-    expect(overview.mandatory_field_count).toBe(19);
+    expect(overview.mandatory_field_count).toBe(17);
     expect(overview.members[0]?.filled_field_count).toBe(overview.mandatory_field_count);
     expect(overview.members[0]?.missing_fields).toEqual([]);
   });
@@ -101,7 +101,7 @@ describe("listMemberProfileOverview", () => {
     expect(row?.filled_field_count).toBe(overview.mandatory_field_count - 2);
   });
 
-  it("includes missing work fields while accepting zero committed hours", () => {
+  it("includes missing work fields but not the optional offboarding plan", () => {
     const service = serviceWith([
       {
         id: "ada",
@@ -116,8 +116,6 @@ describe("listMemberProfileOverview", () => {
     expect(unwrap(service.listMemberProfileOverview()).members[0]?.missing_fields).toEqual([
       "affiliation",
       "joined_month",
-      "graduated_month",
-      "next_position",
     ]);
   });
 

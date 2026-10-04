@@ -544,8 +544,6 @@ export const adminBotMandatoryProfileFields = [
   "affiliation",
   "hours_per_week",
   "joined_month",
-  "graduated_month",
-  "next_position",
 ] as const;
 
 export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFields)[number];
@@ -823,8 +821,6 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   affiliation: "Main affiliation",
   hours_per_week: "Hours per week on Jinesis projects",
   joined_month: "Joined month",
-  graduated_month: "Potential offboarding month",
-  next_position: "Next position you are looking for",
 };
 
 /**

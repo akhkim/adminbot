@@ -147,7 +147,7 @@ async function loginToken(baseUrl: string, email: string): Promise<string> {
 }
 
 describe("AdminBot mock service", () => {
-  it("checks link-wide Drive edit capability through the authenticated durable API", async () => {
+  it("checks Drive access through the authenticated durable API", async () => {
     const databasePath = path.join(
       os.tmpdir(),
       `adminbot-drive-api-${Date.now()}-${Math.random().toString(16).slice(2)}.sqlite`,
@@ -173,7 +173,7 @@ describe("AdminBot mock service", () => {
       body: JSON.stringify({ url }),
     });
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ status: "editable" });
+    expect(await response.json()).toMatchObject({ status: "accessible" });
     expect(seen).toEqual(["1SyntheticEditableFolder"]);
     expect(mock.service.listLabMembers()).toEqual(before);
     const denied = await fetch(`${baseUrl}/drive/check-edit-access`, {

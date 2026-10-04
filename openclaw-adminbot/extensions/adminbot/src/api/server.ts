@@ -1995,7 +1995,7 @@ async function handleAuthenticatedRoute(
       return;
     }
     const body = readRecord(await readJson(req));
-    sendServiceResult(res, await service.checkDriveEditAccess(asString(body.url)));
+    sendServiceResult(res, await service.checkDriveAccess(asString(body.url)));
     return;
   }
   if (req.method === "POST" && url.pathname === "/reference-check/pdf") {
