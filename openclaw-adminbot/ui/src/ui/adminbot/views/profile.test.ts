@@ -490,13 +490,13 @@ describe("renderProfile autosave", () => {
     }
   });
 
-  it("warns when AdminBot cannot edit a saved Drive folder", async () => {
+  it("warns when AdminBot cannot open a saved Drive folder", async () => {
     saveStoredMemberSession({ sessionToken: "test-session", expiresAt: "" });
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          status: "not_editable",
-          message: "Share with Jinesis.adminbot@gmail.com as Editor.",
+          status: "inaccessible",
+          message: "AdminBot cannot open this file. Share it with Jinesis.adminbot@gmail.com.",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
@@ -1584,6 +1584,8 @@ it("renders free-form CV and GitHub safely with intake responses required", () =
   expect(links.querySelector('a[href="@pat"]')).toBeNull();
   expect(adminBotMandatoryProfileFields).toContain("joined_month");
   expect(adminBotMandatoryProfileFields).toContain("intake_form_url");
+  expect(adminBotMandatoryProfileFields).not.toContain("graduated_month");
+  expect(adminBotMandatoryProfileFields).not.toContain("next_position");
   expect(adminBotMandatoryProfileFields).toContain("github_url");
   expect(adminBotMandatoryProfileFields).toContain("cv_url");
 });

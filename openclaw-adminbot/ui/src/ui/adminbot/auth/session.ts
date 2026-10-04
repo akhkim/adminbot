@@ -5044,12 +5044,12 @@ export async function submitReimbursementPackage(
   return { ok: true, value: result.body as { proposal_id: string; to: string; reply_to: string } };
 }
 
-export async function checkDriveEditAccess(
+export async function checkDriveAccess(
   url: string,
   sessionToken: string,
   baseUrl: string,
   signal?: AbortSignal,
-): Promise<AuthResult<{ status: "editable" | "not_editable" | "unverified"; message: string }>> {
+): Promise<AuthResult<{ status: "accessible" | "inaccessible" | "unverified"; message: string }>> {
   const result = await authedJson(
     baseUrl,
     "/drive/check-edit-access",
@@ -5066,7 +5066,7 @@ export async function checkDriveEditAccess(
   }
   return {
     ok: true,
-    value: result.body as { status: "editable" | "not_editable" | "unverified"; message: string },
+    value: result.body as { status: "accessible" | "inaccessible" | "unverified"; message: string },
   };
 }
 

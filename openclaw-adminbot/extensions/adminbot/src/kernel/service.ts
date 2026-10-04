@@ -6632,21 +6632,14 @@ export class AdminBotService {
           continue;
         }
         if (result.status === "found") {
+          // Opening the file is the whole test. AdminBot only reads paper evidence, so a Viewer
+          // share or an "anyone with the link" share proves the link as well as Editor does.
           if (check.verifier === "google_drive") {
-            if (!("canEdit" in result) || typeof result.canEdit !== "boolean") {
-              unreadable.push({
-                paper_id: paper.id,
-                slot: row.slot,
-                reason: "AdminBot could not confirm edit access to this Drive file",
-              });
-              continue;
-            }
-            if (!result.canEdit) {
+            if ("trashed" in result && result.trashed) {
               this.store.savePaperSlot({
                 ...row,
                 status: "invalid",
-                invalid_reason:
-                  "Share this Drive file with Jinesis.adminbot@gmail.com as Editor; general access may stay restricted",
+                invalid_reason: "This Drive file is in the trash. Restore it or paste a different link",
                 validated_at: undefined,
                 verified_by: undefined,
                 verified_at: undefined,
@@ -6710,11 +6703,18 @@ export class AdminBotService {
     };
   }
 
-  /** A read-only check of a pasted Drive link using AdminBot's own Google account. */
-  async checkDriveEditAccess(
+  /**
+   * A read-only check of a pasted Drive link using AdminBot's own Google account.
+   *
+   * Asks only whether AdminBot can open the file, not whether it can edit it. Every link checked
+   * here is one AdminBot reads (a CV, a 1:1 folder, a letters folder) and never writes into, so
+   * Viewer access or an "anyone with the link" share is enough. Demanding Editor turned members away
+   * for links that already worked.
+   */
+  async checkDriveAccess(
     url: string,
   ): Promise<
-    AdminBotServiceResponse<{ status: "editable" | "not_editable" | "unverified"; message: string }>
+    AdminBotServiceResponse<{ status: "accessible" | "inaccessible" | "unverified"; message: string }>
   > {
     const id = adminBotDriveFileId(url);
     if (!id) {
@@ -6731,11 +6731,21 @@ export class AdminBotService {
       };
     }
     const result = await this.options.driveProbe(id);
-    if (result.status === "found" && !result.trashed && result.canEdit === true) {
+    if (result.status === "found" && !result.trashed) {
       return {
         ok: true,
         status: 200,
-        payload: { status: "editable", message: "AdminBot can edit this file." },
+        payload: { status: "accessible", message: "AdminBot can open this file." },
+      };
+    }
+    if (result.status === "found") {
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          status: "inaccessible",
+          message: "This file is in the Drive trash. Restore it or paste a different link.",
+        },
       };
     }
     if (result.status === "missing") {
@@ -6743,20 +6753,9 @@ export class AdminBotService {
         ok: true,
         status: 200,
         payload: {
-          status: "not_editable",
+          status: "inaccessible",
           message:
-            "AdminBot cannot open this file. Check the link or share it with Jinesis.adminbot@gmail.com as Editor; general access may stay restricted.",
-        },
-      };
-    }
-    if (result.status === "found" && result.canEdit === false) {
-      return {
-        ok: true,
-        status: 200,
-        payload: {
-          status: "not_editable",
-          message:
-            "Share this file with Jinesis.adminbot@gmail.com as Editor. You can keep general access restricted.",
+            "AdminBot cannot open this file. Check the link, then either share it with Jinesis.adminbot@gmail.com (Viewer is enough) or set general access to anyone with the link.",
         },
       };
     }
@@ -6766,7 +6765,7 @@ export class AdminBotService {
       payload: {
         status: "unverified",
         message:
-          "AdminBot could not confirm edit access. Check the link and share it with Jinesis.adminbot@gmail.com as Editor.",
+          "AdminBot could not check access to this file right now. Make sure Jinesis.adminbot@gmail.com or anyone with the link can view it.",
       },
     };
   }
@@ -6801,7 +6800,7 @@ export class AdminBotService {
               ...(adminBotDriveFileId(url) ? { id: adminBotDriveFileId(url) } : {}),
               reason: "no Drive file id in the link",
               missingReason:
-                "AdminBot cannot access this Drive file — check the link or share it with Jinesis.adminbot@gmail.com as Editor",
+                "AdminBot cannot access this Drive file — check the link, then share it with Jinesis.adminbot@gmail.com (Viewer is enough) or set general access to anyone with the link",
             }
           : undefined;
       }

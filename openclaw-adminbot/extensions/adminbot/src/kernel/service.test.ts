@@ -5015,7 +5015,7 @@ describe("AdminBotService", () => {
       const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
       expect(result.created).toHaveLength(1);
       const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
-      expect(message).toContain("missing 19 required fields");
+      expect(message).toContain("missing 17 required fields");
       expect(message).toContain("Your term timeline has 0 of 2 needed entries");
     });
 

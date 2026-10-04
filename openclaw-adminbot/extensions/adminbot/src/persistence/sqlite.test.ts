@@ -42,12 +42,12 @@ describe("AdminBotSqliteStore", () => {
     });
     try {
       expect(
-        await durable.service.checkDriveEditAccess(
+        await durable.service.checkDriveAccess(
           "https://drive.google.com/drive/folders/1SyntheticEditableFolder",
         ),
       ).toMatchObject({
         ok: true,
-        payload: { status: "editable" },
+        payload: { status: "accessible" },
       });
       expect(seen).toEqual(["1SyntheticEditableFolder"]);
     } finally {
