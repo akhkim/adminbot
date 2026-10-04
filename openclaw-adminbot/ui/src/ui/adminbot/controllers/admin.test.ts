@@ -16,6 +16,8 @@ import {
   removePendingAdminBotAction,
   removeSelectedPendingAdminBotActions,
   sendAdminBotReimbursementMessage,
+  generateAdminBotReimbursement,
+  submitAdminBotReimbursement,
   saveAdminBotMember,
   saveAdminBotPaper,
   saveAdminBotOwnProfile,
@@ -982,6 +984,44 @@ describe("saveAdminBotMember — onboarding the person just added", () => {
 });
 
 describe("reimbursement session privacy", () => {
+  it("returns the generated package proof and shows regeneration guidance after refusal", async () => {
+    vi.stubGlobal("localStorage", createStorageMock());
+    saveStoredMemberSession({ sessionToken: "member-token", expiresAt: "later" });
+    const artifacts = [
+      { filename: "form.pdf", media_type: "application/pdf", data_base64: "JVBERi0=" },
+    ];
+    const { host } = createHost({
+      adminbot_reimbursement_generate: { artifacts, submission_proof: "checked-package" },
+    });
+    host.adminBotReimbursement = {
+      ...createEmptyAdminBotReimbursementState(),
+      ready: true,
+      funder: "MPI-IS",
+    };
+    await generateAdminBotReimbursement(host);
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "Generate and review the reimbursement forms again before sending them.",
+            },
+          }),
+          { status: 422, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    await submitAdminBotReimbursement(host);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)).toMatchObject({
+      submission_proof: "checked-package",
+      funder: "MPI-IS",
+    });
+    expect(host.adminBotReimbursement.error).toContain("Generate and review");
+    expect(host.adminBotReimbursement.submission).toBeUndefined();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("does not restore a previous member's receipt conversation after the cache is cleared", async () => {
     const { host } = createHost({});
     let finish!: (result: unknown) => void;

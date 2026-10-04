@@ -782,6 +782,7 @@ export type AdminBotReimbursementState = {
   busy: boolean;
   error: string | null;
   artifacts: AdminBotReimbursementArtifact[];
+  submissionProof?: string;
   /** Which finance office is paying. Undefined until the claimant chooses; nothing runs before. */
   funder?: AdminBotReimbursementFunder;
   /** The pre-submission report, once a check has run. */
@@ -3717,6 +3718,7 @@ type ReimbursementConversationResult = {
 
 type ReimbursementGenerationResult = {
   artifacts: AdminBotReimbursementArtifact[];
+  submission_proof?: string;
 };
 
 export async function sendAdminBotReimbursementMessage(
@@ -3799,6 +3801,7 @@ export async function generateAdminBotReimbursement(host: AdminBotHost): Promise
       ...host.adminBotReimbursement,
       busy: false,
       artifacts: Array.isArray(result.artifacts) ? result.artifacts : [],
+      submissionProof: result.submission_proof,
     };
   } catch (err) {
     if (host.adminBotReimbursement !== requestState) {
@@ -3838,6 +3841,7 @@ export async function submitAdminBotReimbursement(host: AdminBotHost): Promise<v
     const result = await submitReimbursementPackage(
       {
         funder: state.funder,
+        submission_proof: state.submissionProof,
         artifacts: state.artifacts.map((artifact) => ({
           filename: artifact.filename,
           data_base64: artifact.data_base64,
@@ -3862,7 +3866,8 @@ export async function submitAdminBotReimbursement(host: AdminBotHost): Promise<v
         error:
           result.kind === "unreachable"
             ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-            : "Couldn't send the package. Check the office address in settings and try again.",
+            : (result.message ??
+              "Couldn't send the package. Check the office address in settings and try again."),
       };
       return;
     }
@@ -4036,6 +4041,7 @@ export async function generateGuestReimbursement(host: GuestReimbursementHost): 
       ...host.adminBotReimbursement,
       busy: false,
       artifacts: Array.isArray(result.artifacts) ? result.artifacts : [],
+      submissionProof: result.submission_proof,
     };
   } catch (err) {
     host.adminBotReimbursement = {

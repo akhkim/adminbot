@@ -2631,6 +2631,100 @@ describe("AdminBot device token issuance", () => {
 });
 
 describe("anonymous reimbursement access", () => {
+  it("only mails the unchanged package produced by the server's generation gate", async () => {
+    const executed: unknown[] = [];
+    const artifacts = [
+      {
+        filename: "expense.xlsx",
+        media_type: "application/octet-stream",
+        data_base64: "ZXhwZW5zZQ==",
+      },
+      {
+        filename: "summary.docx",
+        media_type: "application/octet-stream",
+        data_base64: "c3VtbWFyeQ==",
+      },
+    ];
+    const { baseUrl, mock } = await startService({
+      reimbursementWorkflow: { ...stubWorkflow, generate: async () => ({ artifacts }) },
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal);
+          return { handled: true };
+        },
+      },
+    });
+    seedMember(baseUrl, "claimant", { name: "Claimant", email: "claimant@cs.toronto.edu" });
+    await approveClaim(baseUrl, "claimant", "claimant@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "claimant@cs.toronto.edu");
+    mock.service.updateSettings({
+      reimbursement_dcs_email: "finance@example.org",
+      reimbursement_mpi_email: "mpi@example.org",
+    });
+    const generatedResponse = await fetch(`${baseUrl}/reimbursements/generate`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ draft: { funder: "DCS" } }),
+    });
+    expect(generatedResponse.status).toBe(200);
+    const generated = (await generatedResponse.json()) as { submission_proof: string };
+    const packageInput = { funder: "DCS", artifacts, submission_proof: generated.submission_proof };
+    const submit = (input: unknown) =>
+      fetch(`${baseUrl}/reimbursements/submit`, {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+        body: JSON.stringify(input),
+      });
+    for (const input of [
+      { ...packageInput, funder: "MPI-IS" },
+      { ...packageInput, artifacts: artifacts.slice(0, 1) },
+      {
+        ...packageInput,
+        artifacts: [{ ...artifacts[0], filename: "replacement.xlsx" }, artifacts[1]],
+      },
+      {
+        ...packageInput,
+        artifacts: [{ ...artifacts[0], data_base64: "bW9kaWZpZWQ=" }, artifacts[1]],
+      },
+      { ...packageInput, submission_proof: "f".repeat(64) },
+    ]) {
+      const response = await submit(input);
+      expect(response.status).toBe(422);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { message: expect.stringContaining("Generate and review") },
+      });
+    }
+    expect(executed).toEqual([]);
+    expect((await submit(packageInput)).status).toBe(200);
+    expect(executed).toHaveLength(1);
+  });
+
+  it("refuses unchecked reimbursement attachments before any external execution", async () => {
+    const executed: unknown[] = [];
+    const { baseUrl, mock } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal);
+          return { handled: true };
+        },
+      },
+    });
+    seedMember(baseUrl, "claimant", { name: "Claimant", email: "claimant@cs.toronto.edu" });
+    await approveClaim(baseUrl, "claimant", "claimant@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "claimant@cs.toronto.edu");
+    mock.service.updateSettings({ reimbursement_dcs_email: "finance@example.org" });
+    const response = await fetch(`${baseUrl}/reimbursements/submit`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({
+        funder: "DCS",
+        artifacts: [{ filename: "unchecked.docx", data_base64: "dW5jaGVja2Vk" }],
+      }),
+    });
+    expect(response.status).toBe(422);
+    expect(executed).toEqual([]);
+  });
+
   it("rejects oversized JSON before the anonymous workflow handles it", async () => {
     const { baseUrl } = await startService({ reimbursementWorkflow: stubWorkflow });
     const res = await fetch(`${baseUrl}/reimbursements/converse`, {

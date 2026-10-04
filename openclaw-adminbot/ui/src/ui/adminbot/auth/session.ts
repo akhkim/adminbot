@@ -5028,6 +5028,7 @@ export async function submitReimbursementPackage(
   input: {
     funder: "DCS" | "MPI-IS";
     artifacts: Array<{ filename: string; data_base64: string }>;
+    submission_proof?: string;
     trip_title?: string;
   },
   sessionToken: string,
