@@ -29,6 +29,7 @@ function completeMember(
     receives_nudges: true,
     name: `Complete ${fields.id}`,
     slack_user_id: `U-${fields.id}`,
+    arr_reviewer_qualified: false,
     calendar_email: "complete@gmail.com",
     location: "Toronto",
     research_topics: ["nlp"],
@@ -3536,6 +3537,7 @@ describe("AdminBotService", () => {
       // Every mandatory field, and enough timeline for the second half of the rule.
       unwrap(
         service.updateOwnProfile("ayush", {
+          arr_reviewer_qualified: false,
           calendar_email: "ayush@lab.test",
           location: "Toronto",
           research_topics: ["causality"],
@@ -3596,6 +3598,7 @@ describe("AdminBotService", () => {
 
       unwrap(
         service.updateOwnProfile("ayush", {
+          arr_reviewer_qualified: false,
           calendar_email: "ayush@lab.test",
           location: "Toronto",
           research_topics: ["causality"],
@@ -4726,6 +4729,7 @@ describe("AdminBotService", () => {
           id: "full",
           name: "Full",
           privilege_level: "member",
+          arr_reviewer_qualified: false,
           calendar_email: "full@gmail.com",
           location: "Toronto",
           research_topics: ["nlp"],
@@ -4791,7 +4795,16 @@ describe("AdminBotService", () => {
       );
       const missing = unwrap(service.listMembersWithIncompleteMandatoryFields()).members[0]
         ?.missing_fields;
-      expect(missing).toEqual(adminBotMemberAnswerableProfileFields);
+      expect(missing).toEqual(
+        adminBotMemberAnswerableProfileFields.filter((field) => field !== "arr_review_capacity"),
+      );
+      // Capacity only becomes required after the member confirms qualification.
+      unwrap(service.upsertLabMember({ id: "blank", arr_reviewer_qualified: true }));
+      expect(
+        unwrap(service.listMembersWithIncompleteMandatoryFields()).members[0]?.missing_fields,
+      ).toEqual(
+        adminBotMemberAnswerableProfileFields.filter((field) => field !== "arr_reviewer_qualified"),
+      );
     });
 
     // The rule that used to exempt `linkedin_urn`: a field the member's own page will not let them
@@ -4848,6 +4861,7 @@ describe("AdminBotService", () => {
       unwrap(
         service.upsertLabMember({
           id: "resolved",
+          arr_reviewer_qualified: false,
           calendar_email: "resolved@gmail.com",
           location: "Toronto",
           research_topics: ["nlp"],
@@ -4918,6 +4932,7 @@ describe("AdminBotService", () => {
           receives_nudges: true,
           id: "full",
           name: "Full",
+          arr_reviewer_qualified: false,
           calendar_email: "full@gmail.com",
           location: "Toronto",
           slack_user_id: "U3",
@@ -5015,7 +5030,7 @@ describe("AdminBotService", () => {
       const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
       expect(result.created).toHaveLength(1);
       const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
-      expect(message).toContain("missing 17 required fields");
+      expect(message).toContain("missing 18 required fields");
       expect(message).toContain("Your term timeline has 0 of 2 needed entries");
     });
 
@@ -5130,6 +5145,7 @@ describe("AdminBotService", () => {
           receives_nudges: true,
           id: "full",
           name: "Full",
+          arr_reviewer_qualified: false,
           calendar_email: "full@gmail.com",
           location: "Toronto",
           slack_user_id: "U1",

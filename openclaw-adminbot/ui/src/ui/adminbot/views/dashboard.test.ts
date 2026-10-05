@@ -409,6 +409,7 @@ describe("renderDashboard", () => {
           members: [
             {
               // All required profile questions have answers.
+              arr_reviewer_qualified: false,
               id: "m1",
               name: "Ada",
               location: "Toronto",

@@ -7,9 +7,8 @@
  * is still a typed proposal, approved by that admin, executed and audited -- just not left waiting
  * in Pending Actions.
  *
- * One mail is sent, and only in one case: somebody moving *into* alumni gets the alumni guide.
- * Every other step is silent -- Slack channel moves notify inside Slack only, calendar writes pass
- * `--send-updates none`, and the lab-calendar share suppresses Google's notification.
+ * Moving into alumni sends the alumni guide. Calendar invitations and lab-calendar shares
+ * request Google email notifications; meeting removals remain silent.
  *
  * Each step is reported on its own and none stops the others: the database write has already
  * happened, and a Slack outage should not also leave the Monday meeting unreconciled.
@@ -395,7 +394,7 @@ export async function applyMemberTypeChange(
  * Put a member on exactly the standing meetings the admin ticked, and take them off the rest.
  *
  * Like the type change above, the save is the approval: each add or removal is a typed calendar
- * proposal approved by this admin and executed now. Both are silent (`--send-updates none`). An
+ * proposal approved by this admin and executed now. Adds notify guests; removals are silent. An
  * add goes to every live series of the meeting, so a meeting split "this and following" is joined
  * on the split that actually has Mondays ahead.
  */
