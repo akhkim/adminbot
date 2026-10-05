@@ -258,6 +258,8 @@ export type LabMember = {
   cv_url?: string | null;
   intake_form_url?: string | null;
   intake_form_unavailable?: boolean;
+  arr_reviewer_qualified?: boolean | null;
+  arr_review_capacity?: number | null;
   linkedin_url?: string | null;
   twitter_url?: string | null;
   twitter_followers?: number;
@@ -297,6 +299,8 @@ export type MemberProfileUpdate = {
   cv_url?: string;
   intake_form_url?: string;
   intake_form_unavailable?: boolean;
+  arr_reviewer_qualified?: boolean | null;
+  arr_review_capacity?: number | null;
   linkedin_url?: string;
   twitter_url?: string;
   github_url?: string;

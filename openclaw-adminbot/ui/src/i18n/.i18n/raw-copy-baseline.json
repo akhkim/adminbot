@@ -397,6 +397,20 @@
       "count": 1,
       "kind": "html-attribute",
       "name": "aria-label",
+      "path": "ui/src/ui/adminbot/date-control.ts",
+      "text": "Year–month–day"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/date-control.ts",
+      "text": "Year–month–day"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
       "path": "ui/src/ui/adminbot/decision-popup.ts",
       "text": "Close this decision"
     },

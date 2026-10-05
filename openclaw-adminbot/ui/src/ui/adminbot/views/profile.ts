@@ -669,6 +669,9 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
       setField(fields, field.key, value);
     }
   }
+  const qualification = data.get("arr_reviewer_qualified");
+  fields.arr_reviewer_qualified =
+    qualification === "yes" ? true : qualification === "no" ? false : null;
   fields.intake_form_unavailable = !fields.intake_form_url && data.has("intake_form_unavailable");
   return fields;
 }
@@ -1061,6 +1064,36 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                 ${t(group.labelKey)}
               </h3>
               <div class="profile__field-grid">
+                ${group.id === "work"
+                  ? html`<div>
+                      <label class="profile__form-row">
+                        <span class="profile__form-label"
+                          >${t("profile.arrReviewer.label")}
+                          <span class="profile__optional">${t("profile.basics.optional")}</span>
+                        </span>
+                        <select class="input" name="arr_reviewer_qualified">
+                          <option value="" ?selected=${member.arr_reviewer_qualified == null}>
+                            ${t("profile.arrReviewer.unanswered")}
+                          </option>
+                          <option value="yes" ?selected=${member.arr_reviewer_qualified === true}>
+                            ${t("profile.arrReviewer.yes")}
+                          </option>
+                          <option value="no" ?selected=${member.arr_reviewer_qualified === false}>
+                            ${t("profile.arrReviewer.no")}
+                          </option>
+                        </select>
+                      </label>
+                      <p class="profile__field-hint">
+                        ${t("profile.arrReviewer.hint")}
+                        <a
+                          href="https://aclrollingreview.org/qualifications"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          >${t("profile.arrReviewer.criteria")}</a
+                        >
+                      </p>
+                    </div>`
+                  : nothing}
                 ${group.fields.map(
                   (field) => html`
                     ${field.key === "projects"

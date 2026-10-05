@@ -36,6 +36,30 @@ function createMember(overrides: Partial<LabMember> = {}): LabMember {
   };
 }
 
+it("saves self-reported ARR eligibility and links to the official criteria", () => {
+  const save = vi.fn();
+  const container = renderPage(createState(createMember({ arr_reviewer_qualified: true })), save);
+  const checkbox = container.querySelector<HTMLSelectElement>('[name="arr_reviewer_qualified"]')!;
+  expect(checkbox.value).toBe("yes");
+  expect(container.querySelector('[name="arr_review_capacity"]')).toBeNull();
+  expect(checkbox.closest(".profile__field-group")?.querySelector("h3")?.textContent).toContain(
+    "Work & availability",
+  );
+  expect(
+    container.querySelector('a[href="https://aclrollingreview.org/qualifications"]')?.textContent,
+  ).toContain("criteria");
+  const button = container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!;
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1].arr_reviewer_qualified).toBe(true);
+  expect(save.mock.calls.at(-1)?.[1]).not.toHaveProperty("arr_review_capacity");
+  checkbox.value = "no";
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1].arr_reviewer_qualified).toBe(false);
+  checkbox.value = "";
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1].arr_reviewer_qualified).toBeNull();
+});
+
 function createState(member: LabMember, overrides: Partial<AppViewState> = {}): AppViewState {
   return {
     tab: "profile",

@@ -1521,6 +1521,9 @@ export type AdminBotLabMemberInput = {
   // rather than a link the profile can render for them.
   intake_form_url?: string;
   intake_form_unavailable?: boolean;
+  /** Self-reported ARR eligibility; not verified or a reviewing assignment. */
+  arr_reviewer_qualified?: boolean | null;
+  arr_review_capacity?: number | null;
   /**
    * The Google Drive folder holding this member's one-on-one notes.
    *

@@ -6639,7 +6639,8 @@ export class AdminBotService {
               this.store.savePaperSlot({
                 ...row,
                 status: "invalid",
-                invalid_reason: "This Drive file is in the trash. Restore it or paste a different link",
+                invalid_reason:
+                  "This Drive file is in the trash. Restore it or paste a different link",
                 validated_at: undefined,
                 verified_by: undefined,
                 verified_at: undefined,
@@ -6711,10 +6712,11 @@ export class AdminBotService {
    * Viewer access or an "anyone with the link" share is enough. Demanding Editor turned members away
    * for links that already worked.
    */
-  async checkDriveAccess(
-    url: string,
-  ): Promise<
-    AdminBotServiceResponse<{ status: "accessible" | "inaccessible" | "unverified"; message: string }>
+  async checkDriveAccess(url: string): Promise<
+    AdminBotServiceResponse<{
+      status: "accessible" | "inaccessible" | "unverified";
+      message: string;
+    }>
   > {
     const id = adminBotDriveFileId(url);
     if (!id) {
@@ -14498,6 +14500,8 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "cv_url",
   "intake_form_url",
   "intake_form_unavailable",
+  "arr_reviewer_qualified",
+  "arr_review_capacity",
   // The member's own one-on-one folder. Self-editable because in practice either side creates it
   // -- whoever made the folder pastes the link -- and an admin-only field would leave the member
   // looking at a blank row they cannot fill from the link already in their Drive. Mandatory too
@@ -14999,6 +15003,20 @@ function validateLabMember(
     typeof member.intake_form_unavailable !== "boolean"
   ) {
     return "application form unavailable must be true or false";
+  }
+  if (
+    member.arr_reviewer_qualified !== undefined &&
+    member.arr_reviewer_qualified !== null &&
+    typeof member.arr_reviewer_qualified !== "boolean"
+  ) {
+    return "ARR reviewer qualification must be true, false, or null";
+  }
+  if (
+    member.arr_review_capacity !== undefined &&
+    member.arr_review_capacity !== null &&
+    (!Number.isSafeInteger(member.arr_review_capacity) || member.arr_review_capacity < 0)
+  ) {
+    return "ARR review capacity must be a non-negative whole number";
   }
   const emailError = validateMemberEmail(member.email, existingEmail);
   if (emailError) {
