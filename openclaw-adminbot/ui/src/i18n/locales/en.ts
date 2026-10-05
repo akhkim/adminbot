@@ -2180,6 +2180,12 @@ export const en: TranslationMap = {
     },
   },
   profile: {
+    arrReviewer: {
+      label: "I qualify as an ARR reviewer",
+      capacity: "Number of ARR papers I can review",
+      hint: "Self-reported eligibility. This does not register you or assign reviews.",
+      criteria: "Check ARR eligibility criteria",
+    },
     onboardingChecklist: "Your setup checklist ({count} left)",
     onboardingChecklistDone: "Your setup checklist",
     visibility: {
@@ -2364,7 +2370,8 @@ export const en: TranslationMap = {
       aclAnthology: "ACL Anthology profile",
       openreviewId: "OpenReview ID",
       researchTopics: "Research topics",
-      elevatorPitch: "Elevator pitch that Zhijing can use when recommending you to other prof/recruiter",
+      elevatorPitch:
+        "Elevator pitch that Zhijing can use when recommending you to other prof/recruiter",
       projects: "Projects",
       notes: "Notes",
     },

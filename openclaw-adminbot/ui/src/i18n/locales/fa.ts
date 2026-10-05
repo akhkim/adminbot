@@ -2148,6 +2148,12 @@ export const fa: TranslationMap = {
     },
   },
   profile: {
+    arrReviewer: {
+      label: "I qualify as an ARR reviewer",
+      capacity: "Number of ARR papers I can review",
+      hint: "Self-reported eligibility. This does not register you or assign reviews.",
+      criteria: "Check ARR eligibility criteria",
+    },
     onboardingChecklist: "Your setup checklist ({count} left)",
     onboardingChecklistDone: "Your setup checklist",
     visibility: {

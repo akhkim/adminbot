@@ -669,6 +669,9 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
       setField(fields, field.key, value);
     }
   }
+  const capacity = String(data.get("arr_review_capacity") ?? "").trim();
+  fields.arr_review_capacity = capacity ? Number(capacity) : null;
+  fields.arr_reviewer_qualified = data.has("arr_reviewer_qualified");
   fields.intake_form_unavailable = !fields.intake_form_url && data.has("intake_form_unavailable");
   return fields;
 }
@@ -1061,6 +1064,42 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                 ${t(group.labelKey)}
               </h3>
               <div class="profile__field-grid">
+                ${group.id === "work"
+                  ? html`<div class="profile__intake-note">
+                        <label class="profile__intake-check">
+                          <input
+                            type="checkbox"
+                            name="arr_reviewer_qualified"
+                            .checked=${member.arr_reviewer_qualified === true}
+                          />
+                          <span>${t("profile.arrReviewer.label")}</span>
+                        </label>
+                        <p class="profile__field-hint">
+                          ${t("profile.arrReviewer.hint")}
+                          <a
+                            href="https://aclrollingreview.org/qualifications"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            >${t("profile.arrReviewer.criteria")}</a
+                          >
+                        </p>
+                      </div>
+                      <label class="profile__form-row">
+                        <span class="profile__form-label"
+                          >${t("profile.arrReviewer.capacity")}
+                          <span class="profile__optional">${t("profile.basics.optional")}</span>
+                        </span>
+                        <input
+                          type="number"
+                          name="arr_review_capacity"
+                          min="0"
+                          step="1"
+                          .value=${member.arr_review_capacity == null
+                            ? ""
+                            : String(member.arr_review_capacity)}
+                        />
+                      </label>`
+                  : nothing}
                 ${group.fields.map(
                   (field) => html`
                     ${field.key === "projects"

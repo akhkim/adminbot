@@ -36,6 +36,47 @@ function createMember(overrides: Partial<LabMember> = {}): LabMember {
   };
 }
 
+it("saves self-reported ARR eligibility and links to the official criteria", () => {
+  const save = vi.fn();
+  const container = renderPage(createState(createMember({ arr_reviewer_qualified: true })), save);
+  const checkbox = container.querySelector<HTMLInputElement>('[name="arr_reviewer_qualified"]')!;
+  expect(checkbox.checked).toBe(true);
+  expect(checkbox.closest(".profile__field-group")?.querySelector("h3")?.textContent).toContain(
+    "Work & availability",
+  );
+  expect(
+    container.querySelector('a[href="https://aclrollingreview.org/qualifications"]')?.textContent,
+  ).toContain("criteria");
+  const button = container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!;
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1].arr_reviewer_qualified).toBe(true);
+  checkbox.checked = false;
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1].arr_reviewer_qualified).toBe(false);
+});
+
+it("saves ARR review capacity including zero and allows clearing it", () => {
+  const save = vi.fn();
+  const container = renderPage(createState(createMember({ arr_review_capacity: 3 })), save);
+  const input = container.querySelector<HTMLInputElement>('[name="arr_review_capacity"]')!;
+  expect(input.value).toBe("3");
+  expect(input.closest(".profile__field-group")?.querySelector("h3")?.textContent).toContain(
+    "Work & availability",
+  );
+  expect(input.min).toBe("0");
+  expect(input.step).toBe("1");
+  const button = container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!;
+  for (const [text, value] of [
+    ["3", 3],
+    ["0", 0],
+    ["", null],
+  ] as const) {
+    input.value = text;
+    button.click();
+    expect(save.mock.calls.at(-1)?.[1].arr_review_capacity).toBe(value);
+  }
+});
+
 function createState(member: LabMember, overrides: Partial<AppViewState> = {}): AppViewState {
   return {
     tab: "profile",
