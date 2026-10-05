@@ -633,7 +633,15 @@ function buildEmailArgs(proposal: AdminBotStoredProposal, draft: boolean): strin
   return args;
 }
 
-// Maintenance changes stay silent; explicit invitations opt into Google's guest notifications.
+/**
+ * AdminBot's calendar writes never email anyone.
+ *
+ * Every create, invite, reschedule, attendee change and cancellation passes this to gog's
+ * `--send-updates`. The event still appears on, moves on, or disappears from each guest's
+ * calendar; Google just does not mail them about it. With `all`, one approved change emailed the
+ * whole guest list -- e.g. the Monday meeting sent a fresh invite to every member whenever
+ * somebody was added.
+ */
 const CALENDAR_SEND_UPDATES = "none";
 
 function buildCalendarCreateArgs(proposal: AdminBotStoredProposal): string[] {
@@ -652,7 +660,7 @@ function buildCalendarCreateArgs(proposal: AdminBotStoredProposal): string[] {
     "--to",
     requireString(payload, "to"),
     "--send-updates",
-    proposal.type === "calendar.send_invite" ? "all" : CALENDAR_SEND_UPDATES,
+    CALENDAR_SEND_UPDATES,
   );
   appendOptional(args, "--attendees", attendees);
   appendOptional(args, "--description", optionalString(payload, "description"));
@@ -711,7 +719,7 @@ function buildCalendarAddAttendeesArgs(proposal: AdminBotStoredProposal): string
     "--add-attendee",
     attendees,
     "--send-updates",
-    "all",
+    CALENDAR_SEND_UPDATES,
   );
   return args;
 }

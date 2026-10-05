@@ -18,7 +18,9 @@ const { createCalendarInviteRunner } = await import("./calendar-invite.js");
 describe("createCalendarInviteRunner", () => {
   beforeEach(() => execFile.mockClear());
 
-  it("grants reader access with a share notification", async () => {
+  // Google's "shared a calendar with you" mail is off for every grant, onboarding included:
+  // AdminBot's calendar writes do not email anyone.
+  it("grants reader access without a share notification", async () => {
     const invite = createCalendarInviteRunner({ ADMINBOT_LAB_EMAIL: "lab@example.com" });
 
     await invite("ada@example.com");
@@ -27,7 +29,7 @@ describe("createCalendarInviteRunner", () => {
     expect(args.slice(0, 3)).toEqual(["calendar", "acl", "insert"]);
     expect(JSON.parse(args[args.indexOf("--params") + 1] ?? "{}")).toEqual({
       calendarId: "lab@example.com",
-      sendNotifications: true,
+      sendNotifications: false,
     });
     expect(JSON.parse(args[args.indexOf("--json") + 1] ?? "{}")).toEqual({
       role: "reader",

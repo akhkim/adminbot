@@ -568,21 +568,19 @@ genuine admin session and only when the type actually changes (compared token-wi
 - **Slack rooms** named by the access matrix are joined or left (`slack.invite_to_channel` /
   `slack.remove_from_channel`). Becoming `full` never removes anyone from the lab's rooms.
 - **The Monday group meeting** gains or loses them on every live series (`calendar.add_attendees` /
-  `calendar.remove_attendees`). Adds use `--send-updates all` to request invitation emails;
-  removals remain silent. Google can notify existing guests as well as newly added guests.
-- **Lab calendar** read access is granted with a Google sharing email when they gain it
+  `calendar.remove_attendees`, both `--send-updates none`).
+- **Lab calendar** read access is granted silently when they gain it
   (`calendar.grant_lab_calendar`, recorded as `auth.calendar_invite_sent` like the backfill). No
   action revokes a calendar share, so a loss is reported in the notice for someone to handle by
   hand.
-- **Onboarding guide:** somebody moving _into_ alumni gets the `alumni` guide
-  (`onboarding.send_guide`), in addition to any Google calendar notifications.
+- **One email, in one case:** somebody moving _into_ alumni gets the `alumni` guide
+  (`onboarding.send_guide`). Every other change sends nothing.
 
 **Meetings** is a second checkbox field listing the lab calendar's standing meetings: the Monday
 group meeting and every recurring `Theme:` and `Proj:` series (`GET /lab/meetings`, admin only).
 A box is ticked when any of the member's addresses is on that meeting's guest list. Saving adds
-the member to newly ticked meetings with email notifications and removes them from unticked ones
-silently, on every live series. Existing attendees are skipped, so retrying an already-applied add
-does not resend an invitation. If the list could not be read, the field is left out of the save entirely, so a failed
+the member to newly ticked meetings and removes them from unticked ones, silently, on every live
+series. If the list could not be read, the field is left out of the save entirely, so a failed
 read is never taken as "on no meetings". A Monday box the admin actually changed wins over what
 the type would imply; an unchanged box leaves the Monday meeting to the type.
 

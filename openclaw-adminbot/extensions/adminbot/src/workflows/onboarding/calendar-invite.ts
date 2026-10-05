@@ -16,7 +16,13 @@ const GWS_MAX_OUTPUT_BYTES = 1024 * 1024;
 // deployment approves members without a calendar invite instead of failing the approval.
 export const ADMINBOT_LAB_EMAIL_ENV = "ADMINBOT_LAB_EMAIL";
 
-/** Grants reader access and asks Google to email the recipient the calendar-sharing notice. */
+/**
+ * Grants reader access to the lab calendar, silently.
+ *
+ * Google's "shared a calendar with you" email is never sent: AdminBot's calendar writes do not
+ * email anyone (see CALENDAR_SEND_UPDATES in connectors/gog.ts). The calendar still appears in the
+ * member's calendar list; the onboarding checklist is what tells them it is there.
+ */
 export type CalendarInviteRunner = (email: string) => Promise<void>;
 
 /**
@@ -76,7 +82,7 @@ export function createCalendarInviteRunner(env?: NodeJS.ProcessEnv): CalendarInv
           "acl",
           "insert",
           "--params",
-          JSON.stringify({ calendarId, sendNotifications: true }),
+          JSON.stringify({ calendarId, sendNotifications: false }),
           "--json",
           JSON.stringify({ role: "reader", scope: { type: "user", value: trimmed } }),
         ],

@@ -68,7 +68,7 @@ describe("createGogAdminBotExecutor", () => {
     ]);
   });
 
-  it("notifies invitees while keeping cancellations silent", async () => {
+  it("maps calendar invites and cancellations without emailing anyone", async () => {
     const run = vi.fn(async () => {});
     const executor = createGogAdminBotExecutor({ run });
 
@@ -88,14 +88,15 @@ describe("createGogAdminBotExecutor", () => {
     );
 
     expect(run.mock.calls[0]?.[0]).toEqual(
-      expect.arrayContaining(["calendar.create", "--send-updates", "all"]),
+      expect.arrayContaining(["calendar.create", "--send-updates", "none"]),
     );
     expect(run.mock.calls[1]?.[0]).toEqual(
       expect.arrayContaining(["calendar.delete", "--force", "event-1", "--send-updates", "none"]),
     );
   });
 
-  // Invitations notify guests; maintenance actions retain their existing silent behavior.
+  // No calendar action emails anyone: guests see the change on their calendar, and nothing lands
+  // in their inbox. One place pins every type, so a new calendar action cannot quietly opt in.
   it.each([
     [
       "calendar.create_tentative_hold",
@@ -120,7 +121,7 @@ describe("createGogAdminBotExecutor", () => {
     ],
     ["calendar.add_attendees", { event_id: "event-1", attendees: ["a@example.com"] }],
     ["calendar.cancel", { event_id: "event-1" }],
-  ] as const)("uses the notification policy for %s", async (type, payload) => {
+  ] as const)("sends no email for %s", async (type, payload) => {
     const run = vi.fn(async () => {});
     const executor = createGogAdminBotExecutor({
       run,
@@ -130,9 +131,8 @@ describe("createGogAdminBotExecutor", () => {
     await executor.execute(proposal(type, payload));
 
     const args = run.mock.calls[0]?.[0] as string[];
-    expect(args[args.indexOf("--send-updates") + 1]).toBe(
-      type === "calendar.send_invite" || type === "calendar.add_attendees" ? "all" : "none",
-    );
+    expect(args[args.indexOf("--send-updates") + 1]).toBe("none");
+    expect(args).not.toContain("all");
     expect(args).not.toContain("externalOnly");
   });
 
@@ -163,7 +163,7 @@ describe("createGogAdminBotExecutor", () => {
         "--add-attendee",
         "ada@cs.toronto.edu,mei@cs.toronto.edu",
         "--send-updates",
-        "all",
+        "none",
       ]),
     );
     expect(args).not.toContain("--attendees");
