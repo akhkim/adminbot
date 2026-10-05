@@ -522,6 +522,9 @@ export function isAdminBotFullMember(member: { privilege_level?: string }): bool
 }
 
 export const adminBotMandatoryProfileFields = [
+  // Required only when arr_reviewer_qualified is true.
+  "arr_review_capacity",
+  "arr_reviewer_qualified",
   "name",
   "calendar_email",
   "location",
@@ -803,6 +806,8 @@ export type AdminBotMemberActivityCounts = {
  * once rather than composed per person.
  */
 export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfileField, string> = {
+  arr_reviewer_qualified: "ARR reviewer qualification",
+  arr_review_capacity: "ARR review capacity",
   name: "Name",
   calendar_email: "Calendar email",
   location: "Location",

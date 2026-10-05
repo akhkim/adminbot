@@ -91,7 +91,24 @@ export type ProfileProps = {
   onNavigateToTab?: (tab: Tab) => void;
 };
 
-const EDITABLE_FIELDS = PROFILE_FIELDS;
+const EDITABLE_FIELDS: ProfileField[] = [
+  ...PROFILE_FIELDS,
+  {
+    key: "arr_reviewer_qualified",
+    labelKey: "profile.arrReviewer.label",
+    example: "",
+    type: "dropdown",
+    group: "work",
+  },
+  {
+    key: "arr_review_capacity",
+    labelKey: "profile.arrReviewer.capacity",
+    example: "",
+    type: "numeric",
+    min: 0,
+    group: "work",
+  },
+];
 
 // Rendered as a row of links under the name rather than as rows in the field table -- they are
 // somewhere to go, not facts to read.
@@ -496,6 +513,7 @@ export function blankFields(member: LabMember): EditableField[] {
   return EDITABLE_FIELDS.filter(
     (field) =>
       isMemberAnswerable(field) &&
+      !(field.key === "arr_review_capacity" && member.arr_reviewer_qualified !== true) &&
       !(field.key === "intake_form_url" && member.intake_form_unavailable === true) &&
       !valueOf(member, field).trim(),
   );
@@ -617,6 +635,7 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
   const data = new FormData(form);
   const fields: MemberProfileUpdate = {};
   for (const field of EDITABLE_FIELDS) {
+    if (field.key === "arr_reviewer_qualified" || field.key === "arr_review_capacity") continue;
     if (field.type === "image") {
       // Owned by the upload control, which saves on its own; no input to read here.
       continue;
@@ -670,8 +689,13 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
     }
   }
   const qualification = data.get("arr_reviewer_qualified");
-  fields.arr_reviewer_qualified =
-    qualification === "yes" ? true : qualification === "no" ? false : null;
+  if (qualification === "yes" || qualification === "no") {
+    fields.arr_reviewer_qualified = qualification === "yes";
+    if (qualification === "yes") {
+      const value = String(data.get("arr_review_capacity") ?? "").trim();
+      fields.arr_review_capacity = value ? Number(value) : null;
+    }
+  }
   fields.intake_form_unavailable = !fields.intake_form_url && data.has("intake_form_unavailable");
   return fields;
 }
@@ -771,6 +795,74 @@ function renderProjectChips(state: AppViewState, props: ProfileProps): ReturnTyp
  * "Role". Those rows get a plain container, and the checkbox group carries its own accessible name.
  */
 function renderProfileFormRow(state: AppViewState, member: LabMember, field: EditableField) {
+  if (field.key === "arr_review_capacity")
+    return html` <label class="profile__form-row">
+      <span class="profile__form-label"
+        >${t("profile.arrReviewer.capacity")}
+        <span data-arr-capacity-required ?hidden=${member.arr_reviewer_qualified !== true}
+          >${renderMandatoryMark(field, "")}</span
+        >
+      </span>
+      <input
+        class="input"
+        type="number"
+        name="arr_review_capacity"
+        min="0"
+        step="1"
+        ?required=${member.arr_reviewer_qualified === true}
+        ?disabled=${member.arr_reviewer_qualified !== true}
+        .value=${member.arr_review_capacity == null ? "" : String(member.arr_review_capacity)}
+      />
+    </label>`;
+
+  if (field.key === "arr_reviewer_qualified")
+    return html`<div>
+      <label class="profile__form-row">
+        <span class="profile__form-label"
+          >${t("profile.arrReviewer.label")}
+          ${renderMandatoryMark(field, displayValue(member, field))}
+        </span>
+        <select
+          class="input"
+          name="arr_reviewer_qualified"
+          required
+          @change=${(event: Event) => {
+            const select = event.currentTarget as HTMLSelectElement;
+            const capacity = select.form?.querySelector<HTMLInputElement>(
+              '[name="arr_review_capacity"]',
+            );
+            if (capacity) {
+              capacity.disabled = select.value !== "yes";
+              capacity.required = select.value === "yes";
+              const mark = capacity
+                .closest("label")
+                ?.querySelector<HTMLElement>("[data-arr-capacity-required]");
+              if (mark) mark.hidden = select.value !== "yes";
+            }
+          }}
+        >
+          <option value="" disabled hidden ?selected=${member.arr_reviewer_qualified == null}>
+            ${t("profile.arrReviewer.choose")}
+          </option>
+          <option value="yes" ?selected=${member.arr_reviewer_qualified === true}>
+            ${t("profile.arrReviewer.yes")}
+          </option>
+          <option value="no" ?selected=${member.arr_reviewer_qualified === false}>
+            ${t("profile.arrReviewer.no")}
+          </option>
+        </select>
+      </label>
+      <p class="profile__field-hint">
+        ${t("profile.arrReviewer.hint")}
+        <a
+          href="https://aclrollingreview.org/qualifications"
+          target="_blank"
+          rel="noopener noreferrer"
+          >${t("profile.arrReviewer.criteria")}</a
+        >
+      </p>
+    </div>`;
+
   const body = html`
     <span class="profile__form-label">
       ${labelFor(field.key)}${renderMandatoryMark(
@@ -1064,36 +1156,6 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                 ${t(group.labelKey)}
               </h3>
               <div class="profile__field-grid">
-                ${group.id === "work"
-                  ? html`<div>
-                      <label class="profile__form-row">
-                        <span class="profile__form-label"
-                          >${t("profile.arrReviewer.label")}
-                          <span class="profile__optional">${t("profile.basics.optional")}</span>
-                        </span>
-                        <select class="input" name="arr_reviewer_qualified">
-                          <option value="" ?selected=${member.arr_reviewer_qualified == null}>
-                            ${t("profile.arrReviewer.unanswered")}
-                          </option>
-                          <option value="yes" ?selected=${member.arr_reviewer_qualified === true}>
-                            ${t("profile.arrReviewer.yes")}
-                          </option>
-                          <option value="no" ?selected=${member.arr_reviewer_qualified === false}>
-                            ${t("profile.arrReviewer.no")}
-                          </option>
-                        </select>
-                      </label>
-                      <p class="profile__field-hint">
-                        ${t("profile.arrReviewer.hint")}
-                        <a
-                          href="https://aclrollingreview.org/qualifications"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          >${t("profile.arrReviewer.criteria")}</a
-                        >
-                      </p>
-                    </div>`
-                  : nothing}
                 ${group.fields.map(
                   (field) => html`
                     ${field.key === "projects"
