@@ -1,6 +1,29 @@
 import { expect, it } from "vitest";
 import { AdminBotService, AdminBotMemoryStore } from "./service.js";
 
+it("requires capacity in profile completeness only for qualified ARR reviewers", () => {
+  const service = new AdminBotService(new AdminBotMemoryStore());
+  service.upsertLabMember({ id: "arr", name: "Synthetic Reviewer" });
+  for (const [qualified, capacity, missing] of [
+    [false, null, false],
+    [true, null, true],
+    [true, 0, false],
+    [true, 2, false],
+  ] as const) {
+    service.updateOwnProfile("arr", {
+      arr_reviewer_qualified: qualified,
+      arr_review_capacity: capacity,
+    });
+    const overview = service.listMemberProfileOverview();
+    if (!overview.ok) throw new Error(overview.error.message);
+    expect(
+      overview.payload.members
+        .find((member) => member.id === "arr")
+        ?.missing_fields.includes("arr_review_capacity"),
+    ).toBe(missing);
+  }
+});
+
 it("saves, clears, and validates self-reported ARR review capacity", () => {
   const store = new AdminBotMemoryStore();
   const service = new AdminBotService(store);
@@ -24,7 +47,7 @@ it("lets members declare and clear ARR eligibility, rejecting non-booleans", () 
   const store = new AdminBotMemoryStore();
   const service = new AdminBotService(store);
   service.upsertLabMember({ id: "reviewer", name: "Synthetic Reviewer" });
-  for (const qualified of [true, false, null]) {
+  for (const qualified of [true, false]) {
     expect(
       service.updateOwnProfile("reviewer", { arr_reviewer_qualified: qualified }),
     ).toMatchObject({
@@ -36,7 +59,11 @@ it("lets members declare and clear ARR eligibility, rejecting non-booleans", () 
   expect(
     service.updateOwnProfile("reviewer", { arr_reviewer_qualified: "yes" as unknown as boolean }),
   ).toMatchObject({ ok: false, status: 400 });
-  expect(store.getLabMember("reviewer")?.arr_reviewer_qualified).toBeNull();
+  expect(store.getLabMember("reviewer")?.arr_reviewer_qualified).toBe(false);
+  expect(service.updateOwnProfile("reviewer", { arr_reviewer_qualified: null })).toMatchObject({
+    ok: false,
+    status: 400,
+  });
 });
 
 it("saves an Overleaf CV while preserving unchanged legacy intake data", () => {

@@ -41,7 +41,6 @@ it("saves self-reported ARR eligibility and links to the official criteria", () 
   const container = renderPage(createState(createMember({ arr_reviewer_qualified: true })), save);
   const checkbox = container.querySelector<HTMLSelectElement>('[name="arr_reviewer_qualified"]')!;
   expect(checkbox.value).toBe("yes");
-  expect(container.querySelector('[name="arr_review_capacity"]')).toBeNull();
   expect(checkbox.closest(".profile__field-group")?.querySelector("h3")?.textContent).toContain(
     "Work & availability",
   );
@@ -51,13 +50,29 @@ it("saves self-reported ARR eligibility and links to the official criteria", () 
   const button = container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!;
   button.click();
   expect(save.mock.calls.at(-1)?.[1].arr_reviewer_qualified).toBe(true);
-  expect(save.mock.calls.at(-1)?.[1]).not.toHaveProperty("arr_review_capacity");
   checkbox.value = "no";
   button.click();
   expect(save.mock.calls.at(-1)?.[1].arr_reviewer_qualified).toBe(false);
   checkbox.value = "";
   button.click();
-  expect(save.mock.calls.at(-1)?.[1].arr_reviewer_qualified).toBeNull();
+  expect(save.mock.calls.at(-1)?.[1]).not.toHaveProperty("arr_reviewer_qualified");
+});
+
+it("requires an explicit ARR answer and offers no unanswered choice", () => {
+  for (const answer of [undefined, null, false, true]) {
+    const member = createMember({ arr_reviewer_qualified: answer });
+    expect(blankFields(member).some((field) => field.key === "arr_reviewer_qualified")).toBe(
+      answer == null,
+    );
+    const container = renderPage(createState(member), vi.fn());
+    const select = container.querySelector<HTMLSelectElement>('[name="arr_reviewer_qualified"]')!;
+    expect(select.required).toBe(true);
+    expect(
+      [...select.options].filter((option) => !option.disabled).map((option) => option.value),
+    ).toEqual(["yes", "no"]);
+    expect(select.checkValidity()).toBe(answer != null);
+    expect(select.closest("label")?.querySelector(".profile__mandatory")).not.toBeNull();
+  }
 });
 
 function createState(member: LabMember, overrides: Partial<AppViewState> = {}): AppViewState {
@@ -72,6 +87,44 @@ function createState(member: LabMember, overrides: Partial<AppViewState> = {}): 
     ...overrides,
   } as unknown as AppViewState;
 }
+
+it("requires an integer ARR capacity only for qualified reviewers", () => {
+  const save = vi.fn();
+  const member = createMember();
+  const container = renderPage(createState(member), save);
+  const qualification = container.querySelector<HTMLSelectElement>(
+    '[name="arr_reviewer_qualified"]',
+  )!;
+  const capacity = container.querySelector<HTMLInputElement>('[name="arr_review_capacity"]')!;
+  expect(capacity.disabled).toBe(true);
+  expect(capacity.required).toBe(false);
+  expect(blankFields(member).map((f) => f.key)).not.toContain("arr_review_capacity");
+  expect(blankFields({ ...member, arr_reviewer_qualified: true }).map((f) => f.key)).toContain(
+    "arr_review_capacity",
+  );
+  expect(
+    blankFields({ ...member, arr_reviewer_qualified: true, arr_review_capacity: 0 }).map(
+      (f) => f.key,
+    ),
+  ).not.toContain("arr_review_capacity");
+  qualification.value = "yes";
+  qualification.dispatchEvent(new Event("change", { bubbles: true }));
+  expect(capacity.disabled).toBe(false);
+  expect(capacity.required).toBe(true);
+  expect(capacity.checkValidity()).toBe(false);
+  for (const invalid of ["-1", "1.5"]) {
+    capacity.value = invalid;
+    expect(capacity.checkValidity()).toBe(false);
+  }
+  capacity.value = "2";
+  expect(capacity.checkValidity()).toBe(true);
+  container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!.click();
+  expect(save.mock.calls.at(-1)?.[1].arr_review_capacity).toBe(2);
+  qualification.value = "no";
+  qualification.dispatchEvent(new Event("change", { bubbles: true }));
+  expect(capacity.disabled).toBe(true);
+  expect(capacity.required).toBe(false);
+});
 
 function renderPage(
   state: AppViewState,

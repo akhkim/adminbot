@@ -17,6 +17,7 @@ function unwrap<T>(
 /** Every mandatory field filled, so a test can take exactly the ones it wants back out. */
 const COMPLETE = {
   name: "Ada Lovelace",
+  arr_reviewer_qualified: false,
   calendar_email: "ada@cs.toronto.edu",
   location: "Toronto",
   research_topics: ["causality"],
@@ -77,7 +78,7 @@ describe("listMemberProfileOverview", () => {
     // the exported list. (Only `name` is dropped today; adminBotAdminOwnedProfileFields is empty.)
     // A client counting the exported list would show everybody stuck short forever, which is
     // exactly why the count is carried rather than derived.
-    expect(overview.mandatory_field_count).toBe(17);
+    expect(overview.mandatory_field_count).toBe(19);
     expect(overview.members[0]?.filled_field_count).toBe(overview.mandatory_field_count);
     expect(overview.members[0]?.missing_fields).toEqual([]);
   });

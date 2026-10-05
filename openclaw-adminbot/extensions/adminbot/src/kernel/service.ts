@@ -5612,6 +5612,12 @@ export class AdminBotService {
         return serviceError(400, `${field} cannot be changed from a self profile update`);
       }
     }
+    if (
+      input.arr_reviewer_qualified !== undefined &&
+      typeof input.arr_reviewer_qualified !== "boolean"
+    ) {
+      return serviceError(400, "Choose whether you are a qualified ARR reviewer");
+    }
     const patch: Partial<AdminBotLabMemberInput> = {};
     for (const field of SELF_PROFILE_EDITABLE_FIELDS) {
       if (input[field] !== undefined) {
@@ -14758,6 +14764,7 @@ function memberHasAnyEmail(member: AdminBotLabMember): boolean {
 
 function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
   return MANDATORY_PROFILE_FIELDS.filter((key) => {
+    if (key === "arr_review_capacity" && member.arr_reviewer_qualified !== true) return false;
     if (key === "intake_form_url" && member.intake_form_unavailable === true) {
       return false;
     }
