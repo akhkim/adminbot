@@ -19,6 +19,8 @@ import {
 } from "./logistics.ts";
 
 type DrawOptions = {
+  /** Re-render into an existing container, the way the app redraws the form after each save. */
+  container?: HTMLElement;
   /** False draws the Google Form signpost instead of the correction form. */
   signatureEditing?: boolean;
   role?: AccessRole;
@@ -158,8 +160,10 @@ function draw(options: DrawOptions = {}): Drawn {
   let lettersSaves = 0;
   let meetingSaves = 0;
   let myProjectsOpened = 0;
-  const container = document.createElement("div");
-  document.body.append(container);
+  const container = options.container ?? document.createElement("div");
+  if (!options.container) {
+    document.body.append(container);
+  }
   render(
     renderAdminBotLogistics({
       role: options.role ?? "member",
@@ -858,6 +862,54 @@ describe("list of schools", () => {
       "AoE (UTC−12) by default",
       "If it is not a regular program, what it looks for.",
     ]);
+  });
+
+  // Chrome's date and time fields lose a half-typed segment when their value is written while the
+  // member is typing. Each keystroke saves and redraws, so a redraw must not write back what the box
+  // already holds -- that write is what turned "14" into "4" and deadlines into the 4th.
+  describe("redrawing while a date is being typed", () => {
+    function watchWrites(input: HTMLInputElement): string[] {
+      const writes: string[] = [];
+      const native = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!;
+      Object.defineProperty(input, "value", {
+        configurable: true,
+        get() {
+          return native.get!.call(this);
+        },
+        set(value: string) {
+          writes.push(value);
+          native.set!.call(this, value);
+        },
+      });
+      return writes;
+    }
+
+    const typed = (input: HTMLInputElement, value: string) =>
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+
+    it("does not write a typed date back into its own box", () => {
+      const row = createSchoolRow({ letterDeadline: "2026-12-14", letterDeadlineTime: "23:59" });
+      const { container } = drawLetters({ schools: [row] });
+      for (const key of ["letterDeadline", "letterDeadlineTime"] as const) {
+        const input = cellInput(container, key)!;
+        const value = key === "letterDeadline" ? "2026-12-01" : "17:00";
+        typed(input, value);
+        const writes = watchWrites(input);
+        drawLetters({ container, schools: [{ ...row, [key]: value }] });
+        expect(writes).toEqual([]);
+        expect(input.value).toBe(value);
+      }
+    });
+
+    it("still shows a different date when the form is restored or reset", () => {
+      const row = createSchoolRow({ letterDeadline: "2026-12-14" });
+      const { container } = drawLetters({ schools: [row] });
+      const input = cellInput(container, "letterDeadline")!;
+      drawLetters({ container, schools: [{ ...row, letterDeadline: "2027-01-15" }] });
+      expect(input.value).toBe("2027-01-15");
+      drawLetters({ container, schools: [{ ...row, letterDeadline: "" }] });
+      expect(input.value).toBe("");
+    });
   });
 
   it("gives every column of a row its own control", () => {
