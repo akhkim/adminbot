@@ -24,7 +24,7 @@ it("lets members declare and clear ARR eligibility, rejecting non-booleans", () 
   const store = new AdminBotMemoryStore();
   const service = new AdminBotService(store);
   service.upsertLabMember({ id: "reviewer", name: "Synthetic Reviewer" });
-  for (const qualified of [true, false]) {
+  for (const qualified of [true, false, null]) {
     expect(
       service.updateOwnProfile("reviewer", { arr_reviewer_qualified: qualified }),
     ).toMatchObject({
@@ -36,7 +36,7 @@ it("lets members declare and clear ARR eligibility, rejecting non-booleans", () 
   expect(
     service.updateOwnProfile("reviewer", { arr_reviewer_qualified: "yes" as unknown as boolean }),
   ).toMatchObject({ ok: false, status: 400 });
-  expect(store.getLabMember("reviewer")?.arr_reviewer_qualified).toBe(false);
+  expect(store.getLabMember("reviewer")?.arr_reviewer_qualified).toBeNull();
 });
 
 it("saves an Overleaf CV while preserving unchanged legacy intake data", () => {

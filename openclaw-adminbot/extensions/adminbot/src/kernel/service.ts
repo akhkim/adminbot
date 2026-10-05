@@ -15006,9 +15006,10 @@ function validateLabMember(
   }
   if (
     member.arr_reviewer_qualified !== undefined &&
+    member.arr_reviewer_qualified !== null &&
     typeof member.arr_reviewer_qualified !== "boolean"
   ) {
-    return "ARR reviewer qualification must be true or false";
+    return "ARR reviewer qualification must be true, false, or null";
   }
   if (
     member.arr_review_capacity !== undefined &&

@@ -987,6 +987,9 @@
     "profile.arrReviewer.criteria",
     "profile.arrReviewer.hint",
     "profile.arrReviewer.label",
+    "profile.arrReviewer.no",
+    "profile.arrReviewer.unanswered",
+    "profile.arrReviewer.yes",
     "profile.badges.author",
     "profile.badges.criteriaLink",
     "profile.badges.decidedAt",
@@ -1321,12 +1324,12 @@
     "tabUsage.untimed",
     "tabUsage.window"
   ],
-  "generatedAt": "2026-10-05T13:54:39.086Z",
+  "generatedAt": "2026-10-05T15:57:15.349Z",
   "locale": "th",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "0b9276b66ff4f4fe132e1a3d85f87485c6ea76d86b47669e9e4eaf62165eb41f",
-  "totalKeys": 2466,
+  "sourceHash": "b5fb5ae8fbc007bedc91374d1603db703d61872e6872a5600e32da6f055ba7fa",
+  "totalKeys": 2469,
   "translatedKeys": 1146,
   "workflow": 1
 }

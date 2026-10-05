@@ -2151,6 +2151,9 @@ export const pt_BR: TranslationMap = {
   profile: {
     arrReviewer: {
       label: "I qualify as an ARR reviewer",
+      yes: "I confirm that I am a qualified reviewer.",
+      no: "I confirm that I am not a qualified reviewer.",
+      unanswered: "No response yet.",
       capacity: "Number of ARR papers I can review",
       hint: "Self-reported eligibility. This does not register you or assign reviews.",
       criteria: "Check ARR eligibility criteria",
