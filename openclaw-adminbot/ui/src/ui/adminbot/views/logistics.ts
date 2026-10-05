@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
@@ -598,6 +599,12 @@ function renderSchoolCell(
     row: String(index + 1),
   });
   const placeholder = field.placeholderKey ? t(field.placeholderKey) : nothing;
+  // `live` compares against what is in the box, not against what Lit last wrote. Every keystroke
+  // saves the draft and re-renders, and a plain `.value` binding then writes the value straight back
+  // into the control. Chrome's date and time fields drop their half-typed segment when that happens,
+  // so "14" in the day became "1", then a fresh "4": deadlines landed on the 4th, and a year typed
+  // digit by digit could blank the field. With `live`, the write is skipped when the box already
+  // holds the value, and still happens when a restored draft or a reset really changes it.
   const input = html`<input
     class="logistics-schools__input"
     type=${field.control === "date"
@@ -611,7 +618,7 @@ function renderSchoolCell(
     list=${field.listId ?? nothing}
     aria-label=${label}
     placeholder=${placeholder}
-    .value=${row[field.key]}
+    .value=${live(row[field.key])}
     @input=${onInput}
   />`;
   return html`
@@ -975,7 +982,7 @@ function renderMeetingSection(props: MeetingProps) {
                             class="logistics-schools__input"
                             type="datetime-local"
                             aria-label=${cellLabel(t("logistics.meeting.preferredTime"), index)}
-                            .value=${row.preferredTime}
+                            .value=${live(row.preferredTime)}
                             @input=${update(row, "preferredTime")}
                           />`,
                           row.preferredTime,
@@ -1057,7 +1064,7 @@ function renderMeetingSection(props: MeetingProps) {
                             class="logistics-schools__input"
                             type="date"
                             aria-label=${cellLabel(t("logistics.meeting.latestOk"), index)}
-                            .value=${row.latestOkDate}
+                            .value=${live(row.latestOkDate)}
                             @input=${update(row, "latestOkDate")}
                           />`,
                           row.latestOkDate,
@@ -1243,7 +1250,7 @@ function renderSignatureRequest(props: SignatureProps) {
               class="logistics-signature__input"
               type="date"
               data-testid="logistics-signature-deadline"
-              .value=${form.deadline}
+              .value=${live(form.deadline)}
               @input=${(event: Event) =>
                 props.onForm({ deadline: (event.target as HTMLInputElement).value })}
             />`,
