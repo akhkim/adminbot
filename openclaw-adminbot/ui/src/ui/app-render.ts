@@ -158,12 +158,16 @@ import {
   createSchoolRow,
   clearMeetingRequestDraft,
   clearRecommendationLettersDraft,
+  opportunitySchoolFields,
+  queueLetterSchool,
   restoreAdminBotLettersDraft,
   restoreAdminBotLogisticsDraft,
   restoreAdminBotMeetingDraft,
   saveAdminBotLettersDraft,
   saveAdminBotLogisticsDraft,
   saveAdminBotMeetingDraft,
+  takeQueuedLetterSchools,
+  withPrefilledSchool,
 } from "./adminbot/data/logistics-draft.ts";
 import {
   describeSubmitBlock,
@@ -445,6 +449,27 @@ function tripFor(state: AppViewState, conferenceKey: string) {
   return Object.values(state.adminBotPaperSlots).find(
     (cycle) => cycle.conferenceKey === conferenceKey,
   )?.myTrip;
+}
+
+/**
+ * Adds the schools an Opportunities row asked for to the letters form, and saves the draft.
+ *
+ * Called only once the letters draft is in place. Opening a logistics tab for the first time resets
+ * every form and restores its draft asynchronously, so a row written before that would be wiped by
+ * the reset, or would make the restore skip the member's saved draft.
+ */
+function applyQueuedLetterSchools(
+  state: AppViewState,
+  requestHostUpdate: (() => void) | undefined,
+): void {
+  const queued = takeQueuedLetterSchools();
+  if (queued.length === 0) {
+    return;
+  }
+  state.adminBotLettersSchools = queued.reduce(withPrefilledSchool, state.adminBotLettersSchools);
+  void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
+    requestHostUpdate?.(),
+  );
 }
 
 function adminBotLogisticsScope(state: AppViewState): string {
@@ -3002,6 +3027,7 @@ export function renderApp(state: AppViewState) {
       restoreAdminBotLettersDraft(state, logisticsScope),
       restoreAdminBotMeetingDraft(state, logisticsScope),
     ]).finally(() => {
+      applyQueuedLetterSchools(state, requestHostUpdate);
       requestHostUpdate?.();
       retryDraftSync();
     });
@@ -4617,7 +4643,22 @@ export function renderApp(state: AppViewState) {
             )
           : nothing}
         ${state.tab === "adminbotOpportunities"
-          ? renderLazyView(lazyOpportunities, (m) => m.renderOpportunities())
+          ? renderLazyView(lazyOpportunities, (m) =>
+              m.renderOpportunities({
+                // Members only: the letters tab needs a session, and a visitor has nowhere to go.
+                onRequestLetter: state.memberId
+                  ? (opportunity) => {
+                      queueLetterSchool(opportunitySchoolFields(opportunity));
+                      state.setTab("adminbotRecLetters");
+                      // Already loaded this session: add it now. Otherwise the tab's first render
+                      // restores the draft and adds it then (see applyQueuedLetterSchools).
+                      if (state.adminBotLogisticsDraftScope === adminBotLogisticsScope(state)) {
+                        applyQueuedLetterSchools(state, requestHostUpdate);
+                      }
+                    }
+                  : undefined,
+              }),
+            )
           : nothing}
         ${state.tab === "adminbotMailingList" && adminBotMode === "admin"
           ? renderLazyView(lazyMailingList, (m) =>
