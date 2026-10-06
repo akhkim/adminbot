@@ -3,6 +3,7 @@
 // turn one into a member, and approving it is the same save an admin's own Add member makes.
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMember, AdminBotLabMemberInput } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -55,7 +56,7 @@ function seedMember(
   mock: ReturnType<typeof createAdminBotMockService>,
   input: AdminBotLabMemberInput,
 ): void {
-  const result = mock.service.upsertLabMember(input);
+  const result = mock.service.upsertLabMember(withCompleteProfile(input));
   if (!result.ok) {
     throw new Error(result.error.message);
   }

@@ -1929,3 +1929,14 @@ it("requires social/website links and accepts either intake response answer for 
     expect(row.querySelector(".profile__optional")).toBeNull();
   }
 });
+
+it("hides badge nomination and suggestion controls until profile access is unlocked", () => {
+  const state = createState(createMember());
+  const container = document.createElement("div");
+  render(renderProfile(state, { onSave: vi.fn(), badgesDisabled: true }), container);
+  expect(container.querySelector('[name="location"]')).not.toBeNull();
+  expect(container.querySelector('[data-testid="profile-badge-suggestions"]')).toBeNull();
+  expect(container.querySelector(".profile-badge-form")).toBeNull();
+  render(renderProfile(state, { onSave: vi.fn(), badgesDisabled: false }), container);
+  expect(container.querySelector('[data-testid="profile-badge-suggestions"]')).not.toBeNull();
+});

@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMemberInput, AdminBotStoredProposal } from "../contracts/actions.js";
 import { resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import type { AdminBotCalendarEvent } from "../workflows/calendar/events.js";
 import type { AdminBotOnboardingSender } from "../workflows/onboarding/guide-sender.js";
 import { createAdminBotMockService } from "./server.js";
@@ -104,7 +105,7 @@ async function startService(options: { sheetRows?: string[][]; meeting?: string[
       member_type: "coauthor-major",
     },
   ] as AdminBotLabMemberInput[]) {
-    const saved = mock.service.upsertLabMember(seed);
+    const saved = mock.service.upsertLabMember(withCompleteProfile(seed));
     if (!saved.ok) {
       throw new Error(saved.error.message);
     }
@@ -434,7 +435,9 @@ describe("new member creation", () => {
       });
     expect((await request()).status).toBe(401);
     expect((await request(SERVICE_TOKEN)).status).toBe(403);
-    mock.service.upsertLabMember({ id: "admin", name: "Admin", privilege_level: "member" });
+    mock.service.upsertLabMember(
+      withCompleteProfile({ id: "admin", name: "Admin", privilege_level: "member" }),
+    );
     expect((await request(token)).status).toBe(403);
     const roster = mock.service.listLabMembers();
     expect(

@@ -16,6 +16,18 @@ function sameSession(token: string): boolean {
   return loadStoredMemberSession()?.sessionToken === token;
 }
 
+/** Defer the courtesy prompt while blocked and discard any earlier gate-rejected read. */
+export function prepareProfileLocationPrompt(
+  host: Pick<AdminBotHost, "adminBotLocationDrift">,
+  profileBlocked: boolean,
+): boolean {
+  if (profileBlocked) {
+    host.adminBotLocationDrift = undefined;
+    return false;
+  }
+  return host.adminBotLocationDrift === undefined;
+}
+
 export async function loadAdminBotLocationPrompt(host: AdminBotHost): Promise<void> {
   const stored = loadStoredMemberSession();
   if (!stored) {

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const token = "synthetic-service-token";
@@ -149,11 +150,13 @@ describe("reference scan MVP", () => {
 
   it("denies ordinary member sessions on both endpoints", async () => {
     const { app, url, readPdf } = await setup();
-    app.service.upsertLabMember({
-      id: "synthetic-member",
-      name: "Synthetic Member",
-      email: "member@example.test",
-    });
+    app.service.upsertLabMember(
+      withCompleteProfile({
+        id: "synthetic-member",
+        name: "Synthetic Member",
+        email: "member@example.test",
+      }),
+    );
     const memberToken = "synthetic-member-session";
     app.store.saveSession({
       member_id: "synthetic-member",

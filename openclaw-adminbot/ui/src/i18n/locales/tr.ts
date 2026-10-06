@@ -2153,6 +2153,12 @@ export const tr: TranslationMap = {
     },
   },
   profile: {
+    gate: {
+      title: "Complete your profile to continue",
+      description:
+        "Fill in the required fields below to use AdminBot. Your progress saves automatically.",
+      retry: "Try again",
+    },
     arrReviewer: {
       label: "I qualify as an ARR reviewer",
       yes: "I confirm that I am a qualified reviewer.",

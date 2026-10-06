@@ -132,6 +132,7 @@ import {
 } from "./adminbot/controllers/profile-overview.ts";
 import "./components/feedback-widget.ts";
 import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
+import { prepareProfileLocationPrompt } from "./adminbot/controllers/location-prompt.ts";
 import { exportAdminBotTabUsage, loadAdminBotTabUsage } from "./adminbot/controllers/tab-usage.ts";
 import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
 import { milestoneRows } from "./adminbot/data/availability.ts";
@@ -144,6 +145,7 @@ import {
   loadBadgeSuggestions,
   loadProfileBadgeNominations,
   removeAdminBadge,
+  resetBlockedProfileBadgeErrors,
   saveAdminBadgeDefinition,
   shouldLoadAdminBadgeNominations,
   shouldLoadBadgeDefinitions,
@@ -223,6 +225,7 @@ import { paperTripDraftFrom } from "./adminbot/views/paper-cycle.ts";
 import { renderProfessorView } from "./adminbot/views/professor.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
+import { isProfileBlocked, profileAccessState } from "./adminbot/views/profile-gate.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
 import { EMPTY_TRIP_DRAFT } from "./adminbot/views/time-availability.trips.ts";
 import {
@@ -249,7 +252,7 @@ import {
   dismissChatError,
   switchChatSession,
 } from "./app-render.helpers.ts";
-import { warnQueryToken } from "./app-settings.ts";
+import { refreshActiveTab, warnQueryToken } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
 import { renderChatSessionSelect } from "./chat/session-controls.ts";
@@ -1998,6 +2001,32 @@ export function renderApp(state: AppViewState) {
       : undefined;
   pendingUpdate = requestHostUpdate;
 
+  // Unknown is not incomplete: preserve the requested page until the self read finishes.
+  if (profileAccessState(state) === "loading") {
+    const loadProfile = () => {
+      state.adminBotError = null;
+      void refreshActiveTab(state).finally(() => requestHostUpdate?.());
+    };
+    if (!state.adminBotError) {
+      void refreshActiveTab(state).finally(() => requestHostUpdate?.());
+    }
+    return html`<main class="content">
+      <div class="card" role="status" data-testid="profile-loading">
+        <p>${state.adminBotError || t("common.loading")}</p>
+        ${state.adminBotError
+          ? html`<button class="btn" @click=${loadProfile}>${t("profile.gate.retry")}</button>`
+          : nothing}
+        <button class="btn" @click=${() => void state.signOutMember()}>
+          ${t("login.member.signOut")}
+        </button>
+      </div>
+    </main>`;
+  }
+
+  const profileBlocked = isProfileBlocked(state);
+  resetBlockedProfileBadgeErrors(state);
+  if (profileBlocked && state.tab !== "profile") state.setTab("profile");
+
   // Opening the workshop tab reads the stored pass. It never starts one -- that is Refresh, and it
   // is thousands of model calls. Self-limiting: the read sets `loading` synchronously and leaves a
   // `run` behind, so this fires once per visit and not once per frame.
@@ -2795,7 +2824,8 @@ export function renderApp(state: AppViewState) {
   const hasMemberSession = Boolean(state.memberId);
   const needsRosterForTab = needsLabRoster(state.tab, adminBotMode, adminBotPanel);
   const needsPapersForTab =
-    needsLabPapers(state.tab) || adminBotPanel === "papers" || (isChat && isAdminBotChat);
+    !profileBlocked &&
+    (needsLabPapers(state.tab) || adminBotPanel === "papers" || (isChat && isAdminBotChat));
   // Time Availability needs the roster to fill its member picker but renders its own view, so it
   // deliberately maps to no panel. It has to be named here instead: `adminBotPanel` doubles as the
   // render switch, and borrowing "members" to trigger the fetch drew the whole Lab Members panel
@@ -2909,7 +2939,11 @@ export function renderApp(state: AppViewState) {
   // Asked once, when the member opens their own profile -- which is where the banner renders and
   // the only place its answer makes sense. Undefined is "not asked yet"; null is a real "nothing
   // to ask" and must not re-trigger.
-  if (state.tab === "profile" && hasMemberSession && state.adminBotLocationDrift === undefined) {
+  if (
+    state.tab === "profile" &&
+    hasMemberSession &&
+    prepareProfileLocationPrompt(state, profileBlocked)
+  ) {
     void state.loadLocationPrompt?.().finally(() => requestHostUpdate?.());
   }
   // The three badge reads share one rule, in shouldLoad*: a failed load must not be retried from
@@ -3329,7 +3363,7 @@ export function renderApp(state: AppViewState) {
 
   return html`
     ${renderCommandPalette({
-      open: state.paletteOpen,
+      open: state.paletteOpen && !profileBlocked,
       query: state.paletteQuery,
       activeIndex: state.paletteActiveIndex,
       onToggle: () => {
@@ -3392,6 +3426,7 @@ export function renderApp(state: AppViewState) {
           <div class="topnav-shell__actions">
             <button
               class="topbar-search"
+              ?disabled=${profileBlocked}
               @click=${() => {
                 state.paletteOpen = !state.paletteOpen;
               }}
@@ -3401,7 +3436,7 @@ export function renderApp(state: AppViewState) {
               <span class="topbar-search__label">${t("common.search")}</span>
               <kbd class="topbar-search__kbd">⌘K</kbd>
             </button>
-            ${renderNudgeBell(state)}
+            ${profileBlocked ? nothing : renderNudgeBell(state)}
             <div class="topbar-status">${renderTopbarThemeModeToggle(state)}</div>
           </div>
         </div>
@@ -3575,7 +3610,24 @@ export function renderApp(state: AppViewState) {
                   : nothing}
               </div>
             </section>`}
-        ${renderPageTabs(state, accessRole)}
+        ${profileBlocked
+          ? html`<div class="callout danger" role="status" data-testid="profile-completion-notice">
+              <strong>${t("profile.gate.title")}</strong>
+              <p>${t("profile.gate.description")}</p>
+              ${state.adminBotError
+                ? html`<p>${state.adminBotError}</p>
+                    <button
+                      class="btn"
+                      @click=${() => {
+                        state.adminBotError = null;
+                        void loadAdminBot(state, "general", false).finally(() =>
+                          requestHostUpdate?.(),
+                        );
+                      }}
+                    >${t("profile.gate.retry")}</button>`
+                : nothing}
+            </div>`
+          : renderPageTabs(state, accessRole)}
         ${rosterPendingForTab
           ? html`<div
               class="adminbot-empty"
@@ -3611,7 +3663,7 @@ export function renderApp(state: AppViewState) {
               () => void loadAdminBot(state, adminBotMode, needsPapersForTab),
             )
           : nothing}
-        ${state.tab === "profile"
+        ${state.tab === "profile" && !profileBlocked
           ? renderLocationPrompt({
               drift: state.adminBotLocationDrift ?? null,
               saving: state.adminBotLocationSaving ?? false,
@@ -3627,6 +3679,7 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "profile"
           ? html`
               ${renderProfile(state, {
+                badgesDisabled: profileBlocked,
                 onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
                 onLoadRecentEdits: (subject, id) => {
                   void loadAdminBotRecentEdits(state, subject, id).finally(() =>

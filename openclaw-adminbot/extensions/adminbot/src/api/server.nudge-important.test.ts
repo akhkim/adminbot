@@ -1,6 +1,7 @@
 // The one nudge route whose text and recipients come from a browser must not be able to raise the
 // flag that puts the head professor in a group DM five days later.
 import { describe, expect, it, vi } from "vitest";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { AdminBotService } from "../kernel/service.js";
 
 describe("POST /nudges/send", () => {
@@ -8,13 +9,15 @@ describe("POST /nudges/send", () => {
     const service = new AdminBotService(undefined, {
       executor: { execute: async () => ({ handled: true }) },
     });
-    service.upsertLabMember({
-      receives_nudges: true,
-      id: "mei",
-      name: "Mei Chen",
-      privilege_level: "member",
-      slack_user_id: "U-MEI",
-    } as never);
+    service.upsertLabMember(
+      withCompleteProfile({
+        receives_nudges: true,
+        id: "mei",
+        name: "Mei Chen",
+        privilege_level: "member",
+        slack_user_id: "U-MEI",
+      } as never),
+    );
 
     // Exactly what the route does with the parsed body.
     const body = {
@@ -55,7 +58,7 @@ describe("POST /nudges/send", () => {
       { id: "zhijing", name: "Zhijing Jin", privilege_level: "admin", slack_user_id: "U-ZJ" },
       { id: "mei", name: "Mei Chen", privilege_level: "member", slack_user_id: "U-MEI" },
     ]) {
-      service.upsertLabMember(member as never);
+      service.upsertLabMember(withCompleteProfile(member as never));
     }
     service.updateSettings({ head_professor_member_id: "zhijing" } as never);
 

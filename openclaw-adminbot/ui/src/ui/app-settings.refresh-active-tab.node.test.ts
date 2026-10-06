@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { COMPLETE_PROFILE } from "../../../extensions/adminbot/src/contracts/profile-completion.test-helpers.js";
 
 type CronRunsLoadStatus = "ok" | "error" | "skipped";
 
@@ -27,6 +28,8 @@ async function raceWithNextMacrotask(promise: Promise<unknown>): Promise<"resolv
 
 const mocks = vi.hoisted(() => ({
   loadAdminBotMock: vi.fn(async () => {}),
+  pendingAdminBotLoadMock: vi.fn<() => Promise<void> | undefined>(),
+  loadVenueSourcesMock: vi.fn(async () => {}),
   refreshChatMock: vi.fn(async () => {}),
   scheduleChatScrollMock: vi.fn(),
   scheduleLogsScrollMock: vi.fn(),
@@ -69,7 +72,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./adminbot/controllers/admin.ts", () => ({
   loadAdminBot: mocks.loadAdminBotMock,
-  loadAdminBotVenueSources: vi.fn(async () => {}),
+  loadAdminBotVenueSources: mocks.loadVenueSourcesMock,
+  pendingAdminBotLoad: mocks.pendingAdminBotLoadMock,
 }));
 vi.mock("./app-chat.ts", () => ({
   refreshChat: mocks.refreshChatMock,
@@ -226,6 +230,114 @@ describe("refreshActiveTab", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  function coldMember(tab = "adminbotConferencePapers") {
+    return Object.assign(createHost(), {
+      tab,
+      memberId: COMPLETE_PROFILE.id as string | null,
+      memberPrivilegeLevel: "member",
+      adminBotError: null as string | null,
+      adminBotData: { members: [] as object[], loadedAt: null as number | null },
+    });
+  }
+  function finishProfile(host: ReturnType<typeof coldMember>, complete = true) {
+    host.adminBotData.members = [{ ...COMPLETE_PROFILE, location: complete ? "Toronto" : "" }];
+    host.adminBotData.loadedAt = Date.now();
+  }
+
+  it("loads the profile once and resumes Conference Papers for concurrent refresh requests", async () => {
+    const host = coldMember();
+    const loading = createDeferred();
+    mocks.loadAdminBotMock.mockImplementationOnce(async () => {
+      await loading.promise;
+      finishProfile(host);
+    });
+    const first = refreshActiveTab(host as never);
+    const second = refreshActiveTab(host as never);
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.loadVenueSourcesMock).not.toHaveBeenCalled();
+    loading.resolve();
+    await Promise.all([first, second]);
+    expect(host.tab).toBe("adminbotConferencePapers");
+    expect(mocks.loadVenueSourcesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("joins an existing profile request and refreshes the latest requested tab", async () => {
+    const host = coldMember("chat");
+    const loading = createDeferred();
+    mocks.pendingAdminBotLoadMock.mockReturnValueOnce(loading.promise);
+    const pending = refreshActiveTab(host as never, { chatStartup: true });
+    host.tab = "adminbotConferencePapers";
+    const again = refreshActiveTab(host as never);
+    finishProfile(host);
+    loading.resolve();
+    await Promise.all([pending, again]);
+    expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
+    expect(mocks.refreshChatMock).not.toHaveBeenCalled();
+    expect(mocks.loadVenueSourcesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not swallow navigation once the profile check has finished", async () => {
+    const host = coldMember();
+    const venues = createDeferred();
+    mocks.loadAdminBotMock.mockImplementationOnce(async () => {
+      finishProfile(host);
+    });
+    mocks.loadVenueSourcesMock.mockReturnValueOnce(venues.promise);
+    const first = refreshActiveTab(host as never);
+    await vi.waitFor(() => expect(mocks.loadVenueSourcesMock).toHaveBeenCalledOnce());
+    host.tab = "chat";
+    await refreshActiveTab(host as never);
+    expect(mocks.refreshChatMock).toHaveBeenCalledOnce();
+    venues.resolve();
+    await first;
+  });
+
+  it("continues normal chat startup after the profile read", async () => {
+    const host = coldMember("chat");
+    mocks.loadAdminBotMock.mockImplementationOnce(async () => {
+      finishProfile(host);
+    });
+    await refreshActiveTab(host as never, { chatStartup: true });
+    expect(mocks.refreshChatMock).toHaveBeenCalledWith(host, { awaitHistory: true, startup: true });
+  });
+
+  it("redirects confirmed incomplete profiles without loading the requested feature", async () => {
+    const host = coldMember();
+    mocks.loadAdminBotMock.mockImplementationOnce(async () => {
+      finishProfile(host, false);
+    });
+    await refreshActiveTab(host as never);
+    expect(host.tab).toBe("profile");
+    expect(mocks.loadVenueSourcesMock).not.toHaveBeenCalled();
+  });
+
+  it("stops on failure and resumes the original page on retry", async () => {
+    const host = coldMember();
+    mocks.loadAdminBotMock.mockImplementationOnce(async () => {
+      host.adminBotError = "unreachable";
+    });
+    await refreshActiveTab(host as never);
+    expect(host.tab).toBe("adminbotConferencePapers");
+    expect(mocks.loadVenueSourcesMock).not.toHaveBeenCalled();
+    host.adminBotError = null;
+    mocks.loadAdminBotMock.mockImplementationOnce(async () => {
+      finishProfile(host);
+    });
+    await refreshActiveTab(host as never);
+    expect(mocks.loadVenueSourcesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not resume a feature after the member signs out during loading", async () => {
+    const host = coldMember();
+    const loading = createDeferred();
+    mocks.loadAdminBotMock.mockReturnValueOnce(loading.promise);
+    const pending = refreshActiveTab(host as never);
+    host.memberId = null;
+    loading.resolve();
+    await pending;
+    expect(mocks.loadVenueSourcesMock).not.toHaveBeenCalled();
   });
 
   const expectCommonAgentsTabRefresh = (host: ReturnType<typeof createHost>) => {

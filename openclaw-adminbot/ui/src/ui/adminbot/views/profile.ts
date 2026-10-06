@@ -76,6 +76,7 @@ import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 import { renderRecentEdits } from "./recent-edits.ts";
 
 export type ProfileProps = {
+  badgesDisabled?: boolean;
   onSave: (memberId: string, fields: MemberProfileUpdate) => void;
   /** Fetches this record's edit history, called when the panel is opened. */
   onLoadRecentEdits?: (subject: "member" | "paper", id: string) => void;
@@ -2080,7 +2081,9 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
       </header>
       ${renderBadgesSection(state, member)} ${renderBasics(state, member, props)}
       ${renderPhotoCompliance(state, member, props)}
-      ${renderBadgeSelfNomination(state, member, props)} ${renderBadgeSuggestion(state, props)}
+      ${props.badgesDisabled
+        ? nothing
+        : html`${renderBadgeSelfNomination(state, member, props)} ${renderBadgeSuggestion(state, props)}`}
       ${renderOnboardingPointer(state, props)}
       <!-- Who has been in this record. Last, and shut: it is history about the fields above, and
            the answer to a question somebody asks occasionally rather than on every visit. Since

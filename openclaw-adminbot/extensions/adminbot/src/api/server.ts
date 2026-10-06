@@ -72,6 +72,7 @@ import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../contracts/paper-cy
 import type { AiTextScorer } from "../contracts/paper-integrity-checks.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
 import { parsePaperMentorRunInput } from "../contracts/papermentor.js";
+import { missingMandatoryProfileFields } from "../contracts/profile-completion.js";
 import type { ReferenceScanDependencies } from "../contracts/reference-scans.js";
 import {
   buildNewsletterDraft,
@@ -191,6 +192,7 @@ import {
   resolveMemberSheetConfig,
 } from "./member-sheet-config.js";
 import { createPdfReferenceCheckHandler } from "./pdf-reference-check.js";
+import { isBlockedByProfile } from "./profile-gate.js";
 import {
   previewCallSheetPush,
   proposeCallSheetPush,
@@ -1973,6 +1975,21 @@ async function handleAuthenticatedRoute(
   if (principal.kind === "anonymous" && !isAnonymousRoute(req.method, url.pathname)) {
     sendJson(res, 401, { error: { message: "authentication required" } });
     return;
+  }
+  if (principal.kind === "member") {
+    // Re-read the row on every request: a saved answer unlocks immediately, and clearing it
+    // locks again even when the member's session predates the change.
+    const member = ctx.store.getLabMember(principal.member.id);
+    if (!member || isBlockedByProfile(member, req.method, url.pathname)) {
+      sendJson(res, 403, {
+        error: {
+          code: "profile_incomplete",
+          message: "Complete the required fields in My Profile before using AdminBot.",
+          missing_fields: member ? missingMandatoryProfileFields(member) : [],
+        },
+      });
+      return;
+    }
   }
   if (url.pathname.startsWith("/member-drafts/")) {
     if (principal.kind !== "member") {
