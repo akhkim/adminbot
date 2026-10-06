@@ -21,9 +21,15 @@ import { icons } from "../../icons.ts";
 import { iconForTab, isKnownTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
 import type { MemberNotification } from "../auth/session.ts";
-import { daysLeftLabel, upcomingMajorDeadlines, urgencyOf } from "../data/deadline-time.ts";
+import {
+  deadlineDateTimeLabel,
+  daysLeftLabel,
+  plainDateLabel,
+  upcomingMajorDeadlines,
+  urgencyOf,
+} from "../data/deadline-time.ts";
 import { nextStepFor } from "../next-step.ts";
-import { renderAoeDateTime } from "./deadline-date.ts";
+import { renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderMemberMap } from "./member-map.ts";
 import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
 import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile.ts";
@@ -445,6 +451,7 @@ type NextDeadline = {
   key: string;
   label: string;
   instant: number;
+  dateLabel: string;
   mine: boolean;
 };
 
@@ -467,6 +474,7 @@ function nextDeadlines(state: AppViewState): NextDeadline[] {
       key: `venue:${entry.venue.deadline_id ?? entry.venue.name}`,
       label: entry.venue.name,
       instant: entry.instant,
+      dateLabel: deadlineDateTimeLabel(entry.venue),
       mine: false,
     }),
   );
@@ -486,6 +494,7 @@ function nextDeadlines(state: AppViewState): NextDeadline[] {
       key: `mine:${date}:${milestone.label ?? ""}`,
       label: String(milestone.label ?? "").trim() || date,
       instant,
+      dateLabel: plainDateLabel(date),
       mine: true,
     });
   }
@@ -530,7 +539,7 @@ function renderNextDeadlines(state: AppViewState) {
                 : nothing}
             </span>
             <span class="dashboard__next-deadline-date">
-              ${renderAoeDateTime(new Date(row.instant).toISOString())}
+              ${renderDeadlineDateLabel(row.dateLabel)}
             </span>
           </li>`,
       )}
