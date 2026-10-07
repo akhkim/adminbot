@@ -172,6 +172,25 @@ files. Ignore it.
 `adminbot/` (the member-facing AdminBot tabs plus `access.ts`, the visibility table).
 `ui/src/ui/navigation.ts` holds `TAB_GROUPS` and the `Tab` union.
 
+### AdminBot zones
+
+AdminBot is cut by responsibility zone, and a zone has the same name on both sides of the wire:
+`profile`, `members`, `meetings`, `logistics` (Signatures, Rec Letters, Meeting Requests),
+`reimbursements`, `lab-sharing` (Collaborate), `papers`, `calendar`, and so on.
+
+| Layer      | Where                                          | Holds                                                                                                                                                                        |
+| ---------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Routes     | `extensions/adminbot/src/api/routes/<zone>.ts` | One `Route[]` table per zone. Each entry names its method, path and audience: `get("/meetings", memberOnly(...))`. The guard decorators are in `routes/guards.ts`.           |
+| Route core | `extensions/adminbot/src/api/routes/`          | `router.ts` (matching and dispatch), `guards.ts`, `session.ts` (who is calling), `auth.ts` (`/auth/*`), `origin.ts` (CORS), `anonymous.ts`, `context.ts`, `index.ts` (table) |
+| Composer   | `extensions/adminbot/src/api/server.ts`        | Service options, `createAdminBotMockService`, `routeRequest`, `listen`. No route bodies.                                                                                     |
+| Client     | `ui/src/ui/adminbot/api/<zone>.ts`             | The browser's calls to that zone's routes. `auth/session.ts` keeps the session and the shared request plumbing.                                                              |
+| Controller | `ui/src/ui/adminbot/controllers/<zone>.ts`     | Loads through the zone client and writes onto the host state. `controllers/admin.ts` keeps the host shape and the shared lab read.                                           |
+| Surface    | `ui/src/ui/adminbot/surfaces/<zone>.ts`        | `render<Zone>Surface(state, scope)`: whether the tab shows, and the wiring from its view to its controller. `surfaces/scope.ts` is what renderApp hands every surface.       |
+| View       | `ui/src/ui/adminbot/views/`                    | Rendering only.                                                                                                                                                              |
+
+A zone module imports the core and never a sibling zone. Route order matters only inside a zone:
+the first match wins, so a literal path precedes a pattern that would also accept it.
+
 ## The request lifecycle
 
 One inbound Slack message, end to end. Every hop below was verified by following the actual
@@ -221,6 +240,8 @@ imports.
 | Move files                     | write a manifest in `scripts/moves/*.json`, run `scripts/lib/codemod-move.ts`; one move per commit                                                                         | [ADR-0001](adr/0001-targeted-subgrouping-over-full-hexagonal-reshape.md) |
 | Split a big file               | dot-suffix siblings next to the original (`attempt.session-lock.ts`); characterize the seam first                                                                          | [ADR-0006](adr/0006-deferred-monster-splits.md)                          |
 | Find why a message got a reply | `src/auto-reply/reply/dispatch/dispatch-from-config.ts`, then the get-reply pipeline                                                                                       | the lifecycle above                                                      |
+| Add an AdminBot route          | an entry in `extensions/adminbot/src/api/routes/<zone>.ts`, guarded by `memberOnly` / `privilegedOnly` / `adminSessionOnly`; a new zone joins `routes/index.ts`            | the zones above; the guard is not optional                               |
+| Add an AdminBot tab            | client call in `adminbot/api/<zone>.ts`, controller in `adminbot/controllers/<zone>.ts`, `render<Zone>Surface` in `adminbot/surfaces/<zone>.ts`, called from renderApp     | the zones above                                                          |
 | Add a UI tab                   | `ui/src/ui/views/<tab>.ts` + `controllers/<tab>.ts`, `TAB_GROUPS`/`Tab` in `navigation.ts`, visibility in `adminbot/access.ts`                                             | [AGENTS.md](../AGENTS.md) — the access table is not security             |
 | Add a `plugin-sdk` subpath     | **three registrations**: `src/plugin-sdk/<name>.ts`, the `./plugin-sdk/<name>` entry in root `package.json` exports, and `extensions/tsconfig.package-boundary.paths.json` | [ADR-0003](adr/0003-plugin-sdk-stays-flat.md)                            |
 | Add a cross-domain import      | edit `config/layering.json` — the frozen edge set is deliberate, not generated on demand                                                                                   | [ADR-0004](adr/0004-agents-is-the-application-layer.md)                  |
