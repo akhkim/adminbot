@@ -7,6 +7,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { gzipSync } from "node:zlib";
 import type { AdminBotServiceResponse } from "../kernel/service.js";
+import { avatarJsonReplacer, avatarJsonReviver, type Avatar } from "./avatars.js";
 
 // Typed API requests are small. Routes carrying files pass a larger explicit ceiling; making the
 // ordinary default finite prevents a newly added or anonymous JSON route from silently buffering
@@ -38,7 +39,7 @@ export async function readJson(
     }
     chunks.push(buffer);
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"), avatarJsonReviver);
 }
 
 /**
@@ -62,7 +63,7 @@ export async function readJsonOrEmpty(
     chunks.push(buffer);
   }
   const raw = Buffer.concat(chunks).toString("utf8").trim();
-  return raw ? JSON.parse(raw) : {};
+  return raw ? JSON.parse(raw, avatarJsonReviver) : {};
 }
 
 /** Thrown by `readJson` past its cap, so the route answers 413 rather than dying on a parse. */
@@ -103,7 +104,8 @@ export function sendJson(res: ServerResponse, status: number, body: unknown): vo
   // re-asking the server, which is indistinguishable from the data actually being wrong.
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Vary", "Accept-Encoding");
-  const json = JSON.stringify(body);
+  // Inline photos go out as /avatars/<hash> (see ./avatars.ts) rather than megabytes of base64.
+  const json = JSON.stringify(body, avatarJsonReplacer);
   // Roster and paper payloads run to megabytes of repetitive JSON, which gzip shrinks ~5-10x.
   // Small bodies are not worth the CPU or the header bytes.
   if (json.length >= GZIP_MIN_BYTES && acceptsGzip(res.req)) {
@@ -119,6 +121,27 @@ const GZIP_MIN_BYTES = 1024;
 function acceptsGzip(req: IncomingMessage | undefined): boolean {
   const header = req?.headers?.["accept-encoding"];
   return typeof header === "string" && /\bgzip\b(?!;q=0(?:\.0*)?\b)/i.test(header);
+}
+
+/**
+ * A profile photo by content address. The address changes with the photo, so it is cached for
+ * good; nosniff and the raster-only allowlist in ./avatars.ts keep it from being anything but an
+ * image, and the cross-origin policy lets the console on its own origin show it.
+ */
+export function sendAvatar(res: ServerResponse, avatar: Avatar | undefined): void {
+  if (!avatar) {
+    res.statusCode = 404;
+    res.setHeader("Cache-Control", "no-store");
+    res.end();
+    return;
+  }
+  res.statusCode = 200;
+  res.setHeader("Content-Type", avatar.contentType);
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+  res.end(avatar.bytes);
 }
 
 export function sendHtml(res: ServerResponse, status: number, body: string): void {

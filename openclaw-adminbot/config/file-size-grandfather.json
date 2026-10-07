@@ -8,7 +8,7 @@
   "limit": 2200,
   "grandfathered": {
     "extensions/adminbot/src/api/server.ts": {
-      "max": 7294,
+      "max": 7220,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "extensions/adminbot/src/contracts/actions.ts": {
@@ -240,7 +240,7 @@
       "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
     },
     "ui/src/ui/adminbot/auth/session.ts": {
-      "max": 5633,
+      "max": 5626,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "ui/src/ui/adminbot/controllers/admin.ts": {

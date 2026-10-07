@@ -15,7 +15,6 @@ import {
 import { createInterviewChannelProvisioner } from "../connectors/slack-interview.js";
 import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
-import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import { createLlmLoadRouter, parseLlmNodes } from "../kernel/llm-router.js";
 import { ReferenceScans } from "../kernel/reference-scans.js";
 import {
@@ -32,9 +31,6 @@ import { AdminBotSqliteStore, createAdminBotSqliteService } from "../persistence
 import { createAdminBotPrivacyBroker } from "../privacy/broker.js";
 import { createLocalChat } from "../privacy/local-chat.js";
 import { createAdminBotSensitiveInfoDocument } from "../privacy/sensitive-info-doc.js";
-import { renderAdminBotWebUi } from "../web/console/index.js";
-import { renderMemberMapWebUi } from "../web/member-map/index.js";
-import { renderVenuePickerWebUi } from "../web/venue-picker/index.js";
 import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
 import { createCalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
@@ -74,22 +70,17 @@ import type {
 import type { AdminBotMockServiceOptions } from "./routes/context.js";
 import { AUTHENTICATED_ROUTES } from "./routes/index.js";
 import { memberEnrollmentContext } from "./routes/onboarding.js";
-import {
-  DEFAULT_ALLOWED_ORIGINS,
-  isForeignOrigin,
-  applyCors,
-  parseOrigins,
-  remoteIp,
-} from "./routes/origin.js";
+import { DEFAULT_ALLOWED_ORIGINS, applyCors, parseOrigins, remoteIp } from "./routes/origin.js";
 import { createOpenReviewCitationWatch, createIclrIntegrityWatch } from "./routes/reviews.js";
 import { dispatchRoute } from "./routes/router.js";
 import { resolvePrincipal } from "./routes/session.js";
-import { PayloadTooLargeError, sendHtml, sendRedirect, sendJson } from "./server.http.js";
+import { PayloadTooLargeError, sendJson } from "./server.http.js";
 import { executeMemberEnrollment } from "./server.member-onboarding.js";
 import {
   createPublicDeadlineLimiter,
   handlePublicDeadlineProposal,
 } from "./server.public-deadline-proposals.js";
+import { servePublicRoute } from "./server.public.js";
 export type { AdminBotCvDigestPublisher } from "./routes/context.js";
 export type { AdminBotMemberSheetSource } from "./routes/context.js";
 export type { DeviceTokenIssuance } from "./routes/context.js";
@@ -544,43 +535,8 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     return;
   }
 
-  // Exempt public surfaces: HTML shells and the auth endpoints themselves.
-  //
-  // `/` is the address a person types, so it hands them the Control UI rather than the built-in
-  // console. The console is a thin operator surface with no sign-in and no member flows (see
-  // contracts/control-ui.ts), so landing on it from the bare hostname reads as "this is the
-  // product" when it is really the fallback. It keeps its own address at `/adminbot`, which is
-  // what makes the redirect safe: when the Control UI deployment is down, the operator surface is
-  // still reachable on this origin without touching configuration.
-  if (req.method === "GET" && url.pathname === "/") {
-    const controlUi = resolveAdminBotControlUiUrl();
-    // A Control UI configured to this same origin would redirect to itself forever and leave the
-    // service unopenable in a browser. Serving the console is the strictly better failure: the
-    // operator sees something, and the misconfiguration is visible rather than fatal.
-    if (isForeignOrigin(controlUi, req)) {
-      sendRedirect(res, `${controlUi}/`);
-      return;
-    }
-    sendHtml(res, 200, renderAdminBotWebUi());
-    return;
-  }
-  if (req.method === "GET" && url.pathname === "/adminbot") {
-    sendHtml(res, 200, renderAdminBotWebUi());
-    return;
-  }
-  if (req.method === "GET" && url.pathname === "/deadlines") {
-    sendJson(res, 200, { items: ctx.service.deadlineReadModel(DEADLINE_VENUES) });
-    return;
-  }
-  // Public and login-free by design: the deck asks for the venue guide to be reachable by anyone
-  // the guidebook or the chatbot points at it, including collaborators with no AdminBot account.
-  // Served here, above resolvePrincipal, for the same reason /deadlines is.
-  if (req.method === "GET" && url.pathname === "/venue-picker") {
-    sendHtml(res, 200, renderVenuePickerWebUi());
-    return;
-  }
-  if (req.method === "GET" && url.pathname === "/lab_stats/member_map") {
-    sendHtml(res, 200, renderMemberMapWebUi());
+  // Login-free pages, the deadline feed and photos (./server.public.ts).
+  if (servePublicRoute(req, res, url, ctx)) {
     return;
   }
   if (url.pathname.startsWith("/auth/")) {
