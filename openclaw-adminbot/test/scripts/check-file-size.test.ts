@@ -18,11 +18,12 @@ describe("isScannedSourcePath", () => {
     expect(isScannedSourcePath("ui/src/ui/app.ts")).toBe(true);
   });
 
-  it("rejects tests, non-source files and paths outside scope", () => {
+  it("rejects tests, generated locales, non-source files and paths outside scope", () => {
     expect(isScannedSourcePath("src/agents/run.test.ts")).toBe(false);
     expect(isScannedSourcePath("src/agents/run.e2e.test.ts")).toBe(false);
     expect(isScannedSourcePath("extensions/adminbot/src/data.json")).toBe(false);
     expect(isScannedSourcePath("scripts/check.mjs")).toBe(false);
+    expect(isScannedSourcePath("ui/src/i18n/locales/de.ts")).toBe(false);
   });
 });
 
