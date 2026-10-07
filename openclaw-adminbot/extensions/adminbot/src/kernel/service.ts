@@ -219,6 +219,7 @@ import {
   type AdminBotSocialDraftRecord,
   type AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
+import { parsePaperFeedback } from "../contracts/paper-feedback.js";
 import type { PaperAiTextCheckStore } from "../contracts/paper-integrity-checks.js";
 import {
   adminBotPaperSlotBranchPriority,
@@ -6165,6 +6166,21 @@ export class AdminBotService {
     const context = this.paperSlotContext(params);
     if (!context.ok) {
       return context.error;
+    }
+    if (
+      params.slot === "pi_approval" &&
+      params.memberId !== this.resolveSettings().head_professor_member_id?.trim()
+    ) {
+      return serviceError(403, "Only the head professor can approve publication.");
+    }
+    if (params.slot.startsWith("feedback_") && params.input.value_text) {
+      const feedback = parsePaperFeedback(params.input.value_text);
+      if (
+        (feedback?.reviewed || feedback?.review_note) &&
+        params.memberId !== this.resolveSettings().head_professor_member_id?.trim()
+      ) {
+        return serviceError(403, "Only the head professor can record paper feedback completion.");
+      }
     }
     const result = applyPaperSlotWrite({
       existing: context.existing,

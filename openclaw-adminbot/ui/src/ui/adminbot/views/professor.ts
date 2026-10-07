@@ -61,6 +61,7 @@ export type ProfessorViewProps = {
    * is the asking, and ticking the box is still hers to do on the paper.
    */
   piReview: PiReviewRow[];
+  onOpenPaper?: (paperId: string) => void;
   piReviewLoading?: boolean;
   piReviewError?: string | null;
   onRetryPiReview?: () => void;
@@ -795,7 +796,10 @@ export function renderProfessorView(props: ProfessorViewProps) {
                 items: props.piReview.map((row) =>
                   rowButton({
                     action: t("professor.piReview.open"),
-                    onOpen: () => props.onOpen("adminbotPapers"),
+                    onOpen: () =>
+                      props.onOpenPaper
+                        ? props.onOpenPaper(row.paperId)
+                        : props.onOpen("adminbotPapers"),
                     body: html`<strong>${row.title}</strong>
                       <span class="muted">${row.authors.join(", ")}</span>
                       ${row.feedback
