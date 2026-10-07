@@ -11,13 +11,11 @@ import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/p
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
-import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
-import {
-  draftLinkedInPost,
-  loadStoredMemberSession,
-  mapImportColumns,
-  resolveAdminBotBaseUrl,
-} from "../auth/session.ts";
+import type { PaperNudgeBatch, PaperSlotOverviewRow } from "../api/paper-admin.ts";
+import { mapImportColumns } from "../api/paper-admin.ts";
+import type { PaperCycle } from "../api/papers.ts";
+import { draftLinkedInPost } from "../api/papers.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { cancelAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import {
   BLOCKER_TITLE_MAX,

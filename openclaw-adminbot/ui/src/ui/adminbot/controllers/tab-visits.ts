@@ -8,11 +8,8 @@
 // log is written; see recordTabVisit in auth/session.ts.
 import type { Tab } from "../../navigation.ts";
 import type { UiSettings } from "../../storage.ts";
-import {
-  loadStoredMemberSession,
-  recordTabVisit,
-  resolveAdminBotBaseUrl,
-} from "../auth/session.ts";
+import { recordTabVisit } from "../api/workspace.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 
 export type AdminBotTabVisitHost = {
   settings: UiSettings;

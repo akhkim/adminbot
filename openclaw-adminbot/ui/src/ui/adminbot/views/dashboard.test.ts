@@ -279,6 +279,8 @@ describe("renderDashboard", () => {
       expect(rows).toHaveLength(2);
       expect(rows[0]?.textContent).toContain("Thesis draft");
       expect(rows[0]?.textContent).toContain("yours");
+      expect(rows[0]?.querySelector(".deadline-date")?.textContent).toBe("Aug 25, 2026");
+      expect(rows[0]?.querySelector(".deadline-time")).toBeNull();
       expect(rows[1]?.textContent).toContain("Example conference");
     } finally {
       deadlines.mockRestore();
@@ -314,7 +316,31 @@ describe("renderDashboard", () => {
     );
     // The date splits the same way the board splits it, so the time reads as secondary.
     expect(row?.querySelector(".deadline-date")).not.toBeNull();
-    expect(row?.querySelector(".deadline-time")).not.toBeNull();
+    expect(row?.querySelector(".deadline-time")).toBeNull();
+  });
+
+  it("keeps the public cutoff in AoE instead of relabeling its UTC instant", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-06T12:00:00Z"));
+    const deadlines = vi.spyOn(deadlineTime, "upcomingMajorDeadlines").mockReturnValue([
+      {
+        venue: {
+          ...DEADLINE_VENUES[0]!,
+          name: "Example conference",
+          deadline_at: "2026-10-12T11:59:00Z",
+          deadline_aoe: "2026-10-11 23:59:00",
+          deadline_time_precision: "minute",
+        },
+        instant: Date.parse("2026-10-12T11:59:00Z"),
+      },
+    ]);
+    try {
+      const row = renderPage(createState()).querySelector(".dashboard__next-deadline");
+      expect(row?.querySelector(".deadline-date")?.textContent).toBe("Oct 11, 2026");
+      expect(row?.querySelector(".deadline-time")?.textContent).toBe("23:59 AoE");
+    } finally {
+      deadlines.mockRestore();
+      clock.mockRestore();
+    }
   });
 
   // A blank mandatory field never blocks saving or leaving the profile editor (see profile.ts),

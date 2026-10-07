@@ -39,7 +39,7 @@ import {
   type AdminBotPaperSlotBranch,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
-import type { PaperCycle, PaperSlotRow } from "../auth/session.ts";
+import type { PaperCycle, PaperSlotRow } from "../api/papers.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
 import { renderDateControl } from "../date-control.ts";

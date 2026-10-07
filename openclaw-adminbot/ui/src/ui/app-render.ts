@@ -19,16 +19,27 @@ import {
   visibleTabsForRole,
   type AccessRole,
 } from "./adminbot/access.ts";
+import { submitFeedback } from "./adminbot/api/workspace.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "./adminbot/auth/session.ts";
 import {
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
-  submitFeedback,
-} from "./adminbot/auth/session.ts";
+  setWorkshopConference,
+  setWorkshopNudgeRecipients,
+  setAdminBotVenue,
+  setAdminBotVenueCategory,
+  setAdminBotVenueInterests,
+  toggleAdminBotVenueAbstract,
+  toggleWorkshopNudgeRecipient,
+  updateWorkshopNudgeView,
+  loadAdminBot,
+  loadAdminBotMemberList,
+  loadAdminBotStandingMeetings,
+  loadAdminBotRoster,
+  EMPTY_SLACK_CHANNEL_CHECK,
+  saveAdminBotPaper,
+  markAdminBotNudgesSeen,
+} from "./adminbot/controllers/admin.ts";
+import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
 import {
-  applyAdminBotOwnProfilePhoto,
-  approveAdminBotAction,
-  runAdminBotCvDigestJob,
-  runAdminBotChannelNamingJob,
   runAdminBotVenueIndexJob,
   searchAdminBotLabPapers,
   searchAdminBotVenuePapers,
@@ -36,75 +47,25 @@ import {
   loadWorkshopNudgePreview,
   loadWorkshopConferences,
   refreshWorkshopNudgePreview,
-  setWorkshopConference,
-  setWorkshopNudgeRecipients,
-  setAdminBotVenue,
-  setAdminBotVenueCategory,
-  setAdminBotVenueInterests,
-  toggleAdminBotVenueAbstract,
   sendWorkshopNudgeSelection,
-  toggleWorkshopNudgeRecipient,
-  updateWorkshopNudgeView,
-  deleteAdminBotPaper,
-  executeAdminBotAction,
-  generateAdminBotReimbursement,
-  loadAdminBot,
-  loadAdminBotMemberList,
-  loadAdminBotStandingMeetings,
-  loadAdminBotRoster,
-  polishAdminBotOwnProfilePhoto,
-  removePendingAdminBotAction,
-  removeSelectedPendingAdminBotActions,
-  setAdminBotSelectedActions,
-  toggleAdminBotSelectedAction,
-  resetAdminBotReimbursement,
-  setAdminBotReimbursementFunder,
-  submitAdminBotReimbursement,
-  resolveAdminBotEmailReview,
-  mergeAdminBotMembers,
-  loadSlackChannelNames,
-  EMPTY_SLACK_CHANNEL_CHECK,
-  deleteAdminBotMember,
-  purgeAdminBotMembersWithoutEmail,
-  saveAdminBotMember,
-  saveAdminBotOwnProfile,
-  saveAdminBotOwnSchedule,
-  saveAdminBotPaper,
-  saveAdminBotSensitiveInfo,
-  markAdminBotNudgesSeen,
-  saveAdminBotSettings,
-  sendAdminBotMemberNudge,
-  sendAdminBotReimbursementMessage,
-  setAdminBotNudgeChannel,
-  setAdminBotNudgeMessage,
-  setAdminBotNudgeRecipients,
-  setAdminBotNudgeSubject,
-  toggleAdminBotNudgeRecipient,
-} from "./adminbot/controllers/admin.ts";
-import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
-import { loadCollaboratorSchedules } from "./adminbot/controllers/collaborator-schedules.ts";
+} from "./adminbot/controllers/conference-papers.ts";
 import {
-  loadAdminBotLogisticsRequests,
-  openAdminBotLogisticsRequest,
-  sendAdminBotSignedDocuments,
-  setAdminBotLogisticsRequestStatus,
-  submitAdminBotLogisticsRequest,
-  submitAdminBotSignatureForm,
-  updateAdminBotLogisticsRequest,
-  withdrawAdminBotLogisticsRequest,
-} from "./adminbot/controllers/logistics.ts";
+  runAdminBotCvDigestJob,
+  runAdminBotChannelNamingJob,
+  loadSlackChannelNames,
+} from "./adminbot/controllers/directory.ts";
+import {
+  approveAdminBotAction,
+  executeAdminBotAction,
+  removePendingAdminBotAction,
+} from "./adminbot/controllers/governance.ts";
+import { loadAdminBotLogisticsRequests } from "./adminbot/controllers/logistics.ts";
 import {
   loadAdminBotMailingList,
   sendAdminBotMailingList,
 } from "./adminbot/controllers/mailing-list.ts";
-import {
-  approveAdminBotMemberRequest,
-  editAdminBotMemberRequest,
-  loadAdminBotMemberRequests,
-  rejectAdminBotMemberRequest,
-  submitAdminBotMemberRequest,
-  withdrawAdminBotMemberRequest,
-} from "./adminbot/controllers/member-requests.ts";
+import { loadAdminBotMemberRequests } from "./adminbot/controllers/member-requests.ts";
+import { saveAdminBotOwnSchedule } from "./adminbot/controllers/members.ts";
 import {
   circulateAdminBotSocialDraft,
   loadAdminBotNudgeBatches,
@@ -125,14 +86,14 @@ import {
   saveAdminBotTrip,
   withdrawAdminBotTrip,
 } from "./adminbot/controllers/paper-slots.ts";
+import { deleteAdminBotPaper } from "./adminbot/controllers/papers.ts";
+import "./components/feedback-widget.ts";
 import {
   loadAdminBotProfileOverview,
   remindAdminBotIncompleteProfiles,
   seedAdminBotNudgeList,
 } from "./adminbot/controllers/profile-overview.ts";
-import "./components/feedback-widget.ts";
 import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
-import { prepareProfileLocationPrompt } from "./adminbot/controllers/location-prompt.ts";
 import { exportAdminBotTabUsage, loadAdminBotTabUsage } from "./adminbot/controllers/tab-usage.ts";
 import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
 import { milestoneRows } from "./adminbot/data/availability.ts";
@@ -143,46 +104,22 @@ import {
   loadAdminBadgeNominations,
   loadBadgeDefinitions,
   loadBadgeSuggestions,
-  loadProfileBadgeNominations,
   removeAdminBadge,
-  resetBlockedProfileBadgeErrors,
   saveAdminBadgeDefinition,
   shouldLoadAdminBadgeNominations,
   shouldLoadBadgeDefinitions,
   shouldLoadBadgeSuggestions,
-  shouldLoadProfileBadgeNominations,
-  submitOwnBadgeNomination,
-  submitOwnBadgeSuggestion,
 } from "./adminbot/data/badges.ts";
 import {
-  clearLogisticsDraft,
-  createFactRow,
-  createSchoolRow,
-  clearMeetingRequestDraft,
-  clearRecommendationLettersDraft,
+  opportunitySchoolFields,
+  queueLetterSchool,
   restoreAdminBotLettersDraft,
   restoreAdminBotLogisticsDraft,
   restoreAdminBotMeetingDraft,
   saveAdminBotLettersDraft,
-  saveAdminBotLogisticsDraft,
-  saveAdminBotMeetingDraft,
+  takeQueuedLetterSchools,
+  withPrefilledSchool,
 } from "./adminbot/data/logistics-draft.ts";
-import {
-  describeSubmitBlock,
-  filesToAttachments,
-  filledFacts,
-  filledMeetings,
-  filledSchools,
-  lettersRequestInput,
-  meetingRequestInput,
-  requestToFormState,
-  signatureRequestInput,
-  type LettersFormState,
-  type LogisticsRequestInput,
-  type LogisticsRequestKind,
-  type MeetingFormState,
-  type SignatureFormState,
-} from "./adminbot/data/logistics-requests.ts";
 import { loadMemberMap, needsDashboardMemberMap } from "./adminbot/data/member-map.ts";
 import {
   decideAdminBotRegistration,
@@ -191,30 +128,30 @@ import {
 import "./components/feedback-widget.ts";
 import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
-import {
-  configureDraftSync,
-  downloadDraftCopies,
-  importLegacyDraft,
-  draftScope,
-  draftSyncStatus,
-  resolveDraftConflict,
-  retryDraftSync,
-} from "./adminbot/offline/draft-sync.ts";
+import { configureDraftSync, retryDraftSync } from "./adminbot/offline/draft-sync.ts";
 import { needsLabPapers } from "./adminbot/papers-required.ts";
 import { needsLabRoster } from "./adminbot/roster-required.ts";
-import { renderAdminBot, type AdminBotPanel } from "./adminbot/views/admin.ts";
+import { renderAdminPanelsSurface } from "./adminbot/surfaces/admin-panels.ts";
+import { renderCollaborateSurface } from "./adminbot/surfaces/collaborate.ts";
+import { renderDashboardSurface } from "./adminbot/surfaces/dashboard.ts";
+import {
+  adminBotLogisticsScope,
+  renderLogisticsSurface,
+  resetAdminBotLogisticsForm,
+} from "./adminbot/surfaces/logistics.ts";
+import { renderMeetingsSurface } from "./adminbot/surfaces/meetings.ts";
+import { resolveProfileGate } from "./adminbot/surfaces/profile-gate.ts";
+import { loadProfileSurfaceReads, renderProfileSurface } from "./adminbot/surfaces/profile.ts";
+import type { AdminBotSurfaceScope } from "./adminbot/surfaces/scope.ts";
+import { renderTimeAvailabilitySurface } from "./adminbot/surfaces/time-availability.ts";
+import type { AdminBotPanel } from "./adminbot/views/admin.ts";
 import {
   renderChangePasswordPopover,
   renderChangePasswordTrigger,
 } from "./adminbot/views/change-password.ts";
-import { renderDashboard } from "./adminbot/views/dashboard.ts";
 import { renderGettingStarted } from "./adminbot/views/getting-started.ts";
-import { renderLabSharing } from "./adminbot/views/lab-sharing.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
-import { renderLocationPrompt } from "./adminbot/views/location-prompt.ts";
 import { renderLoginGate, renderSessionRestorePending } from "./adminbot/views/login-gate.ts";
-import { renderAdminBotLogistics, type LogisticsTemplate } from "./adminbot/views/logistics.ts";
-import { renderAdminBotMeetings } from "./adminbot/views/meetings.ts";
 import {
   ownPapers,
   renderMyWork,
@@ -224,15 +161,7 @@ import {
 import { paperTripDraftFrom } from "./adminbot/views/paper-cycle.ts";
 import { renderProfessorView } from "./adminbot/views/professor.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
-import { renderProfile } from "./adminbot/views/profile.ts";
-import { isProfileBlocked, profileAccessState } from "./adminbot/views/profile-gate.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
-import { EMPTY_TRIP_DRAFT } from "./adminbot/views/time-availability.trips.ts";
-import {
-  EMPTY_MILESTONE_DRAFT,
-  EMPTY_TIME_AVAILABILITY_DRAFT,
-  renderAdminBotTimeAvailability,
-} from "./adminbot/views/time-availability.ts";
 import {
   createChatSessionsLoadOverrides,
   hasAbortableSessionRun,
@@ -252,7 +181,7 @@ import {
   dismissChatError,
   switchChatSession,
 } from "./app-render.helpers.ts";
-import { refreshActiveTab, warnQueryToken } from "./app-settings.ts";
+import { warnQueryToken } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
 import { renderChatSessionSelect } from "./chat/session-controls.ts";
@@ -293,6 +222,7 @@ import {
   removeConfigFormValue,
   updateMcpServerEnabled,
 } from "./controllers/config.ts";
+import "./components/dashboard-header.ts";
 import {
   buildNewCronForm,
   loadCronJobsPage,
@@ -353,7 +283,6 @@ import {
   updateSkillEdit,
   updateSkillEnabled,
 } from "./controllers/skills.ts";
-import "./components/dashboard-header.ts";
 import { getCronJobPayload } from "./cron-payload.ts";
 import { formatTimeMs } from "./format.ts";
 import { formatRelativeTimestamp } from "./format.ts";
@@ -450,199 +379,25 @@ function tripFor(state: AppViewState, conferenceKey: string) {
   )?.myTrip;
 }
 
-function adminBotLogisticsScope(state: AppViewState): string {
-  return draftScope(resolveAdminBotBaseUrl(state.settings), state.memberId ?? "anonymous");
-}
-
-/** The three form states, in the shape the request builders and the "can this be sent" check want. */
-function adminBotSignatureForm(state: AppViewState): SignatureFormState {
-  return {
-    files: state.adminBotLogisticsSignatureFiles,
-    description: state.adminBotLogisticsDescription,
-    attachments: state.adminBotLogisticsAttachments,
-  };
-}
-
-function adminBotLettersForm(state: AppViewState): LettersFormState {
-  return {
-    schools: state.adminBotLettersSchools,
-    facts: state.adminBotLettersFacts,
-    cvOverleafUrl: state.adminBotLettersCvOverleafUrl,
-    driveFolderUrl: state.adminBotLettersDriveFolderUrl,
-  };
-}
-
-/** The form behind one template, in the shape the builders and the "can this be sent" check want. */
-function adminBotLogisticsForm(
-  state: AppViewState,
-  template: LogisticsTemplate,
-): SignatureFormState | LettersFormState | MeetingFormState {
-  if (template === "documentSignature") {
-    return adminBotSignatureForm(state);
-  }
-  if (template === "recommendationLetters") {
-    return adminBotLettersForm(state);
-  }
-  return { rows: state.adminBotMeetingRows };
-}
-
-const LOGISTICS_KIND: Record<LogisticsTemplate, LogisticsRequestKind> = {
-  documentSignature: "document_signature",
-  recommendationLetters: "recommendation_letters",
-  bookMeeting: "book_meeting",
-};
-
-/** Whether there is anything on this form to lose, which is what Discard is offered for. */
-function adminBotLogisticsHasContent(state: AppViewState, template: LogisticsTemplate): boolean {
-  if (template === "documentSignature") {
-    return Boolean(
-      state.adminBotLogisticsSignatureFiles.length ||
-      state.adminBotLogisticsDescription.trim() ||
-      state.adminBotLogisticsAttachments.length,
-    );
-  }
-  if (template === "recommendationLetters") {
-    return Boolean(
-      filledSchools(state.adminBotLettersSchools).length ||
-      filledFacts(state.adminBotLettersFacts).length ||
-      state.adminBotLettersCvOverleafUrl.trim() ||
-      state.adminBotLettersDriveFolderUrl.trim(),
-    );
-  }
-  return filledMeetings(state.adminBotMeetingRows).length > 0;
-}
-
-/** Everything a form loses when it is discarded, or when the request it held has been filed. */
-function resetAdminBotLogisticsForm(state: AppViewState, template: LogisticsTemplate): void {
-  if (template === "documentSignature") {
-    state.adminBotLogisticsSignatureFiles = [];
-    state.adminBotLogisticsDescription = "";
-    state.adminBotLogisticsAttachments = [];
-    state.adminBotLogisticsSaving = false;
-    state.adminBotLogisticsSavedAt = null;
-    state.adminBotLogisticsSaveError = null;
-    return;
-  }
-  if (template === "recommendationLetters") {
-    // Back to one blank row rather than none: an empty table has nothing to type in.
-    state.adminBotLettersSchools = [createSchoolRow()];
-    state.adminBotLettersFacts = [createFactRow()];
-    state.adminBotLettersCvOverleafUrl = "";
-    state.adminBotLettersDriveFolderUrl = "";
-    state.adminBotLettersSaving = false;
-    state.adminBotLettersSavedAt = null;
-    state.adminBotLettersSaveError = null;
-    return;
-  }
-  // Book Meeting opens empty on purpose: creating a row stamps "submitted", so a blank one would
-  // claim a request nobody made.
-  state.adminBotMeetingRows = [];
-  state.adminBotMeetingSaving = false;
-  state.adminBotMeetingSavedAt = null;
-  state.adminBotMeetingSaveError = null;
-}
-
-async function clearAdminBotLogisticsDraft(
-  template: LogisticsTemplate,
-  scope: string,
-): Promise<void> {
-  try {
-    if (template === "documentSignature") {
-      await clearLogisticsDraft(scope);
-    } else if (template === "recommendationLetters") {
-      await clearRecommendationLettersDraft(scope);
-    } else {
-      await clearMeetingRequestDraft(scope);
-    }
-  } catch {
-    // A draft that would not clear is a stale form, not lost work: the member is looking at an
-    // empty one either way, and reporting a storage failure here would be noise.
-  }
-}
-
-function adminBotLogisticsRequestInput(
-  state: AppViewState,
-  template: LogisticsTemplate,
-): Promise<LogisticsRequestInput> {
-  if (template === "documentSignature") {
-    // The only one that is async: the picked files are read into base64 here.
-    return signatureRequestInput(adminBotSignatureForm(state));
-  }
-  if (template === "recommendationLetters") {
-    return Promise.resolve(lettersRequestInput(adminBotLettersForm(state)));
-  }
-  return Promise.resolve(meetingRequestInput({ rows: state.adminBotMeetingRows }));
-}
-
 /**
- * Submit, discard and "why not" for one request template.
+ * Adds the schools an Opportunities row asked for to the letters form, and saves the draft.
  *
- * Shared by all three because the three differ only in which form state they read: the button
- * behaviour -- refuse to double-send, clear the form and its draft once the service has the
- * request, leave everything untouched when it does not -- is the same request either way.
+ * Called only once the letters draft is in place. Opening a logistics tab for the first time resets
+ * every form and restores its draft asynchronously, so a row written before that would be wiped by
+ * the reset, or would make the restore skip the member's saved draft.
  */
-function adminBotLogisticsSubmitProps(
+function applyQueuedLetterSchools(
   state: AppViewState,
   requestHostUpdate: (() => void) | undefined,
-  template: LogisticsTemplate,
-) {
-  const form = adminBotLogisticsForm(state, template);
-  const kind = LOGISTICS_KIND[template];
-  const blocked = state.memberId
-    ? describeSubmitBlock(kind, form)
-    : // Signing in is the first thing missing, and saying so beats a 401 after the upload.
-      ({ reason: "signed-out" } as const);
-  return {
-    submitting: state.adminBotLogisticsSubmitting,
-    submitError: state.adminBotLogisticsSubmitError,
-    submitted: Boolean(state.adminBotLogisticsSubmittedId),
-    ...(state.adminBotLogisticsCallSheetNote
-      ? { submittedNote: state.adminBotLogisticsCallSheetNote }
-      : {}),
-    submitBlocked: blocked,
-    hasContent: adminBotLogisticsHasContent(state, template),
-    editing: Boolean(state.adminBotLogisticsEditingId),
-    onCancelEdit: () => {
-      state.adminBotLogisticsEditingId = null;
-      resetAdminBotLogisticsForm(state, template);
-      requestHostUpdate?.();
-    },
-    onSubmit: () => {
-      if (blocked) {
-        // Nothing to send yet. The reason is already on screen next to the button, so pressing it
-        // is how a member finds out rather than a dead click.
-        return;
-      }
-      void (async () => {
-        const input = await adminBotLogisticsRequestInput(state, template);
-        const editingId = state.adminBotLogisticsEditingId;
-        // A correction is a PUT against the request already in the queue: sending it as a new one
-        // would leave the member with two asks for the same thing and an admin deciding which is
-        // current.
-        const filed = editingId
-          ? await updateAdminBotLogisticsRequest(state, editingId, input)
-          : Boolean(
-              await submitAdminBotLogisticsRequest(state, input, adminBotLogisticsScope(state)),
-            );
-        if (filed) {
-          state.adminBotLogisticsEditingId = null;
-          state.adminBotLogisticsSubmittedId = editingId ?? state.adminBotLogisticsSubmittedId;
-          resetAdminBotLogisticsForm(state, template);
-        }
-        requestHostUpdate?.();
-      })();
-    },
-    onDiscard: () => {
-      void (async () => {
-        resetAdminBotLogisticsForm(state, template);
-        state.adminBotLogisticsSubmittedId = null;
-        state.adminBotLogisticsCallSheetNote = null;
-        state.adminBotLogisticsSubmitError = null;
-        await clearAdminBotLogisticsDraft(template, adminBotLogisticsScope(state));
-        requestHostUpdate?.();
-      })();
-    },
-  };
+): void {
+  const queued = takeQueuedLetterSchools();
+  if (queued.length === 0) {
+    return;
+  }
+  state.adminBotLettersSchools = queued.reduce(withPrefilledSchool, state.adminBotLettersSchools);
+  void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
+    requestHostUpdate?.(),
+  );
 }
 
 function renderSettingsSectionNav(state: AppViewState) {
@@ -2001,31 +1756,11 @@ export function renderApp(state: AppViewState) {
       : undefined;
   pendingUpdate = requestHostUpdate;
 
-  // Unknown is not incomplete: preserve the requested page until the self read finishes.
-  if (profileAccessState(state) === "loading") {
-    const loadProfile = () => {
-      state.adminBotError = null;
-      void refreshActiveTab(state).finally(() => requestHostUpdate?.());
-    };
-    if (!state.adminBotError) {
-      void refreshActiveTab(state).finally(() => requestHostUpdate?.());
-    }
-    return html`<main class="content">
-      <div class="card" role="status" data-testid="profile-loading">
-        <p>${state.adminBotError || t("common.loading")}</p>
-        ${state.adminBotError
-          ? html`<button class="btn" @click=${loadProfile}>${t("profile.gate.retry")}</button>`
-          : nothing}
-        <button class="btn" @click=${() => void state.signOutMember()}>
-          ${t("login.member.signOut")}
-        </button>
-      </div>
-    </main>`;
+  const profileGate = resolveProfileGate(state, requestHostUpdate);
+  if ("loadingView" in profileGate) {
+    return profileGate.loadingView;
   }
-
-  const profileBlocked = isProfileBlocked(state);
-  resetBlockedProfileBadgeErrors(state);
-  if (profileBlocked && state.tab !== "profile") state.setTab("profile");
+  const { profileBlocked } = profileGate;
 
   // Opening the workshop tab reads the stored pass. It never starts one -- that is Refresh, and it
   // is thousands of model calls. Self-limiting: the read sets `loading` synchronously and leaves a
@@ -2936,17 +2671,8 @@ export function renderApp(state: AppViewState) {
   ) {
     void state.loadLocationDrifts?.().finally(() => requestHostUpdate?.());
   }
-  // Asked once, when the member opens their own profile -- which is where the banner renders and
-  // the only place its answer makes sense. Undefined is "not asked yet"; null is a real "nothing
-  // to ask" and must not re-trigger.
-  if (
-    state.tab === "profile" &&
-    hasMemberSession &&
-    prepareProfileLocationPrompt(state, profileBlocked)
-  ) {
-    void state.loadLocationPrompt?.().finally(() => requestHostUpdate?.());
-  }
-  // The three badge reads share one rule, in shouldLoad*: a failed load must not be retried from
+  loadProfileSurfaceReads(state, hasMemberSession, profileBlocked, requestHostUpdate);
+  // The badge reads share one rule, in shouldLoad*: a failed load must not be retried from
   // the render pass. Each of these used to test only "not loading and never loaded", which a
   // failure satisfies forever -- so a service that answered 403 or 404 got one request per render,
   // for as long as the tab stayed open, and the error card flickered instead of settling.
@@ -2956,9 +2682,6 @@ export function renderApp(state: AppViewState) {
     shouldLoadBadgeDefinitions(state)
   ) {
     void loadBadgeDefinitions(state).finally(() => requestHostUpdate?.());
-  }
-  if (state.tab === "profile" && hasMemberSession && shouldLoadProfileBadgeNominations(state)) {
-    void loadProfileBadgeNominations(state).finally(() => requestHostUpdate?.());
   }
   if (
     state.tab === "adminbotBadges" &&
@@ -3036,6 +2759,7 @@ export function renderApp(state: AppViewState) {
       restoreAdminBotLettersDraft(state, logisticsScope),
       restoreAdminBotMeetingDraft(state, logisticsScope),
     ]).finally(() => {
+      applyQueuedLetterSchools(state, requestHostUpdate);
       requestHostUpdate?.();
       retryDraftSync();
     });
@@ -3361,6 +3085,19 @@ export function renderApp(state: AppViewState) {
     })();
   };
 
+  const adminBotSurfaces: AdminBotSurfaceScope = {
+    accessRole,
+    adminBotMode,
+    adminBotPanel,
+    activePaperCard,
+    hasMemberSession,
+    needsPapersForTab,
+    rosterPendingForTab,
+    logisticsTemplate,
+    logisticsScope,
+    profileBlocked,
+    requestHostUpdate,
+  };
   return html`
     ${renderCommandPalette({
       open: state.paletteOpen && !profileBlocked,
@@ -3610,24 +3347,7 @@ export function renderApp(state: AppViewState) {
                   : nothing}
               </div>
             </section>`}
-        ${profileBlocked
-          ? html`<div class="callout danger" role="status" data-testid="profile-completion-notice">
-              <strong>${t("profile.gate.title")}</strong>
-              <p>${t("profile.gate.description")}</p>
-              ${state.adminBotError
-                ? html`<p>${state.adminBotError}</p>
-                    <button
-                      class="btn"
-                      @click=${() => {
-                        state.adminBotError = null;
-                        void loadAdminBot(state, "general", false).finally(() =>
-                          requestHostUpdate?.(),
-                        );
-                      }}
-                    >${t("profile.gate.retry")}</button>`
-                : nothing}
-            </div>`
-          : renderPageTabs(state, accessRole)}
+        ${profileBlocked ? profileGate.renderNotice() : renderPageTabs(state, accessRole)}
         ${rosterPendingForTab
           ? html`<div
               class="adminbot-empty"
@@ -3656,65 +3376,8 @@ export function renderApp(state: AppViewState) {
                 : "Loading lab members…"}
             </div>`
           : nothing}
-        ${state.tab === "dashboard"
-          ? renderDashboard(
-              state,
-              accessRole,
-              () => void loadAdminBot(state, adminBotMode, needsPapersForTab),
-            )
-          : nothing}
-        ${state.tab === "profile" && !profileBlocked
-          ? renderLocationPrompt({
-              drift: state.adminBotLocationDrift ?? null,
-              saving: state.adminBotLocationSaving ?? false,
-              error: state.adminBotLocationError ?? null,
-              onConfirm: (answer) => {
-                void state.answerLocationPrompt?.(answer);
-              },
-              onDismiss: () => {
-                void state.answerLocationPrompt?.({});
-              },
-            })
-          : nothing}
-        ${state.tab === "profile"
-          ? html`
-              ${renderProfile(state, {
-                badgesDisabled: profileBlocked,
-                onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
-                onLoadRecentEdits: (subject, id) => {
-                  void loadAdminBotRecentEdits(state, subject, id).finally(() =>
-                    requestHostUpdate?.(),
-                  );
-                },
-                onPolishPhoto: () => void polishAdminBotOwnProfilePhoto(state),
-                onApplyPolishedPhoto: (variantId) =>
-                  void applyAdminBotOwnProfilePhoto(state, variantId),
-                onSubmitBadgeNomination: (badgeId, evidence, memberId) =>
-                  void submitOwnBadgeNomination(state, badgeId, evidence, memberId),
-                onPickBadgeNominee: (memberId) => {
-                  state.profileBadgeNomineeId = memberId;
-                  requestHostUpdate?.();
-                },
-                onOpenBadgeNominee: () => {
-                  // ponytail: At 10k members this fetches the full summary roster (~9 MB). A
-                  // paged server-search picker can replace this when needed.
-                  void loadAdminBotRoster(state).finally(() => requestHostUpdate?.());
-                },
-                onSubmitBadgeSuggestion: (input) =>
-                  void submitOwnBadgeSuggestion(state, input).finally(() => requestHostUpdate?.()),
-                onToggleBadgeSuggestForm: (open) => {
-                  state.profileBadgeSuggestOpen = open;
-                  // Shutting the form drops the last result with it: a success banner left over a
-                  // collapsed form reads as applying to whatever is opened next.
-                  if (!open) {
-                    state.badgeSuggestionNotice = null;
-                  }
-                  requestHostUpdate?.();
-                },
-                onNavigateToTab: (tab) => state.setTab(tab),
-              })}
-            `
-          : nothing}
+        ${renderDashboardSurface(state, adminBotSurfaces)}
+        ${renderProfileSurface(state, adminBotSurfaces)}
         ${state.tab === "gettingStarted" ? renderGettingStarted(state) : nothing}
         ${state.tab === "adminbotProfessor" && adminBotMode === "admin"
           ? renderProfessorView({
@@ -3781,7 +3444,7 @@ export function renderApp(state: AppViewState) {
               }),
             )
           : nothing}
-        ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}
+        ${renderCollaborateSurface(state, adminBotSurfaces)}
         ${state.tab === "adminbotTabUsage"
           ? renderAdminBotTabUsage({
               report: state.adminBotTabUsage,
@@ -3834,432 +3497,9 @@ export function renderApp(state: AppViewState) {
               },
             })
           : nothing}
-        ${isLogisticsTab(state.tab)
-          ? renderAdminBotLogistics({
-              role: accessRole,
-              mode: state.adminBotLogisticsMode,
-              onModeChange: (mode) => {
-                state.adminBotLogisticsMode = mode;
-                state.adminBotLogisticsOpenRequestId = null;
-                state.adminBotLogisticsOpenRequest = null;
-                // Clearing the stamp is what asks for a re-read; the effect above does the fetch,
-                // so entering the list has one path whether it was reached by this button or by a
-                // reload that landed on it. Re-read on every entry rather than once: an admin may
-                // have answered a request since the last look.
-                state.adminBotLogisticsRequestsLoadedAt = null;
-              },
-              requests: {
-                requests: state.adminBotLogisticsRequests,
-                loading: state.adminBotLogisticsRequestsLoading,
-                error: state.adminBotLogisticsRequestsError,
-                open: state.adminBotLogisticsOpenRequest,
-                openLoading: state.adminBotLogisticsOpenLoading,
-                viewerIsAdmin: accessRole === "admin",
-                viewerMemberId: state.memberId ?? null,
-                onOpenRequest: (requestId) => {
-                  state.adminBotLogisticsStatusNote = "";
-                  void openAdminBotLogisticsRequest(state, requestId).finally(() =>
-                    requestHostUpdate?.(),
-                  );
-                },
-                onEdit: (requestId) => {
-                  const request = state.adminBotLogisticsOpenRequest;
-                  if (!request || request.id !== requestId) {
-                    return;
-                  }
-                  // Loaded from the request that was read in full, so the documents come back with
-                  // it rather than having to be picked off the member's disk again.
-                  const form = requestToFormState(request);
-                  if (form.signature) {
-                    state.setTab("adminbotSignatures");
-                    state.adminBotLogisticsSignatureFiles = form.signature.files;
-                    state.adminBotLogisticsDescription = form.signature.description;
-                    state.adminBotLogisticsAttachments = form.signature.attachments;
-                  } else if (form.letters) {
-                    state.setTab("adminbotRecLetters");
-                    state.adminBotLettersSchools = [...form.letters.schools];
-                    state.adminBotLettersFacts = [...form.letters.facts];
-                    state.adminBotLettersCvOverleafUrl = form.letters.cvOverleafUrl;
-                    state.adminBotLettersDriveFolderUrl = form.letters.driveFolderUrl;
-                  } else if (form.meeting) {
-                    state.setTab("adminbotMeetingRequests");
-                    state.adminBotMeetingRows = [...form.meeting.rows];
-                  }
-                  state.adminBotLogisticsEditingId = requestId;
-                  state.adminBotLogisticsSubmittedId = null;
-                  state.adminBotLogisticsCallSheetNote = null;
-                  state.adminBotLogisticsSubmitError = null;
-                  state.adminBotLogisticsMode = "make";
-                  state.adminBotLogisticsOpenRequest = null;
-                  state.adminBotLogisticsOpenRequestId = null;
-                },
-                onWithdraw: (requestId) => {
-                  void withdrawAdminBotLogisticsRequest(state, requestId).finally(() =>
-                    requestHostUpdate?.(),
-                  );
-                },
-                onSetStatus: (requestId, status, note) => {
-                  void setAdminBotLogisticsRequestStatus(state, requestId, status, note).finally(
-                    () => {
-                      state.adminBotLogisticsStatusNote = "";
-                      requestHostUpdate?.();
-                    },
-                  );
-                },
-                statusNote: state.adminBotLogisticsStatusNote,
-                onStatusNoteChange: (note) => {
-                  state.adminBotLogisticsStatusNote = note;
-                },
-              },
-              queue: {
-                options: state.adminBotLogisticsQueueOptions,
-                onOptionsChange: (patch) => {
-                  state.adminBotLogisticsQueueOptions = {
-                    ...state.adminBotLogisticsQueueOptions,
-                    ...patch,
-                  };
-                },
-                requests: state.adminBotLogisticsRequests,
-                loading: state.adminBotLogisticsRequestsLoading,
-                error: state.adminBotLogisticsRequestsError,
-                showSettled: state.adminBotLogisticsShowSettled,
-                onShowSettledChange: (showSettled) => {
-                  state.adminBotLogisticsShowSettled = showSettled;
-                },
-                signingId: state.adminBotLogisticsSigningId,
-                signedNote: state.adminBotLogisticsSignedNote,
-                onSignedNoteChange: (note) => {
-                  state.adminBotLogisticsSignedNote = note;
-                },
-                onSendSigned: (requestId, files) => {
-                  void (async () => {
-                    const documents = await filesToAttachments(files);
-                    const sent = await sendAdminBotSignedDocuments(
-                      state,
-                      requestId,
-                      documents,
-                      state.adminBotLogisticsSignedNote,
-                    );
-                    if (sent) {
-                      // The note belonged to the request that just went out; leaving it in the box
-                      // would attach it to whichever one is signed next.
-                      state.adminBotLogisticsSignedNote = "";
-                    }
-                    requestHostUpdate?.();
-                  })();
-                },
-                onOpenRequest: (requestId) => {
-                  state.adminBotLogisticsStatusNote = "";
-                  void openAdminBotLogisticsRequest(state, requestId).finally(() =>
-                    requestHostUpdate?.(),
-                  );
-                },
-                onSetStatus: (requestId, status) => {
-                  void setAdminBotLogisticsRequestStatus(state, requestId, status, "").finally(() =>
-                    requestHostUpdate?.(),
-                  );
-                },
-              },
-              template: logisticsTemplate,
-              signature: {
-                files: state.adminBotLogisticsSignatureFiles,
-                onFilesChange: (files) => {
-                  state.adminBotLogisticsSignatureFiles = files;
-                  void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(
-                    () => requestHostUpdate?.(),
-                  );
-                },
-                description: state.adminBotLogisticsDescription,
-                onDescriptionChange: (description) => {
-                  state.adminBotLogisticsDescription = description;
-                  void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(
-                    () => requestHostUpdate?.(),
-                  );
-                },
-                attachments: state.adminBotLogisticsAttachments,
-                onAttachmentsChange: (files) => {
-                  state.adminBotLogisticsAttachments = files;
-                  void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(
-                    () => requestHostUpdate?.(),
-                  );
-                },
-                sync: {
-                  ...draftSyncStatus(logisticsScope, "document-signature"),
-                  onImportLegacy: () => {
-                    void importLegacyDraft(logisticsScope, "document-signature");
-                  },
-                  onDownload: () => {
-                    void downloadDraftCopies(logisticsScope, "document-signature");
-                  },
-                  onResolve: (choice: "mine" | "server") => {
-                    void resolveDraftConflict(logisticsScope, "document-signature", choice).finally(
-                      () => requestHostUpdate?.(),
-                    );
-                  },
-                },
-                form: state.adminBotSignatureForm,
-                onForm: (patch) => {
-                  state.adminBotSignatureForm = { ...state.adminBotSignatureForm, ...patch };
-                  // Editing after a send re-arms the tab: "Sent" must not describe something older
-                  // than what is on screen.
-                  state.adminBotSignatureSubmitted = false;
-                  state.adminBotSignatureError = null;
-                  requestHostUpdate?.();
-                },
-                onSendForm: () =>
-                  submitAdminBotSignatureForm(state).finally(() => requestHostUpdate?.()),
-                sendingForm: state.adminBotSignatureSubmitting,
-                formError: state.adminBotSignatureError,
-                formSent: state.adminBotSignatureSubmitted,
-                saving: state.adminBotLogisticsSaving,
-                savedAt: state.adminBotLogisticsSavedAt,
-                saveError: state.adminBotLogisticsSaveError,
-                onSave: () =>
-                  void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(
-                    () => requestHostUpdate?.(),
-                  ),
-                ...adminBotLogisticsSubmitProps(state, requestHostUpdate, "documentSignature"),
-              },
-              meeting: {
-                rows: state.adminBotMeetingRows,
-                onRowsChange: (rows) => {
-                  state.adminBotMeetingRows = rows;
-                  void saveAdminBotMeetingDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                    requestHostUpdate?.(),
-                  );
-                },
-                sync: {
-                  ...draftSyncStatus(logisticsScope, "book-meeting"),
-                  onImportLegacy: () => {
-                    void importLegacyDraft(logisticsScope, "book-meeting");
-                  },
-                  onDownload: () => {
-                    void downloadDraftCopies(logisticsScope, "book-meeting");
-                  },
-                  onResolve: (choice: "mine" | "server") => {
-                    void resolveDraftConflict(logisticsScope, "book-meeting", choice).finally(() =>
-                      requestHostUpdate?.(),
-                    );
-                  },
-                },
-                saving: state.adminBotMeetingSaving,
-                savedAt: state.adminBotMeetingSavedAt,
-                saveError: state.adminBotMeetingSaveError,
-                onSave: () =>
-                  void saveAdminBotMeetingDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                    requestHostUpdate?.(),
-                  ),
-                ...adminBotLogisticsSubmitProps(state, requestHostUpdate, "bookMeeting"),
-              },
-              letters: {
-                schools: state.adminBotLettersSchools,
-                onSchoolsChange: (schools) => {
-                  state.adminBotLettersSchools = schools;
-                  void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                    requestHostUpdate?.(),
-                  );
-                },
-                facts: state.adminBotLettersFacts,
-                onFactsChange: (facts) => {
-                  state.adminBotLettersFacts = facts;
-                  void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                    requestHostUpdate?.(),
-                  );
-                },
-                onOpenMyProjects: () => state.setTab("myWork"),
-                cvOverleafUrl: state.adminBotLettersCvOverleafUrl,
-                onCvOverleafUrlChange: (url) => {
-                  state.adminBotLettersCvOverleafUrl = url;
-                  void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                    requestHostUpdate?.(),
-                  );
-                },
-                driveFolderUrl: state.adminBotLettersDriveFolderUrl,
-                onDriveFolderUrlChange: (url) => {
-                  state.adminBotLettersDriveFolderUrl = url;
-                  void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                    requestHostUpdate?.(),
-                  );
-                },
-                sync: {
-                  ...draftSyncStatus(logisticsScope, "recommendation-letters"),
-                  onImportLegacy: () => {
-                    void importLegacyDraft(logisticsScope, "recommendation-letters");
-                  },
-                  onDownload: () => {
-                    void downloadDraftCopies(logisticsScope, "recommendation-letters");
-                  },
-                  onResolve: (choice: "mine" | "server") => {
-                    void resolveDraftConflict(
-                      logisticsScope,
-                      "recommendation-letters",
-                      choice,
-                    ).finally(() => requestHostUpdate?.());
-                  },
-                },
-                saving: state.adminBotLettersSaving,
-                savedAt: state.adminBotLettersSavedAt,
-                saveError: state.adminBotLettersSaveError,
-                onSave: () =>
-                  void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                    requestHostUpdate?.(),
-                  ),
-                ...adminBotLogisticsSubmitProps(state, requestHostUpdate, "recommendationLetters"),
-              },
-            })
-          : nothing}
-        ${state.tab === "adminbotMeetings"
-          ? renderAdminBotMeetings({
-              meetings: state.adminBotMeetings ?? [],
-              visibleCount: state.adminBotMeetingsVisibleCount,
-              onShowMore: (nextCount) => {
-                if (nextCount <= (state.adminBotMeetings?.length ?? 0)) {
-                  state.adminBotMeetingsVisibleCount = nextCount;
-                } else {
-                  void state.loadMoreMeetings?.();
-                }
-              },
-              hasMore: Boolean(state.adminBotMeetingsNextCursor),
-              loadingMore: state.adminBotMeetingsLoadingMore,
-              loading: state.adminBotMeetingsLoading,
-              saving: state.adminBotMeetingsSaving,
-              error: state.adminBotMeetingsError,
-              viewerIsAdmin: accessRole === "admin",
-              viewerMemberId: state.memberId ?? null,
-              // Only an admin is offered the roster editor, so only an admin needs the names. A
-              // member's own view is built from what the service already redacted for them.
-              members:
-                accessRole === "admin"
-                  ? (state.adminBotData.members ?? []).map((member) => ({
-                      id: member.id,
-                      name: member.name,
-                    }))
-                  : [],
-              onToggleAttendance: (meetingId, attendee) => {
-                void state.toggleMeetingAttendance?.(meetingId, attendee);
-              },
-              onFileMeeting: (draft) => {
-                void state.fileMeeting?.(draft);
-              },
-              // Admin-only, and only offered when the host can actually run it: under break-glass
-              // gateway access there is no member session to authenticate the send with.
-              ...(accessRole === "admin" && state.loadMeetingNudges
-                ? {
-                    nudge: {
-                      preview: state.adminBotMeetingNudgePreview ?? null,
-                      result: state.adminBotMeetingNudgeResult ?? null,
-                      busy: state.adminBotMeetingNudgeBusy ?? false,
-                      error: state.adminBotMeetingNudgeError ?? null,
-                      onPreview: () => {
-                        void state.loadMeetingNudges?.().finally(() => requestHostUpdate?.());
-                      },
-                      onSend: () => {
-                        void state.sendMeetingNudges?.().finally(() => requestHostUpdate?.());
-                      },
-                    },
-                  }
-                : {}),
-            })
-          : nothing}
-        ${state.tab === "adminbotTimeAvailability" && !rosterPendingForTab
-          ? renderAdminBotTimeAvailability({
-              // The trips log's draft lives on the view state so a re-render underneath the
-              // typist -- the roster reloading, a save landing -- cannot wipe half-entered input.
-              tripDraft: state.adminBotTripDraft ?? EMPTY_TRIP_DRAFT,
-              onTripDraftChange: (draft) => {
-                state.adminBotTripDraft = draft;
-              },
-              collaborators:
-                state.adminBotCollaboratorSchedulesSession ===
-                loadStoredMemberSession()?.sessionToken
-                  ? state.adminBotCollaboratorSchedules
-                  : [],
-              collaboratorsLoading: state.adminBotCollaboratorSchedulesLoading,
-              collaboratorsError: state.adminBotCollaboratorSchedulesError,
-              onLoadCollaborators: () => void loadCollaboratorSchedules(state),
-              members: state.adminBotData.members ?? [],
-              loading: state.adminBotLoading,
-              error: state.adminBotError,
-              onRefresh: () => void loadAdminBot(state, adminBotMode, needsPapersForTab),
-              // Self is editable; separately authorized collaborator snapshots remain read-only.
-              selectedMemberId: state.adminBotTimeAvailabilityMemberId || (state.memberId ?? ""),
-              onMemberChange: (memberId) => {
-                state.adminBotTimeAvailabilityMemberId = memberId;
-                // A different member's schedule carries a different note; keeping the draft would
-                // show one person's text over another's record.
-                state.adminBotAvailabilityNotesDraft = null;
-              },
-              range: state.adminBotTimeAvailabilityRange,
-              onRangeChange: (range) => {
-                state.adminBotTimeAvailabilityRange = range;
-                // The chart re-anchors on a range change, so the window it reported for the old
-                // interval no longer describes what it draws. Cleared rather than kept: the tables
-                // show everything for the one frame before the new window arrives.
-                state.adminBotTimeChartWindow = null;
-              },
-              chartWindow: state.adminBotTimeChartWindow,
-              onChartWindowChange: (window) => {
-                const current = state.adminBotTimeChartWindow;
-                if (current?.start === window.start && current?.end === window.end) {
-                  return; // same span; a re-render here would loop against the chart's own effect
-                }
-                state.adminBotTimeChartWindow = window;
-                requestHostUpdate?.();
-              },
-              viewerMemberId: state.memberId ?? null,
-              viewerIsAdmin: accessRole === "admin",
-              draft: state.adminBotTimeAvailabilityDraft,
-              onDraftChange: (draft) => {
-                state.adminBotTimeAvailabilityDraft = draft;
-              },
-              awayDraft: state.adminBotTimeAwayDraft,
-              onAwayDraftChange: (draft) => {
-                state.adminBotTimeAwayDraft = draft;
-              },
-              milestoneDraft: state.adminBotMilestoneDraft,
-              onMilestoneDraftChange: (draft) => {
-                state.adminBotMilestoneDraft = draft;
-              },
-              notesDraft: state.adminBotAvailabilityNotesDraft,
-              onNotesDraftChange: (draft) => {
-                state.adminBotAvailabilityNotesDraft = draft;
-              },
-              activeCommitmentType: state.adminBotActiveCommitmentType,
-              onActiveCommitmentChange: (type) => {
-                state.adminBotActiveCommitmentType = type;
-              },
-              saving: state.adminBotTimeAvailabilitySaving,
-              onSaveSchedule: (memberId, patch) => {
-                state.adminBotTimeAvailabilitySaving = true;
-                void saveAdminBotOwnSchedule(state, memberId, patch).finally(() => {
-                  state.adminBotTimeAvailabilitySaving = false;
-                  // Only clear the draft on success, and only the one this save came from: a
-                  // rejected row stays in its form so the member can correct it rather than
-                  // retype it.
-                  if (state.adminBotNotice?.kind === "success") {
-                    if (patch.availability_notes !== undefined) {
-                      // Back to following the stored value, which the reload has just refreshed.
-                      state.adminBotAvailabilityNotesDraft = null;
-                    } else if (patch.milestones) {
-                      state.adminBotMilestoneDraft = {
-                        ...EMPTY_MILESTONE_DRAFT,
-                      };
-                    } else if (patch.time_off) {
-                      state.adminBotTimeAwayDraft = {
-                        ...EMPTY_TIME_AVAILABILITY_DRAFT,
-                        category: "vacation",
-                      };
-                    } else {
-                      state.adminBotTimeAvailabilityDraft = {
-                        ...EMPTY_TIME_AVAILABILITY_DRAFT,
-                      };
-                    }
-                  }
-                  requestHostUpdate?.();
-                });
-              },
-            })
-          : nothing}
+        ${renderLogisticsSurface(state, adminBotSurfaces)}
+        ${renderMeetingsSurface(state, adminBotSurfaces)}
+        ${renderTimeAvailabilitySurface(state, adminBotSurfaces)}
         ${state.tab === "myWork" && !rosterPendingForTab
           ? renderMyWork(state, {
               ...paperWorkspaceProps(state, requestHostUpdate),
@@ -4386,194 +3626,7 @@ export function renderApp(state: AppViewState) {
               }),
             )
           : nothing}
-        ${adminBotPanel && !rosterPendingForTab
-          ? renderAdminBot({
-              panel: adminBotPanel,
-              onRerender: () => requestHostUpdate?.(),
-              paperSlotOverview: state.adminBotPaperSlotOverview,
-              // Active Papers' bulk sheet writes evidence the same way the card does.
-              paperCycles: state.adminBotPaperSlots,
-              onLoadSlots: (paperId: string) => {
-                void loadAdminBotPaperSlots(state, paperId).finally(() => requestHostUpdate?.());
-              },
-              onSaveSlot: (paperId: string, slot: string, input) => {
-                void saveAdminBotPaperSlot(state, paperId, slot, input).finally(() =>
-                  requestHostUpdate?.(),
-                );
-              },
-              // Who has been in each member's record, read from their roster row. The same
-              // loader the profile and paper panels use; the service decides who may read it.
-              recentEdits: state.adminBotRecentEdits,
-              onLoadRecentEdits: (subject, id) => {
-                void loadAdminBotRecentEdits(state, subject, id).finally(() =>
-                  requestHostUpdate?.(),
-                );
-              },
-              connected: state.connected,
-              loading: state.adminBotLoading,
-              error: state.adminBotError,
-              data: state.adminBotData,
-              memberList: adminBotPanel === "members" ? state.adminBotMemberList : undefined,
-              standingMeetings:
-                adminBotPanel === "members" ? state.adminBotStandingMeetings : undefined,
-              onboardingSlackChannels: state.myWorkChannelCheck,
-              onLoadOnboardingSlackChannels: hasMemberSession
-                ? () => {
-                    const pending = loadSlackChannelNames(state);
-                    requestHostUpdate?.();
-                    void pending.finally(() => requestHostUpdate?.());
-                  }
-                : undefined,
-              memberRequests:
-                adminBotPanel === "members" && hasMemberSession
-                  ? {
-                      state: state.adminBotMemberRequests,
-                      onSubmit: (input) =>
-                        submitAdminBotMemberRequest(state, input).finally(() =>
-                          requestHostUpdate?.(),
-                        ),
-                      onEdit: (request, input) =>
-                        editAdminBotMemberRequest(state, request, input).finally(() =>
-                          requestHostUpdate?.(),
-                        ),
-                      onApprove: (request, options) => {
-                        void approveAdminBotMemberRequest(state, request, options).finally(() =>
-                          requestHostUpdate?.(),
-                        );
-                      },
-                      onReject: (request, note) => {
-                        void rejectAdminBotMemberRequest(state, request, note).finally(() =>
-                          requestHostUpdate?.(),
-                        );
-                      },
-                      onWithdraw: (request) => {
-                        void withdrawAdminBotMemberRequest(state, request).finally(() =>
-                          requestHostUpdate?.(),
-                        );
-                      },
-                    }
-                  : undefined,
-              rosterLoadedAt: state.adminBotRosterLoadedAt,
-              rosterLoading: state.adminBotRosterLoading,
-              rosterError: state.adminBotRosterError,
-              onLoadFullRoster: () => {
-                void loadAdminBotRoster(state).finally(() => requestHostUpdate?.());
-              },
-              onMemberListChange: (query, offset) => {
-                void loadAdminBotMemberList(state, query, offset).finally(() =>
-                  requestHostUpdate?.(),
-                );
-              },
-              busyActionId: state.adminBotBusyActionId,
-              notice: state.adminBotNotice,
-              mode: adminBotMode,
-              signedInMemberId: state.memberId,
-              reimbursement: state.adminBotReimbursement,
-              onReimbursementMessage: (message, files) =>
-                void sendAdminBotReimbursementMessage(state, message, files),
-              onGenerateReimbursement: () => void generateAdminBotReimbursement(state),
-              onResetReimbursement: () => resetAdminBotReimbursement(state),
-              onReimbursementFunderChange: (funder) =>
-                setAdminBotReimbursementFunder(state, funder),
-              onSubmitReimbursement: () => {
-                void submitAdminBotReimbursement(state).finally(() => requestHostUpdate?.());
-              },
-              memberNudge: state.adminBotMemberNudge,
-              blockerSort: state.adminBotBlockerSort,
-              onBlockerSort: (key) => {
-                state.adminBotBlockerSort = key;
-              },
-              venueFilter: state.adminBotVenueFilter,
-              onVenueFilter: (venueId) => {
-                state.adminBotVenueFilter = venueId;
-              },
-              preregSort: state.adminBotPreregSort,
-              onPreregSort: (key) => {
-                state.adminBotPreregSort = key;
-              },
-              preregSortReversed: state.adminBotPreregSortReversed,
-              onPreregSortReversed: (value) => {
-                state.adminBotPreregSortReversed = value;
-              },
-              preregMinConfidence: state.adminBotPreregMinConfidence,
-              onPreregMinConfidence: (value) => {
-                state.adminBotPreregMinConfidence = value;
-              },
-              preregMissingEdit: state.adminBotPreregMissingEdit,
-              onPreregMissingEdit: (value) => {
-                state.adminBotPreregMissingEdit = value;
-              },
-              onOpenPaperCard: (paperId) => {
-                state.adminBotPaperCardId = paperId;
-                // The card reads the paper's evidence cycle, which is fetched the first time a
-                // card is opened. Toggling it open here is what triggers that read.
-                if (!state.adminBotPaperSlotsOpen.includes(paperId)) {
-                  void toggleAdminBotPaperCard(state, paperId).finally(() => requestHostUpdate?.());
-                }
-                requestHostUpdate?.();
-              },
-              paperFilter: state.adminBotPaperFilter,
-              onPaperFilter: (filter) => {
-                state.adminBotPaperFilter = filter;
-                requestHostUpdate?.();
-              },
-              onNudgeChannelChange: (channel) => setAdminBotNudgeChannel(state, channel),
-              onNudgeMessageChange: (message) => setAdminBotNudgeMessage(state, message),
-              onNudgeSubjectChange: (subject) => setAdminBotNudgeSubject(state, subject),
-              onNudgeToggleRecipient: (memberId) => toggleAdminBotNudgeRecipient(state, memberId),
-              onNudgeSetRecipients: (memberIds) => setAdminBotNudgeRecipients(state, memberIds),
-              onSendNudge: () => void sendAdminBotMemberNudge(state),
-              onRefresh: () => {
-                void loadAdminBot(state, adminBotMode, needsPapersForTab);
-                if (adminBotPanel === "members") {
-                  void loadAdminBotMemberList(state).finally(() => requestHostUpdate?.());
-                }
-              },
-              onApprove: (proposal) => void approveAdminBotAction(state, proposal),
-              onRemove: (proposal) => void removePendingAdminBotAction(state, proposal),
-              selectedActionIds: state.adminBotSelectedActionIds,
-              bulkActionBusy: state.adminBotBulkActionBusy,
-              onToggleActionSelected: (proposalId) => {
-                toggleAdminBotSelectedAction(state, proposalId);
-                requestHostUpdate?.();
-              },
-              onSetSelectedActions: (proposalIds) => {
-                setAdminBotSelectedActions(state, proposalIds);
-                requestHostUpdate?.();
-              },
-              onRemoveSelectedActions: () => {
-                void removeSelectedPendingAdminBotActions(state).finally(() =>
-                  requestHostUpdate?.(),
-                );
-                requestHostUpdate?.();
-              },
-              onExecute: (proposal) => void executeAdminBotAction(state, proposal),
-              onResolveEmailReview: (messageId, resolution) =>
-                void resolveAdminBotEmailReview(state, messageId, resolution),
-              onSaveMember: (member, options) => saveAdminBotMember(state, member, options),
-              onMergeMembers: (survivorId, duplicateId) =>
-                void mergeAdminBotMembers(state, survivorId, duplicateId),
-              onDeleteMember: (member) => void deleteAdminBotMember(state, member.id),
-              onPurgeMembersWithoutEmail: (dryRun) =>
-                void purgeAdminBotMembersWithoutEmail(state, { dryRun }),
-              onSaveOwnProfile: (memberId, fields) =>
-                void saveAdminBotOwnProfile(state, memberId, fields),
-              // The checklist itself lives at the bottom of the profile page instead of in a
-              // popup, so "view onboarding checklist" from Lab Members just goes there.
-              onShowOnboardingWelcome: () => state.setTab("profile"),
-              // Admins only, and not from inside a view that is already somebody else's -- the
-              // service refuses both, and leaving the button out says so before it is clicked.
-              ...(adminBotMode === "admin" && !state.memberImpersonatedBy
-                ? {
-                    onViewAsMember: (member) => void state.beginViewAs(member.id),
-                  }
-                : {}),
-              onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
-              onDeletePaper: (paper) => void deleteAdminBotPaper(state, paper),
-              onSaveSettings: (settings) => void saveAdminBotSettings(state, settings),
-              onSaveSensitiveInfo: (markdown) => void saveAdminBotSensitiveInfo(state, markdown),
-            })
-          : nothing}
+        ${renderAdminPanelsSurface(state, adminBotSurfaces)}
         ${state.tab === "adminbotRegistrations" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotRegistrations, (m) =>
               m.renderAdminBotRegistrations({
@@ -4670,7 +3723,22 @@ export function renderApp(state: AppViewState) {
             )
           : nothing}
         ${state.tab === "adminbotOpportunities"
-          ? renderLazyView(lazyOpportunities, (m) => m.renderOpportunities())
+          ? renderLazyView(lazyOpportunities, (m) =>
+              m.renderOpportunities({
+                // Members only: the letters tab needs a session, and a visitor has nowhere to go.
+                onRequestLetter: state.memberId
+                  ? (opportunity) => {
+                      queueLetterSchool(opportunitySchoolFields(opportunity));
+                      state.setTab("adminbotRecLetters");
+                      // Already loaded this session: add it now. Otherwise the tab's first render
+                      // restores the draft and adds it then (see applyQueuedLetterSchools).
+                      if (state.adminBotLogisticsDraftScope === adminBotLogisticsScope(state)) {
+                        applyQueuedLetterSchools(state, requestHostUpdate);
+                      }
+                    }
+                  : undefined,
+              }),
+            )
           : nothing}
         ${state.tab === "adminbotMailingList" && adminBotMode === "admin"
           ? renderLazyView(lazyMailingList, (m) =>

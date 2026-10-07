@@ -1,32 +1,32 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
-import { enqueueAdminBotMutation, resetAdminBotOfflineMemory } from "../offline/outbox.ts";
 import {
   changeMemberEmail,
   claimMember,
+  loginMember,
+  issueDeviceToken,
+  pairDevice,
+  signupMember,
+} from "../api/auth.ts";
+import { resolveEmailReviewAsAdmin } from "../api/email-review.ts";
+import { updateOwnProfile } from "../api/members.ts";
+import { fetchMemberSheet, nudgeOnboardingStep, setOnboardingStep } from "../api/onboarding.ts";
+import { enqueueAdminBotMutation, resetAdminBotOfflineMemory } from "../offline/outbox.ts";
+import {
   clearStoredMemberSession,
   fetchMemberSession,
   fetchMemberResource,
-  fetchMemberSheet,
   fetchRelevantPapers,
   fetchRoster,
   flushQueuedAdminBotWrites,
   hasAcknowledgedOnboardingChecklist,
   loadStoredMemberSession,
-  loginMember,
   logoutMember,
   markOnboardingChecklistAcknowledged,
-  issueDeviceToken,
-  pairDevice,
   pendingQueuedAdminBotWriteCount,
   resolveAdminBotBaseUrl,
-  resolveEmailReviewAsAdmin,
   saveStoredMemberSession,
-  signupMember,
-  nudgeOnboardingStep,
-  setOnboardingStep,
-  updateOwnProfile,
 } from "./session.ts";
 
 const BASE_URL = "http://127.0.0.1:8765";

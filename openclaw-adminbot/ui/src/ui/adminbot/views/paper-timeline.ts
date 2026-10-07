@@ -11,7 +11,7 @@ import {
   type AdminBotPaperSlotBranch,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
-import type { PaperSlotRow } from "../auth/session.ts";
+import type { PaperSlotRow } from "../api/papers.ts";
 
 /**
  * What one dot can be.

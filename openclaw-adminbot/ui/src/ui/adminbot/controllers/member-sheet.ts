@@ -6,7 +6,6 @@ import type { UiSettings } from "../../storage.ts";
 import {
   addMemberSheetRow as addMemberSheetRowRequest,
   fetchMemberSheet as fetchMemberSheetRequest,
-  loadStoredMemberSession,
   type MemberSheetAddRowInput,
   type MemberSheetAddRowResult,
   type MemberSheetEditResult,
@@ -16,8 +15,8 @@ import {
   onboardFromMemberSheet as onboardFromMemberSheetRequest,
   previewOnboardFromMemberSheet as previewOnboardFromMemberSheetRequest,
   proposeMemberSheetEdits as proposeMemberSheetEditsRequest,
-  resolveAdminBotBaseUrl,
-} from "../auth/session.ts";
+} from "../api/onboarding.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 
 /**
  * The Membership grid over the lab's member spreadsheet.

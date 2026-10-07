@@ -745,7 +745,7 @@ export class StateStore {
   }
 }
 
-class GoogleClient {
+export class GoogleClient {
   private args(args: string[]): string[] {
     return [...args, "--account", botEmail(), "--json", "--no-input"];
   }
@@ -905,15 +905,20 @@ class GoogleClient {
       event.start,
       "--to",
       event.end,
-      "--start-timezone",
-      event.startTimeZone ?? DEFAULT_TIMEZONE,
-      "--end-timezone",
-      event.endTimeZone ?? event.startTimeZone ?? DEFAULT_TIMEZONE,
       // Silent: AdminBot's calendar writes never email anyone (connectors/gog.ts).
       "--send-updates",
       "none",
     ];
-    if (event.allDay) args.push("--all-day");
+    if (event.allDay) {
+      args.push("--all-day");
+    } else {
+      args.push(
+        "--start-timezone",
+        event.startTimeZone ?? DEFAULT_TIMEZONE,
+        "--end-timezone",
+        event.endTimeZone ?? event.startTimeZone ?? DEFAULT_TIMEZONE,
+      );
+    }
     if (event.description) args.push("--description", event.description);
     if (event.location) args.push("--location", event.location);
     const result = await command(GOG, this.args(args));

@@ -6,11 +6,11 @@ import {
   ADMINBOT_ELEVATOR_PITCH_MAX,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
 import {
   clearStoredMemberSession,
   saveStoredMemberSession,
   type LabMember,
-  type MemberProfileUpdate,
 } from "../auth/session.ts";
 import {
   blankFields,

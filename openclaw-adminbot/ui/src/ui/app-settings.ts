@@ -5,10 +5,10 @@ import { t } from "../i18n/index.ts";
 import { loadStoredMemberSession } from "./adminbot/auth/session.ts";
 import {
   loadAdminBot,
-  loadAdminBotVenueSources,
   pendingAdminBotLoad,
   type AdminBotHost,
 } from "./adminbot/controllers/admin.ts";
+import { loadAdminBotVenueSources } from "./adminbot/controllers/conference-papers.ts";
 import {
   loadAdminBotRegistrations,
   type AdminBotRegistrationsHost,

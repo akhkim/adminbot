@@ -8,13 +8,15 @@ const inviteToCalendarEvent = vi.fn();
 let currentToken = "token";
 
 vi.mock("../auth/session.ts", () => ({
+  loadStoredMemberSession: () => ({ sessionToken: currentToken }),
+  resolveAdminBotBaseUrl: () => "http://localhost",
+}));
+vi.mock("../api/calendar.ts", () => ({
   fetchCalendarEvents: (...args: unknown[]) => fetchCalendarEvents(...args),
   draftCalendarEvent: (...args: unknown[]) => draftCalendarEvent(...args),
   createCalendarEvent: (...args: unknown[]) => createCalendarEvent(...args),
   updateCalendarEvent: (...args: unknown[]) => updateCalendarEvent(...args),
   inviteToCalendarEvent: (...args: unknown[]) => inviteToCalendarEvent(...args),
-  loadStoredMemberSession: () => ({ sessionToken: currentToken }),
-  resolveAdminBotBaseUrl: () => "http://localhost",
 }));
 
 const {

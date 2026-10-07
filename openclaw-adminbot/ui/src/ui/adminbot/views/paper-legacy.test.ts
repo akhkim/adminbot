@@ -8,7 +8,7 @@ import {
   paperFeedbackSlots,
 } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 import { adminBotPaperSlots } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
-import type { PaperCycle } from "../auth/session.ts";
+import type { PaperCycle } from "../api/papers.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
 import {
   collectLegacyWrites,
