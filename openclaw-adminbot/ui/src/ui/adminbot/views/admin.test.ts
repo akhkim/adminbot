@@ -4,10 +4,10 @@ import { render } from "lit";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   type AdminBotLabMember,
-  type AdminBotLabMemberSaveInput,
   type AdminBotPaperRecord,
   createEmptyAdminBotDashboardData,
 } from "../controllers/admin.ts";
+import type { AdminBotLabMemberSaveInput } from "../controllers/members.ts";
 import { PROFILE_FIELDS } from "../member-fields.ts";
 import { renderAdminBot, resetAdminViewSessionState, type AdminBotProps } from "./admin.ts";
 
@@ -493,6 +493,27 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(container.querySelector("#adminbot-add-member")).not.toBeNull();
   });
 
+  it("keeps a rejected member draft and its validation message inside the editor", async () => {
+    const message =
+      "Use an institutional or company email for correspondence, rather than a personal email address.";
+    const props = baseProps({ mode: "admin", onSaveMember: () => false });
+    const container = renderToDiv(props);
+    const editor = container.querySelector<HTMLElement>("#adminbot-edit-member-0")!;
+    const form = editor.querySelector<HTMLFormElement>("form")!;
+    const email = form.querySelector<HTMLInputElement>('[name="correspondence_email"]')!;
+    email.value = "pat@gmail.com";
+    const hide = vi.fn();
+    editor.hidePopover = hide;
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+    props.notice = { kind: "error", text: message };
+    render(renderAdminBot(props), container);
+
+    expect(hide).not.toHaveBeenCalled();
+    expect(editor.querySelector('[role="alert"]')?.textContent).toContain(message);
+    expect(email.value).toBe("pat@gmail.com");
+  });
+
   it("asks for Member type as checkboxes, with no Privilege or subgroup field", () => {
     const container = renderToDiv(baseProps({ mode: "admin" }));
     const form = container.querySelector<HTMLElement>("#adminbot-add-member");
@@ -646,6 +667,47 @@ describe("renderAdminBot members panel — edit affordance", () => {
       }),
     );
     expect(container.querySelector("tbody tr")?.textContent).not.toContain("Alumni");
+  });
+
+  // Regression: the importers record leaving in Member Type and never set `status`, so every
+  // alumnus rendered as the "active" default -- and the edit form preselected it, so a save wrote
+  // "active" back.
+  it("shows an alumni Member Type as Alumni when no status is set", () => {
+    const { status: _status, ...withoutStatus } = members[0]!;
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [{ ...withoutStatus, member_type: "alumni" }],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+    const row = container.querySelector<HTMLTableRowElement>("tbody tr");
+
+    expect(row?.getAttribute("data-status")).toBe("alumni");
+    expect(row?.querySelector(".adminbot-status")?.textContent?.trim()).toBe("Alumni");
+    expect(
+      container.querySelector<HTMLSelectElement>('#adminbot-edit-member-0 select[name="status"]')
+        ?.value,
+    ).toBe("alumni");
+  });
+
+  it("still defaults a member with neither field to active", () => {
+    const { status: _status, ...withoutStatus } = members[0]!;
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [withoutStatus],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+
+    expect(container.querySelector("tbody tr")?.getAttribute("data-status")).toBe("active");
   });
 
   // Regression: the Slack user ID is self-editable but had no cell in the Lab
@@ -2361,7 +2423,7 @@ describe("onboarding additions", () => {
       new Date().toISOString().slice(0, 7),
     );
     expect(form.querySelector<HTMLInputElement>('input[name="receivesNudges"]')!.checked).toBe(
-      false,
+      true,
     );
     expect(form.querySelector('datalist option[value="Tübingen"]')).not.toBeNull();
     expect(form.querySelector('datalist option[value="ETH Zurich"]')).not.toBeNull();
@@ -2373,5 +2435,73 @@ describe("onboarding additions", () => {
       }),
     ]);
     expect(container.textContent).toContain("Background / reason for adding this person");
+  });
+  it("offers only real meeting/discussion channels and submits selected channel names", () => {
+    const saves = vi.fn();
+    const container = document.createElement("div");
+    render(
+      renderAdminBot(
+        baseProps({
+          mode: "admin",
+          onSaveMember: saves,
+          onboardingSlackChannels: {
+            channels: [
+              "proj-example",
+              "meeting-causality",
+              "discussion-nlp",
+              "random",
+              "disc-reading",
+            ],
+            loading: false,
+            error: null,
+          },
+        }),
+      ),
+      container,
+    );
+    const form = container.querySelector<HTMLFormElement>("#adminbot-add-member form")!;
+    const channels = [...form.querySelectorAll<HTMLInputElement>('input[name="slackChannels"]')];
+    expect(channels.map((input) => input.value)).toEqual([
+      "disc-reading",
+      "discussion-nlp",
+      "meeting-causality",
+    ]);
+    channels[0]!.checked = true;
+    channels[2]!.checked = true;
+    form.querySelector<HTMLInputElement>('input[name="name"]')!.value = "Alex Example";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saves).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        slackChannels: ["disc-reading", "meeting-causality"],
+      }),
+    );
+  });
+  it("shows channel lookup failures without inventing channel options", () => {
+    const container = document.createElement("div");
+    const load = vi.fn();
+    render(
+      renderAdminBot(
+        baseProps({
+          mode: "admin",
+          onboardingSlackChannels: {
+            channels: null,
+            loading: false,
+            error: "Slack lookup unavailable",
+          },
+          onLoadOnboardingSlackChannels: load,
+        }),
+      ),
+      container,
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Slack lookup unavailable",
+    );
+    expect(container.querySelector('input[name="slackChannels"]')).toBeNull();
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Load Slack channel options"),
+    )!;
+    button.click();
+    expect(load).toHaveBeenCalledOnce();
   });
 });

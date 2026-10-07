@@ -7,7 +7,6 @@
 //
 // The chart speaks in effort as a share of weekly capacity rather than in hours: the caller
 // converts, so this module needs to know nothing about how a member's schedule is stored.
-import { html } from "lit";
 import { ChevronLeft, ChevronRight, Info } from "lucide-react";
 import {
   createElement,
@@ -36,6 +35,9 @@ import {
   YAxis,
 } from "recharts";
 import { i18n, t } from "../../../i18n/index.ts";
+import { CHART_COLORS, CHART_NEUTRAL_COLOR, TIME_CHART_ELEMENT } from "./time-chart.ts";
+
+export { CHART_COLORS, CHART_NEUTRAL_COLOR, renderTimeAllocationChart } from "./time-chart.ts";
 
 export type TimeAllocationTask = {
   id: string;
@@ -115,26 +117,6 @@ type TimeAllocationTooltipProps = {
 
 export type TimeAllocationInterval = "day" | "week" | "month";
 const DAY_MS = 86_400_000;
-const TIME_CHART_ELEMENT = "adminbot-effort-stack-chart";
-// The palette lives in styles/time-allocation-chart.css, not here, because the two themes need
-// different steps of the same hue and a hex in this file can only be one of them. Read as CSS
-// variables: recharts passes `fill` straight onto the SVG element, so `var(...)` resolves there
-// like anywhere else, and switching theme repaints the chart with no JavaScript and no re-render.
-//
-// Order is the assignment order and is stable per category (first seen, first slot). Nothing here
-// cycles past the eighth: a ninth category takes the neutral rather than a second turn at blue,
-// which would put one colour on two series in the same stack.
-export const CHART_COLORS = [
-  "var(--adminbot-chart-series-1)",
-  "var(--adminbot-chart-series-2)",
-  "var(--adminbot-chart-series-3)",
-  "var(--adminbot-chart-series-4)",
-  "var(--adminbot-chart-series-5)",
-  "var(--adminbot-chart-series-6)",
-  "var(--adminbot-chart-series-7)",
-  "var(--adminbot-chart-series-8)",
-] as const;
-export const CHART_NEUTRAL_COLOR = "var(--adminbot-chart-neutral)";
 const AWAY_BACKGROUND_KEY = "__away_background__";
 // Recharts omits a Bar's background when that series is exactly zero. A tiny transparent value,
 // held to one rendered pixel, gives the whole-day background an anchor without changing any
@@ -418,9 +400,16 @@ function TimeAllocationTooltip({
   const awayDays = Number(segment?.awayDays ?? 0);
   const dayCount = Number(segment?.dayCount ?? 0);
   const awayRanges = segment?.awayRanges ?? [];
-  return createElement(
+  const mobile =
+    typeof window !== "undefined" &&
+    window.matchMedia?.(
+      "(max-width: 600px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape)",
+    ).matches;
+  const tooltip = createElement(
     "div",
-    { className: "adminbot-time-chart__tooltip" },
+    {
+      className: `adminbot-time-chart__tooltip${mobile ? " adminbot-time-chart__tooltip--mobile" : ""}`,
+    },
     createElement("div", { className: "adminbot-time-chart__tooltip-label" }, label),
     ...jinesisAllocations.map((entry) =>
       createElement(
@@ -539,6 +528,8 @@ function TimeAllocationTooltip({
       ),
     ),
   );
+  // The plot scrolls on phones; its overflow must not crop the selected period details.
+  return mobile ? createPortal(tooltip, document.body) : tooltip;
 }
 
 function ChartPageButton({
@@ -883,6 +874,11 @@ function EffortStackChart({
     { className: "adminbot-time-chart" },
     createElement("span", { className: "adminbot-time-chart__summary" }, segmentSummary),
     createElement(
+      "p",
+      { className: "adminbot-time-chart__phone-hint" },
+      t("adminbotTimeAvailability.chartPhoneHint"),
+    ),
+    createElement(
       "div",
       { className: "adminbot-time-chart__pager" },
       createElement(ChartPageButton, {
@@ -897,6 +893,7 @@ function EffortStackChart({
         "div",
         {
           className: "adminbot-time-chart__plot",
+          tabIndex: 0,
           role: "img",
           "aria-label": t("adminbotTimeAvailability.chartAria", { member: memberName }),
         },
@@ -1135,6 +1132,14 @@ class AdminBotEffortStackChartElement extends HTMLElement {
   };
 
   connectedCallback() {
+    // lit sets these before the module is loaded; as own properties they would hide the setters.
+    for (const key of ["tasks", "awayRanges", "memberName", "memberId", "interval"] as const) {
+      if (Object.hasOwn(this, key)) {
+        const value: unknown = this[key];
+        delete (this as Partial<Record<typeof key, unknown>>)[key];
+        (this as Record<typeof key, unknown>)[key] = value;
+      }
+    }
     this.renderChart();
   }
 
@@ -1170,25 +1175,4 @@ class AdminBotEffortStackChartElement extends HTMLElement {
 
 if (!customElements.get(TIME_CHART_ELEMENT)) {
   customElements.define(TIME_CHART_ELEMENT, AdminBotEffortStackChartElement);
-}
-
-export function renderTimeAllocationChart(
-  tasks: readonly TimeAllocationTask[],
-  memberName: string,
-  memberId: string,
-  interval: TimeAllocationInterval,
-  awayRanges: readonly TimeAllocationAwayRange[] = [],
-  onWindowChange?: (window: TimeChartWindow) => void,
-) {
-  return html`
-    <adminbot-effort-stack-chart
-      .memberId=${memberId}
-      .interval=${interval}
-      .tasks=${tasks}
-      .awayRanges=${awayRanges}
-      .memberName=${memberName}
-      @time-window-change=${(event: Event) =>
-        onWindowChange?.((event as CustomEvent<TimeChartWindow>).detail)}
-    ></adminbot-effort-stack-chart>
-  `;
 }

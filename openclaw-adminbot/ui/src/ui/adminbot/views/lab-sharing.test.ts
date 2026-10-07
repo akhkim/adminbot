@@ -311,3 +311,24 @@ describe("renderLabSharing", () => {
     expect(after).not.toContain("Zhijing");
   });
 });
+
+it("shows only the published time zone and omits it on legacy broadcasts", () => {
+  const status = snapshot().status!;
+  const shown = renderView({
+    labSharing: snapshot({
+      status: {
+        ...status,
+        timezone: "America/Toronto",
+        current_city: "Private city",
+      } as typeof status,
+    }),
+  });
+  expect(
+    shown.container.querySelector('[data-testid="lab-sharing-director"]')?.textContent,
+  ).toContain("Time zone: America/Toronto");
+  expect(shown.container.textContent).not.toContain("Private city");
+  const legacy = renderView();
+  expect(
+    legacy.container.querySelector('[data-testid="lab-sharing-director"]')?.textContent,
+  ).not.toContain("Time zone:");
+});

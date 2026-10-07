@@ -6,6 +6,7 @@ import {
 } from "../../../../../extensions/adminbot/src/contracts/deadline-proposals.stage.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
+import { dateTimeFormat } from "../data/date-format.ts";
 import { displayTimezone, zonedDeadlineLabel } from "../data/deadline-display-time.ts";
 import type { DeadlineProposalInput } from "../data/deadline-proposals.ts";
 import { aoeInstantMs, plainDateLabel } from "../data/deadline-time.ts";
@@ -37,7 +38,7 @@ export function proposalDateFields(
       timezone,
     };
   }
-  const parts = new Intl.DateTimeFormat("en-CA", {
+  const parts = dateTimeFormat("en-CA", {
     timeZone: timezone || "Etc/GMT+12",
     year: "numeric",
     month: "2-digit",

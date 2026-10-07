@@ -19,6 +19,8 @@ import {
 } from "./logistics.ts";
 
 type DrawOptions = {
+  /** Re-render into an existing container, the way the app redraws the form after each save. */
+  container?: HTMLElement;
   /** False draws the Google Form signpost instead of the correction form. */
   signatureEditing?: boolean;
   role?: AccessRole;
@@ -158,8 +160,10 @@ function draw(options: DrawOptions = {}): Drawn {
   let lettersSaves = 0;
   let meetingSaves = 0;
   let myProjectsOpened = 0;
-  const container = document.createElement("div");
-  document.body.append(container);
+  const container = options.container ?? document.createElement("div");
+  if (!options.container) {
+    document.body.append(container);
+  }
   render(
     renderAdminBotLogistics({
       role: options.role ?? "member",
@@ -860,6 +864,54 @@ describe("list of schools", () => {
     ]);
   });
 
+  // Chrome's date and time fields lose a half-typed segment when their value is written while the
+  // member is typing. Each keystroke saves and redraws, so a redraw must not write back what the box
+  // already holds -- that write is what turned "14" into "4" and deadlines into the 4th.
+  describe("redrawing while a date is being typed", () => {
+    function watchWrites(input: HTMLInputElement): string[] {
+      const writes: string[] = [];
+      const native = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!;
+      Object.defineProperty(input, "value", {
+        configurable: true,
+        get() {
+          return native.get!.call(this);
+        },
+        set(value: string) {
+          writes.push(value);
+          native.set!.call(this, value);
+        },
+      });
+      return writes;
+    }
+
+    const typed = (input: HTMLInputElement, value: string) =>
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+
+    it("does not write a typed date back into its own box", () => {
+      const row = createSchoolRow({ letterDeadline: "2026-12-14", letterDeadlineTime: "23:59" });
+      const { container } = drawLetters({ schools: [row] });
+      for (const key of ["letterDeadline", "letterDeadlineTime"] as const) {
+        const input = cellInput(container, key)!;
+        const value = key === "letterDeadline" ? "2026-12-01" : "17:00";
+        typed(input, value);
+        const writes = watchWrites(input);
+        drawLetters({ container, schools: [{ ...row, [key]: value }] });
+        expect(writes).toEqual([]);
+        expect(input.value).toBe(value);
+      }
+    });
+
+    it("still shows a different date when the form is restored or reset", () => {
+      const row = createSchoolRow({ letterDeadline: "2026-12-14" });
+      const { container } = drawLetters({ schools: [row] });
+      const input = cellInput(container, "letterDeadline")!;
+      drawLetters({ container, schools: [{ ...row, letterDeadline: "2027-01-15" }] });
+      expect(input.value).toBe("2027-01-15");
+      drawLetters({ container, schools: [{ ...row, letterDeadline: "" }] });
+      expect(input.value).toBe("");
+    });
+  });
+
   it("gives every column of a row its own control", () => {
     const { container } = drawLetters({ schools: [createSchoolRow()] });
     const row = schoolsTable(container).querySelector<HTMLElement>(".logistics-schools__row");
@@ -976,7 +1028,19 @@ describe("list of schools", () => {
     actions[1].click();
     expect(drawn.lettersSaves).toBe(1);
     expect(drawn.saves).toBe(0);
-    // Submit is the letters form's own too, not the signature form's.
+    // Saving remains available, but submitting requires explicit email confirmation.
+    actions[2].click();
+    expect(drawn.lettersSubmits).toBe(0);
+    const confirmation = drawn.container.querySelector<HTMLInputElement>(
+      "[data-testid='logistics-email-confirmation']",
+    )!;
+    expect(
+      confirmation.closest("label")?.querySelector(".cron-required-marker")?.textContent?.trim(),
+    ).toBe("*");
+    expect(confirmation.closest("label")?.textContent).not.toContain("Required:");
+    expect(confirmation.required).toBe(true);
+    expect(confirmation.checked).toBe(false);
+    confirmation.checked = true;
     actions[2].click();
     expect(drawn.lettersSubmits).toBe(1);
     expect(drawn.submits).toBe(0);
@@ -1664,6 +1728,24 @@ describe("book meeting", () => {
 });
 
 describe("recommendation letter Guidebook guidance", () => {
+  it("requires email confirmation again when resubmitting or discarding", () => {
+    const drawn = drawLetters({ editing: true });
+    const confirmation = drawn.container.querySelector<HTMLInputElement>(
+      "[data-testid='logistics-email-confirmation']",
+    )!;
+    const submit = drawn.container.querySelector<HTMLButtonElement>(
+      "[data-testid='logistics-submit']",
+    )!;
+    submit.click();
+    expect(drawn.lettersSubmits).toBe(0);
+    confirmation.checked = true;
+    submit.click();
+    expect(drawn.lettersSubmits).toBe(1);
+    drawn.container.querySelector<HTMLButtonElement>(".logistics-request__actions .btn")!.click();
+    expect(confirmation.checked).toBe(false);
+    submit.click();
+    expect(drawn.lettersSubmits).toBe(1);
+  });
   it("shows preparation and exact section links before school fields, including edits", () => {
     for (const editing of [false, true]) {
       const { container } = drawLetters({ editing });
@@ -1717,4 +1799,23 @@ it("makes letter deadline required and defaults a new school to AoE", () => {
     container.querySelector<HTMLInputElement>(".logistics-schools__cell--deadlineTimezone input")
       ?.value,
   ).toBe("AoE");
+});
+
+// The same fields become stacked cards on phones. Their visible labels must survive without
+// relying on a table header that is above/offscreen while somebody edits a row.
+it("provides visible phone labels for every editable request cell", () => {
+  const letters = drawLetters({ schools: [createSchoolRow()], facts: [createFactRow()] }).container;
+  const meeting = draw({ template: "bookMeeting", meetings: [createMeetingRow()] }).container;
+  for (const view of [letters, meeting]) {
+    const cells = [...view.querySelectorAll(".logistics-schools__cell")].filter((cell) =>
+      cell.querySelector("input, select, textarea"),
+    );
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of cells) {
+      expect(cell.getAttribute("data-label")?.trim()).toBeTruthy();
+      expect(
+        cell.querySelector("input, select, textarea")?.getAttribute("aria-label")?.trim(),
+      ).toBeTruthy();
+    }
+  }
 });

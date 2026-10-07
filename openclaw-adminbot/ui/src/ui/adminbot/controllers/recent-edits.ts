@@ -5,9 +5,9 @@
 // open, so a panel nobody expands costs no request.
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
+import { fetchMemberRecentEdits } from "../api/members.ts";
+import { fetchPaperRecentEdits } from "../api/papers.ts";
 import {
-  fetchMemberRecentEdits,
-  fetchPaperRecentEdits,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   type RecentUpdateRow,

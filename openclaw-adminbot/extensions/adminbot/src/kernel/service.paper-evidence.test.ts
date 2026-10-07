@@ -90,20 +90,31 @@ describe("verifyPaperEvidence", () => {
     expect(slot?.verified_at).toBeUndefined();
   });
 
-  it("warns the author when AdminBot can see but cannot edit a Drive link", async () => {
-    const service = lab(probeReturning({ status: "found", canEdit: false }));
+  it("confirms a Drive link AdminBot can only view, or reach through a share link", async () => {
+    for (const probed of [{ canEdit: false }, {}]) {
+      const service = lab(probeReturning({ status: "found", ...probed }));
+      const result = unwrap(await service.verifyPaperEvidence("cron"));
+      expect(result.verified).toEqual([{ paper_id: "p1", slot: "project_folder" }]);
+      expect(result.invalidated).toEqual([]);
+      expect(folderSlot(service)).toMatchObject({
+        status: "provided",
+        verified_by: "google_drive",
+      });
+    }
+  });
+
+  it("invalidates a Drive link whose file is in the trash", async () => {
+    const service = lab(probeReturning({ status: "found", trashed: true, canEdit: true }));
     const result = unwrap(await service.verifyPaperEvidence("cron"));
     expect(result.invalidated).toEqual([{ paper_id: "p1", slot: "project_folder" }]);
     expect(folderSlot(service)).toMatchObject({
       status: "invalid",
-      invalid_reason: expect.stringContaining("Jinesis.adminbot@gmail.com"),
+      invalid_reason: expect.stringContaining("trash"),
     });
   });
 
-  it("clears the warning after the owner grants edit access without changing the URL", async () => {
-    const service = lab(
-      probeReturning({ status: "found", canEdit: false }, { status: "found", canEdit: true }),
-    );
+  it("clears the warning after the owner shares the file without changing the URL", async () => {
+    const service = lab(probeReturning({ status: "missing" }, { status: "found", canEdit: false }));
     unwrap(await service.verifyPaperEvidence("cron"));
     expect(folderSlot(service)?.status).toBe("invalid");
     unwrap(await service.verifyPaperEvidence("cron"));

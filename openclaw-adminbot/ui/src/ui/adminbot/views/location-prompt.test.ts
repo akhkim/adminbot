@@ -2,7 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { LocationDrift } from "../auth/session.ts";
+import type { LocationDrift } from "../api/profile.ts";
 import { renderLocationPrompt, type LocationPromptProps } from "./location-prompt.ts";
 
 afterEach(() => {

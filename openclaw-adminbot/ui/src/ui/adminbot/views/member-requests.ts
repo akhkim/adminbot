@@ -14,6 +14,7 @@ export type MemberRequestsProps = {
   isAdmin: boolean;
   state: AdminBotMemberRequestsState | undefined;
   onSubmit?: (input: MemberRequestInput) => Promise<boolean>;
+  onEdit?: (request: MemberRequestView, input: MemberRequestInput) => Promise<boolean>;
   onApprove?: (request: MemberRequestView, options: { onboard: boolean }) => void;
   onReject?: (request: MemberRequestView, note: string) => void;
   onWithdraw?: (request: MemberRequestView) => void;
@@ -31,16 +32,22 @@ function text(data: FormData, name: string): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-async function submitRequest(event: Event, props: MemberRequestsProps): Promise<void> {
+async function submitRequest(
+  event: Event,
+  props: MemberRequestsProps,
+  request?: MemberRequestView,
+): Promise<void> {
   event.preventDefault();
   const form = event.currentTarget;
-  if (!(form instanceof HTMLFormElement) || !props.onSubmit) {
+  if (!(form instanceof HTMLFormElement) || (request ? !props.onEdit : !props.onSubmit)) {
     return;
   }
+  const popover = form.closest<HTMLElement>("[popover]");
   const data = new FormData(form);
   const memberType = data
     .getAll("memberType")
-    .map((value) => String(value).trim())
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
     .filter(Boolean)
     .join(", ");
   const optional = {
@@ -50,16 +57,86 @@ async function submitRequest(event: Event, props: MemberRequestsProps): Promise<
     personal_website: text(data, "personal_website"),
     note: text(data, "note"),
   };
-  const sent = await props.onSubmit({
+  const input = {
     name: text(data, "name"),
     email: text(data, "email"),
     ...Object.fromEntries(Object.entries(optional).filter(([, value]) => value !== "")),
-  });
+  };
+  const sent = request ? await props.onEdit?.(request, input) : await props.onSubmit?.(input);
   // Kept on a refusal so a duplicate or a typo can be fixed without typing the person in again.
   if (sent) {
-    form.reset();
-    form.closest<HTMLElement>("[popover]")?.hidePopover();
+    if (!request) {
+      form.reset();
+    }
+    const current = popover?.id ? document.getElementById(popover.id) : popover;
+    current?.hidePopover();
   }
+}
+
+function renderRequestFields(input?: MemberRequestInput) {
+  const types = (input?.member_type ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return html`
+    <div class="form-grid adminbot-form__grid">
+      <label class="adminbot-form__field"
+        ><span>Name</span
+        ><input name="name" .value=${input?.name ?? ""} required placeholder="Ada Lovelace"
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Email</span
+        ><input
+          name="email"
+          .value=${input?.email ?? ""}
+          type="email"
+          required
+          placeholder="ada@example.org"
+      /></label>
+      <div class="adminbot-form__field">
+        <span>Member type</span>
+        ${renderMultiSelectField({
+          name: "memberType",
+          label: "Member type",
+          placeholder: "Not sure",
+          options: multiSelectOptionsFor(adminBotMemberTypes, types),
+          selected: new Set(types.map((type) => type.toLowerCase())),
+          rootClass: "adminbot-form__multi",
+          optionClass: "adminbot-form__multi-option",
+          testId: "member-request-member-type",
+        })}
+        <small>Your best guess. The admin who approves confirms it, since it sets access.</small>
+      </div>
+      <label class="adminbot-form__field"
+        ><span>Affiliation</span
+        ><input
+          name="affiliation"
+          .value=${input?.affiliation ?? ""}
+          placeholder="University, company"
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Research topics</span
+        ><input name="research_topics" .value=${input?.research_topics ?? ""}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Website</span
+        ><input
+          name="personal_website"
+          .value=${input?.personal_website ?? ""}
+          type="url"
+          placeholder="https://"
+      /></label>
+      <label class="adminbot-form__field adminbot-form__field--wide"
+        ><span>Note for the admins</span
+        ><textarea
+          name="note"
+          .value=${input?.note ?? ""}
+          rows="3"
+          placeholder="How they are joining the lab, who they work with"
+        ></textarea>
+      </label>
+    </div>
+  `;
 }
 
 /**
@@ -90,46 +167,7 @@ export function renderMemberRequestForm(props: MemberRequestsProps) {
       An admin reviews this before they are added to the roster. Nothing is sent to them until then.
     </div>
     <form class="adminbot-form" @submit=${(event: Event) => void submitRequest(event, props)}>
-      <div class="form-grid adminbot-form__grid">
-        <label class="adminbot-form__field"
-          ><span>Name</span><input name="name" required placeholder="Ada Lovelace"
-        /></label>
-        <label class="adminbot-form__field"
-          ><span>Email</span
-          ><input name="email" type="email" required placeholder="ada@example.org"
-        /></label>
-        <div class="adminbot-form__field">
-          <span>Member type</span>
-          ${renderMultiSelectField({
-            name: "memberType",
-            label: "Member type",
-            placeholder: "Not sure",
-            options: multiSelectOptionsFor(adminBotMemberTypes, []),
-            selected: new Set<string>(),
-            rootClass: "adminbot-form__multi",
-            optionClass: "adminbot-form__multi-option",
-            testId: "member-request-member-type",
-          })}
-          <small>Your best guess. The admin who approves confirms it, since it sets access.</small>
-        </div>
-        <label class="adminbot-form__field"
-          ><span>Affiliation</span><input name="affiliation" placeholder="University, company"
-        /></label>
-        <label class="adminbot-form__field"
-          ><span>Research topics</span><input name="research_topics"
-        /></label>
-        <label class="adminbot-form__field"
-          ><span>Website</span><input name="personal_website" type="url" placeholder="https://"
-        /></label>
-        <label class="adminbot-form__field adminbot-form__field--wide"
-          ><span>Note for the admins</span
-          ><textarea
-            name="note"
-            rows="3"
-            placeholder="How they are joining the lab, who they work with"
-          ></textarea>
-        </label>
-      </div>
+      ${renderRequestFields()}
       <div class="adminbot-form__actions">
         <button class="btn btn--sm primary" type="submit">Send for review</button>
       </div>
@@ -169,6 +207,51 @@ function readControls(event: Event): { onboard: boolean; reason: string } {
   return { onboard: onboard?.checked ?? true, reason: reason?.value ?? "" };
 }
 
+function renderRequestEditor(request: MemberRequestView, props: MemberRequestsProps) {
+  if (!props.onEdit) {
+    return nothing;
+  }
+  const id = `adminbot-edit-request-${request.id}`;
+  return html`<button
+      class="btn btn--sm"
+      type="button"
+      popovertarget=${id}
+      ?disabled=${Boolean(props.state?.busyId)}
+      data-testid="member-request-edit"
+    >
+      Edit
+    </button>
+    <article
+      class="adminbot-editor-card adminbot-popover"
+      id=${id}
+      popover
+      data-testid="member-request-editor"
+    >
+      <div class="card-title">Edit member request</div>
+      <p class="card-sub">
+        Saving keeps this request pending. Review the member type before approving.
+      </p>
+      <form
+        class="adminbot-form"
+        @submit=${(event: Event) => void submitRequest(event, props, request)}
+      >
+        ${renderRequestFields({ ...request.profile, note: request.note })}
+        <div class="adminbot-form__actions">
+          <button class="btn btn--sm" type="button" popovertarget=${id} popovertargetaction="hide">
+            Cancel
+          </button>
+          <button
+            class="btn btn--sm primary"
+            type="submit"
+            ?disabled=${Boolean(props.state?.busyId)}
+          >
+            Save changes
+          </button>
+        </div>
+      </form>
+    </article>`;
+}
+
 function renderAdminRequest(request: MemberRequestView, props: MemberRequestsProps) {
   const busy = props.state?.busyId === request.id;
   const grantsAdmin = request.access_level === "admin";
@@ -186,6 +269,7 @@ function renderAdminRequest(request: MemberRequestView, props: MemberRequestsPro
         </p>`
       : nothing}
     <div class="adminbot-form__actions">
+      ${renderRequestEditor(request, props)}
       <label class="adminbot-form__field--check">
         <input type="checkbox" name="onboard" checked />
         <span>Start their onboarding</span>
