@@ -193,11 +193,21 @@ describe("composeOnboardingGuide", () => {
     expect(configured.ok && configured.guide.body).toContain("https://portal.example");
   });
 
-  it("treats whitespace as missing rather than substituting it", () => {
+  it("treats a whitespace name as no name, and greets with Hi!", () => {
     const template = ADMINBOT_ONBOARDING_TEMPLATES.find((entry) => entry.id === "interviewee");
-    expect(
-      missingGuideValues(template!, { ...valuesFor("interviewee"), first_name: "   " }),
-    ).toEqual(["first_name"]);
+    const values = { ...valuesFor("interviewee"), first_name: "   " };
+    expect(missingGuideValues(template!, values)).toEqual([]);
+    const result = composeOnboardingGuide("interviewee", values, ENV);
+    expect(result.ok ? result.guide.body : "").toMatch(/^Hi!\n/u);
+  });
+
+  // A required token that is not optional still refuses: only the name is allowed to be absent.
+  it("still refuses a missing non-name value", () => {
+    const template = ADMINBOT_ONBOARDING_TEMPLATES.find((entry) => entry.id === "interviewee");
+    const token = template!.required[0]!;
+    expect(missingGuideValues(template!, { ...valuesFor("interviewee"), [token]: "" })).toEqual([
+      token,
+    ]);
   });
 
   it("fills every placeholder once satisfied", () => {
@@ -264,19 +274,17 @@ describe("composeOnboardingGuide", () => {
     } satisfies NodeJS.ProcessEnv);
     expect(configured.ok ? configured.guide.body : "").toContain('e.g., "aa@cs.example.edu"');
 
-    // `first_name` is optional here: no name means "Hi," rather than a refusal or a stray comma.
+    // `first_name` is optional: no name means "Hi!" rather than a refusal or a stray comma.
     const anonymous = composeOnboardingGuide("member", {}, ENV);
     expect(anonymous.ok).toBe(true);
-    expect(anonymous.ok ? anonymous.guide.body : "").toMatch(/^Hi,\n/u);
+    expect(anonymous.ok ? anonymous.guide.body : "").toMatch(/^Hi!\n/u);
     expect(anonymous.ok ? anonymous.guide.body : "").not.toMatch(/\{first_name\}/u);
 
-    // The optional token stays optional only where a template declines to require it: the other
-    // templates still refuse rather than greet a stranger with "Hi,".
-    expect(composeOnboardingGuide("rejection", {}, ENV)).toMatchObject({
-      ok: false,
-      reason: "missing-values",
-      missing: ["first_name"],
-    });
+    // Everywhere, including the templates that open on "Dear": a roster row with no name is still
+    // somebody to onboard, so it is greeted "Hi!" instead of being skipped.
+    const unnamed = composeOnboardingGuide("rejection", {}, ENV);
+    expect(unnamed.ok).toBe(true);
+    expect(unnamed.ok ? unnamed.guide.body : "").toMatch(/^Hi!\n/u);
 
     // The member email now names its escalation contact directly, so it no longer depends on
     // ADMINBOT_CONTACT_EMAILS and composes on a deployment that never set it. No template
@@ -411,10 +419,15 @@ describe("onboarding sender", () => {
   // The full-member guide is what starts someone's CS account, and its own copy tells them an
   // account request is coming -- so sending it files the request. This used to happen on
   // registration approval, which is too late: by then they have the address the request produces.
-  it("files the DCS request when the full-member guide is sent", async () => {
-    const submitDcsForm = vi.fn().mockResolvedValue(undefined);
+  it("files the DCS roster row when the full-member guide is sent", async () => {
+    const candidates = ["ada", "lovelace", "alovelace"];
+    const addDcsRosterRow = vi.fn().mockResolvedValue({
+      username: "ada",
+      password: "pw-not-in-the-payload",
+      candidates,
+    });
     const sendEmail = vi.fn().mockResolvedValue(undefined);
-    const send = createAdminBotOnboardingSender({ env: ENV, submitDcsForm, sendEmail });
+    const send = createAdminBotOnboardingSender({ env: ENV, addDcsRosterRow, sendEmail });
 
     const result = await send({
       template_id: "member",
@@ -422,22 +435,56 @@ describe("onboarding sender", () => {
       email: "ada@example.com",
     });
     expect(result.ok).toBe(true);
-    expect(submitDcsForm).toHaveBeenCalledWith({
-      firstName: "Ada",
-      lastName: "Lovelace",
+    expect(addDcsRosterRow).toHaveBeenCalledWith({
+      name: "Ada Lovelace",
       email: "ada@example.com",
     });
     if (result.ok) {
-      expect(result.payload.dcs_form).toEqual({ submitted: true });
+      expect(result.payload.dcs_roster_row).toEqual({
+        added: true,
+        username: "ada",
+        candidates,
+      });
     }
+  });
+
+  // The credential is mailed, and it is mailed on its own. The guide is cc'd to project leads and
+  // reply-to'd elsewhere on most sends; a password does not belong on a thread with an audience.
+  it("mails the credentials as their own message, and keeps them out of the payload", async () => {
+    const sendEmail = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      sendEmail,
+      addDcsRosterRow: vi.fn().mockResolvedValue({
+        username: "ada",
+        password: "sup3rSecretTempPw",
+        candidates: ["ada"],
+      }),
+    });
+    const result = await send({
+      template_id: "member",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      cc: ["lead@example.com"],
+    });
+    expect(result.ok).toBe(true);
+    // Two messages: the guide (cc'd) and the credentials (not).
+    expect(sendEmail).toHaveBeenCalledTimes(2);
+    const credentials = sendEmail.mock.calls.at(-1)?.[0];
+    expect(credentials.to).toBe("ada@example.com");
+    expect(credentials.cc).toBeUndefined();
+    expect(credentials.body).toContain("ada@cs.toronto.edu");
+    expect(credentials.body).toContain("sup3rSecretTempPw");
+    // The payload is returned over the API and rendered in the Control UI.
+    expect(JSON.stringify(result)).not.toContain("sup3rSecretTempPw");
   });
 
   // Every other template goes to people who are not getting a CS account from this lab.
   it("files nothing for the other templates", async () => {
-    const submitDcsForm = vi.fn().mockResolvedValue(undefined);
+    const addDcsRosterRow = vi.fn().mockResolvedValue(undefined);
     const send = createAdminBotOnboardingSender({
       env: ENV,
-      submitDcsForm,
+      addDcsRosterRow,
       sendEmail: vi.fn().mockResolvedValue(undefined),
     });
     const result = await send({
@@ -446,51 +493,85 @@ describe("onboarding sender", () => {
       email: "ada@example.com",
     });
     expect(result.ok).toBe(true);
-    expect(submitDcsForm).not.toHaveBeenCalled();
+    expect(addDcsRosterRow).not.toHaveBeenCalled();
     if (result.ok) {
-      expect(result.payload.dcs_form).toBeUndefined();
+      expect(result.payload.dcs_roster_row).toBeUndefined();
     }
   });
 
   // A re-send is not a second request: an operator resending the guide to someone who already has
   // an account turns it off.
   it("lets a re-send opt out", async () => {
-    const submitDcsForm = vi.fn().mockResolvedValue(undefined);
+    const addDcsRosterRow = vi.fn().mockResolvedValue(undefined);
     const send = createAdminBotOnboardingSender({
       env: ENV,
-      submitDcsForm,
+      addDcsRosterRow,
       sendEmail: vi.fn().mockResolvedValue(undefined),
     });
     const result = await send({
       template_id: "member",
       name: "Ada Lovelace",
       email: "ada@example.com",
-      submit_dcs_form: false,
+      add_dcs_roster_row: false,
     });
     expect(result.ok).toBe(true);
-    expect(submitDcsForm).not.toHaveBeenCalled();
+    expect(addDcsRosterRow).not.toHaveBeenCalled();
   });
 
   // The guide is already delivered by the time the form runs, so a failed form is reported and
   // followed up, never a reason to tell the operator the send failed.
-  it("reports a failed DCS request without failing the send", async () => {
+  it("reports a failed DCS roster filing without failing the send", async () => {
     const sendEmail = vi.fn().mockResolvedValue(undefined);
     const send = createAdminBotOnboardingSender({
       env: ENV,
       sendEmail,
-      submitDcsForm: vi.fn().mockRejectedValue(new Error("form timed out")),
+      addDcsRosterRow: vi.fn().mockRejectedValue(new Error("the sheet answered 503")),
     });
     const result = await send({
       template_id: "member",
       name: "Ada Lovelace",
       email: "ada@example.com",
-      submit_dcs_form: true,
+      add_dcs_roster_row: true,
     });
     expect(result.ok).toBe(true);
     expect(sendEmail).toHaveBeenCalled();
     if (result.ok) {
       expect(result.payload.sent).toBe(true);
-      expect(result.payload.dcs_form).toEqual({ submitted: false, error: "form timed out" });
+      expect(result.payload.dcs_roster_row).toEqual({
+        added: false,
+        error: "the sheet answered 503",
+      });
+    }
+  });
+
+  // A row that landed with an unsent credentials mail must not be re-filed: that asks for a second
+  // account. The report has to say which half failed, because the remedies differ.
+  it("reports a filed row whose credentials mail failed, and says not to re-file", async () => {
+    const sendEmail = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("mailbox full"));
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      sendEmail,
+      addDcsRosterRow: vi.fn().mockResolvedValue({
+        username: "ada",
+        password: "pw",
+        candidates: ["ada"],
+      }),
+    });
+    const result = await send({
+      template_id: "member",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const row = result.payload.dcs_roster_row;
+      expect(row?.added).toBe(true);
+      expect(row?.username).toBe("ada");
+      expect(row?.error).toContain("mailbox full");
+      expect(row?.error).toContain("do not re-run the filing");
     }
   });
 
@@ -768,9 +849,7 @@ describe("standing-channel invites", () => {
 
   // How the lab actually writes them down: one variable per channel, holding a real Slack id.
   it("reads a channel per variable, and takes ids as they are", async () => {
-    const inviteToSlackConnect = vi
-      .fn()
-      .mockResolvedValue({ url: "https://slack.example/i" });
+    const inviteToSlackConnect = vi.fn().mockResolvedValue({ url: "https://slack.example/i" });
     const send = createAdminBotOnboardingSender({
       env: {
         ...ENV,
@@ -788,16 +867,15 @@ describe("standing-channel invites", () => {
     });
 
     expect(result.ok, JSON.stringify(result)).toBe(true);
-    expect(
-      inviteToSlackConnect.mock.calls.map(([call]) => call.channelId),
-    ).toEqual(["C0A06H6K6DV", "C0ALDF1FGKT"]);
+    expect(inviteToSlackConnect.mock.calls.map(([call]) => call.channelId)).toEqual([
+      "C0A06H6K6DV",
+      "C0ALDF1FGKT",
+    ]);
   });
 
   // The combined form still wins when a deployment set it, so neither shape is a breaking change.
   it("prefers the combined list when both are configured", async () => {
-    const inviteToSlackConnect = vi
-      .fn()
-      .mockResolvedValue({ url: "https://slack.example/i" });
+    const inviteToSlackConnect = vi.fn().mockResolvedValue({ url: "https://slack.example/i" });
     const send = createAdminBotOnboardingSender({
       env: { ...ENV, ...CHANNELS, JINESIS_ACTIVE_ID: "C0A06H6K6DV" },
       inviteToSlackConnect,
@@ -808,18 +886,17 @@ describe("standing-channel invites", () => {
       name: "Yann Billeter",
       email: "yann@example.com",
     });
-    expect(
-      inviteToSlackConnect.mock.calls.map(([call]) => call.channelId),
-    ).toEqual(["C_JINESIS", "C_RANDOM"]);
+    expect(inviteToSlackConnect.mock.calls.map(([call]) => call.channelId)).toEqual([
+      "C_JINESIS",
+      "C_RANDOM",
+    ]);
   });
 
   // The access matrix has always said coauthor-major and own-pace belong in #jinesis-active and
   // #random-active. Nothing acted on that row, so the mail told them their invitations were on the
   // way and no invitation was ever sent.
   it("invites coauthor-major to both standing channels", async () => {
-    const inviteToSlackConnect = vi
-      .fn()
-      .mockResolvedValue({ url: "https://slack.example/i" });
+    const inviteToSlackConnect = vi.fn().mockResolvedValue({ url: "https://slack.example/i" });
     const send = createAdminBotOnboardingSender({
       env: { ...ENV, ...CHANNELS },
       inviteToSlackConnect,
@@ -836,23 +913,20 @@ describe("standing-channel invites", () => {
     if (!result.ok) {
       return;
     }
-    expect(
-      inviteToSlackConnect.mock.calls.map(([call]) => call.channelId),
-    ).toEqual(["C_JINESIS", "C_RANDOM"]);
+    expect(inviteToSlackConnect.mock.calls.map(([call]) => call.channelId)).toEqual([
+      "C_JINESIS",
+      "C_RANDOM",
+    ]);
     expect(result.payload.active_channel_invites?.configured).toBe(true);
     expect(result.payload.active_channel_invites?.invited).toHaveLength(2);
   });
 
   it("invites own-pace advisees too", async () => {
-    const inviteToSlackConnect = vi
-      .fn()
-      .mockResolvedValue({ url: "https://slack.example/i" });
+    const inviteToSlackConnect = vi.fn().mockResolvedValue({ url: "https://slack.example/i" });
     const send = createAdminBotOnboardingSender({
       env: { ...ENV, ...CHANNELS },
       inviteToSlackConnect,
-      provisionDriveWorkspace: vi
-        .fn()
-        .mockResolvedValue({ link: "https://drive.example/f" }),
+      provisionDriveWorkspace: vi.fn().mockResolvedValue({ link: "https://drive.example/f" }),
       sendEmail: vi.fn().mockResolvedValue(undefined),
     });
 
@@ -996,9 +1070,7 @@ describe("the alumni Slack Connect invitation", () => {
     const sent: { subject: string; body: string }[] = [];
     const send = createAdminBotOnboardingSender({
       env: ENV,
-      inviteToSlackConnect: vi
-        .fn()
-        .mockResolvedValue({ url: "https://slack.example/connect" }),
+      inviteToSlackConnect: vi.fn().mockResolvedValue({ url: "https://slack.example/connect" }),
       sendEmail: async ({ subject, body }) => {
         sent.push({ subject, body });
       },
@@ -1066,7 +1138,11 @@ describe("reusing a Slack Connect invite", () => {
       created_at: "2026-08-01T00:00:00.000Z",
     });
     const inviteToSlackConnect = vi.fn();
-    const result = await sendWith(inviteCache, inviteToSlackConnect, new Date("2026-08-09T00:00:00Z"));
+    const result = await sendWith(
+      inviteCache,
+      inviteToSlackConnect,
+      new Date("2026-08-09T00:00:00Z"),
+    );
 
     expect(result.ok).toBe(true);
     expect(inviteToSlackConnect).not.toHaveBeenCalled();
@@ -1081,7 +1157,11 @@ describe("reusing a Slack Connect invite", () => {
       created_at: "2026-08-01T00:00:00.000Z",
     });
     const inviteToSlackConnect = vi.fn().mockResolvedValue({ url: "https://slack.example/fresh" });
-    const result = await sendWith(inviteCache, inviteToSlackConnect, new Date("2026-08-16T00:00:00Z"));
+    const result = await sendWith(
+      inviteCache,
+      inviteToSlackConnect,
+      new Date("2026-08-16T00:00:00Z"),
+    );
 
     expect(inviteToSlackConnect).toHaveBeenCalledTimes(1);
     expect(result.ok && result.payload.body).toContain("https://slack.example/fresh");

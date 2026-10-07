@@ -2,12 +2,16 @@
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
-import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
+import type { PaperNudgeBatch, PaperSlotOverviewRow } from "../api/paper-admin.ts";
+import type { PaperCycle } from "../api/papers.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
+import { loadHistory, recordHistory } from "../paper-grid.ts";
 import {
   renderMyWork,
+  resetMyWorkSessionState,
   resetMyWorkViewModeForTest,
   resetPaperSheetChoice,
+  showMyWorkCardsForTest,
   type MyWorkProps,
   ownPapers,
 } from "./my-work.ts";
@@ -53,6 +57,7 @@ function overviewRow(overrides: Partial<PaperSlotOverviewRow> = {}): PaperSlotOv
 }
 
 type DrawOptions = {
+  onSaveBlocker?: MyWorkProps["onSaveBlocker"];
   papers?: AdminBotPaperRecord[];
   /** Passed straight through as MyWorkProps.papers -- the Active Papers scoping. */
   scopedPapers?: AdminBotPaperRecord[];
@@ -76,6 +81,8 @@ type DrawOptions = {
   viewerIsAdmin?: boolean;
   /** Reuse a state object across two draws, for the controls that keep a draft in view state. */
   state?: AppViewState;
+  /** Wires the trip handlers, which is what makes the card draw the reader's own trip. */
+  trip?: boolean;
 };
 
 function draw(options: DrawOptions = {}) {
@@ -91,6 +98,7 @@ function draw(options: DrawOptions = {}) {
   const picked: string[] = [];
   const saved: AdminBotPaperSaveInput[] = [];
   const deleted: string[] = [];
+  const slotWrites: Array<{ paperId: string; slot: string; input: Record<string, unknown> }> = [];
   const state =
     options.state ??
     ({
@@ -110,6 +118,12 @@ function draw(options: DrawOptions = {}) {
     } as unknown as AppViewState);
   const props: MyWorkProps = {
     onSavePaper: (input: AdminBotPaperSaveInput) => saved.push(input),
+    onSaveBlocker:
+      options.onSaveBlocker ??
+      (async (input) => {
+        saved.push(input);
+        return true;
+      }),
     ...(options.onDeletePaper
       ? { onDeletePaper: (record: AdminBotPaperRecord) => deleted.push(record.id) }
       : {}),
@@ -135,7 +149,7 @@ function draw(options: DrawOptions = {}) {
     onReviewNudges: () => reviews.push(1),
     onToggleNudgeRecipient: (id: string) => picked.push(id),
     onToggleCard: (id) => toggled.push(id),
-    onSaveSlot: () => {},
+    onSaveSlot: (paperId, slot, input) => slotWrites.push({ paperId, slot, input }),
     onNudgeAuthors: () => nudges.push(1),
     memberId: "ada",
     personal: options.personal ?? false,
@@ -146,6 +160,9 @@ function draw(options: DrawOptions = {}) {
     onConsent: () => {},
     onSetAttendee: () => {},
     onSetReimbursement: () => {},
+    ...(options.trip
+      ? { onEditTrip: () => {}, onSaveTrip: () => {}, onWithdrawTrip: () => {} }
+      : {}),
   };
   const container = document.createElement("div");
   document.body.append(container);
@@ -159,10 +176,78 @@ function draw(options: DrawOptions = {}) {
     saved,
     state,
     deleted,
+    slotWrites,
     channelToggles,
     rerender: () => render(renderMyWork(state, props), container),
   };
 }
+
+// The page opens on the flat view, so every spec below that is about the card list, the sheet, or
+// one of the banners above them has to say so -- otherwise it would be asserting against a surface
+// it never meant to draw. Said once here rather than by clicking "Back to cards" in a hundred
+// places, and the specs that are about the default undo it themselves.
+beforeEach(() => showMyWorkCardsForTest());
+
+describe("the surface the page opens on, before anybody asks", () => {
+  // These are the ones about the default, so they put back what the hook above just cleared.
+  beforeEach(() => resetMyWorkViewModeForTest());
+  afterEach(() => resetMyWorkViewModeForTest());
+
+  const onLegacy = (container: HTMLElement) =>
+    container.querySelector('[data-testid="paper-legacy"]') !== null;
+
+  it("opens on the flat view", () => {
+    const { container } = draw();
+    expect(onLegacy(container)).toBe(true);
+    expect(container.querySelector('[data-testid="my-work-item-p1"]')).toBeNull();
+  });
+
+  // The sheet's own default -- an admin, or anybody carrying five papers -- used to decide this.
+  // It still decides cards against sheet; it just no longer decides what the page opens on.
+  it("outranks the sheet's own default", () => {
+    const papers = Array.from({ length: 6 }, (_unused, index) => paper({ id: `p${index + 1}` }));
+    const { container } = draw({ papers, viewerIsAdmin: true });
+    expect(onLegacy(container)).toBe(true);
+    expect(container.querySelector(".my-work")?.classList.contains("my-work--sheet")).toBe(false);
+  });
+
+  // An empty flat form says "Nothing here yet" and nothing else. The card list says it too and
+  // offers the form that fixes it, so a member with no papers still lands there.
+  it("leaves somebody with no papers on the cards", () => {
+    const { container } = draw({ scopedPapers: [] });
+    expect(onLegacy(container)).toBe(false);
+  });
+
+  // Worth pinning because it surprises: leaving the flat view hands back whatever the page would
+  // have opened on before the flat view moved in front of it, and for an administrator that is the
+  // sheet. The alternative -- forcing the cards here -- would make the sheet's own default
+  // unreachable, since the flat view now occupies the first screen it used to open on.
+  it("hands an admin back the sheet their own default asks for", () => {
+    const papers = Array.from({ length: 4 }, (_unused, index) => paper({ id: `p${index + 1}` }));
+    const first = draw({ papers, viewerIsAdmin: true });
+    first.container.querySelector<HTMLButtonElement>('[data-testid="paper-legacy-exit"]')!.click();
+
+    const second = draw({ papers, viewerIsAdmin: true });
+    expect(second.container.querySelector(".my-work")?.classList.contains("my-work--sheet")).toBe(
+      true,
+    );
+  });
+
+  // The whole reason the choice is remembered: a default that reasserted itself on the next render
+  // would make "Back to cards" a button that does nothing.
+  it("keeps the cards once the reader asks for them, and reopens on request", () => {
+    const first = draw();
+    first.container.querySelector<HTMLButtonElement>('[data-testid="paper-legacy-exit"]')!.click();
+
+    const second = draw();
+    expect(onLegacy(second.container)).toBe(false);
+    second.container
+      .querySelector<HTMLButtonElement>('[data-testid="my-work-open-legacy"]')!
+      .click();
+
+    expect(onLegacy(draw().container)).toBe(true);
+  });
+});
 
 describe("renderMyWork", () => {
   it("opens as a list of cards with the form closed", () => {
@@ -1351,6 +1436,9 @@ describe("the sheet's width", () => {
 // as soon as it exists, and so does anybody carrying five papers, because at that size the visit is
 // a sweep across every row rather than a read of one card. Nobody loses the other surface -- the
 // button and "Back to cards" are the same two presses they always were.
+// Reached by pressing "Back to cards" off the flat view, which the hook at the top of this file
+// does for every spec here: the sheet's default answers cards against sheet, which is a question
+// the page only asks once the reader has left the flat view.
 describe("the surface the page opens on", () => {
   afterEach(() => resetPaperSheetChoice());
 
@@ -1461,6 +1549,16 @@ describe("project details autosave", () => {
     expect(saved.at(-1)).toMatchObject({ id: "p1", title: "A better title" });
   });
 
+  it("does not save an old member's pending edit after the session changes", () => {
+    const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    typeInto(container, "my-work-details-title-p1", "Private draft", rerender);
+
+    resetMyWorkSessionState();
+    vi.advanceTimersByTime(1000);
+
+    expect(saved).toHaveLength(0);
+  });
+
   it("restarts the timer on every keystroke rather than saving mid-word", () => {
     const { container, saved, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
     for (const value of ["A", "Ab", "Abc"]) {
@@ -1472,6 +1570,27 @@ describe("project details autosave", () => {
     vi.advanceTimersByTime(900);
     expect(saved).toHaveLength(1);
     expect(saved.at(-1)).toMatchObject({ title: "Abc" });
+  });
+
+  it("keeps the focused editor when a saved paper updates the cached list", () => {
+    const { container, state, rerender } = draw({ openIds: ["p1"], papers: [paper()] });
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-details-title-p1"]',
+    )!;
+    input.focus();
+    input.value = "A better title";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    rerender();
+
+    state.adminBotData = {
+      ...state.adminBotData,
+      papers: [paper({ title: "A better title" })],
+    };
+    rerender();
+
+    expect(input.isConnected).toBe(true);
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe("A better title");
   });
 
   it("holds a draft it cannot write instead of firing a doomed request", () => {
@@ -1551,6 +1670,144 @@ describe("the flat view", () => {
   // otherwise leave every later spec looking at it.
   afterEach(() => {
     resetMyWorkViewModeForTest();
+  });
+
+  it("drops an old member's flat-form draft and pending autosave on session reset", () => {
+    vi.useFakeTimers();
+    try {
+      resetMyWorkViewModeForTest();
+      const first = draw();
+      const title = first.container.querySelector<HTMLInputElement>(
+        '[data-testid="paper-legacy-p1-title"]',
+      )!;
+      title.value = "Private draft";
+      title.dispatchEvent(new Event("input", { bubbles: true }));
+      first.rerender();
+      expect(title.value).toBe("Private draft");
+      recordHistory([
+        {
+          at: new Date().toISOString(),
+          paperTitle: "Private paper",
+          column: "Title",
+          from: "",
+          to: "Private draft",
+          kind: "added",
+        },
+      ]);
+
+      resetMyWorkSessionState();
+      vi.advanceTimersByTime(1000);
+      expect(first.saved).toHaveLength(0);
+      expect(loadHistory()).toEqual([]);
+
+      const second = draw();
+      expect(
+        second.container.querySelector<HTMLInputElement>('[data-testid="paper-legacy-p1-title"]')
+          ?.value,
+      ).toBe("Causal abstraction");
+    } finally {
+      resetMyWorkSessionState();
+      vi.useRealTimers();
+    }
+  });
+
+  // The flat view is where the page opens, so anything only the card draws is something a member
+  // never sees. The conference branch is the one that mattered: an accepted paper's attendance,
+  // trip and aid request, and reimbursements lived on the card alone.
+  it("carries the card's conference branch once a paper is accepted", () => {
+    resetMyWorkViewModeForTest();
+    const accepted = paper({
+      venue_decision: "accept",
+      accepted_venue: "EMNLP",
+      accepted_year: 2026,
+      is_archival: true,
+      presentation_type: "poster",
+    });
+    const cycle = {
+      slots: [],
+      stages: [],
+      drafts: [],
+      consents: [],
+      attendees: [],
+      reimbursements: [],
+      weeklyUpdates: [],
+      cycleClosed: false,
+      missingAcceptanceDetails: [],
+      conferenceKey: "emnlp-2026",
+    } as PaperCycle;
+    const { container } = draw({ papers: [accepted], slots: { p1: cycle }, trip: true });
+    expect(container.querySelector('[data-testid="paper-legacy"]')).not.toBeNull();
+    const extras = container.querySelector('[data-testid="paper-legacy-extras-p1"]');
+    expect(extras?.querySelector('[data-testid="paper-attendee-add-p1"]')).not.toBeNull();
+    expect(extras?.querySelector('[data-testid="paper-trip-intent-p1"]')).not.toBeNull();
+    expect(extras?.querySelector('[data-testid="paper-completion-p1"]')).not.toBeNull();
+    // The step picker is already a legacy row; the card's second copy of it stays off this page.
+    expect(container.querySelector('[data-testid="my-work-step-p1"]')).toBeNull();
+    expect(container.querySelector('[data-testid="my-work-map-p1"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-legacy-report-p1"]')).not.toBeNull();
+  });
+
+  // Regression: the feedback slots joined the registry, so the flat view -- where the page opens --
+  // drew them as plain text boxes whose autosave the service rejects, and the real request form was
+  // only on the cards.
+  it("offers the feedback request form, not raw feedback fields, on the page it opens on", () => {
+    resetMyWorkViewModeForTest();
+    const cycle = {
+      slots: ["feedback_arr", "feedback_arxiv", "feedback_camera_ready"].map((slot) => ({
+        paper_id: "p1",
+        slot,
+        status: "missing",
+      })),
+      stages: [],
+      drafts: [],
+      consents: [],
+      attendees: [],
+      reimbursements: [],
+      weeklyUpdates: [],
+      cycleClosed: false,
+      missingAcceptanceDetails: [],
+    } as unknown as PaperCycle;
+    const { container, slotWrites } = draw({ slots: { p1: cycle } });
+    expect(container.querySelector('[data-testid="paper-legacy"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-legacy-p1-feedback_arr"]')).toBeNull();
+    const card = container.querySelector(
+      '[data-testid="paper-legacy-paper-p1"] [data-testid="paper-feedback"]',
+    );
+    expect(card).not.toBeNull();
+
+    const form = card!.querySelector("form")!;
+    form.querySelector<HTMLInputElement>('input[name="url"]')!.value =
+      "https://example.com/draft.pdf";
+    form.querySelector<HTMLTextAreaElement>('textarea[name="reason"]')!.value = "Ready for a read";
+    form.dispatchEvent(new Event("submit", { cancelable: true }));
+
+    expect(slotWrites).toHaveLength(1);
+    expect(slotWrites[0]!.paperId).toBe("p1");
+    expect(slotWrites[0]!.slot).toBe("feedback_arr");
+    expect(JSON.parse(slotWrites[0]!.input.value_text as string)).toEqual({
+      reason: "Ready for a read",
+      url: "https://example.com/draft.pdf",
+    });
+  });
+
+  it("keeps the conference branch shut until the paper is accepted", () => {
+    resetMyWorkViewModeForTest();
+    const cycle = {
+      slots: [],
+      stages: [],
+      drafts: [],
+      consents: [],
+      attendees: [],
+      reimbursements: [],
+      weeklyUpdates: [],
+      cycleClosed: false,
+      missingAcceptanceDetails: [],
+      conferenceKey: "emnlp-2026",
+    } as PaperCycle;
+    const { container } = draw({ slots: { p1: cycle }, trip: true });
+    expect(container.querySelector('[data-testid="paper-cycle-p1"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-attendee-add-p1"]')).toBeNull();
+    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
   });
 
   it("offers the button beside the spreadsheet one", () => {
@@ -1638,4 +1895,76 @@ describe("a decision banner that has done its job", () => {
     expect(saved.at(-1)?.decisionSeen).toBe("accept:EMNLP 2026");
     expect(saved.at(-1)?.presentationType).toBeUndefined();
   });
+});
+
+describe("blocker report validation", () => {
+  it("explains an empty or whitespace-only title without discarding the draft", () => {
+    resetMyWorkViewModeForTest();
+    const view = draw();
+    view.container
+      .querySelector<HTMLButtonElement>('[data-testid="paper-legacy-report-p1"]')!
+      .click();
+    view.rerender();
+    const title = view.container.querySelector<HTMLInputElement>(
+      '[data-testid="blocker-title-p1"]',
+    )!;
+    expect(title.required).toBe(true);
+    expect(title.checkValidity()).toBe(false);
+    title.value = "   ";
+    title.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(title.validationMessage).toBe("Enter a short description of what is blocked.");
+    expect(view.saved).toHaveLength(0);
+    expect(view.state.myWorkBlockerDraft?.paperId).toBe("p1");
+    title.value = "Review for arXiv";
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(title.checkValidity()).toBe(true);
+  });
+});
+
+describe("blocker save feedback", () => {
+  it.each([false, true])(
+    "waits for the save result (%s), keeping failed drafts",
+    async (success) => {
+      resetMyWorkViewModeForTest();
+      let finish!: (value: boolean) => void;
+      const onSaveBlocker = vi.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const view = draw({ onSaveBlocker });
+      view.container
+        .querySelector<HTMLButtonElement>('[data-testid="paper-legacy-report-p1"]')!
+        .click();
+      view.rerender();
+      const form = view.container.querySelector<HTMLFormElement>(".blocker-form")!;
+      (form.elements.namedItem("title") as HTMLInputElement).value = "Review for arXiv";
+      (form.elements.namedItem("note") as HTMLTextAreaElement).value = "Synthetic details";
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      view.rerender();
+      expect(view.state.myWorkBlockerDraft?.saving).toBe(true);
+      expect(
+        view.container.querySelector<HTMLButtonElement>('.blocker-form button[type="submit"]')
+          ?.disabled,
+      ).toBe(true);
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      expect(onSaveBlocker).toHaveBeenCalledTimes(1);
+      finish(success);
+      await Promise.resolve();
+      view.rerender();
+      if (success) expect(view.state.myWorkBlockerDraft).toBeNull();
+      else {
+        expect(view.container.querySelector('[role="alert"]')?.textContent).toContain(
+          "Your draft is kept",
+        );
+        expect(
+          view.container.querySelector<HTMLInputElement>('[data-testid="blocker-title-p1"]')?.value,
+        ).toBe("Review for arXiv");
+        expect(
+          view.container.querySelector<HTMLTextAreaElement>(".blocker-form textarea")?.value,
+        ).toBe("Synthetic details");
+      }
+    },
+  );
 });

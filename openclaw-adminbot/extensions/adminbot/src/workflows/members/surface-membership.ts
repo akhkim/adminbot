@@ -12,6 +12,7 @@ import {
   adminBotIsFullMemberType,
   type AdminBotLabMember,
 } from "../../contracts/actions.js";
+import { subgroupForMemberType, subgroupHoldsAccessItem } from "./collaborator-subgroups.js";
 
 /** The standing invites this sweep knows how to reconcile. */
 export type AdminBotInviteSurface = "lab_calendar" | "group_meeting";
@@ -78,23 +79,24 @@ function isFullMember(member: AdminBotLabMember): boolean {
 }
 
 /**
- * Is this person a major coauthor — the one external subgroup the group meeting seats?
+ * Is this external collaborator one the access design seats on the standing invites?
  *
- * `coauthor_major` is the matrix row that already grants `weekly_meeting`
- * (workflows/members/collaborator-subgroups.ts). Reading the subgroup rather than adding a second
- * marker keeps one answer to "is this person in the group": change the subgroup and the meeting
- * follows.
+ * Read from the matrix's "Lab calendar and Monday Group Meeting" row
+ * (workflows/members/collaborator-subgroups.ts) rather than from a list kept here, so the sheet's
+ * answer -- own-pace advisees and major coauthors today -- is the only one. The subgroup comes from
+ * the record when an admin set it and from the Member Type otherwise, the same precedence the
+ * access audit grades with.
  */
-function isMajorCoauthor(member: AdminBotLabMember): boolean {
-  return (
-    member.privilege_level === "external_collaborator" &&
-    member.collaborator_subgroup === "coauthor_major" &&
-    member.status !== "alumni"
-  );
+function holdsStandingInvites(member: AdminBotLabMember): boolean {
+  if (member.privilege_level !== "external_collaborator" || member.status === "alumni") {
+    return false;
+  }
+  const subgroup = member.collaborator_subgroup ?? subgroupForMemberType(member.member_type);
+  return subgroup !== undefined && subgroupHoldsAccessItem(subgroup, "lab_calendar_group_meeting");
 }
 
 /** Why this member does not belong here, phrased for the approval card. */
-function removalReason(member: AdminBotLabMember, surface: AdminBotInviteSurface): string {
+function removalReason(member: AdminBotLabMember): string {
   if (member.status === "alumni" || adminBotIsAlumniType(member.member_type)) {
     return "has left the lab";
   }
@@ -102,9 +104,7 @@ function removalReason(member: AdminBotLabMember, surface: AdminBotInviteSurface
     return "is marked external";
   }
   if (member.privilege_level === "external_collaborator") {
-    return surface === "group_meeting"
-      ? `is an external collaborator (${member.collaborator_subgroup ?? "no subgroup"}), not a major coauthor`
-      : "is an external collaborator, not a full member";
+    return `is an external collaborator (${member.collaborator_subgroup ?? "no subgroup"}), not an own-pace advisee or major coauthor`;
   }
   if (member.privilege_level === "trial") {
     return "is a trial member, not a full member";
@@ -112,16 +112,18 @@ function removalReason(member: AdminBotLabMember, surface: AdminBotInviteSurface
   return "is not a full member";
 }
 
-/** Does this member belong on this surface at all? */
+/**
+ * Does this member belong on this surface at all?
+ *
+ * The two surfaces are one row of the access design, so the answer no longer depends on which one
+ * is asked about. The parameter stays because every caller names the invite it is reconciling, and
+ * a future row that splits them again should not have to change every call site.
+ */
 export function belongsOnSurface(
   member: AdminBotLabMember,
-  surface: AdminBotInviteSurface,
+  _surface: AdminBotInviteSurface,
 ): boolean {
-  if (isFullMember(member)) {
-    return true;
-  }
-  // The calendar is the lab's own; the group meeting also seats major coauthors.
-  return surface === "group_meeting" && isMajorCoauthor(member);
+  return isFullMember(member) || holdsStandingInvites(member);
 }
 
 /**
@@ -185,7 +187,7 @@ export function surfaceMembershipPlan(params: {
       email,
       member_id: member.id,
       member_name: member.name,
-      reason: removalReason(member, surface),
+      reason: removalReason(member),
     });
   }
 

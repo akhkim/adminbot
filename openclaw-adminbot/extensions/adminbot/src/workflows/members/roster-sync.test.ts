@@ -5,6 +5,7 @@ import {
   planRosterSync,
   rosterSyncRefusal,
   sameMemberType,
+  rosterRowForMember,
 } from "./roster-sync.js";
 
 const HEADER = [
@@ -200,5 +201,38 @@ describe("rosterSyncRefusal", () => {
 
   it("says nothing about a pass with no changes at all", () => {
     expect(rosterSyncRefusal(planWith(0), 0)).toBeUndefined();
+  });
+});
+
+describe("rosterRowForMember", () => {
+  const row = (sheet_row: number, emails: string[], member_id?: string) => ({
+    sheet_row,
+    name: "Someone",
+    emails,
+    member_type: "full",
+    ...(member_id ? { member_id } : {}),
+  });
+  const ada = { id: "ada", name: "Ada", email: "ada@lab.test", privilege_level: "member" } as const;
+
+  it("matches by id first, then by any address", () => {
+    expect(
+      rosterRowForMember({ rows: [row(2, ["x@lab.test"], "ada")], unidentifiable: [] }, ada)
+        ?.sheet_row,
+    ).toBe(2);
+    expect(
+      rosterRowForMember(
+        { rows: [row(3, ["ADA@lab.test".toLowerCase()])], unidentifiable: [] },
+        ada,
+      )?.sheet_row,
+    ).toBe(3);
+  });
+
+  it("refuses to pick between duplicate rows", () => {
+    expect(
+      rosterRowForMember(
+        { rows: [row(2, ["ada@lab.test"]), row(9, ["ada@lab.test"])], unidentifiable: [] },
+        ada,
+      ),
+    ).toBeUndefined();
   });
 });

@@ -77,7 +77,7 @@ function upTo(last: AdminBotPaperSlot): AdminBotPaperSlotRecord[] {
 
 describe("the registry", () => {
   it("declares every slot, so a read can never meet one it has no rules for", () => {
-    expect(adminBotPaperSlots).toHaveLength(25);
+    expect(adminBotPaperSlots).toHaveLength(28);
     for (const slot of adminBotPaperSlots) {
       expect(adminBotPaperSlotRegistry[slot]).toBeDefined();
     }
@@ -144,7 +144,7 @@ describe("the registry", () => {
 describe("paperSlotRows", () => {
   it("returns every slot, blanks included -- the card is a checklist, not a list of answers", () => {
     const rows = paperSlotRows("p1", [provided("overleaf_edit")]);
-    expect(rows).toHaveLength(25);
+    expect(rows).toHaveLength(28);
     expect(rows.find((row) => row.slot === "overleaf_edit")?.status).toBe("provided");
     expect(rows.find((row) => row.slot === "arxiv")?.status).toBe("missing");
   });
@@ -433,6 +433,30 @@ describe("actionablePaperSlots", () => {
     expect(open).not.toContain("poster_physical");
     expect(open).not.toContain("backend_sheet");
     expect(open).not.toContain("overleaf_view");
+  });
+
+  // The social drafts are the one pair whose "you may fill this in" and "the lab is asking for
+  // this" are different moments. Both halves are asserted, because either one alone is a bug:
+  // chasing early buries the submission work, and never chasing at all abandons the announcement.
+  it("does not chase a social draft before there is a link to announce", () => {
+    const open = actionablePaperSlots(paper(), upTo("pdf_ready"), NOW).map((item) => item.slot);
+    expect(open).not.toContain("x_draft");
+    expect(open).not.toContain("linkedin_draft");
+  });
+
+  it("chases both social drafts once the arXiv page is on file", () => {
+    const open = actionablePaperSlots(paper(), upTo("arxiv"), NOW).map((item) => item.slot);
+    expect(open).toContain("x_draft");
+    expect(open).toContain("linkedin_draft");
+  });
+
+  it("opens the social drafts on the card as soon as the PDF compiles", () => {
+    // The card reads `upstream` and the nudge reads both lists, which is the whole point of the
+    // split: the field is reachable here, and still nobody's next move.
+    for (const slot of ["x_draft", "linkedin_draft"] as const) {
+      expect(adminBotPaperSlotRegistry[slot].upstream).toEqual(["pdf_ready"]);
+      expect(adminBotPaperSlotRegistry[slot].chaseAfter).toEqual(["arxiv"]);
+    }
   });
 
   it("has no rebuttal slot: the venue ladder closes that one from a bcc now", () => {
@@ -734,4 +758,20 @@ describe("waivePaperSlot", () => {
       }),
     ).toMatchObject({ ok: false });
   });
+});
+
+it("redacts feedback reasons and manuscript links for unrelated viewers", () => {
+  const rows = [
+    {
+      paper_id: "p",
+      slot: "feedback_arr" as const,
+      status: "provided" as const,
+      value_text: JSON.stringify({
+        reason: "Private draft concern",
+        url: "https://example.com/draft",
+      }),
+    },
+  ];
+  expect(redactPaperSlots(rows, false)[0].value_text).toBeUndefined();
+  expect(redactPaperSlots(rows, true)[0].value_text).toBe(rows[0].value_text);
 });

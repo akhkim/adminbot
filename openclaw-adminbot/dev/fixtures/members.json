@@ -1,0 +1,67 @@
+[
+  {
+    "id": "dev-alice",
+    "name": "Alice Example",
+    "email": "alice@example.test",
+    "privilege_level": "admin",
+    "role": "Lab Manager",
+    "status": "active",
+    "location": "Toronto",
+    "timezone": "America/Toronto",
+    "affiliation": "Example Research Lab",
+    "research_topics": ["Research operations"],
+    "hours_per_week": 40
+  },
+  {
+    "id": "dev-bob",
+    "name": "Bob Example",
+    "email": "bob@example.test",
+    "privilege_level": "member",
+    "role": "PhD Student",
+    "status": "active",
+    "location": "Zurich",
+    "timezone": "Europe/Zurich",
+    "affiliation": "Example University",
+    "research_topics": ["Causal inference", "Machine learning"],
+    "projects": ["Synthetic Causality Study"],
+    "hours_per_week": 35
+  },
+  {
+    "id": "dev-carol",
+    "name": "Carol Example",
+    "email": "carol@example.test",
+    "privilege_level": "trial",
+    "role": "Research Intern",
+    "status": "part_time",
+    "location": "London",
+    "timezone": "Europe/London",
+    "research_topics": ["Interpretability"],
+    "hours_per_week": 15
+  },
+  {
+    "id": "dev-dan",
+    "name": "Dan Example",
+    "email": "dan@example.test",
+    "privilege_level": "external_collaborator",
+    "role": "External Collaborator",
+    "status": "external",
+    "location": "Vancouver",
+    "timezone": "America/Vancouver",
+    "affiliation": "Example Institute",
+    "research_topics": ["Evaluation"],
+    "projects": ["Synthetic Causality Study"],
+    "hours_per_week": 5
+  },
+  {
+    "id": "dev-erin",
+    "name": "Erin Example",
+    "email": "erin@example.test",
+    "privilege_level": "member",
+    "role": "Postdoc",
+    "status": "on_leave",
+    "location": "Berlin",
+    "timezone": "Europe/Berlin",
+    "research_topics": ["Robustness"],
+    "hours_per_week": 0
+  }
+]

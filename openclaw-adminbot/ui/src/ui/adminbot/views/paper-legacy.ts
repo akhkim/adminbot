@@ -25,10 +25,10 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
 import {
-  adminBotPaperPresentationTypes,
   adminBotPaperVenueDecisions,
   type AdminBotPaperStep,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import { isPaperFeedbackSlot } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 import {
   adminBotPaperSlotChartOrder,
   adminBotPaperSlotRegistry,
@@ -39,10 +39,18 @@ import {
   type AdminBotPaperSlotBranch,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
-import type { PaperCycle, PaperSlotRow } from "../auth/session.ts";
+import type { PaperCycle, PaperSlotRow } from "../api/papers.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
+import { renderDateControl } from "../date-control.ts";
+import {
+  PRESENTATION_FORMATS,
+  PUBLICATION_TRACKS,
+  presentationFormat,
+  publicationTrack,
+} from "../paper-classification.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
+import { renderOpenReviewIdentity } from "./paper-slots.ts";
 
 /** What one control writes back, and to which of the two stores. */
 type LegacyField =
@@ -79,7 +87,12 @@ const VENUE_DECISION_LABELS: Record<string, string> = {
   reject: "Rejected",
 };
 
-const YES_NO = ["yes", "no"] as const;
+/**
+ * The values the save path parses, not the words shown for them: the controller reads
+ * `isArchival === "true"`, so "yes" here was written as *false* on every save of the record.
+ */
+const ARCHIVAL_VALUES = ["true", "false"] as const;
+const ARCHIVAL_LABELS: Record<string, string> = { true: "Yes", false: "No" };
 
 const POSTER_STATE_LABELS: Record<string, string> = {
   not_needed: "Not needed",
@@ -231,20 +244,31 @@ const RECORD_GROUPS: LegacyGroup[] = [
         key: "isArchival",
         label: "Archival",
         control: "select",
-        options: YES_NO,
-        optionLabel: title,
+        options: ARCHIVAL_VALUES,
+        optionLabel: (value) => ARCHIVAL_LABELS[value] ?? value,
         hint: "Whether this counts as a publication. The same workshop can be either.",
-        value: (paper) =>
-          typeof paper.is_archival === "boolean" ? (paper.is_archival ? "yes" : "no") : "",
+        value: (paper) => (typeof paper.is_archival === "boolean" ? String(paper.is_archival) : ""),
+      },
+      // Track and format are two answers, as they are on the card and the sheet. Older records
+      // stored the track in `presentation_type`; the readers below find it there, and the service
+      // moves it to `publication_track` the first time the format is written over it.
+      {
+        kind: "record",
+        key: "publicationTrack",
+        label: "Publication track",
+        control: "select",
+        options: PUBLICATION_TRACKS,
+        optionLabel: title,
+        value: publicationTrack,
       },
       {
         kind: "record",
         key: "presentationType",
         label: "Presentation",
         control: "select",
-        options: adminBotPaperPresentationTypes,
+        options: PRESENTATION_FORMATS,
         optionLabel: title,
-        value: (paper) => paper.presentation_type ?? "",
+        value: presentationFormat,
       },
     ],
   },
@@ -258,7 +282,10 @@ function slotGroups(): LegacyGroup[] {
       label: BRANCH_LABELS[branch],
       icon: BRANCH_ICONS[branch],
       fields: adminBotPaperSlots
-        .filter((slot) => adminBotPaperSlotRegistry[slot].branch === branch)
+        // Drawn by the feedback form in the extras instead; see isPaperFeedbackSlot.
+        .filter(
+          (slot) => adminBotPaperSlotRegistry[slot].branch === branch && !isPaperFeedbackSlot(slot),
+        )
         .map((slot) => {
           const definition = adminBotPaperSlotRegistry[slot];
           return {
@@ -290,11 +317,40 @@ export type PaperLegacyState = {
   edits: Map<string, Map<string, string>>;
   /** Papers whose evidence has been asked for, so the fetch happens once each. */
   slotsRequested: Set<string>;
+  /**
+   * Papers the reader has folded shut, by id.
+   *
+   * Held beside the edits and for the same reason -- a re-render mid-visit must not reopen a card
+   * somebody just put away -- and empty to start, because the promise of this view is every field
+   * on one page. Which cards are open is a viewing preference for this sitting, not a fact about
+   * the paper, so it is no more persisted than the edits buffer is.
+   */
+  collapsed: Set<string>;
+  /**
+   * Field groups the reader has folded shut, keyed `<paper id>::<group id>`.
+   *
+   * Per paper rather than per group name, so folding Social away on one paper leaves it open on
+   * the nine below it: a click should change the thing that was clicked and nothing else. Held
+   * beside `collapsed` and emptied the same way -- open is what this view promises, and both sets
+   * record only the reader's departures from it.
+   */
+  collapsedGroups: Set<string>;
   notice: string | null;
 };
 
 export function emptyPaperLegacyState(): PaperLegacyState {
-  return { edits: new Map(), slotsRequested: new Set(), notice: null };
+  return {
+    edits: new Map(),
+    slotsRequested: new Set(),
+    collapsed: new Set(),
+    collapsedGroups: new Set(),
+    notice: null,
+  };
+}
+
+/** One paper's one group. Both halves are slugs, so the separator cannot occur inside either. */
+function groupKey(paperId: string, groupId: string): string {
+  return `${paperId}::${groupId}`;
 }
 
 function editsFor(state: PaperLegacyState, paperId: string): Map<string, string> {
@@ -437,6 +493,7 @@ export function collectLegacyWrites(
       // "2026" would otherwise land as a decision about the paper.
       ...(/^\d{4}$/u.test(year) ? { acceptedYear: year } : {}),
       isArchival: read("isArchival"),
+      publicationTrack: read("publicationTrack"),
       presentationType: read("presentationType"),
     };
   }
@@ -496,6 +553,16 @@ export type PaperLegacyProps = {
   ) => void;
   onChange: () => void;
   onExit: () => void;
+  /**
+   * The card's own controls that are not fields on the record or a slot -- blockers, the
+   * conference branch (who is going, the trip and its aid request, reimbursements), social drafts,
+   * weekly updates, completion, history. Drawn by the host rather than rebuilt here: they are the
+   * card's components with the card's handlers, so the two views cannot drift apart on what a
+   * click does. `top` sits above the form, `bottom` below it. Both land inside
+   * `.paper-legacy__card-parts`, which the card's descendant styles also match -- without it the
+   * card's disclosure chevrons render as unsized SVGs.
+   */
+  renderPaperExtras?: (paper: AdminBotPaperRecord) => { top?: unknown; bottom?: unknown };
 };
 
 /**
@@ -525,6 +592,13 @@ function requestEvidence(props: PaperLegacyProps): void {
 }
 
 const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+export function cancelPaperLegacyAutosave(): void {
+  for (const timer of saveTimers.values()) {
+    clearTimeout(timer);
+  }
+  saveTimers.clear();
+}
 
 function commitPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): () => void {
   return () => {
@@ -641,7 +715,7 @@ function renderControl(
       @input=${(event: Event) => onEdit((event.target as HTMLTextAreaElement).value)}
     ></textarea>`;
   }
-  return html`<input
+  const input = html`<input
     class="input"
     type=${field.control === "date" ? "date" : field.control === "number" ? "number" : "text"}
     placeholder=${ifDefined(field.example)}
@@ -649,6 +723,7 @@ function renderControl(
     .value=${value}
     @input=${(event: Event) => onEdit((event.target as HTMLInputElement).value)}
   />`;
+  return field.control === "date" ? renderDateControl(input, value) : input;
 }
 
 function renderRow(
@@ -686,85 +761,220 @@ function renderRow(
     : html`<label class="profile__form-row">${body}</label>`;
 }
 
+/**
+ * How many of a group's fields carry an answer, counting what has been typed but not yet sent.
+ *
+ * Shown on a folded group for the same reason a folded card keeps its step: the fold should cost
+ * the reader the rows, not the one number that tells them whether opening it is worth it.
+ */
+function filledCount(
+  props: PaperLegacyProps,
+  paper: AdminBotPaperRecord,
+  group: LegacyGroup,
+): number {
+  const cycle = props.slots?.[paper.id];
+  return group.fields.filter((field) => liveValue(props.state, field, paper, cycle).trim() !== "")
+    .length;
+}
+
 function renderPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): TemplateResult {
   const loading = Boolean(props.onLoadSlots) && !props.slots?.[paper.id];
   const commit = commitPaper(props, paper);
   const timerKey = paper.id;
+  const setTimer = (next: ReturnType<typeof setTimeout> | undefined) => {
+    if (next) {
+      saveTimers.set(timerKey, next);
+    } else {
+      saveTimers.delete(timerKey);
+    }
+  };
+  const collapsed = props.state.collapsed.has(paper.id);
+  // Only built for an open card: the extras are forms and lists, and a folded card shows none.
+  const extras = collapsed ? undefined : props.renderPaperExtras?.(paper);
+  /**
+   * Fold this card shut, or open it again.
+   *
+   * The card is the target rather than a control tucked into a corner of it, because on a page
+   * that is every field of every paper the thing a reader reaches for to put one paper away is the
+   * paper. But not the same target in both directions, because the two carry different risk.
+   *
+   * Open, only the heading folds it. The rest of the card is a form, and a card that folded up
+   * under a click that missed a field -- in the padding beside it, in the gap under the last row
+   * -- would take the whole paper away from somebody who was still filling it in.
+   *
+   * Folded, the whole card opens it. There is no form left inside to click instead, and one line
+   * of card is a small thing to have to hit exactly.
+   */
+  const toggle = (event: Event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!collapsed && !target?.closest(".profile__section-head")) {
+      return;
+    }
+    if (collapsed) {
+      props.state.collapsed.delete(paper.id);
+    } else {
+      // Minimizing takes the form out of the page, and a debounce still counting down would go
+      // with it. What was typed lives in `state.edits` rather than in the inputs, so the write is
+      // still there to make -- it just has to be made now instead of in 900ms.
+      flushAutosave(saveTimers.get(timerKey), setTimer, commit);
+      props.state.collapsed.add(paper.id);
+    }
+    props.onChange();
+  };
+  /**
+   * Fold one field group shut, or open it again.
+   *
+   * A button and nothing else, unlike the card above it: a group heading sits inside the form,
+   * where the space around it belongs to some control's row, so there is no surface here that can
+   * be given to the fold without taking it from the fields.
+   */
+  const toggleGroup = (groupId: string) => {
+    const key = groupKey(paper.id, groupId);
+    if (props.state.collapsedGroups.has(key)) {
+      props.state.collapsedGroups.delete(key);
+      props.onChange();
+      return;
+    }
+    // Same reason the card flushes on the way down: the rows leave the page, and a focusout from
+    // an input that was removed rather than blurred is not one this form can count on.
+    flushAutosave(saveTimers.get(timerKey), setTimer, commit);
+    props.state.collapsedGroups.add(key);
+    props.onChange();
+  };
   return html`
     <section
-      class="profile__section paper-legacy__paper"
+      class=${`profile__section paper-legacy__paper${
+        collapsed ? " paper-legacy__paper--collapsed" : ""
+      }`}
       data-testid=${`paper-legacy-paper-${paper.id}`}
+      @click=${toggle}
     >
       <div class="profile__section-head">
-        <h2 class="profile__section-title">${paper.title}</h2>
-      </div>
-      <form
-        class="profile__form"
-        @submit=${(event: SubmitEvent) => event.preventDefault()}
-        @input=${() =>
-          scheduleAutosave(
-            saveTimers.get(timerKey),
-            (next) => {
-              if (next) {
-                saveTimers.set(timerKey, next);
-              } else {
-                saveTimers.delete(timerKey);
-              }
-            },
-            commit,
-          )}
-        @focusout=${(event: FocusEvent) => {
-          const form = event.currentTarget as HTMLFormElement;
-          if (!focusLeftForm(form, event)) {
-            return;
-          }
-          // Leaving commits immediately rather than waiting out the debounce: the reader may be on
-          // their way to another paper, and a pending timer would not survive it.
-          flushAutosave(
-            saveTimers.get(timerKey),
-            (next) => {
-              if (next) {
-                saveTimers.set(timerKey, next);
-              } else {
-                saveTimers.delete(timerKey);
-              }
-            },
-            commit,
-          );
-        }}
-      >
-        ${legacyGroups().map((group) => {
-          // The evidence bands stay on the page while they load rather than appearing late: a
-          // section that pops in after the record fields have settled reads as the form growing
-          // under the reader's hands.
-          const evidence = group.id.startsWith("slots-");
-          return html`
-            <div class="profile__field-group">
-              <h3 class="profile__group-title">
-                <span class="profile__group-icon" aria-hidden="true">${icons[group.icon]}</span>
-                ${group.label}
-                ${evidence && loading
-                  ? html`<span class="paper-legacy__loading">loading…</span>`
-                  : nothing}
-              </h3>
-              <div class="profile__field-grid">
-                ${group.fields.map((field) => renderRow(props, paper, field))}
-              </div>
-            </div>
-          `;
-        })}
-        <div class="profile__form-actions">
-          <span class="profile__autosave-hint">Saves as you type.</span>
+        <!-- The heading wraps a real button rather than carrying the click itself, which is what
+             makes the fold reachable from the keyboard and announces its own state. The button has
+             no handler: the click it fires bubbles to the section, so there is still exactly one
+             place that decides what a click on this card means. -->
+        <h2 class="profile__section-title">
           <button
             type="button"
-            class="btn primary"
-            data-testid=${`paper-legacy-save-${paper.id}`}
-            @click=${commit}
+            class="paper-legacy__collapse"
+            data-testid=${`paper-legacy-collapse-${paper.id}`}
+            aria-expanded=${collapsed ? "false" : "true"}
           >
-            Save
+            <span class="paper-legacy__collapse-icon" aria-hidden="true"
+              >${collapsed ? icons.chevronRight : icons.chevronDown}</span
+            >
+            <span class="paper-legacy__collapse-title">${paper.title}</span>
           </button>
-        </div>
-      </form>
+        </h2>
+        <!-- A minimized card still says where its paper stands. Folding one away to reach the next
+             should not cost the one line that tells you which papers you have put behind you. -->
+        ${collapsed
+          ? html`<span class="paper-legacy__collapsed-step"
+              >${stepLabels[paper.current_step] ?? paper.current_step}</span
+            >`
+          : nothing}
+      </div>
+      ${collapsed
+        ? nothing
+        : html`<!-- Inside the fold rather than above it. This line is one of the paper's own
+                    answers -- which OpenReview account the submission sits under -- so a folded
+                    card that kept it would be a card that is not actually folded. -->
+            ${extras?.top
+              ? html`<div class="paper-legacy__card-parts paper-legacy__top">${extras.top}</div>`
+              : nothing}
+            ${renderOpenReviewIdentity({
+              paperTitle: paper.title,
+              slots: props.slots?.[paper.id]?.slots ?? [],
+            })}
+            <form
+              class="profile__form"
+              @submit=${(event: SubmitEvent) => event.preventDefault()}
+              @input=${() => scheduleAutosave(saveTimers.get(timerKey), setTimer, commit)}
+              @focusout=${(event: FocusEvent) => {
+                const form = event.currentTarget as HTMLFormElement;
+                if (!focusLeftForm(form, event)) {
+                  return;
+                }
+                // Leaving commits immediately rather than waiting out the debounce: the reader may be on
+                // their way to another paper, and a pending timer would not survive it.
+                flushAutosave(saveTimers.get(timerKey), setTimer, commit);
+              }}
+            >
+              ${legacyGroups().map((group) => {
+                // The evidence bands stay on the page while they load rather than appearing late: a
+                // section that pops in after the record fields have settled reads as the form growing
+                // under the reader's hands.
+                const evidence = group.id.startsWith("slots-");
+                const shut = props.state.collapsedGroups.has(groupKey(paper.id, group.id));
+                return html`
+                  <div
+                    class=${`profile__field-group${shut ? " paper-legacy__group--collapsed" : ""}`}
+                    data-testid=${`paper-legacy-group-${paper.id}-${group.id}`}
+                  >
+                    <!-- The whole heading is the button, rather than a chevron parked beside it: the
+                       heading is what names the thing being folded, and a two-pixel target next to
+                       a label the reader is already aiming at is a worse version of the same
+                       control. It announces its own state, so the fold works from the keyboard. -->
+                    <h3 class="profile__group-title">
+                      <button
+                        type="button"
+                        class="paper-legacy__group-toggle"
+                        data-testid=${`paper-legacy-group-toggle-${paper.id}-${group.id}`}
+                        aria-expanded=${shut ? "false" : "true"}
+                        @click=${() => toggleGroup(group.id)}
+                      >
+                        <span class="paper-legacy__collapse-icon" aria-hidden="true"
+                          >${shut ? icons.chevronRight : icons.chevronDown}</span
+                        >
+                        <span class="profile__group-icon" aria-hidden="true"
+                          >${icons[group.icon]}</span
+                        >
+                        <span class="paper-legacy__group-label">${group.label}</span>
+                        ${evidence && loading
+                          ? html`<span class="paper-legacy__loading">loading…</span>`
+                          : nothing}
+                        <!-- What a folded band is still worth saying: how much of it is answered.
+                           Without it the fold hides the very thing that decides whether to open
+                           it, and the reader has to open every band to find the empty one. -->
+                        ${shut
+                          ? html`<span
+                              class="paper-legacy__group-count"
+                              data-testid=${`paper-legacy-group-count-${paper.id}-${group.id}`}
+                              >${filledCount(props, paper, group)} of ${group.fields.length}
+                              filled</span
+                            >`
+                          : nothing}
+                      </button>
+                    </h3>
+                    ${shut
+                      ? nothing
+                      : html`<div class="profile__field-grid">
+                          ${group.fields.map((field) => renderRow(props, paper, field))}
+                        </div>`}
+                  </div>
+                `;
+              })}
+              <div class="profile__form-actions">
+                <span class="profile__autosave-hint">Saves as you type.</span>
+                <button
+                  type="button"
+                  class="btn primary"
+                  data-testid=${`paper-legacy-save-${paper.id}`}
+                  @click=${commit}
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+            ${extras?.bottom
+              ? html`<div
+                  class="paper-legacy__card-parts paper-legacy__extras"
+                  data-testid=${`paper-legacy-extras-${paper.id}`}
+                >
+                  ${extras.bottom}
+                </div>`
+              : nothing}`}
     </section>
   `;
 }
@@ -775,7 +985,8 @@ export function renderPaperLegacy(props: PaperLegacyProps): TemplateResult {
     <div class="paper-legacy" data-testid="paper-legacy">
       <div class="paper-legacy__head">
         <p class="paper-legacy__lead">
-          Every field on every paper, laid out like your profile. The card view groups the same
+          Every field on every paper, laid out like your profile. Click a paper's heading to
+          minimize it, or a section's to fold that section away. The card view groups the same
           answers by what each one unblocks.
         </p>
         <button

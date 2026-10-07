@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import type { DatabaseSync } from "node:sqlite";
 import type { AdminBotAuditEvent } from "../contracts/actions.js";
+import { invalidateSqliteCaches } from "../persistence/sqlite.cache-invalidation.js";
 
 export type TaskAuditEventType = Extract<AdminBotAuditEvent["type"], `task.${string}`>;
 
@@ -118,6 +119,8 @@ export class TaskStore {
       return value;
     } catch (error) {
       this.db.exec("ROLLBACK TO adminbot_task_commit; RELEASE adminbot_task_commit");
+      // fn may have saved a member or an audit row through the store, whose caches kept it.
+      invalidateSqliteCaches(this.db);
       throw error;
     }
   }
@@ -349,6 +352,7 @@ export class TaskStore {
         "INSERT INTO adminbot_audit_events (id,action_id,event_type,timestamp,actor,event_json) VALUES(?,NULL,?,?,?,?)",
       )
       .run(entry.id, entry.type, entry.timestamp, entry.actor, JSON.stringify(entry));
+    invalidateSqliteCaches(this.db);
   }
   resetUncertain(id: string): void {
     this.db

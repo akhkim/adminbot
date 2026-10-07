@@ -31,7 +31,11 @@ async function startService(databasePath?: string) {
     serviceToken: "service-token",
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
-    dcsFormRunner: async () => {},
+    dcsRosterRecorder: async () => ({
+      username: "stub@cs.toronto.edu",
+      password: "stub",
+      candidates: ["stub@cs.toronto.edu"],
+    }),
   });
   await new Promise<void>((resolve, reject) => {
     mock.server.once("error", reject);
@@ -47,11 +51,11 @@ async function startService(databasePath?: string) {
   return { mock, baseUrl: `http://127.0.0.1:${address.port}` };
 }
 
-function createSession(
+async function createSession(
   mock: ReturnType<typeof createAdminBotMockService>,
   id: string,
   privilegeLevel: AdminBotPrivilegeLevel,
-): string {
+): Promise<string> {
   const email = `${id}@cs.toronto.edu`;
   const member = mock.service.upsertLabMember({
     id,
@@ -62,21 +66,21 @@ function createSession(
   if (!member.ok) {
     throw new Error(member.error.message);
   }
-  const claim = mock.auth.claim({ member_id: id, email, password: "correcthorse" });
+  const claim = await mock.auth.claim({ member_id: id, email, password: "correcthorse" });
   if (!claim.ok) {
     throw new Error(claim.error.message);
   }
-  const registration = mock.auth
-    .listRegistrations("pending")
-    .find((entry) => entry.member_id === id);
+  const registration = (await mock.auth.listRegistrations("pending")).find(
+    (entry) => entry.member_id === id,
+  );
   if (!registration) {
     throw new Error("missing registration");
   }
-  const approved = mock.auth.approveRegistration(registration.id, "bootstrap-admin");
+  const approved = await mock.auth.approveRegistration(registration.id, "bootstrap-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }
-  const login = mock.auth.login({ email, password: "correcthorse" });
+  const login = await mock.auth.login({ email, password: "correcthorse" });
   if (!login.ok) {
     throw new Error(login.error.message);
   }
@@ -87,9 +91,9 @@ describe("deadline proposal API", () => {
   it("enforces member submission and administrator review, then publishes publicly", async () => {
     const { mock, baseUrl } = await startService();
     try {
-      const memberToken = createSession(mock, "member-one", "member");
-      const otherMemberToken = createSession(mock, "member-two", "member");
-      const adminToken = createSession(mock, "admin-one", "admin");
+      const memberToken = await createSession(mock, "member-one", "member");
+      const otherMemberToken = await createSession(mock, "member-two", "member");
+      const adminToken = await createSession(mock, "admin-one", "admin");
 
       const missingKey = await fetch(`${baseUrl}/deadline-proposals`, {
         method: "POST",
@@ -197,7 +201,7 @@ describe("deadline proposal API", () => {
       expect(publishedResponse.status).toBe(200);
       await expect(publishedResponse.json()).resolves.toMatchObject({ status: "published" });
 
-      const publicDataset = await fetch(`${baseUrl}/deadlines/venues.json`);
+      const publicDataset = await fetch(`${baseUrl}/deadlines`);
       const publicBody = (await publicDataset.json()) as {
         items: Array<{
           name?: string;
@@ -210,6 +214,9 @@ describe("deadline proposal API", () => {
         expect.objectContaining({
           name: "API Workshop",
           venue_group: "EMNLP 2026 Workshops",
+          deadline_at: "2026-10-02T15:00:00.000Z",
+          deadline_time_precision: "exact",
+          deadline_timezone: "Europe/Zurich",
           homepage_url: "https://example.org/api-workshop/home",
           cfp_url: "https://example.org/api-workshop/cfp",
         }),
@@ -318,10 +325,10 @@ describe("public deadline proposals", () => {
         submitter_email: "taylor@example.org",
       });
       expect(proposal.submitter_member_id).toMatch(/^visitor:deadline:/u);
-      const publicBefore = await (await fetch(`${baseUrl}/deadlines/venues.json`)).text();
+      const publicBefore = await (await fetch(`${baseUrl}/deadlines`)).text();
       expect(publicBefore).not.toContain("API Workshop");
-      const memberToken = createSession(mock, "member-visitor-test", "member");
-      const adminToken = createSession(mock, "admin-visitor-test", "admin");
+      const memberToken = await createSession(mock, "member-visitor-test", "member");
+      const adminToken = await createSession(mock, "admin-visitor-test", "admin");
       const ownQueue = await fetch(`${baseUrl}/deadline-proposals`, {
         headers: { Authorization: `Bearer ${memberToken}` },
       });
@@ -368,7 +375,7 @@ describe("public deadline proposals", () => {
         });
       expect((await publish(proposal.payload_hash)).status).toBe(409);
       expect((await publish(revision.payload_hash)).status).toBe(200);
-      const published = await (await fetch(`${baseUrl}/deadlines/venues.json`)).text();
+      const published = await (await fetch(`${baseUrl}/deadlines`)).text();
       expect(published).toContain("Reviewed Visitor Workshop");
       expect(published).not.toContain("visitor:deadline:");
       expect(published).not.toContain(proposal.payload_hash);
@@ -497,14 +504,14 @@ it("persists a visitor submission and its retry key across restarts without crea
           originalId = proposal.id;
         } else {
           expect(proposal.id).toBe(originalId);
-          const adminToken = createSession(mock, "admin-durable-test", "admin");
+          const adminToken = await createSession(mock, "admin-durable-test", "admin");
           const rejection = await fetch(`${baseUrl}/deadline-proposals/${proposal.id}/reject`, {
             method: "POST",
             headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
             body: "{}",
           });
           expect(rejection.status).toBe(200);
-          expect(await (await fetch(`${baseUrl}/deadlines/venues.json`)).text()).not.toContain(
+          expect(await (await fetch(`${baseUrl}/deadlines`)).text()).not.toContain(
             "Durable Visitor Workshop",
           );
         }

@@ -1,13 +1,18 @@
 // Opportunities the lab wants members to hear about: PhD programs, internships, grants and
 // awards, and Rising Stars workshops.
 //
-// Hand-maintained, unlike `deadlines-data.ts` which is generated from venues.json. These are
+// The PhD programs live in their own file (opportunities-phd-programs.ts) because there are over a
+// hundred of them; they join the list at the bottom of this file.
+//
+// Hand-maintained, unlike `deadlines-data.ts` which is generated from deadlines.json. These are
 // annual programs whose dates are announced by the host institution rather than scraped, so an
 // admin edits this file and the Opportunities tab picks it up on the next UI build.
 //
 // `deadline_aoe` is empty when the cycle's date has not been announced. The view renders those as
 // "Deadline TBA" and sorts them after everything dated -- an unannounced deadline must never
 // render as if it were a real one, because members plan around this tab.
+
+import { PHD_PROGRAMS } from "./opportunities-phd-programs.ts";
 
 export const OPPORTUNITY_CATEGORIES = [
   "phd",
@@ -140,4 +145,5 @@ export const OPPORTUNITIES: Opportunity[] = [
       "approaching the academic job market.",
     note: "Host institution and application window change each year.",
   },
+  ...PHD_PROGRAMS,
 ];

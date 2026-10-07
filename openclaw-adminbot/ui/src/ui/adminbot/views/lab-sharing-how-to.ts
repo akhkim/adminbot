@@ -1,5 +1,6 @@
 import { html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
+import { readApiJson } from "../data/api-json.ts";
 import { taskFetch } from "../task-request.ts";
 
 export class LabSharingHowTo extends LitElement {
@@ -52,11 +53,16 @@ export class LabSharingHowTo extends LitElement {
         body: JSON.stringify({ question: this.question.trim() }),
         signal: this.request.signal,
       });
-      const data = await response.json();
+      const data = (await readApiJson(response)) as {
+        answered?: boolean;
+        answer?: unknown;
+        sources?: unknown;
+        error?: { message?: string };
+      } | null;
       if (generation !== this.generation) {
         return;
       }
-      if (!response.ok || !data.answered) {
+      if (!response.ok || !data?.answered) {
         throw new Error(data?.error?.message ?? "The guidebook could not answer.");
       }
       this.answer = typeof data.answer === "string" ? data.answer : "";

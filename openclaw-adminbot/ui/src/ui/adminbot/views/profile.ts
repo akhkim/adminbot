@@ -1,3 +1,53 @@
+import { html, nothing } from "lit";
+import { ifDefined } from "lit/directives/if-defined.js";
+import { ref } from "lit/directives/ref.js";
+import {
+  adminBotMemberFieldVisibility,
+  adminBotSlackActivityOf,
+  adminBotSlackActivityThreshold,
+  adminBotSlackActivityWindowDays,
+  adminBotTimelineEntryTarget,
+  isAdminBotFullMember,
+} from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import {
+  adminBotBadgeEmoji,
+  ADMINBOT_BADGE_DESCRIPTION_MAX,
+  ADMINBOT_BADGE_RATIONALE_MAX,
+} from "../../../../../extensions/adminbot/src/contracts/badges.js";
+import { adminBotDriveFileId } from "../../../../../extensions/adminbot/src/contracts/drive-links.js";
+import {
+  MEMBER_CITY_OPTIONS,
+  MEMBER_AFFILIATION_OPTIONS,
+} from "../../../../../extensions/adminbot/src/contracts/member-profile-values.js";
+import {
+  formatAdminBotMemberRoles,
+  parseAdminBotMemberRoles,
+} from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
+import { t } from "../../../i18n/index.ts";
+import { toggleAdminBotPaperCard } from "../../adminbot/controllers/paper-slots.ts";
+import "./wait-preference.ts";
+import type { AppViewState } from "../../app-view-state.ts";
+import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
+import { icons } from "../../icons.ts";
+import type { Tab } from "../../navigation.ts";
+import type { BadgeDefinition } from "../api/badges.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
+import { checkDriveAccess } from "../api/profile.ts";
+import {
+  loadStoredMemberSession,
+  resolveAdminBotBaseUrl,
+  type AssignedBadge,
+  type BadgeSuggestionInput,
+  type LabMember,
+} from "../auth/session.ts";
+import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
+import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
+import {
+  joinPhoneNumber,
+  resolvePhoneDial,
+  splitPhoneNumber,
+} from "../data/phone-country-codes.ts";
+import { timezoneForLocation } from "../data/timezone-for-location.ts";
 // The signed-in member's own record: what the lab knows about them, what it does not yet, and
 // what they might do about it.
 //
@@ -10,43 +60,7 @@
 //
 // Saving goes through the same self-edit path the Lab Members table uses, whose server-side
 // whitelist drops governance fields. Nothing here can write privilege_level, status, or email.
-import { html, nothing } from "lit";
-import { ifDefined } from "lit/directives/if-defined.js";
-import {
-  adminBotMemberFieldVisibility,
-  adminBotSlackActivityOf,
-  adminBotSlackActivityThreshold,
-  adminBotSlackActivityWindowDays,
-  adminBotTimelineEntryTarget,
-  isAdminBotFullMember,
-} from "../../../../../extensions/adminbot/src/contracts/actions.js";
-import {
-  formatAdminBotMemberRoles,
-  parseAdminBotMemberRoles,
-} from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
-import { t } from "../../../i18n/index.ts";
-import { toggleAdminBotPaperCard } from "../../adminbot/controllers/paper-slots.ts";
-import "./wait-preference.ts";
-import type { AppViewState } from "../../app-view-state.ts";
-import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
-import { icons } from "../../icons.ts";
-import type { Tab } from "../../navigation.ts";
-import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
-import type {
-  AssignedBadge,
-  BadgeDefinition,
-  BadgeNominationView,
-  LabMember,
-  MemberProfileUpdate,
-} from "../auth/session.ts";
-import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
-import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
-import {
-  joinPhoneNumber,
-  resolvePhoneDial,
-  splitPhoneNumber,
-} from "../data/phone-country-codes.ts";
-import { timezoneForLocation } from "../data/timezone-for-location.ts";
+import { renderDateControl } from "../date-control.ts";
 import {
   isOptionalMemberField,
   PROFILE_FIELD_GROUPS,
@@ -55,6 +69,7 @@ import {
   type ProfileFieldGroup,
 } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
+import { renderMemberBadgeSymbols, badgeCountLabel } from "./badge-symbols.ts";
 import { renderCountrySelect } from "./country-select.ts";
 import { renderMemberSelect } from "./member-select.ts";
 import { ownPapers } from "./my-work.ts";
@@ -70,10 +85,31 @@ export type ProfileProps = {
   /** `memberId` is who the badge is for; omitted means the viewer themselves. */
   onSubmitBadgeNomination?: (badgeId: string, evidence: string, memberId?: string) => void;
   onPickBadgeNominee?: (memberId: string) => void;
+  onOpenBadgeNominee?: () => void;
+  /** Propose a badge the catalogue does not have. An admin decides whether it joins. */
+  onSubmitBadgeSuggestion?: (input: BadgeSuggestionInput) => void;
+  onToggleBadgeSuggestForm?: (open: boolean) => void;
   onNavigateToTab?: (tab: Tab) => void;
 };
 
-const EDITABLE_FIELDS = PROFILE_FIELDS;
+const EDITABLE_FIELDS: ProfileField[] = [
+  ...PROFILE_FIELDS,
+  {
+    key: "arr_reviewer_qualified",
+    labelKey: "profile.arrReviewer.label",
+    example: "",
+    type: "dropdown",
+    group: "work",
+  },
+  {
+    key: "arr_review_capacity",
+    labelKey: "profile.arrReviewer.capacity",
+    example: "",
+    type: "numeric",
+    min: 0,
+    group: "work",
+  },
+];
 
 // Rendered as a row of links under the name rather than as rows in the field table -- they are
 // somewhere to go, not facts to read.
@@ -82,6 +118,7 @@ const SOCIAL_FIELDS = [
   { key: "twitter_url", labelKey: "profile.social.twitter" },
   { key: "github_url", labelKey: "profile.social.github" },
   { key: "scholar_url", labelKey: "profile.social.scholar" },
+  { key: "acl_anthology_url", labelKey: "profile.social.aclAnthology" },
 ] as const;
 
 type EditableField = ProfileField;
@@ -145,10 +182,7 @@ function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
       continue;
     }
     // Already answered for this exact value, and not still in flight.
-    if (
-      accountCheckedValues.get(field) === value &&
-      state.profileAccountChecks[field]?.status !== "checking"
-    ) {
+    if (accountCheckedValues.get(field) === value && state.profileAccountChecks[field]) {
       continue;
     }
     accountCheckAborts.get(field)?.abort();
@@ -166,10 +200,69 @@ function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
       state.profileAccountChecks = { ...state.profileAccountChecks, [field]: result };
     });
   }
+  runDriveChecks(form, state);
+}
+
+function runDriveChecks(form: HTMLFormElement, state: AppViewState): void {
+  const data = new FormData(form);
+  const session = loadStoredMemberSession();
+  if (!session) {
+    return;
+  }
+  for (const field of ["cv_url", "one_on_one_folder_url", "availability_doc_url"] as const) {
+    if (!data.has(field)) {
+      continue;
+    }
+    const value = String(data.get(field) ?? "").trim();
+    if (!adminBotDriveFileId(value)) {
+      accountCheckAborts.get(field)?.abort();
+      accountCheckedValues.delete(field);
+      if (state.profileAccountChecks[field]) {
+        const next = { ...state.profileAccountChecks };
+        delete next[field];
+        state.profileAccountChecks = next;
+      }
+      continue;
+    }
+    if (accountCheckedValues.get(field) === value && state.profileAccountChecks[field]) {
+      continue;
+    }
+    accountCheckAborts.get(field)?.abort();
+    const controller = new AbortController();
+    accountCheckAborts.set(field, controller);
+    accountCheckedValues.set(field, value);
+    state.profileAccountChecks = { ...state.profileAccountChecks, [field]: { status: "checking" } };
+    void checkDriveAccess(
+      value,
+      session.sessionToken,
+      resolveAdminBotBaseUrl(state.settings),
+      controller.signal,
+    ).then((result) => {
+      if (controller.signal.aborted) {
+        return;
+      }
+      state.profileAccountChecks = {
+        ...state.profileAccountChecks,
+        [field]: result.ok
+          ? {
+              status: result.value.status === "accessible" ? "verified" : "warning",
+              message: result.value.message,
+            }
+          : {
+              status: "warning",
+              message:
+                "Could not check Drive access. Make sure Jinesis.adminbot@gmail.com or anyone with the link can view this file.",
+            },
+      };
+    });
+  }
 }
 
 function renderAccountCheckStatus(state: AppViewState, field: EditableField) {
-  if (!isCheckableField(field.key)) {
+  if (
+    !isCheckableField(field.key) &&
+    !["cv_url", "one_on_one_folder_url", "availability_doc_url"].includes(field.key)
+  ) {
     return nothing;
   }
   const check = state.profileAccountChecks[field.key];
@@ -184,7 +277,7 @@ function renderAccountCheckStatus(state: AppViewState, field: EditableField) {
       ${check.status === "checking"
         ? t("profile.accountCheck.checking")
         : check.status === "verified"
-          ? t("profile.accountCheck.verified")
+          ? (check.message ?? t("profile.accountCheck.verified"))
           : check.message}
     </span>
   `;
@@ -419,7 +512,11 @@ function isMemberAnswerable(field: EditableField): boolean {
 
 export function blankFields(member: LabMember): EditableField[] {
   return EDITABLE_FIELDS.filter(
-    (field) => isMemberAnswerable(field) && !valueOf(member, field).trim(),
+    (field) =>
+      isMemberAnswerable(field) &&
+      !(field.key === "arr_review_capacity" && member.arr_reviewer_qualified !== true) &&
+      !(field.key === "intake_form_url" && member.intake_form_unavailable === true) &&
+      !valueOf(member, field).trim(),
   );
 }
 
@@ -489,12 +586,6 @@ function assignedBadgeLabel(badge: Pick<AssignedBadge, "name" | "tier">): string
   return badge.tier ? `${badge.name} · ${badge.tier}` : badge.name;
 }
 
-function nominationBadgeLabel(nomination: BadgeNominationView): string {
-  return nomination.badge_tier
-    ? `${nomination.badge_name} · ${nomination.badge_tier}`
-    : nomination.badge_name;
-}
-
 /**
  * The badges still open to whoever the form is currently about.
  *
@@ -545,11 +636,19 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
   const data = new FormData(form);
   const fields: MemberProfileUpdate = {};
   for (const field of EDITABLE_FIELDS) {
+    if (field.key === "arr_reviewer_qualified" || field.key === "arr_review_capacity") continue;
     if (field.type === "image") {
       // Owned by the upload control, which saves on its own; no input to read here.
       continue;
     }
     const value = String(data.get(field.key) ?? "").trim();
+    if (field.pattern || field.type === "date") {
+      const input = form.elements.namedItem(field.key) as HTMLInputElement | null;
+      // Keep an invalid legacy value visible, but never autosave it or erase it silently.
+      if (input && !input.checkValidity()) {
+        continue;
+      }
+    }
     if (field.type === "phone") {
       // The two controls are a country box and a number box; the record keeps one string. The
       // country box is free text with a suggestion list, so what it holds is resolved back to a
@@ -588,6 +687,14 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
       }
     } else {
       setField(fields, field.key, value);
+    }
+  }
+  const qualification = data.get("arr_reviewer_qualified");
+  if (qualification === "yes" || qualification === "no") {
+    fields.arr_reviewer_qualified = qualification === "yes";
+    if (qualification === "yes") {
+      const value = String(data.get("arr_review_capacity") ?? "").trim();
+      fields.arr_review_capacity = value ? Number(value) : null;
     }
   }
   fields.intake_form_unavailable = !fields.intake_form_url && data.has("intake_form_unavailable");
@@ -689,6 +796,74 @@ function renderProjectChips(state: AppViewState, props: ProfileProps): ReturnTyp
  * "Role". Those rows get a plain container, and the checkbox group carries its own accessible name.
  */
 function renderProfileFormRow(state: AppViewState, member: LabMember, field: EditableField) {
+  if (field.key === "arr_review_capacity")
+    return html` <label class="profile__form-row">
+      <span class="profile__form-label"
+        >${t("profile.arrReviewer.capacity")}
+        <span data-arr-capacity-required ?hidden=${member.arr_reviewer_qualified !== true}
+          >${renderMandatoryMark(field, "")}</span
+        >
+      </span>
+      <input
+        class="input"
+        type="number"
+        name="arr_review_capacity"
+        min="0"
+        step="1"
+        ?required=${member.arr_reviewer_qualified === true}
+        ?disabled=${member.arr_reviewer_qualified !== true}
+        .value=${member.arr_review_capacity == null ? "" : String(member.arr_review_capacity)}
+      />
+    </label>`;
+
+  if (field.key === "arr_reviewer_qualified")
+    return html`<div>
+      <label class="profile__form-row">
+        <span class="profile__form-label"
+          >${t("profile.arrReviewer.label")}
+          ${renderMandatoryMark(field, displayValue(member, field))}
+        </span>
+        <select
+          class="input"
+          name="arr_reviewer_qualified"
+          required
+          @change=${(event: Event) => {
+            const select = event.currentTarget as HTMLSelectElement;
+            const capacity = select.form?.querySelector<HTMLInputElement>(
+              '[name="arr_review_capacity"]',
+            );
+            if (capacity) {
+              capacity.disabled = select.value !== "yes";
+              capacity.required = select.value === "yes";
+              const mark = capacity
+                .closest("label")
+                ?.querySelector<HTMLElement>("[data-arr-capacity-required]");
+              if (mark) mark.hidden = select.value !== "yes";
+            }
+          }}
+        >
+          <option value="" disabled hidden ?selected=${member.arr_reviewer_qualified == null}>
+            ${t("profile.arrReviewer.choose")}
+          </option>
+          <option value="yes" ?selected=${member.arr_reviewer_qualified === true}>
+            ${t("profile.arrReviewer.yes")}
+          </option>
+          <option value="no" ?selected=${member.arr_reviewer_qualified === false}>
+            ${t("profile.arrReviewer.no")}
+          </option>
+        </select>
+      </label>
+      <p class="profile__field-hint">
+        ${t("profile.arrReviewer.hint")}
+        <a
+          href="https://aclrollingreview.org/qualifications"
+          target="_blank"
+          rel="noopener noreferrer"
+          >${t("profile.arrReviewer.criteria")}</a
+        >
+      </p>
+    </div>`;
+
   const body = html`
     <span class="profile__form-label">
       ${labelFor(field.key)}${renderMandatoryMark(
@@ -712,17 +887,13 @@ function renderProfileFormRow(state: AppViewState, member: LabMember, field: Edi
 }
 
 function renderFieldInput(field: EditableField, currentValue: string) {
-  // An admin-owned answer the member may still supply. It was `disabled`, which is why this is
-  // worth explaining: a disabled input cannot be focused, selected, or pasted into, so a member
-  // who had looked their URN up in the collector tool the field's own help text points them at had
-  // nowhere to put it -- and could not copy the stored one out either. Read-only would fix the
-  // copy half and not the paste half, so it is an ordinary input.
-  //
-  // What has *not* changed is who is chased for it. The field stays on
-  // adminBotAdminOwnedProfileFields, so it is still outside the reminder's set and outside the
-  // completion denominator. One member of 199 has a URN; counting it would drop fifty profiles off
-  // 100% overnight and chase every one of them for a value they have never heard of, which is the
-  // incident that list exists to prevent.
+  // An admin-owned answer the member may still supply: shown, typable and pasteable, but outside
+  // the required marks and the completion denominator (see adminBotAdminOwnedProfileFields, which
+  // is empty at present -- `linkedin_urn` was its last entry and is now asked of the member like
+  // any other field). An ordinary input rather than `disabled` or `readonly`, because a disabled
+  // input cannot be focused, selected or pasted into: a member who had looked a value up somewhere
+  // the help text sent them would have nowhere to put it, and could not copy the stored one out
+  // either. Read-only fixes the copy half and not the paste half.
   if (field.adminOnly) {
     return html`
       <input
@@ -797,8 +968,23 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           .value=${currentValue}
         ></textarea>
       `;
+    case "month":
+      // Preserve invalid legacy text; native month inputs silently clear it.
+      return html`<input
+        class="input"
+        name=${field.key}
+        type=${!currentValue || /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(currentValue) ? "month" : "text"}
+        pattern=${ifDefined(field.pattern)}
+        .value=${currentValue}
+        @change=${(event: Event) => (event.currentTarget as HTMLInputElement).reportValidity()}
+      />`;
     case "date":
-      return html` <input class="input" name=${field.key} type="date" .value=${currentValue} /> `;
+      return html`
+        ${renderDateControl(
+          html`<input class="input" name=${field.key} type="date" .value=${currentValue} />`,
+          currentValue,
+        )}
+      `;
     case "link":
       return html`
         <input
@@ -841,12 +1027,34 @@ function renderFieldInput(field: EditableField, currentValue: string) {
         <input
           class="input"
           name=${field.key}
+          list=${ifDefined(
+            field.key === "location"
+              ? "profile-city-options"
+              : field.key === "affiliation"
+                ? "profile-affiliation-options"
+                : undefined,
+          )}
           type="text"
           maxlength=${SHORT_TEXT_MAX_LENGTH}
+          pattern=${ifDefined(field.pattern)}
+          @change=${field.pattern
+            ? (event: Event) => (event.currentTarget as HTMLInputElement).reportValidity()
+            : nothing}
           placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
           autocomplete="off"
         />
+        ${field.key === "location"
+          ? html`<datalist id="profile-city-options">
+              ${MEMBER_CITY_OPTIONS.map((option) => html`<option value=${option}></option>`)}
+            </datalist>`
+          : field.key === "affiliation"
+            ? html`<datalist id="profile-affiliation-options">
+                ${MEMBER_AFFILIATION_OPTIONS.map(
+                  (option) => html`<option value=${option}></option>`,
+                )}
+              </datalist>`
+            : nothing}
       `;
   }
 }
@@ -905,6 +1113,15 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
       </div>
       <form
         class="profile__form"
+        ${ref((element) => {
+          if (element instanceof HTMLFormElement) {
+            queueMicrotask(() => {
+              if (element.isConnected) {
+                runDriveChecks(element, state);
+              }
+            });
+          }
+        })}
         @submit=${(event: SubmitEvent) => event.preventDefault()}
         @input=${(event: Event) => {
           const form = event.currentTarget as HTMLFormElement;
@@ -955,11 +1172,19 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                           </div>
                         `
                       : renderProfileFormRow(state, member, field)}
+                    <!-- A note and a checkbox about the field above, not a field of its own. It
+                         used to be a profile__form-row wrapped in a label, which rendered the
+                         explanation at label weight -- as loud as the questions around it -- and
+                         put a two-line paragraph inside the checkbox's hit area, so trying to
+                         select that text toggled the box. Now the sentence is an ordinary hint and
+                         only the checkbox's own words sit inside the label. -->
                     ${field.key === "intake_form_url"
-                      ? html` <label class="profile__form-row">
-                          <span>${t("profile.hints.intakeFormSearch")}</span>
-                          <span
-                            ><input
+                      ? html`<div class="profile__intake-note">
+                          <span class="profile__field-hint" data-testid="profile-intake-note"
+                            >${t("profile.hints.intakeFormSearch")}</span
+                          >
+                          <label class="profile__intake-check">
+                            <input
                               type="checkbox"
                               name="intake_form_unavailable"
                               .checked=${member.intake_form_unavailable === true}
@@ -971,9 +1196,9 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                                 if (input.checked && link) link.value = "";
                               }}
                             />
-                            ${t("profile.hints.intakeFormUnavailable")}</span
-                          >
-                        </label>`
+                            <span>${t("profile.hints.intakeFormUnavailable")}</span>
+                          </label>
+                        </div>`
                       : nothing}
                   `,
                 )}
@@ -1143,8 +1368,10 @@ function renderBadges(state: AppViewState, member: LabMember) {
     <div class="profile__badges" data-testid="profile-badges">
       ${assigned.map(
         (badge) => html`<span class="profile-badge profile-badge--managed" tabindex="0">
-          <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
-          <span>${assignedBadgeLabel(badge)}</span>
+          <span class="profile-badge__icon" aria-hidden="true"
+            >${adminBotBadgeEmoji(badge.name)}</span
+          >
+          <span>${badgeCountLabel(badge)}</span>
           <span class="profile-badge__popover" role="tooltip">
             <strong>${badge.category}</strong>
             <span>${badge.description}</span>
@@ -1162,7 +1389,9 @@ function renderBadges(state: AppViewState, member: LabMember) {
       )}
       ${computed.map(
         (badge) => html`<span class="profile-badge">
-          <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
+          <span class="profile-badge__icon" aria-hidden="true"
+            >${adminBotBadgeEmoji(badge.split(" · ")[0])}</span
+          >
           ${badge}
         </span>`,
       )}
@@ -1170,25 +1399,215 @@ function renderBadges(state: AppViewState, member: LabMember) {
   `;
 }
 
-/**
- * The member's own badges, as a section rather than a strip of chips in the header.
- *
- * They were rendered inline beside the name, which made them decoration: the hover popover carrying
- * the category, the description and the criteria link was the only way to read what a badge
- * actually meant, and a popover is not something anyone opens for each of five chips. The admin
- * badges tab has always shown the full picture; this is the same thing scoped to one person, and it
- * sits directly above the nomination form so "what I have" and "what I could ask for" read as one
- * subject rather than two halves at opposite ends of the page.
- *
- * Not duplicated back into the header. Stating the same fact twice on one page is how the two
- * copies eventually disagree.
- */
+// Keep earned badge details near the member identity, ahead of profile fields.
 function renderBadgesSection(state: AppViewState, member: LabMember) {
   return html`
     <section class="profile__section" data-testid="profile-badges-section">
       <h2 class="profile__section-title">${t("profile.badges.title")}</h2>
       <p class="profile__section-subtitle">${t("profile.badges.subtitle")}</p>
       ${renderBadges(state, member)}
+    </section>
+  `;
+}
+
+/**
+ * Propose a badge the catalogue does not have.
+ *
+ * Nominating and suggesting are deliberately two forms rather than one with a "something else"
+ * option. They ask different questions -- who should hold this, versus what should exist -- they
+ * are decided on different evidence, and only one of them changes lab vocabulary. Folding them
+ * together would put the rarer, heavier action in front of everybody filing the common one.
+ *
+ * Shut by default, behind one button, for the same reason: most visits to this page are not this.
+ * Open, it is the badge's own fields plus the argument for it, because an admin approving this
+ * creates the badge exactly as written -- see submitBadgeSuggestion, which validates the fields
+ * here rather than at approval so nothing reaches the queue that cannot be accepted.
+ */
+function renderBadgeSuggestion(state: AppViewState, props: ProfileProps) {
+  const open = state.profileBadgeSuggestOpen === true;
+  const busy = state.badgeSuggestionBusy === true;
+  const mine = state.adminBotBadgeSuggestions ?? [];
+  return html`
+    <section class="profile__section" data-testid="profile-badge-suggestions">
+      <h2 class="profile__section-title">${t("profile.badges.suggestTitle")}</h2>
+      <p class="profile__section-subtitle">${t("profile.badges.suggestHint")}</p>
+      <div class="profile__form-actions">
+        <button
+          class="btn btn--sm"
+          type="button"
+          data-testid="profile-badge-suggest-toggle"
+          aria-expanded=${open ? "true" : "false"}
+          @click=${() => props.onToggleBadgeSuggestForm?.(!open)}
+        >
+          ${t(open ? "profile.badges.suggestClose" : "profile.badges.suggestOpen")}
+        </button>
+      </div>
+      ${state.badgeSuggestionNotice
+        ? html`<div
+            class="callout ${state.badgeSuggestionNotice.kind === "error" ? "danger" : "success"}"
+            role="status"
+            data-testid="profile-badge-suggest-notice"
+          >
+            ${state.badgeSuggestionNotice.text}
+          </div>`
+        : nothing}
+      ${open
+        ? html`<form
+            class="profile-badge-form"
+            data-testid="profile-badge-suggest-form"
+            @submit=${(event: Event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget as HTMLFormElement);
+              const text = (key: string) => String(data.get(key) ?? "").trim();
+              const criteriaUrl = text("criteria_url");
+              const tier = text("tier");
+              props.onSubmitBadgeSuggestion?.({
+                category: text("category"),
+                name: text("name"),
+                description: text("description"),
+                rationale: text("rationale"),
+                // Left off rather than sent empty: the service treats an absent optional field and
+                // a blank one the same way, and an absent one keeps the stored record clean.
+                ...(criteriaUrl ? { criteria_url: criteriaUrl } : {}),
+                ...(tier ? { tier } : {}),
+              });
+            }}
+          >
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.suggestName")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <input
+                class="input"
+                name="name"
+                type="text"
+                maxlength=${SHORT_TEXT_MAX_LENGTH}
+                placeholder=${t("profile.badges.suggestNamePlaceholder")}
+                ?disabled=${busy}
+                required
+              />
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.suggestCategory")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <input
+                class="input"
+                name="category"
+                type="text"
+                list="profile-badge-categories"
+                maxlength=${SHORT_TEXT_MAX_LENGTH}
+                placeholder=${t("profile.badges.suggestCategoryPlaceholder")}
+                ?disabled=${busy}
+                required
+              />
+              <!-- The categories already in use, offered rather than enforced: a suggestion that
+                   needs a new category is exactly the kind this form exists for. -->
+              <datalist id="profile-badge-categories">
+                ${[
+                  ...new Set((state.adminBotBadgeDefinitions ?? []).map((badge) => badge.category)),
+                ]
+                  .toSorted()
+                  .map((category) => html`<option value=${category}></option>`)}
+              </datalist>
+              <span class="profile__field-hint">${t("profile.badges.suggestCategoryHint")}</span>
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.suggestDescription")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <input
+                class="input"
+                name="description"
+                type="text"
+                maxlength=${ADMINBOT_BADGE_DESCRIPTION_MAX}
+                placeholder=${t("profile.badges.suggestDescriptionPlaceholder")}
+                ?disabled=${busy}
+                required
+              />
+              <span class="profile__field-hint">${t("profile.badges.suggestDescriptionHint")}</span>
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label">${t("profile.badges.suggestTier")}</span>
+              <input
+                class="input"
+                name="tier"
+                type="text"
+                maxlength=${SHORT_TEXT_MAX_LENGTH}
+                placeholder=${t("profile.badges.suggestTierPlaceholder")}
+                ?disabled=${busy}
+              />
+              <span class="profile__field-hint">${t("profile.badges.suggestTierHint")}</span>
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label">${t("profile.badges.suggestCriteria")}</span>
+              <input class="input" name="criteria_url" type="url" ?disabled=${busy} />
+            </label>
+            <label class="profile__form-row">
+              <span class="profile__form-label"
+                >${t("profile.badges.suggestRationale")}
+                <span class="profile__mandatory" aria-hidden="true"></span
+                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+              >
+              <textarea
+                class="input adminbot-badge-textarea--compact"
+                name="rationale"
+                rows="2"
+                maxlength=${ADMINBOT_BADGE_RATIONALE_MAX}
+                placeholder=${t("profile.badges.suggestRationalePlaceholder")}
+                ?disabled=${busy}
+                required
+              ></textarea>
+            </label>
+            <div class="profile__form-actions">
+              <button class="btn primary" type="submit" ?disabled=${busy}>
+                ${t("profile.badges.suggestButton")}
+              </button>
+            </div>
+          </form>`
+        : nothing}
+      <div class="profile-badge-nominations">
+        <h3 class="profile__group-title">${t("profile.badges.suggestionsTitle")}</h3>
+        ${mine.length
+          ? html`<ul class="profile-badge-nominations__list">
+              ${mine.map(
+                (suggestion) => html`<li
+                  class="profile-badge-nominations__item"
+                  data-testid="profile-badge-suggestion"
+                >
+                  <div class="profile-badge-nominations__head">
+                    <span class="profile-badge">
+                      <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
+                      ${suggestion.tier
+                        ? `${suggestion.name} · ${suggestion.tier}`
+                        : suggestion.name}
+                    </span>
+                    <span class=${`ab-chip ab-chip--${suggestion.status}`}>
+                      ${t(`profile.badges.status.${suggestion.status}`)}
+                    </span>
+                  </div>
+                  <div>${suggestion.description}</div>
+                  <div class="profile-badge-nominations__meta">
+                    <span>${suggestion.category}</span>
+                    ${nominationMeta("submittedAt", suggestion.created_at)}
+                    ${nominationMeta("decidedAt", suggestion.decided_at)}
+                    <!-- Says what approval actually did. "Approved" alone leaves somebody
+                         wondering whether the badge exists yet. -->
+                    ${suggestion.created_badge_id
+                      ? html`<span>${t("profile.badges.suggestionAdded")}</span>`
+                      : nothing}
+                  </div>
+                </li>`,
+              )}
+            </ul>`
+          : html`<p class="profile__badges-empty">${t("profile.badges.suggestionsEmpty")}</p>`}
+      </div>
     </section>
   `;
 }
@@ -1203,7 +1622,7 @@ function nominationMeta(labelKey: "submittedAt" | "decidedAt", value: string | u
 }
 
 /**
- * The nomination form, and the nominations this viewer can see.
+ * The nomination form. Past and pending nominations are not listed on the profile.
  *
  * It used to be self-only, which quietly made the board a record of what people were willing to
  * claim about themselves. Most of what these badges recognise is somebody else's to notice -- the
@@ -1216,7 +1635,6 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
   const forSelf = nominee.id === member.id;
   const nomineeName = nominee.name ?? nominee.id ?? "";
   const available = availableBadgeDefinitions(state, nominee);
-  const nominations = state.profileBadgeNominations ?? [];
   // Alumni are on the roster and can absolutely be nominated for something they did; only the
   // viewer is filtered out, because they are already the default and a picker that lists you twice
   // is a picker that reads as broken.
@@ -1250,10 +1668,25 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
             value: forSelf ? "" : (nominee.id ?? ""),
             placeholder: t("profile.badges.nominateSearch"),
             label: t("profile.badges.nominateWho"),
-            disabled: state.profileBadgeBusy || rosterOptions.length === 0,
+            disabled: state.profileBadgeBusy,
             onPick: (memberId: string) => props.onPickBadgeNominee?.(memberId),
+            onOpen: () => props.onOpenBadgeNominee?.(),
           })}
         </div>
+        ${state.adminBotRosterLoading
+          ? html`<p class="profile__section-subtitle" role="status">Loading lab members…</p>`
+          : state.adminBotRosterError
+            ? html`<p class="profile__section-subtitle" role="alert">
+                Could not load lab members.
+                <button
+                  class="btn btn--sm"
+                  type="button"
+                  @click=${() => props.onOpenBadgeNominee?.()}
+                >
+                  Try again
+                </button>
+              </p>`
+            : nothing}
         ${forSelf
           ? nothing
           : html`<p class="profile__section-subtitle" data-testid="profile-badge-nominee-name">
@@ -1300,9 +1733,6 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
                       />
                       <span class="profile-badge-picker__title">
                         ${assignedBadgeLabel(badge)}
-                        ${badge.category
-                          ? html`<span class="ab-chip">${badge.category}</span>`
-                          : nothing}
                       </span>
                       <p class="profile-badge-picker__description">${badge.description}</p>
                     </label>
@@ -1335,60 +1765,6 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
               ? t("profile.badges.nominateNoneAvailable")
               : t("profile.badges.nominateNoneAvailableFor", { name: nomineeName })}
           </p>`}
-      <div class="profile-badge-nominations">
-        <h3 class="profile__group-title">${t("profile.badges.nominationsTitle")}</h3>
-        ${nominations.length
-          ? html`<ul class="profile-badge-nominations__list">
-              ${nominations.map(
-                (nomination) => html`<li class="profile-badge-nominations__item">
-                  <div class="profile-badge-nominations__head">
-                    <span class="profile-badge">
-                      <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
-                      ${nominationBadgeLabel(nomination)}
-                    </span>
-                    <span class=${`ab-chip ab-chip--${nomination.status}`}>
-                      ${t(`profile.badges.status.${nomination.status}`)}
-                    </span>
-                  </div>
-                  <!-- The list now holds both directions, so every row that is not the plain
-                       self-nomination says which one it is. -->
-                  ${nomination.member_id !== member.id
-                    ? html`<p
-                        class="profile-badge-nominations__who"
-                        data-testid="profile-badge-nomination-sent"
-                      >
-                        ${t("profile.badges.nominationFor", {
-                          name: nomination.member_name || nomination.member_id,
-                        })}
-                      </p>`
-                    : nomination.nominated_by
-                      ? html`<p
-                          class="profile-badge-nominations__who"
-                          data-testid="profile-badge-nomination-received"
-                        >
-                          ${t("profile.badges.nominationBy", {
-                            name: nomination.nominator_name ?? nomination.nominated_by,
-                          })}
-                        </p>`
-                      : nothing}
-                  <p class="profile-badge-nominations__description">
-                    ${nomination.badge_description}
-                  </p>
-                  ${nomination.evidence
-                    ? html`<p class="profile-badge-nominations__description">
-                        <strong>${t("adminbotBadges.field.evidence")}:</strong>
-                        ${nomination.evidence}
-                      </p>`
-                    : nothing}
-                  <div class="profile-badge-nominations__meta">
-                    ${nominationMeta("submittedAt", nomination.created_at)}
-                    ${nominationMeta("decidedAt", nomination.decided_at)}
-                  </div>
-                </li>`,
-              )}
-            </ul>`
-          : html`<p class="profile__badges-empty">${t("adminbotBadges.emptyNominations")}</p>`}
-      </div>
     </section>
   `;
 }
@@ -1620,6 +1996,24 @@ const SAVE_TOAST_MS = 2600;
 let toastNoticeText: string | null = null;
 let toastDismissTimer: ReturnType<typeof setTimeout> | undefined;
 
+export function resetProfileSessionState(): void {
+  if (basicsSaveTimer) {
+    clearTimeout(basicsSaveTimer);
+    basicsSaveTimer = undefined;
+  }
+  for (const controller of accountCheckAborts.values()) {
+    controller.abort();
+  }
+  accountCheckAborts.clear();
+  accountCheckedValues.clear();
+  pendingFocusFieldKey = null;
+  if (toastDismissTimer) {
+    clearTimeout(toastDismissTimer);
+    toastDismissTimer = undefined;
+  }
+  toastNoticeText = null;
+}
+
 function renderSaveToast(state: AppViewState) {
   const notice = state.adminBotNotice;
   if (!notice) {
@@ -1671,6 +2065,7 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         <div class="profile__identity-copy">
           <div class="profile__identity-top">
             <span class="profile__name">${name}</span>
+            ${renderMemberBadgeSymbols(member.assigned_badges ?? [])}
             <!-- One pill per role. Somebody who is both a PhD student and the lab manager reads as
                  two facts about them, where a single pill holding "PhD Student, Lab Manager" reads
                  as one oddly punctuated job title. -->
@@ -1684,18 +2079,19 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         </div>
         ${renderCompletionLedger(member, state)}
       </header>
-      ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
+      ${renderBadgesSection(state, member)} ${renderBasics(state, member, props)}
+      ${renderPhotoCompliance(state, member, props)}
       <!-- Not a member field, so it sits outside the field list: the lab's model queue holds it,
            keyed by the signed-in principal. It is offered inline the first time a request is
            saved, which is when it means something; this is where someone who said yes then can
-           find it again. Below the record and above the lab's own recognitions -- it is a choice
-           about this member's requests, not a fact the lab holds about them. -->
+           find it again. Below the record -- it is a choice about this member's requests, not a
+           fact the lab holds about them. -->
       <adminbot-wait-preference
         standalone
         .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
         .sessionContext=${loadStoredMemberSession()?.sessionToken ?? ""}
       ></adminbot-wait-preference>
-      ${renderBadgesSection(state, member)} ${renderBadgeSelfNomination(state, member, props)}
+      ${renderBadgeSelfNomination(state, member, props)} ${renderBadgeSuggestion(state, props)}
       ${renderOnboardingPointer(state, props)}
       <!-- Who has been in this record. Last, and shut: it is history about the fields above, and
            the answer to a question somebody asks occasionally rather than on every visit. Since

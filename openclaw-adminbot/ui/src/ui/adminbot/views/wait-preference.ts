@@ -1,5 +1,6 @@
 import { html, LitElement, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
+import { readApiJson } from "../data/api-json.ts";
 
 /**
  * The member's standing answer to "the lab's model is busy".
@@ -65,13 +66,13 @@ export class AdminBotWaitPreference extends LitElement {
       if (!response.ok) {
         return;
       }
-      const body = (await response.json()) as { inference_always_wait?: boolean };
+      const body = (await readApiJson(response)) as { inference_always_wait?: boolean } | null;
       if (
         generation === this.generation &&
         baseUrl === this.baseUrl &&
         sessionContext === this.sessionContext
       ) {
-        this.value = Boolean(body.inference_always_wait);
+        this.value = Boolean(body?.inference_always_wait);
       }
     } catch {
       // A preference that cannot be read is simply not offered. Nothing else depends on it.

@@ -7,6 +7,7 @@ deployment scripts, and a sanitized setup template.
 ## Read instructions in scope
 
 - This file applies to the whole repository.
+- Read `CONTRIBUTING.md` for contributor setup, coding-agent onboarding, and PR evidence expectations.
 - Before changing anything under `openclaw-adminbot/`, read
   `openclaw-adminbot/AGENTS.md` in full and then the nearest more-specific `AGENTS.md` files.
 - In particular, `openclaw-adminbot/extensions/AGENTS.md` governs the AdminBot plugin and

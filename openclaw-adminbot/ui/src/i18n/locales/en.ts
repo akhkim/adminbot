@@ -2,6 +2,63 @@
 import type { TranslationMap } from "../lib/types.ts";
 
 export const en: TranslationMap = {
+  paperFeedback: {
+    title: "Request paper feedback",
+    blurb: "Queue a draft for PI feedback. Publication approval is a separate decision.",
+    unspecified: "Not specified",
+    soft: "Feedback by (soft):",
+    hard: "Submission cutoff (hard):",
+    late: "Past submission cutoff — soft submission. Feedback is still queued.",
+    open: "Open manuscript",
+    remove: "Remove from feedback queue",
+    url: "Manuscript link (required)",
+    reason: "Why is feedback needed? (required, visible to paper authors and admins)",
+    softInput: "Feedback by — personal soft deadline",
+    hardInput: "Official submission cutoff — hard deadline",
+    hint: "Times use your browser’s local time zone. A passed cutoff does not block a request.",
+    invalid:
+      "Use an HTTPS manuscript link and valid times; feedback-by cannot follow the submission cutoff.",
+    saving: "Saving…",
+    queued: "Queued: {label}",
+    queue: "Queue {label}",
+    feedback_arr: "ARR / Overleaf feedback",
+    feedback_arxiv: "arXiv feedback",
+    feedback_camera_ready: "Camera-ready feedback",
+  },
+  deadlineStageProposal: {
+    chooseVenue:
+      "Select a conference or workshop from the list, or choose New conference or workshop.",
+    venue: "Conference or workshop",
+    newVenue: "New conference or workshop",
+    stage: "Stage",
+    stageName: "Stage name",
+    original: "Original date",
+    correct: "Suggest deadline correction",
+    timeUnknown: "Time unknown",
+    kinds: {
+      submission: "Paper submission",
+      abstract: "Abstract registration",
+      notification: "Decisions",
+      camera_ready: "Camera-ready",
+      author_response: "Author response",
+      registration: "Registration",
+      conference: "Conference",
+      other: "Other",
+    },
+  },
+  deadlineStageFilter: {
+    label: "Filter by stage",
+    all: "All stages",
+    submission: "Submission",
+    abstract: "Abstract registration",
+    notification: "Decisions",
+    author_response: "Author response",
+    camera_ready: "Camera-ready",
+    conference: "Conference",
+    commitment: "Commitment",
+    registration: "Registration",
+    discussion: "Discussion",
+  },
   common: {
     health: "Health",
     ok: "OK",
@@ -415,11 +472,13 @@ export const en: TranslationMap = {
     broadcast: {
       title: "Broadcast to the lab",
       hint: "Shown at the top of every member's dashboard until the date below.",
-      placeholder: "e.g. Sept 11-17: Zürich. Sept 18-20: Toronto. Then back to Europe.",
+      placeholder: "e.g. Reviewing submissions this week. Available for meetings Thursday.",
       none: "Nothing being broadcast",
       until: "Showing until {date}",
       showsUntil: "Show until",
       availability: "Status",
+      timezone: "Zhijing’s time zone (optional)",
+      timezoneLabel: "Time zone: {timezone}",
       availability_away: "Away",
       availability_busy: "Busy",
       availability_available: "Available",
@@ -439,9 +498,9 @@ export const en: TranslationMap = {
       // Each of the three paper queues below names the job it is asking for, because "a list of
       // papers" was true of all three and told her nothing about which to open. This one is a
       // decision on a finished thing.
-      title: "Approve before it goes public",
+      title: "Paper feedback and publication approval",
       blurb:
-        "The package is finished and the PDF is final. Nothing is posted until you say yes, so these are stopped until you look.",
+        "Feedback requests ask for comments; publication approval remains a separate decision. Nothing is posted until you say yes.",
       empty: "No paper is waiting on your approval.",
       open: "Open the papers",
       since: "ready {date}",
@@ -578,6 +637,7 @@ export const en: TranslationMap = {
     adminbotWorkshopNudges: "Workshop Matches",
     adminbotAnnouncements: "Announcements",
     adminbotConferencePapers: "Find Interesting Papers",
+    adminbotReferenceChecker: "PDF Reference Checker",
     adminbotCalendar: "Calendar",
     adminbotGrantReport: "Grant Report",
     adminbotMailingList: "Mailing List",
@@ -633,6 +693,7 @@ export const en: TranslationMap = {
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
+    adminbotReferenceChecker: "Check PDF references against scholarly databases.",
     adminbotConferencePapers:
       "Search a conference's accepted papers, ranked against what you work on.",
     adminbotCalendar: "Draft an event, and invite the people the roster can describe.",
@@ -1178,6 +1239,19 @@ export const en: TranslationMap = {
       approved: "Nomination approved.",
       rejected: "Nomination rejected.",
     },
+    suggestion: {
+      title: "Suggested badges",
+      sub: "Badges members have asked the lab to add. Approving one creates it exactly as written, and it becomes nominable straight away.",
+      emptyPending: "No suggested badges waiting.",
+      rationale: "Why",
+      unknownSuggester: "Suggested by a member who has since left",
+      approve: "Add badge",
+      reject: "Decline",
+      decidedTitle: "Already decided",
+      approved: "Badge added to the catalog.",
+      rejected: "Suggestion declined.",
+      decideFailed: "Couldn't record that decision.",
+    },
     empty: {
       title: "Couldn't load badges",
       noSession: "Sign in with your member account to manage badges.",
@@ -1206,6 +1280,7 @@ export const en: TranslationMap = {
       description: "Description",
       criteriaUrl: "Criteria link",
       evidence: "Evidence",
+      count: "Count (total awards)",
       assignEvidence: "Evidence (optional)",
       submittedBy: "Submitted by",
       submittedAt: "Submitted",
@@ -1374,10 +1449,11 @@ export const en: TranslationMap = {
     capacity: "{hours} hours/week capacity",
     // The chart's own footnote, restored with the recharts chart it explains.
     capacityNote:
-      "Dashed line marks 100% average allocation. Hover a period for daily capacity details.",
+      "Dashed line marks 100% average allocation. Partial weeks and months show a lower average; commitments stop on their saved end date. Tap or hover a bar for active days and daily capacity details.",
     capacityNoteUnset:
       "No weekly capacity set on this profile, so there is nothing to compare these hours against.",
     chartAria: "Time allocation chart for {member}",
+    chartPhoneHint: "Swipe sideways to see more dates. Tap a bar for details.",
     chartSubtitle: "Hours committed per period. Overlapping commitments are stacked.",
     empty: "Select a user to view their time allocation.",
     endDate: "End date",
@@ -1465,7 +1541,7 @@ export const en: TranslationMap = {
       title: "Overall notes for admins",
       hint: "Anything the rows above cannot say \u2014 a situation that is complicated, dates that may move, weeks that are hard to predict. Only you and the lab's admins can read this.",
       placeholder:
-        "e.g. I am my grandmother's carer on alternating weeks, so the hours above are an average rather than a fixed schedule.",
+        "e.g. My project meetings alternate between weeks, so the hours above are an average rather than a fixed schedule.",
       submit: "Save notes",
     },
     legendTimeOff: "Outside Jinesis commitments",
@@ -1486,6 +1562,9 @@ export const en: TranslationMap = {
       category: "Category",
       customLabel: "Name this category",
       project: "Project",
+      projectExample: "Project XXX",
+      exampleHint:
+        "Example: 20 hours per week on Project XXX. Enter your own project, hours and dates below; the example is not saved.",
       projectPlaceholder: "Leave blank for term baseline",
       hours: "Hours per week",
       link: "Link (optional)",
@@ -1778,14 +1857,14 @@ export const en: TranslationMap = {
       mineEmpty: "You have not sent a request yet.",
       user: "User",
       type: "Type of Request",
-      deadline: "Most Recent Deadline",
+      earliestDeadline: "Earliest deadline",
       statusColumn: "Status",
       noDeadline: "No deadline",
       noSchools: "No schools listed.",
       none: "None",
       back: "All requests",
       detailSub: "{type} · sent {saved}",
-      detailDeadline: "most recent deadline {date}",
+      detailEarliestDeadline: "earliest deadline {date}",
       documents: "Documents to sign",
       withdraw: "Withdraw this request",
       edit: "Correct this request",
@@ -1821,7 +1900,13 @@ export const en: TranslationMap = {
     },
     queue: {
       title: "Request Queue",
-      sub: "Everything the lab has been asked for, soonest deadline first. Download what needs signing, upload it back signed, and the member is emailed automatically.",
+      searchPlaceholder: "Name or school",
+      allTypes: "All request types",
+      allStatuses: "All statuses",
+      awaitingAction: "Awaiting action",
+      noMatches: "No requests match these filters.",
+      instructions:
+        "Letters use the earliest letter deadline, in the entered timezone. Click a column heading to sort or a name to open the full request.",
       submitted: "Submitted",
       context: "What it is for",
       signed: "Signed Document",
@@ -1872,6 +1957,24 @@ export const en: TranslationMap = {
       remove: "Remove {name}",
       clear: "Remove all",
     },
+    lettersGuide: {
+      title: "Before requesting a recommendation letter",
+      sub: "Please follow the Guidebook's preparation steps before submitting this request.",
+      open: "Open the Guidebook: How to ask for Rec Letters",
+      folder:
+        "Create grad_app_[yourname] with edit access for your letter writer, ideally also linked from your shared Zhijing-[yourname] folder.",
+      schools:
+        "Prepare a school/program spreadsheet sorted by the earliest deadline, including application and letter deadlines, statuses, program links, and any special requirements.",
+      materials:
+        "Include your transcript, editable CV, Statement of Purpose, information about your other letter writers, and any supporting materials you want to highlight.",
+      facts:
+        "Prepare concrete facts about your project contributions and a factual first draft of the letter, following the Guidebook's letter-writing guidance.",
+      reminders:
+        "The section also covers reminder emails with deadline times and time zones, a presentation when needed, and optional Interfolio use subject to university rules.",
+      portal:
+        "For Zhijing's application-portal invitations, use zjin.admin@cs.toronto.edu. Her main email does not handle letter requests.",
+      portalLink: "Check the Guidebook's recommender details",
+    },
     schools: {
       title: "List of Schools",
       sub: "Every school this request covers, and where each one stands.",
@@ -1881,10 +1984,11 @@ export const en: TranslationMap = {
       applicationDeadlineTime: "Time",
       letterDeadline: "Letter deadline",
       letterDeadlineHint: "if different",
+      letterDeadlineRequired: "Required",
       letterDeadlineTime: "Time",
       deadlineTimezone: "Time zone",
-      deadlineTimezoneHint: "for both times on this row",
-      deadlineTimezonePlaceholder: "ex. America/New_York",
+      aoeHint: "AoE (UTC−12) by default",
+      aoePlaceholder: "AoE or America/New_York",
       applicationStatus: "Application status",
       applicationStatusPlaceholder: "ex. submitted",
       letterStatus: "Letter status",
@@ -1970,6 +2074,8 @@ export const en: TranslationMap = {
       discard: "Discard",
       blocked: {
         empty: "Fill the request in before sending it.",
+        letterDeadline:
+          "Every school needs a valid letter deadline. Check the date, time, and timezone (AoE by default).",
         noName: "Every school needs its name filled in.",
         noPurpose: "Every meeting needs a purpose.",
         noDocPrep:
@@ -2074,6 +2180,15 @@ export const en: TranslationMap = {
     },
   },
   profile: {
+    arrReviewer: {
+      label: "ARR reviewer qualification",
+      yes: "I confirm that I am a qualified reviewer.",
+      no: "I confirm that I am not a qualified reviewer.",
+      choose: "Select your qualification",
+      capacity: "Number of ARR papers I can review",
+      hint: "Self-reported eligibility. This does not register you or assign reviews.",
+      criteria: "Check ARR eligibility criteria",
+    },
     onboardingChecklist: "Your setup checklist ({count} left)",
     onboardingChecklistDone: "Your setup checklist",
     visibility: {
@@ -2142,6 +2257,33 @@ export const en: TranslationMap = {
         approved: "Approved",
         rejected: "Rejected",
       },
+      suggestOpen: "Suggest a new badge",
+      suggestClose: "Cancel",
+      suggestTitle: "Suggest a new badge",
+      suggestHint:
+        "Is there something this lab does that no badge covers? Describe it and say why it is worth recognising. An admin decides whether it joins the list — nothing is added automatically.",
+      suggestName: "Badge name",
+      suggestNamePlaceholder: "Reviewer Rescue",
+      suggestCategory: "Category",
+      suggestCategoryPlaceholder: "Team Contributor",
+      suggestCategoryHint: "An existing group where it fits, or a new one.",
+      suggestDescription: "What it recognises",
+      suggestDescriptionPlaceholder:
+        "Turned around an emergency review for a lab paper in 48 hours.",
+      suggestDescriptionHint: "One line, as it would read on somebody's profile.",
+      suggestTier: "Tier (optional)",
+      suggestTierPlaceholder: "Level 1",
+      suggestTierHint: "Only for badges that come in levels, like Causality.",
+      suggestCriteria: "Criteria link (optional)",
+      suggestRationale: "Why the lab should have it",
+      suggestRationalePlaceholder:
+        "Three people did this for the ICML batch and none of it shows up anywhere.",
+      suggestButton: "Send suggestion",
+      suggestSubmitted: "Suggestion sent. An admin will decide on it.",
+      suggestFailed: "Couldn't send that suggestion.",
+      suggestionsTitle: "Badges you have suggested",
+      suggestionsEmpty: "You haven't suggested a badge yet.",
+      suggestionAdded: "Added to the badge list.",
     },
     completeness: {
       label: "Complete",
@@ -2175,6 +2317,7 @@ export const en: TranslationMap = {
       twitter: "X",
       github: "GitHub",
       scholar: "Scholar",
+      aclAnthology: "ACL Anthology",
       openreview: "OpenReview",
     },
     suggestions: {
@@ -2197,7 +2340,7 @@ export const en: TranslationMap = {
       name: "Name",
       preferredName: "Preferred name",
       email: "Email (@cs.toronto.edu)",
-      role: "Role",
+      role: "Career stage",
       calendarEmail: "Calendar email",
       affiliation: "Main affiliation",
       location: "Resident location",
@@ -2223,11 +2366,15 @@ export const en: TranslationMap = {
       linkedin: "LinkedIn",
       linkedinUrn: "LinkedIn member ID (URN)",
       twitter: "X / Twitter",
+      twitterFollowers: "X followers (self-reported)",
+      linkedinFollowers: "LinkedIn followers (self-reported)",
       github: "GitHub",
       scholar: "Google Scholar",
+      aclAnthology: "ACL Anthology profile",
       openreviewId: "OpenReview ID",
       researchTopics: "Research topics",
-      elevatorPitch: "Elevator pitch",
+      elevatorPitch:
+        "Elevator pitch that Zhijing can use when recommending you to other prof/recruiter",
       projects: "Projects",
       notes: "Notes",
     },
@@ -2269,22 +2416,27 @@ export const en: TranslationMap = {
       oneOnOneFolderUrl:
         "The Google Drive folder holding the notes from your one-on-ones. Open the folder in Drive and copy the address — it looks like drive.google.com/drive/folders/… A link to a single document is not it: the notes are one file per meeting, so the folder is the part that keeps being right. Only you and lab admins can see this field.",
       elevatorPitch:
-        "How you would explain your research to a smart person who does not work in it — the question you are chasing and why it matters, in a paragraph you could say out loud. The lab reuses it: introductions to visitors and collaborators, your entry on the shared directory, the blurb that goes out when a paper of yours lands. Research topics above are tags for filtering a roster; this is the part that makes somebody want to talk to you.",
+        "A short paragraph about your achievements that Zhijing can use when recommending you to professors or recruiters.",
     },
     // The shapes the service accepts, stated where the answer is typed. Each one mirrors a rule in
     // SOCIAL_URL_FIELDS or validateOpenReviewId; keep them in step if those change.
     hints: {
       calendarEmail: "The Google account your calendar invites should go to.",
-      correspondenceEmail: "Where the lab writes to you. Often not your @cs.toronto.edu address.",
+      correspondenceEmail:
+        "This is your official organizational email. Imagine we contact government sectors or external collaborators. Usually you need to be cc’ed via your institutional email.",
       github: "A username, link, or note about your GitHub account.",
       linkedin: "Your profile page: linkedin.com/in/username",
       twitter: "Your profile page: x.com/username",
+      followers:
+        "Enter your current follower count, or 0 to clear it. Media Impact uses your higher count and requires more than 1,000 followers.",
       scholar: "Your citations page, including the ?user= part of the address.",
       intakeFormUrl:
         "Paste the response link if you have it, or mark that you cannot find it below.",
+      // One line instead of two sentences, and it leans on the label above rather than repeating
+      // "application form response" a third time on the same row.
       intakeFormSearch:
-        "Please search your email for your application form response. It helps us understand your goals and support you in achieving them.",
-      intakeFormUnavailable: "I cannot find my form response",
+        "Search your email for your form response — it helps us understand your goals and support you in achieving them.",
+      intakeFormUnavailable: "I can't find it",
       oneOnOneFolderUrl:
         "The Google Drive folder your 1:1 notes live in — a folder link, not a document.",
       openreviewId: "The id in your OpenReview profile address, like ~Zhijing_Jin1",
@@ -2296,7 +2448,7 @@ export const en: TranslationMap = {
       offboardingMonth:
         "The year and month you plan on leaving Jinesis for a new job or stage, like 2027-06. An estimate is fine — it is not a commitment.",
       elevatorPitch:
-        "One paragraph, in your own words — what you work on and why it is worth doing.",
+        "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
       merchRequests:
         "What you would like from the next lab merch order — item, size, quantity. Leave it blank if you would rather not have anything.",
     },
@@ -2469,7 +2621,7 @@ export const en: TranslationMap = {
       signup: {
         name: "Name",
         namePlaceholder: "Your full name",
-        role: "Role",
+        role: "Career stage",
         rolePlaceholder: "e.g. PhD student (optional)",
         affiliation: "Affiliation",
         affiliationPlaceholder: "Lab, department, or organization (optional)",

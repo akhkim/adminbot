@@ -107,14 +107,14 @@ lab-sharing-invites {
 }
 
 .lab-sharing-page .lab-sharing-directory .btn.primary {
-  border-color: #45454d;
-  background: #2e2e34;
-  color: #e4e4e7;
+  border-color: var(--border-strong);
+  background: var(--secondary);
+  color: var(--text);
 }
 
 .lab-sharing-page .lab-sharing-directory .btn.primary:hover {
-  border-color: #505059;
-  background: #3a3a42;
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
 }
 
 .lab-sharing-page .lab-sharing-directory .btn:focus-visible,

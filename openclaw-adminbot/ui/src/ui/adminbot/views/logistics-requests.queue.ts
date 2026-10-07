@@ -1,23 +1,26 @@
 // The admin's queue, as a spreadsheet.
 //
 // A dot-suffix sibling of logistics-requests.ts, which owns the member's own list and the detail
-// card. This is the other audience: somebody working through everyone's requests, who wants every
-// row's facts and both of its actions on one line rather than four clicks deep. Everything an admin
-// does to a signature request is here -- read the context, download what needs signing, upload what
-// they signed -- because opening a card to do each of them is what made the old queue a list nobody
-// worked from.
+// card. The queue keeps deadlines and actions on one line; documents and context live in the
+// detail card, opened from the member's name.
 //
 // Read-only about the member's own words: an admin cannot edit what somebody asked for. The two
 // writes are returning the signed file and answering, and both belong to the lab.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
-import { icons } from "../../icons.ts";
-import type { LogisticsRequest, LogisticsRequestStatus } from "../auth/session.ts";
-import { formatFileSize, isSettledRequest } from "../data/logistics-requests.ts";
+import type { LogisticsRequest, LogisticsRequestStatus } from "../api/logistics.ts";
+import {
+  logisticsDeadlineText,
+  selectLogisticsQueue,
+  type LogisticsQueueOptions,
+} from "../data/logistics-queue.ts";
+import { isSettledRequest } from "../data/logistics-requests.ts";
 import { logisticsStatusLabel } from "./logistics-status.ts";
 
 export type AdminBotLogisticsQueueProps = {
   requests: LogisticsRequest[];
+  options: LogisticsQueueOptions;
+  onOptionsChange: (patch: Partial<LogisticsQueueOptions>) => void;
   loading: boolean;
   error: string | null;
   /** Outstanding only, or everything the lab has ever been sent. */
@@ -25,20 +28,11 @@ export type AdminBotLogisticsQueueProps = {
   onShowSettledChange: (showSettled: boolean) => void;
   /** The request whose signed document is uploading, so its row can say so. */
   signingId: string | null;
-  /** "<requestId>:<fileName>" while that document is being fetched. */
-  downloadingId: string | null;
-  onDownload: (requestId: string, fileName: string) => void;
   onSendSigned: (requestId: string, files: File[]) => void;
   signedNote: string;
   onSignedNoteChange: (note: string) => void;
   onOpenRequest: (requestId: string) => void;
   onSetStatus: (requestId: string, status: LogisticsRequestStatus) => void;
-};
-
-const KIND_LABEL_KEY: Record<LogisticsRequest["kind"], string> = {
-  document_signature: "logistics.templates.documentSignature",
-  recommendation_letters: "logistics.templates.recommendationLetters",
-  book_meeting: "logistics.templates.bookMeeting",
 };
 
 function formatInstant(instant: string | undefined): string {
@@ -49,57 +43,6 @@ function formatInstant(instant: string | undefined): string {
   return Number.isNaN(parsed.getTime())
     ? instant
     : parsed.toLocaleString([], { dateStyle: "short", timeStyle: "short" });
-}
-
-function formatDay(instant: string): string {
-  const parsed = new Date(instant);
-  return Number.isNaN(parsed.getTime())
-    ? instant
-    : parsed.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
-}
-
-/**
- * The documents on a row, each one a download.
- *
- * A button rather than a link, because the queue deliberately holds no file bytes: the list read
- * carries names and sizes so that drawing a queue of twenty requests is not twenty PDFs down the
- * wire. Pressing one fetches that request and hands the file to the browser. A settled request has
- * had its bytes dropped by the service, so its documents are named but no longer offered.
- */
-function renderDocumentCell(props: AdminBotLogisticsQueueProps, request: LogisticsRequest) {
-  const files = request.documents ?? [];
-  if (!files.length) {
-    return html`<span class="muted">—</span>`;
-  }
-  const settled = isSettledRequest(request);
-  return html`
-    <ul class="logistics-queue__files">
-      ${files.map((file) => {
-        const busy = props.downloadingId === `${request.id}:${file.name}`;
-        return html`
-          <li>
-            ${settled
-              ? html`<span class="logistics-queue__file muted" title=${t("logistics.queue.cleared")}
-                  >${file.name}</span
-                >`
-              : html`<button
-                  class="logistics-queue__file"
-                  type="button"
-                  ?disabled=${busy}
-                  data-testid="logistics-queue-download"
-                  title=${t("logistics.queue.download", { name: file.name })}
-                  @click=${() => props.onDownload(request.id, file.name)}
-                >
-                  <span aria-hidden="true">${icons.download}</span>${file.name}
-                </button>`}
-            ${file.size > 0
-              ? html`<span class="logistics-queue__size ab-num">${formatFileSize(file.size)}</span>`
-              : nothing}
-          </li>
-        `;
-      })}
-    </ul>
-  `;
 }
 
 /**
@@ -183,6 +126,7 @@ function renderStatusCell(props: AdminBotLogisticsQueueProps, request: Logistics
 }
 
 function renderRow(props: AdminBotLogisticsQueueProps, request: LogisticsRequest) {
+  const deadline = logisticsDeadlineText(request);
   return html`
     <tr class="logistics-queue__row" data-status=${request.status}>
       <td class="logistics-queue__cell ab-num">${formatInstant(request.submitted_at)}</td>
@@ -195,16 +139,9 @@ function renderRow(props: AdminBotLogisticsQueueProps, request: LogisticsRequest
           ${request.member_name}
         </button>
       </td>
-      <td class="logistics-queue__cell">${t(KIND_LABEL_KEY[request.kind])}</td>
-      <td class="logistics-queue__cell logistics-queue__cell--documents">
-        ${renderDocumentCell(props, request)}
-      </td>
-      <td class="logistics-queue__cell logistics-queue__cell--context">
-        ${request.description || html`<span class="muted">—</span>`}
-      </td>
       <td class="logistics-queue__cell ab-num">
-        ${request.deadline_at
-          ? formatDay(request.deadline_at)
+        ${deadline
+          ? deadline
           : html`<span class="muted">${t("logistics.requests.noDeadline")}</span>`}
       </td>
       <td class="logistics-queue__cell">${renderStatusCell(props, request)}</td>
@@ -215,21 +152,72 @@ function renderRow(props: AdminBotLogisticsQueueProps, request: LogisticsRequest
   `;
 }
 
-const COLUMN_KEYS = [
-  "logistics.queue.submitted",
-  "logistics.requests.user",
-  "logistics.requests.type",
-  "logistics.requests.documents",
-  "logistics.queue.context",
-  "logistics.requests.deadline",
-  "logistics.requests.statusColumn",
-  "logistics.queue.signed",
-];
+const COLUMNS = [
+  { key: "logistics.queue.submitted", sort: "submitted" },
+  { key: "logistics.requests.user", sort: "user" },
+  { key: "logistics.requests.earliestDeadline", sort: "deadline" },
+  { key: "logistics.requests.statusColumn", sort: "status" },
+  { key: "logistics.queue.signed", sort: null },
+] as const;
+
+function renderFilters(props: AdminBotLogisticsQueueProps) {
+  return html`<div class="logistics-queue__filters">
+    <label class="adminbot-form adminbot-form__field">
+      <span>${t("common.search")}</span>
+      <input
+        type="search"
+        .value=${props.options.search}
+        placeholder=${t("logistics.queue.searchPlaceholder")}
+        @input=${(event: Event) =>
+          props.onOptionsChange({ search: (event.currentTarget as HTMLInputElement).value })}
+      />
+    </label>
+    <label class="adminbot-form adminbot-form__field">
+      <span>${t("logistics.requests.type")}</span>
+      <select
+        aria-label=${t("logistics.requests.type")}
+        .value=${props.options.kind}
+        @change=${(event: Event) =>
+          props.onOptionsChange({
+            kind: (event.currentTarget as HTMLSelectElement).value as LogisticsQueueOptions["kind"],
+          })}
+      >
+        <option value="all">${t("logistics.queue.allTypes")}</option>
+        <option value="document_signature">${t("logistics.templates.documentSignature")}</option>
+        <option value="recommendation_letters">
+          ${t("logistics.templates.recommendationLetters")}
+        </option>
+        <option value="book_meeting">${t("logistics.templates.bookMeeting")}</option>
+      </select>
+    </label>
+    <label class="adminbot-form adminbot-form__field">
+      <span>${t("logistics.requests.statusColumn")}</span>
+      <select
+        aria-label=${t("logistics.requests.statusColumn")}
+        .value=${props.options.status}
+        @change=${(event: Event) =>
+          props.onOptionsChange({
+            status: (event.currentTarget as HTMLSelectElement)
+              .value as LogisticsQueueOptions["status"],
+          })}
+      >
+        <option value="all">${t("logistics.queue.allStatuses")}</option>
+        <option value="submitted">${t("logistics.queue.awaitingAction")}</option>
+        <option value="in_progress">${t("logistics.requests.status.inProgress")}</option>
+        <option value="completed">${t("logistics.requests.status.completed")}</option>
+        <option value="declined">${t("logistics.requests.status.declined")}</option>
+        <option value="withdrawn">${t("logistics.requests.status.withdrawn")}</option>
+      </select>
+    </label>
+  </div>`;
+}
 
 export function renderAdminBotLogisticsQueue(props: AdminBotLogisticsQueueProps) {
-  const rows = props.showSettled
-    ? props.requests
-    : props.requests.filter((request) => !isSettledRequest(request));
+  const rows = selectLogisticsQueue(props.requests, props.options, props.showSettled);
+  const filtered =
+    Boolean(props.options.search.trim()) ||
+    props.options.kind !== "all" ||
+    props.options.status !== "all";
   return html`
     <div
       class="card adminbot-card adminbot-card--wide logistics-queue"
@@ -238,7 +226,7 @@ export function renderAdminBotLogisticsQueue(props: AdminBotLogisticsQueueProps)
       <div class="logistics-queue__heading">
         <div>
           <div class="card-title">${t("logistics.queue.title")}</div>
-          <div class="card-sub">${t("logistics.queue.sub")}</div>
+          <div class="card-sub">${t("logistics.queue.instructions")}</div>
         </div>
         <label class="logistics-queue__toggle">
           <input
@@ -255,6 +243,7 @@ export function renderAdminBotLogisticsQueue(props: AdminBotLogisticsQueueProps)
         </label>
       </div>
 
+      ${renderFilters(props)}
       <label class="adminbot-form adminbot-form__field logistics-queue__note">
         <span>${t("logistics.queue.note")}</span>
         <input
@@ -281,10 +270,43 @@ export function renderAdminBotLogisticsQueue(props: AdminBotLogisticsQueueProps)
                 <table class="logistics-queue__table">
                   <thead>
                     <tr>
-                      ${COLUMN_KEYS.map(
-                        (key) => html`
-                          <th scope="col" class="logistics-queue__head">${t(key)}</th>
-                        `,
+                      ${COLUMNS.map(
+                        ({ key, sort }) => html` <th
+                          scope="col"
+                          class="logistics-queue__head"
+                          aria-sort=${sort && props.options.sortBy === sort
+                            ? props.options.sortDirection === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : sort
+                              ? "none"
+                              : nothing}
+                        >
+                          ${sort
+                            ? html`<button
+                                type="button"
+                                class="logistics-queue__sort"
+                                aria-label=${t(key)}
+                                @click=${() =>
+                                  props.onOptionsChange({
+                                    sortBy: sort,
+                                    sortDirection:
+                                      props.options.sortBy === sort &&
+                                      props.options.sortDirection === "asc"
+                                        ? "desc"
+                                        : "asc",
+                                  })}
+                              >
+                                ${t(key)}<span aria-hidden="true"
+                                  >${props.options.sortBy === sort
+                                    ? props.options.sortDirection === "asc"
+                                      ? " ↑"
+                                      : " ↓"
+                                    : " ↕"}</span
+                                >
+                              </button>`
+                            : t(key)}
+                        </th>`,
                       )}
                     </tr>
                   </thead>
@@ -295,9 +317,11 @@ export function renderAdminBotLogisticsQueue(props: AdminBotLogisticsQueueProps)
               </div>
             `
           : html`<p class="logistics-requests__empty">
-              ${props.showSettled
-                ? t("logistics.requests.empty")
-                : t("logistics.queue.nothingOutstanding")}
+              ${filtered
+                ? t("logistics.queue.noMatches")
+                : props.showSettled
+                  ? t("logistics.requests.empty")
+                  : t("logistics.queue.nothingOutstanding")}
             </p>`}
     </div>
   `;

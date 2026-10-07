@@ -8,6 +8,10 @@
   gap: var(--space-4);
 }
 
+.meetings__more {
+  align-self: flex-start;
+}
+
 /* Link row: the recording button, a Drive copy when there is one, and the passcode beside them.
    Wrapping rather than truncating, because a passcode that is cut off is worse than a second line. */
 .meetings__links {

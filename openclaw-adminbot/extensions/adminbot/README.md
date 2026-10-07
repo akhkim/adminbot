@@ -113,7 +113,7 @@ under `workflows/`, one directory per domain feature.
 | `src/privacy/`           | `packages/privacy/`     | The redaction broker (`broker.ts`) and sensitive-term definitions (`sensitive-info-doc.ts`).             |
 | `src/inference/`         | (v1's own)              | The shared admission gate in front of the local model: capacity, the wait line, health, escalation.      |
 | `src/tasks/`             | (v1's own)              | The runner that owns a member's request across its stages -- checkpoints, ownership, results, recovery.  |
-| `src/api/`               | `apps/api/`             | `server.ts` — the loopback service, routes and auth gates. `client.ts` — the plugin-side client.         |
+| `src/api/`               | `apps/api/`             | `routes/<zone>.ts` — one guarded route table per zone. `server.ts` — wiring and dispatch. `client.ts`.   |
 | `src/adapters/openclaw/` | `adapters/openclaw/`    | The `adminbot_*` tool definitions the agent sees; thin wrappers over `api/client.ts`.                    |
 | `src/connectors/`        | `connectors/`           | Outbound vendor adapters; `composite.ts` dispatches an approved proposal, unhandled types fail closed.   |
 | `src/workflows/`         | `workflows/`            | One directory per domain feature. Proposals and read models only — never a connector call.               |
@@ -146,9 +146,9 @@ factory surface.
   Overleaf edits, social posts.
 - **`reimbursements/`** — reimbursement intake and workflow.
 - **`calendar/`** — the calendar source and read model behind holds and invites.
-- **`deadlines/`** — the deadline board and venue read model. `board.ts` and
-  `generated/dataset.ts` are **generated from `content/deadlines/`** — do not
-  hand-edit them; regenerate with `scripts/adminbot-deadline-*.py`.
+- **`deadlines/`** — the venue read model and deadline workflows. `generated/dataset.ts`
+  is generated from `content/deadlines` by `scripts/adminbot-deadline-collect.py`.
+  The board lives in the Control UI.
 - **`onboarding/`** — guide/invite/workspace sends and the tier email copy
   (`emails.ts`).
 
@@ -159,7 +159,7 @@ between.
 
 ### `content/` (reviewed assets, not service source)
 
-| Directory                    | Role                                                                                                                                                                                                            | Pairs with                  |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| `content/deadlines/`         | The canonical deadline dataset and board assets (`venues.json`, `dm-templates.json`, `deadlines-board.html`), refreshed by `scripts/adminbot-deadline-*.py`. Read by Python and shell as well as by TypeScript. | `src/workflows/deadlines/`  |
-| `content/onboarding-emails/` | Review notes only. The copy itself was folded into `src/workflows/onboarding/emails.ts` so a string ships with the service instead of being read off disk; the README keeps the decisions behind the copy.      | `src/workflows/onboarding/` |
+| Directory                    | Role                                                                                                                                                                                                       | Pairs with                  |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `content/deadlines/`         | The canonical deadline dataset and reminder templates (`deadlines.json`, `dm-templates.json`), refreshed by `scripts/adminbot-deadline-*.py`. Read by Python and shell as well as by TypeScript.           | `src/workflows/deadlines/`  |
+| `content/onboarding-emails/` | Review notes only. The copy itself was folded into `src/workflows/onboarding/emails.ts` so a string ships with the service instead of being read off disk; the README keeps the decisions behind the copy. | `src/workflows/onboarding/` |

@@ -3,14 +3,13 @@
 // Two calls and no state of its own beyond the banner: the answer goes through the service, which
 // writes the profile through the ordinary self-edit path, so the roster reloads afterwards rather
 // than being patched locally.
-import {
-  answerLocationPrompt,
-  fetchLocationDrifts,
-  fetchLocationPrompt,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
-} from "../auth/session.ts";
+import { answerLocationPrompt, fetchLocationDrifts, fetchLocationPrompt } from "../api/profile.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { loadAdminBot, type AdminBotHost } from "./admin.ts";
+
+function sameSession(token: string): boolean {
+  return loadStoredMemberSession()?.sessionToken === token;
+}
 
 export async function loadAdminBotLocationPrompt(host: AdminBotHost): Promise<void> {
   const stored = loadStoredMemberSession();
@@ -19,6 +18,9 @@ export async function loadAdminBotLocationPrompt(host: AdminBotHost): Promise<vo
   }
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   const result = await fetchLocationPrompt(stored.sessionToken, baseUrl);
+  if (!sameSession(stored.sessionToken)) {
+    return;
+  }
   // Deliberately silent on failure. This banner is an unprompted courtesy; an error notice for a
   // question the member never asked would be worse than not asking it.
   host.adminBotLocationDrift = result.ok ? result.value : null;
@@ -37,6 +39,9 @@ export async function answerAdminBotLocationPrompt(
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   try {
     const result = await answerLocationPrompt(answer, stored.sessionToken, baseUrl);
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotLocationError = result.message ?? "Could not save that. Try again.";
       return;
@@ -48,7 +53,9 @@ export async function answerAdminBotLocationPrompt(
       await loadAdminBot(host, "general");
     }
   } finally {
-    host.adminBotLocationSaving = false;
+    if (sameSession(stored.sessionToken)) {
+      host.adminBotLocationSaving = false;
+    }
   }
 }
 
@@ -67,5 +74,8 @@ export async function loadAdminBotLocationDrifts(host: AdminBotHost): Promise<vo
     stored.sessionToken,
     resolveAdminBotBaseUrl(host.settings),
   );
+  if (!sameSession(stored.sessionToken)) {
+    return;
+  }
   host.adminBotLocationDrifts = result.ok ? result.value : [];
 }

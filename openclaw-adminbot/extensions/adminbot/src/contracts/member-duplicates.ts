@@ -13,7 +13,7 @@
 //
 // Nothing here writes. `planMemberMerge` returns the patch and the conflicts; the service applies
 // it and repoints the rows that name the record being retired.
-import { isSamePerson, normalizePersonName } from "./person-names.js";
+import { isSamePerson, normalizePersonName, toFirstLast } from "./person-names.js";
 
 /** Why two records look like one person. Shown to the admin, never acted on automatically. */
 export type MemberDuplicateReason =
@@ -101,19 +101,158 @@ export function memberDuplicateReasons(
   return reasons;
 }
 
-/**
- * Every pair on the roster that looks like one person, most confident first.
- *
- * O(n²) over the member list, which is fine at the size a research lab actually is (~200) and is
- * why this is computed on read rather than stored: a duplicate is created by an import, and an
- * index that has to be rebuilt after every import is a second thing to forget.
- */
+type NameIndex = {
+  minLength: number;
+  byLength: Map<number, number[]>;
+  children: Map<string, NameIndex>;
+};
+
+function nameIndex(): NameIndex {
+  return { minLength: Infinity, byLength: new Map(), children: new Map() };
+}
+
+/** Every pair on the roster that looks like one person, most confident first. */
 export function findDuplicateMembers<T extends DuplicateCandidate>(
   members: readonly T[],
 ): MemberDuplicatePair<T>[] {
-  const pairs: MemberDuplicatePair<T>[] = [];
+  // Only pairs sharing an account fact or a possible name shape need the exact rules below.
+  // ponytail: Returning every pair is quadratic when most names collide; page candidates in the
+  // service if a real roster reaches that ceiling.
+  const candidates = new Map<number, Set<number>>();
+  const addPair = (a: number, b: number) => {
+    if (a === b) {
+      return;
+    }
+    const [left, right] = a < b ? [a, b] : [b, a];
+    const row = candidates.get(left) ?? new Set<number>();
+    row.add(right);
+    candidates.set(left, row);
+  };
+  const addTo = (index: Map<string, number[]>, key: string, position: number) => {
+    const bucket = index.get(key) ?? [];
+    bucket.push(position);
+    index.set(key, bucket);
+  };
+  const addPrior = (index: Map<string, number[]>, key: string, position: number) => {
+    for (const previous of index.get(key) ?? []) {
+      addPair(previous, position);
+    }
+    addTo(index, key, position);
+  };
+  const byEmail = new Map<string, number[]>();
+  const bySlack = new Map<string, number[]>();
+  const byName = new Map<string, number[]>();
+  const byAuthorName = new Map<string, number[]>();
+  const byAuthorEnds = new Map<string, number[]>();
+  const byPlainAuthorEnds = new Map<string, number[]>();
+  const names: Array<{ tokens: string[]; surname: string }> = [];
+  const containingNames = new Map<string, NameIndex>();
+
   for (let i = 0; i < members.length; i += 1) {
-    for (let j = i + 1; j < members.length; j += 1) {
+    const member = members[i] as T;
+    for (const email of new Set(emails(member))) {
+      addPrior(byEmail, email, i);
+    }
+    const slack = member.slack_user_id?.trim();
+    if (slack) {
+      addPrior(bySlack, slack, i);
+    }
+    const name = member.name?.trim() ?? "";
+    const raw = normalizePersonName(name);
+    const tokens = raw.split(" ").filter(Boolean);
+    const surname = tokens.at(-1) ?? "";
+    names.push({ tokens, surname });
+    if (!name) {
+      continue;
+    }
+    addPrior(byName, raw, i);
+
+    // isSamePerson normalizes its first argument as an author ("Last, First" is reversed),
+    // but its second as a roster name. Preserve that directional rule by indexing earlier rows
+    // in the first-argument shape and looking up this row in the second-argument shape.
+    if (raw) {
+      for (const previous of byAuthorName.get(raw) ?? []) {
+        addPair(previous, i);
+      }
+    }
+    if (tokens.length >= 2) {
+      const ends = `${tokens[0]}\0${surname}`;
+      const index = tokens.length === 2 ? byAuthorEnds : byPlainAuthorEnds;
+      for (const previous of index.get(ends) ?? []) {
+        addPair(previous, i);
+      }
+    }
+    const author = normalizePersonName(toFirstLast(name));
+    if (author) {
+      addTo(byAuthorName, author, i);
+      const authorTokens = author.split(" ");
+      if (authorTokens.length >= 2) {
+        const ends = `${authorTokens[0]}\0${authorTokens.at(-1)}`;
+        addTo(byAuthorEnds, ends, i);
+        if (authorTokens.length === 2) {
+          addTo(byPlainAuthorEnds, ends, i);
+        }
+      }
+    }
+    if (tokens.length >= 2) {
+      let node = containingNames.get(surname);
+      if (!node) {
+        node = nameIndex();
+        containingNames.set(surname, node);
+      }
+      const otherTokens = [...new Set(tokens.filter((token) => token !== surname))].toSorted();
+      for (const token of otherTokens) {
+        node.minLength = Math.min(node.minLength, tokens.length);
+        let child = node.children.get(token);
+        if (!child) {
+          child = nameIndex();
+          node.children.set(token, child);
+        }
+        node = child;
+      }
+      node.minLength = Math.min(node.minLength, tokens.length);
+      const bucket = node.byLength.get(tokens.length) ?? [];
+      bucket.push(i);
+      node.byLength.set(tokens.length, bucket);
+    }
+  }
+
+  // nameContains is symmetric: a shorter token set must be contained in a longer one, with the
+  // same surname. The trie visits only token subsets that occur in the roster, not every pair of
+  // people who happens to share a common surname.
+  for (let i = 0; i < names.length; i += 1) {
+    const { tokens, surname } = names[i] as { tokens: string[]; surname: string };
+    if (tokens.length < 3) {
+      continue;
+    }
+    const root = containingNames.get(surname);
+    if (!root || root.minLength >= tokens.length) {
+      continue;
+    }
+    const otherTokens = [...new Set(tokens.filter((token) => token !== surname))].toSorted();
+    const visit = (node: NameIndex, start: number) => {
+      if (node.minLength >= tokens.length) {
+        return;
+      }
+      for (let length = 2; length < tokens.length; length += 1) {
+        for (const shorter of node.byLength.get(length) ?? []) {
+          addPair(i, shorter);
+        }
+      }
+      for (let at = start; at < otherTokens.length; at += 1) {
+        const child = node.children.get(otherTokens[at] as string);
+        if (child) {
+          visit(child, at + 1);
+        }
+      }
+    };
+    visit(root, 0);
+  }
+
+  const high: MemberDuplicatePair<T>[] = [];
+  const likely: MemberDuplicatePair<T>[] = [];
+  for (let i = 0; i < members.length; i += 1) {
+    for (const j of [...(candidates.get(i) ?? [])].toSorted((a, b) => a - b)) {
       const left = members[i] as T;
       const right = members[j] as T;
       const reasons = memberDuplicateReasons(left, right);
@@ -124,12 +263,10 @@ export function findDuplicateMembers<T extends DuplicateCandidate>(
         reasons.includes("same_email") || reasons.includes("same_slack_user_id")
           ? "high"
           : "likely";
-      pairs.push({ left, right, reasons, confidence });
+      (confidence === "high" ? high : likely).push({ left, right, reasons, confidence });
     }
   }
-  return pairs.sort((a, b) =>
-    a.confidence === b.confidence ? 0 : a.confidence === "high" ? -1 : 1,
-  );
+  return [...high, ...likely];
 }
 
 /** A field the merge would have had to choose between, so the admin can see what it kept. */

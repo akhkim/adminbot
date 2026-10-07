@@ -92,13 +92,13 @@ async function memberSession(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ member_id: memberId, email, password: "correcthorse" }),
   });
-  const registration = mock.auth
-    .listRegistrations("pending")
-    .find((entry) => entry.member_id === memberId);
+  const registration = (await mock.auth.listRegistrations("pending")).find(
+    (entry) => entry.member_id === memberId,
+  );
   if (!registration) {
     throw new Error(`no registration for ${memberId}`);
   }
-  const approved = mock.auth.approveRegistration(registration.id, "test-admin");
+  const approved = await mock.auth.approveRegistration(registration.id, "test-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }

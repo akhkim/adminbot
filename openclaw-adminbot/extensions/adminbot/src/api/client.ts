@@ -275,7 +275,8 @@ export class AdminBotClient {
     if (
       (["/privacy/tasks", "/guidebook/ask", "/reimbursements/converse"].includes(path) ||
         path.startsWith("/tasks/")) &&
-      [200, 202, 409, 410, 502].includes(response.status)
+      // A failed task is 502 in the service but leaves as 500 (wireStatus in server.http.ts).
+      [200, 202, 409, 410, 500, 502].includes(response.status)
     ) {
       const taskResult = describeTaskResponse(parsed);
       if (taskResult) {

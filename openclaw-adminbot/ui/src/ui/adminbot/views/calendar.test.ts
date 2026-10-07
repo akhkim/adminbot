@@ -30,6 +30,7 @@ function paper(overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecor
 
 function state(overrides: Partial<AppViewState> = {}): AppViewState {
   return {
+    adminBotRosterLoadedAt: Date.now(),
     adminBotData: {
       members: [member()],
       papers: [paper()],
@@ -114,6 +115,15 @@ describe("the draft panel", () => {
   });
 });
 
+it("shows the calendar while the roster loads, then enables audience planning", () => {
+  const pending = renderToDiv(state({ adminBotRosterLoadedAt: null }));
+  expect(pending.querySelector('[data-testid="calendar-grid"]')).toBeTruthy();
+  expect(pending.querySelector('[data-testid="calendar-invite-panel"]')).toBeNull();
+
+  const ready = renderToDiv(state());
+  expect(ready.querySelector('[data-testid="calendar-invite-panel"]')).toBeTruthy();
+});
+
 describe("the invite panel", () => {
   // Nobody is invited by default: an empty filter set is a forgotten filter, not "everyone".
   it("selects nobody until a filter is set", () => {
@@ -196,6 +206,7 @@ describe("the invite panel", () => {
   it("names the roster members the filters take off the event", () => {
     const container = renderToDiv(
       state({
+        calendarInviteMode: "limit",
         calendarAudience: { homeCity: "Toronto" },
         calendarSelectedEventId: "evt-1",
         adminBotData: {
@@ -246,11 +257,81 @@ describe("the invite panel", () => {
     ).toContain("−1");
   });
 
+  describe("add invitees versus limit to this list", () => {
+    const view = (extra: Partial<AppViewState> = {}) =>
+      state({
+        calendarAudience: { homeCity: "Toronto" },
+        calendarSelectedEventId: "evt-1",
+        adminBotData: {
+          members: [
+            member({ id: "here", name: "Here", email: "here@cs.toronto.edu", location: "Toronto" }),
+            member({ id: "away", name: "Away", email: "away@cs.toronto.edu", location: "Berlin" }),
+          ],
+          papers: [],
+          proposals: [],
+          executions: [],
+          nudges: [],
+          settings: null,
+          sensitiveInfo: null,
+          loadedAt: Date.now(),
+        },
+        calendarEvents: [
+          {
+            id: "evt-1",
+            summary: "Lab retreat",
+            start: "2026-09-01T13:00:00-04:00",
+            attendees: ["away@cs.toronto.edu", "speaker@elsewhere.org"],
+          },
+        ],
+        ...extra,
+      } as unknown as Partial<AppViewState>);
+
+    // Uninviting somebody has to be a choice the operator made, so an unset mode only adds.
+    it("only adds by default", () => {
+      const container = renderToDiv(view());
+      expect(
+        container.querySelector<HTMLInputElement>('[data-testid="calendar-invite-mode-add"]')
+          ?.checked,
+      ).toBe(true);
+      expect(container.querySelector('[data-testid="calendar-removals"]')).toBeNull();
+      expect(container.querySelector('[data-testid="calendar-kept-guests"]')).toBeNull();
+      const button = container.querySelector('[data-testid="calendar-send-invite"]');
+      expect(button?.textContent).toContain("Add invitees (+1)");
+      expect(button?.textContent).not.toContain("−");
+
+      const selection = calendarInviteSelection(view());
+      expect(selection.emails).toEqual(["here@cs.toronto.edu"]);
+      expect(selection.remove).toEqual([]);
+      expect(selection.reason).not.toContain("removed");
+    });
+
+    it("switches to limiting the guest list and disarms a pending confirm", () => {
+      const current = view({ calendarConfirming: "invite" } as Partial<AppViewState>);
+      const container = renderToDiv(current);
+      const limit = container.querySelector<HTMLInputElement>(
+        '[data-testid="calendar-invite-mode-limit"]',
+      );
+      limit!.checked = true;
+      limit!.dispatchEvent(new Event("change", { bubbles: true }));
+      expect(current.calendarInviteMode).toBe("limit");
+      expect(current.calendarConfirming).toBeNull();
+
+      const after = renderToDiv(current);
+      expect(after.querySelector('[data-testid="calendar-removals"]')?.textContent).toContain(
+        "Away",
+      );
+      expect(after.querySelector('[data-testid="calendar-send-invite"]')?.textContent).toContain(
+        "Sync guest list (+1 −1)",
+      );
+    });
+  });
+
   // Removing people is a real send even when nobody is joining, so the button cannot stay disabled
   // on an invite count of zero.
   it("enables the button for a send that only removes", () => {
     const container = renderToDiv(
       state({
+        calendarInviteMode: "limit",
         calendarAudience: { homeCity: "Toronto" },
         calendarSelectedEventId: "evt-1",
         adminBotData: {
@@ -869,6 +950,7 @@ describe("calendarInviteSelection", () => {
   it("carries the removals and the exact list the event is left with", () => {
     const selection = calendarInviteSelection(
       state({
+        calendarInviteMode: "limit",
         calendarAudience: { homeCity: "Toronto" },
         calendarSelectedEventId: "evt-1",
         adminBotData: {
@@ -1027,6 +1109,36 @@ describe("trips on the calendar", () => {
     timezone: "Europe/Berlin",
   };
 
+  it("waits for the full roster before showing travel markers", () => {
+    const partial = renderToDiv(
+      state({
+        calendarMonth: "2026-09-01",
+        adminBotRosterLoadedAt: null,
+        adminBotData: {
+          ...state().adminBotData,
+          members: [member({ trips: [berlin] })],
+        },
+      } as Partial<AppViewState>),
+    );
+    expect(partial.querySelector('[data-testid="calendar-trips-2026-09-15"]')).toBeNull();
+
+    const ready = renderToDiv(
+      state({
+        calendarMonth: "2026-09-01",
+        adminBotData: {
+          ...state().adminBotData,
+          members: [
+            member({ trips: [berlin] }),
+            member({ id: "m2", name: "Mei Chen", trips: [berlin] }),
+          ],
+        },
+      } as Partial<AppViewState>),
+    );
+    expect(ready.querySelector('[data-testid="calendar-trips-2026-09-15"]')?.textContent).toContain(
+      "2 away",
+    );
+  });
+
   it("marks the days a member is away, naming them when it is only one", () => {
     const container = renderToDiv(
       state({
@@ -1173,6 +1285,7 @@ describe("the member-type filter on the invite panel", () => {
   it("takes the excluded types off the event and holds back the undecided", () => {
     const container = renderToDiv(
       panel({
+        calendarInviteMode: "limit",
         calendarAudience: { memberTypes: ["full"] },
       } as Partial<AppViewState>),
     );
@@ -1191,6 +1304,7 @@ describe("the member-type filter on the invite panel", () => {
   it("says the audience was chosen on member type in the reason it records", () => {
     const selection = calendarInviteSelection(
       panel({
+        calendarInviteMode: "limit",
         calendarAudience: { memberTypes: ["full", "coauthor-major"] },
       } as Partial<AppViewState>),
     );

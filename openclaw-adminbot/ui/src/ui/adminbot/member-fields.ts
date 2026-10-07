@@ -36,6 +36,7 @@ export type ProfileFieldType =
   // has to learn a second shape.
   | "multi_dropdown"
   | "date"
+  | "month"
   | "link"
   | "numeric"
   | "list"
@@ -90,6 +91,7 @@ export type ProfileField = {
   // Text-only ceiling, for the fields the service caps tighter than the generic paragraph limit.
   // Same reason as min/max: the rule belongs where the answer is typed, not in a rejected save.
   maxLength?: number;
+  pattern?: string;
   group: ProfileFieldGroup;
 };
 
@@ -100,8 +102,8 @@ export type ProfileField = {
 // this page called optional, and this page marked eight the reminder never mentioned.
 //
 // Everything not on that list is optional, and being optional keeps a field out of the blanks
-// count, the fill-in prompt and the "profile complete" badge. Not everyone has a Twitter, and a
-// checklist that can never reach zero stops being a checklist -- it just nags.
+// count, the fill-in prompt and the "profile complete" badge. Intake responses also accept the
+// explicit unavailable answer, which the UI and reminder treat as completion.
 export const MANDATORY_FIELD_KEYS = new Set<string>(adminBotMandatoryProfileFields);
 
 /** Every field not on the mandatory list, which is what keeps the blanks count honest. */
@@ -148,7 +150,11 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     labelKey: "profile.fields.role",
     example: adminBotMemberRoles[0] ?? "",
     type: "multi_dropdown",
-    options: adminBotMemberRoles,
+    // These describe appointments or lab relationships, rather than career stage. Existing
+    // values remain editable through multiSelectOptionsFor's legacy-value preservation.
+    options: adminBotMemberRoles.filter(
+      (role) => !["External Collaborator", "Research Assistant", "Research Intern"].includes(role),
+    ),
     group: "identity",
   },
   {
@@ -198,13 +204,9 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     group: "research",
   },
   {
-    // The paragraph the topic tags above cannot be: what this person works on, in their own words.
-    // Optional, and deliberately so -- a required pitch is a form asking somebody to be
-    // interesting on demand, and what comes back is a restatement of the tags.
     key: "elevator_pitch",
     labelKey: "profile.fields.elevatorPitch",
-    example:
-      "I work out when a language model's answer is actually caused by the evidence it was given, and when it just looks that way.",
+    example: "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
     type: "paragraph",
     hintKey: "profile.hints.elevatorPitch",
     // The service's own ceiling (validateLabMember in extensions/adminbot/src/kernel/service.ts).
@@ -260,6 +262,8 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     // event on the shared lab calendar. A field whose whole purpose is to publish something should
     // say so where it is typed, not in a changelog.
     key: "birthday",
+    pattern:
+      "((01|03|05|07|08|10|12)-(0[1-9]|[12][0-9]|3[01])|(04|06|09|11)-(0[1-9]|[12][0-9]|30)|02-(0[1-9]|1[0-9]|2[0-9]))",
     labelKey: "profile.fields.birthday",
     example: "03-14",
     type: "short_text",
@@ -268,21 +272,22 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
   },
   {
     key: "joined_month",
+    pattern: "[0-9]{4}-(0[1-9]|1[0-2])",
     labelKey: "profile.fields.joinedMonth",
     example: "2026-03",
-    type: "short_text",
+    type: "month",
     hintKey: "profile.hints.month",
     group: "work",
   },
   {
-    // Empty for every row on the sheet today; it is the column alumni will eventually be aged out
-    // by, which is why it is off the mandatory list -- and why it asks for a *plan* rather than a
-    // fact. Nobody can state the month they left before they leave, so the question people can
-    // actually answer is when they expect to move on.
+    // Ask for an expected offboarding month, rather than claiming the member has already left.
+    // Optional: most members cannot name the month they will move on, and a required box would
+    // only collect guesses.
     key: "graduated_month",
+    pattern: "[0-9]{4}-(0[1-9]|1[0-2])",
     labelKey: "profile.fields.graduatedMonth",
     example: "2027-06",
-    type: "short_text",
+    type: "month",
     hintKey: "profile.hints.offboardingMonth",
     group: "work",
   },
@@ -351,9 +356,9 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
   {
     // Where this member's one-on-one notes live. A Drive folder and only a Drive folder: the
     // service checks the /drive/folders/ shape (SOCIAL_URL_FIELDS in kernel/service.ts), so the
-    // hint says so before anyone pastes the Doc from last week's meeting instead. Optional --
-    // not everybody has one-on-ones, and a folder that has not been made yet is a blank that is
-    // simply true.
+    // hint says so before anyone pastes the Doc from last week's meeting instead. Required (see
+    // adminBotMandatoryProfileFields): a folder that does not exist yet is a set of meeting notes
+    // with nowhere to go, so "not made yet" is the blank the mark is there to close.
     key: "one_on_one_folder_url",
     labelKey: "profile.fields.oneOnOneFolderUrl",
     example: "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz",
@@ -379,16 +384,14 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
   },
   {
     // LinkedIn publishes no mapping from a vanity URL to a URN, so this value cannot be derived
-    // from anything else on the page. The lab looks it up and fills it in; a member reading a
-    // string of digits off a collector site was a step nobody could be expected to get right.
+    // from anything else on the page. It has to be looked up -- but the member can look it up as
+    // easily as an admin can, and the field's help text points at the collector tool that reads it
+    // off their own account, so it is an ordinary required answer rather than an admin-owned one.
+    // See adminBotAdminOwnedProfileFields, which it used to be the sole entry on.
     key: "linkedin_urn",
     labelKey: "profile.fields.linkedinUrn",
     example: "ACoAAB1234567",
     type: "short_text",
-    // Read-only for the member: they see whether it is on file and, if not, follow the collector
-    // link that produces it. Typing a 13-digit id off another site was the step that never worked.
-    // The flag itself is stamped on below from adminBotAdminOwnedProfileFields, so this page and
-    // the service's reminder cannot disagree about who owes the answer.
     group: "links",
   },
   {
@@ -408,9 +411,36 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     group: "links",
   },
   {
+    key: "twitter_followers",
+    labelKey: "profile.fields.twitterFollowers",
+    example: "10000",
+    type: "numeric",
+    hintKey: "profile.hints.followers",
+    min: 0,
+    max: Number.MAX_SAFE_INTEGER,
+    group: "links",
+  },
+  {
+    key: "linkedin_followers",
+    labelKey: "profile.fields.linkedinFollowers",
+    example: "10000",
+    type: "numeric",
+    hintKey: "profile.hints.followers",
+    min: 0,
+    max: Number.MAX_SAFE_INTEGER,
+    group: "links",
+  },
+  {
     key: "personal_website",
     labelKey: "profile.fields.personalWebsite",
     example: "https://zhijing-jin.com",
+    type: "link",
+    group: "links",
+  },
+  {
+    key: "acl_anthology_url",
+    labelKey: "profile.fields.aclAnthology",
+    example: "https://aclanthology.org/people/jane-doe/",
     type: "link",
     group: "links",
   },
@@ -439,7 +469,7 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
 // list the service's reminder reads. Kept as a flag on the row rather than a lookup at each call
 // site because every consumer of this table already has the row in hand.
 export const PROFILE_FIELDS: ProfileField[] = PROFILE_FIELD_DEFINITIONS.map((field) =>
-  (adminBotAdminOwnedProfileFields as readonly string[]).includes(field.key)
+  adminBotAdminOwnedProfileFields.includes(field.key)
     ? { ...field, adminOnly: true as const }
     : field,
 );

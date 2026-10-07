@@ -8,12 +8,14 @@ import { html } from "lit";
 import { t } from "../../i18n/index.ts";
 import { resolveAdminBotBaseUrl } from "../adminbot/auth/session.ts";
 import {
-  generateGuestReimbursement,
   resetAdminBotReimbursement,
   setAdminBotReimbursementFunder,
+} from "../adminbot/controllers/admin.ts";
+import {
+  generateGuestReimbursement,
   sendGuestReimbursementMessage,
   type GuestReimbursementHost,
-} from "../adminbot/controllers/admin.ts";
+} from "../adminbot/controllers/reimbursements.ts";
 import { renderAdminBotReimbursements } from "../adminbot/views/reimbursements.ts";
 import type { AppViewState } from "../app-view-state.ts";
 import { normalizeBasePath } from "../navigation.ts";

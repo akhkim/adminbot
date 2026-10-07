@@ -31,6 +31,22 @@ export interface DeadlineProposalStore {
   decide(proposal: DeadlineProposal, decision: "published" | "rejected"): Promise<DeadlineProposal>;
 }
 
+class DeadlineServiceError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+function publishedItems(body: unknown): DeadlineVenue[] | undefined {
+  if (body && typeof body === "object" && "items" in body && Array.isArray(body.items)) {
+    return body.items as DeadlineVenue[];
+  }
+  return undefined;
+}
+
 type FetchLike = typeof fetch;
 const storesByBaseUrl = new Map<string, AdminBotDeadlineProposalStore>();
 
@@ -61,8 +77,22 @@ export class AdminBotDeadlineProposalStore implements DeadlineProposalStore {
   }
 
   async listPublished(): Promise<DeadlineVenue[]> {
-    const body = await this.request("/deadlines/venues.json", { method: "GET" });
-    return (body as { items?: DeadlineVenue[] }).items ?? [];
+    try {
+      const items = publishedItems(await this.request("/deadlines", { method: "GET" }));
+      if (items) {
+        return items;
+      }
+    } catch (error) {
+      if (!(error instanceof DeadlineServiceError) || error.status !== 404) {
+        throw error;
+      }
+    }
+    // Older deployments still serve HTML at /deadlines and JSON at this route.
+    const items = publishedItems(await this.request("/deadlines/venues.json", { method: "GET" }));
+    if (!items) {
+      throw new Error("Deadline service returned an invalid dataset.");
+    }
+    return items;
   }
 
   async submit(
@@ -139,7 +169,10 @@ export class AdminBotDeadlineProposalStore implements DeadlineProposalStore {
       error?: { message?: string };
     } | null;
     if (!response.ok) {
-      throw new Error(body?.error?.message ?? `Deadline service returned ${response.status}.`);
+      throw new DeadlineServiceError(
+        response.status,
+        body?.error?.message ?? `Deadline service returned ${response.status}.`,
+      );
     }
     return body;
   }

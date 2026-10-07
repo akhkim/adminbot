@@ -5,12 +5,8 @@
 // state here that could accumulate other people's movements.
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
-import {
-  fetchMemberTravelHistory,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
-  type TravelHistoryRow,
-} from "../auth/session.ts";
+import { fetchMemberTravelHistory, type TravelHistoryRow } from "../api/members.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 
 /** Which slice of the log to ask for. Named windows rather than a date picker: see below. */
 export type TravelRange = "12m" | "24m" | "all";
@@ -84,17 +80,24 @@ export async function loadAdminBotTravel(
     patch({ history: null, loading: false, error: t("adminbotTravel.error.signIn") });
     return;
   }
+  const memberId = host.memberId;
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   // The old history stays on screen while a wider range loads. Blanking it would flash the page
   // empty on every range change, which reads as "no travel found" for as long as the request takes.
   patch({ loading: true, error: null });
   const from = rangeStart(range);
   const result = await fetchMemberTravelHistory(
-    host.memberId,
+    memberId,
     stored.sessionToken,
     baseUrl,
     from ? { fromIso: from } : undefined,
   );
+  if (
+    loadStoredMemberSession()?.sessionToken !== stored.sessionToken ||
+    host.memberId !== memberId
+  ) {
+    return;
+  }
   patch(
     result.ok
       ? { history: result.value, loading: false, error: null }

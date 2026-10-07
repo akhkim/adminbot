@@ -1,3 +1,23 @@
+import { html, nothing, LitElement } from "lit";
+import {
+  deleteOpportunity,
+  decideOpportunity,
+  decideOpportunityDeadline,
+  fetchOpportunities,
+  submitOpportunity,
+  updateOpportunity,
+} from "../api/deadlines.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
+import {
+  OPPORTUNITIES,
+  OPPORTUNITY_CATEGORIES,
+  OPPORTUNITY_CATEGORY_LABELS,
+  isContributedOpportunity,
+  type AdminBotOpportunityDraft,
+  type AdminBotOpportunityView,
+  type Opportunity,
+  type OpportunityCategory,
+} from "../data/opportunities-data.ts";
 // Control UI view renders the AdminBot Opportunities board: PhD programs, internships, grants and
 // awards, and Rising Stars workshops, split across sub-tabs.
 //
@@ -11,27 +31,7 @@
 // Undated entries are first-class here rather than filtered out: an annual program whose next
 // cycle has not been announced is still the thing a member wants to know exists. They render as
 // "Deadline TBA" and sort last, never as an expired or invented date.
-import { html, nothing, LitElement } from "lit";
-import {
-  deleteOpportunity,
-  decideOpportunity,
-  decideOpportunityDeadline,
-  fetchOpportunities,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
-  submitOpportunity,
-  updateOpportunity,
-} from "../auth/session.ts";
-import {
-  OPPORTUNITIES,
-  OPPORTUNITY_CATEGORIES,
-  OPPORTUNITY_CATEGORY_LABELS,
-  isContributedOpportunity,
-  type AdminBotOpportunityDraft,
-  type AdminBotOpportunityView,
-  type Opportunity,
-  type OpportunityCategory,
-} from "../data/opportunities-data.ts";
+import { renderDateControl } from "../date-control.ts";
 
 const MS_DAY = 86_400_000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -87,7 +87,9 @@ function urgencyColor(instant: number, now: number): string {
 type Row = { item: Opportunity | AdminBotOpportunityView; instant: number };
 
 // Dated entries ascending, then undated. NaN never participates in the numeric compare, so the
-// ordering stays total regardless of how many entries are undated.
+// ordering stays total regardless of how many entries are undated. Undated entries go by host
+// first: most PhD programs share a name ("PhD in Computer Science"), so ordering by name alone
+// scatters universities, while ordering by host reads like a list of schools.
 function sortRows(rows: Row[]): Row[] {
   return [...rows].sort((a, b) => {
     const aDated = Number.isFinite(a.instant);
@@ -98,7 +100,10 @@ function sortRows(rows: Row[]): Row[] {
     if (aDated !== bDated) {
       return aDated ? -1 : 1;
     }
-    return a.item.name.localeCompare(b.item.name);
+    return (
+      (a.item.org ?? a.item.name).localeCompare(b.item.org ?? b.item.name) ||
+      a.item.name.localeCompare(b.item.name)
+    );
   });
 }
 
@@ -149,6 +154,22 @@ class AdminbotOpportunitiesView extends LitElement {
   private contributed: AdminBotOpportunityView[] = [];
   private notice: { kind: "error" | "success"; text: string } | null = null;
   private busy = false;
+  private requestLetter: ((entry: BoardEntry) => void) | undefined;
+
+  /**
+   * Opens the Rec Letter Request form with this entry's school filled in.
+   *
+   * Only the signed-in app passes it. The visitor shell renders this element too and has no letters
+   * tab to send anyone to, so without the callback the button simply does not render.
+   */
+  set onRequestLetter(value: ((entry: BoardEntry) => void) | undefined) {
+    this.requestLetter = value;
+    this.requestUpdate();
+  }
+
+  get onRequestLetter(): ((entry: BoardEntry) => void) | undefined {
+    return this.requestLetter;
+  }
 
   protected override createRenderRoot(): HTMLElement {
     return this;
@@ -459,15 +480,18 @@ class AdminbotOpportunitiesView extends LitElement {
               ${this.deadlineTba
                 ? html`<span class="opp-tba-badge">TBA</span>`
                 : html`
-                    <input
-                      class="opp-form-input opp-form-input--grow"
-                      type="datetime-local"
-                      .value=${this.form.deadline_aoe?.slice(0, 16) ?? ""}
-                      @input=${(e: Event) => {
-                        const v = (e.target as HTMLInputElement).value;
-                        this.updateField("deadline_aoe", v ? `${v.replace("T", " ")}:00` : "");
-                      }}
-                    />
+                    ${renderDateControl(
+                      html`<input
+                        class="opp-form-input opp-form-input--grow"
+                        type="datetime-local"
+                        .value=${this.form.deadline_aoe?.slice(0, 16) ?? ""}
+                        @input=${(e: Event) => {
+                          const v = (e.target as HTMLInputElement).value;
+                          this.updateField("deadline_aoe", v ? `${v.replace("T", " ")}:00` : "");
+                        }}
+                      />`,
+                      this.form.deadline_aoe?.slice(0, 16) ?? "",
+                    )}
                   `}
               <button
                 type="button"
@@ -592,6 +616,21 @@ class AdminbotOpportunitiesView extends LitElement {
           ${item.org ? html`<div class="opp-org">${item.org}</div>` : nothing}
           ${item.eligibility ? html`<div class="opp-elig">${item.eligibility}</div>` : nothing}
           ${item.note ? html`<div class="opp-note">${item.note}</div>` : nothing}
+          <!-- Not offered on an entry still awaiting review: a letter is a real ask of a
+               professor, and it should rest on a program the lab has vetted. -->
+          ${this.signedIn && this.requestLetter && !pending
+            ? html`<div class="opp-letter">
+                <button
+                  class="opp-form-btn"
+                  type="button"
+                  data-testid="opp-request-letter"
+                  title="Start a recommendation letter request with this program filled in"
+                  @click=${() => this.requestLetter?.(item)}
+                >
+                  Request a letter
+                </button>
+              </div>`
+            : nothing}
         </div>
         <!-- Where it came from, when nobody submitted it. A candidate a sweep filed is a claim
              about somebody else's page, so the reviewer gets the line it was read out of and a
@@ -700,7 +739,7 @@ class AdminbotOpportunitiesView extends LitElement {
           padding: 4px 2px 24px;
         }
         .opportunities-view .intro {
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted);
           font-size: 13.5px;
           margin: 0 0 14px;
         }
@@ -717,7 +756,7 @@ class AdminbotOpportunitiesView extends LitElement {
           padding: 6px 12px;
           border: 1px solid var(--border, #26324a);
           border-radius: 999px;
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated);
           color: var(--text, #d7e2f4);
           font-size: 13px;
           cursor: pointer;
@@ -727,7 +766,7 @@ class AdminbotOpportunitiesView extends LitElement {
           color: var(--accent, #4f8cff);
         }
         .opp-tab-count {
-          color: var(--text-muted, #66799a);
+          color: var(--muted);
           font-size: 11.5px;
           font-variant-numeric: tabular-nums;
         }
@@ -747,7 +786,7 @@ class AdminbotOpportunitiesView extends LitElement {
           border: 1px solid var(--border, #26324a);
           border-left: 4px solid var(--u);
           border-radius: 10px;
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated);
           align-items: start;
         }
         .opp-when {
@@ -765,7 +804,7 @@ class AdminbotOpportunitiesView extends LitElement {
           font-weight: 600;
         }
         .opp-window {
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted);
           font-size: 11px;
           margin-top: 2px;
         }
@@ -776,19 +815,22 @@ class AdminbotOpportunitiesView extends LitElement {
           gap: 6px;
         }
         .opp-org {
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted);
           font-size: 12px;
           margin-top: 2px;
         }
         .opp-elig {
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted);
           font-size: 12px;
           margin-top: 4px;
         }
         .opp-note {
-          color: var(--text-muted, #66799a);
+          color: var(--muted);
           font-size: 11.5px;
           margin-top: 4px;
+        }
+        .opp-letter {
+          margin-top: 8px;
         }
         .opp-notice {
           margin: 0 0 12px;
@@ -799,21 +841,21 @@ class AdminbotOpportunitiesView extends LitElement {
         }
         .opp-notice--success {
           border-color: rgba(52, 199, 123, 0.4);
-          color: #34c77b;
-          background: rgba(52, 199, 123, 0.1);
+          color: var(--ok);
+          background: var(--ok-subtle);
         }
         .opp-notice--error {
           border-color: rgba(248, 113, 113, 0.4);
-          color: #f87171;
-          background: rgba(248, 113, 113, 0.1);
+          color: var(--danger);
+          background: var(--danger-subtle);
         }
         .opp-pending-tag {
           font-size: 10px;
           font-weight: 600;
           text-transform: uppercase;
           letter-spacing: 0.5px;
-          color: #f5a524;
-          background: rgba(245, 165, 36, 0.14);
+          color: var(--warn);
+          background: var(--warn-subtle);
           padding: 1px 6px;
           border-radius: 4px;
           flex-shrink: 0;
@@ -830,7 +872,7 @@ class AdminbotOpportunitiesView extends LitElement {
           padding: 8px 10px;
           border: 1px solid rgba(96, 165, 250, 0.35);
           border-radius: 6px;
-          background: rgba(96, 165, 250, 0.08);
+          background: var(--accent-subtle);
           display: grid;
           gap: 6px;
         }
@@ -866,7 +908,7 @@ class AdminbotOpportunitiesView extends LitElement {
           text-transform: uppercase;
           letter-spacing: 0.5px;
           color: var(--accent, #4f8cff);
-          background: rgba(79, 140, 255, 0.12);
+          background: var(--accent-subtle);
           padding: 1px 6px;
           border-radius: 4px;
           flex-shrink: 0;
@@ -875,7 +917,7 @@ class AdminbotOpportunitiesView extends LitElement {
           background: none;
           border: none;
           border-radius: 6px;
-          color: #f87171;
+          color: var(--danger);
           font-size: 18px;
           line-height: 1;
           cursor: pointer;
@@ -884,7 +926,7 @@ class AdminbotOpportunitiesView extends LitElement {
           transition: color 0.12s;
         }
         .opp-delete:hover {
-          color: #ef4444;
+          color: var(--danger);
         }
         .opp-actions {
           display: flex;
@@ -895,7 +937,7 @@ class AdminbotOpportunitiesView extends LitElement {
           background: none;
           border: none;
           border-radius: 6px;
-          color: var(--text-muted, #66799a);
+          color: var(--muted);
           cursor: pointer;
           padding: 2px 6px;
           display: flex;
@@ -914,7 +956,7 @@ class AdminbotOpportunitiesView extends LitElement {
           height: 48px;
           border-radius: 50%;
           border: 1px solid var(--border, #26324a);
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated);
           cursor: pointer;
           display: flex;
           align-items: center;
@@ -935,7 +977,7 @@ class AdminbotOpportunitiesView extends LitElement {
           transition: stroke 0.12s;
         }
         .opp-fab:hover {
-          background: rgba(79, 140, 255, 0.12);
+          background: var(--accent-subtle);
           border-color: var(--accent, #4f8cff);
         }
         .opp-fab:hover svg {
@@ -960,7 +1002,7 @@ class AdminbotOpportunitiesView extends LitElement {
           z-index: 100;
         }
         .opp-confirm {
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated);
           border: 1px solid var(--border, #26324a);
           border-radius: 12px;
           padding: 20px 24px;
@@ -978,7 +1020,7 @@ class AdminbotOpportunitiesView extends LitElement {
           gap: 8px;
         }
         .opp-form {
-          background: var(--surface, #141b2b);
+          background: var(--bg-elevated);
           border: 1px solid var(--border, #26324a);
           border-radius: 12px;
           padding: 24px;
@@ -1004,20 +1046,20 @@ class AdminbotOpportunitiesView extends LitElement {
         .opp-form-label {
           font-size: 12px;
           font-weight: 500;
-          color: var(--text-muted, #9fb0cc);
+          color: var(--muted);
         }
         .opp-form-input {
           padding: 8px 10px;
           border: 1px solid var(--border, #26324a);
           border-radius: 6px;
-          background: #1e2a3a;
+          background: var(--bg);
           color: var(--text, #d7e2f4);
           font-size: 13px;
           font-family: inherit;
           transition: border-color 0.12s;
         }
         .opp-form-input::placeholder {
-          color: #5a6d84;
+          color: var(--muted);
         }
         .opp-form-input:focus {
           outline: none;
@@ -1041,7 +1083,7 @@ class AdminbotOpportunitiesView extends LitElement {
           padding: 7px 16px;
           border: 1px solid var(--border, #26324a);
           border-radius: 6px;
-          background: #1e2a3a;
+          background: var(--bg);
           color: var(--text, #d7e2f4);
           font-size: 13px;
           cursor: pointer;
@@ -1049,15 +1091,15 @@ class AdminbotOpportunitiesView extends LitElement {
         .opp-form-btn--primary {
           background: var(--accent, #4f8cff);
           border-color: var(--accent, #4f8cff);
-          color: #fff;
+          color: var(--accent-foreground);
         }
         .opp-form-btn--primary:hover {
           opacity: 0.9;
         }
         .opp-form-btn--danger {
-          background: #ef4444;
-          border-color: #ef4444;
-          color: #fff;
+          background: var(--danger);
+          border-color: var(--danger);
+          color: var(--destructive-foreground);
         }
         .opp-form-btn--danger:hover {
           opacity: 0.9;
@@ -1071,8 +1113,8 @@ class AdminbotOpportunitiesView extends LitElement {
           padding: 8px 12px;
           border: 1px solid var(--border, #26324a);
           border-radius: 6px;
-          background: #1e2a3a;
-          color: var(--text-muted, #9fb0cc);
+          background: var(--bg);
+          color: var(--muted);
           font-size: 13px;
           font-style: italic;
         }
@@ -1080,8 +1122,8 @@ class AdminbotOpportunitiesView extends LitElement {
           padding: 7px 12px;
           border: 1px solid var(--border, #26324a);
           border-radius: 6px;
-          background: #1e2a3a;
-          color: var(--text-muted, #9fb0cc);
+          background: var(--bg);
+          color: var(--muted);
           font-size: 12px;
           font-weight: 600;
           cursor: pointer;
@@ -1091,7 +1133,7 @@ class AdminbotOpportunitiesView extends LitElement {
         .opp-tba-toggle--active {
           border-color: var(--accent, #4f8cff);
           color: var(--accent, #4f8cff);
-          background: #e8f0fe;
+          background: var(--accent-subtle);
         }
         .opp-tba-toggle:hover {
           border-color: var(--accent, #4f8cff);
@@ -1139,6 +1181,10 @@ if (!customElements.get("adminbot-opportunities-view")) {
   customElements.define("adminbot-opportunities-view", AdminbotOpportunitiesView);
 }
 
-export function renderOpportunities() {
-  return html`<adminbot-opportunities-view></adminbot-opportunities-view>`;
+export function renderOpportunities(
+  options: { onRequestLetter?: (entry: BoardEntry) => void } = {},
+) {
+  return html`<adminbot-opportunities-view
+    .onRequestLetter=${options.onRequestLetter}
+  ></adminbot-opportunities-view>`;
 }

@@ -1,3 +1,49 @@
+import { html, nothing } from "lit";
+import "../paper-visibility.ts";
+import { ref } from "lit/directives/ref.js";
+import {
+  adminBotNormalizePaperAlias,
+  adminBotPaperAliasMaxLength,
+  adminBotProjectChannelName,
+} from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import { isPaperFeedbackSlot } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
+import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
+import { t } from "../../../i18n/index.ts";
+import type { AppViewState } from "../../app-view-state.ts";
+import { icons } from "../../icons.ts";
+import type { PaperNudgeBatch, PaperSlotOverviewRow } from "../api/paper-admin.ts";
+import { mapImportColumns } from "../api/paper-admin.ts";
+import type { PaperCycle } from "../api/papers.ts";
+import { draftLinkedInPost } from "../api/papers.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
+import { cancelAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
+import {
+  BLOCKER_TITLE_MAX,
+  editBlockerInput,
+  fileBlockerInput,
+  openEntries,
+  resolveBlockerInput,
+} from "../blockers.ts";
+import { buildCoauthorEmail, firstFullMemberAuthor } from "../coauthor-email.ts";
+import type {
+  AdminBotLabMember,
+  AdminBotPaperRecord,
+  AdminBotPaperSaveInput,
+  AdminBotPaperStep,
+  SlackChannelCheck,
+} from "../controllers/admin.ts";
+import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
+import { aoeInstantMs } from "../data/deadline-time.ts";
+import { DEADLINE_SUMMARIES } from "../data/deadlines-summary.ts";
+import {
+  ARCHIVAL_VENUES,
+  type CatalogVenue,
+  NON_ARCHIVAL_VENUES,
+  WORKSHOP_VENUES,
+  formatVenue,
+  parseVenue,
+  venueYears,
+} from "../data/venue-catalog.ts";
 // The signed-in member's own work: one card per project or paper, and inside each card the whole
 // list of what that paper still owes.
 //
@@ -19,53 +65,7 @@
 //
 // Blockers are real records now, not browser state: they are written onto the paper the same way
 // the step is, so an admin sees a report the moment it is filed. See blockers.ts.
-import "../paper-visibility.ts";
-import { html, nothing } from "lit";
-import { ref } from "lit/directives/ref.js";
-import {
-  adminBotNormalizePaperAlias,
-  adminBotPaperAliasMaxLength,
-  adminBotProjectChannelName,
-} from "../../../../../extensions/adminbot/src/contracts/actions.js";
-import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
-import { t } from "../../../i18n/index.ts";
-import type { AppViewState } from "../../app-view-state.ts";
-import { icons } from "../../icons.ts";
-import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
-import {
-  draftLinkedInPost,
-  loadStoredMemberSession,
-  mapImportColumns,
-  resolveAdminBotBaseUrl,
-} from "../auth/session.ts";
-import { cancelAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
-import {
-  BLOCKER_TITLE_MAX,
-  editBlockerInput,
-  fileBlockerInput,
-  openEntries,
-  resolveBlockerInput,
-} from "../blockers.ts";
-import { buildCoauthorEmail, firstFullMemberAuthor } from "../coauthor-email.ts";
-import type {
-  AdminBotLabMember,
-  AdminBotPaperRecord,
-  AdminBotPaperSaveInput,
-  AdminBotPaperStep,
-  SlackChannelCheck,
-} from "../controllers/admin.ts";
-import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
-import { aoeInstantMs } from "../data/deadline-time.ts";
-import { DEADLINE_VENUES } from "../data/deadlines.ts";
-import {
-  ARCHIVAL_VENUES,
-  type CatalogVenue,
-  NON_ARCHIVAL_VENUES,
-  WORKSHOP_VENUES,
-  formatVenue,
-  parseVenue,
-  venueYears,
-} from "../data/venue-catalog.ts";
+import { renderDateControl } from "../date-control.ts";
 import {
   decisionEmailSentStamp,
   decisionOf,
@@ -93,6 +93,7 @@ import {
   partitionByCompletion,
 } from "../paper-completion.ts";
 import {
+  clearHistory,
   clearSavedEdits,
   diffForHistory,
   emptyPaperGridState,
@@ -114,7 +115,13 @@ import {
 } from "../venue-targets.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { paperTripDraftFrom, renderPaperCycle, type PaperTripDraft } from "./paper-cycle.ts";
-import { emptyPaperLegacyState, renderPaperLegacy, type PaperLegacyState } from "./paper-legacy.ts";
+import { renderPaperFeedback } from "./paper-feedback.ts";
+import {
+  cancelPaperLegacyAutosave,
+  emptyPaperLegacyState,
+  renderPaperLegacy,
+  type PaperLegacyState,
+} from "./paper-legacy.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
 import { renderPaperTimeline } from "./paper-timeline.ts";
 import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
@@ -123,6 +130,7 @@ import { renderRecentEdits } from "./recent-edits.ts";
 
 export type MyWorkProps = {
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
+  onSaveBlocker?: (paper: AdminBotPaperSaveInput) => Promise<boolean>;
   /**
    * Which papers this surface is about. Defaults to the signed-in member's own, which is what
    * My Projects & Papers means; Active Papers passes the whole lab. The cards, their fields and
@@ -243,6 +251,11 @@ export type BlockerDraft = {
   /** The blocker being edited, keyed by filing time. Absent when filing a new one. */
   at?: string;
   text: string;
+  title?: string;
+  note?: string;
+  stage?: string;
+  saving?: boolean;
+  error?: string;
 };
 
 export type Blocker = {
@@ -325,7 +338,11 @@ function saveStep(props: MyWorkProps, paper: AdminBotPaperRecord, step: AdminBot
 // resolveAdminBotBaseUrl falls back to this page's own hostname and a guessed port -- which is not
 // where AdminBot lives when the console is served from anywhere but the service itself, so every
 // draft died as "AdminBot is not reachable" before the request left the browser.
-function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
+function renderStepControls(
+  paper: AdminBotPaperRecord,
+  props: MyWorkProps,
+  options: { picker?: boolean } = {},
+) {
   const { index } = paperProgress(paper);
   const next = index >= 0 && index < paperSteps.length - 1 ? paperSteps[index + 1] : null;
   return html`
@@ -355,41 +372,45 @@ function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
            current_step still buckets blockers and drives the Active Papers view, and it has to
            be movable in both directions -- a mis-click, or a rejection that sends a paper back to
            writing. Jumping *forward* past unfinished steps still asks first, because that is the
-           move that asserts work happened. -->
-      <label class="my-work-item__step">
-        <span class="sr-only">Pipeline step</span>
-        <select
-          class="target__select"
-          data-testid=${`my-work-step-${paper.id}`}
-          @change=${(event: Event) => {
-            const target = (event.target as HTMLSelectElement).value as AdminBotPaperStep;
-            const targetIndex = paperSteps.indexOf(target);
-            if (targetIndex - index > 1) {
-              const names = paperSteps
-                .slice(index, targetIndex)
-                .map((value) => stepLabel(value))
-                .join(", ");
-              if (
-                !globalThis.confirm(
-                  `Jumping to ${stepLabel(target)} marks these as done: ${names}.\n\nContinue?`,
-                )
-              ) {
-                (event.target as HTMLSelectElement).value = paper.current_step;
-                return;
-              }
-            }
-            saveStep(props, paper, target);
-          }}
-        >
-          ${paperSteps.map(
-            (step) => html`
-              <option value=${step} ?selected=${step === paper.current_step}>
-                ${stepLabel(step)}
-              </option>
-            `,
-          )}
-        </select>
-      </label>
+           move that asserts work happened.
+           Left off where the page already has a Current step control -- the legacy view -- so
+           one field is not two dropdowns that can disagree while one of them is mid-edit. -->
+      ${options.picker === false
+        ? nothing
+        : html`<label class="my-work-item__step">
+            <span class="sr-only">Pipeline step</span>
+            <select
+              class="target__select"
+              data-testid=${`my-work-step-${paper.id}`}
+              @change=${(event: Event) => {
+                const target = (event.target as HTMLSelectElement).value as AdminBotPaperStep;
+                const targetIndex = paperSteps.indexOf(target);
+                if (targetIndex - index > 1) {
+                  const names = paperSteps
+                    .slice(index, targetIndex)
+                    .map((value) => stepLabel(value))
+                    .join(", ");
+                  if (
+                    !globalThis.confirm(
+                      `Jumping to ${stepLabel(target)} marks these as done: ${names}.\n\nContinue?`,
+                    )
+                  ) {
+                    (event.target as HTMLSelectElement).value = paper.current_step;
+                    return;
+                  }
+                }
+                saveStep(props, paper, target);
+              }}
+            >
+              ${paperSteps.map(
+                (step) => html`
+                  <option value=${step} ?selected=${step === paper.current_step}>
+                    ${stepLabel(step)}
+                  </option>
+                `,
+              )}
+            </select>
+          </label>`}
     </div>
   `;
 }
@@ -419,11 +440,16 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
   return html`
     <form
       class="blocker-form"
-      @submit=${(event: SubmitEvent) => {
+      @submit=${async (event: SubmitEvent) => {
         event.preventDefault();
+        if (draft.saving) return;
         const data = new FormData(event.currentTarget as HTMLFormElement);
         const title = String(data.get("title") ?? "").trim();
-        if (!title) {
+        const titleInput = (event.currentTarget as HTMLFormElement).elements.namedItem(
+          "title",
+        ) as HTMLInputElement;
+        titleInput.setCustomValidity(title ? "" : "Enter a short description of what is blocked.");
+        if (!titleInput.reportValidity()) {
           return;
         }
         const fields = {
@@ -431,13 +457,25 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
           title,
           note: String(data.get("note") ?? "").trim(),
         };
-        props.onSavePaper(
-          editing
-            ? editBlockerInput(paper, editing.at, fields)
-            : // Named at filing time so the admin list can say who to go ask.
-              fileBlockerInput(paper, { ...fields, by: findOwnMember(state)?.name ?? "" }),
-        );
-        state.myWorkBlockerDraft = null;
+        Object.assign(draft, fields, { saving: true, error: undefined });
+        props.onRerender?.();
+        try {
+          const saved = await props.onSaveBlocker?.(
+            editing
+              ? editBlockerInput(paper, editing.at, fields)
+              : // Named at filing time so the admin list can say who to go ask.
+                fileBlockerInput(paper, { ...fields, by: findOwnMember(state)?.name ?? "" }),
+          );
+          if (state.myWorkBlockerDraft !== draft) return;
+          if (saved) state.myWorkBlockerDraft = null;
+          else draft.error = "Could not save the blocker report. Your draft is kept. Try again.";
+        } catch {
+          if (state.myWorkBlockerDraft === draft)
+            draft.error = "Could not save the blocker report. Your draft is kept. Try again.";
+        } finally {
+          draft.saving = false;
+          props.onRerender?.();
+        }
       }}
     >
       <p class="blocker-form__notice">
@@ -451,10 +489,18 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
       <div class="blocker-form__fields">
         <label class="register__field">
           <span class="register__label">Which stage is blocked?</span>
-          <select class="input" name="stage" data-testid=${`blocker-stage-${paper.id}`}>
+          <select
+            class="input"
+            name="stage"
+            ?disabled=${draft.saving}
+            data-testid=${`blocker-stage-${paper.id}`}
+          >
             ${paperSteps.map(
               (step) => html`
-                <option value=${step} ?selected=${step === (editing?.stage || paper.current_step)}>
+                <option
+                  value=${step}
+                  ?selected=${step === (draft.stage || editing?.stage || paper.current_step)}
+                >
                   ${stepLabel(step)}
                 </option>
               `,
@@ -463,13 +509,16 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
         </label>
 
         <label class="register__field">
-          <span class="register__label">What is blocked? (short)</span>
+          <span class="register__label">What is blocked? (short, required)</span>
           <input
             class="input"
             name="title"
+            ?disabled=${draft.saving}
+            required
+            @input=${(event: Event) => (event.target as HTMLInputElement).setCustomValidity("")}
             maxlength=${BLOCKER_TITLE_MAX}
             placeholder="e.g. OpenReview rejects the PDF"
-            .value=${editing?.title ?? ""}
+            .value=${draft.title ?? editing?.title ?? ""}
             data-testid=${`blocker-title-${paper.id}`}
           />
           <span class="register__hint">Up to ${BLOCKER_TITLE_MAX} characters.</span>
@@ -481,20 +530,31 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
         <textarea
           class="input"
           name="note"
+          ?disabled=${draft.saving}
           rows="4"
           placeholder=${t("myWork.blockers.placeholder")}
         >
-${editing?.note ?? ""}</textarea
+${draft.note ?? editing?.note ?? ""}</textarea
         >
       </label>
 
+      ${draft.error ? html`<p role="alert">${draft.error}</p>` : nothing}
       <div class="blocker-form__footer">
         <p class="blocker-form__reviewer">
           ${t("myWork.blockers.reviewer", { name: reviewerName(state) })}
         </p>
         <div class="register__actions">
-          <button type="submit" class="btn primary">
-            ${editing ? "Save changes" : t("myWork.blockers.submit")}
+          <button
+            type="submit"
+            class="btn primary"
+            ?disabled=${draft.saving}
+            aria-busy=${Boolean(draft.saving)}
+          >
+            ${draft.saving
+              ? "Saving report…"
+              : editing
+                ? "Save changes"
+                : t("myWork.blockers.submit")}
           </button>
           <button
             type="button"
@@ -784,14 +844,17 @@ function renderProjectDetails(
           </label>
           <label class="my-work-details__field">
             <span>Started on</span>
-            <input
-              class="input"
-              type="date"
-              data-testid=${`my-work-details-started-${paper.id}`}
-              .value=${draft.startedOn}
-              @input=${(event: Event) =>
-                edited({ startedOn: (event.target as HTMLInputElement).value })}
-            />
+            ${renderDateControl(
+              html`<input
+                class="input"
+                type="date"
+                data-testid=${`my-work-details-started-${paper.id}`}
+                .value=${draft.startedOn}
+                @input=${(event: Event) =>
+                  edited({ startedOn: (event.target as HTMLInputElement).value })}
+              />`,
+              draft.startedOn,
+            )}
           </label>
         </div>
         ${draft.error
@@ -1158,7 +1221,7 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
     // The old dialog's generate path, minus the PDF picker: the service reads the Drive copy the
     // card already chases. Result lands in the panel's textarea as a stored draft, so the usual
     // sign-off row takes over from there.
-    onGenerateLinkedInDraft: async (venue: string, note: string) => {
+    onGenerateLinkedInDraft: async (venue: string, note: string, pdfBase64?: string) => {
       const stored = loadStoredMemberSession();
       if (!stored) {
         globalThis.alert?.("Sign in first — drafting runs against your own session.");
@@ -1168,6 +1231,7 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
         const result = await draftLinkedInPost(
           {
             paperId: paper.id,
+            ...(pdfBase64 ? { pdfBase64 } : {}),
             ...(paper.artifacts?.arxiv_url ? { url: paper.artifacts.arxiv_url } : {}),
             ...(venue ? { venue } : {}),
             ...(note ? { note } : {}),
@@ -1286,6 +1350,7 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
               ${renderNextStep(paper)} ${renderAcceptance(paper, props)}
               ${renderPaperSlots({
                 paperId: paper.id,
+                paperTitle: paper.title,
                 slots: props.slots[paper.id]?.slots ?? [],
                 stages: props.slots[paper.id]?.stages ?? [],
                 details: {
@@ -1301,11 +1366,16 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                   // Optional-chained: this view is rendered against partial state doubles in
                   // tests and against a host that may predate the field, and an author list that
                   // throws is worse than one whose draft box starts empty.
-                  coauthorDraft: state.myWorkCoauthorDraft?.[paper.id] ?? { email: "", name: "" },
+                  coauthorDraft: state.myWorkCoauthorDraft?.[paper.id] ?? {
+                    email: "",
+                    name: "",
+                    twitter: "",
+                  },
                   onCoauthorDraftChange: (draft) => {
                     const current = state.myWorkCoauthorDraft?.[paper.id] ?? {
                       email: "",
                       name: "",
+                      twitter: "",
                     };
                     state.myWorkCoauthorDraft = {
                       ...state.myWorkCoauthorDraft,
@@ -1369,6 +1439,86 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
       </div>
     </article>
   `;
+}
+
+/**
+ * What the card has that the legacy view's fields do not: everything that is not one answer on the
+ * record or one evidence slot.
+ *
+ * The same renderers the card calls, with the same handlers, so the legacy view is the card drawn
+ * flat rather than a second implementation of it. Left out on purpose: the card's project-details
+ * form and its acceptance fields, because the legacy form already carries every one of those as a
+ * row and two controls for one field is two answers waiting to disagree. Completion comes along
+ * without them -- it is a timestamp, not a field the legacy form has.
+ */
+function renderLegacyExtras(state: AppViewState, paper: AdminBotPaperRecord, props: MyWorkProps) {
+  return {
+    top: html`
+      <div class="paper-legacy__actions">
+        <button
+          type="button"
+          class="btn btn--sm"
+          data-testid=${`paper-legacy-report-${paper.id}`}
+          @click=${() => {
+            state.myWorkBlockerDraft = { paperId: paper.id, text: "" };
+            props.onRerender?.();
+          }}
+        >
+          ${t("myWork.blockers.report")}
+        </button>
+        <button
+          type="button"
+          class="btn btn--sm"
+          data-testid=${`paper-legacy-hide-${paper.id}`}
+          title=${t("myWork.hidden.hideTitle")}
+          @click=${() => {
+            toggleHiddenPaper(props.memberId, paper.id);
+            props.onRerender?.();
+          }}
+        >
+          ${t("myWork.hidden.hide")}
+        </button>
+      </div>
+      ${renderPaperBlockers(state, props, paper)} ${renderBlockerForm(state, props, paper)}
+      ${renderVenueTargets(paper)} ${renderTarget(paper, props)}
+      ${renderPaperTimeline({
+        paperId: paper.id,
+        slots: props.slots[paper.id]?.slots ?? [],
+        paper,
+      })}
+      ${renderNextStep(paper)} ${renderLegacyFeedback(paper, props)}
+    `,
+    bottom: html`
+      ${renderCompletion(paper, props)} ${renderWeeklyUpdates(paper, props)}
+      ${renderCycle(state, paper, props)} ${renderStepControls(paper, props, { picker: false })}
+      ${renderRecentEdits({
+        ...(state.adminBotRecentEdits?.[recentEditsKey("paper", paper.id)] ?? EMPTY_RECENT_EDITS),
+        subject: "paper",
+        onOpen: () => props.onLoadRecentEdits?.("paper", paper.id),
+      })}
+      ${renderDeletePaper(paper, props)}
+    `,
+  };
+}
+
+/**
+ * The card's feedback-request form, drawn in the legacy view.
+ *
+ * The legacy view is where My Projects opens, and its field list skips the feedback slots because
+ * a generic text box cannot build the request the service validates -- so without this the form
+ * would only be reachable by leaving the default view. Gated on the slots having loaded, as the
+ * card gates it, so an unfetched paper does not offer a form for rows it has not seen.
+ */
+function renderLegacyFeedback(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const slots = props.slots[paper.id]?.slots ?? [];
+  if (!slots.some((row) => isPaperFeedbackSlot(row.slot))) {
+    return nothing;
+  }
+  return renderPaperFeedback({
+    slots,
+    loading: props.slotsBusyId === paper.id,
+    onSaveSlot: (slot, input) => props.onSaveSlot(paper.id, slot, input),
+  });
 }
 
 /**
@@ -1681,7 +1831,7 @@ function renderAddButton(state: AppViewState) {
  * from scratch.
  */
 function upcomingVenues(now = new Date()) {
-  const future = DEADLINE_VENUES.filter((venue) => {
+  const future = DEADLINE_SUMMARIES.filter((venue) => {
     const due = aoeInstantMs(venue.deadline_aoe);
     return Number.isFinite(due) && due > now.getTime();
   })
@@ -2024,13 +2174,13 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
 
       <label class="register__field">
         <span class="register__label">Started on</span>
-        <input
+        ${renderDateControl(html`<input
           class="input"
           name="started_on"
           type="date"
           required
           data-testid="my-work-add-started-on"
-        />
+        />`)}
         <span class="register__hint">
           When work actually began, which is often well before the paper is filed here.
         </span>
@@ -2209,6 +2359,24 @@ let gridState: PaperGridState | null = null;
 let legacyState: PaperLegacyState | null = null;
 
 /**
+ * Whether this reader has left the flat view.
+ *
+ * The flat view is what the page opens on -- every field of every paper on one page, which is
+ * what somebody arriving at My Projects & Papers to read or fill in their work is after -- so the
+ * only thing worth remembering is that they asked for something else. Without it "Back to cards"
+ * would be a button that does nothing: the next render would look at the same papers and fold the
+ * cards away again under somebody who just left.
+ *
+ * Two states rather than `gridChoice`'s three below, because unlike the sheet there is nothing
+ * underneath this one to defer to: asking for the flat view and never having said anything are
+ * the same page.
+ *
+ * Per session and not persisted, like `gridChoice`: a preference typed by pressing a button in one
+ * sitting, not a setting.
+ */
+let legacyDismissed = false;
+
+/**
  * Which surface this reader has asked for, when they have asked at all.
  *
  * `auto` means they have not, and the paper count and their role decide (`opensOnSheet`). The
@@ -2237,6 +2405,10 @@ function exitGrid(rerender: () => void): void {
 
 function exitLegacy(rerender: () => void): void {
   legacyState = null;
+  // Remembered, not just closed: see `legacyDismissed`. Now that the flat view opens by itself,
+  // dropping `legacyState` alone would re-open it on the next render and make this button look
+  // broken.
+  legacyDismissed = true;
   rerender();
 }
 
@@ -2247,6 +2419,20 @@ function exitLegacy(rerender: () => void): void {
 export function resetMyWorkViewModeForTest(): void {
   gridState = null;
   legacyState = null;
+  legacyDismissed = false;
+}
+
+/**
+ * Puts the page on the card list, the way pressing "Back to cards" does.
+ *
+ * For the tests, and named as such. The flat view is what the page opens on, so a spec about the
+ * cards, the sheet, or any of the banners above them has to say which surface it means -- and
+ * saying it here, rather than by clicking through the flat view first, keeps those specs about
+ * what they were always about.
+ */
+export function showMyWorkCardsForTest(): void {
+  legacyState = null;
+  legacyDismissed = true;
 }
 
 /**
@@ -2263,7 +2449,11 @@ export function resetPaperSheetChoice(): void {
 }
 
 /**
- * Whether the page opens on the sheet rather than offering it.
+ * Whether leaving the flat view lands on the sheet rather than merely offering it.
+ *
+ * This used to decide what the whole page opened on. The flat view now sits in front of it, so the
+ * question it answers is narrower and asked later: once somebody has pressed "Back to cards", is
+ * the cards or the sheet what "cards" means for them. Both audiences keep the answer they had.
  *
  * Two audiences, one rule: an administrator once the sheet is offered at all -- the caller has
  * already checked that -- and anybody carrying enough papers that the visit is a sweep rather than
@@ -2424,6 +2614,28 @@ const decisionDrafts = new Map<
   string,
   { track?: string; presentation: string; attending: "yes" | "no" | ""; nextVenue: string }
 >();
+
+/** Discard unsaved paper edits before a different member can use this browser session. */
+export function resetMyWorkSessionState(): void {
+  for (const timer of detailsSaveTimers.values()) {
+    clearTimeout(timer);
+  }
+  detailsSaveTimers.clear();
+  detailsLastSaved.clear();
+  cancelPaperLegacyAutosave();
+  clearHistory();
+  gridState = null;
+  legacyState = null;
+  legacyDismissed = false;
+  gridChoice = "auto";
+  showAllSlots.clear();
+  collapsedDecisions.clear();
+  savedDecisions.clear();
+  dirtyDecisions.clear();
+  dismissedDecisions.clear();
+  emailTasks.clear();
+  decisionDrafts.clear();
+}
 
 /** The venue as the banner names it, so the mail and the heading never disagree. */
 function venueOf(paper: AdminBotPaperRecord): string {
@@ -2675,20 +2887,49 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
       (gridChoice === "auto" &&
         opensOnSheet({ count: items.length, admin: props.viewerIsAdmin ?? false })));
   const rerender = () => props.onRerender?.();
+  /**
+   * Whether the page is on the flat view.
+   *
+   * Offered on one paper, unlike the sheet -- it is the same paper drawn flat rather than a bulk
+   * tool -- but not on none: an empty flat form says "Nothing here yet" where the card list says
+   * it and offers the form that fixes it.
+   *
+   * Nothing else needs saying about the sheet here. Its own button lives on the card list, which
+   * is only reachable past this gate, so anybody who has asked for the sheet has already left the
+   * flat view -- and `showsGrid` above then decides cards against sheet exactly as it did before
+   * the flat view moved in front of them both.
+   */
+  const showsLegacy = items.length > 0 && !legacyDismissed;
 
-  if (legacyState) {
+  if (showsLegacy) {
+    // Made on the way in rather than by the button, for the same reason the sheet's state is:
+    // there are now two ways onto this surface and only one of them is a press. Kept across
+    // renders so a half-typed field survives a repaint.
+    legacyState ??= emptyPaperLegacyState();
     return html`
       <!-- Takes the page like the sheet does, and for the opposite reason: this is one long
            column of label-and-control rows, which wants the same readable measure the profile
            uses rather than the card list's summaries. -->
       <div class="my-work my-work--legacy">
-        <div class="my-work__section-actions">${renderAddButton(state)}</div>
+        <div class="my-work__section-actions">
+          ${renderNudgeButton(props)} ${renderAddButton(state)}
+        </div>
         <adminbot-paper-visibility
           .papers=${items}
           .memberId=${props.memberId}
           @visibility-changed=${rerender}
         ></adminbot-paper-visibility>
         ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
+        <!-- Everything the card list says to the reader above its cards, said here too: the
+             legacy view is where the page opens now, so a decision banner left on the cards is an
+             OpenReview acceptance nobody is asked about. -->
+        ${props.personal
+          ? renderDecisionBanners(items, props, state.adminBotData?.members ?? [])
+          : nothing}
+        ${renderBlockers(state, items)} ${renderNudgePreview(props)}
+        ${props.slotsNotice
+          ? html`<p class="my-work__notice-line" role="status">${props.slotsNotice}</p>`
+          : nothing}
         ${props.slotsError
           ? html`<p class="my-work__error-line" role="alert">${props.slotsError}</p>`
           : nothing}
@@ -2703,7 +2944,24 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
           onSaveSlot: props.onSaveSlot,
           onChange: rerender,
           onExit: () => exitLegacy(rerender),
+          renderPaperExtras: (paper) => renderLegacyExtras(state, paper, props),
         })}
+        ${tucked.length
+          ? html`<p class="my-work__hidden-line" data-testid="my-work-hidden-line">
+              ${t("myWork.hidden.count", { count: String(tucked.length) })}
+              <button
+                type="button"
+                class="btn btn--sm"
+                data-testid="my-work-show-hidden"
+                @click=${() => {
+                  clearHiddenPapers(props.memberId);
+                  props.onRerender?.();
+                }}
+              >
+                ${t("myWork.hidden.showAll")}
+              </button>
+            </p>`
+          : nothing}
       </div>
     `;
   }
@@ -2845,6 +3103,9 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
                   data-testid="my-work-open-legacy"
                   @click=${() => {
                     legacyState = emptyPaperLegacyState();
+                    // A press outranks the default in both directions: this is how somebody who
+                    // pressed Back to cards earlier gets the flat view again.
+                    legacyDismissed = false;
                     // The two full-page views are mutually exclusive: leaving the sheet open
                     // underneath would restore it on Back to cards.
                     gridState = null;

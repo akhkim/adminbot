@@ -17,16 +17,24 @@ function unwrap<T>(
 /** Every mandatory field filled, so a test can take exactly the ones it wants back out. */
 const COMPLETE = {
   name: "Ada Lovelace",
+  arr_reviewer_qualified: false,
   calendar_email: "ada@cs.toronto.edu",
   location: "Toronto",
   research_topics: ["causality"],
   correspondence_email: "ada@cs.toronto.edu",
   whatsapp: "+1 555 0100",
   joined_month: "2026-01",
+  affiliation: "University of Toronto",
+  hours_per_week: 20,
+  graduated_month: "2027-06",
+  next_position: "Considering research positions",
   github_url: "https://github.com/ada",
   linkedin_url: "https://linkedin.com/in/ada",
   linkedin_urn: "urn:li:person:ada",
+  twitter_url: "https://x.com/ada",
+  personal_website: "https://ada.example",
   cv_url: "https://overleaf.com/read/ada",
+  one_on_one_folder_url: "https://drive.google.com/drive/folders/ada",
   intake_form_url: "https://docs.google.com/forms/d/e/ada/viewform",
   openreview_id: "~Ada_Lovelace1",
 };
@@ -66,10 +74,11 @@ describe("listMemberProfileOverview", () => {
     const overview = unwrap(service.listMemberProfileOverview());
     // Deliberately not `adminBotMandatoryProfileFields.length`: the service checks neither `name`,
     // because a member cannot be created without one, nor the admin-owned fields, because the
-    // member's own page will not let them type those -- so the honest denominator is two smaller.
+    // member's own page will not let them type those -- so the honest denominator is smaller than
+    // the exported list. (Only `name` is dropped today; adminBotAdminOwnedProfileFields is empty.)
     // A client counting the exported list would show everybody stuck short forever, which is
     // exactly why the count is carried rather than derived.
-    expect(overview.mandatory_field_count).toBe(9);
+    expect(overview.mandatory_field_count).toBe(19);
     expect(overview.members[0]?.filled_field_count).toBe(overview.mandatory_field_count);
     expect(overview.members[0]?.missing_fields).toEqual([]);
   });
@@ -91,6 +100,24 @@ describe("listMemberProfileOverview", () => {
     const [row] = overview.members;
     expect(row?.missing_fields).toEqual(["cv_url", "openreview_id"]);
     expect(row?.filled_field_count).toBe(overview.mandatory_field_count - 2);
+  });
+
+  it("includes missing work fields but not the optional offboarding plan", () => {
+    const service = serviceWith([
+      {
+        id: "ada",
+        ...COMPLETE,
+        affiliation: "",
+        hours_per_week: 0,
+        joined_month: "",
+        graduated_month: "",
+        next_position: "",
+      },
+    ]);
+    expect(unwrap(service.listMemberProfileOverview()).members[0]?.missing_fields).toEqual([
+      "affiliation",
+      "joined_month",
+    ]);
   });
 
   it("counts an empty list as missing, the way the reminder pass already does", () => {

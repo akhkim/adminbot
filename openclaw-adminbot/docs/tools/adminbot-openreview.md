@@ -30,12 +30,13 @@ Two things stay manual by design:
   submission (research-overlap match, with conflicts and unavailability shown);
   assigning is an explicit click, never automatic.
 
-  Some people are never candidates. Set **`reviewer_exempt`** on a member to keep
-  them out of every suggestion whatever their topic match — a standing commitment
-  about someone's time, so it is admin-only and cannot be set from a member's own
-  profile. The profile the automation runs as is excluded automatically: whoever
-  chairs a submission cannot also review it, so that needs no configuration. Both
-  rules are enforced again when an assignment is actually posted, so the exemption
+  Zhijing is omitted entirely from reviewer suggestions and cannot be assigned.
+  Bernhard is always marked unavailable and cannot be assigned, regardless of the
+  editable roster exemption flag. Set **`reviewer_exempt`** on other members to
+  block assignment; this admin-only flag cannot be set from a member's own profile.
+  The profile the automation runs as is also blocked automatically: whoever chairs
+  a submission cannot also review it. These rules are enforced again when an
+  assignment is actually posted, so the exemption
   holds even if someone calls the route directly. Removing an exempt reviewer stays
   allowed, which is how the rule gets applied to an assignment made earlier.
 

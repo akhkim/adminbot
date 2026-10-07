@@ -1,3 +1,12 @@
+import { html, nothing } from "lit";
+import { t } from "../../../i18n/index.ts";
+import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
+import type {
+  MeetingAttendanceNudgePreview,
+  MeetingAttendanceNudgeResult,
+  MeetingAttendee,
+  MeetingRecord,
+} from "../api/meetings.ts";
 // Meeting Recordings: what was recorded, who was there, and what the local model made of it.
 //
 // The tab is a catch-up surface first. Someone who missed Tuesday opens it to watch the recording
@@ -12,20 +21,16 @@
 // surfaces that re-render underneath the typist (a roster reloading, a notice arriving). Nothing
 // polls here: the list is fetched once when the tab opens, so the DOM is a safe place for the two
 // fields of an admin's recovery form.
-import { html, nothing } from "lit";
-import { t } from "../../../i18n/index.ts";
-import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
-import type {
-  MeetingAttendanceNudgePreview,
-  MeetingAttendanceNudgeResult,
-  MeetingAttendee,
-  MeetingRecord,
-} from "../auth/session.ts";
+import { renderDateControl } from "../date-control.ts";
 
 export type MeetingsRosterMember = { id: string; name: string };
 
 export type AdminBotMeetingsProps = {
   meetings: MeetingRecord[];
+  visibleCount: number;
+  onShowMore: (nextCount: number) => void;
+  hasMore: boolean;
+  loadingMore: boolean;
   loading: boolean;
   saving: boolean;
   error: string | null;
@@ -319,7 +324,7 @@ function renderFileForm(props: AdminBotMeetingsProps) {
         /></label>
         <label class="adminbot-form__field">
           <span>${t("adminbotMeetings.startedAt")}</span>
-          <input name="started_at" type="datetime-local" required />
+          ${renderDateControl(html`<input name="started_at" type="datetime-local" required />`)}
         </label>
         <label class="adminbot-form__field">
           <span>${t("adminbotMeetings.shareUrl")}</span>
@@ -469,6 +474,7 @@ function renderArchiveLinks() {
 }
 
 export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
+  const visibleCount = Math.min(props.meetings.length, props.visibleCount);
   return html`
     <section class="meetings">
       ${props.error ? html`<p class="notice notice--error">${props.error}</p>` : nothing}
@@ -478,10 +484,31 @@ export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
       ${props.loading && props.meetings.length === 0
         ? html`<p class="muted">${t("adminbotMeetings.loading")}</p>`
         : nothing}
-      ${!props.loading && props.meetings.length === 0
+      ${!props.loading && !props.error && props.meetings.length === 0
         ? html`<p class="muted">${t("adminbotMeetings.empty")}</p>`
         : nothing}
-      ${props.meetings.map((meeting) => renderMeeting(props, meeting))}
+      ${props.meetings.slice(0, visibleCount).map((meeting) => renderMeeting(props, meeting))}
+      ${visibleCount < props.meetings.length || props.hasMore
+        ? html`<button
+            class="btn meetings__more"
+            type="button"
+            data-testid="meetings-show-more"
+            ?disabled=${props.loadingMore}
+            aria-busy=${props.loadingMore ? "true" : "false"}
+            @click=${() =>
+              props.onShowMore(
+                visibleCount < props.meetings.length
+                  ? Math.min(props.meetings.length, visibleCount + 12)
+                  : visibleCount + 12,
+              )}
+          >
+            ${props.loadingMore
+              ? t("adminbotMeetings.loading")
+              : t("professor.showMore", {
+                  count: String(Math.min(12, props.meetings.length - visibleCount || 12)),
+                })}
+          </button>`
+        : nothing}
     </section>
   `;
 }

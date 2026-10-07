@@ -6,8 +6,9 @@
 import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLogisticsRequestInput } from "../contracts/actions.js";
+import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type { CallSheetSource } from "./call-sheet-config.js";
 import { createAdminBotMockService } from "./server.js";
 
@@ -44,7 +45,10 @@ type Lab = {
  * push is off: it probes a doc-prep link over the network and reads a real spreadsheet, and these
  * tests are about who the wire lets in.
  */
-async function startLab(callSheet?: CallSheetSource): Promise<Lab> {
+async function startLab(
+  callSheet?: CallSheetSource,
+  driveProbe?: AdminBotDriveProbe,
+): Promise<Lab> {
   const sensitiveInfoPath = path.join(
     os.tmpdir(),
     `adminbot-logistics-${Date.now()}-${Math.random().toString(16).slice(2)}.md`,
@@ -54,8 +58,13 @@ async function startLab(callSheet?: CallSheetSource): Promise<Lab> {
     sensitiveInfoPath,
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
-    dcsFormRunner: async () => {},
+    dcsRosterRecorder: async () => ({
+      username: "stub@cs.toronto.edu",
+      password: "stub",
+      candidates: ["stub@cs.toronto.edu"],
+    }),
     autoQueueMeetingRequests: Boolean(callSheet),
+    ...(driveProbe ? { driveProbe } : {}),
     ...(callSheet ? { callSheet } : {}),
   });
   await new Promise<void>((resolve, reject) => {
@@ -108,7 +117,7 @@ async function startLab(callSheet?: CallSheetSource): Promise<Lab> {
     if (!claim) {
       throw new Error(`no pending claim for ${id}`);
     }
-    const approved = mock.auth.approveRegistration(claim.id, "test-admin");
+    const approved = await mock.auth.approveRegistration(claim.id, "test-admin");
     if (!approved.ok) {
       throw new Error(approved.error.message);
     }
@@ -124,6 +133,54 @@ async function startLab(callSheet?: CallSheetSource): Promise<Lab> {
   }
   return { baseUrl, tokens };
 }
+
+describe("Drive links in letter documents", () => {
+  it("refuses a recommendation-letter folder AdminBot cannot open", async () => {
+    const probe = vi.fn<AdminBotDriveProbe>(async () => ({ status: "missing" }));
+    const lab = await startLab(undefined, probe);
+    const url = "https://drive.google.com/file/d/1PdF9xAbCdEfGhIjKlMnOpQrStUv/view";
+    const unauthenticated = await fetch(`${lab.baseUrl}/drive/check-edit-access`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    expect(unauthenticated.status).toBe(401);
+    const checked = await fetch(`${lab.baseUrl}/drive/check-edit-access`, {
+      method: "POST",
+      headers: asMember(lab, "ada", { "Content-Type": "application/json" }),
+      body: JSON.stringify({ url }),
+    });
+    expect(checked.status).toBe(200);
+    expect(await checked.json()).toMatchObject({ status: "inaccessible" });
+    const letter = await submit(lab, "ada", {
+      ...LETTERS,
+      drive_folder_url: "https://drive.google.com/drive/folders/1PdF9xAbCdEfGhIjKlMnOpQrStUv",
+    });
+    expect(letter.status).toBe(422);
+    expect(probe).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts a recommendation-letter folder AdminBot can only view", async () => {
+    const lab = await startLab(undefined, async () => ({ status: "found", canEdit: false }));
+    const letter = await submit(lab, "ada", {
+      ...LETTERS,
+      drive_folder_url: "https://drive.google.com/drive/folders/1PdF9xAbCdEfGhIjKlMnOpQrStUv",
+    });
+    expect(letter.status).toBe(201);
+  });
+
+  it("keeps letter submission available when the Drive checker is offline", async () => {
+    const lab = await startLab(undefined, async () => ({
+      status: "unreadable",
+      reason: "offline",
+    }));
+    const letter = await submit(lab, "ada", {
+      ...LETTERS,
+      drive_folder_url: "https://drive.google.com/drive/folders/1PdF9xAbCdEfGhIjKlMnOpQrStUv",
+    });
+    expect(letter.status).toBe(201);
+  });
+});
 
 function asMember(lab: Lab, memberId: string, extra: Record<string, string> = {}) {
   return { Authorization: `Bearer ${lab.tokens[memberId]}`, ...extra };

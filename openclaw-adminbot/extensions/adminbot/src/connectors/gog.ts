@@ -39,6 +39,8 @@ type GogCapture = (args: string[]) => Promise<string>;
 export type GogAdminBotExecutorOptions = {
   env?: NodeJS.ProcessEnv;
   run?: GogRun;
+  /** Reads, for the actions that must look at the live state before they write. */
+  capture?: GogCapture;
 };
 
 export type GogSheetReadOptions = {
@@ -121,6 +123,57 @@ export async function readGogSheetRows(
   const args = rootArgs("sheets.get", optionalAccount(options.env));
   args.push("--readonly", "sheets", "get", id, options.range?.trim() || DEFAULT_SHEET_RANGE);
   return parseGogSheetRows(await capture(args));
+}
+
+export type GogSheetAppendOptions = {
+  env?: NodeJS.ProcessEnv;
+  range?: string;
+  run?: GogRun;
+};
+
+/**
+ * Appends rows after the last populated row of a range.
+ *
+ * `--input RAW` rather than the CLI's `USER_ENTERED` default: these cells are data, not things a
+ * person typed. Under USER_ENTERED, Sheets parses each string the way it would parse typing -- a
+ * leading `=`/`+`/`-` becomes a formula, and a value that looks like a date or a number is
+ * silently coerced. A generated credential that Sheets decided was arithmetic is not the
+ * credential any more, and nobody finds out until the sign-in fails.
+ *
+ * `--insert INSERT_ROWS` rather than the default OVERWRITE: OVERWRITE writes into whatever already
+ * sits below the range's last populated row, so anything a human parked further down the sheet is
+ * silently clobbered. INSERT_ROWS makes room instead.
+ *
+ * Refuses an empty row set rather than issuing a no-op API call, so "nothing was appended" can
+ * never be reported to a caller as a successful append.
+ */
+export async function appendGogSheetRows(
+  spreadsheetId: string,
+  rows: string[][],
+  options: GogSheetAppendOptions = {},
+): Promise<void> {
+  const id = spreadsheetId.trim();
+  if (!id) {
+    throw new Error("gog sheets append requires a spreadsheet id");
+  }
+  if (rows.length === 0) {
+    throw new Error("gog sheets append refuses an empty row set");
+  }
+  const run = options.run ?? createGogRunner(options.env);
+  const args = rootArgs("sheets.append", optionalAccount(options.env));
+  args.push(
+    "sheets",
+    "append",
+    id,
+    options.range?.trim() || DEFAULT_SHEET_RANGE,
+    "--input",
+    "RAW",
+    "--insert",
+    "INSERT_ROWS",
+    "--values-json",
+    JSON.stringify(rows),
+  );
+  await run(args);
 }
 
 export type GogSheetTab = { title: string; gid: number };
@@ -254,8 +307,42 @@ export function createGogAdminBotExecutor(
   options: GogAdminBotExecutorOptions = {},
 ): AdminBotActionExecutor {
   const run = options.run ?? createGogRunner(options.env);
+  const capture = options.capture ?? createGogCapture(options.env);
   return {
     async execute(proposal) {
+      if (proposal.type === "calendar.add_attendees") {
+        const payload = requirePayload(proposal);
+        const args = buildCalendarAddAttendeesArgs(proposal);
+        const eventId = requireString(payload, "event_id");
+        const readArgs = rootArgs("calendar.event", optionalString(payload, "account"));
+        readArgs.push(
+          "calendar",
+          "event",
+          optionalString(payload, "calendar_id") ?? "primary",
+          eventId,
+        );
+        const existing = new Set(
+          parseEventAttendees(await capture(readArgs), eventId, true).map((attendee) =>
+            attendee.email.toLowerCase(),
+          ),
+        );
+        const missing = [
+          ...new Set(
+            (recipients(payload.attendees) ?? "")
+              .split(",")
+              .map((email) => email.trim().toLowerCase()),
+          ),
+        ].filter((email) => email && !existing.has(email));
+        if (missing.length > 0) {
+          args[args.indexOf("--add-attendee") + 1] = missing.join(",");
+          await run(args);
+        }
+        return { handled: true };
+      }
+      if (proposal.type === "calendar.remove_attendees") {
+        await removeCalendarAttendees(proposal, run, capture);
+        return { handled: true };
+      }
       if (
         proposal.type === "logistics.send_signed_document" ||
         // Same shape: bytes rather than paths, because the forms exist only as base64 on the
@@ -384,15 +471,88 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
       return buildCalendarUpdateArgs(proposal);
     case "calendar.add_attendees":
       return buildCalendarAddAttendeesArgs(proposal);
-    case "calendar.remove_attendees":
-      return buildCalendarRemoveAttendeesArgs(proposal);
     case "calendar.cancel":
       return buildCalendarDeleteArgs(proposal);
     case "sheet.update_cells":
       return buildSheetUpdateArgs(proposal);
+    case "sheet.append_rows":
+      return buildSheetAppendArgs(proposal);
+    case "paper_integrity.sheet_scores":
+      return buildIntegrityScoreArgs(proposal);
     default:
       return undefined;
   }
+}
+
+/**
+ * The approval-gated twin of `appendGogSheetRows`, with the same `RAW` / `INSERT_ROWS` choices for
+ * the same reasons: a typed value stays the value, and nothing a person parked below the roster is
+ * overwritten.
+ */
+export function buildSheetAppendArgs(proposal: AdminBotStoredProposal): string[] {
+  const payload = requirePayload(proposal);
+  const spreadsheetId = requireString(payload, "spreadsheet_id");
+  const range = requireString(payload, "range");
+  const rows = payload.rows;
+  if (
+    !Array.isArray(rows) ||
+    rows.length === 0 ||
+    rows.some((row) => !Array.isArray(row) || row.length === 0)
+  ) {
+    throw new Error("sheet.append_rows proposed_payload.rows must be a non-empty row matrix");
+  }
+  const values = (rows as unknown[][]).map((row) =>
+    row.map((cell) => (cell === undefined || cell === null ? "" : String(cell))),
+  );
+  const args = rootArgs("sheets.append", optionalString(payload, "account"));
+  args.push(
+    "sheets",
+    "append",
+    spreadsheetId,
+    range,
+    "--input",
+    "RAW",
+    "--insert",
+    "INSERT_ROWS",
+    "--values-json",
+    JSON.stringify(values),
+  );
+  return args;
+}
+
+/**
+ * The auto-approved score write: the same batch update as `sheet.update_cells`, refused unless
+ * every update is one cell in the column the payload names. That constraint is what makes skipping
+ * the approval safe -- a malformed or hostile payload cannot reach any other cell of the sheet.
+ */
+export function buildIntegrityScoreArgs(proposal: AdminBotStoredProposal): string[] {
+  const payload = requirePayload(proposal);
+  const columns = Array.isArray(payload.columns) ? payload.columns : [];
+  if (
+    columns.length < 1 ||
+    columns.length > 8 ||
+    columns.some((column) => typeof column !== "string" || !/^[A-Z]{1,2}$/u.test(column))
+  ) {
+    throw new Error("paper_integrity.sheet_scores columns must be one to eight column letters");
+  }
+  const column = (columns as string[]).join("|");
+  const updates = Array.isArray(payload.updates) ? payload.updates : [];
+  const cell = new RegExp(`^'(?:[^']|'')+'!(?:${column})[1-9][0-9]*$`, "u");
+  for (const entry of updates) {
+    const update = (entry ?? {}) as Record<string, unknown>;
+    const values = update.values;
+    const single =
+      Array.isArray(values) &&
+      values.length === 1 &&
+      Array.isArray(values[0]) &&
+      (values[0] as unknown[]).length === 1;
+    if (typeof update.range !== "string" || !cell.test(update.range) || !single) {
+      throw new Error(
+        `paper_integrity.sheet_scores may only write single cells in column ${column}`,
+      );
+    }
+  }
+  return buildSheetUpdateArgs(proposal);
 }
 
 /**
@@ -473,6 +633,17 @@ function buildEmailArgs(proposal: AdminBotStoredProposal, draft: boolean): strin
   return args;
 }
 
+/**
+ * AdminBot's calendar writes never email anyone.
+ *
+ * Every create, invite, reschedule, attendee change and cancellation passes this to gog's
+ * `--send-updates`. The event still appears on, moves on, or disappears from each guest's
+ * calendar; Google just does not mail them about it. With `all`, one approved change emailed the
+ * whole guest list -- e.g. the Monday meeting sent a fresh invite to every member whenever
+ * somebody was added.
+ */
+const CALENDAR_SEND_UPDATES = "none";
+
 function buildCalendarCreateArgs(proposal: AdminBotStoredProposal): string[] {
   const payload = requirePayload(proposal);
   const attendees = recipients(payload.attendees);
@@ -489,7 +660,7 @@ function buildCalendarCreateArgs(proposal: AdminBotStoredProposal): string[] {
     "--to",
     requireString(payload, "to"),
     "--send-updates",
-    proposal.type === "calendar.send_invite" ? "all" : "none",
+    CALENDAR_SEND_UPDATES,
   );
   appendOptional(args, "--attendees", attendees);
   appendOptional(args, "--description", optionalString(payload, "description"));
@@ -516,7 +687,7 @@ function buildCalendarUpdateArgs(proposal: AdminBotStoredProposal): string[] {
     "--to",
     requireString(payload, "to"),
     "--send-updates",
-    "all",
+    CALENDAR_SEND_UPDATES,
   );
   appendOptional(args, "--summary", optionalString(payload, "summary"));
   appendOptional(args, "--attendees", recipients(payload.attendees));
@@ -548,47 +719,117 @@ function buildCalendarAddAttendeesArgs(proposal: AdminBotStoredProposal): string
     "--add-attendee",
     attendees,
     "--send-updates",
-    "all",
+    CALENDAR_SEND_UPDATES,
   );
   return args;
 }
 
 /**
- * Rewrite an event's attendee list to exactly `remaining_attendees`.
+ * Take the people named in `removed_attendees` off each target event, and nobody else.
  *
- * `--attendees` replaces rather than adds, which is what makes removal possible at all — there is
- * no remove-attendee flag. It is also what makes this the most dangerous arm in this file: the
- * list is absolute, so anyone missing from it is uninvited, including people added to the event
- * between the read that produced the plan and the approval that executes it.
+ * There is no remove-attendee flag, so removal is a whole-list replace (`--attendees`). The list
+ * written is computed here, from the event as it stands at execution, rather than taken from the
+ * proposal: a proposal's `remaining_attendees` is a snapshot from whenever the sweep ran, and
+ * writing it back days later uninvites everyone added in between. Subtracting from the live list
+ * also makes the action idempotent -- an event none of the named people are still on is not
+ * written at all, so re-approving, retrying after a timeout, or approving a duplicate proposal
+ * does nothing instead of touching the event again.
  *
- * Two guards, both refusing rather than guessing. An empty list is rejected because "remove
- * everybody" is never what a membership sweep means and is exactly what a failed read looks like;
- * and the payload has to name the people being dropped, so the stored proposal records the intent
- * a human approved and not just the end state.
+ * `event_ids` rather than one id because a standing meeting edited "this and following" becomes
+ * several series, and a departure has to come off every one that still has Mondays ahead.
+ *
+ * Silent (CALENDAR_SEND_UPDATES). Google treats a whole-list replace as an edit for every guest,
+ * so with `all` every remaining member got a fresh copy of the Monday meeting invite each time
+ * somebody else was dropped. The people removed are not told either: a membership sweep tidying
+ * the guest list is not news to anyone. gog sends bare `{email}` objects, so the write does reset
+ * the remaining guests' RSVPs; it cannot be avoided through gog, and is why an event that needs
+ * no change is never written.
  */
-function buildCalendarRemoveAttendeesArgs(proposal: AdminBotStoredProposal): string[] {
+async function removeCalendarAttendees(
+  proposal: AdminBotStoredProposal,
+  run: GogRun,
+  capture: GogCapture,
+): Promise<void> {
   const payload = requirePayload(proposal);
-  const remaining = recipients(payload.remaining_attendees);
-  if (!remaining) {
-    throw new Error(
-      "calendar.remove_attendees proposed_payload.remaining_attendees is required and must not be empty",
-    );
-  }
-  if (!recipients(payload.removed_attendees)) {
+  const removed = new Set(
+    (recipients(payload.removed_attendees) ?? "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (removed.size === 0) {
     throw new Error("calendar.remove_attendees proposed_payload.removed_attendees is required");
   }
-  const args = rootArgs("calendar.update", optionalString(payload, "account"));
-  args.push(
-    "calendar",
-    "update",
-    optionalString(payload, "calendar_id") ?? "primary",
-    requireString(payload, "event_id"),
-    "--attendees",
-    remaining,
-    "--send-updates",
-    "all",
-  );
-  return args;
+  const calendarId = optionalString(payload, "calendar_id") ?? "primary";
+  const account = optionalString(payload, "account");
+  const listed = Array.isArray(payload.event_ids)
+    ? payload.event_ids.filter((id): id is string => typeof id === "string" && !!id.trim())
+    : [];
+  const eventIds = listed.length > 0 ? listed : [requireString(payload, "event_id")];
+
+  for (const eventId of eventIds) {
+    const readArgs = rootArgs("calendar.event", account);
+    readArgs.push("calendar", "event", calendarId, eventId);
+    const attendees = parseEventAttendees(await capture(readArgs), eventId);
+    const keep = attendees.filter((attendee) => !removed.has(attendee.email.toLowerCase()));
+    if (keep.length === attendees.length) {
+      continue;
+    }
+    // An empty result is refused: "remove everybody" is never what a membership sweep means, and
+    // it is exactly what a read that came back without its guest list looks like.
+    if (keep.length === 0) {
+      throw new Error(
+        `calendar.remove_attendees refuses to empty the guest list of event ${eventId}`,
+      );
+    }
+    const args = rootArgs("calendar.update", account);
+    args.push(
+      "calendar",
+      "update",
+      calendarId,
+      eventId,
+      "--attendees",
+      keep.map(attendeeSpec).join(","),
+      "--send-updates",
+      CALENDAR_SEND_UPDATES,
+    );
+    await run(args);
+  }
+}
+
+type EventAttendee = { email: string; optional: boolean; resource: boolean };
+
+function parseEventAttendees(stdout: string, eventId: string, allowEmpty = false): EventAttendee[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    throw new Error(`gog calendar event ${eventId} did not return JSON: ${stdout.slice(0, 200)}`);
+  }
+  const record = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+  const event = (
+    record.event && typeof record.event === "object" ? record.event : record
+  ) as Record<string, unknown>;
+  if (!Array.isArray(event.attendees)) {
+    if (allowEmpty && event.id === eventId && event.attendees === undefined) {
+      return [];
+    }
+    // An event with no guest list at all cannot be the meeting a removal was planned against.
+    throw new Error(`gog calendar event ${eventId} returned no attendee list`);
+  }
+  return event.attendees.flatMap((entry) => {
+    const attendee = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+    const email = typeof attendee.email === "string" ? attendee.email.trim() : "";
+    return email
+      ? [{ email, optional: attendee.optional === true, resource: attendee.resource === true }]
+      : [];
+  });
+}
+
+// gog's modifier syntax, so a replace does not quietly turn optional guests into required ones or a
+// booked room into a person.
+function attendeeSpec(attendee: EventAttendee): string {
+  return `${attendee.email}${attendee.optional ? ";optional" : ""}${attendee.resource ? ";resource" : ""}`;
 }
 
 function buildCalendarDeleteArgs(proposal: AdminBotStoredProposal): string[] {
@@ -600,7 +841,7 @@ function buildCalendarDeleteArgs(proposal: AdminBotStoredProposal): string[] {
     optionalString(payload, "calendar_id") ?? "primary",
     requireString(payload, "event_id"),
     "--send-updates",
-    "all",
+    CALENDAR_SEND_UPDATES,
   );
   return args;
 }
@@ -615,13 +856,13 @@ function buildCalendarDeleteArgs(proposal: AdminBotStoredProposal): string[] {
  *
  * Never throws. A probe is a question the lab asks about its own records, and the answer "I could
  * not tell" has to be available to the caller as an answer rather than as a stack trace: a paper
- * must not stall because a network blinked. The three outcomes are the contract's own, and only
- * `missing` is Google actually saying the file is not there.
+ * must not stall because a network blinked. Google returns 404 both when a file is absent and
+ * when this account cannot read it; callers must not claim that a 404 proves deletion.
  */
 export function createGogDriveProbe(
   options: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {},
 ): AdminBotDriveProbe {
-  const command = options.command ?? "gog";
+  const command = options.command ?? resolveGogExecutable(options.env);
   return async (fileId) => {
     // The id comes from `adminBotDriveFileId`, which accepts a closed charset -- but this is the
     // last point before it becomes an argument, so it is checked here too rather than trusted.
@@ -635,7 +876,7 @@ export function createGogDriveProbe(
       "get",
       fileId,
       "--fields",
-      "id,name,trashed",
+      "id,name,mimeType,trashed,capabilities(canEdit,canAddChildren)",
     ];
     try {
       const { stdout } = await execFile(command, args, {
@@ -644,18 +885,26 @@ export function createGogDriveProbe(
         ...(options.env ? { env: options.env } : {}),
       });
       const payload = JSON.parse(stdout) as Record<string, unknown>;
-      const file = (payload.result ?? payload) as Record<string, unknown>;
+      const file = (payload.file ?? payload.result ?? payload) as Record<string, unknown>;
       const name = typeof file.name === "string" ? file.name : undefined;
+      const capabilities = file.capabilities as Record<string, unknown> | undefined;
+      const editable =
+        file.mimeType === "application/vnd.google-apps.folder"
+          ? typeof capabilities?.canEdit === "boolean" &&
+            typeof capabilities.canAddChildren === "boolean"
+            ? capabilities.canEdit && capabilities.canAddChildren
+            : undefined
+          : capabilities?.canEdit;
       return {
         status: "found",
         ...(name ? { name } : {}),
         ...(file.trashed === true ? { trashed: true } : {}),
+        ...(typeof editable === "boolean" ? { canEdit: editable } : {}),
       };
     } catch (error) {
       const text = `${(error as { stderr?: string }).stderr ?? ""} ${(error as Error).message ?? ""}`;
-      // Google's own "there is no such file" and "you cannot see it" are different sentences, and
-      // only the first is evidence about the artifact. Anything else -- no account, a timeout, a
-      // gog that is not installed -- is the lab failing to ask, not the file failing to exist.
+      // A 404 also covers files hidden from this account. Anything else -- no account, a timeout,
+      // a gog that is not installed -- is the lab failing to ask, not the file failing to exist.
       return /not ?found|404|does not exist/iu.test(text)
         ? { status: "missing" }
         : { status: "unreadable", reason: firstLine(text) };
@@ -679,7 +928,9 @@ export async function readDriveFileBase64(
   fileId: string,
   options: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {},
 ): Promise<string> {
-  const command = options.command ?? "gog";
+  // Resolved rather than bare: under the systemd unit's minimal PATH a bare "gog" ENOENTs, which
+  // surfaced as "could not read the Drive copy (spawn gog ENOENT)" on every LinkedIn draft.
+  const command = options.command ?? resolveGogExecutable(options.env);
   const output = path.join(
     os.tmpdir(),
     `adminbot-drive-${fileId.replace(/[^a-zA-Z0-9_-]/gu, "")}-${Date.now()}.pdf`,

@@ -17,7 +17,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { i18n } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
-import type { CalendarEvent } from "../auth/session.ts";
+import type { CalendarEvent } from "../api/calendar.ts";
 import {
   hasAudienceFilter,
   knownCities,
@@ -27,6 +27,7 @@ import {
   selectAudience,
   type AudienceFilter,
   type AudiencePlan,
+  type InviteMode,
 } from "../calendar-audience.ts";
 import { sanitizeEventDescription } from "../calendar-description.ts";
 import {
@@ -46,6 +47,7 @@ import {
   type AttendeeZoneSource,
 } from "../data/attendee-time.ts";
 import { tripOnDay, tripRows } from "../data/availability.ts";
+import { dateTimeFormat } from "../data/date-format.ts";
 import { renderMemberTypeFilter } from "../member-type-filter.ts";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
@@ -58,6 +60,10 @@ const STATUSES = ["active", "part_time", "on_leave", "alumni", "external"] as co
 
 function filterOf(state: AppViewState): AudienceFilter {
   return state.calendarAudience ?? {};
+}
+
+function inviteModeOf(state: AppViewState): InviteMode {
+  return state.calendarInviteMode === "limit" ? "limit" : "add";
 }
 
 function setFilter(state: AppViewState, patch: Partial<AudienceFilter>): void {
@@ -309,7 +315,7 @@ function dayCardLabel(dayKey: string): string {
   if (Number.isNaN(parsed)) {
     return dayKey;
   }
-  return new Intl.DateTimeFormat(i18n.getLocale(), {
+  return dateTimeFormat(i18n.getLocale(), {
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -409,7 +415,7 @@ function renderMonth(state: AppViewState) {
               data-testid=${`calendar-day-${day.key}`}
             >
               <span class="adminbot-calendar__day-number">${day.day}</span>
-              ${renderDayTrips(state, day.key)}
+              ${state.adminBotRosterLoadedAt ? renderDayTrips(state, day.key) : nothing}
               ${events.slice(0, CHIPS_PER_DAY).map((event) => renderChip(state, event, timezone))}
               ${events.length > CHIPS_PER_DAY
                 ? html`<button
@@ -859,7 +865,8 @@ function renderAttendeeTime(state: AppViewState, memberId: string, startsAt: str
 }
 
 /**
- * The exclusive plan for the selected event: who joins, who stays, who comes off.
+ * The plan for the selected event: who joins, who stays, and -- when the send is limited to the
+ * chosen list -- who comes off.
  *
  * One function for the panel and for the send, so what an operator reads above the button is the
  * same arithmetic the button performs. Computing them separately is how a confirm line ends up
@@ -880,6 +887,7 @@ function invitePlanOf(state: AppViewState): AudiencePlan {
     filter: filterOf(state),
     attendees: selected?.attendees ?? [],
     excludedMemberIds: state.calendarExcludedMemberIds ?? [],
+    mode: inviteModeOf(state),
     // The calendar the event lives on is routinely listed among its own attendees, and dropping it
     // would take the event off the calendar it belongs to.
     protectedEmails: [selected?.calendar_id, state.calendarSource?.id].filter(
@@ -903,6 +911,57 @@ function sendLabel(plan: AudiencePlan): string {
   return parts.length ? parts.join(" ") : "no change";
 }
 
+const INVITE_MODES: ReadonlyArray<{ value: InviteMode; label: string; hint: string }> = [
+  {
+    value: "add",
+    label: "Add invitees",
+    hint: "Invite the people below. Everyone already on the event stays.",
+  },
+  {
+    value: "limit",
+    label: "Limit invitees to this list only",
+    hint: "Make the people below the whole guest list. Roster members they leave out come off.",
+  },
+];
+
+/**
+ * Whether the send only adds or also takes people off.
+ *
+ * Two plainly worded choices rather than a checkbox, because the difference is whether somebody
+ * gets uninvited, and that should read as a decision rather than as a setting left on. Switching
+ * disarms a pending confirm for the same reason a filter change does: the plan it agreed to is no
+ * longer the plan the button would send.
+ */
+function renderInviteModeSelect(state: AppViewState) {
+  const mode = inviteModeOf(state);
+  return html`
+    <fieldset class="adminbot-calendar__mode" data-testid="calendar-invite-mode">
+      <legend>When sending</legend>
+      ${INVITE_MODES.map(
+        (option) => html`
+          <label class="adminbot-calendar__mode-option">
+            <input
+              type="radio"
+              name="calendar-invite-mode"
+              value=${option.value}
+              ?checked=${mode === option.value}
+              data-testid=${`calendar-invite-mode-${option.value}`}
+              @change=${() => {
+                state.calendarInviteMode = option.value;
+                state.calendarConfirming = null;
+              }}
+            />
+            <span>
+              <strong>${option.label}</strong>
+              <small>${option.hint}</small>
+            </span>
+          </label>
+        `,
+      )}
+    </fieldset>
+  `;
+}
+
 function renderInvitePanel(state: AppViewState) {
   const members = state.adminBotData?.members ?? [];
   const papers = state.adminBotData?.papers ?? [];
@@ -912,6 +971,7 @@ function renderInvitePanel(state: AppViewState) {
   const events = state.calendarEvents ?? [];
   const selected = events.find((event) => event.id === state.calendarSelectedEventId);
   const plan = invitePlanOf(state);
+  const mode = inviteModeOf(state);
   const timezones = [
     ...new Set(members.flatMap((member) => (member.timezone ? [member.timezone] : []))),
   ].toSorted((left, right) => left.localeCompare(right));
@@ -1080,7 +1140,7 @@ function renderInvitePanel(state: AppViewState) {
             their profile to have the next send decide.
           </p>`
         : nothing}
-      ${plan.unrecognized.length
+      ${mode === "limit" && plan.unrecognized.length
         ? html`<p class="adminbot-calendar__note" data-testid="calendar-kept-guests">
             ${plan.unrecognized.length}
             ${plan.unrecognized.length === 1 ? "address on" : "addresses on"} this event
@@ -1088,6 +1148,7 @@ function renderInvitePanel(state: AppViewState) {
             (${plan.unrecognized.join(", ")}) — guests and rooms are never removed.
           </p>`
         : nothing}
+      ${renderInviteModeSelect(state)}
 
       <div class="adminbot-calendar__actions">
         ${state.calendarConfirming === "invite" && selected
@@ -1126,7 +1187,9 @@ function renderInvitePanel(state: AppViewState) {
             ? "Pick an event to invite people to"
             : state.calendarConfirming === "invite"
               ? `Confirm — ${sendLabel(plan)}`
-              : `Sync guest list (${sendLabel(plan)})`}
+              : mode === "add"
+                ? `Add invitees (${sendLabel(plan)})`
+                : `Sync guest list (${sendLabel(plan)})`}
         </button>
       </div>
     </section>
@@ -1171,7 +1234,7 @@ export function renderAdminBotCalendar(state: AppViewState) {
   return html`
     <div class="adminbot-calendar">
       ${renderNotice(state)} ${renderMonth(state)} ${renderDraftPanel(state)}
-      ${renderInvitePanel(state)}
+      ${state.adminBotRosterLoadedAt ? renderInvitePanel(state) : nothing}
       ${renderCards(
         state,
         state.calendarSource?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,

@@ -1,8 +1,9 @@
 import type { UiSettings } from "../../storage.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
+import { readApiJson } from "../data/api-json.ts";
 import { taskFetch } from "../task-request.ts";
 import type { AdminBotCvDigestJobState, AdminBotHost } from "./admin.ts";
-import { loadWorkshopNudgePreview } from "./admin.ts";
+import { loadWorkshopNudgePreview } from "./conference-papers.ts";
 
 export async function runAdminBotCvScan(host: {
   settings: UiSettings;
@@ -22,13 +23,16 @@ export async function runAdminBotCvScan(host: {
       },
       body: "{}",
     });
-    const result = await response.json();
+    type ScanRows = Array<{ status: string; member_name?: string; reason?: string }>;
+    const result = (await readApiJson(response)) as {
+      error?: { message?: string };
+      result?: { results?: ScanRows };
+      results?: ScanRows;
+    } | null;
     if (!response.ok) {
       throw new Error(result?.error?.message ?? "CV scan failed.");
     }
-    const rows = (result?.result?.results ?? result?.results) as
-      | Array<{ status: string; member_name?: string; reason?: string }>
-      | undefined;
+    const rows = result?.result?.results ?? result?.results;
     const failures = rows?.filter((row) => row.status === "failed") ?? [];
     const changed =
       rows?.filter((row) => row.status === "changed" || row.status === "first_scan").length ?? 0;
@@ -62,7 +66,7 @@ export async function retryWorkshopTask(host: AdminBotHost) {
       },
     );
     if (!response.ok) {
-      const body = await response.json();
+      const body = (await readApiJson(response)) as { error?: { message?: string } } | null;
       throw new Error(body?.error?.message ?? "The match could not resume.");
     }
     await loadWorkshopNudgePreview(host);

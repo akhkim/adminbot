@@ -4,12 +4,16 @@ const publishLabBroadcast = vi.fn();
 const fetchLabBroadcasts = vi.fn();
 
 vi.mock("../auth/session.ts", () => ({
-  publishLabBroadcast: (...args: unknown[]) => publishLabBroadcast(...args),
-  fetchLabBroadcasts: (...args: unknown[]) => fetchLabBroadcasts(...args),
-  fetchNotifications: vi.fn(),
-  markNotificationsRead: vi.fn(),
   loadStoredMemberSession: () => ({ sessionToken: "token" }),
   resolveAdminBotBaseUrl: () => "http://localhost",
+}));
+vi.mock("../api/lab-sharing.ts", () => ({
+  publishLabBroadcast: (...args: unknown[]) => publishLabBroadcast(...args),
+  fetchLabBroadcasts: (...args: unknown[]) => fetchLabBroadcasts(...args),
+}));
+vi.mock("../api/workspace.ts", () => ({
+  fetchNotifications: vi.fn(),
+  markNotificationsRead: vi.fn(),
 }));
 vi.mock("../../toast.ts", () => ({ showToast: vi.fn() }));
 
@@ -22,7 +26,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   publishLabBroadcast.mockResolvedValue({
     ok: true,
-    value: { status: { message: "posted" }, history: [{ message: "posted" }] },
+    value: {
+      status: { message: "posted", timezone: "America/Toronto" },
+      history: [{ message: "posted" }],
+    },
   });
 });
 
@@ -34,10 +41,12 @@ describe("publishAdminBotBroadcast", () => {
       message: "Travelling",
       availability: "away",
       expiresOn: "2099-09-26",
+      timezone: " America/Toronto ",
     });
     const [body] = publishLabBroadcast.mock.calls[0] as [{ expires_at: string; message: string }];
     expect(new Date(body.expires_at).getTime()).toBe(new Date("2099-09-26T23:59:59").getTime());
     expect(body.message).toBe("Travelling");
+    expect(body).toMatchObject({ timezone: "America/Toronto" });
   });
 
   it("refuses an empty message and a date already past, without calling the service", async () => {
@@ -95,5 +104,23 @@ describe("publishAdminBotBroadcast", () => {
 
   it("defaults the end date a week out", () => {
     expect(defaultBroadcastExpiry(new Date("2026-09-11T00:00:00Z"))).toBe("2026-09-18");
+  });
+});
+
+it("reports a server that saves the message but drops its time zone", async () => {
+  publishLabBroadcast.mockResolvedValue({
+    ok: true,
+    value: { status: { message: "posted" }, history: [] },
+  });
+  const app = host();
+  await publishAdminBotBroadcast(app, {
+    message: "Reviewing",
+    availability: "busy",
+    expiresOn: "2099-01-01",
+    timezone: "America/Toronto",
+  });
+  expect(app.adminBotBroadcastNotice).toEqual({
+    kind: "error",
+    text: "The message was posted, but its time zone was not saved.",
   });
 });

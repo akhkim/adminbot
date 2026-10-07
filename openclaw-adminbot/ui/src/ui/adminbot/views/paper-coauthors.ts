@@ -17,10 +17,20 @@
 // lab member), so rows move with explicit buttons rather than drag-and-drop, which is unusable on
 // touch and invisible to a keyboard.
 import { html, nothing } from "lit";
+import { adminBotNormalizeXHandle } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { icons } from "../../icons.ts";
 import { renderMemberSelect, type MemberOption } from "./member-select.ts";
 
-export type PaperAuthorLink = { name: string; member_id?: string; email?: string };
+export type PaperAuthorLink = {
+  name: string;
+  member_id?: string;
+  email?: string;
+  /**
+   * The X handle to tag this author by, stored bare. Externals only: a lab member's handle is on
+   * their profile, and asking for it twice is asking for two answers that can disagree.
+   */
+  twitter?: string;
+};
 
 export type PaperCoauthorsProps = {
   paperId: string;
@@ -29,10 +39,11 @@ export type PaperCoauthorsProps = {
   members: MemberOption[];
   /** Absent for a reader who may not edit this paper. */
   onChange?: (links: PaperAuthorLink[]) => void;
-  /** Draft state for the two add controls, held by the caller so a re-render does not clear it. */
+  /** Draft state for the add controls, held by the caller so a re-render does not clear it. */
   draftEmail: string;
   draftName: string;
-  onDraftChange: (draft: { email?: string; name?: string }) => void;
+  draftTwitter: string;
+  onDraftChange: (draft: { email?: string; name?: string; twitter?: string }) => void;
 };
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
@@ -80,6 +91,16 @@ function renderRow(props: PaperCoauthorsProps, link: PaperAuthorLink, index: num
             : html`<span class="coauthor__badge coauthor__badge--unlinked"
                 >not linked — this paper will not show on their page</span
               >`}
+        <!-- Shown for whoever has one, which in practice is the externals: a member's handle is
+             read off their profile and never stored here, so an absent badge on a member row is
+             not a gap in the paper's record. -->
+        ${link.twitter
+          ? html`<span
+              class="coauthor__badge coauthor__badge--x"
+              data-testid=${`paper-coauthor-x-${props.paperId}-${index}`}
+              >@${link.twitter}</span
+            >`
+          : nothing}
       </span>
       ${props.onChange
         ? html`
@@ -127,7 +148,11 @@ export function renderPaperCoauthors(props: PaperCoauthorsProps) {
   // and the service would collapse the duplicate anyway.
   const options = props.members.filter((member) => !alreadyOn.has(member.id));
   const draftEmail = props.draftEmail.trim();
-  const canAddExternal = isEmailLike(draftEmail);
+  // Null for blank and for anything X would not accept, which are different things to the reader
+  // and the same thing to the record: only a handle that can actually be @-ed is worth storing.
+  const draftTwitter = adminBotNormalizeXHandle(props.draftTwitter);
+  const twitterRejected = props.draftTwitter.trim().length > 0 && !draftTwitter;
+  const canAddExternal = isEmailLike(draftEmail) && !twitterRejected;
 
   return html`
     <section class="coauthors" data-testid=${`paper-coauthors-${props.paperId}`}>
@@ -179,6 +204,28 @@ export function renderPaperCoauthors(props: PaperCoauthorsProps) {
                   @input=${(event: Event) =>
                     props.onDraftChange({ email: (event.target as HTMLInputElement).value })}
                 />
+                <!-- The handle the announcement will tag them by. Optional: a coauthor who is
+                     not on X still belongs on the paper, and the post names them in plain text
+                     instead. -->
+                <input
+                  class="input"
+                  type="text"
+                  placeholder="@handle on X (optional)"
+                  .value=${props.draftTwitter}
+                  data-testid=${`paper-coauthor-external-twitter-${props.paperId}`}
+                  @input=${(event: Event) =>
+                    props.onDraftChange({ twitter: (event.target as HTMLInputElement).value })}
+                />
+                ${twitterRejected
+                  ? html`<p
+                      class="coauthors__error"
+                      role="alert"
+                      data-testid=${`paper-coauthor-external-twitter-error-${props.paperId}`}
+                    >
+                      That is not an X handle. Up to 15 letters, digits or underscores — or paste
+                      their profile link.
+                    </p>`
+                  : nothing}
                 <button
                   type="button"
                   class="btn btn--sm"
@@ -190,9 +237,10 @@ export function renderPaperCoauthors(props: PaperCoauthorsProps) {
                       {
                         name: props.draftName.trim() || draftEmail,
                         email: draftEmail.toLowerCase(),
+                        ...(draftTwitter ? { twitter: draftTwitter } : {}),
                       },
                     ]);
-                    props.onDraftChange({ email: "", name: "" });
+                    props.onDraftChange({ email: "", name: "", twitter: "" });
                   }}
                 >
                   Add external author

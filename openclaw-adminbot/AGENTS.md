@@ -142,7 +142,7 @@ deleted along with their backing files. Those were pruned, and a bare `pnpm buil
 
 1. `pnpm build` — must produce `dist/extensions/adminbot/api.js`
 2. `node start-adminbot.mjs` — or bind an ephemeral port if the systemd unit holds 8765; check
-   `/adminbot` and `/deadlines` answer 200 and `/lab/members`, `/settings`, `/audit` answer 401
+   `/adminbot` answers 200 HTML and `/deadlines` answers 200 JSON and `/lab/members`, `/settings`, `/audit` answer 401
 3. `pnpm ui:build`
 4. `pnpm test extensions/adminbot`
 

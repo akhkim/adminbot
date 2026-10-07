@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // The Logistics tab's controller: what it puts on host state for each answer the service gives.
 //
 // Fetch is stubbed rather than a service being started -- what is under test here is the mapping
@@ -6,7 +7,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type { UiSettings } from "../../storage.ts";
-import { saveStoredMemberSession, type LogisticsRequest } from "../auth/session.ts";
+import type { LogisticsRequest } from "../api/logistics.ts";
+import { clearStoredMemberSession, saveStoredMemberSession } from "../auth/session.ts";
+import { resetAdminBotOfflineMemory } from "../offline/outbox.ts";
 import {
   downloadAdminBotLogisticsDocument,
   loadAdminBotLogisticsRequests,
@@ -67,7 +70,8 @@ const json = (body: unknown, status = 200) =>
   });
 
 describe("logistics controller", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await resetAdminBotOfflineMemory();
     vi.stubGlobal("localStorage", createStorageMock());
   });
 
@@ -94,6 +98,25 @@ describe("logistics controller", () => {
     expect(host.adminBotLogisticsRequests).toEqual([REQUEST]);
     expect(host.adminBotLogisticsRequestsLoading).toBe(false);
     expect(host.adminBotLogisticsRequestsError).toBeNull();
+  });
+
+  it("does not put an old session's queue back after sign-out", async () => {
+    saveStoredMemberSession({ sessionToken: "old-token", expiresAt: "later" });
+    const host = createHost();
+    let finish!: (response: Response) => void;
+    vi.spyOn(globalThis, "fetch").mockReturnValue(
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const loading = loadAdminBotLogisticsRequests(host);
+    clearStoredMemberSession();
+    host.adminBotLogisticsRequests = [];
+    host.adminBotLogisticsRequestsLoading = false;
+    finish(json({ requests: [REQUEST] }));
+    await loading;
+    expect(host.adminBotLogisticsRequests).toEqual([]);
+    expect(host.adminBotLogisticsRequestsLoading).toBe(false);
   });
 
   it("names the service that could not be reached, since that is the fixable half", async () => {

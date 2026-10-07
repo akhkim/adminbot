@@ -9,6 +9,7 @@ import {
   type MeetingRequestRow,
   type RecommendationSchool,
 } from "../data/logistics-draft.ts";
+import { DEFAULT_LOGISTICS_QUEUE_OPTIONS } from "../data/logistics-queue.ts";
 import type { LogisticsRequest, LogisticsRequestStatus } from "../data/logistics-requests.ts";
 import {
   renderAdminBotLogistics,
@@ -18,6 +19,8 @@ import {
 } from "./logistics.ts";
 
 type DrawOptions = {
+  /** Re-render into an existing container, the way the app redraws the form after each save. */
+  container?: HTMLElement;
   /** False draws the Google Form signpost instead of the correction form. */
   signatureEditing?: boolean;
   role?: AccessRole;
@@ -144,7 +147,6 @@ function draw(options: DrawOptions = {}): Drawn {
   const settledToggles: boolean[] = [];
   const signedNoteChanges: string[] = [];
   const signedUploads: { id: string; files: File[] }[] = [];
-  const downloads: { id: string; name: string }[] = [];
   const answers: {
     id: string;
     status: LogisticsRequestStatus;
@@ -158,22 +160,24 @@ function draw(options: DrawOptions = {}): Drawn {
   let lettersSaves = 0;
   let meetingSaves = 0;
   let myProjectsOpened = 0;
-  const container = document.createElement("div");
-  document.body.append(container);
+  const container = options.container ?? document.createElement("div");
+  if (!options.container) {
+    document.body.append(container);
+  }
   render(
     renderAdminBotLogistics({
       role: options.role ?? "member",
       mode: options.mode ?? "make",
       onModeChange: (next) => modeChanges.push(next),
       queue: {
+        options: { ...DEFAULT_LOGISTICS_QUEUE_OPTIONS },
+        onOptionsChange: () => {},
         requests: options.requests ?? [],
         loading: options.requestsLoading ?? false,
         error: options.requestsError ?? null,
         showSettled: options.showSettled ?? false,
         onShowSettledChange: (next) => settledToggles.push(next),
         signingId: options.signingId ?? null,
-        downloadingId: null,
-        onDownload: (id, name) => downloads.push({ id, name }),
         signedNote: options.signedNote ?? "",
         onSignedNoteChange: (next) => signedNoteChanges.push(next),
         onSendSigned: (id, files) => signedUploads.push({ id, files }),
@@ -821,10 +825,10 @@ describe("list of schools", () => {
     ];
   }
 
-  it("leads the letters container, above Save and Submit", () => {
+  it("follows the Guidebook guidance, above Save and Submit", () => {
     const { container } = drawLetters();
     const card = container.querySelector<HTMLElement>("[data-testid='logistics-letters']");
-    expect(card?.firstElementChild?.querySelector(".card-title")?.textContent?.trim()).toBe(
+    expect(card?.children[1]?.querySelector(".card-title")?.textContent?.trim()).toBe(
       "List of Schools",
     );
     expect(card?.lastElementChild?.classList.contains("logistics-request__actions")).toBe(true);
@@ -854,10 +858,58 @@ describe("list of schools", () => {
     const { container } = drawLetters();
     const hints = [...schoolsTable(container).querySelectorAll(".logistics-schools__head-hint")];
     expect(hints.map((hint) => hint.textContent?.trim())).toEqual([
-      "if different",
-      "for both times on this row",
+      "Required",
+      "AoE (UTC−12) by default",
       "If it is not a regular program, what it looks for.",
     ]);
+  });
+
+  // Chrome's date and time fields lose a half-typed segment when their value is written while the
+  // member is typing. Each keystroke saves and redraws, so a redraw must not write back what the box
+  // already holds -- that write is what turned "14" into "4" and deadlines into the 4th.
+  describe("redrawing while a date is being typed", () => {
+    function watchWrites(input: HTMLInputElement): string[] {
+      const writes: string[] = [];
+      const native = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!;
+      Object.defineProperty(input, "value", {
+        configurable: true,
+        get() {
+          return native.get!.call(this);
+        },
+        set(value: string) {
+          writes.push(value);
+          native.set!.call(this, value);
+        },
+      });
+      return writes;
+    }
+
+    const typed = (input: HTMLInputElement, value: string) =>
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+
+    it("does not write a typed date back into its own box", () => {
+      const row = createSchoolRow({ letterDeadline: "2026-12-14", letterDeadlineTime: "23:59" });
+      const { container } = drawLetters({ schools: [row] });
+      for (const key of ["letterDeadline", "letterDeadlineTime"] as const) {
+        const input = cellInput(container, key)!;
+        const value = key === "letterDeadline" ? "2026-12-01" : "17:00";
+        typed(input, value);
+        const writes = watchWrites(input);
+        drawLetters({ container, schools: [{ ...row, [key]: value }] });
+        expect(writes).toEqual([]);
+        expect(input.value).toBe(value);
+      }
+    });
+
+    it("still shows a different date when the form is restored or reset", () => {
+      const row = createSchoolRow({ letterDeadline: "2026-12-14" });
+      const { container } = drawLetters({ schools: [row] });
+      const input = cellInput(container, "letterDeadline")!;
+      drawLetters({ container, schools: [{ ...row, letterDeadline: "2027-01-15" }] });
+      expect(input.value).toBe("2027-01-15");
+      drawLetters({ container, schools: [{ ...row, letterDeadline: "" }] });
+      expect(input.value).toBe("");
+    });
   });
 
   it("gives every column of a row its own control", () => {
@@ -976,7 +1028,19 @@ describe("list of schools", () => {
     actions[1].click();
     expect(drawn.lettersSaves).toBe(1);
     expect(drawn.saves).toBe(0);
-    // Submit is the letters form's own too, not the signature form's.
+    // Saving remains available, but submitting requires explicit email confirmation.
+    actions[2].click();
+    expect(drawn.lettersSubmits).toBe(0);
+    const confirmation = drawn.container.querySelector<HTMLInputElement>(
+      "[data-testid='logistics-email-confirmation']",
+    )!;
+    expect(
+      confirmation.closest("label")?.querySelector(".cron-required-marker")?.textContent?.trim(),
+    ).toBe("*");
+    expect(confirmation.closest("label")?.textContent).not.toContain("Required:");
+    expect(confirmation.required).toBe(true);
+    expect(confirmation.checked).toBe(false);
+    confirmation.checked = true;
     actions[2].click();
     expect(drawn.lettersSubmits).toBe(1);
     expect(drawn.submits).toBe(0);
@@ -1012,6 +1076,7 @@ describe("letter request links", () => {
     const card = section(container, "logistics-letters");
     const sections = [...card.querySelectorAll(":scope > .logistics-request__section")];
     expect(sections.map((entry) => entry.getAttribute("data-testid"))).toEqual([
+      "logistics-letters-guide",
       "logistics-schools",
       // What the member did comes before where the letter is written and stored: it is the part
       // only they can supply, and the two links are plumbing for it.
@@ -1134,7 +1199,7 @@ describe("request modes", () => {
       [...container.querySelectorAll(".logistics-requests__head")].map((head) =>
         head.textContent?.trim(),
       ),
-    ).toEqual(["Type of Request", "Most Recent Deadline", "Status"]);
+    ).toEqual(["Type of Request", "Earliest deadline", "Status"]);
   });
 
   it("offers an admin the two modes above the templates", () => {
@@ -1187,7 +1252,7 @@ describe("request modes", () => {
     const headings = [...container.querySelectorAll(".logistics-requests__head")];
     expect(headings.map((heading) => heading.textContent?.trim())).toEqual([
       "Type of Request",
-      "Most Recent Deadline",
+      "Earliest deadline",
       "Status",
     ]);
     const rows = [...container.querySelectorAll(".logistics-requests__row")];
@@ -1195,10 +1260,10 @@ describe("request modes", () => {
       // All three are stored as the same `submitted`/`in_progress`, and the letter row is the one
       // that must not read "Submitted": the request has been sent, the letter has not. The other
       // two kinds are the thing being asked for, so they still say it. See logistics-status.ts.
-      "Recommendation Letters Dec 1, 2026 To submit",
+      "Recommendation Letters No deadline To submit",
       // A signature request names no date, so it says so rather than inventing one.
       "Document Signature No deadline In progress",
-      "Book Meeting Sep 1, 2026 Submitted",
+      "Book Meeting Sep 1, 2026, 14:00 America/Toronto Submitted",
     ]);
   });
 
@@ -1660,4 +1725,97 @@ describe("book meeting", () => {
     const { container } = drawMeeting();
     expect(container.querySelector(".logistics-schools__empty")).not.toBeNull();
   });
+});
+
+describe("recommendation letter Guidebook guidance", () => {
+  it("requires email confirmation again when resubmitting or discarding", () => {
+    const drawn = drawLetters({ editing: true });
+    const confirmation = drawn.container.querySelector<HTMLInputElement>(
+      "[data-testid='logistics-email-confirmation']",
+    )!;
+    const submit = drawn.container.querySelector<HTMLButtonElement>(
+      "[data-testid='logistics-submit']",
+    )!;
+    submit.click();
+    expect(drawn.lettersSubmits).toBe(0);
+    confirmation.checked = true;
+    submit.click();
+    expect(drawn.lettersSubmits).toBe(1);
+    drawn.container.querySelector<HTMLButtonElement>(".logistics-request__actions .btn")!.click();
+    expect(confirmation.checked).toBe(false);
+    submit.click();
+    expect(drawn.lettersSubmits).toBe(1);
+  });
+  it("shows preparation and exact section links before school fields, including edits", () => {
+    for (const editing of [false, true]) {
+      const { container } = drawLetters({ editing });
+      const guide = container.querySelector<HTMLElement>(
+        "[data-testid='logistics-letters-guide']",
+      )!;
+      expect(guide).not.toBeNull();
+      expect(guide.textContent).toContain("before submitting this request");
+      expect(guide.textContent).toContain("grad_app_[yourname]");
+      expect(guide.textContent).toContain("earliest deadline");
+      expect(guide.textContent).toContain("Statement of Purpose");
+      expect(guide.textContent).toContain("zjin.admin@cs.toronto.edu");
+      const links = [...guide.querySelectorAll<HTMLAnchorElement>("a")];
+      expect(links.map((link) => link.href)).toEqual([
+        "https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.7kpgc8qat88o",
+        "https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.ypvr8psn5zdy",
+      ]);
+      for (const link of links) {
+        expect(link.target).toBe("_blank");
+        expect(link.rel).toContain("noopener");
+      }
+      const schoolSection = container.querySelector("[data-testid='logistics-schools']")!;
+      expect(
+        guide.compareDocumentPosition(schoolSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  it("does not show recommendation instructions on other request forms or the request list", () => {
+    for (const options of [
+      { template: "documentSignature" },
+      { template: "bookMeeting" },
+      { template: "recommendationLetters", mode: "view" },
+    ] as DrawOptions[]) {
+      const { container } = draw(options);
+      expect(container.querySelector("[data-testid='logistics-letters-guide']")).toBeNull();
+    }
+  });
+});
+
+it("makes letter deadline required and defaults a new school to AoE", () => {
+  const { container } = draw({
+    template: "recommendationLetters",
+    schools: [createSchoolRow({ school: "Example" })],
+  });
+  expect(
+    container.querySelector<HTMLInputElement>(".logistics-schools__cell--letterDeadline input")
+      ?.required,
+  ).toBe(true);
+  expect(
+    container.querySelector<HTMLInputElement>(".logistics-schools__cell--deadlineTimezone input")
+      ?.value,
+  ).toBe("AoE");
+});
+
+// The same fields become stacked cards on phones. Their visible labels must survive without
+// relying on a table header that is above/offscreen while somebody edits a row.
+it("provides visible phone labels for every editable request cell", () => {
+  const letters = drawLetters({ schools: [createSchoolRow()], facts: [createFactRow()] }).container;
+  const meeting = draw({ template: "bookMeeting", meetings: [createMeetingRow()] }).container;
+  for (const view of [letters, meeting]) {
+    const cells = [...view.querySelectorAll(".logistics-schools__cell")].filter((cell) =>
+      cell.querySelector("input, select, textarea"),
+    );
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of cells) {
+      expect(cell.getAttribute("data-label")?.trim()).toBeTruthy();
+      expect(
+        cell.querySelector("input, select, textarea")?.getAttribute("aria-label")?.trim(),
+      ).toBeTruthy();
+    }
+  }
 });

@@ -140,7 +140,7 @@ function loadDatabase(path: string): {
 
 type MemberAttempts = {
   calendar_invite: AccessAuditAttempt;
-  dcs_form: AccessAuditAttempt;
+  dcs_roster_row: AccessAuditAttempt;
   approval_email: AccessAuditAttempt;
   onboarding_guide: AccessAuditAttempt;
 };
@@ -148,7 +148,7 @@ type MemberAttempts = {
 function emptyAttempts(): MemberAttempts {
   return {
     calendar_invite: "no_record",
-    dcs_form: "no_record",
+    dcs_roster_row: "no_record",
     approval_email: "no_record",
     onboarding_guide: "no_record",
   };
@@ -160,8 +160,8 @@ const EFFECT_BY_EVENT: Record<
 > = {
   "auth.calendar_invite_sent": { field: "calendar_invite", outcome: "succeeded" },
   "auth.calendar_invite_failed": { field: "calendar_invite", outcome: "failed" },
-  "auth.dcs_form_submitted": { field: "dcs_form", outcome: "succeeded" },
-  "auth.dcs_form_failed": { field: "dcs_form", outcome: "failed" },
+  "auth.dcs_roster_row_added": { field: "dcs_roster_row", outcome: "succeeded" },
+  "auth.dcs_roster_row_failed": { field: "dcs_roster_row", outcome: "failed" },
   "auth.approval_email_sent": { field: "approval_email", outcome: "succeeded" },
   "auth.approval_email_failed": { field: "approval_email", outcome: "failed" },
   "onboarding.guide_sent": { field: "onboarding_guide", outcome: "succeeded" },
@@ -328,7 +328,7 @@ function report(
   const EFFECT_ROWS = [
     ["baseline_approval_email", "account-approved email"],
     ["baseline_calendar_invite", "lab calendar reader invite"],
-    ["baseline_dcs_form", "DCS Slack-access form"],
+    ["baseline_dcs_roster_row", "DCS roster sheet row"],
     ["baseline_portal_login", "portal sign-in credential"],
   ] as const;
   for (const [item, label] of EFFECT_ROWS) {

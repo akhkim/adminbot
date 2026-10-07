@@ -27,6 +27,20 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-citation-checks",
+      "description": "Check the citations of each new OpenReview submission version, every half hour",
+      "cron": "25,55 * * * *",
+      "argv": ["bash", "scripts/adminbot-citation-check-cron.sh"],
+      "timeoutSeconds": 300
+    },
+    {
+      "name": "adminbot-iclr-integrity",
+      "description": "Score each new ICLR submission version with Pangram and alert Slack on AI text or hallucinated citations, hourly",
+      "cron": "12 * * * *",
+      "argv": ["bash", "scripts/adminbot-iclr-integrity-cron.sh"],
+      "timeoutSeconds": 300
+    },
+    {
       "name": "adminbot-meeting-artifacts",
       "description": "Meeting artifact drop-folder pass",
       "cron": "20 * * * *",
@@ -131,8 +145,8 @@
     },
     {
       "name": "adminbot-onboarding-sheet-sweep",
-      "description": "Weekly: create members for new spreadsheet rows and report who is owed an onboarding mail",
-      "cron": "40 6 * * 1",
+      "description": "Daily: create members for new contact-spreadsheet rows and report who is owed an onboarding mail",
+      "cron": "40 6 * * *",
       "argv": [
         "bash",
         "scripts/adminbot-onboarding-sheet-sweep-cron.sh"
@@ -292,8 +306,8 @@
     },
     {
       "name": "adminbot-rec-letter-channel",
-      "description": "Keep #help-rec-letter-request in step with open letter requests",
-      "cron": "20 10 * * 1-5",
+      "description": "Add applicants to #help-rec-letters within three months of letter deadlines; propose expired removals",
+      "cron": "20 * * * *",
       "argv": [
         "bash",
         "scripts/adminbot-rec-letter-channel-cron.sh"

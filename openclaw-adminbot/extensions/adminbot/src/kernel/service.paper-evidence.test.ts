@@ -57,7 +57,9 @@ const folderSlot = (service: AdminBotService) =>
 
 describe("verifyPaperEvidence", () => {
   it("stamps a link Google can open, so the row says who confirmed it and when", async () => {
-    const service = lab(probeReturning({ status: "found", name: "Causal Garden brainstorm" }));
+    const service = lab(
+      probeReturning({ status: "found", name: "Causal Garden brainstorm", canEdit: true }),
+    );
 
     const result = unwrap(
       await service.verifyPaperEvidence("cron", { nowIso: "2026-09-13T09:00:00.000Z" }),
@@ -83,9 +85,41 @@ describe("verifyPaperEvidence", () => {
     expect(result.invalidated).toEqual([{ paper_id: "p1", slot: "project_folder" }]);
     const slot = folderSlot(service);
     expect(slot?.status).toBe("invalid");
-    expect(slot?.invalid_reason).toContain("Google has no file at this link");
+    expect(slot?.invalid_reason).toContain("AdminBot cannot access this Drive file");
     // Un-settled, so the paper stops advancing on it and the nudge carries the reason.
     expect(slot?.verified_at).toBeUndefined();
+  });
+
+  it("confirms a Drive link AdminBot can only view, or reach through a share link", async () => {
+    for (const probed of [{ canEdit: false }, {}]) {
+      const service = lab(probeReturning({ status: "found", ...probed }));
+      const result = unwrap(await service.verifyPaperEvidence("cron"));
+      expect(result.verified).toEqual([{ paper_id: "p1", slot: "project_folder" }]);
+      expect(result.invalidated).toEqual([]);
+      expect(folderSlot(service)).toMatchObject({
+        status: "provided",
+        verified_by: "google_drive",
+      });
+    }
+  });
+
+  it("invalidates a Drive link whose file is in the trash", async () => {
+    const service = lab(probeReturning({ status: "found", trashed: true, canEdit: true }));
+    const result = unwrap(await service.verifyPaperEvidence("cron"));
+    expect(result.invalidated).toEqual([{ paper_id: "p1", slot: "project_folder" }]);
+    expect(folderSlot(service)).toMatchObject({
+      status: "invalid",
+      invalid_reason: expect.stringContaining("trash"),
+    });
+  });
+
+  it("clears the warning after the owner shares the file without changing the URL", async () => {
+    const service = lab(probeReturning({ status: "missing" }, { status: "found", canEdit: false }));
+    unwrap(await service.verifyPaperEvidence("cron"));
+    expect(folderSlot(service)?.status).toBe("invalid");
+    unwrap(await service.verifyPaperEvidence("cron"));
+    expect(folderSlot(service)).toMatchObject({ status: "provided", verified_by: "google_drive" });
+    expect(folderSlot(service)?.invalid_reason).toBeUndefined();
   });
 
   // The case that must never be mistaken for the one above: a file shared with a person but not
@@ -115,7 +149,7 @@ describe("verifyPaperEvidence", () => {
     let calls = 0;
     const service = lab(async () => {
       calls += 1;
-      return { status: "found" };
+      return { status: "found", canEdit: true };
     });
 
     unwrap(await service.verifyPaperEvidence("cron"));
@@ -127,7 +161,7 @@ describe("verifyPaperEvidence", () => {
   // The point of recording it: a paper advanced on four ticked boxes should not read the same as
   // one advanced on three ticks and a file Google confirmed.
   it("names which of the evidence a machine confirmed when a paper advances", async () => {
-    const service = lab(probeReturning({ status: "found" }));
+    const service = lab(probeReturning({ status: "found", canEdit: true }));
     const give = (slot: string, input: Record<string, unknown>) =>
       unwrap(
         service.setPaperSlot({
@@ -326,6 +360,89 @@ describe("the public record", () => {
     unwrap(await service.verifyPaperEvidence("cron"));
 
     expect(slotOf(service, "submission")).toMatchObject({ verified_by: "openreview" });
+  });
+
+  it("persists public identity, refreshes daily, and clears it when the link changes", async () => {
+    let calls = 0;
+    const service = published({
+      openReviewProbe: async () => {
+        calls++;
+        return {
+          status: "found",
+          title: "Garden Planning Revised",
+          previous_submission_id: "Older123",
+          identity_review: {
+            status: "checked",
+            examined: 1,
+            abstract_excerpt: "Source abstract",
+            candidates: [],
+          },
+        };
+      },
+    });
+    unwrap(await service.verifyPaperEvidence("cron", { nowIso: "2026-09-19T00:00:00Z" }));
+    expect(slotOf(service, "submission")).toMatchObject({
+      verified_title: "Garden Planning Revised",
+      previous_submission_id: "Older123",
+    });
+    unwrap(await service.verifyPaperEvidence("cron", { nowIso: "2026-09-19T01:00:00Z" }));
+    expect(calls).toBe(1);
+    unwrap(await service.verifyPaperEvidence("cron", { nowIso: "2026-09-20T00:00:00Z" }));
+    expect(calls).toBe(2);
+    unwrap(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "submission",
+        memberId: "ada",
+        privileged: true,
+        input: { url: "https://openreview.net/forum?id=Changed123" },
+      }),
+    );
+    expect(slotOf(service, "submission")?.verified_title).toBeUndefined();
+    expect(slotOf(service, "submission")?.previous_submission_id).toBeUndefined();
+    expect(slotOf(service, "submission")?.verified_at).toBeUndefined();
+    expect(slotOf(service, "submission")?.identity_review).toBeUndefined();
+  });
+
+  it("does not attach a slow response to a replacement link", async () => {
+    const service = published({
+      openReviewProbe: async () => {
+        unwrap(
+          service.setPaperSlot({
+            paperId: "p1",
+            slot: "submission",
+            memberId: "ada",
+            privileged: true,
+            input: { url: "https://openreview.net/forum?id=Changed123" },
+          }),
+        );
+        return { status: "found", title: "Old title" };
+      },
+    });
+    unwrap(await service.verifyPaperEvidence("cron"));
+    expect(slotOf(service, "submission")?.url).toContain("Changed123");
+    expect(slotOf(service, "submission")?.verified_title).toBeUndefined();
+  });
+
+  it("backfills older verification stamps without titles, then removes withdrawn history on refresh", async () => {
+    let calls = 0;
+    const service = published({
+      openReviewProbe: async () => {
+        calls++;
+        return calls === 1
+          ? { status: "found" }
+          : {
+              status: "found",
+              title: "Causal Garden Planning",
+              ...(calls === 2 ? { previous_submission_id: "Older123" } : {}),
+            };
+      },
+    });
+    unwrap(await service.verifyPaperEvidence("cron", { nowIso: "2026-09-19T00:00:00Z" }));
+    unwrap(await service.verifyPaperEvidence("cron", { nowIso: "2026-09-19T01:00:00Z" }));
+    expect(slotOf(service, "submission")?.previous_submission_id).toBe("Older123");
+    unwrap(await service.verifyPaperEvidence("cron", { nowIso: "2026-09-20T01:00:00Z" }));
+    expect(slotOf(service, "submission")?.previous_submission_id).toBeUndefined();
   });
 
   // The trap this whole design is built to avoid: a paper under blind review looks exactly like a

@@ -193,6 +193,49 @@ describe("draftError", () => {
 });
 
 describe("renderAdminBotTimeAvailability", () => {
+  it("offers authorized collaborators read-only without arbitrary roster schedules", () => {
+    const peer = member({ id: "peer", name: "Coauthor" });
+    const stranger = member({
+      id: "stranger",
+      name: "Unrelated",
+      availability: [
+        { start: "2026-03-02", end: "2026-03-15", project: "Secret", hours_per_week: 5 },
+      ],
+    });
+    const load = vi.fn();
+    const view = renderView({
+      members: [member(), stranger],
+      collaborators: [peer],
+      selectedMemberId: "peer",
+      onLoadCollaborators: load,
+    });
+    expect(view.textContent).toContain("See my collaborator's time availability");
+    expect(view.textContent).toContain("Coauthor");
+    expect(view.textContent).not.toContain("Secret");
+    expect(view.textContent).not.toContain("Add commitment");
+    const refresh = [...view.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Load / refresh"),
+    );
+    refresh?.click();
+    expect(load).toHaveBeenCalledOnce();
+  });
+
+  it("offers a manual schedule refresh and disables it while loading", () => {
+    const onRefresh = vi.fn();
+    renderView({ onRefresh })
+      .querySelector<HTMLButtonElement>(".adminbot-time-availability__refresh")
+      ?.click();
+    expect(onRefresh).toHaveBeenCalledOnce();
+    const loadingView = renderView({ onRefresh, loading: true });
+    expect(
+      loadingView.querySelector<HTMLButtonElement>(".adminbot-time-availability__refresh")
+        ?.disabled,
+    ).toBe(true);
+    expect(
+      loadingView.querySelector("[data-testid=time-availability-jinesis-table]"),
+    ).not.toBeNull();
+  });
+
   // Editing is self-only: the service routes a member session to its own record, so showing the
   // form on someone else's schedule would only ever produce a 403.
   it("shows the add-commitment button on your own schedule and hides it on someone else's", () => {
@@ -1763,5 +1806,34 @@ describe("withinWindow", () => {
   // The window's end is exclusive: a commitment starting on it belongs to the next page.
   it("drops one that starts on the exclusive end", () => {
     expect(withinWindow({ start: "2026-04-01", end: "2026-04-30" }, window)).toBe(false);
+  });
+});
+
+describe("commitment entry point", () => {
+  it("puts the primary add action before the report and opens the existing editor", () => {
+    const onActiveCommitmentChange = vi.fn();
+    const container = renderView({ activeCommitmentType: null, onActiveCommitmentChange });
+    const button = container.querySelector<HTMLButtonElement>(
+      ".adminbot-time-availability__add-commitment",
+    )!;
+    const report = container.querySelector(".adminbot-time-availability__report")!;
+    expect(button.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    button.click();
+    expect(onActiveCommitmentChange).toHaveBeenCalledWith("jinesis");
+  });
+  it("shows an editable example without filling or saving a commitment", () => {
+    const onSaveSchedule = vi.fn();
+    const container = renderView({
+      activeCommitmentType: "jinesis",
+      draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT },
+      onSaveSchedule,
+    });
+    expect(container.textContent).toContain("Example: 20 hours per week on Project XXX.");
+    const hours = container.querySelector<HTMLInputElement>(
+      '[data-testid="time-availability-hours"]',
+    )!;
+    expect(hours.placeholder).toBe("20");
+    expect(hours.value).toBe("");
+    expect(onSaveSchedule).not.toHaveBeenCalled();
   });
 });

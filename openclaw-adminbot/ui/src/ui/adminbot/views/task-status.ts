@@ -1,5 +1,6 @@
 import { html, LitElement, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
+import { readApiJson } from "../data/api-json.ts";
 import { listRecentTasks, applicationResultSummary, type RecoveredTask } from "../task-history.ts";
 import { taskActivities, taskChanges, taskFetch, type TaskHandle } from "../task-request.ts";
 import "./wait-preference.ts";
@@ -184,7 +185,7 @@ export class AdminBotTaskStatus extends LitElement {
           signal: this.historyRequest?.signal,
         },
       );
-      const result = await response.json();
+      const result = (await readApiJson(response)) as { error?: { message?: string } } | null;
       if (generation !== this.generation) {
         return;
       }

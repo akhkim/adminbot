@@ -5,15 +5,18 @@ const draftCalendarEvent = vi.fn();
 const createCalendarEvent = vi.fn();
 const updateCalendarEvent = vi.fn();
 const inviteToCalendarEvent = vi.fn();
+let currentToken = "token";
 
 vi.mock("../auth/session.ts", () => ({
+  loadStoredMemberSession: () => ({ sessionToken: currentToken }),
+  resolveAdminBotBaseUrl: () => "http://localhost",
+}));
+vi.mock("../api/calendar.ts", () => ({
   fetchCalendarEvents: (...args: unknown[]) => fetchCalendarEvents(...args),
   draftCalendarEvent: (...args: unknown[]) => draftCalendarEvent(...args),
   createCalendarEvent: (...args: unknown[]) => createCalendarEvent(...args),
   updateCalendarEvent: (...args: unknown[]) => updateCalendarEvent(...args),
   inviteToCalendarEvent: (...args: unknown[]) => inviteToCalendarEvent(...args),
-  loadStoredMemberSession: () => ({ sessionToken: "token" }),
-  resolveAdminBotBaseUrl: () => "http://localhost",
 }));
 
 const {
@@ -31,6 +34,7 @@ function host(overrides: Partial<Host> = {}): Host {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  currentToken = "token";
   fetchCalendarEvents.mockResolvedValue({ ok: true, value: { events: [], calendar: null } });
   createCalendarEvent.mockResolvedValue({
     ok: true,
@@ -115,6 +119,24 @@ describe("inviteAdminBotCalendarAudience", () => {
 });
 
 describe("loadAdminBotCalendar", () => {
+  it("does not restore A's events when an old fetch finishes after B signs in", async () => {
+    let finish: ((value: unknown) => void) | undefined;
+    fetchCalendarEvents.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const app = host({ calendarEvents: [{ id: "b-event" }] as never });
+    const pending = loadAdminBotCalendar(app);
+    currentToken = "token-b";
+    app.calendarEvents = [];
+    app.calendarEventsLoading = false;
+    finish?.({ ok: true, value: { events: [{ id: "a-event" }], calendar: null } });
+    await pending;
+    expect(app.calendarEvents).toEqual([]);
+    expect(app.calendarEventsLoading).toBe(false);
+  });
+
   // The grid draws a whole month. Asking the service for "now onwards" would leave the days
   // earlier this month drawn as empty when they are not — the reader has no way to tell the
   // difference between "nothing booked" and "not fetched".

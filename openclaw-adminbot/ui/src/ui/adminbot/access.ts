@@ -53,6 +53,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotDeadlines: "anonymous",
   adminbotOpportunities: "anonymous",
   adminbotConferencePapers: "anonymous",
+  adminbotReferenceChecker: "admin",
 
   // Members. The roster is lab-internal but not a governance surface, and chat is how members talk
   // to AdminBot at all.

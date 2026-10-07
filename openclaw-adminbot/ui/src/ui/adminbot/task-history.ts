@@ -1,3 +1,4 @@
+import { readApiJson } from "./data/api-json.ts";
 import type { TaskHandle } from "./task-request.ts";
 
 export type RecoveredTask = { task: TaskHandle; result?: unknown; error?: string; busy?: boolean };
@@ -30,7 +31,7 @@ export async function listRecentTasks(
   if (!response.ok) {
     throw new Error("Recent tasks could not be loaded.");
   }
-  const body = await response.json();
+  const body = (await readApiJson(response)) as { tasks?: unknown } | null;
   const tasks = Array.isArray(body?.tasks) ? body.tasks : [];
   return tasks
     .filter((task: TaskHandle) => typeof task?.id === "string" && typeof task.status === "string")

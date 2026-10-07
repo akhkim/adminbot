@@ -1,8 +1,8 @@
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
+import { adminBotMemberTypes } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import { editMemberSheetCell, memberSheetCellKey } from "../controllers/member-sheet.ts";
-import { adminBotMemberTypes } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { memberTypeOptions, renderMemberSheet } from "./member-sheet.ts";
 
 const SHEET = {
@@ -68,9 +68,9 @@ describe("the roster grid", () => {
     expect(host.querySelector("thead th.adminbot-member-roster__name")?.textContent?.trim()).toBe(
       "Column A",
     );
-    expect(host.querySelector<HTMLInputElement>("td.adminbot-member-roster__name input")?.value).toBe(
-      "Yuen Chen",
-    );
+    expect(
+      host.querySelector<HTMLInputElement>("td.adminbot-member-roster__name input")?.value,
+    ).toBe("Yuen Chen");
     const values = [...host.querySelectorAll<HTMLInputElement>("tbody input[type=text]")].map(
       (input) => input.value,
     );
@@ -125,15 +125,13 @@ describe("the roster grid", () => {
     };
     const host = draw(state);
 
-    host
-      .querySelector<HTMLButtonElement>('[data-testid="onboard-preview-open"]')
-      ?.click();
+    host.querySelector<HTMLButtonElement>('[data-testid="onboard-preview-open"]')?.click();
     expect(previewOnboardSelectedRows).toHaveBeenCalledOnce();
     expect(onboardSelectedMemberRows).not.toHaveBeenCalled();
 
     const panel = text(host);
     expect(panel).toContain("Review before onboarding");
-    expect(panel).toContain("Nothing is sent until an admin approves them there.");
+    expect(panel).toContain("nothing is sent until an admin approves them there.");
     expect(panel).toContain("Yuen Chen");
     expect(panel).toContain("alumni → yuen@example.org");
     expect(panel).toContain("Welcome back");
@@ -144,13 +142,45 @@ describe("the roster grid", () => {
     expect(onboardSelectedMemberRows).toHaveBeenCalledOnce();
   });
 
+  // A no-mail Member Type is onboarded by its access alone; the panel says so rather than listing
+  // the row as skipped, and the button still has something to do.
+  it("lists access-only rows and lets them be onboarded without an email", () => {
+    const onboardSelectedMemberRows = vi.fn(async () => {});
+    const state: Partial<AppViewState> = {
+      memberSheet: SHEET,
+      onboardSelectedMemberRows,
+      memberSheetOnboardPreview: {
+        planned: [],
+        access_only: [
+          {
+            sheet_row: 4,
+            name: "Rauno Arike",
+            email: "rauno@example.org",
+            member_type: "coauthor-discussant-or-designer",
+            reason: "sends no onboarding mail",
+          },
+        ],
+        skipped: [],
+      },
+    };
+    const host = draw(state);
+    const panel = text(host);
+    expect(panel).toContain("Onboarded by their access alone, with no email:");
+    expect(panel).toContain("Row 4 · Rauno Arike (coauthor-discussant-or-designer)");
+    const confirm = host.querySelector<HTMLButtonElement>('[data-testid="onboard-confirm"]');
+    expect(confirm?.disabled).toBe(false);
+    expect(confirm?.textContent).toContain("Onboard 1 person");
+    confirm?.click();
+    expect(onboardSelectedMemberRows).toHaveBeenCalledOnce();
+  });
+
   it("dismisses the preview without queueing anything", () => {
     const state: Partial<AppViewState> = {
       memberSheet: SHEET,
       memberSheetOnboardPreview: { planned: [], skipped: [] },
     };
     const host = draw(state);
-    expect(text(host)).toContain("Nothing would be queued for this selection.");
+    expect(text(host)).toContain("Nothing would be sent or queued for this selection.");
     host.querySelector<HTMLButtonElement>('[data-testid="onboard-preview-cancel"]')?.click();
     expect(state.memberSheetOnboardPreview).toBeNull();
   });
@@ -236,12 +266,75 @@ describe("the roster grid", () => {
         created: [
           { sheet_row: 2, email: "yuenc2@illinois.edu", template_id: "alumni", proposal_id: "a" },
         ],
-        skipped: [{ sheet_row: 3, reason: "coauthor-discussant-or-designer sends no onboarding mail" }],
+        skipped: [
+          { sheet_row: 3, reason: "coauthor-discussant-or-designer sends no onboarding mail" },
+        ],
       },
     });
     expect(text(host)).toContain("Queued 1");
-    expect(text(host)).toContain("Nothing has been sent yet");
+    expect(text(host)).toContain("not been sent yet");
+    expect(text(host)).not.toContain("Sent ");
     expect(text(host)).toContain("sends no onboarding mail");
+  });
+
+  // The standard full-member guide goes out on the admin's click, so the result must not tell
+  // them it is waiting in Pending Actions.
+  it("reports sent guides apart from queued ones", () => {
+    const host = draw({
+      memberSheet: SHEET,
+      memberSheetOnboardResult: {
+        created: [
+          {
+            sheet_row: 2,
+            email: "ada@example.org",
+            template_id: "member",
+            proposal_id: "a",
+            status: "sent",
+          },
+          {
+            sheet_row: 3,
+            email: "yuen@example.org",
+            template_id: "alumni",
+            proposal_id: "b",
+            status: "queued",
+          },
+        ],
+        skipped: [],
+      },
+    });
+    expect(
+      host.querySelector('[data-testid="onboard-result-sent"]')?.textContent?.replace(/\s+/g, " "),
+    ).toContain("Sent 1 onboarding email on your approval.");
+    expect(
+      host
+        .querySelector('[data-testid="onboard-result-queued"]')
+        ?.textContent?.replace(/\s+/g, " "),
+    ).toContain("Queued 1 email in Pending Actions. It has not been sent yet");
+  });
+
+  it("says which previewed emails send on confirm and which wait for approval", () => {
+    const mail = (sheet_row: number, template_id: string, email: string) => ({
+      sheet_row,
+      name: email,
+      email,
+      template_id,
+      subject: "Welcome",
+      body: "Hello",
+      reply_to: "lab@example.org",
+    });
+    const host = draw({
+      memberSheet: SHEET,
+      memberSheetOnboardPreview: {
+        planned: [mail(2, "member", "ada@example.org"), mail(3, "alumni", "yuen@example.org")],
+        skipped: [],
+      },
+    });
+    const panel = text(host);
+    expect(panel).toContain("1 email is sent as soon as you confirm.");
+    expect(panel).toContain("1 email proposal is queued in Pending Actions");
+    expect(
+      host.querySelector<HTMLButtonElement>('[data-testid="onboard-confirm"]')?.textContent,
+    ).toContain("Send 1, queue 1 for approval");
   });
 
   it("only offers to onboard once rows are selected, and then only as a preview", () => {
@@ -370,5 +463,60 @@ describe("memberTypeOptions", () => {
 
   it("survives a sheet with no Member Type column", () => {
     expect(memberTypeOptions([{ cells: { 0: "x" } }], -1, "")).toEqual([...adminBotMemberTypes]);
+  });
+});
+
+describe("Add row", () => {
+  it("offers the form with the Member Type vocabulary", () => {
+    const host = draw({ memberSheet: SHEET });
+    expect(host.querySelector('[data-testid="member-sheet-add-row-open"]')).not.toBeNull();
+    const form = host.querySelector('[data-testid="member-sheet-add-row"]');
+    const types = [...(form?.querySelectorAll('select[name="row_member_type"] option') ?? [])]
+      .map((option) => (option as HTMLOptionElement).value)
+      .filter(Boolean);
+    expect(types).toEqual(expect.arrayContaining(["full", "alumni"]));
+  });
+
+  it("sends what was typed and clears the form once the service took it", async () => {
+    const addMemberSheetRow = vi.fn(async () => true);
+    const host = draw({ memberSheet: SHEET, addMemberSheetRow });
+    const form = host.querySelector<HTMLFormElement>('[data-testid="member-sheet-add-row"] form')!;
+    const set = (name: string, value: string) => {
+      const field = form.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`)!;
+      field.value = value;
+    };
+    set("row_name", "Ada Lovelace");
+    set("row_member_type", "full");
+    set("row_email", "ada@lab.co");
+    set("row_member_attributes", "PhD");
+
+    form.dispatchEvent(new Event("submit", { cancelable: true }));
+    await vi.waitFor(() => expect(addMemberSheetRow).toHaveBeenCalledTimes(1));
+
+    expect(addMemberSheetRow).toHaveBeenCalledWith({
+      name: "Ada Lovelace",
+      member_type: "full",
+      email: "ada@lab.co",
+      member_attributes: "PhD",
+    });
+    await vi.waitFor(() =>
+      expect(form.querySelector<HTMLInputElement>('[name="row_name"]')!.value).toBe(""),
+    );
+  });
+
+  it("says which step failed when only part of it went through", () => {
+    const host = draw({
+      memberSheet: SHEET,
+      memberSheetAddRowResult: {
+        member_id: "ada-lovelace",
+        sheet: { status: "failed", reason: "You are trying to edit a protected cell or object." },
+        member: { status: "done" },
+        onboarding: { status: "done", detail: "sent to ada@lab.co" },
+      },
+    });
+    const result = host.querySelector<HTMLElement>('[data-testid="member-sheet-add-row-result"]');
+    expect(result?.className).toContain("warning");
+    expect(text(result!)).toContain("Roster sheet row: failed");
+    expect(text(result!)).toContain("Onboarding guide: done — sent to ada@lab.co");
   });
 });

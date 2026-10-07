@@ -58,16 +58,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      # The two deadline-board specs are excluded, and that is a real gap rather than a tidy-up:
-      # they assert behaviour the Control UI has and the standalone board never got -- workshop
-      # groups rendered as standalone cards, and the removal of the priority facet. Three of their
-      # eleven tests fail on `main` today. Delete these two lines once the board is brought level;
-      # until then everything else in the suite is gated.
       - name: AdminBot suite
         run: >
           pnpm exec vitest run --config test/vitest/vitest.node.config.ts extensions/adminbot
-          --exclude '**/workflows/deadlines/board.test.ts'
-          --exclude '**/workflows/deadlines/board.base.test.ts'
 
   test-ui:
     name: Tests (ui)
@@ -80,8 +73,22 @@ jobs:
       - uses: ./.github/actions/setup
       # Scoped to the AdminBot surface. The wider `ui/src` lane carries the known-red i18n specs,
       # which the baseline job reports instead.
+      - name: Install Chromium for offline browser tests
+        run: pnpm exec playwright install --with-deps chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/adminbot-playwright
+      - name: Build the offline shell
+        run: pnpm exec vite build --config vite.config.ts
+        working-directory: openclaw-adminbot/ui
       - name: AdminBot UI suite
-        run: pnpm exec vitest run --config test/vitest/vitest.ui.config.ts ui/src/ui/adminbot
+        run: >
+          pnpm exec vitest run --config test/vitest/vitest.ui.config.ts ui/src/ui/adminbot
+          --exclude "**/*.browser.test.ts" --exclude "**/*.node.test.ts" --isolate --maxWorkers 3
+      - name: Offline browser and storage suite
+        run: pnpm exec vitest run --config vitest.config.ts src/ui/adminbot/offline
+        working-directory: openclaw-adminbot/ui
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/adminbot-playwright
 
   structure:
     name: Structure

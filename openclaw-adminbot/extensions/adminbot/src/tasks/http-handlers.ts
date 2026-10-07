@@ -1,4 +1,4 @@
-import type { AdminBotRouteContext } from "../api/server.js";
+import type { AdminBotRouteContext } from "../api/routes/context.js";
 import type { AdminBotPrivacyTaskRequest } from "../contracts/actions.js";
 import { draftMemberBlurb } from "../cv-scan.js";
 import { askGuidebook } from "../guidebook/ask.js";

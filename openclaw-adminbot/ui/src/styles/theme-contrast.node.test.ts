@@ -59,3 +59,32 @@ describe("theme-inverting controls", () => {
     }
   });
 });
+
+// Scan every page, including styles embedded in Lit templates. A misspelled token with a dark
+// fallback still breaks light mode, so check references even when they provide a fallback.
+describe("shared page colour tokens", () => {
+  it("defines every colour variable used by page and component styles", () => {
+    const src = path.resolve(stylesDir, "..");
+    const files = fs
+      .readdirSync(src, { recursive: true, encoding: "utf8" })
+      .filter((name) => /\.(css|ts)$/.test(name) && !name.includes(".test."));
+    const sources = files.map((file) => ({
+      file,
+      text: fs.readFileSync(path.join(src, file), "utf8"),
+    }));
+    const definitions = new Set(
+      sources.flatMap(({ text }) => [...text.matchAll(/(--[\w-]+)\s*:/g)].map((match) => match[1])),
+    );
+    const missing = new Set<string>();
+    for (const { file, text } of sources) {
+      for (const declaration of text.matchAll(
+        /(?:^|[;{\s])(?:color|background(?:-color)?|border(?:-color)?|fill|stroke|outline(?:-color)?)\s*:[^;{}]+/g,
+      )) {
+        for (const reference of declaration[0].matchAll(/var\((--[\w-]+)/g)) {
+          if (!definitions.has(reference[1])) missing.add(`${file}: ${reference[1]}`);
+        }
+      }
+    }
+    expect([...missing]).toEqual([]);
+  });
+});

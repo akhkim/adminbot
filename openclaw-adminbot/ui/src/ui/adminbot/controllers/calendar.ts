@@ -20,16 +20,19 @@ import {
   draftCalendarEvent,
   fetchCalendarEvents,
   inviteToCalendarEvent,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
   updateCalendarEvent,
   type CalendarEvent,
   type CalendarEventDraft,
-} from "../auth/session.ts";
+} from "../api/calendar.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { dayKeyInZone, monthStartKey, monthWindow } from "../calendar-month.ts";
 import type { AdminBotHost } from "./admin.ts";
 
 const SIGN_IN_FIRST = "Sign in with an admin account to use the calendar.";
+
+function sameSession(token: string): boolean {
+  return loadStoredMemberSession()?.sessionToken === token;
+}
 
 /**
  * What to tell the operator when a calendar call fails.
@@ -93,6 +96,9 @@ export async function loadAdminBotCalendar(host: AdminBotHost): Promise<void> {
       stored.sessionToken,
       baseUrl,
     );
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.calendarEventsError = failureText(result, "Could not read the calendar.", baseUrl);
       host.calendarEvents = [];
@@ -103,7 +109,9 @@ export async function loadAdminBotCalendar(host: AdminBotHost): Promise<void> {
       host.calendarSource = result.value.calendar;
     }
   } finally {
-    host.calendarEventsLoading = false;
+    if (sameSession(stored.sessionToken)) {
+      host.calendarEventsLoading = false;
+    }
   }
 }
 
@@ -169,6 +177,9 @@ export async function requestAdminBotCalendarDraft(host: AdminBotHost): Promise<
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       const text = failureText(
         result,
@@ -184,7 +195,9 @@ export async function requestAdminBotCalendarDraft(host: AdminBotHost): Promise<
     host.calendarDraft = result.value;
     say(host, "assistant", describeDraft(result.value, Boolean(editing)));
   } finally {
-    host.calendarDraftBusy = false;
+    if (sameSession(stored.sessionToken)) {
+      host.calendarDraftBusy = false;
+    }
   }
 }
 
@@ -228,6 +241,9 @@ export async function saveAdminBotCalendarEvent(host: AdminBotHost): Promise<voi
           stored.sessionToken,
           baseUrl,
         );
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotNotice = {
         kind: "error",
@@ -252,7 +268,9 @@ export async function saveAdminBotCalendarEvent(host: AdminBotHost): Promise<voi
     }
     await loadAdminBotCalendar(host);
   } finally {
-    host.calendarBusy = false;
+    if (sameSession(stored.sessionToken)) {
+      host.calendarBusy = false;
+    }
   }
 }
 
@@ -295,6 +313,9 @@ export async function inviteAdminBotCalendarAudience(
       stored.sessionToken,
       baseUrl,
     );
+    if (!sameSession(stored.sessionToken)) {
+      return;
+    }
     if (!result.ok) {
       host.adminBotNotice = {
         kind: "error",
@@ -325,6 +346,8 @@ export async function inviteAdminBotCalendarAudience(
     };
     await loadAdminBotCalendar(host);
   } finally {
-    host.calendarBusy = false;
+    if (sameSession(stored.sessionToken)) {
+      host.calendarBusy = false;
+    }
   }
 }

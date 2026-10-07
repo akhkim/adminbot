@@ -6,62 +6,40 @@ import type {
 import type { GatewayBrowserClient } from "../../gateway.ts";
 import type { UiSettings } from "../../storage.ts";
 // Control UI controller for the AdminBot dashboard surface.
+import type { CalendarEvent, CalendarEventDraft, LabCalendar } from "../api/calendar.ts";
 import {
-  type CalendarEvent,
-  type CalendarEventDraft,
-  type LabCalendar,
-  type LocationDrift,
+  type WorkshopConferenceOption,
+  fetchVenueCategories,
+  type VenuePaperCategory,
+} from "../api/conference-papers.ts";
+import type { LabBroadcast } from "../api/lab-sharing.ts";
+import {
   type MeetingRecord,
+  type MeetingCursor,
   type MeetingAttendanceNudgePreview,
   type MeetingAttendanceNudgeResult,
-  type LabBroadcast,
-  type MemberNotification,
+  fetchStandingMeetings,
+} from "../api/meetings.ts";
+import type { StandingMeeting } from "../api/meetings.ts";
+import { queueMemberOnboardingGuide } from "../api/onboarding.ts";
+import type { ConferenceRoster } from "../api/paper-admin.ts";
+import { saveOwnPaper } from "../api/papers.ts";
+import type { LocationDrift } from "../api/profile.ts";
+import type { MemberNotification } from "../api/workspace.ts";
+import {
   type AdminBotEmailReviewItem,
   type AdminBotEmailReviewPaperflowCandidate,
-  type AdminBotEmailReviewResolution,
   type AdminBotResolvedEmailReviewItem,
   type MemberNudgeChannel,
-  type MemberProfileUpdate,
-  type MemberScheduleUpdate,
-  approveActionAsMember,
-  applyOwnPolishedProfilePhoto,
-  executeActionAsMember,
-  removePendingAction,
   fetchMemberResource,
   loadStoredMemberSession,
-  cancelWorkshopNudges,
-  previewWorkshopNudges,
-  fetchWorkshopConferences,
-  refreshWorkshopNudges,
-  type WorkshopConferenceOption,
-  polishOwnProfilePhoto,
   resolveAdminBotBaseUrl,
-  resolveEmailReviewAsAdmin,
-  saveOwnPaper,
-  fetchVenueSources,
-  rebuildVenueIndexes,
-  runChannelNamingSweep,
-  publishCvDigest,
-  searchVenuePapers,
-  sendMemberNudge,
-  sendWorkshopNudges,
-  deleteOwnPaper,
-  updateOwnProfile,
-  updateSettingsAsAdmin,
-  updateOwnSchedule,
-  mergeLabMembersAsAdmin,
-  fetchSlackChannelNames,
-  deleteLabMemberAsAdmin,
-  fetchMembersWithoutEmail,
-  purgeMembersWithoutEmailAsAdmin,
-  submitReimbursementPackage,
-  upsertLabMemberAsAdmin,
-  type ConferenceRoster,
+  pendingQueuedAdminBotWriteCount,
 } from "../auth/session.ts";
 import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
-import { loadMemberMap, type MemberMap } from "../data/member-map.ts";
+import { invalidateMemberMap, type MemberMap } from "../data/member-map.ts";
 import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
-import { taskFetch, taskActivities } from "../task-request.ts";
+import { taskActivities } from "../task-request.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
 
@@ -94,6 +72,7 @@ export type AdminBotAccessGrant = {
 export type AdminBotMemberStatus = "active" | "part_time" | "on_leave" | "alumni" | "external";
 
 export type AdminBotLabMember = {
+  assigned_badges?: import("../auth/session.ts").AssignedBadge[];
   id: string;
   name: string;
   email?: string;
@@ -156,19 +135,6 @@ export type AdminBotLabMember = {
   updated_at: string;
 };
 
-/**
- * A member's stored topics as the one string the interests box shows.
- *
- * Mirrors `interestsFromTopics` in the service's venue-relevance.ts; ui/ cannot import from
- * extensions/. Kept in step because what the box shows has to be exactly what gets embedded.
- */
-function interestsFromTopics(topics: readonly string[] | undefined): string {
-  return (topics ?? [])
-    .map((topic) => topic.trim())
-    .filter(Boolean)
-    .join(", ");
-}
-
 /** A conference an admin has made searchable. Mirrors the service contract. */
 export type AdminBotVenueSource = {
   /** OpenReview group id, e.g. "ICLR.cc/2025/Conference". */
@@ -205,6 +171,7 @@ export type AdminBotVenuePaperHit = {
 export type AdminBotVenueSearchResult = {
   venue_id: string;
   label: string;
+  category?: string;
   /** How many accepted papers were ranked, so "12 of 3,704" is answerable. */
   searched: number;
   results: AdminBotVenuePaperHit[];
@@ -216,6 +183,10 @@ export type AdminBotVenuePapersState = {
   sources: AdminBotVenueSourceView[];
   loadingSources: boolean;
   venueId: string;
+  categories: VenuePaperCategory[];
+  loadingCategories: boolean;
+  /** Empty means every category in the selected conference. */
+  categoryId: string;
   /** Free text, prefilled from the member's own research_topics and editable per search. */
   interests: string;
   /** False until the member edits the box, so a prefill can be refreshed and an edit cannot. */
@@ -232,6 +203,9 @@ export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
     sources: [],
     loadingSources: false,
     venueId: "",
+    categories: [],
+    loadingCategories: false,
+    categoryId: "",
     interests: "",
     interestsTouched: false,
     searching: false,
@@ -239,6 +213,50 @@ export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
     result: null,
     expanded: [],
   };
+}
+
+/** One lab paper placed against the query. Mirrors LabPaperRelevance in the service. */
+export type AdminBotLabPaperHit = {
+  paper_id: string;
+  title: string;
+  score: number;
+  margin: number;
+  band: "core" | "related" | "peripheral" | "off_topic";
+  segments: Array<{
+    segment_id: string;
+    label: string;
+    score: number;
+    margin: number;
+    band: string;
+  }>;
+  best_segment?: { segment_id: string; label: string; score: number; margin: number; band: string };
+  matched_terms: string[];
+  /** How much text the placement was made from. Most records are `title_only`. */
+  evidence: "rich" | "thin" | "title_only";
+};
+
+export type AdminBotLabPaperReport = {
+  query_kind: "keywords" | "proposal";
+  segment_count: number;
+  scored: number;
+  matches: AdminBotLabPaperHit[];
+  off_topic: AdminBotLabPaperHit[];
+  nothing_relevant: boolean;
+  uncovered_segments: Array<{ id: string; label: string; text: string }>;
+};
+
+export type AdminBotLabPapersState = {
+  /** Free text: a keyword, a topic list, or a whole proposal pasted in. */
+  query: string;
+  searching: boolean;
+  error: string | null;
+  result: AdminBotLabPaperReport | null;
+  /** Which rows have their matched sections open. */
+  expanded: string[];
+};
+
+export function createEmptyLabPapersState(): AdminBotLabPapersState {
+  return { query: "", searching: false, error: null, result: null, expanded: [] };
 }
 
 export type WorkshopNudgeRecommendation = {
@@ -408,14 +426,6 @@ export type AdminBotCvDigestJobState = {
   finishedAtMs?: number;
 };
 
-/** What POST /cv/publish-digest answers with. Mirrors the service; ui/ cannot import extensions/. */
-export type AdminBotCvDigestPublishResult = {
-  document_url: string;
-  published_at: string;
-  day_count: number;
-  change_count: number;
-};
-
 export type AdminBotSettings = {
   paper_escalation_business_days: number;
   cv_recency_window_months: number;
@@ -435,48 +445,6 @@ export type AdminBotSensitiveInfoRecord = {
   path?: string;
 };
 
-export type AdminBotLabMemberSaveInput = {
-  id: string;
-  // Optional so an emptied name box saves the rest of the form: omitted, the service keeps the
-  // stored name on an existing record instead of rejecting the whole save.
-  name?: string;
-  email?: string;
-  slackUserId?: string;
-  privilegeLevel?: AdminBotPrivilegeLevel;
-  collaboratorSubgroup?: AdminBotExternalCollaboratorSubgroup;
-  notes?: string;
-  status?: AdminBotMemberStatus;
-  /**
-   * Whether AdminBot may send this person anything at all.
-   *
-   * Governance, and spelled out here rather than carried in the profile bag for the same reason
-   * privilege and status are: it is not a fact about the person, it is a decision the lab made
-   * about them, and only an admin session may write it.
-   */
-  receivesNudges?: boolean;
-  /**
-   * Every profile field the roster editor collected, already in the service's wire shape.
-   *
-   * One bag rather than a camelCase key per field, and this is the change that keeps the Lab
-   * Members editor and the Profile page in step: both render from the shared member field
-   * registry (ui/src/ui/adminbot/member-fields.ts), whose keys *are* the wire names, so a new
-   * field needs no entry here and no line in `adminMemberUpdatePayload`. The previous shape
-   * named fifteen fields in camelCase and mapped each one back by hand, which is how the editor
-   * came to be missing eleven of the fields the profile page already had.
-   *
-   * Governance stays above, spelled out: privilege, status, email and the collaborator subgroup
-   * are not profile facts, only an admin session may write them, and they should be visible in
-   * this type rather than hidden inside a generic bag.
-   *
-   * No `availability` in here either way. The stored schedule is a list of rows the service
-   * validates as one (validateAvailability in extensions/adminbot/src/kernel/service.ts), written
-   * from the Time Availability tab; this form has no schedule control at all. It used to carry a
-   * free-text `availability` string, which every save sent as "" and the service rejected with
-   * 400 "member availability must be a list" — the whole edit lost to a field nobody could see.
-   */
-  profile?: Record<string, unknown>;
-};
-
 export type AdminBotPaperSaveInput = {
   id: string;
   title: string;
@@ -486,7 +454,7 @@ export type AdminBotPaperSaveInput = {
   /** What each author does on the paper. Sent whole; "" clears it. */
   authorRoles?: string;
   /** The author list as people. Sent whole; the service regenerates `authors` from it. */
-  authorLinks?: Array<{ name: string; member_id?: string; email?: string }>;
+  authorLinks?: Array<{ name: string; member_id?: string; email?: string; twitter?: string }>;
   /** The project's short name, which becomes its Slack channel `proj-<alias>`. */
   alias?: string;
   /** When work started, YYYY-MM-DD. Asked at creation; a paper is often filed weeks later. */
@@ -558,18 +526,6 @@ export type AdminBotPaperSaveInput = {
   publicationTrack?: string;
 };
 
-export type AdminBotSettingsSaveInput = {
-  paper_escalation_business_days?: number;
-  meeting_minimum_minutes?: number;
-  cv_recency_window_months?: number;
-  head_professor_member_id?: string;
-  lab_manager_member_id?: string;
-  head_professor_whatsapp?: string;
-  applicant_sheet_id?: string;
-  applicant_last_reviewed_at?: string;
-  venue_sources?: AdminBotVenueSource[];
-};
-
 export type AdminBotPaperStep =
   | "brainstorming_docs"
   | "overleaf_writing"
@@ -623,7 +579,7 @@ export type AdminBotPaperRecord = {
    * email for somebody who is not on the roster. This is what decides whose My Projects page the
    * paper appears on; `authors` above is only how the paper spells the names.
    */
-  author_links?: Array<{ name: string; member_id?: string; email?: string }>;
+  author_links?: Array<{ name: string; member_id?: string; email?: string; twitter?: string }>;
   current_step: AdminBotPaperStep;
   // Governance fields the service owns. Mirrored here so a card can show the venue and its
   // deadline without a second read; nothing in the UI writes them.
@@ -710,6 +666,7 @@ export type AdminBotReimbursementState = {
   busy: boolean;
   error: string | null;
   artifacts: AdminBotReimbursementArtifact[];
+  submissionProof?: string;
   /** Which finance office is paying. Undefined until the claimant chooses; nothing runs before. */
   funder?: AdminBotReimbursementFunder;
   /** The pre-submission report, once a check has run. */
@@ -725,6 +682,7 @@ export type AdminBotDashboardData = {
   emailReviewHistory?: AdminBotResolvedEmailReviewItem[];
   members: AdminBotLabMember[];
   papers: AdminBotPaperRecord[];
+  papersLoadedAt: number | null;
   nudges: AdminBotPaperNudge[];
   /**
    * Who is going to each conference the lab has an accepted paper at.
@@ -736,6 +694,17 @@ export type AdminBotDashboardData = {
   conferenceRosters?: ConferenceRoster[];
   settings: AdminBotSettings | null;
   sensitiveInfo: AdminBotSensitiveInfoRecord | null;
+  loadedAt: number | null;
+};
+
+export type AdminBotMemberListState = {
+  rows: AdminBotLabMember[];
+  total: number;
+  limit: number;
+  offset: number;
+  query: string;
+  loading: boolean;
+  error: string | null;
   loadedAt: number | null;
 };
 
@@ -751,24 +720,40 @@ export type AdminBotMemberNudgeState = {
   busy: boolean;
 };
 
-// The guest flow runs before any gateway connection exists, so it needs only the reimbursement
-// slice of the host plus the resolved AdminBot origin -- deliberately not the full AdminBotHost,
-// which would imply a client/session this path does not have.
-export type GuestReimbursementHost = {
-  adminBotReimbursement: AdminBotReimbursementState;
-  guestReimbursementBaseUrl: string;
+/** The Meetings checkboxes' options, loaded with the Lab Members panel. */
+export type AdminBotStandingMeetingsState = {
+  meetings: StandingMeeting[];
+  loading: boolean;
+  error: string | null;
+  loadedAt: number | null;
 };
 
+export function createEmptyAdminBotStandingMeetings(): AdminBotStandingMeetingsState {
+  return { meetings: [], loading: false, error: null, loadedAt: null };
+}
+
 export type AdminBotHost = {
+  requestUpdate?: () => void;
+  adminBotStandingMeetings?: AdminBotStandingMeetingsState;
   client: GatewayBrowserClient | null;
   connected: boolean;
-  // The dashboard's member-map card, loaded alongside the roster. See data/member-map.ts.
-  adminBotMemberMap: MemberMap | null;
+  // The dashboard's member-map card. Undefined means it has not been requested yet.
+  adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
+  adminBotMemberMapRequestId?: number;
   adminBotLoading: boolean;
   adminBotError: string | null;
+  adminBotUsingCachedReads?: boolean;
+  adminBotOfflinePendingWrites?: number;
   adminBotData: AdminBotDashboardData;
+  adminBotRosterLoadedAt?: number | null;
+  adminBotRosterLoading?: boolean;
+  adminBotRosterError?: string | null;
+  adminBotRosterRequestId?: number;
+  adminBotMemberList?: AdminBotMemberListState;
   adminBotBusyActionId: string | null;
+  adminBotSelectedActionIds: string[];
+  adminBotBulkActionBusy: boolean;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotPhotoPolishBusy: boolean;
   adminBotPhotoApplyBusy: boolean;
@@ -778,6 +763,7 @@ export type AdminBotHost = {
   // row and the document it wrote, so this only has to survive long enough to report the outcome.
   adminBotCvDigestJob: AdminBotCvDigestJobState;
   adminBotVenuePapers: AdminBotVenuePapersState;
+  adminBotLabPapers: AdminBotLabPapersState;
   adminBotWorkshopNudges: WorkshopNudgeReviewState;
   adminBotVenueIndexJob: AdminBotCvDigestJobState;
   adminBotChannelNamingJob: AdminBotCvDigestJobState;
@@ -815,6 +801,10 @@ export type AdminBotHost = {
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
   adminBotMeetingsLoading: boolean;
+  adminBotMeetingsRequestVersion?: number;
+  adminBotMeetingsLoadingMore: boolean;
+  adminBotMeetingsNextCursor: MeetingCursor | null;
+  adminBotMeetingsVisibleCount: number;
   adminBotMeetingsSaving: boolean;
   adminBotMeetingsError: string | null;
   // The attendance nudge an admin previews and sends from the Meeting Recordings tab.
@@ -847,16 +837,6 @@ export function createEmptyAdminBotReimbursementState(): AdminBotReimbursementSt
     busy: false,
     error: null,
     artifacts: [],
-  };
-}
-
-export function createEmptyAdminBotMemberNudgeState(): AdminBotMemberNudgeState {
-  return {
-    channel: "slack",
-    message: "",
-    subject: "",
-    selectedMemberIds: [],
-    busy: false,
   };
 }
 
@@ -894,11 +874,165 @@ export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
     emailReviewHistory: [],
     members: [],
     papers: [],
+    papersLoadedAt: null,
     nudges: [],
     settings: null,
     sensitiveInfo: null,
     loadedAt: null,
   };
+}
+
+export function createEmptyAdminBotMemberList(): AdminBotMemberListState {
+  return {
+    rows: [],
+    total: 0,
+    limit: 50,
+    offset: 0,
+    query: "",
+    loading: false,
+    error: null,
+    loadedAt: null,
+  };
+}
+
+export async function loadAdminBotMemberList(
+  host: AdminBotHost,
+  query = host.adminBotMemberList?.query ?? "",
+  offset = host.adminBotMemberList?.offset ?? 0,
+): Promise<void> {
+  const previous = host.adminBotMemberList ?? createEmptyAdminBotMemberList();
+  const limit = previous.limit;
+  const pending: AdminBotMemberListState = {
+    ...previous,
+    rows: query === previous.query && offset === previous.offset ? previous.rows : [],
+    query,
+    offset,
+    loading: true,
+    error: null,
+  };
+  host.adminBotMemberList = pending;
+  const session = loadStoredMemberSession();
+  const isCurrent = () =>
+    host.adminBotMemberList === pending &&
+    loadStoredMemberSession()?.sessionToken === session?.sessionToken;
+  try {
+    if (!session) {
+      const search = query.trim().toLocaleLowerCase();
+      const matches = host.adminBotData.members.filter((member) =>
+        [
+          member.name,
+          member.email,
+          ...(member.research_topics ?? []),
+          ...(member.projects ?? []),
+        ].some((value) => value?.toLocaleLowerCase().includes(search)),
+      );
+      host.adminBotMemberList = {
+        rows: matches.slice(offset, offset + limit),
+        total: matches.length,
+        limit,
+        offset,
+        query,
+        loading: false,
+        error: null,
+        loadedAt: Date.now(),
+      };
+      return;
+    }
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+      q: query.trim(),
+    });
+    const result = await fetchMemberResource(
+      `/lab/members?${params}`,
+      session.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!isCurrent()) {
+      return;
+    }
+    if (!result.ok) {
+      throw new Error(
+        result.kind === "unreachable"
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+          : result.kind === "forbidden"
+            ? "You do not have access to the lab roster."
+            : "Could not load lab members. Please try again.",
+      );
+    }
+    const response = readRecord(result.value);
+    const members = readArray<AdminBotLabMember>(response, "members");
+    // Older services return the complete roster. Keep the new UI usable during separate UI/API deploys.
+    const filtered =
+      typeof response.total === "number"
+        ? members
+        : members.filter((member) =>
+            [
+              member.name,
+              member.email,
+              ...(member.research_topics ?? []),
+              ...(member.projects ?? []),
+            ].some((value) =>
+              value?.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+            ),
+          );
+    host.adminBotMemberList = {
+      rows: typeof response.total === "number" ? members : filtered.slice(offset, offset + limit),
+      total: typeof response.total === "number" ? response.total : filtered.length,
+      limit,
+      offset,
+      query,
+      loading: false,
+      error: null,
+      loadedAt: Date.now(),
+    };
+  } catch (error) {
+    if (!isCurrent()) {
+      return;
+    }
+    host.adminBotMemberList = {
+      ...host.adminBotMemberList!,
+      loading: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Load the standing meetings the Lab Members form offers as checkboxes.
+ *
+ * Only for a signed-in admin: the route is admin-only and names people's addresses. A failure is
+ * kept as an error rather than an empty list, and the form then leaves the Meetings field out of
+ * the save altogether -- see AdminBotLabMemberSaveInput.meetings.
+ */
+export async function loadAdminBotStandingMeetings(host: AdminBotHost): Promise<void> {
+  const session = loadStoredMemberSession();
+  if (!session) {
+    return;
+  }
+  const previous = host.adminBotStandingMeetings ?? createEmptyAdminBotStandingMeetings();
+  const pending = { ...previous, loading: true, error: null };
+  host.adminBotStandingMeetings = pending;
+  const result = await fetchStandingMeetings(
+    session.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  if (
+    host.adminBotStandingMeetings !== pending ||
+    loadStoredMemberSession()?.sessionToken !== session.sessionToken
+  ) {
+    return;
+  }
+  host.adminBotStandingMeetings = result.ok
+    ? { meetings: result.value, loading: false, error: null, loadedAt: Date.now() }
+    : {
+        ...pending,
+        loading: false,
+        error:
+          result.kind === "unreachable"
+            ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+            : (result.message ?? "Could not load the lab's meetings."),
+      };
 }
 
 function adminBotUnavailableError(host: Pick<AdminBotHost, "connected" | "client">): string | null {
@@ -911,7 +1045,7 @@ function adminBotUnavailableError(host: Pick<AdminBotHost, "connected" | "client
   return null;
 }
 
-function readRecord(value: unknown): Record<string, unknown> {
+export function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
@@ -954,7 +1088,7 @@ function unwrapAdminBotToolOutput(value: unknown): unknown {
   return value;
 }
 
-function formatAdminBotToolError(err: unknown): string {
+export function formatAdminBotToolError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   if (/tool not available:\s*adminbot_/iu.test(message) || /unknown tool/iu.test(message)) {
     return ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE;
@@ -962,7 +1096,7 @@ function formatAdminBotToolError(err: unknown): string {
   return message;
 }
 
-async function invokeAdminBotTool(
+export async function invokeAdminBotTool(
   host: AdminBotHost,
   name: string,
   args: Record<string, unknown> = {},
@@ -992,17 +1126,19 @@ function readArray<T>(value: unknown, key: string): T[] {
   return Array.isArray(raw) ? (raw as T[]) : [];
 }
 
-// Dashboard read path for a signed-in member. Members and papers are the two surfaces every
-// signed-in person may read, so a failure there is a real error; the privileged extras (pending
-// queue, nudges, settings, sensitive info) are fetched best-effort and simply stay empty for a
-// member whose session the server refuses them to.
+// Signed-in read path. The own profile is always required; the full paper list is required only
+// when the active page uses it. Privileged extras are best-effort and stay empty when refused.
 async function loadAdminBotOverSession(
   host: AdminBotHost,
   mode: AdminBotLoadMode,
   session: { sessionToken: string; baseUrl: string },
+  includePapers: boolean,
 ): Promise<void> {
+  const isCurrent = () => loadStoredMemberSession()?.sessionToken === session.sessionToken;
   host.adminBotLoading = true;
   host.adminBotError = null;
+  host.adminBotUsingCachedReads = false;
+  let usedCache = false;
   const read = async (path: string): Promise<unknown> => {
     const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
     if (!result.ok) {
@@ -1010,21 +1146,75 @@ async function loadAdminBotOverSession(
         result.kind === "unreachable" ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE : result.kind,
       );
     }
+    if (result.cached) {
+      usedCache = true;
+    }
     return result.value;
   };
   const optional = async (path: string): Promise<unknown> => {
     const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
+    if (result.ok && result.cached) {
+      usedCache = true;
+    }
     return result.ok ? result.value : undefined;
   };
+  const readSelf = async (): Promise<unknown> => {
+    const result = await fetchMemberResource(
+      "/lab/members/self",
+      session.sessionToken,
+      session.baseUrl,
+    );
+    if (result.ok) {
+      if (result.cached) usedCache = true;
+      return result.value;
+    }
+    if (result.kind !== "not-found" || !host.memberId) {
+      throw new Error(
+        result.kind === "unreachable" ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE : result.kind,
+      );
+    }
+    // During an API-first rollout the old service has only the unpaged roster route. Filter its
+    // already-redacted response to the authenticated member; never cache peers on this cold path.
+    const legacy = await read("/lab/members");
+    return {
+      member: readArray<AdminBotLabMember>(legacy, "members").find(
+        (member) => member.id === host.memberId,
+      ),
+    };
+  };
   try {
-    const [members, papers] = await Promise.all([read("/lab/members"), read("/papers")]);
+    const selfResponse = await readSelf();
+    if (!isCurrent()) {
+      return;
+    }
+    const self = readRecord(readRecord(selfResponse).member) as AdminBotLabMember;
+    if (!self.id) {
+      throw new Error("Your member profile could not be loaded.");
+    }
+    const memberRows = host.adminBotRosterLoadedAt
+      ? [...host.adminBotData.members.filter((member) => member.id !== self.id), self]
+      : [self];
+    // A roster request can finish while the slower paper request is in flight.
+    const currentMemberRows = () =>
+      host.adminBotRosterLoadedAt ? host.adminBotData.members : memberRows;
+    // The profile and public deadlines can render while the larger paper read is still pending.
+    host.adminBotData = { ...createEmptyAdminBotDashboardData(), members: memberRows };
+    host.requestUpdate?.();
+    const papers = includePapers ? await read("/papers") : undefined;
+    if (!isCurrent()) {
+      return;
+    }
+    host.adminBotData = {
+      ...createEmptyAdminBotDashboardData(),
+      members: currentMemberRows(),
+      papers: readArray<AdminBotPaperRecord>(papers, "papers"),
+      papersLoadedAt: includePapers ? Date.now() : null,
+      // Admin queues still need their own read before the dashboard is complete.
+      loadedAt: mode === "general" ? Date.now() : null,
+    };
+    host.requestUpdate?.();
+    host.adminBotUsingCachedReads = usedCache;
     if (mode === "general") {
-      host.adminBotData = {
-        ...createEmptyAdminBotDashboardData(),
-        members: readArray<AdminBotLabMember>(members, "members"),
-        papers: readArray<AdminBotPaperRecord>(papers, "papers"),
-        loadedAt: Date.now(),
-      };
       return;
     }
     const [pending, emailReview, nudges, conferenceRosters, settings, sensitiveInfo] =
@@ -1036,6 +1226,9 @@ async function loadAdminBotOverSession(
         optional("/settings"),
         optional("/sensitive-info"),
       ]);
+    if (!isCurrent()) {
+      return;
+    }
     const settingsRecord = readRecord(settings);
     const sensitiveInfoRecord = readRecord(sensitiveInfo);
     const markdown = readString(sensitiveInfoRecord, "markdown");
@@ -1051,8 +1244,9 @@ async function loadAdminBotOverSession(
         emailReview,
         "recent_resolutions",
       ),
-      members: readArray<AdminBotLabMember>(members, "members"),
+      members: currentMemberRows(),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
+      papersLoadedAt: includePapers ? Date.now() : null,
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
       conferenceRosters: readArray<ConferenceRoster>(conferenceRosters, "conferences"),
       settings:
@@ -1060,32 +1254,113 @@ async function loadAdminBotOverSession(
       sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,
       loadedAt: Date.now(),
     };
+    host.adminBotUsingCachedReads = usedCache;
   } catch (err) {
-    host.adminBotError = err instanceof Error ? err.message : String(err);
+    if (isCurrent()) {
+      host.adminBotError = err instanceof Error ? err.message : String(err);
+    }
   } finally {
-    host.adminBotLoading = false;
+    if (isCurrent()) {
+      host.adminBotLoading = false;
+      const pendingCount = await pendingQueuedAdminBotWriteCount(
+        session.sessionToken,
+        session.baseUrl,
+      );
+      if (isCurrent()) host.adminBotOfflinePendingWrites = pendingCount;
+    }
+  }
+}
+
+/** Full roster only for surfaces that use other members' schedules, names, or badges. */
+export async function loadAdminBotRoster(host: AdminBotHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored || host.adminBotRosterLoading || host.adminBotRosterLoadedAt) {
+    return;
+  }
+  const requestId = (host.adminBotRosterRequestId ?? 0) + 1;
+  host.adminBotRosterRequestId = requestId;
+  host.adminBotRosterLoading = true;
+  host.adminBotRosterError = null;
+  const isCurrent = () =>
+    host.adminBotRosterRequestId === requestId &&
+    loadStoredMemberSession()?.sessionToken === stored.sessionToken;
+  try {
+    const result = await fetchMemberResource(
+      "/lab/members?view=summary",
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!isCurrent()) {
+      return;
+    }
+    if (!result.ok) {
+      throw new Error(
+        result.kind === "unreachable"
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+          : "Could not load lab members. Please try again.",
+      );
+    }
+    const response = readRecord(result.value);
+    const self = readRecord(response.self) as AdminBotLabMember;
+    const roster = readArray<AdminBotLabMember>(response, "members");
+    host.adminBotData = {
+      ...host.adminBotData,
+      members: self.id ? roster.map((member) => (member.id === self.id ? self : member)) : roster,
+    };
+    host.adminBotRosterLoadedAt = Date.now();
+  } catch (error) {
+    if (isCurrent()) {
+      host.adminBotRosterError = error instanceof Error ? error.message : String(error);
+    }
+  } finally {
+    if (isCurrent()) {
+      host.adminBotRosterLoading = false;
+    }
   }
 }
 
 export async function loadAdminBot(
   host: AdminBotHost,
   mode: AdminBotLoadMode = "admin",
+  includePapers = true,
+  preserveRoster = false,
 ): Promise<void> {
+  // A write may have changed a member row; the next roster-dependent tab reloads it on demand.
+  // Opening a paper page after a non-paper page changes no member rows, so keep its loaded roster.
+  if (!preserveRoster) {
+    // Profile edits may also change the Dashboard map; only that tab will fetch it again.
+    invalidateMemberMap(host);
+    host.adminBotRosterRequestId = (host.adminBotRosterRequestId ?? 0) + 1;
+    host.adminBotRosterLoadedAt = null;
+    host.adminBotRosterLoading = false;
+    host.adminBotRosterError = null;
+  }
+  if (!preserveRoster && host.adminBotMemberList?.loadedAt) {
+    host.adminBotMemberList = { ...host.adminBotMemberList, loadedAt: null };
+  }
   // A signed-in member reads through their own session. The gateway tool path needs
   // operator.write, which a plain member's paired device deliberately does not hold, so for them
   // every tool call fails and the dashboard renders empty -- including after a successful save,
   // which is what made edits look like they never persisted.
   const stored = loadStoredMemberSession();
   if (stored) {
-    await loadAdminBotOverSession(host, mode, {
-      sessionToken: stored.sessionToken,
-      baseUrl: resolveAdminBotBaseUrl(host.settings),
-    });
-    // Not awaited and never able to fail the load: the map is one dashboard card, and the roster
-    // and papers above it are what the page is actually for.
-    void loadMemberMap(host);
+    await loadAdminBotOverSession(
+      host,
+      mode,
+      {
+        sessionToken: stored.sessionToken,
+        baseUrl: resolveAdminBotBaseUrl(host.settings),
+      },
+      includePapers,
+    );
+    if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+      return;
+    }
     return;
   }
+  const startingClient = host.client;
+  const gatewayLoadIsCurrent = () =>
+    loadStoredMemberSession() === null && host.client === startingClient;
   const unavailable = adminBotUnavailableError(host);
   if (unavailable) {
     host.adminBotError = unavailable;
@@ -1100,10 +1375,14 @@ export async function loadAdminBot(
         invokeAdminBotTool(host, "adminbot_list_lab_members"),
         invokeAdminBotTool(host, "adminbot_list_papers"),
       ]);
+      if (!gatewayLoadIsCurrent()) {
+        return;
+      }
       host.adminBotData = {
         ...createEmptyAdminBotDashboardData(),
         members: readArray<AdminBotLabMember>(members, "members"),
         papers: readArray<AdminBotPaperRecord>(papers, "papers"),
+        papersLoadedAt: Date.now(),
         loadedAt: Date.now(),
       };
       return;
@@ -1123,6 +1402,9 @@ export async function loadAdminBot(
       invokeAdminBotTool(host, "adminbot_get_settings"),
       invokeAdminBotTool(host, "adminbot_get_sensitive_info"),
     ]);
+    if (!gatewayLoadIsCurrent()) {
+      return;
+    }
     const essentialFailures = [membersResult, papersResult].filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
@@ -1147,6 +1429,7 @@ export async function loadAdminBot(
       emailReviewHistory: [],
       members: readArray<AdminBotLabMember>(members, "members"),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
+      papersLoadedAt: Date.now(),
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
       settings:
         Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
@@ -1154,77 +1437,13 @@ export async function loadAdminBot(
       loadedAt: Date.now(),
     };
   } catch (err) {
-    host.adminBotError = formatAdminBotToolError(err);
+    if (gatewayLoadIsCurrent()) {
+      host.adminBotError = formatAdminBotToolError(err);
+    }
   } finally {
-    host.adminBotLoading = false;
-  }
-}
-
-function approvalFailureMessage(kind: string): string {
-  if (kind === "unreachable") {
-    return ADMINBOT_SERVICE_UNREACHABLE_MESSAGE;
-  }
-  if (kind === "forbidden") {
-    return "Your session no longer has approval rights — sign in again and retry.";
-  }
-  if (kind === "rate-limited") {
-    return "Too many attempts. Wait a moment and try again.";
-  }
-  return "Couldn't record this approval. Reload the pending list and try again.";
-}
-
-export async function approveAdminBotAction(
-  host: AdminBotHost,
-  proposal: AdminBotActionProposal,
-): Promise<void> {
-  host.adminBotBusyActionId = proposal.id;
-  host.adminBotNotice = null;
-  try {
-    const session = requirePrivilegedSession(host);
-    if (!session) {
-      return;
+    if (gatewayLoadIsCurrent()) {
+      host.adminBotLoading = false;
     }
-    const approved = await approveActionAsMember(
-      proposal.id,
-      proposal.payload_hash,
-      session.sessionToken,
-      session.baseUrl,
-    );
-    if (!approved.ok) {
-      host.adminBotNotice = { kind: "error", text: approvalFailureMessage(approved.kind) };
-      return;
-    }
-    // High-risk actions need a second distinct approver; stop here rather than executing an
-    // action that is still pending quorum.
-    if (approved.value.status !== "approved") {
-      const need = approved.value.approval_requirement.min_approvals;
-      const have = new Set(
-        approved.value.approvals.map((entry) => entry.approver_id ?? entry.approver_role),
-      ).size;
-      host.adminBotNotice = {
-        kind: "success",
-        text: `Recorded your approval of ${proposal.id}. ${have} of ${need} approvals — another admin or core member must approve before it runs.`,
-      };
-      await loadAdminBot(host);
-      return;
-    }
-    const executed = await executeActionAsMember(
-      proposal.id,
-      `control-ui-${proposal.id}`,
-      session.sessionToken,
-      session.baseUrl,
-    );
-    if (!executed.ok) {
-      host.adminBotNotice = { kind: "error", text: approvalFailureMessage(executed.kind) };
-      return;
-    }
-    host.adminBotNotice = {
-      kind: "success",
-      text: `${executed.value.status === "executed" ? "Approved and executed" : "Approved and simulated"} ${proposal.id}.`,
-    };
-    await loadAdminBot(host);
-  } finally {
-    host.adminBotBusyActionId = null;
   }
 }
 
@@ -1238,14 +1457,17 @@ export async function approveAdminBotAction(
  * still the authority -- these two routes are in its ANONYMOUS_ROUTES and rate-limited per IP like
  * the reimbursement pair; this only stops the UI refusing to ask.
  */
-function optionalSession(host: AdminBotHost): { sessionToken: string | null; baseUrl: string } {
+export function optionalSession(host: AdminBotHost): {
+  sessionToken: string | null;
+  baseUrl: string;
+} {
   return {
     sessionToken: loadStoredMemberSession()?.sessionToken ?? null,
     baseUrl: resolveAdminBotBaseUrl(host.settings),
   };
 }
 
-function requirePrivilegedSession(
+export function requirePrivilegedSession(
   host: AdminBotHost,
 ): { sessionToken: string; baseUrl: string } | null {
   const stored = loadStoredMemberSession();
@@ -1259,49 +1481,6 @@ function requirePrivilegedSession(
   return { sessionToken: stored.sessionToken, baseUrl: resolveAdminBotBaseUrl(host.settings) };
 }
 
-export async function resolveAdminBotEmailReview(
-  host: AdminBotHost,
-  messageId: string,
-  resolution: AdminBotEmailReviewResolution,
-): Promise<void> {
-  host.adminBotBusyActionId = `email-review:${messageId}`;
-  host.adminBotNotice = null;
-  try {
-    const session = requirePrivilegedSession(host);
-    if (!session) {
-      return;
-    }
-    const result = await resolveEmailReviewAsAdmin(
-      messageId,
-      resolution,
-      session.sessionToken,
-      session.baseUrl,
-    );
-    if (!result.ok) {
-      host.adminBotNotice = {
-        kind: "error",
-        text:
-          result.kind === "unreachable"
-            ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-            : result.kind === "forbidden"
-              ? "Email review requires an administrator account."
-              : `Could not resolve this email: ${result.message ?? result.kind}`,
-      };
-      return;
-    }
-    host.adminBotNotice = {
-      kind: "success",
-      text:
-        resolution.kind === "paperflow_evidence"
-          ? "Attached the email to the paper. AdminBot will stop reminders for that stage."
-          : "Removed the email from AdminBot's review queue without changing any paper.",
-    };
-    await loadAdminBot(host);
-  } finally {
-    host.adminBotBusyActionId = null;
-  }
-}
-
 // Re-reads every linked CV and replaces the panel's scan result. Deliberately not merged into the
 // previous result: a member whose link broke since the last run must stop showing that run's
 // changes as though they were still current.
@@ -1310,7 +1489,7 @@ export async function resolveAdminBotEmailReview(
 // These three routes are the newest in the service, so they are the ones a long-running dev
 // service will not have yet. "not-found" therefore means version skew, and saying so is the
 // difference between restarting a process and hunting a login problem that does not exist.
-function cvErrorText(kind: string, action: string): string {
+export function cvErrorText(kind: string, action: string): string {
   if (kind === "unreachable") {
     return ADMINBOT_SERVICE_UNREACHABLE_MESSAGE;
   }
@@ -1323,179 +1502,61 @@ function cvErrorText(kind: string, action: string): string {
   return `Could not ${action}: ${kind}`;
 }
 
-/**
- * Rebuilds every configured conference index.
- *
- * The slow job of the pair: a few thousand papers fetched from OpenReview and embedded one batch
- * at a time, roughly a minute and a half per conference. It reports per-venue rather than pass or
- * fail because the venues are independent — one dead id should not read as "indexing is broken".
- */
-/**
- * Files a rename proposal for every Slack channel whose naming reminder has run out.
- *
- * Reports what it queued rather than what it changed, because it changes nothing: the renames go
- * to Pending Actions for an admin to approve. A run that finds channels still waiting on an
- * earlier proposal says so instead of filing them twice.
- */
-export async function runAdminBotChannelNamingJob(host: AdminBotHost): Promise<void> {
-  const session = requirePrivilegedSession(host);
-  if (!session) {
-    return;
-  }
-  host.adminBotChannelNamingJob = { status: "running" };
-  try {
-    const result = await runChannelNamingSweep(session.sessionToken, session.baseUrl);
-    if (!result.ok) {
-      host.adminBotChannelNamingJob = {
-        status: "error",
-        detail: result.message?.trim() || cvErrorText(result.kind, "run the channel naming sweep"),
-        finishedAtMs: Date.now(),
-      };
-      return;
-    }
-    const payload = result.value as {
-      scanned?: number;
-      reminders_pending?: number;
-      renames_proposed?: number;
-      renames_awaiting_approval?: number;
-    };
-    host.adminBotChannelNamingJob = {
-      status: "ok",
-      detail: describeNamingSweep(payload),
-      finishedAtMs: Date.now(),
-    };
-  } catch (error) {
-    host.adminBotChannelNamingJob = {
-      status: "error",
-      detail: error instanceof Error ? error.message : String(error),
-      finishedAtMs: Date.now(),
-    };
-  }
-}
-
-// Every outcome is worth a sentence, because all three mean different things to the person who
-// just pressed the button: something is waiting on them, something is waiting on a channel owner,
-// or the roster is clean.
-function describeNamingSweep(payload: {
-  scanned?: number;
-  reminders_pending?: number;
-  renames_proposed?: number;
-  renames_awaiting_approval?: number;
-}): string {
-  const proposed = payload.renames_proposed ?? 0;
-  const awaiting = payload.renames_awaiting_approval ?? 0;
-  const reminded = payload.reminders_pending ?? 0;
-  const parts: string[] = [];
-  if (proposed) {
-    parts.push(
-      `Proposed ${proposed} rename${proposed === 1 ? "" : "s"} — approve them in Pending Actions.`,
-    );
-  }
-  if (awaiting) {
-    parts.push(`${awaiting} already waiting for approval.`);
-  }
-  if (reminded) {
-    parts.push(`${reminded} still inside the 48-hour window.`);
-  }
-  if (!parts.length) {
-    return `Nothing to rename across ${payload.scanned ?? 0} watched channel${
-      (payload.scanned ?? 0) === 1 ? "" : "s"
-    }.`;
-  }
-  return parts.join(" ");
-}
-
-export async function runAdminBotVenueIndexJob(host: AdminBotHost): Promise<void> {
-  const session = requirePrivilegedSession(host);
-  if (!session) {
-    return;
-  }
-  host.adminBotVenueIndexJob = { status: "running" };
-  try {
-    const result = await rebuildVenueIndexes(session.sessionToken, session.baseUrl);
-    if (!result.ok) {
-      host.adminBotVenueIndexJob = {
-        status: "error",
-        detail: result.message?.trim() || cvErrorText(result.kind, "rebuild the paper indexes"),
-        finishedAtMs: Date.now(),
-      };
-      return;
-    }
-    const payload = result.value as {
-      built?: Array<{ label?: string; paper_count?: number }>;
-      failed?: Array<{ venue_id: string; reason: string }>;
-    };
-    const built = payload.built ?? [];
-    const failed = payload.failed ?? [];
-    const papers = built.reduce((total, entry) => total + (entry.paper_count ?? 0), 0);
-    host.adminBotVenueIndexJob = {
-      status: failed.length ? "error" : "ok",
-      detail: failed.length
-        ? `Indexed ${built.length} of ${built.length + failed.length}: ${failed
-            .map((entry) => `${entry.venue_id} (${entry.reason})`)
-            .join("; ")}`
-        : `Indexed ${papers.toLocaleString()} papers across ${built.length} conference${
-            built.length === 1 ? "" : "s"
-          }.`,
-      finishedAtMs: Date.now(),
-    };
-  } catch (error) {
-    host.adminBotVenueIndexJob = {
-      status: "error",
-      detail: error instanceof Error ? error.message : String(error),
-      finishedAtMs: Date.now(),
-    };
-  }
-}
-
-/**
- * Loads the conference list, and prefills the interests box from the member's own topics.
- *
- * The prefill only ever happens while the box is untouched. Re-opening the tab should pick up a
- * profile edit, but re-loading the list must never overwrite a sentence the member is part way
- * through typing.
- */
-export async function loadAdminBotVenueSources(host: AdminBotHost): Promise<void> {
-  const session = optionalSession(host);
-  host.adminBotVenuePapers = { ...host.adminBotVenuePapers, loadingSources: true, error: null };
-  try {
-    const result = await fetchVenueSources(session.sessionToken, session.baseUrl);
-    if (!result.ok) {
-      host.adminBotVenuePapers = {
-        ...host.adminBotVenuePapers,
-        loadingSources: false,
-        error: result.message?.trim() || cvErrorText(result.kind, "load the conference list"),
-      };
-      return;
-    }
-    const sources = (result.value as { sources?: AdminBotVenueSourceView[] })?.sources ?? [];
-    const state = host.adminBotVenuePapers;
-    const self = host.adminBotData?.members?.find((member) => member.id === host.memberId);
-    host.adminBotVenuePapers = {
-      ...state,
-      sources,
-      loadingSources: false,
-      // Default to the first conference an admin listed; the list is ordered deliberately.
-      venueId: state.venueId || (sources[0]?.venue_id ?? ""),
-      interests: state.interestsTouched
-        ? state.interests
-        : interestsFromTopics(self?.research_topics),
-    };
-  } catch (error) {
-    host.adminBotVenuePapers = {
-      ...host.adminBotVenuePapers,
-      loadingSources: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
 export function setAdminBotVenue(host: AdminBotHost, venueId: string): void {
   // The old result belonged to a different conference; keeping it on screen under a new heading
   // would be a lie about what was searched.
   host.adminBotVenuePapers = {
     ...host.adminBotVenuePapers,
     venueId,
+    categories: [],
+    loadingCategories: Boolean(venueId),
+    categoryId: "",
+    searching: false,
+    result: null,
+    error: null,
+    expanded: [],
+  };
+  if (venueId) {
+    void loadAdminBotVenueCategories(host);
+  }
+}
+
+export async function loadAdminBotVenueCategories(host: AdminBotHost): Promise<void> {
+  const venueId = host.adminBotVenuePapers.venueId;
+  const requestedCategoryId = host.adminBotVenuePapers.categoryId;
+  if (!venueId) {
+    return;
+  }
+  const session = optionalSession(host);
+  host.adminBotVenuePapers = {
+    ...host.adminBotVenuePapers,
+    loadingCategories: true,
+    categories: [],
+  };
+  const result = await fetchVenueCategories(venueId, session.sessionToken, session.baseUrl);
+  // A quick second selection must not let the first conference's slower response win the race.
+  if (host.adminBotVenuePapers.venueId !== venueId) {
+    return;
+  }
+  const categories = result.ok ? result.value.categories : [];
+  host.adminBotVenuePapers = {
+    ...host.adminBotVenuePapers,
+    loadingCategories: false,
+    categories,
+    categoryId: categories.some((category) => category.id === requestedCategoryId)
+      ? requestedCategoryId
+      : "",
+    error: result.ok
+      ? null
+      : result.message?.trim() || cvErrorText(result.kind, "load conference categories"),
+  };
+}
+
+export function setAdminBotVenueCategory(host: AdminBotHost, categoryId: string): void {
+  host.adminBotVenuePapers = {
+    ...host.adminBotVenuePapers,
+    categoryId,
+    searching: false,
     result: null,
     error: null,
     expanded: [],
@@ -1518,208 +1579,8 @@ export function toggleAdminBotVenueAbstract(host: AdminBotHost, paperId: string)
   };
 }
 
-/** Ranks the chosen conference against the interests currently in the box. */
-export async function searchAdminBotVenuePapers(host: AdminBotHost): Promise<void> {
-  const session = optionalSession(host);
-  const { venueId, interests } = host.adminBotVenuePapers;
-  if (!venueId || !interests.trim()) {
-    return;
-  }
-  host.adminBotVenuePapers = {
-    ...host.adminBotVenuePapers,
-    searching: true,
-    error: null,
-    expanded: [],
-  };
-  try {
-    const result = await searchVenuePapers(
-      { venueId, interests },
-      session.sessionToken,
-      session.baseUrl,
-    );
-    if (!result.ok) {
-      host.adminBotVenuePapers = {
-        ...host.adminBotVenuePapers,
-        searching: false,
-        result: null,
-        error: result.message?.trim() || cvErrorText(result.kind, "search the conference"),
-      };
-      return;
-    }
-    host.adminBotVenuePapers = {
-      ...host.adminBotVenuePapers,
-      searching: false,
-      result: result.value as AdminBotVenueSearchResult,
-    };
-  } catch (error) {
-    host.adminBotVenuePapers = {
-      ...host.adminBotVenuePapers,
-      searching: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-/** How often the page checks back on a pass that is still running. */
-const WORKSHOP_RUN_POLL_MS = 5_000;
-
-/**
- * Start a new match.
- *
- * Separate from loading, because they cost wildly different things: reading the stored answer is
- * one cheap request, and producing a new one is thousands of model calls. Opening the page must
- * never do the second by accident.
- */
-export async function loadWorkshopConferences(host: AdminBotHost): Promise<void> {
-  const session = requirePrivilegedSession(host);
-  if (!session) {
-    return;
-  }
-  const result = await fetchWorkshopConferences(session.sessionToken, session.baseUrl);
-  // Silent on failure, and specifically on a 404 from a service too old to have the route: the
-  // picker is an optional narrowing of a pass that already works without it, so a missing list
-  // leaves the admin with "every open workshop" rather than with an error over a working tab.
-  host.adminBotWorkshopNudges = {
-    ...host.adminBotWorkshopNudges,
-    conferences: result.ok ? result.value : [],
-  };
-}
-
 export function setWorkshopConference(host: AdminBotHost, key: string): void {
   host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, conferenceKey: key };
-}
-
-export async function refreshWorkshopNudgePreview(
-  host: AdminBotHost,
-  // Set when the administrator is deliberately replacing a pass that still says it is running,
-  // rather than waiting out the server's stall window.
-  force = false,
-): Promise<void> {
-  const session = requirePrivilegedSession(host);
-  if (!session) {
-    host.adminBotWorkshopNudges = {
-      ...host.adminBotWorkshopNudges,
-      error: "Sign in with a lab administrator account before refreshing recommendations.",
-    };
-    return;
-  }
-  host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, loading: true, error: null };
-  const started = await refreshWorkshopNudges(
-    session.sessionToken,
-    session.baseUrl,
-    force,
-    host.adminBotWorkshopNudges.conferenceKey,
-  );
-  if (!started.ok) {
-    host.adminBotWorkshopNudges = {
-      ...host.adminBotWorkshopNudges,
-      loading: false,
-      error: started.message?.trim() || cvErrorText(started.kind, "start a workshop match"),
-    };
-    return;
-  }
-  host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, loading: false };
-  await loadWorkshopNudgePreview(host);
-}
-
-export async function loadWorkshopNudgePreview(host: AdminBotHost): Promise<void> {
-  const session = requirePrivilegedSession(host);
-  if (!session) {
-    host.adminBotWorkshopNudges = {
-      ...host.adminBotWorkshopNudges,
-      error: "Sign in with a lab administrator account before refreshing recommendations.",
-    };
-    return;
-  }
-  const current = host.adminBotWorkshopNudges;
-  if (current.loading || current.sending) {
-    return;
-  }
-  host.adminBotWorkshopNudges = {
-    ...current,
-    loading: true,
-    error: null,
-    selectedRecipientIds: [],
-  };
-  try {
-    const result = await previewWorkshopNudges(session.sessionToken, session.baseUrl);
-    if (!result.ok) {
-      host.adminBotWorkshopNudges = {
-        ...host.adminBotWorkshopNudges,
-        loading: false,
-        result: null,
-        error: result.message?.trim() || cvErrorText(result.kind, "load workshop nudges"),
-      };
-      return;
-    }
-    const run = result.value as WorkshopNudgeRunView;
-    const value = run.preview ?? null;
-    host.adminBotWorkshopNudges = {
-      ...host.adminBotWorkshopNudges,
-      loading: false,
-      run,
-      result: value,
-      // A failed pass says why on the page rather than looking like an empty result.
-      error: run.status === "failed" ? (run.error ?? "The last match did not finish.") : null,
-      selectedRecipientIds: value
-        ? value.recipients
-            .filter((recipient) => recipient.delivery_ready)
-            .map((recipient) => recipient.recipient_member_id)
-        : [],
-      view: { ...host.adminBotWorkshopNudges.view, page: 0, detailKey: null },
-    };
-    // While a pass is in flight the page checks back on its own, so somebody who pressed Refresh
-    // and walked away comes back to the answer rather than to a spinner that stopped meaning
-    // anything. Polling stops the moment the pass is terminal.
-    if (
-      run.status === "running" &&
-      run.task_status !== "needs_retry" &&
-      run.task_status !== "shed"
-    ) {
-      setTimeout(() => {
-        if ("isConnected" in host && host.isConnected === false) {
-          return;
-        }
-        void loadWorkshopNudgePreview(host);
-      }, WORKSHOP_RUN_POLL_MS);
-    }
-  } catch (error) {
-    host.adminBotWorkshopNudges = {
-      ...host.adminBotWorkshopNudges,
-      loading: false,
-      result: null,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-/**
- * Stop the pass in flight.
- *
- * Reaching a stalled pass used to mean waiting out the server's thirty-minute window or restarting
- * the service, neither of which is available to somebody looking at a wedged tab in a browser.
- */
-export async function cancelWorkshopNudgeRun(host: AdminBotHost): Promise<void> {
-  const session = requirePrivilegedSession(host);
-  if (!session) {
-    host.adminBotWorkshopNudges = {
-      ...host.adminBotWorkshopNudges,
-      error: "Sign in with a lab administrator account before stopping a pass.",
-    };
-    return;
-  }
-  host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, loading: true, error: null };
-  const stopped = await cancelWorkshopNudges(session.sessionToken, session.baseUrl);
-  if (!stopped.ok) {
-    host.adminBotWorkshopNudges = {
-      ...host.adminBotWorkshopNudges,
-      loading: false,
-      error: stopped.message?.trim() || cvErrorText(stopped.kind, "stop the workshop match"),
-    };
-    return;
-  }
-  host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, loading: false };
-  await loadWorkshopNudgePreview(host);
 }
 
 export function toggleWorkshopNudgeRecipient(host: AdminBotHost, memberId: string): void {
@@ -1758,342 +1619,76 @@ export function updateWorkshopNudgeView(host: AdminBotHost, patch: WorkshopNudge
   };
 }
 
-export async function sendWorkshopNudgeSelection(host: AdminBotHost): Promise<void> {
-  const session = requirePrivilegedSession(host);
-  if (!session) {
-    return;
-  }
-  const current = host.adminBotWorkshopNudges;
-  if (current.sending || current.loading) {
-    return;
-  }
-  if (!current.selectedRecipientIds.length) {
-    host.adminBotWorkshopNudges = { ...current, error: "Select at least one recipient." };
-    return;
-  }
-  host.adminBotWorkshopNudges = { ...current, sending: true, error: null, sendResult: null };
-  try {
-    const result = await sendWorkshopNudges(
-      current.selectedRecipientIds,
-      session.sessionToken,
-      session.baseUrl,
-    );
-    if (!result.ok) {
-      host.adminBotWorkshopNudges = {
-        ...host.adminBotWorkshopNudges,
-        sending: false,
-        error: result.message?.trim() || cvErrorText(result.kind, "send workshop nudges"),
-      };
-      return;
-    }
-    const value = result.value as {
-      created: Array<{ member_id: string }>;
-      skipped: Array<{ member_id: string; reason: string }>;
-    };
-    const skipped = value.skipped.length
-      ? ` Skipped ${value.skipped.length}: ${value.skipped.map((entry) => entry.reason).join(", ")}.`
-      : "";
-    host.adminBotNotice = {
-      kind: value.skipped.length ? "error" : "success",
-      text: `Sent ${value.created.length} workshop nudge${value.created.length === 1 ? "" : "s"}.${skipped}`,
-    };
-    host.adminBotWorkshopNudges = {
-      ...host.adminBotWorkshopNudges,
-      sending: false,
-      // Only clear the ticks for recipients that actually went. A skipped one stays selected, so
-      // pressing Nudge again after fixing the cause retries exactly those.
-      selectedRecipientIds: value.skipped.map((entry) => entry.member_id),
-      sendResult: { created: value.created.length, skipped: value.skipped },
-    };
-  } catch (error) {
-    host.adminBotWorkshopNudges = {
-      ...host.adminBotWorkshopNudges,
-      sending: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+export function toggleAdminBotSelectedAction(host: AdminBotHost, proposalId: string): void {
+  const selected = host.adminBotSelectedActionIds;
+  host.adminBotSelectedActionIds = selected.includes(proposalId)
+    ? selected.filter((id) => id !== proposalId)
+    : [...selected, proposalId];
 }
 
-/**
- * Runs the CV digest job: scan every linked CV, then rewrite the CV Updates doc from the whole
- * change ledger.
- *
- * The scan is the slow half — one fetch and, for anything that changed, one model call per member
- * — so the button reports "running" for as long as it takes rather than optimistically claiming
- * success. Nothing here is optimistic: the state only advances once the service says the document
- * was written, because the point of the job is that the doc actually changed.
- */
-export async function runAdminBotCvDigestJob(host: AdminBotHost): Promise<void> {
-  const session = requirePrivilegedSession(host);
-  if (!session) {
-    return;
-  }
-  host.adminBotCvDigestJob = { status: "running" };
-  host.adminBotNotice = null;
-  try {
-    const result = await publishCvDigest(session.sessionToken, session.baseUrl);
-    if (!result.ok) {
-      host.adminBotCvDigestJob = {
-        status: "error",
-        // The service's own sentence when it sent one (a missing document id, a gog failure);
-        // the generic copy only when it did not.
-        detail: result.message?.trim() || cvErrorText(result.kind, "publish the CV digest"),
-        finishedAtMs: Date.now(),
-      };
-      return;
-    }
-    const published = result.value as AdminBotCvDigestPublishResult;
-    host.adminBotCvDigestJob = {
-      status: "ok",
-      detail: describeDigestRun(published),
-      resultUrl: published.document_url,
-      finishedAtMs: Date.now(),
-    };
-  } catch (error) {
-    // A thrown error here is a bug or a dead network rather than a service refusal, but leaving
-    // the button stuck on "Running…" would be worse than saying so.
-    host.adminBotCvDigestJob = {
-      status: "error",
-      detail: error instanceof Error ? error.message : String(error),
-      finishedAtMs: Date.now(),
-    };
-  }
+// Bulk-set the ticked rows -- used by the header checkbox, which both selects every listed
+// proposal and (ticked again) clears the selection. Mirrors setAdminBotNudgeRecipients.
+export function setAdminBotSelectedActions(host: AdminBotHost, proposalIds: string[]): void {
+  host.adminBotSelectedActionIds = proposalIds;
 }
 
-// A run that published nothing is still a run: the document was rewritten with a fresh date, and
-// saying "0 updates" is what stops an admin pressing the button again to check.
-function describeDigestRun(published: AdminBotCvDigestPublishResult): string {
-  if (published.change_count === 0) {
-    return "No CV updates recorded yet — the document was refreshed with today's date.";
-  }
-  const updates = `${published.change_count} update${published.change_count === 1 ? "" : "s"}`;
-  const days = `${published.day_count} day${published.day_count === 1 ? "" : "s"}`;
-  return `Published ${updates} across ${days}.`;
-}
+// Autosaves can overlap when a member pauses and then keeps typing. Queue writes to the same
+// record in request order: ignoring an old response is not enough if the server commits it last.
+const memberSaveQueues = new WeakMap<AdminBotHost, Map<string, Promise<void>>>();
 
-export async function removePendingAdminBotAction(
+export function serializeMemberSave(
   host: AdminBotHost,
-  proposal: AdminBotActionProposal,
+  key: string,
+  work: () => Promise<void>,
 ): Promise<void> {
-  host.adminBotBusyActionId = proposal.id;
-  host.adminBotNotice = null;
-  try {
-    const session = requirePrivilegedSession(host);
-    if (!session) {
-      return;
-    }
-    const removed = await removePendingAction(proposal.id, session.sessionToken, session.baseUrl);
-    if (!removed.ok) {
-      host.adminBotNotice = { kind: "error", text: approvalFailureMessage(removed.kind) };
-      return;
-    }
-    host.adminBotNotice = { kind: "success", text: "Removed " + proposal.id + "." };
-    await loadAdminBot(host);
-  } finally {
-    host.adminBotBusyActionId = null;
+  let queue = memberSaveQueues.get(host);
+  if (!queue) {
+    queue = new Map();
+    memberSaveQueues.set(host, queue);
   }
+  const pending = (queue.get(key) ?? Promise.resolve()).catch(() => {}).then(work);
+  queue.set(key, pending);
+  return pending.finally(() => {
+    if (queue?.get(key) === pending) {
+      queue.delete(key);
+    }
+  });
 }
 
-export async function executeAdminBotAction(
+/** Queues the onboarding guide for a member just saved, and says what became of it. */
+export async function onboardSavedMember(
   host: AdminBotHost,
-  proposal: AdminBotActionProposal,
-): Promise<void> {
-  host.adminBotBusyActionId = proposal.id;
-  host.adminBotNotice = null;
-  try {
-    const session = requirePrivilegedSession(host);
-    if (!session) {
-      return;
-    }
-    const executed = await executeActionAsMember(
-      proposal.id,
-      `control-ui-${proposal.id}`,
-      session.sessionToken,
-      session.baseUrl,
-    );
-    if (!executed.ok) {
-      host.adminBotNotice = { kind: "error", text: approvalFailureMessage(executed.kind) };
-      return;
-    }
-    host.adminBotNotice = {
-      kind: "success",
-      text: `${executed.value.status === "executed" ? "Executed" : "Simulated"} ${proposal.id}.`,
-    };
-    await loadAdminBot(host);
-  } finally {
-    host.adminBotBusyActionId = null;
-  }
-}
-
-function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
-  return {
-    ...(member.name ? { name: member.name } : {}),
-    ...(member.email ? { email: member.email } : {}),
-    ...(member.slackUserId ? { slack_user_id: member.slackUserId } : {}),
-    ...(member.privilegeLevel ? { privilege_level: member.privilegeLevel } : {}),
-    ...(member.collaboratorSubgroup ? { collaborator_subgroup: member.collaboratorSubgroup } : {}),
-    ...(member.notes ? { notes: member.notes } : {}),
-    ...(member.status ? { status: member.status } : {}),
-    // `!== undefined`, not truthiness: `false` is how somebody is taken *off* the list, and a
-    // truthiness check would silently turn every removal into a no-op.
-    ...(member.receivesNudges !== undefined ? { receives_nudges: member.receivesNudges } : {}),
-    // Last, so a governance field can never be overwritten by a profile key of the same name.
-    // The service re-checks every key against its own whitelist regardless.
-    ...member.profile,
-  };
-}
-
-/**
- * The registry fields the break-glass gateway tool can carry, renamed to its camelCase parameters.
- *
- * Narrower than the HTTP path on purpose, and narrower than it looks: `adminbot_upsert_lab_member`
- * declares a fixed parameter object (extensions/adminbot/index.ts), so a key it does not name is
- * rejected rather than ignored. Fields outside this map are simply not settable over the legacy
- * token path -- which is the same restriction that path already had, now stated in one place
- * instead of being implied by which lines somebody remembered to write.
- */
-const TOOL_PROFILE_PARAMS: Record<string, string> = {
-  role: "role",
-  research_branch: "researchBranch",
-  research_topics: "researchTopics",
-  projects: "projects",
-  hours_per_week: "hoursPerWeek",
-  location: "location",
-  affiliation: "affiliation",
-  timezone: "timezone",
-  personal_website: "personalWebsite",
-  openreview_id: "openreviewId",
-};
-
-function toolProfileParams(profile: Record<string, unknown> | undefined): Record<string, unknown> {
-  const params: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(profile ?? {})) {
-    const param = TOOL_PROFILE_PARAMS[key];
-    if (param !== undefined) {
-      params[param] = value;
-    }
-  }
-  return params;
-}
-
-// Saves a member from the Lab Members admin editor. Governance fields (privilege_level,
-// status, email) can only ever be set by a genuine admin *member Bearer session* — the
-// gateway-RPC tool path (adminbot_upsert_lab_member) always authenticates as the shared
-// service principal regardless of who is signed in, and that principal is deliberately
-// restricted to the same whitelist as a plain self-edit (the fix that closed the
-// chat-based privilege-escalation hole). So a signed-in admin's edits here go straight to
-// the AdminBot HTTP service with their own session token, bypassing the gateway tool
-// entirely. Falls back to the gateway tool only when there's no stored member session at
-// all (legacy break-glass access via the bare gateway token, predating member auth) —
-// that path keeps today's already-restricted behavior rather than losing the save entirely.
-export async function saveAdminBotMember(
-  host: AdminBotHost,
-  member: AdminBotLabMemberSaveInput,
-): Promise<void> {
-  host.adminBotNotice = null;
-  const stored = loadStoredMemberSession();
-  if (stored) {
-    const result = await upsertLabMemberAsAdmin(
-      member.id,
-      adminMemberUpdatePayload(member),
-      stored.sessionToken,
-      resolveAdminBotBaseUrl(host.settings),
-    );
-    if (!result.ok) {
-      const message =
-        result.kind === "unreachable"
-          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-          : result.kind === "forbidden"
-            ? "Your session no longer has admin access — sign in again and retry."
-            : result.kind === "rate-limited"
-              ? "Too many attempts. Wait a moment and try again."
-              : // A validation refusal names the value it rejected ("member role must be one of:
-                // ..."); the generic line below cannot, and the whole record is sent on every save,
-                // so without the service's own sentence one bad field reads as the editor being
-                // broken. Same reasoning as saveAdminBotOwnProfile.
-                (result.message ?? "Couldn't save this member. Check the values and try again.");
-      host.adminBotNotice = { kind: "error", text: message };
-      return;
-    }
-    host.adminBotNotice = { kind: "success", text: `Saved member ${member.id}.` };
-    await loadAdminBot(host);
-    return;
-  }
-  try {
-    await invokeAdminBotTool(host, "adminbot_upsert_lab_member", {
-      id: member.id,
-      ...(member.name ? { name: member.name } : {}),
-      ...(member.email ? { email: member.email } : {}),
-      ...(member.slackUserId ? { slackUserId: member.slackUserId } : {}),
-      ...(member.privilegeLevel ? { privilegeLevel: member.privilegeLevel } : {}),
-      ...(member.collaboratorSubgroup ? { collaboratorSubgroup: member.collaboratorSubgroup } : {}),
-      ...(member.notes ? { notes: member.notes } : {}),
-      ...(member.status ? { status: member.status } : {}),
-      ...toolProfileParams(member.profile),
-    });
-    host.adminBotNotice = { kind: "success", text: `Saved member ${member.id}.` };
-    await loadAdminBot(host);
-  } catch (err) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: formatAdminBotToolError(err),
-    };
-  }
-}
-
-/**
- * Folds one roster row into another and retires it.
- *
- * Member session only, and no gateway-tool fallback: unlike a save, there is no narrower version
- * of this that the shared service principal could safely perform, and the service refuses it to
- * that principal anyway. Break-glass access simply does not offer the affordance.
- *
- * The notice names what the merge could not decide. A conflict is not an error -- the survivor's
- * answer stands, which is what the admin asked for by choosing which record survives -- but it is
- * the one thing about a merge nobody can see afterwards, so it is said out loud once.
- */
-export async function mergeAdminBotMembers(
-  host: AdminBotHost,
-  survivorId: string,
-  duplicateId: string,
-): Promise<void> {
-  host.adminBotNotice = null;
-  const stored = loadStoredMemberSession();
-  if (!stored) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: "Sign in with your admin account to merge roster records.",
-    };
-    return;
-  }
-  const result = await mergeLabMembersAsAdmin(
-    survivorId,
-    duplicateId,
-    stored.sessionToken,
+  memberId: string,
+  sessionToken: string,
+  slackChannels?: string[],
+): Promise<{ kind: "success" | "error"; text: string }> {
+  const result = await queueMemberOnboardingGuide(
+    memberId,
+    sessionToken,
     resolveAdminBotBaseUrl(host.settings),
+    slackChannels,
   );
   if (!result.ok) {
-    host.adminBotNotice = {
+    const reason =
+      result.kind === "unreachable"
+        ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+        : result.kind === "forbidden"
+          ? "your session no longer has admin access"
+          : // The service names what it refused -- no address, a Member Type that sends no mail, a
+            // guide already sent or queued -- and that sentence is the whole value of this notice.
+            (result.message ?? "the onboarding guide could not be queued");
+    return {
       kind: "error",
-      text:
-        result.kind === "unreachable"
-          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-          : result.kind === "forbidden"
-            ? "Your session no longer has admin access — sign in again and retry."
-            : (result.message ?? "Couldn't merge those records."),
+      text: `Saved member ${memberId}, but their onboarding guide was not queued: ${reason}`,
     };
-    return;
   }
-  const conflicts = result.value.conflicts ?? [];
-  host.adminBotNotice = {
+  return {
     kind: "success",
-    text: conflicts.length
-      ? `Merged ${duplicateId} into ${survivorId}. Kept ${survivorId}'s answer for ${conflicts
-          .map((conflict) => conflict.field)
-          .join(", ")}.`
-      : `Merged ${duplicateId} into ${survivorId}.`,
+    text:
+      result.value.status === "done"
+        ? `Saved member ${memberId}. Their standard onboarding email has been sent.`
+        : `Saved member ${memberId}. Their ${result.value.template_id} onboarding email draft is queued in Pending Actions. An admin must review, approve, and execute it there; no email has been sent yet.`,
   };
-  await loadAdminBot(host);
 }
 
 /** What the project form knows about the workspace's channels. */
@@ -2113,382 +1708,6 @@ export const EMPTY_SLACK_CHANNEL_CHECK: SlackChannelCheck = {
   loading: false,
   error: null,
 };
-
-/**
- * Load the workspace's channel names so the project form can check an alias against them.
- *
- * Only ever called when somebody ticks the box, because it is a paginated walk over the whole
- * workspace and most projects are new ones with no channel to match.
- *
- * Every failure leaves `channels` null rather than empty. The distinction is the whole point: an
- * empty list would make the form tell a member with a perfectly good alias that no channel matches
- * it, which is worse than not checking.
- */
-export async function loadSlackChannelNames(host: AdminBotHost): Promise<void> {
-  const stored = loadStoredMemberSession();
-  if (!stored) {
-    host.myWorkChannelCheck = {
-      ...host.myWorkChannelCheck,
-      enabled: true,
-      channels: null,
-      loading: false,
-      error: "Sign in to check this against the lab's Slack channels.",
-    };
-    return;
-  }
-  host.myWorkChannelCheck = {
-    ...host.myWorkChannelCheck,
-    enabled: true,
-    loading: true,
-    error: null,
-  };
-  const result = await fetchSlackChannelNames(
-    stored.sessionToken,
-    resolveAdminBotBaseUrl(host.settings),
-  );
-  if (result.ok) {
-    host.myWorkChannelCheck = {
-      enabled: true,
-      channels: result.value.channels,
-      loading: false,
-      error: null,
-    };
-    return;
-  }
-  host.myWorkChannelCheck = {
-    enabled: true,
-    channels: null,
-    loading: false,
-    error:
-      result.kind === "unconfigured"
-        ? "AdminBot cannot read Slack channels on this deployment, so the alias cannot be checked here."
-        : result.kind === "unreachable"
-          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-          : ((result as { message?: string }).message ?? "Couldn't read the lab's Slack channels."),
-  };
-}
-
-/**
- * Deletes one roster row outright.
- *
- * Member session only and no gateway-tool fallback, for the reason the merge gives -- with the
- * difference that this keeps nothing, so the confirmation is the caller's job before it gets here.
- *
- * A 409 is surfaced as itself rather than retried with `force`. The service refuses an account
- * somebody can still sign in to, and the whole value of that refusal is that clearing it is a
- * second human decision; a UI that resent the call with force would have made the guard
- * decorative.
- */
-export async function deleteAdminBotMember(
-  host: AdminBotHost,
-  memberId: string,
-  options: { force?: boolean } = {},
-): Promise<void> {
-  host.adminBotNotice = null;
-  const stored = loadStoredMemberSession();
-  if (!stored) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: "Sign in with your admin account to delete roster records.",
-    };
-    return;
-  }
-  const result = await deleteLabMemberAsAdmin(
-    memberId,
-    stored.sessionToken,
-    resolveAdminBotBaseUrl(host.settings),
-    options,
-  );
-  if (!result.ok) {
-    host.adminBotNotice = {
-      kind: "error",
-      text:
-        result.kind === "unreachable"
-          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-          : result.kind === "forbidden"
-            ? "Your session no longer has admin access — sign in again and retry."
-            : (result.message ?? "Couldn't delete that record."),
-    };
-    return;
-  }
-  const removed = Object.values(result.value.removed ?? {}).reduce(
-    (total, count) => total + count,
-    0,
-  );
-  host.adminBotNotice = {
-    kind: "success",
-    text: removed
-      ? `Deleted ${result.value.deleted_name}, and ${removed} row${removed === 1 ? "" : "s"} that named them.`
-      : `Deleted ${result.value.deleted_name}.`,
-  };
-  await loadAdminBot(host);
-}
-
-/**
- * Loads the address-less roster rows so the page can show them before anything is deleted.
- *
- * Kept separate from the purge so the preview is a plain read: an admin looking at this list has
- * not yet asked for anything to happen, and a preview that mutated to tell you what it would do
- * is the thing this whole flow is built to avoid.
- */
-export async function loadAdminBotMembersWithoutEmail(host: AdminBotHost): Promise<{
-  deletable: Array<{ id: string; name: string; attached_rows: number }>;
-  blocked: Array<{ id: string; name: string; reason: string }>;
-} | null> {
-  host.adminBotNotice = null;
-  const stored = loadStoredMemberSession();
-  if (!stored) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: "Sign in with your admin account to review roster records.",
-    };
-    return null;
-  }
-  const result = await fetchMembersWithoutEmail(
-    stored.sessionToken,
-    resolveAdminBotBaseUrl(host.settings),
-  );
-  if (!result.ok) {
-    host.adminBotNotice = {
-      kind: "error",
-      text:
-        result.kind === "unreachable"
-          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-          : result.kind === "forbidden"
-            ? "Your session no longer has admin access — sign in again and retry."
-            : (result.message ?? "Couldn't read the roster."),
-    };
-    return null;
-  }
-  return result.value;
-}
-
-/**
- * Deletes every member the lab holds no address for.
- *
- * `dryRun` is the default at all three layers -- here, in the client and in the service -- so the
- * press that deletes is always the one that said so.
- *
- * The notice names the blocked rows rather than only the deleted ones. On this roster the row with
- * no address and a working credential is the shared `admin` login, and an admin who is told "37
- * deleted" without being told "1 kept, it can still sign in" has been given the wrong picture of
- * what their roster now is.
- */
-export async function purgeAdminBotMembersWithoutEmail(
-  host: AdminBotHost,
-  options: { dryRun?: boolean } = {},
-): Promise<void> {
-  host.adminBotNotice = null;
-  const stored = loadStoredMemberSession();
-  if (!stored) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: "Sign in with your admin account to delete roster records.",
-    };
-    return;
-  }
-  const dryRun = options.dryRun !== false;
-  const result = await purgeMembersWithoutEmailAsAdmin(
-    stored.sessionToken,
-    resolveAdminBotBaseUrl(host.settings),
-    { dryRun },
-  );
-  if (!result.ok) {
-    host.adminBotNotice = {
-      kind: "error",
-      text:
-        result.kind === "unreachable"
-          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-          : result.kind === "forbidden"
-            ? "Your session no longer has admin access — sign in again and retry."
-            : (result.message ?? "Couldn't delete those records."),
-    };
-    return;
-  }
-  const { deleted, blocked } = result.value;
-  const kept = blocked.length
-    ? ` ${blocked.length} kept: ${blocked.map((row) => `${row.name} (${row.reason})`).join("; ")}.`
-    : "";
-  host.adminBotNotice = {
-    kind: "success",
-    text: dryRun
-      ? `${deleted.length} member${deleted.length === 1 ? "" : "s"} have no email on file and would be deleted.${kept}`
-      : `Deleted ${deleted.length} member${deleted.length === 1 ? "" : "s"} with no email on file.${kept}`,
-  };
-  if (!dryRun) {
-    await loadAdminBot(host);
-  }
-}
-
-// Saves the signed-in member's own roster row from the Lab Members table. Uses the
-// self-edit endpoint (PUT /lab/members/:id with a member Bearer session), whose server-side
-// whitelist drops governance fields — so a plain member editing their own row can never
-// reach the admin write path. Requires a real member session; break-glass gateway-token-only
-// access has no signed-in member and never renders this affordance.
-export async function saveAdminBotOwnProfile(
-  host: AdminBotHost,
-  memberId: string,
-  fields: MemberProfileUpdate,
-): Promise<void> {
-  host.adminBotNotice = null;
-  const stored = loadStoredMemberSession();
-  if (!stored) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: "Sign in with your member account to edit your profile.",
-    };
-    return;
-  }
-  const result = await updateOwnProfile(
-    memberId,
-    fields,
-    stored.sessionToken,
-    resolveAdminBotBaseUrl(host.settings),
-  );
-  if (!result.ok) {
-    const message =
-      result.kind === "unreachable"
-        ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-        : result.kind === "rate-limited"
-          ? "Too many attempts. Wait a moment and try again."
-          : // A validation refusal names the value it rejected ("LinkedIn link must be a profile
-            // URL"); the generic line below cannot, and the whole record is sent on every save, so
-            // without the service's own sentence one bad field silently freezes every other edit.
-            // 403 (editing someone else's id) folds into auth-failed here; the UI never offers
-            // this affordance on another member's row, so it reads as a stale session.
-            (result.message ??
-            "Couldn't save your profile. Sign in again, check the values, and retry.");
-    host.adminBotNotice = { kind: "error", text: message };
-    return;
-  }
-  host.adminBotNotice = { kind: "success", text: "Saved your profile." };
-  await loadAdminBot(host);
-}
-
-export async function polishAdminBotOwnProfilePhoto(host: AdminBotHost): Promise<void> {
-  host.adminBotNotice = null;
-  const stored = loadStoredMemberSession();
-  if (!stored) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: "Sign in with your member account to polish your profile photo.",
-    };
-    return;
-  }
-  host.adminBotPhotoPolishBusy = true;
-  try {
-    const result = await polishOwnProfilePhoto(
-      stored.sessionToken,
-      resolveAdminBotBaseUrl(host.settings),
-    );
-    if (!result.ok) {
-      const message =
-        result.kind === "unreachable"
-          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-          : result.kind === "rate-limited"
-            ? "Too many attempts. Wait a moment and try again."
-            : "Couldn't generate a polished photo right now.";
-      host.adminBotNotice = { kind: "error", text: message };
-      return;
-    }
-    host.adminBotNotice = {
-      kind: "success",
-      text: "Generated a polished photo option. Review it below and apply if you like it.",
-    };
-    await loadAdminBot(host, "general");
-  } finally {
-    host.adminBotPhotoPolishBusy = false;
-  }
-}
-
-export async function applyAdminBotOwnProfilePhoto(
-  host: AdminBotHost,
-  variantId: string,
-): Promise<void> {
-  host.adminBotNotice = null;
-  const stored = loadStoredMemberSession();
-  if (!stored) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: "Sign in with your member account to apply a profile photo.",
-    };
-    return;
-  }
-  host.adminBotPhotoApplyBusy = true;
-  try {
-    const result = await applyOwnPolishedProfilePhoto(
-      variantId,
-      stored.sessionToken,
-      resolveAdminBotBaseUrl(host.settings),
-    );
-    if (!result.ok) {
-      const message =
-        result.kind === "unreachable"
-          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-          : result.kind === "rate-limited"
-            ? "Too many attempts. Wait a moment and try again."
-            : "Couldn't apply that photo to Slack. Try another variant or retry.";
-      host.adminBotNotice = { kind: "error", text: message };
-      return;
-    }
-    host.adminBotNotice = {
-      kind: "success",
-      text: "Updated your Slack profile photo to the selected version.",
-    };
-    await loadAdminBot(host, "general");
-  } finally {
-    host.adminBotPhotoApplyBusy = false;
-  }
-}
-
-/**
- * Replaces the signed-in member's own schedule lists with `patch`.
- *
- * Whole lists are sent, not deltas: each stored field is a list the service validates as one, so
- * add and remove are both "write the list you want". The caller composes them. An omitted list is
- * left untouched.
- *
- * Writing another member's schedule is not possible: the service routes a self session to its own
- * record only. Same posture as saveAdminBotOwnProfile — the UI never offers the editor on anyone
- * else's row, and a 403 folds into the generic failure below because reaching it means a stale
- * session rather than a case worth its own copy.
- */
-export async function saveAdminBotOwnSchedule(
-  host: AdminBotHost,
-  memberId: string,
-  patch: MemberScheduleUpdate,
-): Promise<void> {
-  host.adminBotNotice = null;
-  const stored = loadStoredMemberSession();
-  if (!stored) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: "Sign in with your member account to edit your schedule.",
-    };
-    return;
-  }
-  const result = await updateOwnSchedule(
-    memberId,
-    patch,
-    stored.sessionToken,
-    resolveAdminBotBaseUrl(host.settings),
-  );
-  if (!result.ok) {
-    const message =
-      result.kind === "unreachable"
-        ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-        : result.kind === "rate-limited"
-          ? "Too many attempts. Wait a moment and try again."
-          : // The service rejects an out-of-range date or an hours value outside 0–168 with a 400;
-            // the form validates the same things first, so reaching here means a stale session or
-            // a rule the form does not know about yet.
-            "Couldn't save your schedule. Check the dates and hours, then retry.";
-    host.adminBotNotice = { kind: "error", text: message };
-    return;
-  }
-  host.adminBotNotice = { kind: "success", text: "Saved your schedule." };
-  await loadAdminBot(host);
-}
 
 export function setAdminBotNudgeChannel(host: AdminBotHost, channel: MemberNudgeChannel): void {
   host.adminBotMemberNudge = { ...host.adminBotMemberNudge, channel };
@@ -2518,78 +1737,6 @@ export function setAdminBotNudgeRecipients(host: AdminBotHost, memberIds: string
   host.adminBotMemberNudge = { ...host.adminBotMemberNudge, selectedMemberIds: memberIds };
 }
 
-// Sends the composed Announcements message to every selected recipient. Requires a real admin
-// member session (same reasoning as saveAdminBotMember's direct-write path) since the server
-// rejects this route outright for the shared service principal. Each recipient becomes its own
-// member_nudge.send proposal awaiting pi/lab_manager approval in Pending actions — this never
-// sends anything immediately.
-export async function sendAdminBotMemberNudge(host: AdminBotHost): Promise<void> {
-  host.adminBotNotice = null;
-  const draft = host.adminBotMemberNudge;
-  if (draft.busy) {
-    return;
-  }
-  const message = draft.message.trim();
-  if (!message) {
-    host.adminBotNotice = { kind: "error", text: "Enter a message to send." };
-    return;
-  }
-  if (draft.selectedMemberIds.length === 0) {
-    host.adminBotNotice = { kind: "error", text: "Select at least one recipient." };
-    return;
-  }
-  if (draft.channel === "email" && !draft.subject.trim()) {
-    host.adminBotNotice = { kind: "error", text: "Enter a subject line for the email." };
-    return;
-  }
-  const stored = loadStoredMemberSession();
-  if (!stored) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: "Sign in with your admin account to send a nudge.",
-    };
-    return;
-  }
-  host.adminBotMemberNudge = { ...draft, busy: true };
-  try {
-    const result = await sendMemberNudge(
-      {
-        channel: draft.channel,
-        recipient_member_ids: draft.selectedMemberIds,
-        message,
-        ...(draft.channel === "email" ? { subject: draft.subject.trim() } : {}),
-      },
-      stored.sessionToken,
-      resolveAdminBotBaseUrl(host.settings),
-    );
-    if (!result.ok) {
-      const text =
-        result.kind === "unreachable"
-          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-          : result.kind === "forbidden"
-            ? "Your session no longer has admin access — sign in again and retry."
-            : result.kind === "rate-limited"
-              ? "Too many attempts. Wait a moment and try again."
-              : "Couldn't send this nudge. Check the values and try again.";
-      host.adminBotNotice = { kind: "error", text };
-      return;
-    }
-    const { created, skipped } = result.value;
-    const skippedNote =
-      skipped.length > 0
-        ? ` Skipped ${skipped.length}: ${skipped.map((entry) => entry.reason).join(", ")}.`
-        : "";
-    host.adminBotNotice = {
-      kind: skipped.length > 0 ? "error" : "success",
-      text: `Sent ${created.length} nudge${created.length === 1 ? "" : "s"}.${skippedNote}`,
-    };
-    host.adminBotMemberNudge = createEmptyAdminBotMemberNudgeState();
-    await loadAdminBot(host);
-  } finally {
-    host.adminBotMemberNudge = { ...host.adminBotMemberNudge, busy: false };
-  }
-}
-
 /**
  * Marks the alerts the member just opened as read.
  *
@@ -2605,7 +1752,7 @@ export async function markAdminBotNudgesSeen(host: AdminBotHost): Promise<void> 
 export async function saveAdminBotPaper(
   host: AdminBotHost,
   paper: AdminBotPaperSaveInput,
-): Promise<void> {
+): Promise<boolean> {
   host.adminBotNotice = null;
   const artifacts = {
     ...(paper.overleafEditUrl ? { overleaf_edit_url: paper.overleafEditUrl } : {}),
@@ -2668,27 +1815,50 @@ export async function saveAdminBotPaper(
   // for break-glass sessions that hold a gateway token but no member login.
   const stored = loadStoredMemberSession();
   if (stored) {
-    const saved = await saveOwnPaper(
-      paper.id,
-      {
-        title: paper.title,
-        authors: paper.authors,
-        current_step: paper.currentStep,
-        ...details,
-        ...acceptance,
-        ...(Object.keys(artifacts).length > 0 ? { artifacts } : {}),
-        ...(paper.reminderStatus ? { reminder: { status: paper.reminderStatus } } : {}),
+    let success = false;
+    await serializeMemberSave(
+      host,
+      JSON.stringify(["paper", stored.sessionToken, paper.id]),
+      async () => {
+        if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+          return;
+        }
+        const saved = await saveOwnPaper(
+          paper.id,
+          {
+            title: paper.title,
+            authors: paper.authors,
+            current_step: paper.currentStep,
+            ...details,
+            ...acceptance,
+            ...(Object.keys(artifacts).length > 0 ? { artifacts } : {}),
+            ...(paper.reminderStatus ? { reminder: { status: paper.reminderStatus } } : {}),
+          },
+          stored.sessionToken,
+          resolveAdminBotBaseUrl(host.settings),
+        );
+        if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+          return;
+        }
+        if (!saved.ok) {
+          host.adminBotNotice = { kind: "error", text: paperSaveErrorText(saved.kind) };
+          return;
+        }
+        success = true;
+        host.adminBotNotice = { kind: "success", text: `Saved paper ${paper.id}.` };
+        const updated = saved.value as AdminBotPaperRecord;
+        if (updated?.id === paper.id) {
+          const papers = host.adminBotData.papers;
+          host.adminBotData = {
+            ...host.adminBotData,
+            papers: papers.some((row) => row.id === paper.id)
+              ? papers.map((row) => (row.id === paper.id ? { ...row, ...updated } : row))
+              : [...papers, updated],
+          };
+        }
       },
-      stored.sessionToken,
-      resolveAdminBotBaseUrl(host.settings),
     );
-    if (!saved.ok) {
-      host.adminBotNotice = { kind: "error", text: paperSaveErrorText(saved.kind) };
-      return;
-    }
-    host.adminBotNotice = { kind: "success", text: `Saved paper ${paper.id}.` };
-    await loadAdminBot(host);
-    return;
+    return success;
   }
   try {
     await invokeAdminBotTool(host, "adminbot_upsert_paper", {
@@ -2710,11 +1880,13 @@ export async function saveAdminBotPaper(
     });
     host.adminBotNotice = { kind: "success", text: `Saved paper ${paper.id}.` };
     await loadAdminBot(host);
+    return true;
   } catch (err) {
     host.adminBotNotice = {
       kind: "error",
       text: formatAdminBotToolError(err),
     };
+    return false;
   }
 }
 
@@ -2731,91 +1903,6 @@ function paperSaveErrorText(kind: string): string {
   }
 }
 
-/**
- * Remove a paper.
- *
- * Prefers the member's own session, for the same reason saveAdminBotPaper does: the service scopes
- * the delete to what that member may remove -- any paper for an admin, one they authored for an
- * author -- and a member's paired device holds read-only gateway scopes, so the tool path below is
- * not open to them at all. Until this existed an author who filed a paper by mistake had to ask an
- * admin to undo it.
- */
-export async function deleteAdminBotPaper(
-  host: AdminBotHost,
-  paper: Pick<AdminBotPaperRecord, "id" | "title">,
-): Promise<void> {
-  host.adminBotBusyActionId = paper.id;
-  host.adminBotNotice = null;
-  try {
-    const stored = loadStoredMemberSession();
-    if (stored) {
-      const removed = await deleteOwnPaper(
-        paper.id,
-        stored.sessionToken,
-        resolveAdminBotBaseUrl(host.settings),
-      );
-      if (!removed.ok) {
-        host.adminBotNotice = { kind: "error", text: paperDeleteErrorText(removed.kind) };
-        return;
-      }
-      host.adminBotNotice = { kind: "success", text: `Deleted paper ${paper.title}.` };
-      await loadAdminBot(host);
-      return;
-    }
-    await invokeAdminBotTool(host, "adminbot_delete_paper", { paperId: paper.id });
-    host.adminBotNotice = { kind: "success", text: `Deleted paper ${paper.title}.` };
-    await loadAdminBot(host);
-  } catch (err) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: formatAdminBotToolError(err),
-    };
-  } finally {
-    host.adminBotBusyActionId = null;
-  }
-}
-
-/** Deleting fails for its own reasons, and "check the details" is not one of them. */
-function paperDeleteErrorText(kind: string): string {
-  switch (kind) {
-    case "unreachable":
-      return "Couldn't reach AdminBot to delete this paper.";
-    case "forbidden":
-      return "You can only delete papers you authored.";
-    case "auth-failed":
-      return "Sign in again to delete this paper.";
-    default:
-      return "Couldn't delete this paper. Try again.";
-  }
-}
-
-export async function saveAdminBotSettings(
-  host: AdminBotHost,
-  settings: AdminBotSettingsSaveInput,
-): Promise<void> {
-  const session = requirePrivilegedSession(host);
-  if (!session) {
-    return;
-  }
-  host.adminBotNotice = null;
-  const result = await updateSettingsAsAdmin(
-    settings as Record<string, unknown>,
-    session.sessionToken,
-    session.baseUrl,
-  );
-  if (!result.ok) {
-    host.adminBotNotice = {
-      kind: "error",
-      // The service names what it refused on a 400 (an out-of-range window, say), which beats any
-      // fixed copy this side could write.
-      text: result.message?.trim() || cvErrorText(result.kind, "save settings"),
-    };
-    return;
-  }
-  host.adminBotNotice = { kind: "success", text: "Saved AdminBot settings." };
-  await loadAdminBot(host);
-}
-
 export async function saveAdminBotSensitiveInfo(
   host: AdminBotHost,
   markdown: string,
@@ -2829,177 +1916,6 @@ export async function saveAdminBotSensitiveInfo(
     host.adminBotNotice = {
       kind: "error",
       text: formatAdminBotToolError(err),
-    };
-  }
-}
-
-type ReimbursementConversationResult = {
-  assistant_message: string;
-  draft: Record<string, unknown>;
-  missing_fields: string[];
-  ready: boolean;
-  receipt_names: string[];
-  /** The pre-submission report the service ran against the chosen funder's ruleset. */
-  check?: AdminBotReimbursementCheck;
-};
-
-type ReimbursementGenerationResult = {
-  artifacts: AdminBotReimbursementArtifact[];
-};
-
-export async function sendAdminBotReimbursementMessage(
-  host: AdminBotHost,
-  message: string,
-  files: File[],
-): Promise<void> {
-  const userMessage = message.trim();
-  if (!userMessage || host.adminBotReimbursement.busy) {
-    return;
-  }
-  host.adminBotReimbursement = {
-    ...host.adminBotReimbursement,
-    busy: true,
-    error: null,
-    artifacts: [],
-  };
-  const turn = host.adminBotReimbursement;
-  try {
-    const receipts = await Promise.all(files.map(receiptPayload));
-    const session = optionalSession(host);
-    const response = await taskFetch(`${session.baseUrl}/reimbursements/converse`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(session.sessionToken ? { Authorization: `Bearer ${session.sessionToken}` } : {}),
-      },
-      body: JSON.stringify({
-        message: userMessage,
-        messages: host.adminBotReimbursement.messages,
-        draft: host.adminBotReimbursement.draft,
-        ...(host.adminBotReimbursement.funder ? { funder: host.adminBotReimbursement.funder } : {}),
-        ...(receipts.length ? { receipts } : {}),
-      }),
-    });
-    const result = await response.json();
-    if (!response.ok) {
-      throw new Error(result?.error?.message ?? "Reimbursement task failed.");
-    }
-    if (host.adminBotReimbursement !== turn) {
-      return;
-    }
-    host.adminBotReimbursement = {
-      messages: [
-        ...host.adminBotReimbursement.messages,
-        { role: "user", content: userMessage },
-        { role: "assistant", content: result.assistant_message },
-      ],
-      draft: readRecord(result.draft),
-      missingFields: Array.isArray(result.missing_fields) ? result.missing_fields : [],
-      receiptNames: [
-        ...new Set([
-          ...host.adminBotReimbursement.receiptNames,
-          ...(Array.isArray(result.receipt_names) ? result.receipt_names : []),
-        ]),
-      ],
-      ready: result.ready === true,
-      busy: false,
-      error: null,
-      artifacts: [],
-      ...(host.adminBotReimbursement.funder ? { funder: host.adminBotReimbursement.funder } : {}),
-      ...(result.check ? { check: result.check } : {}),
-    };
-  } catch (err) {
-    if (host.adminBotReimbursement !== turn) {
-      return;
-    }
-    host.adminBotReimbursement = {
-      ...host.adminBotReimbursement,
-      busy: false,
-      error: formatAdminBotToolError(err),
-    };
-  }
-}
-
-export async function generateAdminBotReimbursement(host: AdminBotHost): Promise<void> {
-  if (!host.adminBotReimbursement.ready || host.adminBotReimbursement.busy) {
-    return;
-  }
-  host.adminBotReimbursement = { ...host.adminBotReimbursement, busy: true, error: null };
-  try {
-    const result = (await invokeAdminBotTool(host, "adminbot_reimbursement_generate", {
-      draft: host.adminBotReimbursement.draft,
-    })) as ReimbursementGenerationResult;
-    host.adminBotReimbursement = {
-      ...host.adminBotReimbursement,
-      busy: false,
-      artifacts: Array.isArray(result.artifacts) ? result.artifacts : [],
-    };
-  } catch (err) {
-    host.adminBotReimbursement = {
-      ...host.adminBotReimbursement,
-      busy: false,
-      error: formatAdminBotToolError(err),
-    };
-  }
-}
-
-/**
- * Mail the generated package to the funder's office.
- *
- * The member's own session, always: the service resolves both the recipient (from settings, by
- * funder) and the reply-to (from that member's record), so nothing about where this goes or who
- * answers it comes from the browser.
- */
-export async function submitAdminBotReimbursement(host: AdminBotHost): Promise<void> {
-  const state = host.adminBotReimbursement;
-  if (!state.funder || !state.artifacts.length || state.busy) {
-    return;
-  }
-  const stored = loadStoredMemberSession();
-  if (!stored) {
-    host.adminBotReimbursement = {
-      ...state,
-      error: "Sign in to have AdminBot send this for you.",
-    };
-    return;
-  }
-  host.adminBotReimbursement = { ...state, busy: true, error: null };
-  try {
-    const result = await submitReimbursementPackage(
-      {
-        funder: state.funder,
-        artifacts: state.artifacts.map((artifact) => ({
-          filename: artifact.filename,
-          data_base64: artifact.data_base64,
-        })),
-        ...(typeof state.draft.trip_title === "string"
-          ? { trip_title: state.draft.trip_title }
-          : {}),
-      },
-      stored.sessionToken,
-      resolveAdminBotBaseUrl(host.settings),
-    );
-    if (!result.ok) {
-      host.adminBotReimbursement = {
-        ...host.adminBotReimbursement,
-        busy: false,
-        error:
-          result.kind === "unreachable"
-            ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-            : "Couldn't send the package. Check the office address in settings and try again.",
-      };
-      return;
-    }
-    host.adminBotReimbursement = {
-      ...host.adminBotReimbursement,
-      busy: false,
-      submission: { to: result.value.to, reply_to: result.value.reply_to },
-    };
-  } catch (err) {
-    host.adminBotReimbursement = {
-      ...host.adminBotReimbursement,
-      busy: false,
-      error: formatAdminBotToolError(err),
     };
   }
 }
@@ -3029,173 +1945,4 @@ export function resetAdminBotReimbursement(
     }
   }
   host.adminBotReimbursement = createEmptyAdminBotReimbursementState();
-}
-
-const RECEIPT_MEDIA_TYPES_BY_EXTENSION: Record<
-  string,
-  "application/pdf" | "image/png" | "image/jpeg"
-> = {
-  ".pdf": "application/pdf",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-};
-
-function resolveReceiptMediaType(
-  file: File,
-): "application/pdf" | "image/png" | "image/jpeg" | undefined {
-  if (file.type === "application/pdf" || file.type === "image/png" || file.type === "image/jpeg") {
-    return file.type;
-  }
-  const name = file.name.toLowerCase();
-  const extension = Object.keys(RECEIPT_MEDIA_TYPES_BY_EXTENSION).find((candidate) =>
-    name.endsWith(candidate),
-  );
-  return extension ? RECEIPT_MEDIA_TYPES_BY_EXTENSION[extension] : undefined;
-}
-
-// Guest (not-signed-in) reimbursement path. The signed-in flow reaches the workflow through the
-// gateway's `tools.invoke`, which needs a connected gateway client and therefore a login; these two
-// helpers talk to the AdminBot service's own HTTP routes instead, which accept anonymous callers.
-// Everything else about the flow -- state shape, receipt encoding, error text -- stays shared, so
-// the guest view and the signed-in view cannot drift apart.
-async function guestReimbursementRequest(
-  baseUrl: string,
-  path: "/reimbursements/converse" | "/reimbursements/generate",
-  payload: Record<string, unknown>,
-): Promise<unknown> {
-  let response: Response;
-  try {
-    response = await (path === "/reimbursements/converse" ? taskFetch : fetch)(
-      `${baseUrl}${path}`,
-      {
-        method: "POST",
-        // Task requests use an isolated visitor cookie; generation remains stateless.
-        credentials: "omit",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(payload),
-      },
-    );
-  } catch {
-    throw new Error("Could not reach the AdminBot service. Check that it is running.");
-  }
-  const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-  if (!response.ok) {
-    if (response.status === 429) {
-      throw new Error("Too many reimbursement requests from this network. Try again later.");
-    }
-    throw new Error(body?.error?.message ?? `Reimbursement request failed (${response.status}).`);
-  }
-  return body;
-}
-
-export async function sendGuestReimbursementMessage(
-  host: GuestReimbursementHost,
-  message: string,
-  files: File[],
-): Promise<void> {
-  const userMessage = message.trim();
-  if (!userMessage || host.adminBotReimbursement.busy) {
-    return;
-  }
-  host.adminBotReimbursement = {
-    ...host.adminBotReimbursement,
-    busy: true,
-    error: null,
-    artifacts: [],
-  };
-  const turn = host.adminBotReimbursement;
-  try {
-    const receipts = await Promise.all(files.map(receiptPayload));
-    const result = (await guestReimbursementRequest(
-      host.guestReimbursementBaseUrl,
-      "/reimbursements/converse",
-      {
-        message: userMessage,
-        messages: host.adminBotReimbursement.messages,
-        draft: host.adminBotReimbursement.draft,
-        // Sent on every turn, not just the first: the service re-runs the rule check each time and
-        // there is no ruleset to apply without it.
-        ...(host.adminBotReimbursement.funder ? { funder: host.adminBotReimbursement.funder } : {}),
-        ...(receipts.length ? { receipts } : {}),
-      },
-    )) as ReimbursementConversationResult;
-    if (host.adminBotReimbursement !== turn) {
-      return;
-    }
-    host.adminBotReimbursement = {
-      messages: [
-        ...host.adminBotReimbursement.messages,
-        { role: "user", content: userMessage },
-        { role: "assistant", content: result.assistant_message },
-      ],
-      draft: readRecord(result.draft),
-      missingFields: Array.isArray(result.missing_fields) ? result.missing_fields : [],
-      receiptNames: [
-        ...new Set([
-          ...host.adminBotReimbursement.receiptNames,
-          ...(Array.isArray(result.receipt_names) ? result.receipt_names : []),
-        ]),
-      ],
-      ready: result.ready === true,
-      busy: false,
-      error: null,
-      artifacts: [],
-      ...(turn.funder ? { funder: turn.funder } : {}),
-      ...(result.check ? { check: result.check } : {}),
-    };
-  } catch (err) {
-    if (host.adminBotReimbursement !== turn) {
-      return;
-    }
-    host.adminBotReimbursement = {
-      ...host.adminBotReimbursement,
-      busy: false,
-      error: formatAdminBotToolError(err),
-    };
-  }
-}
-
-export async function generateGuestReimbursement(host: GuestReimbursementHost): Promise<void> {
-  if (!host.adminBotReimbursement.ready || host.adminBotReimbursement.busy) {
-    return;
-  }
-  host.adminBotReimbursement = { ...host.adminBotReimbursement, busy: true, error: null };
-  try {
-    const result = (await guestReimbursementRequest(
-      host.guestReimbursementBaseUrl,
-      "/reimbursements/generate",
-      {
-        draft: host.adminBotReimbursement.draft,
-        ...(host.adminBotReimbursement.funder ? { funder: host.adminBotReimbursement.funder } : {}),
-      },
-    )) as ReimbursementGenerationResult;
-    host.adminBotReimbursement = {
-      ...host.adminBotReimbursement,
-      busy: false,
-      artifacts: Array.isArray(result.artifacts) ? result.artifacts : [],
-    };
-  } catch (err) {
-    host.adminBotReimbursement = {
-      ...host.adminBotReimbursement,
-      busy: false,
-      error: formatAdminBotToolError(err),
-    };
-  }
-}
-
-async function receiptPayload(file: File) {
-  const mediaType = resolveReceiptMediaType(file);
-  if (!mediaType) {
-    throw new Error(`${file.name} is not a PDF, PNG, or JPEG file`);
-  }
-  if (file.size > 12 * 1024 * 1024) {
-    throw new Error(`${file.name} exceeds 12 MB`);
-  }
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
-  }
-  return { name: file.name, media_type: mediaType, data_base64: btoa(binary) };
 }

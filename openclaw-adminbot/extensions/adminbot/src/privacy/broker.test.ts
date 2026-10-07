@@ -28,7 +28,7 @@ const config = { ...defaultAdminBotPrivacyBrokerConfig };
 const env = { NVIDIA_API_KEY: "remote-key", VLLM_API_KEY: "local-key" };
 
 describe("AdminBot privacy broker", () => {
-  it("classifies with local Qwen before sending a generic task to MiniMax", async () => {
+  it("classifies with local Qwen before sending a generic task to NVIDIA NIM", async () => {
     const calls: Array<{ url: string; body: Record<string, unknown>; auth?: string }> = [];
     const fetchImpl = vi.fn(async (input, init) => {
       const body = JSON.parse(init?.body ?? "{}") as Record<string, unknown>;
@@ -60,9 +60,12 @@ describe("AdminBot privacy broker", () => {
         response_format: { type: "json_schema" },
       },
     });
+    expect(calls[1]?.body).toMatchObject({
+      model: "nvidia/nemotron-3-ultra-550b-a55b",
+    });
   });
 
-  it("sends placeholders only to MiniMax and finalizes private output locally", async () => {
+  it("sends placeholders only to NVIDIA NIM and finalizes private output locally", async () => {
     const remoteBodies: string[] = [];
     let call = 0;
     const fetchImpl = vi.fn(async (input, init) => {
@@ -127,6 +130,31 @@ describe("AdminBot privacy broker", () => {
       "local privacy model must use a loopback URL",
     );
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("sends a generic public task to OpenRouter when OPENROUTER_API_KEY is set", async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (input, init) => {
+      calls.push(String(input));
+      if (String(input).includes("127.0.0.1")) {
+        return local({
+          classification: "generic",
+          sanitized_task: "Explain merge sort",
+          replacements: [],
+        });
+      }
+      expect(init?.headers?.Authorization).toBe("Bearer or-key");
+      return response({ choices: [{ message: { content: "OpenRouter answer" } }] });
+    }) as PrivacyBrokerFetch;
+    const broker = createAdminBotPrivacyBroker(config, {
+      fetchImpl,
+      env: { ...env, OPENROUTER_API_KEY: "or-key" },
+    });
+    await expect(broker.handle({ task: "Explain merge sort" })).resolves.toEqual({
+      route: "remote",
+      output: "OpenRouter answer",
+    });
+    expect(calls[1]).toBe("https://openrouter.ai/api/v1/chat/completions");
   });
 });
 

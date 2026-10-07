@@ -26,6 +26,7 @@ async function raceWithNextMacrotask(promise: Promise<unknown>): Promise<"resolv
 }
 
 const mocks = vi.hoisted(() => ({
+  loadAdminBotMock: vi.fn(async () => {}),
   refreshChatMock: vi.fn(async () => {}),
   scheduleChatScrollMock: vi.fn(),
   scheduleLogsScrollMock: vi.fn(),
@@ -66,6 +67,12 @@ const mocks = vi.hoisted(() => ({
   stopNodesPollingMock: vi.fn(),
 }));
 
+vi.mock("./adminbot/controllers/admin.ts", () => ({
+  loadAdminBot: mocks.loadAdminBotMock,
+}));
+vi.mock("./adminbot/controllers/conference-papers.ts", () => ({
+  loadAdminBotVenueSources: vi.fn(async () => {}),
+}));
 vi.mock("./app-chat.ts", () => ({
   refreshChat: mocks.refreshChatMock,
 }));
@@ -240,6 +247,85 @@ describe("refreshActiveTab", () => {
     channels: [mocks.loadChannelsMock, false],
     tools: null,
   } as const;
+
+  it("reuses cached Time Availability data on revisit; the view has its own Refresh", async () => {
+    const host = createHost();
+    host.tab = "adminbotTimeAvailability";
+    const app = host as typeof host & { adminBotData: { loadedAt: number } };
+    app.adminBotData = { loadedAt: Date.now() };
+
+    await refreshActiveTab(app as never);
+
+    expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
+  });
+
+  it("does not request the paper list when Time Availability first opens", async () => {
+    const host = createHost();
+    host.tab = "adminbotTimeAvailability";
+
+    await refreshActiveTab(host as never);
+
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(host, "admin", false, false);
+  });
+
+  it("loads papers after navigating from a non-paper page to Active Papers", async () => {
+    const host = createHost();
+    host.tab = "adminbotPapers";
+    const app = host as typeof host & {
+      adminBotData: { loadedAt: number; papersLoadedAt: null };
+    };
+    app.adminBotData = { loadedAt: Date.now(), papersLoadedAt: null };
+
+    await refreshActiveTab(app as never);
+
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "admin", true, true);
+  });
+
+  it("waits for an in-flight non-paper load before requesting the missing papers", async () => {
+    const host = createHost();
+    host.tab = "adminbotPapers";
+    const app = host as typeof host & {
+      adminBotLoading: boolean;
+      adminBotData: { loadedAt: number; papersLoadedAt: null };
+    };
+    app.adminBotData = { loadedAt: Date.now(), papersLoadedAt: null };
+    app.adminBotLoading = true;
+
+    await refreshActiveTab(app as never);
+    expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
+
+    app.adminBotLoading = false;
+    await refreshActiveTab(app as never);
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "admin", true, true);
+  });
+
+  it("does not start a second roster read while the dashboard is loading", async () => {
+    const host = createHost();
+    host.tab = "adminbotMembers";
+    const app = host as typeof host & { adminBotLoading: boolean };
+    app.adminBotLoading = true;
+
+    await refreshActiveTab(app as never);
+
+    expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
+  });
+
+  it("calls the Calendar loader with its app receiver", async () => {
+    const host = createHost();
+    host.tab = "adminbotCalendar";
+    let receiver: unknown;
+    const loadCalendarEvents = vi.fn(function (this: unknown) {
+      receiver = this;
+      return Promise.resolve();
+    });
+    (host as typeof host & { loadCalendarEvents: typeof loadCalendarEvents }).loadCalendarEvents =
+      loadCalendarEvents;
+
+    await refreshActiveTab(host as never);
+
+    expect(loadCalendarEvents).toHaveBeenCalledOnce();
+    expect(receiver).toBe(host);
+  });
 
   it("routes agents cron panel refresh through cron loaders", async () => {
     const host = createHost();

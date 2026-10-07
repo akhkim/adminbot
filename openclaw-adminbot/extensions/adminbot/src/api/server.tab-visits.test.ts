@@ -46,7 +46,11 @@ async function startService() {
     sensitiveInfoPath,
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
-    dcsFormRunner: async () => {},
+    dcsRosterRecorder: async () => ({
+      username: "stub@cs.toronto.edu",
+      password: "stub",
+      candidates: ["stub@cs.toronto.edu"],
+    }),
   });
   await new Promise<void>((resolve, reject) => {
     mock.server.once("error", reject);
@@ -98,7 +102,7 @@ async function approveClaim(
   if (!registration) {
     throw new Error(`no pending registration for ${memberId}`);
   }
-  const approved = mock.auth.approveRegistration(registration.id, "seed-admin");
+  const approved = await mock.auth.approveRegistration(registration.id, "seed-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }

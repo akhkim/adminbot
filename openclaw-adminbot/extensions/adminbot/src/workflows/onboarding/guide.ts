@@ -78,14 +78,22 @@ export const ADMINBOT_DEPLOYMENT_TOKENS: readonly string[] = [
 ];
 
 /**
- * Values the *sender* may leave blank. Unlike a `required` token these never refuse the send: the
- * placeholder and one space in front of it disappear together, so "Hi {first_name}," degrades to
- * "Hi," rather than to "Hi ," or to a literal "{first_name}" reaching a recipient.
- *
- * A template that cannot read without one keeps it in `required` instead -- that check runs first,
- * so listing a token here does not weaken any template that demands it.
+ * Values the *sender* may leave blank. These never refuse the send, even if a template lists one
+ * in `required`: a roster row with no name is still somebody to onboard, and holding their guide
+ * back over a greeting is the worse outcome. A greeting that opens on the token -- "Hi
+ * {first_name}," or "Dear {first_name}," -- becomes "Hi!" (see `unnamedGreeting`); anywhere else
+ * the placeholder and one space in front of it disappear together, so a literal "{first_name}"
+ * never reaches a recipient.
  */
 export const ADMINBOT_OPTIONAL_VALUE_TOKENS: readonly string[] = ["first_name"];
+
+/** An opening "Hi {first_name}," / "Dear {first_name}," line, for a recipient with no name. */
+const NAMED_GREETING = /^(?:Hi|Hello|Dear) \{first_name\},/gmu;
+
+/** Rewrites a name-led greeting to "Hi!" when there is no name to put in it. */
+function unnamedGreeting(text: string, values: AdminBotOnboardingValues): string {
+  return values.first_name?.trim() ? text : text.replaceAll(NAMED_GREETING, "Hi!");
+}
 
 const OPTIONAL_VALUE_TOKENS = new Set(ADMINBOT_OPTIONAL_VALUE_TOKENS);
 
@@ -242,7 +250,10 @@ export function missingGuideValues(
   text?: string,
 ): string[] {
   return template.required.filter(
-    (token) => (text === undefined || text.includes(`{${token}}`)) && !values[token]?.trim(),
+    (token) =>
+      !OPTIONAL_VALUE_TOKENS.has(token) &&
+      (text === undefined || text.includes(`{${token}}`)) &&
+      !values[token]?.trim(),
   );
 }
 
@@ -281,7 +292,10 @@ export function composeOnboardingGuide(
     guide: {
       template_id: template.id,
       subject,
-      body: fill(dropUnresolvedLines(bodySource, deployment.unresolvedOptional), resolved),
+      body: fill(
+        unnamedGreeting(dropUnresolvedLines(bodySource, deployment.unresolvedOptional), resolved),
+        resolved,
+      ),
     },
   };
 }

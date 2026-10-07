@@ -1,9 +1,13 @@
 /* @vitest-environment jsdom */
 
 import { render } from "lit";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { adminBotAdminOwnedProfileFields } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AccessRole } from "../access.ts";
+import { createEmptyAdminBotDashboardData } from "../controllers/admin.ts";
+import * as deadlineTime from "../data/deadline-time.ts";
+import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { renderDashboard } from "./dashboard.ts";
 import { findOwnMember } from "./profile.ts";
 
@@ -32,6 +36,54 @@ function attentionIds(container: HTMLElement): string[] {
 }
 
 describe("renderDashboard", () => {
+  it("shows loading instead of empty work while the first read is pending", () => {
+    const container = renderPage(
+      createState({ adminBotData: createEmptyAdminBotDashboardData(), adminBotLoading: true }),
+    );
+    expect(container.querySelector('[data-testid="dashboard-loading"]')).not.toBeNull();
+    expect(container.querySelector(".dashboard__empty")).toBeNull();
+    expect(container.querySelector('[data-testid="dashboard-summary-myWork"]')).toBeNull();
+  });
+
+  it("shows the member's profile action while papers are still loading", () => {
+    const container = renderPage(
+      createState({
+        memberId: "m1",
+        adminBotData: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [{ id: "m1", name: "Ada" }],
+        },
+        adminBotLoading: true,
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
+    expect(
+      container.querySelector('[data-testid="dashboard-attention-mandatoryFields"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("Loading your papers");
+    expect(container.querySelector('[data-testid="dashboard-summary-myWork"]')).toBeNull();
+  });
+
+  it("shows a retryable failure instead of zero work after the first read fails", () => {
+    const onRetry = vi.fn();
+    const container = document.createElement("div");
+    render(
+      renderDashboard(
+        createState({
+          adminBotData: createEmptyAdminBotDashboardData(),
+          adminBotError: "Service unavailable",
+        }),
+        "admin",
+        onRetry,
+      ),
+      container,
+    );
+    expect(container.querySelector('[data-testid="dashboard-load-error"]')).not.toBeNull();
+    expect(container.querySelector(".dashboard__empty")).toBeNull();
+    container.querySelector<HTMLButtonElement>("button")?.click();
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it("says nothing is waiting when nothing is", () => {
     const container = renderPage(createState());
     expect(attentionIds(container)).toEqual([]);
@@ -198,26 +250,42 @@ describe("renderDashboard", () => {
   // The member's own dated milestones are the ones they plan around, so a glance that showed only
   // the public board could say "nothing for weeks" to somebody with a submission on Friday.
   it("merges the member's own milestones into the glance, soonest first", () => {
-    const soon = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const state = createState({
-      memberId: "ada",
-      adminBotData: {
-        proposals: [],
-        members: [
-          {
-            id: "ada",
-            name: "Ada Lovelace",
-            milestones: [{ date: soon, label: "Thesis draft" }],
-          },
-        ],
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-08-24T12:00:00Z"));
+    // Control both inputs to the merge: real dates and refreshed venue data must not change
+    // which row leads. The public row also proves the merge keeps conference deadlines.
+    const deadlines = vi.spyOn(deadlineTime, "upcomingMajorDeadlines").mockReturnValue([
+      {
+        venue: { ...DEADLINE_VENUES[0]!, name: "Example conference" },
+        instant: Date.parse("2026-08-26T12:00:00Z"),
       },
-    } as unknown as Partial<AppViewState>);
-    expect(findOwnMember(state)?.milestones).toHaveLength(1);
-    const container = renderPage(state, "member");
-    const rows = [...container.querySelectorAll<HTMLElement>(".dashboard__next-deadline")];
-    // Tomorrow beats every conference in the bundled snapshot, so it leads.
-    expect(rows[0]?.textContent).toContain("Thesis draft");
-    expect(rows[0]?.textContent).toContain("yours");
+    ]);
+    try {
+      const state = createState({
+        memberId: "ada",
+        adminBotData: {
+          proposals: [],
+          members: [
+            {
+              id: "ada",
+              name: "Ada Lovelace",
+              milestones: [{ date: "2026-08-25", label: "Thesis draft" }],
+            },
+          ],
+        },
+      } as unknown as Partial<AppViewState>);
+      expect(findOwnMember(state)?.milestones).toHaveLength(1);
+      const container = renderPage(state, "member");
+      const rows = [...container.querySelectorAll<HTMLElement>(".dashboard__next-deadline")];
+      expect(rows).toHaveLength(2);
+      expect(rows[0]?.textContent).toContain("Thesis draft");
+      expect(rows[0]?.textContent).toContain("yours");
+      expect(rows[0]?.querySelector(".deadline-date")?.textContent).toBe("Aug 25, 2026");
+      expect(rows[0]?.querySelector(".deadline-time")).toBeNull();
+      expect(rows[1]?.textContent).toContain("Example conference");
+    } finally {
+      deadlines.mockRestore();
+      clock.mockRestore();
+    }
   });
 
   // The glance borrows the board's row vocabulary rather than inventing a second one: the urgency
@@ -248,7 +316,31 @@ describe("renderDashboard", () => {
     );
     // The date splits the same way the board splits it, so the time reads as secondary.
     expect(row?.querySelector(".deadline-date")).not.toBeNull();
-    expect(row?.querySelector(".deadline-time")).not.toBeNull();
+    expect(row?.querySelector(".deadline-time")).toBeNull();
+  });
+
+  it("keeps the public cutoff in AoE instead of relabeling its UTC instant", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-06T12:00:00Z"));
+    const deadlines = vi.spyOn(deadlineTime, "upcomingMajorDeadlines").mockReturnValue([
+      {
+        venue: {
+          ...DEADLINE_VENUES[0]!,
+          name: "Example conference",
+          deadline_at: "2026-10-12T11:59:00Z",
+          deadline_aoe: "2026-10-11 23:59:00",
+          deadline_time_precision: "minute",
+        },
+        instant: Date.parse("2026-10-12T11:59:00Z"),
+      },
+    ]);
+    try {
+      const row = renderPage(createState()).querySelector(".dashboard__next-deadline");
+      expect(row?.querySelector(".deadline-date")?.textContent).toBe("Oct 11, 2026");
+      expect(row?.querySelector(".deadline-time")?.textContent).toBe("23:59 AoE");
+    } finally {
+      deadlines.mockRestore();
+      clock.mockRestore();
+    }
   });
 
   // A blank mandatory field never blocks saving or leaving the profile editor (see profile.ts),
@@ -314,8 +406,9 @@ describe("renderDashboard", () => {
     );
   });
 
-  // The URN is filled in by an admin, so chasing the member for it names a field whose control on
-  // the profile page is disabled.
+  // Chasing a member for a field their own profile page will not let them answer names a blank they
+  // cannot close. adminBotAdminOwnedProfileFields is empty at present -- `linkedin_urn` came off it
+  // and is now an ordinary blank like the rest -- so this asserts the rule rather than a roster.
   it("never lists an admin-filled field among the blanks", () => {
     const container = renderPage(
       createState({
@@ -328,7 +421,9 @@ describe("renderDashboard", () => {
       "member",
     );
 
-    expect(container.querySelector('[data-testid="dashboard-blank-linkedin_urn"]')).toBeNull();
+    for (const key of adminBotAdminOwnedProfileFields) {
+      expect(container.querySelector(`[data-testid="dashboard-blank-${key}"]`)).toBeNull();
+    }
   });
 
   it("drops the mandatory-fields item once every required field is filled in", () => {
@@ -339,19 +434,27 @@ describe("renderDashboard", () => {
           proposals: [],
           members: [
             {
-              // The mandatory set is the member sheet's own columns, plus the CV.
+              // All required profile questions have answers.
+              arr_reviewer_qualified: false,
               id: "m1",
               name: "Ada",
               location: "Toronto",
               research_topics: ["alignment"],
               joined_month: "2026-03",
+              affiliation: "University of Toronto",
+              hours_per_week: 20,
+              graduated_month: "2027-06",
+              next_position: "Considering research positions",
               correspondence_email: "ada@cs.toronto.edu",
               calendar_email: "ada@gmail.com",
               whatsapp: "(+1) 555 0100",
               openreview_id: "~Ada_Lovelace1",
               github_url: "https://github.com/ada",
               linkedin_url: "https://www.linkedin.com/in/ada",
+              twitter_url: "https://x.com/ada",
+              personal_website: "https://ada.dev",
               cv_url: "https://ada.dev/cv.pdf",
+              one_on_one_folder_url: "https://drive.google.com/drive/folders/ada",
               intake_form_url: "https://docs.google.com/forms/d/e/ada/viewform",
               linkedin_urn: "ACoAAB1234567",
             },
@@ -596,6 +699,18 @@ describe("notifications on the dashboard", () => {
     expect(read).toEqual([[NOTIFICATION.id]]);
     expect(tabs).toEqual(["adminbotMeetings"]);
   });
+
+  it("explains cached reads and queued writes when the service is offline", () => {
+    const container = renderPage(
+      createState({
+        adminBotUsingCachedReads: true,
+        adminBotOfflinePendingWrites: 2,
+      }),
+    );
+    const banner = container.querySelector('[data-testid="dashboard-offline"]');
+    expect(banner?.textContent).toContain("Working offline");
+    expect(banner?.textContent).toContain("2 edits retained from the old queue");
+  });
 });
 
 // The one channel the lab has for telling everybody something at once. Top of the page, above the
@@ -612,12 +727,15 @@ describe("the lab-wide broadcast", () => {
 
   it("shows the current broadcast above everything else", () => {
     const container = renderPage(
-      createState({ adminBotBroadcast: live } as Partial<AppViewState>),
+      createState({
+        adminBotBroadcast: { ...live, timezone: "America/Toronto" },
+      } as Partial<AppViewState>),
       "member",
     );
     const banner = container.querySelector('[data-testid="dashboard-broadcast"]');
     expect(banner).not.toBeNull();
     expect(banner?.textContent).toContain("Zürich");
+    expect(banner?.textContent).toContain("Time zone: America/Toronto");
     expect(banner?.textContent).toContain("Broadcast from Zhijing");
     // Above the attention stack, not tucked in beside it.
     const attention = container.querySelector('[data-testid="dashboard-attention"]');
@@ -628,8 +746,10 @@ describe("the lab-wide broadcast", () => {
 
   it("shows nothing when there is no broadcast", () => {
     expect(
-      renderPage(createState({ adminBotBroadcast: null } as Partial<AppViewState>), "member")
-        .querySelector('[data-testid="dashboard-broadcast"]'),
+      renderPage(
+        createState({ adminBotBroadcast: null } as Partial<AppViewState>),
+        "member",
+      ).querySelector('[data-testid="dashboard-broadcast"]'),
     ).toBeNull();
   });
 
@@ -653,5 +773,77 @@ describe("the lab-wide broadcast", () => {
       "member",
     );
     expect(container.querySelector('[data-testid="dashboard-broadcast"]')).toBeNull();
+  });
+});
+
+describe("one-off Drive PDF notice", () => {
+  beforeEach(() => vi.useFakeTimers({ now: new Date("2026-09-27T12:00:00Z") }));
+  afterEach(() => vi.useRealTimers());
+
+  const NOTICE = '[data-testid="dashboard-one-off-notice"]';
+  const members = [
+    { id: "oscar", name: "Oscar Yasunaga" },
+    { id: "terry", name: "Terry Jingchen Zhang" },
+    { id: "zhijing-jin", name: "Zhijing Jin" },
+  ];
+  const signedInAs = (memberId: string, extra: Partial<AppViewState> = {}) =>
+    createState({
+      memberId,
+      adminBotData: { ...createEmptyAdminBotDashboardData(), members },
+      ...extra,
+    } as unknown as Partial<AppViewState>);
+
+  it("shows only to Oscar", () => {
+    expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).not.toBeNull();
+    for (const other of ["terry", "zhijing-jin"]) {
+      expect(renderPage(signedInAs(other), "member").querySelector(NOTICE)).toBeNull();
+      expect(renderPage(signedInAs(other), "admin").querySelector(NOTICE)).toBeNull();
+    }
+    expect(renderPage(createState(), "anonymous").querySelector(NOTICE)).toBeNull();
+  });
+
+  it("ignores a typed sign-up name and an admin viewing as Oscar", () => {
+    expect(
+      renderPage(
+        signedInAs("terry", { memberName: "Oscar Yasunaga" } as Partial<AppViewState>),
+        "member",
+      ).querySelector(NOTICE),
+    ).toBeNull();
+    expect(
+      renderPage(
+        signedInAs("oscar", {
+          memberImpersonatedBy: { id: "zhijing-jin", name: "Zhijing Jin" },
+        } as Partial<AppViewState>),
+        "admin",
+      ).querySelector(NOTICE),
+    ).toBeNull();
+  });
+
+  it("is gone once dismissed or expired", () => {
+    // This file's jsdom has no localStorage; the notice needs one to remember the dismissal.
+    const stored = new Map<string, string>();
+    const originalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => stored.get(key) ?? null,
+        setItem: (key: string, value: string) => stored.set(key, value),
+      },
+    });
+    try {
+      const page = renderPage(signedInAs("oscar"), "member");
+      page.querySelectorAll<HTMLButtonElement>(`${NOTICE} button`)[1]?.click();
+      expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).toBeNull();
+      stored.clear();
+
+      vi.useFakeTimers({ now: new Date("2026-09-28T04:00:00Z") });
+      expect(renderPage(signedInAs("oscar"), "member").querySelector(NOTICE)).toBeNull();
+    } finally {
+      if (originalStorage) {
+        Object.defineProperty(window, "localStorage", originalStorage);
+      } else {
+        Reflect.deleteProperty(window, "localStorage");
+      }
+    }
   });
 });

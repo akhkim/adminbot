@@ -3,7 +3,7 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../../../../../extensions/adminbot/src/contracts/overleaf.js";
-import type { PaperflowStageRow, PaperSlotRow } from "../auth/session.ts";
+import type { PaperflowStageRow, PaperSlotRow } from "../api/papers.ts";
 import { renderPaperSlots, type PaperDetailsProps } from "./paper-slots.ts";
 
 type Saved = {
@@ -35,6 +35,7 @@ async function draw(
   render(
     renderPaperSlots({
       paperId: "p1",
+      paperTitle: "Causal Garden Planning",
       slots,
       loading,
       showAllSlots: extra.showAll ?? true,
@@ -63,6 +64,85 @@ function row(fields: Partial<PaperSlotRow> & { slot: string }): PaperSlotRow {
 }
 
 describe("renderPaperSlots", () => {
+  it("shows candidate evidence without presenting similarity as confirmed resubmission", async () => {
+    const { container } = await draw([
+      row({
+        slot: "submission",
+        status: "provided",
+        url: "https://openreview.net/forum?id=Paper123",
+        verified_by: "openreview",
+        verified_title: "Causal Garden Planning",
+        identity_review: {
+          status: "limited",
+          examined: 12,
+          abstract_excerpt: "We study causal resource allocation.",
+          candidates: [
+            {
+              id: "Earlier123",
+              title: "Planning under uncertainty",
+              abstract_excerpt: "We study allocation under interventions.",
+              shared_authors: ["~Ada_Example1"],
+              abstract_overlap: 78,
+              created_at: "2025-09-01T00:00:00Z",
+            },
+          ],
+        },
+      }),
+    ]);
+    const panel = container.querySelector('[data-testid="openreview-identity"]');
+    expect(panel?.textContent).toContain("Possible earlier version");
+    expect(panel?.textContent).toContain("Search coverage is incomplete");
+    expect(panel?.textContent?.replace(/\s+/gu, " ")).toContain("not a confidence score");
+    expect(panel?.textContent).toContain("We study allocation under interventions.");
+    expect(panel?.textContent).not.toContain("Resubmission reported by OpenReview");
+  });
+  it("shows title differences and explicit resubmission evidence above the checklist", async () => {
+    const { container } = await draw([
+      row({
+        slot: "submission",
+        status: "provided",
+        url: "https://openreview.net/forum?id=Paper123",
+        verified_by: "openreview",
+        verified_title: "Causal Garden Planning: Revised",
+        previous_submission_id: "Older123",
+        verified_at: "2026-09-19T00:00:00Z",
+      }),
+    ]);
+    const identity = container.querySelector('[data-testid="openreview-identity"]');
+    expect(identity?.textContent).toContain("Title differs from AdminBot");
+    expect(identity?.textContent).toContain("Resubmission reported by OpenReview");
+    expect(identity?.querySelectorAll("a")[1].href).toBe(
+      "https://openreview.net/forum?id=Older123",
+    );
+  });
+
+  it("ignores punctuation/case differences and never equates absent history with a first submission", async () => {
+    const { container } = await draw([
+      row({
+        slot: "submission",
+        status: "provided",
+        url: "https://openreview.net/forum?id=Paper123",
+        verified_by: "openreview",
+        verified_title: "CAUSAL: Garden Planning!",
+      }),
+    ]);
+    const identity = container.querySelector('[data-testid="openreview-identity"]');
+    expect(identity?.textContent).not.toContain("Title differs");
+    expect(identity?.textContent).toContain("Resubmission history is unknown");
+  });
+
+  it("explains unconfirmed metadata without declaring a private submission invalid", async () => {
+    const { container } = await draw([
+      row({
+        slot: "submission",
+        status: "provided",
+        url: "https://openreview.net/forum?id=Paper123",
+      }),
+    ]);
+    expect(container.querySelector('[data-testid="openreview-identity"]')?.textContent).toContain(
+      "Private submissions may not be visible",
+    );
+  });
   it("shows every slot when the card is expanded -- the checklist is still all there", async () => {
     const { container } = await draw([]);
     // The deck rework made a merged node a header row plus one child per half, so the four
@@ -312,7 +392,11 @@ describe("renderPaperSlots", () => {
   });
 
   it("sends the value, never a status -- the service decides what counts as provided", async () => {
-    const { container, saved } = await draw([]);
+    const { container, saved } = await draw([
+      row({ slot: "feedback_arr" }),
+      row({ slot: "feedback_arxiv" }),
+      row({ slot: "feedback_camera_ready" }),
+    ]);
     const input = container.querySelector<HTMLInputElement>(
       '[data-testid="paper-slot-p1-project_folder"]',
     );
@@ -338,13 +422,14 @@ describe("renderPaperSlots", () => {
     expect(container.textContent).toContain("the link must be a /abs/ URL");
   });
 
-  it("dims a slot that is not reachable yet, without narrating why", async () => {
+  it("keeps slots visually open and editable before prerequisites", async () => {
     // The "Waiting on X" line, the "unblocks Y" line and the host/path spec were three rows of
     // small grey type under every field. The dimming carries the same meaning without turning the
     // card into a dependency graph.
     const { container } = await draw([]);
     const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
-    expect(overleaf?.className).toContain("paper-slot--blocked");
+    expect(overleaf?.className).not.toContain("paper-slot--blocked");
+    expect(overleaf?.querySelector<HTMLInputElement>("input")?.disabled).toBe(false);
     expect(overleaf?.textContent).not.toContain("Waiting on");
     expect(overleaf?.textContent).not.toContain("unblocks");
   });
@@ -353,6 +438,17 @@ describe("renderPaperSlots", () => {
     const { container } = await draw([row({ slot: "project_folder", status: "provided" })]);
     const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
     expect(overleaf?.className).not.toContain("paper-slot--blocked");
+  });
+
+  it("opens the social drafts on a compiled PDF, with no arXiv link in sight", async () => {
+    // An announcement is written from the paper, so it is reachable here. Whether the lab is
+    // *asking* for it yet is a separate question, and the nudge sweep answers it.
+    const { container } = await draw([row({ slot: "pdf_ready", status: "provided" })]);
+    for (const slot of ["x_draft", "linkedin_draft"]) {
+      expect(
+        container.querySelector(`[data-testid="paper-slot-row-p1-${slot}"]`)?.className,
+      ).not.toContain("paper-slot--blocked");
+    }
   });
 
   it("locks a waived slot and says who lifted it", async () => {
@@ -387,7 +483,11 @@ describe("renderPaperSlots", () => {
   });
 
   it("gives the enum slot a state and a place, and locks the place until a state is picked", async () => {
-    const { container, saved } = await draw([]);
+    const { container, saved } = await draw([
+      row({ slot: "feedback_arr" }),
+      row({ slot: "feedback_arxiv" }),
+      row({ slot: "feedback_camera_ready" }),
+    ]);
     const state = container.querySelector<HTMLSelectElement>(
       '[data-testid="paper-slot-p1-poster_physical"]',
     );
@@ -489,10 +589,10 @@ describe("renderPaperSlots -- only what is ready", () => {
     expect(container.querySelector('[data-testid="paper-slot-p1-project_folder"]')).not.toBeNull();
   });
 
-  it("says how many are held back, so nothing looks lost", async () => {
+  it("explains that all fields are available at any project stage", async () => {
     const { container } = await draw([], false, { showAll: false });
     expect(container.querySelector(".paper-slots__filter-text")?.textContent).toContain(
-      "further off",
+      "available at any project stage",
     );
   });
 });
@@ -593,10 +693,12 @@ describe("field guidance", () => {
       row({ slot: "authors_ack", status: "provided", provided_at: "2026-09-08T10:00:00.000Z" }),
     ];
 
-    it("tells the authors the paper has gone to her, and when", async () => {
+    it("reports readiness without claiming notification delivery", async () => {
       const { container } = await draw(atGate);
       const note = container.querySelector('[data-testid="paper-slot-pi-sent-p1"]');
-      expect(note?.textContent).toContain("Sent to Zhijing to review");
+      expect(note?.textContent).toContain("Ready for PI approval");
+      expect(note?.textContent).toContain("does not confirm a notification was delivered");
+      expect(note?.textContent).not.toContain("Sent to Zhijing");
       expect(note?.textContent).toContain("2026-09-08");
     });
 
@@ -617,5 +719,68 @@ describe("field guidance", () => {
       ]);
       expect(container.querySelector('[data-testid="paper-slot-pi-sent-p1"]')).toBeNull();
     });
+  });
+});
+
+describe("paper feedback requests", () => {
+  it("offers three queue actions and preserves a reason and deadline times", async () => {
+    const { container, saved } = await draw([
+      row({ slot: "feedback_arr" }),
+      row({ slot: "feedback_arxiv" }),
+      row({ slot: "feedback_camera_ready" }),
+    ]);
+    const forms = container.querySelectorAll<HTMLFormElement>(
+      '[data-testid="paper-feedback"] form',
+    );
+    expect(forms.length).toBe(3);
+    const form = forms[0];
+    (form.elements.namedItem("url") as HTMLInputElement).value =
+      "https://www.overleaf.com/read/synthetic";
+    (form.elements.namedItem("reason") as HTMLTextAreaElement).value =
+      "Please check the experiments before ARR submission";
+    (form.elements.namedItem("soft") as HTMLInputElement).value = "2027-01-01T10:00";
+    (form.elements.namedItem("hard") as HTMLInputElement).value = "2027-01-02T10:00";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved[0].slot).toBe("feedback_arr");
+    const request = JSON.parse(saved[0].input.value_text!);
+    expect(request.reason).toContain("experiments");
+    expect(Date.parse(request.soft_deadline)).toBeLessThan(Date.parse(request.hard_deadline));
+  });
+  it("rejects reversed deadlines without clearing the draft", async () => {
+    const { container, saved } = await draw([
+      row({ slot: "feedback_arr" }),
+      row({ slot: "feedback_arxiv" }),
+      row({ slot: "feedback_camera_ready" }),
+    ]);
+    const form = container.querySelector<HTMLFormElement>('[data-testid="paper-feedback"] form')!;
+    (form.elements.namedItem("url") as HTMLInputElement).value = "https://example.com/draft";
+    (form.elements.namedItem("reason") as HTMLTextAreaElement).value = "Check claims";
+    (form.elements.namedItem("soft") as HTMLInputElement).value = "2027-02-02T10:00";
+    (form.elements.namedItem("hard") as HTMLInputElement).value = "2027-02-01T10:00";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved).toHaveLength(0);
+    expect(form.querySelector('[role="alert"]')?.textContent).toContain("cannot follow");
+    expect((form.elements.namedItem("reason") as HTMLTextAreaElement).value).toBe("Check claims");
+  });
+  it("shows confirmed queued state and allows removing a late request", async () => {
+    const { container, saved } = await draw([
+      row({
+        slot: "feedback_arxiv",
+        status: "provided",
+        value_text: JSON.stringify({
+          reason: "Check abstract",
+          url: "https://example.com/draft",
+          hard_deadline: "2000-01-01T00:00:00Z",
+        }),
+      }),
+    ]);
+    const card = container.querySelector('[data-testid="paper-feedback"]')!;
+    expect(card.textContent).toContain("Queued: arXiv feedback");
+    expect(card.textContent).toContain("soft submission");
+    const remove = [...card.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Remove"),
+    )!;
+    remove.click();
+    expect(saved).toEqual([{ slot: "feedback_arxiv", input: { value_text: "" } }]);
   });
 });

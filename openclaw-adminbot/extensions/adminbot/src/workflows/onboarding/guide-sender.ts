@@ -19,7 +19,7 @@ import {
 } from "../../contracts/actions.js";
 import { adminBotSlackConnectInviteIsFresh } from "../../kernel/service.js";
 import { collaboratorSubgroupAccess } from "../members/collaborator-subgroups.js";
-import { splitDisplayName, type DcsFormRunner } from "./dcs-form.js";
+import { dcsCredentialsEmail, type DcsRosterRowRecorder } from "./dcs-roster-sheet.js";
 import type { DriveWorkspaceProvisioner } from "./drive-workspace.js";
 import { findOnboardingTemplate } from "./emails.js";
 import {
@@ -32,6 +32,12 @@ import {
   type AdminBotGuideComposeResult,
   type AdminBotGuideOverrides,
 } from "./guide.js";
+import {
+  readInterviewInvitation,
+  interviewBody,
+  INTERVIEW_TASK_MARKER,
+  type InterviewInvitation,
+} from "./interview.js";
 
 const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 45_000;
@@ -48,7 +54,7 @@ const GOG_TIMEOUT_MS = 45_000;
  */
 const FULL_MEMBER_TEMPLATE_IDS = new Set(["member", "member_what_to_expect"]);
 
-const DCS_FORM_TEMPLATE_ID = "member";
+const DCS_ROSTER_TEMPLATE_ID = "member";
 
 /**
  * The mail whose Slack Connect invitation travels separately, and the template that carries it.
@@ -82,13 +88,14 @@ export type SlackConnectInviter = (params: {
 
 export type AdminBotOnboardingSendRequest = {
   template_id: string;
+  interview?: InterviewInvitation;
   name: string;
   email: string;
   /** Everything the template needs that the tab collected by hand. */
   values?: Record<string, string | undefined>;
   slack_channel_id?: string;
   /**
-   * Also file the DCS Slack-access request for this person.
+   * Also file this person's row on the DCS roster sheet, and mail them the credentials it carries.
    *
    * Defaults to on for the full-member guide and off for every other template: that mail is what
    * starts a new member's CS account, and its own copy tells the reader an account request is
@@ -96,9 +103,10 @@ export type AdminBotOnboardingSendRequest = {
    * by then the member has an address and the request has already been made.
    *
    * Still a flag rather than a rule, because a re-send is not a second request: an operator
-   * resending the guide to someone who already has an account unticks it.
+   * resending the guide to someone who already has an account unticks it. Leaving it ticked would
+   * file a second row, asking for a second account under a second password.
    */
-  submit_dcs_form?: boolean;
+  add_dcs_roster_row?: boolean;
   /** Compose and provision nothing; used by the tab's preview. */
   preview?: boolean;
   /**
@@ -137,8 +145,14 @@ export type AdminBotOnboardingSendRequest = {
 export type AdminBotOnboardingSendResult = {
   template_id: string;
   subject: string;
-  /** Present when the send also filed a DCS Slack-access request; absent when it did not try. */
-  dcs_form?: { submitted: boolean; error?: string };
+  /**
+   * Present when the send also filed a DCS roster row; absent when it did not try.
+   *
+   * Carries the chosen username and the candidates it beat, so the tab can show what was asked
+   * for. Never the password: this payload is returned over the API, logged by the dry-run script
+   * and rendered in the Control UI, and the credential belongs only in the sheet and the inbox.
+   */
+  dcs_roster_row?: { added: boolean; username?: string; candidates?: string[]; error?: string };
   body: string;
   /** HTML alternative rendered from `body`; absent only when the body renders to nothing. */
   body_html?: string;
@@ -173,14 +187,15 @@ export type AdminBotOnboardingSender = (
 
 export type AdminBotOnboardingSenderOptions = {
   env?: NodeJS.ProcessEnv;
+  provisionInterviewChannel?: (email: string, interview: InterviewInvitation) => Promise<string>;
   provisionDriveWorkspace?: DriveWorkspaceProvisioner;
   inviteToSlackConnect?: SlackConnectInviter;
   /**
-   * Files the DCS Slack-access request. Same injection seam as the two provisioners above, and the
-   * same runner the approval path uses -- the composition layer owns the script path, so a send
-   * and an approval can never file the request two different ways.
+   * Files the DCS roster row and returns the credentials it wrote. Same injection seam as the two
+   * provisioners above: the composition layer owns the spreadsheet id and the roster lookup, so a
+   * send and an approval can never file the row two different ways.
    */
-  submitDcsForm?: DcsFormRunner;
+  addDcsRosterRow?: DcsRosterRowRecorder;
   /** Resolves `{zhijing_whatsapp}`; reads AdminBot settings so no phone number lives in the repo. */
   headProfessorWhatsapp?: () => string | undefined;
   defaultSlackChannelId?: string;
@@ -264,6 +279,63 @@ export function resolveActiveChannels(env: NodeJS.ProcessEnv): string[] {
  * and starts doing something, which is the whole point.
  */
 const ACTIVE_CHANNELS_ACCESS_ITEM = "active_channels";
+
+/**
+ * Mints the #friends-and-collaborators Slack Connect invite on its own, without a mail around it.
+ *
+ * The same channel, invite and reuse window as the guide's `{slack_connect_link}`, so somebody
+ * reached by both is invited once: a fresh cached invite is reported as reused rather than minted
+ * again. For the Member Types the access design gives the channel but no onboarding mail.
+ */
+export function createSlackConnectOnboardingInviter(
+  options: Pick<
+    AdminBotOnboardingSenderOptions,
+    "inviteToSlackConnect" | "slackConnectInviteCache" | "defaultSlackChannelId" | "now"
+  >,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  return async (
+    email: string,
+  ): Promise<
+    { ok: true; channel_id: string; url: string; reused: boolean } | { ok: false; reason: string }
+  > => {
+    const address = email.trim();
+    if (!address) {
+      return { ok: false, reason: "no address to invite" };
+    }
+    if (!options.inviteToSlackConnect) {
+      return { ok: false, reason: "Slack Connect invites are not configured" };
+    }
+    const channelId =
+      options.defaultSlackChannelId?.trim() ||
+      configuredEnvValue(env[ADMINBOT_ONBOARDING_CHANNEL_ENV]);
+    if (!channelId) {
+      return {
+        ok: false,
+        reason: `Slack Connect invites need a channel: set ${ADMINBOT_ONBOARDING_CHANNEL_ENV}`,
+      };
+    }
+    const now = options.now?.() ?? new Date();
+    const cached = options.slackConnectInviteCache?.get(address, channelId);
+    if (cached?.url && adminBotSlackConnectInviteIsFresh(cached, now)) {
+      return { ok: true, channel_id: channelId, url: cached.url, reused: true };
+    }
+    try {
+      const invite = await options.inviteToSlackConnect({ email: address, channelId });
+      if (invite.url) {
+        options.slackConnectInviteCache?.save({
+          email: address,
+          channel_id: channelId,
+          url: invite.url,
+          created_at: now.toISOString(),
+        });
+      }
+      return { ok: true, channel_id: channelId, url: invite.url, reused: false };
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+  };
+}
 
 /** The production email sender, exported so a caller can wrap it and still report what it did. */
 export function gogEmailSender(env: NodeJS.ProcessEnv = process.env) {
@@ -351,10 +423,24 @@ export function createAdminBotOnboardingSender(
   const env = options.env ?? process.env;
   const sendEmail = options.sendEmail ?? gogEmailSender(env);
   return async (request) => {
+    let interview: InterviewInvitation | undefined;
+    if (request.interview) {
+      try {
+        if (request.template_id !== "interviewee") {
+          throw new Error("Interview details require the interviewee template.");
+        }
+        interview = readInterviewInvitation(request.interview);
+      } catch (error) {
+        return { ok: false, error: { status: 400, message: String(error) } };
+      }
+    }
     const overrides: AdminBotGuideOverrides = {
       ...(request.subject_override?.trim() ? { subject: request.subject_override } : {}),
       ...(request.body_override?.trim() ? { body: request.body_override } : {}),
     };
+    if (interview) {
+      overrides.body = interviewBody(interview.task);
+    }
     const name = request.name?.trim() ?? "";
     const email = request.email?.trim() ?? "";
     if (!name) {
@@ -379,6 +465,7 @@ export function createAdminBotOnboardingSender(
 
     const base: Record<string, string | undefined> = {
       ...request.values,
+      ...(interview ? { slack_connect_link: undefined } : {}),
       first_name: request.values?.first_name?.trim() || firstNameOf(name),
       // The address the mail is going to, for the copy that has to name it back to the reader
       // ("log in using ..."). Defaulted like first_name so nobody retypes the recipient.
@@ -427,6 +514,12 @@ export function createAdminBotOnboardingSender(
       );
       if (!preview.ok) {
         return { ok: false, error: composeFailure(preview) };
+      }
+      if (interview) {
+        preview.guide.body = preview.guide.body.replace(
+          INTERVIEW_TASK_MARKER,
+          () => interview!.task,
+        );
       }
       // The preview shows the operator exactly what the send would produce, html included.
       return {
@@ -502,7 +595,14 @@ export function createAdminBotOnboardingSender(
           },
         };
       }
+      if (interview && !options.provisionInterviewChannel) {
+        return {
+          ok: false,
+          error: { status: 501, message: "Private interview channels are not configured." },
+        };
+      }
       const channelId =
+        (interview ? await options.provisionInterviewChannel!(email, interview) : undefined) ||
         request.slack_channel_id?.trim() ||
         options.defaultSlackChannelId?.trim() ||
         configuredEnvValue(env[ADMINBOT_ONBOARDING_CHANNEL_ENV]);
@@ -671,6 +771,9 @@ export function createAdminBotOnboardingSender(
         },
       };
     }
+    if (interview) {
+      guide.body = guide.body.replace(INTERVIEW_TASK_MARKER, () => interview!.task);
+    }
     const html = htmlOf(guide.body);
     await sendEmail({
       to: email,
@@ -682,39 +785,50 @@ export function createAdminBotOnboardingSender(
     });
 
     // After the mail, and reported rather than thrown: the guide has already been delivered, so a
-    // failed form is a follow-up item, not a reason to tell the operator the send failed. Awaited
+    // failed row is a follow-up item, not a reason to tell the operator the send failed. Awaited
     // rather than fired and forgotten, because the operator asked for it in this request and the
     // approval path's fire-and-forget is exactly how twelve of these failed unnoticed.
-    let dcsForm: { submitted: boolean; error?: string } | undefined;
-    const wantsDcsForm = request.submit_dcs_form ?? template.id === DCS_FORM_TEMPLATE_ID;
-    if (wantsDcsForm) {
-      if (!options.submitDcsForm) {
-        dcsForm = {
-          submitted: false,
-          error: "the DCS form runner is not configured",
-        };
+    let dcsRosterRow:
+      | { added: boolean; username?: string; candidates?: string[]; error?: string }
+      | undefined;
+    const wantsDcsRosterRow = request.add_dcs_roster_row ?? template.id === DCS_ROSTER_TEMPLATE_ID;
+    if (wantsDcsRosterRow) {
+      if (!options.addDcsRosterRow) {
+        dcsRosterRow = { added: false, error: "the DCS roster sheet is not configured" };
       } else {
-        // A name with no family name in it cannot be filed: the form asks for First and Last, and
-        // answering both with the same word is how a DCS account was requested for "Eric Eric".
-        // Reported as a failed attempt rather than thrown -- the guide itself has been sent, and
-        // this is the shape the tab and the audit already use for "somebody has to do this by
-        // hand".
-        const parts = splitDisplayName(name);
-        if (!parts) {
-          dcsForm = {
-            submitted: false,
-            error: `no last name in "${name}" — the DCS form asks for First and Last separately. Put the full name on the roster and re-send, or file the request by hand.`,
-          };
-        } else {
+        try {
+          const record = await options.addDcsRosterRow({ name, email });
+          // The row is filed; the member still has to be told what is on it. A failure here is
+          // reported apart from the row itself, because the two have different remedies: a row
+          // that did not land has to be filed again, whereas a row that landed with an unsent
+          // mail must *not* be re-filed -- that asks for a second account. Re-sending the one
+          // mail by hand is the fix, so the error says which of the two happened.
           try {
-            await options.submitDcsForm({ ...parts, email });
-            dcsForm = { submitted: true };
+            const credentials = dcsCredentialsEmail({ name, ...record });
+            await sendEmail({
+              to: email,
+              subject: credentials.subject,
+              body: credentials.body,
+              ...htmlOf(credentials.body),
+            });
+            dcsRosterRow = {
+              added: true,
+              username: record.username,
+              candidates: record.candidates,
+            };
           } catch (error) {
-            dcsForm = {
-              submitted: false,
-              error: error instanceof Error ? error.message : String(error),
+            dcsRosterRow = {
+              added: true,
+              username: record.username,
+              candidates: record.candidates,
+              error: `the roster row was filed for ${record.username}, but the credentials mail to ${email} failed: ${error instanceof Error ? error.message : String(error)}. Send the username and password by hand — do not re-run the filing, which would request a second account.`,
             };
           }
+        } catch (error) {
+          dcsRosterRow = {
+            added: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
         }
       }
     }
@@ -729,7 +843,7 @@ export function createAdminBotOnboardingSender(
         ...(slackLink ? { slack_connect_link: slackLink } : {}),
         ...(projectInvites.length > 0 ? { project_channel_invites: projectInvites } : {}),
         ...(activeChannelInvites ? { active_channel_invites: activeChannelInvites } : {}),
-        ...(dcsForm ? { dcs_form: dcsForm } : {}),
+        ...(dcsRosterRow ? { dcs_roster_row: dcsRosterRow } : {}),
       },
     };
   };

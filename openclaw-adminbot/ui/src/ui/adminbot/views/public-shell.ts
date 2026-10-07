@@ -27,17 +27,22 @@ import { agentLogoUrl } from "../../views/agents-utils.ts";
 import { visibleTabsForRole } from "../access.ts";
 import { resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
-  generateGuestReimbursement,
-  loadAdminBotVenueSources,
   resetAdminBotReimbursement,
   setAdminBotReimbursementFunder,
-  searchAdminBotVenuePapers,
-  sendGuestReimbursementMessage,
   setAdminBotVenue,
+  setAdminBotVenueCategory,
   setAdminBotVenueInterests,
   toggleAdminBotVenueAbstract,
-  type GuestReimbursementHost,
 } from "../controllers/admin.ts";
+import {
+  loadAdminBotVenueSources,
+  searchAdminBotVenuePapers,
+} from "../controllers/conference-papers.ts";
+import {
+  generateGuestReimbursement,
+  sendGuestReimbursementMessage,
+  type GuestReimbursementHost,
+} from "../controllers/reimbursements.ts";
 import { renderConferencePapers } from "./conference-papers.ts";
 import { renderDeadlines } from "./deadlines.ts";
 import { renderOpportunities } from "./opportunities.ts";
@@ -150,6 +155,7 @@ function renderPublicPanel(state: AppViewState) {
     return renderConferencePapers({
       state: state.adminBotVenuePapers,
       onVenueChange: (venueId) => setAdminBotVenue(state, venueId),
+      onCategoryChange: (categoryId) => setAdminBotVenueCategory(state, categoryId),
       onInterestsChange: (interests) => setAdminBotVenueInterests(state, interests),
       onSearch: () => void searchAdminBotVenuePapers(state),
       onToggleAbstract: (paperId) => toggleAdminBotVenueAbstract(state, paperId),

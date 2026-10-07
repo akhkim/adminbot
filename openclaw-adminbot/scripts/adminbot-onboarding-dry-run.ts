@@ -9,7 +9,7 @@
 // whether ADMINBOT_* is actually set there. On Aurora:
 //
 //   export PATH="$HOME/.local/bin:$PATH"   # node lives here; `ssh host 'cmd'` will not find it
-//   cd ~/services/openclaw-adminbot/current
+//   cd /mfs1/u/<cs-user>/jinesis-adminbot/current
 //   set -a; . ~/.config/jinesis-adminbot/adminbot.env; set +a
 //   node --import tsx scripts/adminbot-onboarding-dry-run.ts --plan ~/onboarding-plan.json
 //
@@ -27,6 +27,7 @@ import { promisify } from "node:util";
 import { resolveGogExecutable } from "../extensions/adminbot/src/connectors/gog.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../extensions/adminbot/src/contracts/actions.js";
 import { collaboratorSubgroupAccess } from "../extensions/adminbot/src/workflows/members/collaborator-subgroups.js";
+import { dcsUsernameCandidates } from "../extensions/adminbot/src/workflows/onboarding/dcs-roster-sheet.js";
 import { findOnboardingTemplate } from "../extensions/adminbot/src/workflows/onboarding/emails.js";
 import {
   createAdminBotOnboardingSender,
@@ -530,11 +531,26 @@ async function main(): Promise<void> {
         performed.push(`Slack: Connect invite to ${email} for channel ${channelId}`);
         return { url: "https://join.slack.com/share/DRY-RUN" };
       },
-      submitDcsForm: async ({ firstName, lastName, email }) => {
-        performed.push(`DCS: file the Slack-access form for ${firstName} ${lastName} <${email}>`);
-        if (args.send) {
-          throw new Error("the DCS form is not wired into this script; use the tab instead");
+      addDcsRosterRow: async ({ name, email }) => {
+        const candidates = dcsUsernameCandidates(name);
+        if (candidates.length === 0) {
+          throw new Error(`no DCS username can be built from "${name}"`);
         }
+        // Rehearsal only: no sheet is read, so nothing here knows which candidates are taken, and
+        // the first is reported as the one a real run would most likely file. The password is a
+        // visible placeholder rather than a generated one -- this transcript is pasted into
+        // tickets and chat, and a real credential printed "just as an example" is still real.
+        performed.push(
+          `DCS: file the roster row for ${name} <${email}> as ${candidates[0]} (candidates: ${candidates.join(", ")})`,
+        );
+        if (args.send) {
+          throw new Error("the DCS roster sheet is not wired into this script; use the tab instead");
+        }
+        return {
+          username: candidates[0] as string,
+          password: "DRY-RUN-NOT-A-PASSWORD",
+          candidates,
+        };
       },
       ...(args.noEmail
         ? {
@@ -653,9 +669,9 @@ async function main(): Promise<void> {
         ? `  - (no audit row: --no-email sent no guide)`
         : `  - Audit: onboarding.guide_sent (template ${result.payload.template_id}, recipient ${request.email})`,
     );
-    if (result.payload.dcs_form) {
+    if (result.payload.dcs_roster_row) {
       console.log(
-        `  - Audit: ${result.payload.dcs_form.submitted ? "auth.dcs_form_submitted" : "auth.dcs_form_failed"}`,
+        `  - Audit: ${result.payload.dcs_roster_row.added ? "auth.dcs_roster_row_added" : "auth.dcs_roster_row_failed"}`,
       );
     }
     if (!performed.some((step) => step.startsWith("Drive:"))) {

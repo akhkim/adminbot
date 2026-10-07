@@ -7,8 +7,8 @@
 //
 // It renders above the profile form so the member can see the fields it is offering to change.
 import { html, nothing } from "lit";
+import type { LocationDrift } from "../api/profile.ts";
 import { timezoneForLocation } from "../data/timezone-for-location.ts";
-import type { LocationDrift } from "../auth/session.ts";
 
 export type LocationPromptProps = {
   drift: LocationDrift | null;
@@ -51,7 +51,8 @@ export function renderLocationPrompt(props: LocationPromptProps) {
         ${drift.observation_count} sign-ins since ${sinceText(drift.since)} came from
         ${drift.observed_country}${drift.profile_location
           ? html`, but your profile says ${drift.profile_location}`
-          : nothing}. Meeting times and calendar invites are scheduled from what your profile says.
+          : nothing}.
+        Meeting times and calendar invites are scheduled from what your profile says.
       </p>
       ${props.error ? html`<p class="notice notice--error">${props.error}</p>` : nothing}
       <form class="location-prompt__form" @submit=${submit}>

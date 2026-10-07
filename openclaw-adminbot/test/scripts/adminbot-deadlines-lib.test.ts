@@ -41,7 +41,7 @@ function datasetDir(venues: Array<Record<string, unknown>>): string {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-deadlines-test-"));
   temporaryDirectories.push(directory);
   fs.writeFileSync(
-    path.join(directory, "venues.json"),
+    path.join(directory, "deadlines.json"),
     JSON.stringify({ timezone: "AoE (UTC-12)", count: venues.length, items: venues }),
   );
   return directory;
@@ -55,6 +55,119 @@ const venue = (id: string, deadline: string, extra: Record<string, unknown> = {}
   deadline_label: "submission",
   deadline_aoe: deadline,
   ...extra,
+});
+
+describe("deadline calendar", () => {
+  const setup = `
+import os
+from unittest.mock import patch
+from types import SimpleNamespace
+os.environ['ADMINBOT_DEADLINE_CALENDAR_ID'] = 'calendar@example.test'
+os.environ['GOG_ACCOUNT'] = 'bot@example.test'
+m = load('adminbot-deadline-calendar')
+item = {'id': 'test-venue', 'name': 'Test Venue', 'deadline_aoe': '2026-09-30 23:59:59'}
+`;
+
+  it("ends a one-hour event at the actual AoE cutoff, including year rollover", () => {
+    expect(
+      runPython(`${setup}
+item['deadline_aoe'] = '2026-12-31 23:59:59'
+event = m.build_event(item)
+print(json.dumps([event['start'], event['end'], event['description']]))`),
+    ).toEqual([
+      "2027-01-01T10:59:59+00:00",
+      "2027-01-01T11:59:59+00:00",
+      expect.stringContaining("Deadline: 2026-12-31 23:59:59 AoE"),
+    ]);
+  });
+
+  it("converts an existing all-day event and updates the same ID on repeat", () => {
+    const calls = runPython(`${setup}
+calls = []
+def gog(args, check=True):
+    calls.append(args)
+    return SimpleNamespace(returncode=0, stdout=json.dumps({'events': [
+        {'id': 'existing-event', 'description': m.marker_for(item['id'])}
+    ]}))
+with patch.object(m.DeadlineDataset, 'venues', return_value=[item]), \
+     patch.object(m, 'gog', side_effect=gog), \
+     patch.dict(os.environ, {'ADMINBOT_DEADLINE_NOW': '2026-10-01T10:00:00+00:00'}), \
+     patch.object(sys, 'argv', ['calendar', '--send']):
+    m.main()
+    m.main()
+print(json.dumps(calls))`) as string[][];
+    expect(calls).toHaveLength(4);
+    expect(calls[0]).toEqual([
+      "calendar",
+      "events",
+      "calendar@example.test",
+      "--from",
+      "2026-09-29",
+      "--to",
+      "2026-10-03",
+      "--max",
+      "2500",
+      "--json",
+    ]);
+    expect(calls[1].slice(0, 4)).toEqual([
+      "calendar",
+      "update",
+      "calendar@example.test",
+      "existing-event",
+    ]);
+    expect(calls[1].slice(-7)).toEqual([
+      "--from",
+      "2026-10-01T10:59:59+00:00",
+      "--to",
+      "2026-10-01T11:59:59+00:00",
+      "--all-day=false",
+      "--send-updates",
+      "none",
+    ]);
+    expect(calls[3]).toEqual(calls[1]);
+  });
+
+  it("leaves an event that already matches untouched", () => {
+    const calls = runPython(`${setup}
+event = m.build_event(item)
+calls = []
+def gog(args, check=True):
+    calls.append(args)
+    return SimpleNamespace(returncode=0, stdout=json.dumps({'events': [{
+        'id': 'existing-event',
+        'summary': event['summary'],
+        'description': event['description'],
+        'start': {'dateTime': '2026-10-01T10:59:59Z'},
+        'end': {'dateTime': '2026-10-01T11:59:59Z'},
+    }]}))
+with patch.object(m.DeadlineDataset, 'venues', return_value=[item]), \
+     patch.object(m, 'gog', side_effect=gog), \
+     patch.dict(os.environ, {'ADMINBOT_DEADLINE_NOW': '2026-10-01T10:00:00+00:00'}), \
+     patch.object(sys, 'argv', ['calendar', '--send']):
+    m.main()
+print(json.dumps(calls))`) as string[][];
+    expect(calls).toHaveLength(1);
+    expect(calls[0].slice(0, 2)).toEqual(["calendar", "events"]);
+  });
+
+  it("creates timed events, previews without Google calls, and skips expired deadlines", () => {
+    expect(
+      runPython(`${setup}
+with patch.object(m.DeadlineDataset, 'venues', return_value=[item]), \
+     patch.object(m, 'gog', return_value=SimpleNamespace(returncode=0, stdout='[]')) as gog, \
+     patch.dict(os.environ, {'ADMINBOT_DEADLINE_NOW': '2026-10-01T10:00:00+00:00'}):
+    with patch.object(sys, 'argv', ['calendar']):
+        m.main()
+    preview_calls = gog.call_count
+    with patch.object(sys, 'argv', ['calendar', '--send']):
+        m.main()
+        create = gog.call_args.args[0]
+        gog.reset_mock()
+        with patch.dict(os.environ, {'ADMINBOT_DEADLINE_NOW': '2026-10-01T12:00:00+00:00'}):
+            m.main()
+    print(json.dumps([preview_calls, create[:2], create[-3:], gog.call_count]))`),
+    ).toEqual([0, ["calendar", "create"], ["--all-day=false", "--send-updates", "none"], 0]);
+  });
 });
 
 describe("AoEClock", () => {
@@ -272,16 +385,16 @@ describe("workshop source URLs", () => {
     ).toEqual([false, "2034-12-01T00:00:00Z"]);
   });
 
-  it("does not publish an expired official-only group outside the audited NeurIPS roster", () => {
+  it("retains discovered groups with an explicit final-paper date", () => {
     expect(
       runPython(
         "m = load('adminbot-deadline-collect')\n" +
           "m._openreview_get = lambda *args, **kwargs: {'groups': [{'id': 'TEST/2035/Workshop/Example', 'content': {'title': {'value': 'Example'}, 'date': {'value': 'Abstract Registration: Jan 01 2035 11:00PM UTC-0, Submission Deadline: Jan 02 2035 11:00PM UTC-0'}}}]}\n" +
           "m._openreview_submission_deadlines = lambda group_ids, include_expired=False, metadata=None: {}\n" +
           "source = {'parent': 'TEST/2035/Workshop', 'id_prefix': 'test2035_ws_', 'deadline_aoe': '', 'notification_aoe': '', 'family': 'ACL', 'year': 2035, 'group': 'TEST 2035 Workshops'}\n" +
-          "print(json.dumps(m.fetch_workshop_source(source, [])))",
+          "print(json.dumps([x['deadline_aoe'] for x in m.fetch_workshop_source(source, [])]))",
       ),
-    ).toEqual([]);
+    ).toEqual(["2035-01-02 11:00:00"]);
   });
 
   it("does not substitute an ARR paper-cycle date for a commitment deadline", () => {
@@ -386,9 +499,9 @@ describe("workshop source URLs", () => {
           "fast = reconcile_deadline_candidates(shared_candidates, '', 'https://openreview.net/group?id=Fast', 2026, target_hint='Fast_Track')\n" +
           "unrelated_candidates, _ = deadline_candidates_from_html(unrelated, 'https://workshop.example/', 2026)\n" +
           "paper = reconcile_deadline_candidates(unrelated_candidates, '2026-08-30 00:00:00', 'https://openreview.net/group?id=Paper', 2026)\n" +
-          "print(json.dumps([fast['deadline_aoe'], paper['deadline_extended'], paper['source_revisions']]))",
+          "print(json.dumps([fast['deadline_aoe'], fast['deadline_time_precision'], fast['deadline_at'], paper['deadline_extended'], paper['source_revisions']]))",
       ),
-    ).toEqual(["2026-09-25 23:59:00", false, []]);
+    ).toEqual(["2026-09-25 00:00:00", "date_only", "", false, []]);
   });
 
   it("retains the supplied matched portal cutoff over a different CFP route", () => {
@@ -466,7 +579,7 @@ describe("deadline history", () => {
           'answers = iter([\'/repo\', \'{"history_version": 7, "count": 12, "items": []}\'])\n' +
           "m._git_output = lambda *args, **kwargs: next(answers)\n" +
           "m.HERE = '/repo/scripts'\n" +
-          "m.OUT = '/repo/data/venues.json'\n" +
+          "m.OUT = '/repo/data/deadlines.json'\n" +
           "baseline = m._load_previous_document('HEAD')\n" +
           "print(json.dumps([baseline['history_version'], baseline['count']]))",
       ),
@@ -877,19 +990,355 @@ print(json.dumps([row['deadline_aoe'], row['source_checked_at'], row['_source_ob
 });
 
 it("refreshes the named commitment row without borrowing submission or notification dates", () => {
-  expect(runPython(`
+  expect(
+    runPython(`
 from adminbot_conference_deadlines import conference_table_deadline
 html = '<table><tr><td>ARR submission deadline</td><td>October 12, 2026</td></tr><tr><td>NAACL commitment deadline</td><td>December 23, 2026</td></tr><tr><td>Notification</td><td>February 10, 2027</td></tr></table>'
 print(json.dumps([conference_table_deadline(html, 'NAACL commitment deadline', 2026)[0], conference_table_deadline(html, 'Missing deadline', 2026), conference_table_deadline(html + html, 'NAACL commitment deadline', 2026)]))
-`)).toEqual(["2026-12-23", null, null]);
+`),
+  ).toEqual(["2026-12-23", null, null]);
 });
 
-
 it("does not invent a tutorial abstract stage from a shared paper CFP", () => {
-  expect(runPython(`
+  expect(
+    runPython(`
 from adminbot_workshop_deadlines import split_workshop_milestones, deadline_candidates_from_text
 item = {'id':'tutorial','name':'Tutorials track','deadline_aoe':'2035-09-11 23:59:00','_openreview_deadline':'2035-09-11 23:59:00'}
 candidates = deadline_candidates_from_text('Abstract submission deadline: September 11, 2035 AoE. Paper submission deadline: September 13, 2035 AoE.', 'https://example.org/', 2035)
 print(json.dumps([row['id'] for row in split_workshop_milestones(item, candidates, 2035)]))
-`)).toEqual(["tutorial"]);
+`),
+  ).toEqual(["tutorial"]);
+});
+
+describe("deadline time precision", () => {
+  it("retains an exact UTC instant without changing its seconds", () => {
+    expect(
+      runPython(`from adminbot_deadline_time import timing_fields
+print(json.dumps(timing_fields('2035-02-01 23:59:59')))`),
+    ).toMatchObject({
+      deadline_at: "2035-02-02T11:59:59Z",
+      deadline_planning_at: "2035-02-02T11:59:59Z",
+      deadline_time_precision: "exact",
+    });
+  });
+
+  it("uses the start of the stated day in its known zone, or UTC+14 when unknown", () => {
+    expect(
+      runPython(`from adminbot_deadline_time import timing_fields
+print(json.dumps([timing_fields('2035-02-01', date_only=True, timezone=zone) for zone in ['AoE', 'UTC', '']]))`),
+    ).toMatchObject([
+      {
+        deadline_date: "2035-02-01",
+        deadline_at: "",
+        deadline_planning_at: "2035-02-01T12:00:00Z",
+      },
+      {
+        deadline_date: "2035-02-01",
+        deadline_at: "",
+        deadline_planning_at: "2035-02-01T00:00:00Z",
+      },
+      {
+        deadline_date: "2035-02-01",
+        deadline_at: "",
+        deadline_planning_at: "2035-01-31T10:00:00Z",
+      },
+    ]);
+  });
+
+  it("keeps date-only abstract and paper stages separate", () => {
+    expect(
+      runPython(`from adminbot_workshop_deadlines import deadline_candidates_from_html, split_workshop_milestones, reconcile_deadline_candidates, _candidate_is_abstract
+html = '<p>Abstract registration deadline: September 11, 2035 AoE.</p><p>Paper submission deadline: September 13, 2035 AoE.</p>'
+candidates, _ = deadline_candidates_from_html(html, 'https://example.test', 2035)
+rows = split_workshop_milestones({'id':'example','name':'Example'}, candidates, 2035)
+results = [reconcile_deadline_candidates([c for c in candidates if _candidate_is_abstract(c) == (row['_stage'] == 'abstract')], row['_openreview_deadline'], '', 2035, row['_group_final_deadline'], target_hint=row['_stage']) for row in rows]
+print(json.dumps([[row['id'], result['deadline_date'], result['deadline_at'], result['deadline_time_precision']] for row, result in zip(rows, results)]))`),
+    ).toEqual([
+      ["example", "2035-09-13", "", "date_only"],
+      ["example_abstract", "2035-09-11", "", "date_only"],
+    ]);
+  });
+
+  it("does not invent a time for a conference table date", () => {
+    expect(
+      runPython(`from adminbot_conference_deadlines import refresh_conference_tables
+item = {'id':'naacl2027_commitment','deadline_aoe':'2026-11-15 23:59:00'}
+refresh_conference_tables([item], {}, AoEClock.resolve('2026-09-01T00:00:00Z'), True, lambda url: (url, '<table><tr><td>NAACL commitment deadline</td><td>November 16, 2026</td></tr></table>'), lambda: '2026-09-01T00:00:00Z')
+print(json.dumps(item))`),
+    ).toMatchObject({
+      deadline_date: "2026-11-16",
+      deadline_at: "",
+      deadline_time_precision: "date_only",
+      deadline_timezone: "",
+    });
+  });
+
+  it("does not escalate a passed planning cutoff as a missed submission", () => {
+    expect(
+      runPython(`from adminbot_deadline_time import timing_fields
+m = load('adminbot-deadline-reminders')
+item = dict(id='example', **timing_fields('2035-02-01', date_only=True))
+class Dataset:
+    def venues(self): return [item]
+    def matches(self): return {'ongoing': [{'confirmed': True, 'title': 'Example', 'deadline_id': 'example'}]}
+    def templates(self): return {}
+class Notifier:
+    mode = "test"
+    def __init__(self, **kw): pass
+    def send_to_user(self, *args, **kw): raise AssertionError('unexpected notification')
+m.DeadlineDataset = Dataset
+m.SlackNotifier = Notifier
+m.load_roster = lambda: {}
+m.openreview_submitted_titles = lambda: set()
+sys.argv = ['reminders', '--now', '2035-02-02T00:00:00Z']
+m.main()
+print(json.dumps(True))`),
+    ).toBe(true);
+  });
+});
+
+it("does not preserve an invented end-of-day time from cached date-only evidence", () => {
+  expect(
+    runPython(`from adminbot_workshop_deadlines import deadline_candidates_from_text, reconcile_deadline_candidates
+candidates = deadline_candidates_from_text('Paper submission deadline: September 25, 2035 AoE.', 'https://example.test', 2035)
+for candidate in candidates: candidate['stamp'] = candidate['date'] + ' 23:59:00'
+result = reconcile_deadline_candidates(candidates, '', '', 2035)
+print(json.dumps([result['deadline_at'], result['deadline_time_precision'], result['deadline_planning_at']]))`),
+  ).toEqual(["", "date_only", "2035-09-25T12:00:00Z"]);
+});
+
+it("does not call learning the exact time an extension of a planning cutoff", () => {
+  expect(
+    runPython(`from adminbot_deadline_time import timing_fields
+m = load('adminbot-deadline-collect')
+old = m.merge_history(dict(id='example', name='Example', **timing_fields('2035-02-01', date_only=True, timezone='AoE')))
+current = m.merge_history(dict(id='example', name='Example', **timing_fields('2035-02-01 23:59:00')), old)
+print(json.dumps([len(current['revisions']), current['deadline_extended']]))`),
+  ).toEqual([2, false]);
+});
+
+it("retains original UTC and AoE source zones through candidate normalization", () => {
+  expect(
+    runPython(`from adminbot_workshop_deadlines import deadline_candidates_from_text, reconcile_deadline_candidates
+results = []
+for zone in ['UTC', 'AoE']:
+    candidates = deadline_candidates_from_text('Paper submission deadline: September 25, 2035 23:59 ' + zone, 'https://example.org/cfp', 2035)
+    result = reconcile_deadline_candidates(candidates, '', '', 2035)
+    results.append([result['deadline_timezone'], result['deadline_at']])
+print(json.dumps(results))`),
+  ).toEqual([
+    ["UTC", "2035-09-25T23:59:00Z"],
+    ["AoE", "2035-09-26T11:59:00Z"],
+  ]);
+});
+
+it("does not invent an original timezone for normalized legacy timestamps", () => {
+  expect(
+    runPython(`from adminbot_deadline_time import timing_fields
+print(json.dumps(timing_fields('2035-09-25 23:59:00')['deadline_timezone']))`),
+  ).toBe("");
+});
+
+it("keeps the source calendar day when normalizing an early UTC deadline", () => {
+  expect(
+    runPython(`from adminbot_workshop_deadlines import deadline_candidates_from_text, reconcile_deadline_candidates
+candidates = deadline_candidates_from_text('Paper submission deadline: September 25, 2035 01:00 UTC', 'https://example.org/cfp', 2035)
+result = reconcile_deadline_candidates(candidates, '', '', 2035)
+m = load('adminbot-deadline-collect')
+result.update(id='example', name='Example', venue_type='workshop', venue_group='Example 2035', deadline_label='submission')
+m.classify(result)
+merged = m.merge_history(result)
+print(json.dumps([result['deadline_date'], result['deadline_timezone'], result['deadline_at'], merged['revisions'][-1]['deadline_timezone']]))`),
+  ).toEqual(["2035-09-25", "UTC", "2035-09-25T01:00:00Z", "UTC"]);
+});
+
+describe("abstract registration evidence", () => {
+  it.each([
+    ["Abstract registration is mandatory. Date TBA.", "required"],
+    ["Abstract registration deadline: to be announced.", "required"],
+    ["No separate abstract registration is required.", "not_required"],
+    ["Abstract registration is optional.", "not_required"],
+    ["Submit a paper by September 25, 2035.", "unknown"],
+    ["If you join the demo track, abstract registration is required.", "unknown"],
+    ["2034: Abstract registration is required.", "unknown"],
+    [
+      "[OLD]Abstract registration is required.[/OLD] No abstract registration is required.",
+      "not_required",
+    ],
+    ["Abstract registration is required. Abstract registration is optional.", "unknown"],
+  ])("classifies only explicit unambiguous requirements: %s", (text, expected) => {
+    expect(
+      runPython(`from adminbot_abstract_requirements import requirement_from_text
+print(json.dumps(requirement_from_text(${JSON.stringify(text)}, 'https://example.org/cfp', 2035).get('abstract_requirement', 'unknown')))`),
+    ).toBe(expected);
+  });
+
+  it("caches requirement evidence and preserves conflicts across homepage/CFP merging", () => {
+    expect(
+      runPython(`m = load('adminbot-deadline-collect')
+a = m.workshop_profile_from_html('<p>Abstract registration is required.</p>', 'https://example.org', 2035)
+b = m.workshop_profile_from_html('<p>No abstract registration is required.</p>', 'https://example.org/cfp', 2035)
+merged = m._merge_workshop_profiles(a, b)
+previous = dict(merged, website_deadline_candidates=[])
+cached = m.cached_workshop_metadata(previous)[2]
+print(json.dumps([cached['abstract_requirement'], cached['abstract_requirement_conflict']]))`),
+    ).toEqual(["unknown", true]);
+  });
+
+  it("does not treat script content as an explicit registration policy", () => {
+    expect(
+      runPython(`m = load('adminbot-deadline-collect')
+p = m.workshop_profile_from_html('<script>Abstract registration is required.</script><p>Call for papers</p>', 'https://example.org', 2035)
+print(json.dumps(p.get('abstract_requirement', 'unknown')))`),
+    ).toBe("unknown");
+  });
+
+  it("links only one current abstract in the same track and edition, and respects optional registration", () => {
+    expect(
+      runPython(`from adminbot_abstract_requirements import attach_abstract_requirements
+abstract = dict(id='abstract', venue_id='example', venue_group='Example 2035', track='main', milestone='abstract', deadline_aoe='2035-09-20 00:00:00')
+base = dict(id='paper', venue_id='example', venue_group='Example 2035', track='main', milestone='full_paper', deadline_aoe='2035-09-25 00:00:00')
+results = []
+for patch in [{}, {'track':'demo'}, {'venue_group':'Example 2036'}, {'abstract_requirement':'not_required'}, {'abstract_requirement_conflict':True}]:
+    paper = dict(base, **patch)
+    attach_abstract_requirements([paper, dict(abstract)])
+    results.append(paper.get('abstract_deadline_id', ''))
+    if not patch: assert 'abstract_requirement' not in paper
+for change in [{'stale':True}, {'deadline_aoe':'2035-09-26 00:00:00'}]:
+    paper = dict(base)
+    attach_abstract_requirements([paper, dict(abstract, **change)])
+    results.append(paper.get('abstract_deadline_id', ''))
+print(json.dumps(results))`),
+    ).toEqual(["abstract", "", "", "abstract", "abstract", "", ""]);
+  });
+});
+
+describe("deadline output generation", () => {
+  it("writes the dataset and all projections without requiring an HTML template", () => {
+    expect(
+      runPython(`
+import tempfile
+from pathlib import Path
+m = load('adminbot-deadline-collect')
+with tempfile.TemporaryDirectory() as directory:
+    root = Path(directory)
+    for folder in ['scripts', 'extensions/adminbot/src/workflows/deadlines/generated', 'ui/src/ui/adminbot/data', 'content']:
+        (root / folder).mkdir(parents=True)
+    m.HERE = str(root / 'scripts')
+    m.OUT = str(root / 'content/deadlines.json')
+    m.DEADLINES_DIR = str(root / 'content')
+    m.write_outputs([dict(id='example', name='Example Workshop', venue_type='workshop', deadline_aoe='', venue_group='Example')])
+    assert json.loads((root / 'content/deadlines.json').read_text())['items'][0]['id'] == 'example'
+    print(json.dumps(sorted(str(p.relative_to(root)) for p in root.rglob('*') if p.is_file())))
+`),
+    ).toEqual([
+      "content/deadlines.json",
+      "extensions/adminbot/src/workflows/deadlines/generated/dataset.ts",
+      "ui/src/ui/adminbot/data/deadlines-summary.ts",
+      "ui/src/ui/adminbot/data/deadlines.ts",
+    ]);
+  });
+});
+
+describe("deadline extraction evidence", () => {
+  it("rejects reused pages from another edition and retains the reason", () => {
+    expect(
+      runPython(`from adminbot_workshop_deadlines import deadline_candidates_from_html, reconcile_deadline_candidates
+c, _ = deadline_candidates_from_html('<h1>Workshop 2034</h1><p>Paper submission deadline: September 10 at 23:59 AoE</p>', 'https://example.org', 2035)
+r = reconcile_deadline_candidates(c, '2035-09-12 23:59:00', 'https://openreview.net/example', 2035)
+print(json.dumps([r['deadline_aoe'], r['deadline_observations'][1]['decision']]))`),
+    ).toEqual(["2035-09-12 23:59:00", "different_edition"]);
+  });
+  it("does not select crossed-out dates even when they match the portal", () => {
+    expect(
+      runPython(`from adminbot_workshop_deadlines import deadline_candidates_from_html, reconcile_deadline_candidates
+c, _ = deadline_candidates_from_html('<p>Paper submission deadline: <s>September 10 at 23:59 AoE</s></p><p>Paper submission deadline extended to September 17 at 23:59 AoE</p>', 'https://example.org', 2035)
+r = reconcile_deadline_candidates(c, '2035-09-10 23:59:00', 'https://openreview.net/example', 2035)
+print(json.dumps([r['deadline_aoe'], sorted(set(x['decision'] for x in r['deadline_observations']))]))`),
+    ).toEqual([
+      "2035-09-10 23:59:00",
+      ["authoritative", "conflicts_with_portal", "historical_date"],
+    ]);
+  });
+  it("keeps full-paper selection separate from abstract evidence", () => {
+    expect(
+      runPython(`from adminbot_workshop_deadlines import deadline_candidates_from_html, reconcile_deadline_candidates
+c, _ = deadline_candidates_from_html('<p>Abstract registration deadline: September 10 at 23:59 AoE</p>', 'https://example.org', 2035)
+r = reconcile_deadline_candidates(c, '', '', 2035, target_hint='Example full_paper')
+print(json.dumps([r['deadline_aoe'], r['deadline_observations'][0]['decision']]))`),
+    ).toEqual(["", "different_milestone"]);
+  });
+  it("retains asset URLs separately from the workshop page without network access", () => {
+    expect(
+      runPython(`m = load('adminbot-deadline-collect')
+m._fetch_text_asset = lambda url: (url, 'Paper submission deadline: September 25 at 23:59 AoE')
+p = m._profile_with_deadline_assets('<script src="/assets/cfp.js"></script>', 'https://example.org', 2035)
+c = p['_deadline_candidates'][0]
+print(json.dumps([c['source_url'], c['document_id'], c['extraction_kind']]))`),
+    ).toEqual(["https://example.org", "https://example.org/assets/cfp.js", "script_asset"]);
+  });
+});
+
+it("keeps extraction observations and their original check age on a skipped sweep", () => {
+  expect(
+    runPython(`m = load('adminbot-deadline-collect')
+old = dict(id='example', name='Example', venue_type='workshop', deadline_aoe='2035-12-20 23:59:00', profile_extracted_at='2035-09-10T00:00:00Z', source_checked_at='2035-09-10T00:00:00Z', deadline_observations=[{'decision':'conflicts_with_portal'}])
+rows = [dict(id='example', name='Example', venue_type='workshop', deadline_aoe=old['deadline_aoe'])]
+m.enrich_workshop_sources(rows, {'example': old}, AoEClock.resolve('2035-09-11T00:00:00Z'))
+print(json.dumps([rows[0]['deadline_observations'], rows[0]['source_checked_at']]))`),
+  ).toEqual([[{ decision: "conflicts_with_portal" }], "2035-09-10T00:00:00Z"]);
+});
+
+it("keeps undated workshop discovery and uses the same id when the date appears", () => {
+  expect(
+    runPython(`m = load('adminbot-deadline-collect')
+m._openreview_get = lambda *a, **kw: {'groups':[{'id':'TEST/2035/Workshop/Example','content':{'title':{'value':'Example'}}}]}
+m._openreview_submission_deadlines = lambda *a, **kw: {}
+m.fetch_invitation_observations = lambda ids: {}
+source = dict(parent='TEST/2035/Workshop', id_prefix='test2035_ws_', deadline_aoe='', notification_aoe='', family='TEST', year=2035, group='TEST 2035 Workshops')
+first = m.fetch_workshop_source(source)[0]
+assert first['_source_observed'] and first['source_checked_at']
+m._openreview_submission_deadlines = lambda *a, **kw: {'TEST/2035/Workshop/Example':'2035-09-25 23:59:00'}
+second = m.fetch_workshop_source(source, {first['id']:first})[0]
+print(json.dumps([first['id'], first['deadline_aoe'], second['id'], second['deadline_aoe']]))`),
+  ).toEqual(["test2035_ws_Example", "", "test2035_ws_Example", "2035-09-25 23:59:00"]);
+});
+
+it("excludes undated venues from date-driven digests", () => {
+  expect(
+    runPython(`d = DeadlineDataset()
+d.venues = lambda: [dict(id='unknown', name='Example', deadline_aoe='')]
+c = AoEClock.resolve('2035-09-01')
+print(json.dumps([d.upcoming(c,45), d.past(c)]))`),
+  ).toEqual([[], []]);
+});
+
+it("does not remind or escalate an undated workshop match", () => {
+  expect(
+    runPython(`m = load('adminbot-deadline-reminders')
+class Dataset:
+ def venues(self): return [dict(id='example', deadline_aoe='')]
+ def matches(self): return {'ongoing':[{'confirmed':True,'title':'Example','deadline_id':'example'}]}
+ def templates(self): return {}
+class Notifier:
+ mode='test'
+ def __init__(self, **kw): pass
+ def send_to_user(self,*a,**kw): raise AssertionError('Unexpected reminder')
+m.DeadlineDataset=Dataset
+m.SlackNotifier=Notifier
+m.load_roster=lambda: {}
+m.openreview_submitted_titles=lambda: set()
+sys.argv=['reminders','--now','2035-09-01']
+m.main()
+print(json.dumps(True))`),
+  ).toBe(true);
+});
+
+it("does not call the first published date an extension of an unknown deadline", () => {
+  expect(
+    runPython(`m=load('adminbot-deadline-collect')
+old=m.merge_history(m.classify(dict(id='example',name='Example',venue_type='workshop',venue_group='Example 2035 Workshops',track='workshop',deadline_aoe='',notification_aoe='',deadline_label='submission',link='https://example.org')))
+new=m.merge_history(dict(old,deadline_aoe='2035-09-25 23:59:00'), old)
+print(json.dumps([old['deadline_aoe'],old['deadline_id']==new['deadline_id'],new['deadline_extended']]))`),
+  ).toEqual(["", true, false]);
 });

@@ -1,5 +1,9 @@
 import { render } from "lit";
 import { beforeAll, describe, expect, it } from "vitest";
+import {
+  isPaperFeedbackSlot,
+  paperFeedbackSlots,
+} from "../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 import { adminBotPaperSlots } from "../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import {
@@ -185,7 +189,7 @@ describe("threshold", () => {
 
 describe("change history", () => {
   // The jsdom stub here exposes a localStorage object whose methods are missing, so the real
-  // one is replaced with a working in-memory store to exercise the persistence path.
+  // one is replaced with a working in-memory store to verify the old history key is purged.
   beforeAll(() => {
     const store = new Map<string, string>();
     Object.defineProperty(globalThis, "localStorage", {
@@ -239,6 +243,46 @@ describe("change history", () => {
     const state = emptyPaperGridState();
     applyPaste(state, [stored], 0, columnIndexOf("arxiv_url"), "junk");
     expect(diffForHistory(state, [stored])).toEqual([]);
+  });
+
+  it("never records paper passwords", () => {
+    const state = emptyPaperGridState();
+    state.edits.set("p1", new Map([["arxiv_paper_password", "new123"]]));
+    expect(diffForHistory(state, [paper("p1", { arxiv_paper_password: "old123" })])).toEqual([]);
+
+    clearHistory();
+    recordHistory([
+      {
+        at: new Date().toISOString(),
+        paperTitle: "Paper p1",
+        column: "arXiv paper password",
+        from: "old123",
+        to: "new123",
+        kind: "changed",
+      },
+    ]);
+    expect(loadHistory()).toEqual([]);
+  });
+
+  it("purges old browser history and keeps new entries in memory only", () => {
+    clearHistory();
+    const key = "openclaw.adminbot.papergrid.history.v1";
+    const entry = {
+      at: new Date().toISOString(),
+      paperTitle: "Paper p1",
+      column: "Poster",
+      from: "",
+      to: "new poster",
+      kind: "added" as const,
+    };
+    localStorage.setItem(key, JSON.stringify([entry]));
+
+    expect(loadHistory()).toEqual([]);
+    expect(localStorage.getItem(key)).toBeNull();
+    expect(recordHistory([entry])).toEqual([entry]);
+    expect(localStorage.getItem(key)).toBeNull();
+    clearHistory();
+    expect(loadHistory()).toEqual([]);
   });
 
   it("keeps only the most recent 30, newest first", () => {
@@ -375,6 +419,16 @@ describe("what a column asks for", () => {
       if (column.format.startsWith("https://")) {
         expect(column.format, `${column.label} reads as a real link`).toContain("…");
       }
+    }
+  });
+
+  // Regression: with no feedback case a feedback slot fell through to a link cell, and a link
+  // reaches the service as `url`, which the feedback kind reads as empty -- so pasting into it
+  // cleared the request instead of queueing one.
+  it("draws no cell for a feedback request, which only the feedback form can write", () => {
+    const slotKeys = new Set(gridColumns().flatMap((column) => (column.slot ? [column.slot] : [])));
+    for (const slot of Object.keys(paperFeedbackSlots)) {
+      expect(slotKeys.has(slot as never), `${slot} has a cell`).toBe(false);
     }
   });
 
@@ -623,10 +677,10 @@ describe("evidence columns", () => {
 
   const columnFor = (key: string) => gridColumns()[columnIndexOf(key)]!;
 
-  it("gives every slot in the registry a column, once", () => {
+  it("gives every evidence slot in the registry a column, once", () => {
     const slotted = gridColumns().flatMap((column) => (column.slot ? [column.slot] : []));
     expect(new Set(slotted).size, "no slot may appear twice").toBe(slotted.length);
-    for (const slot of adminBotPaperSlots) {
+    for (const slot of adminBotPaperSlots.filter((entry) => !isPaperFeedbackSlot(entry))) {
       expect(slotted, `${slot} should be reachable from the sheet`).toContain(slot);
     }
   });
@@ -809,6 +863,17 @@ describe("the sheet as drawn", () => {
     render(renderPaperGrid(props), host);
     return { host, state, loaded, saved, slotWrites, props };
   }
+
+  it("shows and edits native dates without losing the grid save path", () => {
+    const { host, state } = draw({ papers: [{ ...paperRow2(), started_on: "2026-11-03" }] });
+    const input = host.querySelector<HTMLInputElement>('input[type="date"]')!;
+    expect(input.value).toBe("2026-11-03");
+    expect(input.parentElement!.querySelector("output")!.textContent).toBe("2026-11-03");
+    input.value = "2026-03-11";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(input.parentElement!.querySelector("output")!.textContent).toBe("2026-03-11");
+    expect(pendingSaves(state, [paperRow2()])[0]).toMatchObject({ startedOn: "2026-03-11" });
+  });
 
   it("draws a chip per band, with the evidence one off", () => {
     const { host } = draw();

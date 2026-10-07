@@ -2,6 +2,7 @@ import {
   validateDeadlineProposalInput,
   type PublishedDeadlineRecord,
 } from "../../contracts/deadline-proposals.js";
+import { applyStageProposal } from "../../contracts/deadline-proposals.stage.js";
 
 /** Merge the public projection while keeping approved corrections authoritative. */
 export function mergePublishedDeadlines(
@@ -18,7 +19,11 @@ export function mergePublishedDeadlines(
     generated.map((row) => [(row as Record<string, unknown>).id as string, row]),
   );
   for (const records of byDeadline.values()) {
-    const update = publishedDeadlineVenue(records);
+    const primary = records.filter((record) => !record.deadline.stage?.venueId);
+    if (!primary.length) {
+      continue;
+    }
+    const update = publishedDeadlineVenue(primary);
     const original = merged.get(String(update.id)) as Record<string, unknown> | undefined;
     merged.set(
       String(update.id),
@@ -52,6 +57,21 @@ export function mergePublishedDeadlines(
         : update,
     );
   }
+  for (const record of published.toSorted(
+    (a, b) => a.published_at.localeCompare(b.published_at) || a.revision - b.revision,
+  )) {
+    if (!record.deadline.stage?.venueId) {
+      continue;
+    }
+    const target = merged.get(record.deadline_id) as Record<string, unknown> | undefined;
+    const validated = validateDeadlineProposalInput(record.deadline);
+    if (target && validated.ok) {
+      merged.set(
+        record.deadline_id,
+        applyStageProposal(target, validated.value, validated.instant),
+      );
+    }
+  }
   return [...merged.values()];
 }
 
@@ -76,13 +96,14 @@ function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<str
       ? `${parentGroup} Workshops`
       : parentGroup;
   const label =
-    entryType === "arr_commitment"
+    latest.deadline.stage?.label ??
+    (entryType === "arr_commitment"
       ? "ARR commitment"
       : entryType === "arr_direct_submission"
         ? "ARR submission"
         : entryType === "rebuttal"
           ? "rebuttal ends"
-          : "submission";
+          : "submission");
   return {
     id: latest.deadline_id,
     deadline_id: latest.deadline_id,
@@ -99,14 +120,20 @@ function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<str
     archival: false,
     stale: false,
     milestone:
-      entryType === "arr_commitment"
+      latest.deadline.stage?.milestone ??
+      (entryType === "arr_commitment"
         ? "commitment"
         : entryType === "rebuttal"
           ? "rebuttal"
-          : "direct_submission",
+          : "direct_submission"),
     schedule: [],
     deadline_label: label,
     deadline_aoe: aoe,
+    deadline_at: latest.deadline.deadlineTime ? new Date(instant).toISOString() : "",
+    deadline_planning_at: new Date(instant).toISOString(),
+    deadline_date: latest.deadline.deadlineDate,
+    deadline_timezone: latest.deadline.timezone,
+    deadline_time_precision: latest.deadline.deadlineTime ? "exact" : "date_only",
     link: latest.deadline.cfpUrl || latest.deadline.homepageUrl,
     homepage_url: latest.deadline.homepageUrl,
     ...(latest.deadline.cfpUrl ? { cfp_url: latest.deadline.cfpUrl } : {}),

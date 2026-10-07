@@ -23,6 +23,7 @@ import {
   type InferenceFetch,
   type InferenceGate,
 } from "./inference/gate.js";
+import { routeLlmFetch } from "./kernel/llm-gateway-client.js";
 import { currentTaskContext } from "./tasks/context.js";
 import { TaskInterruptedError, TaskNeedsRetryError } from "./tasks/runtime.js";
 
@@ -666,7 +667,8 @@ async function extractCvEntries(
     caller: "cv_scan.extract",
     wait: true,
     apiKey: env.VLLM_API_KEY?.trim() || "vllm-local",
-    fetchImpl: fetchImpl as unknown as InferenceFetch,
+    // Through the shared LLM gateway when one is configured (LLM_GATEWAY_URL).
+    fetchImpl: routeLlmFetch(fetchImpl, "local", env) as unknown as InferenceFetch,
     ...(signal ? { signal } : {}),
     request: {
       route: "chat/completions",
@@ -802,7 +804,8 @@ export async function draftMemberBlurb(
     ...(options?.wait !== undefined ? { wait: options.wait } : {}),
     ...(options?.submissionKey ? { submissionKey: options.submissionKey } : {}),
     apiKey: env.VLLM_API_KEY?.trim() || "vllm-local",
-    fetchImpl: fetchImpl as unknown as InferenceFetch,
+    // Through the shared LLM gateway when one is configured (LLM_GATEWAY_URL).
+    fetchImpl: routeLlmFetch(fetchImpl, "local", env) as unknown as InferenceFetch,
     ...(options?.signal ? { signal: options.signal } : {}),
     request: {
       route: "chat/completions",

@@ -2,6 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type {
   DeadlineProposal,
   DeadlineProposalInput,
@@ -20,9 +21,11 @@ import {
   headlineDeadlineEntry,
   mergeArrSubmissionDuplicates,
   milestoneDateLabel,
+  nextVenueStage,
   venueSchedule,
   workshopGroupLabel,
   priorDeadlineRevisions,
+  recentDeadlineActions,
   renderDeadlines,
   venueConferenceSites,
   venueLocationLabel,
@@ -31,6 +34,9 @@ import {
 } from "./deadlines.ts";
 
 beforeEach(() => {
+  vi.stubGlobal("localStorage", createStorageMock());
+  // Existing layout assertions use a fixed display zone, independent of the test machine.
+  window.localStorage.setItem("adminbot.deadlines.display-timezone", "Etc/GMT+12");
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-24T12:00:00Z"));
 });
@@ -38,15 +44,33 @@ beforeEach(() => {
 afterEach(() => {
   document.body.innerHTML = "";
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
-async function settle(container: HTMLElement): Promise<void> {
+async function settle(container: HTMLElement, allCatalog = true): Promise<void> {
   const element = container.querySelector("adminbot-deadlines-view") as {
     updateComplete?: Promise<unknown>;
   };
   await element?.updateComplete;
   await Promise.resolve();
   await element?.updateComplete;
+  // Existing catalog/layout cases explicitly exercise the unfiltered catalog.
+  // Default-filter coverage below opts out and checks the production defaults.
+  if (allCatalog && !container.dataset.catalogFiltersSelected) {
+    container.dataset.catalogFiltersSelected = "true";
+    for (const [selector, value] of [
+      ["[data-testid='deadline-filter-entry-type']", "all"],
+      ["[data-testid='deadline-filter-archival-status']", "all"],
+      ["[data-testid='deadline-filter-stage']", ""],
+    ]) {
+      const select = container.querySelector<HTMLSelectElement>(selector);
+      if (select) {
+        select.value = value;
+        select.dispatchEvent(new Event("change"));
+      }
+    }
+    await element?.updateComplete;
+  }
 }
 
 async function renderView(view: "cards" | "default" = "cards"): Promise<HTMLElement> {
@@ -162,13 +186,13 @@ describe("deadline board model", () => {
     expect(workshopSourceLinks(workshop)).toEqual({
       titleUrl: "https://workshop.example",
       sourceUrl: "https://workshop.example/cfp",
-      sourceLabel: "Call for papers",
+      sourceLabel: "CFP",
       openReviewUrl: "https://openreview.net/group?id=Example/Workshop",
     });
     expect(workshopSourceLinks({ ...workshop, cfp_url: "", openreview_url: "" })).toEqual({
       titleUrl: "https://workshop.example",
       sourceUrl: "https://workshop.example",
-      sourceLabel: "Official site",
+      sourceLabel: "Website",
       openReviewUrl: "",
     });
   });
@@ -189,6 +213,50 @@ describe("deadline board model", () => {
     expect(past.map((entry) => entry.instant)).toEqual(
       past.map((entry) => entry.instant).toSorted((left, right) => right - left),
     );
+  });
+
+  it("keeps a conference upcoming until its whole calendar is behind us", () => {
+    const entries = buildDeadlineBoardEntries();
+    // Months after ICLR 2027 closed both of its submissions and released decisions, and months
+    // before it meets in Yokohama on 26 April.
+    const now = Date.parse("2027-01-15T12:00:00Z");
+    const upcoming = entriesForDeadlinePeriod(entries, now, "upcoming");
+    const past = entriesForDeadlinePeriod(entries, now, "past");
+
+    const iclr = upcoming.filter((entry) => entry.venue.venue_group === "ICLR 2027");
+    expect(iclr).toHaveLength(2);
+    expect(iclr.every((entry) => entry.instant < now)).toBe(true);
+    expect(past.some((entry) => entry.venue.venue_group === "ICLR 2027")).toBe(false);
+    expect(nextVenueStage(iclr[0]!.venue, now)?.label).toBe("Conference");
+
+    // Ordered by the stage each row is waiting on, not by the deadline it already closed.
+    const targets = upcoming.map((entry) => nextVenueStage(entry.venue, now)!.instant);
+    expect(targets).toEqual(targets.toSorted((left, right) => left - right));
+
+    // Nothing published behind the deadline means nothing left to wait for: the row drops into
+    // Past the moment it closes, exactly as it always did.
+    const bare = {
+      deadline_aoe: "2026-09-14 23:59:59",
+      deadline_label: "full paper",
+      schedule: [],
+    } as unknown as DeadlineVenue;
+    expect(nextVenueStage(bare, now)).toBeUndefined();
+
+    // A conference is still happening on its last day, so a span is read to its end.
+    const meeting = {
+      ...bare,
+      schedule: [
+        {
+          milestone: "conference",
+          label: "Conference",
+          kind: "period",
+          starts: "2027-04-26",
+          ends: "2027-04-30",
+        },
+      ],
+    } as unknown as DeadlineVenue;
+    expect(nextVenueStage(meeting, Date.parse("2027-04-28T00:00:00Z"))?.label).toBe("Conference");
+    expect(nextVenueStage(meeting, Date.parse("2027-05-02T00:00:00Z"))).toBeUndefined();
   });
 
   it("applies type and archival-status filters independently", () => {
@@ -304,7 +372,7 @@ describe("deadline board model", () => {
       entry_type: "main_conference",
       venue_priority: "primary",
     } as DeadlineVenue;
-    expect(archivalLabelOf(venue)).toBe("Archival");
+    expect(archivalLabelOf(venue)).toContain("Archival");
     expect(archivalLabelOf({ ...venue, archival_status: "unknown" })).toBe(
       "Archival status not established",
     );
@@ -573,6 +641,18 @@ describe("venue schedule", () => {
 });
 
 describe("renderDeadlines", () => {
+  it("keeps the proposal button at the bottom and opens its dialog", async () => {
+    const container = await renderView("default");
+    const trigger = buttonNamed(container, "Propose a new deadline");
+    expect(container.querySelector(".deadline-board")?.lastElementChild).toBe(
+      trigger.parentElement,
+    );
+    expect(container.querySelector(".deadline-board__foot")).toBeNull();
+    trigger.click();
+    await settle(container);
+    expect(container.querySelector('[data-testid="deadline-proposal-form-panel"]')).not.toBeNull();
+  });
+
   it("lets a visitor submit without exposing proposal history", async () => {
     const container = document.createElement("div");
     document.body.append(container);
@@ -673,7 +753,7 @@ describe("renderDeadlines", () => {
     parentConference.dispatchEvent(new Event("input", { bubbles: true }));
     expect(
       (form.elements.namedItem("timezone") as HTMLSelectElement).selectedOptions[0]?.textContent,
-    ).toContain("AoE — Anywhere on Earth (UTC−12)");
+    ).toContain("Time zone unknown");
     const values = proposalInput();
     for (const [name, value] of Object.entries(values)) {
       if (name === "parentConference") {
@@ -839,27 +919,31 @@ describe("renderDeadlines", () => {
     );
   });
 
-  it("renders the standalone board's native hierarchy without an embedded page", async () => {
+  it("renders the board hierarchy without an embedded page", async () => {
     const container = await renderView();
 
     expect(container.querySelector("iframe")).toBeNull();
     expect(container.querySelector(".deadline-board__header")?.textContent).toContain(
-      "Past and upcoming conference & workshop deadlines.",
+      "Latest source check",
     );
     expect(container.querySelector(".deadline-board__hero")).not.toBeNull();
-    expect(container.querySelectorAll(".deadline-board__stats > div")).toHaveLength(4);
-    expect(container.querySelector(".deadline-board__stats")?.textContent).toContain("Due today");
+    // The hero stands alone above the board: the four summary tiles ("Matching deadlines",
+    // "Due today", "Due within 7/30 days") were removed, and the footer carries the count.
+    expect(container.querySelector(".deadline-board__stats")).toBeNull();
     expect(
       container.querySelector<HTMLInputElement>('.deadline-board__search input[type="search"]')
         ?.placeholder,
     ).toBe("Search conferences & workshops…");
     expect(
       container.querySelectorAll<HTMLSelectElement>(".deadline-board__facet select"),
-    ).toHaveLength(2);
+    ).toHaveLength(4);
     expect(
-      [...container.querySelectorAll<HTMLSelectElement>(".deadline-board__facet select")].every(
-        (select) =>
-          [...select.options].every((option) => / \(\d+\)\s*$/u.test(option.textContent ?? "")),
+      [
+        ...container.querySelectorAll<HTMLSelectElement>(
+          ".deadline-board__facet select:not([data-testid=deadline-filter-stage])",
+        ),
+      ].every((select) =>
+        [...select.options].every((option) => / \(\d+\)\s*$/u.test(option.textContent ?? "")),
       ),
     ).toBe(true);
     expect(container.textContent).toContain("Archival + non-archival");
@@ -871,10 +955,9 @@ describe("renderDeadlines", () => {
     expect(
       boardChildren.indexOf(container.querySelector(".deadline-board__controls")!),
     ).toBeLessThan(boardChildren.indexOf(container.querySelector(".deadline-board__overview")!));
-    expect(
-      container.querySelector(".deadline-board__guide")?.textContent?.replace(/\s+/gu, " "),
-    ).toContain(
-      "Non-archival does not count as publishing; you can still submit the paper elsewhere.",
+    expect(container.querySelector(".deadline-board__guide")).toBeNull();
+    expect(container.querySelector(".deadline-archival__explanation")?.textContent).toContain(
+      "Check",
     );
     expect(container.textContent).not.toContain("Jinesis Lab · Submission Deadlines");
     expect(container.textContent).not.toContain("countdowns update live");
@@ -889,8 +972,11 @@ describe("renderDeadlines", () => {
     button.click();
     await settle(container);
 
-    const groups = [...container.querySelectorAll(".deadline-card__group")].map(
-      (node) => node.textContent?.trim() ?? "",
+    const groups = [...container.querySelectorAll(".deadline-card")].map(
+      (card) =>
+        card.querySelector(".deadline-card__group")?.getAttribute("title") ??
+        card.querySelector(".deadline-card__name")?.textContent?.trim() ??
+        "",
     );
     expect(groups.length).toBeGreaterThan(1);
     expect(groups.every((label) => label.startsWith("ICLR 2027"))).toBe(true);
@@ -915,9 +1001,9 @@ describe("renderDeadlines", () => {
 
     buttonNamed(container, "Groups").click();
     await settle(container);
-    const headings = [...container.querySelectorAll(".deadline-group__heading strong")].map(
-      (heading) => heading.textContent?.trim(),
-    );
+    const headings = [
+      ...container.querySelectorAll(".deadline-group__heading .deadline-action__venue"),
+    ].map((heading) => heading.textContent?.trim());
     expect(headings).toContain("Workshops of EMNLP 2026");
     expect(headings).toContain("Workshops of NeurIPS 2026");
     // A conference now heads its own collapsible group, spelled the way the data spells it.
@@ -936,7 +1022,7 @@ describe("renderDeadlines", () => {
       (card) => card.dataset.entryType === "workshop" && card.dataset.archivalStatus === "mixed",
     )!;
     expect(workshop.querySelector(".deadline-card__urgency")?.textContent?.trim()).not.toBe("");
-    expect(workshop.querySelector(".deadline-archival")?.textContent?.trim()).toBe(
+    expect(workshop.querySelector(".deadline-archival")?.textContent?.trim()).toContain(
       "Archival + non-archival",
     );
 
@@ -949,7 +1035,7 @@ describe("renderDeadlines", () => {
     )!;
     expect(
       archivalConference.querySelector('[data-archival="archival"]')?.textContent?.trim(),
-    ).toBe("Archival");
+    ).toContain("Archival");
     expect(container.querySelectorAll(".deadline-priority")).toHaveLength(0);
     expect(container.querySelectorAll("[data-priority]")).toHaveLength(0);
     expect(container.textContent).not.toContain("Primary");
@@ -991,10 +1077,6 @@ describe("renderDeadlines", () => {
     expect(container.querySelector(".deadline-board__hero-meta")?.textContent).toMatch(
       /\d{2}:\d{2} AoE/u,
     );
-    expect(container.querySelector(".deadline-board__stats")?.textContent).toContain(
-      "Passed today",
-    );
-
     buttonNamed(container, "Groups").click();
     await settle(container);
     const groups = [...container.querySelectorAll<HTMLElement>(".deadline-group")];
@@ -1020,12 +1102,14 @@ describe("renderDeadlines", () => {
     const entryType = container.querySelector<HTMLSelectElement>(
       '[data-testid="deadline-filter-entry-type"]',
     )!;
-    entryType.value = "arr_commitment";
+    // Workshops rather than ARR commitments: Past holds only venues whose whole calendar is over,
+    // and an ARR commitment made by this date is still waiting on its conference.
+    entryType.value = "workshop";
     entryType.dispatchEvent(new Event("change", { bubbles: true }));
     await settle(container);
     const filteredCards = [...container.querySelectorAll<HTMLElement>(".deadline-card")];
     expect(filteredCards.length).toBeGreaterThan(0);
-    expect(filteredCards.every((card) => card.dataset.entryType === "arr_commitment")).toBe(true);
+    expect(filteredCards.every((card) => card.dataset.entryType === "workshop")).toBe(true);
     expect(buttonNamed(container, "Past").getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -1038,8 +1122,11 @@ describe("renderDeadlines", () => {
     button.click();
     await settle(container);
 
-    const groups = [...container.querySelectorAll(".deadline-card__group")].map(
-      (node) => node.textContent?.trim() ?? "",
+    const groups = [...container.querySelectorAll(".deadline-card")].map(
+      (card) =>
+        card.querySelector(".deadline-card__group")?.getAttribute("title") ??
+        card.querySelector(".deadline-card__name")?.textContent?.trim() ??
+        "",
     );
     expect(groups.length).toBeGreaterThan(50);
     expect(groups.every((label) => label.startsWith("Workshops of NeurIPS 2026"))).toBe(true);
@@ -1101,21 +1188,17 @@ describe("renderDeadlines", () => {
     await settle(container);
     const groupRow = container.querySelector(".deadline-group__row");
     expect(groupRow?.getAttribute("data-change")).toBe("extended");
-    expect(groupRow?.querySelector(".deadline-group__row-detail")?.textContent).toBe(
+    expect(groupRow?.querySelector(".deadline-group__date-stage > span")?.textContent).toBe(
       "ARR commitment",
     );
     expect(
-      groupRow?.querySelector(".deadline-group__row-date-wrap > .deadline-card__history"),
+      groupRow?.querySelector(".deadline-group__row-date-wrap .deadline-card__history"),
     ).not.toBeNull();
     expect(groupRow?.querySelector(".deadline-group__row-date .deadline-date")).not.toBeNull();
     expect(groupRow?.querySelector(".deadline-group__row-date .deadline-time")).not.toBeNull();
     expect(groupRow?.querySelector(".deadline-change__badge")).toBeNull();
     expect(buttonNamed(container, "All 1")).toBeDefined();
-    const stats = [...container.querySelectorAll(".deadline-board__stats > div")];
-    expect(stats[0]?.querySelector("dt")?.textContent).toBe("Matching deadlines");
-    expect(stats[0]?.querySelector("dd")?.textContent).toBe("1");
-    expect(stats[1]?.querySelector("dt")?.textContent).toBe("Due today");
-    expect(stats[1]?.querySelector("dd")?.textContent).toBe("0");
+    expect(container.querySelector(".deadline-board__foot")).toBeNull();
   });
 
   it("updates groups, summary, and the active group for combined filters", async () => {
@@ -1137,25 +1220,22 @@ describe("renderDeadlines", () => {
     expect(cards.length).toBeGreaterThan(0);
     expect(cards.every((card) => card.dataset.entryType === "arr_commitment")).toBe(true);
     expect(buttonNamed(container, `All ${cards.length}`).getAttribute("aria-pressed")).toBe("true");
-    expect(container.querySelector(".deadline-board__stats dd")?.textContent).toBe(
-      String(cards.length),
-    );
-    expect(container.querySelector(".deadline-board__foot")?.textContent).toContain(
-      `Showing ${cards.length} of ${cards.length} matching upcoming deadlines`,
-    );
+    expect(container.querySelector(".deadline-board__foot")).toBeNull();
 
-    // The priority facet is gone; the two that remain are the whole filter bar.
+    // Entry type, archival status, and location are independent facets.
     expect(container.querySelector('[data-testid="deadline-filter-priority"]')).toBeNull();
     expect(
       container.querySelectorAll<HTMLSelectElement>(".deadline-board__facet select"),
-    ).toHaveLength(2);
+    ).toHaveLength(4);
   });
 
   it("drops a conference open onto its camera-ready and conference dates", async () => {
     const container = await renderView("default");
     const iclr = [...container.querySelectorAll<HTMLElement>(".deadline-group")].find(
       (group) =>
-        group.querySelector(".deadline-group__heading strong")?.textContent?.trim() === "ICLR 2027",
+        group
+          .querySelector(".deadline-group__heading .deadline-action__venue")
+          ?.textContent?.trim() === "ICLR 2027",
     )!;
     expect(iclr.dataset.groupKind).toBe("conference");
 
@@ -1164,15 +1244,17 @@ describe("renderDeadlines", () => {
     expect(iclr.querySelector(".deadline-group__next-stage")?.textContent?.trim()).toBe(
       "Abstract deadline",
     );
-    expect(iclr.querySelector(".deadline-group__count")?.textContent?.trim()).toBe(
-      "2 deadlines · 4 more dates",
-    );
+    expect(
+      iclr.querySelector(".deadline-group__count")?.textContent?.replace(/\s+/g, " ").trim(),
+    ).toBe("2 deadlines · 4 more dates");
 
     iclr.querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
     await settle(container);
     const open = [...container.querySelectorAll<HTMLElement>(".deadline-group")].find(
       (group) =>
-        group.querySelector(".deadline-group__heading strong")?.textContent?.trim() === "ICLR 2027",
+        group
+          .querySelector(".deadline-group__heading .deadline-action__venue")
+          ?.textContent?.trim() === "ICLR 2027",
     )!;
     const timeline = open.querySelector<HTMLElement>(
       '[data-testid="deadline-conference-timeline"]',
@@ -1203,7 +1285,9 @@ describe("renderDeadlines", () => {
 
   it("switches among cards, grouped disclosures, and a complete table", async () => {
     const container = await renderView("default");
-    const count = Number(container.querySelector(".deadline-board__stats dd")?.textContent);
+    const count = Number(
+      container.querySelector('[data-testid="deadline-group-all"] span')?.textContent,
+    );
     expect(count).toBeGreaterThan(100);
     expect(
       [...container.querySelectorAll(".deadline-board__view button")].map((button) =>
@@ -1225,6 +1309,11 @@ describe("renderDeadlines", () => {
       (group) => group.hasAttribute("data-open"),
     )!;
     expect(openGroup.querySelector(".deadline-group__panel")?.hasAttribute("hidden")).toBe(false);
+    expect(openGroup.querySelectorAll(".deadline-group__shared-policy")).toHaveLength(1);
+    expect(openGroup.querySelector(".deadline-group__shared-policy")?.textContent).toMatch(
+      /Organizers must notify authors by[\s\S]*Source not verified/u,
+    );
+    expect(openGroup.textContent).not.toContain("Shared notification cutoff unverified.");
     expect(openGroup.querySelector(".deadline-group__row-date")?.textContent).toMatch(
       /\d{2}:\d{2} AoE/u,
     );
@@ -1241,7 +1330,7 @@ describe("renderDeadlines", () => {
       [...openGroup.querySelector(".deadline-group__row-note")!.children].map(
         (element) => element.className,
       ),
-    ).toEqual(["deadline-group__row-detail", "deadline-card__labels"]);
+    ).toEqual(["deadline-action__venue", "deadline-card__labels"]);
     expect(openGroup.querySelector(".deadline-group__row-name a")).not.toBeNull();
     expect(openGroup.querySelector(".deadline-card__source--button")).not.toBeNull();
     expect(buttonNamed(container, "Groups").getAttribute("aria-pressed")).toBe("true");
@@ -1263,32 +1352,36 @@ describe("renderDeadlines", () => {
     expect(buttonNamed(container, "Table").getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("keeps the countdown on the submission and the whole timeline beside it", async () => {
+  it("shows the earliest upcoming prerequisite and keeps the whole timeline available", async () => {
     const container = await renderView();
     const iclr = [...container.querySelectorAll<HTMLElement>(".deadline-card")].find(
       (card) =>
         card.querySelector(".deadline-card__name")?.textContent?.trim() === "ICLR 2027" &&
-        card.querySelector(".deadline-card__stage")?.textContent?.trim() === "Full paper",
+        card.querySelector(".deadline-card__stage")?.textContent?.trim() === "Abstract",
     )!;
 
-    // The highlighted date and the countdown are still the submission, and nothing else on the
-    // card counts down: a rebuttal window six months out must not compete with what is due next.
-    expect(iclr.querySelector(".deadline-card__date")?.textContent).toContain("Sep 25, 2026");
+    // The earlier prerequisite drives the card; the full schedule remains expandable.
+    expect(iclr.querySelector(".deadline-card__date")?.textContent).toContain("Sep 18, 2026");
     expect(iclr.querySelector(".deadline-card__countdown")?.textContent?.trim()).toMatch(/^\d+d /u);
 
-    // Five entries, so the list is behind a disclosure rather than doubling the card's height.
+    // Six entries, so the list is behind a disclosure rather than doubling the card's height.
     const schedule = iclr.querySelector<HTMLElement>('[data-testid="deadline-schedule"]')!;
-    expect(schedule.tagName).toBe("DETAILS");
-    expect(schedule.querySelector("summary")?.textContent).toContain("Full timeline (5)");
+    const toggle = schedule.querySelector<HTMLButtonElement>(".deadline-schedule-toggle")!;
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    toggle.click();
+    await settle(container);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(
       [...schedule.querySelectorAll(".deadline-card__milestone")].map((row) => [
         row.querySelector(".deadline-card__milestone-label")?.textContent?.trim(),
-        row.querySelector(".deadline-card__milestone-date")?.textContent?.trim(),
+        row
+          .querySelector(".deadline-card__milestone-date")
+          ?.textContent?.replace(/\s+/g, " ")
+          .trim(),
       ]),
     ).toEqual([
-      // The submission leads its own timeline, so the list reads as a whole sequence rather than
-      // starting mid-story. It is the same date the card counts down to above, not a second one.
-      ["Full paper", "Sep 25, 2026 AoE"],
+      ["Abstract", "Sep 18, 2026 · 23:59 AoE"],
+      ["Full paper", "Sep 25, 2026 · 23:59 AoE"],
       ["Reviews released", "Nov 5, 2026"],
       ["Author-reviewer discussion", "Nov 5 – Nov 18, 2026"],
       ["Final decisions", "Dec 16, 2026"],
@@ -1297,17 +1390,13 @@ describe("renderDeadlines", () => {
     expect(schedule.querySelector(".deadline-card__countdown")).toBeNull();
   });
 
-  it("leaves a lone notification date inline, where the old note was", async () => {
+  it("does not present a shared organizer cutoff as a workshop schedule stage", async () => {
     const container = await renderView();
-    const workshop = [...container.querySelectorAll<HTMLElement>(".deadline-card")].find(
-      (card) =>
-        card.dataset.entryType === "workshop" &&
-        card.querySelector('[data-testid="deadline-schedule"]'),
-    )!;
-    const schedule = workshop.querySelector<HTMLElement>('[data-testid="deadline-schedule"]')!;
-    // One or two lines cost nothing open, and that is what nearly every workshop has.
-    expect(schedule.tagName).toBe("UL");
-    expect(schedule.textContent).toContain("Accept/reject");
+    for (const card of container.querySelectorAll<HTMLElement>('[data-entry-type="workshop"]')) {
+      card.querySelector<HTMLButtonElement>(".deadline-schedule-toggle")?.click();
+    }
+    await settle(container);
+    expect(container.querySelector('[data-milestone="notification_by"]')).toBeNull();
   });
 
   it("links a workshop name to its homepage and keeps source actions separate", async () => {
@@ -1328,9 +1417,7 @@ describe("renderDeadlines", () => {
     const actions = [
       ...workshop.querySelectorAll<HTMLAnchorElement>(".deadline-card__source--button"),
     ];
-    const source = actions.find((link) =>
-      /Call for papers|Official site/u.test(link.textContent || ""),
-    )!;
+    const source = actions.find((link) => /CFP|Website/u.test(link.textContent || ""))!;
     const review = actions.find((link) => link.textContent?.includes("OpenReview"))!;
     expect(title.href).toBe(venue.homepage_url);
     expect(source.href).toBe(venue.cfp_url);
@@ -1366,6 +1453,64 @@ describe("renderDeadlines", () => {
     await vi.advanceTimersByTimeAsync(2_000);
 
     expect(read()).not.toBe(before);
+  });
+
+  it("passes the abstract row and advances the conference to full paper at the cutoff", async () => {
+    const abstract = DEADLINE_VENUES.find((venue) => venue.id === "iclr2027_abstract")!;
+    const cutoff = Date.parse(abstract.deadline_aoe.replace(" ", "T") + "-12:00");
+    vi.setSystemTime(cutoff - 1_000);
+    const container = await renderView("default");
+    const group = () =>
+      [...container.querySelectorAll<HTMLElement>(".deadline-group")].find(
+        (entry) =>
+          entry
+            .querySelector(".deadline-group__heading .deadline-action__venue")
+            ?.textContent?.trim() === "ICLR 2027",
+      )!;
+    group().querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
+    await settle(container);
+    const rows = () => [...group().querySelectorAll(".deadline-group__row-countdown")];
+    expect(rows()[0].textContent?.trim()).toBe("0d 00:00:01");
+    await vi.advanceTimersByTimeAsync(1_000);
+    await settle(container);
+    expect(rows()[0].textContent?.trim()).toBe("passed");
+    expect(rows()[1].textContent?.trim()).toMatch(/^7d /u);
+    expect(group().querySelector(".deadline-group__next-stage")?.textContent?.trim()).toBe(
+      "Full paper",
+    );
+    for (const [view, selector, countdown] of [
+      ["Cards", ".deadline-card", ".deadline-card__countdown"],
+      ["Table", ".deadline-table tbody tr", ".deadline-table__countdown"],
+    ]) {
+      buttonNamed(container, view).click();
+      await settle(container);
+      const row = [...container.querySelectorAll(selector)].find(
+        (node) =>
+          node.textContent?.includes("ICLR 2027") &&
+          node
+            .querySelector(".deadline-card__date, .deadline-table__date-row")
+            ?.textContent?.trim()
+            .startsWith("Sep 25, 2026"),
+      )!;
+      expect(row.querySelector(countdown)?.textContent?.trim()).toMatch(/^7d /u);
+      expect(row.getAttribute("data-urgency")).not.toBe("passed");
+    }
+  });
+
+  it("names the next action and its date after all ICLR submissions close", async () => {
+    vi.setSystemTime(new Date("2026-09-27T12:00:00Z"));
+    const container = await renderView("default");
+    const chip = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.replace(/\s+/gu, " ").trim() === "ICLR 2027 2",
+    )!;
+    chip.click();
+    await settle(container);
+    expect(container.querySelector(".deadline-board__hero-meta")?.textContent).toContain(
+      "Author-reviewer discussion",
+    );
+    expect(container.querySelector(".deadline-board__hero-date")?.textContent?.trim()).toBe(
+      "Nov 5 – Nov 18, 2026",
+    );
   });
 
   it("stops its timer when removed", async () => {
@@ -1424,6 +1569,7 @@ it("never displays bundled deadlines when the first live request fails and suppo
   const load = vi.spyOn(store, "listPublished").mockRejectedValue(new Error("offline"));
   render(renderDeadlines({ proposalStore: store }), container);
   await settle(container);
+  expect(load).toHaveBeenCalledTimes(1);
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Could not load live deadlines",
   );
@@ -1588,6 +1734,75 @@ describe("add to my timeline", () => {
     expect(addButtons(container)).toHaveLength(0);
   });
 
+  it.each(["Cards", "Groups", "Table"])(
+    "keeps %s actions available through a pending save and retry",
+    async (view) => {
+      let finish!: (saved: boolean) => void;
+      const onSaveTimeline = vi.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const container = await renderSignedIn({ timelineMilestones: [], onSaveTimeline });
+      buttonNamed(container, view).click();
+      await settle(container);
+      const button = addButtons(container)[0];
+      expect(button).toBeDefined();
+      const label = button.getAttribute("aria-label");
+      button.click();
+      await settle(container);
+      expect(button.getAttribute("aria-busy")).toBe("true");
+      expect(addButtons(container).every((action) => action.disabled)).toBe(true);
+      expect(container.querySelector('a[aria-label^="Website"]')).not.toBeNull();
+      button.click();
+      expect(onSaveTimeline).toHaveBeenCalledTimes(1);
+      finish(false);
+      await settle(container);
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute("aria-label")).toBe(label);
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain("Couldn't add it");
+      button.click();
+      await settle(container);
+      expect(onSaveTimeline).toHaveBeenCalledTimes(2);
+      finish(true);
+      await settle(container);
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+    },
+  );
+
+  it("adds the displayed upcoming stage rather than the passed submission to the timeline", async () => {
+    const store = new TestProposalStore();
+    const workshop = {
+      ...DEADLINE_VENUES.find((v) => v.entry_type === "workshop")!,
+      deadline_aoe: "2026-08-20 23:59:00",
+      deadline_at: "2026-08-21T11:59:00Z",
+      schedule: [
+        {
+          milestone: "notification",
+          label: "Decisions",
+          kind: "date" as const,
+          date: "2026-08-29",
+        },
+      ],
+    };
+    vi.spyOn(store, "listPublished").mockResolvedValue([workshop]);
+    const save = vi.fn(async () => true);
+    const container = await renderSignedIn({
+      proposalStore: store,
+      timelineMilestones: [],
+      onSaveTimeline: save,
+    });
+    expect(container.textContent).toContain(workshop.name);
+    expect(container.textContent).toContain("Decisions");
+    expect(addButtons(container)).toHaveLength(1);
+    addButtons(container)[0].click();
+    await settle(container);
+    expect(save).toHaveBeenCalledWith([
+      expect.objectContaining({ date: "2026-08-29", label: `${workshop.name} — Decisions` }),
+    ]);
+  });
+
   it("says so when the save fails", async () => {
     const container = await renderSignedIn({
       timelineMilestones: [],
@@ -1660,7 +1875,7 @@ describe("venue location", () => {
   });
 
   it("carries conference_location through the generated dataset", () => {
-    // Guards the collector's key projection: the field is on the canonical venues.json, and
+    // Guards the collector's key projection: the field is on the canonical deadlines.json, and
     // dropping it from the slim UI dataset would empty the board's locations silently.
     const located = DEADLINE_VENUES.filter((venue) => venueLocationSites(venue).length);
     expect(located.length).toBeGreaterThan(0);
@@ -1675,7 +1890,7 @@ describe("venue location", () => {
     ]);
   });
 
-  it("shows the location on a workshop card, listing every site", async () => {
+  it("keeps workshop locations in details, listing every site", async () => {
     const container = await renderView();
     const cards = [...container.querySelectorAll<HTMLElement>(".deadline-card")];
     const neurips = cards.find(
@@ -1683,7 +1898,10 @@ describe("venue location", () => {
         card.dataset.entryType === "workshop" &&
         card.querySelector(".deadline-card__group-name")?.textContent?.includes("NeurIPS 2026"),
     )!;
-    const location = neurips.querySelector<HTMLElement>(".deadline-location")!;
+    expect(neurips.querySelector(".deadline-card__context .deadline-location")).toBeNull();
+    const location = neurips.querySelector<HTMLElement>(
+      ".deadline-card__history-panel .deadline-location",
+    )!;
     expect(location.querySelector(".deadline-location__sites")?.textContent?.trim()).toBe(
       "Sydney, Australia · Atlanta, USA · Paris, France",
     );
@@ -1701,32 +1919,23 @@ describe("venue location", () => {
     expect(single.getAttribute("title")).toBe("Budapest, Hungary");
   });
 
-  it("gives the table a Location column, with an em dash where none is published", async () => {
+  it("moves table locations into deadline details", async () => {
     const container = await renderView();
     buttonNamed(container, "Table").click();
     await settle(container);
     const headings = [...container.querySelectorAll(".deadline-table th")].map((cell) =>
       cell.textContent?.trim(),
     );
-    expect(headings).toContain("Location");
-
-    const cells = [...container.querySelectorAll<HTMLElement>(".deadline-table__location")];
-    expect(cells.length).toBeGreaterThan(0);
-    // The column heading already names the field, so the cell carries no pin icon.
-    expect(
-      container.querySelector(".deadline-table__location .deadline-location__icon"),
-    ).toBeNull();
-    expect(cells.some((cell) => cell.textContent?.trim() === "Budapest, Hungary")).toBe(true);
-    expect(
-      cells.some(
-        (cell) => cell.textContent?.trim() === "Sydney, Australia · Atlanta, USA · Paris, France",
-      ),
-    ).toBe(true);
-    // ARR cycles publish no location and must still occupy the column.
-    expect(cells.some((cell) => cell.textContent?.trim() === "—")).toBe(true);
+    expect(headings).not.toContain("Location");
+    expect(container.querySelector(".deadline-table__location")).toBeNull();
+    const details = [...container.querySelectorAll(".deadline-details__facts")].map(
+      (facts) => facts.textContent,
+    );
+    expect(details.some((text) => text?.includes("Budapest, Hungary"))).toBe(true);
+    expect(details.some((text) => text?.includes("Not published"))).toBe(true);
   });
 
-  it("puts the location on the group heading and on every workshop row beneath it", async () => {
+  it("keeps group locations in each workshop’s details", async () => {
     const container = await renderView();
     buttonNamed(container, "Groups").click();
     await settle(container);
@@ -1734,17 +1943,10 @@ describe("venue location", () => {
       (section) =>
         section.dataset.standalone !== "true" &&
         section
-          .querySelector(".deadline-group__heading strong")
+          .querySelector(".deadline-group__heading .deadline-action__venue")
           ?.textContent?.includes("NeurIPS 2026"),
     )!;
-    expect(
-      group
-        .querySelector(".deadline-group__heading .deadline-location__sites")
-        ?.textContent?.trim(),
-    ).toBe("Sydney, Australia · Atlanta, USA · Paris, France");
-    // Every workshop row carries one too, and names its own city rather than repeating the
-    // heading. The heading keeps the full list because it stands for every row beneath it, and
-    // because that is what a collapsed group shows.
+    expect(group.querySelector(".deadline-group__heading .deadline-location")).toBeNull();
     const rows = [...group.querySelectorAll<HTMLElement>(".deadline-group__row")];
     expect(rows.length).toBeGreaterThan(1);
     const sites = rows.map((row) =>
@@ -1756,7 +1958,7 @@ describe("venue location", () => {
     expect(sites.some((site) => site === "Sydney, Australia")).toBe(true);
   });
 
-  it("puts the location on a standalone group row, which has no heading above it", async () => {
+  it("keeps a standalone group location in details", async () => {
     // Searching down to one workshop leaves its bundle with a single row, which the board
     // renders as a standalone card — no heading, so the row itself has to carry the location.
     const container = await renderView();
@@ -1778,4 +1980,831 @@ describe("venue location", () => {
         ?.textContent?.trim(),
     ).toBe("Budapest, Hungary");
   });
+});
+
+function locationFixtures(): DeadlineVenue[] {
+  return [
+    ["paris", "Paris, France", "Paris, France; Atlanta, USA"],
+    ["atlanta", "Atlanta, USA", "Paris, France; Atlanta, USA"],
+    ["inherited", "", "Paris, France; Atlanta, USA"],
+    ["unknown", "", ""],
+  ].map(([id, workshop_location, conference_location]) => ({
+    ...DEADLINE_VENUES[0],
+    id,
+    deadline_id: id,
+    venue_id: id,
+    venue_aliases: [],
+    name: `Location ${id}`,
+    venue_group: "Example Workshops",
+    venue_type: "workshop",
+    entry_type: "workshop",
+    deadline_aoe: "2035-09-25 23:59:00",
+    notification_aoe: "",
+    schedule: [],
+    workshop_location,
+    conference_location,
+  }));
+}
+
+it("filters on workshop sites, inherited possibilities, and unknown locations", () => {
+  const entries = buildDeadlineBoardEntries(locationFixtures());
+  const matching = (location: string, query = "") =>
+    filterDeadlineBoardEntries(entries, "", query, {
+      entryType: "all",
+      archivalStatus: "all",
+      location,
+    }).map((entry) => entry.venue.id);
+  expect(matching("Paris, France")).toEqual(["inherited", "paris"]);
+  expect(matching("Atlanta, USA")).toEqual(["atlanta", "inherited"]);
+  expect(matching("unknown")).toEqual(["unknown"]);
+  expect(matching("Paris, France", "paris")).toEqual(["paris"]);
+  expect(matching("")).toHaveLength(4);
+});
+
+it("keeps location selection across views and allows returning to all locations", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const store = new TestProposalStore();
+  vi.spyOn(store, "listPublished").mockResolvedValue(locationFixtures());
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  const select = container.querySelector<HTMLSelectElement>(
+    '[data-testid="deadline-filter-location"]',
+  )!;
+  select.value = "Paris, France";
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle(container);
+  for (const view of ["Cards", "Table", "Groups"]) {
+    buttonNamed(container, view).click();
+    await settle(container);
+    expect(container.textContent).toContain("Location paris");
+    expect(container.textContent).toContain("Location inherited");
+    expect(container.textContent).not.toContain("Location atlanta");
+    expect(
+      [...container.querySelectorAll("a")].some(
+        (link) => link.textContent?.trim() === "Location unknown",
+      ),
+    ).toBe(false);
+    expect(select.value).toBe("Paris, France");
+  }
+  select.value = "unknown";
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  expect(container.querySelectorAll(".deadline-card")).toHaveLength(1);
+  select.value = "";
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle(container);
+  expect(container.querySelectorAll(".deadline-card")).toHaveLength(4);
+});
+
+it("shows the source date and a plain conservative countdown in cards", async () => {
+  const store = new TestProposalStore();
+  store.listPublished = async () => [
+    {
+      ...DEADLINE_VENUES[0],
+      id: "date-only",
+      deadline_id: "date-only",
+      name: "Example date-only workshop",
+      deadline_aoe: "2026-08-28 22:00:00",
+      deadline_at: "",
+      deadline_date: "2026-08-30",
+      deadline_time_precision: "date_only",
+      deadline_timezone: "",
+      deadline_planning_at: "2026-08-29T10:00:00Z",
+      revisions: [],
+      schedule: [],
+    },
+  ];
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(
+    renderDeadlines({ proposalStore: store, role: "member", memberId: "member-1" }),
+    container,
+  );
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  const card = container.querySelector(".deadline-card")!;
+  expect(card.textContent).toContain("Aug 30, 2026");
+  expect(card.textContent).toContain("time unknown");
+  expect(card.querySelector(".deadline-card__countdown")?.textContent?.trim()).toBe("4d 22:00:00");
+  expect(card.textContent).not.toContain("Plan within");
+  expect(card.textContent).toContain("4 days left");
+  expect(card.textContent).not.toContain("Time unknown");
+  expect(card.querySelector(".deadline-card__date")?.textContent).not.toContain("22:00 AoE");
+  container.querySelector<HTMLButtonElement>('button[aria-label^="Suggest correction:"]')!.click();
+  await settle(container);
+  expect(container.querySelector<HTMLInputElement>('input[name="deadlineDate"]')?.value).toBe(
+    "2026-08-30",
+  );
+  expect(container.querySelector<HTMLInputElement>('input[name="deadlineTime"]')?.value).toBe("");
+  expect(container.querySelector<HTMLSelectElement>('select[name="timezone"]')?.value).toBe("");
+});
+
+it("labels a learned closing time as updated instead of extended", () => {
+  const venue = {
+    ...DEADLINE_VENUES[0],
+    deadline_aoe: "2035-02-01 23:59:00",
+    deadline_time_precision: "exact",
+    revisions: [
+      {
+        observed_at: "2035-01-01T00:00:00Z",
+        deadline_aoe: "2035-02-01 00:00:00",
+        deadline_date: "2035-02-01",
+        deadline_timezone: "AoE",
+        deadline_time_precision: "date_only",
+      },
+    ],
+  };
+  expect(deadlineChangeSummary(venue)?.kind).toBe("updated");
+  expect(deadlineChangeLabel(venue)).toContain("time unknown");
+  expect(deadlineChangeLabel(venue)).not.toContain("00:00 AoE");
+});
+
+it("persists display zones across login state and updates cards, groups, table and history without changing countdowns", async () => {
+  window.localStorage.clear();
+  const store = new TestProposalStore();
+  store.listPublished = async () => [
+    {
+      ...DEADLINE_VENUES[0],
+      id: "zone-example",
+      deadline_id: "zone-example",
+      name: "Timezone example",
+      deadline_aoe: "2026-09-25 23:59:00",
+      deadline_at: "2026-09-26T11:59:00Z",
+      deadline_timezone: "AoE",
+      deadline_time_precision: "exact",
+      schedule: [],
+      notification_aoe: "",
+      revisions: [
+        {
+          observed_at: "2026-08-01T00:00:00Z",
+          deadline_aoe: "2026-09-24 23:59:00",
+          deadline_at: "2026-09-25T11:59:00Z",
+          deadline_timezone: "AoE",
+        },
+      ],
+    },
+  ];
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  const countdown = container.querySelector(".deadline-card__countdown")!.textContent;
+  const select = async (zone: string) => {
+    const input = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Display timezone"]',
+    )!;
+    input.value = zone;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle(container);
+  };
+  await select("Europe/Zurich");
+  expect(container.querySelector(".deadline-card__date")!.textContent).toContain("13:59 UTC+2");
+  expect(container.querySelector(".deadline-details__history")!.textContent).toContain(
+    "Sep 25, 2026",
+  );
+  expect(container.querySelector(".deadline-details__facts")!.textContent).toContain("Source date");
+  expect(container.querySelector(".deadline-card__countdown")!.textContent).toBe(countdown);
+  await select("Original");
+  expect(container.querySelector(".deadline-card__date")!.textContent).toContain("23:59 AoE");
+  await select("America/Toronto");
+  buttonNamed(container, "Groups").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-group__row-date")!.textContent).toContain(
+    "07:59 UTC-4",
+  );
+  buttonNamed(container, "Table").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-table__date")!.textContent).toContain("07:59 UTC-4");
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Display timezone"]')!;
+  await select("invalid zone");
+  expect(input.value).toBe("Toronto (ET)");
+  render(
+    renderDeadlines({ proposalStore: store, role: "member", memberId: "example-member" }),
+    container,
+  );
+  await settle(container);
+  expect(input.value).toBe("Toronto (ET)");
+  container.remove();
+  const reopened = await renderView();
+  expect(
+    reopened.querySelector<HTMLInputElement>('input[aria-label="Display timezone"]')!.value,
+  ).toBe("Toronto (ET)");
+});
+
+it("keeps workshop stage, date, countdown and expansion consistent across views", async () => {
+  const venue = {
+    ...DEADLINE_VENUES.find((v) => v.venue_type === "workshop")!,
+    abstract_requirement: "not_required",
+    abstract_deadline_id: "",
+    notification_policy: undefined,
+    notification_previous_aoe: "",
+    id: "stage-fixture",
+    name: "Stage workshop",
+    venue_group: "Stage workshops",
+    deadline_at: "2026-08-20T12:00:00Z",
+    deadline_aoe: "2026-08-20 00:00:00",
+    deadline_time_precision: "exact",
+    deadline_label: "Submission",
+    notification_aoe: "",
+    schedule: [{ milestone: "notification", label: "Decisions", kind: "date", date: "2026-08-25" }],
+  } as DeadlineVenue;
+  const store = new TestProposalStore();
+  store.listPublished = async () => [venue];
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-card__stage")?.textContent).toBe("Decisions");
+  expect(container.querySelector(".deadline-card__date")?.textContent).toContain("Aug 25, 2026");
+  expect(container.querySelector(".deadline-card__countdown")?.textContent?.trim()).toBe(
+    "1d 23:59:59",
+  );
+  const toggle = container.querySelector<HTMLButtonElement>(
+    ".deadline-card .deadline-schedule-toggle",
+  )!;
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(toggle.textContent).toContain("Decisions");
+  expect(container.querySelector(".deadline-card__group")?.textContent).not.toContain("Decisions");
+  toggle.click();
+  await settle(container);
+  expect(
+    container.querySelector('.deadline-card__milestone[data-next="true"]')?.textContent,
+  ).toContain("Decisions");
+  buttonNamed(container, "Table").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-table__countdown")?.textContent?.trim()).toBe(
+    "1d 23:59:59",
+  );
+  expect(container.querySelector(".deadline-table__stage")?.textContent).toContain("Decisions");
+  expect(container.querySelectorAll(".deadline-table__schedule-row")).toHaveLength(2);
+  buttonNamed(container, "Groups").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-group__row-date")?.textContent).toContain(
+    "Aug 25, 2026",
+  );
+  expect(
+    container.querySelector('.deadline-workshop-schedule [data-stage-state="next"]')?.textContent,
+  ).toContain("Decisions");
+  vi.setSystemTime(new Date("2026-09-01T12:00:00Z"));
+  await vi.advanceTimersByTimeAsync(1000);
+  buttonNamed(container, "Past").click();
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-card__stage")?.textContent).toBe("Submission");
+  expect(container.querySelector(".deadline-card__date")?.textContent).toContain("Aug 20, 2026");
+  expect(container.querySelector(".deadline-card__countdown")?.textContent?.trim()).toBe("passed");
+});
+
+it("filters by a selected stage and uses its date across views and timeline", async () => {
+  const venue = {
+    ...DEADLINE_VENUES.find((v) => v.venue_type === "workshop")!,
+    id: "selected-stage",
+    deadline_id: "selected-stage",
+    venue_id: "selected-stage",
+    name: "Selected-stage workshop",
+    venue_group: "Stage workshops",
+    milestone: "full_paper",
+    deadline_label: "Submission",
+    deadline_at: "2026-08-25T12:00:00Z",
+    deadline_aoe: "2026-08-25 00:00:00",
+    notification_aoe: "",
+    notification_policy: undefined,
+    abstract_deadline_id: "",
+    schedule: [
+      { milestone: "notification", label: "Decisions", kind: "date", date: "2026-08-28" },
+      {
+        milestone: "camera_ready",
+        label: "Camera-ready",
+        kind: "deadline",
+        date: "2026-09-01 23:59:00",
+      },
+    ],
+  } as DeadlineVenue;
+  const missing = {
+    ...venue,
+    id: "missing-stage",
+    deadline_id: "missing-stage",
+    name: "No decision date",
+    schedule: [],
+  };
+  const store = new TestProposalStore();
+  store.listPublished = async () => [venue, missing];
+  const saved = vi.fn(async (_rows: unknown[]) => true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(
+    renderDeadlines({
+      proposalStore: store,
+      memberId: "member-1",
+      role: "member",
+      timelineMilestones: [],
+      onSaveTimeline: saved,
+    }),
+    container,
+  );
+  await settle(container);
+  const select = container.querySelector<HTMLSelectElement>(
+    '[data-testid="deadline-filter-stage"]',
+  )!;
+  expect([...select.options].find((option) => option.value === "")?.textContent).toBe(
+    "All stages (2)",
+  );
+  expect(select.querySelector('option[value="notification"]')?.textContent).toBe("Decisions (1)");
+  select.value = "notification";
+  select.dispatchEvent(new Event("change"));
+  await settle(container);
+  expect(container.querySelector(".deadline-group__row-countdown")?.textContent?.trim()).toBe(
+    "4d 23:59:59",
+  );
+  expect(container.querySelector(".deadline-board__hero")?.textContent).toContain("Decisions");
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  expect(container.querySelectorAll(".deadline-card")).toHaveLength(1);
+  expect(container.querySelector(".deadline-card__stage")?.textContent).toBe("Decisions");
+  expect(container.querySelector(".deadline-card__date")?.textContent).toContain("Aug 28, 2026");
+  container
+    .querySelector<HTMLButtonElement>('.deadline-card [data-testid="deadline-add-to-timeline"]')!
+    .click();
+  await settle(container);
+  expect(saved).toHaveBeenCalledWith([
+    expect.objectContaining({ date: "2026-08-28", label: "Selected-stage workshop — Decisions" }),
+  ]);
+  expect(saved.mock.calls[0]![0][0]).not.toHaveProperty("time");
+  buttonNamed(container, "Table").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-table__countdown")?.textContent?.trim()).toBe(
+    "4d 23:59:59",
+  );
+  expect(container.querySelector(".deadline-table__stage")?.textContent).toContain("Decisions");
+  vi.setSystemTime(new Date("2026-08-30T12:00:00Z"));
+  await vi.advanceTimersByTimeAsync(1000);
+  buttonNamed(container, "Past").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-table__stage")?.textContent).toContain("Decisions");
+  expect(container.querySelector(".deadline-table__countdown")?.textContent?.trim()).toBe("passed");
+  expect(venue.deadline_label).toBe("Submission");
+});
+
+it("does not repeat a selected shared conference stage across its submission rows", () => {
+  const venue = {
+    ...DEADLINE_VENUES[0],
+    venue_id: "shared-conference",
+    track: "main",
+    submission_type: "",
+    deadline_aoe: "2026-09-01 23:59:00",
+    deadline_at: "2026-09-02T11:59:00Z",
+    abstract_deadline_id: undefined,
+    schedule: [
+      { milestone: "notification", label: "Decisions", kind: "date" as const, date: "2026-10-01" },
+    ],
+  };
+  const venues = [
+    { ...venue, id: "abstract-row", deadline_id: "abstract-row", milestone: "abstract" },
+    { ...venue, id: "paper-row", deadline_id: "paper-row", milestone: "submission" },
+  ];
+  const rows = entriesForDeadlinePeriod(
+    buildDeadlineBoardEntries(venues),
+    Date.parse("2026-08-24T12:00:00Z"),
+    "upcoming",
+    "notification",
+    "UTC",
+    venues,
+  );
+  expect(rows).toHaveLength(1);
+  expect(rows[0].stage?.label).toBe("Decisions");
+  expect(conferenceTimeline(rows, venues)).toHaveLength(1);
+});
+
+it("prioritizes the next action over earlier informational dates", () => {
+  const venue = {
+    ...DEADLINE_VENUES[0],
+    id: "next-stage",
+    venue_type: "conference",
+    deadline_aoe: "2026-08-01 23:59:00",
+    deadline_at: "2026-08-02T11:59:00Z",
+    notification_aoe: "",
+    schedule: [
+      { milestone: "camera_ready", label: "Camera-ready", kind: "date", date: "2026-10-01" },
+      { milestone: "notification", label: "Decisions", kind: "date", date: "2026-09-01" },
+    ],
+  } as DeadlineVenue;
+  const rows = entriesForDeadlinePeriod(buildDeadlineBoardEntries([venue]), Date.now(), "upcoming");
+  expect(rows[0]?.stage?.label).toBe("Camera-ready");
+});
+
+it("proposes a single stage for an existing past venue without entering venue details again", async () => {
+  const store = new TestProposalStore();
+  const past = {
+    ...DEADLINE_VENUES[0],
+    id: "past",
+    deadline_id: "past",
+    name: "Past Example Conference",
+    deadline_aoe: "2025-01-01 23:59:00",
+    deadline_at: "2025-01-02T11:59:00Z",
+    schedule: [],
+    notification_aoe: "",
+    homepage_url: "https://example.org",
+  };
+  store.listPublished = async () => [past];
+  const submit = vi.spyOn(store, "submit");
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(
+    renderDeadlines({ proposalStore: store, role: "member", memberId: "member-1" }),
+    container,
+  );
+  await settle(container);
+  buttonNamed(container, "Propose a new deadline").click();
+  await settle(container);
+  const picker = container.querySelector(
+    "adminbot-deadline-parent-conference-select",
+  ) as HTMLElement & { options: string[] };
+  picker.dispatchEvent(
+    new CustomEvent("selection-change", {
+      detail: picker.options.find((x) => x.includes("Past Example Conference")),
+      bubbles: true,
+    }),
+  );
+  await settle(container);
+  const kind = container.querySelector<HTMLSelectElement>('select[name="stageKind"]')!;
+  kind.value = "camera_ready";
+  kind.dispatchEvent(new Event("change"));
+  await settle(container);
+  const form = container.querySelector<HTMLFormElement>(".deadline-proposal__form")!;
+  (form.elements.namedItem("deadlineDate") as HTMLInputElement).value = "2026-10-01";
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await settle(container);
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      deadlineDate: "2026-10-01",
+      deadlineTime: "",
+      stage: {
+        milestone: "camera_ready",
+        label: "Camera-ready",
+        operation: "add",
+        venueId: "past",
+      },
+    }),
+    expect.any(String),
+    undefined,
+  );
+});
+it.each(["Cards", "Table"])(
+  "opens a stage correction in %s and allows changing its target",
+  async (view) => {
+    const store = new TestProposalStore();
+    store.listPublished = async () => [
+      {
+        ...DEADLINE_VENUES[0],
+        id: "stage-venue",
+        deadline_id: "stage-venue",
+        name: "Stage Example",
+        venue_type: "workshop",
+        deadline_aoe: "2026-09-01 23:59:00",
+        deadline_at: "2026-09-02T11:59:00Z",
+        notification_aoe: "",
+        abstract_deadline_id: undefined,
+        schedule: [
+          { milestone: "camera_ready", label: "Camera-ready", kind: "date", date: "2026-10-01" },
+        ],
+      },
+    ];
+    const submit = vi.spyOn(store, "submit");
+    const container = document.createElement("div");
+    document.body.append(container);
+    render(
+      renderDeadlines({ proposalStore: store, role: "member", memberId: "member-1" }),
+      container,
+    );
+    await settle(container);
+    buttonNamed(container, view).click();
+    await settle(container);
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Schedule for Stage Example"]')!
+      .click();
+    await settle(container);
+    const panel = container.querySelector<HTMLElement>(
+      '[aria-label="Deadline details for Stage Example: Camera-ready"]',
+    )!;
+    expect(panel).not.toBeNull();
+    buttonNamed(panel, "Suggest deadline correction").click();
+    await settle(container);
+    const form = container.querySelector<HTMLFormElement>(".deadline-proposal__form")!;
+    expect((form.elements.namedItem("deadlineDate") as HTMLInputElement).value).toBe("2026-10-01");
+    expect(form.elements.namedItem("stageKind")).toBeNull();
+    expect(
+      (
+        form.elements.namedItem("correctionStage") as HTMLSelectElement
+      ).selectedOptions[0].textContent?.trim(),
+    ).toBe("Camera-ready");
+    const stageSelect = form.elements.namedItem("correctionStage") as HTMLSelectElement;
+    stageSelect.value = "primary";
+    stageSelect.dispatchEvent(new Event("change"));
+    await settle(container);
+    expect((form.elements.namedItem("deadlineDate") as HTMLInputElement).value).toBe("2026-09-01");
+    stageSelect.value = "0";
+    stageSelect.dispatchEvent(new Event("change"));
+    await settle(container);
+    expect((form.elements.namedItem("deadlineDate") as HTMLInputElement).value).toBe("2026-10-01");
+    (form.elements.namedItem("deadlineDate") as HTMLInputElement).value = "2026-10-03";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle(container);
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deadlineDate: "2026-10-03",
+        stage: expect.objectContaining({
+          milestone: "camera_ready",
+          operation: "correct",
+          venueId: "stage-venue",
+          previous: expect.any(String),
+        }),
+      }),
+      expect.any(String),
+      "stage-venue",
+    );
+  },
+);
+
+it("keeps undated workshops in their usual upcoming groups without countdowns", async () => {
+  const unknown: DeadlineVenue = {
+    ...DEADLINE_VENUES[0],
+    id: "undated",
+    deadline_id: "undated",
+    name: "Undated Workshop",
+    venue_type: "workshop",
+    entry_type: "workshop",
+    venue_group: "Example 2035 Workshops",
+    deadline_aoe: "",
+    deadline_at: "",
+    deadline_planning_at: "",
+    deadline_date: "",
+    deadline_time_precision: "",
+    notification_aoe: "",
+    schedule: [],
+  };
+  const entries = buildDeadlineBoardEntries([unknown]);
+  expect(entries).toHaveLength(1);
+  expect(entriesForDeadlinePeriod(entries, Date.now(), "upcoming")).toHaveLength(1);
+  expect(entriesForDeadlinePeriod(entries, Date.now(), "past")).toHaveLength(0);
+  expect(headlineDeadlineEntry(entries)).toBeUndefined();
+  expect(groupDeadlineBoardEntries(entries)[0].entries[0].venue.id).toBe("undated");
+  const container = document.createElement("div");
+  document.body.append(container);
+  const store = new TestProposalStore();
+  vi.spyOn(store, "listPublished").mockResolvedValue([unknown]);
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  const card = container.querySelector(".deadline-card")!;
+  expect(card.textContent).toContain("Deadline unknown");
+  expect(card.getAttribute("data-urgency")).toBe("unknown");
+  expect(card.querySelector(".deadline-card__countdown")).toBeNull();
+  expect(card.querySelector(".deadline-card__urgency")).toBeNull();
+  expect(card.textContent).not.toMatch(/NaN|Infinity|passed/);
+});
+
+it("uses the same ticking clock in the next deadline summary and its card", async () => {
+  const container = await renderView();
+  const summary = container.querySelector(".deadline-board__hero-countdown")!;
+  const name = container.querySelector(".deadline-board__hero-name")?.textContent?.trim();
+  const card = [...container.querySelectorAll(".deadline-card")].find(
+    (item) => item.querySelector(".deadline-card__name")?.textContent?.trim() === name,
+  )!;
+  const firstClock = card.querySelector(".deadline-card__countdown")!;
+  expect(summary.textContent?.trim()).toBe(firstClock.textContent?.trim());
+  const before = summary.textContent?.trim();
+  await vi.advanceTimersByTimeAsync(1000);
+  await settle(container);
+  expect(summary.textContent?.trim()).not.toBe(before);
+  expect(summary.textContent?.trim()).toBe(firstClock.textContent?.trim());
+});
+
+it("keeps source links after member-only correction actions", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(
+    renderDeadlines({
+      role: "member",
+      memberId: "member-1",
+      proposalStore: new TestProposalStore(),
+    }),
+    container,
+  );
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  const footer = container.querySelector(".deadline-card .deadline-details__footer")!;
+  expect(footer.firstElementChild?.textContent?.trim()).toBe("Suggest deadline correction");
+  expect(footer.lastElementChild?.classList.contains("deadline-card__actions")).toBe(true);
+  const policy = container.querySelector<HTMLButtonElement>(".deadline-card .deadline-archival")!;
+  expect(
+    container.querySelector(`[id="${policy.getAttribute("popovertarget")}"]`)?.getAttribute("role"),
+  ).toBe("note");
+});
+
+it("keeps only actions passed within 14 days, deduplicates shared stages and respects stage filters", () => {
+  const now = Date.parse("2026-10-02T12:00:00Z");
+  const venue = {
+    ...DEADLINE_VENUES[0],
+    id: "attention",
+    venue_id: "attention",
+    deadline_id: "attention",
+    deadline_at: "2026-09-18T12:00:00Z",
+    deadline_aoe: "2026-09-18 00:00:00",
+    milestone: "submission",
+    notification_aoe: "",
+    schedule: [
+      { milestone: "camera_ready", label: "Camera-ready", kind: "date", date: "2026-09-30" },
+      { milestone: "author_response", label: "Rebuttal", kind: "date", date: "2026-09-01" },
+      { milestone: "conference", label: "Attend conference", kind: "date", date: "2026-10-01" },
+    ],
+  } as DeadlineVenue;
+  const entries = buildDeadlineBoardEntries([
+    venue,
+    { ...venue, id: "duplicate", deadline_id: "duplicate" },
+  ]);
+  const recent = recentDeadlineActions(entries, now);
+  expect(recent.map((row) => row.stage?.key)).toEqual(["camera_ready", "submission"]);
+  expect(recentDeadlineActions(entries, now + 1).map((row) => row.stage?.key)).toEqual([
+    "camera_ready",
+  ]);
+  expect(recentDeadlineActions(entries, now, "UTC", [], "camera_ready")).toHaveLength(1);
+  expect(recentDeadlineActions(entries, now, "UTC", [], "conference")).toEqual([]);
+});
+
+it("keeps recent passed actions in Past and upcoming actions in Upcoming", async () => {
+  const venue = {
+    ...DEADLINE_VENUES[0],
+    id: "attention-ui",
+    venue_id: "attention-ui",
+    name: "Example venue",
+    venue_group: "Example venue",
+    deadline_id: "attention-ui",
+    deadline_at: "2026-08-20T12:00:00Z",
+    deadline_aoe: "2026-08-20 00:00:00",
+    milestone: "submission",
+    deadline_label: "Paper submission",
+    notification_aoe: "",
+    schedule: [
+      { milestone: "camera_ready", label: "Camera-ready due", kind: "date", date: "2026-09-01" },
+      { milestone: "conference", label: "Attend conference", kind: "date", date: "2026-08-25" },
+    ],
+  } as DeadlineVenue;
+  const store = new TestProposalStore();
+  vi.spyOn(store, "listPublished").mockResolvedValue([venue]);
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  expect(container.querySelector(".deadline-recent")).toBeNull();
+  expect(
+    container.querySelector(".deadline-board__hero .deadline-action__title")?.textContent,
+  ).toContain("Camera-ready due");
+  buttonNamed(container, "Past").click();
+  await settle(container);
+  const recent = container.querySelector<HTMLDetailsElement>("details.deadline-recent")!;
+  expect(recent.open).toBe(false);
+  expect(recent.querySelector("summary")?.textContent).toContain("Passed in the last 14 days");
+  expect(recent.textContent).toContain("Paper submission");
+  expect(recent.textContent).not.toContain("Attend conference");
+  buttonNamed(container, "Upcoming").click();
+  await settle(container);
+  const summary = container.querySelector(".deadline-group__summary")!;
+  expect(Array.from(summary.children).map((child) => child.className)).toEqual([
+    "deadline-group__chevron",
+    "deadline-group__summary-countdown",
+    "deadline-group__heading",
+    "deadline-group__count",
+  ]);
+  expect(summary.querySelector(".deadline-group__heading strong")?.textContent).toContain(
+    "Camera-ready due",
+  );
+  expect(summary.querySelector(".deadline-group__heading")?.textContent).toContain("Example venue");
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  expect(container.querySelector(".deadline-card .deadline-action__title")?.textContent).toContain(
+    "Camera-ready due",
+  );
+  expect(
+    container
+      .querySelector(".deadline-card [aria-label^='Deadline details']")
+      ?.getAttribute("aria-label"),
+  ).toContain("Camera-ready due");
+  const stageFilter = container.querySelector<HTMLSelectElement>(
+    "select[aria-label='Filter by stage']",
+  )!;
+  stageFilter.value = "submission";
+  stageFilter.dispatchEvent(new Event("change"));
+  await settle(container);
+  expect(container.querySelector(".deadline-recent")).toBeNull();
+  expect(container.querySelector(".deadline-board__empty")?.textContent).toContain(
+    "No deadlines match",
+  );
+});
+
+it("defaults to archival publication actions and keeps other stages available through filters", async () => {
+  const base = {
+    ...DEADLINE_VENUES[0],
+    entry_type: "main_conference",
+    archival_status: "archival",
+    milestone: "submission",
+    deadline_label: "Paper submission",
+    deadline_at: "2026-09-01T12:00:00Z",
+    deadline_aoe: "2026-09-01 00:00:00",
+    schedule: [],
+  } as DeadlineVenue;
+  const venues = [
+    {
+      ...base,
+      id: "archival-paper",
+      venue_id: "archival-paper",
+      deadline_id: "archival-paper",
+      venue_group: "Archival paper",
+    },
+    {
+      ...base,
+      id: "workshop",
+      venue_id: "workshop",
+      deadline_id: "workshop",
+      venue_group: "Workshop",
+      entry_type: "workshop",
+    },
+    {
+      ...base,
+      id: "non-archival",
+      venue_id: "non-archival",
+      deadline_id: "non-archival",
+      venue_group: "Non archival",
+      archival_status: "non_archival",
+    },
+    {
+      ...base,
+      id: "decision",
+      venue_id: "decision",
+      deadline_id: "decision",
+      venue_group: "Decision only",
+      milestone: "notification",
+    },
+  ] as DeadlineVenue[];
+  const store = new TestProposalStore();
+  vi.spyOn(store, "listPublished").mockResolvedValue(venues);
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container, false);
+  expect(
+    container.querySelector<HTMLSelectElement>("select[aria-label='Filter by stage']")?.value,
+  ).toBe("submission_actions");
+  expect(
+    container.querySelector<HTMLSelectElement>("select[data-testid='deadline-filter-entry-type']")
+      ?.value,
+  ).toBe("paper_deadlines");
+  expect(container.querySelector(".deadline-board__hero")?.textContent).toContain("Archival paper");
+  expect(
+    container.querySelector(".deadline-board__grid, .deadline-board__groups")?.textContent ??
+      container.querySelector(".deadline-group")?.textContent,
+  ).not.toContain("Workshop");
+  expect(container.querySelector(".deadline-recent")).toBeNull();
+});
+
+it("keeps recent publication actions under the default combined stage filter", () => {
+  const now = Date.parse("2026-10-02T12:00:00Z");
+  const venue = {
+    ...DEADLINE_VENUES[0],
+    id: "recent",
+    deadline_at: "2026-09-26T12:00:00Z",
+    deadline_aoe: "2026-09-26 23:59:59",
+    milestone: "full_paper",
+    schedule: [
+      {
+        milestone: "commitment",
+        label: "Commitment",
+        kind: "deadline" as const,
+        date: "2026-09-27",
+      },
+      { milestone: "abstract", label: "Abstract", kind: "deadline" as const, date: "2026-09-28" },
+      {
+        milestone: "camera_ready",
+        label: "Camera ready",
+        kind: "deadline" as const,
+        date: "2026-09-29",
+      },
+    ],
+  };
+  const entries = buildDeadlineBoardEntries([venue]);
+  expect(
+    recentDeadlineActions(entries, now, undefined, [venue], "submission_actions")
+      .map((entry) => entry.stage?.key)
+      .toSorted(),
+  ).toEqual(["abstract", "commitment", "submission"]);
 });

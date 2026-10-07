@@ -1,8 +1,11 @@
+import { adminBotInferenceActionTypes, type InferenceAuditEventType } from "./inference-events.js";
+
 export const adminBotRiskTiers = ["T0", "T1", "T2", "T3", "T4"] as const;
 
 export type AdminBotRiskTier = (typeof adminBotRiskTiers)[number];
 
 export const adminBotActionTypes = [
+  "reference.scan",
   "slack.send_message",
   "slack.profile_photo_update",
   "slack.channel_naming_notify_owner",
@@ -25,6 +28,12 @@ export const adminBotActionTypes = [
   // approval card show what the event will look like afterwards, which is the thing worth reading
   // before saying yes to uninviting somebody.
   "calendar.remove_attendees",
+  // Read-only access to the lab's shared calendar for one member. Its own type because it is not an
+  // event write: it adds an ACL entry to the calendar itself, silently (Google's "shared a calendar
+  // with you" mail is suppressed). Typed so an onboarding that no admin is present for -- the
+  // weekly sheet sweep -- can queue the grant for approval like every other step, instead of either
+  // skipping it or granting access with nobody having said yes.
+  "calendar.grant_lab_calendar",
   "calendar.reschedule",
   "calendar.cancel",
   "email.draft",
@@ -39,6 +48,11 @@ export const adminBotActionTypes = [
   // recipient and lets the sender compose, rather than carrying a body an approver could edit into
   // something the provisioning no longer matches.
   "onboarding.send_guide",
+  // Sets a sheet joiner's access level from their Member Type and enrolls them in what that level
+  // grants (api/server.member-onboarding.ts). Its own action because the weekly sweep that creates
+  // them runs unattended, and a spreadsheet row is not an authorization: the member is created at
+  // the least-privileged level and an admin approving this is what raises it.
+  "lab_member.enroll",
   // The finished reimbursement package, mailed to the funder's office with the forms attached.
   //
   // Its own type rather than `email.send` for two reasons. The recipient is resolved from settings
@@ -53,12 +67,7 @@ export const adminBotActionTypes = [
   "paper_publish.submit",
   "paper_publish.nudge_author",
   "paper_publish.escalate_to_pi",
-  // The inference gate asking an administrator for help: the GPU line is too long, too old, or the
-  // model server has stopped answering. Its own type because it is the one message in the system
-  // that is *about* the system, and "when did AdminBot last say the GPU was in trouble" is a
-  // question the audit trail should answer without reading every Slack DM. It reaches nobody until
-  // an admin approves it -- see inference/gate.ts for the operator alert that fires meanwhile.
-  "inference.escalate",
+  ...adminBotInferenceActionTypes,
   "join_form.classify",
   // Mailing a signed document back to the member who asked for it. An external effect (Gmail with
   // an attachment), so it is a typed action rather than a call out of the service.
@@ -96,6 +105,21 @@ export const adminBotActionTypes = [
   // answer "when did we last pull the professor in", and a shape that opens a group conversation
   // is a different external effect from one that DMs a person.
   "member_nudge.escalate",
+  // The Slack group DM -- the head professor and a paper's first two full / coauthor-major lab
+  // authors -- raised when an ICLR submission's AI-text score or citation check trips before the
+  // deadline. Its own type because "when did AdminBot tell a PI a paper read as AI-written, and on
+  // what evidence" is a question the audit log has to answer on its own row.
+  "paper_integrity.alert",
+  // A Slack DM, after every hourly integrity sweep, listing each ICLR submission's current AI-text
+  // score and citation status -- to the operators named in ADMINBOT_ICLR_INTEGRITY_REPORT_SLACK_USERS,
+  // never to authors. Its own type so a routine digest and a warning about one paper are never the
+  // same row in the audit log.
+  "paper_integrity.report",
+  // Writes each ICLR submission's AI-text score into one column of the lab's paper sheet
+  // (ADMINBOT_ICLR_INTEGRITY_SHEET_ID). Its own type, rather than sheet.update_cells, because it is
+  // auto-approved -- and the executor enforces what makes that safe: single cells, in the one
+  // column the payload names, nothing else.
+  "paper_integrity.sheet_scores",
   // Adds one member to one public channel. Its own type rather than a generic Slack call because
   // the audit log has to be able to answer "who did AdminBot put where, and when" -- which is the
   // question somebody asks after finding themselves in a room they did not join.
@@ -106,6 +130,11 @@ export const adminBotActionTypes = [
   // because the two carry different risk: an unwanted invite is noise, an unwanted removal is
   // somebody losing a conversation they were part of.
   "slack.remove_from_channel",
+  // A Slack Connect invitation to the lab's #friends-and-collaborators channel for somebody who is
+  // not in the workspace, so has no user id `slack.invite_to_channel` could name. Slack mails them
+  // the invitation. The onboarding guide mints the same invite for the Member Types it mails; this
+  // is for the types the access design onboards without a mail but still gives the channel.
+  "slack.connect_invite",
   // Opens one project channel. Its own type because creating a room is a decision about the shape
   // of the workspace, not a membership change, and the audit log has to be able to answer "who
   // opened this, and why" -- which for a `proj-` channel is "a project was created with that alias".
@@ -113,6 +142,7 @@ export const adminBotActionTypes = [
   "openreview.nudge",
   "openreview.warning",
   "deadline.publish",
+  "deadline.recommend",
   // Writing cells back to the lab's member spreadsheet from the Membership tab's grid. A typed
   // action rather than a call out of the service for the usual reason -- it reaches Google and
   // changes a document several people read -- and for one specific to this sheet: the roster is
@@ -120,6 +150,11 @@ export const adminBotActionTypes = [
   // payload carries the exact ranges that will be written, so the approval card shows the cells
   // rather than a diff the approver has to reconstruct.
   "sheet.update_cells",
+  // A new row at the bottom of the member roster, from the Onboarding tab's Add row. Separate from
+  // `sheet.update_cells` because an append names no cells -- Sheets finds the first empty row -- so
+  // it cannot overwrite anything, and the approval card reads as "adds Ada" rather than as a range
+  // the approver has to locate.
+  "sheet.append_rows",
 ] as const;
 
 export type AdminBotActionType = (typeof adminBotActionTypes)[number];
@@ -142,43 +177,8 @@ export const adminBotPrivilegeLevels = [
 
 export type AdminBotPrivilegeLevel = (typeof adminBotPrivilegeLevels)[number];
 
-/**
- * The Member Type column's vocabulary, in the spreadsheet's own hyphenated spelling.
- *
- * Ordered most-committed first, matching how member-type-template.ts picks a row's onboarding mail
- * when it carries several: the first token that matches wins, because that role's onboarding covers
- * the others. The tail is the roles that send no mail at all -- their onboarding is the access
- * algorithm in collaborator-subgroups.ts -- followed by the operational tags the sheet uses to mark
- * who runs AdminBot itself and who only receives the mailing list.
- *
- * Deliberately not the same list as `adminBotExternalCollaboratorSubgroups`, which is a different
- * question in a different spelling: that one is the access matrix for a single `external_collaborator`
- * privilege level, this one is what the roster spreadsheet says a person *is*.
- *
- * This is the list the Onboarding grid offers as a dropdown. It is a floor, not a ceiling: the grid
- * also offers whatever the sheet already holds, so a value the lab has started using is never
- * unselectable just because it has not been added here yet.
- */
-export const adminBotMemberTypes = [
-  "full",
-  "alumni",
-  "own-pace-advisee",
-  "coauthor-major",
-  "coauthor-minor",
-  "disappearing-coauthor",
-  "slightly-better-than-emails",
-  "interviewee",
-  // No onboarding mail; the backend grants their access items instead.
-  "acquaintance",
-  "coauthor-discussant-or-designer",
-  "external-prof",
-  // Operational tags rather than collaboration shapes.
-  "adminbot-admin",
-  "adminbot-developer",
-  "mailing-list",
-] as const;
-
-export type AdminBotMemberType = (typeof adminBotMemberTypes)[number];
+// The Member Type column's vocabulary; see member-types.ts.
+export { adminBotMemberTypes, type AdminBotMemberType } from "./member-types.js";
 
 // Subgroups an `external_collaborator` can be sorted into, ordered least- to most-engaged. Each
 // one carries its own access-item matrix (collaborator-subgroups.ts). `alumni` here is a
@@ -194,6 +194,10 @@ export const adminBotExternalCollaboratorSubgroups = [
   "coauthor_discussant_designer",
   "disappearing_coauthor",
   "external_prof",
+  // Not collaborators on the work: a partner organisation (office access, e.g. Vector) and a
+  // member's direct relative. The access design gives both follows and Slack Connect, no portal.
+  "benefit_partner",
+  "benefit_direct_relative",
 ] as const;
 
 export type AdminBotExternalCollaboratorSubgroup =
@@ -213,6 +217,7 @@ export type AdminBotAccessGrant = {
 export const adminBotMemberRoles = [
   "Undergraduate Student",
   "Master's Student",
+  "Predoctoral gap-year researcher",
   "PhD Student",
   "Postdoc",
   "Research Assistant",
@@ -392,6 +397,8 @@ export const adminBotNoPortalAccessMemberTypes = [
   "disappearing-coauthor",
   "external-prof",
   "coauthor-discussant-or-designer",
+  "benefit-partner",
+  "benefit-direct-relative",
 ] as const;
 
 /**
@@ -481,6 +488,9 @@ export function isAdminBotFullMember(member: { privilege_level?: string }): bool
 }
 
 export const adminBotMandatoryProfileFields = [
+  // Required only when arr_reviewer_qualified is true.
+  "arr_review_capacity",
+  "arr_reviewer_qualified",
   "name",
   "calendar_email",
   "location",
@@ -490,8 +500,19 @@ export const adminBotMandatoryProfileFields = [
   "github_url",
   "linkedin_url",
   "linkedin_urn",
+  "twitter_url",
+  "personal_website",
+  "intake_form_url",
   "cv_url",
+  // Where the member's one-on-one notes live. Required of the record because the folder is what
+  // every later one-on-one is filed into: a blank here is not "this person has no meetings", it is
+  // a meeting whose notes went somewhere nobody else can find. Either side may create it, so it is
+  // an answer the member can give (see SELF_PROFILE_EDITABLE_FIELDS).
+  "one_on_one_folder_url",
   "openreview_id",
+  "affiliation",
+  "hours_per_week",
+  "joined_month",
 ] as const;
 
 export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFields)[number];
@@ -499,17 +520,24 @@ export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFiel
 /**
  * Mandatory fields whose answer only the lab can give.
  *
- * Required *of the record* and asked for on the admin editor, but never of the member: the profile
- * page renders these disabled, so a member who has filled in every box they can see still has one
- * of them blank. Chasing somebody for a field their own page will not let them type is a reminder
- * they cannot act on, and this list is what keeps every reader agreeing on that.
+ * Required *of the record* but never of the member: the profile page leaves these out of its
+ * required marks and its completion denominator, so nobody is chased for a box their own page will
+ * not let them fill. Chasing somebody for an answer they cannot give is a reminder they cannot act
+ * on, and this list is what keeps every reader agreeing on which fields those are.
  *
  * It is a list rather than a flag on the UI's field table because the reminder runs in the service,
- * which cannot see that table. They disagreed: the page dropped `linkedin_urn` from its completion
- * ledger and the reminder did not, so 173 of 174 active members read as complete on their own page
- * and were chased every three days anyway -- nine of them for that field alone.
+ * which cannot see that table. They disagreed once: the page dropped `linkedin_urn` from its
+ * completion ledger and the reminder did not, so 173 of 174 active members read as complete on
+ * their own page and were chased every three days anyway.
+ *
+ * Empty at present. `linkedin_urn` was the only entry, and it is no longer exempt: the field is on
+ * SELF_PROFILE_EDITABLE_FIELDS, its control is an ordinary input, and its help text points at the
+ * collector tool that reads the value off the member's own account -- so it is an answer the member
+ * can give, and the lab now asks for it like any other. Expect the completion ledger to fall for
+ * everyone who has not supplied one, which is most of the roster; that is the ask, not a
+ * regression. The list stays as the hook for the next field only an admin can answer.
  */
-export const adminBotAdminOwnedProfileFields = ["linkedin_urn"] as const;
+export const adminBotAdminOwnedProfileFields: readonly string[] = [];
 
 /**
  * Whether AdminBot may send this person a nudge.
@@ -655,7 +683,7 @@ export function adminBotHasMemberType(
  */
 export const adminBotMemberAnswerableProfileFields = adminBotMandatoryProfileFields.filter(
   (key): key is AdminBotMandatoryProfileField =>
-    key !== "name" && !(adminBotAdminOwnedProfileFields as readonly string[]).includes(key),
+    key !== "name" && !adminBotAdminOwnedProfileFields.includes(key),
 );
 
 /** How many entries a member has on their Time Availability page, by list. */
@@ -744,6 +772,8 @@ export type AdminBotMemberActivityCounts = {
  * once rather than composed per person.
  */
 export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfileField, string> = {
+  arr_reviewer_qualified: "ARR reviewer qualification",
+  arr_review_capacity: "ARR review capacity",
   name: "Name",
   calendar_email: "Calendar email",
   location: "Location",
@@ -753,8 +783,15 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   github_url: "GitHub",
   linkedin_url: "LinkedIn",
   linkedin_urn: "LinkedIn URN",
+  twitter_url: "X / Twitter",
+  personal_website: "Website",
+  intake_form_url: "Application form response link (or mark that you cannot find it)",
   cv_url: "CV",
+  one_on_one_folder_url: "Link to 1:1 Folder",
   openreview_id: "OpenReview",
+  affiliation: "Main affiliation",
+  hours_per_week: "Hours per week on Jinesis projects",
+  joined_month: "Joined month",
 };
 
 /**
@@ -1455,6 +1492,9 @@ export type AdminBotLabMemberInput = {
   // rather than a link the profile can render for them.
   intake_form_url?: string;
   intake_form_unavailable?: boolean;
+  /** Self-reported ARR eligibility; not verified or a reviewing assignment. */
+  arr_reviewer_qualified?: boolean | null;
+  arr_review_capacity?: number | null;
   /**
    * The Google Drive folder holding this member's one-on-one notes.
    *
@@ -1476,8 +1516,12 @@ export type AdminBotLabMemberInput = {
   // Members read theirs off https://linkedin-urn-collector.vercel.app and paste it here.
   linkedin_urn?: string;
   twitter_url?: string;
+  /** Self-reported; used only for the Media Impact audience badge. */
+  twitter_followers?: number;
+  linkedin_followers?: number;
   github_url?: string;
   scholar_url?: string;
+  acl_anthology_url?: string;
   // Never propose or assign this person as an emergency reviewer, whatever their topic
   // match. Governance-owned: it encodes a standing commitment about someone's time, so
   // it is deliberately absent from the fields a member may edit on their own profile.
@@ -1509,6 +1553,35 @@ export type AdminBotLabMemberInput = {
   // `calendar_email` (the Google account invites go to). The roster spreadsheet has one for every
   // member, and it is frequently neither of the other two.
   correspondence_email?: string;
+  /**
+   * The unix account DCS sponsors for this person, e.g. "akim".
+   *
+   * Stored rather than derived from the institutional address, even though it is usually its local
+   * part. The sysadmin's roster is keyed on this string, and a person whose account was minted
+   * under a different spelling than their mail would otherwise be reported under a name that does
+   * not exist on her side.
+   */
+  dcs_username?: string;
+  /**
+   * Whether this person holds a UofT affiliation, which is what makes a DCS account sponsorable.
+   *
+   * Its own field rather than a reading of `affiliation`: that column is free text and is empty
+   * for most of the roster, and "blank" would otherwise be reported to DCS as "not at UofT",
+   * which is a claim about somebody's eligibility rather than an absence of information.
+   */
+  at_uoft?: boolean;
+  /**
+   * Which clusters this person is allowed onto. See contracts/compute-access.ts.
+   *
+   * A list because the cell it feeds is multiple-choice, and because access accumulates: somebody
+   * on the H100 also has the Slurm cluster and the Slack account under it.
+   */
+  compute_access?: string[];
+  /**
+   * Vector's own categories, which decide how their sponsor reads the row: their PhD students and
+   * postdocs are counted against a different line than everybody else the lab sends over.
+   */
+  vector_role?: "phd" | "postdoc" | "other";
   // Kept for the rows the member-sheet import filled in; the profile page no longer offers it.
   // One named column per platform only ever covered the platforms someone thought of, so what the
   // page asks for now is `other_socials` below.
@@ -1679,6 +1752,36 @@ export type AdminBotSettingsInput = {
   reimbursement_dcs_email?: string;
   reimbursement_mpi_email?: string;
   /**
+   * The partner desks each recurring roster and paper report is mailed to.
+   *
+   * Settings rather than constants for the reason the reimbursement addresses above already give:
+   * these are people, a desk changes hands, and an address compiled into a release is a claim that
+   * silently goes nowhere. Unset means the pass refuses to send rather than guessing -- the same
+   * fail-closed rule, and a stronger case for it here, because every one of these recipients is
+   * outside the lab and a misdirected roster carries other people's names and emails.
+   */
+  /** DCS: the weekly server-access roster, and the ping when an account needs creating. */
+  dcs_server_access_email?: string;
+  /** Vector: the weekly sponsor roster. */
+  vector_roster_email?: string;
+  /** Where the submissions snapshot goes once a conference deadline passes. */
+  papers_submission_report_email?: string;
+  /**
+   * MPI, on an acceptance. Two addresses on one mail rather than two mails, because the desk is
+   * one desk -- the pair read the same queue and a second copy is a second thing to reconcile.
+   */
+  papers_acceptance_mpi_emails?: string[];
+  /**
+   * The other three partners, on an acceptance, one mail each.
+   *
+   * Separate fields rather than a list, so that a missing SRI address cannot silently shorten the
+   * DCS mail's recipient list -- each desk is either configured or it is not, and the pass reports
+   * which.
+   */
+  papers_acceptance_dcs_email?: string;
+  papers_acceptance_vector_email?: string;
+  papers_acceptance_sri_email?: string;
+  /**
    * When the weekly group meeting is, for the reminders that are aimed at it.
    *
    * Settings rather than a constant: the meeting moves, and a nudge that fires against a
@@ -1738,6 +1841,36 @@ export type AdminBotSettings = {
    */
   reimbursement_dcs_email?: string;
   reimbursement_mpi_email?: string;
+  /**
+   * The partner desks each recurring roster and paper report is mailed to.
+   *
+   * Settings rather than constants for the reason the reimbursement addresses above already give:
+   * these are people, a desk changes hands, and an address compiled into a release is a claim that
+   * silently goes nowhere. Unset means the pass refuses to send rather than guessing -- the same
+   * fail-closed rule, and a stronger case for it here, because every one of these recipients is
+   * outside the lab and a misdirected roster carries other people's names and emails.
+   */
+  /** DCS: the weekly server-access roster, and the ping when an account needs creating. */
+  dcs_server_access_email?: string;
+  /** Vector: the weekly sponsor roster. */
+  vector_roster_email?: string;
+  /** Where the submissions snapshot goes once a conference deadline passes. */
+  papers_submission_report_email?: string;
+  /**
+   * MPI, on an acceptance. Two addresses on one mail rather than two mails, because the desk is
+   * one desk -- the pair read the same queue and a second copy is a second thing to reconcile.
+   */
+  papers_acceptance_mpi_emails?: string[];
+  /**
+   * The other three partners, on an acceptance, one mail each.
+   *
+   * Separate fields rather than a list, so that a missing SRI address cannot silently shorten the
+   * DCS mail's recipient list -- each desk is either configured or it is not, and the pass reports
+   * which.
+   */
+  papers_acceptance_dcs_email?: string;
+  papers_acceptance_vector_email?: string;
+  papers_acceptance_sri_email?: string;
   /** See the note on AdminBotSettingsInput. Defaults live in contracts/group-meeting.ts. */
   group_meeting_weekday?: number;
   group_meeting_time?: string;
@@ -1887,7 +2020,45 @@ export type AdminBotPaperAuthorLink = {
   name: string;
   member_id?: string;
   email?: string;
+  /**
+   * The X handle to tag this author with, stored bare and lowercase-insensitive ("alice_ai").
+   *
+   * Only ever set on an author who is not on the roster, for the same reason `email` is: a lab
+   * member's handle is `twitter_url` on their profile, and a second copy here would be a second
+   * thing to keep in step. It exists because the announcement wants to tag everyone on the paper,
+   * and before this an external coauthor could only ever land in the payload's `missing` list --
+   * the lab knew their address and their name and still had nothing to @ them by.
+   */
+  twitter?: string;
 };
+
+/**
+ * An X handle as it will be stored, or null when the text cannot be one.
+ *
+ * Accepts what people actually paste: a bare handle, an @-prefixed one, or the profile URL off
+ * their address bar. Returns the handle without the "@", so a renderer adds the sigil once rather
+ * than every caller guessing whether the stored value already carries it.
+ *
+ * Both patterns are anchored. An unanchored profile pattern lets the optional host group simply
+ * not participate, and the handle group then matches the first word it finds -- turning
+ * "https://x.com/alice_ai" into "https". X's own rule is the length and character class: 1-15 of
+ * letters, digits and underscore.
+ */
+export function adminBotNormalizeXHandle(raw: string | undefined): string | null {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) {
+    return null;
+  }
+  const fromUrl =
+    /^(?:https?:\/\/)?(?:www\.)?(?:x|twitter)\.com\/(?:#!\/)?@?([A-Za-z0-9_]{1,15})\/?$/u.exec(
+      trimmed,
+    );
+  if (fromUrl?.[1]) {
+    return fromUrl[1];
+  }
+  const bare = /^@?([A-Za-z0-9_]{1,15})$/u.exec(trimmed);
+  return bare?.[1] ?? null;
+}
 
 /** Slack's own rule, which is why the alias is stored in this shape rather than converted later. */
 export const adminBotPaperAliasMaxLength = 24;
@@ -2235,6 +2406,8 @@ export type AdminBotExecutionResult = {
   dry_run: boolean;
   idempotency_key?: string;
   executed_at: string;
+  /** What the connector reported creating (see AdminBotExecutorOutcome.artifacts). */
+  artifacts?: Record<string, string>;
 };
 
 export type AdminBotAuditEvent = {
@@ -2259,6 +2432,8 @@ export type AdminBotAuditEvent = {
     | "deadline_proposal.revised"
     | "deadline_proposal.published"
     | "lab_member.upserted"
+    // A Lab Members type change applied on the spot: access level, sheet, Slack, meeting, mail.
+    | "lab_member.member_type_applied"
     | "lab_member.notes_migrated"
     | "nudge_list.seeded"
     // One pass of a standing local event's guest list against where people actually are.
@@ -2269,6 +2444,11 @@ export type AdminBotAuditEvent = {
     | "lab_member.merged"
     | "lab_member.deleted"
     | "lab_members.purged_without_email"
+    | "lab_member_request.submitted"
+    | "lab_member_request.edited"
+    | "lab_member_request.approved"
+    | "lab_member_request.rejected"
+    | "lab_member_request.withdrawn"
     | "paper.upserted"
     | "paper_slot.updated"
     | "paper_slot.waived"
@@ -2289,6 +2469,9 @@ export type AdminBotAuditEvent = {
     | "paper_weekly_updates.nudged"
     | "alumni_slack_invites.swept"
     | "rec_letter_channel.swept"
+    // One PDF sent from the Reference Checker page to references-validation or GPTZero: checker,
+    // hash, admin and outcome only. The PDF and its findings are deliberately never stored.
+    | "reference_check.pdf_checked"
     // The three-day letter warning to the head professor's inbox. One row per pass that actually
     // sent, naming the address it went to: this is the one mail AdminBot sends that desk, so "did
     // she hear about this letter, and when" has an answer that does not depend on her mailbox.
@@ -2358,6 +2541,12 @@ export type AdminBotAuditEvent = {
     | "badge.nomination_submitted"
     | "badge.nomination_approved"
     | "badge.nomination_rejected"
+    // A member proposing a badge the catalogue does not have, and the admin answer to it. Kept
+    // distinct from the nomination events above: those are about who holds an existing badge,
+    // these are about what the catalogue contains.
+    | "badge.suggestion_submitted"
+    | "badge.suggestion_approved"
+    | "badge.suggestion_rejected"
     | "opportunity.submitted"
     | "opportunity.updated"
     | "opportunity.approved"
@@ -2368,8 +2557,8 @@ export type AdminBotAuditEvent = {
     | "opportunity.deadline_dismissed"
     | "opportunity.rejected"
     | "opportunity.deleted"
-    | "auth.dcs_form_submitted"
-    | "auth.dcs_form_failed"
+    | "auth.dcs_roster_row_added"
+    | "auth.dcs_roster_row_failed"
     | "auth.location_updated"
     | "auth.location_update_failed"
     | "member_nudge.sent"
@@ -2436,37 +2625,7 @@ export type AdminBotAuditEvent = {
     // the lab: the recipient and the range are the whole of what was disclosed and to whom.
     | "publication_digest.sent"
     | "publication_digest.failed"
-    // The inference gate (inference/gate.ts). One request to the local model is one row in
-    // `adminbot_inference_queue`, and these are the row's life: `admitted` when it takes a GPU slot,
-    // `queued` when it joins the line, `shed` when it is turned away with its body kept, `waited`
-    // when a shed request is converted to a queued one at the member's request. Exactly one of
-    // `completed`, `failed`, `expired` closes every row -- the load simulation reconciles on that.
-    // `refused` is a request the queue declined to store at all (over the size caps), so no row
-    // exists for it and the event is the only record. `escalation_proposed` is the gate asking an
-    // administrator for help through the approval gate; `escalated` is recorded only once a
-    // connector has actually delivered that ask, because a proposal nobody approved reached nobody.
-    | "inference.control_changed"
-    | "inference.admitted"
-    | "inference.queued"
-    | "inference.shed"
-    | "inference.waited"
-    | "inference.completed"
-    | "inference.failed"
-    | "inference.expired"
-    | "inference.refused"
-    | "inference.escalation_proposed"
-    | "inference.escalated"
-    | "task.accepted"
-    | "task.shed"
-    | "task.queued"
-    | "task.running"
-    | "task.completed"
-    | "task.failed"
-    | "task.needs_retry"
-    | "task.cancelled"
-    | "task.expired"
-    | "task.step.running"
-    | "task.step.completed";
+    | InferenceAuditEventType;
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;
@@ -2845,20 +3004,11 @@ export const adminBotLogisticsSettledStatuses = [
   "withdrawn",
 ] as const satisfies readonly AdminBotLogisticsRequestStatus[];
 
-/**
- * How long somebody stays in the recommendation-letter help channel after their last letter is
- * settled.
- *
- * Three months, measured from the most recent settled request rather than the first. An application
- * season runs roughly two months across different school deadlines, so a member routinely has one
- * request closed while another is still open; a shorter window, or one measured from the earliest
- * close, would take them out of the channel in the middle of their own season. The extra month past
- * a two-month season is the margin for a late deadline or a school that comes back with questions.
- */
-export const adminBotRecLetterChannelRetentionDays = 90;
+/** Calendar months on either side of a letter deadline. */
+export const adminBotRecLetterChannelWindowMonths = 3;
 
-/** The channel the letter-request sweep manages. A name, because that is what the connector takes. */
-export const ADMINBOT_REC_LETTER_CHANNEL = "help-rec-letter-request";
+/** The existing Slack channel managed by the letter-request sweep. */
+export const ADMINBOT_REC_LETTER_CHANNEL = "help-rec-letters";
 
 /**
  * A file travelling with a request, bytes and all.
@@ -2883,13 +3033,14 @@ export type AdminBotLogisticsAttachment = {
 /** One school on a recommendation letters request, as the member filled the row in. */
 export type AdminBotLogisticsSchool = {
   school: string;
-  /** yyyy-mm-dd. Both deadlines are optional: a member often knows one before the other. */
+  /** yyyy-mm-dd. Application deadlines are informational and do not determine the letter deadline. */
   application_deadline?: string;
   /** HH:mm, in `deadline_timezone`. A date with no time is treated as end of that day. */
   application_deadline_time?: string;
+  /** Required for new submissions/edits; optional here to allow reading legacy records. */
   letter_deadline?: string;
   letter_deadline_time?: string;
-  /** IANA zone both times on this row are read in. Blank means the dates are whole-day. */
+  /** IANA zone or AoE. Letter deadlines default to AoE (UTC−12), with a blank time due at 23:59. */
   deadline_timezone?: string;
   application_status?: string;
   letter_status?: string;
@@ -2973,8 +3124,9 @@ export type AdminBotLogisticsRequest = AdminBotLogisticsRequestInput & {
   updated_at: string;
   /**
    * RFC3339 instant of the soonest thing this request is working towards, or absent when it names
-   * none. Derived on write from the dates, times and zones the member gave, so every reader sorts
-   * the same way and no client has to re-implement "which of these is soonest".
+   * none. Letters use only the earliest letter deadline. This comparison instant never replaces
+   * the entered wall-clock date, time, or timezone shown to the user. Recomputed on letter reads
+   * so legacy records cannot retain an application-based deadline.
    */
   deadline_at?: string;
   /**

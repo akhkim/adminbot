@@ -17,6 +17,7 @@ import {
   type InferenceGate,
   type InferenceResponseRecord,
 } from "../../inference/gate.js";
+import { routeLlmFetch } from "../../kernel/llm-gateway-client.js";
 import { currentTaskContext, taskStep } from "../../tasks/context.js";
 import { checkReimbursementPackage, describeCheck } from "./check.js";
 
@@ -365,7 +366,8 @@ async function callLocalReimbursementModel(
       ...(context.wait !== undefined ? { wait: context.wait } : {}),
       ...(context.submissionKey ? { submissionKey: context.submissionKey } : {}),
       apiKey: env.VLLM_API_KEY?.trim() || "vllm-local",
-      fetchImpl: fetchImpl as unknown as InferenceFetch,
+      // Through the shared LLM gateway when one is configured (LLM_GATEWAY_URL).
+      fetchImpl: routeLlmFetch(fetchImpl, "local", env) as unknown as InferenceFetch,
       ...(signal ? { signal } : {}),
       request: {
         route: "chat/completions",

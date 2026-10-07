@@ -490,7 +490,7 @@
   padding: var(--space-2) var(--space-3);
   border-left: 3px solid var(--warn);
   border-radius: var(--radius-1, 6px);
-  background: var(--panel-alt);
+  background: var(--panel-strong);
   font-size: 0.875rem;
 }
 
@@ -748,7 +748,7 @@
    row already in the queue -- not a second verdict on the submit. */
 .logistics-request__status--note {
   display: block;
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 /* Why Submit would refuse, sitting between the status and the buttons. Not an error color: nothing
@@ -844,9 +844,7 @@
   font-size: var(--control-ui-text-sm);
 }
 
-/* The admin queue: a spreadsheet, not a list of cards.
-   Dense on purpose -- somebody working through everyone's requests reads across a row, and the two
-   things they do (take the document, give it back signed) are the last two columns. */
+/* Keep deadlines and actions together while the member's name opens the full request. */
 
 .logistics-queue__heading {
   display: flex;
@@ -870,8 +868,7 @@
   max-width: 42rem;
 }
 
-/* Eight columns do not fit a laptop and squeezing them makes every cell unreadable, so the table
-   keeps its width and this wrapper scrolls -- same decision as the schools table. */
+/* Scroll on narrow screens so the status and signed-document controls stay usable. */
 .logistics-queue__scroll {
   overflow-x: auto;
   margin-top: var(--space-4);
@@ -916,44 +913,8 @@
   vertical-align: top;
 }
 
-/* The one column that is prose. Capped so a long explanation cannot push the actions off screen. */
-.logistics-queue__cell--context {
-  max-width: 22rem;
-  min-width: 12rem;
-}
-
-.logistics-queue__cell--documents {
-  min-width: 12rem;
-}
-
 .logistics-queue__cell--sign {
   white-space: nowrap;
-}
-
-.logistics-queue__files {
-  display: grid;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.logistics-queue__file {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--accent);
-  word-break: break-word;
-}
-
-.logistics-queue__file.muted {
-  color: var(--muted);
-}
-
-.logistics-queue__size {
-  margin-left: var(--space-2);
-  color: var(--muted);
-  font-size: var(--control-ui-text-xs);
 }
 
 .logistics-queue__status {
@@ -1754,6 +1715,22 @@
   margin-top: var(--space-5);
 }
 
+.logistics-sync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.logistics-sync > span {
+  display: flex;
+  flex: 1 1 220px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 /* Tab Usage: which parts of AdminBot the lab opens.
    A table of eleven-odd rows read by comparing them to each other, so the bar under each tab name
    is doing the real work and the digits are there to check it. */
@@ -1888,4 +1865,104 @@
   margin: var(--space-3) 0 0;
   color: var(--danger);
   font-size: var(--control-ui-text-sm);
+}
+
+.logistics-queue__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-block: var(--space-4);
+}
+
+.logistics-queue__sort {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.logistics-queue__sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+/* Editable request tables become labelled forms on phones; desktop keeps its comparison grid. */
+@media (max-width: 600px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
+  .logistics-schools[data-testid] .logistics-schools__table,
+  .logistics-schools[data-testid] .logistics-schools__table tbody {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .logistics-schools[data-testid] .logistics-schools__table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .logistics-schools[data-testid] .logistics-schools__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logistics-schools[data-testid] .logistics-schools__cell {
+    display: block;
+    min-width: 0;
+    width: auto;
+    border-bottom: 0;
+  }
+
+  .logistics-schools[data-testid] .logistics-schools__cell[data-label]::before {
+    display: block;
+    margin-bottom: var(--space-2);
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: var(--control-ui-text-sm);
+  }
+
+  .logistics-schools[data-testid] .logistics-schools__input,
+  .logistics-schools[data-testid] .logistics-schools__notes {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .logistics-schools[data-testid] .logistics-schools__cell--remove {
+    text-align: right;
+  }
+}
+
+/* Light DOM lets the shared offline panel use the same controls as every request page. */
+adminbot-offline-access {
+  display: block;
+  margin-bottom: var(--space-3);
+}
+
+adminbot-offline-access details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+
+adminbot-offline-access summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+adminbot-offline-access p {
+  max-width: 75ch;
+  line-height: 1.5;
+  font-size: var(--control-ui-text-sm);
+}
+
+adminbot-offline-access .btn {
+  max-width: 100%;
+  white-space: normal;
 }

@@ -2,7 +2,7 @@
 // progress nobody has evidence for -- and what it must do is move on its own when evidence lands.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
-import type { PaperSlotRow } from "../auth/session.ts";
+import type { PaperSlotRow } from "../api/papers.ts";
 import { buildPaperTimeline, renderPaperTimeline } from "./paper-timeline.ts";
 
 function rows(settled: string[], extra: PaperSlotRow[] = []): PaperSlotRow[] {
@@ -39,10 +39,10 @@ describe("buildPaperTimeline", () => {
     }
   });
 
-  it("opens every branch off the compiled PDF at once, not in sequence", () => {
+  it("keeps every project branch open before the compiled PDF is available", () => {
     const before = rows(["project_folder", "overleaf_edit", "papermentor_review", "fixes_merged"]);
     for (const branch of ["talk", "archive", "venue"]) {
-      expect(lane(before, branch).opensAfter).toBe("Paper PDF compiles cleanly");
+      expect(lane(before, branch).opensAfter).toBeUndefined();
     }
     const after = rows([
       ...["project_folder", "overleaf_edit", "papermentor_review", "fixes_merged"],
@@ -150,9 +150,10 @@ describe("renderPaperTimeline", () => {
     ).toBe("ready");
   });
 
-  it("says what a shut branch is waiting for instead of showing dead dots", () => {
+  it("does not describe editable project stages as locked", () => {
     const container = draw(rows(["project_folder"]));
     const talk = container.querySelector('[data-testid="paper-timeline-lane-p1-talk"]');
-    expect(talk?.textContent).toContain("opens after Paper PDF compiles cleanly");
+    expect(talk?.textContent).not.toContain("opens after");
+    expect(talk?.classList.contains("is-shut")).toBe(false);
   });
 });

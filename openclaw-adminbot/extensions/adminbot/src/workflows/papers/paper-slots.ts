@@ -13,6 +13,7 @@ import {
   type AdminBotSocialConsentRecord,
   type AdminBotSocialDraftRecord,
 } from "../../contracts/paper-cycle.js";
+import { parsePaperFeedback } from "../../contracts/paper-feedback.js";
 import {
   adminBotPaperSlotBranchPriority,
   adminBotPaperSlotEscalateAfterNudges,
@@ -107,7 +108,7 @@ export function redactPaperSlots(
     return rows;
   }
   return rows.map((row) => {
-    if (!isConfidentialPaperSlot(row.slot)) {
+    if (!isConfidentialPaperSlot(row.slot) && !row.slot.startsWith("feedback_")) {
       return row;
     }
     const { value_text: _dropped, ...rest } = row;
@@ -173,6 +174,21 @@ export function applyPaperSlotWrite(params: {
         ? { ok: true, record: provided({ value_text: value }) }
         : { ok: true, record: clearedSlot(existing) };
     }
+    case "feedback": {
+      const value = (input.value_text ?? "").trim();
+      if (!value) {
+        return { ok: true, record: clearedSlot(existing) };
+      }
+      const feedback = parsePaperFeedback(value);
+      if (!feedback) {
+        return {
+          ok: false,
+          error:
+            "Feedback needs a reason, an HTTPS manuscript link and valid deadline times; feedback-by cannot follow submission cutoff.",
+        };
+      }
+      return { ok: true, record: provided({ value_text: JSON.stringify(feedback) }) };
+    }
     case "secret6": {
       const value = (input.value_text ?? "").trim();
       if (!value) {
@@ -206,6 +222,17 @@ export function applyPaperSlotWrite(params: {
     }
     case "link": {
       const value = (input.url ?? "").trim();
+      // Verification belongs to the URL, not to the field that happens to hold it.
+      const verification =
+        value === existing.url
+          ? {}
+          : {
+              verified_by: undefined,
+              verified_at: undefined,
+              verified_title: undefined,
+              previous_submission_id: undefined,
+              identity_review: undefined,
+            };
       if (!value) {
         return { ok: true, record: clearedSlot(existing) };
       }
@@ -215,6 +242,7 @@ export function applyPaperSlotWrite(params: {
           ok: true,
           record: {
             ...existing,
+            ...verification,
             status: "invalid",
             url: value,
             provided_by_member_id: memberId,
@@ -224,7 +252,7 @@ export function applyPaperSlotWrite(params: {
           },
         };
       }
-      return { ok: true, record: provided({ url: value, validated_at: nowIso }) };
+      return { ok: true, record: provided({ ...verification, url: value, validated_at: nowIso }) };
     }
   }
 }
@@ -341,6 +369,9 @@ export type NudgeItem = {
  *   - open means `missing` or `invalid`; provided and waived are done
  *   - a slot is only actionable once everything upstream of it is settled, so nobody is asked for
  *     an arXiv link on a paper that has not been submitted
+ *   - and once everything in its `chaseAfter` is settled, which is how a field can be open on the
+ *     card without being anybody's next move: the social drafts may be written off the PDF, but
+ *     nobody is chased for an announcement before there is a link to announce
  *   - advisory slots (`required: false`) never appear: they block nothing, so chasing them spends
  *     the lab's attention on bookkeeping
  *
@@ -382,7 +413,11 @@ export function actionablePaperSlots(
     if (isAdminBotPaperSlotSettled(record.status) && !reopened) {
       continue;
     }
-    if (!definition.upstream.every(settled)) {
+    // Both lists, not either: `chaseAfter` says when the lab starts asking, `upstream` says when
+    // the field is fillable at all, and asking for something that cannot yet be filled in is the
+    // one combination neither list should be able to produce. For almost every slot `chaseAfter`
+    // is absent and this is exactly the upstream check it has always been.
+    if (![...definition.upstream, ...(definition.chaseAfter ?? [])].every(settled)) {
       continue;
     }
     // Three sources for the line under the label, in the order they matter: a value the service

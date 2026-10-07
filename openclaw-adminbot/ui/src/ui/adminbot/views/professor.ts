@@ -18,6 +18,7 @@
 // the page it used to live on is the one members read, where an editor only she could see was three
 // controls of dead weight for everybody else.
 import { html, nothing } from "lit";
+import "./local-chat.ts";
 import {
   adminBotIsAlumniMember,
   adminBotLogisticsSettledStatuses,
@@ -26,16 +27,16 @@ import {
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
-import type {
-  EscalatedNudgeRow,
-  LabBroadcast,
-  LogisticsRequest,
-  MemberProfileOverviewRow,
-  PiReviewRow,
-} from "../auth/session.ts";
+import type { LabBroadcast } from "../api/lab-sharing.ts";
+import type { LogisticsRequest } from "../api/logistics.ts";
+import type { MemberProfileOverviewRow } from "../api/members.ts";
+import type { EscalatedNudgeRow } from "../api/nudges.ts";
+import type { PiReviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
+import { renderDateControl } from "../date-control.ts";
 
 export type ProfessorViewProps = {
+  localChatSessionToken?: string;
   requests: LogisticsRequest[];
   requestsLoading: boolean;
   papers: AdminBotPaperRecord[];
@@ -58,6 +59,9 @@ export type ProfessorViewProps = {
    * is the asking, and ticking the box is still hers to do on the paper.
    */
   piReview: PiReviewRow[];
+  piReviewLoading?: boolean;
+  piReviewError?: string | null;
+  onRetryPiReview?: () => void;
   onOpen: (tab: Tab) => void;
   /**
    * Row lists open past their preview cap, keyed by list id.
@@ -73,14 +77,16 @@ export type ProfessorViewProps = {
   broadcastDraft?: string;
   broadcastExpiry?: string;
   broadcastAvailability?: string;
+  broadcastTimezone?: string;
   broadcastBusy?: boolean;
   broadcastNotice?: { kind: "success" | "error"; text: string } | null;
   onBroadcastDraftChange: (value: string) => void;
   onBroadcastExpiryChange: (value: string) => void;
   onBroadcastAvailabilityChange: (value: string) => void;
+  onBroadcastTimezoneChange?: (value: string) => void;
   /** Post what is in the box, or take the current broadcast down with null. */
   onBroadcastPublish: (
-    draft: { message: string; availability: string; expiresOn: string } | null,
+    draft: { message: string; availability: string; expiresOn: string; timezone?: string } | null,
   ) => void;
 };
 
@@ -357,7 +363,7 @@ function section(params: {
    * whether you open it now, so it is worth a line rather than left to be inferred from the rows.
    */
   blurb?: string;
-  count: number;
+  count: number | null;
   tab: Tab;
   linkLabel: string;
   onOpen: (tab: Tab) => void;
@@ -368,7 +374,7 @@ function section(params: {
       <div class="professor__head">
         <div class="card-title">${params.title}</div>
         <span class="professor__count ab-num" data-empty=${params.count === 0 ? "true" : "false"}
-          >${params.count}</span
+          >${params.count ?? "—"}</span
         >
       </div>
       ${params.blurb ? html`<p class="professor__blurb">${params.blurb}</p>` : nothing}
@@ -626,8 +632,12 @@ function broadcastBox(props: ProfessorViewProps) {
   const expiresOn =
     props.broadcastExpiry ?? (live ? live.expires_at.slice(0, 10) : defaultExpiryDate());
   const availability = props.broadcastAvailability ?? live?.availability ?? "away";
+  const timezone = props.broadcastTimezone ?? live?.timezone ?? "";
   const busy = Boolean(props.broadcastBusy);
-  const dirty = draft.trim() !== (live?.message ?? "").trim();
+  const dirty =
+    draft.trim() !== (live?.message ?? "").trim() ||
+    availability !== live?.availability ||
+    timezone.trim() !== (live?.timezone ?? "");
 
   return html`
     <section class="professor__section professor__broadcast" data-testid="professor-broadcast">
@@ -657,14 +667,17 @@ function broadcastBox(props: ProfessorViewProps) {
       <div class="professor__broadcast-controls">
         <label class="professor__broadcast-field">
           <span>${t("professor.broadcast.showsUntil")}</span>
-          <input
-            type="date"
-            data-testid="professor-broadcast-expiry"
-            .value=${expiresOn}
-            ?disabled=${busy}
-            @input=${(event: Event) =>
-              props.onBroadcastExpiryChange((event.target as HTMLInputElement).value)}
-          />
+          ${renderDateControl(
+            html`<input
+              type="date"
+              data-testid="professor-broadcast-expiry"
+              .value=${expiresOn}
+              ?disabled=${busy}
+              @input=${(event: Event) =>
+                props.onBroadcastExpiryChange((event.target as HTMLInputElement).value)}
+            />`,
+            expiresOn,
+          )}
         </label>
         <label class="professor__broadcast-field">
           <span>${t("professor.broadcast.availability")}</span>
@@ -682,6 +695,18 @@ function broadcastBox(props: ProfessorViewProps) {
             )}
           </select>
         </label>
+        <label class="professor__broadcast-field">
+          <span>${t("professor.broadcast.timezone")}</span>
+          <input
+            type="text"
+            data-testid="professor-broadcast-timezone"
+            .value=${timezone}
+            placeholder="America/Toronto"
+            ?disabled=${busy}
+            @input=${(event: Event) =>
+              props.onBroadcastTimezoneChange?.((event.target as HTMLInputElement).value)}
+          />
+        </label>
         <div class="professor__broadcast-actions">
           <button
             class="btn btn--sm primary"
@@ -690,7 +715,13 @@ function broadcastBox(props: ProfessorViewProps) {
             ?disabled=${busy ||
             !draft.trim() ||
             (!dirty && !!live && expiresOn === live.expires_at.slice(0, 10))}
-            @click=${() => props.onBroadcastPublish({ message: draft, availability, expiresOn })}
+            @click=${() =>
+              props.onBroadcastPublish({
+                message: draft,
+                availability,
+                expiresOn,
+                ...(timezone.trim() ? { timezone: timezone.trim() } : {}),
+              })}
           >
             ${live ? t("professor.broadcast.update") : t("professor.broadcast.post")}
           </button>
@@ -737,51 +768,85 @@ export function renderProfessorView(props: ProfessorViewProps) {
 
   const sections: Array<{ settled: boolean; pinned?: boolean; body: unknown }> = [
     {
-      settled: props.piReview.length === 0,
+      settled: !props.piReviewLoading && !props.piReviewError && props.piReview.length === 0,
       body: section({
         id: "pi-review",
         title: t("professor.piReview.title"),
         blurb: t("professor.piReview.blurb"),
-        count: props.piReview.length,
+        count: props.piReviewLoading || props.piReviewError ? null : props.piReview.length,
         // The paper card is where the yes is given, so that is where this points.
         tab: "adminbotPapers",
         linkLabel: t("professor.piReview.open"),
         onOpen: props.onOpen,
-        body: rows({
-          id: "pi-review",
-          items: props.piReview.map((row) =>
-            rowButton({
-              action: t("professor.piReview.open"),
-              onOpen: () => props.onOpen("adminbotPapers"),
-              body: html`<strong>${row.title}</strong>
-                <span class="muted">${row.authors.join(", ")}</span>
-                ${row.packageComplete
-                  ? nothing
-                  : html`<span class="muted">${t("professor.piReview.incomplete")}</span>`}
-                ${row.waitingSince
-                  ? html`<span class="professor__when"
-                      >${t("professor.piReview.since", {
-                        date: row.waitingSince.slice(0, 10),
-                      })}</span
-                    >`
-                  : nothing}`,
-              // Reading the PDF and giving the yes are two different errands, so the PDF keeps its
-              // own target rather than being swallowed by the row.
-              aside: row.drivePdfUrl
-                ? html`<a
-                    class="professor__row-aside"
-                    href=${row.drivePdfUrl}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    >${t("professor.piReview.pdf")}</a
-                  >`
-                : undefined,
-            }),
-          ),
-          empty: t("professor.piReview.empty"),
-          expanded: props.expanded,
-          onToggleExpand: props.onToggleExpand,
-        }),
+        body: props.piReviewLoading
+          ? html`<p role="status">Loading PI review queue…</p>`
+          : props.piReviewError
+            ? html`<p role="alert">
+                  Could not load the PI review queue. Approval status is unknown.
+                  ${props.piReviewError}
+                </p>
+                <button class="btn btn--sm" type="button" @click=${props.onRetryPiReview}>
+                  Retry PI review queue
+                </button>`
+            : rows({
+                id: "pi-review",
+                items: props.piReview.map((row) =>
+                  rowButton({
+                    action: t("professor.piReview.open"),
+                    onOpen: () => props.onOpen("adminbotPapers"),
+                    body: html`<strong>${row.title}</strong>
+                      <span class="muted">${row.authors.join(", ")}</span>
+                      ${row.feedback
+                        ? html`<strong>${row.feedback.label}</strong
+                            ><span>${row.feedback.reason}</span>
+                            <span
+                              >Feedback by (soft):
+                              ${row.feedback.soft_deadline
+                                ? new Date(row.feedback.soft_deadline).toLocaleString(undefined, {
+                                    timeZoneName: "short",
+                                  })
+                                : "Not specified"}</span
+                            >
+                            <span
+                              >Submission cutoff (hard):
+                              ${row.feedback.hard_deadline
+                                ? new Date(row.feedback.hard_deadline).toLocaleString(undefined, {
+                                    timeZoneName: "short",
+                                  })
+                                : "Not specified"}</span
+                            >
+                            ${row.feedback.hard_deadline &&
+                            Date.parse(row.feedback.hard_deadline) < Date.now()
+                              ? html`<strong>Past submission cutoff — soft submission</strong>`
+                              : nothing} `
+                        : html`<span>Publication approval</span>`}
+                      ${row.packageComplete
+                        ? nothing
+                        : html`<span class="muted">${t("professor.piReview.incomplete")}</span>`}
+                      ${row.waitingSince
+                        ? html`<span class="professor__when"
+                            >${t("professor.piReview.since", {
+                              date: row.waitingSince.slice(0, 10),
+                            })}</span
+                          >`
+                        : nothing}`,
+                    // Reading the PDF and giving the yes are two different errands, so the PDF keeps its
+                    // own target rather than being swallowed by the row.
+                    aside: row.drivePdfUrl
+                      ? html`<a
+                          class="professor__row-aside"
+                          href=${row.drivePdfUrl}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          >${row.feedback ? "Open manuscript" : t("professor.piReview.pdf")}</a
+                        >`
+                      : undefined,
+                  }),
+                ),
+                empty: t("professor.piReview.empty"),
+                expanded: props.expanded,
+                onToggleExpand: props.onToggleExpand,
+              }),
       }),
     },
     {
@@ -888,6 +953,10 @@ export function renderProfessorView(props: ProfessorViewProps) {
   // depending on how her week is going.
   return html`
     <div class="professor">
+      <adminbot-local-chat
+        style="display: block; grid-column: 1 / -1"
+        .sessionToken=${props.localChatSessionToken ?? ""}
+      ></adminbot-local-chat>
       ${broadcastBox(props)}
       ${sections
         .toSorted(

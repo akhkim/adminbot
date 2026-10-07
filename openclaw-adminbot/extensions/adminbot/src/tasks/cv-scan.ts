@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import type { AdminBotRouteContext, CvScanOutcome } from "../api/server.js";
+import type { AdminBotRouteContext } from "../api/routes/context.js";
+import type { CvScanOutcome } from "../api/routes/directory.js";
 import type { AdminBotCvSnapshot } from "../contracts/actions.js";
 import { runAdminBotCvScan, draftFromResults } from "../cv-scan.js";
 import type { AdminBotService } from "../kernel/service.js";

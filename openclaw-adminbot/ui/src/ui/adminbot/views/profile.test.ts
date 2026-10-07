@@ -1,12 +1,23 @@
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  adminBotAdminOwnedProfileFields,
   adminBotMandatoryProfileFields,
   ADMINBOT_ELEVATOR_PITCH_MAX,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
-import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
-import { renderProfile, type ProfileProps } from "./profile.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
+import {
+  clearStoredMemberSession,
+  saveStoredMemberSession,
+  type LabMember,
+} from "../auth/session.ts";
+import {
+  blankFields,
+  renderProfile,
+  resetProfileSessionState,
+  type ProfileProps,
+} from "./profile.ts";
 
 function createMember(overrides: Partial<LabMember> = {}): LabMember {
   return {
@@ -25,6 +36,45 @@ function createMember(overrides: Partial<LabMember> = {}): LabMember {
   };
 }
 
+it("saves self-reported ARR eligibility and links to the official criteria", () => {
+  const save = vi.fn();
+  const container = renderPage(createState(createMember({ arr_reviewer_qualified: true })), save);
+  const checkbox = container.querySelector<HTMLSelectElement>('[name="arr_reviewer_qualified"]')!;
+  expect(checkbox.value).toBe("yes");
+  expect(checkbox.closest(".profile__field-group")?.querySelector("h3")?.textContent).toContain(
+    "Work & availability",
+  );
+  expect(
+    container.querySelector('a[href="https://aclrollingreview.org/qualifications"]')?.textContent,
+  ).toContain("criteria");
+  const button = container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!;
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1].arr_reviewer_qualified).toBe(true);
+  checkbox.value = "no";
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1].arr_reviewer_qualified).toBe(false);
+  checkbox.value = "";
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1]).not.toHaveProperty("arr_reviewer_qualified");
+});
+
+it("requires an explicit ARR answer and offers no unanswered choice", () => {
+  for (const answer of [undefined, null, false, true]) {
+    const member = createMember({ arr_reviewer_qualified: answer });
+    expect(blankFields(member).some((field) => field.key === "arr_reviewer_qualified")).toBe(
+      answer == null,
+    );
+    const container = renderPage(createState(member), vi.fn());
+    const select = container.querySelector<HTMLSelectElement>('[name="arr_reviewer_qualified"]')!;
+    expect(select.required).toBe(true);
+    expect(
+      [...select.options].filter((option) => !option.disabled).map((option) => option.value),
+    ).toEqual(["yes", "no"]);
+    expect(select.checkValidity()).toBe(answer != null);
+    expect(select.closest("label")?.querySelector(".profile__mandatory")).not.toBeNull();
+  }
+});
+
 function createState(member: LabMember, overrides: Partial<AppViewState> = {}): AppViewState {
   return {
     tab: "profile",
@@ -37,6 +87,44 @@ function createState(member: LabMember, overrides: Partial<AppViewState> = {}): 
     ...overrides,
   } as unknown as AppViewState;
 }
+
+it("requires an integer ARR capacity only for qualified reviewers", () => {
+  const save = vi.fn();
+  const member = createMember();
+  const container = renderPage(createState(member), save);
+  const qualification = container.querySelector<HTMLSelectElement>(
+    '[name="arr_reviewer_qualified"]',
+  )!;
+  const capacity = container.querySelector<HTMLInputElement>('[name="arr_review_capacity"]')!;
+  expect(capacity.disabled).toBe(true);
+  expect(capacity.required).toBe(false);
+  expect(blankFields(member).map((f) => f.key)).not.toContain("arr_review_capacity");
+  expect(blankFields({ ...member, arr_reviewer_qualified: true }).map((f) => f.key)).toContain(
+    "arr_review_capacity",
+  );
+  expect(
+    blankFields({ ...member, arr_reviewer_qualified: true, arr_review_capacity: 0 }).map(
+      (f) => f.key,
+    ),
+  ).not.toContain("arr_review_capacity");
+  qualification.value = "yes";
+  qualification.dispatchEvent(new Event("change", { bubbles: true }));
+  expect(capacity.disabled).toBe(false);
+  expect(capacity.required).toBe(true);
+  expect(capacity.checkValidity()).toBe(false);
+  for (const invalid of ["-1", "1.5"]) {
+    capacity.value = invalid;
+    expect(capacity.checkValidity()).toBe(false);
+  }
+  capacity.value = "2";
+  expect(capacity.checkValidity()).toBe(true);
+  container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!.click();
+  expect(save.mock.calls.at(-1)?.[1].arr_review_capacity).toBe(2);
+  qualification.value = "no";
+  qualification.dispatchEvent(new Event("change", { bubbles: true }));
+  expect(capacity.disabled).toBe(true);
+  expect(capacity.required).toBe(false);
+});
 
 function renderPage(
   state: AppViewState,
@@ -79,11 +167,66 @@ describe("renderProfile autosave", () => {
   });
 
   afterEach(() => {
+    resetProfileSessionState();
     vi.useRealTimers();
+  });
+
+  it("keeps malformed month drafts visible while saving unrelated profile edits", () => {
+    const onSave = vi.fn();
+    const container = renderPage(createState(createMember({ joined_month: "Jan-26" })), onSave);
+    const month = container.querySelector<HTMLInputElement>('input[name="joined_month"]')!;
+    const name = container.querySelector<HTMLInputElement>('input[name="name"]')!;
+    name.value = "Pat Updated";
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1_000);
+    expect(onSave).toHaveBeenCalledWith("pat", expect.objectContaining({ name: "Pat Updated" }));
+    expect(onSave.mock.calls.at(-1)?.[1]).not.toHaveProperty("joined_month");
+    expect(month.value).toBe("Jan-26");
+    month.value = "2026-01";
+    month.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1_000);
+    expect(onSave).toHaveBeenLastCalledWith(
+      "pat",
+      expect.objectContaining({ joined_month: "2026-01" }),
+    );
+  });
+
+  it("cancels a pending profile save when the signed-in member changes", () => {
+    const member = createMember();
+    const onSave = vi.fn();
+    const container = renderPage(createState(member), onSave);
+    const name = container.querySelector<HTMLInputElement>('input[name="name"]')!;
+    name.value = "Pat's private draft";
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+
+    resetProfileSessionState();
+    vi.advanceTimersByTime(1_000);
+
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   // The paragraph the research-topic tags cannot be, and the reason it is a field rather than a
   // line in `notes`: the lab quotes it back in introductions and directory entries.
+  it("autosaves optional follower counts as numbers including zero", () => {
+    const onSave = vi.fn();
+    const container = renderPage(createState(createMember()), onSave);
+    for (const [key, value] of [
+      ["twitter_followers", "10000"],
+      ["linkedin_followers", "0"],
+    ]) {
+      const input = container.querySelector<HTMLInputElement>(`input[name="${key}"]`)!;
+      expect(input.type).toBe("number");
+      expect(input.required).toBe(false);
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    vi.advanceTimersByTime(1000);
+    expect(onSave).toHaveBeenCalledWith(
+      "pat",
+      expect.objectContaining({ twitter_followers: 10000, linkedin_followers: 0 }),
+    );
+  });
+
   it("collects an elevator pitch, capped where the service caps it", () => {
     const member = createMember();
     const state = createState(member);
@@ -93,6 +236,13 @@ describe("renderProfile autosave", () => {
     const pitch = container.querySelector<HTMLTextAreaElement>('textarea[name="elevator_pitch"]')!;
     expect(pitch).not.toBeNull();
     expect(pitch.maxLength).toBe(ADMINBOT_ELEVATOR_PITCH_MAX);
+    expect(pitch.required).toBe(false);
+    expect(container.textContent).toContain(
+      "Elevator pitch that Zhijing can use when recommending you to other prof/recruiter",
+    );
+    expect(container.textContent).toContain(
+      "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
+    );
 
     pitch.value = "I work out when a model's answer is caused by its evidence.";
     pitch.dispatchEvent(new Event("input", { bubbles: true }));
@@ -127,6 +277,24 @@ describe("renderProfile autosave", () => {
 
   // The folder, not a document: the service only accepts a Drive /drive/folders/ URL, and the hint
   // says which shape that is before anyone pastes last week's meeting notes into it.
+  it("shows and autosaves the optional ACL Anthology profile link", () => {
+    const url = "https://aclanthology.org/people/jane-doe/";
+    const onSave = vi.fn();
+    const container = renderPage(
+      createState(createMember({ acl_anthology_url: url } as Partial<LabMember>)),
+      onSave,
+    );
+    const input = container.querySelector<HTMLInputElement>('input[name="acl_anthology_url"]')!;
+    expect(input.value).toBe(url);
+    expect(input.required).toBe(false);
+    expect(container.textContent).toContain("ACL Anthology profile");
+    expect(container.querySelector(`a[href="${url}"]`)).not.toBeNull();
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1000);
+    expect(onSave).toHaveBeenCalledWith("pat", expect.objectContaining({ acl_anthology_url: "" }));
+  });
+
   it("collects the 1:1 folder as a Drive folder link", () => {
     const member = createMember();
     const state = createState(member);
@@ -398,6 +566,54 @@ describe("renderProfile autosave", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("warns when AdminBot cannot open a saved Drive folder", async () => {
+    saveStoredMemberSession({ sessionToken: "test-session", expiresAt: "" });
+    // The profile's wait-preference control fetches too; answer it separately so the Drive check
+    // gets a body of its own and the call count below stays about the Drive check alone.
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify({
+            status: "inaccessible",
+            message: "AdminBot cannot open this file. Share it with Jinesis.adminbot@gmail.com.",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
+      String(url).endsWith("/inference/preferences")
+        ? Promise.resolve(new Response("{}", { status: 200 }))
+        : fetchMock(url, init),
+    );
+    try {
+      const member = createMember({
+        one_on_one_folder_url:
+          "https://drive.google.com/drive/folders/1PdF9xAbCdEfGhIjKlMnOpQrStUv",
+      });
+      const state = createState(member);
+      const container = document.createElement("div");
+      document.body.append(container);
+      render(renderProfile(state, { onSave: vi.fn() }), container);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/drive/check-edit-access"),
+        expect.objectContaining({ method: "POST", credentials: "omit" }),
+      );
+      expect(state.profileAccountChecks.one_on_one_folder_url).toMatchObject({ status: "warning" });
+      render(renderProfile(state, { onSave: vi.fn() }), container);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(
+        container.querySelector('[data-testid="profile-account-check-one_on_one_folder_url"]')
+          ?.textContent,
+      ).toContain("Jinesis.adminbot@gmail.com");
+    } finally {
+      document.body.replaceChildren();
+      clearStoredMemberSession();
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("renderProfile mandatory fields", () => {
@@ -410,7 +626,7 @@ describe("renderProfile mandatory fields", () => {
     expect(nameRow?.querySelector(".profile__mandatory")).not.toBeNull();
 
     const websiteRow = container
-      .querySelector('input[name="personal_website"]')
+      .querySelector('input[name="scholar_url"]')
       ?.closest(".profile__form-row");
     expect(websiteRow?.querySelector(".profile__mandatory")).toBeNull();
     expect(websiteRow?.querySelector(".profile__optional")).not.toBeNull();
@@ -599,6 +815,9 @@ describe("renderProfile LinkedIn URN and intake form", () => {
 
     const hint = (key: string) =>
       container.querySelector(`[data-testid="profile-hint-${key}"]`)?.textContent?.trim();
+    expect(hint("correspondence_email")).toBe(
+      "This is your official organizational email. Imagine we contact government sectors or external collaborators. Usually you need to be cc’ed via your institutional email.",
+    );
     expect(hint("github_url")).toContain("A username, link, or note");
     expect(hint("linkedin_url")).toContain("linkedin.com/in/username");
     expect(hint("openreview_id")).toContain("~Zhijing_Jin1");
@@ -606,13 +825,11 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(container.querySelector('[data-testid="profile-hint-name"]')).toBeNull();
   });
 
-  // The member cannot type a URN in; all they need is whether the lab has one yet, and the
-  // collector link while it does not.
-  // Editable now: it was disabled, which cannot be focused, selected or pasted into, so the member
-  // could neither follow the field's own "look it up and paste it here" instruction nor copy the
-  // stored one out. The status line beside it stays, because "on file or not" is still the thing
-  // the member is checking when they look.
-  it("shows the URN as an editable value with its on-file state beside it", () => {
+  // Editable, and asked for: it was disabled, which cannot be focused, selected or pasted into, so
+  // the member could neither follow the field's own "look it up and paste it here" instruction nor
+  // copy the stored one out. The status line beside it stays, because "on file or not" is still the
+  // thing the member is checking when they look.
+  it("shows the URN as an editable, required value with its on-file state beside it", () => {
     const filled = renderPage(
       createState(createMember({ linkedin_urn: "ACoAAB1234567" } as Partial<LabMember>)),
       vi.fn(),
@@ -628,9 +845,11 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(blank.querySelector('[data-testid="profile-urn-status"]')?.textContent?.trim()).toBe(
       "Not on file yet — use the collector",
     );
-    // No required dot: the form does not let them answer it, so it must not chase them for one.
+    // And a required dot. The field is on adminBotMandatoryProfileFields and no longer exempted by
+    // adminBotAdminOwnedProfileFields, so the page asks for it like any other answer the member
+    // can give -- which, with the collector link right beside the input, it is.
     const row = blank.querySelector('[name="linkedin_urn"]')?.closest(".profile__form-row");
-    expect(row?.querySelector(".profile__mandatory")).toBeNull();
+    expect(row?.querySelector(".profile__mandatory")).not.toBeNull();
   });
 
   // Three states, not two. "Unknown" renders nothing, because labelling someone Inactive from a
@@ -749,8 +968,9 @@ describe("renderProfile LinkedIn URN and intake form", () => {
   // The page's required marks and the service's daily reminder read one list, so neither can chase
   // a field the other calls skippable. They used to be two hand-kept lists that never agreed.
   //
-  // The one documented exception is linkedin_urn: still mandatory for the record, but filled by an
-  // admin, so the member's own page does not dot it. The service reminder still names it.
+  // No exceptions left: adminBotAdminOwnedProfileFields is empty, so the marks are the whole list.
+  // The filter below keeps the rule rather than the roster of the moment -- an admin-owned field
+  // added later is required of the record and still not dotted here.
   it("marks exactly the shared mandatory list required, minus the admin-filled ones", () => {
     // Every mandatory field blank, so the marks stand for the whole list rather than the subset
     // this fixture happens to leave unanswered.
@@ -769,8 +989,14 @@ describe("renderProfile LinkedIn URN and intake form", () => {
       .map((control) => control?.getAttribute("name"))
       .filter((name): name is string => Boolean(name));
     expect(marked.toSorted()).toEqual(
-      [...adminBotMandatoryProfileFields].filter((key) => key !== "linkedin_urn").toSorted(),
+      [...adminBotMandatoryProfileFields]
+        .filter((key) => !adminBotAdminOwnedProfileFields.includes(key))
+        .toSorted(),
     );
+    // The two fields the lab most recently started asking for, named outright so a silent removal
+    // from the shared list cannot pass as "the marks still match the list".
+    expect(marked).toContain("linkedin_urn");
+    expect(marked).toContain("one_on_one_folder_url");
   });
 
   // Time zone is the one field derivable from another the member already filled in, so the control
@@ -845,7 +1071,7 @@ describe("renderProfile LinkedIn URN and intake form", () => {
   // It is the member's own answers, not the lab's blank form. Google Forms only ever hands the
   // edit link to the respondent, so nobody else can produce it for them -- which is why this is a
   // field they paste into rather than a link the profile could render.
-  it("collects the member's own application form URL as an optional field, not a shared link", () => {
+  it("requires the member's own application form response without publishing it", () => {
     const complete = createMember({
       linkedin_urn: "ACoAAB1234567",
       personal_website: "https://ada.dev",
@@ -859,8 +1085,8 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     const input = basics.querySelector<HTMLInputElement>('[name="intake_form_url"]');
     expect(input).not.toBeNull();
     const row = input?.closest(".profile__form-row");
-    expect(row?.querySelector(".profile__optional")).not.toBeNull();
-    expect(row?.querySelector(".profile__mandatory")).toBeNull();
+    expect(row?.querySelector(".profile__optional")).toBeNull();
+    expect(row?.querySelector(".profile__mandatory")).not.toBeNull();
   });
 });
 
@@ -878,6 +1104,14 @@ describe("renderProfile field types", () => {
     const values = roleBoxes(container).map((box) => box.value);
     expect(values.length).toBeGreaterThan(0);
     expect(values).toContain("PhD Student");
+    expect(values).toContain("Predoctoral gap-year researcher");
+    expect(
+      container
+        .querySelector('[data-testid="profile-multi-role"] summary')
+        ?.getAttribute("aria-label"),
+    ).toBe("Career stage");
+    expect(values).not.toContain("Research Assistant");
+    expect(values).not.toContain("Research Intern");
     // Nothing outside the closed vocabulary is offered.
     expect(values).not.toContain("Definitely Not A Real Role");
     expect(roleBoxes(container).every((box) => !box.checked)).toBe(true);
@@ -893,6 +1127,19 @@ describe("renderProfile field types", () => {
       .map((box) => box.value);
 
     expect(checked).toEqual(["PhD Student", "Lab Manager"]);
+  });
+
+  it("preserves saved research appointments when editing the career stage", () => {
+    const container = renderPage(
+      createState(createMember({ role: "Master's Student, Research Assistant, Research Intern" })),
+      vi.fn(),
+    );
+    expect(
+      roleBoxes(container)
+        .filter((box) => box.checked)
+        .map((box) => box.value),
+    ).toEqual(["Master's Student", "Research Assistant", "Research Intern"]);
+    expect(container.querySelectorAll(".profile__multi-option--legacy input")).toHaveLength(2);
   });
 
   it("keeps a box for an imported role the vocabulary has no option for", () => {
@@ -914,19 +1161,19 @@ describe("renderProfile field types", () => {
       const container = renderPage(createState(createMember({ role: "" })), onSave);
       const boxes = roleBoxes(container);
       const lab = boxes.find((box) => box.value === "Lab Manager")!;
-      const phd = boxes.find((box) => box.value === "PhD Student")!;
+      const predoctoral = boxes.find((box) => box.value === "Predoctoral gap-year researcher")!;
 
       // Ticked in the other order on purpose: what is stored is the vocabulary's order, so two
       // people who picked the same pair store the same string.
       lab.checked = true;
       lab.dispatchEvent(new Event("input", { bubbles: true }));
-      phd.checked = true;
-      phd.dispatchEvent(new Event("input", { bubbles: true }));
+      predoctoral.checked = true;
+      predoctoral.dispatchEvent(new Event("input", { bubbles: true }));
       vi.advanceTimersByTime(1000);
 
       expect(onSave).toHaveBeenCalled();
       const saved = onSave.mock.calls.at(-1)?.[1] as { role?: string };
-      expect(saved.role).toBe("PhD Student, Lab Manager");
+      expect(saved.role).toBe("Predoctoral gap-year researcher, Lab Manager");
     } finally {
       vi.useRealTimers();
     }
@@ -967,7 +1214,9 @@ describe("renderProfile field types", () => {
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
-    expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe("text");
+    expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe(
+      "text",
+    );
     // Weekly capacity is the denominator the Time Availability chart reads every commitment
     // against, so the page has to ask for it. Bounded to the range the service accepts, so an
     // impossible week is refused by the control rather than by a rejected save.
@@ -1111,8 +1360,6 @@ describe("renderProfile visual structure", () => {
     expect(badges).not.toContain("Postdoc");
   });
 
-  // Badges moved out of the header into a section of their own, next to the nomination form. The
-  // header keeps the completeness ring, which is the one thing it still states about the record.
   it("shows a completeness indicator in the header and badges in their own section", () => {
     // A badge is something the record earns, so the fixture has to earn one: authorship of a paper
     // it submitted. (Role is not a badge -- see the test above.)
@@ -1133,11 +1380,8 @@ describe("renderProfile visual structure", () => {
     const section = container.querySelector('[data-testid="profile-badges-section"]');
     expect(section).not.toBeNull();
     expect(section?.querySelector('[data-testid="profile-badges"]')).not.toBeNull();
-    // Immediately above the nomination form: "what I have" and "what I could ask for" are one
-    // subject, and they used to sit at opposite ends of the page.
-    expect(section?.nextElementSibling?.getAttribute("data-testid")).toBe(
-      "profile-badge-nominations",
-    );
+    expect(hero.nextElementSibling).toBe(section);
+    expect(section?.nextElementSibling?.querySelector("h2")?.textContent).toBe("Basic info");
   });
 
   it("shows admin-managed badges ahead of computed badges and renders the self-nomination form", () => {
@@ -1300,7 +1544,7 @@ describe("renderProfile visual structure", () => {
       expect(container.textContent).toContain("Mei Chen already holds");
     });
 
-    it("says which way round each nomination in the list runs", () => {
+    it("keeps the nomination form but shows no nomination record", () => {
       const { state } = lab({
         profileBadgeNominations: [
           {
@@ -1333,12 +1577,13 @@ describe("renderProfile visual structure", () => {
       } as unknown as Partial<AppViewState>);
       const container = renderPage(state, vi.fn());
 
+      // The form stays; the list of past and pending nominations is not part of the profile.
+      expect(container.querySelector('[data-testid="profile-badge-nominee"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="profile-badge-nomination-sent"]')).toBeNull();
       expect(
-        container.querySelector('[data-testid="profile-badge-nomination-sent"]')?.textContent,
-      ).toContain("You nominated Mei Chen");
-      expect(
-        container.querySelector('[data-testid="profile-badge-nomination-received"]')?.textContent,
-      ).toContain("Nominated by Mei Chen");
+        container.querySelector('[data-testid="profile-badge-nomination-received"]'),
+      ).toBeNull();
+      expect(container.querySelector(".profile-badge-nominations__item")).toBeNull();
     });
   });
 
@@ -1397,37 +1642,54 @@ describe("the LinkedIn URN", () => {
       createState(createMember({ linkedin_urn: "ACoAAB1234567" })),
       () => {},
     );
-    const input = container.querySelector<HTMLInputElement>(
-      "[data-testid='profile-admin-only-linkedin_urn']",
-    );
+    const input = container.querySelector<HTMLInputElement>('input[name="linkedin_urn"]');
     expect(input).not.toBeNull();
     expect(input?.disabled).toBe(false);
     expect(input?.readOnly).toBe(false);
     expect(input?.value).toBe("ACoAAB1234567");
   });
 
-  // Editable is a separate question from chased. One member of 199 has a URN, so counting it would
-  // drop fifty profiles off 100% and nudge every one of them for a field nobody has heard of.
-  it("stays out of the completion ledger and carries no mandatory dot", () => {
+  // Chased as well as editable. It is off adminBotAdminOwnedProfileFields, so a blank URN is a
+  // blank field like any other: dotted on the page, counted in the ledger, named by the reminder.
+  it("carries a mandatory dot and counts as a blank while it is empty", () => {
     const container = renderPage(createState(createMember()), () => {});
-    const field = container
-      .querySelector("[data-testid='profile-admin-only-linkedin_urn']")
-      ?.closest("label");
-    expect(field?.querySelector(".profile__mandatory")).toBeNull();
+    const field = container.querySelector('input[name="linkedin_urn"]')?.closest("label");
+    expect(field?.querySelector(".profile__mandatory")).not.toBeNull();
+    expect(blankFields(createMember()).map((entry) => entry.key)).toContain("linkedin_urn");
   });
 });
 
-it("renders free-form CV and GitHub safely and leaves historical fields optional", () => {
+it("renders free-form CV and GitHub safely with intake responses required", () => {
   const member = createMember({ cv_url: "Available on request", github_url: "@pat" });
   const container = renderPage(createState(member), vi.fn());
   const links = container.querySelector('[data-testid="profile-links"]')!;
   expect(links.textContent).toContain("Available on request");
   expect(links.textContent).toContain("@pat");
   expect(links.querySelector('a[href="@pat"]')).toBeNull();
-  expect(adminBotMandatoryProfileFields).not.toContain("joined_month");
-  expect(adminBotMandatoryProfileFields).not.toContain("intake_form_url");
+  expect(adminBotMandatoryProfileFields).toContain("joined_month");
+  expect(adminBotMandatoryProfileFields).toContain("intake_form_url");
+  expect(adminBotMandatoryProfileFields).not.toContain("graduated_month");
+  expect(adminBotMandatoryProfileFields).not.toContain("next_position");
   expect(adminBotMandatoryProfileFields).toContain("github_url");
   expect(adminBotMandatoryProfileFields).toContain("cv_url");
+});
+
+// The intake aside used to be a `.profile__form-row` inside a `<label>`: the explanation rendered
+// at label weight, and the whole paragraph was inside the checkbox's hit area.
+it("renders the intake note as a quiet hint, outside the checkbox's label", () => {
+  const container = renderPage(createState(createMember()), vi.fn());
+
+  const note = container.querySelector('[data-testid="profile-intake-note"]')!;
+  expect(note).not.toBeNull();
+  // Quiet: the hint class, not a form label, and not a field row.
+  expect(note.className).toContain("profile__field-hint");
+  expect(note.closest(".profile__form-row")).toBeNull();
+  // Outside the label, so selecting the sentence cannot toggle the box.
+  expect(note.closest("label")).toBeNull();
+
+  const checkbox = container.querySelector<HTMLInputElement>('[name="intake_form_unavailable"]')!;
+  const label = checkbox.closest("label")!;
+  expect(label.textContent?.trim()).toBe("I can't find it");
 });
 
 it("saves the missing-form checkbox and clears it when a link is supplied", () => {
@@ -1438,7 +1700,239 @@ it("saves the missing-form checkbox and clears it when a link is supplied", () =
   const button = container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!;
   button.click();
   expect(save.mock.calls.at(-1)?.[1].intake_form_unavailable).toBe(true);
-  container.querySelector<HTMLInputElement>('[name="intake_form_url"]')!.value = "https://docs.google.com/forms/d/e/test/viewform";
+  container.querySelector<HTMLInputElement>('[name="intake_form_url"]')!.value =
+    "https://docs.google.com/forms/d/e/test/viewform";
   button.click();
   expect(save.mock.calls.at(-1)?.[1].intake_form_unavailable).toBe(false);
+});
+
+// Suggesting a badge the catalogue does not have. The other half of this page's badge block --
+// renderBadgeSelfNomination puts somebody forward for a badge that exists; this asks for one that
+// does not.
+describe("suggesting a new badge", () => {
+  function suggestState(overrides: Partial<AppViewState> = {}): AppViewState {
+    return createState(createMember(), {
+      adminBotBadgeDefinitions: [
+        {
+          id: "team_contributor__bug_hunter",
+          family_key: "team_contributor__bug_hunter",
+          category: "Team Contributor",
+          name: "Bug Hunter",
+          description: "Found a substantive error.",
+          sort_order: 10,
+          created_at: "2026-01-01T00:00:00.000Z",
+          updated_at: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      profileBadgeNominations: [],
+      adminBotBadgeSuggestions: [],
+      ...overrides,
+    } as unknown as Partial<AppViewState>);
+  }
+
+  // Shut by default: most visits to this page are somebody editing a field, not proposing lab
+  // vocabulary, and an eight-input form standing open would be the largest thing on the page.
+  it("stays collapsed until asked for", () => {
+    const container = renderPage(suggestState(), vi.fn());
+
+    expect(container.querySelector('[data-testid="profile-badge-suggestions"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="profile-badge-suggest-form"]')).toBeNull();
+    const toggle = container.querySelector('[data-testid="profile-badge-suggest-toggle"]');
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("opens on request and submits the badge plus the case for it", () => {
+    const onSubmitBadgeSuggestion = vi.fn();
+    const container = renderPage(
+      suggestState({ profileBadgeSuggestOpen: true } as Partial<AppViewState>),
+      vi.fn(),
+      { onSubmitBadgeSuggestion },
+    );
+
+    const form = container.querySelector<HTMLFormElement>(
+      '[data-testid="profile-badge-suggest-form"]',
+    )!;
+    form.querySelector<HTMLInputElement>('[name="name"]')!.value = "Reviewer Rescue";
+    form.querySelector<HTMLInputElement>('[name="category"]')!.value = "Team Contributor";
+    form.querySelector<HTMLInputElement>('[name="description"]')!.value =
+      "Turned around an emergency review in 48 hours.";
+    form.querySelector<HTMLTextAreaElement>('[name="rationale"]')!.value =
+      "Three people did this for ICML and none of it is recorded.";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    expect(onSubmitBadgeSuggestion).toHaveBeenCalledWith({
+      name: "Reviewer Rescue",
+      category: "Team Contributor",
+      description: "Turned around an emergency review in 48 hours.",
+      rationale: "Three people did this for ICML and none of it is recorded.",
+    });
+  });
+
+  // Blank optionals are left off rather than sent empty, so a stored suggestion carries the fields
+  // somebody actually answered.
+  it("omits the optional fields when they are left blank, and sends them when they are not", () => {
+    const onSubmitBadgeSuggestion = vi.fn();
+    const container = renderPage(
+      suggestState({ profileBadgeSuggestOpen: true } as Partial<AppViewState>),
+      vi.fn(),
+      { onSubmitBadgeSuggestion },
+    );
+
+    const form = container.querySelector<HTMLFormElement>(
+      '[data-testid="profile-badge-suggest-form"]',
+    )!;
+    const fill = () => {
+      form.querySelector<HTMLInputElement>('[name="name"]')!.value = "Causality";
+      form.querySelector<HTMLInputElement>('[name="category"]')!.value = "Causality";
+      form.querySelector<HTMLInputElement>('[name="description"]')!.value = "Passed level four.";
+      form.querySelector<HTMLTextAreaElement>('[name="rationale"]')!.value = "The tiers stop at 3.";
+    };
+    fill();
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(onSubmitBadgeSuggestion.mock.calls.at(-1)?.[0]).not.toHaveProperty("tier");
+    expect(onSubmitBadgeSuggestion.mock.calls.at(-1)?.[0]).not.toHaveProperty("criteria_url");
+
+    fill();
+    form.querySelector<HTMLInputElement>('[name="tier"]')!.value = "Level 4";
+    form.querySelector<HTMLInputElement>('[name="criteria_url"]')!.value = "https://lab.test/c";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(onSubmitBadgeSuggestion.mock.calls.at(-1)?.[0]).toMatchObject({
+      tier: "Level 4",
+      criteria_url: "https://lab.test/c",
+    });
+  });
+
+  // The categories already in use are offered but not enforced -- a suggestion that needs a new
+  // category is exactly what this form is for, so the control is a datalist and not a select.
+  it("offers the existing categories without restricting the answer to them", () => {
+    const container = renderPage(
+      suggestState({ profileBadgeSuggestOpen: true } as Partial<AppViewState>),
+      vi.fn(),
+    );
+
+    const input = container.querySelector<HTMLInputElement>('[name="category"]');
+    expect(input?.tagName).toBe("INPUT");
+    expect(input?.getAttribute("list")).toBe("profile-badge-categories");
+    expect(container.querySelector("#profile-badge-categories")?.textContent).toContain("");
+    expect(
+      [...container.querySelectorAll("#profile-badge-categories option")].map(
+        (option) => (option as HTMLOptionElement).value,
+      ),
+    ).toEqual(["Team Contributor"]);
+  });
+
+  it("lists the member's own suggestions with what became of them", () => {
+    const container = renderPage(
+      suggestState({
+        adminBotBadgeSuggestions: [
+          {
+            id: "sug_1",
+            category: "Team Contributor",
+            name: "Reviewer Rescue",
+            description: "Turned around an emergency review in 48 hours.",
+            rationale: "Worth recording.",
+            status: "approved",
+            created_at: "2026-09-01T10:00:00.000Z",
+            decided_at: "2026-09-02T10:00:00.000Z",
+            created_badge_id: "badge_1",
+          },
+        ],
+      } as unknown as Partial<AppViewState>),
+      vi.fn(),
+    );
+
+    const row = container.querySelector('[data-testid="profile-badge-suggestion"]');
+    expect(row?.textContent).toContain("Reviewer Rescue");
+    expect(row?.textContent).toContain("Approved");
+    // "Approved" alone leaves somebody wondering whether the badge exists yet.
+    expect(row?.textContent).toContain("Added to the badge list.");
+  });
+
+  it("says so when there is nothing suggested yet", () => {
+    const container = renderPage(suggestState(), vi.fn());
+
+    expect(
+      container.querySelector('[data-testid="profile-badge-suggestions"]')?.textContent,
+    ).toContain("haven't suggested a badge yet");
+  });
+
+  it("surfaces the service's own refusal rather than a generic failure", () => {
+    const container = renderPage(
+      suggestState({
+        badgeSuggestionNotice: { kind: "error", text: "that badge already exists" },
+      } as unknown as Partial<AppViewState>),
+      vi.fn(),
+    );
+
+    const notice = container.querySelector('[data-testid="profile-badge-suggest-notice"]');
+    expect(notice?.textContent).toContain("that badge already exists");
+    expect(notice?.className).toContain("danger");
+  });
+});
+
+it("validates year-month fields without hiding legacy values", () => {
+  const container = renderPage(
+    createState(createMember({ joined_month: "Jan-26", graduated_month: "Jan-26" })),
+    vi.fn(),
+  );
+  for (const key of ["joined_month", "graduated_month"]) {
+    const input = container.querySelector(`input[name="${key}"]`) as HTMLInputElement;
+    if (key === "joined_month") expect(input.value).toBe("Jan-26");
+    for (const value of ["Jan-26", "2026-00", "2026-13", "2026-1"]) {
+      input.value = value;
+      expect(input.checkValidity()).toBe(false);
+    }
+    input.value = "2026-01";
+    expect(input.checkValidity()).toBe(true);
+    input.value = "";
+    expect(input.checkValidity()).toBe(true);
+  }
+});
+
+it("accepts only real month-day birthdays without collecting a birth year", () => {
+  const container = renderPage(createState(createMember()), vi.fn());
+  const input = container.querySelector<HTMLInputElement>('input[name="birthday"]')!;
+  expect(input.type).toBe("text");
+  for (const value of ["2026-03-14", "02-30", "04-31", "13-01", "3-14"]) {
+    input.value = value;
+    expect(input.checkValidity()).toBe(false);
+  }
+  for (const value of ["03-14", "02-29", "12-31", ""]) {
+    input.value = value;
+    expect(input.checkValidity()).toBe(true);
+  }
+});
+
+it("uses native month selectors for valid and empty year-month values", () => {
+  const container = renderPage(createState(createMember({ joined_month: "2026-01" })), vi.fn());
+  for (const key of ["joined_month", "graduated_month"]) {
+    const input = container.querySelector<HTMLInputElement>(`input[name="${key}"]`)!;
+    expect(input.type).toBe("month");
+    input.value = "2027-06";
+    expect(input.checkValidity()).toBe(true);
+    expect(input.value).toBe("2027-06");
+  }
+});
+
+it("requires social/website links and accepts either intake response answer for completion", () => {
+  const empty = createMember();
+  expect(blankFields(empty).map((field) => field.key)).toEqual(
+    expect.arrayContaining(["twitter_url", "personal_website", "intake_form_url"]),
+  );
+  expect(
+    blankFields(createMember({ intake_form_unavailable: true })).map((field) => field.key),
+  ).not.toContain("intake_form_url");
+  expect(
+    blankFields(
+      createMember({
+        intake_form_url: "https://docs.google.com/forms/d/e/sample/viewform?edit2=sample",
+      }),
+    ).map((field) => field.key),
+  ).not.toContain("intake_form_url");
+  const container = renderPage(createState(empty), vi.fn());
+  for (const name of ["twitter_url", "personal_website", "intake_form_url"]) {
+    const row = container.querySelector(`[name="${name}"]`)!.closest(".profile__form-row")!;
+    expect(row.querySelector(".profile__mandatory")).not.toBeNull();
+    expect(row.querySelector(".profile__optional")).toBeNull();
+  }
 });

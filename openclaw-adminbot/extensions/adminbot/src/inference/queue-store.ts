@@ -14,6 +14,7 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { AdminBotAuditEvent } from "../contracts/actions.js";
+import { invalidateSqliteCaches } from "../persistence/sqlite.cache-invalidation.js";
 
 export type InferenceRowStatus = "queued" | "shed" | "running" | "completed" | "failed" | "expired";
 
@@ -178,6 +179,7 @@ export class InferenceQueueStore {
       return result;
     } catch (error) {
       this.db.exec("ROLLBACK");
+      invalidateSqliteCaches(this.db);
       throw error;
     } finally {
       this.inTransaction = false;
@@ -212,6 +214,7 @@ export class InferenceQueueStore {
         event.actor ?? null,
         JSON.stringify(event),
       );
+    invalidateSqliteCaches(this.db);
     return event;
   }
 

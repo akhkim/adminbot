@@ -34,6 +34,7 @@ import {
   type AdminBotCollaboratorAccessItemId,
   type AdminBotCollaboratorGrantedCell,
   adminBotCollaboratorAccessItems,
+  subgroupForMemberType,
 } from "./collaborator-subgroups.js";
 import { belongsOnSurface } from "./surface-membership.js";
 
@@ -86,7 +87,7 @@ export type AccessAuditEvidence = {
   portal_credential: boolean;
   /** Latest outcome of each onboarding side effect, from the audit trail. */
   calendar_invite: AccessAuditAttempt;
-  dcs_form: AccessAuditAttempt;
+  dcs_roster_row: AccessAuditAttempt;
   approval_email: AccessAuditAttempt;
   onboarding_guide: AccessAuditAttempt;
   /** Whether the audit trail was loaded. False makes every trail-backed row unverifiable. */
@@ -126,28 +127,13 @@ export function resolveSubgroup(member: AdminBotLabMember): {
   if (tokens.has("full")) {
     return { source: "full_member" };
   }
-  for (const [token, subgroup] of SUBGROUP_BY_TOKEN) {
-    if (tokens.has(token)) {
-      return { subgroup, source: "member_type" };
-    }
-  }
-  return { source: "unknown" };
+  const subgroup = subgroupForMemberType(member.member_type);
+  return subgroup ? { subgroup, source: "member_type" } : { source: "unknown" };
 }
 
-// The member-type tokens the onboarding sheet uses, and the subgroup row each grades against.
-// Ordered most-committed first for the same reason TEMPLATE_BY_TYPE is.
-const SUBGROUP_BY_TOKEN: readonly (readonly [string, AdminBotExternalCollaboratorSubgroup])[] = [
-  ["coauthor-major", "coauthor_major"],
-  ["own-pace-advisee", "own_pace_advisee"],
-  ["coauthor-minor", "coauthor_minor"],
-  ["coauthor-discussant-or-designer", "coauthor_discussant_designer"],
-  ["disappearing-coauthor", "disappearing_coauthor"],
-  ["external-prof", "external_prof"],
-  ["alumni", "alumni"],
-  ["interviewee", "interviewee"],
-  ["slightly-better-than-emails", "slightly_better_than_emails"],
-  ["acquaintance", "acquaintance"],
-];
+// Re-exported: callers have always found it here, and the lookup moved only so surface-membership
+// can read it without an import cycle through this file.
+export { subgroupForMemberType };
 
 /**
  * The Slack Connect room the matrix calls #friends-and-collaborators, as the export names it.
@@ -351,6 +337,12 @@ const CHECKS: Record<AdminBotCollaboratorAccessItemId, AccessItemCheck> = {
     kind: "unverifiable",
     reason: "needs a live Drive permissions read; not in the roster or the Slack export",
   },
+  // The calendar half is the grant's own audit row; the Monday meeting's guest list is not in the
+  // evidence this audit loads, and the invite reconciliation owns that half.
+  lab_calendar_group_meeting: attemptCheck(
+    (evidence) => evidence.calendar_invite,
+    "lab calendar invite",
+  ),
   weekly_meeting: slackCheck("a #meeting- channel", (channels) => {
     const found = matching(channels, "meeting-");
     return {
@@ -419,6 +411,10 @@ const CHECKS: Record<AdminBotCollaboratorAccessItemId, AccessItemCheck> = {
       detail: found.length > 0 ? `in ${found.length} group channel(s)` : "in no #group- channel",
     };
   }),
+  physical_office_access: {
+    kind: "unverifiable",
+    reason: "fobs, building access and guest contracts are issued outside AdminBot",
+  },
 };
 
 /**
@@ -461,21 +457,21 @@ const BASELINE_ITEMS = [
   {
     id: "baseline_calendar_invite" as const,
     label: "Lab calendar reader invite",
-    // `belongsOnSurface` is what the invite sweep itself asks: the lab calendar is the lab's own
-    // people. Major coauthors get the group meeting, not the calendar.
+    // `belongsOnSurface` is what the invite sweep itself asks: the lab's own people, and the
+    // external subgroups the access design seats on the calendar and the Monday meeting.
     applies: (member: AdminBotLabMember) => belongsOnSurface(member, "lab_calendar"),
     check: attemptCheck((evidence) => evidence.calendar_invite, "lab calendar invite"),
   },
   {
-    id: "baseline_dcs_form" as const,
-    label: "DCS Slack-access form",
-    // Filed by one onboarding template -- the full-member one (DCS_FORM_TEMPLATE_ID = "member").
+    id: "baseline_dcs_roster_row" as const,
+    label: "DCS roster sheet row",
+    // Filed by one onboarding template -- the full-member one (DCS_ROSTER_TEMPLATE_ID = "member").
     // Every other member type's onboarding never files it.
     applies: (member: AdminBotLabMember) => {
       const template = templateForMemberType(member.member_type);
       return template.ok ? template.templateId === "member" : undefined;
     },
-    check: attemptCheck((evidence) => evidence.dcs_form, "DCS form submission"),
+    check: attemptCheck((evidence) => evidence.dcs_roster_row, "DCS roster row filing"),
   },
   {
     id: "baseline_portal_login" as const,

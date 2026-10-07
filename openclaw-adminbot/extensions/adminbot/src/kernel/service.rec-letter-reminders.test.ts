@@ -12,7 +12,7 @@ function unwrap<T>(
   return result.payload;
 }
 
-const NOW = "2026-11-28T09:00:00Z";
+const NOW = "2026-11-28T13:00:00Z";
 
 const LETTERS: AdminBotLogisticsRequestInput = {
   kind: "recommendation_letters",
@@ -126,7 +126,7 @@ describe("sweepRecLetterReminders", () => {
 
     expect(result.reminded).toHaveLength(2);
     expect(sent).toHaveLength(1);
-    expect(sent[0]?.subject).toBe("2 recommendation letters due within 3 days");
+    expect(sent[0]?.subject).toBe("2 recommendation letters due within 2 business days");
     expect(sent[0]?.body).toContain("Grace Hopper");
   });
 
