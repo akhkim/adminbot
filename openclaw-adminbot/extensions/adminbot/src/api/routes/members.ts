@@ -1,9 +1,10 @@
-import { randomUUID } from "node:crypto";
-import type { IncomingMessage, ServerResponse } from "node:http";
 // The lab roster: listing, editing, merging, and requests to add somebody.
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
+
+import { randomUUID } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   type AdminBotLabMemberInput,
   redactConfidentialMemberFields,

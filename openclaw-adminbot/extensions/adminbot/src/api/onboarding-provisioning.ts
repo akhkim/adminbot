@@ -1,3 +1,8 @@
+// What happens around an executed onboarding action: the guide email that goes with it and the
+// lab calendar grant it implies. Wired into the executor by createAdminBotMockService.
+//
+// Cut from server.ts.
+
 import { randomUUID } from "node:crypto";
 import type { AdminBotAuditEvent, AdminBotStoredProposal } from "../contracts/actions.js";
 import {
@@ -15,10 +20,6 @@ import {
   type AdminBotOnboardingSender,
 } from "../workflows/onboarding/guide-sender.js";
 import { readInterviewInvitation } from "../workflows/onboarding/interview.js";
-// What happens around an executed onboarding action: the guide email that goes with it and the
-// lab calendar grant it implies. Wired into the executor by createAdminBotMockService.
-//
-// Cut from server.ts.
 
 /**
  * Say once, at startup, that nobody will be granted calendar access.

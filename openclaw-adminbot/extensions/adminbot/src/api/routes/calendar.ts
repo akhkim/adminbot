@@ -1,8 +1,9 @@
-import type { ServerResponse } from "node:http";
 // Lab calendar events and the scheduled invite passes.
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
+
+import type { ServerResponse } from "node:http";
 import type { AdminBotActionProposal } from "../../contracts/actions.js";
 import { AdminBotService, type AdminBotServiceResponse } from "../../kernel/service.js";
 import { normalizeCalendarTimezone, toAbsoluteRfc3339 } from "../../workflows/calendar/time.js";

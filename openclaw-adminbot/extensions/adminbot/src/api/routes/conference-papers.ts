@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
 // Published conference programmes: venue paper search, lab relevance, workshop nudges.
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
+
+import { randomUUID } from "node:crypto";
 import { findRelevantLabPapers } from "../../workflows/papers/lab-relevance-search.js";
 import {
   buildVenueIndex,

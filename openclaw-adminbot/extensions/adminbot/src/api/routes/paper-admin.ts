@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
 // Lab-wide paper sweeps and boards an administrator runs.
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
+
+import { randomUUID } from "node:crypto";
 import { parsePaperMentorRunInput } from "../../contracts/papermentor.js";
 import {
   asString,

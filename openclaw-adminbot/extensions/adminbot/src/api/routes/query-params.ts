@@ -1,3 +1,8 @@
+// Query-string readers more than one route zone shares: list paging, edit-history limits, and
+// day windows.
+//
+// Cut from server.ts.
+
 import type { AdminBotListPage } from "../../kernel/service.js";
 
 export function readListPage(url: URL): AdminBotListPage | "invalid" | undefined {

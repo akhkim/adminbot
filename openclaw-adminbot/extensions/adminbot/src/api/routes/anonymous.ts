@@ -1,8 +1,9 @@
-import type { AnonymousRateLimiter } from "./context.js";
 // The few routes a visitor with no account may reach, and the per-IP limiter that caps them.
 //
 // Cut from server.ts. routeRequest consults this before resolving a principal, and
 // handleAuthenticatedRoute re-checks it, so a new route is never anonymous by accident.
+
+import type { AnonymousRateLimiter } from "./context.js";
 
 // Routes the anonymous principal may reach, keyed as "METHOD pathname" -- re-checked against this
 // list before any handler runs, so a new route cannot become anonymously reachable by being added

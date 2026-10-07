@@ -1,3 +1,9 @@
+// Sign-in, sign-up, sessions, impersonation, password changes, registration review, and device
+// pairing: every route under /auth/. These run before a principal is resolved for the request,
+// so each one establishes or checks identity itself.
+//
+// Cut from server.ts.
+
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   adminBotRegistrationStatuses,
@@ -24,11 +30,6 @@ import {
   bearerToken,
   cookieToken,
 } from "./session.js";
-// Sign-in, sign-up, sessions, impersonation, password changes, registration review, and device
-// pairing: every route under /auth/. These run before a principal is resolved for the request,
-// so each one establishes or checks identity itself.
-//
-// Cut from server.ts.
 
 export async function handleAuthRoute(
   req: IncomingMessage,

@@ -1,3 +1,8 @@
+// Reference and integrity checks over manuscripts, and the OpenReview reviewing cycle.
+//
+// Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
+// decorator from guards.ts; the order below is the order the old if-chain tried them in.
+
 import fs from "node:fs";
 import path from "node:path";
 import { readGogSheetRows } from "../../connectors/gog.js";
@@ -11,10 +16,6 @@ import {
 import { type AdminBotServiceStore, AdminBotService } from "../../kernel/service.js";
 import { IclrIntegrityWatch } from "../../workflows/papers/iclr-integrity-watch.js";
 import { OpenReviewCitationWatch } from "../../workflows/papers/openreview-citation-watch.js";
-// Reference and integrity checks over manuscripts, and the OpenReview reviewing cycle.
-//
-// Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
-// decorator from guards.ts; the order below is the order the old if-chain tried them in.
 import { readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
 import type { AdminBotMockServiceOptions } from "./context.js";
 import { adminSessionOnly, principalActor, privilegedOnly } from "./guards.js";

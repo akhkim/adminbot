@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
 // The lab directory around the roster: member map, CV digest, and Slack channel names.
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
+
+import { randomUUID } from "node:crypto";
 import type { AdminBotCvScanResult } from "../../contracts/actions.js";
 import {
   type AdminBotCvScanDeps,

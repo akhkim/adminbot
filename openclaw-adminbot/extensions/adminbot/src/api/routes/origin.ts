@@ -1,7 +1,8 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
 // Where a request comes from: the CORS allow-list, and the client address behind a proxy.
 //
 // Cut from server.ts. Origin checks run before anything else in routeRequest, so they own no route.
+
+import type { IncomingMessage, ServerResponse } from "node:http";
 
 export const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:5173",

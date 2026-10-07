@@ -1,8 +1,9 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 // The reimbursement assistant and its packet generator.
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
+
+import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   AdminBotReimbursementBlocked,
   type AdminBotReimbursementRequest,

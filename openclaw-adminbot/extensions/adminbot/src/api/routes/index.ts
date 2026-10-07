@@ -1,3 +1,6 @@
+// Every authenticated route, zone by zone, in the order the old if-chain tried them. No two zones
+// claim the same method and path, so the zone order only has to keep each zone's own order.
+
 import { assistantRoutes } from "./assistant.js";
 import { badgesRoutes } from "./badges.js";
 import { calendarRoutes } from "./calendar.js";
@@ -17,8 +20,6 @@ import { papersRoutes } from "./papers.js";
 import { profileRoutes } from "./profile.js";
 import { reimbursementsRoutes } from "./reimbursements.js";
 import { reviewsRoutes } from "./reviews.js";
-// Every authenticated route, zone by zone, in the order the old if-chain tried them. No two zones
-// claim the same method and path, so the zone order only has to keep each zone's own order.
 import type { Route } from "./router.js";
 import { workspaceRoutes } from "./workspace.js";
 

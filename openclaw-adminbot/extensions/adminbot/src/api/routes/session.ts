@@ -1,3 +1,8 @@
+// Who is calling: the session cookie and its attributes, the bearer token, and the principal a
+// request resolves to. The /auth/ routes in auth.ts set and clear what this module reads.
+//
+// Cut from server.ts.
+
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AdminBotAuthResponse } from "../../workflows/identity/auth.js";

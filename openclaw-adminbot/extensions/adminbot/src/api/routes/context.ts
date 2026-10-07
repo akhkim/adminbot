@@ -1,3 +1,8 @@
+// What every route is handed: the principal the request resolved to, the service and its
+// connectors (AdminBotRouteContext), and the options createAdminBotMockService builds them from.
+//
+// Cut from server.ts. Types only, so any route module may import it without a cycle.
+
 import type { PdfReferenceChecker } from "../../connectors/reference-check.js";
 import type { AdminBotDriveProbe } from "../../contracts/drive-links.js";
 import type { OpenReviewSubmissionReader } from "../../contracts/openreview-citation-checks.js";

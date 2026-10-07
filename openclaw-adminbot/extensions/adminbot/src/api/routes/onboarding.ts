@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
 // Onboarding guides, the membership sheet, interviews, and onboarding sweeps.
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
+
+import { randomUUID } from "node:crypto";
 import type { AdminBotMemberNudgeChannel } from "../../contracts/actions.js";
 import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../../contracts/paper-cycle.js";
 import type { AdminBotOnboardingSendRequest } from "../../workflows/onboarding/guide-sender.js";
