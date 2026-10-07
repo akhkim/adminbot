@@ -593,7 +593,11 @@ describe("renderProfile autosave", () => {
         expect.stringContaining("/drive/check-edit-access"),
         expect.objectContaining({ method: "POST", credentials: "omit" }),
       );
-      expect(state.profileAccountChecks.one_on_one_folder_url).toMatchObject({ status: "warning" });
+      await vi.waitFor(() => {
+        expect(state.profileAccountChecks.one_on_one_folder_url).toMatchObject({
+          status: "warning",
+        });
+      });
       render(renderProfile(state, { onSave: vi.fn() }), container);
       await vi.advanceTimersByTimeAsync(0);
       expect(fetchMock).toHaveBeenCalledTimes(1);
