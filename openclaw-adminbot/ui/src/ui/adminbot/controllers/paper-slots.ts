@@ -16,6 +16,8 @@ import {
   fetchPaperNudgeBatches,
   fetchPaperSlotOverview,
   fetchPaperSlots,
+  fetchPiReviewQueue,
+  type PiReviewRow,
   loadStoredMemberSession,
   recordPaperSocialConsent,
   resolveAdminBotBaseUrl,
@@ -35,6 +37,8 @@ import type { PaperTripDraft } from "../views/paper-cycle.ts";
 
 export type AdminBotPaperSlotsHost = {
   settings: UiSettings;
+  adminBotPiReview?: PiReviewRow[];
+  adminBotPiReviewError?: string | null;
   /** The roster, for deciding who may be nudged. See `nudgeableBatches`. */
   adminBotData?: {
     members?: {
@@ -292,7 +296,7 @@ export async function saveAdminBotPaperSlot(
     host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
     return;
   }
-  const feedbackRequest = slot.startsWith("feedback_");
+  const feedbackRequest = slot.startsWith("feedback_") || slot === "pi_approval";
   if (feedbackRequest && host.adminBotPaperSlotsBusyId) {
     return;
   }
@@ -322,6 +326,15 @@ export async function saveAdminBotPaperSlot(
     // The header counts and the outstanding list are computed by the service, so a write only
     // reaches them through a re-read.
     host.adminBotPaperSlotsLoadedAt = null;
+    if (feedbackRequest && host.adminBotPiReview !== undefined) {
+      const queue = await fetchPiReviewQueue(wire.token, wire.baseUrl);
+      if (sameSession(wire.token)) {
+        if (queue.ok) {
+          host.adminBotPiReview = queue.value;
+        }
+        host.adminBotPiReviewError = queue.ok ? null : failureText(queue, wire.baseUrl);
+      }
+    }
   } finally {
     if (feedbackRequest) {
       host.adminBotPaperSlotsBusyId = null;

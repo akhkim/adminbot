@@ -766,3 +766,56 @@ it("queues an author's feedback with reason and deadlines without publication ap
   );
   expect(unwrap(service.listPiReviewQueue()).papers).toHaveLength(0);
 });
+
+describe("PI review completion authorization", () => {
+  it("lets only the configured PI complete feedback or approve publication", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(service.updateSettings({ head_professor_member_id: "ada" }));
+    const input = {
+      value_text: JSON.stringify({
+        reason: "Review please",
+        url: "https://overleaf.com/project/test",
+        reviewed: true,
+        review_note: "Looks ready",
+      }),
+    };
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "feedback_arxiv",
+        input,
+        memberId: "bob",
+        privileged: true,
+      }).status,
+    ).toBe(403);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        input: { done: true },
+        memberId: "bob",
+        privileged: true,
+      }).status,
+    ).toBe(403);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "feedback_arxiv",
+        input,
+        memberId: "ada",
+        privileged: true,
+      }).ok,
+    ).toBe(true);
+    expect(unwrap(service.listPiReviewQueue()).papers).toEqual([]);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        input: { done: true },
+        memberId: "ada",
+        privileged: true,
+      }).ok,
+    ).toBe(true);
+  });
+});

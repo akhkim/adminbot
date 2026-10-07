@@ -1,6 +1,6 @@
 import { html, nothing } from "lit";
-import "../paper-visibility.ts";
 import { ref } from "lit/directives/ref.js";
+import "../paper-visibility.ts";
 import {
   adminBotNormalizePaperAlias,
   adminBotPaperAliasMaxLength,
@@ -124,6 +124,7 @@ import {
   renderPaperLegacy,
   type PaperLegacyState,
 } from "./paper-legacy.ts";
+import { renderPaperPiReview } from "./paper-pi-review.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
 import { renderPaperTimeline } from "./paper-timeline.ts";
 import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
@@ -2823,6 +2824,7 @@ function showPaperDialog(element?: Element) {
  * asking the same question twice.
  */
 export function renderPaperCardDialog(params: {
+  reviewOnly?: boolean;
   state: AppViewState;
   props: MyWorkProps;
   paper: AdminBotPaperRecord;
@@ -2830,8 +2832,11 @@ export function renderPaperCardDialog(params: {
 }) {
   return html`
     <dialog
-      class="paper-card-dialog"
+      class=${params.reviewOnly
+        ? "paper-card-dialog paper-card-dialog--review"
+        : "paper-card-dialog"}
       data-testid="paper-card-dialog"
+      aria-label=${params.reviewOnly ? `Review ${params.paper.title}` : params.paper.title}
       ${ref(showPaperDialog)}
       @click=${(event: Event) => {
         // The backdrop is the dialog itself; a click that lands on a child is not a dismissal.
@@ -2863,7 +2868,12 @@ export function renderPaperCardDialog(params: {
           </button>
         </div>
         <div class="paper-card-dialog__body">
-          ${renderItem(params.state, params.paper, { ...params.props, openIds: [params.paper.id] })}
+          ${params.reviewOnly
+            ? renderPaperPiReview(params.paper, params.props)
+            : renderItem(params.state, params.paper, {
+                ...params.props,
+                openIds: [params.paper.id],
+              })}
         </div>
       </div>
     </dialog>
