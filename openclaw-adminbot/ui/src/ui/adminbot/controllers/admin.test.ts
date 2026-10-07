@@ -1024,31 +1024,42 @@ describe("reimbursement session privacy", () => {
 
   it("does not restore a previous member's receipt conversation after the cache is cleared", async () => {
     const { host } = createHost({});
-    let finish!: (result: unknown) => void;
-    const request = vi.fn(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
+    // A reimbursement turn is a service task (POST /reimbursements/converse), not a gateway tool
+    // call; an anonymous claimant first gets a visitor credential.
+    let finish!: (response: Response) => void;
+    const request = vi.fn(async (url: string) =>
+      url.endsWith("/tasks/visitor")
+        ? new Response("{}", { status: 200, headers: { "X-AdminBot-Visitor": "synthetic" } })
+        : new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
     );
-    host.client = {
-      request,
-    } as never;
-    const pending = sendAdminBotReimbursementMessage(host, "Old receipt", []);
-    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
-    host.adminBotReimbursement = createEmptyAdminBotReimbursementState();
-    finish({
-      ok: true,
-      toolName: "adminbot_reimbursement_converse",
-      output: {
-        assistant_message: "Old response",
-        draft: { amount: "200" },
-        ready: true,
-      },
-    });
-    await pending;
-    expect(host.adminBotReimbursement.messages).toEqual([]);
-    expect(host.adminBotReimbursement.draft).toEqual({});
+    vi.stubGlobal("fetch", request);
+    try {
+      const pending = sendAdminBotReimbursementMessage(host, "Old receipt", []);
+      await vi.waitFor(() =>
+        expect(request).toHaveBeenCalledWith(
+          expect.stringContaining("/reimbursements/converse"),
+          expect.anything(),
+        ),
+      );
+      host.adminBotReimbursement = createEmptyAdminBotReimbursementState();
+      finish(
+        new Response(
+          JSON.stringify({
+            assistant_message: "Old response",
+            draft: { amount: "200" },
+            ready: true,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+      await pending;
+      expect(host.adminBotReimbursement.messages).toEqual([]);
+      expect(host.adminBotReimbursement.draft).toEqual({});
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

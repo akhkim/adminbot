@@ -15,6 +15,7 @@ type WorkshopNudgeUnresolved = WorkshopNudgeResult["unresolved_recipients"][numb
 export type WorkshopNudgesProps = {
   state: WorkshopNudgeReviewState;
   onRefresh: () => void;
+  onRetryTask?: () => void;
   /** Stop the pass in flight. */
   onCancelRun: () => void;
   /** Replace the pass in flight with a new one, without waiting out the server's stall window. */
@@ -32,6 +33,16 @@ export function renderWorkshopNudges(props: WorkshopNudgesProps) {
   const selectedCount = props.state.selectedRecipientIds.length;
   return html`
     <section class="adminbot-shell workshop-nudges" data-testid="adminbot-workshop-nudges">
+      ${["needs_retry", "shed"].includes(props.state.run?.task_status ?? "")
+        ? html`<div class="callout warning" role="status">
+            ${props.state.run?.task_status === "shed"
+              ? "The match is saved. Choose Wait to request a place in the queue."
+              : "This match stopped during a step. Retry resumes it with completed work preserved."}
+            <button class="btn" @click=${props.onRetryTask}>
+              ${props.state.run?.task_status === "shed" ? "Wait" : "Retry uncertain step"}
+            </button>
+          </div>`
+        : nothing}
       ${props.state.error
         ? html`<div
             class="card adminbot-card adminbot-card--wide adminbot-notice adminbot-notice--error workshop-nudges__error"
@@ -185,11 +196,11 @@ function renderSendResult(props: WorkshopNudgesProps) {
     role="status"
     data-testid="workshop-nudges-send-result"
   >
-    <strong>
-      Sent ${sent.created} workshop nudge${sent.created === 1 ? "" : "s"}${sent.skipped.length
-        ? `, skipped ${sent.skipped.length}`
-        : ""}.
-    </strong>
+    <strong
+      >${`Sent ${sent.created} workshop nudge${sent.created === 1 ? "" : "s"}${
+        sent.skipped.length ? `, skipped ${sent.skipped.length}` : ""
+      }.`}</strong
+    >
     ${reasons.length
       ? html`<ul class="workshop-nudges__send-reasons">
           ${reasons.map(

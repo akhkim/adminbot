@@ -208,6 +208,25 @@ export function createAdminBotToolHandlers(
   const signal = options.signal;
   return {
     runEmailAutomation: () => client.runEmailAutomation(signal),
+    task: (params: {
+      taskId: string;
+      action: "status" | "result" | "wait" | "cancel" | "retry";
+    }) => {
+      switch (params.action) {
+        case "status":
+          return client.getTask(params.taskId, signal);
+        case "result":
+          return client.getTaskResult(params.taskId, signal);
+        case "wait":
+          return client.waitForTask(params.taskId, signal);
+        case "cancel":
+          return client.cancelTask(params.taskId, signal);
+        case "retry":
+          return client.retryTask(params.taskId, signal);
+        default:
+          throw new Error("Unsupported saved task action");
+      }
+    },
     converseReimbursement: (params: ReimbursementConversationParams) =>
       client.converseReimbursement(params, signal),
     generateReimbursement: (params: { draft: Record<string, unknown> }) =>
@@ -760,7 +779,9 @@ function calendarTimestampRange(
   const candidates = [params.timeWindow, calendarString(payload, "timeWindow")];
   const timestamp = /\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2}))\b/gu;
   for (const candidate of candidates) {
-    if (!candidate) continue;
+    if (!candidate) {
+      continue;
+    }
     const matches = [...candidate.matchAll(timestamp)].map((match) => match[1]);
     if (matches.length >= 2) {
       return { from: matches[0], to: matches[1] };
@@ -777,14 +798,20 @@ function calendarDateRange(
   const namedDate =
     /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?/giu;
   for (const candidate of candidates) {
-    if (!candidate) continue;
+    if (!candidate) {
+      continue;
+    }
     const matches = [...candidate.matchAll(namedDate)];
-    if (matches.length < 2) continue;
+    if (matches.length < 2) {
+      continue;
+    }
     const between = candidate.slice(
       (matches[0].index ?? 0) + matches[0][0].length,
       matches[1].index ?? candidate.length,
     );
-    if (!/(?:-|–|—|\bto\b|\bthrough\b)/iu.test(between)) continue;
+    if (!/(?:-|–|—|\bto\b|\bthrough\b)/iu.test(between)) {
+      continue;
+    }
     const year = Number(matches[0][3] ?? matches[1][3] ?? new Date().getUTCFullYear());
     const from = calendarIsoDate(year, calendarMonth(matches[0][1]), Number(matches[0][2]));
     const end = calendarIsoDate(
@@ -792,7 +819,9 @@ function calendarDateRange(
       calendarMonth(matches[1][1]),
       Number(matches[1][2]),
     );
-    if (from && end) return { from, to: nextCalendarDate(end) };
+    if (from && end) {
+      return { from, to: nextCalendarDate(end) };
+    }
   }
   return undefined;
 }
@@ -840,9 +869,13 @@ function calendarDateOnly(
     params.summary,
   ];
   for (const candidate of candidates) {
-    if (!candidate) continue;
+    if (!candidate) {
+      continue;
+    }
     const iso = /\b(\d{4}-\d{2}-\d{2})\b/u.exec(candidate)?.[1];
-    if (iso) return iso;
+    if (iso) {
+      return iso;
+    }
     const numeric = /\b(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?\b/u.exec(candidate);
     if (numeric) {
       const month = Number(numeric[1]) - 1;
@@ -866,7 +899,9 @@ function calendarDateOnly(
       /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b/iu.exec(
         candidate.trim(),
       );
-    if (!named) continue;
+    if (!named) {
+      continue;
+    }
     const months = [
       "january",
       "february",
@@ -950,7 +985,7 @@ function paperNudgeMessage(paper: AdminBotPaperRecord, recipientLabel: string): 
   const progress = paper.timeline ? ` Timeline progress: ${paper.timeline.progress_percent}%.` : "";
   return (
     `Hi ${recipientLabel}, please nudge ${paper.authors.join(", ")} about ` +
-    `\"${paper.title}\". Current step: ${currentLabel}.${progress}${nextLabel}`
+    `"${paper.title}". Current step: ${currentLabel}.${progress}${nextLabel}`
   );
 }
 function slackMessageProposal(params: SlackMessageParams): AdminBotActionProposal {

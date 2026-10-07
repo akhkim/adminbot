@@ -9,6 +9,7 @@
     "tools": [
       "adminbot_run_email_automation",
       "adminbot_reason",
+      "adminbot_task",
       "adminbot_propose_action",
       "adminbot_prepare_paper_social_posts",
       "adminbot_prepare_overleaf_paper_edit",
@@ -44,6 +45,9 @@
     "./skills"
   ],
   "toolMetadata": {
+    "adminbot_task": {
+      "optional": true
+    },
     "adminbot_run_email_automation": {
       "optional": true
     },

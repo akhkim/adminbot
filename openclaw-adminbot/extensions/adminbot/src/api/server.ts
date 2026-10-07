@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
@@ -73,13 +74,13 @@ import type { AiTextScorer } from "../contracts/paper-integrity-checks.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
 import { parsePaperMentorRunInput } from "../contracts/papermentor.js";
 import type { ReferenceScanDependencies } from "../contracts/reference-scans.js";
+import { buildNewsletterDraft, type AdminBotCvScanDeps } from "../cv-scan.js";
+import { resolveInferenceGateConfig } from "../inference/config.js";
 import {
-  buildNewsletterDraft,
-  draftMemberBlurb,
-  runAdminBotCvScan,
-  type AdminBotCvScanDeps,
-} from "../cv-scan.js";
-import { askGuidebook } from "../guidebook/ask.js";
+  createInferenceGate,
+  setSharedInferenceGate,
+  type InferenceGate,
+} from "../inference/gate.js";
 import { readLlmGatewayStatus } from "../kernel/llm-gateway-client.js";
 import { createLlmLoadRouter, parseLlmNodes, type LlmLoadRouter } from "../kernel/llm-router.js";
 import { ReferenceScans } from "../kernel/reference-scans.js";
@@ -106,6 +107,10 @@ import {
   createAdminBotSensitiveInfoDocument,
   type AdminBotSensitiveInfoDocument,
 } from "../privacy/sensitive-info-doc.js";
+import { runPersistentCvScan } from "../tasks/cv-scan.js";
+import { registerServiceTaskHandlers } from "../tasks/http-handlers.js";
+import { TaskRuntime } from "../tasks/runtime.js";
+import { VisitorSessions } from "../tasks/visitors.js";
 import { renderAdminBotWebUi } from "../web/console/index.js";
 import { renderMemberMapWebUi } from "../web/member-map/index.js";
 import { renderVenuePickerWebUi } from "../web/venue-picker/index.js";
@@ -208,6 +213,7 @@ import {
   sendJson,
   sendServiceResult,
 } from "./server.http.js";
+import { handleInferenceRoute } from "./server.inference.js";
 import { prepareInterviewInvitation } from "./server.interview-invitation.js";
 import { handleLabSharingRoute } from "./server.lab-sharing.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
@@ -236,6 +242,7 @@ import {
   createPublicDeadlineLimiter,
   handlePublicDeadlineProposal,
 } from "./server.public-deadline-proposals.js";
+import { handleTaskRoute, submitHttpTask } from "./server.tasks.js";
 import {
   cancelWorkshopNudgeRun,
   readWorkshopNudgeRun,
@@ -243,6 +250,7 @@ import {
   sendWorkshopNudges,
   startWorkshopNudgeRun,
   listWorkshopConferences,
+  configureWorkshopTaskRuntime,
 } from "./server.workshop-nudges.js";
 
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -291,12 +299,18 @@ export type AdminBotMockServiceOptions = {
   databasePath?: string;
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
+  /**
+   * The admission gate in front of the local model. Built here from the durable store when none is
+   * injected, so queued requests survive a restart; tests hand in an in-memory one.
+   */
+  inferenceGate?: InferenceGate;
   privacyBroker?: AdminBotPrivacyBroker;
   localChat?: ReturnType<typeof createLocalChat>;
   sensitiveInfoPath?: string;
   sensitiveInfoDocument?: AdminBotSensitiveInfoDocument;
   emailAutomationRunner?: () => Promise<unknown>;
   reimbursementWorkflow?: AdminBotReimbursementWorkflow;
+  reimbursementWorkflowFactory?: (gate: InferenceGate) => AdminBotReimbursementWorkflow;
   serviceToken?: string;
   gatewayToken?: string;
   gatewayUrl?: string;
@@ -328,6 +342,7 @@ export type AdminBotMockServiceOptions = {
   // Fetch/extract/model steps behind the admin CV scan. Injected so tests can drive the scan
   // without a network fetch, a python interpreter, or a running local model.
   cvScanDeps?: AdminBotCvScanDeps;
+  cvScanDepsFactory?: (gate: InferenceGate) => AdminBotCvScanDeps;
   // Publishes the rendered CV digest to its Google Doc. Injected so tests never shell out to
   // `gog`, and so a deployment without a configured document simply has no job rather than a
   // button that fails at the CLI.
@@ -596,7 +611,9 @@ function createAnonymousRateLimiter(): AnonymousRateLimiter {
   };
 }
 
-type AdminBotRouteContext = {
+export type AdminBotRouteContext = {
+  taskRuntime: TaskRuntime;
+  visitors: VisitorSessions;
   // A restart invalidates outstanding packages: regenerate and review against the current rules.
   reimbursementSigningKey: Buffer;
   memberDrafts: MemberDraftStore;
@@ -605,6 +622,7 @@ type AdminBotRouteContext = {
   // append-only bookkeeping with no policy of its own, so it does not earn a service method.
   store: AdminBotServiceStore;
   auth: AdminBotAuthService;
+  inferenceGate: InferenceGate;
   privacyBroker: AdminBotPrivacyBroker;
   localChat: ReturnType<typeof createLocalChat>;
   sensitiveInfo: AdminBotSensitiveInfoDocument;
@@ -1118,6 +1136,43 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       save: (invite) => service.saveSlackConnectInvite(invite),
     },
   });
+  // The shared GPU gate uses a connection-local queue unless restart persistence is enabled.
+  // The task runner owns application recovery; model rows remain transport diagnostics.
+  // It is also installed as a compatibility default for standalone callers. Service-owned callers receive
+  // it explicitly; replacing that default does not hot-swap an existing service or its factories.
+  const inferenceConfig = resolveInferenceGateConfig(process.env);
+  const persistTasks =
+    options.inferenceGate?.settings().persist_across_restarts ??
+    inferenceConfig.persistAcrossRestarts;
+  const inferenceGate =
+    options.inferenceGate ??
+    createInferenceGate({
+      ...(store instanceof AdminBotSqliteStore ? { db: store.inferenceDatabase() } : {}),
+      config: { ...inferenceConfig, persistAcrossRestarts: false },
+      localApiKeyEnv: "VLLM_API_KEY",
+      alert: (line) => console.warn(line),
+      onEscalate: async (escalation) => {
+        const proposed = service.proposeInferenceEscalation({
+          ...escalation,
+          firedAt: new Date().toISOString(),
+        });
+        if (!proposed.ok) {
+          // No admin with a Slack id, most likely. The alert above already went to the console;
+          // the audit row the gate writes carries this reason.
+          throw new Error(proposed.error.message);
+        }
+        return { proposal_id: proposed.payload.id };
+      },
+    });
+  setSharedInferenceGate(inferenceGate);
+  // Task checkpoints own recovery; legacy model-only rows must never dispatch independently.
+  const recovered = inferenceGate.start({ recoverExisting: false });
+  if (recovered.interrupted > 0 || recovered.expired > 0 || recovered.readmitted > 0) {
+    console.warn(
+      `[adminbot] inference queue recovered: ${recovered.readmitted} re-admitted, ` +
+        `${recovered.expired} expired, ${recovered.interrupted} interrupted (see audit).`,
+    );
+  }
   const sensitiveInfo =
     options.sensitiveInfoDocument ??
     createAdminBotSensitiveInfoDocument({
@@ -1128,6 +1183,15 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     createAdminBotPrivacyBroker(undefined, {
       sensitiveTermsProvider: () => sensitiveInfo.listSensitiveTerms(),
       llmRouter,
+      gate: inferenceGate,
+      // The broker's fallbacks used to be invisible. Recorded through the store so they land in
+      // the same audit table as every other inference event.
+      recordAudit: (event) =>
+        store.recordAudit({
+          id: `aud_${randomUUID()}`,
+          timestamp: new Date().toISOString(),
+          ...event,
+        }),
     });
   let activeEmailAutomation: Promise<unknown> | undefined;
   const emailAutomationRunner = options.emailAutomationRunner;
@@ -1149,12 +1213,45 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         store,
       })
     : undefined;
+  const reimbursementWorkflow =
+    options.reimbursementWorkflow ?? options.reimbursementWorkflowFactory?.(inferenceGate);
+  const cvScanDeps = options.cvScanDeps ?? options.cvScanDepsFactory?.(inferenceGate);
+  const sqlite = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+  const ownTaskDb = !(store instanceof AdminBotSqliteStore);
+  const taskDb =
+    store instanceof AdminBotSqliteStore
+      ? store.inferenceDatabase()
+      : new sqlite.DatabaseSync(":memory:");
+  const taskRuntime = new TaskRuntime({
+    db: taskDb,
+    persist: persistTasks,
+    maxQueued: inferenceConfig.queue.maxDepth,
+    maxInFlightPerOwner: inferenceConfig.queue.maxPerOwner,
+    maxInputBytes: inferenceConfig.queue.maxPayloadBytes,
+    maxResultBytes: inferenceConfig.queue.maxPayloadBytes,
+    maxRetainedBytes: inferenceConfig.queue.maxRetainedBytes,
+    // These rows hold receipts, CV text and privacy-task input; keep them no longer than queue rows.
+    retentionMs: inferenceConfig.queue.retentionMs,
+    admissionNotice: (id) => inferenceGate.admissionNotice(id),
+    canDispatch: () => {
+      const stats = inferenceGate.settings();
+      return !stats.paused && !stats.shutting_down;
+    },
+    canStart: () => {
+      const stats = inferenceGate.stats();
+      return !stats.paused && !stats.shutting_down && stats.in_flight < stats.capacity;
+    },
+  });
+  const visitors = new VisitorSessions(taskDb, persistTasks);
   const ctx: AdminBotRouteContext = {
     reimbursementSigningKey: randomBytes(32),
+    taskRuntime,
+    visitors,
     service,
     store,
     memberDrafts,
     auth,
+    inferenceGate,
     privacyBroker,
     localChat: options.localChat ?? createLocalChat(),
     sensitiveInfo,
@@ -1169,9 +1266,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(callSheet ? { callSheet } : {}),
     autoQueueMeetingRequests,
     ...(runEmailAutomation ? { runEmailAutomation } : {}),
-    ...(options.reimbursementWorkflow
-      ? { reimbursementWorkflow: options.reimbursementWorkflow }
-      : {}),
+    ...(reimbursementWorkflow ? { reimbursementWorkflow } : {}),
     ...(serviceToken ? { serviceToken } : {}),
     ...(options.devicePairingApprover
       ? { devicePairingApprover: options.devicePairingApprover }
@@ -1179,13 +1274,13 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.deviceTokenIssuer ? { deviceTokenIssuer: options.deviceTokenIssuer } : {}),
     ...(openReviewWorkflow ? { openReviewWorkflow } : {}),
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
-    ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
+    ...(cvScanDeps ? { cvScanDeps } : {}),
     ...(options.cvDigestPublisher ? { cvDigestPublisher: options.cvDigestPublisher } : {}),
     publicationMailingRunner: options.publicationMailingRunner ?? createPublicationMailingRunner(),
     ...(venuePapersReader ? { venuePapersReader } : {}),
     embedder,
     embeddingModel,
-    workshopMatcher: options.workshopMatcher ?? createLocalWorkshopMatcher(),
+    workshopMatcher: options.workshopMatcher ?? createLocalWorkshopMatcher({ gate: inferenceGate }),
     workshopNudgeNow: options.workshopNudgeNow ?? (() => new Date()),
     ...(options.fetchSlackTimezones ? { fetchSlackTimezones: options.fetchSlackTimezones } : {}),
     ...(options.fetchSlackMessageCounts
@@ -1209,7 +1304,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // an import leaves a column the local pass could not place.
     importColumnMapper:
       options.importColumnMapper ??
-      createImportColumnMapper({ fetchImpl: (input, init) => fetch(input, init) }),
+      createImportColumnMapper({
+        fetchImpl: (input, init) => fetch(input, init),
+        gate: inferenceGate,
+      }),
     allowedOrigins,
     refusedOrigins: new Set<string>(),
     anonymousRateLimiter: createAnonymousRateLimiter(),
@@ -1236,6 +1334,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       },
       proposal,
     );
+  registerServiceTaskHandlers(taskRuntime, ctx);
+  configureWorkshopTaskRuntime(service, taskRuntime, ctx.workshopMatcher);
+  taskRuntime.start();
   const slackChannelNamingSweepIntervalMs = options.slackChannelNamingSweepIntervalMs;
   const slackChannelNamingSweepTimer =
     typeof slackChannelNamingSweepIntervalMs === "number" && slackChannelNamingSweepIntervalMs > 0
@@ -1257,10 +1358,13 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       });
     }
   });
+  let closing: Promise<void> | undefined;
   return {
     server,
     service,
     auth,
+    inferenceGate,
+    taskRuntime,
     // Exposed for the same reason `service` and `auth` are: tests drive this object graph
     // directly to set up state that has no HTTP route, such as an observation dated three days
     // ago. Nothing in production reaches for it.
@@ -1273,7 +1377,28 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       if (slackChannelNamingSweepTimer) {
         clearInterval(slackChannelNamingSweepTimer);
       }
-      closeDurable();
+      closing ??= (async () => {
+        // Keep operator controls reachable while inference drains, including live grace edits.
+        await Promise.all([
+          inferenceGate.shutdown(),
+          taskRuntime.shutdown({ graceMs: () => inferenceGate.settings().shutdown_grace_ms }),
+        ]);
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            server.closeAllConnections();
+            resolve();
+          }, 5_000);
+          server.close(() => {
+            clearTimeout(timeout);
+            resolve();
+          });
+        });
+        if (ownTaskDb) {
+          taskDb.close();
+        }
+        closeDurable();
+      })();
+      return closing;
     },
   };
 }
@@ -1370,7 +1495,87 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/tasks/visitor") {
+    if (!ctx.anonymousRateLimiter.check(remoteIp(req, ctx.trustProxyHeaders))) {
+      sendJson(res, 429, {
+        error: { message: "too many visitor session requests; try again later" },
+      });
+      return;
+    }
+    ctx.visitors.ensure(req, res);
+    res.setHeader("Cache-Control", "no-store");
+    sendJson(res, 200, { visitor: { ready: true } });
+    return;
+  }
   const principal = await resolvePrincipal(req, ctx);
+  if (url.pathname === "/tasks" || url.pathname.startsWith("/tasks/")) {
+    const visitor = !principal ? ctx.visitors.resolve(req) : undefined;
+    const owner = principal ? taskOwner(principal) : visitor;
+    if (!owner) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    // A visitor reaching a task route has not passed the anonymous limiter below -- this block
+    // returns before it -- and Wait and retry both start model work. Without this, one bootstrap
+    // plus one failed turn buys unlimited inference by retrying the same row, which is exactly
+    // what that limiter exists to stop. Reads are left alone: they spend no GPU time, and the
+    // status polling the UI does would exhaust a 60-per-hour budget in a minute.
+    if (visitor && req.method === "POST" && /\/(?:wait|retry)$/u.test(url.pathname)) {
+      const ip = remoteIp(req, ctx.trustProxyHeaders);
+      if (!ctx.anonymousRateLimiter.check(ip)) {
+        ctx.service.recordAnonymousReimbursementUse({
+          route: url.pathname,
+          outcome: "rate_limited",
+          ...(ip ? { ip } : {}),
+        });
+        sendJson(res, 429, {
+          error: { message: "too many reimbursement requests; please try again later" },
+        });
+        return;
+      }
+      ctx.service.recordAnonymousReimbursementUse({
+        route: url.pathname,
+        outcome: "accepted",
+        ...(ip ? { ip } : {}),
+      });
+    }
+    const handled = await handleTaskRoute(
+      req,
+      res,
+      url,
+      ctx.taskRuntime,
+      owner,
+      (task) => {
+        if (visitor) {
+          return task.kind === "reimbursement";
+        }
+        if (task.kind === "member-guidebook" && task.status !== "expired") {
+          if (!task.input || typeof task.input !== "object") {
+            return false;
+          }
+          const input = task.input as { approvedHash?: string; indexPath?: string };
+          if (
+            input.approvedHash !== (process.env.ADMINBOT_MEMBER_GUIDEBOOK_SHA256?.trim() ?? "") ||
+            input.indexPath !== (process.env.ADMINBOT_MEMBER_GUIDEBOOK_INDEX?.trim() ?? "")
+          ) {
+            return false;
+          }
+        }
+        if (task.kind.startsWith("cv.") && principal && !isPrivileged(principal)) {
+          return false;
+        }
+        return true;
+      },
+      (task) =>
+        Boolean(principal && isPrivileged(principal)) &&
+        task.owner === "system:workshop-match" &&
+        task.kind === "workshop.match",
+    );
+    if (!handled) {
+      sendJson(res, 404, { error: { message: "not found" } });
+    }
+    return;
+  }
   if (!principal) {
     if (!isAnonymousRoute(req.method, url.pathname)) {
       sendJson(res, 401, { error: { message: "authentication required" } });
@@ -1683,6 +1888,48 @@ async function handleRegistrationRoute(
  * under a member who was not there -- the same conflation the `lab_member.upserted` actor stamp
  * had, and impersonation would be a far quieter version of it.
  */
+function taskOwner(principal: AdminBotPrincipal): string {
+  if (principal.kind === "member") {
+    return `member:${principal.member.id}${principal.impersonator ? `:viewed-by:${principal.impersonator.id}` : ""}`;
+  }
+  return principal.kind;
+}
+
+async function submitRouteTask(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: AdminBotRouteContext,
+  principal: AdminBotPrincipal,
+  kind: string,
+  input: unknown,
+) {
+  if (
+    principal.kind === "anonymous" &&
+    ctx.visitors.hasCredential(req) &&
+    !ctx.visitors.resolve(req)
+  ) {
+    sendJson(res, 401, {
+      error: {
+        message:
+          "Visitor session expired; establish a new session before submitting a new request.",
+      },
+    });
+    return;
+  }
+  const owner =
+    principal.kind === "anonymous" ? ctx.visitors.ensure(req, res) : taskOwner(principal);
+  return submitHttpTask(
+    req,
+    res,
+    ctx.taskRuntime,
+    owner,
+    kind,
+    input,
+    principal.kind !== "anonymous" &&
+      ctx.inferenceGate.preferences(principalActor(principal)).inference_always_wait,
+  );
+}
+
 function principalActor(principal: AdminBotPrincipal): string {
   if (principal.kind === "service") {
     return "service";
@@ -1988,7 +2235,7 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
-  const { service, privacyBroker, sensitiveInfo } = ctx;
+  const { service, sensitiveInfo } = ctx;
   if (req.method === "POST" && url.pathname === "/drive/check-edit-access") {
     if (principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "member session required" } });
@@ -2233,12 +2480,7 @@ async function handleAuthenticatedRoute(
       sendJson(res, 503, { error: { message: "cv scanning is not configured" } });
       return;
     }
-    const scan = await scanAndRecordCvs(ctx, service);
-    if (!scan.ok) {
-      sendServiceResult(res, scan.failure);
-      return;
-    }
-    sendJson(res, 200, scan.result);
+    await submitRouteTask(req, res, ctx, principal, "cv.scan", {});
     return;
   }
   // Members: which conferences are searchable, and how fresh each index is. Member-level because
@@ -2734,21 +2976,15 @@ async function handleAuthenticatedRoute(
       });
       return;
     }
-    try {
-      const text = await draftMemberBlurb(
-        {
-          name: member.name,
-          ...(member.role ? { role: member.role } : {}),
-          ...(member.research_topics?.length ? { research_topics: member.research_topics } : {}),
-        },
-        entries,
-      );
-      sendJson(res, 200, { member_id: member.id, blurb: text });
-    } catch (error) {
-      sendJson(res, 502, {
-        error: { message: error instanceof Error ? error.message : String(error) },
-      });
-    }
+    await submitRouteTask(req, res, ctx, principal, "cv.blurb", {
+      member_id: member.id,
+      member: {
+        name: member.name,
+        ...(member.role ? { role: member.role } : {}),
+        ...(member.research_topics?.length ? { research_topics: member.research_topics } : {}),
+      },
+      entries,
+    });
     return;
   }
   if (req.method === "POST" && url.pathname === "/members/directory/refresh-slack") {
@@ -2878,7 +3114,7 @@ async function handleAuthenticatedRoute(
       return;
     }
     const body = (await readJson(req)) as AdminBotReimbursementRequest;
-    sendJson(res, 200, await ctx.reimbursementWorkflow.converse(body));
+    await submitRouteTask(req, res, ctx, principal, "reimbursement", body);
     return;
   }
   if (req.method === "POST" && url.pathname === "/reimbursements/submit") {
@@ -3360,37 +3596,15 @@ async function handleAuthenticatedRoute(
       sendJson(res, 400, { error: { message: "question is required" } });
       return;
     }
-    // Retrieval and synthesis both run on loopback endpoints inside askGuidebook,
-    // and only the prose it writes leaves this handler. Guidebook excerpts are
-    // deliberately absent from the response so they cannot reach a hosted model
-    // through the agent's context.
-    try {
-      const result = await askGuidebook({
-        question,
-        ...(typeof body.maxResults === "number" ? { maxResults: body.maxResults } : {}),
-      });
-      sendJson(res, 200, result);
-    } catch (error) {
-      sendJson(res, 502, {
-        error: {
-          message: `the guidebook gate failed: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        },
-      });
-    }
+    await submitRouteTask(req, res, ctx, principal, "guidebook", {
+      question,
+      ...(typeof body.maxResults === "number" ? { maxResults: body.maxResults } : {}),
+    });
     return;
   }
   if (req.method === "POST" && url.pathname === "/privacy/tasks") {
     const body = (await readJson(req)) as AdminBotPrivacyTaskRequest;
-    const controller = new AbortController();
-    const cancel = () => controller.abort();
-    res.once("close", cancel);
-    try {
-      sendJson(res, 200, await privacyBroker.handle(body, controller.signal));
-    } finally {
-      res.off("close", cancel);
-    }
+    await submitRouteTask(req, res, ctx, principal, "privacy", body);
     return;
   }
   if (req.method === "GET" && url.pathname === "/ops/llm-load") {
@@ -3518,7 +3732,7 @@ async function handleAuthenticatedRoute(
       sendJson(res, 200, { mapping: {} });
       return;
     }
-    sendJson(res, 200, { mapping: await mapper({ unmapped, available }) });
+    await submitRouteTask(req, res, ctx, principal, "import-columns", { unmapped, available });
     return;
   }
   if (req.method === "GET" && url.pathname === "/opportunities") {
@@ -3820,12 +4034,38 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  if (url.pathname === "/inference" || url.pathname.startsWith("/inference/")) {
+    // The owner is the session, never the URL or the body. The service principal owns the rows it
+    // submitted (as "service"); anonymous callers are denied by the boundary above this function.
+    const handled = await handleInferenceRoute(
+      req,
+      res,
+      url,
+      ctx.inferenceGate,
+      principalActor(principal),
+      isPrivileged(principal),
+      {
+        pause: () => ctx.taskRuntime.pause(),
+        resume: () => ctx.taskRuntime.resume(),
+        metrics: () => ctx.taskRuntime.metrics(),
+      },
+    );
+    if (handled) {
+      return;
+    }
+  }
   if (url.pathname === "/lab-sharing" || url.pathname.startsWith("/lab-sharing/")) {
     if (principal.kind !== "member") {
       sendJson(res, 403, { error: { message: "A member session is required." } });
       return;
     }
-    await handleLabSharingRoute(req, res, url, service, principal.member.id);
+    await handleLabSharingRoute(req, res, url, service, principal.member.id, (question) =>
+      submitRouteTask(req, res, ctx, principal, "member-guidebook", {
+        question,
+        approvedHash: process.env.ADMINBOT_MEMBER_GUIDEBOOK_SHA256?.trim() ?? "",
+        indexPath: process.env.ADMINBOT_MEMBER_GUIDEBOOK_INDEX?.trim() ?? "",
+      }),
+    );
     return;
   }
   // Member requests: anyone signed in may propose adding somebody; only an admin decides. Ahead of
@@ -4893,9 +5133,10 @@ async function handleAuthenticatedRoute(
       : undefined;
     sendServiceResult(
       res,
-      await service.sendPaperSlotNudges(principalActor(principal), {
-        ...(recipients?.length ? { recipientIds: recipients } : {}),
-      }),
+      await service.sendPaperSlotNudges(
+        principalActor(principal),
+        recipients?.length ? { recipientIds: recipients } : {},
+      ),
     );
     return;
   }
@@ -6488,7 +6729,7 @@ const LEDGER_EPOCH = "1970-01-01T00:00:00.000Z";
 
 type CvScanFailure = Extract<AdminBotServiceResponse<never>, { ok: false }>;
 
-type CvScanOutcome =
+export type CvScanOutcome =
   | { ok: true; result: AdminBotCvScanResult }
   | { ok: false; failure: CvScanFailure };
 
@@ -6504,52 +6745,7 @@ async function scanAndRecordCvs(
   ctx: AdminBotRouteContext,
   service: AdminBotService,
 ): Promise<CvScanOutcome> {
-  const members = service.listLabMembers();
-  if (!members.ok) {
-    return { ok: false, failure: members };
-  }
-  // Read at scan time rather than captured at boot, so changing the window takes effect on the
-  // next scan instead of the next restart.
-  const cvSettings = service.getSettings();
-  const { result, snapshots } = await runAdminBotCvScan(
-    members.payload.members,
-    // Callers check this before calling; asserted here so the helper has one contract.
-    ctx.cvScanDeps as AdminBotCvScanDeps,
-    cvSettings.ok ? cvSettings.payload.cv_recency_window_months : undefined,
-  );
-  // Snapshots are written through upsertLabMember rather than straight to the store so the scan
-  // cannot bypass member validation, and so a bad extraction fails one member's save instead of
-  // corrupting the roster.
-  for (const member of members.payload.members) {
-    const snapshot = snapshots.get(member.id);
-    if (!snapshot) {
-      continue;
-    }
-    const saved = service.upsertLabMember({ ...member, cv_snapshot: snapshot });
-    if (!saved.ok) {
-      const failed = result.results.find((entry) => entry.member_id === member.id);
-      if (failed) {
-        failed.status = "failed";
-        failed.reason = `could not save cv snapshot: ${saved.error.message}`;
-      }
-    }
-  }
-  // Recorded after the snapshots are saved, so a member whose snapshot failed to store does not
-  // leave a change on the ledger the next scan would then never re-detect.
-  ctx.store.recordCvChanges(
-    result.results
-      .filter((entry) => entry.status === "changed" || entry.status === "first_scan")
-      .flatMap((entry) =>
-        entry.added.map((change) => ({
-          member_id: entry.member_id,
-          member_name: entry.member_name,
-          detected_at: result.scanned_at,
-          recency: change.recency,
-          entry: change.entry,
-        })),
-      ),
-  );
-  return { ok: true, result };
+  return runPersistentCvScan(ctx, service);
 }
 
 function readStringList(value: unknown): string[] {
@@ -7262,11 +7458,14 @@ function applyCors(
     return false;
   }
   res.setHeader("Access-Control-Allow-Origin", origin);
+  // Task clients use credentials; only the explicitly approved origins reach this branch.
+  res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Vary", "Origin");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Authorization, Content-Type, Idempotency-Key, Prefer",
+    "Authorization, Content-Type, Idempotency-Key, Prefer, X-Inference-Wait, X-AdminBot-Visitor",
   );
+  res.setHeader("Access-Control-Expose-Headers", "X-AdminBot-Visitor");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   return true;
 }

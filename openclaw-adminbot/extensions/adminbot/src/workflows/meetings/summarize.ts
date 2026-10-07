@@ -16,6 +16,7 @@ import type {
   AdminBotMeetingSummary,
 } from "../../contracts/actions.js";
 import { completeLocally, type GuidebookFetch } from "../../guidebook/local-client.js";
+import type { InferenceGate } from "../../inference/gate.js";
 import { normalizeName } from "./attendance.js";
 
 const PURPOSE = "meeting summary";
@@ -44,6 +45,7 @@ export type MeetingSummaryOptions = {
   baseUrl?: string;
   model?: string;
   apiKey?: string;
+  gate?: InferenceGate;
   now?: () => Date;
 };
 
@@ -93,11 +95,13 @@ function truncateMiddle(text: string, limit: number): string {
  * often you ask them not to, so the outermost braces are found rather than assumed, but a reply
  * missing `overview` is a failed summary and is reported as one instead of being stored empty.
  */
-export function parseSummaryReply(reply: string): {
-  overview: string;
-  decisions: string[];
-  actionItems: Array<{ text: string; ownerName?: string }>;
-} | undefined {
+export function parseSummaryReply(reply: string):
+  | {
+      overview: string;
+      decisions: string[];
+      actionItems: Array<{ text: string; ownerName?: string }>;
+    }
+  | undefined {
   const start = reply.indexOf("{");
   const end = reply.lastIndexOf("}");
   if (start < 0 || end <= start) {
@@ -184,6 +188,7 @@ export async function summarizeMeeting(
   const model = options.model ?? DEFAULT_MODEL;
   const reply = await completeLocally({
     fetchImpl: options.fetchImpl,
+    gate: { gate: options.gate, caller: "meetings.summary" },
     baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
     model,
     ...(options.apiKey ? { apiKey: options.apiKey } : {}),

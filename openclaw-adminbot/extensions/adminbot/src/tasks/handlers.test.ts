@@ -1,0 +1,365 @@
+import { describe, expect, it, vi } from "vitest";
+import { inferenceTestConfig } from "../inference/config.test-support.js";
+import { createInferenceGate, runGated, type InferenceFetch } from "../inference/gate.js";
+import { createAdminBotPrivacyBroker } from "../privacy/broker.js";
+import { TaskRuntime } from "./runtime.js";
+
+function setup(failFinal = false, malformedFinal = false) {
+  let classified = 0,
+    generated = 0;
+  const fetchImpl: InferenceFetch = async (_url, init) => {
+    const body = JSON.parse(init.body ?? "{}");
+    const classification = Boolean(body.response_format);
+    if (classification) {
+      classified++;
+    } else {
+      generated++;
+      if (failFinal && generated === 1) {
+        throw new Error("connection interrupted");
+      }
+    }
+    const content = classification
+      ? JSON.stringify({
+          classification: "private",
+          sanitized_task: "Write about Ada",
+          replacements: [],
+        })
+      : malformedFinal
+        ? ""
+        : "Synthetic answer";
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => JSON.stringify({ choices: [{ message: { content } }] }),
+    };
+  };
+  const gate = createInferenceGate({ config: inferenceTestConfig(), fetchImpl, env: {} });
+  const broker = createAdminBotPrivacyBroker(undefined, { gate, env: {} });
+  const runtime = new TaskRuntime({ db: gate.database, maxRunning: 1 });
+  runtime.register("privacy", 1, (input, ctx) =>
+    broker.handle(input as Parameters<typeof broker.handle>[0], ctx.signal, { owner: ctx.owner }),
+  );
+  return { runtime, gate, counts: () => ({ classified, generated }) };
+}
+const input = { task: "Write about Ada", privacy: "private", sensitive_terms: ["Ada"] };
+
+describe("workflow checkpoint integration", () => {
+  it("shed then wait completes the original privacy task, not only classification", async () => {
+    const { runtime, gate, counts } = setup();
+    let release!: () => void;
+    runtime.register(
+      "hold",
+      1,
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const first = runtime.submit({ owner: "a", kind: "hold", input: null });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const submitted = runtime.submit({ owner: "a", kind: "privacy", input, key: "privacy-key" });
+    expect(submitted.status).toBe("shed");
+    const waited = runtime.wait(submitted.id, "a")!;
+    release();
+    await first.promise;
+    const result = await waited.promise;
+    expect(result?.status).toBe("completed");
+    expect(result?.result).toEqual({ route: "local", output: "Synthetic answer" });
+    expect(counts()).toEqual({ classified: 1, generated: 1 });
+    expect(
+      runtime.submit({ owner: "a", kind: "privacy", input, key: "privacy-key" }).result,
+    ).toEqual(result?.result);
+    await runtime.shutdown();
+    await gate.shutdown();
+    gate.database.close();
+  });
+  it("an explicit retry reuses classification and gives the failed model call a new attempt", async () => {
+    const { runtime, gate, counts } = setup(true);
+    const submitted = runtime.submit({ owner: "a", kind: "privacy", input });
+    expect((await submitted.promise)?.status).toBe("failed");
+    const retried = runtime.retry(submitted.id, "a")!;
+    expect((await retried.promise)?.result).toEqual({ route: "local", output: "Synthetic answer" });
+    expect(counts()).toEqual({ classified: 1, generated: 2 });
+    await runtime.shutdown();
+    await gate.shutdown();
+    gate.database.close();
+  });
+  it("does not call malformed final model output a completed application task", async () => {
+    const { runtime, gate } = setup(false, true);
+    const submitted = runtime.submit({ owner: "a", kind: "privacy", input });
+    const result = await submitted.promise;
+    expect(result?.status).toBe("failed");
+    expect(result?.result).toBeUndefined();
+    await runtime.shutdown();
+    await gate.shutdown();
+    gate.database.close();
+  });
+});
+
+it("keeps task-level backpressure out of needs-retry even with no model waiting slots", async () => {
+  let release!: () => void;
+  let calls = 0;
+  const gate = createInferenceGate({
+    env: {},
+    config: inferenceTestConfig({ capacity: 1, queue: { maxDepth: 0 } }),
+    fetchImpl: async () => {
+      if (++calls === 1) {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return { ok: true, status: 200, statusText: "OK", text: async () => "answer" };
+    },
+  });
+  const request = {
+    route: "chat/completions" as const,
+    baseUrl: "http://127.0.0.1:8000/v1",
+    body: { model: "m" },
+    purpose: "test",
+  };
+  const occupant = gate.run({ owner: "other", caller: "occupant", request });
+  const runtime = new TaskRuntime({ db: gate.database });
+  runtime.register("call", 1, () => runGated(gate, { owner: "a", caller: "task", request }));
+  const task = runtime.submit({ owner: "a", kind: "call", input: {} });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(runtime.get(task.id)?.status).toBe("running");
+  release();
+  await occupant;
+  expect((await task.promise)?.status).toBe("completed");
+  expect(calls).toBe(2);
+  expect(gate.stats().rows.completed).toBe(2);
+  await runtime.shutdown();
+  await gate.shutdown();
+  gate.database.close();
+});
+
+it("bounds a hung remote stage and falls back to the local model", async () => {
+  vi.useFakeTimers();
+  const fetchImpl: InferenceFetch = async (url) => {
+    if (String(url).startsWith("https:")) {
+      return new Promise(() => {});
+    }
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () =>
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  classification: "generic",
+                  sanitized_task: "hello",
+                  replacements: [],
+                }),
+              },
+            },
+          ],
+        }),
+    };
+  };
+  const gate = createInferenceGate({ config: inferenceTestConfig(), fetchImpl, env: {} });
+  const runtime = new TaskRuntime({ db: gate.database });
+  const broker = createAdminBotPrivacyBroker(undefined, {
+    gate,
+    fetchImpl,
+    env: { NVIDIA_API_KEY: "synthetic" },
+  });
+  runtime.register("privacy", 1, () => broker.handle({ task: "hello" }));
+  try {
+    const submitted = runtime.submit({ owner: "a", kind: "privacy", input: {} });
+    await vi.advanceTimersByTimeAsync(120_001);
+    const task = await submitted.promise;
+    expect(task?.status).toBe("completed");
+    expect(task?.result).toMatchObject({ route: "local" });
+  } finally {
+    await runtime.shutdown({ graceMs: 0 });
+    await gate.shutdown();
+    gate.database.close();
+    vi.useRealTimers();
+  }
+});
+
+it("retries a model HTTP failure without replaying a completed predecessor", async () => {
+  let first = 0;
+  let second = 0;
+  const gate = createInferenceGate({
+    config: inferenceTestConfig(),
+    env: {},
+    fetchImpl: async (_url, init) => {
+      const stage = JSON.parse(init.body!).stage;
+      const fail = stage === "answer" ? ++second === 1 : (++first, false);
+      return {
+        ok: !fail,
+        status: fail ? 503 : 200,
+        statusText: fail ? "Unavailable" : "OK",
+        text: async () => (fail ? "busy" : "answer"),
+      };
+    },
+  });
+  const runtime = new TaskRuntime({ db: gate.database });
+  runtime.register("test", 1, async () => {
+    for (const stage of ["classify", "answer"]) {
+      await runGated(gate, {
+        owner: "member",
+        caller: stage,
+        request: {
+          route: "chat/completions",
+          baseUrl: "http://127.0.0.1:8000/v1",
+          purpose: stage,
+          body: { stage },
+        },
+      });
+    }
+    return "done";
+  });
+  try {
+    const firstTask = runtime.submit({ kind: "test", owner: "member", input: {} });
+    expect((await firstTask.promise)?.status).toBe("failed");
+    expect((await runtime.retry(firstTask.id, "member")!.promise)?.result).toBe("done");
+    expect({ first, second }).toEqual({ first: 1, second: 2 });
+  } finally {
+    await runtime.shutdown();
+    await gate.shutdown();
+    gate.database.close();
+  }
+});
+
+// Review of #255: a model call that finished with a failure has no side effect to protect, so it
+// must not leave an uncertain checkpoint that forces a whole-task retry on a handler that coped.
+it("completes a task whose handler tolerates a failed model call", async () => {
+  let calls = 0;
+  const gate = createInferenceGate({
+    config: inferenceTestConfig(),
+    env: {},
+    fetchImpl: async () => {
+      calls++;
+      return calls === 1
+        ? { ok: false, status: 503, statusText: "Unavailable", text: async () => "busy" }
+        : { ok: true, status: 200, statusText: "OK", text: async () => "answer" };
+    },
+  });
+  const runtime = new TaskRuntime({ db: gate.database });
+  const request = {
+    route: "chat/completions" as const,
+    baseUrl: "http://127.0.0.1:8000/v1",
+    purpose: "item",
+    body: { model: "m" },
+  };
+  runtime.register("items", 1, async () => {
+    const outcomes: string[] = [];
+    for (const item of ["one", "two"]) {
+      try {
+        await runGated(gate, { owner: "member", caller: `item:${item}`, request });
+        outcomes.push(`${item}:ok`);
+      } catch (error) {
+        outcomes.push(`${item}:failed:${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    return outcomes;
+  });
+  try {
+    const task = await runtime.submit({ kind: "items", owner: "member", input: {} }).promise;
+    expect(task?.status).toBe("completed");
+    expect(task?.result).toEqual(["one:failed:item: HTTP 503 Unavailable", "two:ok"]);
+  } finally {
+    await runtime.shutdown();
+    await gate.shutdown();
+    gate.database.close();
+  }
+});
+
+it("re-runs a failed model call on an explicit retry instead of refusing the checkpoint", async () => {
+  let calls = 0;
+  const gate = createInferenceGate({
+    config: inferenceTestConfig(),
+    env: {},
+    fetchImpl: async () => {
+      calls++;
+      if (calls === 1) {
+        throw new TypeError("fetch failed");
+      }
+      return { ok: true, status: 200, statusText: "OK", text: async () => "answer" };
+    },
+  });
+  const runtime = new TaskRuntime({ db: gate.database });
+  runtime.register("one", 1, async () => {
+    const response = await runGated(gate, {
+      owner: "member",
+      caller: "only",
+      request: {
+        route: "chat/completions",
+        baseUrl: "http://127.0.0.1:8000/v1",
+        purpose: "only",
+        body: { model: "m" },
+      },
+    });
+    return response.text;
+  });
+  try {
+    const first = runtime.submit({ kind: "one", owner: "member", input: {} });
+    const failed = await first.promise;
+    // Nothing is uncertain about a call that failed, so the task fails rather than asking for a
+    // retry; the member can still retry it, and the call runs again.
+    expect(failed?.status).toBe("failed");
+    expect(failed?.error).toBe("fetch failed");
+    expect((await runtime.retry(first.id, "member")!.promise)?.result).toBe("answer");
+    expect(calls).toBe(2);
+  } finally {
+    await runtime.shutdown();
+    await gate.shutdown();
+    gate.database.close();
+  }
+});
+
+it("falls back to the local model when the remote call fails in transport inside a task", async () => {
+  const audits: string[] = [];
+  const fetchImpl: InferenceFetch = async (url, init) => {
+    if (url.startsWith("https:")) {
+      throw new TypeError("fetch failed");
+    }
+    const classification = Boolean(JSON.parse(init.body ?? "{}").response_format);
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () =>
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: classification
+                  ? JSON.stringify({
+                      classification: "generic",
+                      sanitized_task: "hello",
+                      replacements: [],
+                    })
+                  : "Local answer",
+              },
+            },
+          ],
+        }),
+    };
+  };
+  const gate = createInferenceGate({ config: inferenceTestConfig(), fetchImpl, env: {} });
+  const runtime = new TaskRuntime({ db: gate.database });
+  const broker = createAdminBotPrivacyBroker(undefined, {
+    gate,
+    fetchImpl,
+    env: { NVIDIA_API_KEY: "synthetic" },
+    recordAudit: (event) => audits.push(String(event.details?.caller)),
+  });
+  runtime.register("privacy", 1, () => broker.handle({ task: "hello" }));
+  try {
+    const task = await runtime.submit({ owner: "a", kind: "privacy", input: {} }).promise;
+    expect(task?.status).toBe("completed");
+    expect(task?.result).toEqual({ route: "local", output: "Local answer" });
+    expect(audits).toEqual(["privacy_broker.remote"]);
+  } finally {
+    await runtime.shutdown();
+    await gate.shutdown();
+    gate.database.close();
+  }
+});

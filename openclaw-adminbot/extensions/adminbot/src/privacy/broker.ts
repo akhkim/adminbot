@@ -1,7 +1,24 @@
+import { randomUUID } from "node:crypto";
 import type {
+  AdminBotAuditEvent,
   AdminBotPrivacyTaskRequest,
   AdminBotPrivacyTaskResult,
 } from "../contracts/actions.js";
+import {
+  abortable,
+  errorCode,
+  isInferenceDeferred,
+  runGated,
+  sharedInferenceGate,
+  type InferenceFetch,
+  type InferenceGate,
+} from "../inference/gate.js";
+import {
+  TaskStepFailedError,
+  currentTaskContext,
+  isTaskInterruption,
+  taskStep,
+} from "../tasks/context.js";
 import { createGatewayFetch } from "./broker.gateway.js";
 
 export type PrivacyBrokerFetch = (
@@ -37,12 +54,32 @@ export type AdminBotPrivacyBrokerOptions = {
   sensitiveTermsProvider?: () => string[] | Promise<string[]>;
   /** Non-LLM preflight for local vs OpenRouter concurrency. Absent, calls go through unbounded. */
   llmRouter?: import("../kernel/llm-router.js").LlmLoadRouter;
+  /** The admission gate for local calls. Tests hand in their own; production uses the shared one. */
+  gate?: InferenceGate;
+  /**
+   * Where a fallback is recorded. Every route here can fall back to the local model when a stage
+   * fails, and for a long time that happened silently: a remote outage looked like every task being
+   * private. Each fallback now leaves an `inference.failed` row saying which stage failed and why.
+   */
+  recordAudit?: (event: Omit<AdminBotAuditEvent, "id" | "timestamp">) => void;
+};
+
+/**
+ * Who the task is for and how it should meet a busy GPU. Optional and additive: the request
+ * contract (`AdminBotPrivacyTaskRequest`) is what agents send and stays as it is; this is what the
+ * HTTP layer knows from the session and the caller's headers.
+ */
+export type AdminBotPrivacyTaskContext = {
+  owner?: string;
+  wait?: boolean;
+  submissionKey?: string;
 };
 
 export type AdminBotPrivacyBroker = {
   handle(
     request: AdminBotPrivacyTaskRequest,
     signal?: AbortSignal,
+    context?: AdminBotPrivacyTaskContext,
   ): Promise<AdminBotPrivacyTaskResult>;
 };
 
@@ -82,37 +119,103 @@ export function createAdminBotPrivacyBroker(
   const fetchImpl = env.LLM_GATEWAY_URL
     ? createGatewayFetch(directFetch, config, env)
     : wrapFetchWithLlmSlots(directFetch, options.llmRouter);
-  return createPrivacyBrokerHandler(config, fetchImpl, env, options.sensitiveTermsProvider);
+  return createPrivacyBrokerHandler(config, fetchImpl, env, options);
 }
 
 // Raw requests are classified locally before any remote model call.
+
+/** Per-task state shared across classification, local execution, and finalization. */
+type TaskRun = {
+  config: AdminBotPrivacyBrokerConfig;
+  fetchImpl: PrivacyBrokerFetch;
+  env: NodeJS.ProcessEnv;
+  gate: InferenceGate;
+  context: AdminBotPrivacyTaskContext;
+  audit: (stage: string, error: unknown, fallback: string) => void;
+  /**
+   * Set once the first local stage has been admitted. A later stage then waits for its slot rather
+   * than being shed: the member is already holding the connection for an answer, and a task shed
+   * halfway leaves them a classification they cannot use. The first stage is where "wait or try
+   * later" is decided; after that the task finishes. The depth cap still applies -- a full line
+   * sheds a later stage too, and the member gets that stage's handle.
+   */
+  admitted: boolean;
+  /** Groups this task's stage rows when the caller sent no submission key. */
+  taskId: string;
+  signal?: AbortSignal;
+};
 
 function createPrivacyBrokerHandler(
   config: AdminBotPrivacyBrokerConfig,
   fetchImpl: PrivacyBrokerFetch,
   env: NodeJS.ProcessEnv,
-  sensitiveTermsProvider?: () => string[] | Promise<string[]>,
+  options: AdminBotPrivacyBrokerOptions,
 ): AdminBotPrivacyBroker {
+  const sensitiveTermsProvider = options.sensitiveTermsProvider;
   return {
-    async handle(request, signal) {
+    async handle(request, signal, context = {}) {
       const task = request.task.trim();
       if (!task) {
         throw new Error("privacy task is required");
       }
-      const defaultSensitiveTerms = (await sensitiveTermsProvider?.()) ?? [];
+      const run: TaskRun = {
+        config,
+        fetchImpl,
+        env,
+        // Resolved per call, not per broker: the server installs the durable gate after the broker
+        // is built, and a broker that captured the placeholder would be a second counter.
+        gate: options.gate ?? sharedInferenceGate(),
+        context,
+        admitted: false,
+        taskId: `task:${randomUUID()}`,
+        audit: (stage, error, fallback) => {
+          options.recordAudit?.({
+            type: "inference.failed",
+            ...(context.owner ? { actor: context.owner } : {}),
+            details: {
+              caller: `privacy_broker.${stage}`,
+              outcome: "error",
+              // A code and a status, never the message: the remote's error body and the local
+              // model's can both quote the task back, and "message only" does not sanitize that.
+              ...auditableError(error),
+              fallback,
+            },
+          });
+        },
+        ...(signal ? { signal } : {}),
+      };
+      const currentSensitiveTerms = (await sensitiveTermsProvider?.()) ?? [];
+      const defaultSensitiveTerms = await taskStep(
+        "privacy.policy",
+        {},
+        () => currentSensitiveTerms,
+        { replaySafe: true },
+      );
+      if (
+        JSON.stringify([...defaultSensitiveTerms].toSorted()) !==
+        JSON.stringify([...currentSensitiveTerms].toSorted())
+      ) {
+        throw new Error(
+          "Privacy policy changed while this task was pending; submit a new task under the current policy.",
+        );
+      }
       const combinedSensitiveTerms = [...defaultSensitiveTerms, ...(request.sensitive_terms ?? [])];
       let classification: PrivacyClassification;
       try {
-        classification = await classifyLocally(
-          config,
-          fetchImpl,
-          task,
-          { ...request, sensitive_terms: combinedSensitiveTerms },
-          env,
-          signal,
-        );
-      } catch {
-        return runLocalOnly(config, fetchImpl, env, task, signal);
+        classification = await classifyLocally(run, task, {
+          ...request,
+          sensitive_terms: combinedSensitiveTerms,
+        });
+      } catch (error) {
+        if (isInferenceDeferred(error) || isTaskInterruption(error)) {
+          // The gate did not run the classifier: the GPU is busy and this member was shed, or is in
+          // line. Falling back to a full local run here would be a second request to the same busy
+          // GPU, so the decision goes up to the caller as it is.
+          throw error;
+        }
+        // The classifier answered badly, or the local model is down. Both used to vanish here.
+        run.audit("classify", error, "local");
+        return runLocalOnly(run, task);
       }
       const required = findObviousSensitiveValues(task, combinedSensitiveTerms);
       if (
@@ -120,63 +223,64 @@ function createPrivacyBrokerHandler(
         required.length === 0 &&
         classification.classification === "generic"
       ) {
-        const output = await runRemote(config, fetchImpl, env, task, signal).catch(() => undefined);
-        return output
-          ? { route: "remote", output }
-          : runLocalOnly(config, fetchImpl, env, task, signal);
+        const output = await runRemote(config, fetchImpl, env, task, signal).catch((error) => {
+          if (isTaskInterruption(error)) {
+            throw error;
+          }
+          run.audit("remote", error, "local");
+          return undefined;
+        });
+        return output ? { route: "remote", output } : runLocalOnly(run, task);
       }
-      return runPrivateTask(config, fetchImpl, env, task, classification, required, signal);
+      return runPrivateTask(run, task, classification, required);
     },
   };
 }
 
 async function runPrivateTask(
-  config: AdminBotPrivacyBrokerConfig,
-  fetchImpl: PrivacyBrokerFetch,
-  env: NodeJS.ProcessEnv,
+  run: TaskRun,
   task: string,
   classification: PrivacyClassification,
   required: string[],
-  signal?: AbortSignal,
 ): Promise<AdminBotPrivacyTaskResult> {
   if (
     classification.classification === "private" &&
     isSafeSanitization(task, classification, required)
   ) {
     const draft = await runRemote(
-      config,
-      fetchImpl,
-      env,
+      run.config,
+      run.fetchImpl,
+      run.env,
       classification.sanitized_task,
-      signal,
-    ).catch(() => undefined);
+      run.signal,
+    ).catch((error) => {
+      if (isTaskInterruption(error)) {
+        throw error;
+      }
+      run.audit("remote", error, "local");
+      return undefined;
+    });
     if (draft) {
       try {
-        const output = await finalizeLocally(
-          config,
-          fetchImpl,
-          task,
-          draft,
-          classification.replacements,
-          env,
-          signal,
-        );
+        const output = await finalizeLocally(run, task, draft, classification.replacements);
         return { route: "hybrid", output };
-      } catch {
+      } catch (error) {
+        if (isInferenceDeferred(error) || isTaskInterruption(error)) {
+          // Same rule as the classifier: a queue decision is not a reason for another GPU call.
+          throw error;
+        }
         // The remote model saw placeholders only. Re-run the full task locally.
+        run.audit("finalize", error, "local");
       }
     }
   }
-  return runLocalOnly(config, fetchImpl, env, task, signal);
+  return runLocalOnly(run, task);
 }
 
 async function classifyLocally(
-  config: AdminBotPrivacyBrokerConfig,
-  fetchImpl: PrivacyBrokerFetch,
+  run: TaskRun,
   task: string,
   request: AdminBotPrivacyTaskRequest,
-  env: NodeJS.ProcessEnv,
-  signal?: AbortSignal,
 ): Promise<PrivacyClassification> {
   const prompt = {
     task,
@@ -184,9 +288,8 @@ async function classifyLocally(
     explicitly_sensitive_terms: (request.sensitive_terms ?? []).filter((term) => term.trim()),
   };
   const content = await callLocalModel(
-    config,
-    fetchImpl,
-    env,
+    run,
+    "classify",
     [
       {
         role: "system",
@@ -196,22 +299,14 @@ async function classifyLocally(
       { role: "user", content: JSON.stringify(prompt) },
     ],
     true,
-    signal,
   );
   return parseClassification(content);
 }
 
-async function runLocalOnly(
-  config: AdminBotPrivacyBrokerConfig,
-  fetchImpl: PrivacyBrokerFetch,
-  env: NodeJS.ProcessEnv,
-  task: string,
-  signal?: AbortSignal,
-): Promise<AdminBotPrivacyTaskResult> {
+async function runLocalOnly(run: TaskRun, task: string): Promise<AdminBotPrivacyTaskResult> {
   const output = await callLocalModel(
-    config,
-    fetchImpl,
-    env,
+    run,
+    "local",
     [
       {
         role: "system",
@@ -221,24 +316,19 @@ async function runLocalOnly(
       { role: "user", content: task },
     ],
     false,
-    signal,
   );
   return { route: "local", output };
 }
 
 async function finalizeLocally(
-  config: AdminBotPrivacyBrokerConfig,
-  fetchImpl: PrivacyBrokerFetch,
+  run: TaskRun,
   originalTask: string,
   remoteOutput: string,
   replacements: PrivacyClassification["replacements"],
-  env: NodeJS.ProcessEnv,
-  signal?: AbortSignal,
 ): Promise<string> {
   return callLocalModel(
-    config,
-    fetchImpl,
-    env,
+    run,
+    "finalize",
     [
       {
         role: "system",
@@ -255,72 +345,86 @@ async function finalizeLocally(
       },
     ],
     false,
-    signal,
   );
 }
 
+/** Acquire a separate permit per stage; no permit spans remote calls or subsequent local stages. */
 async function callLocalModel(
-  config: AdminBotPrivacyBrokerConfig,
-  fetchImpl: PrivacyBrokerFetch,
-  env: NodeJS.ProcessEnv,
+  run: TaskRun,
+  stage: "classify" | "local" | "finalize",
   messages: Array<{ role: "system" | "user"; content: string }>,
   json: boolean,
-  signal?: AbortSignal,
 ): Promise<string> {
+  const { config, env } = run;
   const baseUrl = getValidatedLoopbackLocalBaseUrl(config.localBaseUrl);
   const apiKey = env[config.localApiKeyEnv]?.trim() || "vllm-local";
-  const response = await fetchImpl(new URL("chat/completions", baseUrl), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.localModel,
-      messages,
-      temperature: 0,
-      max_tokens: json ? 1024 : 4096,
-      chat_template_kwargs: { enable_thinking: false },
-      ...(json
-        ? {
-            response_format: {
-              type: "json_schema",
-              json_schema: {
-                name: "privacy_classification",
-                strict: true,
-                schema: {
-                  type: "object",
-                  properties: {
-                    classification: {
-                      type: "string",
-                      enum: ["generic", "private", "uncertain"],
-                    },
-                    sanitized_task: { type: "string" },
-                    replacements: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        properties: {
-                          placeholder: { type: "string" },
-                          value: { type: "string" },
+  const wait = run.context.wait ?? (run.admitted ? true : undefined);
+  // Every stage of one task shares the task's identity, and `local`/`finalize` are the steps whose
+  // completion means the task is done. A shed `classify` that is later waited on completes only the
+  // classification; its stored status must say the task did not finish, not "Done".
+  const task = run.context.submissionKey ?? run.taskId;
+  const response = await runGated(run.gate, {
+    owner: run.context.owner ?? "anonymous",
+    caller: `privacy_broker.${stage}`,
+    stage: { name: stage, task, final: stage !== "classify" },
+    ...(wait !== undefined ? { wait } : {}),
+    ...(run.context.submissionKey
+      ? { submissionKey: `${run.context.submissionKey}:${stage}` }
+      : {}),
+    ...(run.signal ? { signal: run.signal } : {}),
+    apiKey,
+    fetchImpl: run.fetchImpl as unknown as InferenceFetch,
+    request: {
+      route: "chat/completions",
+      baseUrl,
+      purpose: "local privacy model",
+      apiKeyEnv: config.localApiKeyEnv,
+      body: {
+        model: config.localModel,
+        messages,
+        temperature: 0,
+        max_tokens: json ? 1024 : 4096,
+        chat_template_kwargs: { enable_thinking: false },
+        ...(json
+          ? {
+              response_format: {
+                type: "json_schema",
+                json_schema: {
+                  name: "privacy_classification",
+                  strict: true,
+                  schema: {
+                    type: "object",
+                    properties: {
+                      classification: {
+                        type: "string",
+                        enum: ["generic", "private", "uncertain"],
+                      },
+                      sanitized_task: { type: "string" },
+                      replacements: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          properties: {
+                            placeholder: { type: "string" },
+                            value: { type: "string" },
+                          },
+                          required: ["placeholder", "value"],
+                          additionalProperties: false,
                         },
-                        required: ["placeholder", "value"],
-                        additionalProperties: false,
                       },
                     },
+                    required: ["classification", "sanitized_task", "replacements"],
+                    additionalProperties: false,
                   },
-                  required: ["classification", "sanitized_task", "replacements"],
-                  additionalProperties: false,
                 },
               },
-            },
-          }
-        : {}),
-    }),
-    signal,
+            }
+          : {}),
+      },
+    },
   });
-  const parsed = parseJson(await response.text(), "local privacy model");
+  run.admitted = true;
+  const parsed = parseJson(response.text, "local privacy model");
   if (!response.ok) {
     throw new Error(
       formatHttpError("local privacy model", response.status, response.statusText, parsed),
@@ -340,6 +444,58 @@ async function runRemote(
   task: string,
   signal?: AbortSignal,
 ): Promise<string> {
+  // No remote attempt occurred when credentials/configuration are absent; normal local fallback applies.
+  const target = selectRemoteTarget(config, env);
+  if (new URL(target.baseUrl).protocol !== "https:") {
+    throw new Error("remote reasoning URL must use https");
+  }
+  const key = "privacy.remote";
+  const owner = currentTaskContext();
+  // The deadline lives inside the step rather than as the runtime's step timeout. A step timeout
+  // reads as an interrupted attempt and forces a whole-task retry; a remote call that ran out of
+  // time is a finished failure, and the caller falls back to the local model as for any other.
+  const deadline = new AbortController();
+  const remoteSignal = owner
+    ? AbortSignal.any([owner.signal, deadline.signal, ...(signal ? [signal] : [])])
+    : signal;
+  const result = await taskStep(
+    key,
+    { task, model: target.model, url: target.baseUrl },
+    async () => {
+      const timer = owner
+        ? setTimeout(
+            () => deadline.abort(new Error("remote reasoning timed out after 120 seconds")),
+            120_000,
+          )
+        : undefined;
+      try {
+        const call = runRemoteCall(config, fetchImpl, env, task, remoteSignal);
+        return { output: await (remoteSignal ? abortable(call, remoteSignal) : call) };
+      } catch (error) {
+        if (error instanceof CompletedRemoteFailure) {
+          return { error: error.message };
+        }
+        // Network, DNS and timeout failures are as final as an HTTP error, but they are not
+        // retained as a completed checkpoint: a retry should ask the remote model again.
+        if (owner && !owner.signal.aborted && !signal?.aborted) {
+          throw new TaskStepFailedError(error);
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  );
+  if (result.error) {
+    throw new Error(result.error);
+  }
+  return result.output!;
+}
+
+class CompletedRemoteFailure extends Error {}
+
+/** The public route (OpenRouter) when it is fully configured, otherwise the remote one. */
+function selectRemoteTarget(config: AdminBotPrivacyBrokerConfig, env: NodeJS.ProcessEnv) {
   const publicKey = config.publicApiKeyEnv ? env[config.publicApiKeyEnv]?.trim() : undefined;
   const usePublic =
     Boolean(publicKey) && Boolean(config.publicBaseUrl) && Boolean(config.publicModel);
@@ -348,8 +504,21 @@ async function runRemote(
   if (!apiKey || !keyEnv) {
     throw new Error(`${keyEnv ?? config.remoteApiKeyEnv} is required for remote reasoning`);
   }
-  const baseUrl = usePublic ? config.publicBaseUrl! : config.remoteBaseUrl;
-  const model = usePublic ? config.publicModel! : config.remoteModel;
+  return {
+    apiKey,
+    baseUrl: usePublic ? config.publicBaseUrl! : config.remoteBaseUrl,
+    model: usePublic ? config.publicModel! : config.remoteModel,
+  };
+}
+
+async function runRemoteCall(
+  config: AdminBotPrivacyBrokerConfig,
+  fetchImpl: PrivacyBrokerFetch,
+  env: NodeJS.ProcessEnv,
+  task: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const { apiKey, baseUrl, model } = selectRemoteTarget(config, env);
   const url = new URL("chat/completions", ensureTrailingSlash(baseUrl));
   if (url.protocol !== "https:") {
     throw new Error("remote reasoning URL must use https");
@@ -368,13 +537,21 @@ async function runRemote(
     }),
     signal,
   });
-  const parsed = parseJson(await response.text(), "remote reasoning model");
+  const raw = await response.text();
+  let parsed: unknown;
+  try {
+    parsed = parseJson(raw, "remote reasoning model");
+  } catch {
+    throw new CompletedRemoteFailure("remote reasoning model returned malformed JSON");
+  }
   if (!response.ok) {
-    throw new Error(`remote reasoning model error ${response.status}: ${response.statusText}`);
+    throw new CompletedRemoteFailure(
+      `remote reasoning model error ${response.status}: ${response.statusText}`,
+    );
   }
   const content = getNestedString(parsed, ["choices", "0", "message", "content"]);
   if (!content?.trim()) {
-    throw new Error("remote reasoning model returned no content");
+    throw new CompletedRemoteFailure("remote reasoning model returned no content");
   }
   return content.trim();
 }
@@ -520,6 +697,18 @@ function getValidatedLoopbackLocalBaseUrl(value: string): string {
     throw new Error("local privacy model must use a loopback URL");
   }
   return url.toString();
+}
+
+/**
+ * What a failure may contribute to an audit row: an error class or code and, for HTTP failures, the
+ * status. The message is excluded on purpose -- see the audit callback.
+ */
+function auditableError(error: unknown): Record<string, unknown> {
+  if (!(error instanceof Error)) {
+    return { error_code: "unknown" };
+  }
+  const status = /\berror (\d{3})\b/u.exec(error.message)?.[1];
+  return { error_code: errorCode(error), ...(status ? { http_status: Number(status) } : {}) };
 }
 
 function formatHttpError(

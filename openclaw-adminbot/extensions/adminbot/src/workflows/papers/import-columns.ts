@@ -15,6 +15,8 @@
 // filled -- so the worst a wrong answer costs is one unticked row in a preview.
 
 import { completeLocally, type GuidebookFetch } from "../../guidebook/local-client.js";
+import { isInferenceDeferred, type InferenceGate } from "../../inference/gate.js";
+import { currentTaskContext } from "../../tasks/context.js";
 
 const PURPOSE = "paper import column mapping";
 const DEFAULT_BASE_URL = "http://127.0.0.1:8000/v1";
@@ -81,6 +83,7 @@ export function createImportColumnMapper(options: {
   baseUrl?: string;
   model?: string;
   apiKey?: string;
+  gate?: InferenceGate;
 }): ImportColumnMapper {
   return async ({ unmapped, available, signal }) => {
     if (unmapped.length === 0 || available.length === 0) {
@@ -95,6 +98,7 @@ export function createImportColumnMapper(options: {
         ...(options.apiKey ? { apiKey: options.apiKey } : {}),
         ...(signal ? { signal } : {}),
         purposeLabel: PURPOSE,
+        gate: { gate: options.gate, caller: "papers.import-columns" },
         temperature: 0,
         maxTokens: 600,
         messages: [
@@ -122,7 +126,19 @@ export function createImportColumnMapper(options: {
           },
         },
       });
-    } catch {
+    } catch (error) {
+      if (currentTaskContext()) {
+        // ctx.step has already rewrapped this, so the identity test below cannot fire inside a
+        // task -- and the empty mapping returned after it is exactly the "carried on as if it
+        // had asked" outcome the comment above forbids. Let the runtime own the outcome.
+        throw error;
+      }
+      if (isInferenceDeferred(error)) {
+        // A queue decision, not a model that could not answer. `{}` here would read as "the model
+        // could not place any of these columns", and the importer would carry on as if it had
+        // asked. The caller decides what to tell the person importing.
+        throw error;
+      }
       return {};
     }
     return readMapping(text, unmapped, available);

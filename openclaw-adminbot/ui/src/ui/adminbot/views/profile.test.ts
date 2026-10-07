@@ -569,15 +569,20 @@ describe("renderProfile autosave", () => {
 
   it("warns when AdminBot cannot open a saved Drive folder", async () => {
     saveStoredMemberSession({ sessionToken: "test-session", expiresAt: "" });
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          status: "inaccessible",
-          message: "AdminBot cannot open this file. Share it with Jinesis.adminbot@gmail.com.",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
+    // The profile also loads the member's wait preference, so answer by route.
+    const fetchMock = vi.fn(async (url: string) =>
+      url.includes("/drive/check-edit-access")
+        ? new Response(
+            JSON.stringify({
+              status: "inaccessible",
+              message: "AdminBot cannot open this file. Share it with Jinesis.adminbot@gmail.com.",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
+        : new Response(JSON.stringify({ inference_always_wait: false }), { status: 200 }),
     );
+    const driveChecks = () =>
+      fetchMock.mock.calls.filter(([url]) => url.includes("/drive/check-edit-access"));
     vi.stubGlobal("fetch", fetchMock);
     try {
       const member = createMember({
@@ -596,7 +601,7 @@ describe("renderProfile autosave", () => {
       expect(state.profileAccountChecks.one_on_one_folder_url).toMatchObject({ status: "warning" });
       render(renderProfile(state, { onSave: vi.fn() }), container);
       await vi.advanceTimersByTimeAsync(0);
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(driveChecks()).toHaveLength(1);
       expect(
         container.querySelector('[data-testid="profile-account-check-one_on_one_folder_url"]')
           ?.textContent,
