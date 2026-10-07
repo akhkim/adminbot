@@ -19,6 +19,7 @@ import {
 } from "../tasks/context.js";
 import {
   DEFAULT_INFERENCE_GATE_CONFIG,
+  MAX_SHUTDOWN_GRACE_MS,
   validateInferenceGateConfig,
   type InferenceGateConfig,
 } from "./config.js";
@@ -1528,8 +1529,8 @@ export function createInferenceGate(options: InferenceGateOptions) {
   }
 
   function setShutdownGraceMs(value: number, actor = "system:inference-gate") {
-    if (!Number.isSafeInteger(value) || value < 0 || value > 2_147_483_647) {
-      throw new Error("shutdown_grace_ms must be an integer from 0 to 2147483647");
+    if (!Number.isSafeInteger(value) || value < 0 || value > MAX_SHUTDOWN_GRACE_MS) {
+      throw new Error(`shutdown_grace_ms must be an integer from 0 to ${MAX_SHUTDOWN_GRACE_MS}`);
     }
     controlAudit(actor, "shutdown_grace", { shutdown_grace_ms: value });
     shutdownGraceMs = value;

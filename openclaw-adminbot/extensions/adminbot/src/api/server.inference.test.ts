@@ -427,6 +427,16 @@ describe("inference operator controls", () => {
         })
       ).status,
     ).toBe(400);
+    // Above the ceiling the unit's TimeoutStopSec is written against: refused, not a 500.
+    const tooLong = await fetch(`${baseUrl}/inference/settings`, {
+      method: "PUT",
+      headers: adminHeaders,
+      body: JSON.stringify({ shutdown_grace_ms: 360_001 }),
+    });
+    expect(tooLong.status).toBe(400);
+    expect((await tooLong.json()).error.message).toBe(
+      "shutdown_grace_ms must be an integer from 0 to 360000",
+    );
     const updated = await fetch(`${baseUrl}/inference/settings`, {
       method: "PUT",
       headers: adminHeaders,

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_INFERENCE_GATE_CONFIG, resolveInferenceGateConfig } from "./config.js";
+import {
+  DEFAULT_INFERENCE_GATE_CONFIG,
+  MAX_SHUTDOWN_GRACE_MS,
+  resolveInferenceGateConfig,
+} from "./config.js";
 import { inferenceTestConfig, type InferenceConfigOverrides } from "./config.test-support.js";
 import { createInferenceGate } from "./gate.js";
 
@@ -96,5 +100,39 @@ describe("direct gate configuration", () => {
     expect(() => createInferenceGate({ config: inferenceTestConfig(overrides), env: {} })).toThrow(
       name,
     );
+  });
+});
+
+// Review of #255: systemd stops the AdminBot unit after TimeoutStopSec, so a grace period longer
+// than the unit allows is never served; the grace has a ceiling the unit is written against.
+describe("shutdown grace ceiling", () => {
+  it("ignores a configured grace above the ceiling", () => {
+    expect(
+      resolveInferenceGateConfig({
+        ADMINBOT_INFERENCE_SHUTDOWN_GRACE_MS: String(MAX_SHUTDOWN_GRACE_MS + 1),
+      }).shutdownGraceMs,
+    ).toBe(DEFAULT_INFERENCE_GATE_CONFIG.shutdownGraceMs);
+    expect(DEFAULT_INFERENCE_GATE_CONFIG.shutdownGraceMs).toBeLessThanOrEqual(
+      MAX_SHUTDOWN_GRACE_MS,
+    );
+  });
+  it("rejects a grace above the ceiling in direct configuration and at runtime", () => {
+    expect(() =>
+      createInferenceGate({
+        config: inferenceTestConfig({ shutdownGraceMs: MAX_SHUTDOWN_GRACE_MS + 1 }),
+        env: {},
+      }),
+    ).toThrow("shutdownGraceMs");
+    const gate = createInferenceGate({ config: inferenceTestConfig(), env: {} });
+    try {
+      expect(() => gate.setShutdownGraceMs(MAX_SHUTDOWN_GRACE_MS + 1, "test")).toThrow(
+        `shutdown_grace_ms must be an integer from 0 to ${MAX_SHUTDOWN_GRACE_MS}`,
+      );
+      expect(gate.setShutdownGraceMs(MAX_SHUTDOWN_GRACE_MS, "test").shutdown_grace_ms).toBe(
+        MAX_SHUTDOWN_GRACE_MS,
+      );
+    } finally {
+      gate.close();
+    }
   });
 });

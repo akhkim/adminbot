@@ -96,6 +96,12 @@ export const DEFAULT_INFERENCE_GATE_CONFIG: InferenceGateConfig = {
 
 const ENV_PREFIX = "ADMINBOT_INFERENCE_";
 const MAX_TIMER_MS = 2_147_483_647;
+/**
+ * The longest shutdown grace an operator can set. The AdminBot systemd unit's TimeoutStopSec
+ * (deploy/aurora/install-user-services.sh) is written against this, with room for the database
+ * close after the drain; systemd SIGKILLs at that timeout, so a longer grace would never be served.
+ */
+export const MAX_SHUTDOWN_GRACE_MS = 360_000;
 
 /** Read deployment settings, retaining the legacy matcher concurrency fallback. */
 export function resolveInferenceGateConfig(
@@ -126,7 +132,7 @@ export function resolveInferenceGateConfig(
       env.ADMINBOT_INFERENCE_PERSIST_ACROSS_RESTARTS?.trim() ?? "",
     ),
     startPaused: /^(1|true)$/iu.test(env.ADMINBOT_INFERENCE_START_PAUSED?.trim() ?? ""),
-    shutdownGraceMs: timer("SHUTDOWN_GRACE_MS", defaults.shutdownGraceMs),
+    shutdownGraceMs: read("SHUTDOWN_GRACE_MS", defaults.shutdownGraceMs, 0, MAX_SHUTDOWN_GRACE_MS),
     capacity: read("CAPACITY", capacityFallback, 1),
     defaultTimeoutMs: timer("DEFAULT_TIMEOUT_MS", defaults.defaultTimeoutMs, 1),
     queue: {
@@ -168,7 +174,7 @@ export function validateInferenceGateConfig(config: InferenceGateConfig): void {
     throw new TypeError("Inference gate startPaused must be a boolean");
   }
   integer("capacity", config.capacity, 1);
-  integer("shutdownGraceMs", config.shutdownGraceMs, 0, MAX_TIMER_MS);
+  integer("shutdownGraceMs", config.shutdownGraceMs, 0, MAX_SHUTDOWN_GRACE_MS);
   integer("defaultTimeoutMs", config.defaultTimeoutMs, 1, MAX_TIMER_MS);
   integer("queue.maxPerOwner", config.queue.maxPerOwner, 1);
   for (const key of [

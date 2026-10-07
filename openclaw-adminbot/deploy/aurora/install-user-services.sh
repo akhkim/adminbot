@@ -249,7 +249,9 @@ Environment=PYTHONPATH=$REIMBURSEMENT_LIBS
 ExecStart=$NODE_BIN $ROOT/start-adminbot.mjs
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=30
+# SIGTERM drains admitted model work for up to the inference shutdown grace (at most 360 s,
+# MAX_SHUTDOWN_GRACE_MS) and then closes the databases; stop only after both have had their time.
+TimeoutStopSec=390
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true

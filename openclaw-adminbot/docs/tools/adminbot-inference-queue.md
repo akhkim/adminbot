@@ -93,21 +93,23 @@ which the gate divides already.
 
 ## Operator controls
 
-| Variable                                     | Default                 | What it does                                                  |
-| -------------------------------------------- | ----------------------- | ------------------------------------------------------------- |
-| `ADMINBOT_INFERENCE_CAPACITY`                | 2                       | Calls in flight to the local model. Matches `--max-num-seqs`. |
-| `ADMINBOT_INFERENCE_QUEUE_MAX_DEPTH`         | 32                      | The whole waiting line, tasks and model calls.                |
-| `ADMINBOT_INFERENCE_QUEUE_MAX_PER_OWNER`     | 4                       | One owner's share of it.                                      |
-| `ADMINBOT_INFERENCE_DEFAULT_TIMEOUT_MS`      | 120000                  | Budget once admitted, for callers that name none.             |
-| `ADMINBOT_INFERENCE_SHUTDOWN_GRACE_MS`       | 360000                  | How long admitted work may settle during shutdown.            |
-| `ADMINBOT_INFERENCE_START_PAUSED`            | off                     | Boot without dispatching.                                     |
-| `ADMINBOT_INFERENCE_PERSIST_ACROSS_RESTARTS` | off                     | Durable task checkpoints. See below.                          |
-| `ADMINBOT_DATABASE_PATH`                     | `state/adminbot.sqlite` | Where the service reads its database.                         |
+| Variable                                     | Default                 | What it does                                                   |
+| -------------------------------------------- | ----------------------- | -------------------------------------------------------------- |
+| `ADMINBOT_INFERENCE_CAPACITY`                | 2                       | Calls in flight to the local model. Matches `--max-num-seqs`.  |
+| `ADMINBOT_INFERENCE_QUEUE_MAX_DEPTH`         | 32                      | The whole waiting line, tasks and model calls.                 |
+| `ADMINBOT_INFERENCE_QUEUE_MAX_PER_OWNER`     | 4                       | One owner's share of it.                                       |
+| `ADMINBOT_INFERENCE_DEFAULT_TIMEOUT_MS`      | 120000                  | Budget once admitted, for callers that name none.              |
+| `ADMINBOT_INFERENCE_SHUTDOWN_GRACE_MS`       | 360000                  | How long admitted work may settle during shutdown. Max 360000. |
+| `ADMINBOT_INFERENCE_START_PAUSED`            | off                     | Boot without dispatching.                                      |
+| `ADMINBOT_INFERENCE_PERSIST_ACROSS_RESTARTS` | off                     | Durable task checkpoints. See below.                           |
+| `ADMINBOT_DATABASE_PATH`                     | `state/adminbot.sqlite` | Where the service reads its database.                          |
 
 `POST /inference/pause` and `/resume` control dispatch; calls already admitted finish.
 `PUT /inference/settings` with `{ "shutdown_grace_ms": 1000 }` takes effect immediately, including
 _during_ a shutdown that is already draining — the deadline stays measured from when shutdown
-started. Control routes stay answerable while draining.
+started. Control routes stay answerable while draining. The grace is capped at 360000 ms because
+the Aurora unit's `TimeoutStopSec=390` is written against that ceiling: systemd kills the process
+at that timeout, so a longer grace would never be served.
 
 `POST /tasks/:id/cancel` cancels one task. `/inference/cancel-pending` takes explicit model-request
 ids and is the older, lower-level control.

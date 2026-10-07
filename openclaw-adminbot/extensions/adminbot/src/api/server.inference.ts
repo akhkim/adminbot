@@ -3,6 +3,7 @@
  * Request IDs identify rows; the authenticated session authorizes access.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { MAX_SHUTDOWN_GRACE_MS } from "../inference/config.js";
 import {
   isInferenceDeferred,
   type InferenceGate,
@@ -118,10 +119,12 @@ export async function handleInferenceRoute(
         typeof value !== "number" ||
         !Number.isSafeInteger(value) ||
         value < 0 ||
-        value > 2_147_483_647
+        value > MAX_SHUTDOWN_GRACE_MS
       ) {
         sendJson(res, 400, {
-          error: { message: "shutdown_grace_ms must be an integer from 0 to 2147483647" },
+          error: {
+            message: `shutdown_grace_ms must be an integer from 0 to ${MAX_SHUTDOWN_GRACE_MS}`,
+          },
         });
         return true;
       }
