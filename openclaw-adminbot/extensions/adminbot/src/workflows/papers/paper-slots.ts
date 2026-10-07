@@ -13,6 +13,7 @@ import {
   type AdminBotSocialConsentRecord,
   type AdminBotSocialDraftRecord,
 } from "../../contracts/paper-cycle.js";
+import { parsePaperFeedback } from "../../contracts/paper-feedback.js";
 import {
   adminBotPaperSlotBranchPriority,
   adminBotPaperSlotEscalateAfterNudges,
@@ -107,7 +108,7 @@ export function redactPaperSlots(
     return rows;
   }
   return rows.map((row) => {
-    if (!isConfidentialPaperSlot(row.slot)) {
+    if (!isConfidentialPaperSlot(row.slot) && !row.slot.startsWith("feedback_")) {
       return row;
     }
     const { value_text: _dropped, ...rest } = row;
@@ -172,6 +173,21 @@ export function applyPaperSlotWrite(params: {
       return value
         ? { ok: true, record: provided({ value_text: value }) }
         : { ok: true, record: clearedSlot(existing) };
+    }
+    case "feedback": {
+      const value = (input.value_text ?? "").trim();
+      if (!value) {
+        return { ok: true, record: clearedSlot(existing) };
+      }
+      const feedback = parsePaperFeedback(value);
+      if (!feedback) {
+        return {
+          ok: false,
+          error:
+            "Feedback needs a reason, an HTTPS manuscript link and valid deadline times; feedback-by cannot follow submission cutoff.",
+        };
+      }
+      return { ok: true, record: provided({ value_text: JSON.stringify(feedback) }) };
     }
     case "secret6": {
       const value = (input.value_text ?? "").trim();

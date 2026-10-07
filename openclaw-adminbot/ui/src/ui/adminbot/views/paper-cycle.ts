@@ -1,9 +1,3 @@
-// The parts of a paper card that are lists rather than single fields: the social drafts and who
-// has signed off on them, who is going to the conference, and who has been reimbursed.
-//
-// Kept apart from the slot checklist above it because they behave differently. A slot is one
-// answer with one owner; each of these is a set of rows about several people, and the useful
-// question is "who has not answered yet" rather than "is it filled in".
 import { html, nothing } from "lit";
 import { icons } from "../../icons.ts";
 import type {
@@ -11,7 +5,14 @@ import type {
   PaperReimbursement,
   PaperSocialConsent,
   PaperSocialDraft,
-} from "../auth/session.ts";
+} from "../api/papers.ts";
+// The parts of a paper card that are lists rather than single fields: the social drafts and who
+// has signed off on them, who is going to the conference, and who has been reimbursed.
+//
+// Kept apart from the slot checklist above it because they behave differently. A slot is one
+// answer with one owner; each of these is a set of rows about several people, and the useful
+// question is "who has not answered yet" rather than "is it filled in".
+import { renderDateControl } from "../date-control.ts";
 
 export type PaperCycleProps = {
   paperId: string;
@@ -28,8 +29,11 @@ export type PaperCycleProps = {
   memberName: (memberId: string) => string;
   onSaveDraft: (platform: string, body: string) => void;
   onCirculateDraft: (draftId: string) => void;
-  /** LinkedIn only: run the model draft with the panel's venue/context inputs and store the text. */
-  onGenerateLinkedInDraft?: (venue: string, note: string) => void;
+  /**
+   * LinkedIn only: run the model draft with the panel's venue/context inputs and store the text.
+   * `pdfBase64` is a PDF dropped on the panel; absent, the service reads the card's Drive copy.
+   */
+  onGenerateLinkedInDraft?: (venue: string, note: string, pdfBase64?: string) => void;
   onConsent: (draftId: string, decision: string, comment?: string) => void;
   onSetAttendee: (name: string, memberId: string | undefined, attending: string) => void;
   /**
@@ -120,6 +124,54 @@ function renderConsentRow(props: PaperCycleProps, consent: PaperSocialConsent) {
   `;
 }
 
+// Matches the service's ceiling on /papers/linkedin-draft, so an oversize file is refused here
+// with a message rather than as a 413 after the whole thing has been uploaded.
+export const LINKEDIN_DRAFT_PDF_MAX_BYTES = 20 * 1024 * 1024;
+
+function isPdf(file: File): boolean {
+  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+async function readPdfBase64(file: File): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+  return dataUrl.slice(dataUrl.indexOf(",") + 1);
+}
+
+// The chosen PDF lives on the file input itself rather than in app state, the same way the venue
+// and context inputs beside it do: Generate reads all three off the DOM when clicked, and a
+// re-render leaves an input's files alone, so nothing has to be threaded through the view.
+function choosePdf(zone: HTMLElement, files: FileList | null | undefined): void {
+  const input = zone.querySelector<HTMLInputElement>('[data-el="pdf"]');
+  const title = zone.querySelector<HTMLElement>('[data-el="pdf-name"]');
+  const file = files?.[0];
+  if (!input || !title || !files || !file) {
+    return;
+  }
+  if (!isPdf(file) || file.size > LINKEDIN_DRAFT_PDF_MAX_BYTES) {
+    globalThis.alert?.(isPdf(file) ? "That PDF is over 20 MB." : `${file.name} is not a PDF.`);
+    input.value = "";
+    title.textContent = "Drop the paper PDF here";
+    return;
+  }
+  // A drop hands over the drag's own FileList; a click-to-pick already put it on the input.
+  if (input.files !== files) {
+    input.files = files;
+  }
+  title.textContent = file.name;
+}
+
+function setPdfDragging(event: DragEvent, dragging: boolean): void {
+  const zone = event.currentTarget;
+  if (zone instanceof HTMLElement) {
+    zone.classList.toggle("is-dragging", dragging);
+  }
+}
+
 /**
  * One platform's draft, and who still owes a sign-off on it.
  *
@@ -174,6 +226,51 @@ function renderDraft(props: PaperCycleProps, platform: string) {
                 placeholder="anything the abstract does not say"
               />
             </label>
+            ${generate
+              ? html`
+                  <!-- Optional, and it wins over the card's Drive copy when given: the way through
+                       when the service cannot reach Drive, or the card has no file link yet. -->
+                  <label
+                    class="logistics-upload__drop paper-cycle__pdf-drop"
+                    data-testid=${`paper-draft-pdf-${props.paperId}`}
+                    @dragenter=${(event: DragEvent) => {
+                      event.preventDefault();
+                      setPdfDragging(event, true);
+                    }}
+                    @dragover=${(event: DragEvent) => {
+                      // Without this the browser opens the dropped PDF instead of handing it over.
+                      event.preventDefault();
+                      setPdfDragging(event, true);
+                    }}
+                    @dragleave=${(event: DragEvent) => setPdfDragging(event, false)}
+                    @drop=${(event: DragEvent) => {
+                      event.preventDefault();
+                      setPdfDragging(event, false);
+                      choosePdf(event.currentTarget as HTMLElement, event.dataTransfer?.files);
+                    }}
+                  >
+                    <span class="logistics-upload__drop-icon" aria-hidden="true"
+                      >${icons.paperclip}</span
+                    >
+                    <span class="logistics-upload__drop-title" data-el="pdf-name"
+                      >Drop the paper PDF here</span
+                    >
+                    <small class="logistics-upload__drop-hint">
+                      Optional — or click to choose. Used instead of the Drive copy on the card.
+                    </small>
+                    <input
+                      class="sr-only"
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      data-el="pdf"
+                      @change=${(event: Event) => {
+                        const input = event.currentTarget as HTMLInputElement;
+                        choosePdf(input.closest("label") as HTMLElement, input.files);
+                      }}
+                    />
+                  </label>
+                `
+              : nothing}
           `
         : nothing}
       <textarea
@@ -196,13 +293,14 @@ function renderDraft(props: PaperCycleProps, platform: string) {
                 type="button"
                 class="btn btn--sm primary"
                 data-testid=${`paper-draft-generate-${props.paperId}-linkedin`}
-                @click=${(event: Event) => {
+                @click=${async (event: Event) => {
                   const root = (event.currentTarget as HTMLElement).closest(".paper-cycle__draft");
                   const venue =
                     root?.querySelector<HTMLInputElement>('[data-el="venue"]')?.value.trim() ?? "";
                   const note =
                     root?.querySelector<HTMLInputElement>('[data-el="note"]')?.value.trim() ?? "";
-                  generate(venue, note);
+                  const pdf = root?.querySelector<HTMLInputElement>('[data-el="pdf"]')?.files?.[0];
+                  generate(venue, note, pdf ? await readPdfBase64(pdf) : undefined);
                 }}
               >
                 Generate draft
@@ -453,25 +551,31 @@ function renderMyTrip(props: PaperCycleProps) {
                          many beds *and* for which nights. -->
                     <label class="paper-trip__field">
                       <span>Arriving</span>
-                      <input
-                        class="input"
-                        type="date"
-                        data-testid=${`paper-trip-arrival-${props.paperId}`}
-                        .value=${draft.arrival_on}
-                        @input=${(event: Event) =>
-                          edit({ arrival_on: (event.target as HTMLInputElement).value })}
-                      />
+                      ${renderDateControl(
+                        html`<input
+                          class="input"
+                          type="date"
+                          data-testid=${`paper-trip-arrival-${props.paperId}`}
+                          .value=${draft.arrival_on}
+                          @input=${(event: Event) =>
+                            edit({ arrival_on: (event.target as HTMLInputElement).value })}
+                        />`,
+                        draft.arrival_on,
+                      )}
                     </label>
                     <label class="paper-trip__field">
                       <span>Leaving</span>
-                      <input
-                        class="input"
-                        type="date"
-                        data-testid=${`paper-trip-departure-${props.paperId}`}
-                        .value=${draft.departure_on}
-                        @input=${(event: Event) =>
-                          edit({ departure_on: (event.target as HTMLInputElement).value })}
-                      />
+                      ${renderDateControl(
+                        html`<input
+                          class="input"
+                          type="date"
+                          data-testid=${`paper-trip-departure-${props.paperId}`}
+                          .value=${draft.departure_on}
+                          @input=${(event: Event) =>
+                            edit({ departure_on: (event.target as HTMLInputElement).value })}
+                        />`,
+                        draft.departure_on,
+                      )}
                     </label>
                   `
                 : nothing}

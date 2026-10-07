@@ -53,6 +53,103 @@ function seeded(): AdminBotService {
   return service;
 }
 
+describe("conference travel export", () => {
+  it("deduplicates Going people and keeps unknown lodging separate from explicit requests", () => {
+    const service = seeded();
+    const key = firstConference(service);
+    unwrap(
+      service.setConferenceAttendee({
+        paperId: "p1",
+        memberId: "ada",
+        name: "Ada Lovelace",
+        attending: "yes",
+        actorId: "admin",
+        privileged: true,
+      }),
+    );
+    unwrap(
+      service.upsertPaper({
+        id: "p2",
+        title: "Second accepted paper",
+        authors: ["Ada Lovelace", "Bob Coauthor"],
+        author_links: [
+          { name: "Ada Lovelace", member_id: "ada" },
+          { name: "Bob Coauthor", member_id: "bob" },
+        ],
+        current_step: "submission",
+        venue_decision: "accept",
+        accepted_venue: "EMNLP",
+        accepted_year: 2026,
+        is_archival: true,
+        presentation_type: "poster",
+      }),
+    );
+    unwrap(
+      service.setConferenceAttendee({
+        paperId: "p2",
+        memberId: "ada",
+        name: "Ada Lovelace",
+        attending: "yes",
+        actorId: "admin",
+        privileged: true,
+      }),
+    );
+    let rows = unwrap(service.listConferenceTravelExport()).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].needs_lodging).toBeNull();
+    unwrap(
+      service.setConferenceTrip({
+        conferenceKey: key,
+        memberId: "ada",
+        intent: "going",
+        funding: "none",
+        needsLodging: true,
+        arrivalOn: "2026-10-24",
+        departureOn: "2026-10-30",
+        notes: "PRIVATE TRAVEL NOTE",
+      }),
+    );
+    unwrap(
+      service.setConferenceTrip({
+        conferenceKey: key,
+        memberId: "bob",
+        intent: "undecided",
+        funding: "none",
+        needsLodging: true,
+      }),
+    );
+    // Attendance without a paper is still a real trip, and another year is another event.
+    unwrap(
+      service.setConferenceTrip({
+        conferenceKey: "neurips:2026",
+        memberId: "bob",
+        intent: "going",
+        funding: "none",
+        needsLodging: false,
+      }),
+    );
+    unwrap(
+      service.setConferenceTrip({
+        conferenceKey: "emnlp:2027",
+        memberId: "ada",
+        intent: "going",
+        funding: "none",
+      }),
+    );
+    rows = unwrap(service.listConferenceTravelExport()).rows;
+    expect(rows).toHaveLength(3);
+    expect(rows.find((row) => row.conference_key === key)).toMatchObject({
+      name: "Ada Lovelace",
+      needs_lodging: true,
+      arrival_on: "2026-10-24",
+      departure_on: "2026-10-30",
+      going_source: "paper attendance and personal trip",
+    });
+    expect(rows.find((row) => row.conference_key === "neurips:2026")?.needs_lodging).toBe(false);
+    expect(JSON.stringify(rows)).not.toContain("PRIVATE TRAVEL NOTE");
+  });
+});
+
 describe("the trip on the paper card", () => {
   it("names the conference only once the acceptance details are in", () => {
     const service = seeded();

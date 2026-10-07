@@ -1,3 +1,4 @@
+import { routeLlmFetch } from "../kernel/llm-gateway-client.js";
 import { localModelCapacity } from "./local-model-capacity.js";
 
 /**
@@ -162,7 +163,7 @@ export async function completeLocally(params: {
     params.signal,
     (signal) =>
       postJson(
-        params.fetchImpl,
+        routeLlmFetch(params.fetchImpl, "local"),
         params.baseUrl,
         "chat/completions",
         params.apiKey,

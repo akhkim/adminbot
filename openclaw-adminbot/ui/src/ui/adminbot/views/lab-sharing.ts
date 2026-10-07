@@ -141,7 +141,7 @@ function directorOf(state: AppViewState): DirectorStatus | null {
   return {
     name: status.message,
     availability,
-    timezone: "",
+    timezone: status.timezone ?? "",
     localTime: "",
     progressLabel: "",
     progressPercent: -1,
@@ -329,7 +329,11 @@ function renderDirectorPanel(state: AppViewState) {
           ></span>
           <div class="lab-sharing-director__name">${director.name}</div>
         </div>
-        <div class="lab-sharing-director__meta">${availabilityLabel(director.availability)}</div>
+        <div class="lab-sharing-director__meta">
+          ${availabilityLabel(director.availability)}${director.timezone
+            ? html` · ${t("professor.broadcast.timezoneLabel", { timezone: director.timezone })}`
+            : nothing}
+        </div>
       </div>
     </section>
   `;

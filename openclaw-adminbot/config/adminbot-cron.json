@@ -306,7 +306,7 @@
     },
     {
       "name": "adminbot-rec-letter-channel",
-      "description": "Keep #help-rec-letter-request in step with open letter requests",
+      "description": "Add applicants to #help-rec-letters within three months of letter deadlines; propose expired removals",
       "cron": "20 * * * *",
       "argv": [
         "bash",

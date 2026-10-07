@@ -1,8 +1,9 @@
-import "./member-guide-status.ts";
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
+import "./interview-invite.ts";
 import { ifDefined } from "lit/directives/if-defined.js";
+import "./member-guide-status.ts";
 import {
   adminBotIsAlumniMember,
   adminBotMemberTypes,
@@ -26,14 +27,10 @@ import {
 import { t } from "../../../i18n/index.ts";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
-import type {
-  AdminBotEmailReviewResolution,
-  ConferenceRoster,
-  MemberNudgeChannel,
-  MemberProfileUpdate,
-  PaperSlotOverviewRow,
-  PaperSlotRow,
-} from "../auth/session.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
+import type { ConferenceRoster, PaperSlotOverviewRow } from "../api/paper-admin.ts";
+import type { PaperSlotRow } from "../api/papers.ts";
+import type { AdminBotEmailReviewResolution, MemberNudgeChannel } from "../auth/session.ts";
 import {
   type BlockerRow,
   blockerAgeDays,
@@ -46,7 +43,6 @@ import type {
   AdminBotActionProposal,
   AdminBotDashboardData,
   AdminBotLabMember,
-  AdminBotLabMemberSaveInput,
   AdminBotMemberNudgeState,
   AdminBotPaperNudge,
   AdminBotPaperRecord,
@@ -55,17 +51,19 @@ import type {
   AdminBotSensitiveInfoRecord,
   AdminBotReimbursementState,
   AdminBotSettings,
-  AdminBotSettingsSaveInput,
   AdminBotStandingMeetingsState,
   AdminBotVenueSource,
 } from "../controllers/admin.ts";
+import type { AdminBotLabMemberSaveInput } from "../controllers/members.ts";
 import {
   EMPTY_RECENT_EDITS,
   recentEditsKey,
   type RecentEditsState,
 } from "../controllers/recent-edits.ts";
+import type { AdminBotSettingsSaveInput } from "../controllers/workspace.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
+import { renderDateControl } from "../date-control.ts";
 import { saveMemberInBackground, waitForMemberSave } from "../member-autosave.ts";
 import { PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
@@ -78,6 +76,7 @@ import {
   type PreRegistrationVenue,
   type VenueTarget,
 } from "../venue-targets.ts";
+import { renderMemberBadgeSymbols } from "./badge-symbols.ts";
 import {
   MEMBER_REQUEST_POPOVER_ID,
   type MemberRequestsProps,
@@ -200,6 +199,12 @@ export type AdminBotProps = {
   data: AdminBotDashboardData;
   /** The member editor's Meetings checkboxes; absent outside the Lab Members panel. */
   standingMeetings?: AdminBotStandingMeetingsState;
+  onboardingSlackChannels?: {
+    channels: readonly string[] | null;
+    loading: boolean;
+    error: string | null;
+  };
+  onLoadOnboardingSlackChannels?: () => void;
   /**
    * Requests to add somebody to the roster, and the calls that file and decide them. Absent
    * outside the Lab Members panel and for a visitor with no member session, who can do neither.
@@ -337,6 +342,18 @@ const memberStatusOptions: Array<{ value: string; label: string }> = [
   { value: "external", label: "External" },
   { value: "alumni", label: "Alumni" },
 ];
+
+/**
+ * The status the roster shows, filters on and preselects in the edit form.
+ *
+ * The importers write the spreadsheet's Member Type and never `status`, so nearly every alumnus has
+ * `member_type: "alumni"` and no status at all. Defaulting a missing status to "active" therefore
+ * listed all of them as Full time -- and the edit form preselected "active", so saving one wrote
+ * that back. Either field saying alumni is enough, as it is for `adminBotIsAlumniMember` server-side.
+ */
+function memberDisplayStatus(member: AdminBotLabMember): string {
+  return adminBotIsAlumniMember(member) ? "alumni" : (member.status ?? "active");
+}
 
 function friendly(value: string | undefined | null): string {
   if (!value) {
@@ -585,15 +602,16 @@ function saveMemberForm(
       ...(creating
         ? {
             create: true,
-            slackChannels: getFormValue(data, "slackChannels")
-              .split(",")
+            slackChannels: data
+              .getAll("slackChannels")
+              .map(String)
               .map((channel) => channel.trim())
               .filter(Boolean),
           }
         : {}),
     },
   );
-  return saved instanceof Promise ? saved : true;
+  return saved instanceof Promise ? saved : saved !== false;
 }
 
 /**
@@ -1201,8 +1219,18 @@ function renderRegistryField(
           max=${ifDefined(field.max)}
           .value=${value}
         />`;
+      case "month":
+        return html`<input
+          name=${field.key}
+          type=${!value || /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(value) ? "month" : "text"}
+          pattern=${ifDefined(field.pattern)}
+          .value=${value}
+        />`;
       case "date":
-        return html`<input name=${field.key} type="date" .value=${value} />`;
+        return html`${renderDateControl(
+          html`<input name=${field.key} type="date" .value=${value} />`,
+          value,
+        )}`;
       case "link":
         return html`<input
           name=${field.key}
@@ -1221,6 +1249,7 @@ function renderRegistryField(
         return html`<input
             name=${field.key}
             placeholder=${field.example}
+            pattern=${ifDefined(field.pattern)}
             .value=${value}
             ?required=${field.key === "name" && !member}
             list=${ifDefined(
@@ -1411,11 +1440,15 @@ function renderMemberFormFields(
       /></label>
       ${renderMemberTypeField(member)} ${renderMeetingsField(member, standingMeetings)}
       <label class="adminbot-form__field adminbot-form__field--check">
-        <input type="checkbox" name="receivesNudges" ?checked=${member?.receives_nudges === true} />
+        <input
+          type="checkbox"
+          name="receivesNudges"
+          ?checked=${member ? member.receives_nudges === true : true}
+        />
         <span>AdminBot may contact them</span>
         <small
-          >Off unless the lab turns it on. Everything AdminBot sends — profile reminders, paper
-          chases, meeting nudges — goes only to people on this list.</small
+          >On for new members unless turned off. Existing contact preferences are preserved. Turn
+          off to stop profile reminders, paper chases, and meeting nudges.</small
         >
       </label>
       <label class="adminbot-form__field"
@@ -1425,7 +1458,7 @@ function renderMemberFormFields(
             (option) =>
               html`<option
                 value=${option.value}
-                ?selected=${option.value === (member?.status ?? "active")}
+                ?selected=${option.value === (member ? memberDisplayStatus(member) : "active")}
               >
                 ${option.label}
               </option>`,
@@ -1520,6 +1553,11 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
                 .memberId=${member.id}
               ></adminbot-member-guide-status>
               ${renderMemberFormFields(member, props.standingMeetings)}
+              ${props.notice?.kind === "error"
+                ? html`<div class="callout danger" role="alert" style="grid-column: 1 / -1">
+                    ${props.notice.text}
+                  </div>`
+                : nothing}
               <div class="adminbot-form__actions">
                 <button class="btn btn--sm primary" type="submit">Save member</button>
               </div>
@@ -1673,7 +1711,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
     ownMember !== undefined &&
     !members.some((member) => member.id === ownMember.id);
   const total = page?.total ?? members.length;
-  const statuses = [...new Set(members.map((member) => member.status ?? "active"))].sort();
+  const statuses = [...new Set(members.map((member) => memberDisplayStatus(member)))].sort();
   const projects = [...new Set(members.flatMap((member) => member.projects ?? []))].sort();
   const paperTitles = [...new Set(papers.map((paper) => paper.title))].sort();
   // Only conferences someone on the roster is actually submitting to, so the options match what
@@ -1817,13 +1855,15 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 .toLocaleLowerCase();
               return html`<tr
                 data-search=${search}
-                data-status=${member.status ?? "active"}
+                data-status=${memberDisplayStatus(member)}
                 data-projects=${(member.projects ?? []).join("|")}
                 data-papers=${memberPapers.map((entry) => entry.title).join("|")}
                 data-conferences=${[...new Set(memberPapers.map(paperConference))].join("|")}
               >
                 <td>
-                  <strong>${member.name}</strong><small>${member.id}</small>
+                  <strong>${member.name}</strong>${renderMemberBadgeSymbols(
+                    member.assigned_badges,
+                  )}<small>${member.id}</small>
                   ${memberPapers.length
                     ? html`<span
                         class="adminbot-member-sheet__papers"
@@ -1887,8 +1927,8 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                   friendly(member.privilege_level)}
                 </td>
                 <td>
-                  <span class="adminbot-status adminbot-status--${member.status ?? "active"}"
-                    >${friendly(member.status ?? "active")}</span
+                  <span class="adminbot-status adminbot-status--${memberDisplayStatus(member)}"
+                    >${friendly(memberDisplayStatus(member))}</span
                   >
                 </td>
                 <td>
@@ -2255,6 +2295,9 @@ function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember
 }
 
 function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
+  const interviewInvite = html`<adminbot-interview-invite
+    .members=${members}
+  ></adminbot-interview-invite>`;
   const spreadsheet = renderMemberSpreadsheet(props, props.memberList?.rows ?? members);
   const requests = props.memberRequests
     ? { ...props.memberRequests, isAdmin: props.mode === "admin" }
@@ -2264,8 +2307,10 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
   // member, but only an admin's Add member writes the roster; anyone else's files a request.
   if (props.mode === "general") {
     return requests
-      ? html`${renderMemberRequests(requests)}${spreadsheet}${renderMemberRequestForm(requests)}`
-      : spreadsheet;
+      ? html`${interviewInvite}${renderMemberRequests(
+          requests,
+        )}${spreadsheet}${renderMemberRequestForm(requests)}`
+      : html`${interviewInvite}${spreadsheet}`;
   }
   const fullRosterChecks =
     props.memberList && !props.rosterLoadedAt
@@ -2293,7 +2338,7 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
           props,
           members,
         )}`;
-  return html`${requests
+  return html`${interviewInvite}${requests
       ? renderMemberRequests(requests)
       : nothing}${spreadsheet}${fullRosterChecks}
     <div class="adminbot-editor-grid">
@@ -2319,19 +2364,47 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
             />
             <span>Start their onboarding</span>
             <small
-              >Composes the onboarding guide for their member type and queues it for approval — the
-              same mail the Onboarding tab sends from the roster. Nothing is sent until an admin
-              approves it. Untick when the record is a backfill for somebody the lab has already
-              onboarded.</small
+              >Composes the onboarding guide for their member type — the same mail the Onboarding
+              tab sends from the roster. The standard full-member guide is sent as soon as you save;
+              guides for other member types wait for approval in Pending Actions. Untick when the
+              record is a backfill for somebody the lab has already onboarded.</small
             >
           </label>
-          <label class="adminbot-form__field"
-            ><span>Slack groups for onboarding (optional)</span
-            ><input name="slackChannels" placeholder="#theme-causality, #proj-example" /><small
-              >Comma-separated channel names or IDs. Invitations are part of the onboarding draft
-              and only run after approval and execution.</small
-            ></label
-          >
+          <div class="adminbot-form__field">
+            <span>Slack groups for onboarding (optional)</span>
+            ${props.onboardingSlackChannels?.channels
+              ? renderMultiSelectField({
+                  name: "slackChannels",
+                  label: "Slack groups for onboarding",
+                  placeholder: "Choose meeting or discussion channels",
+                  options: props.onboardingSlackChannels.channels
+                    .filter((name) => /^(meeting-|disc)/.test(name.replace(/^#/, "")))
+                    .map((name) => name.replace(/^#/, ""))
+                    .toSorted()
+                    .map((value) => ({ value, label: `#${value}` })),
+                  selected: new Set(),
+                  rootClass: "adminbot-form__multi",
+                  optionClass: "adminbot-form__multi-option",
+                })
+              : html`<button
+                  type="button"
+                  class="btn btn--sm"
+                  ?disabled=${props.onboardingSlackChannels?.loading ||
+                  !props.onLoadOnboardingSlackChannels}
+                  @click=${props.onLoadOnboardingSlackChannels}
+                >
+                  ${props.onboardingSlackChannels?.loading
+                    ? "Loading Slack channels…"
+                    : "Load Slack channel options"}
+                </button>`}
+            ${props.onboardingSlackChannels?.error
+              ? html`<small role="alert">${props.onboardingSlackChannels.error}</small>`
+              : nothing}
+            <small
+              >Choose existing #meeting-* or #disc* channels. Invitations are part of the onboarding
+              draft and only run after approval and execution.</small
+            >
+          </div>
           <div class="adminbot-form__actions">
             <button class="btn btn--sm primary" type="submit">Add member</button>
           </div>
@@ -3483,7 +3556,7 @@ function matchesRecipient(
   papers: AdminBotPaperRecord[],
   filters: RecipientFilters,
 ): boolean {
-  if (filters.status && (member.status ?? "active") !== filters.status) {
+  if (filters.status && memberDisplayStatus(member) !== filters.status) {
     return false;
   }
   if (filters.branch && member.research_branch !== filters.branch) {
@@ -3535,7 +3608,7 @@ function renderAnnouncementRecipients(
   );
   const offset = view.page * RECIPIENT_PAGE_SIZE;
   const pageMembers = filtered.slice(offset, offset + RECIPIENT_PAGE_SIZE);
-  const statuses = [...new Set(members.map((member) => member.status ?? "active"))].toSorted();
+  const statuses = [...new Set(members.map((member) => memberDisplayStatus(member)))].toSorted();
   const branches = [
     ...new Set(
       members.flatMap((member) => (member.research_branch ? [member.research_branch] : [])),
@@ -3674,7 +3747,7 @@ function renderAnnouncementRecipients(
               const hasContact = announceChannelHasContact(member, channel);
               return html`<tr
                 data-search=${search}
-                data-status=${member.status ?? "active"}
+                data-status=${memberDisplayStatus(member)}
                 data-branch=${member.research_branch ?? ""}
                 data-privilege=${member.privilege_level}
                 data-projects=${(member.projects ?? []).join("|")}
@@ -3694,7 +3767,11 @@ function renderAnnouncementRecipients(
                     @change=${() => props.onNudgeToggleRecipient(member.id)}
                   />
                 </td>
-                <td><strong>${member.name}</strong><small>${member.id}</small></td>
+                <td>
+                  <strong>${member.name}</strong>${renderMemberBadgeSymbols(
+                    member.assigned_badges,
+                  )}<small>${member.id}</small>
+                </td>
                 <td>
                   ${channel === "slack"
                     ? (member.slack_user_id ??
@@ -3703,8 +3780,8 @@ function renderAnnouncementRecipients(
                       html`<span class="adminbot-nudge-recipients__missing">no email</span>`)}
                 </td>
                 <td>
-                  <span class="adminbot-status adminbot-status--${member.status ?? "active"}"
-                    >${friendly(member.status ?? "active")}</span
+                  <span class="adminbot-status adminbot-status--${memberDisplayStatus(member)}"
+                    >${friendly(memberDisplayStatus(member))}</span
                   >
                 </td>
                 <td>${member.research_branch ?? "—"}</td>

@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sendLocalChat } from "./session.ts";
+import { sendLocalChat } from "../api/assistant.ts";
 afterEach(() => vi.unstubAllGlobals());
 describe("local chat client", () => {
   it("forwards cancellation, omits cookies and validates local routing", async () => {
