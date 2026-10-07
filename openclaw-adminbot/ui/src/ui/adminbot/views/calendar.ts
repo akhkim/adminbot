@@ -17,7 +17,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { i18n } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
-import type { CalendarEvent } from "../auth/session.ts";
+import type { CalendarEvent } from "../api/calendar.ts";
 import {
   hasAudienceFilter,
   knownCities,
@@ -47,6 +47,7 @@ import {
   type AttendeeZoneSource,
 } from "../data/attendee-time.ts";
 import { tripOnDay, tripRows } from "../data/availability.ts";
+import { dateTimeFormat } from "../data/date-format.ts";
 import { renderMemberTypeFilter } from "../member-type-filter.ts";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
@@ -314,7 +315,7 @@ function dayCardLabel(dayKey: string): string {
   if (Number.isNaN(parsed)) {
     return dayKey;
   }
-  return new Intl.DateTimeFormat(i18n.getLocale(), {
+  return dateTimeFormat(i18n.getLocale(), {
     weekday: "long",
     day: "numeric",
     month: "long",

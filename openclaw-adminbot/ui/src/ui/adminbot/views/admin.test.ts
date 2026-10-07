@@ -4,10 +4,10 @@ import { render } from "lit";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   type AdminBotLabMember,
-  type AdminBotLabMemberSaveInput,
   type AdminBotPaperRecord,
   createEmptyAdminBotDashboardData,
 } from "../controllers/admin.ts";
+import type { AdminBotLabMemberSaveInput } from "../controllers/members.ts";
 import { PROFILE_FIELDS } from "../member-fields.ts";
 import { renderAdminBot, resetAdminViewSessionState, type AdminBotProps } from "./admin.ts";
 

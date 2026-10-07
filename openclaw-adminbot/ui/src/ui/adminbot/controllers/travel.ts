@@ -5,12 +5,8 @@
 // state here that could accumulate other people's movements.
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
-import {
-  fetchMemberTravelHistory,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
-  type TravelHistoryRow,
-} from "../auth/session.ts";
+import { fetchMemberTravelHistory, type TravelHistoryRow } from "../api/members.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 
 /** Which slice of the log to ask for. Named windows rather than a date picker: see below. */
 export type TravelRange = "12m" | "24m" | "all";

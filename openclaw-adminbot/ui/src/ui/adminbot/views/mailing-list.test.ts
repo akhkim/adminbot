@@ -4,7 +4,7 @@
 // believing it is the whole truth.
 import { render } from "lit";
 import { afterEach, describe, expect, it } from "vitest";
-import type { PublicationDigestPreview } from "../auth/session.ts";
+import type { PublicationDigestPreview } from "../api/paper-admin.ts";
 import { renderMailingList, type MailingListProps } from "./mailing-list.ts";
 
 function preview(overrides: Partial<PublicationDigestPreview> = {}): PublicationDigestPreview {

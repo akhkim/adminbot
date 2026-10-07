@@ -5,25 +5,27 @@ import type { UiSettings } from "../../storage.ts";
 import { clearStoredMemberSession, saveStoredMemberSession } from "../auth/session.ts";
 import {
   ADMINBOT_SERVICE_UNREACHABLE_MESSAGE,
-  approveAdminBotAction,
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
-  createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   loadAdminBot,
   loadAdminBotMemberList,
   loadAdminBotRoster,
+  saveAdminBotPaper,
+  type AdminBotHost,
+} from "./admin.js";
+import {
+  approveAdminBotAction,
   removePendingAdminBotAction,
   removeSelectedPendingAdminBotActions,
+} from "./governance.js";
+import { saveAdminBotMember, saveAdminBotOwnProfile } from "./members.js";
+import { createEmptyAdminBotMemberNudgeState, sendAdminBotMemberNudge } from "./nudges.js";
+import {
   sendAdminBotReimbursementMessage,
   generateAdminBotReimbursement,
   submitAdminBotReimbursement,
-  saveAdminBotMember,
-  saveAdminBotPaper,
-  saveAdminBotOwnProfile,
-  sendAdminBotMemberNudge,
-  type AdminBotHost,
-} from "./admin.js";
+} from "./reimbursements.js";
 
 function createHost(outputs: Record<string, unknown>) {
   const calls: string[] = [];
@@ -999,18 +1001,16 @@ describe("reimbursement session privacy", () => {
       funder: "MPI-IS",
     };
     await generateAdminBotReimbursement(host);
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            error: {
-              message: "Generate and review the reimbursement forms again before sending them.",
-            },
-          }),
-          { status: 422, headers: { "Content-Type": "application/json" } },
-        ),
-      );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: "Generate and review the reimbursement forms again before sending them.",
+          },
+        }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      ),
+    );
     await submitAdminBotReimbursement(host);
     expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)).toMatchObject({
       submission_proof: "checked-package",

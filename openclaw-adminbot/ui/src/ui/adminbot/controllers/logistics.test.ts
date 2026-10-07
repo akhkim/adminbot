@@ -7,11 +7,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type { UiSettings } from "../../storage.ts";
-import {
-  clearStoredMemberSession,
-  saveStoredMemberSession,
-  type LogisticsRequest,
-} from "../auth/session.ts";
+import type { LogisticsRequest } from "../api/logistics.ts";
+import { clearStoredMemberSession, saveStoredMemberSession } from "../auth/session.ts";
 import { resetAdminBotOfflineMemory } from "../offline/outbox.ts";
 import {
   downloadAdminBotLogisticsDocument,

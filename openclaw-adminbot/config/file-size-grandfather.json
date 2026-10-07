@@ -1,0 +1,271 @@
+{
+  "_doc": {
+    "purpose": "Grandfather list for scripts/check-file-size.mjs, which turns the 2200-line max-lines rule in .oxlintrc.json into a blocking gate. JSON has no comments, so the documentation is this key.",
+    "counting": "Lines in tracked non-test source files under src/, extensions/*/src and ui/src.",
+    "max": "The line count each file was at when grandfathered. It is a ratchet: growing past max fails, shrinking below it warns so the max can be tightened, and reaching the limit makes the entry prunable.",
+    "status": "This list is the modularization backlog; it should only shrink."
+  },
+  "limit": 2200,
+  "grandfathered": {
+    "extensions/adminbot/src/contracts/actions.ts": {
+      "max": 3182,
+      "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
+    },
+    "extensions/adminbot/src/kernel/service.ts": {
+      "max": 16177,
+      "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
+    },
+    "extensions/adminbot/src/persistence/sqlite.ts": {
+      "max": 4333,
+      "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
+    },
+    "extensions/adminbot/src/workflows/deadlines/generated/dataset.ts": {
+      "max": 13167,
+      "reason": "Generated data; regenerate it as a JSON asset or lazy chunk instead of hand-splitting."
+    },
+    "extensions/adminbot/src/workflows/members/generated/contact-roster.ts": {
+      "max": 2739,
+      "reason": "Generated data; regenerate it as a JSON asset or lazy chunk instead of hand-splitting."
+    },
+    "extensions/memory-core/src/memory/manager-sync-ops.ts": {
+      "max": 2637,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "extensions/memory-core/src/memory/qmd-manager.ts": {
+      "max": 3481,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "extensions/memory-core/src/short-term-promotion.ts": {
+      "max": 2887,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/agents/agent-command.ts": {
+      "max": 2460,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/agents/embedded-agent-runner/run.ts": {
+      "max": 3706,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/agents/embedded-agent-runner/run/attempt.ts": {
+      "max": 5466,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/agents/harness/native-hook-relay.ts": {
+      "max": 2397,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/agents/sessions/agent-session.ts": {
+      "max": 3283,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/agents/sessions/session-manager.ts": {
+      "max": 3027,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/agents/tools/tool-search.ts": {
+      "max": 2276,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/agents/transport/openai-transport-stream.ts": {
+      "max": 2788,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/auto-reply/reply/agent/agent-runner-execution.ts": {
+      "max": 3345,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/auto-reply/reply/agent/agent-runner.ts": {
+      "max": 2657,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/auto-reply/reply/dispatch/dispatch-from-config.ts": {
+      "max": 3285,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/cli/config/config-cli.ts": {
+      "max": 2697,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/cli/update-cli/update-command.ts": {
+      "max": 4005,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/commands/doctor/shared/codex-route-warnings.ts": {
+      "max": 3102,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/config/io/io.ts": {
+      "max": 3043,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/cron/service/timer.ts": {
+      "max": 2265,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/gateway/server-methods/agent.ts": {
+      "max": 3050,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/gateway/server-methods/chat/chat.ts": {
+      "max": 2493,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/gateway/server-methods/sessions.ts": {
+      "max": 2746,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/gateway/server/ws-connection/message-handler.ts": {
+      "max": 2345,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/gateway/sessions/session-utils.ts": {
+      "max": 2906,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/infra/heartbeat/heartbeat-runner.ts": {
+      "max": 2649,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/infra/session-cost-usage.ts": {
+      "max": 2711,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/infra/state/state-migrations.ts": {
+      "max": 4098,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/plugins/install/install.ts": {
+      "max": 3187,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/plugins/manifest/registry.ts": {
+      "max": 3139,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/plugins/runtime/loader.ts": {
+      "max": 3378,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/plugins/types.ts": {
+      "max": 2793,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/plugins/update.ts": {
+      "max": 2468,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "src/tasks/task-registry.ts": {
+      "max": 2482,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "ui/src/i18n/locales/ar.ts": {
+      "max": 3115,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/de.ts": {
+      "max": 3155,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/en.ts": {
+      "max": 3182,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/es.ts": {
+      "max": 3152,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/fa.ts": {
+      "max": 3134,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/fr.ts": {
+      "max": 3157,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/id.ts": {
+      "max": 3131,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/it.ts": {
+      "max": 3150,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/ja-JP.ts": {
+      "max": 3143,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/ko.ts": {
+      "max": 3121,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/nl.ts": {
+      "max": 3141,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/pl.ts": {
+      "max": 3146,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/pt-BR.ts": {
+      "max": 3140,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/th.ts": {
+      "max": 3099,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/tr.ts": {
+      "max": 3144,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/uk.ts": {
+      "max": 3142,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/vi.ts": {
+      "max": 3125,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/zh-CN.ts": {
+      "max": 3093,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/i18n/locales/zh-TW.ts": {
+      "max": 3095,
+      "reason": "Translation table; size tracks the string catalogue. Split by feature namespace if it keeps growing."
+    },
+    "ui/src/ui/adminbot/data/deadlines.ts": {
+      "max": 10125,
+      "reason": "Static venue data used only as a default parameter; move to a lazily loaded JSON asset."
+    },
+    "ui/src/ui/adminbot/views/admin.ts": {
+      "max": 4075,
+      "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
+    },
+    "ui/src/ui/adminbot/views/deadlines.ts": {
+      "max": 3552,
+      "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
+    },
+    "ui/src/ui/adminbot/views/time-availability.ts": {
+      "max": 2286,
+      "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
+    },
+    "ui/src/ui/app-chat.ts": {
+      "max": 2363,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "ui/src/ui/app-render.ts": {
+      "max": 4926,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "ui/src/ui/app.ts": {
+      "max": 2208,
+      "reason": "Upstream core file; split when touched, never grow."
+    },
+    "ui/src/ui/views/chat.ts": {
+      "max": 2512,
+      "reason": "Upstream core file; split when touched, never grow."
+    }
+  }
+}
