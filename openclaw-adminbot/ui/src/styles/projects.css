@@ -1,0 +1,447 @@
+/* My Projects & Papers: the sidebar list, the card list, and one project's page. */
+
+/* Lane colors, shared with the old checklist so a lane reads the same everywhere. */
+.lane-dot--core {
+  --lane: #6d66c2;
+}
+.lane-dot--venue {
+  --lane: #4e86ba;
+}
+.lane-dot--archive {
+  --lane: #93826a;
+}
+.lane-dot--talk {
+  --lane: #b56f67;
+}
+.lane-dot--social {
+  --lane: #5f8c6c;
+}
+
+.lane-dots {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.lane-dot {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lane);
+}
+
+/* Open, but nothing can be done yet: a ring rather than a filled dot. */
+.lane-dot--waiting {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--lane);
+}
+
+/* The hover legend: which lane a dot is, and what is waiting on it. Anchored to the dot's right
+   edge so it opens leftwards, inside the sidebar, which clips anything past its own edge. */
+.lane-dot[data-legend]:hover::after {
+  content: attr(data-legend);
+  position: absolute;
+  z-index: 40;
+  top: 14px;
+  right: -4px;
+  width: max-content;
+  max-width: 150px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg);
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: normal;
+  pointer-events: none;
+}
+
+/* ---- sidebar ---- */
+
+.projects-nav {
+  display: grid;
+  gap: 1px;
+  margin: 2px 0 6px 30px;
+}
+
+.projects-nav__item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 6px);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  text-decoration: none;
+}
+
+.projects-nav__item:hover,
+.projects-nav__item.is-active {
+  background: var(--bg-muted);
+  color: var(--text-strong);
+}
+
+.projects-nav__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projects-nav__choice {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 8px;
+  color: var(--text);
+  font-size: var(--control-ui-text-xs);
+}
+
+.projects-nav__toggle {
+  justify-self: start;
+  margin: 2px 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  cursor: pointer;
+}
+
+.projects-nav__toggle:hover {
+  color: var(--text-strong);
+  text-decoration: underline;
+}
+
+/* ---- card list ---- */
+
+.projects__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.projects__lede,
+.projects__empty {
+  margin: 0;
+  color: var(--muted);
+}
+
+.projects__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.project-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-elevated, var(--bg));
+  color: var(--text);
+  text-decoration: none;
+}
+
+.project-card:hover {
+  border-color: var(--text-strong);
+}
+
+.project-card__title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.3;
+}
+
+.project-card__alias,
+.project-card__venue {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.project-card__venue {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.project-card__todos,
+.project__todos {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--control-ui-text-xs);
+}
+
+.project-card__todos li,
+.project__todos li {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.project-card__todos small,
+.project__todos small {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.project-card__todos .is-waiting,
+.project__todos .is-waiting {
+  color: var(--muted);
+}
+
+.project-card__more,
+.project-card__done {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.project-new {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.project-new label {
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* ---- one project ---- */
+
+.project__back {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  text-decoration: none;
+}
+
+.project__head h2 {
+  margin: var(--space-2) 0 4px;
+  color: var(--text-strong);
+}
+
+.project__head p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.project__alias {
+  margin-right: 6px;
+  color: var(--text);
+}
+
+.project__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: var(--space-4) 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.project__tab {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: -1px;
+  padding: 8px 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.project__tab.is-active {
+  border-bottom-color: var(--text-strong);
+  color: var(--text-strong);
+}
+
+.project__tab small {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.project__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.project__panel {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+}
+
+.project__panel h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-sm);
+}
+
+.project__panel p {
+  margin: 0;
+}
+
+.project__legend {
+  margin: 0 0 var(--space-3);
+  color: var(--muted);
+}
+
+.project__slots {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.project__slot {
+  display: grid;
+  gap: 4px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+}
+
+.project__slot.is-child {
+  margin-left: var(--space-4);
+}
+
+.project__slot.is-provided,
+.project__slot.is-waived {
+  opacity: 0.75;
+}
+
+.project__slot.is-invalid {
+  border-color: var(--danger);
+}
+
+.project__slot-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.project__slot-label {
+  color: var(--text-strong);
+}
+
+.project__status {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.project__slot.is-provided .project__status {
+  color: var(--ok);
+}
+
+.project__slot small {
+  color: var(--muted);
+}
+
+.project__slot-form,
+.project__form,
+.project__decision {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.project__slot-form input,
+.project__slot-form select {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.project__decision label {
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.project__stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--control-ui-text-xs);
+}
+
+.project__stages li {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.project__stages .is-closed {
+  color: var(--ok);
+}
+
+.project__blocker {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding-left: var(--space-2);
+  border-left: 3px solid var(--warn);
+}
+
+.project__error {
+  color: var(--danger);
+}
+
+/* Form controls take the app's field look rather than the browser's. */
+.projects input:not([type="checkbox"]),
+.projects select,
+.project input:not([type="checkbox"]),
+.project select {
+  height: var(--control-h-md);
+  padding: 0 10px;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--bg-accent);
+  color: var(--text);
+  font-size: var(--control-ui-input-text-size);
+  outline: none;
+}
+
+.projects input::placeholder,
+.project input::placeholder {
+  color: var(--muted);
+}
+
+.projects input:disabled,
+.project input:disabled,
+.project select:disabled {
+  opacity: 0.55;
+}
+
+.project input[type="checkbox"],
+.projects-nav input[type="checkbox"] {
+  accent-color: var(--accent);
+}

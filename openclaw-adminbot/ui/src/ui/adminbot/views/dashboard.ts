@@ -21,6 +21,7 @@ import { icons } from "../../icons.ts";
 import { iconForTab, isKnownTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
 import type { MemberNotification } from "../auth/session.ts";
+import { openEntries } from "../blockers.ts";
 import {
   deadlineDateTimeLabel,
   daysLeftLabel,
@@ -29,9 +30,9 @@ import {
   urgencyOf,
 } from "../data/deadline-time.ts";
 import { nextStepFor } from "../next-step.ts";
+import { ownPapers, paperProgress, stepLabel } from "../projects/model.ts";
 import { renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderMemberMap } from "./member-map.ts";
-import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
 import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile.ts";
 
 // One thing waiting on the viewer. `detail` is optional supporting text -- the queue items say
@@ -394,7 +395,7 @@ function renderMore(count: number) {
 
 function renderWorkSummary(state: AppViewState) {
   const items = ownPapers(state);
-  const blockers = (state.myWorkBlockers ?? []).length;
+  const blockers = items.reduce((count, paper) => count + openEntries(paper).length, 0);
   return renderSummary({
     state,
     tab: "myWork",

@@ -167,18 +167,10 @@ export type MemberAuthHost = {
   adminBotAvailabilityNotesDraft?: string | null;
   adminBotActiveCommitmentType?: string | null;
   adminBotTimeAvailabilitySaving?: boolean;
-  myWorkCoauthorDraft?: Record<string, { email: string; name: string; twitter: string }>;
-  myWorkBlockerDraft?: import("../views/my-work.ts").BlockerDraft | null;
-  myWorkBlockers?: import("../views/my-work.ts").Blocker[];
-  myWorkProjectDraft?: string | null;
-  myWorkProjectAlias?: string;
-  myWorkProjectError?: string | null;
-  myWorkProjectEdits?: Record<
-    string,
-    { title: string; alias: string; startedOn: string; error: string | null }
-  >;
+  myProjects?: import("../projects/model.ts").ProjectSummary[] | null;
+  myProjectsError?: string | null;
+  myProjectsChoosing?: boolean;
   myWorkChannelCheck?: SlackChannelCheck;
-  myWorkProjectVenues?: Array<{ venueId: string; year: number; confidence: number }>;
   profileEditingSection?: "basics" | null;
   profileAccountChecks?: Record<
     string,
@@ -608,15 +600,11 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotAvailabilityNotesDraft = null;
   host.adminBotActiveCommitmentType = null;
   host.adminBotTimeAvailabilitySaving = false;
-  host.myWorkCoauthorDraft = {};
-  host.myWorkBlockerDraft = null;
-  host.myWorkBlockers = [];
-  host.myWorkProjectDraft = null;
-  host.myWorkProjectAlias = "";
-  host.myWorkProjectError = null;
-  host.myWorkProjectEdits = {};
+  // Another member's projects must not survive into this session's sidebar.
+  host.myProjects = null;
+  host.myProjectsError = null;
+  host.myProjectsChoosing = false;
   host.myWorkChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
-  host.myWorkProjectVenues = [];
   host.profileEditingSection = null;
   host.profileAccountChecks = {};
   host.adminBotVenueFilter = "";

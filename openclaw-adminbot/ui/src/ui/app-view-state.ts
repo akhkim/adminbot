@@ -637,8 +637,6 @@ export type AppViewState = {
   adminBotProfileOverviewLoadedAt: number | null;
   adminBotProfileOverviewReminding: boolean;
   adminBotProfileOverviewNotice: string | null;
-  /** Per-paper draft for the external-coauthor boxes, so a re-render does not clear what was typed. */
-  myWorkCoauthorDraft: Record<string, { email: string; name: string; twitter: string }>;
   adminBotProfileOverviewFilter: import("./adminbot/views/profile-overview.ts").ProfileOverviewFilter;
   adminBotPaperFilter: import("./adminbot/views/paper-overview.ts").PaperOverviewFilter;
   adminBotPaperCardId: string | null;
@@ -717,36 +715,14 @@ export type AppViewState = {
   // Last press of the Slack channel naming sweep, same shape again. What it "did" is file
   // proposals, so the detail line points at Pending Actions rather than reporting a change.
   adminBotChannelNamingJob: import("./adminbot/controllers/admin.ts").AdminBotCvDigestJobState;
-  // Prototype-only: blockers a member raises from My Projects & Papers. Held in the browser
-  // because the AdminBot service has no blocker route yet -- see views/my-work.ts.
-  myWorkBlockerDraft: import("./adminbot/views/my-work.ts").BlockerDraft | null;
-  myWorkBlockers: import("./adminbot/views/my-work.ts").Blocker[];
-  // Non-null while the "add a project" field is open; holds what has been typed.
-  myWorkProjectDraft: string | null;
-  myWorkProjectAlias: string;
-  /**
-   * Why the add-project form refused, or null.
-   *
-   * The form used to `return` out of submit on every one of these, which files nothing and says
-   * nothing: the member is left looking at a filled-in form and an unchanged page. Most often it
-   * was the alias -- an apostrophe or a colon carried over from the title cannot be a Slack
-   * channel name, so `adminBotNormalizePaperAlias` returns null and the submit gives up silently.
-   */
-  myWorkProjectError: string | null;
-  /**
-   * Per-paper drafts for the card's own "project details" editor, keyed by paper id.
-   *
-   * A title changes over a project's life -- that is the normal case, not an exception -- and until
-   * now the three answers the create form insists on could never be revised afterwards. Held per
-   * paper because several cards can be open at once.
-   */
-  myWorkProjectEdits: Record<
-    string,
-    { title: string; alias: string; startedOn: string; error: string | null }
-  >;
+  /** The viewer's active projects (GET /my/projects); null until read, and after a write. */
+  myProjects: import("./adminbot/projects/model.ts").ProjectSummary[] | null;
+  myProjectsLoading: boolean;
+  myProjectsError: string | null;
+  /** The sidebar list is showing its hide/show checkboxes. */
+  myProjectsChoosing: boolean;
+  myProjectsNewOpen: boolean;
   myWorkChannelCheck: import("./adminbot/controllers/admin.ts").SlackChannelCheck;
-  /** Venue rows on the add-project form: a paper can be aimed at several, each with its own odds. */
-  myWorkProjectVenues: Array<{ venueId: string; year: number; confidence: number }>;
   // Which profile section is in edit mode, if any.
   profileEditingSection: "basics" | null;
   profileAccountChecks: Record<

@@ -379,6 +379,24 @@ const PATH_TO_TAB = new Map<string, Tab>([
   ...Object.entries(PATH_ALIASES),
 ]);
 
+/**
+ * Tabs whose path also owns everything under it. `/my-work/<paper>/<lane>` is still My Projects &
+ * Papers: the rest of the path says which project and tab the page shows, which the page reads.
+ */
+const TABS_WITH_SUBPATHS: readonly Tab[] = ["myWork"];
+
+function tabOwningSubpath(path: string): Tab | null {
+  return TABS_WITH_SUBPATHS.find((tab) => path.startsWith(`${TAB_PATHS[tab]}/`)) ?? null;
+}
+
+/** Whether `pathname` is below `tab`'s own path, which the tab keeps rather than resetting. */
+export function isSubpathOfTab(tab: Tab, pathname: string, basePath = ""): boolean {
+  return (
+    TABS_WITH_SUBPATHS.includes(tab) &&
+    tabOwningSubpath(normalizedTabPath(pathname, basePath)) === tab
+  );
+}
+
 export function normalizeBasePath(basePath: string): string {
   if (!basePath) {
     return "";
@@ -469,7 +487,7 @@ export function tabFromPath(pathname: string, basePath = ""): Tab | null {
   if (normalized === "/") {
     return "dashboard";
   }
-  return PATH_TO_TAB.get(normalized) ?? null;
+  return PATH_TO_TAB.get(normalized) ?? tabOwningSubpath(normalized);
 }
 
 /**
@@ -499,7 +517,7 @@ export function inferBasePathFromPathname(pathname: string): string {
   }
   for (let i = 0; i < segments.length; i++) {
     const candidate = normalizeLowercaseStringOrEmpty(`/${segments.slice(i).join("/")}`);
-    if (PATH_TO_TAB.has(candidate)) {
+    if (PATH_TO_TAB.has(candidate) || tabOwningSubpath(candidate)) {
       const prefix = segments.slice(0, i);
       return prefix.length ? `/${prefix.join("/")}` : "";
     }
