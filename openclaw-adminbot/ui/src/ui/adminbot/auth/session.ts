@@ -2056,7 +2056,34 @@ export type LinkedInDraftAuthor = {
   member_id?: string;
   linkedin_url?: string;
   linkedin_urn?: string;
+  twitter_url?: string;
 };
+
+export type XDraft = {
+  paper: LinkedInDraft["paper"];
+  posts: Array<{ text: string }>;
+  model: string;
+  issues: string[];
+  authors: LinkedInDraftAuthor[];
+};
+
+export async function draftXPost(
+  request: { pdfBase64?: string; paperId: string; url?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<XDraft>> {
+  const result = await authedJson(baseUrl, "/papers/x-draft", "POST", sessionToken, {
+    paper_id: request.paperId,
+    ...(request.pdfBase64 ? { pdf_base64: request.pdfBase64 } : {}),
+    ...(request.url ? { url: request.url } : {}),
+  });
+  if ("unreachable" in result) return { ok: false, kind: "unreachable" };
+  if (!result.response.ok) {
+    const body = result.body as { error?: { message?: string } } | null;
+    return { ok: false, kind: "draft-failed", message: body?.error?.message ?? "X draft failed" };
+  }
+  return { ok: true, value: result.body as XDraft };
+}
 
 export type LinkedInDraft = {
   paper: { title: string; authors: string[]; abstract: string; url?: string };

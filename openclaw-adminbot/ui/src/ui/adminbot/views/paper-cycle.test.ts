@@ -162,6 +162,19 @@ describe("social drafts", () => {
 });
 
 describe("the linkedin panel's absorbed generator", () => {
+  it("exposes PDF generation in X without unused LinkedIn context inputs", () => {
+    const calls: unknown[] = [];
+    const { container } = draw({
+      onGenerateXDraft: (...args) => {
+        calls.push(args);
+      },
+    });
+    const panel = container.querySelector('[data-testid="paper-draft-p1-x"]');
+    expect(panel?.querySelector('[data-el="pdf"]')).not.toBeNull();
+    expect(panel?.querySelector('[data-el="venue"]')).toBeNull();
+    panel?.querySelector<HTMLButtonElement>('[data-testid="paper-draft-generate-p1-x"]')?.click();
+    expect(calls).toEqual([["", "", undefined]]);
+  });
   it("asks for venue and context on linkedin only, ahead of the draft box", () => {
     const { container } = draw();
     const li = container.querySelector('[data-testid="paper-draft-p1-linkedin"]');

@@ -14,6 +14,7 @@ import { icons } from "../../icons.ts";
 import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
 import {
   draftLinkedInPost,
+  draftXPost,
   loadStoredMemberSession,
   mapImportColumns,
   resolveAdminBotBaseUrl,
@@ -1246,6 +1247,32 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
           return;
         }
         props.onSaveDraft(paper.id, "linkedin", result.value.text);
+      } catch (error) {
+        globalThis.alert?.((error as Error).message);
+      }
+    },
+    onGenerateXDraft: async (_venue: string, _note: string, pdfBase64?: string) => {
+      const stored = loadStoredMemberSession();
+      if (!stored) {
+        globalThis.alert?.("Sign in first.");
+        return;
+      }
+      try {
+        const result = await draftXPost(
+          {
+            paperId: paper.id,
+            ...(pdfBase64 ? { pdfBase64 } : {}),
+            ...(paper.artifacts?.arxiv_url ? { url: paper.artifacts.arxiv_url } : {}),
+          },
+          stored.sessionToken ?? "",
+          resolveAdminBotBaseUrl(state.settings),
+        );
+        if (!result.ok) {
+          globalThis.alert?.(result.message ?? "Could not generate the X thread.");
+          return;
+        }
+        props.onSaveDraft(paper.id, "x", result.value.posts.map((post) => post.text).join("\n\n"));
+        if (result.value.issues.length) globalThis.alert?.(result.value.issues.join("\n"));
       } catch (error) {
         globalThis.alert?.((error as Error).message);
       }

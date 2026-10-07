@@ -34,6 +34,7 @@ export type PaperCycleProps = {
    * `pdfBase64` is a PDF dropped on the panel; absent, the service reads the card's Drive copy.
    */
   onGenerateLinkedInDraft?: (venue: string, note: string, pdfBase64?: string) => void;
+  onGenerateXDraft?: (venue: string, note: string, pdfBase64?: string) => void;
   onConsent: (draftId: string, decision: string, comment?: string) => void;
   onSetAttendee: (name: string, memberId: string | undefined, attending: string) => void;
   /**
@@ -182,7 +183,7 @@ function renderDraft(props: PaperCycleProps, platform: string) {
   // Hoisted so the click handler closes over a value that is already known to exist. Testing
   // `props.onGenerateLinkedInDraft` at the render site guards the button correctly, but the
   // narrowing does not survive into the closure, so the call read as possibly-undefined.
-  const generate = props.onGenerateLinkedInDraft;
+  const generate = platform === "x" ? props.onGenerateXDraft : props.onGenerateLinkedInDraft;
   const draft = liveDraft(props.drafts, platform);
   const consents = draft ? props.consents.filter((consent) => consent.draft_id === draft.id) : [];
   const waiting = consents.filter((consent) => consent.decision === "pending").length;
@@ -204,73 +205,82 @@ function renderDraft(props: PaperCycleProps, platform: string) {
             </span>`
           : html`<span class="paper-slot__pill">No draft</span>`}
       </div>
-      ${platform === "linkedin"
+      ${generate
         ? html`
             <!-- Absorbed from the old "Draft LinkedIn post" dialog: same two optional inputs, but
                  inline where the post actually lives, so generating and circulating are one row. -->
             <label class="paper-cycle__field">
-              <span>Venue / session <em>(optional)</em></span>
-              <input
-                class="input"
-                type="text"
-                data-el="venue"
-                placeholder="ICML 2026, poster Wed Jul 8 Hall A #3015"
-              />
+              ${platform === "x"
+                ? nothing
+                : html`
+                    <span>Venue / session <em>(optional)</em></span>
+                    <input
+                      class="input"
+                      type="text"
+                      data-el="venue"
+                      placeholder="ICML 2026, poster Wed Jul 8 Hall A #3015"
+                    />
+                  `}
             </label>
             <label class="paper-cycle__field">
-              <span>Extra context <em>(optional)</em></span>
-              <input
-                class="input"
-                type="text"
-                data-el="note"
-                placeholder="anything the abstract does not say"
-              />
-            </label>
-            ${generate
-              ? html`
-                  <!-- Optional, and it wins over the card's Drive copy when given: the way through
-                       when the service cannot reach Drive, or the card has no file link yet. -->
-                  <label
-                    class="logistics-upload__drop paper-cycle__pdf-drop"
-                    data-testid=${`paper-draft-pdf-${props.paperId}`}
-                    @dragenter=${(event: DragEvent) => {
-                      event.preventDefault();
-                      setPdfDragging(event, true);
-                    }}
-                    @dragover=${(event: DragEvent) => {
-                      // Without this the browser opens the dropped PDF instead of handing it over.
-                      event.preventDefault();
-                      setPdfDragging(event, true);
-                    }}
-                    @dragleave=${(event: DragEvent) => setPdfDragging(event, false)}
-                    @drop=${(event: DragEvent) => {
-                      event.preventDefault();
-                      setPdfDragging(event, false);
-                      choosePdf(event.currentTarget as HTMLElement, event.dataTransfer?.files);
-                    }}
-                  >
-                    <span class="logistics-upload__drop-icon" aria-hidden="true"
-                      >${icons.paperclip}</span
-                    >
-                    <span class="logistics-upload__drop-title" data-el="pdf-name"
-                      >Drop the paper PDF here</span
-                    >
-                    <small class="logistics-upload__drop-hint">
-                      Optional — or click to choose. Used instead of the Drive copy on the card.
-                    </small>
+              ${platform === "x"
+                ? nothing
+                : html`
+                    <span>Extra context <em>(optional)</em></span>
                     <input
-                      class="sr-only"
-                      type="file"
-                      accept="application/pdf,.pdf"
-                      data-el="pdf"
-                      @change=${(event: Event) => {
-                        const input = event.currentTarget as HTMLInputElement;
-                        choosePdf(input.closest("label") as HTMLElement, input.files);
-                      }}
+                      class="input"
+                      type="text"
+                      data-el="note"
+                      placeholder="anything the abstract does not say"
                     />
-                  </label>
-                `
-              : nothing}
+                  `}
+            </label>
+            ${html`
+              <!-- Optional, and it wins over the card's Drive copy when given: the way through
+                       when the service cannot reach Drive, or the card has no file link yet. -->
+              <label
+                class="logistics-upload__drop paper-cycle__pdf-drop"
+                data-testid=${`paper-draft-pdf-${props.paperId}`}
+                @dragenter=${(event: DragEvent) => {
+                  event.preventDefault();
+                  setPdfDragging(event, true);
+                }}
+                @dragover=${(event: DragEvent) => {
+                  // Without this the browser opens the dropped PDF instead of handing it over.
+                  event.preventDefault();
+                  setPdfDragging(event, true);
+                }}
+                @dragleave=${(event: DragEvent) => setPdfDragging(event, false)}
+                @drop=${(event: DragEvent) => {
+                  event.preventDefault();
+                  setPdfDragging(event, false);
+                  choosePdf(event.currentTarget as HTMLElement, event.dataTransfer?.files);
+                }}
+              >
+                <span class="logistics-upload__drop-icon" aria-hidden="true"
+                  >${icons.paperclip}</span
+                >
+                <span class="logistics-upload__drop-title" data-el="pdf-name"
+                  >Drop the paper PDF here</span
+                >
+                <small class="logistics-upload__drop-hint"
+                  >Optional — or click to choose.
+                  ${platform === "x"
+                    ? "Otherwise use arXiv first, then the Drive copy."
+                    : "Used instead of the Drive copy on the card."}
+                </small>
+                <input
+                  class="sr-only"
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  data-el="pdf"
+                  @change=${(event: Event) => {
+                    const input = event.currentTarget as HTMLInputElement;
+                    choosePdf(input.closest("label") as HTMLElement, input.files);
+                  }}
+                />
+              </label>
+            `}
           `
         : nothing}
       <textarea
@@ -286,21 +296,34 @@ function renderDraft(props: PaperCycleProps, platform: string) {
           }
         }}
       ></textarea>
-      ${platform === "linkedin" && generate
+      ${generate
         ? html`
             <div class="paper-cycle__draft-actions">
               <button
                 type="button"
                 class="btn btn--sm primary"
-                data-testid=${`paper-draft-generate-${props.paperId}-linkedin`}
+                data-testid=${`paper-draft-generate-${props.paperId}-${platform}`}
                 @click=${async (event: Event) => {
+                  const button = event.currentTarget as HTMLButtonElement;
+                  if (button.disabled) {
+                    return;
+                  }
+                  button.disabled = true;
                   const root = (event.currentTarget as HTMLElement).closest(".paper-cycle__draft");
                   const venue =
                     root?.querySelector<HTMLInputElement>('[data-el="venue"]')?.value.trim() ?? "";
                   const note =
                     root?.querySelector<HTMLInputElement>('[data-el="note"]')?.value.trim() ?? "";
                   const pdf = root?.querySelector<HTMLInputElement>('[data-el="pdf"]')?.files?.[0];
-                  generate(venue, note, pdf ? await readPdfBase64(pdf) : undefined);
+                  try {
+                    await Promise.resolve(
+                      generate(venue, note, pdf ? await readPdfBase64(pdf) : undefined),
+                    );
+                  } catch (error) {
+                    globalThis.alert?.((error as Error).message);
+                  } finally {
+                    button.disabled = false;
+                  }
                 }}
               >
                 Generate draft

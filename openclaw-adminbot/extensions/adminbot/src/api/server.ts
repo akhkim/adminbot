@@ -23,7 +23,11 @@ import {
   createPublicOpenReviewPdfReader,
 } from "../connectors/reference-scan.js";
 import { createInterviewChannelProvisioner } from "../connectors/slack-interview.js";
-import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
+import {
+  createLinkedInDraftRunner,
+  createXDraftRunner,
+  readArxivPdfBase64,
+} from "../connectors/social-draft.js";
 import {
   adminBotRegistrationStatuses,
   redactConfidentialMemberFields,
@@ -364,6 +368,8 @@ export type AdminBotMockServiceOptions = {
   // Generates a LinkedIn announcement draft from a paper PDF. Injected so tests can assert the
   // route without an OpenRouter round trip; defaults to the real connector.
   linkedInDraftRunner?: import("../connectors/social-draft.js").LinkedInDraftRunner;
+  xDraftRunner?: import("../connectors/social-draft.js").XDraftRunner;
+  readArxivPdfBase64?: (id: string) => Promise<string>;
   /** Reads one Drive file as base64, so a draft can use the PDF the paper already names. */
   readDrivePdfBase64?: (fileId: string) => Promise<string>;
   /**
@@ -637,6 +643,8 @@ type AdminBotRouteContext = {
   importColumnMapper?: ImportColumnMapper;
   // Generates a LinkedIn announcement draft from a paper PDF. Nothing it returns is persisted.
   draftLinkedInPost: import("../connectors/social-draft.js").LinkedInDraftRunner;
+  draftXPost: import("../connectors/social-draft.js").XDraftRunner;
+  readArxivPdfBase64: (id: string) => Promise<string>;
   /**
    * Downloads one Drive file and returns it base64-encoded.
    *
@@ -1164,6 +1172,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(iclrIntegrityWatch ? { iclrIntegrityWatch } : {}),
     onboardingSender,
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
+    draftXPost: options.xDraftRunner ?? createXDraftRunner(),
+    readArxivPdfBase64: options.readArxivPdfBase64 ?? readArxivPdfBase64,
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
     ...(memberSheet ? { memberSheet } : {}),
     ...(callSheet ? { callSheet } : {}),
@@ -4387,7 +4397,11 @@ async function handleAuthenticatedRoute(
   // the draft is a suggestion a human copies, edits and posts by hand, so storing it would
   // create a stale second copy of something whose only real version ends up on LinkedIn.
   // Nothing here writes -- the PDF is read, the post is returned, both are then forgotten.
-  if (req.method === "POST" && url.pathname === "/papers/linkedin-draft") {
+  if (
+    req.method === "POST" &&
+    ["/papers/linkedin-draft", "/papers/x-draft"].includes(url.pathname)
+  ) {
+    const isX = url.pathname === "/papers/x-draft";
     if (principal.kind === "anonymous") {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
@@ -4413,40 +4427,50 @@ async function handleAuthenticatedRoute(
         sendServiceResult(res, cycle);
         return;
       }
-      const source = resolvePaperPdfSource(cycle.payload.slots);
+      const source = resolvePaperPdfSource(cycle.payload.slots, isX);
       if (source.kind === "none") {
         sendJson(res, 400, { error: { message: source.reason } });
         return;
       }
-      if (!ctx.readDrivePdfBase64) {
-        sendJson(res, 503, {
-          error: {
-            message: "this deployment cannot read Drive files; attach the PDF here instead",
-          },
-        });
-        return;
-      }
-      try {
-        pdfBase64 = await ctx.readDrivePdfBase64(source.fileId);
-      } catch (error) {
-        sendJson(res, 502, {
-          error: {
-            message: `could not read the Drive copy (${(error as Error).message}); attach the PDF here instead`,
-          },
-        });
-        return;
-      }
-      if (!pdfBase64) {
-        sendJson(res, 502, {
-          error: { message: "the Drive copy came back empty; attach the PDF here instead" },
-        });
-        return;
+      if (source.kind === "arxiv") {
+        try {
+          pdfBase64 = await ctx.readArxivPdfBase64(source.id);
+        } catch (error) {
+          sendJson(res, 502, { error: { message: (error as Error).message } });
+          return;
+        }
+        if (typeof body.url !== "string") body.url = source.url;
+      } else {
+        if (!ctx.readDrivePdfBase64) {
+          sendJson(res, 503, {
+            error: {
+              message: "this deployment cannot read Drive files; attach the PDF here instead",
+            },
+          });
+          return;
+        }
+        try {
+          pdfBase64 = await ctx.readDrivePdfBase64(source.fileId);
+        } catch (error) {
+          sendJson(res, 502, {
+            error: {
+              message: `could not read the Drive copy (${(error as Error).message}); attach the PDF here instead`,
+            },
+          });
+          return;
+        }
+        if (!pdfBase64) {
+          sendJson(res, 502, {
+            error: { message: "the Drive copy came back empty; attach the PDF here instead" },
+          });
+          return;
+        }
       }
     }
     const membersResult = service.listLabMembers();
     const members = membersResult.ok ? membersResult.payload.members : [];
     try {
-      const draft = await ctx.draftLinkedInPost({
+      const draft = await (isX ? ctx.draftXPost : ctx.draftLinkedInPost)({
         pdfBase64,
         members,
         ...(typeof body.url === "string" ? { url: body.url } : {}),
