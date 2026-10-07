@@ -24,8 +24,8 @@ export function readListPage(url: URL): AdminBotListPage | "invalid" | undefined
   return { limit, offset, ...(q ? { q } : {}) };
 }
 
-/** `?limit=` for the edit-history reads, or nothing and let the service pick its default. */
-export function updateLimit(url: URL): number | undefined {
+/** A positive `?limit=`, or undefined and the reader picks its default. */
+export function limitParam(url: URL): number | undefined {
   const raw = Number(url.searchParams.get("limit") ?? "");
   return Number.isFinite(raw) && raw > 0 ? raw : undefined;
 }

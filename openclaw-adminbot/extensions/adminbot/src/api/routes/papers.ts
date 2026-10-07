@@ -13,7 +13,7 @@ import {
   principalActor,
   privilegedOnly,
 } from "./guards.js";
-import { readListPage, updateLimit } from "./query-params.js";
+import { readListPage, limitParam } from "./query-params.js";
 import { del, get, post, put, type Route } from "./router.js";
 
 // 20 MB of PDF, plus base64's third and the JSON around it. Matches the Control UI's own check.
@@ -33,7 +33,7 @@ export const papersRoutes: readonly Route[] = [
           ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
           isAdmin: isPrivileged(principal),
         },
-        updateLimit(url),
+        limitParam(url),
       ),
     );
   }),

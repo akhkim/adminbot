@@ -44,7 +44,7 @@ import {
 } from "./guards.js";
 import { readStandingMeetings } from "./meetings.js";
 import { memberOnboardingDeps } from "./onboarding.js";
-import { readListPage, updateLimit } from "./query-params.js";
+import { readListPage, limitParam } from "./query-params.js";
 import { del, get, post, put, route, type Route, under } from "./router.js";
 import { requestIsSecure, sendAuthResult } from "./session.js";
 
@@ -155,7 +155,7 @@ export const membersRoutes: readonly Route[] = [
     if (!isSelf && !requirePrivileged(res, principal)) {
       return;
     }
-    sendServiceResult(res, service.listRecentUpdatesForMember(memberId, updateLimit(url)));
+    sendServiceResult(res, service.listRecentUpdatesForMember(memberId, limitParam(url)));
   }),
   get(/^\/lab\/members\/([^/]+)\/travel$/u, ({ res, url, principal, ctx, params }) => {
     const { service } = ctx;

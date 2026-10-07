@@ -16,6 +16,7 @@ import {
   privilegedOnly,
   requireMemberPrivileged,
 } from "./guards.js";
+import { limitParam } from "./query-params.js";
 import { get, post, type Route } from "./router.js";
 
 export const governanceRoutes: readonly Route[] = [
@@ -92,9 +93,9 @@ export const governanceRoutes: readonly Route[] = [
   ),
   get(
     "/audit",
-    privilegedOnly(({ res, ctx }) => {
-      const { service } = ctx;
-      sendJson(res, 200, { events: service.listAuditEvents() });
+    privilegedOnly(({ res, url, ctx }) => {
+      const events = ctx.service.listAuditEvents();
+      sendJson(res, 200, { events: events.slice(-(limitParam(url) ?? events.length)) });
     }),
   ),
 ];
