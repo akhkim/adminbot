@@ -36,11 +36,11 @@ export function servePublicRoute(
       sendRedirect(res, `${controlUi}/`);
       return true;
     }
-    sendHtml(res, 200, renderAdminBotWebUi());
+    sendHtml(res, renderAdminBotWebUi);
     return true;
   }
   if (req.method === "GET" && url.pathname === "/adminbot") {
-    sendHtml(res, 200, renderAdminBotWebUi());
+    sendHtml(res, renderAdminBotWebUi);
     return true;
   }
   if (req.method === "GET" && url.pathname === "/deadlines") {
@@ -51,7 +51,7 @@ export function servePublicRoute(
   // the guidebook or the chatbot points at it, including collaborators with no AdminBot account.
   // Served here, above resolvePrincipal, for the same reason /deadlines is.
   if (req.method === "GET" && url.pathname === "/venue-picker") {
-    sendHtml(res, 200, renderVenuePickerWebUi());
+    sendHtml(res, renderVenuePickerWebUi);
     return true;
   }
   // Public for the same reason the member map is: the hash is only known to someone already sent
@@ -64,7 +64,7 @@ export function servePublicRoute(
     return true;
   }
   if (req.method === "GET" && url.pathname === "/lab_stats/member_map") {
-    sendHtml(res, 200, renderMemberMapWebUi());
+    sendHtml(res, renderMemberMapWebUi);
     return true;
   }
   return false;

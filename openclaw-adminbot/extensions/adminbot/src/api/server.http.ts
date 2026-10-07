@@ -4,6 +4,7 @@
 // reaches for, and keeping them here is what lets a route handler live in its own file without
 // importing the router back (see server.logistics.ts, and check:import-cycles for why that
 // matters). Nothing here knows what any route means.
+import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { gzipSync } from "node:zlib";
 import type { AdminBotServiceResponse } from "../kernel/service.js";
@@ -144,10 +145,43 @@ export function sendAvatar(res: ServerResponse, avatar: Avatar | undefined): voi
   res.end(avatar.bytes);
 }
 
-export function sendHtml(res: ServerResponse, status: number, body: string): void {
-  res.statusCode = status;
+type RenderedPage = { html: string; gzip: Buffer; etag: string };
+const renderedPages = new WeakMap<() => string, RenderedPage>();
+
+/**
+ * One of the service's own pages (console, venue picker, member map).
+ *
+ * Each is fixed for the life of the build, so it is rendered and gzipped on first request and kept;
+ * a deploy restarts the process, which is the only time a page can change. `no-cache` plus the
+ * ETag makes the browser ask every time and get an empty 304 when nothing moved.
+ */
+export function sendHtml(res: ServerResponse, render: () => string): void {
+  let page = renderedPages.get(render);
+  if (!page) {
+    const html = render();
+    page = {
+      html,
+      gzip: gzipSync(html),
+      etag: `"${createHash("sha256").update(html).digest("hex").slice(0, 32)}"`,
+    };
+    renderedPages.set(render, page);
+  }
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.end(body);
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Vary", "Accept-Encoding");
+  res.setHeader("ETag", page.etag);
+  if (res.req?.headers["if-none-match"] === page.etag) {
+    res.statusCode = 304;
+    res.end();
+    return;
+  }
+  res.statusCode = 200;
+  if (acceptsGzip(res.req)) {
+    res.setHeader("Content-Encoding", "gzip");
+    res.end(page.gzip);
+    return;
+  }
+  res.end(page.html);
 }
 
 /**
