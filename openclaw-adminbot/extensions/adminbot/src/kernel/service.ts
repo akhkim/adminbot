@@ -986,6 +986,7 @@ import {
   type AdminBotTabVisitReport,
 } from "../contracts/tab-visits.js";
 import { AdminBotMemoryStore } from "../persistence/memory.js";
+import { ADMINBOT_ACTIVE_CHANNELS } from "../workflows/members/access-audit.js";
 import {
   adminBotCityChannelMinimumMembers,
   buildCityChannelMessage,
@@ -1004,6 +1005,7 @@ import {
 import {
   hasAccessConsequences,
   memberTypeAccessDelta,
+  memberTypeAccessProfile,
   type MemberTypeAccessDelta,
 } from "../workflows/members/member-type-access.js";
 import {
@@ -3192,6 +3194,55 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
+  private inviteLinkedMemberToActiveChannels(member: AdminBotLabMember): void {
+    const userId = member.slack_user_id?.trim();
+    const access = memberTypeAccessProfile(member);
+    if (
+      !userId ||
+      !/^[UW][A-Z0-9]+$/u.test(userId) ||
+      (access.subgroup_source !== "full_member" &&
+        !access.grants.some((grant) => grant.item === "active_channels"))
+    ) {
+      return;
+    }
+    for (const channel of ADMINBOT_ACTIVE_CHANNELS) {
+      if (
+        member.slack_channels?.some((name) => name.replace(/^#/u, "").toLowerCase() === channel)
+      ) {
+        continue;
+      }
+      const key = `active-channel-link:${member.id}:${userId}:${channel}`;
+      const previous = this.store
+        .listProposalsByType("slack.invite_to_channel")
+        .find((proposal) => proposal.idempotency_key === key);
+      if (previous?.status === "executed" || previous?.status === "rejected") {
+        continue;
+      }
+      const proposed = previous
+        ? { ok: true as const, payload: previous }
+        : this.createProposal({
+            type: "slack.invite_to_channel",
+            summary: `Add ${member.name} to #${channel} (linked Slack account)`,
+            target: {
+              service: "slack",
+              channel: "slack",
+              target: channel,
+              recipientMemberId: member.id,
+            },
+            proposed_payload: { channel, user_id: userId },
+            idempotency_key: key,
+            undo_plan: "An admin can remove the member from the channel.",
+          });
+      if (proposed.ok) {
+        void this.execute(proposed.payload.id, { dry_run: false, idempotency_key: key }).catch(
+          () => {
+            // The typed proposal retains the failure for review; never fail the profile save.
+          },
+        );
+      }
+    }
+  }
+
   private afterLabMemberWritten(
     existing: AdminBotLabMember | undefined,
     member: AdminBotLabMemberInput,
@@ -3201,6 +3252,9 @@ export class AdminBotService {
     origin: AdminBotWriteOrigin,
   ): void {
     this.clearResolvedProfileNotifications(stored);
+    if (stored.slack_user_id?.trim() !== existing?.slack_user_id?.trim()) {
+      this.inviteLinkedMemberToActiveChannels(stored);
+    }
     // Same patch, same rules, same instant as the provenance stamp above -- see
     // changedProfileFields for why these two must not drift. Provenance keeps the latest writer
     // per field; this keeps every writer, which is the half that survives a bulk re-import.
@@ -10248,6 +10302,9 @@ export class AdminBotService {
         this.store.saveLabMember({ ...member, slack_user_id: slackUserId, updated_at: now });
         idsResolved += 1;
       }
+    }
+    for (const member of this.store.listLabMembers()) {
+      this.inviteLinkedMemberToActiveChannels(member);
     }
     let timezonesChecked = 0;
     let timezonesUpdated = 0;
