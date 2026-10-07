@@ -1507,7 +1507,7 @@ export async function loadAdminBot(
     if (mode === "general") {
       const [members, papers] = await Promise.all([
         invokeAdminBotTool(host, "adminbot_list_lab_members"),
-        invokeAdminBotTool(host, "adminbot_list_papers"),
+        includePapers ? invokeAdminBotTool(host, "adminbot_list_papers") : undefined,
       ]);
       if (!gatewayLoadIsCurrent()) {
         return;
@@ -1516,7 +1516,7 @@ export async function loadAdminBot(
         ...createEmptyAdminBotDashboardData(),
         members: readArray<AdminBotLabMember>(members, "members"),
         papers: readArray<AdminBotPaperRecord>(papers, "papers"),
-        papersLoadedAt: Date.now(),
+        papersLoadedAt: includePapers ? Date.now() : null,
         loadedAt: Date.now(),
       };
       return;
@@ -1531,7 +1531,7 @@ export async function loadAdminBot(
     ] = await Promise.allSettled([
       invokeAdminBotTool(host, "adminbot_list_pending_actions", { limit: 50 }),
       invokeAdminBotTool(host, "adminbot_list_lab_members"),
-      invokeAdminBotTool(host, "adminbot_list_papers"),
+      includePapers ? invokeAdminBotTool(host, "adminbot_list_papers") : undefined,
       invokeAdminBotTool(host, "adminbot_list_paper_nudges"),
       invokeAdminBotTool(host, "adminbot_get_settings"),
       invokeAdminBotTool(host, "adminbot_get_sensitive_info"),
@@ -1563,7 +1563,7 @@ export async function loadAdminBot(
       emailReviewHistory: [],
       members: readArray<AdminBotLabMember>(members, "members"),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
-      papersLoadedAt: Date.now(),
+      papersLoadedAt: includePapers ? Date.now() : null,
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
       settings:
         Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
