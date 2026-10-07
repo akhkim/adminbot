@@ -19,11 +19,8 @@ import {
   visibleTabsForRole,
   type AccessRole,
 } from "./adminbot/access.ts";
-import {
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
-  submitFeedback,
-} from "./adminbot/auth/session.ts";
+import { submitFeedback } from "./adminbot/api/workspace.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "./adminbot/auth/session.ts";
 import {
   applyAdminBotOwnProfilePhoto,
   approveAdminBotAction,

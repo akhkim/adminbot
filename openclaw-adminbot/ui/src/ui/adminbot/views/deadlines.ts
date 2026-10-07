@@ -6,12 +6,8 @@ import { icons } from "../../icons.ts";
 import type { UiSettings } from "../../storage.ts";
 import "./deadlines.recommendation.ts";
 import type { AccessRole } from "../access.ts";
-import {
-  resolveAdminBotBaseUrl,
-  loadStoredMemberSession,
-  fetchConferenceRosters,
-  type ConferenceRoster,
-} from "../auth/session.ts";
+import { fetchConferenceRosters, type ConferenceRoster } from "../api/paper-admin.ts";
+import { resolveAdminBotBaseUrl, loadStoredMemberSession } from "../auth/session.ts";
 import {
   deadlineMilestoneRow,
   hasDeadlineMilestone,

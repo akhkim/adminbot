@@ -35,7 +35,7 @@ import {
   type AdminBotPaperSlotDefinition,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
-import type { PaperflowStageRow, PaperSlotRow } from "../auth/session.ts";
+import type { PaperflowStageRow, PaperSlotRow } from "../api/papers.ts";
 import type { MemberOption } from "./member-select.ts";
 import { renderPaperCoauthors, type PaperAuthorLink } from "./paper-coauthors.ts";
 import "./paper-slot-deck.ts";

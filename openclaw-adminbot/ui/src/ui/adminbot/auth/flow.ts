@@ -5,6 +5,20 @@ import { loadOrCreateDeviceIdentity } from "../../device-identity.ts";
 import { clearSignedOutView, goToSignedOutView } from "../../signed-out-view.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
+  type MemberSession,
+  type SignupProfile,
+  changeMemberPassword,
+  claimMember,
+  confirmPasswordReset,
+  issueDeviceToken,
+  loginMember,
+  requestPasswordReset,
+  signupMember,
+  startImpersonation,
+} from "../api/auth.ts";
+import { setOnboardingStep } from "../api/onboarding.ts";
+import { acknowledgeOnboardingStep } from "../api/profile.ts";
+import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
   createEmptyAdminBotStandingMeetings,
@@ -38,31 +52,19 @@ import type { MilestoneDraft, TimeAvailabilityDraft } from "../views/time-availa
 // flows through applySettings so it stays in sessionStorage-scoped plumbing.
 import {
   type AuthErrorKind,
-  acknowledgeOnboardingStep,
   type MemberImpersonator,
   type MemberOnboarding,
-  type MemberSession,
   type RosterMember,
-  type SignupProfile,
-  changeMemberPassword,
-  claimMember,
   clearStoredMemberSession,
-  confirmPasswordReset,
   fetchMemberSession,
   cacheOfflineMemberSession,
   fetchRoster,
   hasAcknowledgedOnboardingChecklist,
-  issueDeviceToken,
   loadStoredMemberSession,
-  loginMember,
   logoutMember,
   markOnboardingChecklistAcknowledged,
-  requestPasswordReset,
   resolveAdminBotBaseUrl,
   saveStoredMemberSession,
-  setOnboardingStep,
-  signupMember,
-  startImpersonation,
   stopImpersonation,
 } from "./session.ts";
 
@@ -209,10 +211,10 @@ export type MemberAuthHost = {
   registrationsError?: import("../data/registrations.ts").RegistrationsLoadError | null;
   registrationsBusyId?: string | null;
   registrationsNotice?: { kind: "success" | "error"; text: string } | null;
-  adminBotNotifications?: import("./session.ts").MemberNotification[];
+  adminBotNotifications?: import("../api/workspace.ts").MemberNotification[];
   adminBotNotificationsError?: string | null;
-  adminBotBroadcast?: import("./session.ts").LabBroadcast | null;
-  adminBotBroadcastHistory?: import("./session.ts").LabBroadcast[];
+  adminBotBroadcast?: import("../api/lab-sharing.ts").LabBroadcast | null;
+  adminBotBroadcastHistory?: import("../api/lab-sharing.ts").LabBroadcast[];
   adminBotBroadcastDraft?: string;
   adminBotBroadcastExpiry?: string;
   adminBotBroadcastAvailability?: string;
@@ -221,52 +223,52 @@ export type MemberAuthHost = {
   adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
   adminBotNotice?: { kind: "success" | "error"; text: string } | null;
   professorExpandedLists?: Set<string>;
-  memberSheet?: import("./session.ts").MemberSheetView | null;
+  memberSheet?: import("../api/onboarding.ts").MemberSheetView | null;
   memberSheetLoadedAt?: number | null;
   memberSheetBusy?: boolean;
   memberSheetError?: string | null;
   memberSheetEdits?: Record<string, string>;
   memberSheetBaseline?: Record<string, string>;
   memberSheetSelection?: number[];
-  memberSheetSaveResult?: import("./session.ts").MemberSheetEditResult | null;
-  memberSheetOnboardResult?: import("./session.ts").MemberSheetOnboardResult | null;
-  memberSheetAddRowResult?: import("./session.ts").MemberSheetAddRowResult | null;
-  adminBotProfileOverview?: import("./session.ts").MemberProfileOverviewRow[];
+  memberSheetSaveResult?: import("../api/onboarding.ts").MemberSheetEditResult | null;
+  memberSheetOnboardResult?: import("../api/onboarding.ts").MemberSheetOnboardResult | null;
+  memberSheetAddRowResult?: import("../api/onboarding.ts").MemberSheetAddRowResult | null;
+  adminBotProfileOverview?: import("../api/members.ts").MemberProfileOverviewRow[];
   adminBotProfileOverviewLoadedAt?: number | null;
   adminBotProfileOverviewLoading?: boolean;
   adminBotProfileOverviewError?: string | null;
   adminBotProfileOverviewFieldCount?: number;
   adminBotProfileOverviewReminding?: boolean;
   adminBotProfileOverviewNotice?: string | null;
-  adminBotProfileAdoption?: import("./session.ts").MemberAdoptionSummary | null;
-  adminBotEscalatedNudges?: import("./session.ts").EscalatedNudgeRow[];
-  adminBotPiReview?: import("./session.ts").PiReviewRow[];
+  adminBotProfileAdoption?: import("../api/members.ts").MemberAdoptionSummary | null;
+  adminBotEscalatedNudges?: import("../api/nudges.ts").EscalatedNudgeRow[];
+  adminBotPiReview?: import("../api/paper-admin.ts").PiReviewRow[];
   adminBotPiReviewError?: string | null;
   adminBotTravel?: TravelState;
-  adminBotLocationDrift?: import("./session.ts").LocationDrift | null;
-  adminBotLocationDrifts?: import("./session.ts").LocationDrift[];
+  adminBotLocationDrift?: import("../api/profile.ts").LocationDrift | null;
+  adminBotLocationDrifts?: import("../api/profile.ts").LocationDrift[];
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
-  adminBotMeetings?: import("./session.ts").MeetingRecord[];
+  adminBotMeetings?: import("../api/meetings.ts").MeetingRecord[];
   adminBotMeetingsRequestVersion?: number;
-  adminBotMeetingsNextCursor?: import("./session.ts").MeetingCursor | null;
+  adminBotMeetingsNextCursor?: import("../api/meetings.ts").MeetingCursor | null;
   adminBotMeetingsLoadingMore?: boolean;
   adminBotMeetingsVisibleCount?: number;
   adminBotMeetingsLoading?: boolean;
   adminBotMeetingsSaving?: boolean;
   adminBotMeetingsError?: string | null;
-  adminBotMeetingNudgePreview?: import("./session.ts").MeetingAttendanceNudgePreview | null;
-  adminBotMeetingNudgeResult?: import("./session.ts").MeetingAttendanceNudgeResult | null;
+  adminBotMeetingNudgePreview?: import("../api/meetings.ts").MeetingAttendanceNudgePreview | null;
+  adminBotMeetingNudgeResult?: import("../api/meetings.ts").MeetingAttendanceNudgeResult | null;
   adminBotMeetingNudgeBusy?: boolean;
   adminBotMeetingNudgeError?: string | null;
-  calendarEvents?: import("./session.ts").CalendarEvent[];
+  calendarEvents?: import("../api/calendar.ts").CalendarEvent[];
   calendarEventsLoading?: boolean;
   calendarEventsError?: string | null;
-  calendarSource?: import("./session.ts").LabCalendar | null;
+  calendarSource?: import("../api/calendar.ts").LabCalendar | null;
   calendarMonth?: string;
   calendarPrompt?: string;
   calendarMessages?: Array<{ role: "user" | "assistant"; content: string }>;
-  calendarDraft?: import("./session.ts").CalendarEventDraft | null;
+  calendarDraft?: import("../api/calendar.ts").CalendarEventDraft | null;
   calendarDraftBusy?: boolean;
   calendarDraftError?: string | null;
   calendarSelectedEventId?: string | null;
@@ -277,8 +279,8 @@ export type MemberAuthHost = {
   calendarExcludedMemberIds?: string[];
   calendarBusy?: boolean;
   calendarConfirming?: "save" | "invite" | null;
-  adminBotPaperSlotOverview?: import("./session.ts").PaperSlotOverviewRow[];
-  adminBotPaperSlots?: Record<string, import("./session.ts").PaperCycle>;
+  adminBotPaperSlotOverview?: import("../api/paper-admin.ts").PaperSlotOverviewRow[];
+  adminBotPaperSlots?: Record<string, import("../api/papers.ts").PaperCycle>;
   adminBotPaperSlotsOpen?: string[];
   adminBotPaperSlotsLoadedAt?: number | null;
   adminBotPaperSlotsLoading?: boolean;
@@ -286,23 +288,23 @@ export type MemberAuthHost = {
   adminBotPaperSlotsNudging?: boolean;
   adminBotPaperSlotsNotice?: string | null;
   adminBotPaperSlotsBusyId?: string | null;
-  adminBotPaperNudgeBatches?: import("./session.ts").PaperNudgeBatch[] | null;
+  adminBotPaperNudgeBatches?: import("../api/paper-admin.ts").PaperNudgeBatch[] | null;
   adminBotPaperNudgeLoading?: boolean;
   adminBotPaperNudgeSelected?: string[];
   adminBotTripDrafts?: Record<string, import("../views/paper-cycle.ts").PaperTripDraft>;
   adminBotTripSavingKey?: string | null;
-  adminBotTabUsage?: import("./session.ts").TabVisitReport | null;
+  adminBotTabUsage?: import("../api/workspace.ts").TabVisitReport | null;
   adminBotTabUsageLoadedAt?: number | null;
   adminBotTabUsageLoading?: boolean;
   adminBotTabUsageError?: string | null;
   adminBotTabUsageExporting?: boolean;
   adminBotReimbursement?: AdminBotReimbursementState;
-  adminBotLogisticsRequests?: import("./session.ts").LogisticsRequest[];
+  adminBotLogisticsRequests?: import("../api/logistics.ts").LogisticsRequest[];
   adminBotLogisticsRequestsLoading?: boolean;
   adminBotLogisticsRequestsError?: string | null;
   adminBotLogisticsRequestsLoadedAt?: number | null;
   adminBotLogisticsOpenRequestId?: string | null;
-  adminBotLogisticsOpenRequest?: import("./session.ts").LogisticsRequest | null;
+  adminBotLogisticsOpenRequest?: import("../api/logistics.ts").LogisticsRequest | null;
   adminBotLogisticsOpenLoading?: boolean;
   adminBotLogisticsDraftScope?: string | null;
   adminBotLogisticsDescription?: string;
@@ -320,7 +322,7 @@ export type MemberAuthHost = {
   adminBotLogisticsSignedNote?: string;
   adminBotLogisticsStatusNote?: string;
   adminBotLogisticsEditingId?: string | null;
-  adminBotBadgeDefinitions?: import("./session.ts").BadgeDefinition[];
+  adminBotBadgeDefinitions?: import("../api/badges.ts").BadgeDefinition[];
   adminBotBadgeDefinitionsLoadedAt?: number | null;
   adminBotBadgeDefinitionsError?: import("../data/badges.ts").BadgeLoadError | null;
   adminBotBadgeNominations?: import("./session.ts").BadgeNominationView[];

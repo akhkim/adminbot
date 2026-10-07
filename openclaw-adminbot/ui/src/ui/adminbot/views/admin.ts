@@ -27,14 +27,10 @@ import {
 import { t } from "../../../i18n/index.ts";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
-import type {
-  AdminBotEmailReviewResolution,
-  ConferenceRoster,
-  MemberNudgeChannel,
-  MemberProfileUpdate,
-  PaperSlotOverviewRow,
-  PaperSlotRow,
-} from "../auth/session.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
+import type { ConferenceRoster, PaperSlotOverviewRow } from "../api/paper-admin.ts";
+import type { PaperSlotRow } from "../api/papers.ts";
+import type { AdminBotEmailReviewResolution, MemberNudgeChannel } from "../auth/session.ts";
 import {
   type BlockerRow,
   blockerAgeDays,

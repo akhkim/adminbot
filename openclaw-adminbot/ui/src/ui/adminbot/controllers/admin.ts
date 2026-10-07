@@ -6,66 +6,74 @@ import type {
 import type { GatewayBrowserClient } from "../../gateway.ts";
 import type { UiSettings } from "../../storage.ts";
 // Control UI controller for the AdminBot dashboard surface.
+import type { CalendarEvent, CalendarEventDraft, LabCalendar } from "../api/calendar.ts";
 import {
-  type CalendarEvent,
-  type CalendarEventDraft,
-  type LabCalendar,
-  type LocationDrift,
-  type MeetingRecord,
-  type MeetingCursor,
-  type MeetingAttendanceNudgePreview,
-  type MeetingAttendanceNudgeResult,
-  type LabBroadcast,
-  type MemberNotification,
-  type AdminBotEmailReviewItem,
-  type AdminBotEmailReviewPaperflowCandidate,
-  type AdminBotEmailReviewResolution,
-  type AdminBotResolvedEmailReviewItem,
-  type MemberNudgeChannel,
-  type MemberProfileUpdate,
-  type MemberScheduleUpdate,
-  approveActionAsMember,
-  applyOwnPolishedProfilePhoto,
-  executeActionAsMember,
-  removePendingAction,
-  fetchMemberResource,
-  fetchStandingMeetings,
-  loadStoredMemberSession,
   cancelWorkshopNudges,
   previewWorkshopNudges,
   fetchWorkshopConferences,
   refreshWorkshopNudges,
   type WorkshopConferenceOption,
-  polishOwnProfilePhoto,
-  resolveAdminBotBaseUrl,
-  resolveEmailReviewAsAdmin,
-  saveOwnPaper,
   fetchVenueSources,
   rebuildVenueIndexes,
-  runChannelNamingSweep,
-  publishCvDigest,
   fetchVenueCategories,
   searchLabPaperRelevance,
   searchVenuePapers,
-  sendMemberNudge,
   sendWorkshopNudges,
   type VenuePaperCategory,
-  deleteOwnPaper,
+} from "../api/conference-papers.ts";
+import {
+  runChannelNamingSweep,
+  publishCvDigest,
+  fetchSlackChannelNames,
+} from "../api/directory.ts";
+import { resolveEmailReviewAsAdmin } from "../api/email-review.ts";
+import {
+  approveActionAsMember,
+  executeActionAsMember,
+  removePendingAction,
+} from "../api/governance.ts";
+import type { LabBroadcast } from "../api/lab-sharing.ts";
+import {
+  type MeetingRecord,
+  type MeetingCursor,
+  type MeetingAttendanceNudgePreview,
+  type MeetingAttendanceNudgeResult,
+  fetchStandingMeetings,
+} from "../api/meetings.ts";
+import type { StandingMeeting } from "../api/meetings.ts";
+import {
+  type MemberProfileUpdate,
+  type MemberScheduleUpdate,
   updateOwnProfile,
-  updateSettingsAsAdmin,
   updateOwnSchedule,
   mergeLabMembersAsAdmin,
-  pendingQueuedAdminBotWriteCount,
-  fetchSlackChannelNames,
   deleteLabMemberAsAdmin,
   fetchMembersWithoutEmail,
   purgeMembersWithoutEmailAsAdmin,
-  submitReimbursementPackage,
-  queueMemberOnboardingGuide,
   upsertLabMemberAsAdmin,
-  type ConferenceRoster,
+} from "../api/members.ts";
+import { sendMemberNudge } from "../api/nudges.ts";
+import { queueMemberOnboardingGuide } from "../api/onboarding.ts";
+import type { ConferenceRoster } from "../api/paper-admin.ts";
+import { saveOwnPaper, deleteOwnPaper } from "../api/papers.ts";
+import {
+  type LocationDrift,
+  applyOwnPolishedProfilePhoto,
+  polishOwnProfilePhoto,
+} from "../api/profile.ts";
+import { submitReimbursementPackage } from "../api/reimbursements.ts";
+import { type MemberNotification, updateSettingsAsAdmin } from "../api/workspace.ts";
+import {
+  type AdminBotEmailReviewItem,
+  type AdminBotEmailReviewPaperflowCandidate,
+  type AdminBotEmailReviewResolution,
+  type AdminBotResolvedEmailReviewItem,
+  type MemberNudgeChannel,
+  fetchMemberResource,
+  loadStoredMemberSession,
+  resolveAdminBotBaseUrl,
+  pendingQueuedAdminBotWriteCount,
 } from "../auth/session.ts";
-import type { StandingMeeting } from "../auth/session.ts";
 import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
 import { invalidateMemberMap, type MemberMap } from "../data/member-map.ts";
 import { describeMemberTypeChange } from "../data/member-type-change.ts";

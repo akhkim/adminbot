@@ -17,7 +17,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { i18n } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
-import type { CalendarEvent } from "../auth/session.ts";
+import type { CalendarEvent } from "../api/calendar.ts";
 import {
   hasAudienceFilter,
   knownCities,

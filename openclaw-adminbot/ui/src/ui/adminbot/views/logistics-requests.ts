@@ -18,7 +18,7 @@ import type {
   LogisticsRequest,
   LogisticsRequestStatus,
   LogisticsSchool,
-} from "../auth/session.ts";
+} from "../api/logistics.ts";
 import { logisticsDeadlineText } from "../data/logistics-queue.ts";
 import { attachmentDataUrl, formatFileSize } from "../data/logistics-requests.ts";
 import { SCHOOL_FIELDS, TEMPLATE_FOLDER_URL, type SchoolField } from "./logistics-fields.ts";

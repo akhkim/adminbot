@@ -5,9 +5,11 @@ const recordTabVisit = vi.fn();
 let storedSession: { sessionToken: string } | null = { sessionToken: "token" };
 
 vi.mock("../auth/session.ts", () => ({
-  recordTabVisit: (...args: unknown[]) => recordTabVisit(...args),
   loadStoredMemberSession: () => storedSession,
   resolveAdminBotBaseUrl: () => "http://localhost",
+}));
+vi.mock("../api/workspace.ts", () => ({
+  recordTabVisit: (...args: unknown[]) => recordTabVisit(...args),
 }));
 
 const { recordAdminBotTabVisit } = await import("./tab-visits.ts");

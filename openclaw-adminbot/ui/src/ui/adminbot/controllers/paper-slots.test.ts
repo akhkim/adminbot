@@ -5,7 +5,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type { UiSettings } from "../../storage.ts";
-import { saveStoredMemberSession, type PaperNudgeBatch } from "../auth/session.ts";
+import type { PaperNudgeBatch } from "../api/paper-admin.ts";
+import { saveStoredMemberSession } from "../auth/session.ts";
 import {
   loadAdminBotNudgeBatches,
   loadAdminBotPaperSlotOverview,
