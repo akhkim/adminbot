@@ -1041,8 +1041,8 @@ function paperWorkspaceProps(
     memberName: (memberId: string) =>
       (state.adminBotData?.members ?? []).find((member) => member.id === memberId)?.name ??
       memberId,
-    onSaveDraft: (paperId, platform, body) => {
-      void saveAdminBotSocialDraft(state, paperId, platform, body).finally(() =>
+    onSaveDraft: (paperId, platform, body, xThread) => {
+      void saveAdminBotSocialDraft(state, paperId, platform, body, xThread).finally(() =>
         requestHostUpdate?.(),
       );
     },

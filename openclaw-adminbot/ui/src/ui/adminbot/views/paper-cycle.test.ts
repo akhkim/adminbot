@@ -29,30 +29,27 @@ function draw(overrides: Partial<PaperCycleProps> = {}) {
   };
   const container = document.createElement("div");
   document.body.append(container);
-  render(
-    renderPaperCycle({
-      paperId: "p1",
-      drafts: [],
-      consents: [],
-      attendees: [],
-      reimbursements: [],
-      conferenceOpen: false,
-      missingAcceptanceDetails: [],
-      cycleClosed: false,
-      memberId: "ada",
-      memberName: (id) => id,
-      onSaveDraft: (platform, body) => calls.drafts.push([platform, body]),
-      onCirculateDraft: (id) => calls.circulated.push(id),
-      onGenerateLinkedInDraft: (venue, note) => calls.generated.push([venue, note]),
-      onConsent: (id, decision, comment) => calls.consents.push([id, decision, comment]),
-      onSetAttendee: (name, memberId, attending) =>
-        calls.attendees.push([name, memberId, attending]),
-      onSetReimbursement: (memberId, status) => calls.reimbursements.push([memberId, status]),
-      ...overrides,
-    }),
-    container,
-  );
-  return { container, calls };
+  const props: PaperCycleProps = {
+    paperId: "p1",
+    drafts: [],
+    consents: [],
+    attendees: [],
+    reimbursements: [],
+    conferenceOpen: false,
+    missingAcceptanceDetails: [],
+    cycleClosed: false,
+    memberId: "ada",
+    memberName: (id) => id,
+    onSaveDraft: (platform, body) => calls.drafts.push([platform, body]),
+    onCirculateDraft: (id) => calls.circulated.push(id),
+    onGenerateLinkedInDraft: (venue, note) => calls.generated.push([venue, note]),
+    onConsent: (id, decision, comment) => calls.consents.push([id, decision, comment]),
+    onSetAttendee: (name, memberId, attending) => calls.attendees.push([name, memberId, attending]),
+    onSetReimbursement: (memberId, status) => calls.reimbursements.push([memberId, status]),
+    ...overrides,
+  };
+  render(renderPaperCycle(props), container);
+  return { container, calls, props };
 }
 
 function draft(fields: Partial<PaperSocialDraft> = {}): PaperSocialDraft {
@@ -162,6 +159,78 @@ describe("social drafts", () => {
 });
 
 describe("the linkedin panel's absorbed generator", () => {
+  it("keeps four stage panels and edits a saved figure with its thread", async () => {
+    const saved: unknown[] = [];
+    const { container, props } = draw({
+      onGenerateXDraft: () => {},
+      onSaveDraft: (...args) => {
+        saved.push(args);
+      },
+      drafts: [
+        draft({
+          x_thread: {
+            stage: "poster",
+            posts: [
+              {
+                text: "1/1 Come chat",
+                images: [
+                  { data_uri: "data:image/png;base64,iVBORw0KGgo=", alt_text: "Synthetic results" },
+                ],
+              },
+            ],
+          },
+        }),
+      ],
+    });
+    for (const stage of ["acceptance", "attendance", "poster"]) {
+      expect(container.querySelector(`[data-testid="paper-draft-p1-x-${stage}"]`)).not.toBeNull();
+    }
+    const panel = container.querySelector('[data-testid="paper-draft-p1-x-poster"]');
+    expect(panel?.querySelector("img")?.getAttribute("alt")).toBe("Synthetic results");
+    const text = panel?.querySelector<HTMLTextAreaElement>('[data-post="0"]');
+    if (!text) {
+      throw new Error("Missing thread editor");
+    }
+    text.value = "1/1 Updated invitation";
+    text.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(panel?.querySelector('[data-preview="0"]')?.textContent).toBe(text.value);
+    expect(panel?.querySelector('[data-count="0"]')?.textContent).toBe("22 / 280");
+    expect(panel?.textContent).toContain("Coauthor review is optional");
+    panel
+      ?.querySelector("form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saved).toEqual([
+      [
+        "x",
+        "1/1 Updated invitation",
+        {
+          stage: "poster",
+          posts: [
+            {
+              text: "1/1 Updated invitation",
+              images: [
+                { data_uri: "data:image/png;base64,iVBORw0KGgo=", alt_text: "Synthetic results" },
+              ],
+            },
+          ],
+        },
+      ],
+    ]);
+    expect(() =>
+      render(
+        renderPaperCycle({
+          ...props,
+          drafts: props.drafts.map((item) => ({
+            ...item,
+            x_thread: { stage: "poster" as const, posts: [{ text: "1/1 Saved invitation" }] },
+          })),
+        }),
+        container,
+      ),
+    ).not.toThrow();
+    expect(container.querySelector('[data-preview="0"]')?.textContent).toBe("1/1 Saved invitation");
+  });
   it("exposes PDF generation in X without unused LinkedIn context inputs", () => {
     const calls: unknown[] = [];
     const { container } = draw({
@@ -173,7 +242,15 @@ describe("the linkedin panel's absorbed generator", () => {
     expect(panel?.querySelector('[data-el="pdf"]')).not.toBeNull();
     expect(panel?.querySelector('[data-el="venue"]')).toBeNull();
     panel?.querySelector<HTMLButtonElement>('[data-testid="paper-draft-generate-p1-x"]')?.click();
-    expect(calls).toEqual([["", "", undefined]]);
+    expect(calls).toEqual([
+      [
+        "",
+        "",
+        undefined,
+        { stage: "arxiv", venue: undefined, attendees: undefined, session: undefined },
+        { authors: [], organizations: [] },
+      ],
+    ]);
   });
   it("asks for venue and context on linkedin only, ahead of the draft box", () => {
     const { container } = draw();

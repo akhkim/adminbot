@@ -2068,12 +2068,20 @@ export type XDraft = {
 };
 
 export async function draftXPost(
-  request: { pdfBase64?: string; paperId: string; url?: string },
+  request: {
+    pdfBase64?: string;
+    paperId: string;
+    url?: string;
+    credits?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XCreditSelection;
+    announcement?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XAnnouncementDetails;
+  },
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<XDraft>> {
   const result = await authedJson(baseUrl, "/papers/x-draft", "POST", sessionToken, {
     paper_id: request.paperId,
+    ...(request.announcement ? { announcement: request.announcement } : {}),
+    ...(request.credits ? { credits: request.credits } : {}),
     ...(request.pdfBase64 ? { pdf_base64: request.pdfBase64 } : {}),
     ...(request.url ? { url: request.url } : {}),
   });
@@ -5271,6 +5279,7 @@ export type PaperSocialDraft = {
   paper_id: string;
   platform: "x" | "linkedin";
   body: string;
+  x_thread?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XThreadDraft;
   model?: string;
   generated_at: string;
   status: "draft" | "circulated" | "approved" | "superseded";
@@ -5383,7 +5392,11 @@ export async function fetchPaperSlots(
 /** Save a social draft. Supersedes whatever it replaces, server-side. */
 export async function savePaperSocialDraft(
   paperId: string,
-  input: { platform: string; body: string },
+  input: {
+    platform: string;
+    body: string;
+    x_thread?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XThreadDraft;
+  },
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<PaperSocialDraft>> {

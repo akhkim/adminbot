@@ -437,6 +437,7 @@ import {
   venueKey,
   selectPublications,
 } from "../workflows/papers/publication-list.js";
+import { readXThreadDraft } from "../workflows/papers/x-draft.js";
 import {
   recommendationDirectory,
   previewRecommendation,
@@ -643,7 +644,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   /** The whole ledger, or one domain's slice. */
   listNudgeLedger(domain?: string): AdminBotNudgeLedgerRecord[];
   saveSocialDraft(record: AdminBotSocialDraftRecord): void;
-  listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[];
+  listSocialDrafts(paperId?: string, draftId?: string): AdminBotSocialDraftRecord[];
   saveSocialConsent(record: AdminBotSocialConsentRecord): void;
   listSocialConsents(draftId?: string): AdminBotSocialConsentRecord[];
   saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void;
@@ -7017,6 +7018,7 @@ export class AdminBotService {
     platform: string;
     body: string;
     model?: string;
+    xThread?: unknown;
     memberId: string;
     privileged: boolean;
   }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord }> {
@@ -7030,7 +7032,18 @@ export class AdminBotService {
     if (params.platform !== "x" && params.platform !== "linkedin") {
       return serviceError(400, "platform must be x or linkedin");
     }
-    const body = params.body.trim();
+    let xThread;
+    if (params.xThread !== undefined) {
+      if (params.platform !== "x") {
+        return serviceError(400, "Only X drafts support threads.");
+      }
+      try {
+        xThread = readXThreadDraft(params.xThread);
+      } catch (error) {
+        return serviceError(400, (error as Error).message);
+      }
+    }
+    const body = xThread ? xThread.posts.map((post) => post.text).join("\n\n") : params.body.trim();
     if (!body) {
       return serviceError(400, "a draft needs a body");
     }
@@ -7043,13 +7056,19 @@ export class AdminBotService {
       paper_id: params.paperId,
       platform: params.platform,
       body,
+      ...(xThread ? { x_thread: xThread } : {}),
       generated_at: now,
       generated_by_member_id: params.memberId,
       status: "draft",
       ...(params.model ? { model: params.model } : {}),
     };
     for (const existing of this.store.listSocialDrafts(params.paperId)) {
-      if (existing.platform !== params.platform || existing.status === "superseded") {
+      if (
+        existing.platform !== params.platform ||
+        existing.status === "superseded" ||
+        (params.platform === "x" &&
+          (existing.x_thread?.stage ?? "arxiv") !== (xThread?.stage ?? "arxiv"))
+      ) {
         continue;
       }
       this.store.saveSocialDraft({
@@ -7079,7 +7098,7 @@ export class AdminBotService {
     memberId: string;
     privileged: boolean;
   }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord; asked: string[] }> {
-    const draft = this.store.listSocialDrafts().find((row) => row.id === params.draftId);
+    const draft = this.store.listSocialDrafts(undefined, params.draftId)[0];
     if (!draft) {
       return serviceError(404, "draft not found");
     }
@@ -7137,7 +7156,7 @@ export class AdminBotService {
     decision: string;
     comment?: string;
   }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord }> {
-    const draft = this.store.listSocialDrafts().find((row) => row.id === params.draftId);
+    const draft = this.store.listSocialDrafts(undefined, params.draftId)[0];
     if (!draft) {
       return serviceError(404, "draft not found");
     }

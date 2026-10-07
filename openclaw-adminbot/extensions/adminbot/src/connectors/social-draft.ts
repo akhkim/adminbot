@@ -49,9 +49,11 @@ import {
   type AdminBotVerifiedAuthor,
 } from "../workflows/papers/linkedin-draft.js";
 import {
-  ADMINBOT_X_THREAD_PROMPT,
   finishXThread,
   type AdminBotXThreadPost,
+  xAnnouncementPrompt,
+  type XAnnouncementDetails,
+  type XCreditSelection,
 } from "../workflows/papers/x-draft.js";
 
 export type SocialDraftFetch = (
@@ -322,6 +324,8 @@ export type LinkedInDraftResponse = {
 export type LinkedInDraftRunner = (request: LinkedInDraftRequest) => Promise<LinkedInDraftResponse>;
 
 export type XDraftRequest = LinkedInDraftRequest & {
+  announcement?: XAnnouncementDetails;
+  credits?: XCreditSelection;
   organizations?: Array<{ name: string; x_handle?: string }>;
 };
 export type XDraftResponse = {
@@ -371,6 +375,8 @@ export async function readArxivPdfBase64(id: string): Promise<string> {
 
 export function createXDraftRunner(options: AdminBotSocialDraftOptions = {}): XDraftRunner {
   return async (request) => {
+    const announcement = request.announcement ?? { stage: "arxiv" as const };
+    const system = xAnnouncementPrompt(announcement);
     const extracted = await extractPaperFromPdf(request.pdfBase64, {
       ...options,
       signal: request.signal,
@@ -386,10 +392,14 @@ export function createXDraftRunner(options: AdminBotSocialDraftOptions = {}): XD
         reasoning: NO_REASONING,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: ADMINBOT_X_THREAD_PROMPT },
+          { role: "system", content: system },
           {
             role: "user",
-            content: JSON.stringify({ title: paper.title, abstract: paper.abstract }),
+            content: JSON.stringify({
+              title: paper.title,
+              abstract: paper.abstract,
+              confirmed_logistics: announcement,
+            }),
           },
         ],
       },
@@ -413,7 +423,8 @@ export function createXDraftRunner(options: AdminBotSocialDraftOptions = {}): XD
       posts: posts.map((post) => ({ text: post.text })),
       paper,
       members: request.members,
-      organizations: request.organizations,
+      organizations: request.credits?.organizations ?? request.organizations,
+      authorSelections: request.credits?.authors,
     });
     return {
       paper,

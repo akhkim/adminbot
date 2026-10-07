@@ -28,4 +28,4 @@ Visually inspect each figure with its nearby paper text. Use a readable crop, as
 
 Pick authors from AdminBot in paper order; retain external authors by name. Confirm missing or ambiguous handles. Select supporting organizations explicitly; affiliation alone does not establish support.
 
-Prefer the public arXiv link, then a verified public Drive PDF or other public paper link. Never change sharing permissions. Flag missing session details instead of guessing. Preview every post and figure; save for coauthor approval. Publish only the approved version through the existing approval flow.
+Prefer the public arXiv link, then a verified public Drive PDF or other public paper link. Never change sharing permissions. Flag missing session details instead of guessing. Preview every post and figure; save the draft. Coauthor review is optional. Publish only the owner-approved version through the existing publishing approval flow.

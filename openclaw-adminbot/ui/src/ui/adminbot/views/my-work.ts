@@ -215,7 +215,12 @@ export type MyWorkProps = {
   viewerIsAdmin?: boolean;
   memberId: string | null;
   memberName: (memberId: string) => string;
-  onSaveDraft: (paperId: string, platform: string, body: string) => void;
+  onSaveDraft: (
+    paperId: string,
+    platform: string,
+    body: string,
+    xThread?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XThreadDraft,
+  ) => void;
   onCirculateDraft: (paperId: string, draftId: string) => void;
   onConsent: (paperId: string, draftId: string, decision: string, comment?: string) => void;
   onSetAttendee: (
@@ -1219,7 +1224,9 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
     cycleClosed: cycle.cycleClosed,
     memberId: props.memberId,
     memberName: props.memberName,
-    onSaveDraft: (platform: string, body: string) => props.onSaveDraft(paper.id, platform, body),
+    paperAuthors: paper.authors ?? [],
+    creditMembers: state.adminBotData?.members ?? [],
+    onSaveDraft: (platform, body, xThread) => props.onSaveDraft(paper.id, platform, body, xThread),
     onCirculateDraft: (draftId: string) => props.onCirculateDraft(paper.id, draftId),
     // The old dialog's generate path, minus the PDF picker: the service reads the Drive copy the
     // card already chases. Result lands in the panel's textarea as a stored draft, so the usual
@@ -1251,7 +1258,7 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
         globalThis.alert?.((error as Error).message);
       }
     },
-    onGenerateXDraft: async (_venue: string, _note: string, pdfBase64?: string) => {
+    onGenerateXDraft: async (_venue, _note, pdfBase64, announcement, credits) => {
       const stored = loadStoredMemberSession();
       if (!stored) {
         globalThis.alert?.("Sign in first.");
@@ -1261,6 +1268,8 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
         const result = await draftXPost(
           {
             paperId: paper.id,
+            ...(announcement ? { announcement } : {}),
+            ...(credits ? { credits } : {}),
             ...(pdfBase64 ? { pdfBase64 } : {}),
             ...(paper.artifacts?.arxiv_url ? { url: paper.artifacts.arxiv_url } : {}),
           },
@@ -1271,7 +1280,10 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
           globalThis.alert?.(result.message ?? "Could not generate the X thread.");
           return;
         }
-        props.onSaveDraft(paper.id, "x", result.value.posts.map((post) => post.text).join("\n\n"));
+        props.onSaveDraft(paper.id, "x", result.value.posts.map((post) => post.text).join("\n\n"), {
+          stage: announcement?.stage ?? "arxiv",
+          posts: result.value.posts,
+        });
         if (result.value.issues.length) globalThis.alert?.(result.value.issues.join("\n"));
       } catch (error) {
         globalThis.alert?.((error as Error).message);

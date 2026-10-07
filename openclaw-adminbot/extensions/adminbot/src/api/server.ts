@@ -180,6 +180,7 @@ import {
   venuePaperCategoryId,
 } from "../workflows/papers/venue-index.js";
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
+import { readXAnnouncement, readXCredits } from "../workflows/papers/x-draft.js";
 // The error class is a runtime value (the generate route catches it), so it cannot ride on the
 // type-only import beside it.
 import { AdminBotReimbursementBlocked } from "../workflows/reimbursements/workflow.js";
@@ -3064,7 +3065,7 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "POST" && url.pathname === "/proposals") {
-    const body = (await readJson(req)) as AdminBotActionProposal;
+    const body = (await readJson(req, 3_000_000)) as AdminBotActionProposal;
     sendServiceResult(res, service.createProposal(body));
     return;
   }
@@ -4409,6 +4410,17 @@ async function handleAuthenticatedRoute(
     // A paper PDF can be attached here, so the default 1 MB JSON ceiling would refuse most real
     // papers once base64 has added its third.
     const body = readRecord(await readJson(req, LINKEDIN_DRAFT_BODY_LIMIT_BYTES));
+    let announcement;
+    let credits;
+    if (isX) {
+      try {
+        announcement = readXAnnouncement(body.announcement);
+        credits = readXCredits(body.credits);
+      } catch (error) {
+        sendJson(res, 400, { error: { message: (error as Error).message } });
+        return;
+      }
+    }
     let pdfBase64 = typeof body.pdf_base64 === "string" ? body.pdf_base64 : "";
     // An upload is no longer required. The author has usually already given the lab this exact
     // file -- `drive_pdf_arxiv` is the Drive copy of the PDF they intend to post, and the card
@@ -4471,6 +4483,8 @@ async function handleAuthenticatedRoute(
     const members = membersResult.ok ? membersResult.payload.members : [];
     try {
       const draft = await (isX ? ctx.draftXPost : ctx.draftLinkedInPost)({
+        ...(announcement ? { announcement } : {}),
+        ...(credits ? { credits } : {}),
         pdfBase64,
         members,
         ...(typeof body.url === "string" ? { url: body.url } : {}),
@@ -5170,13 +5184,14 @@ async function handleAuthenticatedRoute(
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
-    const body = readRecord(await readJson(req));
+    const body = readRecord(await readJson(req, 3_000_000));
     sendServiceResult(
       res,
       service.saveSocialDraft({
         paperId: decodeURIComponent(paperDrafts[1]),
         platform: String(body.platform ?? ""),
         body: String(body.body ?? ""),
+        ...(body.x_thread !== undefined ? { xThread: body.x_thread } : {}),
         ...(typeof body.model === "string" ? { model: body.model } : {}),
         memberId: principal.kind === "member" ? principal.member.id : principalActor(principal),
         privileged: isPrivileged(principal),

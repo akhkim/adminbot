@@ -80,6 +80,7 @@ type PaperSocialPostParams = EvidenceParams & {
   paperId?: string;
   title?: string;
   summary: string;
+  xThread?: import("../../workflows/papers/x-draft.js").XThreadDraft;
   url?: string;
   authors?: string[];
   tone?: string;
@@ -295,6 +296,7 @@ export function createAdminBotToolHandlers(
         hashtags: params.hashtags,
         platforms: params.platforms,
         linkedinVisibility: params.linkedinVisibility,
+        xThread: params.xThread,
         members,
       });
       const missing = payload.tags.missing.length
