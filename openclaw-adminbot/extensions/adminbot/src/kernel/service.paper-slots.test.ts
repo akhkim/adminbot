@@ -3,6 +3,7 @@
 //
 // Its own file rather than more of service.test.ts, which is already the longest in the extension.
 import { describe, expect, it, vi } from "vitest";
+import { AdminBotMemoryStore } from "../persistence/memory.js";
 import { AdminBotService } from "./service.js";
 
 function unwrap<T>(
@@ -765,4 +766,34 @@ it("queues an author's feedback with reason and deadlines without publication ap
     }),
   );
   expect(unwrap(service.listPiReviewQueue()).papers).toHaveLength(0);
+});
+
+describe("roster reads on the all-paper sweeps", () => {
+  // Every roster read parses every member's whole payload (avatars included), so a sweep that
+  // re-reads it per paper costs seconds on the real lab and blocks the synchronous store meanwhile.
+  it("reads the roster once per sweep, not once per paper", async () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    seed(service);
+    for (const id of ["p2", "p3", "p4"]) {
+      unwrap(
+        service.upsertPaper({
+          id,
+          title: `Paper ${id}`,
+          authors: ["Ada Lovelace", "Bob Coauthor"],
+          current_step: "overleaf_writing",
+        }),
+      );
+    }
+    const reads = vi.spyOn(store, "listLabMembers");
+    for (const sweep of [
+      () => service.listPaperSlotOverview(),
+      () => service.collectPaperNudgeBatches(),
+      () => service.collectWeeklyUpdateGaps(),
+    ]) {
+      reads.mockClear();
+      unwrap(sweep());
+      expect(reads.mock.calls.length).toBeLessThanOrEqual(1);
+    }
+  });
 });
