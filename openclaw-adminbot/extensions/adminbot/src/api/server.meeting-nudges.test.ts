@@ -8,6 +8,7 @@ import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -74,12 +75,14 @@ async function startLab(): Promise<Lab> {
     ["grace", "member"],
     ["zhijing", "admin"],
   ] as const) {
-    const seeded = mock.service.upsertLabMember({
-      id,
-      name: id,
-      email: `${id}@cs.toronto.edu`,
-      privilege_level: privilege,
-    });
+    const seeded = mock.service.upsertLabMember(
+      withCompleteProfile({
+        id,
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: privilege,
+      }),
+    );
     if (!seeded.ok) {
       throw new Error(seeded.error.message);
     }

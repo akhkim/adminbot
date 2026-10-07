@@ -9,6 +9,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLogisticsRequestInput } from "../contracts/actions.js";
 import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import type { CallSheetSource } from "./call-sheet-config.js";
 import { createAdminBotMockService } from "./server.js";
 
@@ -87,12 +88,14 @@ async function startLab(
     ["grace", "member"],
     ["zhijing", "admin"],
   ] as const) {
-    const seeded = mock.service.upsertLabMember({
-      id,
-      name: id,
-      email: `${id}@cs.toronto.edu`,
-      privilege_level: privilege,
-    });
+    const seeded = mock.service.upsertLabMember(
+      withCompleteProfile({
+        id,
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: privilege,
+      }),
+    );
     if (!seeded.ok) {
       throw new Error(seeded.error.message);
     }

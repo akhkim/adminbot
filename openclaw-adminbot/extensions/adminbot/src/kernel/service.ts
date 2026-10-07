@@ -254,6 +254,7 @@ import {
   type AdminBotPaperMentorRun,
   type AdminBotPaperMentorRunInput,
 } from "../contracts/papermentor.js";
+import { missingMandatoryProfileFields } from "../contracts/profile-completion.js";
 import type { ReferenceScanStore } from "../contracts/reference-scans.js";
 import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
@@ -14760,20 +14761,6 @@ function memberHasAnyEmail(member: AdminBotLabMember): boolean {
   return [member.email, member.calendar_email, member.correspondence_email].some(
     (value) => typeof value === "string" && value.trim() !== "",
   );
-}
-
-function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
-  return MANDATORY_PROFILE_FIELDS.filter((key) => {
-    if (key === "arr_review_capacity" && member.arr_reviewer_qualified !== true) return false;
-    if (key === "intake_form_url" && member.intake_form_unavailable === true) {
-      return false;
-    }
-    const value = member[key];
-    if (Array.isArray(value)) {
-      return value.filter(Boolean).length === 0;
-    }
-    return value === undefined || value === null || String(value).trim() === "";
-  });
 }
 
 /**

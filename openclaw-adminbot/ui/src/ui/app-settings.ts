@@ -2,9 +2,11 @@ import { ADMINBOT_PASSWORD_RESET_PATH } from "../../../extensions/adminbot/src/c
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
+import { loadStoredMemberSession } from "./adminbot/auth/session.ts";
 import {
   loadAdminBot,
   loadAdminBotVenueSources,
+  pendingAdminBotLoad,
   type AdminBotHost,
 } from "./adminbot/controllers/admin.ts";
 import {
@@ -12,6 +14,11 @@ import {
   type AdminBotRegistrationsHost,
 } from "./adminbot/data/registrations.ts";
 import { needsLabPapers } from "./adminbot/papers-required.ts";
+import {
+  isProfileBlocked,
+  profileAccessState,
+  type ProfileGateState,
+} from "./adminbot/views/profile-gate.ts";
 import { refreshChat } from "./app-chat.ts";
 import {
   startLogsPolling,
@@ -88,7 +95,7 @@ import { resetChatViewState } from "./views/chat.ts";
 
 export { setLastActiveSessionKey } from "./app-last-active-session.ts";
 
-type SettingsHost = {
+type SettingsHost = ProfileGateState & {
   settings: UiSettings;
   userName?: string | null;
   userAvatar?: string | null;
@@ -460,8 +467,67 @@ function loadConfigSchemaAfterPrimary(
   );
 }
 
-export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?: boolean }) {
+type TabRefreshOptions = { chatStartup?: boolean };
+const pendingProfileRefreshes = new WeakMap<
+  SettingsHost,
+  {
+    requestId: symbol;
+    memberId: string | null | undefined;
+    sessionToken: string | undefined;
+    promise: Promise<void>;
+  }
+>();
+
+// All entry points (navigation, gateway startup, and the loading view) await the same access
+// check. Once it resolves, continue the normal loader for the CURRENT tab, exactly once.
+export function refreshActiveTab(host: SettingsHost, opts?: TabRefreshOptions): Promise<void> {
+  const memberId = host.memberId;
+  const sessionToken = loadStoredMemberSession()?.sessionToken;
+  const existing = pendingProfileRefreshes.get(host);
+  if (existing && existing.memberId === memberId && existing.sessionToken === sessionToken) {
+    return existing.promise;
+  }
+  if (profileAccessState(host) !== "loading") return refreshAccessibleTab(host, opts);
   const app = host as unknown as SettingsAppHost;
+  const requestId = Symbol();
+  const pending = (async () => {
+    const current = () =>
+      host.memberId === memberId && loadStoredMemberSession()?.sessionToken === sessionToken;
+    const inFlight = pendingAdminBotLoad(app);
+    if (inFlight) await inFlight;
+    if (!current()) return;
+    if (profileAccessState(host) === "loading" && !app.adminBotError) {
+      await loadAdminBot(app, "general", false);
+    }
+    if (!current()) return;
+    if (profileAccessState(host) !== "loading") {
+      // The access check is finished. Subsequent navigation must not join a different tab's load.
+      if (pendingProfileRefreshes.get(host)?.requestId === requestId)
+        pendingProfileRefreshes.delete(host);
+      await refreshAccessibleTab(host, opts);
+    }
+    host.requestUpdate?.();
+  })();
+  pendingProfileRefreshes.set(host, { requestId, memberId, sessionToken, promise: pending });
+  const clear = () => {
+    if (pendingProfileRefreshes.get(host)?.requestId === requestId)
+      pendingProfileRefreshes.delete(host);
+  };
+  void pending.then(clear, clear);
+  return pending;
+}
+
+async function refreshAccessibleTab(host: SettingsHost, opts?: TabRefreshOptions) {
+  const app = host as unknown as SettingsAppHost;
+  if (isProfileBlocked(host)) {
+    if (host.tab !== "profile") {
+      host.tab = "profile";
+      host.landedWithoutATab = false;
+      syncUrlWithTab(host, "profile", true);
+    }
+    host.requestUpdate?.();
+    return;
+  }
   // Navigation should reuse the session's dashboard read where the page has its own Refresh button.
   const needsPapers = needsLabPapers(host.tab);
   const loadAdminBotOnce = () =>
@@ -758,6 +824,8 @@ function applyTabSelection(
   next: Tab,
   options: { refreshPolicy: "always" | "connected"; syncUrl?: boolean },
 ) {
+  const profileRedirect = isProfileBlocked(host) && next !== "profile";
+  if (profileRedirect) next = "profile";
   const prev = host.tab;
   host.tab = next;
   // Whatever brought us here -- a click, Back, a deep link -- the tab on screen is now a choice,
@@ -790,8 +858,8 @@ function applyTabSelection(
     void refreshActiveTab(host);
   }
 
-  if (options.syncUrl) {
-    syncUrlWithTab(host, next, false);
+  if (options.syncUrl || profileRedirect) {
+    syncUrlWithTab(host, next, profileRedirect);
   }
 }
 

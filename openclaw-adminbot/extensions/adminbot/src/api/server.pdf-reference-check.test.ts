@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ReferenceCheckError, type ReferenceProgress } from "../connectors/reference-check.js";
 import { GptZeroScanError } from "../connectors/reference-scan.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const token = "synthetic-service-token";
@@ -76,11 +77,13 @@ async function setup(databasePath?: string, gptEnabled = true) {
 function session(app: Awaited<ReturnType<typeof setup>>["app"], admin = true) {
   const memberId = admin ? "upload-admin" : "upload-member";
   const sessionToken = `${memberId}-session`;
-  app.service.upsertLabMember({
-    id: memberId,
-    name: "Synthetic User",
-    privilege_level: admin ? "admin" : "member",
-  });
+  app.service.upsertLabMember(
+    withCompleteProfile({
+      id: memberId,
+      name: "Synthetic User",
+      privilege_level: admin ? "admin" : "member",
+    }),
+  );
   app.store.saveSession({
     member_id: memberId,
     token_hash: createHash("sha256").update(sessionToken).digest("hex"),

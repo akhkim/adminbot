@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
+import { COMPLETE_PROFILE } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -87,10 +88,19 @@ function mockFor(baseUrl: string): ReturnType<typeof createAdminBotMockService> 
   return entry.mock;
 }
 
-function seedMember(baseUrl: string, id: string, body: Record<string, unknown>): void {
+function seedMember(
+  baseUrl: string,
+  id: string,
+  body: Record<string, unknown>,
+  complete = true,
+): void {
   const result = mockFor(baseUrl).service.upsertLabMember({
     // Seeded onto the nudge list unless the case says otherwise: the list is opt-in, and a fixture
     // that is not on it can never be mailed. See adminBotReceivesNudges.
+    ...(complete ? COMPLETE_PROFILE : {}),
+    privilege_level: "external_collaborator",
+    email: undefined,
+    calendar_email: complete ? String(body.email ?? `${id}@example.com`) : undefined,
     receives_nudges: true,
     ...(body as AdminBotLabMemberInput),
     id,
@@ -1190,7 +1200,7 @@ describe("AdminBot mock service", () => {
     // Unplaced (no location anywhere), so a summary that ever put unplaced names back in would
     // leak "Zedunia" specifically, and the check below would catch it even though Zed never
     // appears in a `places` entry at all.
-    await seedMember(baseUrl, "zed", { name: "Zedunia", privilege_level: "member" });
+    await seedMember(baseUrl, "zed", { name: "Zedunia", privilege_level: "member" }, false);
     await approveClaim(baseUrl, "ada", "ada@example.com");
     const memberToken = await loginToken(baseUrl, "ada@example.com");
 
@@ -1710,7 +1720,7 @@ describe("AdminBot service-principal privilege scoping", () => {
 
   it("reports members with incomplete mandatory profile fields to any caller", async () => {
     const { baseUrl } = await startService();
-    seedMember(baseUrl, "blank", { name: "Blank" });
+    seedMember(baseUrl, "blank", { name: "Blank" }, false);
     const res = await fetch(`${baseUrl}/members/mandatory-fields-incomplete`, {
       headers: serviceHeaders(),
     });
@@ -1723,7 +1733,7 @@ describe("AdminBot service-principal privilege scoping", () => {
   it("lets the service principal (unlike /nudges/send) run the daily mandatory-fields reminder, since it takes no caller-supplied content", async () => {
     const executor = { execute: async () => ({ handled: true }) };
     const { baseUrl } = await startService({ executor });
-    seedMember(baseUrl, "blank", { name: "Blank", slack_user_id: "U1" });
+    seedMember(baseUrl, "blank", { name: "Blank", slack_user_id: "U1" }, false);
     const res = await fetch(`${baseUrl}/members/mandatory-fields-reminder/run`, {
       method: "POST",
       headers: serviceHeaders(),

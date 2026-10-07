@@ -2,6 +2,7 @@
 // through the approval gate with the clicking admin as approver.
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { AdminBotService } from "../kernel/service.js";
 import { onboardNewMember } from "./server.member-onboarding.js";
 import {
@@ -161,11 +162,13 @@ describe("addMemberSheetRow", () => {
 
   it("refuses somebody already on the roster", async () => {
     const { service, executed } = harness();
-    const created = service.upsertLabMember({
-      id: "ada-l",
-      name: "Ada L.",
-      email: "ada@cs.toronto.edu",
-    } as never);
+    const created = service.upsertLabMember(
+      withCompleteProfile({
+        id: "ada-l",
+        name: "Ada L.",
+        email: "ada@cs.toronto.edu",
+      } as never),
+    );
     expect(created.ok).toBe(true);
 
     const result = await addRow(service, source(), ADA);

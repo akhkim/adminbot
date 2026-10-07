@@ -279,6 +279,8 @@ export type AppViewState = {
   lastErrorCode: string | null;
   chatError: string | null;
   eventLog: EventLogEntry[];
+  eventLogBuffer: EventLogEntry[];
+  chatHasAutoScrolled: boolean;
   assistantName: string;
   assistantAvatar: string | null;
   assistantAvatarSource?: string | null;

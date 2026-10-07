@@ -18,6 +18,25 @@ Use this shape when the same agent should actively read permitted conversations
 or forms and suggest useful work, but every sensitive action must become a
 specific approval item before anything mutates outside OpenClaw.
 
+## Required profile before using AdminBot
+
+Only accounts with the `member` privilege level must fill every member-answerable required profile
+field before using other AdminBot features. Admins, external collaborators (all subgroups), and trial
+accounts are exempt. Members are directed to My Profile, with the other sidebar tabs disabled and
+an explanation above the form. Sign-out remains available. Saving the last missing answer unlocks the tabs without
+signing in again. While the profile loads, the requested page is preserved and interaction waits;
+a failed load offers retry. Only confirmed incomplete profiles are redirected. Direct links and
+browser history cannot open another tab while blocked.
+The service rechecks the stored profile on member API requests, so clearing a required answer
+locks access again. Profile reads, self-edits, and the Drive-access check used by the form remain
+available.
+
+This uses the same completeness rules as profile reminders: an explicit ARR qualification answer
+is required, review capacity is required only for qualified reviewers (zero is valid), and marking
+an application response link unavailable satisfies that question. Optional profile fields and
+Time Availability timeline entries do not block access. Service-token jobs and public,
+unauthenticated pages retain their existing access rules.
+
 ## Before you begin
 
 You need a local AdminBot service listening on loopback, for example
