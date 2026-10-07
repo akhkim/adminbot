@@ -41,7 +41,6 @@ import type {
 } from "../contracts/badges.js";
 import type { AdminBotConferenceTripRecord } from "../contracts/conference-trips.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
-import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewResolution,
@@ -80,7 +79,6 @@ import type { ReferenceScan } from "../contracts/reference-scans.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import {
   AdminBotService,
-  type AdminBotActionExecutor,
   type AdminBotLabMemberSummary,
   type AdminBotListPage,
   type AdminBotMeetingArtifactRecord,
@@ -153,16 +151,13 @@ const PAPER_SEARCH = `(
     WHERE instr(adminbot_lower(author.value), ?) > 0)
 )`;
 
-export type AdminBotSqliteServiceOptions = {
+export type AdminBotSqliteServiceOptions = AdminBotServiceOptions & {
   databasePath: string;
-  auditRetentionDays?: number;
-  executor?: AdminBotActionExecutor;
-  driveProbe?: AdminBotDriveProbe;
 };
 
 export function createAdminBotSqliteService(options: AdminBotSqliteServiceOptions) {
   const store = new AdminBotSqliteStore(options.databasePath);
-  const service = new AdminBotService(store, serviceOptions(options));
+  const service = new AdminBotService(store, sqliteServiceOptions(options));
   return {
     service,
     store,
@@ -170,13 +165,16 @@ export function createAdminBotSqliteService(options: AdminBotSqliteServiceOption
   };
 }
 
-function serviceOptions(options: AdminBotSqliteServiceOptions): AdminBotServiceOptions {
+/**
+ * The caller's options whole, plus env-sourced paperflow settings. An allowlist here once dropped
+ * the deadline dataset, arXiv/OpenReview probes and Slack photo reviewers in production only.
+ */
+export function sqliteServiceOptions(
+  options: AdminBotSqliteServiceOptions,
+): AdminBotServiceOptions {
+  const { databasePath: _databasePath, ...wired } = options;
   return {
-    ...(typeof options.auditRetentionDays === "number"
-      ? { auditRetentionDays: options.auditRetentionDays }
-      : {}),
-    ...(options.executor ? { executor: options.executor } : {}),
-    ...(options.driveProbe ? { driveProbe: options.driveProbe } : {}),
+    ...wired,
     // Read here rather than in the kernel so the service stays free of process globals: both
     // callers (the API server and the hourly email script) build the service through this factory
     // and both already load ~/.openclaw/.env before they do.

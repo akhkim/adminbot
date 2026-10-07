@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../contracts/actions.js";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
-import { createAdminBotSqliteService } from "./sqlite.js";
+import { createAdminBotSqliteService, sqliteServiceOptions } from "./sqlite.js";
 
 const tempDirs: string[] = [];
 
@@ -830,5 +830,32 @@ describe("AdminBotSqliteStore", () => {
       scope: "paper records",
     });
     second.close();
+  });
+});
+
+describe("sqliteServiceOptions", () => {
+  // An allowlist here once dropped these, so they worked against the memory store in tests and
+  // silently did nothing in production.
+  it("forwards every wired service option, not just an allowlist", () => {
+    const deadlineDataset = () => [];
+    const arxivProbe = { probe: async () => ({ ok: true }) } as never;
+    const openReviewProbe = { probe: async () => ({ ok: true }) } as never;
+    const reviewSlackProfilePhoto = (async () => ({})) as never;
+    const options = sqliteServiceOptions({
+      databasePath: "/unused.sqlite",
+      auditRetentionDays: 30,
+      deadlineDataset,
+      arxivProbe,
+      openReviewProbe,
+      reviewSlackProfilePhoto,
+    });
+    expect(options).toMatchObject({
+      auditRetentionDays: 30,
+      deadlineDataset,
+      arxivProbe,
+      openReviewProbe,
+      reviewSlackProfilePhoto,
+    });
+    expect(options).not.toHaveProperty("databasePath");
   });
 });
