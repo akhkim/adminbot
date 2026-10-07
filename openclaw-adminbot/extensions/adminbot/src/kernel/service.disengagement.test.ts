@@ -5,7 +5,7 @@
 // the audit trail, the ledger advancing the sequence, the two rules not both firing on the same
 // person, and the escalation arriving on the queue the professor's page already reads.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { adminBotOnboardingFollowUpPlan } from "../contracts/actions.js";
 import { AdminBotMemoryStore, AdminBotService } from "./service.js";
 
@@ -43,16 +43,18 @@ function lab(options: { memberType?: string | null; slack?: boolean } = {}) {
 
 /** The manual onboarding email, as the sender records it. */
 function welcome(service: AdminBotService, at = WELCOME_AT) {
-  service.recordOnboardingGuideSent({
-    actor: "andrew-kim",
-    template_id: "full_member",
-    email: "ada@lab.test",
-    sent: true,
-  });
-  // recordAudit stamps "now", so the row is re-dated to the welcome the test means.
-  const events = service.listAuditEvents();
-  const row = events.find((event) => event.type === "onboarding.guide_sent");
-  Object.assign(row as { timestamp: string }, { timestamp: at });
+  // recordAudit stamps "now", so the clock is set to the welcome the test means.
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date(at) });
+  try {
+    service.recordOnboardingGuideSent({
+      actor: "andrew-kim",
+      template_id: "full_member",
+      email: "ada@lab.test",
+      sent: true,
+    });
+  } finally {
+    vi.useRealTimers();
+  }
 }
 
 /**
