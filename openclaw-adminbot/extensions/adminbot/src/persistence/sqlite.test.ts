@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../contracts/actions.js";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
-import { createAdminBotSqliteService } from "./sqlite.js";
+import { createAdminBotSqliteService, sqliteServiceOptions } from "./sqlite.js";
 
 const tempDirs: string[] = [];
 
@@ -31,6 +31,55 @@ function unwrap<T>(
 }
 
 describe("AdminBotSqliteStore", () => {
+  it("preserves the injected Drive checker in the durable service", async () => {
+    const seen: string[] = [];
+    const durable = createAdminBotSqliteService({
+      databasePath: tempDbPath(),
+      driveProbe: async (id) => {
+        seen.push(id);
+        return { status: "found", canEdit: true };
+      },
+    });
+    try {
+      expect(
+        await durable.service.checkDriveAccess(
+          "https://drive.google.com/drive/folders/1SyntheticEditableFolder",
+        ),
+      ).toMatchObject({
+        ok: true,
+        payload: { status: "accessible" },
+      });
+      expect(seen).toEqual(["1SyntheticEditableFolder"]);
+    } finally {
+      durable.close();
+    }
+  });
+
+  it("retains a self-edited ACL Anthology link after reopening SQLite", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(first.service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+    const url = "https://aclanthology.org/people/pat-doe/";
+    unwrap(first.service.updateOwnProfile("pat", { acl_anthology_url: url }));
+    first.store.close();
+    const reopened = createAdminBotSqliteService({ databasePath });
+    expect(unwrap(reopened.service.listLabMembers()).members[0].acl_anthology_url).toBe(url);
+    reopened.store.close();
+  });
+
+  it("retains explicit badge counts after reopening SQLite", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(first.service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+    unwrap(
+      first.service.assignBadge("pat", "community_building__referral_bonus", "admin", undefined, 4),
+    );
+    first.store.close();
+    const reopened = createAdminBotSqliteService({ databasePath });
+    expect(unwrap(reopened.service.listLabMembers()).members[0].assigned_badges?.[0].count).toBe(4);
+    reopened.store.close();
+  });
+
   it("searches only eligible roster names before applying the public result cap", () => {
     const instance = createAdminBotSqliteService({ databasePath: tempDbPath() });
     for (let index = 0; index < 26; index += 1) {
@@ -781,5 +830,32 @@ describe("AdminBotSqliteStore", () => {
       scope: "paper records",
     });
     second.close();
+  });
+});
+
+describe("sqliteServiceOptions", () => {
+  // An allowlist here once dropped these, so they worked against the memory store in tests and
+  // silently did nothing in production.
+  it("forwards every wired service option, not just an allowlist", () => {
+    const deadlineDataset = () => [];
+    const arxivProbe = { probe: async () => ({ ok: true }) } as never;
+    const openReviewProbe = { probe: async () => ({ ok: true }) } as never;
+    const reviewSlackProfilePhoto = (async () => ({})) as never;
+    const options = sqliteServiceOptions({
+      databasePath: "/unused.sqlite",
+      auditRetentionDays: 30,
+      deadlineDataset,
+      arxivProbe,
+      openReviewProbe,
+      reviewSlackProfilePhoto,
+    });
+    expect(options).toMatchObject({
+      auditRetentionDays: 30,
+      deadlineDataset,
+      arxivProbe,
+      openReviewProbe,
+      reviewSlackProfilePhoto,
+    });
+    expect(options).not.toHaveProperty("databasePath");
   });
 });

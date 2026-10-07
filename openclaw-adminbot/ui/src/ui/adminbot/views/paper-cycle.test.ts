@@ -1,12 +1,12 @@
 // The lists that hang off a paper card: drafts and their sign-offs, who is going, who is square.
 import { render } from "lit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   PaperAttendee,
   PaperReimbursement,
   PaperSocialConsent,
   PaperSocialDraft,
-} from "../auth/session.ts";
+} from "../api/papers.ts";
 import { renderPaperCycle, type PaperCycleProps } from "./paper-cycle.ts";
 
 type Calls = {
@@ -189,6 +189,43 @@ describe("the linkedin panel's absorbed generator", () => {
     expect(calls.generated).toEqual([
       ["ICML 2026, poster Wed Jul 8 Hall A #3015", "Best paper award"],
     ]);
+  });
+
+  it("sends a chosen PDF with the generate request, in place of the Drive copy", async () => {
+    const pdfs: Array<string | undefined> = [];
+    const { container } = draw({
+      onGenerateLinkedInDraft: (_venue, _note, pdfBase64) => pdfs.push(pdfBase64),
+    });
+    const zone = container.querySelector<HTMLElement>('[data-testid="paper-draft-pdf-p1"]');
+    const input = zone?.querySelector<HTMLInputElement>('[data-el="pdf"]');
+    if (!zone || !input) throw new Error("no pdf drop zone");
+    // jsdom cannot build a FileList, so the picked file is pinned onto the input directly.
+    const file = new File(["%PDF-1.7 fake"], "paper.pdf", { type: "application/pdf" });
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    input.dispatchEvent(new Event("change"));
+    expect(zone.querySelector('[data-el="pdf-name"]')?.textContent).toBe("paper.pdf");
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="paper-draft-generate-p1-linkedin"]')
+      ?.click();
+    await vi.waitFor(() => expect(pdfs).toHaveLength(1));
+    expect(pdfs[0]).toBe(btoa("%PDF-1.7 fake"));
+  });
+
+  it("refuses a file that is not a PDF and sends nothing extra", () => {
+    const alerts: string[] = [];
+    vi.stubGlobal("alert", (message: string) => alerts.push(message));
+    const pdfs: Array<string | undefined> = [];
+    const { container } = draw({
+      onGenerateLinkedInDraft: (_venue, _note, pdfBase64) => pdfs.push(pdfBase64),
+    });
+    const input = container.querySelector<HTMLInputElement>('[data-el="pdf"]');
+    if (!input) throw new Error("no pdf input");
+    const file = new File(["hello"], "notes.docx", { type: "application/msword" });
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    input.dispatchEvent(new Event("change"));
+    expect(alerts).toEqual(["notes.docx is not a PDF."]);
+    vi.unstubAllGlobals();
   });
 
   it("keeps circulation beside generation once a linkedin draft exists", () => {

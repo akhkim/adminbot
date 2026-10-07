@@ -474,6 +474,31 @@ export class AdminbotFeedbackWidget extends LitElement {
       color: var(--muted);
       font-size: var(--control-ui-text-xs);
     }
+    @media (max-width: 600px),
+      (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
+      :host {
+        bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      }
+
+      .fb {
+        max-height: calc(100dvh - 32px - env(safe-area-inset-bottom, 0px));
+        overflow-y: auto;
+      }
+
+      .fb button,
+      .fb a {
+        min-width: 44px;
+        min-height: 44px;
+      }
+
+      .fb__row {
+        flex-wrap: wrap;
+      }
+
+      .fb__input {
+        font-size: 16px;
+      }
+    }
   `;
 
   override render() {

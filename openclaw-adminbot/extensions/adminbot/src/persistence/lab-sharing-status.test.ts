@@ -34,6 +34,7 @@ it("preserves existing data and keeps every broadcast across restarts", () => {
       ...row,
       id: "bcast_two",
       message: "Second broadcast",
+      timezone: "America/Toronto",
       updated_at: "2026-09-08T00:00:00Z",
     });
     db.close();
@@ -42,6 +43,8 @@ it("preserves existing data and keeps every broadcast across restarts", () => {
     // The newest is current; the first is still on the record. This is what the single-row table
     // could not do -- publishing the second one used to erase the first.
     expect(readDirectorStatus(db)?.message).toBe("Second broadcast");
+    expect(readDirectorStatus(db)?.timezone).toBe("America/Toronto");
+    expect(listDirectorStatusHistory(db)[1]).not.toHaveProperty("timezone");
     expect(listDirectorStatusHistory(db).map((entry) => entry.message)).toEqual([
       "Second broadcast",
       "Synthetic review",
@@ -107,7 +110,9 @@ it("drops an unreadable pre-history row rather than failing every open", () => {
     db.exec(`CREATE TABLE IF NOT EXISTS adminbot_director_status (
       id INTEGER PRIMARY KEY CHECK (id = 1), payload_json TEXT NOT NULL
     )`);
-    db.prepare("INSERT INTO adminbot_director_status (id, payload_json) VALUES (1, ?)").run("{not json");
+    db.prepare("INSERT INTO adminbot_director_status (id, payload_json) VALUES (1, ?)").run(
+      "{not json",
+    );
     expect(() => ensureDirectorStatusSchema(db)).not.toThrow();
     expect(listDirectorStatusHistory(db)).toHaveLength(0);
   } finally {

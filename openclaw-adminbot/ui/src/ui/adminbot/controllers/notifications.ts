@@ -11,15 +11,13 @@ import { showToast } from "../../toast.ts";
 // alone would re-pop everything on the next poll and every reload, which turns a reminder into
 // something the member learns to close without reading; firing once and leaving the dashboard card
 // behind is the version that still says the thing tomorrow without saying it every minute.
+import { fetchLabBroadcasts, publishLabBroadcast } from "../api/lab-sharing.ts";
 import {
-  fetchLabBroadcasts,
-  publishLabBroadcast,
   fetchNotifications,
-  loadStoredMemberSession,
   markNotificationsRead,
-  resolveAdminBotBaseUrl,
   type MemberNotification,
-} from "../auth/session.ts";
+} from "../api/workspace.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { AdminBotHost } from "./admin.ts";
 
 /** Notification ids already popped in this session. Cleared on sign-out via `resetNotificationPopups`. */
@@ -178,7 +176,7 @@ export function defaultBroadcastExpiry(now = new Date()): string {
  */
 export async function publishAdminBotBroadcast(
   host: AdminBotHost,
-  draft: { message: string; availability: string; expiresOn: string } | null,
+  draft: { message: string; availability: string; expiresOn: string; timezone?: string } | null,
 ): Promise<void> {
   const stored = loadStoredMemberSession();
   if (!stored || host.adminBotBroadcastBusy) {
@@ -199,6 +197,7 @@ export async function publishAdminBotBroadcast(
     body = {
       availability: (draft.availability || "unknown") as "available" | "busy" | "away" | "unknown",
       message,
+      ...(draft.timezone?.trim() ? { timezone: draft.timezone.trim() } : {}),
       expires_at: endOfDay.toISOString(),
     };
   }
@@ -226,10 +225,11 @@ export async function publishAdminBotBroadcast(
     // The box follows what is live, so a post leaves it showing what was posted rather than a
     // stale draft, and a clear empties it.
     host.adminBotBroadcastDraft = result.value.status?.message ?? "";
-    host.adminBotBroadcastNotice = {
-      kind: "success",
-      text: body ? "Posted to the lab." : "Broadcast taken down.",
-    };
+    host.adminBotBroadcastTimezone = result.value.status?.timezone ?? "";
+    host.adminBotBroadcastNotice =
+      body?.timezone && !result.value.status?.timezone
+        ? { kind: "error", text: "The message was posted, but its time zone was not saved." }
+        : { kind: "success", text: body ? "Posted to the lab." : "Broadcast taken down." };
   } finally {
     if (loadStoredMemberSession()?.sessionToken === stored.sessionToken) {
       host.adminBotBroadcastBusy = false;

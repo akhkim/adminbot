@@ -11,6 +11,8 @@
 // **in the calendar's own zone**, via Intl, never by slicing an ISO string or reading local getters.
 // A 9pm Toronto event is on that Toronto day even when the viewer's browser is in Zurich.
 
+import { dateTimeFormat } from "./data/date-format.ts";
+
 /** A day cell in the grid. */
 export type CalendarDay = {
   /** `YYYY-MM-DD` in the calendar's zone — the key events are bucketed under. */
@@ -27,7 +29,7 @@ const MS_PER_DAY = 86_400_000;
 export function dayKeyInZone(value: Date | number, timezone: string): string {
   try {
     // en-CA formats as YYYY-MM-DD, which is the key format, so no reassembly is needed.
-    return new Intl.DateTimeFormat("en-CA", {
+    return dateTimeFormat("en-CA", {
       timeZone: timezone,
       year: "numeric",
       month: "2-digit",
@@ -71,7 +73,7 @@ export function shiftMonth(monthKey: string, months: number): string {
 
 export function monthLabel(monthKey: string, locale?: string): string {
   const [year, month] = [Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7))];
-  return new Intl.DateTimeFormat(locale, {
+  return dateTimeFormat(locale, {
     month: "long",
     year: "numeric",
     timeZone: "UTC",
@@ -147,7 +149,7 @@ export function eventTimeLabel(
     return "";
   }
   try {
-    return new Intl.DateTimeFormat(locale, {
+    return dateTimeFormat(locale, {
       timeZone: timezone,
       hour: "numeric",
       minute: "2-digit",

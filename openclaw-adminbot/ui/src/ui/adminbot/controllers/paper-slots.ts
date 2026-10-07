@@ -12,14 +12,16 @@ import { adminBotIsAlumniMember } from "../../../../../extensions/adminbot/src/c
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
-  circulatePaperSocialDraft,
   fetchPaperNudgeBatches,
   fetchPaperSlotOverview,
-  fetchPaperSlots,
-  loadStoredMemberSession,
-  recordPaperSocialConsent,
-  resolveAdminBotBaseUrl,
   runPaperSlotReminder,
+  type PaperNudgeBatch,
+  type PaperSlotOverviewRow,
+} from "../api/paper-admin.ts";
+import {
+  circulatePaperSocialDraft,
+  fetchPaperSlots,
+  recordPaperSocialConsent,
   deleteConferenceTrip,
   saveConferenceTrip,
   savePaperAttendee,
@@ -28,9 +30,8 @@ import {
   savePaperWeeklyUpdate,
   savePaperSocialDraft,
   type PaperCycle,
-  type PaperNudgeBatch,
-  type PaperSlotOverviewRow,
-} from "../auth/session.ts";
+} from "../api/papers.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { PaperTripDraft } from "../views/paper-cycle.ts";
 
 export type AdminBotPaperSlotsHost = {
@@ -292,28 +293,41 @@ export async function saveAdminBotPaperSlot(
     host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
     return;
   }
-  host.adminBotPaperSlotsError = null;
-  const result = await savePaperSlot(paperId, slot, input, wire.token, wire.baseUrl);
-  if (!sameSession(wire.token)) {
+  const feedbackRequest = slot.startsWith("feedback_");
+  if (feedbackRequest && host.adminBotPaperSlotsBusyId) {
     return;
   }
-  if (!result.ok) {
-    host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
-    return;
+  if (feedbackRequest) {
+    host.adminBotPaperSlotsBusyId = paperId;
   }
-  const cycle = host.adminBotPaperSlots[paperId];
-  if (cycle) {
-    host.adminBotPaperSlots = {
-      ...host.adminBotPaperSlots,
-      [paperId]: {
-        ...cycle,
-        slots: cycle.slots.map((row) => (row.slot === slot ? result.value : row)),
-      },
-    };
+  try {
+    host.adminBotPaperSlotsError = null;
+    const result = await savePaperSlot(paperId, slot, input, wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
+    if (!result.ok) {
+      host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
+      return;
+    }
+    const cycle = host.adminBotPaperSlots[paperId];
+    if (cycle) {
+      host.adminBotPaperSlots = {
+        ...host.adminBotPaperSlots,
+        [paperId]: {
+          ...cycle,
+          slots: cycle.slots.map((row) => (row.slot === slot ? result.value : row)),
+        },
+      };
+    }
+    // The header counts and the outstanding list are computed by the service, so a write only
+    // reaches them through a re-read.
+    host.adminBotPaperSlotsLoadedAt = null;
+  } finally {
+    if (feedbackRequest) {
+      host.adminBotPaperSlotsBusyId = null;
+    }
   }
-  // The header counts and the outstanding list are computed by the service, so a write only
-  // reaches them through a re-read.
-  host.adminBotPaperSlotsLoadedAt = null;
 }
 
 /**

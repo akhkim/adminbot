@@ -2,6 +2,30 @@ import { LitElement } from "lit";
 import { state } from "lit/decorators.js";
 import { i18n, I18nController, isSupportedLocale, t } from "../i18n/index.ts";
 import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
+import type { CalendarEvent, CalendarEventDraft, LabCalendar } from "./adminbot/api/calendar.ts";
+import type { LabBroadcast } from "./adminbot/api/lab-sharing.ts";
+import type {
+  MeetingAttendanceNudgePreview,
+  MeetingAttendanceNudgeResult,
+  MeetingRecord,
+  MeetingCursor,
+} from "./adminbot/api/meetings.ts";
+import type { MemberAdoptionSummary } from "./adminbot/api/members.ts";
+import type { MemberProfileOverviewRow } from "./adminbot/api/members.ts";
+import type { EscalatedNudgeRow } from "./adminbot/api/nudges.ts";
+import type {
+  PublicationDigestPreview,
+  PublicationDigestVenue,
+} from "./adminbot/api/paper-admin.ts";
+import type {
+  PiReviewRow,
+  PaperNudgeBatch,
+  PaperSlotOverviewRow,
+} from "./adminbot/api/paper-admin.ts";
+import type { PaperCycle } from "./adminbot/api/papers.ts";
+import type { LocationDrift } from "./adminbot/api/profile.ts";
+import type { MemberNotification } from "./adminbot/api/workspace.ts";
+import type { TabVisitReport } from "./adminbot/api/workspace.ts";
 import {
   type LoginMode,
   type MemberAuthFailure,
@@ -16,39 +40,17 @@ import {
   submitMemberAuth as submitMemberAuthInternal,
 } from "./adminbot/auth/flow.ts";
 import type {
-  MemberAdoptionSummary,
   MemberImpersonator,
-  PublicationDigestPreview,
-  PublicationDigestVenue,
   MemberOnboarding,
   MemberRegistration,
   RosterMember,
-  CalendarEvent,
-  LocationDrift,
-  MeetingAttendanceNudgePreview,
-  MeetingAttendanceNudgeResult,
-  MeetingRecord,
-  MeetingCursor,
-  MemberNotification,
-  CalendarEventDraft,
-  LabBroadcast,
-  LabCalendar,
 } from "./adminbot/auth/session.ts";
-import type {
-  EscalatedNudgeRow,
-  PiReviewRow,
-  MemberProfileOverviewRow,
-  PaperCycle,
-  PaperNudgeBatch,
-  PaperSlotOverviewRow,
-  TabVisitReport,
-} from "./adminbot/auth/session.ts";
-import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
+import type { AudienceFilter, InviteMode } from "./adminbot/calendar-audience.ts";
+import type { AdminBotLabMember } from "./adminbot/controllers/admin.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
   createEmptyAdminBotStandingMeetings,
-  createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   createEmptyLabPapersState,
   createEmptyVenuePapersState,
@@ -104,6 +106,7 @@ import {
   markAdminBotNotificationsRead,
   resetNotificationPopups,
 } from "./adminbot/controllers/notifications.ts";
+import { createEmptyAdminBotMemberNudgeState } from "./adminbot/controllers/nudges.ts";
 import type { RecentEditsState } from "./adminbot/controllers/recent-edits.ts";
 import {
   recordAdminBotTabVisit,
@@ -356,7 +359,7 @@ export class OpenClawApp extends LitElement {
   @state() loginPendingNotice = false;
   @state() guestReimbursements = false;
   @state() authGateVisible = false;
-  @state() memberSheet: import("./adminbot/auth/session.ts").MemberSheetView | null = null;
+  @state() memberSheet: import("./adminbot/api/onboarding.ts").MemberSheetView | null = null;
   @state() memberSheetLoadedAt: number | null = null;
   @state() memberSheetBusy = false;
   @state() memberSheetError: string | null = null;
@@ -364,13 +367,13 @@ export class OpenClawApp extends LitElement {
   @state() memberSheetBaseline: Record<string, string> = {};
   @state() memberSheetSelection: number[] = [];
   @state() memberSheetSaveResult:
-    | import("./adminbot/auth/session.ts").MemberSheetEditResult
+    | import("./adminbot/api/onboarding.ts").MemberSheetEditResult
     | null = null;
   @state() memberSheetOnboardResult:
-    | import("./adminbot/auth/session.ts").MemberSheetOnboardResult
+    | import("./adminbot/api/onboarding.ts").MemberSheetOnboardResult
     | null = null;
   @state() memberSheetAddRowResult:
-    | import("./adminbot/auth/session.ts").MemberSheetAddRowResult
+    | import("./adminbot/api/onboarding.ts").MemberSheetAddRowResult
     | null = null;
   // Calendar tab. Declared here, not merely typed on AppViewState: an undeclared field is not a
   // reactive property, so writing one from a controller changes nothing on screen. That is what
@@ -397,6 +400,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotBroadcastDraft?: string;
   @state() adminBotBroadcastExpiry?: string;
   @state() adminBotBroadcastAvailability?: string;
+  @state() adminBotBroadcastTimezone?: string;
   @state() adminBotBroadcastBusy = false;
   @state() adminBotBroadcastNotice: { kind: "success" | "error"; text: string } | null = null;
   // Which My Desk lists she has opened. Not persisted: it is where she is on the page, not a
@@ -426,6 +430,7 @@ export class OpenClawApp extends LitElement {
   @state() calendarEditingEventId: string | null = null;
   @state() calendarAudience: AudienceFilter = {};
   @state() calendarExcludedMemberIds: string[] = [];
+  @state() calendarInviteMode: InviteMode = "add";
   @state() calendarBusy = false;
   @state() calendarConfirming: "save" | "invite" | null = null;
   @state() rosterMembers: RosterMember[] = [];
@@ -684,6 +689,8 @@ export class OpenClawApp extends LitElement {
   @state() agentsSelectedId: string | null = null;
   @state() adminBotLoading = false;
   @state() adminBotError: string | null = null;
+  @state() adminBotUsingCachedReads = false;
+  @state() adminBotOfflinePendingWrites = 0;
   @state() adminBotData: AdminBotDashboardData = createEmptyAdminBotDashboardData();
   @state() adminBotRosterLoadedAt: number | null = null;
   @state() adminBotRosterLoading = false;
@@ -699,6 +706,10 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMemberMap: MemberMap | null | undefined = undefined;
   @state() adminBotMemberMapLoading = false;
   adminBotMemberMapRequestId = 0;
+  @state() adminBotCollaboratorSchedules: AdminBotLabMember[] = [];
+  @state() adminBotCollaboratorSchedulesLoading = false;
+  @state() adminBotCollaboratorSchedulesError: string | null = null;
+  @state() adminBotCollaboratorSchedulesSession = "";
   @state() adminBotTimeAvailabilityMemberId = "";
   @state() adminBotLogisticsSignatureFiles: File[] = [];
   @state() adminBotLogisticsDescription = "";
@@ -744,6 +755,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotProfileOverview: MemberProfileOverviewRow[] = [];
   @state() adminBotEscalatedNudges: EscalatedNudgeRow[] = [];
   @state() adminBotPiReview: PiReviewRow[] = [];
+  @state() adminBotPiReviewError: string | null = null;
   @state() adminBotProfileOverviewFieldCount = 0;
   // The lab-wide adoption roll-up that heads the same page. Null until the first read answers, so
   // "not loaded" and "nothing adopted" are distinguishable.
@@ -870,7 +882,7 @@ export class OpenClawApp extends LitElement {
   @state() registrationsError: RegistrationsLoadError | null = null;
   @state() registrationsBusyId: string | null = null;
   @state() registrationsNotice: { kind: "success" | "error"; text: string } | null = null;
-  @state() adminBotBadgeDefinitions: import("./adminbot/auth/session.ts").BadgeDefinition[] = [];
+  @state() adminBotBadgeDefinitions: import("./adminbot/api/badges.ts").BadgeDefinition[] = [];
   @state() adminBotBadgeDefinitionsLoading = false;
   @state() adminBotBadgeDefinitionsLoadedAt: number | null = null;
   @state() adminBotBadgeDefinitionsError: BadgeLoadError | null = null;
@@ -1807,7 +1819,7 @@ export class OpenClawApp extends LitElement {
   }
 
   addMemberSheetRow(
-    input: import("./adminbot/auth/session.ts").MemberSheetAddRowInput,
+    input: import("./adminbot/api/onboarding.ts").MemberSheetAddRowInput,
   ): Promise<boolean> {
     return addMemberSheetRowController(
       this as unknown as Parameters<typeof addMemberSheetRowController>[0],
@@ -1874,7 +1886,7 @@ export class OpenClawApp extends LitElement {
   }
 
   publishBroadcast(
-    draft: { message: string; availability: string; expiresOn: string } | null,
+    draft: { message: string; availability: string; expiresOn: string; timezone?: string } | null,
   ): Promise<void> {
     return publishAdminBotBroadcast(
       this as unknown as Parameters<typeof publishAdminBotBroadcast>[0],

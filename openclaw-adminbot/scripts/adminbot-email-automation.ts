@@ -23,6 +23,7 @@ import { loadConfig } from "../src/config/config.js";
 import type { OpenClawConfig } from "../src/config/types/openclaw.js";
 import { resolveSecretInputString } from "../src/secrets/resolve-secret-input-string.js";
 import { downloadLinkedDriveFiles } from "./adminbot-drive-download.js";
+import { adminbotServiceDatabasePath } from "./adminbot-service-database.js";
 import {
   AdminBotEmailModel,
   GMAIL_SCAN_DEFAULT_LOOKBACK_MS,
@@ -744,7 +745,7 @@ export class StateStore {
   }
 }
 
-class GoogleClient {
+export class GoogleClient {
   private args(args: string[]): string[] {
     return [...args, "--account", botEmail(), "--json", "--no-input"];
   }
@@ -904,12 +905,20 @@ class GoogleClient {
       event.start,
       "--to",
       event.end,
-      "--start-timezone",
-      event.startTimeZone ?? DEFAULT_TIMEZONE,
-      "--end-timezone",
-      event.endTimeZone ?? event.startTimeZone ?? DEFAULT_TIMEZONE,
+      // Silent: AdminBot's calendar writes never email anyone (connectors/gog.ts).
+      "--send-updates",
+      "none",
     ];
-    if (event.allDay) args.push("--all-day");
+    if (event.allDay) {
+      args.push("--all-day");
+    } else {
+      args.push(
+        "--start-timezone",
+        event.startTimeZone ?? DEFAULT_TIMEZONE,
+        "--end-timezone",
+        event.endTimeZone ?? event.startTimeZone ?? DEFAULT_TIMEZONE,
+      );
+    }
     if (event.description) args.push("--description", event.description);
     if (event.location) args.push("--location", event.location);
     const result = await command(GOG, this.args(args));
@@ -1754,10 +1763,17 @@ async function fileRecordingNotice(
 export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   loadDotEnv(path.join(os.homedir(), ".openclaw", ".env"));
   process.env.GOG_ACCOUNT = botEmail();
-  const databasePath =
-    process.env.ADMINBOT_DB_PATH ??
+  // The message ledger stays where it has always been: moving it would make every message since
+  // the last time the two files agreed look unread, and re-run its replies and onboarding. What
+  // the pass files for the lab -- meetings, paper stages -- goes to the database the service
+  // reads, or nobody ever sees it.
+  // A blank value is unset, not "": SQLite opens "" as a private temporary database, which would
+  // forget every settled message at the end of the run and replay it on the next.
+  const ledgerPath =
+    process.env.ADMINBOT_DB_PATH?.trim() ||
     path.join(os.homedir(), ".openclaw", "state", "adminbot.sqlite");
-  const state = new StateStore(databasePath);
+  const databasePath = adminbotServiceDatabasePath();
+  const state = new StateStore(ledgerPath);
   const google = new GoogleClient();
   const model = new AdminBotEmailModel();
   const summary: EmailAutomationSummary = {

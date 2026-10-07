@@ -1712,8 +1712,10 @@ def write_outputs(items):
     slim = [{k: it.get(k, [] if k in {"schedule", "schedule_issues"} else "") for k in keys
              if (k not in (*TIME_FIELDS, *ABSTRACT_FIELDS, "deadline_observations") or k in it)
              and (not k.startswith(("schedule_", "notification_")) or k == "notification_aoe" or k in it)} for it in items]
-    ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
-    with open(ui_ds, "w") as f:
+    # The record types live in their own generated module so the dataset file holds only data;
+    # deadlines.ts re-exports them for existing importers.
+    ui_types = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadline-types.ts")
+    with open(ui_types, "w") as f:
         f.write("// Generated from extensions/adminbot/content/deadlines by\n"
                 "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
                 "export type DeadlineRevision = {\n"
@@ -1788,7 +1790,14 @@ def write_outputs(items):
                 "  deadline_source_kind?: string;\n  deadline_source_status?: string;\n"
                 "  deadline_source_precision?: string;\n"
                 "  deadline_official_url?: string;\n"
-                "  deadline_extended: boolean;\n  deadline_history_status?: string;\n};\n\n"
+                "  deadline_extended: boolean;\n  deadline_history_status?: string;\n};\n")
+    print(f"wrote {ui_types}")
+    ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
+    with open(ui_ds, "w") as f:
+        f.write("// Generated from extensions/adminbot/content/deadlines by\n"
+                "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
+                'import type { DeadlineVenue } from "./deadline-types.ts";\n\n'
+                'export type { DeadlineMilestone, DeadlineRevision, DeadlineVenue } from "./deadline-types.ts";\n\n'
                 "export const DEADLINE_VENUES: DeadlineVenue[] = "
                 + json.dumps(slim, ensure_ascii=False, indent=2) + ";\n")
     print(f"wrote {ui_ds}")

@@ -138,6 +138,7 @@ export type ConferenceAttendancePerson = {
   attendee_key: string;
   member_id?: string;
   name: string;
+  avatar_url?: string;
   attending: AdminBotAttendanceState;
   papers: ConferenceAttendancePaper[];
 };

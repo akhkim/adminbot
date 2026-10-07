@@ -29,13 +29,20 @@ function completeMember(
     receives_nudges: true,
     name: `Complete ${fields.id}`,
     slack_user_id: `U-${fields.id}`,
+    arr_reviewer_qualified: false,
     calendar_email: "complete@gmail.com",
     location: "Toronto",
     research_topics: ["nlp"],
     correspondence_email: "complete@cs.toronto.edu",
     whatsapp: "(+1) 555 0100",
     joined_month: "2026-03",
+    affiliation: "University of Toronto",
+    hours_per_week: 20,
+    graduated_month: "2027-06",
+    next_position: "Considering research positions",
     github_url: "https://github.com/complete",
+    twitter_url: "https://x.com/complete",
+    personal_website: "https://example.com/complete",
     linkedin_url: "https://www.linkedin.com/in/complete",
     linkedin_urn: "ACoAAB1234567",
     cv_url: "https://example.com/cv.pdf",
@@ -1027,7 +1034,7 @@ describe("AdminBotService member deletion", () => {
       service.upsertLabMember({
         id: "correspondence-only",
         name: "Correspondence Only",
-        correspondence_email: "corr@gmail.com",
+        correspondence_email: "corr@company.example",
       }),
     );
     unwrap(service.updateSettings({ head_professor_member_id: "zhijing-jin" }));
@@ -1647,7 +1654,7 @@ describe("AdminBotService", () => {
         receives_nudges: true,
         id: "vocab-role",
         name: "Vocab Role",
-        role: "PhD Student",
+        role: "Predoctoral gap-year researcher",
       }).ok,
     ).toBe(true);
     // Several roles at once: people here are routinely two things, and every part is checked
@@ -2214,6 +2221,7 @@ describe("AdminBotService", () => {
           kind: "recommendation_letters",
           member_id: "ada",
           member_name: "Ada Lovelace",
+          schools: [{ school: "Example", letter_deadline: request.updated_at.slice(0, 10) }],
           status: request.status,
           submitted_at: request.updated_at,
           updated_at: request.updated_at,
@@ -2222,7 +2230,7 @@ describe("AdminBotService", () => {
       return { service, store };
     }
 
-    it("puts anybody with an open letter request in the channel", () => {
+    it("adds applicants near their letter deadline", () => {
       const { service } = labWithLetters([{ status: "submitted", updated_at: iso(-1) }]);
       const roster = service.recLetterChannelRoster();
       expect(roster.add.map((row) => row.member_id)).toEqual(["ada"]);
@@ -2232,7 +2240,7 @@ describe("AdminBotService", () => {
     // The subtlety the window exists for. A season runs about two months across different school
     // deadlines, so one request closes while another is still open; reading the earliest settled
     // date would drop somebody in the middle of their own season.
-    it("keeps somebody whose season is still running, however old their first close", () => {
+    it("keeps applicants while any deadline window is active", () => {
       const { service } = labWithLetters([
         { status: "completed", updated_at: iso(-200) },
         { status: "submitted", updated_at: iso(-1) },
@@ -2242,19 +2250,89 @@ describe("AdminBotService", () => {
       expect(roster.remove).toEqual([]);
     });
 
-    it("measures the window from the most recently settled request", () => {
+    it("measures expiry from the latest deadline window", () => {
       const { service } = labWithLetters([
         { status: "completed", updated_at: iso(-200) },
         { status: "completed", updated_at: iso(-60) },
       ]);
-      // Sixty days on from the latest close: inside the ninety-day window, so nothing happens.
+      // The latest deadline remains inside its three-calendar-month window.
       expect(service.recLetterChannelRoster().remove).toEqual([]);
-      expect(service.recLetterChannelRoster().add).toEqual([]);
+      expect(service.recLetterChannelRoster().add.map((row) => row.member_id)).toEqual(["ada"]);
 
-      const later = new Date(Date.now() + 31 * DAY).toISOString();
+      const later = new Date(Date.now() + 40 * DAY).toISOString();
       expect(
         service.recLetterChannelRoster({ nowIso: later }).remove.map((row) => row.member_id),
       ).toEqual(["ada"]);
+    });
+
+    it("uses inclusive calendar-month boundaries and clamps month ends", () => {
+      const { service, store } = labWithLetters([
+        { status: "completed", updated_at: "2026-05-31T00:00:00Z" },
+      ]);
+      const request = store.listLogisticsRequests()[0]!;
+      store.saveLogisticsRequest({
+        ...request,
+        schools: [
+          {
+            school: "Example",
+            letter_deadline: "2026-05-31",
+            letter_deadline_time: "12:00",
+            deadline_timezone: "UTC",
+          },
+        ],
+      });
+      expect(service.recLetterChannelRoster({ nowIso: "2026-02-28T11:59:59Z" }).add).toEqual([]);
+      expect(service.recLetterChannelRoster({ nowIso: "2026-02-28T12:00:00Z" }).add).toHaveLength(
+        1,
+      );
+      expect(service.recLetterChannelRoster({ nowIso: "2026-08-31T12:00:00Z" }).add).toHaveLength(
+        1,
+      );
+      expect(
+        service.recLetterChannelRoster({ nowIso: "2026-08-31T12:00:01Z" }).remove[0]
+          ?.window_ends_at,
+      ).toBe("2026-08-31T12:00:00.000Z");
+    });
+
+    it("uses any school deadline and its timezone, without application-date fallback", () => {
+      const { service, store } = labWithLetters([
+        { status: "submitted", updated_at: "2026-01-01T00:00:00Z" },
+      ]);
+      const request = store.listLogisticsRequests()[0]!;
+      store.saveLogisticsRequest({
+        ...request,
+        schools: [
+          { school: "Old", letter_deadline: "2025-01-01" },
+          {
+            school: "Current",
+            letter_deadline: "2026-06-01",
+            letter_deadline_time: "09:00",
+            deadline_timezone: "America/New_York",
+          },
+        ],
+      });
+      expect(service.recLetterChannelRoster({ nowIso: "2026-03-01T13:59:59Z" }).add).toEqual([]);
+      expect(service.recLetterChannelRoster({ nowIso: "2026-03-01T14:00:00Z" }).add).toHaveLength(
+        1,
+      );
+      store.saveLogisticsRequest({
+        ...request,
+        schools: [{ school: "Legacy", application_deadline: "2026-06-01" }],
+      });
+      expect(service.recLetterChannelRoster({ nowIso: "2026-06-01T00:00:00Z" }).add).toEqual([]);
+      expect(service.recLetterChannelRoster({ nowIso: "2026-06-01T00:00:00Z" }).remove).toEqual([]);
+      store.saveLogisticsRequest({
+        ...request,
+        schools: [{ school: "Invalid", letter_deadline: "2026-02-30" }],
+      });
+      expect(service.recLetterChannelRoster({ nowIso: "2026-03-01T00:00:00Z" }).add).toEqual([]);
+    });
+
+    it("does not invite declined or withdrawn applicants", () => {
+      for (const status of ["declined", "withdrawn"]) {
+        const { service } = labWithLetters([{ status, updated_at: iso(-1) }]);
+        expect(service.recLetterChannelRoster().add).toEqual([]);
+      }
     });
 
     it("skips a member with no Slack account rather than proposing anything", () => {
@@ -2287,13 +2365,14 @@ describe("AdminBotService", () => {
         kind: "recommendation_letters",
         member_id: "mei",
         member_name: "Mei Chen",
+        schools: [{ school: "Example", letter_deadline: iso(-200).slice(0, 10) }],
         status: "completed",
         submitted_at: iso(-260),
         updated_at: iso(-200),
       } as never);
 
       const result = unwrap(await service.syncRecLetterChannel("cron"));
-      expect(result.channel).toBe("help-rec-letter-request");
+      expect(result.channel).toBe("help-rec-letters");
       expect(result.invited.map((row) => row.member_id)).toEqual(["ada"]);
       expect(result.removal_proposals.map((row) => row.member_id)).toEqual(["mei"]);
 
@@ -2323,6 +2402,7 @@ describe("AdminBotService", () => {
         kind: "recommendation_letters",
         member_id: "mei",
         member_name: "Mei Chen",
+        schools: [{ school: "Example", letter_deadline: iso(-200).slice(0, 10) }],
         status: "completed",
         submitted_at: iso(-260),
         updated_at: iso(-200),
@@ -2751,6 +2831,7 @@ describe("AdminBotService", () => {
         twitter_url: "https://x.com/octocat",
         linkedin_url: "https://www.linkedin.com/in/octocat",
         scholar_url: "https://scholar.google.com/citations?user=abc123",
+        acl_anthology_url: "https://aclanthology.org/people/jane-doe/",
         cv_url: "https://example.com/jane-doe-cv.pdf",
         intake_form_url: "https://docs.google.com/forms/d/e/1FAIpQLSc/viewform?edit2=2_ABaOnud",
       }),
@@ -2759,6 +2840,10 @@ describe("AdminBotService", () => {
     expect(saved.twitter_url).toBe("https://x.com/octocat");
     expect(saved.linkedin_url).toBe("https://www.linkedin.com/in/octocat");
     expect(saved.scholar_url).toBe("https://scholar.google.com/citations?user=abc123");
+    expect(saved.acl_anthology_url).toBe("https://aclanthology.org/people/jane-doe/");
+    expect(
+      unwrap(service.updateOwnProfile("social", { acl_anthology_url: "" })).acl_anthology_url,
+    ).toBe("");
     expect(saved.cv_url).toBe("https://example.com/jane-doe-cv.pdf");
     expect(saved.intake_form_url).toContain("docs.google.com/forms/");
 
@@ -2766,6 +2851,9 @@ describe("AdminBotService", () => {
     expect(unwrap(service.updateOwnProfile("social", { github_url: "" })).github_url).toBe("");
 
     for (const bad of [
+      { acl_anthology_url: "https://example.com/people/jane-doe/" },
+      { acl_anthology_url: "https://aclanthology.org/2026.acl-long.1/" },
+      { acl_anthology_url: "http://aclanthology.org/people/jane-doe/" },
       { twitter_url: "https://github.com/octocat" }, // GitHub link in the Twitter field
       { linkedin_url: "https://linkedin.com/company/openai" }, // company page, not a personal profile
       { scholar_url: "https://scholar.google.com/citations" }, // missing ?user=
@@ -3449,14 +3537,21 @@ describe("AdminBotService", () => {
       // Every mandatory field, and enough timeline for the second half of the rule.
       unwrap(
         service.updateOwnProfile("ayush", {
+          arr_reviewer_qualified: false,
           calendar_email: "ayush@lab.test",
           location: "Toronto",
           research_topics: ["causality"],
           correspondence_email: "ayush@lab.test",
           whatsapp: "+1 555 0100",
           joined_month: "2026-01",
+          affiliation: "University of Toronto",
+          hours_per_week: 20,
+          graduated_month: "2027-06",
+          next_position: "Considering research positions",
           github_url: "https://github.com/ayush",
           linkedin_url: "https://linkedin.com/in/ayush",
+          twitter_url: "https://x.com/ayush",
+          personal_website: "https://example.test/ayush",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.test/cv.pdf",
           one_on_one_folder_url: "https://drive.google.com/drive/folders/ayush",
@@ -3503,14 +3598,21 @@ describe("AdminBotService", () => {
 
       unwrap(
         service.updateOwnProfile("ayush", {
+          arr_reviewer_qualified: false,
           calendar_email: "ayush@lab.test",
           location: "Toronto",
           research_topics: ["causality"],
           correspondence_email: "ayush@lab.test",
           whatsapp: "+1 555 0100",
           joined_month: "2026-01",
+          affiliation: "University of Toronto",
+          hours_per_week: 20,
+          graduated_month: "2027-06",
+          next_position: "Considering research positions",
           github_url: "https://github.com/ayush",
           linkedin_url: "https://linkedin.com/in/ayush",
+          twitter_url: "https://x.com/ayush",
+          personal_website: "https://example.test/ayush",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.test/cv.pdf",
           one_on_one_folder_url: "https://drive.google.com/drive/folders/ayush",
@@ -4584,6 +4686,32 @@ describe("AdminBotService", () => {
   });
 
   describe("mandatory profile fields", () => {
+    it("accepts an unavailable intake response but reports missing required social links", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember(
+          completeMember({
+            id: "intake",
+            privilege_level: "member",
+            intake_form_url: "",
+            intake_form_unavailable: true,
+          }),
+        ),
+      );
+      expect(unwrap(service.listMembersWithIncompleteMandatoryFields()).members).toEqual([]);
+      unwrap(
+        service.upsertLabMember({
+          id: "intake",
+          intake_form_unavailable: false,
+          twitter_url: "",
+          personal_website: "",
+        }),
+      );
+      expect(
+        unwrap(service.listMembersWithIncompleteMandatoryFields()).members[0]?.missing_fields,
+      ).toEqual(expect.arrayContaining(["intake_form_url", "twitter_url", "personal_website"]));
+    });
+
     it("lists current members missing a required field, and skips alumni/external", () => {
       const service = new AdminBotService();
       unwrap(
@@ -4601,14 +4729,23 @@ describe("AdminBotService", () => {
           id: "full",
           name: "Full",
           privilege_level: "member",
+          arr_reviewer_qualified: false,
           calendar_email: "full@gmail.com",
           location: "Toronto",
           research_topics: ["nlp"],
           correspondence_email: "full@cs.toronto.edu",
           whatsapp: "(+1) 555 0100",
           joined_month: "2026-03",
+          affiliation: "University of Toronto",
+          hours_per_week: 20,
+          graduated_month: "2027-06",
+          next_position: "Considering research positions",
           github_url: "https://github.com/full",
+          twitter_url: "https://x.com/full",
+          personal_website: "https://example.com/full",
           linkedin_url: "https://www.linkedin.com/in/full",
+          twitter_url: "https://x.com/full",
+          personal_website: "https://example.com/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
           one_on_one_folder_url: "https://drive.google.com/drive/folders/full",
@@ -4658,7 +4795,16 @@ describe("AdminBotService", () => {
       );
       const missing = unwrap(service.listMembersWithIncompleteMandatoryFields()).members[0]
         ?.missing_fields;
-      expect(missing).toEqual(adminBotMemberAnswerableProfileFields);
+      expect(missing).toEqual(
+        adminBotMemberAnswerableProfileFields.filter((field) => field !== "arr_review_capacity"),
+      );
+      // Capacity only becomes required after the member confirms qualification.
+      unwrap(service.upsertLabMember({ id: "blank", arr_reviewer_qualified: true }));
+      expect(
+        unwrap(service.listMembersWithIncompleteMandatoryFields()).members[0]?.missing_fields,
+      ).toEqual(
+        adminBotMemberAnswerableProfileFields.filter((field) => field !== "arr_reviewer_qualified"),
+      );
     });
 
     // The rule that used to exempt `linkedin_urn`: a field the member's own page will not let them
@@ -4715,14 +4861,21 @@ describe("AdminBotService", () => {
       unwrap(
         service.upsertLabMember({
           id: "resolved",
+          arr_reviewer_qualified: false,
           calendar_email: "resolved@gmail.com",
           location: "Toronto",
           research_topics: ["nlp"],
           correspondence_email: "resolved@cs.toronto.edu",
           whatsapp: "+1 555 0100",
           joined_month: "2026-03",
+          affiliation: "University of Toronto",
+          hours_per_week: 20,
+          graduated_month: "2027-06",
+          next_position: "Considering research positions",
           github_url: "https://github.com/resolved",
           linkedin_url: "https://www.linkedin.com/in/resolved",
+          twitter_url: "https://x.com/resolved",
+          personal_website: "https://example.com/resolved",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
           one_on_one_folder_url: "https://drive.google.com/drive/folders/resolved",
@@ -4779,6 +4932,7 @@ describe("AdminBotService", () => {
           receives_nudges: true,
           id: "full",
           name: "Full",
+          arr_reviewer_qualified: false,
           calendar_email: "full@gmail.com",
           location: "Toronto",
           slack_user_id: "U3",
@@ -4786,8 +4940,14 @@ describe("AdminBotService", () => {
           correspondence_email: "full@cs.toronto.edu",
           whatsapp: "(+1) 555 0100",
           joined_month: "2026-03",
+          affiliation: "University of Toronto",
+          hours_per_week: 20,
+          graduated_month: "2027-06",
+          next_position: "Considering research positions",
           github_url: "https://github.com/full",
           linkedin_url: "https://www.linkedin.com/in/full",
+          twitter_url: "https://x.com/full",
+          personal_website: "https://example.com/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
           one_on_one_folder_url: "https://drive.google.com/drive/folders/full",
@@ -4870,7 +5030,7 @@ describe("AdminBotService", () => {
       const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
       expect(result.created).toHaveLength(1);
       const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
-      expect(message).toContain("missing 11 required fields");
+      expect(message).toContain("missing 18 required fields");
       expect(message).toContain("Your term timeline has 0 of 2 needed entries");
     });
 
@@ -4985,6 +5145,7 @@ describe("AdminBotService", () => {
           receives_nudges: true,
           id: "full",
           name: "Full",
+          arr_reviewer_qualified: false,
           calendar_email: "full@gmail.com",
           location: "Toronto",
           slack_user_id: "U1",
@@ -4992,8 +5153,14 @@ describe("AdminBotService", () => {
           correspondence_email: "full@cs.toronto.edu",
           whatsapp: "(+1) 555 0100",
           joined_month: "2026-03",
+          affiliation: "University of Toronto",
+          hours_per_week: 20,
+          graduated_month: "2027-06",
+          next_position: "Considering research positions",
           github_url: "https://github.com/full",
           linkedin_url: "https://www.linkedin.com/in/full",
+          twitter_url: "https://x.com/full",
+          personal_website: "https://example.com/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
           one_on_one_folder_url: "https://drive.google.com/drive/folders/full",

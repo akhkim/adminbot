@@ -35,10 +35,11 @@ import {
   type AdminBotPaperSlotDefinition,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
-import type { PaperflowStageRow, PaperSlotRow } from "../auth/session.ts";
+import type { PaperflowStageRow, PaperSlotRow } from "../api/papers.ts";
 import type { MemberOption } from "./member-select.ts";
-import "./paper-slot-deck.ts";
 import { renderPaperCoauthors, type PaperAuthorLink } from "./paper-coauthors.ts";
+import "./paper-slot-deck.ts";
+import { renderPaperFeedback } from "./paper-feedback.ts";
 
 export type PaperDetailsProps = {
   authors: string[];
@@ -105,7 +106,7 @@ const BRANCH_LABELS: Record<AdminBotPaperSlotBranch, string> = {
 
 /** What each branch is for, in the chart's own terms. One line, or the card becomes a manual. */
 const BRANCH_BLURBS: Record<AdminBotPaperSlotBranch, string> = {
-  core: "The trunk. Everything below opens once the paper compiles.",
+  core: "Writing and review materials. Add evidence at any project stage.",
   talk: "Slides, and the poster and video that come off them.",
   social: "The announcement, and the coauthors who sign it off.",
   archive: "The Drive copy, the arXiv package, and the gate before it goes public.",
@@ -136,8 +137,8 @@ function rowFor(slots: PaperSlotRow[], slot: AdminBotPaperSlot): PaperSlotRow | 
  *
  * `pi_approval` is the PI's own, and to an author it used to look like any other unfilled field --
  * a "Missing" pill and the word "the PI" in grey -- which reads as something nobody has picked up.
- * Once the package is prepared the paper is genuinely with her: it is on her queue on My Desk and
- * she has been told it is there (workflows/papers/pi-review.ts). So the row says so.
+ * The slot state establishes readiness for her queue, not successful notification delivery.
+ * The copy must not claim she was told without a delivery record.
  *
  * Null until the paper is actually at the gate. Before that the claim would be false -- the package
  * is still being assembled, nothing has reached her -- and the row keeps saying what it waits on.
@@ -155,25 +156,8 @@ function piReviewNotice(
   }
   const readyAt = rowFor(slots, "authors_ack")?.provided_at?.slice(0, 10);
   return readyAt
-    ? `Sent to Zhijing to review on ${readyAt}. It is on her desk waiting for her yes to post.`
-    : "Sent to Zhijing to review. It is on her desk waiting for her yes to post.";
-}
-
-/**
- * Whether a field is worth filling in yet.
- *
- * A slot whose upstream evidence is still missing is shown, not hidden -- the checklist is the
- * point -- but it says what it is waiting for. Hiding it would make the card grow as work
- * progressed, which reads as the paper acquiring new requirements rather than revealing them.
- */
-function waitingOn(definition: AdminBotPaperSlotDefinition, slots: PaperSlotRow[]): string | null {
-  const blocked = definition.upstream.filter(
-    (slot) => !isAdminBotPaperSlotSettled(rowFor(slots, slot)?.status ?? "missing"),
-  );
-  if (blocked.length === 0) {
-    return null;
-  }
-  return blocked.map((slot) => adminBotPaperSlotRegistry[slot].label).join(" and ");
+    ? `Ready for PI approval since ${readyAt}. It appears in the PI review queue on My Desk; this does not confirm a notification was delivered.`
+    : "Ready for PI approval. It appears in the PI review queue on My Desk; this does not confirm a notification was delivered.";
 }
 
 function statusPill(row: PaperSlotRow | undefined) {
@@ -401,12 +385,11 @@ function renderChildSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
 function renderSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
   const definition = adminBotPaperSlotRegistry[slot];
   const row = rowFor(props.slots, slot);
-  const blocked = waitingOn(definition, props.slots);
   const sentToPi = piReviewNotice(definition, slot, props.slots);
   const children = childrenOf(slot);
   return html`
     <div
-      class=${`paper-slot ${blocked ? "paper-slot--blocked" : ""} ${
+      class=${`paper-slot ${
         row?.status === "invalid" ? "paper-slot--invalid" : ""
       } ${children.length > 0 ? "paper-slot--grouped" : ""}`}
       data-testid=${`paper-slot-row-${props.paperId}-${slot}`}
@@ -842,12 +825,10 @@ function renderGroupedSlots(props: PaperSlotsProps, slots: AdminBotPaperSlot[]):
       if (group.length === 1) {
         items.push(renderSlot(props, group[0]));
       } else {
-        const first = adminBotPaperSlotRegistry[group[0]];
         const row0 = rowFor(props.slots, group[0]);
-        const blocked0 = waitingOn(first, props.slots);
         items.push(html`
           <div
-            class=${`paper-slot paper-slot--grouped ${blocked0 ? "paper-slot--blocked" : ""} ${
+            class=${`paper-slot paper-slot--grouped ${
               row0?.status === "invalid" ? "paper-slot--invalid" : ""
             }`}
             data-testid=${`paper-slot-row-${props.paperId}-${group[0]}`}
@@ -1039,37 +1020,21 @@ export function renderPaperSlots(props: PaperSlotsProps) {
     return html`<p class="paper-slots__loading">Loading this paper's checklist…</p>`;
   }
 
-  const visible = new Set(visibleSlots(props.slots));
-  const ready = [...visible].filter(
-    (slot) => slotDistance(adminBotPaperSlotRegistry[slot], props.slots) === 0,
-  ).length;
-  const hidden = adminBotPaperSlots.length - visible.size;
-  const showAll = props.showAllSlots ?? false;
-
   return html`
     <div class="paper-slots" data-testid=${`paper-slots-${props.paperId}`}>
       ${renderOpenReviewIdentity(props)} ${renderDetails(props)}
+      ${props.slots.some((row) => row.slot.startsWith("feedback_"))
+        ? renderPaperFeedback(props)
+        : nothing}
       <div class="paper-slots__filter">
         <span class="paper-slots__filter-text">
-          ${showAll
-            ? `Showing all ${adminBotPaperSlots.length} fields`
-            : `${ready} you can do now · ${visible.size - ready} coming up · ${hidden} further off`}
+          All ${adminBotPaperSlots.length - 3} fields are available at any project stage.
         </span>
-        ${props.onToggleShowAll
-          ? html`<button
-              type="button"
-              class="btn btn--sm"
-              data-testid=${`paper-slots-toggle-${props.paperId}`}
-              @click=${() => props.onToggleShowAll?.()}
-            >
-              ${showAll ? "Show only what's ready" : "Show all fields"}
-            </button>`
-          : nothing}
       </div>
       ${adminBotPaperSlotChartOrder.map((branch) => {
         // Every field stays in the deck once shown -- settled ones keep rendering with their
         // done pill rather than vanishing, so flipping through reviews history too.
-        const slots = topLevelSlots(branch);
+        const slots = topLevelSlots(branch).filter((slot) => !slot.startsWith("feedback_"));
         const branchNumber = adminBotPaperFlowBranchNumber[branch];
         // The venue section still draws when it has no open field left: the ladder below it is
         // the half of that branch nobody fills in, and hiding it would hide the paper's position

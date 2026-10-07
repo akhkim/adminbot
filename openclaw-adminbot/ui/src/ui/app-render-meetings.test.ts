@@ -34,7 +34,8 @@ describe("Meeting Recordings entry", () => {
     expect(container.querySelector(".login-gate__form")).toBeTruthy();
   });
 
-  it("keeps a verified member off the sign-in form while the gateway connects", () => {
+  it("keeps a verified member on their profile when the gateway is unavailable", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("offline"));
     saveStoredMemberSession({
       sessionToken: "synthetic-session",
       expiresAt: "2099-01-01T00:00:00Z",
@@ -46,13 +47,14 @@ describe("Meeting Recordings entry", () => {
     const container = document.createElement("div");
 
     render(renderApp(app as unknown as AppViewState), container);
-    expect(container.querySelector('[data-testid="session-restore-pending"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="session-restore-pending"]')).toBeNull();
     expect(container.querySelector(".login-gate__form")).toBeNull();
 
     app.lastError = "Synthetic gateway failure";
     render(renderApp(app as unknown as AppViewState), container);
     expect(container.querySelector('[data-testid="session-restore-pending"]')).toBeNull();
-    expect(container.querySelector(".login-gate__form")).toBeTruthy();
+    expect(container.querySelector(".login-gate__form")).toBeNull();
+    await vi.waitFor(() => expect(app.adminBotLoading).toBe(false));
   });
 
   it("loads meetings from the member session before gateway, roster, or papers", async () => {

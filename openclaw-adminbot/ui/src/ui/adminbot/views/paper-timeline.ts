@@ -1,22 +1,5 @@
-// Where a paper actually is, drawn to the shape of the PaperFlow chart and read off the evidence.
-//
-// This replaces the eight-dot stepper. The stepper was wrong in two ways at once:
-//
-//   1. It drew one path. PaperFlow is a trunk with four branches that open together off "paper
-//      PDF compiles", so a single line had to invent an order that does not exist -- it claimed
-//      slides come after the arXiv post, when neither waits on the other.
-//   2. It was drawn from `current_step`, a pointer somebody has to remember to move. A paper with
-//      every artifact in could sit on "Submission" forever, and one with nothing on file could be
-//      dragged to "Poster" in a click.
-//
-// So nothing here is typed by hand or read from a pointer: a node is done when the slots that are
-// evidence for it are settled, ready when everything upstream of it is settled, and waiting
-// otherwise. Fill in a field in the checklist below and the dot above it closes on the next
-// render, which is what "the timeline updates itself" means.
-//
-// The registry is the single source for all of it -- `node` groups slots into chart nodes,
-// `branch` puts them in a lane, `upstream` is the dependency edge -- so this file and the
-// checklist under it cannot disagree about what is done or what is next.
+// Progress follows evidence. All author-editable stages are available independently;
+// backend dependencies still govern automated actions.
 import { html, nothing } from "lit";
 import {
   adminBotPaperFlowBranchNumber,
@@ -28,7 +11,7 @@ import {
   type AdminBotPaperSlotBranch,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
-import type { PaperSlotRow } from "../auth/session.ts";
+import type { PaperSlotRow } from "../api/papers.ts";
 
 /**
  * What one dot can be.
@@ -142,38 +125,22 @@ function nodeSlots(branch: AdminBotPaperSlotBranch): Map<string, AdminBotPaperSl
 }
 
 /** Upstream slots that live outside this node -- the edges that actually gate it. */
-function gatesOf(members: AdminBotPaperSlot[]): AdminBotPaperSlot[] {
-  const inside = new Set<string>(members);
-  const gates = new Set<AdminBotPaperSlot>();
-  for (const slot of members) {
-    for (const upstream of adminBotPaperSlotRegistry[slot].upstream) {
-      if (!inside.has(upstream)) {
-        gates.add(upstream);
-      }
-    }
-  }
-  return [...gates];
-}
-
 function buildNode(id: string, members: AdminBotPaperSlot[], slots: PaperSlotRow[]): TimelineNode {
   const provided = members.filter((slot) => settled(slots, slot)).length;
-  const blocked = gatesOf(members).filter((slot) => !settled(slots, slot));
   const invalid = members.some((slot) => statusOf(slots, slot) === "invalid");
   const label = NODE_LABELS[id] ?? adminBotPaperSlotRegistry[members[0] as AdminBotPaperSlot].label;
   const state: TimelineNodeState = invalid
     ? "attention"
     : provided === members.length
       ? "done"
-      : blocked.length > 0
-        ? "waiting"
-        : "ready";
+      : "ready";
   return {
     id,
     label,
     state,
     provided,
     total: members.length,
-    waitingOn: blocked.map((slot) => adminBotPaperSlotRegistry[slot].label),
+    waitingOn: [],
   };
 }
 

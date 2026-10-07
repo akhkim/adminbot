@@ -9,11 +9,10 @@ import type { UiSettings } from "../../storage.ts";
 import {
   fetchTabVisitReport,
   fetchTabVisitRows,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
   type TabVisitReport,
   type TabVisitRow,
-} from "../auth/session.ts";
+} from "../api/workspace.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 
 /** The windows the page offers. Days, because that is how the question is asked. */
 export const TAB_USAGE_WINDOWS = [7, 30, 90] as const;

@@ -11,13 +11,12 @@ import {
   createMeeting,
   fetchMeetingAttendanceNudges,
   fetchMeetings,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
   saveMeetingAttendance,
   sendMeetingAttendanceNudges,
   type MeetingAttendee,
   type MeetingRecord,
-} from "../auth/session.ts";
+} from "../api/meetings.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { AdminBotHost } from "./admin.ts";
 
 const SIGN_IN_FIRST = "Sign in to see the lab's meeting recordings.";

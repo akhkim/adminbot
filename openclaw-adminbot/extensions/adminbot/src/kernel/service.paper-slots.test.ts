@@ -2,7 +2,8 @@
 // what the global nudge actually sends.
 //
 // Its own file rather than more of service.test.ts, which is already the longest in the extension.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { AdminBotMemoryStore } from "../persistence/memory.js";
 import { AdminBotService } from "./service.js";
 
 function unwrap<T>(
@@ -56,11 +57,11 @@ function seed(service: AdminBotService): void {
 }
 
 describe("listPaperSlots", () => {
-  it("answers with all 25 rows, so the card renders a checklist rather than a list of answers", () => {
+  it("answers with all 28 rows, so the card renders a checklist rather than a list of answers", () => {
     const service = new AdminBotService();
     seed(service);
     const { slots } = unwrap(service.listPaperSlots("p1"));
-    expect(slots).toHaveLength(25);
+    expect(slots).toHaveLength(28);
     expect(slots.every((slot) => slot.status === "missing")).toBe(true);
   });
 
@@ -464,6 +465,135 @@ describe("the conference roll-call", () => {
     return service;
   }
 
+  it("invites only confirmed linked attendees through audited proposals, across venues and years", async () => {
+    const deliveries: Array<{ type: string; proposed_payload: unknown }> = [];
+    const service = new AdminBotService(undefined, {
+      executor: {
+        execute: async (proposal) => {
+          deliveries.push(proposal);
+          return { handled: true };
+        },
+      },
+    });
+    seed(service);
+    for (const [id, venue, year] of [
+      ["p1", "EMNLP", 2026],
+      ["p2", "ICLR 2027", 2027],
+    ] as const) {
+      unwrap(
+        service.upsertPaper({
+          id,
+          title: id,
+          authors: ["Ada Lovelace", "Bob Coauthor"],
+          author_links: [
+            { name: "Ada Lovelace", member_id: "ada" },
+            { name: "Bob Coauthor", member_id: "bob" },
+          ],
+          current_step: "overleaf_writing",
+          first_author_member_id: "ada",
+          venue_decision: "accept",
+          accepted_venue: venue,
+          accepted_year: year,
+          is_archival: true,
+          presentation_type: "poster",
+        }),
+      );
+      unwrap(
+        service.setConferenceAttendee({
+          paperId: id,
+          name: "Ada Lovelace",
+          memberId: "ada",
+          attending: "yes",
+          actorId: "ada",
+          privileged: false,
+        }),
+      );
+    }
+    await vi.waitFor(() =>
+      expect(deliveries.filter((entry) => entry.type === "slack.invite_to_channel")).toHaveLength(
+        2,
+      ),
+    );
+    const rosters = unwrap(service.listConferenceRosters()).conferences;
+    for (const roster of rosters)
+      expect(unwrap(await service.inviteConferenceAttendees(roster.key))).toMatchObject({
+        invited: 1,
+        skipped: 1,
+        failed: 0,
+      });
+    expect(
+      deliveries
+        .filter((entry) => entry.type === "slack.invite_to_channel")
+        .map((entry) => entry.proposed_payload),
+    ).toEqual(
+      expect.arrayContaining([
+        { channel: "conf-iclr-2027", user_id: "U-ADA" },
+        { channel: "conf-emnlp-2026", user_id: "U-ADA" },
+      ]),
+    );
+    await service.inviteConferenceAttendees(rosters[0].key);
+    expect(deliveries.filter((entry) => entry.type === "slack.invite_to_channel")).toHaveLength(2);
+    expect((await service.inviteConferenceAttendees("missing:2026")).ok).toBe(false);
+  });
+
+  it("automatically invites when acceptance follows Going and keeps save failures separate", async () => {
+    const deliveries: unknown[] = [];
+    const service = new AdminBotService(undefined, {
+      executor: {
+        execute: async (proposal) => {
+          deliveries.push(proposal.proposed_payload);
+          throw new Error("Slack unavailable");
+        },
+      },
+    });
+    seed(service);
+    const paper = unwrap(
+      service.upsertPaper({
+        id: "auto",
+        title: "Synthetic",
+        authors: ["Ada Lovelace"],
+        author_links: [{ name: "Ada Lovelace", member_id: "ada" }],
+        current_step: "overleaf_writing",
+        first_author_member_id: "ada",
+      }),
+    );
+    unwrap(
+      service.setConferenceAttendee({
+        paperId: paper.id,
+        name: "Ada Lovelace",
+        memberId: "ada",
+        attending: "yes",
+        actorId: "ada",
+        privileged: false,
+      }),
+    );
+    expect(deliveries).toHaveLength(0);
+    const accepted = {
+      ...paper,
+      venue_decision: "accept" as const,
+      accepted_venue: "EMNLP",
+      accepted_year: 2026,
+      is_archival: true,
+      presentation_type: "poster" as const,
+    };
+    expect(service.upsertPaper(accepted).ok).toBe(true);
+    await vi.waitFor(() =>
+      expect(deliveries).toEqual([{ channel: "conf-emnlp-2026", user_id: "U-ADA" }]),
+    );
+    expect(service.upsertPaper(accepted).ok).toBe(true);
+    unwrap(
+      service.setConferenceAttendee({
+        paperId: paper.id,
+        name: "Ada Lovelace",
+        memberId: "ada",
+        attending: "no",
+        actorId: "ada",
+        privileged: false,
+      }),
+    );
+    expect(deliveries).toHaveLength(1);
+  });
+
   it("puts every author on the card before anybody has been added by hand", () => {
     const { attendees } = unwrap(acceptedService().listPaperSlots("p1"));
     expect(attendees.map((row) => [row.name, row.attending])).toEqual([
@@ -583,5 +713,87 @@ describe("the conference roll-call", () => {
       unwrap(service.listPaperSlotOverview()).papers.find((paper) => paper.paper_id === "p1");
     expect(row()?.attendance).toEqual({ yes: 0, no: 0, unknown: 2, going: [] });
     expect(row()?.cycle_closed).toBe(false);
+  });
+});
+
+it("queues an author's feedback with reason and deadlines without publication approval", () => {
+  const service = new AdminBotService();
+  seed(service);
+  const input = {
+    value_text: JSON.stringify({
+      reason: "Check claims",
+      url: "https://example.com/draft",
+      soft_deadline: "2000-01-01T00:00:00Z",
+      hard_deadline: "2000-01-02T00:00:00Z",
+    }),
+  };
+  expect(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input,
+      memberId: "stranger",
+      privileged: false,
+    }),
+  ).toMatchObject({ ok: false, status: 403 });
+  unwrap(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input,
+      memberId: "ada",
+      privileged: false,
+    }),
+  );
+  expect(unwrap(service.listPiReviewQueue()).papers[0].feedback?.reason).toBe("Check claims");
+  expect(
+    unwrap(service.listPaperSlots("p1", { memberId: "stranger" })).slots.find(
+      (row) => row.slot === "feedback_arr",
+    )?.value_text,
+  ).toBeUndefined();
+  expect(
+    unwrap(service.listPaperSlots("p1", { memberId: "ada" })).slots.find(
+      (row) => row.slot === "feedback_arr",
+    )?.value_text,
+  ).toContain("Check claims");
+  unwrap(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input: { value_text: "" },
+      memberId: "ada",
+      privileged: false,
+    }),
+  );
+  expect(unwrap(service.listPiReviewQueue()).papers).toHaveLength(0);
+});
+
+describe("roster reads on the all-paper sweeps", () => {
+  // Every roster read parses every member's whole payload (avatars included), so a sweep that
+  // re-reads it per paper costs seconds on the real lab and blocks the synchronous store meanwhile.
+  it("reads the roster once per sweep, not once per paper", async () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    seed(service);
+    for (const id of ["p2", "p3", "p4"]) {
+      unwrap(
+        service.upsertPaper({
+          id,
+          title: `Paper ${id}`,
+          authors: ["Ada Lovelace", "Bob Coauthor"],
+          current_step: "overleaf_writing",
+        }),
+      );
+    }
+    const reads = vi.spyOn(store, "listLabMembers");
+    for (const sweep of [
+      () => service.listPaperSlotOverview(),
+      () => service.collectPaperNudgeBatches(),
+      () => service.collectWeeklyUpdateGaps(),
+    ]) {
+      reads.mockClear();
+      unwrap(sweep());
+      expect(reads.mock.calls.length).toBeLessThanOrEqual(1);
+    }
   });
 });

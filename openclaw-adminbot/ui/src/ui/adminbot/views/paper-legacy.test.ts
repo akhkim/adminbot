@@ -3,8 +3,12 @@
 // reaches the right one of the two stores behind it.
 import { html, render } from "lit";
 import { describe, expect, it } from "vitest";
+import {
+  isPaperFeedbackSlot,
+  paperFeedbackSlots,
+} from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 import { adminBotPaperSlots } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
-import type { PaperCycle } from "../auth/session.ts";
+import type { PaperCycle } from "../api/papers.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
 import {
   collectLegacyWrites,
@@ -104,9 +108,15 @@ describe("legacyGroups", () => {
         .filter((field) => field.kind === "slot")
         .map((field) => field.key),
     );
-    expect(keys.size).toBe(adminBotPaperSlots.length);
-    for (const slot of adminBotPaperSlots) {
+    // Feedback requests are the exception: their value is a request only the feedback form can
+    // build, and My Projects draws that form beside this list instead.
+    const evidence = adminBotPaperSlots.filter((slot) => !isPaperFeedbackSlot(slot));
+    expect(keys.size).toBe(evidence.length);
+    for (const slot of evidence) {
       expect(keys.has(slot)).toBe(true);
+    }
+    for (const slot of Object.keys(paperFeedbackSlots)) {
+      expect(keys.has(slot)).toBe(false);
     }
   });
 
@@ -131,6 +141,21 @@ describe("renderPaperLegacy", () => {
     expect(container.querySelector('[data-testid="paper-legacy-paper-p2"]')).not.toBeNull();
     // The profile's own markup, which is the whole point of this view.
     expect(container.querySelectorAll(".profile__field-group").length).toBeGreaterThan(1);
+  });
+
+  it("keeps the legacy date edit and explicit calendar value in sync", () => {
+    const record = paper({ started_on: "2026-11-03" });
+    const { container, state } = draw({ papers: [record] });
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-testid="paper-legacy-p1-startedOn"]',
+    )!;
+    expect(input.type).toBe("date");
+    expect(input.parentElement!.querySelector("output")!.textContent).toBe("2026-11-03");
+    type(container, "paper-legacy-p1-startedOn", "2026-03-11");
+    expect(input.parentElement!.querySelector("output")!.textContent).toBe("2026-03-11");
+    expect(collectLegacyWrites(state, record, cycle()).record).toMatchObject({
+      startedOn: "2026-03-11",
+    });
   });
 
   it("shows the stored value in each control", () => {
