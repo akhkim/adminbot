@@ -213,7 +213,7 @@ describe("AdminBotClient", () => {
       message: expect.stringContaining("http://127.0.0.1:8765 is unreachable"),
     });
   });
-  it.each([202, 409, 410, 502])(
+  it.each([202, 409, 410, 500, 502])(
     "preserves task handles from HTTP %s without choosing Wait or returning an answer",
     async (status) => {
       const state =

@@ -899,7 +899,12 @@ async function scenarioMatcher(o: Options): Promise<ScenarioResult> {
   try {
     const members = store.listLabMembers();
     const papers = store.listPapers();
-    const workshops = workshopProfilesFromDeadlines(DEADLINE_VENUES, new Date()).slice(0, 6);
+    // A fixed reference date, not today: the check below needs a sweep several calls long, and
+    // filtering the shipped deadlines by today's date shrank it to one workshop as they passed.
+    const workshops = workshopProfilesFromDeadlines(DEADLINE_VENUES, new Date("2000-01-01")).slice(
+      0,
+      3,
+    );
     const inputs = workshopNudgeInputsFromAdminBot({
       papers,
       members,

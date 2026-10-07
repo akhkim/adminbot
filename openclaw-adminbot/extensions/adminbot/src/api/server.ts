@@ -1,9 +1,9 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { createArxivProbe } from "../connectors/arxiv.js";
-import { createRequire } from "node:module";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
 import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
@@ -74,22 +74,16 @@ import type { AiTextScorer } from "../contracts/paper-integrity-checks.js";
 import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
 import { parsePaperMentorRunInput } from "../contracts/papermentor.js";
 import type { ReferenceScanDependencies } from "../contracts/reference-scans.js";
-import {
-  buildNewsletterDraft,
-  draftMemberBlurb,
-  runAdminBotCvScan,
-  type AdminBotCvScanDeps,
-} from "../cv-scan.js";
-import { askGuidebook } from "../guidebook/ask.js";
-import { readLlmGatewayStatus } from "../kernel/llm-gateway-client.js";
-import { createLlmLoadRouter, parseLlmNodes, type LlmLoadRouter } from "../kernel/llm-router.js";
-import { ReferenceScans } from "../kernel/reference-scans.js";
+import { buildNewsletterDraft, type AdminBotCvScanDeps } from "../cv-scan.js";
 import { resolveInferenceGateConfig } from "../inference/config.js";
 import {
   createInferenceGate,
   setSharedInferenceGate,
   type InferenceGate,
 } from "../inference/gate.js";
+import { readLlmGatewayStatus } from "../kernel/llm-gateway-client.js";
+import { createLlmLoadRouter, parseLlmNodes, type LlmLoadRouter } from "../kernel/llm-router.js";
+import { ReferenceScans } from "../kernel/reference-scans.js";
 import {
   AdminBotMemoryStore,
   AdminBotService,
@@ -219,8 +213,8 @@ import {
   sendJson,
   sendServiceResult,
 } from "./server.http.js";
-import { prepareInterviewInvitation } from "./server.interview-invitation.js";
 import { handleInferenceRoute } from "./server.inference.js";
+import { prepareInterviewInvitation } from "./server.interview-invitation.js";
 import { handleLabSharingRoute } from "./server.lab-sharing.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
 import { handleMemberDraft } from "./server.member-drafts.js";

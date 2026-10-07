@@ -279,10 +279,11 @@ describe("application task HTTP API", () => {
       headers,
       body: JSON.stringify({ task: "Synthetic invalid output test", privacy: "private" }),
     });
-    expect(response.status).toBe(502);
+    // A failed task is a 502 inside the service and a 500 on the wire (see wireStatus).
+    expect(response.status).toBe(500);
     const { task } = (await response.json()) as { task: { id: string; status: string } };
     expect(task.status).toBe("failed");
-    expect((await fetch(`${base}/tasks/${task.id}/result`, { headers })).status).toBe(502);
+    expect((await fetch(`${base}/tasks/${task.id}/result`, { headers })).status).toBe(500);
     expect(app.taskRuntime.get(task.id)?.result).toBeUndefined();
   });
 

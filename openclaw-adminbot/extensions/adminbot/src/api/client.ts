@@ -272,10 +272,11 @@ export class AdminBotClient {
     const parsed = raw.trim() ? parseJson(raw) : undefined;
     // Deferred application tasks are useful tool results. Throwing only their message would
     // discard the saved task identity, while interpreting HTTP 202 as an answer invents success.
+    // A failed task is answered 502 but leaves the service as 500 (wireStatus), so accept both.
     if (
       (["/privacy/tasks", "/guidebook/ask", "/reimbursements/converse"].includes(path) ||
         path.startsWith("/tasks/")) &&
-      [200, 202, 409, 410, 502].includes(response.status)
+      [200, 202, 409, 410, 500, 502].includes(response.status)
     ) {
       const taskResult = describeTaskResponse(parsed);
       if (taskResult) {
