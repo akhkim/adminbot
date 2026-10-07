@@ -603,7 +603,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     indexedAt: string,
     model: string,
   ): void;
-  listVenuePapers(venueId: string): AdminBotVenuePaper[];
+  listVenuePapers(venueId: string): readonly AdminBotVenuePaper[];
   listVenueIndexStatuses(): Omit<AdminBotVenueIndexStatus, "label">[];
   savePaper(paper: AdminBotPaperRecord): void;
   getPaper(paperId: string): AdminBotPaperRecord | undefined;

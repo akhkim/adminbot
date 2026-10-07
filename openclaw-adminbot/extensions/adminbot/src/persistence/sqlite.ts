@@ -131,6 +131,7 @@ import {
   getReferenceScan,
   saveReferenceScan,
 } from "./reference-scans.js";
+import { SqliteVenuePaperIndex } from "./sqlite.venue-papers.js";
 
 const require = createRequire(import.meta.url);
 
@@ -194,11 +195,13 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   private readonly db: DatabaseSync;
   private readonly failedRequests: FailedExternalRequestLedger;
+  private readonly venueIndex: SqliteVenuePaperIndex;
 
   constructor(readonly databasePath: string) {
     ensureDatabaseDirectory(databasePath);
     const sqlite = requireNodeSqlite();
     this.db = new sqlite.DatabaseSync(databasePath);
+    this.venueIndex = new SqliteVenuePaperIndex(this.db);
     // SQLite's built-in lower() only handles ASCII; use the same fold as the in-memory store.
     this.db.function("adminbot_lower", { deterministic: true }, (value) =>
       String(value ?? "").toLowerCase(),
@@ -2199,59 +2202,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     indexedAt: string,
     model: string,
   ): void {
-    const remove = this.db.prepare("DELETE FROM adminbot_venue_papers WHERE venue_id = ?");
-    const insert = this.db.prepare(
-      `INSERT INTO adminbot_venue_papers (
-         venue_id, paper_id, indexed_at, embedding_model, payload_json
-       ) VALUES (?, ?, ?, ?, ?)`,
-    );
-    // Explicit BEGIN/COMMIT so a failed rebuild leaves the previous index intact: without it a
-    // crash mid-insert leaves the venue half-indexed and silently ranking against a partial
-    // corpus. Written out rather than via a helper because node:sqlite's DatabaseSync has no
-    // `transaction()` wrapper -- that is better-sqlite3, which this file does not use.
-    this.db.exec("BEGIN");
-    try {
-      remove.run(venueId);
-      for (const paper of papers) {
-        insert.run(venueId, paper.paper_id, indexedAt, model, JSON.stringify(paper));
-      }
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+    this.venueIndex.replace(venueId, papers, indexedAt, model);
   }
 
-  listVenuePapers(venueId: string): AdminBotVenuePaper[] {
-    const rows = this.db
-      .prepare("SELECT payload_json FROM adminbot_venue_papers WHERE venue_id = ?")
-      .all(venueId) as Array<{ payload_json: string }>;
-    return rows.map((row) => parseJson<AdminBotVenuePaper>(row.payload_json));
+  listVenuePapers(venueId: string): readonly AdminBotVenuePaper[] {
+    return this.venueIndex.list(venueId);
   }
 
   listVenueIndexStatuses(): Omit<AdminBotVenueIndexStatus, "label">[] {
-    const rows = this.db
-      .prepare(
-        `SELECT venue_id, COUNT(*) AS paper_count,
-                MAX(indexed_at) AS indexed_at,
-                MAX(embedding_model) AS embedding_model
-         FROM adminbot_venue_papers GROUP BY venue_id`,
-      )
-      .all() as Array<{
-      venue_id: string;
-      paper_count: number;
-      indexed_at: string | null;
-      embedding_model: string | null;
-    }>;
-    // Built without a conditional spread: MAX() over a grouped column is null only for an empty
-    // group, which cannot happen here, and `undefined` reads the same as an absent key to every
-    // caller. Matches how the route serialises the same record.
-    return rows.map((row) => ({
-      venue_id: row.venue_id,
-      paper_count: row.paper_count,
-      indexed_at: row.indexed_at ?? undefined,
-      embedding_model: row.embedding_model ?? undefined,
-    }));
+    return this.venueIndex.statuses();
   }
 
   saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void {
