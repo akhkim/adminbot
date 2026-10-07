@@ -536,7 +536,7 @@ it("reports admission storage trouble on the owning task over HTTP and clears it
 });
 
 // Review of #255: the server built its task runtime without the configured retention or any limit
-// on what anonymous visitors may hold.
+// on what anonymous visitors may hold, and Wait on a shed task never said why it stayed shed.
 describe("task runtime wiring", () => {
   function app() {
     const created = createAdminBotMockService({
@@ -569,6 +569,28 @@ describe("task runtime wiring", () => {
     expect(visitors).toBeLessThan(1000);
     expect(taskRuntime.submit({ owner: "member:m", kind: "review.hold", input: {} }).status).toBe(
       "shed",
+    );
+  });
+  it("says why Wait left a task shed", async () => {
+    const created = app();
+    const base = await serve(created.server);
+    for (let i = 0; i < 4; i++) {
+      created.taskRuntime.submit({ owner: "service", kind: "review.hold", input: i, wait: true });
+    }
+    const shed = created.taskRuntime.submit({ owner: "service", kind: "review.hold", input: 9 });
+    expect(shed.status).toBe("shed");
+    const res = await fetch(`${base}/tasks/${shed.id}/wait`, {
+      method: "POST",
+      headers: { Authorization: "Bearer synthetic-token" },
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as {
+      task: { shedReason?: string };
+      error: { message: string };
+    };
+    expect(body.task.shedReason).toBe("owner_limit");
+    expect(body.error.message).toBe(
+      "You already have 4 requests waiting or running. Choose Wait again when one finishes.",
     );
   });
 });

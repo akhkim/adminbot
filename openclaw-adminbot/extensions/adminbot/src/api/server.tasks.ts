@@ -26,6 +26,7 @@ export function taskView(task: TaskRecord, requestError?: string) {
     updatedAt: task.updatedAt,
     expiresAt: task.expiresAt,
     error: task.error,
+    ...(task.status === "shed" && task.shedReason ? { shedReason: task.shedReason } : {}),
     ...(requestError ? { requestError } : {}),
     actions,
   };
@@ -47,11 +48,22 @@ function statusCode(task: TaskRecord): number {
   return 202;
 }
 
+function shedMessage(task: TaskRecord, runtime: TaskRuntime): string {
+  switch (task.shedReason) {
+    case "owner_limit":
+      return `You already have ${runtime.ownerShare()} requests waiting or running. Choose Wait again when one finishes.`;
+    case "queue_full":
+      return "The lab's model queue is full. Choose Wait again in a few minutes.";
+    default:
+      return "Task saved. Choose Wait to run it.";
+  }
+}
+
 function sendTask(res: ServerResponse, task: TaskRecord, runtime: TaskRuntime) {
   const message =
     task.error ??
     (task.status === "shed"
-      ? "Task saved. Choose Wait to run it."
+      ? shedMessage(task, runtime)
       : `Task ${task.status.replaceAll("_", " ")}.`);
   sendJson(res, statusCode(task), {
     task: taskView(task, runtime.requestError(task)),

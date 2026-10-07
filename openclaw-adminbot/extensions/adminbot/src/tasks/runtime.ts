@@ -18,11 +18,12 @@ import {
   inputHash,
   TaskStore,
   type TaskRecord,
+  type TaskShedReason,
   type TaskStatus,
   type StepRecord,
   VISITOR_OWNER_PREFIX,
 } from "./store.js";
-export type { TaskRecord, TaskStatus } from "./store.js";
+export type { TaskRecord, TaskShedReason, TaskStatus } from "./store.js";
 export type TaskSubmission = {
   id: string;
   status: TaskStatus;
@@ -263,6 +264,9 @@ export class TaskRuntime {
   }
   private update(task: TaskRecord, status: TaskStatus, error?: string): TaskRecord {
     task.status = status;
+    if (status !== "shed") {
+      delete task.shedReason;
+    }
     task.updatedAt = this.options.now();
     task.error = error?.slice(0, 2000);
     this.store.transaction(() => {
@@ -350,11 +354,12 @@ export class TaskRuntime {
       owner: params.owner,
       key: params.key,
       input,
-      status: this.admissionStatus(params.owner, params.wait ?? false),
+      status: "shed",
       createdAt: now,
       updatedAt: now,
       expiresAt: now + this.options.retentionMs,
     };
+    task.status = this.admit(task, params.wait ?? false);
     this.ensureCapacity(task, task.owner);
     this.store.transaction(() => {
       this.store.save(task);
@@ -362,6 +367,10 @@ export class TaskRuntime {
     });
     this.drain();
     return this.submission(this.store.get(task.id)!);
+  }
+  /** How many unfinished tasks one owner may hold, for messages that explain a shed task. */
+  ownerShare(): number {
+    return this.options.maxInFlightPerOwner;
   }
   wait(id: string, owner?: string): TaskSubmission | undefined {
     this.assertOpen();
@@ -371,7 +380,7 @@ export class TaskRuntime {
       return;
     }
     if (task.status === "shed") {
-      this.update(task, this.admissionStatus(task.owner, true));
+      this.update(task, this.admit(task, true));
     }
     this.drain();
     return this.submission(this.store.get(id)!);
@@ -395,7 +404,7 @@ export class TaskRuntime {
       task.retryExhausted = false;
       this.store.transaction(() => {
         this.store.resetUncertain(id);
-        this.update(task, this.admissionStatus(task.owner, true));
+        this.update(task, this.admit(task, true));
       });
     }
     this.drain();
@@ -455,7 +464,17 @@ export class TaskRuntime {
       ...counts,
     };
   }
-  private admissionStatus(owner: string, wait: boolean): "queued" | "shed" {
+  /** Decide admission for `task` and record why it was shed, so Wait can say so. */
+  private admit(task: TaskRecord, wait: boolean): "queued" | "shed" {
+    const reason = this.shedReason(task.owner, wait);
+    if (reason) {
+      task.shedReason = reason;
+      return "shed";
+    }
+    delete task.shedReason;
+    return "queued";
+  }
+  private shedReason(owner: string, wait: boolean): TaskShedReason | undefined {
     // The share binds first, and it binds even when the service is idle. An earlier version let
     // an idle service admit anything, reasoning that a share divides a contended line and there
     // was no line to divide. That is wrong: submit() drains after every admission, so the queue
@@ -463,7 +482,7 @@ export class TaskRuntime {
     // and one owner reaches maxRunning. Measured at 20 running against a share of 4. "Idle right
     // now" is not a reason to let one member take every running slot on a box the lab shares.
     if (this.store.countInFlightForOwner(owner) >= this.options.maxInFlightPerOwner) {
-      return "shed";
+      return "owner_limit";
     }
     const queued = this.store.count("queued");
     const immediate =
@@ -472,11 +491,14 @@ export class TaskRuntime {
       this.active.size < this.options.maxRunning &&
       (this.options.canStart?.() ?? true);
     if (immediate) {
-      return "queued";
+      return undefined;
     }
     // Past the shared line the task is saved, not refused: the member keeps a row and a Wait,
     // which is the status they would have seen from a full queue.
-    return !wait || queued >= this.options.maxQueued ? "shed" : "queued";
+    if (!wait) {
+      return "not_waiting";
+    }
+    return queued >= this.options.maxQueued ? "queue_full" : undefined;
   }
   /**
    * Queued ids, ordered least-recently-served owner first rather than by arrival.

@@ -652,3 +652,22 @@ describe("visitor allotment", () => {
     expect(r.submit({ owner: "member:m", kind: "t", input: receipt }).status).toBe("shed");
   });
 });
+
+// Review of #255: Wait on a shed task said nothing about why it stayed shed.
+describe("shed reasons", () => {
+  it("names the owner limit and the full queue, and keeps the reason through Wait", async () => {
+    const r = new TaskRuntime({ maxRunning: 1, maxInFlightPerOwner: 1, maxQueued: 1 });
+    r.register("t", 1, () => new Promise(() => {}));
+    expect(r.submit({ owner: "a", kind: "t", input: 1 }).status).toBe("running");
+    await tick();
+    const own = r.submit({ owner: "a", kind: "t", input: 2, wait: true });
+    expect(own.task).toMatchObject({ status: "shed", shedReason: "owner_limit" });
+    expect(r.wait(own.id, "a")?.task).toMatchObject({ status: "shed", shedReason: "owner_limit" });
+    expect(r.submit({ owner: "b", kind: "t", input: 3, wait: true }).status).toBe("queued");
+    const full = r.submit({ owner: "c", kind: "t", input: 4, wait: true });
+    expect(full.task).toMatchObject({ status: "shed", shedReason: "queue_full" });
+    const declined = r.submit({ owner: "d", kind: "t", input: 5 });
+    expect(declined.task).toMatchObject({ status: "shed", shedReason: "not_waiting" });
+    await r.shutdown({ graceMs: 0 });
+  });
+});

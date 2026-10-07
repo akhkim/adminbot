@@ -43,7 +43,8 @@ Task saved. Choose Wait to run it.
 ```
 
 Wait asks to put the saved row in the line. If the queue or the owner's share is still full,
-it remains saved and offers Wait again. It does not re-upload the input, and it is idempotent —
+it remains saved, offers Wait again, and says which of the two it was (`shedReason`
+`owner_limit` or `queue_full`). It does not re-upload the input, and it is idempotent —
 a client that polls cannot turn one request into two. When the task finishes, the member gets the
 answer to what they asked, not the classification that preceded it.
 

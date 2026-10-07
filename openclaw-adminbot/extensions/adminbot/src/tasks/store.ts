@@ -18,6 +18,8 @@ export type TaskStatus =
   | "needs_retry"
   | "cancelled"
   | "expired";
+/** Why a task was saved rather than admitted: Wait cannot help until that condition clears. */
+export type TaskShedReason = "owner_limit" | "queue_full" | "not_waiting";
 export type TaskRecord = {
   id: string;
   owner: string;
@@ -29,6 +31,7 @@ export type TaskRecord = {
   result?: unknown;
   progress?: Record<string, unknown>;
   error?: string;
+  shedReason?: TaskShedReason;
   executionAttempts?: number;
   retryExhausted?: boolean;
   createdAt: number;
