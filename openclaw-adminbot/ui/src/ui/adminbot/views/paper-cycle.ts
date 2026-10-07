@@ -5,7 +5,7 @@ import type {
   PaperReimbursement,
   PaperSocialConsent,
   PaperSocialDraft,
-} from "../auth/session.ts";
+} from "../api/papers.ts";
 // The parts of a paper card that are lists rather than single fields: the social drafts and who
 // has signed off on them, who is going to the conference, and who has been reimbursed.
 //

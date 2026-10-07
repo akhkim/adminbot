@@ -2,12 +2,10 @@
 // My Desk: what lands in each queue, and what does not.
 import { render } from "lit";
 import { afterEach, describe, expect, it } from "vitest";
-import type {
-  EscalatedNudgeRow,
-  LogisticsRequest,
-  MemberProfileOverviewRow,
-  PiReviewRow,
-} from "../auth/session.ts";
+import type { LogisticsRequest } from "../api/logistics.ts";
+import type { MemberProfileOverviewRow } from "../api/members.ts";
+import type { EscalatedNudgeRow } from "../api/nudges.ts";
+import type { PiReviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import {
   incompleteProfiles,

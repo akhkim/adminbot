@@ -13,7 +13,7 @@
 // to be able to tell which one they are looking at before they file anything against it.
 import { html, nothing, LitElement } from "lit";
 import { property } from "lit/decorators.js";
-import type { TravelHistoryRow, TravelStayRow } from "../auth/session.ts";
+import type { TravelHistoryRow, TravelStayRow } from "../api/members.ts";
 import type { TravelRange } from "../controllers/travel.ts";
 
 const RANGE_LABELS: Record<TravelRange, string> = {

@@ -1,7 +1,7 @@
 import { html, nothing, LitElement } from "lit";
 import { property, state } from "lit/decorators.js";
 import { t } from "../../../i18n/index.ts";
-import type { PublicationDigestPreview, PublicationDigestVenue } from "../auth/session.ts";
+import type { PublicationDigestPreview, PublicationDigestVenue } from "../api/paper-admin.ts";
 // Control UI view for the Mailing List tab: the lab's publications in a date range, mailed out.
 //
 // Sits beside the Grant Report on Lab Overview and answers a narrower version of the same

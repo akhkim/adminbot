@@ -1,5 +1,5 @@
 import { html, nothing } from "lit";
-import type { ConferenceRoster } from "../auth/session.ts";
+import type { ConferenceRoster } from "../api/paper-admin.ts";
 import type { DeadlineVenue } from "../data/deadlines.ts";
 
 // Match recorded aliases and year, never an acronym guessed from a full conference title.

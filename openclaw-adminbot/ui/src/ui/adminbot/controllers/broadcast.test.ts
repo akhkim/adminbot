@@ -7,12 +7,16 @@ const storedSession = vi.fn<() => { sessionToken: string } | null>(() => ({
 }));
 
 vi.mock("../auth/session.ts", () => ({
-  publishLabBroadcast: (...args: unknown[]) => publishLabBroadcast(...args),
-  fetchLabBroadcasts: (...args: unknown[]) => fetchLabBroadcasts(...args),
-  fetchNotifications: vi.fn(),
-  markNotificationsRead: vi.fn(),
   loadStoredMemberSession: () => storedSession(),
   resolveAdminBotBaseUrl: () => "http://localhost",
+}));
+vi.mock("../api/lab-sharing.ts", () => ({
+  publishLabBroadcast: (...args: unknown[]) => publishLabBroadcast(...args),
+  fetchLabBroadcasts: (...args: unknown[]) => fetchLabBroadcasts(...args),
+}));
+vi.mock("../api/workspace.ts", () => ({
+  fetchNotifications: vi.fn(),
+  markNotificationsRead: vi.fn(),
 }));
 vi.mock("../../toast.ts", () => ({ showToast: vi.fn() }));
 
