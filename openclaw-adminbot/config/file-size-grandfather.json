@@ -160,7 +160,7 @@
       "reason": "Upstream core file; split when touched, never grow."
     },
     "ui/src/ui/adminbot/data/deadlines.ts": {
-      "max": 10125,
+      "max": 10025,
       "reason": "Static venue data used only as a default parameter; move to a lazily loaded JSON asset."
     },
     "ui/src/ui/adminbot/views/admin.ts": {
@@ -168,7 +168,7 @@
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "ui/src/ui/adminbot/views/deadlines.ts": {
-      "max": 3552,
+      "max": 3529,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "ui/src/ui/adminbot/views/my-work.ts": {
