@@ -131,6 +131,7 @@ import {
   getReferenceScan,
   saveReferenceScan,
 } from "./reference-scans.js";
+import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
 import { SqliteVenuePaperIndex } from "./sqlite.venue-papers.js";
 
 const require = createRequire(import.meta.url);
@@ -196,12 +197,14 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   private readonly db: DatabaseSync;
   private readonly failedRequests: FailedExternalRequestLedger;
   private readonly venueIndex: SqliteVenuePaperIndex;
+  private readonly members: SqliteLabMemberCache;
 
   constructor(readonly databasePath: string) {
     ensureDatabaseDirectory(databasePath);
     const sqlite = requireNodeSqlite();
     this.db = new sqlite.DatabaseSync(databasePath);
     this.venueIndex = new SqliteVenuePaperIndex(this.db);
+    this.members = new SqliteLabMemberCache(this.db);
     // SQLite's built-in lower() only handles ASCII; use the same fold as the in-memory store.
     this.db.function("adminbot_lower", { deterministic: true }, (value) =>
       String(value ?? "").toLowerCase(),
@@ -1375,42 +1378,44 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           payload_json = excluded.payload_json`,
       )
       .run(member.id, member.privilege_level, member.updated_at, JSON.stringify(member));
+    this.members.invalidate();
   }
 
   patchLabMemberAuthFields(
     memberId: string,
     patch: Parameters<AdminBotServiceStore["patchLabMemberAuthFields"]>[1],
   ): boolean {
-    return (
+    const changed =
       this.db
         .prepare(
           `UPDATE adminbot_lab_members
          SET updated_at = ?, payload_json = json_patch(payload_json, ?)
          WHERE id = ?`,
         )
-        .run(patch.updated_at, JSON.stringify(patch), memberId).changes > 0
-    );
+        .run(patch.updated_at, JSON.stringify(patch), memberId).changes > 0;
+    this.members.invalidate();
+    return changed;
   }
 
   getLabMember(memberId: string): AdminBotLabMember | undefined {
-    const row = this.db
-      .prepare("SELECT payload_json FROM adminbot_lab_members WHERE id = ?")
-      .get(memberId) as { payload_json?: string } | undefined;
-    return row?.payload_json ? parseJson<AdminBotLabMember>(row.payload_json) : undefined;
+    return this.members.get(memberId);
   }
 
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[] {
-    const q = page?.q?.toLowerCase();
+    if (!page) {
+      return [...this.members.list()];
+    }
+    const q = page.q?.toLowerCase();
     const where = q ? `WHERE ${LAB_MEMBER_SEARCH}` : "";
     // ponytail: NOCASE indexes the common paged read but folds ASCII only. Search still folds
     // Unicode; add a persisted Unicode sort key if locale-aware global ordering becomes necessary.
     const rows = this.db
       .prepare(
         `SELECT m.payload_json FROM adminbot_lab_members m ${where}
-          ORDER BY ${page ? "json_extract(m.payload_json, '$.name') COLLATE NOCASE, m.id" : "json_extract(m.payload_json, '$.name')"}
-          ${page ? "LIMIT ? OFFSET ?" : ""}`,
+          ORDER BY json_extract(m.payload_json, '$.name') COLLATE NOCASE, m.id
+          LIMIT ? OFFSET ?`,
       )
-      .all(...(q ? [q, q, q, q] : []), ...(page ? [page.limit, page.offset] : [])) as Array<{
+      .all(...(q ? [q, q, q, q] : []), page.limit, page.offset) as Array<{
       payload_json: string;
     }>;
     return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
@@ -1436,28 +1441,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   listLabMemberSummaries(): AdminBotLabMemberSummary[] {
-    const rows = this.db
-      .prepare(
-        `SELECT m.payload_json FROM adminbot_lab_members m
-         ORDER BY adminbot_lower(json_extract(m.payload_json, '$.name')), m.id`,
-      )
-      .all() as Array<{ payload_json: string }>;
-    return rows.map((row) => {
-      const summary = parseJson<AdminBotLabMember>(row.payload_json);
-      delete summary.field_provenance;
-      delete (summary as Partial<AdminBotLabMember>).access;
-      if (summary.onboarding && !Array.isArray(summary.onboarding)) {
-        return {
-          ...summary,
-          onboarding: {
-            steps: Array.isArray(summary.onboarding.steps)
-              ? summary.onboarding.steps.map(({ id, status }) => ({ id, status }))
-              : [],
-          },
-        };
-      }
-      return summary;
-    });
+    return [...this.members.summaries()];
   }
 
   countLabMembers(q?: string): number {
@@ -1917,6 +1901,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     const result = this.db
       .prepare("DELETE FROM adminbot_lab_members WHERE id = ?")
       .run(memberId) as { changes?: number };
+    this.members.invalidate();
     return (result.changes ?? 0) > 0;
   }
 
@@ -3770,6 +3755,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         return "stale";
       }
       this.db.exec("COMMIT");
+      this.members.invalidate();
       return "changed";
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -3953,6 +3939,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         )
         .run(decidedBy, decidedAt, id);
       this.db.exec("COMMIT");
+      this.members.invalidate();
       return { ok: true, member_id: memberId };
     } catch (error) {
       this.db.exec("ROLLBACK");
