@@ -1,6 +1,18 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export type TaskStepOptions = { timeoutMs?: number; replaySafe?: boolean };
+/**
+ * Thrown from a step body when the attempt definitely finished and failed, with no effect that an
+ * explicit retry would have to reconcile -- a model call that answered 503, timed out or never
+ * connected. The runtime records the step as failed rather than uncertain and rethrows `cause`, so
+ * a caller that tolerates one failed item can carry on. A later attempt at the same key runs again.
+ */
+export class TaskStepFailedError extends Error {
+  override name = "TaskStepFailedError";
+  constructor(override readonly cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+  }
+}
 export type TaskContext = {
   id: string;
   owner: string;

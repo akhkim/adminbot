@@ -35,7 +35,7 @@ export type TaskRecord = {
 export type StepRecord = {
   key: string;
   hash: string;
-  status: "running" | "completed" | "uncertain";
+  status: "running" | "completed" | "uncertain" | "failed";
   attempt: string;
   replaySafe?: boolean;
   result?: unknown;

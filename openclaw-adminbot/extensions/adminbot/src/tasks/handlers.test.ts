@@ -74,10 +74,10 @@ describe("workflow checkpoint integration", () => {
     await gate.shutdown();
     gate.database.close();
   });
-  it("an explicit retry reuses classification and gives the uncertain model call a new attempt", async () => {
+  it("an explicit retry reuses classification and gives the failed model call a new attempt", async () => {
     const { runtime, gate, counts } = setup(true);
     const submitted = runtime.submit({ owner: "a", kind: "privacy", input });
-    expect((await submitted.promise)?.status).toBe("needs_retry");
+    expect((await submitted.promise)?.status).toBe("failed");
     const retried = runtime.retry(submitted.id, "a")!;
     expect((await retried.promise)?.result).toEqual({ route: "local", output: "Synthetic answer" });
     expect(counts()).toEqual({ classified: 1, generated: 2 });
@@ -215,9 +215,96 @@ it("retries a model HTTP failure without replaying a completed predecessor", asy
   });
   try {
     const firstTask = runtime.submit({ kind: "test", owner: "member", input: {} });
-    expect((await firstTask.promise)?.status).toBe("needs_retry");
+    expect((await firstTask.promise)?.status).toBe("failed");
     expect((await runtime.retry(firstTask.id, "member")!.promise)?.result).toBe("done");
     expect({ first, second }).toEqual({ first: 1, second: 2 });
+  } finally {
+    await runtime.shutdown();
+    await gate.shutdown();
+    gate.database.close();
+  }
+});
+
+// Review of #255: a model call that finished with a failure has no side effect to protect, so it
+// must not leave an uncertain checkpoint that forces a whole-task retry on a handler that coped.
+it("completes a task whose handler tolerates a failed model call", async () => {
+  let calls = 0;
+  const gate = createInferenceGate({
+    config: inferenceTestConfig(),
+    env: {},
+    fetchImpl: async () => {
+      calls++;
+      return calls === 1
+        ? { ok: false, status: 503, statusText: "Unavailable", text: async () => "busy" }
+        : { ok: true, status: 200, statusText: "OK", text: async () => "answer" };
+    },
+  });
+  const runtime = new TaskRuntime({ db: gate.database });
+  const request = {
+    route: "chat/completions" as const,
+    baseUrl: "http://127.0.0.1:8000/v1",
+    purpose: "item",
+    body: { model: "m" },
+  };
+  runtime.register("items", 1, async () => {
+    const outcomes: string[] = [];
+    for (const item of ["one", "two"]) {
+      try {
+        await runGated(gate, { owner: "member", caller: `item:${item}`, request });
+        outcomes.push(`${item}:ok`);
+      } catch (error) {
+        outcomes.push(`${item}:failed:${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    return outcomes;
+  });
+  try {
+    const task = await runtime.submit({ kind: "items", owner: "member", input: {} }).promise;
+    expect(task?.status).toBe("completed");
+    expect(task?.result).toEqual(["one:failed:item: HTTP 503 Unavailable", "two:ok"]);
+  } finally {
+    await runtime.shutdown();
+    await gate.shutdown();
+    gate.database.close();
+  }
+});
+
+it("re-runs a failed model call on an explicit retry instead of refusing the checkpoint", async () => {
+  let calls = 0;
+  const gate = createInferenceGate({
+    config: inferenceTestConfig(),
+    env: {},
+    fetchImpl: async () => {
+      calls++;
+      if (calls === 1) {
+        throw new TypeError("fetch failed");
+      }
+      return { ok: true, status: 200, statusText: "OK", text: async () => "answer" };
+    },
+  });
+  const runtime = new TaskRuntime({ db: gate.database });
+  runtime.register("one", 1, async () => {
+    const response = await runGated(gate, {
+      owner: "member",
+      caller: "only",
+      request: {
+        route: "chat/completions",
+        baseUrl: "http://127.0.0.1:8000/v1",
+        purpose: "only",
+        body: { model: "m" },
+      },
+    });
+    return response.text;
+  });
+  try {
+    const first = runtime.submit({ kind: "one", owner: "member", input: {} });
+    const failed = await first.promise;
+    // Nothing is uncertain about a call that failed, so the task fails rather than asking for a
+    // retry; the member can still retry it, and the call runs again.
+    expect(failed?.status).toBe("failed");
+    expect(failed?.error).toBe("fetch failed");
+    expect((await runtime.retry(first.id, "member")!.promise)?.result).toBe("answer");
+    expect(calls).toBe(2);
   } finally {
     await runtime.shutdown();
     await gate.shutdown();

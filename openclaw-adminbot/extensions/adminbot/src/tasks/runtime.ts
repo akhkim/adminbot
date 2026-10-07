@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type { DatabaseSync } from "node:sqlite";
 import {
+  TaskStepFailedError,
   taskContextStorage,
   taskStepAttemptStorage,
   type TaskContext,
@@ -665,7 +666,7 @@ export class TaskRuntime {
         if (old.status === "completed") {
           return old;
         }
-        if (!old.replaySafe) {
+        if (!old.replaySafe && old.status !== "failed") {
           throw new TaskNeedsRetryError(`Checkpoint ${key} requires explicit retry`);
         }
       }
@@ -731,9 +732,13 @@ export class TaskRuntime {
           );
           return finish(step, value);
         } catch (error) {
+          const settled = error instanceof TaskStepFailedError && !signal.aborted;
           if (!this.closed && this.store.step(task.id, step.key)?.attempt === step.attempt) {
-            step.status = "uncertain";
+            step.status = settled ? "failed" : "uncertain";
             this.store.saveStep(task.id, step);
+          }
+          if (settled) {
+            throw error.cause;
           }
           if (error instanceof TaskInterruptedError || options?.replaySafe) {
             throw error;

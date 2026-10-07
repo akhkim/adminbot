@@ -48,8 +48,11 @@ it, so a sweep cannot hold the GPU while an interactive caller waits on nothing.
 
 Durability is opt-in and off by default (`ADMINBOT_INFERENCE_PERSIST_ACROSS_RESTARTS`). A step that
 is interrupted and is not replay-safe becomes `needs_retry`; only an explicit retry re-enters it,
-because a client that lost its response cannot know whether the GPU already ran the work. We make
-no exactly-once claim for GPU or remote execution and the interface says so.
+because a client that lost its response cannot know whether the GPU already ran the work. A call
+that finished with a failure (an HTTP error, a timeout, no connection) is not interrupted: its step
+is recorded as failed, so a workflow that counts failed items keeps going instead of the whole task
+waiting on an explicit retry. We make no exactly-once claim for GPU or remote execution and the
+interface says so.
 
 The backlog is bounded per owner as well as in total (`queue.maxPerOwner`), and the dispatcher
 rotates across owners rather than following arrival order, so one member's burst neither takes the

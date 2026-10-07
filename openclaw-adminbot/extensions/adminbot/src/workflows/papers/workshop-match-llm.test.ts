@@ -520,12 +520,22 @@ it("resumes a task's original batch plan and reuses completed model batches", as
     maxAttemptsPerCall: 1,
   });
   const runtime = new TaskRuntime({ db });
-  runtime.register("matcher", 1, () =>
-    matcher({ papers: [paper("a"), paper("b")], workshops: [profile("one"), profile("two")] }),
-  );
+  let executions = 0;
+  runtime.register("matcher", 1, async () => {
+    const first = ++executions === 1;
+    const matches = await matcher({
+      papers: [paper("a"), paper("b")],
+      workshops: [profile("one"), profile("two")],
+    });
+    // A failed batch is counted, not fatal, so the first execution fails after the pass instead.
+    if (first) {
+      throw new Error("synthetic failure after the pass");
+    }
+    return matches;
+  });
   try {
     const submitted = runtime.submit({ owner: "service", kind: "matcher", input: {} });
-    expect((await submitted.promise)?.status).toBe("needs_retry");
+    expect((await submitted.promise)?.status).toBe("failed");
     const retried = runtime.retry(submitted.id, "service")!;
     expect((await retried.promise)?.status).toBe("completed");
     expect(bodies).toHaveLength(5);

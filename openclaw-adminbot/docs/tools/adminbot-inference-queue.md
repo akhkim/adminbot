@@ -48,7 +48,11 @@ a client that polls cannot turn one request into two. When the task finishes, th
 answer to what they asked, not the classification that preceded it.
 
 A task that was interrupted mid-step and cannot safely be replayed becomes `needs_retry` and says
-so. Retry creates a fresh attempt and keeps every checkpoint that already completed. The runner
+so. A model call that _finished_ with a failure is not uncertain: an HTTP error, a timeout or a
+connection that never opened has no effect to reconcile. Its step is recorded as failed and the
+error goes back to the workflow, so one that tolerates a failed item -- a matcher batch, one
+member's CV, a remote stage that falls back to the local model -- carries on. A failure the
+workflow does not handle ends the task as `failed`, and Retry runs the call again. Retry creates a fresh attempt and keeps every checkpoint that already completed. The runner
 allows three task executions by default, counting the initial run, explicit retries, and resumed
 handler runs after a restart. This execution budget is separate from the 20,000 checkpoint-attempt
 ceiling, so it does not limit a task to three stages.

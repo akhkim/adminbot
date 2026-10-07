@@ -11,6 +11,7 @@ import type { DatabaseSync } from "node:sqlite";
  * Queue decisions must propagate through callers without triggering fallback or retry.
  */
 import {
+  TaskStepFailedError,
   currentTaskContext,
   currentTaskScope,
   currentTaskStepAttempt,
@@ -1685,28 +1686,44 @@ export async function runGated(
     };
     for (;;) {
       task.check();
-      try {
-        const response = await runGatedCall(gate, gatedRequest);
+      const outcome = await gate.run(gatedRequest);
+      if (outcome.kind === "completed") {
         // A server error is not a completed checkpoint. Retaining a 503 as completed makes
         // every explicit Resume reuse that failure even after the model recovers.
-        if (!response.ok) {
-          throw new Error(
-            `${request.request.purpose}: HTTP ${response.status} ${response.statusText}`,
-          );
+        if (!outcome.response.ok) {
+          throw new TaskStepFailedError(httpFailure(request, outcome.response));
         }
-        return response;
-      } catch (error) {
-        // Internal backpressure is not an uncertain model attempt. Reuse the saved child row.
-        if (!isInferenceDeferred(error) || error.outcome.kind !== "shed") {
+        return outcome.response;
+      }
+      if (outcome.kind === "failed") {
+        const error = outcome.response
+          ? httpFailure(request, outcome.response)
+          : outcome.cause instanceof Error
+            ? outcome.cause
+            : new Error(outcome.error);
+        // A call the gate stopped (shutdown) or the caller abandoned may have been cut off mid
+        // generation, and stays uncertain. One that answered with an error, timed out or never
+        // connected is finished: nothing it did needs reconciling, so the task can count it as
+        // one failed item and carry on, and a retry simply asks again.
+        if (outcome.failure === "interrupted" || outcome.failure === "cancelled") {
           throw error;
         }
-        await abortable(
-          new Promise<void>((resolve) => setTimeout(resolve, 50)),
-          gatedRequest.signal!,
-        );
+        throw new TaskStepFailedError(error);
       }
+      // Internal backpressure is not an uncertain model attempt. Reuse the saved child row.
+      if (outcome.kind !== "shed") {
+        throw new InferenceDeferredError(outcome);
+      }
+      await abortable(
+        new Promise<void>((resolve) => setTimeout(resolve, 50)),
+        gatedRequest.signal!,
+      );
     }
   });
+}
+
+function httpFailure(request: InferenceGateRequest, response: InferenceResponseRecord): Error {
+  return new Error(`${request.request.purpose}: HTTP ${response.status} ${response.statusText}`);
 }
 
 async function runGatedCall(
