@@ -1041,16 +1041,51 @@ export function renderPaperCycle(props: PaperCycleProps) {
         <p class="paper-slot__note">
           Stored so the coauthors named in a post can be shown it before it goes out.
         </p>
-        ${renderDraft(props, "x")}
         ${props.onGenerateXDraft
-          ? X_ANNOUNCEMENT_STAGES.slice(1).map(
-              (stage) =>
-                html`<details>
-                  <summary>${X_STAGE_LABELS[stage]}</summary>
+          ? html`<div class="paper-cycle__stage-picker">
+              <label class="paper-cycle__field"
+                ><span>What would you like to announce?</span>
+                <select
+                  class="input"
+                  aria-label="Announcement to make"
+                  @change=${(event: Event) => {
+                    const select = event.currentTarget as HTMLSelectElement;
+                    const root = select.closest(".paper-cycle__stage-picker");
+                    root
+                      ?.querySelectorAll<HTMLElement>("[data-announcement-panel]")
+                      .forEach((panel) => {
+                        panel.hidden = panel.dataset.announcementPanel !== select.value;
+                      });
+                  }}
+                >
+                  ${X_ANNOUNCEMENT_STAGES.map(
+                    (stage) => html`<option value=${stage}>${X_STAGE_LABELS[stage]}</option>`,
+                  )}
+                </select>
+              </label>
+              <p class="paper-slot__note">
+                Each announcement has its own template and saved thread for this paper.
+              </p>
+              ${X_ANNOUNCEMENT_STAGES.map(
+                (stage) => html`<section
+                  data-announcement-panel=${stage}
+                  .hidden=${stage !== "arxiv"}
+                >
+                  <p class="paper-slot__note">
+                    ${{
+                      arxiv: "Hook → method and findings → significance, paper link and credits.",
+                      acceptance:
+                        "Acceptance hook → contribution and findings → significance, venue, paper link and credits.",
+                      attendance: "Who is going → confirmed dates → invitation to meet.",
+                      poster:
+                        "Come chat → confirmed local time and poster location → topic and paper link.",
+                    }[stage]}
+                  </p>
                   ${renderDraft(props, "x", stage)}
-                </details>`,
-            )
-          : nothing}
+                </section>`,
+              )}
+            </div>`
+          : renderDraft(props, "x")}
         ${renderDraft(props, "linkedin")}
       </details>
 

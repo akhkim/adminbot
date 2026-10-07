@@ -252,6 +252,36 @@ describe("the linkedin panel's absorbed generator", () => {
       ],
     ]);
   });
+  it("selects one announcement and generates that stage", () => {
+    const calls: unknown[] = [];
+    const { container } = draw({
+      onGenerateXDraft: (...args) => {
+        calls.push(args);
+      },
+    });
+    const select = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Announcement to make"]',
+    )!;
+    select.value = "poster";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    const panels = Array.from(container.querySelectorAll<HTMLElement>("[data-announcement-panel]"));
+    expect(
+      panels.filter((panel) => !panel.hidden).map((panel) => panel.dataset.announcementPanel),
+    ).toEqual(["poster"]);
+    const panel = container.querySelector('[data-announcement-panel="poster"]')!;
+    panel.querySelector<HTMLInputElement>('[data-el="x-venue"]')!.value = "SyntheticConf";
+    panel.querySelector<HTMLInputElement>('[data-el="x-session"]')!.value =
+      "9 Oct, Hall A, poster 2";
+    panel
+      .querySelector<HTMLButtonElement>('[data-testid="paper-draft-generate-p1-x-poster"]')!
+      .click();
+    expect((calls[0] as unknown[])[3]).toEqual({
+      stage: "poster",
+      venue: "SyntheticConf",
+      attendees: undefined,
+      session: "9 Oct, Hall A, poster 2",
+    });
+  });
   it("asks for venue and context on linkedin only, ahead of the draft box", () => {
     const { container } = draw();
     const li = container.querySelector('[data-testid="paper-draft-p1-linkedin"]');

@@ -14,11 +14,13 @@ Choose one stage; make a separate draft for each:
 | Conference attendance | “We’re heading to [conference]—let’s meet.” | Confirmed attendees, dates, meeting invitation |
 | Poster invitation | “We’re here—come chat about [topic].” | Verified local date/time, hall, poster number |
 
-## Thread template
+## Release and acceptance thread template
 
 - **1/N — Hook → answer → method.** One clear question or announcement; give the main takeaway. Attach the overview/pipeline figure when useful.
 - **2/N — Evidence → meaning.** Explain one supported finding in plain language. Attach the actual results figure that supports it.
 - **3/N — Why it matters → invitation.** State the significance or stage-specific invitation. Add paper/code links, all authors and selected supporting organizations.
+
+Attendance and poster announcements use a shorter invitation template: confirmed people/dates or session logistics → meet/come chat → paper topic and link. Do not repeat the full release thread.
 
 Use extra posts when needed; renumber after editing. Keep each post within X’s character limit, including numbering and links. Reply each post to the preceding post. Never truncate credits to force three posts.
 

@@ -28,6 +28,22 @@ describe("X paper thread", () => {
     ).toContain("come chat");
     expect(() => readXAnnouncement({ stage: "invented" })).toThrow();
   });
+  it("uses research threads for release/acceptance and short invitations for later stages", () => {
+    expect(xAnnouncementPrompt({ stage: "arxiv" })).toContain("research-thread template");
+    expect(xAnnouncementPrompt({ stage: "acceptance", venue: "SyntheticConf" })).toContain(
+      "research-thread template",
+    );
+    for (const stage of ["attendance", "poster"] as const) {
+      const prompt = xAnnouncementPrompt({
+        stage,
+        venue: "SyntheticConf",
+        attendees: "Ada, 9 Oct",
+        session: "9 Oct, Hall A",
+      });
+      expect(prompt).toContain("short invitation template");
+      expect(prompt).not.toContain("Start with a concrete question");
+    }
+  });
   it("keeps figure bytes and rejects remote URLs or missing descriptions", () => {
     const draft = {
       stage: "arxiv",
