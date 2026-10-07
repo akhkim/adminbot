@@ -20,6 +20,7 @@ import {
   type TaskRecord,
   type TaskStatus,
   type StepRecord,
+  VISITOR_OWNER_PREFIX,
 } from "./store.js";
 export type { TaskRecord, TaskStatus } from "./store.js";
 export type TaskSubmission = {
@@ -40,6 +41,13 @@ export type TaskRuntimeOptions = {
   maxResultBytes?: number;
   maxSteps?: number;
   maxRetainedBytes?: number;
+  /**
+   * The part of `maxTasks` and `maxRetainedBytes` that anonymous visitors may hold between them.
+   * Visitors can create tasks without an account, so without their own ceiling they could fill
+   * the shared capacity and every member's task-backed route would answer 503 until rows expired.
+   */
+  maxVisitorTasks?: number;
+  maxVisitorRetainedBytes?: number;
   /** Total checkpoint attempts across the task journal. */
   maxAttempts?: number;
   /** Task executions, including the initial run and explicit retries. */
@@ -103,6 +111,13 @@ export class TaskRuntime {
       maxAttempts: 20000,
       maxExecutions: 3,
       retentionMs: 24 * 60 * 60 * 1000,
+      // A fifth of the shared capacity unless configured: enough for a burst of reimbursement
+      // drafts, and members keep at least four fifths whatever visitors do.
+      maxVisitorTasks: Math.max(1, Math.floor((options.maxTasks ?? 1000) / 5)),
+      maxVisitorRetainedBytes: Math.max(
+        1,
+        Math.floor((options.maxRetainedBytes ?? 64_000_000) / 5),
+      ),
       now: Date.now,
       ...options,
     };
@@ -116,6 +131,8 @@ export class TaskRuntime {
       "maxSteps",
       "retentionMs",
       "maxRetainedBytes",
+      "maxVisitorTasks",
+      "maxVisitorRetainedBytes",
       "maxAttempts",
       "maxExecutions",
     ] as const) {
@@ -313,6 +330,12 @@ export class TaskRuntime {
       }
       return this.submission(previous);
     }
+    if (
+      params.owner.startsWith(VISITOR_OWNER_PREFIX) &&
+      this.store.countOwnedBy(VISITOR_OWNER_PREFIX) >= this.options.maxVisitorTasks
+    ) {
+      throw new Error("Visitor task capacity exhausted; retry after expiry");
+    }
     if (this.store.count() >= this.options.maxTasks) {
       throw new Error("Task retention capacity exhausted; retry after expiry");
     }
@@ -332,7 +355,7 @@ export class TaskRuntime {
       updatedAt: now,
       expiresAt: now + this.options.retentionMs,
     };
-    this.ensureCapacity(task);
+    this.ensureCapacity(task, task.owner);
     this.store.transaction(() => {
       this.store.save(task);
       this.store.audit(task, "task.accepted");
@@ -633,7 +656,7 @@ export class TaskRuntime {
         throw new TaskInterruptedError("Task interrupted");
       }
       const result = JSON.parse(encode(value, this.options.maxResultBytes)) as T;
-      this.ensureCapacity(result);
+      this.ensureCapacity(result, task.owner);
       step.status = "completed";
       step.result = result;
       this.store.transaction(() => {
@@ -688,7 +711,7 @@ export class TaskRuntime {
         attempt: randomUUID(),
         replaySafe: options?.replaySafe,
       };
-      this.ensureCapacity({ step: prepared, attempt: prepared });
+      this.ensureCapacity({ step: prepared, attempt: prepared }, task.owner);
       return prepared;
     };
     const ctx: TaskContext = {
@@ -698,7 +721,7 @@ export class TaskRuntime {
       check,
       progress: (value: Record<string, unknown>): void => {
         check();
-        this.ensureCapacity(value);
+        this.ensureCapacity(value, task.owner);
         task.progress = JSON.parse(
           encode(value, Math.min(this.options.maxResultBytes, 64_000)),
         ) as Record<string, unknown>;
@@ -774,7 +797,7 @@ export class TaskRuntime {
         throw new TaskNeedsRetryError("Unsettled checkpoint requires explicit retry");
       }
       const encodedResult = JSON.parse(encode(result, this.options.maxResultBytes)) as unknown;
-      this.ensureCapacity(encodedResult);
+      this.ensureCapacity(encodedResult, task.owner);
       task.result = encodedResult;
       this.update(task, "completed");
     } catch (error) {
@@ -832,7 +855,7 @@ export class TaskRuntime {
     }
     return undefined;
   }
-  private ensureCapacity(value: unknown): void {
+  private ensureCapacity(value: unknown, owner: string): void {
     // Keep per-task headroom for bounded error text and cancellation/uncertainty status
     // writes so exhausting payload storage never prevents recording the final outcome.
     if (
@@ -842,6 +865,15 @@ export class TaskRuntime {
       this.options.maxRetainedBytes
     ) {
       throw new Error("Task retained content capacity exhausted");
+    }
+    if (
+      owner.startsWith(VISITOR_OWNER_PREFIX) &&
+      this.store.retainedBytesOwnedBy(VISITOR_OWNER_PREFIX) +
+        Buffer.byteLength(encode(value, this.options.maxRetainedBytes)) +
+        (this.store.countOwnedBy(VISITOR_OWNER_PREFIX) + 1) * 2300 >
+        this.options.maxVisitorRetainedBytes
+    ) {
+      throw new Error("Visitor task retained content capacity exhausted");
     }
   }
   private bound<T>(promise: Promise<T>, signal: AbortSignal, timeoutMs?: number): Promise<T> {

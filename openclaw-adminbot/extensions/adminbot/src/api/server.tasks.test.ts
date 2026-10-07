@@ -534,3 +534,41 @@ it("reports admission storage trouble on the owning task over HTTP and clears it
   expect(app.taskRuntime.get(submitted.id)?.executionAttempts).toBe(1);
   expect(calls).toBe(2);
 });
+
+// Review of #255: the server built its task runtime without the configured retention or any limit
+// on what anonymous visitors may hold.
+describe("task runtime wiring", () => {
+  function app() {
+    const created = createAdminBotMockService({
+      serviceToken: "synthetic-token",
+      calendarInviteRunner: async () => {},
+      accountApprovedEmailRunner: async () => {},
+      dcsFormRunner: async () => {},
+    });
+    // The held tasks never finish, so let shutdown abandon them rather than wait out the grace.
+    created.inferenceGate.setShutdownGraceMs(0, "test");
+    cleanups.push(() => created.close());
+    created.taskRuntime.register("review.hold", 1, () => new Promise(() => {}));
+    return created;
+  }
+  it("keeps task rows for the configured queue retention, not the runtime default", () => {
+    const { taskRuntime } = app();
+    taskRuntime.pause();
+    const { task } = taskRuntime.submit({ owner: "service", kind: "review.hold", input: {} });
+    expect(task.expiresAt - task.createdAt).toBe(60 * 60 * 1000);
+  });
+  it("still accepts a member's task once visitors have used their whole allotment", () => {
+    const { taskRuntime } = app();
+    taskRuntime.pause();
+    let visitors = 0;
+    expect(() => {
+      for (; visitors < 1000; visitors++) {
+        taskRuntime.submit({ owner: `visitor:${visitors}`, kind: "review.hold", input: {} });
+      }
+    }).toThrow("Visitor task capacity exhausted; retry after expiry");
+    expect(visitors).toBeLessThan(1000);
+    expect(taskRuntime.submit({ owner: "member:m", kind: "review.hold", input: {} }).status).toBe(
+      "shed",
+    );
+  });
+});

@@ -621,3 +621,34 @@ it.each([false, true])(
     await runtime.shutdown({ graceMs: 0 });
   },
 );
+
+// Review of #255: retention capacity was global, so anonymous visitors could fill it and every
+// task-backed member route answered 503 until their rows expired.
+describe("visitor allotment", () => {
+  it("refuses a visitor past the visitor allotment while members still submit", () => {
+    const r = new TaskRuntime({ maxTasks: 4, maxVisitorTasks: 2 });
+    r.register("t", 1, () => new Promise(() => {}));
+    r.pause();
+    r.submit({ owner: "visitor:a", kind: "t", input: 1 });
+    r.submit({ owner: "visitor:b", kind: "t", input: 2 });
+    expect(() => r.submit({ owner: "visitor:c", kind: "t", input: 3 })).toThrow(
+      "Visitor task capacity exhausted; retry after expiry",
+    );
+    expect(r.submit({ owner: "member:m", kind: "t", input: 4 }).status).toBe("shed");
+    expect(r.submit({ owner: "member:n", kind: "t", input: 5 }).status).toBe("shed");
+    expect(() => r.submit({ owner: "member:o", kind: "t", input: 6 })).toThrow(
+      "Task retention capacity exhausted; retry after expiry",
+    );
+  });
+  it("bounds the bytes visitors retain separately from members' bytes", () => {
+    const r = new TaskRuntime({ maxRetainedBytes: 1_000_000, maxVisitorRetainedBytes: 20_000 });
+    r.register("t", 1, () => new Promise(() => {}));
+    r.pause();
+    const receipt = "x".repeat(16_000);
+    r.submit({ owner: "visitor:a", kind: "t", input: receipt });
+    expect(() => r.submit({ owner: "visitor:b", kind: "t", input: receipt })).toThrow(
+      "Visitor task retained content capacity exhausted",
+    );
+    expect(r.submit({ owner: "member:m", kind: "t", input: receipt }).status).toBe("shed");
+  });
+});

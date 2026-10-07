@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { DatabaseSync } from "node:sqlite";
+import { VISITOR_OWNER_PREFIX } from "./store.js";
 
 export const VISITOR_COOKIE = "adminbot_visitor";
 const LIFETIME_MS = 24 * 60 * 60 * 1000;
@@ -49,7 +50,7 @@ export class VisitorSessions {
       throw new Error("visitor session capacity reached; try again later");
     }
     const token = randomBytes(32).toString("base64url");
-    const owner = `visitor:${randomUUID()}`;
+    const owner = `${VISITOR_OWNER_PREFIX}${randomUUID()}`;
     this.db
       .prepare("INSERT INTO adminbot_task_visitors(token_hash, owner, expires_at) VALUES (?, ?, ?)")
       .run(createHash("sha256").update(token).digest("hex"), owner, this.now() + LIFETIME_MS);

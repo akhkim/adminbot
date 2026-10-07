@@ -6,6 +6,9 @@ import type { AdminBotAuditEvent } from "../contracts/actions.js";
 
 export type TaskAuditEventType = Extract<AdminBotAuditEvent["type"], `task.${string}`>;
 
+/** Owners minted for anonymous visitors (see visitors.ts); they draw on their own allotment. */
+export const VISITOR_OWNER_PREFIX = "visitor:";
+
 export type TaskStatus =
   | "shed"
   | "queued"
@@ -308,6 +311,29 @@ export class TaskStore {
     this.db
       .prepare(`INSERT OR REPLACE INTO ${this.steps}_attempts VALUES(?,?,?,?)`)
       .run(id, step.key, step.attempt, JSON.stringify({ ...step, result: undefined }));
+  }
+  countOwnedBy(prefix: string): number {
+    return (
+      this.db
+        .prepare(`SELECT COUNT(*) AS n FROM ${this.table} WHERE substr(owner,1,length(?))=?`)
+        .get(prefix, prefix) as { n: number }
+    ).n;
+  }
+  retainedBytesOwnedBy(prefix: string): number {
+    const owned = `SELECT id FROM ${this.table} WHERE substr(owner,1,length(?))=?`;
+    const task = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(length(CAST(record AS BLOB))),0) AS n FROM ${this.table} WHERE id IN (${owned})`,
+      )
+      .get(prefix, prefix) as { n: number };
+    return [this.steps, `${this.steps}_attempts`].reduce((sum, table) => {
+      const row = this.db
+        .prepare(
+          `SELECT COALESCE(SUM(length(CAST(record AS BLOB))),0) AS n FROM ${table} WHERE task_id IN (${owned})`,
+        )
+        .get(prefix, prefix) as { n: number };
+      return sum + row.n;
+    }, task.n);
   }
   retainedBytes(): number {
     return [this.table, this.steps, `${this.steps}_attempts`].reduce((sum, table) => {

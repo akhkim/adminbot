@@ -68,7 +68,9 @@ Reimbursement is usable without an account — the form carries only the claiman
 so an anonymous claimant needs an owner too. `POST /tasks/visitor` establishes an expiring
 credential, stored only as a hash, **before** the first submission. Without that ordering, losing
 the first response would create a second owner on retry. Visitors reach their own reimbursement
-tasks and nothing else.
+tasks and nothing else. Between them, visitors may hold at most a fifth of the retained task rows
+and bytes, so a burst of anonymous drafts cannot exhaust the capacity members' tasks need; task
+rows are kept for `ADMINBOT_INFERENCE_QUEUE_RETENTION_MS`, like queue rows.
 
 ## Sharing the line
 

@@ -1230,6 +1230,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     maxInputBytes: inferenceConfig.queue.maxPayloadBytes,
     maxResultBytes: inferenceConfig.queue.maxPayloadBytes,
     maxRetainedBytes: inferenceConfig.queue.maxRetainedBytes,
+    // These rows hold receipts, CV text and privacy-task input; keep them no longer than queue rows.
+    retentionMs: inferenceConfig.queue.retentionMs,
     admissionNotice: (id) => inferenceGate.admissionNotice(id),
     canDispatch: () => {
       const stats = inferenceGate.settings();
