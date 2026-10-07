@@ -1514,11 +1514,9 @@ export class AdminBotService {
   }
 
   private refreshStoredDeadlineMilestones(): void {
+    const deadlines = this.deadlineReadModel(DEADLINE_VENUES);
     for (const member of this.store.listLabMembers()) {
-      const milestones = reconcileDeadlineMilestones(
-        member.milestones,
-        this.deadlineReadModel(DEADLINE_VENUES),
-      );
+      const milestones = reconcileDeadlineMilestones(member.milestones, deadlines);
       if (milestones === member.milestones) {
         continue;
       }
