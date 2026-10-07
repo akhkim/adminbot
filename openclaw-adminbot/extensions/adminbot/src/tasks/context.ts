@@ -35,6 +35,18 @@ export const taskContextStorage = new AsyncLocalStorage<TaskContext>();
 export function currentTaskContext(): TaskContext | undefined {
   return taskContextStorage.getStore();
 }
+/**
+ * Whether an error from inside a task means the task itself was stopped or must be retried as a
+ * whole, rather than one item of its work failing. Callers that tolerate a failed item rethrow
+ * these and count everything else.
+ */
+export function isTaskInterruption(error: unknown): boolean {
+  return (
+    Boolean(currentTaskContext()?.signal.aborted) ||
+    (error instanceof Error &&
+      ["TaskNeedsRetryError", "TaskInterruptedError", "TaskSuspendedError"].includes(error.name))
+  );
+}
 export function taskStep<T>(
   key: string,
   input: unknown,

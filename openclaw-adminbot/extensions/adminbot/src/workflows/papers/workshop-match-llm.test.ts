@@ -611,3 +611,52 @@ it("lets an accepted interactive task join the GPU FIFO during a matcher sweep",
     db.close();
   }
 });
+
+// Review of #255: inside a task the matcher rethrew every batch error, so one timeout or 5xx
+// rejected a pass of thousands of calls and, after three executions, wedged it.
+it("inside a task, counts a batch that fails for good and finishes the pass", async () => {
+  const db = memoryDb();
+  const seen: Array<[number, number, number]> = [];
+  const fetchImpl: GuidebookFetch = async (_url, init) => {
+    if (init.body?.includes("Workshop a")) {
+      return { ok: false, status: 504, statusText: "Gateway Timeout", text: async () => "" };
+    }
+    return reply({ matches: [{ paper_id: "p-1", relevance: 90, reason: "On scope." }] });
+  };
+  const gate = createInferenceGate({
+    db,
+    fetchImpl,
+    env: {},
+    config: resolveInferenceGateConfig({
+      ADMINBOT_INFERENCE_HEALTH_INTERVAL_MS: "0",
+      ADMINBOT_INFERENCE_QUEUE_SWEEP_INTERVAL_MS: "0",
+    }),
+  });
+  const matcher = createLocalWorkshopMatcher({
+    gate,
+    fetchImpl,
+    papersPerRequest: 1,
+    maxConcurrentRequests: 1,
+    maxAttemptsPerCall: 2,
+    retryBackoffMs: 0,
+  });
+  const runtime = new TaskRuntime({ db });
+  runtime.register("matcher", 1, () =>
+    matcher({
+      papers: [paper("p-1")],
+      workshops: [profile("a"), profile("b")],
+      onProgress: (done, total, failed) => seen.push([done, total, failed]),
+    }),
+  );
+  try {
+    const task = await runtime.submit({ owner: "service", kind: "matcher", input: {} }).promise;
+    expect(task?.status).toBe("completed");
+    expect(task?.result).toMatchObject([{ workshop_id: "b" }]);
+    expect(task?.result).toHaveLength(1);
+    expect(seen.at(-1)).toEqual([2, 2, 1]);
+  } finally {
+    await runtime.shutdown({ graceMs: 0 });
+    await gate.shutdown();
+    db.close();
+  }
+});

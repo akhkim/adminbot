@@ -19,7 +19,7 @@ import {
   sharedInferenceGate,
   type InferenceGate,
 } from "../../inference/gate.js";
-import { currentTaskContext, withTaskScope, taskStep } from "../../tasks/context.js";
+import { isTaskInterruption, withTaskScope, taskStep } from "../../tasks/context.js";
 import type {
   WorkshopMatcher,
   WorkshopNudgePaper,
@@ -377,7 +377,7 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
           () => runJobWithRetries(job),
         );
       } catch (error) {
-        if (currentTaskContext()) {
+        if (isTaskInterruption(error)) {
           throw error;
         }
         if (isInferenceDeferred(error)) {
@@ -465,7 +465,7 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
         try {
           return await runJob(job, requestTimeoutMs * attempt);
         } catch (error) {
-          if (currentTaskContext()) {
+          if (isTaskInterruption(error)) {
             throw error;
           }
           if (isInferenceDeferred(error)) {
