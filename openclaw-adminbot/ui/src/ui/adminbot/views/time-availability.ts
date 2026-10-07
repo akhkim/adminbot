@@ -60,6 +60,7 @@ import { AOE_TIMEZONE, localTimezone, timezoneOptions } from "../data/timezones.
 // the number they typed in, and capacity becomes a reference line when it is known.
 import { renderDateControl } from "../date-control.ts";
 import { renderMemberSelect } from "./member-select.ts";
+import { renderTrips, renderWhereStrip, type TripDraft } from "./time-availability.trips.ts";
 import {
   CHART_COLORS,
   CHART_NEUTRAL_COLOR,
@@ -68,8 +69,7 @@ import {
   type TimeAllocationInterval,
   type TimeAllocationTask as ChartTask,
   type TimeChartWindow,
-} from "./time-allocation-chart.ts";
-import { renderTrips, renderWhereStrip, type TripDraft } from "./time-availability.trips.ts";
+} from "./time-chart.ts";
 
 type TimeAllocationTask = {
   key: string;
