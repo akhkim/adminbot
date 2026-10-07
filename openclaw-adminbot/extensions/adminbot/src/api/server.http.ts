@@ -5,6 +5,7 @@
 // importing the router back (see server.logistics.ts, and check:import-cycles for why that
 // matters). Nothing here knows what any route means.
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { gzipSync } from "node:zlib";
 import type { AdminBotServiceResponse } from "../kernel/service.js";
 
 // Typed API requests are small. Routes carrying files pass a larger explicit ceiling; making the
@@ -101,7 +102,23 @@ export function sendJson(res: ServerResponse, status: number, body: unknown): vo
   // without this a browser can silently serve a stale GET from its disk cache instead of
   // re-asking the server, which is indistinguishable from the data actually being wrong.
   res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify(body));
+  res.setHeader("Vary", "Accept-Encoding");
+  const json = JSON.stringify(body);
+  // Roster and paper payloads run to megabytes of repetitive JSON, which gzip shrinks ~5-10x.
+  // Small bodies are not worth the CPU or the header bytes.
+  if (json.length >= GZIP_MIN_BYTES && acceptsGzip(res.req)) {
+    res.setHeader("Content-Encoding", "gzip");
+    res.end(gzipSync(json));
+    return;
+  }
+  res.end(json);
+}
+
+const GZIP_MIN_BYTES = 1024;
+
+function acceptsGzip(req: IncomingMessage | undefined): boolean {
+  const header = req?.headers?.["accept-encoding"];
+  return typeof header === "string" && /\bgzip\b(?!;q=0(?:\.0*)?\b)/i.test(header);
 }
 
 export function sendHtml(res: ServerResponse, status: number, body: string): void {
