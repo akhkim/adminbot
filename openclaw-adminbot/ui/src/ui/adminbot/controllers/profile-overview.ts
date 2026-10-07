@@ -6,18 +6,15 @@
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
-  fetchEscalatedNudges,
-  fetchPiReviewQueue,
   fetchMemberProfileOverview,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
   runMandatoryFieldsReminder,
   seedNudgeList,
-  type EscalatedNudgeRow,
-  type PiReviewRow,
   type MemberAdoptionSummary,
   type MemberProfileOverviewRow,
-} from "../auth/session.ts";
+} from "../api/members.ts";
+import { fetchEscalatedNudges, type EscalatedNudgeRow } from "../api/nudges.ts";
+import { fetchPiReviewQueue, type PiReviewRow } from "../api/paper-admin.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 
 export type AdminBotProfileOverviewHost = {
   settings: UiSettings;

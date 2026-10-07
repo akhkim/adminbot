@@ -12,14 +12,16 @@ import { adminBotIsAlumniMember } from "../../../../../extensions/adminbot/src/c
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
-  circulatePaperSocialDraft,
   fetchPaperNudgeBatches,
   fetchPaperSlotOverview,
-  fetchPaperSlots,
-  loadStoredMemberSession,
-  recordPaperSocialConsent,
-  resolveAdminBotBaseUrl,
   runPaperSlotReminder,
+  type PaperNudgeBatch,
+  type PaperSlotOverviewRow,
+} from "../api/paper-admin.ts";
+import {
+  circulatePaperSocialDraft,
+  fetchPaperSlots,
+  recordPaperSocialConsent,
   deleteConferenceTrip,
   saveConferenceTrip,
   savePaperAttendee,
@@ -28,9 +30,8 @@ import {
   savePaperWeeklyUpdate,
   savePaperSocialDraft,
   type PaperCycle,
-  type PaperNudgeBatch,
-  type PaperSlotOverviewRow,
-} from "../auth/session.ts";
+} from "../api/papers.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { PaperTripDraft } from "../views/paper-cycle.ts";
 
 export type AdminBotPaperSlotsHost = {

@@ -2,7 +2,7 @@
 // progress nobody has evidence for -- and what it must do is move on its own when evidence lands.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
-import type { PaperSlotRow } from "../auth/session.ts";
+import type { PaperSlotRow } from "../api/papers.ts";
 import { buildPaperTimeline, renderPaperTimeline } from "./paper-timeline.ts";
 
 function rows(settled: string[], extra: PaperSlotRow[] = []): PaperSlotRow[] {

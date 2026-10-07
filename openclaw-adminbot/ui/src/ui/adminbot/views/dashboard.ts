@@ -20,7 +20,7 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
 import { iconForTab, isKnownTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
-import type { MemberNotification } from "../auth/session.ts";
+import type { MemberNotification } from "../api/workspace.ts";
 import {
   deadlineDateTimeLabel,
   daysLeftLabel,
