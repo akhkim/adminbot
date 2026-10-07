@@ -2862,13 +2862,19 @@ function showPaperDialog(element?: Element) {
  * Always expanded: the dialog was opened to read this paper, so making its body a second click is
  * asking the same question twice.
  */
-export function renderPaperCardDialog(params: {
-  reviewOnly?: boolean;
-  state: AppViewState;
-  props: MyWorkProps;
-  paper: AdminBotPaperRecord;
-  onClose: () => void;
-}) {
+export function renderPaperCardDialog(
+  params: {
+    state: AppViewState;
+    props: MyWorkProps;
+    onClose: () => void;
+  } & (
+    | {
+        reviewOnly: true;
+        paper: Pick<AdminBotPaperRecord, "id" | "title" | "authors" | "artifacts">;
+      }
+    | { reviewOnly?: false; paper: AdminBotPaperRecord }
+  ),
+) {
   return html`
     <dialog
       class=${params.reviewOnly
