@@ -51,7 +51,6 @@ import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
   createEmptyAdminBotStandingMeetings,
-  createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   createEmptyLabPapersState,
   createEmptyVenuePapersState,
@@ -107,6 +106,7 @@ import {
   markAdminBotNotificationsRead,
   resetNotificationPopups,
 } from "./adminbot/controllers/notifications.ts";
+import { createEmptyAdminBotMemberNudgeState } from "./adminbot/controllers/nudges.ts";
 import type { RecentEditsState } from "./adminbot/controllers/recent-edits.ts";
 import {
   recordAdminBotTabVisit,

@@ -5,12 +5,12 @@
 
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
+import { loadAdminBotRoster } from "../controllers/admin.ts";
+import { saveAdminBotOwnProfile } from "../controllers/members.ts";
 import {
   applyAdminBotOwnProfilePhoto,
-  loadAdminBotRoster,
   polishAdminBotOwnProfilePhoto,
-  saveAdminBotOwnProfile,
-} from "../controllers/admin.ts";
+} from "../controllers/profile.ts";
 import { loadAdminBotRecentEdits } from "../controllers/recent-edits.ts";
 import { submitOwnBadgeNomination, submitOwnBadgeSuggestion } from "../data/badges.ts";
 import { renderLocationPrompt } from "../views/location-prompt.ts";

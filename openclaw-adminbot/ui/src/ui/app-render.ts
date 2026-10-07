@@ -22,9 +22,24 @@ import {
 import { submitFeedback } from "./adminbot/api/workspace.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "./adminbot/auth/session.ts";
 import {
-  approveAdminBotAction,
-  runAdminBotCvDigestJob,
-  runAdminBotChannelNamingJob,
+  setWorkshopConference,
+  setWorkshopNudgeRecipients,
+  setAdminBotVenue,
+  setAdminBotVenueCategory,
+  setAdminBotVenueInterests,
+  toggleAdminBotVenueAbstract,
+  toggleWorkshopNudgeRecipient,
+  updateWorkshopNudgeView,
+  loadAdminBot,
+  loadAdminBotMemberList,
+  loadAdminBotStandingMeetings,
+  loadAdminBotRoster,
+  EMPTY_SLACK_CHANNEL_CHECK,
+  saveAdminBotPaper,
+  markAdminBotNudgesSeen,
+} from "./adminbot/controllers/admin.ts";
+import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
+import {
   runAdminBotVenueIndexJob,
   searchAdminBotLabPapers,
   searchAdminBotVenuePapers,
@@ -32,35 +47,25 @@ import {
   loadWorkshopNudgePreview,
   loadWorkshopConferences,
   refreshWorkshopNudgePreview,
-  setWorkshopConference,
-  setWorkshopNudgeRecipients,
-  setAdminBotVenue,
-  setAdminBotVenueCategory,
-  setAdminBotVenueInterests,
-  toggleAdminBotVenueAbstract,
   sendWorkshopNudgeSelection,
-  toggleWorkshopNudgeRecipient,
-  updateWorkshopNudgeView,
-  deleteAdminBotPaper,
-  executeAdminBotAction,
-  loadAdminBot,
-  loadAdminBotMemberList,
-  loadAdminBotStandingMeetings,
-  loadAdminBotRoster,
-  removePendingAdminBotAction,
+} from "./adminbot/controllers/conference-papers.ts";
+import {
+  runAdminBotCvDigestJob,
+  runAdminBotChannelNamingJob,
   loadSlackChannelNames,
-  EMPTY_SLACK_CHANNEL_CHECK,
-  saveAdminBotOwnSchedule,
-  saveAdminBotPaper,
-  markAdminBotNudgesSeen,
-} from "./adminbot/controllers/admin.ts";
-import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
+} from "./adminbot/controllers/directory.ts";
+import {
+  approveAdminBotAction,
+  executeAdminBotAction,
+  removePendingAdminBotAction,
+} from "./adminbot/controllers/governance.ts";
 import { loadAdminBotLogisticsRequests } from "./adminbot/controllers/logistics.ts";
 import {
   loadAdminBotMailingList,
   sendAdminBotMailingList,
 } from "./adminbot/controllers/mailing-list.ts";
 import { loadAdminBotMemberRequests } from "./adminbot/controllers/member-requests.ts";
+import { saveAdminBotOwnSchedule } from "./adminbot/controllers/members.ts";
 import {
   circulateAdminBotSocialDraft,
   loadAdminBotNudgeBatches,
@@ -81,6 +86,7 @@ import {
   saveAdminBotTrip,
   withdrawAdminBotTrip,
 } from "./adminbot/controllers/paper-slots.ts";
+import { deleteAdminBotPaper } from "./adminbot/controllers/papers.ts";
 import {
   loadAdminBotProfileOverview,
   remindAdminBotIncompleteProfiles,

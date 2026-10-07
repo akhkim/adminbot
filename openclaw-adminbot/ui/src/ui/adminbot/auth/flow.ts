@@ -22,7 +22,6 @@ import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
   createEmptyAdminBotStandingMeetings,
-  createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   createEmptyLabPapersState,
   createEmptyVenuePapersState,
@@ -39,6 +38,7 @@ import {
   type WorkshopNudgeReviewState,
 } from "../controllers/admin.ts";
 import { createEmptyAdminBotMemberRequests } from "../controllers/member-requests.ts";
+import { createEmptyAdminBotMemberNudgeState } from "../controllers/nudges.ts";
 import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
 import { invalidateMemberMap } from "../data/member-map.ts";
 import { localTimezone } from "../data/timezones.ts";

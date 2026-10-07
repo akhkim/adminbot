@@ -6,38 +6,29 @@
 import { nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import {
-  approveAdminBotAction,
-  deleteAdminBotMember,
-  deleteAdminBotPaper,
-  executeAdminBotAction,
-  generateAdminBotReimbursement,
   loadAdminBot,
   loadAdminBotMemberList,
   loadAdminBotRoster,
-  loadSlackChannelNames,
-  mergeAdminBotMembers,
-  purgeAdminBotMembersWithoutEmail,
-  removePendingAdminBotAction,
-  removeSelectedPendingAdminBotActions,
   resetAdminBotReimbursement,
-  resolveAdminBotEmailReview,
-  saveAdminBotMember,
-  saveAdminBotOwnProfile,
   saveAdminBotPaper,
   saveAdminBotSensitiveInfo,
-  saveAdminBotSettings,
-  sendAdminBotMemberNudge,
-  sendAdminBotReimbursementMessage,
   setAdminBotNudgeChannel,
   setAdminBotNudgeMessage,
   setAdminBotNudgeRecipients,
   setAdminBotNudgeSubject,
   setAdminBotReimbursementFunder,
   setAdminBotSelectedActions,
-  submitAdminBotReimbursement,
   toggleAdminBotNudgeRecipient,
   toggleAdminBotSelectedAction,
 } from "../controllers/admin.ts";
+import { loadSlackChannelNames } from "../controllers/directory.ts";
+import { resolveAdminBotEmailReview } from "../controllers/email-review.ts";
+import {
+  approveAdminBotAction,
+  executeAdminBotAction,
+  removePendingAdminBotAction,
+  removeSelectedPendingAdminBotActions,
+} from "../controllers/governance.ts";
 import {
   approveAdminBotMemberRequest,
   editAdminBotMemberRequest,
@@ -46,11 +37,26 @@ import {
   withdrawAdminBotMemberRequest,
 } from "../controllers/member-requests.ts";
 import {
+  deleteAdminBotMember,
+  mergeAdminBotMembers,
+  purgeAdminBotMembersWithoutEmail,
+  saveAdminBotMember,
+  saveAdminBotOwnProfile,
+} from "../controllers/members.ts";
+import { sendAdminBotMemberNudge } from "../controllers/nudges.ts";
+import {
   loadAdminBotPaperSlots,
   saveAdminBotPaperSlot,
   toggleAdminBotPaperCard,
 } from "../controllers/paper-slots.ts";
+import { deleteAdminBotPaper } from "../controllers/papers.ts";
 import { loadAdminBotRecentEdits } from "../controllers/recent-edits.ts";
+import {
+  generateAdminBotReimbursement,
+  sendAdminBotReimbursementMessage,
+  submitAdminBotReimbursement,
+} from "../controllers/reimbursements.ts";
+import { saveAdminBotSettings } from "../controllers/workspace.ts";
 import { renderAdminBot } from "../views/admin.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 

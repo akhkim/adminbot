@@ -6,8 +6,9 @@
 import { nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { loadStoredMemberSession } from "../auth/session.ts";
-import { loadAdminBot, saveAdminBotOwnSchedule } from "../controllers/admin.ts";
+import { loadAdminBot } from "../controllers/admin.ts";
 import { loadCollaboratorSchedules } from "../controllers/collaborator-schedules.ts";
+import { saveAdminBotOwnSchedule } from "../controllers/members.ts";
 import { EMPTY_TRIP_DRAFT } from "../views/time-availability.trips.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
