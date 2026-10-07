@@ -46,6 +46,13 @@ export function createAdminBotSocialExecutor(
       }
       const payload = readSocialPayload(proposal);
       assertSocialPayloadReady(payload);
+      if (payload.platforms.includes("linkedin")) {
+        requireEnv(env, "LINKEDIN_ACCESS_TOKEN");
+        requireEnv(env, "LINKEDIN_AUTHOR_URN");
+      }
+      if (payload.platforms.includes("x")) {
+        requireEnv(env, "X_ACCESS_TOKEN");
+      }
       // What the connector created, reported back so the paper's evidence is filled by the act
       // rather than by somebody pasting the link in a week later. See AdminBotExecutorOutcome.
       const artifacts: Record<string, string> = {};
@@ -142,7 +149,43 @@ async function postXThread(
   const accessToken = requireEnv(env, "X_ACCESS_TOKEN");
   let replyToId: string | undefined;
   let firstId: string | undefined;
-  for (const post of payload.x?.posts ?? []) {
+  const mediaByPost: string[][] = [];
+  // Prepare every image before sending the first post: a later bad figure must not leave a partial thread.
+  for (const [index] of (payload.x?.posts ?? []).entries()) {
+    const images = payload.x?.thread?.posts[index]?.images ?? [];
+    const mediaIds: string[] = [];
+    for (const image of images) {
+      const upload = await fetchImpl("https://api.x.com/2/media/upload", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          media: image.data_uri.split(",")[1],
+          media_category: "tweet_image",
+        }),
+      });
+      const uploaded = (await assertOk(upload, "X figure upload")) as {
+        data?: { id?: string; processing_info?: { state?: string } };
+      };
+      const id = uploaded.data?.id;
+      if (
+        !id ||
+        !/^\d+$/u.test(id) ||
+        (uploaded.data?.processing_info && uploaded.data.processing_info.state !== "succeeded")
+      ) {
+        throw new Error("X figure upload is not ready; no post was sent for this figure.");
+      }
+      const metadata = await fetchImpl("https://api.x.com/2/media/metadata", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ id, metadata: { alt_text: { text: image.alt_text } } }),
+      });
+      await assertOk(metadata, "X figure alt text");
+      mediaIds.push(id);
+    }
+    mediaByPost.push(mediaIds);
+  }
+  for (const [index, post] of (payload.x?.posts ?? []).entries()) {
+    const mediaIds = mediaByPost[index];
     const response = await fetchImpl("https://api.x.com/2/tweets", {
       method: "POST",
       headers: {
@@ -151,11 +194,15 @@ async function postXThread(
       },
       body: JSON.stringify({
         text: post,
+        ...(mediaIds.length ? { media: { media_ids: mediaIds } } : {}),
         ...(replyToId ? { reply: { in_reply_to_tweet_id: replyToId } } : {}),
       }),
     });
     const body = await assertOk(response, "X post");
     replyToId = readTweetId(body);
+    if (!replyToId) {
+      throw new Error("X returned no post ID; stop rather than creating unthreaded replies.");
+    }
     firstId ??= replyToId;
   }
   // `/i/status/<id>` rather than a handle: the account that posted is whichever token was
@@ -169,7 +216,13 @@ async function assertOk(
 ): Promise<unknown> {
   const raw = await response.text();
   const parsed = raw.trim() ? parseJson(raw, label) : undefined;
-  if (!response.ok) {
+  if (
+    !response.ok ||
+    (parsed &&
+      typeof parsed === "object" &&
+      Array.isArray((parsed as { errors?: unknown }).errors) &&
+      (parsed as { errors: unknown[] }).errors.length)
+  ) {
     throw new Error(
       `${label} failed ${response.status}: ${formatErrorBody(parsed) || response.statusText}`,
     );

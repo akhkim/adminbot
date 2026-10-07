@@ -384,9 +384,15 @@ export function saveAdminBotSocialDraft(
   paperId: string,
   platform: string,
   body: string,
+  xThread?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XThreadDraft,
 ): Promise<void> {
   return mutateCycle(host, paperId, (token, baseUrl) =>
-    savePaperSocialDraft(paperId, { platform, body }, token, baseUrl),
+    savePaperSocialDraft(
+      paperId,
+      { platform, body, ...(xThread ? { x_thread: xThread } : {}) },
+      token,
+      baseUrl,
+    ),
   );
 }
 
