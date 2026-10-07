@@ -9,7 +9,9 @@ const running: Array<ReturnType<typeof createAdminBotMockService>> = [];
 
 afterEach(async () => {
   for (const mock of running.splice(0)) {
-    await new Promise<void>((resolve) => mock.server.close(() => resolve()));
+    await new Promise<void>((resolve) => {
+      mock.server.close(() => resolve());
+    });
     mock.close();
   }
 });
@@ -17,7 +19,9 @@ afterEach(async () => {
 async function start() {
   const mock = createAdminBotMockService({ serviceToken: SERVICE_TOKEN });
   running.push(mock);
-  await new Promise<void>((resolve) => mock.server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => {
+    mock.server.listen(0, "127.0.0.1", resolve);
+  });
   const { port } = mock.server.address() as { port: number };
   for (const n of [1, 2, 3]) {
     mock.store.recordAudit({

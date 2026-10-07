@@ -15,7 +15,9 @@ export function dateTimeFormat(
   let formatter = formatters.get(key);
   if (!formatter) {
     formatter = new Intl.DateTimeFormat(locale, options);
-    if (formatters.size >= 500) formatters.clear();
+    if (formatters.size >= 500) {
+      formatters.clear();
+    }
     formatters.set(key, formatter);
   }
   return formatter;
