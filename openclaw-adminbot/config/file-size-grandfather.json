@@ -12,7 +12,7 @@
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "extensions/adminbot/src/kernel/service.ts": {
-      "max": 16177,
+      "max": 16169,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "extensions/adminbot/src/persistence/sqlite.ts": {
@@ -180,11 +180,7 @@
       "reason": "Upstream core file; split when touched, never grow."
     },
     "ui/src/ui/app-render.ts": {
-      "max": 4926,
-      "reason": "Upstream core file; split when touched, never grow."
-    },
-    "ui/src/ui/app.ts": {
-      "max": 2208,
+      "max": 4733,
       "reason": "Upstream core file; split when touched, never grow."
     },
     "ui/src/ui/views/chat.ts": {
