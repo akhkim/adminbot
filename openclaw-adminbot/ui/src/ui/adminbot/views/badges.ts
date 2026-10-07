@@ -5,13 +5,8 @@ import { t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import "../../components/modal-dialog.ts";
 import { icons } from "../../icons.ts";
-import type {
-  BadgeDefinition,
-  BadgeDefinitionInput,
-  BadgeNominationView,
-  BadgeSuggestionView,
-  LabMember,
-} from "../auth/session.ts";
+import type { BadgeDefinition, BadgeDefinitionInput } from "../api/badges.ts";
+import type { BadgeNominationView, BadgeSuggestionView, LabMember } from "../auth/session.ts";
 import type { BadgeLoadError } from "../data/badges.ts";
 import { renderBadgeSelect } from "./badge-select.ts";
 import { renderMemberBadgeSymbols, badgeCountLabel } from "./badge-symbols.ts";
@@ -204,7 +199,6 @@ function renderCatalogCard(props: AdminBotBadgesProps, badge: BadgeDefinition) {
             ${icons.edit}
           </button>
         </div>
-        ${badge.category ? html`<span class="ab-chip">${badge.category}</span>` : nothing}
         <p class="adminbot-badge-catalog__description">${badge.description}</p>
       </div>
     </div>

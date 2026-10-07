@@ -3,6 +3,29 @@
 import type { TranslationMap } from "../lib/types.ts";
 
 export const vi: TranslationMap = {
+  paperFeedback: {
+    title: "Request paper feedback",
+    blurb: "Queue a draft for PI feedback. Publication approval is a separate decision.",
+    unspecified: "Not specified",
+    soft: "Feedback by (soft):",
+    hard: "Submission cutoff (hard):",
+    late: "Past submission cutoff — soft submission. Feedback is still queued.",
+    open: "Open manuscript",
+    remove: "Remove from feedback queue",
+    url: "Manuscript link (required)",
+    reason: "Why is feedback needed? (required, visible to paper authors and admins)",
+    softInput: "Feedback by — personal soft deadline",
+    hardInput: "Official submission cutoff — hard deadline",
+    hint: "Times use your browser’s local time zone. A passed cutoff does not block a request.",
+    invalid:
+      "Use an HTTPS manuscript link and valid times; feedback-by cannot follow the submission cutoff.",
+    saving: "Saving…",
+    queued: "Queued: {label}",
+    queue: "Queue {label}",
+    feedback_arr: "ARR / Overleaf feedback",
+    feedback_arxiv: "arXiv feedback",
+    feedback_camera_ready: "Camera-ready feedback",
+  },
   deadlineStageProposal: {
     chooseVenue:
       "Select a conference or workshop from the list, or choose New conference or workshop.",
@@ -449,6 +472,8 @@ export const vi: TranslationMap = {
       until: "Showing until {date}",
       showsUntil: "Show until",
       availability: "Status",
+      timezone: "Zhijing’s time zone (optional)",
+      timezoneLabel: "Time zone: {timezone}",
       availability_away: "Away",
       availability_busy: "Busy",
       availability_available: "Available",
@@ -1409,6 +1434,7 @@ export const vi: TranslationMap = {
     capacityNoteUnset:
       "No weekly capacity set on this profile, so there is nothing to compare these hours against.",
     chartAria: "Time allocation chart for {member}",
+    chartPhoneHint: "Swipe sideways to see more dates. Tap a bar for details.",
     chartSubtitle: "Hours committed per period. Overlapping commitments are stacked.",
     empty: "Select a user to view their time allocation.",
     endDate: "End date",
@@ -1496,7 +1522,7 @@ export const vi: TranslationMap = {
       title: "Overall notes for admins",
       hint: "Anything the rows above cannot say — a situation that is complicated, dates that may move, weeks that are hard to predict. Only you and the lab's admins can read this.",
       placeholder:
-        "e.g. I am my grandmother's carer on alternating weeks, so the hours above are an average rather than a fixed schedule.",
+        "e.g. My project meetings alternate between weeks, so the hours above are an average rather than a fixed schedule.",
       submit: "Save notes",
     },
     legendTimeOff: "Outside Jinesis commitments",
@@ -1517,6 +1543,9 @@ export const vi: TranslationMap = {
       category: "Category",
       customLabel: "Name this category",
       project: "Project",
+      projectExample: "Project XXX",
+      exampleHint:
+        "Example: 20 hours per week on Project XXX. Enter your own project, hours and dates below; the example is not saved.",
       projectPlaceholder: "Leave blank for term baseline",
       hours: "Hours per week",
       link: "Link (optional)",
@@ -2118,6 +2147,15 @@ export const vi: TranslationMap = {
     },
   },
   profile: {
+    arrReviewer: {
+      label: "I qualify as an ARR reviewer",
+      yes: "I confirm that I am a qualified reviewer.",
+      no: "I confirm that I am not a qualified reviewer.",
+      choose: "Select your qualification",
+      capacity: "Number of ARR papers I can review",
+      hint: "Self-reported eligibility. This does not register you or assign reviews.",
+      criteria: "Check ARR eligibility criteria",
+    },
     onboardingChecklist: "Your setup checklist ({count} left)",
     onboardingChecklistDone: "Your setup checklist",
     visibility: {
@@ -2242,6 +2280,7 @@ export const vi: TranslationMap = {
       twitter: "X",
       github: "GitHub",
       scholar: "Scholar",
+      aclAnthology: "ACL Anthology",
       openreview: "OpenReview",
     },
     suggestions: {
@@ -2290,8 +2329,11 @@ export const vi: TranslationMap = {
       linkedin: "LinkedIn",
       linkedinUrn: "LinkedIn member ID (URN)",
       twitter: "X / Twitter",
+      twitterFollowers: "X followers (self-reported)",
+      linkedinFollowers: "LinkedIn followers (self-reported)",
       github: "GitHub",
       scholar: "Google Scholar",
+      aclAnthology: "ACL Anthology profile",
       openreviewId: "OpenReview ID",
       researchTopics: "Research topics",
       elevatorPitch: "Elevator pitch",
@@ -2344,6 +2386,8 @@ export const vi: TranslationMap = {
       github: "Your profile page, not a repository: github.com/username",
       linkedin: "Your profile page: linkedin.com/in/username",
       twitter: "Your profile page: x.com/username",
+      followers:
+        "Enter your current follower count, or 0 to clear it. Media Impact uses your higher count and requires more than 1,000 followers.",
       scholar: "Your citations page, including the ?user= part of the address.",
       intakeFormUrl: "The “edit your response” link Google Forms emailed you after you applied.",
       intakeFormSearch:

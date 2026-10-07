@@ -10583,6 +10583,41 @@ details[open] > .ov-expandable-toggle::after {
   font-size: var(--control-ui-text-sm);
 }
 
+/* Add-only versus limit-to-this-list. Two stacked choices with a hint each, because one of them
+   can uninvite people and the operator should read which before sending. */
+.adminbot-calendar__mode {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.adminbot-calendar__mode legend {
+  padding: 0;
+  margin-bottom: var(--space-1);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.adminbot-calendar__mode-option {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  cursor: pointer;
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-calendar__mode-option span {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-2);
+}
+
+.adminbot-calendar__mode-option small {
+  color: var(--muted);
+}
+
 /* The outcome of the last write. Sits above everything, because it is the answer to the button
    the operator just pressed. */
 .adminbot-calendar__notice {
@@ -11002,20 +11037,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-time-availability__add-commitment {
   width: 100%;
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--control-ui-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg) 90%, var(--bg-accent));
-  transition: all 0.15s ease;
-  text-align: center;
-}
-
-.adminbot-time-availability__add-commitment:hover {
-  background: color-mix(in srgb, var(--bg) 80%, var(--bg-accent));
-  border-style: solid;
+  min-height: 44px;
 }
 
 .adminbot-time-availability__commitment-picker {
@@ -11442,18 +11464,18 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 /* Neutral primary actions follow the same palette in light, dark and custom themes. */
-.adminbot-time-availability .btn.primary {
+.adminbot-time-availability .btn.primary:not(.adminbot-time-availability__add-commitment) {
   border-color: var(--border-strong);
   background: var(--secondary);
   color: var(--text);
 }
 
-.adminbot-time-availability .btn.primary:hover {
+.adminbot-time-availability .btn.primary:not(.adminbot-time-availability__add-commitment):hover {
   background: var(--bg-hover);
   border-color: var(--border-hover);
 }
 
-.adminbot-time-availability .btn.primary:active {
+.adminbot-time-availability .btn.primary:not(.adminbot-time-availability__add-commitment):active {
   background: var(--bg-muted);
   border-color: var(--border-strong);
 }

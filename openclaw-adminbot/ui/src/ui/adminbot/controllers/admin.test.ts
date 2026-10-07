@@ -5,23 +5,27 @@ import type { UiSettings } from "../../storage.ts";
 import { clearStoredMemberSession, saveStoredMemberSession } from "../auth/session.ts";
 import {
   ADMINBOT_SERVICE_UNREACHABLE_MESSAGE,
-  approveAdminBotAction,
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
-  createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   loadAdminBot,
   loadAdminBotMemberList,
   loadAdminBotRoster,
-  removePendingAdminBotAction,
-  removeSelectedPendingAdminBotActions,
-  sendAdminBotReimbursementMessage,
-  saveAdminBotMember,
   saveAdminBotPaper,
-  saveAdminBotOwnProfile,
-  sendAdminBotMemberNudge,
   type AdminBotHost,
 } from "./admin.js";
+import {
+  approveAdminBotAction,
+  removePendingAdminBotAction,
+  removeSelectedPendingAdminBotActions,
+} from "./governance.js";
+import { saveAdminBotMember, saveAdminBotOwnProfile } from "./members.js";
+import { createEmptyAdminBotMemberNudgeState, sendAdminBotMemberNudge } from "./nudges.js";
+import {
+  sendAdminBotReimbursementMessage,
+  generateAdminBotReimbursement,
+  submitAdminBotReimbursement,
+} from "./reimbursements.js";
 
 function createHost(outputs: Record<string, unknown>) {
   const calls: string[] = [];
@@ -898,6 +902,25 @@ describe("saveAdminBotMember — onboarding the person just added", () => {
     expect(host.adminBotNotice?.text).toMatch(/queued in Pending Actions/i);
   });
 
+  it("reports a confirmed immediate send without directing the admin to Pending Actions", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    routes(
+      new Response(
+        JSON.stringify({
+          proposal_id: "act_7",
+          template_id: "member",
+          email: "grace@lab.co",
+          status: "done",
+        }),
+        { status: 200 },
+      ),
+    );
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+    expect(host.adminBotNotice?.text).toContain("standard onboarding email has been sent");
+    expect(host.adminBotNotice?.text).not.toContain("Pending Actions");
+  });
+
   it("carries the member type, which is what decides the template", async () => {
     saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
     const { host } = createHost({});
@@ -963,6 +986,42 @@ describe("saveAdminBotMember — onboarding the person just added", () => {
 });
 
 describe("reimbursement session privacy", () => {
+  it("returns the generated package proof and shows regeneration guidance after refusal", async () => {
+    vi.stubGlobal("localStorage", createStorageMock());
+    saveStoredMemberSession({ sessionToken: "member-token", expiresAt: "later" });
+    const artifacts = [
+      { filename: "form.pdf", media_type: "application/pdf", data_base64: "JVBERi0=" },
+    ];
+    const { host } = createHost({
+      adminbot_reimbursement_generate: { artifacts, submission_proof: "checked-package" },
+    });
+    host.adminBotReimbursement = {
+      ...createEmptyAdminBotReimbursementState(),
+      ready: true,
+      funder: "MPI-IS",
+    };
+    await generateAdminBotReimbursement(host);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: "Generate and review the reimbursement forms again before sending them.",
+          },
+        }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    await submitAdminBotReimbursement(host);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)).toMatchObject({
+      submission_proof: "checked-package",
+      funder: "MPI-IS",
+    });
+    expect(host.adminBotReimbursement.error).toContain("Generate and review");
+    expect(host.adminBotReimbursement.submission).toBeUndefined();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("does not restore a previous member's receipt conversation after the cache is cleared", async () => {
     const { host } = createHost({});
     let finish!: (result: unknown) => void;
@@ -1052,6 +1111,34 @@ describe("saveAdminBotOwnProfile", () => {
     expect(host.adminBotMemberList.loadedAt).toBe(12);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(host.adminBotLoading).toBe(false);
+  });
+
+  it("shows correspondence validation errors without replacing saved profile or roster values", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const member = { id: "pat", name: "Pat", correspondence_email: "pat@institute.example" };
+    host.adminBotData.members = [member as never];
+    host.adminBotMemberList = {
+      ...createEmptyAdminBotMemberList(),
+      rows: [member as never],
+      loadedAt: 12,
+    };
+    const message =
+      "Use an institutional or company email for correspondence, rather than a personal email address.";
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ error: { message } }), { status: 400 }));
+
+    await saveAdminBotOwnProfile(host, "pat", { correspondence_email: "pat@gmail.com" });
+
+    expect(host.adminBotNotice).toEqual({ kind: "error", text: message });
+    expect(host.adminBotData.members[0]).toEqual(member);
+    expect(host.adminBotMemberList.rows[0]).toEqual(member);
+    expect(host.adminBotMemberList.loadedAt).toBe(12);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)).toEqual({
+      correspondence_email: "pat@gmail.com",
+    });
   });
 
   it("serializes autosaves so an older slow profile write cannot win", async () => {
@@ -1294,7 +1381,7 @@ describe("saveAdminBotPaper", () => {
       }),
     );
 
-    await saveAdminBotPaper(host, baseInput);
+    expect(await saveAdminBotPaper(host, baseInput)).toBe(false);
 
     expect(host.adminBotNotice).toMatchObject({
       kind: "error",

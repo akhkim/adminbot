@@ -1,15 +1,3 @@
-// The signed-in member's own record: what the lab knows about them, what it does not yet, and
-// what they might do about it.
-//
-// Three jobs, in the order a person meets them:
-//   1. Basic info and badges  -- what is on file.
-//   2. Fill in the blanks     -- a form containing only the fields still empty, so completing a
-//                                profile is a short task rather than a hunt through a full editor.
-//   3. Suggestions            -- guidebook pointers derived from what is missing, so the advice is
-//                                about this person rather than a generic welcome.
-//
-// Saving goes through the same self-edit path the Lab Members table uses, whose server-side
-// whitelist drops governance fields. Nothing here can write privilege_level, status, or email.
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
 import { ref } from "lit/directives/ref.js";
@@ -41,15 +29,15 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
+import type { BadgeDefinition } from "../api/badges.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
+import { checkDriveAccess } from "../api/profile.ts";
 import {
-  checkDriveEditAccess,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   type AssignedBadge,
-  type BadgeDefinition,
   type BadgeSuggestionInput,
   type LabMember,
-  type MemberProfileUpdate,
 } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
@@ -59,6 +47,19 @@ import {
   splitPhoneNumber,
 } from "../data/phone-country-codes.ts";
 import { timezoneForLocation } from "../data/timezone-for-location.ts";
+// The signed-in member's own record: what the lab knows about them, what it does not yet, and
+// what they might do about it.
+//
+// Three jobs, in the order a person meets them:
+//   1. Basic info and badges  -- what is on file.
+//   2. Fill in the blanks     -- a form containing only the fields still empty, so completing a
+//                                profile is a short task rather than a hunt through a full editor.
+//   3. Suggestions            -- guidebook pointers derived from what is missing, so the advice is
+//                                about this person rather than a generic welcome.
+//
+// Saving goes through the same self-edit path the Lab Members table uses, whose server-side
+// whitelist drops governance fields. Nothing here can write privilege_level, status, or email.
+import { renderDateControl } from "../date-control.ts";
 import {
   isOptionalMemberField,
   PROFILE_FIELD_GROUPS,
@@ -90,7 +91,24 @@ export type ProfileProps = {
   onNavigateToTab?: (tab: Tab) => void;
 };
 
-const EDITABLE_FIELDS = PROFILE_FIELDS;
+const EDITABLE_FIELDS: ProfileField[] = [
+  ...PROFILE_FIELDS,
+  {
+    key: "arr_reviewer_qualified",
+    labelKey: "profile.arrReviewer.label",
+    example: "",
+    type: "dropdown",
+    group: "work",
+  },
+  {
+    key: "arr_review_capacity",
+    labelKey: "profile.arrReviewer.capacity",
+    example: "",
+    type: "numeric",
+    min: 0,
+    group: "work",
+  },
+];
 
 // Rendered as a row of links under the name rather than as rows in the field table -- they are
 // somewhere to go, not facts to read.
@@ -99,6 +117,7 @@ const SOCIAL_FIELDS = [
   { key: "twitter_url", labelKey: "profile.social.twitter" },
   { key: "github_url", labelKey: "profile.social.github" },
   { key: "scholar_url", labelKey: "profile.social.scholar" },
+  { key: "acl_anthology_url", labelKey: "profile.social.aclAnthology" },
 ] as const;
 
 type EditableField = ProfileField;
@@ -212,7 +231,7 @@ function runDriveChecks(form: HTMLFormElement, state: AppViewState): void {
     accountCheckAborts.set(field, controller);
     accountCheckedValues.set(field, value);
     state.profileAccountChecks = { ...state.profileAccountChecks, [field]: { status: "checking" } };
-    void checkDriveEditAccess(
+    void checkDriveAccess(
       value,
       session.sessionToken,
       resolveAdminBotBaseUrl(state.settings),
@@ -225,13 +244,13 @@ function runDriveChecks(form: HTMLFormElement, state: AppViewState): void {
         ...state.profileAccountChecks,
         [field]: result.ok
           ? {
-              status: result.value.status === "editable" ? "verified" : "warning",
+              status: result.value.status === "accessible" ? "verified" : "warning",
               message: result.value.message,
             }
           : {
               status: "warning",
               message:
-                "Could not check Drive access. Make sure Jinesis.adminbot@gmail.com can edit this file.",
+                "Could not check Drive access. Make sure Jinesis.adminbot@gmail.com or anyone with the link can view this file.",
             },
       };
     });
@@ -492,7 +511,11 @@ function isMemberAnswerable(field: EditableField): boolean {
 
 export function blankFields(member: LabMember): EditableField[] {
   return EDITABLE_FIELDS.filter(
-    (field) => isMemberAnswerable(field) && !valueOf(member, field).trim(),
+    (field) =>
+      isMemberAnswerable(field) &&
+      !(field.key === "arr_review_capacity" && member.arr_reviewer_qualified !== true) &&
+      !(field.key === "intake_form_url" && member.intake_form_unavailable === true) &&
+      !valueOf(member, field).trim(),
   );
 }
 
@@ -612,11 +635,19 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
   const data = new FormData(form);
   const fields: MemberProfileUpdate = {};
   for (const field of EDITABLE_FIELDS) {
+    if (field.key === "arr_reviewer_qualified" || field.key === "arr_review_capacity") continue;
     if (field.type === "image") {
       // Owned by the upload control, which saves on its own; no input to read here.
       continue;
     }
     const value = String(data.get(field.key) ?? "").trim();
+    if (field.pattern || field.type === "date") {
+      const input = form.elements.namedItem(field.key) as HTMLInputElement | null;
+      // Keep an invalid legacy value visible, but never autosave it or erase it silently.
+      if (input && !input.checkValidity()) {
+        continue;
+      }
+    }
     if (field.type === "phone") {
       // The two controls are a country box and a number box; the record keeps one string. The
       // country box is free text with a suggestion list, so what it holds is resolved back to a
@@ -655,6 +686,14 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
       }
     } else {
       setField(fields, field.key, value);
+    }
+  }
+  const qualification = data.get("arr_reviewer_qualified");
+  if (qualification === "yes" || qualification === "no") {
+    fields.arr_reviewer_qualified = qualification === "yes";
+    if (qualification === "yes") {
+      const value = String(data.get("arr_review_capacity") ?? "").trim();
+      fields.arr_review_capacity = value ? Number(value) : null;
     }
   }
   fields.intake_form_unavailable = !fields.intake_form_url && data.has("intake_form_unavailable");
@@ -756,6 +795,74 @@ function renderProjectChips(state: AppViewState, props: ProfileProps): ReturnTyp
  * "Role". Those rows get a plain container, and the checkbox group carries its own accessible name.
  */
 function renderProfileFormRow(state: AppViewState, member: LabMember, field: EditableField) {
+  if (field.key === "arr_review_capacity")
+    return html` <label class="profile__form-row">
+      <span class="profile__form-label"
+        >${t("profile.arrReviewer.capacity")}
+        <span data-arr-capacity-required ?hidden=${member.arr_reviewer_qualified !== true}
+          >${renderMandatoryMark(field, "")}</span
+        >
+      </span>
+      <input
+        class="input"
+        type="number"
+        name="arr_review_capacity"
+        min="0"
+        step="1"
+        ?required=${member.arr_reviewer_qualified === true}
+        ?disabled=${member.arr_reviewer_qualified !== true}
+        .value=${member.arr_review_capacity == null ? "" : String(member.arr_review_capacity)}
+      />
+    </label>`;
+
+  if (field.key === "arr_reviewer_qualified")
+    return html`<div>
+      <label class="profile__form-row">
+        <span class="profile__form-label"
+          >${t("profile.arrReviewer.label")}
+          ${renderMandatoryMark(field, displayValue(member, field))}
+        </span>
+        <select
+          class="input"
+          name="arr_reviewer_qualified"
+          required
+          @change=${(event: Event) => {
+            const select = event.currentTarget as HTMLSelectElement;
+            const capacity = select.form?.querySelector<HTMLInputElement>(
+              '[name="arr_review_capacity"]',
+            );
+            if (capacity) {
+              capacity.disabled = select.value !== "yes";
+              capacity.required = select.value === "yes";
+              const mark = capacity
+                .closest("label")
+                ?.querySelector<HTMLElement>("[data-arr-capacity-required]");
+              if (mark) mark.hidden = select.value !== "yes";
+            }
+          }}
+        >
+          <option value="" disabled hidden ?selected=${member.arr_reviewer_qualified == null}>
+            ${t("profile.arrReviewer.choose")}
+          </option>
+          <option value="yes" ?selected=${member.arr_reviewer_qualified === true}>
+            ${t("profile.arrReviewer.yes")}
+          </option>
+          <option value="no" ?selected=${member.arr_reviewer_qualified === false}>
+            ${t("profile.arrReviewer.no")}
+          </option>
+        </select>
+      </label>
+      <p class="profile__field-hint">
+        ${t("profile.arrReviewer.hint")}
+        <a
+          href="https://aclrollingreview.org/qualifications"
+          target="_blank"
+          rel="noopener noreferrer"
+          >${t("profile.arrReviewer.criteria")}</a
+        >
+      </p>
+    </div>`;
+
   const body = html`
     <span class="profile__form-label">
       ${labelFor(field.key)}${renderMandatoryMark(
@@ -860,8 +967,23 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           .value=${currentValue}
         ></textarea>
       `;
+    case "month":
+      // Preserve invalid legacy text; native month inputs silently clear it.
+      return html`<input
+        class="input"
+        name=${field.key}
+        type=${!currentValue || /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(currentValue) ? "month" : "text"}
+        pattern=${ifDefined(field.pattern)}
+        .value=${currentValue}
+        @change=${(event: Event) => (event.currentTarget as HTMLInputElement).reportValidity()}
+      />`;
     case "date":
-      return html` <input class="input" name=${field.key} type="date" .value=${currentValue} /> `;
+      return html`
+        ${renderDateControl(
+          html`<input class="input" name=${field.key} type="date" .value=${currentValue} />`,
+          currentValue,
+        )}
+      `;
     case "link":
       return html`
         <input
@@ -913,6 +1035,10 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           )}
           type="text"
           maxlength=${SHORT_TEXT_MAX_LENGTH}
+          pattern=${ifDefined(field.pattern)}
+          @change=${field.pattern
+            ? (event: Event) => (event.currentTarget as HTMLInputElement).reportValidity()
+            : nothing}
           placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
           autocomplete="off"
@@ -1272,19 +1398,7 @@ function renderBadges(state: AppViewState, member: LabMember) {
   `;
 }
 
-/**
- * The member's own badges, as a section rather than a strip of chips in the header.
- *
- * They were rendered inline beside the name, which made them decoration: the hover popover carrying
- * the category, the description and the criteria link was the only way to read what a badge
- * actually meant, and a popover is not something anyone opens for each of five chips. The admin
- * badges tab has always shown the full picture; this is the same thing scoped to one person, and it
- * sits directly above the nomination form so "what I have" and "what I could ask for" read as one
- * subject rather than two halves at opposite ends of the page.
- *
- * Not duplicated back into the header. Stating the same fact twice on one page is how the two
- * copies eventually disagree.
- */
+// Keep earned badge details near the member identity, ahead of profile fields.
 function renderBadgesSection(state: AppViewState, member: LabMember) {
   return html`
     <section class="profile__section" data-testid="profile-badges-section">
@@ -1618,9 +1732,6 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
                       />
                       <span class="profile-badge-picker__title">
                         ${assignedBadgeLabel(badge)}
-                        ${badge.category
-                          ? html`<span class="ab-chip">${badge.category}</span>`
-                          : nothing}
                       </span>
                       <p class="profile-badge-picker__description">${badge.description}</p>
                     </label>
@@ -1967,9 +2078,10 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         </div>
         ${renderCompletionLedger(member, state)}
       </header>
-      ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
-      ${renderBadgesSection(state, member)} ${renderBadgeSelfNomination(state, member, props)}
-      ${renderBadgeSuggestion(state, props)} ${renderOnboardingPointer(state, props)}
+      ${renderBadgesSection(state, member)} ${renderBasics(state, member, props)}
+      ${renderPhotoCompliance(state, member, props)}
+      ${renderBadgeSelfNomination(state, member, props)} ${renderBadgeSuggestion(state, props)}
+      ${renderOnboardingPointer(state, props)}
       <!-- Who has been in this record. Last, and shut: it is history about the fields above, and
            the answer to a question somebody asks occasionally rather than on every visit. Since
            "view as" landed, an admin editing this profile is a thing that happens, and this is

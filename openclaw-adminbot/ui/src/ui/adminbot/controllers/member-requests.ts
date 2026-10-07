@@ -1,3 +1,4 @@
+import { queueMemberOnboardingGuide } from "../api/onboarding.ts";
 /**
  * Requests to add somebody to the roster, from the Lab Members tab.
  *
@@ -12,7 +13,6 @@ import {
   loadStoredMemberSession,
   type MemberRequestInput,
   type MemberRequestView,
-  queueMemberOnboardingGuide,
   rejectMemberRequest,
   resolveAdminBotBaseUrl,
   submitMemberRequest,
@@ -169,7 +169,11 @@ export async function approveAdminBotMemberRequest(
     }
     const guide = await queueMemberOnboardingGuide(memberId, token, baseUrl);
     return guide.ok
-      ? success(`${added} Their onboarding guide is queued for approval.`)
+      ? success(
+          guide.value.status === "done"
+            ? `${added} Their standard onboarding email has been sent.`
+            : `${added} Their onboarding guide is queued for approval.`,
+        )
       : failure(
           `${added} The onboarding guide was not queued: ${failureText(guide, "the service refused it")}. Start it from their row.`,
         );

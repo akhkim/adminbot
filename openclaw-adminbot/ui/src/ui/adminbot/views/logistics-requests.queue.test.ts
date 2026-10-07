@@ -1,7 +1,7 @@
 // The admin queue: what each row shows, and the two things an admin does from it.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
-import type { LogisticsRequest, LogisticsRequestStatus } from "../auth/session.ts";
+import type { LogisticsRequest, LogisticsRequestStatus } from "../api/logistics.ts";
 import {
   DEFAULT_LOGISTICS_QUEUE_OPTIONS,
   type LogisticsQueueOptions,

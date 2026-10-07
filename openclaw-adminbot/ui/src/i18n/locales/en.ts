@@ -2,6 +2,29 @@
 import type { TranslationMap } from "../lib/types.ts";
 
 export const en: TranslationMap = {
+  paperFeedback: {
+    title: "Request paper feedback",
+    blurb: "Queue a draft for PI feedback. Publication approval is a separate decision.",
+    unspecified: "Not specified",
+    soft: "Feedback by (soft):",
+    hard: "Submission cutoff (hard):",
+    late: "Past submission cutoff — soft submission. Feedback is still queued.",
+    open: "Open manuscript",
+    remove: "Remove from feedback queue",
+    url: "Manuscript link (required)",
+    reason: "Why is feedback needed? (required, visible to paper authors and admins)",
+    softInput: "Feedback by — personal soft deadline",
+    hardInput: "Official submission cutoff — hard deadline",
+    hint: "Times use your browser’s local time zone. A passed cutoff does not block a request.",
+    invalid:
+      "Use an HTTPS manuscript link and valid times; feedback-by cannot follow the submission cutoff.",
+    saving: "Saving…",
+    queued: "Queued: {label}",
+    queue: "Queue {label}",
+    feedback_arr: "ARR / Overleaf feedback",
+    feedback_arxiv: "arXiv feedback",
+    feedback_camera_ready: "Camera-ready feedback",
+  },
   deadlineStageProposal: {
     chooseVenue:
       "Select a conference or workshop from the list, or choose New conference or workshop.",
@@ -449,11 +472,13 @@ export const en: TranslationMap = {
     broadcast: {
       title: "Broadcast to the lab",
       hint: "Shown at the top of every member's dashboard until the date below.",
-      placeholder: "e.g. Sept 11-17: Zürich. Sept 18-20: Toronto. Then back to Europe.",
+      placeholder: "e.g. Reviewing submissions this week. Available for meetings Thursday.",
       none: "Nothing being broadcast",
       until: "Showing until {date}",
       showsUntil: "Show until",
       availability: "Status",
+      timezone: "Zhijing’s time zone (optional)",
+      timezoneLabel: "Time zone: {timezone}",
       availability_away: "Away",
       availability_busy: "Busy",
       availability_available: "Available",
@@ -473,9 +498,9 @@ export const en: TranslationMap = {
       // Each of the three paper queues below names the job it is asking for, because "a list of
       // papers" was true of all three and told her nothing about which to open. This one is a
       // decision on a finished thing.
-      title: "Approve before it goes public",
+      title: "Paper feedback and publication approval",
       blurb:
-        "The package is finished and the PDF is final. Nothing is posted until you say yes, so these are stopped until you look.",
+        "Feedback requests ask for comments; publication approval remains a separate decision. Nothing is posted until you say yes.",
       empty: "No paper is waiting on your approval.",
       open: "Open the papers",
       since: "ready {date}",
@@ -1426,10 +1451,11 @@ export const en: TranslationMap = {
     capacity: "{hours} hours/week capacity",
     // The chart's own footnote, restored with the recharts chart it explains.
     capacityNote:
-      "Dashed line marks 100% average allocation. Partial weeks and months show a lower average; commitments stop on their saved end date. Hover for active days and daily capacity details.",
+      "Dashed line marks 100% average allocation. Partial weeks and months show a lower average; commitments stop on their saved end date. Tap or hover a bar for active days and daily capacity details.",
     capacityNoteUnset:
       "No weekly capacity set on this profile, so there is nothing to compare these hours against.",
     chartAria: "Time allocation chart for {member}",
+    chartPhoneHint: "Swipe sideways to see more dates. Tap a bar for details.",
     chartSubtitle: "Hours committed per period. Overlapping commitments are stacked.",
     empty: "Select a user to view their time allocation.",
     endDate: "End date",
@@ -1517,7 +1543,7 @@ export const en: TranslationMap = {
       title: "Overall notes for admins",
       hint: "Anything the rows above cannot say \u2014 a situation that is complicated, dates that may move, weeks that are hard to predict. Only you and the lab's admins can read this.",
       placeholder:
-        "e.g. I am my grandmother's carer on alternating weeks, so the hours above are an average rather than a fixed schedule.",
+        "e.g. My project meetings alternate between weeks, so the hours above are an average rather than a fixed schedule.",
       submit: "Save notes",
     },
     legendTimeOff: "Outside Jinesis commitments",
@@ -1538,6 +1564,9 @@ export const en: TranslationMap = {
       category: "Category",
       customLabel: "Name this category",
       project: "Project",
+      projectExample: "Project XXX",
+      exampleHint:
+        "Example: 20 hours per week on Project XXX. Enter your own project, hours and dates below; the example is not saved.",
       projectPlaceholder: "Leave blank for term baseline",
       hours: "Hours per week",
       link: "Link (optional)",
@@ -2153,6 +2182,15 @@ export const en: TranslationMap = {
     },
   },
   profile: {
+    arrReviewer: {
+      label: "ARR reviewer qualification",
+      yes: "I confirm that I am a qualified reviewer.",
+      no: "I confirm that I am not a qualified reviewer.",
+      choose: "Select your qualification",
+      capacity: "Number of ARR papers I can review",
+      hint: "Self-reported eligibility. This does not register you or assign reviews.",
+      criteria: "Check ARR eligibility criteria",
+    },
     onboardingChecklist: "Your setup checklist ({count} left)",
     onboardingChecklistDone: "Your setup checklist",
     visibility: {
@@ -2281,6 +2319,7 @@ export const en: TranslationMap = {
       twitter: "X",
       github: "GitHub",
       scholar: "Scholar",
+      aclAnthology: "ACL Anthology",
       openreview: "OpenReview",
     },
     suggestions: {
@@ -2303,7 +2342,7 @@ export const en: TranslationMap = {
       name: "Name",
       preferredName: "Preferred name",
       email: "Email (@cs.toronto.edu)",
-      role: "Career stage / lab role",
+      role: "Career stage",
       calendarEmail: "Calendar email",
       affiliation: "Main affiliation",
       location: "Resident location",
@@ -2329,11 +2368,15 @@ export const en: TranslationMap = {
       linkedin: "LinkedIn",
       linkedinUrn: "LinkedIn member ID (URN)",
       twitter: "X / Twitter",
+      twitterFollowers: "X followers (self-reported)",
+      linkedinFollowers: "LinkedIn followers (self-reported)",
       github: "GitHub",
       scholar: "Google Scholar",
+      aclAnthology: "ACL Anthology profile",
       openreviewId: "OpenReview ID",
       researchTopics: "Research topics",
-      elevatorPitch: "Elevator pitch",
+      elevatorPitch:
+        "Elevator pitch that Zhijing can use when recommending you to other prof/recruiter",
       projects: "Projects",
       notes: "Notes",
     },
@@ -2375,16 +2418,19 @@ export const en: TranslationMap = {
       oneOnOneFolderUrl:
         "The Google Drive folder holding the notes from your one-on-ones. Open the folder in Drive and copy the address — it looks like drive.google.com/drive/folders/… A link to a single document is not it: the notes are one file per meeting, so the folder is the part that keeps being right. Only you and lab admins can see this field.",
       elevatorPitch:
-        "How you would explain your research to a smart person who does not work in it — the question you are chasing and why it matters, in a paragraph you could say out loud. The lab reuses it: introductions to visitors and collaborators, your entry on the shared directory, the blurb that goes out when a paper of yours lands. Research topics above are tags for filtering a roster; this is the part that makes somebody want to talk to you.",
+        "A short paragraph about your achievements that Zhijing can use when recommending you to professors or recruiters.",
     },
     // The shapes the service accepts, stated where the answer is typed. Each one mirrors a rule in
     // SOCIAL_URL_FIELDS or validateOpenReviewId; keep them in step if those change.
     hints: {
       calendarEmail: "The Google account your calendar invites should go to.",
-      correspondenceEmail: "Where the lab writes to you. Often not your @cs.toronto.edu address.",
+      correspondenceEmail:
+        "This is your official organizational email. Imagine we contact government sectors or external collaborators. Usually you need to be cc’ed via your institutional email.",
       github: "A username, link, or note about your GitHub account.",
       linkedin: "Your profile page: linkedin.com/in/username",
       twitter: "Your profile page: x.com/username",
+      followers:
+        "Enter your current follower count, or 0 to clear it. Media Impact uses your higher count and requires more than 1,000 followers.",
       scholar: "Your citations page, including the ?user= part of the address.",
       intakeFormUrl:
         "Paste the response link if you have it, or mark that you cannot find it below.",
@@ -2404,7 +2450,7 @@ export const en: TranslationMap = {
       offboardingMonth:
         "The year and month you plan on leaving Jinesis for a new job or stage, like 2027-06. An estimate is fine — it is not a commitment.",
       elevatorPitch:
-        "One paragraph, in your own words — what you work on and why it is worth doing.",
+        "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
       merchRequests:
         "What you would like from the next lab merch order — item, size, quantity. Leave it blank if you would rather not have anything.",
     },
@@ -2577,7 +2623,7 @@ export const en: TranslationMap = {
       signup: {
         name: "Name",
         namePlaceholder: "Your full name",
-        role: "Career stage / lab role",
+        role: "Career stage",
         rolePlaceholder: "e.g. PhD student (optional)",
         affiliation: "Affiliation",
         affiliationPlaceholder: "Lab, department, or organization (optional)",

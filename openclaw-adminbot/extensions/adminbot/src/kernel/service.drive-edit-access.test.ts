@@ -3,29 +3,51 @@ import { AdminBotService } from "./service.js";
 
 const URL = "https://drive.google.com/file/d/1PdF9xAbCdEfGhIjKlMnOpQrStUv/view";
 
-describe("Drive edit access", () => {
-  it("checks the bot account's actual capability without changing sharing", async () => {
+describe("Drive access", () => {
+  it("checks the bot account's actual access without changing sharing", async () => {
     const ids: string[] = [];
     const service = new AdminBotService(undefined, {
       driveProbe: async (id) => {
         ids.push(id);
-        return { status: "found", canEdit: false };
+        return { status: "found", canEdit: true };
       },
     });
-    const result = await service.checkDriveEditAccess(URL);
+    const result = await service.checkDriveAccess(URL);
     expect(ids).toEqual(["1PdF9xAbCdEfGhIjKlMnOpQrStUv"]);
-    expect(result).toMatchObject({ ok: true, payload: { status: "not_editable" } });
+    expect(result).toMatchObject({ ok: true, payload: { status: "accessible" } });
+  });
+
+  it("accepts view-only and link-shared files, which Google reports as found but not editable", async () => {
+    for (const probed of [{ canEdit: false }, {}]) {
+      const service = new AdminBotService(undefined, {
+        driveProbe: async () => ({ status: "found", ...probed }),
+      });
+      expect(await service.checkDriveAccess(URL)).toMatchObject({
+        ok: true,
+        payload: { status: "accessible" },
+      });
+    }
+  });
+
+  it("refuses a trashed file even when AdminBot can still see it", async () => {
+    const service = new AdminBotService(undefined, {
+      driveProbe: async () => ({ status: "found", trashed: true, canEdit: true }),
+    });
+    expect(await service.checkDriveAccess(URL)).toMatchObject({
+      ok: true,
+      payload: { status: "inaccessible", message: expect.stringContaining("trash") },
+    });
   });
 
   it("does not claim access when the probe cannot establish it", async () => {
     const service = new AdminBotService(undefined, {
       driveProbe: async () => ({ status: "unreadable", reason: "permission denied" }),
     });
-    expect(await service.checkDriveEditAccess(URL)).toMatchObject({
+    expect(await service.checkDriveAccess(URL)).toMatchObject({
       ok: true,
       payload: { status: "unverified" },
     });
-    expect(await service.checkDriveEditAccess("https://example.com/file")).toMatchObject({
+    expect(await service.checkDriveAccess("https://example.com/file")).toMatchObject({
       ok: false,
       status: 400,
     });
@@ -35,9 +57,11 @@ describe("Drive edit access", () => {
     const service = new AdminBotService(undefined, {
       driveProbe: async () => ({ status: "missing" }),
     });
-    expect(await service.checkDriveEditAccess(URL)).toMatchObject({
+    const result = await service.checkDriveAccess(URL);
+    expect(result).toMatchObject({
       ok: true,
-      payload: { status: "not_editable", message: expect.stringContaining("cannot open") },
+      payload: { status: "inaccessible", message: expect.stringContaining("cannot open") },
     });
+    expect(result.ok && result.payload.message).not.toContain("as Editor");
   });
 });
