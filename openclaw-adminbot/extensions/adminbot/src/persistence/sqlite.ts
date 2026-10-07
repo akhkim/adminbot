@@ -79,7 +79,6 @@ import type { ReferenceScan } from "../contracts/reference-scans.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import {
   AdminBotService,
-  type AdminBotActionExecutor,
   type AdminBotLabMemberSummary,
   type AdminBotListPage,
   type AdminBotMeetingArtifactRecord,
@@ -97,6 +96,10 @@ import {
   adminBotResolvedEmailReviewFromRow,
   ensureAdminBotEmailReviewSchema,
 } from "./email-review.js";
+import {
+  createFailedRequestLedgerFromDatabase,
+  type FailedExternalRequestLedger,
+} from "./failed-requests.js";
 import { discoverHelpRequests } from "./lab-sharing-discovery.js";
 import {
   ensureLabInterestSchema,
@@ -110,6 +113,7 @@ import {
   readDirectorStatus,
 } from "./lab-sharing-status.js";
 import { ensureLabSharingSchema, saveHelpRequest, listHelpRequests } from "./lab-sharing.js";
+import { createMemberDraftStore } from "./member-drafts.js";
 import {
   ensureOpenReviewCitationCheckSchema,
   getOpenReviewCitationCheck,
@@ -127,6 +131,10 @@ import {
   getReferenceScan,
   saveReferenceScan,
 } from "./reference-scans.js";
+import { SqliteAuditLog } from "./sqlite.audit.js";
+import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
+import { reassignMemberReferencesIn, renameMemberIdIn } from "./sqlite.member-identity.js";
+import { SqliteVenuePaperIndex } from "./sqlite.venue-papers.js";
 
 const require = createRequire(import.meta.url);
 
@@ -147,15 +155,13 @@ const PAPER_SEARCH = `(
     WHERE instr(adminbot_lower(author.value), ?) > 0)
 )`;
 
-export type AdminBotSqliteServiceOptions = {
+export type AdminBotSqliteServiceOptions = AdminBotServiceOptions & {
   databasePath: string;
-  auditRetentionDays?: number;
-  executor?: AdminBotActionExecutor;
 };
 
 export function createAdminBotSqliteService(options: AdminBotSqliteServiceOptions) {
   const store = new AdminBotSqliteStore(options.databasePath);
-  const service = new AdminBotService(store, serviceOptions(options));
+  const service = new AdminBotService(store, sqliteServiceOptions(options));
   return {
     service,
     store,
@@ -163,12 +169,16 @@ export function createAdminBotSqliteService(options: AdminBotSqliteServiceOption
   };
 }
 
-function serviceOptions(options: AdminBotSqliteServiceOptions): AdminBotServiceOptions {
+/**
+ * The caller's options whole, plus env-sourced paperflow settings. An allowlist here once dropped
+ * the deadline dataset, arXiv/OpenReview probes and Slack photo reviewers in production only.
+ */
+export function sqliteServiceOptions(
+  options: AdminBotSqliteServiceOptions,
+): AdminBotServiceOptions {
+  const { databasePath: _databasePath, ...wired } = options;
   return {
-    ...(typeof options.auditRetentionDays === "number"
-      ? { auditRetentionDays: options.auditRetentionDays }
-      : {}),
-    ...(options.executor ? { executor: options.executor } : {}),
+    ...wired,
     // Read here rather than in the kernel so the service stays free of process globals: both
     // callers (the API server and the hourly email script) build the service through this factory
     // and both already load ~/.openclaw/.env before they do.
@@ -182,12 +192,23 @@ function serviceOptions(options: AdminBotSqliteServiceOptions): AdminBotServiceO
 }
 
 export class AdminBotSqliteStore implements AdminBotServiceStore {
+  memberDraftStore() {
+    return createMemberDraftStore(this.db);
+  }
+
   private readonly db: DatabaseSync;
+  private readonly failedRequests: FailedExternalRequestLedger;
+  private readonly venueIndex: SqliteVenuePaperIndex;
+  private readonly members: SqliteLabMemberCache;
+  private readonly audit: SqliteAuditLog;
 
   constructor(readonly databasePath: string) {
     ensureDatabaseDirectory(databasePath);
     const sqlite = requireNodeSqlite();
     this.db = new sqlite.DatabaseSync(databasePath);
+    this.venueIndex = new SqliteVenuePaperIndex(this.db);
+    this.members = new SqliteLabMemberCache(this.db);
+    this.audit = new SqliteAuditLog(this.db);
     // SQLite's built-in lower() only handles ASCII; use the same fold as the in-memory store.
     this.db.function("adminbot_lower", { deterministic: true }, (value) =>
       String(value ?? "").toLowerCase(),
@@ -863,6 +884,19 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       -- Every read is "the newest pass", whether to show its answer or its progress.
       CREATE INDEX IF NOT EXISTS adminbot_workshop_match_runs_started_idx
         ON adminbot_workshop_match_runs(started_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_failed_external_requests (
+        id TEXT PRIMARY KEY,
+        service_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        error_message TEXT NOT NULL,
+        status TEXT NOT NULL,
+        attempt_count INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS adminbot_failed_external_requests_updated_idx
+        ON adminbot_failed_external_requests(updated_at DESC);
     `);
     ensureLabSharingSchema(this.db);
     ensureDirectorStatusSchema(this.db);
@@ -874,6 +908,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
     this.migratePaperSlotColumns();
+    this.failedRequests = createFailedRequestLedgerFromDatabase(this.db);
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
     this.migrateBadgeNominationColumns();
@@ -990,6 +1025,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           WHERE status = 'running'`,
       )
       .run(new Date().toISOString());
+  }
+
+  failedRequestLedger(): FailedExternalRequestLedger {
+    return this.failedRequests;
   }
 
   /**
@@ -1343,42 +1382,44 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           payload_json = excluded.payload_json`,
       )
       .run(member.id, member.privilege_level, member.updated_at, JSON.stringify(member));
+    this.members.invalidate();
   }
 
   patchLabMemberAuthFields(
     memberId: string,
     patch: Parameters<AdminBotServiceStore["patchLabMemberAuthFields"]>[1],
   ): boolean {
-    return (
+    const changed =
       this.db
         .prepare(
           `UPDATE adminbot_lab_members
          SET updated_at = ?, payload_json = json_patch(payload_json, ?)
          WHERE id = ?`,
         )
-        .run(patch.updated_at, JSON.stringify(patch), memberId).changes > 0
-    );
+        .run(patch.updated_at, JSON.stringify(patch), memberId).changes > 0;
+    this.members.invalidate();
+    return changed;
   }
 
   getLabMember(memberId: string): AdminBotLabMember | undefined {
-    const row = this.db
-      .prepare("SELECT payload_json FROM adminbot_lab_members WHERE id = ?")
-      .get(memberId) as { payload_json?: string } | undefined;
-    return row?.payload_json ? parseJson<AdminBotLabMember>(row.payload_json) : undefined;
+    return this.members.get(memberId);
   }
 
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[] {
-    const q = page?.q?.toLowerCase();
+    if (!page) {
+      return [...this.members.list()];
+    }
+    const q = page.q?.toLowerCase();
     const where = q ? `WHERE ${LAB_MEMBER_SEARCH}` : "";
     // ponytail: NOCASE indexes the common paged read but folds ASCII only. Search still folds
     // Unicode; add a persisted Unicode sort key if locale-aware global ordering becomes necessary.
     const rows = this.db
       .prepare(
         `SELECT m.payload_json FROM adminbot_lab_members m ${where}
-          ORDER BY ${page ? "json_extract(m.payload_json, '$.name') COLLATE NOCASE, m.id" : "json_extract(m.payload_json, '$.name')"}
-          ${page ? "LIMIT ? OFFSET ?" : ""}`,
+          ORDER BY json_extract(m.payload_json, '$.name') COLLATE NOCASE, m.id
+          LIMIT ? OFFSET ?`,
       )
-      .all(...(q ? [q, q, q, q] : []), ...(page ? [page.limit, page.offset] : [])) as Array<{
+      .all(...(q ? [q, q, q, q] : []), page.limit, page.offset) as Array<{
       payload_json: string;
     }>;
     return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
@@ -1404,28 +1445,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   listLabMemberSummaries(): AdminBotLabMemberSummary[] {
-    const rows = this.db
-      .prepare(
-        `SELECT m.payload_json FROM adminbot_lab_members m
-         ORDER BY adminbot_lower(json_extract(m.payload_json, '$.name')), m.id`,
-      )
-      .all() as Array<{ payload_json: string }>;
-    return rows.map((row) => {
-      const summary = parseJson<AdminBotLabMember>(row.payload_json);
-      delete summary.field_provenance;
-      delete (summary as Partial<AdminBotLabMember>).access;
-      if (summary.onboarding && !Array.isArray(summary.onboarding)) {
-        return {
-          ...summary,
-          onboarding: {
-            steps: Array.isArray(summary.onboarding.steps)
-              ? summary.onboarding.steps.map(({ id, status }) => ({ id, status }))
-              : [],
-          },
-        };
-      }
-      return summary;
-    });
+    return [...this.members.summaries()];
   }
 
   countLabMembers(q?: string): number {
@@ -1885,6 +1905,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     const result = this.db
       .prepare("DELETE FROM adminbot_lab_members WHERE id = ?")
       .run(memberId) as { changes?: number };
+    this.members.invalidate();
     return (result.changes ?? 0) > 0;
   }
 
@@ -2084,109 +2105,20 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   reassignMemberReferences(fromMemberId: string, toMemberId: string): Record<string, number> {
-    const moved: Record<string, number> = {};
-    // One transaction: a half-repointed member is worse than an unmerged one, because the rows
-    // that did move no longer name a record anybody can find their way back from. Written as an
-    // explicit BEGIN/COMMIT for the same reason replaceVenueIndex is -- node:sqlite's DatabaseSync
-    // has no `transaction()` wrapper.
-    this.db.exec("BEGIN");
-    try {
-      for (const [table, column] of AdminBotSqliteStore.MEMBER_REFERENCE_COLUMNS) {
-        // The tall tables key on (subject, member), so a row that would collide with one the
-        // survivor already has is dropped rather than updated -- two attendee rows for one person
-        // on one paper is not a merge, it is a duplicate with a new name. INSERT OR REPLACE
-        // semantics are wrong here for the same reason: the survivor's own answer wins.
-        const result = this.db
-          .prepare(`UPDATE OR IGNORE "${table}" SET ${column} = ? WHERE ${column} = ?`)
-          .run(toMemberId, fromMemberId) as { changes?: number };
-        const changes = result.changes ?? 0;
-        if (changes > 0) {
-          moved[`${table}.${column}`] = (moved[`${table}.${column}`] ?? 0) + changes;
-        }
-        // Whatever the UPDATE could not move is a collision with a row the survivor already owns.
-        this.db.prepare(`DELETE FROM "${table}" WHERE ${column} = ?`).run(fromMemberId);
-      }
-      // Badge suggestions are repointed here rather than from MEMBER_REFERENCE_COLUMNS because
-      // that loop moves the column and leaves `payload_json` alone -- and payload_json is what is
-      // read back, so a merge done through the loop would move the row and change nothing anybody
-      // can see. Nothing keys on the suggester, so there is no collision case to drop.
-      {
-        const result = this.db
-          .prepare(
-            `UPDATE adminbot_badge_suggestions
-              SET suggested_by = ?,
-                  payload_json = json_set(payload_json, '$.suggested_by', ?)
-              WHERE suggested_by = ?`,
-          )
-          .run(toMemberId, toMemberId, fromMemberId) as { changes?: number };
-        if ((result.changes ?? 0) > 0) {
-          moved["adminbot_badge_suggestions.suggested_by"] = result.changes ?? 0;
-        }
-      }
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-    return moved;
+    const columns = AdminBotSqliteStore.MEMBER_REFERENCE_COLUMNS;
+    return reassignMemberReferencesIn(this.db, columns, fromMemberId, toMemberId);
   }
 
   renameMemberId(fromMemberId: string, toMemberId: string): Record<string, number> {
-    const changed: Record<string, number> = {};
-    // Every table, discovered rather than listed: a member id lives in dedicated columns and inside
-    // payload_json (paper author links, the head-professor setting, attendee maps keyed by id), and
-    // a hand-kept list is how the merge ended up moving the column a page reads from but not the
-    // payload it renders. The audit log is the one exception -- it is history, and the rename's own
-    // audit line is what ties the old id in it to the new one.
-    const tables = (
-      this.db
-        .prepare(
-          `SELECT name FROM sqlite_master
-            WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'adminbot_audit_events'`,
-        )
-        .all() as Array<{ name: string }>
-    ).map((row) => row.name);
-    // Matched as a whole JSON string, quotes included, so renaming "pat" leaves "pat-lee" and a
-    // sentence mentioning pat alone. Covers both values and object keys.
-    const fromJson = JSON.stringify(fromMemberId);
-    const toJson = JSON.stringify(toMemberId);
-    // One transaction, and plain UPDATE rather than UPDATE OR IGNORE: a row already keyed on the
-    // new id is a collision the admin has to look at, and a rename that silently dropped the old
-    // row instead would lose that person's data. The throw rolls every table back.
-    this.db.exec("BEGIN");
     try {
-      for (const table of tables) {
-        const columns = (
-          this.db.prepare(`PRAGMA table_info("${table}")`).all() as Array<{
-            name: string;
-            type: string;
-          }>
-        )
-          // Untyped columns too: SQLite stores whatever was bound, and an old schema may not say.
-          .filter((column) => column.type === "" || /TEXT|CHAR|CLOB/iu.test(column.type))
-          .map((column) => column.name);
-        for (const column of columns) {
-          const exact = this.db
-            .prepare(`UPDATE "${table}" SET "${column}" = ? WHERE "${column}" = ?`)
-            .run(toMemberId, fromMemberId) as { changes?: number };
-          const embedded = this.db
-            .prepare(
-              `UPDATE "${table}" SET "${column}" = replace("${column}", ?, ?)
-                WHERE instr("${column}", ?) > 0`,
-            )
-            .run(fromJson, toJson, fromJson) as { changes?: number };
-          const changes = (exact.changes ?? 0) + (embedded.changes ?? 0);
-          if (changes > 0) {
-            changed[`${table}.${column}`] = changes;
-          }
-        }
-      }
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
+      return renameMemberIdIn(this.db, fromMemberId, toMemberId);
+    } finally {
+      // The sweep rewrites adminbot_lab_members (and any payload naming the id) with raw SQL on
+      // this connection, which PRAGMA data_version does not see: drop the parsed caches here or
+      // getLabMember keeps answering for the old id. On rollback too -- it costs one re-read.
+      this.members.invalidate();
+      this.venueIndex.invalidate();
     }
-    return changed;
   }
 
   recordCvChanges(events: AdminBotCvChangeEvent[]): AdminBotCvChangeEvent[] {
@@ -2228,59 +2160,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     indexedAt: string,
     model: string,
   ): void {
-    const remove = this.db.prepare("DELETE FROM adminbot_venue_papers WHERE venue_id = ?");
-    const insert = this.db.prepare(
-      `INSERT INTO adminbot_venue_papers (
-         venue_id, paper_id, indexed_at, embedding_model, payload_json
-       ) VALUES (?, ?, ?, ?, ?)`,
-    );
-    // Explicit BEGIN/COMMIT so a failed rebuild leaves the previous index intact: without it a
-    // crash mid-insert leaves the venue half-indexed and silently ranking against a partial
-    // corpus. Written out rather than via a helper because node:sqlite's DatabaseSync has no
-    // `transaction()` wrapper -- that is better-sqlite3, which this file does not use.
-    this.db.exec("BEGIN");
-    try {
-      remove.run(venueId);
-      for (const paper of papers) {
-        insert.run(venueId, paper.paper_id, indexedAt, model, JSON.stringify(paper));
-      }
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+    this.venueIndex.replace(venueId, papers, indexedAt, model);
   }
 
-  listVenuePapers(venueId: string): AdminBotVenuePaper[] {
-    const rows = this.db
-      .prepare("SELECT payload_json FROM adminbot_venue_papers WHERE venue_id = ?")
-      .all(venueId) as Array<{ payload_json: string }>;
-    return rows.map((row) => parseJson<AdminBotVenuePaper>(row.payload_json));
+  listVenuePapers(venueId: string): readonly AdminBotVenuePaper[] {
+    return this.venueIndex.list(venueId);
   }
 
   listVenueIndexStatuses(): Omit<AdminBotVenueIndexStatus, "label">[] {
-    const rows = this.db
-      .prepare(
-        `SELECT venue_id, COUNT(*) AS paper_count,
-                MAX(indexed_at) AS indexed_at,
-                MAX(embedding_model) AS embedding_model
-         FROM adminbot_venue_papers GROUP BY venue_id`,
-      )
-      .all() as Array<{
-      venue_id: string;
-      paper_count: number;
-      indexed_at: string | null;
-      embedding_model: string | null;
-    }>;
-    // Built without a conditional spread: MAX() over a grouped column is null only for an empty
-    // group, which cannot happen here, and `undefined` reads the same as an absent key to every
-    // caller. Matches how the route serialises the same record.
-    return rows.map((row) => ({
-      venue_id: row.venue_id,
-      paper_count: row.paper_count,
-      indexed_at: row.indexed_at ?? undefined,
-      embedding_model: row.embedding_model ?? undefined,
-    }));
+    return this.venueIndex.statuses();
   }
 
   saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void {
@@ -3576,39 +3464,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   recordAudit(event: AdminBotAuditEvent): void {
-    this.db
-      .prepare(
-        `INSERT INTO adminbot_audit_events (
-          id,
-          action_id,
-          event_type,
-          timestamp,
-          actor,
-          event_json
-        ) VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        event.id,
-        event.action_id ?? null,
-        event.type,
-        event.timestamp,
-        event.actor ?? null,
-        JSON.stringify(event),
-      );
+    this.audit.record(event);
   }
 
   listAuditEvents(): AdminBotAuditEvent[] {
-    const rows = this.db
-      .prepare("SELECT event_json FROM adminbot_audit_events ORDER BY timestamp ASC")
-      .all() as Array<{ event_json: string }>;
-    return rows.map((row) => parseJson<AdminBotAuditEvent>(row.event_json));
+    return this.audit.list();
   }
 
   pruneAuditEventsBefore(cutoffIso: string): number {
-    const result = this.db
-      .prepare("DELETE FROM adminbot_audit_events WHERE timestamp < ?")
-      .run(cutoffIso);
-    return Number(result.changes ?? 0);
+    return this.audit.pruneBefore(cutoffIso);
   }
 
   getCredentialByEmail(email: string): AdminBotMemberCredential | undefined {
@@ -3840,6 +3704,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         return "stale";
       }
       this.db.exec("COMMIT");
+      this.members.invalidate();
       return "changed";
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -4023,6 +3888,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         )
         .run(decidedBy, decidedAt, id);
       this.db.exec("COMMIT");
+      this.members.invalidate();
       return { ok: true, member_id: memberId };
     } catch (error) {
       this.db.exec("ROLLBACK");

@@ -862,7 +862,7 @@ function buildCalendarDeleteArgs(proposal: AdminBotStoredProposal): string[] {
 export function createGogDriveProbe(
   options: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {},
 ): AdminBotDriveProbe {
-  const command = options.command ?? "gog";
+  const command = options.command ?? resolveGogExecutable(options.env);
   return async (fileId) => {
     // The id comes from `adminBotDriveFileId`, which accepts a closed charset -- but this is the
     // last point before it becomes an argument, so it is checked here too rather than trusted.
@@ -885,7 +885,7 @@ export function createGogDriveProbe(
         ...(options.env ? { env: options.env } : {}),
       });
       const payload = JSON.parse(stdout) as Record<string, unknown>;
-      const file = (payload.result ?? payload) as Record<string, unknown>;
+      const file = (payload.file ?? payload.result ?? payload) as Record<string, unknown>;
       const name = typeof file.name === "string" ? file.name : undefined;
       const capabilities = file.capabilities as Record<string, unknown> | undefined;
       const editable =
@@ -928,7 +928,9 @@ export async function readDriveFileBase64(
   fileId: string,
   options: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {},
 ): Promise<string> {
-  const command = options.command ?? "gog";
+  // Resolved rather than bare: under the systemd unit's minimal PATH a bare "gog" ENOENTs, which
+  // surfaced as "could not read the Drive copy (spawn gog ENOENT)" on every LinkedIn draft.
+  const command = options.command ?? resolveGogExecutable(options.env);
   const output = path.join(
     os.tmpdir(),
     `adminbot-drive-${fileId.replace(/[^a-zA-Z0-9_-]/gu, "")}-${Date.now()}.pdf`,

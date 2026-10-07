@@ -20,10 +20,16 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
 import { iconForTab, isKnownTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
-import type { MemberNotification } from "../auth/session.ts";
-import { daysLeftLabel, upcomingMajorDeadlines, urgencyOf } from "../data/deadline-time.ts";
+import type { MemberNotification } from "../api/workspace.ts";
+import {
+  deadlineDateTimeLabel,
+  daysLeftLabel,
+  plainDateLabel,
+  upcomingMajorDeadlines,
+  urgencyOf,
+} from "../data/deadline-time.ts";
 import { nextStepFor } from "../next-step.ts";
-import { renderAoeDateTime } from "./deadline-date.ts";
+import { renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderMemberMap } from "./member-map.ts";
 import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
 import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile.ts";
@@ -445,6 +451,7 @@ type NextDeadline = {
   key: string;
   label: string;
   instant: number;
+  dateLabel: string;
   mine: boolean;
 };
 
@@ -467,6 +474,7 @@ function nextDeadlines(state: AppViewState): NextDeadline[] {
       key: `venue:${entry.venue.deadline_id ?? entry.venue.name}`,
       label: entry.venue.name,
       instant: entry.instant,
+      dateLabel: deadlineDateTimeLabel(entry.venue),
       mine: false,
     }),
   );
@@ -486,6 +494,7 @@ function nextDeadlines(state: AppViewState): NextDeadline[] {
       key: `mine:${date}:${milestone.label ?? ""}`,
       label: String(milestone.label ?? "").trim() || date,
       instant,
+      dateLabel: plainDateLabel(date),
       mine: true,
     });
   }
@@ -530,7 +539,7 @@ function renderNextDeadlines(state: AppViewState) {
                 : nothing}
             </span>
             <span class="dashboard__next-deadline-date">
-              ${renderAoeDateTime(new Date(row.instant).toISOString())}
+              ${renderDeadlineDateLabel(row.dateLabel)}
             </span>
           </li>`,
       )}
@@ -753,7 +762,7 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
   }
   return html`
     <div class="dashboard">
-      ${renderBroadcast(state)} ${renderOneOffNotice(state, role)}
+      ${renderOfflineBanner(state)} ${renderBroadcast(state)} ${renderOneOffNotice(state, role)}
       ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
@@ -762,5 +771,31 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
       </section>
       ${renderNextDeadlines(state)}
     </div>
+  `;
+}
+
+function renderOfflineBanner(state: AppViewState) {
+  const pending = state.adminBotOfflinePendingWrites ?? 0;
+  const cached = Boolean(state.adminBotUsingCachedReads);
+  if (!cached && pending === 0) {
+    return nothing;
+  }
+  const reads = cached
+    ? "Showing the last copy saved on this device. You can still read and edit supported drafts. Submit requests when AdminBot is reachable."
+    : "";
+  const writes =
+    pending > 0
+      ? `${pending} edit${pending === 1 ? "" : "s"} retained from the old queue. Review and submit again when connected; these will not send automatically.`
+      : "";
+  return html`
+    <section
+      class="dashboard__nudge-warning"
+      data-tone="warn"
+      data-testid="dashboard-offline"
+      role="status"
+    >
+      <strong>Working offline</strong>
+      <p>${[reads, writes].filter(Boolean).join(" ")}</p>
+    </section>
   `;
 }

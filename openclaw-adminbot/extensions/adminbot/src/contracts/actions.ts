@@ -1,3 +1,5 @@
+import type { AdminBotLabMemberRecordAuditType } from "./member-audit-events.js";
+
 export const adminBotRiskTiers = ["T0", "T1", "T2", "T3", "T4"] as const;
 
 export type AdminBotRiskTier = (typeof adminBotRiskTiers)[number];
@@ -522,6 +524,9 @@ export function isAdminBotFullMember(member: { privilege_level?: string }): bool
 }
 
 export const adminBotMandatoryProfileFields = [
+  // Required only when arr_reviewer_qualified is true.
+  "arr_review_capacity",
+  "arr_reviewer_qualified",
   "name",
   "calendar_email",
   "location",
@@ -531,6 +536,9 @@ export const adminBotMandatoryProfileFields = [
   "github_url",
   "linkedin_url",
   "linkedin_urn",
+  "twitter_url",
+  "personal_website",
+  "intake_form_url",
   "cv_url",
   // Where the member's one-on-one notes live. Required of the record because the folder is what
   // every later one-on-one is filed into: a blank here is not "this person has no meetings", it is
@@ -541,8 +549,6 @@ export const adminBotMandatoryProfileFields = [
   "affiliation",
   "hours_per_week",
   "joined_month",
-  "graduated_month",
-  "next_position",
 ] as const;
 
 export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFields)[number];
@@ -802,6 +808,8 @@ export type AdminBotMemberActivityCounts = {
  * once rather than composed per person.
  */
 export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfileField, string> = {
+  arr_reviewer_qualified: "ARR reviewer qualification",
+  arr_review_capacity: "ARR review capacity",
   name: "Name",
   calendar_email: "Calendar email",
   location: "Location",
@@ -811,14 +819,15 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   github_url: "GitHub",
   linkedin_url: "LinkedIn",
   linkedin_urn: "LinkedIn URN",
+  twitter_url: "X / Twitter",
+  personal_website: "Website",
+  intake_form_url: "Application form response link (or mark that you cannot find it)",
   cv_url: "CV",
   one_on_one_folder_url: "Link to 1:1 Folder",
   openreview_id: "OpenReview",
   affiliation: "Main affiliation",
   hours_per_week: "Hours per week on Jinesis projects",
   joined_month: "Joined month",
-  graduated_month: "Potential offboarding month",
-  next_position: "Next position you are looking for",
 };
 
 /**
@@ -1519,6 +1528,9 @@ export type AdminBotLabMemberInput = {
   // rather than a link the profile can render for them.
   intake_form_url?: string;
   intake_form_unavailable?: boolean;
+  /** Self-reported ARR eligibility; not verified or a reviewing assignment. */
+  arr_reviewer_qualified?: boolean | null;
+  arr_review_capacity?: number | null;
   /**
    * The Google Drive folder holding this member's one-on-one notes.
    *
@@ -1545,6 +1557,7 @@ export type AdminBotLabMemberInput = {
   linkedin_followers?: number;
   github_url?: string;
   scholar_url?: string;
+  acl_anthology_url?: string;
   // Never propose or assign this person as an emergency reviewer, whatever their topic
   // match. Governance-owned: it encodes a standing commitment about someone's time, so
   // it is deliberately absent from the fields a member may edit on their own profile.
@@ -2463,16 +2476,7 @@ export type AdminBotAuditEvent = {
     | "calendar.local_audience_swept"
     // One pass over the back catalogue, linking printed author names to the people they name.
     | "paper_author_links.backfilled"
-    // Carries the whole retired record in `details`, because a merge has no undo.
-    | "lab_member.merged"
-    | "lab_member.id_changed"
-    | "lab_member.deleted"
-    | "lab_members.purged_without_email"
-    | "lab_member_request.submitted"
-    | "lab_member_request.edited"
-    | "lab_member_request.approved"
-    | "lab_member_request.rejected"
-    | "lab_member_request.withdrawn"
+    | AdminBotLabMemberRecordAuditType
     | "paper.upserted"
     | "paper_slot.updated"
     | "paper_slot.waived"

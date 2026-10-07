@@ -159,6 +159,44 @@ async function namePi(baseUrl: string, adminSession: string, memberId: string): 
 }
 
 describe("AdminBot mock service", () => {
+  it("checks Drive access through the authenticated durable API", async () => {
+    const databasePath = path.join(
+      os.tmpdir(),
+      `adminbot-drive-api-${Date.now()}-${Math.random().toString(16).slice(2)}.sqlite`,
+    );
+    const seen: string[] = [];
+    const { baseUrl, mock } = await startService({
+      databasePath,
+      driveProbe: async (id) => {
+        seen.push(id);
+        return { status: "found", canEdit: true };
+      },
+    });
+    const entry = running.find((candidate) => candidate.baseUrl === baseUrl)!;
+    entry.cleanupPaths.push(databasePath, `${databasePath}-wal`, `${databasePath}-shm`);
+    seedMember(baseUrl, "pat", { name: "Pat", email: "pat@institute.example" });
+    await approveClaim(baseUrl, "pat", "pat@institute.example");
+    const token = await loginToken(baseUrl, "pat@institute.example");
+    const before = mock.service.listLabMembers();
+    const url = "https://drive.google.com/drive/folders/1SyntheticEditableFolder";
+    const response = await fetch(`${baseUrl}/drive/check-edit-access`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "accessible" });
+    expect(seen).toEqual(["1SyntheticEditableFolder"]);
+    expect(mock.service.listLabMembers()).toEqual(before);
+    const denied = await fetch(`${baseUrl}/drive/check-edit-access`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ url }),
+    });
+    expect(denied.status).toBe(401);
+    expect(seen).toHaveLength(1);
+  });
+
   it("serves the management UI and state endpoints for the service principal", async () => {
     const { baseUrl } = await startService();
 
@@ -827,6 +865,41 @@ describe("AdminBot mock service", () => {
     // Secure is additive -- the protections that never depended on the transport still hold.
     await expect(loginCookie(true, "https")).resolves.toContain("HttpOnly");
     await expect(loginCookie(true, "https")).resolves.toContain("SameSite=Lax");
+  });
+
+  it("returns correspondence validation errors over HTTP without changing the saved member", async () => {
+    const { baseUrl } = await startService();
+    await seedMember(baseUrl, "email-self", {
+      name: "Email Self",
+      email: "email-self@cs.toronto.edu",
+      correspondence_email: "self@institute.example",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "email-self", "email-self@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "email-self@cs.toronto.edu");
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    const rejected = await fetch(`${baseUrl}/lab/members/email-self`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ correspondence_email: "self@gmail.com" }),
+    });
+    expect(rejected.status).toBe(400);
+    await expect(rejected.json()).resolves.toMatchObject({
+      error: {
+        message:
+          "Use an institutional or company email for correspondence, rather than a personal email address.",
+      },
+    });
+    const accepted = await fetch(`${baseUrl}/lab/members/email-self`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ name: "Email Self Updated" }),
+    });
+    expect(accepted.status).toBe(200);
+    await expect(accepted.json()).resolves.toMatchObject({
+      name: "Email Self Updated",
+      correspondence_email: "self@institute.example",
+    });
   });
 
   it("guards member self-profile edits", async () => {
@@ -2574,6 +2647,100 @@ describe("AdminBot device token issuance", () => {
 });
 
 describe("anonymous reimbursement access", () => {
+  it("only mails the unchanged package produced by the server's generation gate", async () => {
+    const executed: unknown[] = [];
+    const artifacts = [
+      {
+        filename: "expense.xlsx",
+        media_type: "application/octet-stream",
+        data_base64: "ZXhwZW5zZQ==",
+      },
+      {
+        filename: "summary.docx",
+        media_type: "application/octet-stream",
+        data_base64: "c3VtbWFyeQ==",
+      },
+    ];
+    const { baseUrl, mock } = await startService({
+      reimbursementWorkflow: { ...stubWorkflow, generate: async () => ({ artifacts }) },
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal);
+          return { handled: true };
+        },
+      },
+    });
+    seedMember(baseUrl, "claimant", { name: "Claimant", email: "claimant@cs.toronto.edu" });
+    await approveClaim(baseUrl, "claimant", "claimant@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "claimant@cs.toronto.edu");
+    mock.service.updateSettings({
+      reimbursement_dcs_email: "finance@example.org",
+      reimbursement_mpi_email: "mpi@example.org",
+    });
+    const generatedResponse = await fetch(`${baseUrl}/reimbursements/generate`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ draft: { funder: "DCS" } }),
+    });
+    expect(generatedResponse.status).toBe(200);
+    const generated = (await generatedResponse.json()) as { submission_proof: string };
+    const packageInput = { funder: "DCS", artifacts, submission_proof: generated.submission_proof };
+    const submit = (input: unknown) =>
+      fetch(`${baseUrl}/reimbursements/submit`, {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+        body: JSON.stringify(input),
+      });
+    for (const input of [
+      { ...packageInput, funder: "MPI-IS" },
+      { ...packageInput, artifacts: artifacts.slice(0, 1) },
+      {
+        ...packageInput,
+        artifacts: [{ ...artifacts[0], filename: "replacement.xlsx" }, artifacts[1]],
+      },
+      {
+        ...packageInput,
+        artifacts: [{ ...artifacts[0], data_base64: "bW9kaWZpZWQ=" }, artifacts[1]],
+      },
+      { ...packageInput, submission_proof: "f".repeat(64) },
+    ]) {
+      const response = await submit(input);
+      expect(response.status).toBe(422);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { message: expect.stringContaining("Generate and review") },
+      });
+    }
+    expect(executed).toEqual([]);
+    expect((await submit(packageInput)).status).toBe(200);
+    expect(executed).toHaveLength(1);
+  });
+
+  it("refuses unchecked reimbursement attachments before any external execution", async () => {
+    const executed: unknown[] = [];
+    const { baseUrl, mock } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal);
+          return { handled: true };
+        },
+      },
+    });
+    seedMember(baseUrl, "claimant", { name: "Claimant", email: "claimant@cs.toronto.edu" });
+    await approveClaim(baseUrl, "claimant", "claimant@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "claimant@cs.toronto.edu");
+    mock.service.updateSettings({ reimbursement_dcs_email: "finance@example.org" });
+    const response = await fetch(`${baseUrl}/reimbursements/submit`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({
+        funder: "DCS",
+        artifacts: [{ filename: "unchecked.docx", data_base64: "dW5jaGVja2Vk" }],
+      }),
+    });
+    expect(response.status).toBe(422);
+    expect(executed).toEqual([]);
+  });
+
   it("rejects oversized JSON before the anonymous workflow handles it", async () => {
     const { baseUrl } = await startService({ reimbursementWorkflow: stubWorkflow });
     const res = await fetch(`${baseUrl}/reimbursements/converse`, {

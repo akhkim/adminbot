@@ -5198,7 +5198,7 @@ adminbot-deadline-timezone {
 .deadline-group__summary {
   display: grid;
   position: relative;
-  grid-template-columns: 7.75rem minmax(0, 1fr) 15rem 14rem;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: var(--space-3);
   width: 100%;
@@ -5249,8 +5249,9 @@ adminbot-deadline-timezone {
 .deadline-group__heading {
   display: flex;
   min-width: 0;
-  flex-direction: column;
-  gap: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1);
 }
 
 .deadline-group__heading strong {
@@ -5258,8 +5259,8 @@ adminbot-deadline-timezone {
   color: var(--text-strong);
   font-size: var(--control-ui-text-lg);
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .deadline-group__heading small,
@@ -5270,7 +5271,7 @@ adminbot-deadline-timezone {
 
 .deadline-group__count {
   white-space: normal;
-  text-align: right;
+  text-align: left;
   padding: 0;
   border: 0;
   border-radius: var(--radius-full);
@@ -6176,36 +6177,6 @@ adminbot-deadline-timezone {
 .deadline-archival__explanation strong {
   display: block;
   margin-bottom: var(--space-1);
-}
-
-@container deadline-board (max-width: 64em) {
-  .deadline-group__summary {
-    grid-template-columns: max-content minmax(0, 1fr);
-    gap: var(--space-1) var(--space-2);
-  }
-
-  .deadline-group__summary-countdown {
-    grid-row: 3;
-    grid-column: 1;
-  }
-
-  .deadline-group__heading {
-    grid-row: 1;
-    grid-column: 1 / -1;
-  }
-
-  .deadline-group__summary-date {
-    grid-row: 2;
-    grid-column: 1 / -1;
-  }
-
-  .deadline-group__count {
-    grid-row: 3;
-    grid-column: 2;
-    max-width: 10rem;
-    text-align: right;
-    justify-self: end;
-  }
 }
 
 @container deadline-board (max-width: 96em) {
@@ -10584,6 +10555,24 @@ adminbot-deadline-timezone {
   color: var(--muted);
 }
 
+/* The logistics drop zone, tightened to sit between the context inputs and the draft box. Both
+   classes, because logistics.css loads after this file and would otherwise win the tie. */
+.logistics-upload__drop.paper-cycle__pdf-drop {
+  margin-top: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+/* Outside the logistics page nothing sizes or strokes a bare icon svg, so it rendered at 0x0. */
+.paper-cycle__pdf-drop .logistics-upload__drop-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* Generate sits left; sign-off rides the right edge, matching how the card's action rows read. */
 .paper-cycle__draft-actions {
   display: flex;
@@ -11351,10 +11340,15 @@ adminbot-paper-visibility {
 }
 .deadline-board
   [data-entry-type="workshop"]
-  :is(.btn, .deadline-card__source, .deadline-card__actions, deadline-recommendation) {
+  :is(
+    .btn:not(.primary),
+    .deadline-card__source,
+    .deadline-card__actions,
+    deadline-recommendation
+  ) {
   color: var(--muted);
 }
-.deadline-board [data-entry-type="workshop"] :is(.btn, .deadline-card__source):hover {
+.deadline-board [data-entry-type="workshop"] :is(.btn:not(.primary), .deadline-card__source):hover {
   color: var(--text-strong);
 }
 .deadline-board .deadline-group[data-group-kind="workshops"] .deadline-group__heading strong {
@@ -12087,7 +12081,7 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   color: var(--muted);
 }
 .deadline-board .deadline-group__heading {
-  display: grid;
+  display: flex;
   gap: 4px;
 }
 .deadline-board .deadline-group__heading > strong,
@@ -12165,7 +12159,7 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   box-sizing: border-box;
 }
 .deadline-board .deadline-group__heading {
-  gap: var(--deadline-row-gap);
+  gap: var(--space-1);
 }
 .deadline-board .deadline-group__heading > strong,
 .deadline-board .deadline-group__heading > small {
@@ -12333,8 +12327,9 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   padding: 16px;
   margin: 16px 0;
 }
-.deadline-recent h2 {
-  margin: 0 0 8px;
+.deadline-recent summary {
+  cursor: pointer;
+  font-weight: 600;
 }
 .deadline-recent p {
   color: var(--muted);
@@ -12364,4 +12359,40 @@ html[data-theme="light"] .deadline-board [data-urgency] {
 .deadline-board .deadline-card__name.deadline-action__venue {
   font-size: 0.875rem;
   font-weight: 400;
+}
+
+.deadline-conference-attendance {
+  padding: 0 var(--space-4) var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+.deadline-conference-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+  margin: var(--space-1) 0;
+}
+.deadline-conference-people li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.deadline-conference-people img,
+.deadline-conference-initials {
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+}
+.deadline-conference-initials {
+  display: inline-grid;
+  place-items: center;
+  background: var(--bg-accent);
+  font-size: 12px;
+}
+.deadline-conference-attendance .btn {
+  justify-self: start;
+  white-space: normal;
+  text-align: left;
 }

@@ -1,4 +1,3 @@
-import "./local-chat.ts";
 // The professor's morning page: the things that are hers to do, on one screen.
 //
 // Everything here is already somewhere else -- the rec-letter queue is on Requests, the adoption
@@ -19,6 +18,7 @@ import "./local-chat.ts";
 // the page it used to live on is the one members read, where an editor only she could see was three
 // controls of dead weight for everybody else.
 import { html, nothing } from "lit";
+import "./local-chat.ts";
 import {
   adminBotIsAlumniMember,
   adminBotLogisticsSettledStatuses,
@@ -27,14 +27,13 @@ import {
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
-import type {
-  EscalatedNudgeRow,
-  LabBroadcast,
-  LogisticsRequest,
-  MemberProfileOverviewRow,
-  PiReviewRow,
-} from "../auth/session.ts";
+import type { LabBroadcast } from "../api/lab-sharing.ts";
+import type { LogisticsRequest } from "../api/logistics.ts";
+import type { MemberProfileOverviewRow } from "../api/members.ts";
+import type { EscalatedNudgeRow } from "../api/nudges.ts";
+import type { PiReviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
+import { renderDateControl } from "../date-control.ts";
 
 export type ProfessorViewProps = {
   localChatSessionToken?: string;
@@ -668,14 +667,17 @@ function broadcastBox(props: ProfessorViewProps) {
       <div class="professor__broadcast-controls">
         <label class="professor__broadcast-field">
           <span>${t("professor.broadcast.showsUntil")}</span>
-          <input
-            type="date"
-            data-testid="professor-broadcast-expiry"
-            .value=${expiresOn}
-            ?disabled=${busy}
-            @input=${(event: Event) =>
-              props.onBroadcastExpiryChange((event.target as HTMLInputElement).value)}
-          />
+          ${renderDateControl(
+            html`<input
+              type="date"
+              data-testid="professor-broadcast-expiry"
+              .value=${expiresOn}
+              ?disabled=${busy}
+              @input=${(event: Event) =>
+                props.onBroadcastExpiryChange((event.target as HTMLInputElement).value)}
+            />`,
+            expiresOn,
+          )}
         </label>
         <label class="professor__broadcast-field">
           <span>${t("professor.broadcast.availability")}</span>

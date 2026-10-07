@@ -2131,6 +2131,15 @@ export const zh_CN: TranslationMap = {
     },
   },
   profile: {
+    arrReviewer: {
+      label: "I qualify as an ARR reviewer",
+      yes: "I confirm that I am a qualified reviewer.",
+      no: "I confirm that I am not a qualified reviewer.",
+      choose: "Select your qualification",
+      capacity: "Number of ARR papers I can review",
+      hint: "Self-reported eligibility. This does not register you or assign reviews.",
+      criteria: "Check ARR eligibility criteria",
+    },
     onboardingChecklist: "Your setup checklist ({count} left)",
     onboardingChecklistDone: "Your setup checklist",
     visibility: {
@@ -2255,6 +2264,7 @@ export const zh_CN: TranslationMap = {
       twitter: "X",
       github: "GitHub",
       scholar: "Scholar",
+      aclAnthology: "ACL Anthology",
       openreview: "OpenReview",
     },
     suggestions: {
@@ -2307,6 +2317,7 @@ export const zh_CN: TranslationMap = {
       linkedinFollowers: "LinkedIn followers (self-reported)",
       github: "GitHub",
       scholar: "Google Scholar",
+      aclAnthology: "ACL Anthology profile",
       openreviewId: "OpenReview ID",
       researchTopics: "Research topics",
       elevatorPitch: "Elevator pitch",

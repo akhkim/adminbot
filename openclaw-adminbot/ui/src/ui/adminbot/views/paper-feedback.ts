@@ -4,9 +4,12 @@ import {
   parsePaperFeedback,
 } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 import { t } from "../../../i18n/index.ts";
+import { renderDateControl } from "../date-control.ts";
 import type { PaperSlotsProps } from "./paper-slots.ts";
 
-export function renderPaperFeedback(props: PaperSlotsProps) {
+export function renderPaperFeedback(
+  props: Pick<PaperSlotsProps, "slots" | "loading" | "onSaveSlot">,
+) {
   return html`<section class="card" data-testid="paper-feedback">
     <h4>${t("paperFeedback.title")}</h4>
     <p>${t("paperFeedback.blurb")}</p>
@@ -89,17 +92,19 @@ export function renderPaperFeedback(props: PaperSlotsProps) {
                 ></textarea>
               </label>
               <label
-                >${t("paperFeedback.softInput")}<input
+                >${t("paperFeedback.softInput")}${renderDateControl(html`<input
                   class="input"
                   name="soft"
                   type="datetime-local"
-              /></label>
+                />`)}</label
+              >
               <label
-                >${t("paperFeedback.hardInput")}<input
+                >${t("paperFeedback.hardInput")}${renderDateControl(html`<input
                   class="input"
                   name="hard"
                   type="datetime-local"
-              /></label>
+                />`)}</label
+              >
               <p class="muted">${t("paperFeedback.hint")}</p>
               <p role="alert"></p>
               <button class="btn btn--primary" type="submit" ?disabled=${props.loading}>

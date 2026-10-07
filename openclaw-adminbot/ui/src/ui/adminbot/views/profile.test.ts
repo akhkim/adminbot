@@ -6,11 +6,11 @@ import {
   ADMINBOT_ELEVATOR_PITCH_MAX,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
 import {
   clearStoredMemberSession,
   saveStoredMemberSession,
   type LabMember,
-  type MemberProfileUpdate,
 } from "../auth/session.ts";
 import {
   blankFields,
@@ -36,6 +36,45 @@ function createMember(overrides: Partial<LabMember> = {}): LabMember {
   };
 }
 
+it("saves self-reported ARR eligibility and links to the official criteria", () => {
+  const save = vi.fn();
+  const container = renderPage(createState(createMember({ arr_reviewer_qualified: true })), save);
+  const checkbox = container.querySelector<HTMLSelectElement>('[name="arr_reviewer_qualified"]')!;
+  expect(checkbox.value).toBe("yes");
+  expect(checkbox.closest(".profile__field-group")?.querySelector("h3")?.textContent).toContain(
+    "Work & availability",
+  );
+  expect(
+    container.querySelector('a[href="https://aclrollingreview.org/qualifications"]')?.textContent,
+  ).toContain("criteria");
+  const button = container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!;
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1].arr_reviewer_qualified).toBe(true);
+  checkbox.value = "no";
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1].arr_reviewer_qualified).toBe(false);
+  checkbox.value = "";
+  button.click();
+  expect(save.mock.calls.at(-1)?.[1]).not.toHaveProperty("arr_reviewer_qualified");
+});
+
+it("requires an explicit ARR answer and offers no unanswered choice", () => {
+  for (const answer of [undefined, null, false, true]) {
+    const member = createMember({ arr_reviewer_qualified: answer });
+    expect(blankFields(member).some((field) => field.key === "arr_reviewer_qualified")).toBe(
+      answer == null,
+    );
+    const container = renderPage(createState(member), vi.fn());
+    const select = container.querySelector<HTMLSelectElement>('[name="arr_reviewer_qualified"]')!;
+    expect(select.required).toBe(true);
+    expect(
+      [...select.options].filter((option) => !option.disabled).map((option) => option.value),
+    ).toEqual(["yes", "no"]);
+    expect(select.checkValidity()).toBe(answer != null);
+    expect(select.closest("label")?.querySelector(".profile__mandatory")).not.toBeNull();
+  }
+});
+
 function createState(member: LabMember, overrides: Partial<AppViewState> = {}): AppViewState {
   return {
     tab: "profile",
@@ -48,6 +87,44 @@ function createState(member: LabMember, overrides: Partial<AppViewState> = {}): 
     ...overrides,
   } as unknown as AppViewState;
 }
+
+it("requires an integer ARR capacity only for qualified reviewers", () => {
+  const save = vi.fn();
+  const member = createMember();
+  const container = renderPage(createState(member), save);
+  const qualification = container.querySelector<HTMLSelectElement>(
+    '[name="arr_reviewer_qualified"]',
+  )!;
+  const capacity = container.querySelector<HTMLInputElement>('[name="arr_review_capacity"]')!;
+  expect(capacity.disabled).toBe(true);
+  expect(capacity.required).toBe(false);
+  expect(blankFields(member).map((f) => f.key)).not.toContain("arr_review_capacity");
+  expect(blankFields({ ...member, arr_reviewer_qualified: true }).map((f) => f.key)).toContain(
+    "arr_review_capacity",
+  );
+  expect(
+    blankFields({ ...member, arr_reviewer_qualified: true, arr_review_capacity: 0 }).map(
+      (f) => f.key,
+    ),
+  ).not.toContain("arr_review_capacity");
+  qualification.value = "yes";
+  qualification.dispatchEvent(new Event("change", { bubbles: true }));
+  expect(capacity.disabled).toBe(false);
+  expect(capacity.required).toBe(true);
+  expect(capacity.checkValidity()).toBe(false);
+  for (const invalid of ["-1", "1.5"]) {
+    capacity.value = invalid;
+    expect(capacity.checkValidity()).toBe(false);
+  }
+  capacity.value = "2";
+  expect(capacity.checkValidity()).toBe(true);
+  container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!.click();
+  expect(save.mock.calls.at(-1)?.[1].arr_review_capacity).toBe(2);
+  qualification.value = "no";
+  qualification.dispatchEvent(new Event("change", { bubbles: true }));
+  expect(capacity.disabled).toBe(true);
+  expect(capacity.required).toBe(false);
+});
 
 function renderPage(
   state: AppViewState,
@@ -92,6 +169,26 @@ describe("renderProfile autosave", () => {
   afterEach(() => {
     resetProfileSessionState();
     vi.useRealTimers();
+  });
+
+  it("keeps malformed month drafts visible while saving unrelated profile edits", () => {
+    const onSave = vi.fn();
+    const container = renderPage(createState(createMember({ joined_month: "Jan-26" })), onSave);
+    const month = container.querySelector<HTMLInputElement>('input[name="joined_month"]')!;
+    const name = container.querySelector<HTMLInputElement>('input[name="name"]')!;
+    name.value = "Pat Updated";
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1_000);
+    expect(onSave).toHaveBeenCalledWith("pat", expect.objectContaining({ name: "Pat Updated" }));
+    expect(onSave.mock.calls.at(-1)?.[1]).not.toHaveProperty("joined_month");
+    expect(month.value).toBe("Jan-26");
+    month.value = "2026-01";
+    month.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1_000);
+    expect(onSave).toHaveBeenLastCalledWith(
+      "pat",
+      expect.objectContaining({ joined_month: "2026-01" }),
+    );
   });
 
   it("cancels a pending profile save when the signed-in member changes", () => {
@@ -180,6 +277,24 @@ describe("renderProfile autosave", () => {
 
   // The folder, not a document: the service only accepts a Drive /drive/folders/ URL, and the hint
   // says which shape that is before anyone pastes last week's meeting notes into it.
+  it("shows and autosaves the optional ACL Anthology profile link", () => {
+    const url = "https://aclanthology.org/people/jane-doe/";
+    const onSave = vi.fn();
+    const container = renderPage(
+      createState(createMember({ acl_anthology_url: url } as Partial<LabMember>)),
+      onSave,
+    );
+    const input = container.querySelector<HTMLInputElement>('input[name="acl_anthology_url"]')!;
+    expect(input.value).toBe(url);
+    expect(input.required).toBe(false);
+    expect(container.textContent).toContain("ACL Anthology profile");
+    expect(container.querySelector(`a[href="${url}"]`)).not.toBeNull();
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1000);
+    expect(onSave).toHaveBeenCalledWith("pat", expect.objectContaining({ acl_anthology_url: "" }));
+  });
+
   it("collects the 1:1 folder as a Drive folder link", () => {
     const member = createMember();
     const state = createState(member);
@@ -452,13 +567,13 @@ describe("renderProfile autosave", () => {
     }
   });
 
-  it("warns when AdminBot cannot edit a saved Drive folder", async () => {
+  it("warns when AdminBot cannot open a saved Drive folder", async () => {
     saveStoredMemberSession({ sessionToken: "test-session", expiresAt: "" });
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          status: "not_editable",
-          message: "Share with Jinesis.adminbot@gmail.com as Editor.",
+          status: "inaccessible",
+          message: "AdminBot cannot open this file. Share it with Jinesis.adminbot@gmail.com.",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
@@ -504,7 +619,7 @@ describe("renderProfile mandatory fields", () => {
     expect(nameRow?.querySelector(".profile__mandatory")).not.toBeNull();
 
     const websiteRow = container
-      .querySelector('input[name="personal_website"]')
+      .querySelector('input[name="scholar_url"]')
       ?.closest(".profile__form-row");
     expect(websiteRow?.querySelector(".profile__mandatory")).toBeNull();
     expect(websiteRow?.querySelector(".profile__optional")).not.toBeNull();
@@ -949,7 +1064,7 @@ describe("renderProfile LinkedIn URN and intake form", () => {
   // It is the member's own answers, not the lab's blank form. Google Forms only ever hands the
   // edit link to the respondent, so nobody else can produce it for them -- which is why this is a
   // field they paste into rather than a link the profile could render.
-  it("collects the member's own application form URL as an optional field, not a shared link", () => {
+  it("requires the member's own application form response without publishing it", () => {
     const complete = createMember({
       linkedin_urn: "ACoAAB1234567",
       personal_website: "https://ada.dev",
@@ -963,8 +1078,8 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     const input = basics.querySelector<HTMLInputElement>('[name="intake_form_url"]');
     expect(input).not.toBeNull();
     const row = input?.closest(".profile__form-row");
-    expect(row?.querySelector(".profile__optional")).not.toBeNull();
-    expect(row?.querySelector(".profile__mandatory")).toBeNull();
+    expect(row?.querySelector(".profile__optional")).toBeNull();
+    expect(row?.querySelector(".profile__mandatory")).not.toBeNull();
   });
 });
 
@@ -1537,7 +1652,7 @@ describe("the LinkedIn URN", () => {
   });
 });
 
-it("renders free-form CV and GitHub safely and keeps intake responses optional", () => {
+it("renders free-form CV and GitHub safely with intake responses required", () => {
   const member = createMember({ cv_url: "Available on request", github_url: "@pat" });
   const container = renderPage(createState(member), vi.fn());
   const links = container.querySelector('[data-testid="profile-links"]')!;
@@ -1545,7 +1660,9 @@ it("renders free-form CV and GitHub safely and keeps intake responses optional",
   expect(links.textContent).toContain("@pat");
   expect(links.querySelector('a[href="@pat"]')).toBeNull();
   expect(adminBotMandatoryProfileFields).toContain("joined_month");
-  expect(adminBotMandatoryProfileFields).not.toContain("intake_form_url");
+  expect(adminBotMandatoryProfileFields).toContain("intake_form_url");
+  expect(adminBotMandatoryProfileFields).not.toContain("graduated_month");
+  expect(adminBotMandatoryProfileFields).not.toContain("next_position");
   expect(adminBotMandatoryProfileFields).toContain("github_url");
   expect(adminBotMandatoryProfileFields).toContain("cv_url");
 });
@@ -1744,4 +1861,71 @@ describe("suggesting a new badge", () => {
     expect(notice?.textContent).toContain("that badge already exists");
     expect(notice?.className).toContain("danger");
   });
+});
+
+it("validates year-month fields without hiding legacy values", () => {
+  const container = renderPage(
+    createState(createMember({ joined_month: "Jan-26", graduated_month: "Jan-26" })),
+    vi.fn(),
+  );
+  for (const key of ["joined_month", "graduated_month"]) {
+    const input = container.querySelector(`input[name="${key}"]`) as HTMLInputElement;
+    if (key === "joined_month") expect(input.value).toBe("Jan-26");
+    for (const value of ["Jan-26", "2026-00", "2026-13", "2026-1"]) {
+      input.value = value;
+      expect(input.checkValidity()).toBe(false);
+    }
+    input.value = "2026-01";
+    expect(input.checkValidity()).toBe(true);
+    input.value = "";
+    expect(input.checkValidity()).toBe(true);
+  }
+});
+
+it("accepts only real month-day birthdays without collecting a birth year", () => {
+  const container = renderPage(createState(createMember()), vi.fn());
+  const input = container.querySelector<HTMLInputElement>('input[name="birthday"]')!;
+  expect(input.type).toBe("text");
+  for (const value of ["2026-03-14", "02-30", "04-31", "13-01", "3-14"]) {
+    input.value = value;
+    expect(input.checkValidity()).toBe(false);
+  }
+  for (const value of ["03-14", "02-29", "12-31", ""]) {
+    input.value = value;
+    expect(input.checkValidity()).toBe(true);
+  }
+});
+
+it("uses native month selectors for valid and empty year-month values", () => {
+  const container = renderPage(createState(createMember({ joined_month: "2026-01" })), vi.fn());
+  for (const key of ["joined_month", "graduated_month"]) {
+    const input = container.querySelector<HTMLInputElement>(`input[name="${key}"]`)!;
+    expect(input.type).toBe("month");
+    input.value = "2027-06";
+    expect(input.checkValidity()).toBe(true);
+    expect(input.value).toBe("2027-06");
+  }
+});
+
+it("requires social/website links and accepts either intake response answer for completion", () => {
+  const empty = createMember();
+  expect(blankFields(empty).map((field) => field.key)).toEqual(
+    expect.arrayContaining(["twitter_url", "personal_website", "intake_form_url"]),
+  );
+  expect(
+    blankFields(createMember({ intake_form_unavailable: true })).map((field) => field.key),
+  ).not.toContain("intake_form_url");
+  expect(
+    blankFields(
+      createMember({
+        intake_form_url: "https://docs.google.com/forms/d/e/sample/viewform?edit2=sample",
+      }),
+    ).map((field) => field.key),
+  ).not.toContain("intake_form_url");
+  const container = renderPage(createState(empty), vi.fn());
+  for (const name of ["twitter_url", "personal_website", "intake_form_url"]) {
+    const row = container.querySelector(`[name="${name}"]`)!.closest(".profile__form-row")!;
+    expect(row.querySelector(".profile__mandatory")).not.toBeNull();
+    expect(row.querySelector(".profile__optional")).toBeNull();
+  }
 });

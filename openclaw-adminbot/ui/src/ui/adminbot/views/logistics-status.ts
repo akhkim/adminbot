@@ -16,7 +16,7 @@
 // status is untouched; the service's lifecycle is identical for all three kinds, and
 // `adminBotLogisticsSettledStatuses` still decides what counts as finished.
 import { t } from "../../../i18n/index.ts";
-import type { LogisticsRequest, LogisticsRequestStatus } from "../auth/session.ts";
+import type { LogisticsRequest, LogisticsRequestStatus } from "../api/logistics.ts";
 
 const STATUS_LABEL_KEY: Record<LogisticsRequestStatus, string> = {
   submitted: "logistics.requests.status.submitted",

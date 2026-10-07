@@ -1,3 +1,12 @@
+import { html, nothing } from "lit";
+import { t } from "../../../i18n/index.ts";
+import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
+import type {
+  MeetingAttendanceNudgePreview,
+  MeetingAttendanceNudgeResult,
+  MeetingAttendee,
+  MeetingRecord,
+} from "../api/meetings.ts";
 // Meeting Recordings: what was recorded, who was there, and what the local model made of it.
 //
 // The tab is a catch-up surface first. Someone who missed Tuesday opens it to watch the recording
@@ -12,15 +21,7 @@
 // surfaces that re-render underneath the typist (a roster reloading, a notice arriving). Nothing
 // polls here: the list is fetched once when the tab opens, so the DOM is a safe place for the two
 // fields of an admin's recovery form.
-import { html, nothing } from "lit";
-import { t } from "../../../i18n/index.ts";
-import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
-import type {
-  MeetingAttendanceNudgePreview,
-  MeetingAttendanceNudgeResult,
-  MeetingAttendee,
-  MeetingRecord,
-} from "../auth/session.ts";
+import { renderDateControl } from "../date-control.ts";
 
 export type MeetingsRosterMember = { id: string; name: string };
 
@@ -323,7 +324,7 @@ function renderFileForm(props: AdminBotMeetingsProps) {
         /></label>
         <label class="adminbot-form__field">
           <span>${t("adminbotMeetings.startedAt")}</span>
-          <input name="started_at" type="datetime-local" required />
+          ${renderDateControl(html`<input name="started_at" type="datetime-local" required />`)}
         </label>
         <label class="adminbot-form__field">
           <span>${t("adminbotMeetings.shareUrl")}</span>

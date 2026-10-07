@@ -5,7 +5,7 @@
 // throw inside the render and blank the page rather than empty a column.
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
-import { fetchMemberProfileOverview } from "./auth/session.ts";
+import { fetchMemberProfileOverview } from "./api/members.ts";
 import {
   EMPTY_PROFILE_OVERVIEW_FILTER,
   renderAdminBotProfileOverview,

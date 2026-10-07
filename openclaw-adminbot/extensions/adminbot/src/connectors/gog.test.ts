@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { Value } from "typebox/value";
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotEmailPayload, AdminBotStoredProposal } from "../contracts/actions.js";
@@ -12,6 +14,7 @@ import {
   buildIntegrityScoreArgs,
   readGogSheetRows,
   readGogSheetTabs,
+  readDriveFileBase64,
 } from "./gog.js";
 
 function proposal(
@@ -803,6 +806,44 @@ describe("sheet.update_cells", () => {
 });
 
 describe("the Drive probe", () => {
+  it.each([
+    [true, true, true],
+    [true, false, false],
+    [false, true, false],
+  ])(
+    "reads gog's file envelope with folder rights %s/%s",
+    async (canEdit, canAddChildren, editable) => {
+      const probe = createGogDriveProbe({
+        command: process.execPath,
+        commandArgsPrefix: [
+          "-e",
+          `process.stdout.write(JSON.stringify({file:{name:"Synthetic folder",mimeType:"application/vnd.google-apps.folder",capabilities:{canEdit:${canEdit},canAddChildren:${canAddChildren}}}}))`,
+          "--",
+        ],
+      });
+      expect(await probe("1SyntheticEditableFolder")).toEqual({
+        status: "found",
+        name: "Synthetic folder",
+        canEdit: editable,
+      });
+    },
+  );
+
+  it("uses GOG_BIN on the service's restricted PATH for metadata reads", async () => {
+    const probe = createGogDriveProbe({
+      env: { ...process.env, GOG_BIN: process.execPath, PATH: "/nonexistent" },
+      commandArgsPrefix: [
+        "-e",
+        'process.stdout.write(JSON.stringify({result:{mimeType:"application/vnd.google-apps.folder",capabilities:{canEdit:true,canAddChildren:true}}}))',
+        "--",
+      ],
+    });
+    expect(await probe("1SyntheticEditableFolder")).toMatchObject({
+      status: "found",
+      canEdit: true,
+    });
+  });
+
   it("reads a file it can see, and says what it is called", async () => {
     const probe = createGogDriveProbe({
       command: process.execPath,
@@ -914,5 +955,28 @@ describe("paper_integrity.sheet_scores", () => {
     expect(() =>
       buildIntegrityScoreArgs(proposal({ spreadsheet_id: "sheet-1", ...payload })),
     ).toThrow(/paper_integrity\.sheet_scores/u);
+  });
+});
+
+describe("readDriveFileBase64", () => {
+  // The service's systemd unit runs with a PATH that does not include ~/.local/bin, so a bare
+  // "gog" spawn ENOENTs there. This reproduces that: PATH holds no gog, only GOG_BIN names it.
+  it("finds gog through GOG_BIN when PATH does not have it", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-gog-"));
+    const fakeGog = path.join(dir, "gog");
+    fs.writeFileSync(
+      fakeGog,
+      '#!/bin/sh\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = "--output" ]; then printf "%%PDF-fake" > "$2"; fi\n  shift\ndone\n',
+      { mode: 0o755 },
+    );
+    try {
+      await expect(
+        readDriveFileBase64("1AbCdEfGhIjKlMnOp", {
+          env: { GOG_BIN: fakeGog, PATH: "/usr/bin:/bin" },
+        }),
+      ).resolves.toBe(Buffer.from("%PDF-fake").toString("base64"));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

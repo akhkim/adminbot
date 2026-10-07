@@ -1715,6 +1715,22 @@
   margin-top: var(--space-5);
 }
 
+.logistics-sync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.logistics-sync > span {
+  display: flex;
+  flex: 1 1 220px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 /* Tab Usage: which parts of AdminBot the lab opens.
    A table of eleven-odd rows read by comparing them to each other, so the bar under each tab name
    is doing the real work and the digits are there to check it. */
@@ -1921,4 +1937,32 @@
   .logistics-schools[data-testid] .logistics-schools__cell--remove {
     text-align: right;
   }
+}
+
+/* Light DOM lets the shared offline panel use the same controls as every request page. */
+adminbot-offline-access {
+  display: block;
+  margin-bottom: var(--space-3);
+}
+
+adminbot-offline-access details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+
+adminbot-offline-access summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+adminbot-offline-access p {
+  max-width: 75ch;
+  line-height: 1.5;
+  font-size: var(--control-ui-text-sm);
+}
+
+adminbot-offline-access .btn {
+  max-width: 100%;
+  white-space: normal;
 }

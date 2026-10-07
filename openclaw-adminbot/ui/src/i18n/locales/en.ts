@@ -1,5 +1,6 @@
 // Control UI English locale strings are the i18n source bundle.
 import type { TranslationMap } from "../lib/types.ts";
+import { enAdminbotRegistrations } from "./en.adminbot-registrations.ts";
 
 export const en: TranslationMap = {
   paperFeedback: {
@@ -1167,49 +1168,7 @@ export const en: TranslationMap = {
       sat: "Sat",
     },
   },
-  adminbotRegistrations: {
-    title: "Member requests",
-    sub: "Pending account requests awaiting the PI's decision.",
-    piOnly: "Only the PI can approve or reject a new member.",
-    loading: "Loading member requests…",
-    refresh: "Refresh",
-    retry: "Retry",
-    approve: "Approve",
-    reject: "Reject",
-    approved: "Request approved.",
-    rejected: "Request rejected.",
-    submitted: "Submitted",
-    rosterMember: "Roster member",
-    unnamedApplicant: "Unnamed applicant",
-    kind: {
-      claim: "Roster claim",
-      signup: "New signup",
-    },
-    empty: {
-      title: "No member requests to review",
-      none: "No pending registrations.",
-      noSession: "Sign in with your member email and password to review member requests.",
-      expired: "Your session has expired. Sign in again with the member login to continue.",
-      forbidden: "Only admins and core members can review member requests.",
-      unreachable: "The AdminBot service is unreachable. Check that it's running, then retry.",
-      failed: "Couldn't load member requests. Retry in a moment.",
-    },
-    error: {
-      unreachable: "The AdminBot service is unreachable. Check that it's running and try again.",
-      forbidden: "Only admins and core members can approve or reject member requests.",
-      decisionFailed: "Couldn't record that decision. Refresh the queue and try again.",
-    },
-    field: {
-      memberId: "Member ID",
-      affiliation: "Affiliation",
-      researchBranch: "Research branch",
-      researchTopics: "Research topics",
-      location: "Location",
-      timezone: "Timezone",
-      website: "Personal website",
-      notes: "Notes",
-    },
-  },
+  adminbotRegistrations: enAdminbotRegistrations,
   adminbotBadges: {
     title: "Badges",
     sub: "Create badges, assign them to members, and review nominations.",
@@ -2181,6 +2140,15 @@ export const en: TranslationMap = {
     },
   },
   profile: {
+    arrReviewer: {
+      label: "ARR reviewer qualification",
+      yes: "I confirm that I am a qualified reviewer.",
+      no: "I confirm that I am not a qualified reviewer.",
+      choose: "Select your qualification",
+      capacity: "Number of ARR papers I can review",
+      hint: "Self-reported eligibility. This does not register you or assign reviews.",
+      criteria: "Check ARR eligibility criteria",
+    },
     onboardingChecklist: "Your setup checklist ({count} left)",
     onboardingChecklistDone: "Your setup checklist",
     visibility: {
@@ -2309,6 +2277,7 @@ export const en: TranslationMap = {
       twitter: "X",
       github: "GitHub",
       scholar: "Scholar",
+      aclAnthology: "ACL Anthology",
       openreview: "OpenReview",
     },
     suggestions: {
@@ -2361,9 +2330,11 @@ export const en: TranslationMap = {
       linkedinFollowers: "LinkedIn followers (self-reported)",
       github: "GitHub",
       scholar: "Google Scholar",
+      aclAnthology: "ACL Anthology profile",
       openreviewId: "OpenReview ID",
       researchTopics: "Research topics",
-      elevatorPitch: "Elevator pitch that Zhijing can use when recommending you to other prof/recruiter",
+      elevatorPitch:
+        "Elevator pitch that Zhijing can use when recommending you to other prof/recruiter",
       projects: "Projects",
       notes: "Notes",
     },

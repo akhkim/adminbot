@@ -36,6 +36,7 @@ export type ProfileFieldType =
   // has to learn a second shape.
   | "multi_dropdown"
   | "date"
+  | "month"
   | "link"
   | "numeric"
   | "list"
@@ -90,6 +91,7 @@ export type ProfileField = {
   // Text-only ceiling, for the fields the service caps tighter than the generic paragraph limit.
   // Same reason as min/max: the rule belongs where the answer is typed, not in a rejected save.
   maxLength?: number;
+  pattern?: string;
   group: ProfileFieldGroup;
 };
 
@@ -100,8 +102,8 @@ export type ProfileField = {
 // this page called optional, and this page marked eight the reminder never mentioned.
 //
 // Everything not on that list is optional, and being optional keeps a field out of the blanks
-// count, the fill-in prompt and the "profile complete" badge. Not everyone has a Twitter, and a
-// checklist that can never reach zero stops being a checklist -- it just nags.
+// count, the fill-in prompt and the "profile complete" badge. Intake responses also accept the
+// explicit unavailable answer, which the UI and reminder treat as completion.
 export const MANDATORY_FIELD_KEYS = new Set<string>(adminBotMandatoryProfileFields);
 
 /** Every field not on the mandatory list, which is what keeps the blanks count honest. */
@@ -204,8 +206,7 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
   {
     key: "elevator_pitch",
     labelKey: "profile.fields.elevatorPitch",
-    example:
-      "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
+    example: "XX is the IMO medalist; got perfect GPA, 1st of his class; was a champion for XXX",
     type: "paragraph",
     hintKey: "profile.hints.elevatorPitch",
     // The service's own ceiling (validateLabMember in extensions/adminbot/src/kernel/service.ts).
@@ -261,6 +262,8 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     // event on the shared lab calendar. A field whose whole purpose is to publish something should
     // say so where it is typed, not in a changelog.
     key: "birthday",
+    pattern:
+      "((01|03|05|07|08|10|12)-(0[1-9]|[12][0-9]|3[01])|(04|06|09|11)-(0[1-9]|[12][0-9]|30)|02-(0[1-9]|1[0-9]|2[0-9]))",
     labelKey: "profile.fields.birthday",
     example: "03-14",
     type: "short_text",
@@ -269,18 +272,22 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
   },
   {
     key: "joined_month",
+    pattern: "[0-9]{4}-(0[1-9]|1[0-2])",
     labelKey: "profile.fields.joinedMonth",
     example: "2026-03",
-    type: "short_text",
+    type: "month",
     hintKey: "profile.hints.month",
     group: "work",
   },
   {
     // Ask for an expected offboarding month, rather than claiming the member has already left.
+    // Optional: most members cannot name the month they will move on, and a required box would
+    // only collect guesses.
     key: "graduated_month",
+    pattern: "[0-9]{4}-(0[1-9]|1[0-2])",
     labelKey: "profile.fields.graduatedMonth",
     example: "2027-06",
-    type: "short_text",
+    type: "month",
     hintKey: "profile.hints.offboardingMonth",
     group: "work",
   },
@@ -299,7 +306,8 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     // Career direction, asked as a question rather than a label: where this person wants to go
     // next, when, and what the lab can actually do about it. It sits with the other timeline
     // facts (joined/graduated month) because the answer is usually pinned to those dates, and it
-    // is required for profile completion. An uncertain plan can be described in free text.
+    // is optional -- "I don't know yet" is a normal answer at any point in a research career, and
+    // a required field would only teach people to type something they don't mean.
     // Confidential (adminBotConfidentialMemberFields): a job search is not roster material, so
     // only this member and the admins read it.
     key: "next_position",
@@ -426,6 +434,13 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     key: "personal_website",
     labelKey: "profile.fields.personalWebsite",
     example: "https://zhijing-jin.com",
+    type: "link",
+    group: "links",
+  },
+  {
+    key: "acl_anthology_url",
+    labelKey: "profile.fields.aclAnthology",
+    example: "https://aclanthology.org/people/jane-doe/",
     type: "link",
     group: "links",
   },

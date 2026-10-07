@@ -17,6 +17,7 @@ function unwrap<T>(
 /** Every mandatory field filled, so a test can take exactly the ones it wants back out. */
 const COMPLETE = {
   name: "Ada Lovelace",
+  arr_reviewer_qualified: false,
   calendar_email: "ada@cs.toronto.edu",
   location: "Toronto",
   research_topics: ["causality"],
@@ -30,6 +31,8 @@ const COMPLETE = {
   github_url: "https://github.com/ada",
   linkedin_url: "https://linkedin.com/in/ada",
   linkedin_urn: "urn:li:person:ada",
+  twitter_url: "https://x.com/ada",
+  personal_website: "https://ada.example",
   cv_url: "https://overleaf.com/read/ada",
   one_on_one_folder_url: "https://drive.google.com/drive/folders/ada",
   intake_form_url: "https://docs.google.com/forms/d/e/ada/viewform",
@@ -75,7 +78,7 @@ describe("listMemberProfileOverview", () => {
     // the exported list. (Only `name` is dropped today; adminBotAdminOwnedProfileFields is empty.)
     // A client counting the exported list would show everybody stuck short forever, which is
     // exactly why the count is carried rather than derived.
-    expect(overview.mandatory_field_count).toBe(16);
+    expect(overview.mandatory_field_count).toBe(19);
     expect(overview.members[0]?.filled_field_count).toBe(overview.mandatory_field_count);
     expect(overview.members[0]?.missing_fields).toEqual([]);
   });
@@ -99,7 +102,7 @@ describe("listMemberProfileOverview", () => {
     expect(row?.filled_field_count).toBe(overview.mandatory_field_count - 2);
   });
 
-  it("includes missing work fields while accepting zero committed hours", () => {
+  it("includes missing work fields but not the optional offboarding plan", () => {
     const service = serviceWith([
       {
         id: "ada",
@@ -114,8 +117,6 @@ describe("listMemberProfileOverview", () => {
     expect(unwrap(service.listMemberProfileOverview()).members[0]?.missing_fields).toEqual([
       "affiliation",
       "joined_month",
-      "graduated_month",
-      "next_position",
     ]);
   });
 

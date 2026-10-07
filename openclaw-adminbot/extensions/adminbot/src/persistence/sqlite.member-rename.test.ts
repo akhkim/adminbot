@@ -91,6 +91,23 @@ describe("renaming a member id in SQLite", () => {
     store.close();
   });
 
+  it("drops the cached roster so the old id is gone and the new id resolves", () => {
+    const { service, store } = lab();
+    // Warm every view of the roster cache first: the sweep writes the roster row with raw SQL on
+    // the same connection, which PRAGMA data_version does not report.
+    expect(store.getLabMember("pat")?.id).toBe("pat");
+    expect(store.listLabMembers().map((member) => member.id)).toContain("pat");
+    const result = service.renameLabMember({ memberId: "pat", newId: "pat-2", actorId: "admin" });
+    expect(result.ok).toBe(true);
+
+    expect(store.getLabMember("pat")).toBeUndefined();
+    expect(store.getLabMember("pat-2")).toMatchObject({ id: "pat-2", name: "Pat" });
+    const ids = store.listLabMembers().map((member) => member.id);
+    expect(ids).not.toContain("pat");
+    expect(ids).toContain("pat-2");
+    store.close();
+  });
+
   it("changes nothing when a row is already keyed on the new id", () => {
     const { service, store } = lab();
     // A credential left behind by a member who is no longer on the roster.

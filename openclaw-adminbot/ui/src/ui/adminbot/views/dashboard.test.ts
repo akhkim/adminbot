@@ -279,6 +279,8 @@ describe("renderDashboard", () => {
       expect(rows).toHaveLength(2);
       expect(rows[0]?.textContent).toContain("Thesis draft");
       expect(rows[0]?.textContent).toContain("yours");
+      expect(rows[0]?.querySelector(".deadline-date")?.textContent).toBe("Aug 25, 2026");
+      expect(rows[0]?.querySelector(".deadline-time")).toBeNull();
       expect(rows[1]?.textContent).toContain("Example conference");
     } finally {
       deadlines.mockRestore();
@@ -314,7 +316,31 @@ describe("renderDashboard", () => {
     );
     // The date splits the same way the board splits it, so the time reads as secondary.
     expect(row?.querySelector(".deadline-date")).not.toBeNull();
-    expect(row?.querySelector(".deadline-time")).not.toBeNull();
+    expect(row?.querySelector(".deadline-time")).toBeNull();
+  });
+
+  it("keeps the public cutoff in AoE instead of relabeling its UTC instant", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-06T12:00:00Z"));
+    const deadlines = vi.spyOn(deadlineTime, "upcomingMajorDeadlines").mockReturnValue([
+      {
+        venue: {
+          ...DEADLINE_VENUES[0]!,
+          name: "Example conference",
+          deadline_at: "2026-10-12T11:59:00Z",
+          deadline_aoe: "2026-10-11 23:59:00",
+          deadline_time_precision: "minute",
+        },
+        instant: Date.parse("2026-10-12T11:59:00Z"),
+      },
+    ]);
+    try {
+      const row = renderPage(createState()).querySelector(".dashboard__next-deadline");
+      expect(row?.querySelector(".deadline-date")?.textContent).toBe("Oct 11, 2026");
+      expect(row?.querySelector(".deadline-time")?.textContent).toBe("23:59 AoE");
+    } finally {
+      deadlines.mockRestore();
+      clock.mockRestore();
+    }
   });
 
   // A blank mandatory field never blocks saving or leaving the profile editor (see profile.ts),
@@ -408,7 +434,8 @@ describe("renderDashboard", () => {
           proposals: [],
           members: [
             {
-              // The mandatory set is the member sheet's own columns, plus the CV.
+              // All required profile questions have answers.
+              arr_reviewer_qualified: false,
               id: "m1",
               name: "Ada",
               location: "Toronto",
@@ -424,6 +451,8 @@ describe("renderDashboard", () => {
               openreview_id: "~Ada_Lovelace1",
               github_url: "https://github.com/ada",
               linkedin_url: "https://www.linkedin.com/in/ada",
+              twitter_url: "https://x.com/ada",
+              personal_website: "https://ada.dev",
               cv_url: "https://ada.dev/cv.pdf",
               one_on_one_folder_url: "https://drive.google.com/drive/folders/ada",
               intake_form_url: "https://docs.google.com/forms/d/e/ada/viewform",
@@ -669,6 +698,18 @@ describe("notifications on the dashboard", () => {
       ?.click();
     expect(read).toEqual([[NOTIFICATION.id]]);
     expect(tabs).toEqual(["adminbotMeetings"]);
+  });
+
+  it("explains cached reads and queued writes when the service is offline", () => {
+    const container = renderPage(
+      createState({
+        adminBotUsingCachedReads: true,
+        adminBotOfflinePendingWrites: 2,
+      }),
+    );
+    const banner = container.querySelector('[data-testid="dashboard-offline"]');
+    expect(banner?.textContent).toContain("Working offline");
+    expect(banner?.textContent).toContain("2 edits retained from the old queue");
   });
 });
 

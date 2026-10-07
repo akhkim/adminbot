@@ -28,6 +28,7 @@ import {
   adminBotPaperVenueDecisions,
   type AdminBotPaperStep,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import { isPaperFeedbackSlot } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 import {
   adminBotPaperSlotChartOrder,
   adminBotPaperSlotRegistry,
@@ -38,9 +39,10 @@ import {
   type AdminBotPaperSlotBranch,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
-import type { PaperCycle, PaperSlotRow } from "../auth/session.ts";
+import type { PaperCycle, PaperSlotRow } from "../api/papers.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
+import { renderDateControl } from "../date-control.ts";
 import {
   PRESENTATION_FORMATS,
   PUBLICATION_TRACKS,
@@ -280,7 +282,10 @@ function slotGroups(): LegacyGroup[] {
       label: BRANCH_LABELS[branch],
       icon: BRANCH_ICONS[branch],
       fields: adminBotPaperSlots
-        .filter((slot) => adminBotPaperSlotRegistry[slot].branch === branch)
+        // Drawn by the feedback form in the extras instead; see isPaperFeedbackSlot.
+        .filter(
+          (slot) => adminBotPaperSlotRegistry[slot].branch === branch && !isPaperFeedbackSlot(slot),
+        )
         .map((slot) => {
           const definition = adminBotPaperSlotRegistry[slot];
           return {
@@ -710,7 +715,7 @@ function renderControl(
       @input=${(event: Event) => onEdit((event.target as HTMLTextAreaElement).value)}
     ></textarea>`;
   }
-  return html`<input
+  const input = html`<input
     class="input"
     type=${field.control === "date" ? "date" : field.control === "number" ? "number" : "text"}
     placeholder=${ifDefined(field.example)}
@@ -718,6 +723,7 @@ function renderControl(
     .value=${value}
     @input=${(event: Event) => onEdit((event.target as HTMLInputElement).value)}
   />`;
+  return field.control === "date" ? renderDateControl(input, value) : input;
 }
 
 function renderRow(

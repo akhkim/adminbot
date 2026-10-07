@@ -16,7 +16,7 @@ import {
   adminBotWeekStart,
 } from "../../../../../extensions/adminbot/src/contracts/paper-weekly-updates.js";
 import { icons } from "../../icons.ts";
-import type { PaperWeeklyUpdate } from "../auth/session.ts";
+import type { PaperWeeklyUpdate } from "../api/papers.ts";
 
 export type PaperWeeklyUpdatesProps = {
   paperId: string;

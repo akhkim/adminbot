@@ -62,7 +62,6 @@ import type {
   AdminBotPasswordReset,
   AdminBotPaperRecordInput,
   AdminBotPaperStep,
-  AdminBotPaperTimeline,
   AdminBotProfilePhotoAssessment,
   AdminBotProfilePhotoPolishVariant,
   AdminBotRemovePendingRequest,
@@ -129,6 +128,7 @@ import {
   type AdminBotConferenceTripRecord,
 } from "../contracts/conference-trips.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
+import { adminBotIsPersonalCorrespondenceEmail } from "../contracts/correspondence-email.js";
 import {
   deadlineProposalDuplicateKey,
   isDeadlinePublicationPayload,
@@ -170,12 +170,7 @@ import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discover
 import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
-import {
-  findDuplicateMembers,
-  planMemberMerge,
-  type MemberDuplicatePair,
-  type MemberMergeConflict,
-} from "../contracts/member-duplicates.js";
+import { findDuplicateMembers, type MemberDuplicatePair } from "../contracts/member-duplicates.js";
 import { adminBotOutreachEmail } from "../contracts/member-outreach-email.js";
 import { normalizeMemberProfileValues } from "../contracts/member-profile-values.js";
 import {
@@ -443,6 +438,14 @@ import {
 } from "./service.deadline-recommendations.js";
 import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import { LabSharingService } from "./service.lab-sharing.js";
+import {
+  type AdminBotMemberRenameStore,
+  type MemberMergeParams,
+  type MemberRenameParams,
+  mergeLabMembersIn,
+  renameLabMemberIn,
+} from "./service.member-identity.js";
+import { withPaperTimeline } from "./service.paper-timeline.js";
 
 // Ordinary approvals require an administrator; a recommendation is approved by its verified author.
 type AdminBotApproverRole = Extract<AdminBotPrivilegeLevel, "admin"> | "recommender";
@@ -474,335 +477,326 @@ export type AdminBotMeetingArtifactRecord = {
   processed_at: string;
 };
 
-export type AdminBotServiceStore = AdminBotCitationCheckStores & {
-  saveHelpInterest(interest: LabHelpInterest): void;
-  listHelpInterests(): LabHelpInterest[];
-  saveDirectorStatus(status: LabDirectorStatus | null): void;
-  readDirectorStatus(): LabDirectorStatus | null;
-  /** The broadcast archive, newest first. */
-  listDirectorStatusHistory(limit?: number): LabDirectorStatus[];
-  saveHelpRequest(request: LabHelpRequest): void;
-  getHelpRequest(paperId: string): LabHelpRequest | undefined;
-  listHelpRequests(): LabHelpRequest[];
-  discoverHelpRequests(
-    query: LabSharingDiscoveryQuery,
-    after?: DiscoveryPosition,
-  ): DiscoveredHelpRequest[];
-  saveProposal(proposal: AdminBotStoredProposal): void;
-  getProposal(actionId: string): AdminBotStoredProposal | undefined;
-  updateProposal(proposal: AdminBotStoredProposal): void;
-  listPending(limit?: number): AdminBotStoredProposal[];
-  listProposalsByType(type: AdminBotActionType): AdminBotStoredProposal[];
-  saveDeadlineProposalSubmission(
-    proposal: AdminBotStoredProposal,
-    submitterMemberId: string,
-    idempotencyKey: string,
-  ): { proposal: AdminBotStoredProposal; created: boolean };
-  replaceDeadlineProposalRevision(
-    previous: AdminBotStoredProposal,
-    next: AdminBotStoredProposal,
-  ): void;
-  savePublishedDeadline(record: PublishedDeadlineRecord): void;
-  listPublishedDeadlines(): PublishedDeadlineRecord[];
-  saveExecutionResult(result: AdminBotExecutionResult): void;
-  getExecutionResult(actionId: string): AdminBotExecutionResult | undefined;
-  getExecutionResultByIdempotencyKey(idempotencyKey: string): AdminBotExecutionResult | undefined;
-  claimExecution(
-    effectKey: string,
-    actionId: string,
-    claimedAt: string,
-    staleBefore: string,
-  ): boolean;
-  releaseExecutionClaim(effectKey: string, actionId: string): void;
-  saveLabMember(member: AdminBotLabMember): void;
-  patchLabMemberAuthFields(
-    memberId: string,
-    patch: Pick<AdminBotLabMember, "updated_at"> &
-      Partial<
-        Pick<
-          AdminBotLabMember,
-          | "last_login_at"
-          | "last_login_country"
-          | "last_login_continent"
-          | "last_login_city"
-          | "last_login_timezone"
-        >
-      >,
-  ): boolean;
-  getLabMember(memberId: string): AdminBotLabMember | undefined;
-  listLabMembers(page?: AdminBotListPage): AdminBotLabMember[];
-  searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }>;
-  listLabMemberSummaries(): AdminBotLabMemberSummary[];
-  countLabMembers(q?: string): number;
-  saveBadgeDefinition(badge: AdminBotBadgeDefinition): void;
-  getBadgeDefinition(badgeId: string): AdminBotBadgeDefinition | undefined;
-  listBadgeDefinitions(): AdminBotBadgeDefinition[];
-  saveBadgeAssignment(assignment: AdminBotBadgeAssignment): void;
-  getBadgeAssignment(memberId: string, familyKey: string): AdminBotBadgeAssignment | undefined;
-  listBadgeAssignments(memberId?: string | string[]): AdminBotBadgeAssignment[];
-  deleteBadgeAssignment(memberId: string, badgeId: string): boolean;
-  saveOpportunity(opportunity: AdminBotOpportunity): void;
-  getOpportunity(opportunityId: string): AdminBotOpportunity | undefined;
-  listOpportunities(params?: {
-    memberId?: string;
-    status?: AdminBotOpportunityStatus;
-  }): AdminBotOpportunity[];
-  deleteOpportunity(opportunityId: string): boolean;
-  saveMemberRequest(request: AdminBotMemberRequest): void;
-  getMemberRequest(requestId: string): AdminBotMemberRequest | undefined;
-  listMemberRequests(params?: {
-    requestedBy?: string;
-    status?: AdminBotMemberRequestStatus;
-  }): AdminBotMemberRequest[];
-  deleteMemberRequest(requestId: string): boolean;
-  saveBadgeNomination(nomination: AdminBotBadgeNomination): void;
-  getBadgeNomination(nominationId: string): AdminBotBadgeNomination | undefined;
-  listBadgeNominations(params?: {
-    memberId?: string;
-    involvingMemberId?: string;
-    nominatedBy?: string;
-    status?: AdminBotBadgeNominationStatus;
-  }): AdminBotBadgeNomination[];
-  saveBadgeSuggestion(suggestion: AdminBotBadgeSuggestion): void;
-  getBadgeSuggestion(suggestionId: string): AdminBotBadgeSuggestion | undefined;
-  listBadgeSuggestions(params?: {
-    suggestedBy?: string;
-    status?: AdminBotBadgeSuggestionStatus;
-  }): AdminBotBadgeSuggestion[];
-  /** Removes one roster row. False when there was nothing to remove. */
-  deleteLabMember(memberId: string): boolean;
-  /**
-   * Repoints every record that names one member at another, returning what moved per table.
-   *
-   * The store owns this rather than the service because the store is the only layer that knows
-   * which tables carry a member id -- a merge that missed one would leave a reimbursement or a
-   * consent row pointing at an id that no longer exists, which reads downstream as the person
-   * never having been asked.
-   */
-  reassignMemberReferences(fromMemberId: string, toMemberId: string): Record<string, number>;
-  /**
-   * Deletes every record that names one member, returning what went per table.
-   *
-   * The delete-side counterpart to `reassignMemberReferences`, and a separate list on purpose: a
-   * merge repoints a person's rows at whoever they turned out to be, so the tables it walks are
-   * the ones whose rows still mean something under a new owner. A delete has no survivor, so it
-   * also has to take the rows a merge deliberately leaves alone -- the notifications, feedback,
-   * weekly updates and submission keys that belong to nobody once the member is gone.
-   */
-  purgeMemberReferences(memberId: string): Record<string, number>;
-  /**
-   * Re-keys one member under a new id everywhere the database names them, returning what changed
-   * per `table.column`.
-   *
-   * Not `reassignMemberReferences` with a fresh row: that list is the rows a *merge* should move,
-   * and it leaves papers, settings, requests and every JSON payload naming the old id alone. A
-   * rename that did the same would detach the person from their own papers. Throws -- and changes
-   * nothing -- if any row would collide with one already keyed on the new id.
-   */
-  renameMemberId(fromMemberId: string, toMemberId: string): Record<string, number>;
-  // Returns the events actually inserted. A change already on record is ignored rather than
-  // re-dated, so re-scanning cannot make an old move look like it just happened.
-  recordCvChanges(events: AdminBotCvChangeEvent[]): AdminBotCvChangeEvent[];
-  listCvChangesSince(sinceIso: string): AdminBotCvChangeEvent[];
-  // Replaces a venue's index in one go. A rebuild is all-or-nothing: half an old conference mixed
-  // with half a new one would rank against a corpus that never existed.
-  replaceVenueIndex(
-    venueId: string,
-    papers: AdminBotVenuePaper[],
-    indexedAt: string,
-    model: string,
-  ): void;
-  listVenuePapers(venueId: string): AdminBotVenuePaper[];
-  listVenueIndexStatuses(): Omit<AdminBotVenueIndexStatus, "label">[];
-  savePaper(paper: AdminBotPaperRecord): void;
-  getPaper(paperId: string): AdminBotPaperRecord | undefined;
-  listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[];
-  countPapers(q?: string): number;
-  deletePaper(paperId: string): boolean;
-  savePaperSlot(record: AdminBotPaperSlotRecord): void;
-  /** One paper's slots, or every paper's when the id is omitted. */
-  listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
-  /**
-   * One PaperMentor review, by its own id. First sighting wins, like the paperflow evidence
-   * below: the collector re-reads the same cached review until a newer one replaces it, so a
-   * second write of the same run is the same pass running again rather than news.
-   */
-  savePaperMentorRun(record: AdminBotPaperMentorRun): void;
-  getPaperMentorRun(id: string): AdminBotPaperMentorRun | undefined;
-  /** One paper's reviews newest first, or every paper's when the id is omitted. */
-  listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[];
-  /** First sighting wins: a stage that already closed keeps the mail that closed it. */
-  savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void;
-  /** One paper's stage evidence, or every paper's when the id is omitted. */
-  listPaperflowEvidence(paperId?: string): AdminBotPaperflowEvidenceRecord[];
-  /** Messages the hourly mailbox pass refused to automate, newest first. */
-  saveEmailReview(review: AdminBotEmailReviewItem): void;
-  listEmailReviews(): AdminBotEmailReviewItem[];
-  getEmailReview(messageId: string): AdminBotEmailReviewItem | undefined;
-  /** Most recently settled decisions, newest first and capped by the caller. */
-  listResolvedEmailReviews(limit: number): AdminBotResolvedEmailReviewItem[];
-  /** Returns false when another administrator already settled this row. */
-  resolveEmailReview(params: {
-    messageId: string;
-    resolution: AdminBotEmailReviewResolution["kind"];
-    resolvedBy: string;
-    resolvedAt: string;
-  }): boolean;
-  saveNudgeLedgerEntry(record: AdminBotNudgeLedgerRecord): void;
-  /** The whole ledger, or one domain's slice. */
-  listNudgeLedger(domain?: string): AdminBotNudgeLedgerRecord[];
-  saveSocialDraft(record: AdminBotSocialDraftRecord): void;
-  listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[];
-  saveSocialConsent(record: AdminBotSocialConsentRecord): void;
-  listSocialConsents(draftId?: string): AdminBotSocialConsentRecord[];
-  saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void;
-  listConferenceAttendees(paperId?: string): AdminBotConferenceAttendeeRecord[];
-  /** One row per member per conference: their own plan for the trip. See contracts/conference-trips.ts. */
-  saveConferenceTrip(record: AdminBotConferenceTripRecord): void;
-  listConferenceTrips(conferenceKey?: string): AdminBotConferenceTripRecord[];
-  /** Withdrawing is deleting: not going is the absence of a row, never a stored value. */
-  deleteConferenceTrip(conferenceKey: string, memberId: string): boolean;
-  savePaperReimbursement(record: AdminBotPaperReimbursementRecord): void;
-  listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[];
-  appendMemberLocation(entry: AdminBotMemberLocationEntry): void;
-  /** Newest first. `limit` is a cap, not a page: nothing here needs to walk a member's whole history. */
-  listMemberLocations(memberId: string, limit?: number): AdminBotMemberLocationEntry[];
-  /** Every member's entries since a timestamp, so the admin view is one query rather than one per member. */
-  listMemberLocationsSince(since: string): AdminBotMemberLocationEntry[];
-  saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void;
-  latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined;
-  appendLoginEvent(event: AdminBotLoginEvent): void;
-  appendTabVisit(visit: AdminBotTabVisit): void;
-  /** Every tab opening at or after `since`, newest first. */
-  listTabVisitsSince(since: string): AdminBotTabVisit[];
-  /** Fills in where an already-appended sign-in came from. See the note on the persistence side. */
-  attachLoginEventLocation(id: string, location: AdminBotLoginLocation): void;
-  listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[];
-  listLoginEventsSince(since: string): AdminBotLoginEvent[];
-  appendUpdateEvent(event: AdminBotUpdateEvent): void;
-  listUpdateEventsByMember(memberId: string, limit?: number): AdminBotUpdateEvent[];
-  listUpdateEventsBySlot(slotId: string, limit?: number): AdminBotUpdateEvent[];
-  listUpdateEventsSince(since: string): AdminBotUpdateEvent[];
-  listRecentUpdateEvents(limit: number): AdminBotUpdateEvent[];
-  listUpdateEventsForMemberRecord(memberId: string, limit: number): AdminBotUpdateEvent[];
-  listUpdateEventsForPaper(paperId: string, limit: number): AdminBotUpdateEvent[];
-  saveMeeting(meeting: AdminBotMeetingRecord): void;
-  getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
-  listMeetings(): AdminBotMeetingRecord[];
-  listMeetingsPage(options: {
-    limit: number;
-    before?: AdminBotMeetingCursor;
-    minimumMinutes: number;
-  }): AdminBotMeetingRecord[];
-  deleteMeeting(meetingId: string): boolean;
-  hasAttachedMeetingArtifact(fileId: string): boolean;
-  recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void;
-  /**
-   * One row per thing the lab has told one person. Upsert by id, so a resend of the same nudge
-   * replaces its own row rather than stacking a second copy of the same sentence.
-   */
-  saveMemberNotification(notification: AdminBotMemberNotification): void;
-  /** Newest first, one member's own. There is no all-members read: nothing needs one. */
-  listMemberNotifications(memberId: string): AdminBotMemberNotification[];
-  /**
-   * Every escalated nudge still outstanding, across the whole roster, oldest first.
-   *
-   * The one read that deliberately crosses member boundaries, and narrow on purpose: an escalation
-   * is something the lab already decided to raise to the head professor, which is not the same as
-   * her being able to read anyone's notification stream. `/notifications` stays strictly the
-   * caller's own.
-   */
-  listEscalatedMemberNotifications(): AdminBotMemberNotification[];
-  deleteMemberNotification(notificationId: string): boolean;
-  saveLogisticsRequest(request: AdminBotLogisticsRequest): void;
-  getLogisticsRequest(requestId: string): AdminBotLogisticsRequest | undefined;
-  /** Every request, or one member's. Newest first; the service re-sorts by urgency on read. */
-  listLogisticsRequests(memberId?: string): AdminBotLogisticsRequest[];
-  deleteLogisticsRequest(requestId: string): boolean;
-  saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void;
-  listOpenReviewCycles(): AdminBotOpenReviewCycleRecord[];
-  // Returns false when the milestone had already fired, which is how the caller
-  // knows not to send.
-  recordOpenReviewMilestone(milestone: AdminBotOpenReviewMilestoneRecord): boolean;
-  listOpenReviewMilestones(venueId?: string): AdminBotOpenReviewMilestoneRecord[];
-  getSettings(): AdminBotSettings | undefined;
-  saveSettings(settings: AdminBotSettings): void;
-  recordAudit(event: AdminBotAuditEvent): void;
-  listAuditEvents(): AdminBotAuditEvent[];
-  pruneAuditEventsBefore(cutoffIso: string): number;
-  getCredentialByEmail(email: string): AdminBotMemberCredential | undefined;
-  getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined;
-  /** Member IDs with portal credentials, for the public unclaimed-roster picker. */
-  listCredentialMemberIds(): string[];
-  saveCredential(credential: AdminBotMemberCredential): void;
-  changePasswordAndRevokeSessions(
-    memberId: string,
-    expectedPasswordHash: string,
-    newPasswordHash: string,
-    updatedAt: string,
-  ): boolean;
-  updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void;
-  changeMemberLoginEmail(
-    memberId: string,
-    newEmail: string,
-    expectedPasswordHash: string,
-    updatedAt: string,
-  ): "changed" | "stale" | "taken";
-  savePasswordReset(reset: AdminBotPasswordReset): void;
-  getPasswordResetByTokenHash(tokenHash: string): AdminBotPasswordReset | undefined;
-  markPasswordResetsUsedForMember(memberId: string, usedAt: string): void;
-  consumePasswordResetAndRevokeSessions(
-    tokenHash: string,
-    newPasswordHash: string,
-    usedAt: string,
-  ): boolean;
-  saveAccountRegistration(registration: AdminBotAccountRegistration): void;
-  /** Insert a pending claim/signup only when no pending email or claim-member collision exists. */
-  trySavePendingRegistration(registration: AdminBotAccountRegistration): boolean;
-  getAccountRegistration(id: string): AdminBotAccountRegistration | undefined;
-  listAccountRegistrations(status?: AdminBotRegistrationStatus): AdminBotAccountRegistration[];
-  updateAccountRegistrationDecision(
-    id: string,
-    status: AdminBotRegistrationStatus,
-    decidedBy: string,
-    decidedAt: string,
-  ): boolean;
-  /** Approve one pending request and insert its credential/member in one database transaction. */
-  tryApproveRegistration(
-    id: string,
-    decidedBy: string,
-    decidedAt: string,
-    preparedMember?: AdminBotLabMember,
-  ): { ok: true; member_id: string } | { ok: false; reason: "not_pending" | "conflict" };
-  getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined;
-  getPendingRegistrationByMemberId(memberId: string): AdminBotAccountRegistration | undefined;
-  saveSession(session: AdminBotAuthSession): void;
-  /** Prevent a stale verified password from minting a session after a concurrent password change. */
-  saveSessionIfCredentialCurrent(
-    session: AdminBotAuthSession,
-    expectedPasswordHash: string,
-  ): boolean;
-  getSession(tokenHash: string): AdminBotAuthSession | undefined;
-  touchSession(tokenHash: string, lastSeenAt: string): void;
-  revokeSession(tokenHash: string, revokedAt: string): void;
-  revokeSessionsForMember(memberId: string, revokedAt: string): void;
-  pruneSessionsBefore(cutoffIso: string): number;
-  /** Upserts one author's account of one week on one paper. Re-saving the same week replaces. */
-  savePaperWeeklyUpdate(update: AdminBotPaperWeeklyUpdate): void;
-  listPaperWeeklyUpdates(params?: {
-    paperId?: string;
-    weekStart?: string;
-  }): AdminBotPaperWeeklyUpdate[];
-  /** Upserts one member's verdict on one surface. Re-rating replaces; see contracts/feedback.ts. */
-  saveFeedback(entry: AdminBotFeedbackEntry): void;
-  listFeedback(featureId?: string): AdminBotFeedbackEntry[];
-  saveSlackConnectInvite(invite: AdminBotSlackConnectInvite): void;
-  getSlackConnectInvite(email: string, channelId: string): AdminBotSlackConnectInvite | undefined;
-  saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void;
-  getSlackChannelNamingRecord(channelId: string): AdminBotSlackChannelNamingRecord | undefined;
-  listSlackChannelNamingRecords(): AdminBotSlackChannelNamingRecord[];
-  deleteSlackChannelNamingRecord(channelId: string): boolean;
-};
+export type AdminBotServiceStore = AdminBotCitationCheckStores &
+  AdminBotMemberRenameStore & {
+    saveHelpInterest(interest: LabHelpInterest): void;
+    listHelpInterests(): LabHelpInterest[];
+    saveDirectorStatus(status: LabDirectorStatus | null): void;
+    readDirectorStatus(): LabDirectorStatus | null;
+    /** The broadcast archive, newest first. */
+    listDirectorStatusHistory(limit?: number): LabDirectorStatus[];
+    saveHelpRequest(request: LabHelpRequest): void;
+    getHelpRequest(paperId: string): LabHelpRequest | undefined;
+    listHelpRequests(): LabHelpRequest[];
+    discoverHelpRequests(
+      query: LabSharingDiscoveryQuery,
+      after?: DiscoveryPosition,
+    ): DiscoveredHelpRequest[];
+    saveProposal(proposal: AdminBotStoredProposal): void;
+    getProposal(actionId: string): AdminBotStoredProposal | undefined;
+    updateProposal(proposal: AdminBotStoredProposal): void;
+    listPending(limit?: number): AdminBotStoredProposal[];
+    listProposalsByType(type: AdminBotActionType): AdminBotStoredProposal[];
+    saveDeadlineProposalSubmission(
+      proposal: AdminBotStoredProposal,
+      submitterMemberId: string,
+      idempotencyKey: string,
+    ): { proposal: AdminBotStoredProposal; created: boolean };
+    replaceDeadlineProposalRevision(
+      previous: AdminBotStoredProposal,
+      next: AdminBotStoredProposal,
+    ): void;
+    savePublishedDeadline(record: PublishedDeadlineRecord): void;
+    listPublishedDeadlines(): PublishedDeadlineRecord[];
+    saveExecutionResult(result: AdminBotExecutionResult): void;
+    getExecutionResult(actionId: string): AdminBotExecutionResult | undefined;
+    getExecutionResultByIdempotencyKey(idempotencyKey: string): AdminBotExecutionResult | undefined;
+    claimExecution(
+      effectKey: string,
+      actionId: string,
+      claimedAt: string,
+      staleBefore: string,
+    ): boolean;
+    releaseExecutionClaim(effectKey: string, actionId: string): void;
+    saveLabMember(member: AdminBotLabMember): void;
+    patchLabMemberAuthFields(
+      memberId: string,
+      patch: Pick<AdminBotLabMember, "updated_at"> &
+        Partial<
+          Pick<
+            AdminBotLabMember,
+            | "last_login_at"
+            | "last_login_country"
+            | "last_login_continent"
+            | "last_login_city"
+            | "last_login_timezone"
+          >
+        >,
+    ): boolean;
+    getLabMember(memberId: string): AdminBotLabMember | undefined;
+    listLabMembers(page?: AdminBotListPage): AdminBotLabMember[];
+    searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }>;
+    listLabMemberSummaries(): AdminBotLabMemberSummary[];
+    countLabMembers(q?: string): number;
+    saveBadgeDefinition(badge: AdminBotBadgeDefinition): void;
+    getBadgeDefinition(badgeId: string): AdminBotBadgeDefinition | undefined;
+    listBadgeDefinitions(): AdminBotBadgeDefinition[];
+    saveBadgeAssignment(assignment: AdminBotBadgeAssignment): void;
+    getBadgeAssignment(memberId: string, familyKey: string): AdminBotBadgeAssignment | undefined;
+    listBadgeAssignments(memberId?: string | string[]): AdminBotBadgeAssignment[];
+    deleteBadgeAssignment(memberId: string, badgeId: string): boolean;
+    saveOpportunity(opportunity: AdminBotOpportunity): void;
+    getOpportunity(opportunityId: string): AdminBotOpportunity | undefined;
+    listOpportunities(params?: {
+      memberId?: string;
+      status?: AdminBotOpportunityStatus;
+    }): AdminBotOpportunity[];
+    deleteOpportunity(opportunityId: string): boolean;
+    saveMemberRequest(request: AdminBotMemberRequest): void;
+    getMemberRequest(requestId: string): AdminBotMemberRequest | undefined;
+    listMemberRequests(params?: {
+      requestedBy?: string;
+      status?: AdminBotMemberRequestStatus;
+    }): AdminBotMemberRequest[];
+    deleteMemberRequest(requestId: string): boolean;
+    saveBadgeNomination(nomination: AdminBotBadgeNomination): void;
+    getBadgeNomination(nominationId: string): AdminBotBadgeNomination | undefined;
+    listBadgeNominations(params?: {
+      memberId?: string;
+      involvingMemberId?: string;
+      nominatedBy?: string;
+      status?: AdminBotBadgeNominationStatus;
+    }): AdminBotBadgeNomination[];
+    saveBadgeSuggestion(suggestion: AdminBotBadgeSuggestion): void;
+    getBadgeSuggestion(suggestionId: string): AdminBotBadgeSuggestion | undefined;
+    listBadgeSuggestions(params?: {
+      suggestedBy?: string;
+      status?: AdminBotBadgeSuggestionStatus;
+    }): AdminBotBadgeSuggestion[];
+    /** Removes one roster row. False when there was nothing to remove. */
+    deleteLabMember(memberId: string): boolean;
+    /**
+     * Repoints every record that names one member at another, returning what moved per table.
+     *
+     * The store owns this rather than the service because the store is the only layer that knows
+     * which tables carry a member id -- a merge that missed one would leave a reimbursement or a
+     * consent row pointing at an id that no longer exists, which reads downstream as the person
+     * never having been asked.
+     */
+    reassignMemberReferences(fromMemberId: string, toMemberId: string): Record<string, number>;
+    /**
+     * Deletes every record that names one member, returning what went per table.
+     *
+     * The delete-side counterpart to `reassignMemberReferences`, and a separate list on purpose: a
+     * merge repoints a person's rows at whoever they turned out to be, so the tables it walks are
+     * the ones whose rows still mean something under a new owner. A delete has no survivor, so it
+     * also has to take the rows a merge deliberately leaves alone -- the notifications, feedback,
+     * weekly updates and submission keys that belong to nobody once the member is gone.
+     */
+    purgeMemberReferences(memberId: string): Record<string, number>;
+    // Returns the events actually inserted. A change already on record is ignored rather than
+    // re-dated, so re-scanning cannot make an old move look like it just happened.
+    recordCvChanges(events: AdminBotCvChangeEvent[]): AdminBotCvChangeEvent[];
+    listCvChangesSince(sinceIso: string): AdminBotCvChangeEvent[];
+    // Replaces a venue's index in one go. A rebuild is all-or-nothing: half an old conference mixed
+    // with half a new one would rank against a corpus that never existed.
+    replaceVenueIndex(
+      venueId: string,
+      papers: AdminBotVenuePaper[],
+      indexedAt: string,
+      model: string,
+    ): void;
+    listVenuePapers(venueId: string): readonly AdminBotVenuePaper[];
+    listVenueIndexStatuses(): Omit<AdminBotVenueIndexStatus, "label">[];
+    savePaper(paper: AdminBotPaperRecord): void;
+    getPaper(paperId: string): AdminBotPaperRecord | undefined;
+    listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[];
+    countPapers(q?: string): number;
+    deletePaper(paperId: string): boolean;
+    savePaperSlot(record: AdminBotPaperSlotRecord): void;
+    /** One paper's slots, or every paper's when the id is omitted. */
+    listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
+    /**
+     * One PaperMentor review, by its own id. First sighting wins, like the paperflow evidence
+     * below: the collector re-reads the same cached review until a newer one replaces it, so a
+     * second write of the same run is the same pass running again rather than news.
+     */
+    savePaperMentorRun(record: AdminBotPaperMentorRun): void;
+    getPaperMentorRun(id: string): AdminBotPaperMentorRun | undefined;
+    /** One paper's reviews newest first, or every paper's when the id is omitted. */
+    listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[];
+    /** First sighting wins: a stage that already closed keeps the mail that closed it. */
+    savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void;
+    /** One paper's stage evidence, or every paper's when the id is omitted. */
+    listPaperflowEvidence(paperId?: string): AdminBotPaperflowEvidenceRecord[];
+    /** Messages the hourly mailbox pass refused to automate, newest first. */
+    saveEmailReview(review: AdminBotEmailReviewItem): void;
+    listEmailReviews(): AdminBotEmailReviewItem[];
+    getEmailReview(messageId: string): AdminBotEmailReviewItem | undefined;
+    /** Most recently settled decisions, newest first and capped by the caller. */
+    listResolvedEmailReviews(limit: number): AdminBotResolvedEmailReviewItem[];
+    /** Returns false when another administrator already settled this row. */
+    resolveEmailReview(params: {
+      messageId: string;
+      resolution: AdminBotEmailReviewResolution["kind"];
+      resolvedBy: string;
+      resolvedAt: string;
+    }): boolean;
+    saveNudgeLedgerEntry(record: AdminBotNudgeLedgerRecord): void;
+    /** The whole ledger, or one domain's slice. */
+    listNudgeLedger(domain?: string): AdminBotNudgeLedgerRecord[];
+    saveSocialDraft(record: AdminBotSocialDraftRecord): void;
+    listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[];
+    saveSocialConsent(record: AdminBotSocialConsentRecord): void;
+    listSocialConsents(draftId?: string): AdminBotSocialConsentRecord[];
+    saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void;
+    listConferenceAttendees(paperId?: string): AdminBotConferenceAttendeeRecord[];
+    /** One row per member per conference: their own plan for the trip. See contracts/conference-trips.ts. */
+    saveConferenceTrip(record: AdminBotConferenceTripRecord): void;
+    listConferenceTrips(conferenceKey?: string): AdminBotConferenceTripRecord[];
+    /** Withdrawing is deleting: not going is the absence of a row, never a stored value. */
+    deleteConferenceTrip(conferenceKey: string, memberId: string): boolean;
+    savePaperReimbursement(record: AdminBotPaperReimbursementRecord): void;
+    listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[];
+    appendMemberLocation(entry: AdminBotMemberLocationEntry): void;
+    /** Newest first. `limit` is a cap, not a page: nothing here needs to walk a member's whole history. */
+    listMemberLocations(memberId: string, limit?: number): AdminBotMemberLocationEntry[];
+    /** Every member's entries since a timestamp, so the admin view is one query rather than one per member. */
+    listMemberLocationsSince(since: string): AdminBotMemberLocationEntry[];
+    saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void;
+    latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined;
+    appendLoginEvent(event: AdminBotLoginEvent): void;
+    appendTabVisit(visit: AdminBotTabVisit): void;
+    /** Every tab opening at or after `since`, newest first. */
+    listTabVisitsSince(since: string): AdminBotTabVisit[];
+    /** Fills in where an already-appended sign-in came from. See the note on the persistence side. */
+    attachLoginEventLocation(id: string, location: AdminBotLoginLocation): void;
+    listLoginEvents(memberId: string, limit?: number): AdminBotLoginEvent[];
+    listLoginEventsSince(since: string): AdminBotLoginEvent[];
+    appendUpdateEvent(event: AdminBotUpdateEvent): void;
+    listUpdateEventsByMember(memberId: string, limit?: number): AdminBotUpdateEvent[];
+    listUpdateEventsBySlot(slotId: string, limit?: number): AdminBotUpdateEvent[];
+    listUpdateEventsSince(since: string): AdminBotUpdateEvent[];
+    listRecentUpdateEvents(limit: number): AdminBotUpdateEvent[];
+    listUpdateEventsForMemberRecord(memberId: string, limit: number): AdminBotUpdateEvent[];
+    listUpdateEventsForPaper(paperId: string, limit: number): AdminBotUpdateEvent[];
+    saveMeeting(meeting: AdminBotMeetingRecord): void;
+    getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
+    listMeetings(): AdminBotMeetingRecord[];
+    listMeetingsPage(options: {
+      limit: number;
+      before?: AdminBotMeetingCursor;
+      minimumMinutes: number;
+    }): AdminBotMeetingRecord[];
+    deleteMeeting(meetingId: string): boolean;
+    hasAttachedMeetingArtifact(fileId: string): boolean;
+    recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void;
+    /**
+     * One row per thing the lab has told one person. Upsert by id, so a resend of the same nudge
+     * replaces its own row rather than stacking a second copy of the same sentence.
+     */
+    saveMemberNotification(notification: AdminBotMemberNotification): void;
+    /** Newest first, one member's own. There is no all-members read: nothing needs one. */
+    listMemberNotifications(memberId: string): AdminBotMemberNotification[];
+    /**
+     * Every escalated nudge still outstanding, across the whole roster, oldest first.
+     *
+     * The one read that deliberately crosses member boundaries, and narrow on purpose: an escalation
+     * is something the lab already decided to raise to the head professor, which is not the same as
+     * her being able to read anyone's notification stream. `/notifications` stays strictly the
+     * caller's own.
+     */
+    listEscalatedMemberNotifications(): AdminBotMemberNotification[];
+    deleteMemberNotification(notificationId: string): boolean;
+    saveLogisticsRequest(request: AdminBotLogisticsRequest): void;
+    getLogisticsRequest(requestId: string): AdminBotLogisticsRequest | undefined;
+    /** Every request, or one member's. Newest first; the service re-sorts by urgency on read. */
+    listLogisticsRequests(memberId?: string): AdminBotLogisticsRequest[];
+    deleteLogisticsRequest(requestId: string): boolean;
+    saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void;
+    listOpenReviewCycles(): AdminBotOpenReviewCycleRecord[];
+    // Returns false when the milestone had already fired, which is how the caller
+    // knows not to send.
+    recordOpenReviewMilestone(milestone: AdminBotOpenReviewMilestoneRecord): boolean;
+    listOpenReviewMilestones(venueId?: string): AdminBotOpenReviewMilestoneRecord[];
+    getSettings(): AdminBotSettings | undefined;
+    saveSettings(settings: AdminBotSettings): void;
+    recordAudit(event: AdminBotAuditEvent): void;
+    listAuditEvents(): AdminBotAuditEvent[];
+    pruneAuditEventsBefore(cutoffIso: string): number;
+    getCredentialByEmail(email: string): AdminBotMemberCredential | undefined;
+    getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined;
+    /** Member IDs with portal credentials, for the public unclaimed-roster picker. */
+    listCredentialMemberIds(): string[];
+    saveCredential(credential: AdminBotMemberCredential): void;
+    changePasswordAndRevokeSessions(
+      memberId: string,
+      expectedPasswordHash: string,
+      newPasswordHash: string,
+      updatedAt: string,
+    ): boolean;
+    updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void;
+    changeMemberLoginEmail(
+      memberId: string,
+      newEmail: string,
+      expectedPasswordHash: string,
+      updatedAt: string,
+    ): "changed" | "stale" | "taken";
+    savePasswordReset(reset: AdminBotPasswordReset): void;
+    getPasswordResetByTokenHash(tokenHash: string): AdminBotPasswordReset | undefined;
+    markPasswordResetsUsedForMember(memberId: string, usedAt: string): void;
+    consumePasswordResetAndRevokeSessions(
+      tokenHash: string,
+      newPasswordHash: string,
+      usedAt: string,
+    ): boolean;
+    saveAccountRegistration(registration: AdminBotAccountRegistration): void;
+    /** Insert a pending claim/signup only when no pending email or claim-member collision exists. */
+    trySavePendingRegistration(registration: AdminBotAccountRegistration): boolean;
+    getAccountRegistration(id: string): AdminBotAccountRegistration | undefined;
+    listAccountRegistrations(status?: AdminBotRegistrationStatus): AdminBotAccountRegistration[];
+    updateAccountRegistrationDecision(
+      id: string,
+      status: AdminBotRegistrationStatus,
+      decidedBy: string,
+      decidedAt: string,
+    ): boolean;
+    /** Approve one pending request and insert its credential/member in one database transaction. */
+    tryApproveRegistration(
+      id: string,
+      decidedBy: string,
+      decidedAt: string,
+      preparedMember?: AdminBotLabMember,
+    ): { ok: true; member_id: string } | { ok: false; reason: "not_pending" | "conflict" };
+    getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined;
+    getPendingRegistrationByMemberId(memberId: string): AdminBotAccountRegistration | undefined;
+    saveSession(session: AdminBotAuthSession): void;
+    /** Prevent a stale verified password from minting a session after a concurrent password change. */
+    saveSessionIfCredentialCurrent(
+      session: AdminBotAuthSession,
+      expectedPasswordHash: string,
+    ): boolean;
+    getSession(tokenHash: string): AdminBotAuthSession | undefined;
+    touchSession(tokenHash: string, lastSeenAt: string): void;
+    revokeSession(tokenHash: string, revokedAt: string): void;
+    revokeSessionsForMember(memberId: string, revokedAt: string): void;
+    pruneSessionsBefore(cutoffIso: string): number;
+    /** Upserts one author's account of one week on one paper. Re-saving the same week replaces. */
+    savePaperWeeklyUpdate(update: AdminBotPaperWeeklyUpdate): void;
+    listPaperWeeklyUpdates(params?: {
+      paperId?: string;
+      weekStart?: string;
+    }): AdminBotPaperWeeklyUpdate[];
+    /** Upserts one member's verdict on one surface. Re-rating replaces; see contracts/feedback.ts. */
+    saveFeedback(entry: AdminBotFeedbackEntry): void;
+    listFeedback(featureId?: string): AdminBotFeedbackEntry[];
+    saveSlackConnectInvite(invite: AdminBotSlackConnectInvite): void;
+    getSlackConnectInvite(email: string, channelId: string): AdminBotSlackConnectInvite | undefined;
+    saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void;
+    getSlackChannelNamingRecord(channelId: string): AdminBotSlackChannelNamingRecord | undefined;
+    listSlackChannelNamingRecords(): AdminBotSlackChannelNamingRecord[];
+    deleteSlackChannelNamingRecord(channelId: string): boolean;
+  };
 
 export type AdminBotListPage = { limit: number; offset: number; q?: string };
 
@@ -1317,11 +1311,6 @@ const LOCATION_DRIFT_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 // against "2026-05-01".
 const ISO_DAY_RE = /^\d{4}-\d{2}-\d{2}$/u;
 
-// What an admin may rename a member *to*. Narrower than the ids already on the roster on purpose:
-// the id is spliced into URLs and matched as a JSON string by the rename sweep, so it stays plain.
-// `mem_` ids from self-signup still pass, so a rename is never forced to be a "tidy" one.
-const MEMBER_ID_PATTERN = /^(?=.{1,64}$)[a-z0-9]+(?:[-_][a-z0-9]+)*$/u;
-
 const DEFAULT_SETTINGS = {
   paper_escalation_business_days: 3,
   // Ten minutes: long enough to drop test calls and accidental rejoins, short enough to keep a
@@ -1528,11 +1517,9 @@ export class AdminBotService {
   }
 
   private refreshStoredDeadlineMilestones(): void {
+    const deadlines = this.deadlineReadModel(DEADLINE_VENUES);
     for (const member of this.store.listLabMembers()) {
-      const milestones = reconcileDeadlineMilestones(
-        member.milestones,
-        this.deadlineReadModel(DEADLINE_VENUES),
-      );
+      const milestones = reconcileDeadlineMilestones(member.milestones, deadlines);
       if (milestones === member.milestones) {
         continue;
       }
@@ -3090,6 +3077,18 @@ export class AdminBotService {
     }
     member = normalizeMemberProfileValues(member);
     const existing = this.store.getLabMember(member.id);
+    for (const field of ["joined_month", "graduated_month"] as const) {
+      const value = member[field];
+      // Full-record editors may resend legacy values. Preserve those until explicitly corrected.
+      if (
+        value !== undefined &&
+        value !== "" &&
+        value !== existing?.[field] &&
+        (typeof value !== "string" || !/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(value))
+      ) {
+        return serviceError(400, `${field} must be a valid year-month (YYYY-MM)`);
+      }
+    }
     const privilegeLevel =
       member.privilege_level ?? existing?.privilege_level ?? DEFAULT_MEMBER_PRIVILEGE_LEVEL;
     // This is a patch, not a replace: `stored` below is {...existing, ...member}, and callers send
@@ -3098,6 +3097,24 @@ export class AdminBotService {
     // `availability` and nothing else, and validating the patch alone read that as a member with no
     // name at all. Every other check in validateLabMember is already guarded on `!== undefined`, so
     // it still only inspects what this request actually sent.
+    if (
+      member.correspondence_email !== undefined &&
+      member.correspondence_email !== existing?.correspondence_email
+    ) {
+      const correspondenceError = validateEmailFormat(
+        member.correspondence_email,
+        "correspondence email",
+      );
+      if (correspondenceError) {
+        return serviceError(400, correspondenceError);
+      }
+      if (adminBotIsPersonalCorrespondenceEmail(member.correspondence_email)) {
+        return serviceError(
+          400,
+          "Use an institutional or company email for correspondence, rather than a personal email address.",
+        );
+      }
+    }
     const validation = validateLabMember(
       { ...member, name: member.name ?? existing?.name ?? "" },
       privilegeLevel,
@@ -4854,6 +4871,13 @@ export class AdminBotService {
     week_start: string;
     gaps: AdminBotWeeklyUpdateGap[];
   }> {
+    return this.withRosterSnapshot(() => this.sweepCollectWeeklyUpdateGaps(nowIso));
+  }
+
+  private sweepCollectWeeklyUpdateGaps(nowIso?: string): AdminBotServiceResponse<{
+    week_start: string;
+    gaps: AdminBotWeeklyUpdateGap[];
+  }> {
     const now = nowIso ? new Date(nowIso) : new Date();
     const weekStart = adminBotWeekStart(now);
     // The head professor is not asked for a weekly line, on any paper. She supervises nearly
@@ -5228,130 +5252,14 @@ export class AdminBotService {
     };
   }
 
-  /**
-   * Fold one roster row into another and retire it.
-   *
-   * The lab's two ingestion paths -- the Quick-Start survey and the Slack member export -- write
-   * different halves of the same person under different ids, so "Terry Jingchen Zhang" holds the
-   * career detail and "Terry Zhang" holds the Slack id and the address. Neither page shows the
-   * whole person, and every count that walks the roster counts them twice.
-   *
-   * Three things happen, in this order, and the order matters:
-   *
-   *   1. the survivor gains everything only the duplicate knew (planMemberMerge; a disagreement
-   *      is kept as the survivor's answer and reported, never silently resolved)
-   *   2. every row that named the duplicate is repointed at the survivor, including the login
-   *      credential -- if the survivor has none of their own
-   *   3. the duplicate's sessions are revoked and the row is deleted
-   *
-   * Reversible only from the audit line, which is why that line carries the whole retired record
-   * rather than its id: undoing a merge means re-creating it, and a merge is easy to regret when
-   * two people really do share a name.
-   */
-  mergeLabMembers(params: {
-    survivorId: string;
-    duplicateId: string;
-    actorId: string;
-  }): AdminBotServiceResponse<{
-    member: AdminBotLabMember;
-    conflicts: MemberMergeConflict[];
-    moved: Record<string, number>;
-  }> {
-    if (params.survivorId === params.duplicateId) {
-      return serviceError(400, "a member cannot be merged into themselves");
-    }
-    const survivor = this.store.getLabMember(params.survivorId);
-    if (!survivor) {
-      return serviceError(404, "member not found");
-    }
-    const duplicate = this.store.getLabMember(params.duplicateId);
-    if (!duplicate) {
-      return serviceError(404, "duplicate member not found");
-    }
-    const now = new Date().toISOString();
-    const { patch, conflicts } = planMemberMerge(
-      survivor as unknown as Record<string, unknown>,
-      duplicate as unknown as Record<string, unknown>,
-    );
-    const merged: AdminBotLabMember = {
-      ...survivor,
-      ...(patch as Partial<AdminBotLabMember>),
-      id: survivor.id,
-      updated_at: now,
-    };
-    this.store.saveLabMember(merged);
-    const moved = this.store.reassignMemberReferences(params.duplicateId, params.survivorId);
-    this.store.revokeSessionsForMember(params.duplicateId, now);
-    this.store.deleteLabMember(params.duplicateId);
-    this.recordAudit({
-      type: "lab_member.merged",
-      actor: params.actorId,
-      details: {
-        survivor_id: params.survivorId,
-        duplicate_id: params.duplicateId,
-        moved,
-        conflicts,
-        // The whole retired record: a merge has no undo, and an id alone would not be enough to
-        // put back what was folded in.
-        retired_record: duplicate,
-      },
-    });
-    return { ok: true, status: 200, payload: { member: merged, conflicts, moved } };
+  /** Fold one roster row into another and retire it; see service.member-identity.ts. */
+  mergeLabMembers(params: MemberMergeParams) {
+    return mergeLabMembersIn(this.store, (event) => this.recordAudit(event), params);
   }
 
-  /**
-   * Give one member a new id, carrying everything that named the old one.
-   *
-   * The id is the key papers, sessions, credentials and settings hold, which is why the editor
-   * keeps it read-only -- and also why a bad one (a generated `mem_<uuid>`, a typo from an import)
-   * is worth fixing once rather than living with. Sessions move with it rather than being revoked
-   * as a merge's are: a merge judges that two records are one person and can be wrong, a rename
-   * is the same person under a new key, so signing them out would cost a login and buy nothing.
-   */
-  renameLabMember(params: {
-    memberId: string;
-    newId: string;
-    actorId: string;
-  }): AdminBotServiceResponse<{ member: AdminBotLabMember; changed: Record<string, number> }> {
-    const newId = params.newId.trim();
-    if (!MEMBER_ID_PATTERN.test(newId)) {
-      return serviceError(
-        400,
-        "a member id is lowercase letters and digits, joined by single hyphens or underscores (at most 64 characters)",
-      );
-    }
-    if (newId === params.memberId) {
-      return serviceError(400, "that is already this member's id");
-    }
-    const member = this.store.getLabMember(params.memberId);
-    if (!member) {
-      return serviceError(404, "member not found");
-    }
-    if (this.store.getLabMember(newId)) {
-      return serviceError(409, `member id "${newId}" is already taken`);
-    }
-    let changed: Record<string, number>;
-    try {
-      changed = this.store.renameMemberId(params.memberId, newId);
-    } catch (error) {
-      // A constraint failure means some table already holds a row keyed on the new id -- a leftover
-      // from a deleted or merged member. The store rolled back, so nothing moved.
-      return serviceError(
-        409,
-        `could not move every record to "${newId}": ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-    const renamed = this.store.getLabMember(newId);
-    if (!renamed) {
-      // The sweep re-keys the roster row like any other; reaching here means it did not.
-      return serviceError(500, "the member record did not move to the new id");
-    }
-    this.recordAudit({
-      type: "lab_member.id_changed",
-      actor: params.actorId,
-      details: { from_id: params.memberId, to_id: newId, name: member.name, changed },
-    });
-    return { ok: true, status: 200, payload: { member: renamed, changed } };
+  /** Give one member a new id, carrying everything that named the old one. */
+  renameLabMember(params: MemberRenameParams) {
+    return renameLabMemberIn(this.store, (event) => this.recordAudit(event), params);
   }
 
   /**
@@ -5655,6 +5563,12 @@ export class AdminBotService {
       if (input[field] !== undefined) {
         return serviceError(400, `${field} cannot be changed from a self profile update`);
       }
+    }
+    if (
+      input.arr_reviewer_qualified !== undefined &&
+      typeof input.arr_reviewer_qualified !== "boolean"
+    ) {
+      return serviceError(400, "Choose whether you are a qualified ARR reviewer");
     }
     const patch: Partial<AdminBotLabMemberInput> = {};
     for (const field of SELF_PROFILE_EDITABLE_FIELDS) {
@@ -6005,6 +5919,7 @@ export class AdminBotService {
         at: now,
       });
     }
+    this.syncConferenceChannel(stored);
     return { ok: true, status: 200, payload: stored };
   }
 
@@ -6675,21 +6590,15 @@ export class AdminBotService {
           continue;
         }
         if (result.status === "found") {
+          // Opening the file is the whole test. AdminBot only reads paper evidence, so a Viewer
+          // share or an "anyone with the link" share proves the link as well as Editor does.
           if (check.verifier === "google_drive") {
-            if (!("canEdit" in result) || typeof result.canEdit !== "boolean") {
-              unreadable.push({
-                paper_id: paper.id,
-                slot: row.slot,
-                reason: "AdminBot could not confirm edit access to this Drive file",
-              });
-              continue;
-            }
-            if (!result.canEdit) {
+            if ("trashed" in result && result.trashed) {
               this.store.savePaperSlot({
                 ...row,
                 status: "invalid",
                 invalid_reason:
-                  "Share this Drive file with Jinesis.adminbot@gmail.com as Editor; general access may stay restricted",
+                  "This Drive file is in the trash. Restore it or paste a different link",
                 validated_at: undefined,
                 verified_by: undefined,
                 verified_at: undefined,
@@ -6753,11 +6662,19 @@ export class AdminBotService {
     };
   }
 
-  /** A read-only check of a pasted Drive link using AdminBot's own Google account. */
-  async checkDriveEditAccess(
-    url: string,
-  ): Promise<
-    AdminBotServiceResponse<{ status: "editable" | "not_editable" | "unverified"; message: string }>
+  /**
+   * A read-only check of a pasted Drive link using AdminBot's own Google account.
+   *
+   * Asks only whether AdminBot can open the file, not whether it can edit it. Every link checked
+   * here is one AdminBot reads (a CV, a 1:1 folder, a letters folder) and never writes into, so
+   * Viewer access or an "anyone with the link" share is enough. Demanding Editor turned members away
+   * for links that already worked.
+   */
+  async checkDriveAccess(url: string): Promise<
+    AdminBotServiceResponse<{
+      status: "accessible" | "inaccessible" | "unverified";
+      message: string;
+    }>
   > {
     const id = adminBotDriveFileId(url);
     if (!id) {
@@ -6774,11 +6691,21 @@ export class AdminBotService {
       };
     }
     const result = await this.options.driveProbe(id);
-    if (result.status === "found" && !result.trashed && result.canEdit === true) {
+    if (result.status === "found" && !result.trashed) {
       return {
         ok: true,
         status: 200,
-        payload: { status: "editable", message: "AdminBot can edit this file." },
+        payload: { status: "accessible", message: "AdminBot can open this file." },
+      };
+    }
+    if (result.status === "found") {
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          status: "inaccessible",
+          message: "This file is in the Drive trash. Restore it or paste a different link.",
+        },
       };
     }
     if (result.status === "missing") {
@@ -6786,20 +6713,9 @@ export class AdminBotService {
         ok: true,
         status: 200,
         payload: {
-          status: "not_editable",
+          status: "inaccessible",
           message:
-            "AdminBot cannot open this file. Check the link or share it with Jinesis.adminbot@gmail.com as Editor; general access may stay restricted.",
-        },
-      };
-    }
-    if (result.status === "found" && result.canEdit === false) {
-      return {
-        ok: true,
-        status: 200,
-        payload: {
-          status: "not_editable",
-          message:
-            "Share this file with Jinesis.adminbot@gmail.com as Editor. You can keep general access restricted.",
+            "AdminBot cannot open this file. Check the link, then either share it with Jinesis.adminbot@gmail.com (Viewer is enough) or set general access to anyone with the link.",
         },
       };
     }
@@ -6809,7 +6725,7 @@ export class AdminBotService {
       payload: {
         status: "unverified",
         message:
-          "AdminBot could not confirm edit access. Check the link and share it with Jinesis.adminbot@gmail.com as Editor.",
+          "AdminBot could not check access to this file right now. Make sure Jinesis.adminbot@gmail.com or anyone with the link can view it.",
       },
     };
   }
@@ -6844,7 +6760,7 @@ export class AdminBotService {
               ...(adminBotDriveFileId(url) ? { id: adminBotDriveFileId(url) } : {}),
               reason: "no Drive file id in the link",
               missingReason:
-                "AdminBot cannot access this Drive file — check the link or share it with Jinesis.adminbot@gmail.com as Editor",
+                "AdminBot cannot access this Drive file — check the link, then share it with Jinesis.adminbot@gmail.com (Viewer is enough) or set general access to anyone with the link",
             }
           : undefined;
       }
@@ -7267,6 +7183,7 @@ export class AdminBotService {
       actor: params.actorId,
       details: { paper_id: params.paperId, attending: params.attending },
     });
+    this.syncConferenceChannel(paper);
     return { ok: true, status: 200, payload: { attendee } };
   }
 
@@ -7306,7 +7223,157 @@ export class AdminBotService {
         paper,
         attendees: this.store.listConferenceAttendees(paper.id),
       }));
-    return { ok: true, status: 200, payload: { conferences: buildConferenceAttendance(entries) } };
+    const conferences = buildConferenceAttendance(entries).map((conference) => ({
+      ...conference,
+      people: conference.people.map((person) => ({
+        ...person,
+        avatar_url: person.member_id
+          ? this.store.getLabMember(person.member_id)?.avatar_url
+          : undefined,
+      })),
+    }));
+    return { ok: true, status: 200, payload: { conferences } };
+  }
+
+  /** Admin export: attendance is not a lodging commitment. No free-text travel notes. */
+  listConferenceTravelExport() {
+    const rosters = this.listConferenceRosters();
+    if (!rosters.ok) return rosters;
+    const rows = new Map<
+      string,
+      {
+        conference_key: string;
+        conference: string;
+        member_id: string;
+        name: string;
+        going_source: string;
+        trip_intent: string;
+        needs_lodging: boolean | null;
+        arrival_on: string;
+        departure_on: string;
+      }
+    >();
+    for (const conference of rosters.payload.conferences) {
+      for (const person of conference.people.filter((person) => person.attending === "yes")) {
+        rows.set(`${conference.key}/${person.attendee_key}`, {
+          conference_key: conference.key,
+          conference: conference.label,
+          member_id: person.member_id ?? "",
+          name: person.name,
+          going_source: "paper attendance",
+          trip_intent: "",
+          needs_lodging: null,
+          arrival_on: "",
+          departure_on: "",
+        });
+      }
+    }
+    for (const trip of this.store.listConferenceTrips()) {
+      const key = `${trip.conference_key}/member:${trip.member_id}`;
+      const existing = rows.get(key);
+      // Undecided plans cannot create a Going attendee or a confirmed bed request.
+      if (!existing && trip.intent !== "going") continue;
+      rows.set(key, {
+        conference_key: trip.conference_key,
+        conference: existing?.conference ?? trip.conference_key,
+        member_id: trip.member_id,
+        name: this.store.getLabMember(trip.member_id)?.name ?? trip.member_id,
+        going_source: existing
+          ? trip.intent === "going"
+            ? "paper attendance and personal trip"
+            : "paper attendance"
+          : "personal trip",
+        trip_intent: trip.intent,
+        needs_lodging: trip.intent === "going" ? trip.needs_lodging : null,
+        arrival_on: trip.arrival_on ?? "",
+        departure_on: trip.departure_on ?? "",
+      });
+    }
+    return {
+      ok: true as const,
+      status: 200,
+      payload: {
+        rows: [...rows.values()].sort(
+          (a, b) =>
+            a.conference_key.localeCompare(b.conference_key) || a.name.localeCompare(b.name),
+        ),
+      },
+    };
+  }
+
+  private syncConferenceChannel(paper: AdminBotPaperRecord): void {
+    const key = paperConferenceKey(paper);
+    if (!key) return;
+    // Persist the approved proposal before yielding. Slack outages must not fail a paper save;
+    // the existing action audit retains failures for retry, and execution deduplicates saves.
+    void this.inviteConferenceAttendees(key).catch(() => {});
+  }
+
+  /** Uses the existing Slack proposal/approval/execution gate. */
+  async inviteConferenceAttendees(conferenceKey: string): Promise<
+    AdminBotServiceResponse<{
+      channel: string;
+      invited: number;
+      skipped: number;
+      failed: number;
+    }>
+  > {
+    const roster = this.listConferenceRosters();
+    if (!roster.ok) return roster;
+    const conference = roster.payload.conferences.find((entry) => entry.key === conferenceKey);
+    if (!conference) return serviceError(404, "accepted conference not found");
+    // Use the exact recorded venue/year, never a caller-supplied channel or user ID.
+    const venue = conference.venue
+      .replace(new RegExp(`\\b${conference.year}\\b`, "gu"), "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, "-")
+      .replace(/^-|-$/gu, "");
+    if (!venue) return serviceError(400, "conference venue has no channel name");
+    const channel = `conf-${venue}-${conference.year}`;
+    let invited = 0,
+      skipped = 0,
+      failed = 0;
+    for (const person of conference.people) {
+      const member = person.member_id ? this.store.getLabMember(person.member_id) : undefined;
+      if (
+        person.attending !== "yes" ||
+        !member?.slack_user_id ||
+        member.slack_channels?.some((name) => name.replace(/^#/u, "").toLowerCase() === channel)
+      ) {
+        skipped++;
+        continue;
+      }
+      const proposal = this.createProposal({
+        type: "slack.invite_to_channel",
+        summary: `Add ${member.name} to #${channel}`,
+        target: {
+          service: "slack",
+          channel: "slack",
+          target: channel,
+          recipientMemberId: member.id,
+        },
+        proposed_payload: { channel, user_id: member.slack_user_id },
+        rationale: `Confirmed going to ${conference.label} on an accepted paper.`,
+        undo_plan: "The member can leave the channel, or an admin can remove them.",
+        idempotency_key: `conference-channel:${conference.key}:${member.id}`,
+      });
+      if (!proposal.ok) {
+        failed++;
+        continue;
+      }
+      try {
+        const executed = await this.execute(proposal.payload.id, {
+          dry_run: false,
+          idempotency_key: proposal.payload.idempotency_key,
+        });
+        if (executed.ok && executed.payload.status === "executed") invited++;
+        else failed++;
+      } catch {
+        failed++;
+      }
+    }
+    return { ok: true, status: 200, payload: { channel, invited, skipped, failed } };
   }
 
   /**
@@ -7425,10 +7492,8 @@ export class AdminBotService {
   /**
    * Mail a cleared reimbursement package to the funder's office.
    *
-   * Only ever called after the ruleset cleared: the workflow refuses to produce forms for a
-   * package with an outstanding blocker, so there is nothing to send for one. The check is not
-   * re-run here because there is nothing left to check -- the artifacts are the evidence that it
-   * passed.
+   * The HTTP caller verifies the server-issued proof of the generated package before calling
+   * this method. Artifacts alone do not establish that the ruleset cleared.
    *
    * Reply-to is the member's correspondence address, not the bot's. A finance office that reads
    * this and has a question has to be able to answer the person whose claim it is; a reply landing
@@ -7480,6 +7545,7 @@ export class AdminBotService {
       proposed_payload: {
         to,
         reply_to: replyTo,
+        cc: [replyTo],
         subject: `Reimbursement claim — ${member.name} — ${label}`,
         body: reimbursementSubmissionBody({
           memberName: member.name,
@@ -7568,6 +7634,12 @@ export class AdminBotService {
    * what makes the button's count honest -- it says what pressing it would actually chase.
    */
   listPaperSlotOverview(nowIso?: string): AdminBotServiceResponse<{
+    papers: AdminBotPaperSlotOverviewRow[];
+  }> {
+    return this.withRosterSnapshot(() => this.sweepListPaperSlotOverview(nowIso));
+  }
+
+  private sweepListPaperSlotOverview(nowIso?: string): AdminBotServiceResponse<{
     papers: AdminBotPaperSlotOverviewRow[];
   }> {
     const now = nowIso ? new Date(nowIso) : new Date();
@@ -7757,9 +7829,18 @@ export class AdminBotService {
     batches: AdminBotNudgeBatch[];
     papers_considered: number;
   }> {
+    return this.withRosterSnapshot(() => this.sweepCollectPaperNudgeBatches(nowIso));
+  }
+
+  private sweepCollectPaperNudgeBatches(nowIso?: string): AdminBotServiceResponse<{
+    batches: AdminBotNudgeBatch[];
+    papers_considered: number;
+  }> {
     const now = nowIso ? new Date(nowIso) : new Date();
     const gathered = this.gatherPaperNudges(now);
-    const roster = new Map(this.store.listLabMembers().map((member) => [member.id, member]));
+    const roster = new Map(
+      (this.rosterSnapshot ?? this.store.listLabMembers()).map((member) => [member.id, member]),
+    );
     const batches = [...gathered.byRecipient.entries()]
       .map(([memberId, groups]) => {
         const member = roster.get(memberId);
@@ -8624,6 +8705,26 @@ export class AdminBotService {
     };
   }
 
+  /** Set only while an all-paper sweep runs; see withRosterSnapshot. */
+  private rosterSnapshot: AdminBotLabMember[] | undefined;
+
+  /**
+   * Runs a synchronous, read-only sweep with one roster read shared by every per-paper owner
+   * lookup. A roster read parses every member's whole payload, so reading it per paper made the
+   * admin sweeps cost seconds and stall the synchronous store for everyone else meanwhile.
+   */
+  private withRosterSnapshot<T>(sweep: () => T): T {
+    if (this.rosterSnapshot) {
+      return sweep();
+    }
+    this.rosterSnapshot = this.store.listLabMembers();
+    try {
+      return sweep();
+    } finally {
+      this.rosterSnapshot = undefined;
+    }
+  }
+
   /**
    * Who a slot's owner role resolves to on this paper.
    *
@@ -8635,7 +8736,7 @@ export class AdminBotService {
     paper: AdminBotPaperRecord,
     owner: AdminBotPaperSlotOwner,
   ): string[] {
-    const roster = this.store.listLabMembers();
+    const roster = this.rosterSnapshot ?? this.store.listLabMembers();
     const byName = new Map(
       roster.map((member) => [member.name.trim().toLocaleLowerCase(), member]),
     );
@@ -14392,6 +14493,8 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "cv_url",
   "intake_form_url",
   "intake_form_unavailable",
+  "arr_reviewer_qualified",
+  "arr_review_capacity",
   // The member's own one-on-one folder. Self-editable because in practice either side creates it
   // -- whoever made the folder pastes the link -- and an admin-only field would leave the member
   // looking at a blank row they cannot fill from the link already in their Drive. Mandatory too
@@ -14415,6 +14518,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "linkedin_followers",
   "github_url",
   "scholar_url",
+  "acl_anthology_url",
   "calendar_email",
   "joined_month",
   "graduated_month",
@@ -14647,6 +14751,10 @@ function memberHasAnyEmail(member: AdminBotLabMember): boolean {
 
 function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
   return MANDATORY_PROFILE_FIELDS.filter((key) => {
+    if (key === "arr_review_capacity" && member.arr_reviewer_qualified !== true) return false;
+    if (key === "intake_form_url" && member.intake_form_unavailable === true) {
+      return false;
+    }
     const value = member[key];
     if (Array.isArray(value)) {
       return value.filter(Boolean).length === 0;
@@ -14890,6 +14998,20 @@ function validateLabMember(
   ) {
     return "application form unavailable must be true or false";
   }
+  if (
+    member.arr_reviewer_qualified !== undefined &&
+    member.arr_reviewer_qualified !== null &&
+    typeof member.arr_reviewer_qualified !== "boolean"
+  ) {
+    return "ARR reviewer qualification must be true, false, or null";
+  }
+  if (
+    member.arr_review_capacity !== undefined &&
+    member.arr_review_capacity !== null &&
+    (!Number.isSafeInteger(member.arr_review_capacity) || member.arr_review_capacity < 0)
+  ) {
+    return "ARR review capacity must be a non-negative whole number";
+  }
   const emailError = validateMemberEmail(member.email, existingEmail);
   if (emailError) {
     return emailError;
@@ -15011,7 +15133,8 @@ type SocialUrlFieldSpec = {
     | "linkedin_url"
     | "twitter_url"
     | "github_url"
-    | "scholar_url";
+    | "scholar_url"
+    | "acl_anthology_url";
   label: string;
   freeText?: true;
   // Omitted for personal_website/cv_url: those genuinely point anywhere the member likes.
@@ -15058,6 +15181,13 @@ function validateInlineImage(value: string, spec: SocialUrlFieldSpec): string | 
 }
 
 const SOCIAL_URL_FIELDS: SocialUrlFieldSpec[] = [
+  {
+    field: "acl_anthology_url",
+    label: "ACL Anthology",
+    hosts: new Set(["aclanthology.org"]),
+    path: /^\/people\/[A-Za-z0-9_-]+\/?$/u,
+    shapeMessage: "ACL Anthology link must be a profile URL (https://aclanthology.org/people/...)",
+  },
   { field: "personal_website", label: "personal website" },
   { field: "avatar_url", label: "profile photo", allowInlineImage: true },
   { field: "cv_url", label: "CV", freeText: true },
@@ -15742,163 +15872,6 @@ function mergeAccessGrants(
   );
 }
 
-type PaperTimelinePlanItem = {
-  step: AdminBotPaperStep;
-  label: string;
-  dependency_group: AdminBotPaperTimeline["items"][number]["dependency_group"];
-  duration_business_days: number;
-  color: string;
-  /**
-   * Steps that must finish first. The paper flow is not a single line: slides branch off the
-   * submission and run alongside the arXiv/announcement chain, so this is a graph rather than the
-   * plan's array order. Scheduling walks these edges; the array order only defines step identity.
-   */
-  depends_on: readonly AdminBotPaperStep[];
-};
-
-const PAPER_TIMELINE_PLAN = [
-  {
-    step: "brainstorming_docs",
-    label: "Brainstorming docs",
-    dependency_group: "ideation",
-    duration_business_days: 2,
-    color: "#64748b",
-    depends_on: [],
-  },
-  {
-    step: "overleaf_writing",
-    label: "Overleaf writing",
-    dependency_group: "writing",
-    duration_business_days: 5,
-    color: "#2563eb",
-    depends_on: ["brainstorming_docs"],
-  },
-  {
-    step: "submission",
-    label: "Submission",
-    dependency_group: "submission",
-    duration_business_days: 1,
-    color: "#7c3aed",
-    depends_on: ["overleaf_writing"],
-  },
-  {
-    step: "google_drive_pdf",
-    label: "Drive PDF",
-    dependency_group: "release",
-    duration_business_days: 1,
-    color: "#0891b2",
-    depends_on: ["submission"],
-  },
-  {
-    step: "arxiv_polish",
-    label: "arXiv polish",
-    dependency_group: "release",
-    duration_business_days: 2,
-    color: "#0f766e",
-    depends_on: ["google_drive_pdf"],
-  },
-  {
-    step: "social_posts",
-    label: "Announcements",
-    dependency_group: "outreach",
-    duration_business_days: 1,
-    color: "#db2777",
-    depends_on: ["arxiv_polish"],
-  },
-  {
-    step: "slide_making",
-    label: "Slides",
-    dependency_group: "materials",
-    duration_business_days: 2,
-    color: "#d97706",
-    depends_on: ["submission"],
-  },
-  {
-    step: "poster_making",
-    label: "Poster",
-    dependency_group: "materials",
-    duration_business_days: 2,
-    color: "#16a34a",
-    depends_on: ["slide_making"],
-  },
-] as const satisfies readonly PaperTimelinePlanItem[];
-
-function withPaperTimeline(paper: AdminBotPaperRecord): AdminBotPaperRecord {
-  return {
-    ...paper,
-    timeline: buildPaperTimeline(paper),
-  };
-}
-
-function buildPaperTimeline(
-  paper: Pick<AdminBotPaperRecord, "current_step" | "reminder">,
-): AdminBotPaperTimeline {
-  const currentStepIndex = Math.max(
-    0,
-    PAPER_TIMELINE_PLAN.findIndex((item) => item.step === paper.current_step),
-  );
-  // Work in the plan, used for progress. This is the sum of every step's estimate and is not the
-  // same as the schedule length below: parallel branches take calendar time off the schedule
-  // without taking work off the paper.
-  const totalWorkBusinessDays = PAPER_TIMELINE_PLAN.reduce(
-    (total, item) => total + item.duration_business_days,
-    0,
-  );
-  const complete = paper.reminder?.status === "complete";
-  const blocked = paper.reminder?.status === "blocked";
-
-  // Earliest start per step = latest finish among its dependencies (longest path). The plan is
-  // ordered so every step appears after its dependencies, so one forward pass is enough.
-  const finishByStep = new Map<AdminBotPaperStep, number>();
-  const items = PAPER_TIMELINE_PLAN.map((item, index) => {
-    const start = item.depends_on.reduce(
-      (latest, dependency) => Math.max(latest, finishByStep.get(dependency) ?? 0),
-      0,
-    );
-    const end = start + item.duration_business_days;
-    finishByStep.set(item.step, end);
-    return {
-      step: item.step,
-      label: item.label,
-      dependency_group: item.dependency_group,
-      depends_on: [...item.depends_on],
-      status: timelineStatus(index, currentStepIndex, complete, blocked),
-      offset_start_business_day: start,
-      offset_end_business_day: end,
-      duration_business_days: item.duration_business_days,
-      color: item.color,
-    };
-  });
-  // Schedule length is the critical path, which is what a Gantt axis spans.
-  const scheduleBusinessDays = Math.max(1, ...items.map((item) => item.offset_end_business_day));
-  const completedWorkBusinessDays = complete
-    ? totalWorkBusinessDays
-    : PAPER_TIMELINE_PLAN.slice(0, currentStepIndex).reduce(
-        (total, item) => total + item.duration_business_days,
-        0,
-      );
-  return {
-    progress_percent: Math.round((completedWorkBusinessDays / totalWorkBusinessDays) * 100),
-    current_step_index: currentStepIndex,
-    total_estimated_business_days: scheduleBusinessDays,
-    items,
-  };
-}
-
-function timelineStatus(
-  index: number,
-  currentStepIndex: number,
-  complete: boolean,
-  blocked: boolean,
-): AdminBotPaperTimeline["items"][number]["status"] {
-  if (complete || index < currentStepIndex) {
-    return "complete";
-  }
-  if (index === currentStepIndex) {
-    return blocked ? "blocked" : "current";
-  }
-  return "upcoming";
-}
 function duePaperNudges(paper: AdminBotPaperRecord, nowIso: string): AdminBotPaperNudge[] {
   const reminder = paper.reminder;
   if (reminder?.status !== "waiting_on_authors") {

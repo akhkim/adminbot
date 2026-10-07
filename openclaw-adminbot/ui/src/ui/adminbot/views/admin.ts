@@ -1,9 +1,9 @@
-import "./interview-invite.ts";
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
-import "./member-guide-status.ts";
+import "./interview-invite.ts";
 import { ifDefined } from "lit/directives/if-defined.js";
+import "./member-guide-status.ts";
 import {
   adminBotIsAlumniMember,
   adminBotMemberTypes,
@@ -27,14 +27,10 @@ import {
 import { t } from "../../../i18n/index.ts";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
-import type {
-  AdminBotEmailReviewResolution,
-  ConferenceRoster,
-  MemberNudgeChannel,
-  MemberProfileUpdate,
-  PaperSlotOverviewRow,
-  PaperSlotRow,
-} from "../auth/session.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
+import type { ConferenceRoster, PaperSlotOverviewRow } from "../api/paper-admin.ts";
+import type { PaperSlotRow } from "../api/papers.ts";
+import type { AdminBotEmailReviewResolution, MemberNudgeChannel } from "../auth/session.ts";
 import {
   type BlockerRow,
   blockerAgeDays,
@@ -47,7 +43,6 @@ import type {
   AdminBotActionProposal,
   AdminBotDashboardData,
   AdminBotLabMember,
-  AdminBotLabMemberSaveInput,
   AdminBotMemberNudgeState,
   AdminBotPaperNudge,
   AdminBotPaperRecord,
@@ -56,18 +51,26 @@ import type {
   AdminBotSensitiveInfoRecord,
   AdminBotReimbursementState,
   AdminBotSettings,
-  AdminBotSettingsSaveInput,
   AdminBotStandingMeetingsState,
   AdminBotVenueSource,
 } from "../controllers/admin.ts";
+import type { AdminBotLabMemberSaveInput } from "../controllers/members.ts";
 import {
   EMPTY_RECENT_EDITS,
   recentEditsKey,
   type RecentEditsState,
 } from "../controllers/recent-edits.ts";
+import type { AdminBotSettingsSaveInput } from "../controllers/workspace.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
-import { saveMemberInBackground, waitForMemberSave } from "../member-autosave.ts";
+import { renderDateControl } from "../date-control.ts";
+import {
+  cancelAllMemberAutosaves,
+  cancelMemberAutosave,
+  queueMemberAutosaveTimer,
+  saveMemberInBackground,
+  waitForMemberSave,
+} from "../member-autosave.ts";
 import { PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
 import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
@@ -80,6 +83,7 @@ import {
   type VenueTarget,
 } from "../venue-targets.ts";
 import { renderMemberBadgeSymbols } from "./badge-symbols.ts";
+import { renderChangeMemberIdButton } from "./member-id-change.ts";
 import {
   MEMBER_REQUEST_POPOVER_ID,
   type MemberRequestsProps,
@@ -348,6 +352,18 @@ const memberStatusOptions: Array<{ value: string; label: string }> = [
   { value: "alumni", label: "Alumni" },
 ];
 
+/**
+ * The status the roster shows, filters on and preselects in the edit form.
+ *
+ * The importers write the spreadsheet's Member Type and never `status`, so nearly every alumnus has
+ * `member_type: "alumni"` and no status at all. Defaulting a missing status to "active" therefore
+ * listed all of them as Full time -- and the edit form preselected "active", so saving one wrote
+ * that back. Either field saying alumni is enough, as it is for `adminBotIsAlumniMember` server-side.
+ */
+function memberDisplayStatus(member: AdminBotLabMember): string {
+  return adminBotIsAlumniMember(member) ? "alumni" : (member.status ?? "active");
+}
+
 function friendly(value: string | undefined | null): string {
   if (!value) {
     return "n/a";
@@ -448,11 +464,7 @@ async function submitMemberForm(event: Event, props: AdminBotProps): Promise<voi
   if (!(form instanceof HTMLFormElement)) {
     return;
   }
-  const pending = memberAutosaveTimers.get(form);
-  if (pending !== undefined) {
-    clearTimeout(pending);
-    memberAutosaveTimers.delete(form);
-  }
+  cancelMemberAutosave(form);
   const pendingWrite = waitForMemberSave(form);
   if (pendingWrite) await pendingWrite;
   const saved = saveMemberForm(form, props);
@@ -473,10 +485,10 @@ async function submitMemberForm(event: Event, props: AdminBotProps): Promise<voi
  * Deliberately *defer*, not mount-and-unmount: an id is never removed. Once a row's form exists it
  * stays, so everything about it after the first open is exactly as it was before this -- the same
  * markup, the same prefilled values, a half-typed draft still sitting there when the popover is
- * reopened, and `memberAutosaveTimers` still keyed on a form that is still in the tree. A version
+ * reopened, and the member-autosave timers still keyed on a form that is still in the tree. A version
  * that rendered only the *open* row would be smaller again and would silently change all of that.
  *
- * Module state rather than a prop for the same reason `memberAutosaveTimers` is: it is a fact
+ * Module state rather than a prop for the same reason the member-autosave timers is: it is a fact
  * about this browser's session with the sheet, not about the roster, and nothing outside this file
  * needs to read it. The set survives panel remounts, which only means a row opened earlier is
  * still cheap to open again.
@@ -495,11 +507,6 @@ function openMemberEditor(memberId: string, props: AdminBotProps): void {
   props.onRerender?.();
 }
 
-// Debounced autosave for the edit-member popover: every change lands on the record without the
-// Save button. Keyed per form so two open popovers never flush each other, and deliberately not
-// wired to the add-member form — autosaving there would create a member from a half-typed id.
-const memberAutosaveTimers = new Map<HTMLFormElement, ReturnType<typeof setTimeout>>();
-
 function queueMemberAutosave(event: Event, props: AdminBotProps): void {
   const form = event.currentTarget;
   if (!(form instanceof HTMLFormElement)) {
@@ -509,16 +516,10 @@ function queueMemberAutosave(event: Event, props: AdminBotProps): void {
   if (event.target instanceof Element && event.target.closest("[data-no-autosave]")) {
     return;
   }
-  const pending = memberAutosaveTimers.get(form);
-  if (pending !== undefined) {
-    clearTimeout(pending);
-  }
-  memberAutosaveTimers.set(
+  queueMemberAutosaveTimer(
     form,
-    setTimeout(() => {
-      memberAutosaveTimers.delete(form);
-      saveMemberInBackground(form, () => saveMemberForm(form, props, { explicit: false }));
-    }, 800),
+    () => saveMemberInBackground(form, () => saveMemberForm(form, props, { explicit: false })),
+    800,
   );
 }
 
@@ -604,7 +605,7 @@ function saveMemberForm(
         : {}),
     },
   );
-  return saved instanceof Promise ? saved : true;
+  return saved instanceof Promise ? saved : saved !== false;
 }
 
 /**
@@ -1212,8 +1213,18 @@ function renderRegistryField(
           max=${ifDefined(field.max)}
           .value=${value}
         />`;
+      case "month":
+        return html`<input
+          name=${field.key}
+          type=${!value || /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(value) ? "month" : "text"}
+          pattern=${ifDefined(field.pattern)}
+          .value=${value}
+        />`;
       case "date":
-        return html`<input name=${field.key} type="date" .value=${value} />`;
+        return html`${renderDateControl(
+          html`<input name=${field.key} type="date" .value=${value} />`,
+          value,
+        )}`;
       case "link":
         return html`<input
           name=${field.key}
@@ -1232,6 +1243,7 @@ function renderRegistryField(
         return html`<input
             name=${field.key}
             placeholder=${field.example}
+            pattern=${ifDefined(field.pattern)}
             .value=${value}
             ?required=${field.key === "name" && !member}
             list=${ifDefined(
@@ -1395,16 +1407,7 @@ function renderMemberFormFields(
           .value=${member?.id ?? ""}
           ?readonly=${editing}
           ?required=${editing}
-        />${member && onRenameMember
-          ? html`<button
-              class="btn btn--sm"
-              type="button"
-              data-testid="member-change-id"
-              @click=${(event: Event) => changeMemberId(event, member, onRenameMember)}
-            >
-              Change ID
-            </button>`
-          : nothing}<small
+        />${renderChangeMemberIdButton(member, onRenameMember)}<small
           >${editing
             ? "Links their papers, sign-in and settings. Change ID moves all of those to the new ID; to fix how their name reads, edit the name below instead."
             : "Optional. Generated from their name; duplicate names get a unique suffix."}</small
@@ -1451,7 +1454,7 @@ function renderMemberFormFields(
             (option) =>
               html`<option
                 value=${option.value}
-                ?selected=${option.value === (member?.status ?? "active")}
+                ?selected=${option.value === (member ? memberDisplayStatus(member) : "active")}
               >
                 ${option.label}
               </option>`,
@@ -1517,38 +1520,6 @@ function renderMemberEditsPopover(member: AdminBotLabMember, index: number, prop
   `;
 }
 
-function changeMemberId(
-  event: Event,
-  member: AdminBotLabMember,
-  onRenameMember: NonNullable<AdminBotProps["onRenameMember"]>,
-): void {
-  const newId = globalThis.prompt?.(`New member ID for ${member.name}:`, member.id)?.trim();
-  if (!newId || newId === member.id) {
-    return;
-  }
-  if (
-    !globalThis.confirm?.(
-      `Change ${member.name}'s member ID from "${member.id}" to "${newId}"?\n\n` +
-        `Their papers, sign-in, sessions and settings move to the new ID. ` +
-        `Links that spell out the old ID stop working.`,
-    )
-  ) {
-    return;
-  }
-  // A queued autosave carries the old id, and landing after the rename would upsert a fresh record
-  // under it -- a ghost of the member just moved. Drop it; the roster reloads after the rename.
-  const form = (event.currentTarget as Element | null)?.closest("form");
-  if (form) {
-    const pending = memberAutosaveTimers.get(form);
-    if (pending !== undefined) {
-      clearTimeout(pending);
-      memberAutosaveTimers.delete(form);
-    }
-    form.closest<HTMLElement>("[popover]")?.hidePopover();
-  }
-  onRenameMember(member.id, newId);
-}
-
 function renderMemberEditPopover(member: AdminBotLabMember, index: number, props: AdminBotProps) {
   const editId = `adminbot-edit-member-${index}`;
   // The shell is always here: `popovertarget` resolves against the id, so the button needs it in
@@ -1582,6 +1553,11 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
                 props.standingMeetings,
                 props.mode === "admin" ? props.onRenameMember : undefined,
               )}
+              ${props.notice?.kind === "error"
+                ? html`<div class="callout danger" role="alert" style="grid-column: 1 / -1">
+                    ${props.notice.text}
+                  </div>`
+                : nothing}
               <div class="adminbot-form__actions">
                 <button class="btn btn--sm primary" type="submit">Save member</button>
               </div>
@@ -1735,7 +1711,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
     ownMember !== undefined &&
     !members.some((member) => member.id === ownMember.id);
   const total = page?.total ?? members.length;
-  const statuses = [...new Set(members.map((member) => member.status ?? "active"))].sort();
+  const statuses = [...new Set(members.map((member) => memberDisplayStatus(member)))].sort();
   const projects = [...new Set(members.flatMap((member) => member.projects ?? []))].sort();
   const paperTitles = [...new Set(papers.map((paper) => paper.title))].sort();
   // Only conferences someone on the roster is actually submitting to, so the options match what
@@ -1879,7 +1855,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 .toLocaleLowerCase();
               return html`<tr
                 data-search=${search}
-                data-status=${member.status ?? "active"}
+                data-status=${memberDisplayStatus(member)}
                 data-projects=${(member.projects ?? []).join("|")}
                 data-papers=${memberPapers.map((entry) => entry.title).join("|")}
                 data-conferences=${[...new Set(memberPapers.map(paperConference))].join("|")}
@@ -1951,8 +1927,8 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                   friendly(member.privilege_level)}
                 </td>
                 <td>
-                  <span class="adminbot-status adminbot-status--${member.status ?? "active"}"
-                    >${friendly(member.status ?? "active")}</span
+                  <span class="adminbot-status adminbot-status--${memberDisplayStatus(member)}"
+                    >${friendly(memberDisplayStatus(member))}</span
                   >
                 </td>
                 <td>
@@ -2516,10 +2492,7 @@ function renderAddPaperCard(props: AdminBotProps, options: { governance: boolean
 let paperGridState: PaperGridState | null = null;
 
 export function resetAdminViewSessionState(): void {
-  for (const timer of memberAutosaveTimers.values()) {
-    clearTimeout(timer);
-  }
-  memberAutosaveTimers.clear();
+  cancelAllMemberAutosaves();
   openedMemberEditors.clear();
   paperGridState = null;
 }
@@ -3580,7 +3553,7 @@ function matchesRecipient(
   papers: AdminBotPaperRecord[],
   filters: RecipientFilters,
 ): boolean {
-  if (filters.status && (member.status ?? "active") !== filters.status) {
+  if (filters.status && memberDisplayStatus(member) !== filters.status) {
     return false;
   }
   if (filters.branch && member.research_branch !== filters.branch) {
@@ -3632,7 +3605,7 @@ function renderAnnouncementRecipients(
   );
   const offset = view.page * RECIPIENT_PAGE_SIZE;
   const pageMembers = filtered.slice(offset, offset + RECIPIENT_PAGE_SIZE);
-  const statuses = [...new Set(members.map((member) => member.status ?? "active"))].toSorted();
+  const statuses = [...new Set(members.map((member) => memberDisplayStatus(member)))].toSorted();
   const branches = [
     ...new Set(
       members.flatMap((member) => (member.research_branch ? [member.research_branch] : [])),
@@ -3771,7 +3744,7 @@ function renderAnnouncementRecipients(
               const hasContact = announceChannelHasContact(member, channel);
               return html`<tr
                 data-search=${search}
-                data-status=${member.status ?? "active"}
+                data-status=${memberDisplayStatus(member)}
                 data-branch=${member.research_branch ?? ""}
                 data-privilege=${member.privilege_level}
                 data-projects=${(member.projects ?? []).join("|")}
@@ -3804,8 +3777,8 @@ function renderAnnouncementRecipients(
                       html`<span class="adminbot-nudge-recipients__missing">no email</span>`)}
                 </td>
                 <td>
-                  <span class="adminbot-status adminbot-status--${member.status ?? "active"}"
-                    >${friendly(member.status ?? "active")}</span
+                  <span class="adminbot-status adminbot-status--${memberDisplayStatus(member)}"
+                    >${friendly(memberDisplayStatus(member))}</span
                   >
                 </td>
                 <td>${member.research_branch ?? "—"}</td>
