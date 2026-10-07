@@ -1609,22 +1609,51 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
-  /**
-   * Propose the recurring all-day event for a member's birthday.
-   *
-   * A proposal rather than a direct write, because reaching Google is an external effect and every
-   * one of those goes through the approval gate. The card an admin sees is also the last place a
-   * typo'd date, or somebody who filled the field in without noticing where it would show up, can
-   * be caught before it is on a calendar the whole lab reads.
-   *
-   * Changing a birthday proposes an event for the new date and does not retract the old one --
-   * cancelling the previous event needs its Google event id, which the proposal only learns at
-   * execution time. Until that is wired, a corrected date leaves the first event to be removed by
-   * hand.
-   */
-  private proposeBirthdayEvent(member: AdminBotLabMember): void {
-    const calendar = resolveLabCalendar();
-    const payload = birthdayEventPayload(member, calendar.id, new Date());
+  /** Reconcile calendar proposals; external writes still require approval. */
+  private reconcileBirthdayEvent(member: AdminBotLabMember, removed = false): void {
+    const eligible = !removed && isThemeMeetingEligible(member) && Boolean(member.birthday?.trim());
+    let current = false;
+    for (const proposal of this.store.listProposalsByType("calendar.create_birthday")) {
+      if (proposal.target?.member_id !== member.id) {
+        continue;
+      }
+      const cancellations = this.store
+        .listProposalsByType("calendar.cancel")
+        .filter((cancel) => cancel.target?.birthday_action_id === proposal.id);
+      if (
+        eligible &&
+        proposal.target?.birthday === member.birthday?.trim() &&
+        proposal.status !== "rejected" &&
+        !cancellations.some((cancel) => cancel.status !== "rejected")
+      ) {
+        current = true;
+        continue;
+      }
+      if (proposal.status === "pending" || proposal.status === "approved") {
+        this.removePending(proposal.id, { note: "Birthday or membership changed." });
+      }
+      const execution = this.store.getExecutionResult(proposal.id);
+      const eventId = execution?.artifacts?.event_id;
+      if (execution?.status === "executed" && eventId && cancellations.length === 0) {
+        const payload = proposal.proposed_payload as Record<string, unknown>;
+        this.createProposal({
+          type: "calendar.cancel",
+          summary: `Remove ${member.name}'s previous birthday event`,
+          target: { member_id: member.id, birthday_action_id: proposal.id },
+          proposed_payload: {
+            calendar_id: payload.calendar_id,
+            event_id: eventId,
+            ...(payload.account ? { account: payload.account } : {}),
+          },
+          rationale: "The birthday changed, was cleared, or the member is no longer eligible.",
+          idempotency_key: `birthday-remove:${proposal.id}`,
+        });
+      }
+    }
+    if (!eligible || current) {
+      return;
+    }
+    const payload = birthdayEventPayload(member, resolveLabCalendar().id, new Date());
     if (!payload) {
       return;
     }
@@ -1634,11 +1663,8 @@ export class AdminBotService {
       summary: `Add ${name}'s birthday to the lab calendar`,
       target: { member_id: member.id, birthday: member.birthday?.trim() ?? "" },
       proposed_payload: payload,
-      rationale: "A member set their birthday on their profile so the lab can send wishes.",
-      undo_plan: "Delete the recurring event from the lab calendar and clear the profile field.",
-      // Keyed on the date as well as the member, so re-saving the same birthday collapses onto one
-      // proposal while a corrected date is genuinely a new one.
-      idempotency_key: `birthday:${member.id}:${member.birthday?.trim() ?? ""}`,
+      rationale: "A full or major coauthor member supplied their optional birthday.",
+      undo_plan: "Delete the recurring event from the lab calendar.",
     });
   }
 
@@ -2650,6 +2676,17 @@ export class AdminBotService {
     ) {
       return serviceError(409, "proposal does not have the required approvals");
     }
+    if (proposal.type === "calendar.create_birthday") {
+      const member = this.store.getLabMember(String(proposal.target?.member_id ?? ""));
+      if (
+        !member ||
+        !isThemeMeetingEligible(member) ||
+        !member.birthday?.trim() ||
+        member.birthday.trim() !== proposal.target?.birthday
+      ) {
+        return serviceError(409, "birthday proposal no longer matches an eligible member");
+      }
+    }
     const now = new Date().toISOString();
     const dryRun = request.dry_run !== false;
     const baseResult = {
@@ -2820,6 +2857,21 @@ export class AdminBotService {
     proposal.updated_at = now;
     this.store.updateProposal(proposal);
     this.store.saveExecutionResult(result);
+    if (proposal.type === "calendar.create_birthday") {
+      const memberId = String(proposal.target?.member_id ?? "");
+      const member = this.store.getLabMember(memberId);
+      this.reconcileBirthdayEvent(
+        member ?? {
+          id: memberId,
+          name: memberId,
+          privilege_level: "external_collaborator",
+          access: [],
+          created_at: now,
+          updated_at: now,
+        },
+        !member,
+      );
+    }
     this.recordAudit({
       type: "execution.executed",
       action_id: actionId,
@@ -3234,13 +3286,7 @@ export class AdminBotService {
         ...(moved.timezone ? { timezone: moved.timezone } : {}),
       });
     }
-    // Same hook, same reason: a birthday can be set from the member's own form, an admin's editor
-    // or the roster import, and all three land here. Only on an actual change -- re-saving a
-    // profile must not propose the same event again, and the idempotency key makes a retry of the
-    // *same* date collapse onto one proposal rather than stacking cards on an admin.
-    if (stored.birthday?.trim() && stored.birthday.trim() !== existing?.birthday?.trim()) {
-      this.proposeBirthdayEvent(stored);
-    }
+    this.reconcileBirthdayEvent(stored);
     // The same hook again, for theme membership. This is what makes onboarding automatic: a new
     // member describing their research is a profile write, so the channels they belong in are
     // proposed the moment they say what they work on, rather than waiting for a sweep.
@@ -5290,7 +5336,9 @@ export class AdminBotService {
       id: survivor.id,
       updated_at: now,
     };
+    this.reconcileBirthdayEvent(duplicate, true);
     this.store.saveLabMember(merged);
+    this.reconcileBirthdayEvent(merged);
     const moved = this.store.reassignMemberReferences(params.duplicateId, params.survivorId);
     this.store.revokeSessionsForMember(params.duplicateId, now);
     this.store.deleteLabMember(params.duplicateId);
@@ -5356,6 +5404,7 @@ export class AdminBotService {
     // Sessions first and through the revoke path rather than the purge, so a signed-in browser
     // stops working by the route that records that it did -- same order as the merge.
     this.store.revokeSessionsForMember(member.id, now);
+    this.reconcileBirthdayEvent(member, true);
     const removed = this.store.purgeMemberReferences(member.id);
     this.store.deleteLabMember(member.id);
     this.recordAudit({
