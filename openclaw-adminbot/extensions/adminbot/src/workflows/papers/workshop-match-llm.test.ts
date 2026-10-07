@@ -660,3 +660,52 @@ it("inside a task, counts a batch that fails for good and finishes the pass", as
     db.close();
   }
 });
+
+// A model answer that arrives (HTTP 200) but cannot be parsed is a completed model checkpoint, so
+// the matcher's own retry must ask again under a new checkpoint rather than replay that answer.
+it("inside a task, retries an unparseable answer with a fresh model call", async () => {
+  const db = memoryDb();
+  let calls = 0;
+  const fetchImpl: GuidebookFetch = async () => {
+    calls++;
+    return calls === 1
+      ? {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          text: async () => JSON.stringify({ choices: [{ message: { content: "not json" } }] }),
+        }
+      : reply({ matches: [{ paper_id: "p-1", relevance: 90, reason: "On scope." }] });
+  };
+  const gate = createInferenceGate({
+    db,
+    fetchImpl,
+    env: {},
+    config: resolveInferenceGateConfig({
+      ADMINBOT_INFERENCE_HEALTH_INTERVAL_MS: "0",
+      ADMINBOT_INFERENCE_QUEUE_SWEEP_INTERVAL_MS: "0",
+    }),
+  });
+  const matcher = createLocalWorkshopMatcher({
+    gate,
+    fetchImpl,
+    papersPerRequest: 1,
+    maxConcurrentRequests: 1,
+    maxAttemptsPerCall: 2,
+    retryBackoffMs: 0,
+  });
+  const runtime = new TaskRuntime({ db });
+  runtime.register("matcher", 1, () =>
+    matcher({ papers: [paper("p-1")], workshops: [profile("a")] }),
+  );
+  try {
+    const task = await runtime.submit({ owner: "service", kind: "matcher", input: {} }).promise;
+    expect(task?.status).toBe("completed");
+    expect(task?.result).toMatchObject([{ workshop_id: "a" }]);
+    expect(calls).toBe(2);
+  } finally {
+    await runtime.shutdown({ graceMs: 0 });
+    await gate.shutdown();
+    db.close();
+  }
+});

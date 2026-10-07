@@ -463,7 +463,11 @@ export function createLocalWorkshopMatcher(options: WorkshopMatcherOptions = {})
           throw new Error(`${PURPOSE} was cancelled`);
         }
         try {
-          return await runJob(job, requestTimeoutMs * attempt);
+          // Inside a task a model answer is checkpointed before it is parsed, so a retry under the
+          // same scope would replay an unusable answer instead of asking again.
+          return await (attempt === 1
+            ? runJob(job, requestTimeoutMs)
+            : withTaskScope(`retry:${attempt}`, () => runJob(job, requestTimeoutMs * attempt)));
         } catch (error) {
           if (isTaskInterruption(error)) {
             throw error;
