@@ -43,12 +43,12 @@ import {
   countdownLabel,
   dateRangeLabel,
   daysLeftLabel,
-  milestoneEndInstant,
   plainDateLabel,
   urgencyOf,
   type Urgency,
 } from "../data/deadline-time.ts";
 import { DEADLINE_VENUES, type DeadlineMilestone, type DeadlineVenue } from "../data/deadlines.ts";
+import { milestoneEndInstant } from "../data/milestone-time.ts";
 import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
 import { renderDateControl } from "../date-control.ts";
 import { renderDeadlineDate, renderDeadlineDateLabel } from "./deadline-date.ts";

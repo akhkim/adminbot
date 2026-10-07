@@ -4,8 +4,8 @@
 // agree on what "3 days left" means. Both read the same generated summary; only the presentation
 // differs. A countdown that disagreed between the two surfaces would read as a bug in the data.
 
+import type { DeadlineVenue } from "./deadlines.ts";
 import { DEADLINE_SUMMARIES, type DeadlineSummaryVenue } from "./deadlines-summary.ts";
-import type { DeadlineMilestone, DeadlineVenue } from "./deadlines.ts";
 
 export const MS_DAY = 86_400_000;
 
@@ -254,29 +254,4 @@ export function allUpcomingVenues(now: number): DeadlineEntry[] {
   }))
     .filter((entry) => Number.isFinite(entry.instant) && entry.instant > now)
     .toSorted((a, b) => a.instant - b.instant);
-}
-
-/**
- * When a stage stops being something still ahead.
- *
- * Schedule dates are calendar days, not AoE timestamps, so a day is spent only once it is over:
- * read as 23:59:59 in the same AoE frame the submissions use. A period ends when its last day
- * does -- a conference running through Friday is still happening on Friday.
- */
-export function milestoneEndInstant(milestone: DeadlineMilestone): number {
-  if (milestone.planning_at) {
-    return Date.parse(milestone.planning_at);
-  }
-  if (/(?:Z|[+-]\d{2}:\d{2})$/u.test(milestone.date ?? "")) {
-    return Date.parse(milestone.date!);
-  }
-  const value =
-    milestone.kind === "period"
-      ? (milestone.ends ?? milestone.starts ?? "")
-      : (milestone.date ?? "");
-  const day = /(\d{4})-(\d{2})-(\d{2})/u.exec(value)?.[0];
-  if (!day) {
-    return Number.NaN;
-  }
-  return aoeInstantMs(/[ T]\d{2}:\d{2}/u.test(value) ? value : `${day} 23:59:59`);
 }
