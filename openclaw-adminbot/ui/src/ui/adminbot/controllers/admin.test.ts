@@ -406,6 +406,48 @@ describe("loadAdminBot over the member session", () => {
     expect(host.adminBotData.loadedAt).not.toBeNull();
   });
 
+  it("starts admin queues while papers are still pending", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    host.memberId = "pat";
+    let resolvePapers: (response: Response) => void = () => {};
+    const fetched: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const path = new URL(String(input)).pathname;
+      fetched.push(path);
+      if (path === "/lab/members/self") {
+        return Promise.resolve(json({ member: { id: "pat" } }));
+      }
+      if (path === "/papers") {
+        return new Promise<Response>((resolve) => {
+          resolvePapers = resolve;
+        });
+      }
+      return Promise.resolve(json({}));
+    });
+    const pending = loadAdminBot(host, "admin");
+    try {
+      await vi.waitFor(() => expect(fetched).toContain("/papers"));
+      expect(fetched).toEqual(
+        expect.arrayContaining([
+          "/proposals/pending",
+          "/automation/email/review",
+          "/papers/nudges",
+          "/papers/conference-rosters",
+          "/settings",
+          "/sensitive-info",
+        ]),
+      );
+      expect(host.adminBotData.members[0]?.id).toBe("pat");
+      expect(host.adminBotLoading).toBe(true);
+    } finally {
+      resolvePapers(json({ papers: [{ id: "paper-1" }] }));
+      await pending;
+    }
+    expect(host.adminBotData.papers[0]?.id).toBe("paper-1");
+    expect(host.adminBotLoading).toBe(false);
+  });
+
   it("preserves a roster that arrives while papers are still loading", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});

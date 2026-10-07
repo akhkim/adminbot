@@ -1334,6 +1334,19 @@ async function loadAdminBotOverSession(
     // The profile and public deadlines can render while the larger paper read is still pending.
     host.adminBotData = { ...createEmptyAdminBotDashboardData(), members: memberRows };
     host.requestUpdate?.();
+    // These queues do not depend on papers; overlap their network waits.
+    const adminReads = Promise.allSettled(
+      mode === "admin"
+        ? [
+            optional("/proposals/pending?limit=50"),
+            optional("/automation/email/review"),
+            optional("/papers/nudges"),
+            optional("/papers/conference-rosters"),
+            optional("/settings"),
+            optional("/sensitive-info"),
+          ]
+        : [],
+    );
     const papers = includePapers ? await read("/papers") : undefined;
     if (!isCurrent()) {
       return;
@@ -1351,15 +1364,9 @@ async function loadAdminBotOverSession(
     if (mode === "general") {
       return;
     }
-    const [pending, emailReview, nudges, conferenceRosters, settings, sensitiveInfo] =
-      await Promise.all([
-        optional("/proposals/pending?limit=50"),
-        optional("/automation/email/review"),
-        optional("/papers/nudges"),
-        optional("/papers/conference-rosters"),
-        optional("/settings"),
-        optional("/sensitive-info"),
-      ]);
+    const [pending, emailReview, nudges, conferenceRosters, settings, sensitiveInfo] = (
+      await adminReads
+    ).map((result) => (result.status === "fulfilled" ? result.value : undefined));
     if (!isCurrent()) {
       return;
     }
