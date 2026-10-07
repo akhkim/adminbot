@@ -3252,7 +3252,7 @@ export class AdminBotService {
     origin: AdminBotWriteOrigin,
   ): void {
     this.clearResolvedProfileNotifications(stored);
-    if (stored.slack_user_id?.trim() !== existing?.slack_user_id?.trim()) {
+    if (existing && stored.slack_user_id?.trim() !== existing.slack_user_id?.trim()) {
       this.inviteLinkedMemberToActiveChannels(stored);
     }
     // Same patch, same rules, same instant as the provenance stamp above -- see

@@ -5644,6 +5644,24 @@ describe("AdminBotService", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it("defers invitations for imported linked records until directory reconciliation", async () => {
+    const execute = vi.fn(async (_proposal: AdminBotStoredProposal) => ({ handled: true }));
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store, { executor: { execute } });
+    unwrap(
+      service.upsertLabMember({
+        id: "imported",
+        name: "Imported",
+        member_type: "full",
+        slack_user_id: "U123ABC",
+      }),
+    );
+    expect(store.listProposalsByType("slack.invite_to_channel")).toEqual([]);
+    expect(execute).not.toHaveBeenCalled();
+    await service.refreshMemberDirectoryFromSlack({}, "admin");
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+  });
+
   it("catches up previously linked eligible members and retries audited connector failures", async () => {
     const store = new AdminBotMemoryStore();
     store.saveLabMember({
