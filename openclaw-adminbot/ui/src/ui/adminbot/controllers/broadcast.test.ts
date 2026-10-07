@@ -2,13 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const publishLabBroadcast = vi.fn();
 const fetchLabBroadcasts = vi.fn();
+const storedSession = vi.fn<() => { sessionToken: string } | null>(() => ({
+  sessionToken: "token",
+}));
 
 vi.mock("../auth/session.ts", () => ({
   publishLabBroadcast: (...args: unknown[]) => publishLabBroadcast(...args),
   fetchLabBroadcasts: (...args: unknown[]) => fetchLabBroadcasts(...args),
   fetchNotifications: vi.fn(),
   markNotificationsRead: vi.fn(),
-  loadStoredMemberSession: () => ({ sessionToken: "token" }),
+  loadStoredMemberSession: () => storedSession(),
   resolveAdminBotBaseUrl: () => "http://localhost",
 }));
 vi.mock("../../toast.ts", () => ({ showToast: vi.fn() }));
@@ -20,6 +23,7 @@ const host = (overrides: Partial<Host> = {}): Host => ({ settings: {}, ...overri
 
 beforeEach(() => {
   vi.clearAllMocks();
+  storedSession.mockReturnValue({ sessionToken: "token" });
   publishLabBroadcast.mockResolvedValue({
     ok: true,
     value: {
@@ -119,4 +123,35 @@ it("reports a server that saves the message but drops its time zone", async () =
     kind: "error",
     text: "The message was posted, but its time zone was not saved.",
   });
+});
+
+it("shows a sign-in error instead of silently ignoring a missing local session", async () => {
+  storedSession.mockReturnValue(null);
+  const app = host({ adminBotBroadcastDraft: "Synthetic message" });
+  await publishAdminBotBroadcast(app, {
+    message: "Synthetic message",
+    availability: "away",
+    expiresOn: "2099-01-01",
+  });
+  expect(app.adminBotBroadcastNotice).toEqual({
+    kind: "error",
+    text: "Sign in again before posting a broadcast.",
+  });
+  expect(publishLabBroadcast).not.toHaveBeenCalled();
+});
+
+it("reports an unexpected request failure, preserves the draft and allows retry", async () => {
+  publishLabBroadcast.mockRejectedValue(new Error("private internal detail"));
+  const app = host({ adminBotBroadcastDraft: "Synthetic message" });
+  await publishAdminBotBroadcast(app, {
+    message: "Synthetic message",
+    availability: "away",
+    expiresOn: "2099-01-01",
+  });
+  expect(app.adminBotBroadcastNotice).toEqual({
+    kind: "error",
+    text: "Could not confirm that broadcast was saved. Check the connection and reload before trying again.",
+  });
+  expect(app.adminBotBroadcastDraft).toBe("Synthetic message");
+  expect(app.adminBotBroadcastBusy).toBe(false);
 });
