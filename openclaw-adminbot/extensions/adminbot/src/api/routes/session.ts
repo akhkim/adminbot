@@ -1,6 +1,9 @@
+import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AdminBotAuthResponse } from "../../workflows/identity/auth.js";
 import { sendJson } from "../server.http.js";
+import type { AdminBotRouteContext, AdminBotPrincipal } from "./context.js";
+import { remoteIp } from "./origin.js";
 
 export const SESSION_COOKIE = "adminbot_session";
 
@@ -72,4 +75,70 @@ export function sendAuthResult<T>(
       ? { error: result.error, retry_after_seconds: result.retry_after_seconds }
       : { error: result.error };
   sendJson(res, result.status, body);
+}
+
+export async function resolvePrincipal(
+  req: IncomingMessage,
+  ctx: AdminBotRouteContext,
+): Promise<AdminBotPrincipal | undefined> {
+  const bearer = bearerToken(req);
+  if (bearer) {
+    // Service-principal check first with a constant-time compare. If the env token is unset the
+    // service principal is unavailable and this path fails closed.
+    if (ctx.serviceToken && constantTimeEqual(bearer, ctx.serviceToken)) {
+      return { kind: "service" };
+    }
+    const member = await ctx.auth.resolveSession(bearer);
+    if (member) {
+      // Every authenticated request lands here, which is what makes it the place to notice an
+      // account being used from somewhere new. noteAccountUse is a no-op unless the address
+      // actually changed, so this costs a map lookup on the hot path.
+      ctx.auth.noteAccountUse(member, remoteIp(req, ctx.trustProxyHeaders));
+      return member;
+    }
+  }
+  const cookie = cookieToken(req);
+  if (cookie) {
+    const member = await ctx.auth.resolveSession(cookie);
+    if (member) {
+      ctx.auth.noteAccountUse(member, remoteIp(req, ctx.trustProxyHeaders));
+      return member;
+    }
+  }
+  return undefined;
+}
+
+export function bearerToken(req: IncomingMessage): string | undefined {
+  const header = req.headers.authorization;
+  if (typeof header !== "string") {
+    return undefined;
+  }
+  const match = /^Bearer\s+(.+)$/u.exec(header.trim());
+  return match?.[1]?.trim() || undefined;
+}
+
+export function cookieToken(req: IncomingMessage): string | undefined {
+  const header = req.headers.cookie;
+  if (typeof header !== "string") {
+    return undefined;
+  }
+  for (const pair of header.split(";")) {
+    const index = pair.indexOf("=");
+    if (index === -1) {
+      continue;
+    }
+    if (pair.slice(0, index).trim() === SESSION_COOKIE) {
+      return pair.slice(index + 1).trim() || undefined;
+    }
+  }
+  return undefined;
+}
+
+export function constantTimeEqual(left: string, right: string): boolean {
+  const leftBuf = Buffer.from(left);
+  const rightBuf = Buffer.from(right);
+  if (leftBuf.length !== rightBuf.length) {
+    return false;
+  }
+  return timingSafeEqual(leftBuf, rightBuf);
 }
