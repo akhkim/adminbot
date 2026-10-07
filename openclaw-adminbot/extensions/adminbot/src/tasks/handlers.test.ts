@@ -134,7 +134,7 @@ it("keeps task-level backpressure out of needs-retry even with no model waiting 
   gate.database.close();
 });
 
-it("bounds a hung remote stage without claiming application completion", async () => {
+it("bounds a hung remote stage and falls back to the local model", async () => {
   vi.useFakeTimers();
   const fetchImpl: InferenceFetch = async (url) => {
     if (String(url).startsWith("https:")) {
@@ -171,7 +171,9 @@ it("bounds a hung remote stage without claiming application completion", async (
   try {
     const submitted = runtime.submit({ owner: "a", kind: "privacy", input: {} });
     await vi.advanceTimersByTimeAsync(120_001);
-    expect((await submitted.promise)?.status).toBe("needs_retry");
+    const task = await submitted.promise;
+    expect(task?.status).toBe("completed");
+    expect(task?.result).toMatchObject({ route: "local" });
   } finally {
     await runtime.shutdown({ graceMs: 0 });
     await gate.shutdown();
@@ -305,6 +307,56 @@ it("re-runs a failed model call on an explicit retry instead of refusing the che
     expect(failed?.error).toBe("fetch failed");
     expect((await runtime.retry(first.id, "member")!.promise)?.result).toBe("answer");
     expect(calls).toBe(2);
+  } finally {
+    await runtime.shutdown();
+    await gate.shutdown();
+    gate.database.close();
+  }
+});
+
+it("falls back to the local model when the remote call fails in transport inside a task", async () => {
+  const audits: string[] = [];
+  const fetchImpl: InferenceFetch = async (url, init) => {
+    if (url.startsWith("https:")) {
+      throw new TypeError("fetch failed");
+    }
+    const classification = Boolean(JSON.parse(init.body ?? "{}").response_format);
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () =>
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: classification
+                  ? JSON.stringify({
+                      classification: "generic",
+                      sanitized_task: "hello",
+                      replacements: [],
+                    })
+                  : "Local answer",
+              },
+            },
+          ],
+        }),
+    };
+  };
+  const gate = createInferenceGate({ config: inferenceTestConfig(), fetchImpl, env: {} });
+  const runtime = new TaskRuntime({ db: gate.database });
+  const broker = createAdminBotPrivacyBroker(undefined, {
+    gate,
+    fetchImpl,
+    env: { NVIDIA_API_KEY: "synthetic" },
+    recordAudit: (event) => audits.push(String(event.details?.caller)),
+  });
+  runtime.register("privacy", 1, () => broker.handle({ task: "hello" }));
+  try {
+    const task = await runtime.submit({ owner: "a", kind: "privacy", input: {} }).promise;
+    expect(task?.status).toBe("completed");
+    expect(task?.result).toEqual({ route: "local", output: "Local answer" });
+    expect(audits).toEqual(["privacy_broker.remote"]);
   } finally {
     await runtime.shutdown();
     await gate.shutdown();

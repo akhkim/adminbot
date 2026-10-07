@@ -1778,7 +1778,8 @@ function openMemoryDatabase(): DatabaseSync {
 }
 
 // Bound transports that ignore AbortSignal, and detach the abort listener after settlement.
-function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+/** Settle with the signal's reason when it aborts, even if `promise` never notices the abort. */
+export function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const abort = () => reject(signal.reason);
     signal.addEventListener("abort", abort, { once: true });

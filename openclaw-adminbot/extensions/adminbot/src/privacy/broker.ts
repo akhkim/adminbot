@@ -4,8 +4,8 @@ import type {
   AdminBotPrivacyTaskRequest,
   AdminBotPrivacyTaskResult,
 } from "../contracts/actions.js";
-import { createGatewayFetch } from "./broker.gateway.js";
 import {
+  abortable,
   errorCode,
   isInferenceDeferred,
   runGated,
@@ -13,7 +13,13 @@ import {
   type InferenceFetch,
   type InferenceGate,
 } from "../inference/gate.js";
-import { currentTaskContext, taskStep } from "../tasks/context.js";
+import {
+  TaskStepFailedError,
+  currentTaskContext,
+  isTaskInterruption,
+  taskStep,
+} from "../tasks/context.js";
+import { createGatewayFetch } from "./broker.gateway.js";
 
 export type PrivacyBrokerFetch = (
   input: string | URL,
@@ -431,14 +437,6 @@ async function callLocalModel(
   return content.trim();
 }
 
-function isTaskInterruption(error: unknown): boolean {
-  return (
-    Boolean(currentTaskContext()?.signal.aborted) ||
-    (error instanceof Error &&
-      ["TaskNeedsRetryError", "TaskInterruptedError", "TaskSuspendedError"].includes(error.name))
-  );
-}
-
 async function runRemote(
   config: AdminBotPrivacyBrokerConfig,
   fetchImpl: PrivacyBrokerFetch,
@@ -453,25 +451,40 @@ async function runRemote(
   }
   const key = "privacy.remote";
   const owner = currentTaskContext();
+  // The deadline lives inside the step rather than as the runtime's step timeout. A step timeout
+  // reads as an interrupted attempt and forces a whole-task retry; a remote call that ran out of
+  // time is a finished failure, and the caller falls back to the local model as for any other.
+  const deadline = new AbortController();
   const remoteSignal = owner
-    ? AbortSignal.any([owner.signal, AbortSignal.timeout(120_000), ...(signal ? [signal] : [])])
+    ? AbortSignal.any([owner.signal, deadline.signal, ...(signal ? [signal] : [])])
     : signal;
   const result = await taskStep(
     key,
     { task, model: target.model, url: target.baseUrl },
     async () => {
+      const timer = owner
+        ? setTimeout(
+            () => deadline.abort(new Error("remote reasoning timed out after 120 seconds")),
+            120_000,
+          )
+        : undefined;
       try {
-        return {
-          output: await runRemoteCall(config, fetchImpl, env, task, remoteSignal),
-        };
+        const call = runRemoteCall(config, fetchImpl, env, task, remoteSignal);
+        return { output: await (remoteSignal ? abortable(call, remoteSignal) : call) };
       } catch (error) {
         if (error instanceof CompletedRemoteFailure) {
           return { error: error.message };
         }
+        // Network, DNS and timeout failures are as final as an HTTP error, but they are not
+        // retained as a completed checkpoint: a retry should ask the remote model again.
+        if (owner && !owner.signal.aborted && !signal?.aborted) {
+          throw new TaskStepFailedError(error);
+        }
         throw error;
+      } finally {
+        clearTimeout(timer);
       }
     },
-    owner ? { timeoutMs: 120_000 } : undefined,
   );
   if (result.error) {
     throw new Error(result.error);
