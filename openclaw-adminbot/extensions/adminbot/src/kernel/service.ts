@@ -384,6 +384,11 @@ import {
   type ConferenceAttendanceView,
 } from "../workflows/papers/conference-attendance.js";
 import {
+  isProjectActive,
+  summarizeProject,
+  type AdminBotMyProjectSummary,
+} from "../workflows/papers/my-projects.js";
+import {
   memberRelevanceNeedles,
   textMatchesNeedles,
 } from "../workflows/papers/openreview-matching.js";
@@ -5822,6 +5827,36 @@ export class AdminBotService {
     }
     this.store.saveLabMember({ ...member, onboarding, updated_at: new Date().toISOString() });
     return { ok: true, status: 200, payload: { onboarding } };
+  }
+
+  /**
+   * The signed-in member's active projects, each with its open work counted per lane.
+   *
+   * Ownership is `memberOwnsPaper`, the same rule the write path enforces, so the list never shows
+   * a paper its reader could not edit. Hiding a paper is a per-viewer browser preference and is
+   * deliberately not applied here: it would hide the paper from every coauthor too.
+   */
+  listMyProjects(
+    memberId: string,
+    nowIso?: string,
+  ): AdminBotServiceResponse<{ projects: AdminBotMyProjectSummary[] }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    const now = nowIso ? new Date(nowIso) : new Date();
+    const projects = this.store
+      .listPapers()
+      .filter((paper) => this.memberOwnsPaper(member, paper) && isProjectActive(paper, now))
+      .map((paper) =>
+        summarizeProject(
+          paper,
+          this.store.listPaperSlots(paper.id),
+          this.store.listSocialDrafts(paper.id),
+        ),
+      )
+      .toSorted((left, right) => (left.deadline ?? "9999").localeCompare(right.deadline ?? "9999"));
+    return { ok: true, status: 200, payload: { projects } };
   }
 
   // Case-insensitive relevance match of a member's research focus against paper metadata.

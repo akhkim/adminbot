@@ -68,10 +68,10 @@ import {
   type ProfileFieldGroup,
 } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
+import { ownPapers } from "../projects/model.ts";
 import { renderMemberBadgeSymbols, badgeCountLabel } from "./badge-symbols.ts";
 import { renderCountrySelect } from "./country-select.ts";
 import { renderMemberSelect } from "./member-select.ts";
-import { ownPapers } from "./my-work.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 import { renderRecentEdits } from "./recent-edits.ts";
 

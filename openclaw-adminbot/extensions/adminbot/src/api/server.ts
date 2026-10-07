@@ -4688,6 +4688,16 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  // A member's own active projects for the sidebar and the project cards. Member sessions only:
+  // the service token has no "own" papers, and the id comes from the session, never the query.
+  if (req.method === "GET" && url.pathname === "/my/projects") {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "member session required" } });
+      return;
+    }
+    sendServiceResult(res, service.listMyProjects(principal.member.id));
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/papers/relevant") {
     if (principal.kind !== "member") {
       sendJson(res, 400, { error: { message: "member principal required" } });

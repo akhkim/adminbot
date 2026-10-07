@@ -195,18 +195,15 @@ describe("renderDashboard", () => {
               title: "A paper",
               authors: ["Ada"],
               current_step: "submission",
+              // Blockers are read off the paper's own log, the same record Active Papers reads.
+              artifacts: {
+                blocker_log: JSON.stringify([
+                  { stage: "submission", title: "Stuck", note: "", by: "m1", at: "2026-10-01" },
+                ]),
+              },
             },
           ],
         },
-        myWorkBlockers: [
-          {
-            id: "b1",
-            paperId: "p1",
-            paperTitle: "A paper",
-            text: "Stuck",
-            createdAt: 0,
-          },
-        ],
       } as unknown as Partial<AppViewState>),
       "member",
     );

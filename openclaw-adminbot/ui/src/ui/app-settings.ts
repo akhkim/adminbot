@@ -66,6 +66,7 @@ import {
   inferBasePathFromPathname,
   normalizeBasePath,
   normalizePath,
+  isSubpathOfTab,
   pathForTab,
   pathIsRoot,
   tabFromPath,
@@ -728,6 +729,8 @@ export function onPopState(host: SettingsHost) {
   }
 
   setTabFromRoute(host, resolved);
+  // Back within one tab (My Projects' own pages) changes no tab, so nothing else would re-render.
+  host.requestUpdate?.();
 }
 
 export function setTabFromRoute(host: SettingsHost, next: Tab) {
@@ -811,7 +814,8 @@ export function syncUrlWithTab(host: SettingsHost, tab: Tab, replace: boolean) {
     url.searchParams.delete("session");
   }
 
-  if (currentPath !== targetPath) {
+  // Arriving on a deep link (a reload, Back) keeps it; choosing the tab itself goes to its top.
+  if (currentPath !== targetPath && !(replace && isSubpathOfTab(tab, currentPath, host.basePath))) {
     url.pathname = targetPath;
   }
 
