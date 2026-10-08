@@ -135,6 +135,7 @@ import {
 } from "./reference-scans.js";
 import { SqliteAuditLog } from "./sqlite.audit.js";
 import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
+import { listSqliteLogisticsRequests } from "./sqlite.logistics.js";
 import { listSqliteMeetingsPage } from "./sqlite.meetings.js";
 import { escalatedMemberNotificationsSql } from "./sqlite.member-notifications.js";
 import { SqliteTableVersions } from "./sqlite.table-versions.js";
@@ -3375,21 +3376,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   listLogisticsRequests(memberId?: string): AdminBotLogisticsRequest[] {
-    const rows = (
-      memberId
-        ? this.db
-            .prepare(
-              `SELECT payload_json FROM adminbot_logistics_requests
-               WHERE member_id = ? ORDER BY submitted_at DESC`,
-            )
-            .all(memberId)
-        : this.db
-            .prepare(
-              "SELECT payload_json FROM adminbot_logistics_requests ORDER BY submitted_at DESC",
-            )
-            .all()
-    ) as Array<{ payload_json: string }>;
-    return rows.map((row) => parseJson<AdminBotLogisticsRequest>(row.payload_json));
+    return listSqliteLogisticsRequests(this.db, memberId, { withoutFileBytes: false });
+  }
+
+  /** As listLogisticsRequests, with every file's `data_base64` left out. */
+  listLogisticsRequestSummaries(memberId?: string): AdminBotLogisticsRequest[] {
+    return listSqliteLogisticsRequests(this.db, memberId, { withoutFileBytes: true });
   }
 
   deleteLogisticsRequest(requestId: string): boolean {

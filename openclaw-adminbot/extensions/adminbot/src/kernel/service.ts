@@ -739,6 +739,8 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   getLogisticsRequest(requestId: string): AdminBotLogisticsRequest | undefined;
   /** Every request, or one member's. Newest first; the service re-sorts by urgency on read. */
   listLogisticsRequests(memberId?: string): AdminBotLogisticsRequest[];
+  /** listLogisticsRequests without the file bytes, for stores that can leave them unread. */
+  listLogisticsRequestSummaries?(memberId?: string): AdminBotLogisticsRequest[];
   deleteLogisticsRequest(requestId: string): boolean;
   saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void;
   listOpenReviewCycles(): AdminBotOpenReviewCycleRecord[];
@@ -9844,8 +9846,10 @@ export class AdminBotService {
   listLogisticsRequests(
     memberId?: string,
   ): AdminBotServiceResponse<{ requests: AdminBotLogisticsRequest[] }> {
-    const requests = this.store
-      .listLogisticsRequests(memberId)
+    const requests = (
+      this.store.listLogisticsRequestSummaries?.(memberId) ??
+      this.store.listLogisticsRequests(memberId)
+    )
       .map(withoutAttachmentBytes)
       .toSorted(byUrgency);
     return { ok: true, status: 200, payload: { requests } };
