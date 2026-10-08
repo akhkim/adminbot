@@ -257,17 +257,15 @@ export function createEmptyLabPapersState(): AdminBotLabPapersState {
 }
 
 export type WorkshopNudgeRecommendation = {
-  pair_id: string;
+  /** Which entry of the service's `workshops` map `workshop` was restored from. */
+  workshop_id?: string;
   final_rank?: number;
-  match_rationale: string;
   topic_relevance: number;
   topic_evidence: string[];
   rank_explanation: string;
-  draft_fragment?: string;
   paper: {
     paper_id: string;
     title: string;
-    year?: number;
     current_submission_state?: string;
     publication_sources: string[];
     recipient_display_name?: string;
@@ -275,17 +273,14 @@ export type WorkshopNudgeRecommendation = {
   workshop: {
     workshop_id: string;
     name: string;
-    parent_conference_key: string;
     parent_conference: string;
     conference_location: string;
-    topics: string[];
     archival_status: "archival" | "non_archival" | "mixed" | "unknown";
     cross_submission_status: "allowed" | "prohibited" | "unclear";
     cross_submission_evidence: string;
     cross_submission_source_url: string;
     profile_extracted_at: string;
     routes: Array<{
-      deadline_id: string;
       label: string;
       submission_type: string;
       deadline_aoe: string;
@@ -314,8 +309,6 @@ export type WorkshopNudgeResult = {
     recommendations: WorkshopNudgeRecommendation[];
     draft: {
       text: string;
-      pair_ids: string[];
-      recommendations: WorkshopNudgeRecommendation[];
     } | null;
   }>;
   unresolved_recipients: Array<{
