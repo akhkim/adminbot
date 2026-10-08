@@ -1225,7 +1225,7 @@ async function sendFeedback(state: AppViewState, event: CustomEvent): Promise<vo
 // see. Correct it before rendering rather than after: a privileged panel with no data behind it is
 // worse than landing on the role's own default.
 function withAccessibleTab<T extends AppViewState>(state: T, role: AccessRole): T {
-  const allowed = resolveAccessibleTab(state.tab, role);
+  const allowed = resolveAccessibleTab(state.tab, role, state.memberPrivilegeLevel ?? null);
   if (allowed !== state.tab) {
     state.tab = allowed;
   }
@@ -3503,6 +3503,7 @@ export function renderApp(state: AppViewState) {
                     group.tabs as readonly Tab[],
                     accessRole,
                     state.adminBotOnboarding?.steps,
+                    state.memberPrivilegeLevel ?? null,
                   );
                   // A group whose every tab is out of reach renders nothing at all, header
                   // included: an empty "Settings" heading reads as a broken sidebar.
@@ -4739,10 +4740,12 @@ export function renderApp(state: AppViewState) {
                 .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
                 .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
               ></adminbot-reference-checker>
-              <adminbot-openreview-citation-checks
-                .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-                .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
-              ></adminbot-openreview-citation-checks>`
+              ${state.memberPrivilegeLevel === "admin"
+                ? html`<adminbot-openreview-citation-checks
+                    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+                    .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
+                  ></adminbot-openreview-citation-checks>`
+                : nothing}`
           : nothing}
         ${state.tab === "adminbotConferencePapers"
           ? renderLazyView(lazyConferencePapers, (m) =>

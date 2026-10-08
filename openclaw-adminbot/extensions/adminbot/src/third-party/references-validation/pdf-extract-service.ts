@@ -347,9 +347,13 @@ export const splitIntoReferences = (sectionText: string): string[] => {
       const looksLikeNewRefPattern = endsWithPunctuation && apaStartPattern.test(trimmed);
 
       // Conference bibliographies commonly place the year at the end without parentheses.
-      const previousEndsInYear = /\b(?:19|20)\d{2}[a-z]?[.)]?\s*$/.test(currentRef);
+      // A reference may end with an arXiv identifier or DOI after its publication year.
+      const previousEndsInYear =
+        /\b(?:19|20)\d{2}[a-z]?[.)]?(?:\s*(?:arxiv:\s*\S+|https?:\/\/\S+|doi:\s*\S+))*\s*$/i.test(
+          currentRef,
+        );
       const startsWithAuthor =
-        /^[\p{Lu}][\p{L}'’-]+(?:,\s*|\s+)[\p{Lu}][\p{L}'’.-]*(?:\s|,|\.)/u.test(trimmed);
+        /^[\p{Lu}][\p{L}'’.-]*(?:,\s*|\s+)[\p{Lu}][\p{L}'’.-]*(?:\s|,|\.)/u.test(trimmed);
       const looksLikeYearEndReference = previousEndsInYear && startsWithAuthor;
       if (
         (looksLikeNewRefAfterBlank || looksLikeNewRefPattern || looksLikeYearEndReference) &&

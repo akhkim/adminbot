@@ -54,7 +54,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotNotificationDrafts: "admin",
   adminbotOpportunities: "anonymous",
   adminbotConferencePapers: "anonymous",
-  adminbotReferenceChecker: "admin",
+  adminbotReferenceChecker: "member",
 
   // Members. The roster is lab-internal but not a governance surface, and chat is how members talk
   // to AdminBot at all.
@@ -151,12 +151,24 @@ export function minimumRoleForTab(tab: Tab): AccessRole {
   return TAB_MINIMUM_ROLE[tab];
 }
 
-export function canAccessTab(tab: Tab, role: AccessRole): boolean {
+export function canAccessTab(
+  tab: Tab,
+  role: AccessRole,
+  privilegeLevel: string | null = role,
+): boolean {
+  // The broad UI member role also includes trial members and external collaborators.
+  if (tab === "adminbotReferenceChecker") {
+    return role !== "anonymous" && (privilegeLevel === "member" || privilegeLevel === "admin");
+  }
   return rank(role) >= rank(TAB_MINIMUM_ROLE[tab]);
 }
 
-export function visibleTabsForRole(tabs: readonly Tab[], role: AccessRole): Tab[] {
-  return tabs.filter((tab) => canAccessTab(tab, role));
+export function visibleTabsForRole(
+  tabs: readonly Tab[],
+  role: AccessRole,
+  privilegeLevel: string | null = role,
+): Tab[] {
+  return tabs.filter((tab) => canAccessTab(tab, role, privilegeLevel));
 }
 
 /**
@@ -188,9 +200,12 @@ export function visibleTabsForMember(
   tabs: readonly Tab[],
   role: AccessRole,
   onboardingSteps: readonly { status: string }[] | undefined | null,
+  privilegeLevel: string | null = role,
 ): Tab[] {
   const finished = isOnboardingComplete(onboardingSteps);
-  return visibleTabsForRole(tabs, role).filter((tab) => tab !== "gettingStarted" || !finished);
+  return visibleTabsForRole(tabs, role, privilegeLevel).filter(
+    (tab) => tab !== "gettingStarted" || !finished,
+  );
 }
 
 // Where a role lands when it has no tab of its own choosing — a fresh visit, or a tab that is no
@@ -201,8 +216,12 @@ export function defaultTabForRole(role: AccessRole): Tab {
 
 // The tab to actually render: the requested one when the role may see it, otherwise that role's
 // default. Signing out mid-session lands on a permitted surface rather than an empty panel.
-export function resolveAccessibleTab(tab: Tab, role: AccessRole): Tab {
-  return canAccessTab(tab, role) ? tab : defaultTabForRole(role);
+export function resolveAccessibleTab(
+  tab: Tab,
+  role: AccessRole,
+  privilegeLevel: string | null = role,
+): Tab {
+  return canAccessTab(tab, role, privilegeLevel) ? tab : defaultTabForRole(role);
 }
 
 /**

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { canAccessTab } from "../access.ts";
+import { canAccessTab, resolveAccessibleTab, visibleTabsForMember } from "../access.ts";
 import { ReferenceChecker } from "./reference-checker.ts";
 
 afterEach(() => {
@@ -23,9 +23,9 @@ async function choose(el: ReferenceChecker, files: File[]) {
   await el.updateComplete;
 }
 
-it("restricts the tab to admins and rejects non-PDF selections and multiple drops", async () => {
+it("allows members and admins and rejects non-PDF selections and multiple drops", async () => {
   expect(canAccessTab("adminbotReferenceChecker", "admin")).toBe(true);
-  expect(canAccessTab("adminbotReferenceChecker", "member")).toBe(false);
+  expect(canAccessTab("adminbotReferenceChecker", "member")).toBe(true);
   expect(canAccessTab("adminbotReferenceChecker", "anonymous")).toBe(false);
   const el = await mount();
   await choose(el, [new File(["text"], "notes.txt", { type: "text/plain" })]);
@@ -244,4 +244,11 @@ it("offers Scholar only for not-found citations and database links for existing 
       status === "matched" || status === "review",
     );
   }
+});
+
+it.each(["trial", "external_collaborator", null])("denies checker access for %s", (level) => {
+  expect(canAccessTab("adminbotReferenceChecker", "member", level)).toBe(false);
+  expect(canAccessTab("adminbotReferenceChecker", "admin", level)).toBe(false);
+  expect(visibleTabsForMember(["adminbotReferenceChecker"], "member", [], level)).toEqual([]);
+  expect(resolveAccessibleTab("adminbotReferenceChecker", "member", level)).toBe("dashboard");
 });
