@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../../contracts/actions.js";
-import { buildMemberMap, resolveCountry, resolvePlace } from "./member-map.js";
+import {
+  buildMemberMap,
+  memberMapMemo,
+  resolveCountry,
+  resolvePlace,
+  toPrivilegedMemberMap,
+} from "./member-map.js";
 
 function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
   return {
@@ -244,5 +250,49 @@ describe("buildMemberMap", () => {
     ]);
     expect(map.places[0]?.members.map((m) => m.name)).toEqual(["Ada"]);
     expect(map.counts.placed).toBe(1);
+  });
+});
+
+describe("memberMapMemo", () => {
+  it("rebuilds only when the roster version moves, and every call without one", () => {
+    let version: number | undefined = 1;
+    const reads = { count: 0 };
+    const store = {
+      labMemberVersion: () => version!,
+      listLabMembers: () => {
+        reads.count += 1;
+        return [member({ location: "Toronto" })];
+      },
+    };
+    const memo = memberMapMemo();
+    const first = memo(store);
+    expect(memo(store)).toBe(first);
+    expect(reads.count).toBe(1);
+    version = 2;
+    expect(memo(store)).not.toBe(first);
+    expect(reads.count).toBe(2);
+
+    const unversioned = memberMapMemo();
+    const plain = { listLabMembers: store.listLabMembers };
+    unversioned(plain);
+    unversioned(plain);
+    expect(reads.count).toBe(4);
+  });
+});
+
+describe("toPrivilegedMemberMap", () => {
+  const map = buildMemberMap([
+    member({ id: "a", name: "Ada", location: "Toronto" }),
+    member({ id: "z", name: "Zed", location: "nowhere-in-particular" }),
+    member({ id: "y", name: "Yan" }),
+  ]);
+
+  it("sends a count of the unplaced, and the names only when asked", () => {
+    const counted = toPrivilegedMemberMap(map, { listUnplaced: false });
+    expect(counted).not.toHaveProperty("unplaced");
+    expect(counted.unplaced_count).toBe(2);
+    expect(counted.places).toBe(map.places);
+    const listed = toPrivilegedMemberMap(map, { listUnplaced: true });
+    expect(listed.unplaced?.map((entry) => entry.name)).toEqual(["Yan", "Zed"]);
   });
 });

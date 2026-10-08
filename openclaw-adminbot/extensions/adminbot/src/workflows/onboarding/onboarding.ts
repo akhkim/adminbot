@@ -285,6 +285,11 @@ export function resolveMemberOnboarding(
   options: {
     /** A change of standing: re-open the steps that are about standing, and restart the clock. */
     reopen?: { reason: AdminBotOnboardingCycleReason; at: string };
+    /**
+     * The fresh checklist to resolve against, from `buildOnboardingSteps()`. A caller resolving a
+     * whole roster builds it once; the steps are copied, their text is shared and read-only.
+     */
+    catalog?: readonly AdminBotMemberOnboardingStep[];
   } = {},
 ): AdminBotMemberOnboarding {
   // Re-opened steps lose their acknowledgement, and only those. Clearing the whole list on every
@@ -319,7 +324,7 @@ export function resolveMemberOnboarding(
   return withCycle(
     projectOnboarding(
       promoteCurrentStep(
-        buildOnboardingSteps().map((step) => {
+        (options.catalog ?? buildOnboardingSteps()).map((step) => {
           const at = acknowledgedAt.get(step.id);
           const complete = at !== undefined || completed.has(step.id);
           return {
@@ -445,14 +450,8 @@ function promoteCurrentStep(steps: AdminBotMemberOnboardingStep[]): AdminBotMemb
   });
 }
 
-// Keeps `current_step`/`completed`/`remaining` consistent with `steps`, which is the only field
-// callers mutate. Everything unfinished stays in `remaining` so the UI can count what is left.
+// `steps` is the whole checklist. The current step, and what is done or left, are filters over it,
+// so they are derived where they are read rather than stored three more times beside it.
 function projectOnboarding(steps: AdminBotMemberOnboardingStep[]): AdminBotMemberOnboarding {
-  const current = steps.find((step) => step.status === "current");
-  return {
-    ...(current ? { current_step: current } : {}),
-    completed: steps.filter((step) => step.status === "complete"),
-    remaining: steps.filter((step) => step.status !== "complete"),
-    steps,
-  };
+  return { steps };
 }

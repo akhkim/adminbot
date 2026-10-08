@@ -137,6 +137,7 @@ export function parseMemberMap(body: unknown): MemberMap | null {
     mode?: unknown;
     places?: unknown;
     unplaced?: unknown;
+    unplaced_count?: unknown;
     counts?: unknown;
   } | null;
   if (!raw || !Array.isArray(raw.places)) {
@@ -150,9 +151,9 @@ export function parseMemberMap(body: unknown): MemberMap | null {
   return {
     mode: raw.mode === "full" ? "full" : "summary",
     places,
-    // Only ever a number here. The full response lists unplaced members by name, but the card has
-    // no use for that — it is a prompt to extend the gazetteer, not a roster.
-    unplaced: Array.isArray(raw.unplaced) ? raw.unplaced.length : 0,
+    // Only ever a number here: the card is a prompt to extend the gazetteer, not a roster. The full
+    // response sends `unplaced_count`; an older server sent the list itself.
+    unplaced: Array.isArray(raw.unplaced) ? raw.unplaced.length : asNumber(raw.unplaced_count) || 0,
     counts: {
       placed: asNumber(counts.placed) || 0,
       unplaced: asNumber(counts.unplaced) || 0,

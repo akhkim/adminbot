@@ -479,8 +479,11 @@ describe("AdminBot mock service", () => {
     // approved the account, like every other new member's.
     expect(invited).toEqual(["calendar-person@cs.toronto.edu"]);
 
+    // Onboarding is owner-only, so the checklist is read as the admin, not the service principal.
     const members = (await (
-      await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() })
+      await fetch(`${baseUrl}/lab/members`, {
+        headers: { Authorization: `Bearer ${adminSession}` },
+      })
     ).json()) as {
       members: Array<{ id: string; onboarding?: { steps: Array<{ id: string; status: string }> } }>;
     };
@@ -1235,15 +1238,23 @@ describe("AdminBot mock service", () => {
     const body = (await response.json()) as {
       mode: string;
       places: Array<{ label: string; members: Array<{ name: string; source: string }> }>;
-      unplaced: Array<{ name: string }>;
+      unplaced?: unknown;
+      unplaced_count: number;
     };
     expect(body.mode).toBe("full");
     expect(body.places[0]?.label).toBe("Toronto");
     expect(body.places[0]?.members[0]).toMatchObject({ name: "Ada", source: "roster" });
+    // The dashboard card needs how many, not who: the names come only on request.
+    expect(body.unplaced).toBeUndefined();
+    expect(body.unplaced_count).toBeGreaterThan(0);
+    const listed = (await (
+      await fetch(`${baseUrl}/member-map?unplaced=list`, { headers: serviceHeaders() })
+    ).json()) as { unplaced: Array<{ name: string }>; unplaced_count: number };
     // The full path still surfaces the unplaced name -- proving the two summary checks above
     // are actually testing something the admin view does show, not a name that was never in
     // the data to begin with.
-    expect(body.unplaced.map((entry) => entry.name)).toContain("Zedunia");
+    expect(listed.unplaced.map((entry) => entry.name)).toContain("Zedunia");
+    expect(listed.unplaced).toHaveLength(body.unplaced_count);
   });
 
   it("reports a 503 for a map refresh when no slack lookup is configured", async () => {
@@ -1673,6 +1684,93 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(adaToService.availability).toHaveLength(1);
   });
 
+  // Checklist progress, per-field provenance and resolved grants are bookkeeping for the member and
+  // the admins, and most of a record's bytes. A peer's roster read carries none of them.
+  it("keeps onboarding, provenance and access off a peer's roster read", async () => {
+    const { baseUrl } = await startService();
+    for (const [id, privilege] of [
+      ["ada", "member"],
+      ["peer", "member"],
+      ["boss", "admin"],
+    ] as const) {
+      seedMember(baseUrl, id, {
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: privilege,
+      });
+    }
+    const tokens = new Map<string, string>();
+    for (const id of ["peer", "boss"]) {
+      await approveClaim(baseUrl, id, `${id}@cs.toronto.edu`);
+      tokens.set(id, await loginToken(baseUrl, `${id}@cs.toronto.edu`));
+    }
+    const readAs = async (id: string, path: string) => {
+      const token = tokens.get(id)!;
+      const res = await fetch(`${baseUrl}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return (await res.json()) as {
+        members: Array<Record<string, unknown>>;
+        self?: Record<string, unknown>;
+      };
+    };
+    const owned = ["onboarding", "field_provenance", "access"];
+
+    for (const path of ["/lab/members", "/lab/members?view=summary", "/lab/members?limit=10"]) {
+      const asPeer = await readAs("peer", path);
+      const ada = asPeer.members.find((member) => member.id === "ada")!;
+      expect(ada.name, path).toBe("ada");
+      for (const field of owned) {
+        expect(field in ada, `${path} ${field}`).toBe(false);
+      }
+      if (!path.includes("limit=")) {
+        const own = asPeer.members.find((member) => member.id === "peer")!;
+        expect(own.access ?? asPeer.self?.access, path).toBeDefined();
+      }
+
+      const asAdmin = await readAs("boss", path);
+      const adaToAdmin = asAdmin.members.find((member) => member.id === "ada")!;
+      expect(adaToAdmin.onboarding, path).toBeDefined();
+    }
+  });
+
+  it("pages the roster as card summaries, not full records", async () => {
+    const { baseUrl } = await startService();
+    for (const [id, privilege] of [
+      ["ada", "member"],
+      ["boss", "admin"],
+    ] as const) {
+      seedMember(baseUrl, id, {
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: privilege,
+      });
+    }
+    await approveClaim(baseUrl, "boss", "boss@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "boss@cs.toronto.edu");
+    const res = await fetch(`${baseUrl}/lab/members?limit=10&offset=0`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      members: Array<Record<string, unknown> & { onboarding?: { steps: object[] } }>;
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    expect(body).toMatchObject({ total: 2, limit: 10, offset: 0 });
+    const ada = body.members.find((member) => member.id === "ada")!;
+    expect(ada.email).toBe("ada@cs.toronto.edu");
+    expect(ada).not.toHaveProperty("field_provenance");
+    expect(ada).not.toHaveProperty("access");
+    // Step states only: the admin panel checks `{ id, status }`, the copy stays in the catalog.
+    expect(ada.onboarding).toEqual({ steps: expect.any(Array) });
+    expect(ada.onboarding!.steps.length).toBeGreaterThan(0);
+    for (const step of ada.onboarding!.steps) {
+      expect(Object.keys(step).toSorted()).toEqual(["id", "status"]);
+    }
+  });
+
   it("lets a member write, and clear, the overall note on their own schedule", async () => {
     const { baseUrl } = await startService();
     seedMember(baseUrl, "ada", {
@@ -1877,7 +1975,9 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(own.status).toBe(200);
     await expect(own.json()).resolves.toMatchObject({
       onboarding: {
-        completed: expect.arrayContaining([expect.objectContaining({ id: "linkedin" })]),
+        steps: expect.arrayContaining([
+          expect.objectContaining({ id: "linkedin", status: "complete" }),
+        ]),
       },
     });
 
@@ -2132,21 +2232,22 @@ describe("onboarding acknowledgement", () => {
 
     const before = (await (
       await fetch(`${baseUrl}/auth/session`, { headers: { Authorization: `Bearer ${token}` } })
-    ).json()) as { member: { onboarding: { current_step?: { id: string } } } };
-    const firstStepId = before.member.onboarding.current_step!.id;
+    ).json()) as { member: { onboarding: { steps: Array<{ id: string; status: string }> } } };
+    const currentOf = (onboarding: { steps: Array<{ id: string; status: string }> }) =>
+      onboarding.steps.find((step) => step.status === "current")?.id;
+    const firstStepId = currentOf(before.member.onboarding)!;
 
     const res = await ack(baseUrl, token, firstStepId);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       onboarding: {
-        current_step?: { id: string };
         steps: Array<{ id: string; status: string; acknowledged_at?: string }>;
       };
     };
     const acknowledged = body.onboarding.steps.find((step) => step.id === firstStepId);
     expect(acknowledged?.status).toBe("complete");
     expect(acknowledged?.acknowledged_at).toBeTruthy();
-    expect(body.onboarding.current_step?.id).not.toBe(firstStepId);
+    expect(currentOf(body.onboarding)).not.toBe(firstStepId);
   });
 
   it("persists the acknowledgement on the member record", async () => {

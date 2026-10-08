@@ -443,8 +443,6 @@ describe("memberPrivilegeLevel wiring", () => {
 
 describe("onboarding checklist acknowledgement", () => {
   const onboarding = {
-    completed: [],
-    remaining: [],
     steps: [
       {
         id: "profile_photo",
@@ -797,8 +795,6 @@ describe("toggleOnboardingStep", () => {
     saveStoredMemberSession({ sessionToken: "sess-tok", expiresAt: "later" });
     const refreshed = {
       steps: [{ id: "linkedin", status: "complete", label: "Connect on LinkedIn" }],
-      completed: [],
-      remaining: [],
     };
     const spy = vi
       .spyOn(globalThis, "fetch")

@@ -1,9 +1,13 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { AdminBotLabMember } from "../contracts/actions.js";
 import type { AdminBotLabMemberSummary } from "../kernel/service.js";
+import { summarizeLabMember } from "../workflows/members/member-summary.js";
+import { labMemberRowReader } from "../workflows/onboarding/onboarding-storage.js";
 
 type Snapshot = {
   version: number;
+  /** Counts rebuilds, so it moves on this connection's writes too, which `data_version` does not. */
+  generation: number;
   members: readonly AdminBotLabMember[];
   byId: ReadonlyMap<string, AdminBotLabMember>;
   summaries?: readonly AdminBotLabMemberSummary[];
@@ -20,6 +24,7 @@ type Snapshot = {
  */
 export class SqliteLabMemberCache {
   private snapshot: Snapshot | undefined;
+  private generation = 0;
 
   constructor(private readonly db: DatabaseSync) {}
 
@@ -29,6 +34,11 @@ export class SqliteLabMemberCache {
 
   list(): readonly AdminBotLabMember[] {
     return this.current().members;
+  }
+
+  /** A token that changes whenever the parsed roster is rebuilt; equal tokens, same members. */
+  version(): number {
+    return this.current().generation;
   }
 
   get(memberId: string): AdminBotLabMember | undefined {
@@ -44,7 +54,7 @@ export class SqliteLabMemberCache {
            ORDER BY adminbot_lower(json_extract(payload_json, '$.name')), id`,
         )
         .all() as Array<{ id: string }>
-    ).map(({ id }) => summarize(snapshot.byId.get(id)!));
+    ).map(({ id }) => summarizeLabMember(snapshot.byId.get(id)!));
     return snapshot.summaries;
   }
 
@@ -55,6 +65,7 @@ export class SqliteLabMemberCache {
     if (this.snapshot?.version === version) {
       return this.snapshot;
     }
+    const read = labMemberRowReader();
     const members = (
       this.db
         .prepare(
@@ -62,23 +73,14 @@ export class SqliteLabMemberCache {
            ORDER BY json_extract(payload_json, '$.name')`,
         )
         .all() as Array<{ payload_json: string }>
-    ).map((row) => JSON.parse(row.payload_json) as AdminBotLabMember);
-    this.snapshot = { version, members, byId: new Map(members.map((m) => [m.id, m])) };
+    ).map((row) => read(row.payload_json));
+    this.generation += 1;
+    this.snapshot = {
+      version,
+      generation: this.generation,
+      members,
+      byId: new Map(members.map((m) => [m.id, m])),
+    };
     return this.snapshot;
   }
-}
-
-function summarize(member: AdminBotLabMember): AdminBotLabMemberSummary {
-  const { field_provenance: _provenance, access: _access, ...summary } = member;
-  if (summary.onboarding && !Array.isArray(summary.onboarding)) {
-    return {
-      ...summary,
-      onboarding: {
-        steps: Array.isArray(summary.onboarding.steps)
-          ? summary.onboarding.steps.map(({ id, status }) => ({ id, status }))
-          : [],
-      },
-    } as AdminBotLabMemberSummary;
-  }
-  return summary as AdminBotLabMemberSummary;
 }

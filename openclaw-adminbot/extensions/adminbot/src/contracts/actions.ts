@@ -1,3 +1,5 @@
+import { adminBotOwnerOnlyMemberFields } from "./member-owner-fields.js";
+
 export const adminBotRiskTiers = ["T0", "T1", "T2", "T3", "T4"] as const;
 
 export type AdminBotRiskTier = (typeof adminBotRiskTiers)[number];
@@ -977,7 +979,7 @@ export function redactConfidentialMemberFields<T extends { id?: string }>(
     return member;
   }
   const copy = { ...member } as Record<string, unknown>;
-  for (const field of adminBotConfidentialMemberFields) {
+  for (const field of [...adminBotConfidentialMemberFields, ...adminBotOwnerOnlyMemberFields]) {
     delete copy[field];
   }
   if (viewer.isMemberSession) {
@@ -1094,9 +1096,6 @@ export type AdminBotMemberOnboardingStep = {
 export type AdminBotOnboardingCycleReason = "registration" | "status_change" | "privilege_change";
 
 export type AdminBotMemberOnboarding = {
-  current_step?: AdminBotMemberOnboardingStep;
-  completed: AdminBotMemberOnboardingStep[];
-  remaining: AdminBotMemberOnboardingStep[];
   steps: AdminBotMemberOnboardingStep[];
   /**
    * When the current cycle opened: at registration, or when the member's standing last changed.

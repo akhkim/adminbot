@@ -325,7 +325,8 @@ import {
   observationFor,
   selfReportedChange,
 } from "../workflows/members/location-history.js";
-import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
+import { memberMapMemo, type AdminBotMemberMap } from "../workflows/members/member-map.js";
+import { summarizeLabMember } from "../workflows/members/member-summary.js";
 import {
   dormantChaseDue,
   isChaseableMember,
@@ -538,6 +539,8 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   ): boolean;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[];
+  /** Changes whenever the roster may have; a store without it is re-read on every call. */
+  labMemberVersion?(): number;
   searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }>;
   listLabMemberSummaries(): AdminBotLabMemberSummary[];
   countLabMembers(q?: string): number;
@@ -3332,30 +3335,29 @@ export class AdminBotService {
     };
   }
 
-  listLabMembers(page?: AdminBotListPage): AdminBotServiceResponse<{
-    members: AdminBotLabMemberView[];
+  listLabMembers<P extends AdminBotListPage | undefined = undefined>(
+    page?: P,
+  ): AdminBotServiceResponse<{
+    members: P extends AdminBotListPage ? AdminBotLabMemberSummary[] : AdminBotLabMemberView[];
     total?: number;
     limit?: number;
     offset?: number;
   }> {
-    const members = this.store.listLabMembers(page);
+    const rows = this.store.listLabMembers(page);
+    const members = page ? rows.map(summarizeLabMember) : rows;
     const { badgesById, assignmentsByMember } = this.rosterBadgeViews(
       page ? members.map((member) => member.id) : undefined,
     );
     const deadlines = members.some((member) => member.milestones?.length)
       ? this.deadlineReadModel(DEADLINE_VENUES)
       : undefined;
+    const assigned = (memberId: string) =>
+      this.assignedBadgesFor(memberId, assignmentsByMember.get(memberId) ?? [], badgesById);
     return {
       ok: true,
       status: 200,
       payload: {
-        members: members.map((member) =>
-          this.memberView(
-            member,
-            this.assignedBadgesFor(member.id, assignmentsByMember.get(member.id) ?? [], badgesById),
-            deadlines,
-          ),
-        ),
+        members: members.map((m) => this.memberView(m, assigned(m.id), deadlines)) as never,
         ...(page
           ? { total: this.store.countLabMembers(page.q), limit: page.limit, offset: page.offset }
           : {}),
@@ -10150,15 +10152,10 @@ export class AdminBotService {
   // Where members are, Slack first and the roster location only where Slack has nothing.
   // Reads stamped state: refreshing from Slack is refreshMemberMap's job, not a page
   // load's, so opening the map never waits on 144 API calls.
+  private readonly memberMapCache = memberMapMemo();
+
   memberMap(): AdminBotServiceResponse<AdminBotMemberMap> {
-    const members = this.store.listLabMembers();
-    const slackLocations = new Map<string, string>();
-    for (const member of members) {
-      if (member.slack_user_id && member.slack_location) {
-        slackLocations.set(member.slack_user_id, member.slack_location);
-      }
-    }
-    return { ok: true, status: 200, payload: buildMemberMap(members, slackLocations) };
+    return { ok: true, status: 200, payload: this.memberMapCache(this.store) };
   }
 
   // Re-reads every member's Slack profile and stamps what it finds. A member Slack has

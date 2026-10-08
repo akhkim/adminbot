@@ -4148,11 +4148,9 @@ describe("AdminBotService", () => {
 
       const steps = updated.onboarding?.steps ?? [];
       expect(steps.find((step) => step.id === "linkedin")?.status).toBe("complete");
-      expect(updated.onboarding?.completed.map((step) => step.id)).toContain("linkedin");
-      expect(updated.onboarding?.remaining.map((step) => step.id)).not.toContain("linkedin");
       // `current` is positional — the first required step still outstanding, which is the shared
       // Drive folder note.
-      expect(updated.onboarding?.current_step?.id).toBe("drive_folder");
+      expect(steps.find((step) => step.status === "current")?.id).toBe("drive_folder");
     });
 
     it("can un-complete a step, pulling current back to it", () => {
@@ -4160,7 +4158,9 @@ describe("AdminBotService", () => {
       seed(service, "sam");
       unwrap(service.setOnboardingStep("sam", "drive_folder", true, "sam"));
       const reverted = unwrap(service.setOnboardingStep("sam", "drive_folder", false, "admin"));
-      expect(reverted.onboarding?.current_step?.id).toBe("drive_folder");
+      expect(reverted.onboarding?.steps.find((step) => step.status === "current")?.id).toBe(
+        "drive_folder",
+      );
     });
 
     it("rejects an unknown step and an unknown member", () => {

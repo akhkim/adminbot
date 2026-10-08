@@ -410,7 +410,13 @@ function resolveMemberPlace(
   // Nothing resolved: still report whatever the highest-priority source with any text wrote,
   // so an unplaced entry always points at the thing worth fixing.
   const raw = slackText || loginText || rosterText;
-  const source: AdminBotMapSource | undefined = slackText ? "slack" : loginText ? "login" : rosterText ? "roster" : undefined;
+  const source: AdminBotMapSource | undefined = slackText
+    ? "slack"
+    : loginText
+      ? "login"
+      : rosterText
+        ? "roster"
+        : undefined;
   return raw && source ? { raw, source } : {};
 }
 
@@ -469,6 +475,61 @@ export function buildMemberMap(
       unplaced: unplaced.length - unknown,
       unknown,
     },
+  };
+}
+
+/** The map for a roster read, with each member's synced Slack location as their first choice. */
+export function memberMapFromRoster(members: readonly AdminBotLabMember[]): AdminBotMemberMap {
+  const slackLocations = new Map<string, string>();
+  for (const member of members) {
+    if (member.slack_user_id && member.slack_location) {
+      slackLocations.set(member.slack_user_id, member.slack_location);
+    }
+  }
+  return buildMemberMap(members, slackLocations);
+}
+
+/**
+ * Remembers the last map built, keyed on the store's roster version.
+ *
+ * The map is a pure function of the roster, and the dashboard asks for it on every load; at 1000+
+ * members rebuilding it means a gazetteer pass over everyone each time. A store with no version
+ * (the in-memory one) is rebuilt every call.
+ */
+export function memberMapMemo(): (store: {
+  labMemberVersion?(): number;
+  listLabMembers(): readonly AdminBotLabMember[];
+}) => AdminBotMemberMap {
+  let last: { version: number; map: AdminBotMemberMap } | undefined;
+  return (store) => {
+    const version = store.labMemberVersion?.();
+    if (version === undefined) {
+      return memberMapFromRoster(store.listLabMembers());
+    }
+    if (last?.version !== version) {
+      last = { version, map: memberMapFromRoster(store.listLabMembers()) };
+    }
+    return last.map;
+  };
+}
+
+/**
+ * The privileged map as sent: who is where, and how many are unplaced. The names of the unplaced
+ * go only to a caller that asks for them (the standalone map page lists them to fix the
+ * gazetteer); the dashboard card shows a count, and a lab of 1000 can have hundreds unplaced.
+ */
+export function toPrivilegedMemberMap(
+  map: AdminBotMemberMap,
+  options: { listUnplaced: boolean },
+): Omit<AdminBotMemberMap, "unplaced"> &
+  Partial<Pick<AdminBotMemberMap, "unplaced">> & {
+    unplaced_count: number;
+  } {
+  const { unplaced, ...rest } = map;
+  return {
+    ...rest,
+    unplaced_count: unplaced.length,
+    ...(options.listUnplaced ? { unplaced } : {}),
   };
 }
 

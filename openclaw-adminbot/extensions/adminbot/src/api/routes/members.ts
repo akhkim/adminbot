@@ -122,6 +122,7 @@ export const membersRoutes: readonly Route[] = [
       );
       return;
     }
+    // A page carries the card projection; the unpaged read stays full for the agent tools.
     const result = service.listLabMembers(page);
     sendServiceResult(
       res,

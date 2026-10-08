@@ -17,7 +17,10 @@ import {
   type AdminBotSlackChannelNamingEvent,
 } from "../../kernel/service.js";
 import { renderCvDigestDocument } from "../../workflows/cv/digest-doc.js";
-import { toPublicMemberMapSummary } from "../../workflows/members/member-map.js";
+import {
+  toPrivilegedMemberMap,
+  toPublicMemberMapSummary,
+} from "../../workflows/members/member-map.js";
 import { asString, readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
 import type { AdminBotRouteContext } from "./context.js";
 import { isPrivileged, principalActor, privilegedOnly } from "./guards.js";
@@ -41,7 +44,7 @@ export const SLACK_CHANNEL_CACHE_MS = 5 * 60 * 1000;
 export let slackChannelCache: { at: number; names: string[] } | undefined;
 
 export const directoryRoutes: readonly Route[] = [
-  get("/member-map", ({ res, principal, ctx }) => {
+  get("/member-map", ({ res, url, principal, ctx }) => {
     const { service } = ctx;
     // Public in shape (see GET /member-map in ANONYMOUS_ROUTES), but only ever public in a
     // counts-only shape: publishing 100+ people's names and locations is a decision to make
@@ -57,7 +60,12 @@ export const directoryRoutes: readonly Route[] = [
       res,
       200,
       isPrivileged(principal)
-        ? { mode: "full", ...result.payload }
+        ? {
+            mode: "full",
+            ...toPrivilegedMemberMap(result.payload, {
+              listUnplaced: url.searchParams.get("unplaced") === "list",
+            }),
+          }
         : { mode: "summary", ...toPublicMemberMapSummary(result.payload) },
     );
   }),

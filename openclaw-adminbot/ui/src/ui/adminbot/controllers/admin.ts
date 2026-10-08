@@ -82,7 +82,8 @@ export type AdminBotLabMember = {
   // Whether AdminBot may write to this person at all. Absent reads as no: the list is one the lab
   // adds to, so a row nobody has decided about is silent. See adminBotReceivesNudges.
   receives_nudges?: boolean;
-  access: AdminBotAccessGrant[];
+  /** Owner-only, and absent from the summary and paged roster reads. */
+  access?: AdminBotAccessGrant[];
   role?: string;
   status?: AdminBotMemberStatus;
   research_branch?: string;
