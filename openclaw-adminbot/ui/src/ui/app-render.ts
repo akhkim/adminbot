@@ -2,12 +2,8 @@ import "./adminbot/offline/offline-access.ts";
 // oxlint-disable max-lines -- grandfathered at 3976 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
-import "./adminbot/views/reference-checker.ts";
-import "./adminbot/views/openreview-citation-checks.ts";
 import { guard } from "lit/directives/guard.js";
 import { styleMap } from "lit/directives/style-map.js";
-import "./adminbot/views/reference-checker.ts";
-import "./adminbot/views/openreview-citation-checks.ts";
 import { i18n, t } from "../i18n/index.ts";
 import {
   canAccessTab,
@@ -88,7 +84,6 @@ import {
 } from "./adminbot/controllers/paper-slots.ts";
 import { deleteAdminBotPaper } from "./adminbot/controllers/papers.ts";
 import { readAdminBotProfileOverview } from "./adminbot/controllers/profile-overview-paging.ts";
-import "./components/feedback-widget.ts";
 import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
 import { exportAdminBotTabUsage, loadAdminBotTabUsage } from "./adminbot/controllers/tab-usage.ts";
 import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
@@ -644,6 +639,16 @@ const renderConfig = (props: ConfigProps) =>
   renderLazyView(lazyConfig, (m) => m.renderConfig(props));
 const renderQuickSettings = (props: QuickSettingsProps) =>
   renderLazyView(lazyQuickSettings, (m) => m.renderQuickSettings(props));
+// The reference checker's two elements define themselves on import; loading them with the page
+// keeps them out of the entry, and the page renders them once both are defined.
+const lazyReferenceChecker = createLazyView(
+  () =>
+    Promise.all([
+      import("./adminbot/views/reference-checker.ts"),
+      import("./adminbot/views/openreview-citation-checks.ts"),
+    ]),
+  notifyLazyViewHost,
+);
 // My Work and the paper card it shares with Active Papers carry the whole paper workflow (slots,
 // the cycle checklist, the grid). The card opens on top of a page that is already showing, so it
 // stays out of view until its code arrives rather than flashing a loading card.
@@ -3700,14 +3705,18 @@ export function renderApp(state: AppViewState) {
             )
           : nothing}
         ${state.tab === "adminbotReferenceChecker"
-          ? html`<adminbot-reference-checker
-                .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-                .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
-              ></adminbot-reference-checker>
-              <adminbot-openreview-citation-checks
-                .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-                .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
-              ></adminbot-openreview-citation-checks>`
+          ? renderLazyView(
+              lazyReferenceChecker,
+              () =>
+                html`<adminbot-reference-checker
+                    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+                    .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
+                  ></adminbot-reference-checker>
+                  <adminbot-openreview-citation-checks
+                    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+                    .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
+                  ></adminbot-openreview-citation-checks>`,
+            )
           : nothing}
         ${state.tab === "adminbotConferencePapers"
           ? renderLazyView(lazyConferencePapers, (m) =>
