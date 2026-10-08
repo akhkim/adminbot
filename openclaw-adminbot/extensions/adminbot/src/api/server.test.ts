@@ -1712,12 +1712,51 @@ describe("AdminBot service-principal privilege scoping", () => {
       for (const field of owned) {
         expect(field in ada, `${path} ${field}`).toBe(false);
       }
-      const own = asPeer.members.find((member) => member.id === "peer")!;
-      expect(own.access ?? asPeer.self?.access, path).toBeDefined();
+      if (!path.includes("limit=")) {
+        const own = asPeer.members.find((member) => member.id === "peer")!;
+        expect(own.access ?? asPeer.self?.access, path).toBeDefined();
+      }
 
       const asAdmin = await readAs("boss", path);
       const adaToAdmin = asAdmin.members.find((member) => member.id === "ada")!;
       expect(adaToAdmin.onboarding, path).toBeDefined();
+    }
+  });
+
+  it("pages the roster as card summaries, not full records", async () => {
+    const { baseUrl } = await startService();
+    for (const [id, privilege] of [
+      ["ada", "member"],
+      ["boss", "admin"],
+    ] as const) {
+      seedMember(baseUrl, id, {
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: privilege,
+      });
+    }
+    await approveClaim(baseUrl, "boss", "boss@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "boss@cs.toronto.edu");
+    const res = await fetch(`${baseUrl}/lab/members?limit=10&offset=0`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      members: Array<Record<string, unknown> & { onboarding?: { steps: object[] } }>;
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    expect(body).toMatchObject({ total: 2, limit: 10, offset: 0 });
+    const ada = body.members.find((member) => member.id === "ada")!;
+    expect(ada.email).toBe("ada@cs.toronto.edu");
+    expect(ada).not.toHaveProperty("field_provenance");
+    expect(ada).not.toHaveProperty("access");
+    // Step states only: the admin panel checks `{ id, status }`, the copy stays in the catalog.
+    expect(ada.onboarding).toEqual({ steps: expect.any(Array) });
+    expect(ada.onboarding!.steps.length).toBeGreaterThan(0);
+    for (const step of ada.onboarding!.steps) {
+      expect(Object.keys(step).toSorted()).toEqual(["id", "status"]);
     }
   });
 

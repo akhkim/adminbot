@@ -122,7 +122,9 @@ export const membersRoutes: readonly Route[] = [
       );
       return;
     }
-    const result = service.listLabMembers(page);
+    // A page is a slice of the roster table, so it carries the card projection; the unpaged read
+    // stays full for the agent tools and importers that consume it.
+    const result = page ? service.listLabMemberSummaryPage(page) : service.listLabMembers();
     sendServiceResult(
       res,
       result.ok

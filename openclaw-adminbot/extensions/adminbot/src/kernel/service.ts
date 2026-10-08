@@ -326,6 +326,7 @@ import {
   selfReportedChange,
 } from "../workflows/members/location-history.js";
 import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
+import { summarizeLabMember } from "../workflows/members/member-summary.js";
 import {
   dormantChaseDue,
   isChaseableMember,
@@ -3359,6 +3360,42 @@ export class AdminBotService {
         ...(page
           ? { total: this.store.countLabMembers(page.q), limit: page.limit, offset: page.offset }
           : {}),
+      },
+    };
+  }
+
+  /**
+   * One page of the roster as card summaries (the `view=summary` projection), with the page
+   * total. The paged list backs the admin members panel, which reads names, statuses and
+   * onboarding step states, never provenance, access or onboarding copy.
+   */
+  listLabMemberSummaryPage(page: AdminBotListPage): AdminBotServiceResponse<{
+    members: Array<AdminBotLabMemberSummary & { assigned_badges?: AdminBotAssignedBadge[] }>;
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const members = this.store.listLabMembers(page).map(summarizeLabMember);
+    const { badgesById, assignmentsByMember } = this.rosterBadgeViews(
+      members.map((member) => member.id),
+    );
+    const deadlines = members.some((member) => member.milestones?.length)
+      ? this.deadlineReadModel(DEADLINE_VENUES)
+      : undefined;
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        members: members.map((member) =>
+          this.memberView(
+            member,
+            this.assignedBadgesFor(member.id, assignmentsByMember.get(member.id) ?? [], badgesById),
+            deadlines,
+          ),
+        ),
+        total: this.store.countLabMembers(page.q),
+        limit: page.limit,
+        offset: page.offset,
       },
     };
   }

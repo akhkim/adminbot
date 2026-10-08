@@ -13,6 +13,7 @@ import type {
 import type { AdminBotLoginEvent, AdminBotLoginLocation } from "../contracts/activity-log.js";
 import type { AdminBotLabMemberSummary, AdminBotListPage } from "../kernel/service.js";
 import type { AdminBotAuthStore } from "../workflows/identity/auth.js";
+import { summarizeLabMember } from "../workflows/members/member-summary.js";
 
 // Match SQLite's JS lowercase search, including non-ASCII names and topics.
 function memberMatchesQuery(member: AdminBotLabMember, q: string): boolean {
@@ -188,21 +189,7 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
             Buffer.from((right.name ?? "").toLowerCase()),
           ) || Buffer.compare(Buffer.from(left.id), Buffer.from(right.id)),
       )
-      .map((member) => {
-        delete member.field_provenance;
-        delete (member as Partial<AdminBotLabMember>).access;
-        if (member.onboarding && !Array.isArray(member.onboarding)) {
-          return {
-            ...member,
-            onboarding: {
-              steps: Array.isArray(member.onboarding.steps)
-                ? member.onboarding.steps.map(({ id, status }) => ({ id, status }))
-                : [],
-            },
-          };
-        }
-        return member;
-      });
+      .map(summarizeLabMember);
   }
 
   async countLabMembers(q?: string): Promise<number> {
