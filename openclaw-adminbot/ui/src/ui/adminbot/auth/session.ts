@@ -18,12 +18,17 @@ import {
   rememberedRead,
   sharedRead,
 } from "./read-cache.ts";
+import { type AdminBotOfflineScope, pendingAdminBotOutboxCount } from "../offline/outbox.ts";
 import {
-  cacheAdminBotGet,
-  type AdminBotOfflineScope,
-  pendingAdminBotOutboxCount,
-  readCachedAdminBotGet,
-} from "../offline/outbox.ts";
+  confirmOwnRead,
+  forgetOfflineReads,
+  keepOwnRead,
+  type OwnReadContext,
+  ownReadContext,
+  resolveOfflineScope,
+  storedOwnRead,
+} from "./offline-reads.ts";
+import { isOfflineReadPath, readOfflineRead, storeOfflineRead } from "../offline/read-store.ts";
 
 const SESSION_STORAGE_KEY = "openclaw.adminbot.session.v1";
 // v2: the onboarding checklist moved from a post-login popup (dismiss = "seen it") to a standing
@@ -362,31 +367,6 @@ let lastAuthedCall:
   | { baseUrl: string; token: string | null; offlineScope?: AdminBotOfflineScope }
   | undefined;
 
-async function resolveOfflineScope(
-  baseUrl: string,
-  token: string | null,
-): Promise<AdminBotOfflineScope | undefined> {
-  if (!token) return undefined;
-  if (typeof crypto === "undefined" || !crypto.subtle) {
-    return undefined;
-  }
-  let digest: ArrayBuffer;
-  try {
-    digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
-  } catch {
-    // Offline storage must never make an otherwise-valid online request unusable. If the
-    // browser cannot derive a non-secret session identity, fail closed by disabling cache/outbox.
-    return undefined;
-  }
-  const principalKey = [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-  return {
-    baseUrl: baseUrl.replace(/\/+$/u, ""),
-    principalKey,
-  };
-}
-
 export async function pendingQueuedAdminBotWriteCount(
   token: string,
   baseUrl: string,
@@ -447,12 +427,39 @@ async function authedJsonOnce(
   signal?: AbortSignal,
 ): Promise<AuthedJsonResult> {
   const url = `${baseUrl}${path}`;
+  // The member's own reads are also kept on disk (offline/read-store.ts); everything else is
+  // memory-only. Decided before the request goes out so a wipe mid-flight drops the write.
+  // The generation is captured synchronously here; the hash behind the scope is awaited only
+  // when the request has to wait for the disk copy, so other reads go out at once.
+  const ownPromise =
+    method === "GET" ? ownReadContext(baseUrl, path, token, isViewingAs(token)) : undefined;
+  let own: OwnReadContext | undefined;
   // The body this session last received for this URL, if the service tagged it. Sent back as
   // If-None-Match so an unchanged read costs an empty 304 instead of the whole payload again.
-  const previous = method === "GET" ? rememberedRead(token, url) : undefined;
+  // After a page refresh memory is empty; an own read then revalidates against its disk copy.
+  let previous = method === "GET" ? rememberedRead(token, url) : undefined;
+  let previousFromDisk: { text: string; etag: string | null } | undefined;
+  if (method === "GET" && !previous && isOfflineReadPath(path)) {
+    own = await ownPromise;
+    previousFromDisk = own ? await storedOwnRead(own) : undefined;
+    if (previousFromDisk?.etag) {
+      previous = { etag: previousFromDisk.etag, text: previousFromDisk.text, url };
+    }
+  }
   const offlineScopePromise = resolveOfflineScope(baseUrl, token);
   const call = { baseUrl, token };
   lastAuthedCall = call;
+  const offlineCopy = async () => {
+    own ??= await ownPromise;
+    const stored = previousFromDisk ?? (own ? await storedOwnRead(own) : undefined);
+    return stored
+      ? {
+          response: { ok: true, status: 200 } as Response,
+          body: parseApiJson(stored.text, url),
+          fromCache: true as const,
+        }
+      : undefined;
+  };
   let response: Response;
   try {
     response = await fetch(url, {
@@ -470,20 +477,22 @@ async function authedJsonOnce(
       ...(method === "GET" || method === "DELETE" ? {} : { body: JSON.stringify(payload) }),
     });
   } catch {
-    const offlineScope = await offlineScopePromise;
-    if (method === "GET") {
-      const cached = offlineScope
-        ? await readCachedAdminBotGet(offlineScope, path).catch(() => undefined)
-        : undefined;
-      if (cached !== undefined) {
-        return { response: { ok: true, status: 200 } as Response, body: cached, fromCache: true };
-      }
-    }
-    return { unreachable: true };
+    return (method === "GET" ? await offlineCopy() : undefined) ?? { unreachable: true };
   }
+  own ??= await ownPromise;
   const offlineScope = await offlineScopePromise;
   if (lastAuthedCall === call && offlineScope) lastAuthedCall = { ...call, offlineScope };
+  if (token && response.status === 401) {
+    // The session is gone (expired or revoked); so is anything kept for it. A late 401 for a
+    // token already replaced must not take the current session's copies with it.
+    const current = loadStoredMemberSession()?.sessionToken;
+    forgetOfflineReads(current && current !== token ? current : null);
+  }
   if (previous && response.status === 304) {
+    if (previousFromDisk) {
+      rememberRead(token, url, previous);
+      if (own) confirmOwnRead(own, previousFromDisk);
+    }
     // Re-parsed from the kept text rather than handed back as the object a caller already holds,
     // so a view that patched its copy in place cannot leak that edit into the next read.
     return {
@@ -506,23 +515,29 @@ async function authedJsonOnce(
     } else {
       forgetRead(token, url);
     }
+    if (own && response.ok) {
+      keepOwnRead(own, text, etag ?? null);
+    }
   }
   const serviceMessage = (body as { error?: { message?: unknown } } | null)?.error?.message;
   if (
     method === "GET" &&
     [502, 503, 504].includes(response.status) &&
-    offlineScope &&
     typeof serviceMessage !== "string"
   ) {
-    const cached = await readCachedAdminBotGet(offlineScope, path).catch(() => undefined);
-    if (cached !== undefined) {
-      return { response: { ok: true, status: 200 } as Response, body: cached, fromCache: true };
+    const cached = await offlineCopy();
+    if (cached) {
+      return cached;
     }
   }
-  if (method === "GET" && response.ok && offlineScope) {
-    void cacheAdminBotGet(offlineScope, path, body).catch(() => {});
-  }
   return { response, body };
+}
+
+// A View-as session belongs to the member being viewed; nothing of theirs is kept on the
+// admin's device.
+function isViewingAs(token: string | null): boolean {
+  const stored = loadStoredMemberSession();
+  return Boolean(token && stored?.impersonator && stored.sessionToken === token);
 }
 
 /**
@@ -932,12 +947,15 @@ export async function cacheOfflineMemberSession(
   baseUrl: string,
   session: MemberSessionInfo,
 ): Promise<void> {
-  const scope = await resolveOfflineScope(baseUrl, token);
+  // A View-as session is another member's identity on the admin's device: never kept.
+  const scope = isViewingAs(token) ? undefined : await resolveOfflineScope(baseUrl, token);
   if (!scope) {
     return;
   }
-  // Never persist gateway credentials with the offline identity snapshot.
-  await cacheAdminBotGet(scope, "/offline-identity", {
+  // Never persist gateway credentials with the offline identity snapshot. Written now rather than
+  // batched: sign-in calls this just before the session switch that wipes every other session's
+  // reads, and the snapshot has to be on disk, under the new session, before that runs.
+  const snapshot = JSON.stringify({
     expires_at: session.expires_at,
     member: {
       id: session.member.id,
@@ -945,7 +963,10 @@ export async function cacheOfflineMemberSession(
       onboarding: session.member.onboarding,
     },
     gateway: { token: "" },
-  }).catch(() => {});
+  });
+  await storeOfflineRead(scope, "/offline-identity", snapshot, null, { immediate: true }).catch(
+    () => "denied",
+  );
 }
 
 export async function fetchMemberSession(
@@ -962,10 +983,11 @@ export async function fetchMemberSession(
     });
   } catch {
     const scope = await resolveOfflineScope(baseUrl, token);
-    const cached = scope
-      ? ((await readCachedAdminBotGet(scope, "/offline-identity").catch(() => undefined)) as
-          | MemberSessionInfo
-          | undefined)
+    const stored = scope
+      ? await readOfflineRead(scope, "/offline-identity").catch(() => undefined)
+      : undefined;
+    const cached = stored
+      ? (parseApiJson(stored.text, `${baseUrl}/auth/session`) as MemberSessionInfo | null)
       : undefined;
     if (cached?.member?.id && Date.parse(cached.expires_at) > Date.now()) {
       return { ok: true, value: cached, cached: true };
@@ -975,10 +997,8 @@ export async function fetchMemberSession(
   const body = await readApiJson(response);
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
-      const scope = await resolveOfflineScope(baseUrl, token);
-      if (scope) {
-        await cacheAdminBotGet(scope, "/offline-identity", null).catch(() => {});
-      }
+      // The service rejected this session: its offline snapshot and every kept read go with it.
+      forgetOfflineReads();
     }
     // Only an explicit authentication rejection invalidates a stored login. Proxy outages,
     // rate limits and rolling-deploy 404s must not turn a refresh into a forced sign-in.
@@ -1070,10 +1090,20 @@ export function loadStoredMemberSession(): StoredMemberSession | null {
 }
 
 export function saveStoredMemberSession(next: StoredMemberSession): void {
-  if (loadStoredMemberSession()?.sessionToken !== next.sessionToken) {
+  const previous = loadStoredMemberSession();
+  if (previous?.sessionToken !== next.sessionToken) {
     // Sign-in, View-as and its end all arrive here with a new token; the kept reads belong to the
     // old one and would never be asked for again.
     forgetSessionReads();
+  }
+  if (previous?.sessionToken !== next.sessionToken || (next.impersonator && !previous?.impersonator)) {
+    // The same for the copies on disk. A new session keeps only its own sign-in snapshot (written
+    // just before this by applyMemberSession); a View-as keeps nothing, not even that, because
+    // it is another member's data on the admin's device. Unsent drafts are untouched: they live
+    // in draft-sync's own store, scoped by member rather than token, so a re-sign-in by the same
+    // member still finds them and a different member never sees them. The legacy outbox is
+    // untouched too: its rows are principal-scoped and never replayed, so no unsent work is lost.
+    forgetOfflineReads(next.impersonator ? null : next.sessionToken);
   }
   const storage = getSafeLocalStorage();
   try {
@@ -1093,6 +1123,7 @@ export function saveStoredMemberSession(next: StoredMemberSession): void {
 export function clearStoredMemberSession(): void {
   configureDraftSync("signed-out", null);
   forgetSessionReads();
+  forgetOfflineReads();
   lastAuthedCall = undefined;
   const storage = getSafeLocalStorage();
   try {

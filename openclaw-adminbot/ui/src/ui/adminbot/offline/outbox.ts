@@ -1,14 +1,14 @@
-// Browser-local GET cache and mutation outbox for AdminBot HTTP.
+// Mutation outbox for AdminBot HTTP.
 //
 // The Control UI is often on a different origin from `:8765`, so a service worker cannot
-// intercept those fetches. IndexedDB on this origin is the same idea as Chrome/Docs offline
-// and WhatsApp queued sends: reads come from the last successful GET; writes wait until the
-// service is reachable again. On-device SLM drafting is an interview-task stub, not wired here.
+// intercept those fetches; IndexedDB on this origin holds what must survive offline. Reads live
+// in read-store.ts (own data only, bounded, wiped with the session). Writes here wait until the
+// service is reachable again, scoped to the session that made them. Nothing enqueues new rows
+// today -- member drafts sync through draft-sync.ts -- and legacy rows are kept for recovery but
+// never replayed (flushQueuedAdminBotWrites). On-device SLM drafting is an interview-task stub.
 
-const DB_NAME = "adminbot-offline";
-const DB_VERSION = 2;
-const GET_STORE = "get-cache";
-const OUTBOX_STORE = "outbox";
+import { resetOfflineReadStore } from "./read-store.ts";
+import { OUTBOX_STORE, hasIndexedDb, withOfflineStore as withStore } from "./offline-db.ts";
 
 export type AdminBotOfflineScope = {
   baseUrl: string;
@@ -27,119 +27,13 @@ export type OfflineOutboxItem = {
   kind: "mutation";
 };
 
-type GetCacheEntry = {
-  key: string;
-  base_url: string;
-  principal_key: string;
-  path: string;
-  body: unknown;
-  stored_at: number;
-};
-
-const memoryGets = new Map<string, GetCacheEntry>();
 const memoryOutbox = new Map<string, OfflineOutboxItem>();
-
-function cacheKey(scope: AdminBotOfflineScope, path: string): string {
-  return `${scope.principalKey}|${scope.baseUrl}|${path}`;
-}
 
 function belongsToScope(
   item: Pick<OfflineOutboxItem, "base_url" | "principal_key">,
   scope: AdminBotOfflineScope,
 ): boolean {
   return item.base_url === scope.baseUrl && item.principal_key === scope.principalKey;
-}
-
-function hasIndexedDb(): boolean {
-  return typeof globalThis.indexedDB !== "undefined";
-}
-
-function openDatabase(): Promise<IDBDatabase> {
-  const factory = globalThis.indexedDB;
-  return new Promise((resolve, reject) => {
-    const request = factory.open(DB_NAME, DB_VERSION);
-    request.addEventListener("upgradeneeded", (event) => {
-      const db = request.result;
-      // Version 1 rows have neither an origin nor a principal. They cannot be safely assigned to
-      // whoever happens to sign in after the upgrade, so discard them rather than risk replaying
-      // one member's write or cached response as another member.
-      if ((event as IDBVersionChangeEvent).oldVersion < 2) {
-        if (db.objectStoreNames.contains(GET_STORE)) {
-          db.deleteObjectStore(GET_STORE);
-        }
-        if (db.objectStoreNames.contains(OUTBOX_STORE)) {
-          db.deleteObjectStore(OUTBOX_STORE);
-        }
-      }
-      if (!db.objectStoreNames.contains(GET_STORE)) {
-        db.createObjectStore(GET_STORE, { keyPath: "key" });
-      }
-      if (!db.objectStoreNames.contains(OUTBOX_STORE)) {
-        db.createObjectStore(OUTBOX_STORE, { keyPath: "id" });
-      }
-    });
-    request.addEventListener("success", () => resolve(request.result));
-    request.addEventListener("error", () =>
-      reject(request.error ?? new Error("Could not open AdminBot offline storage.")),
-    );
-  });
-}
-
-async function withStore<T>(
-  storeName: string,
-  mode: IDBTransactionMode,
-  run: (store: IDBObjectStore) => IDBRequest<T>,
-): Promise<T> {
-  const db = await openDatabase();
-  try {
-    return await new Promise<T>((resolve, reject) => {
-      const transaction = db.transaction(storeName, mode);
-      const request = run(transaction.objectStore(storeName));
-      transaction.addEventListener("complete", () => resolve(request.result));
-      transaction.addEventListener("abort", () =>
-        reject(transaction.error ?? new Error("AdminBot offline storage failed.")),
-      );
-      transaction.addEventListener("error", () =>
-        reject(transaction.error ?? new Error("AdminBot offline storage failed.")),
-      );
-    });
-  } finally {
-    db.close();
-  }
-}
-
-export async function cacheAdminBotGet(
-  scope: AdminBotOfflineScope,
-  path: string,
-  body: unknown,
-): Promise<void> {
-  const entry: GetCacheEntry = {
-    key: cacheKey(scope, path),
-    base_url: scope.baseUrl,
-    principal_key: scope.principalKey,
-    path,
-    body,
-    stored_at: Date.now(),
-  };
-  if (!hasIndexedDb()) {
-    memoryGets.set(entry.key, entry);
-    return;
-  }
-  await withStore(GET_STORE, "readwrite", (store) => store.put(entry));
-}
-
-export async function readCachedAdminBotGet(
-  scope: AdminBotOfflineScope,
-  path: string,
-): Promise<unknown | undefined> {
-  const key = cacheKey(scope, path);
-  if (!hasIndexedDb()) {
-    return memoryGets.get(key)?.body;
-  }
-  const entry = await withStore<GetCacheEntry | undefined>(GET_STORE, "readonly", (store) =>
-    store.get(key),
-  );
-  return entry?.body;
 }
 
 export async function enqueueAdminBotMutation(
@@ -215,13 +109,13 @@ export async function flushAdminBotOutbox(
   return { flushed, remaining: (await listAdminBotOutbox(scope)).length };
 }
 
+/** Tests: empty both the read store and the outbox. */
 export async function resetAdminBotOfflineMemory(): Promise<void> {
-  memoryGets.clear();
   memoryOutbox.clear();
+  await resetOfflineReadStore();
   if (!hasIndexedDb()) {
     return;
   }
-  await withStore(GET_STORE, "readwrite", (store) => store.clear());
   await withStore(OUTBOX_STORE, "readwrite", (store) => store.clear());
 }
 
