@@ -157,4 +157,23 @@ describe("GET /members/profile-overview", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ created: [], skipped: [] });
   });
+
+  it("sends to nobody when the recipient list it is given names nobody", async () => {
+    const { base } = await start(3);
+    const remind = async (body: unknown) => {
+      const res = await fetch(`${base}/members/mandatory-fields-reminder/run`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${SERVICE_TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(200);
+      return (await res.json()) as { created: unknown[]; skipped: unknown[] };
+    };
+    // An explicit list -- empty, or with nothing usable in it -- is "these people", never "everyone".
+    expect(await remind({ recipient_member_ids: [] })).toEqual({ created: [], skipped: [] });
+    expect(await remind({ recipient_member_ids: [7, null] })).toEqual({ created: [], skipped: [] });
+    // Leaving the list out is still the daily sweep across everyone owed a reminder.
+    const sweep = await remind({});
+    expect(sweep.created.length + sweep.skipped.length).toBeGreaterThan(0);
+  });
 });
