@@ -141,6 +141,10 @@ import {
   type PublishedDeadlineRecord,
 } from "../contracts/deadline-proposals.js";
 import { stageProposalConflict } from "../contracts/deadline-proposals.stage.js";
+import {
+  deadlineBoardEntryId,
+  deadlineInputFromBoardEntry,
+} from "../workflows/deadlines/board-entry.js";
 import type { DeadlineRecommendationInput } from "../contracts/deadline-recommendations.js";
 import { adminBotDriveFileId, type AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type {
@@ -375,6 +379,7 @@ import {
   authorNamesFromLinks,
   buildAuthorLinks,
 } from "../workflows/papers/author-links.js";
+import { PaperTableSnapshot, type PaperRowReader } from "./paper-table-snapshot.js";
 import {
   memberOwnsPaper,
   paperIdsByOwner,
@@ -6859,10 +6864,14 @@ export class AdminBotService {
 
   /** The papers waiting on the head professor's yes, oldest wait first. */
   listPiReviewQueue(): AdminBotServiceResponse<{ papers: PiReviewRow[] }> {
+    return this.withPaperTables(() => this.sweepPiReviewQueue());
+  }
+
+  private sweepPiReviewQueue(): AdminBotServiceResponse<{ papers: PiReviewRow[] }> {
     const candidates = this.store
       .listPapers()
       .filter((paper) => !isPaperClosed(paper))
-      .map((paper) => ({ paper, slots: this.store.listPaperSlots(paper.id) }));
+      .map((paper) => ({ paper, slots: this.paperRows().listPaperSlots(paper.id) }));
     return {
       ok: true,
       status: 200,
@@ -6887,7 +6896,7 @@ export class AdminBotService {
     const link =
       stored.find((row) => row.slot === "overleaf_edit")?.url ?? paper.artifacts?.overleaf_edit_url;
     const project = link ? adminBotOverleafProjectRef(link) : undefined;
-    const [latest] = this.store.listPaperMentorRuns(paper.id);
+    const [latest] = this.paperRows().listPaperMentorRuns(paper.id);
     return {
       ...(project ? { project: { lab: project.lab, host: project.host } } : {}),
       ...(latest ? { latest } : {}),
@@ -7237,7 +7246,7 @@ export class AdminBotService {
    * count on every paper in the lab and describe the acceptance form rather than the travel.
    */
   private conferenceRollCall(paper: AdminBotPaperRecord): AdminBotConferenceAttendeeRecord[] {
-    const stored = this.store.listConferenceAttendees(paper.id);
+    const stored = this.paperRows().listConferenceAttendees(paper.id);
     return isConferenceBranchOpen(paper) ? mergeConferenceAttendance(paper, stored) : stored;
   }
 
@@ -7258,13 +7267,14 @@ export class AdminBotService {
   listConferenceRosters(): AdminBotServiceResponse<{
     conferences: ConferenceAttendanceView[];
   }> {
-    const entries = this.store
+    const entries = this.withPaperTables(() => this.store
       .listPapers()
       .filter((paper) => isConferenceBranchOpen(paper))
       .map((paper) => ({
         paper,
-        attendees: this.store.listConferenceAttendees(paper.id),
-      }));
+        attendees: this.paperRows().listConferenceAttendees(paper.id),
+      })),
+    );
     const conferences = buildConferenceAttendance(entries).map((conference) => ({
       ...conference,
       people: conference.people.map((person) => ({
@@ -7678,7 +7688,9 @@ export class AdminBotService {
   listPaperSlotOverview(nowIso?: string): AdminBotServiceResponse<{
     papers: AdminBotPaperSlotOverviewRow[];
   }> {
-    return this.withRosterSnapshot(() => this.sweepListPaperSlotOverview(nowIso));
+    return this.withRosterSnapshot(() =>
+      this.withPaperTables(() => this.sweepListPaperSlotOverview(nowIso)),
+    );
   }
 
   private sweepListPaperSlotOverview(nowIso?: string): AdminBotServiceResponse<{
@@ -7687,12 +7699,12 @@ export class AdminBotService {
     const now = nowIso ? new Date(nowIso) : new Date();
     const ledger = this.nudgeLedgerIndex();
     const papers = this.store.listPapers().map((paper) => {
-      const stored = this.store.listPaperSlots(paper.id);
-      const drafts = this.store.listSocialDrafts(paper.id);
+      const stored = this.paperRows().listPaperSlots(paper.id);
+      const drafts = this.paperRows().listSocialDrafts(paper.id);
       // Merged, so the header's `unknown` count is the number of authors still owing an answer
       // rather than the number of half-filled rows -- see the note on the card read above.
       const attendees = this.conferenceRollCall(paper);
-      const reimbursements = this.store.listPaperReimbursements(paper.id);
+      const reimbursements = this.paperRows().listPaperReimbursements(paper.id);
       const actionable = actionablePaperSlots(
         paper,
         stored,
@@ -7928,7 +7940,11 @@ export class AdminBotService {
    * not appear at all -- the cadence protects people from a repeated manual press exactly as it
    * protected them from a doubled crontab.
    */
-  private gatherPaperNudges(now: Date): {
+  private gatherPaperNudges(now: Date): ReturnType<AdminBotService["sweepPaperNudges"]> {
+    return this.withPaperTables(() => this.sweepPaperNudges(now));
+  }
+
+  private sweepPaperNudges(now: Date): {
     byRecipient: Map<
       string,
       Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>
@@ -7965,8 +7981,8 @@ export class AdminBotService {
       if (isPaperDormant(paper, now) || isPaperClosed(paper)) {
         continue;
       }
-      const stored = this.store.listPaperSlots(paper.id);
-      const drafts = this.store.listSocialDrafts(paper.id);
+      const stored = this.paperRows().listPaperSlots(paper.id);
+      const drafts = this.paperRows().listSocialDrafts(paper.id);
 
       for (const item of actionablePaperSlots(
         paper,
@@ -8010,7 +8026,7 @@ export class AdminBotService {
       // for produces one line per author here, and keeps producing them until it is answered.
       for (const attendee of mergeConferenceAttendance(
         paper,
-        this.store.listConferenceAttendees(paper.id),
+        this.paperRows().listConferenceAttendees(paper.id),
       )) {
         if (attendee.attending !== "unknown") {
           continue;
@@ -8026,7 +8042,7 @@ export class AdminBotService {
           });
         }
       }
-      for (const row of this.store.listPaperReimbursements(paper.id)) {
+      for (const row of this.paperRows().listPaperReimbursements(paper.id)) {
         if (row.status !== "pending" && row.status !== "submitted") {
           continue;
         }
@@ -8147,16 +8163,20 @@ export class AdminBotService {
   }
 
   private gatherPaperflowStages(now: Date): { items: AdminBotPaperflowStageNudge[] } {
+    return this.withPaperTables(() => this.sweepPaperflowStages(now));
+  }
+
+  private sweepPaperflowStages(now: Date): { items: AdminBotPaperflowStageNudge[] } {
     const ledger = this.nudgeLedgerIndex();
     const roster = this.store.listLabMembers();
     const priorityMemberId = this.options.paperflowPriorityMemberId;
     const items: AdminBotPaperflowStageNudge[] = [];
 
     for (const paper of this.store.listPapers()) {
-      const evidence = this.store.listPaperflowEvidence(paper.id);
+      const evidence = this.paperRows().listPaperflowEvidence(paper.id);
       const open = openPaperflowStage({
         paper,
-        slots: this.store.listPaperSlots(paper.id),
+        slots: this.paperRows().listPaperSlots(paper.id),
         evidence,
         now,
       });
@@ -8754,6 +8774,28 @@ export class AdminBotService {
 
   /** Set only while an all-paper sweep runs; see withRosterSnapshot. */
   private rosterSnapshot: AdminBotLabMember[] | undefined;
+  /** The snapshot's name index, built once per snapshot rather than once per paper. */
+  private rosterByName: Map<string, AdminBotLabMember> | undefined;
+  /** Set only while a read-only all-paper sweep runs; see withPaperTables. */
+  private paperTables: PaperTableSnapshot | undefined;
+
+  /** Per-paper rows: from the sweep's one-read-per-table snapshot when one is running. */
+  private paperRows(): PaperRowReader {
+    return this.paperTables ?? this.store;
+  }
+
+  /** Runs a synchronous, read-only sweep against one read of each per-paper table. */
+  private withPaperTables<T>(sweep: () => T): T {
+    if (this.paperTables) {
+      return sweep();
+    }
+    this.paperTables = new PaperTableSnapshot(this.store);
+    try {
+      return sweep();
+    } finally {
+      this.paperTables = undefined;
+    }
+  }
 
   /**
    * Runs a synchronous, read-only sweep with one roster read shared by every per-paper owner
@@ -8769,6 +8811,7 @@ export class AdminBotService {
       return sweep();
     } finally {
       this.rosterSnapshot = undefined;
+      this.rosterByName = undefined;
     }
   }
 
@@ -8784,9 +8827,10 @@ export class AdminBotService {
     owner: AdminBotPaperSlotOwner,
   ): string[] {
     const roster = this.rosterSnapshot ?? this.store.listLabMembers();
-    const byName = new Map(
-      roster.map((member) => [member.name.trim().toLocaleLowerCase(), member]),
-    );
+    const byName =
+      (this.rosterSnapshot && this.rosterByName) ||
+      new Map(roster.map((member) => [member.name.trim().toLocaleLowerCase(), member]));
+    this.rosterByName = this.rosterSnapshot ? byName : undefined;
     // The recorded links first, name matching only for the papers that have none. External
     // coauthors carry no roster id, so they fall out of every one of these lists by construction
     // -- which is the whole point of recording them as emails rather than as half-members.
@@ -14470,47 +14514,6 @@ function firstDeadlineValidationError(
   errors: Partial<Record<keyof DeadlineProposalInput, string>>,
 ): string {
   return Object.values(errors)[0] ?? "deadline proposal is invalid";
-}
-
-function deadlineBoardEntryId(value: unknown): string | undefined {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-  const row = value as Record<string, unknown>;
-  const id = row.deadline_id ?? row.id;
-  return typeof id === "string" ? id : undefined;
-}
-
-function deadlineInputFromBoardEntry(value: unknown): DeadlineProposalInput | undefined {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-  const row = value as Record<string, unknown>;
-  const deadline = typeof row.deadline_aoe === "string" ? row.deadline_aoe : "";
-  const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/u.exec(deadline);
-  if (!match || typeof row.name !== "string" || typeof row.entry_type !== "string") {
-    return undefined;
-  }
-  return {
-    name: row.name,
-    parentConference: typeof row.venue_family === "string" ? row.venue_family : "",
-    parentYear: "",
-    entryType: row.entry_type as DeadlineProposalInput["entryType"],
-    deadlineDate: match[1],
-    deadlineTime: match[2],
-    timezone: "Etc/GMT+12",
-    homepageUrl:
-      typeof row.homepage_url === "string" && row.homepage_url
-        ? row.homepage_url
-        : typeof row.source_url === "string"
-          ? row.source_url
-          : typeof row.link === "string"
-            ? row.link
-            : "",
-    cfpUrl: typeof row.cfp_url === "string" ? row.cfp_url : "",
-    openReviewUrl: typeof row.openreview_url === "string" ? row.openreview_url : "",
-    note: "",
-  };
 }
 
 const SELF_PROFILE_EDITABLE_FIELDS = [
