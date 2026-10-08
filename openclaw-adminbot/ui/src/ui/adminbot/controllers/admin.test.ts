@@ -1850,7 +1850,9 @@ describe("removeSelectedPendingAdminBotActions", () => {
 
   it("keeps the ones that refused ticked, and says how many went", async () => {
     const host = seed(["act_one", "act_two"], ["act_one", "act_two"]);
+    // The two removes, then the reload: that one must not fall through to the real network.
     vi.spyOn(globalThis, "fetch")
+      .mockImplementation(async () => ok())
       .mockResolvedValueOnce(ok())
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ error: { message: "nope" } }), {
