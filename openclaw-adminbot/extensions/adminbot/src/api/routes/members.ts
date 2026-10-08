@@ -457,7 +457,11 @@ export const membersRoutes: readonly Route[] = [
         return;
       }
       // Rows leave out the zeroed counters the client fills in itself; see profileOverviewWireRow.
-      const { rows, ...rest } = pageOf(filterOverviewRows(members, filter), page);
+      const { rows, ...rest } = pageOf(
+        filterOverviewRows(members, filter),
+        page,
+        (row) => row.id,
+      );
       sendJson(res, 200, {
         ...rollUp,
         members: rows.map(profileOverviewWireRow),

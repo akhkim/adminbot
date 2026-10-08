@@ -635,10 +635,14 @@ describe("GET /logistics/requests paging", () => {
     expect(first.status).toBe(200);
     expect(first.body.requests).toHaveLength(20);
     expect(first.body.total).toBe(24);
-    expect(first.body.next_cursor).toBe("20");
+    expect(first.body.next_cursor).toMatch(/^20~/u);
     expect(first.body.requests.every((row) => row.status === "submitted")).toBe(true);
 
-    const rest = await list(lab, "zhijing", `?cursor=${first.body.next_cursor}`);
+    const rest = await list(
+      lab,
+      "zhijing",
+      `?cursor=${encodeURIComponent(first.body.next_cursor ?? "")}`,
+    );
     expect(rest.body.requests.map((row) => row.status)).toEqual([
       "submitted",
       "completed",
@@ -658,6 +662,25 @@ describe("GET /logistics/requests paging", () => {
     const mine = await list(lab, "ada");
     expect(mine.body.total).toBe(12);
     expect(new Set(mine.body.requests.map((row) => row.member_name))).toEqual(new Set(["ada"]));
+  });
+
+  it("does not skip a request when one on the page already shown is settled", async () => {
+    const lab = await startLab();
+    for (let index = 0; index < 6; index += 1) {
+      await submit(lab, "ada", letterFor(`School ${index}`));
+    }
+    const first = await list(lab, "zhijing", "?status=open&limit=3");
+    // The admin finishes one of the three on screen; it leaves the open queue.
+    await fetch(`${lab.baseUrl}/logistics/requests/${first.body.requests[0]!.id}/status`, {
+      method: "PUT",
+      headers: asMember(lab, "zhijing", { "Content-Type": "application/json" }),
+      body: JSON.stringify({ status: "completed" }),
+    });
+    const cursor = encodeURIComponent(first.body.next_cursor ?? "");
+    const rest = await list(lab, "zhijing", `?status=open&limit=3&cursor=${cursor}`);
+    const shown = new Set([...first.body.requests, ...rest.body.requests].map((row) => row.id));
+    expect(shown.size).toBe(6);
+    expect(rest.body.next_cursor).toBeUndefined();
   });
 
   it("searches the whole queue before cutting the page", async () => {

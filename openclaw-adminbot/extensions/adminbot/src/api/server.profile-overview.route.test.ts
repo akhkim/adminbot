@@ -113,7 +113,7 @@ describe("GET /members/profile-overview", () => {
     expect(first.status).toBe(200);
     expect((first.body.members as unknown[]).length).toBe(ADMIN_LIST_PAGE_SIZE);
     expect(first.body.total).toBe(45);
-    expect(first.body.next_cursor).toBe(String(ADMIN_LIST_PAGE_SIZE));
+    expect(first.body.next_cursor).toMatch(new RegExp(`^${ADMIN_LIST_PAGE_SIZE}~`, "u"));
     // Everyone owes profile fields in a fresh roster, so all 45 are owed a reminder.
     expect(first.body.summary).toEqual({ remind_count: 45 });
     expect((first.body.adoption as { members: number }).members).toBe(45);
