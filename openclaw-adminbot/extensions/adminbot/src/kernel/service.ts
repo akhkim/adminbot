@@ -8388,7 +8388,12 @@ export class AdminBotService {
     paperflow_candidates: AdminBotEmailReviewPaperflowCandidate[];
     recent_resolutions: AdminBotResolvedEmailReviewItem[];
   }> {
-    const stageResult = this.collectPaperflowStageNudges();
+    const reviews = this.store.listEmailReviews();
+    // Candidates are only ever offered against a held message, and the walk that finds them visits
+    // every open paper. An empty queue -- the usual state -- needs neither the walk nor the list.
+    const stageResult = reviews.length
+      ? this.collectPaperflowStageNudges()
+      : ({ ok: true, status: 200, payload: { items: [] } } as const);
     if (!stageResult.ok) {
       return stageResult;
     }
@@ -8419,7 +8424,7 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: {
-        reviews: this.store.listEmailReviews(),
+        reviews,
         recent_resolutions: recentResolutions,
         paperflow_candidates: stageResult.payload.items.map((item) => ({
           paper_id: item.paper_id,

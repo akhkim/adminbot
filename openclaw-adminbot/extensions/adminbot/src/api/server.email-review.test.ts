@@ -231,5 +231,9 @@ describe("email review routes", () => {
         resolved_by: "admin",
       }),
     ]);
+    // An empty queue has nothing to attach, so the open-stage walk is skipped and no targets ship,
+    // though paper-1 still has an open stage.
+    const queue = await fetch(`${baseUrl}/automation/email/review`, { headers: admin });
+    expect(await queue.json()).toMatchObject({ reviews: [], paperflow_candidates: [] });
   });
 });
