@@ -145,11 +145,13 @@ import {
   rowToRegistration,
   type AccountRegistrationRow,
 } from "./sqlite.registration-rows.js";
+import { escalatedMemberNotificationsSql } from "./sqlite.member-notifications.js";
 import {
   listSqliteSocialDrafts,
   migrateSocialDraftColumns,
   saveSqliteSocialDraft,
 } from "./sqlite.social-drafts.js";
+import { cacheStatements } from "./sqlite.statement-cache.js";
 import { SqliteTableVersions } from "./sqlite.table-versions.js";
 import { SqliteVenuePaperIndex } from "./sqlite.venue-papers.js";
 
@@ -238,6 +240,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ensureDatabaseDirectory(databasePath);
     const sqlite = requireNodeSqlite();
     this.db = new sqlite.DatabaseSync(databasePath);
+    cacheStatements(this.db);
     this.venueIndex = new SqliteVenuePaperIndex(this.db);
     this.members = new SqliteLabMemberCache(this.db);
     this.versions = new SqliteTableVersions(this.db);
@@ -264,6 +267,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_proposals_pending_idx
         ON adminbot_proposals(status, updated_at);
+      -- The deadline board reads one action type; ties keep rowid order, as the full scan's sort did.
+      CREATE INDEX IF NOT EXISTS adminbot_proposals_type_idx
+        ON adminbot_proposals(action_type, created_at);
 
       CREATE TABLE IF NOT EXISTS adminbot_deadline_submission_keys (
         submitter_member_id TEXT NOT NULL,
@@ -898,6 +904,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         ON adminbot_update_events(slot_id, at DESC);
       CREATE INDEX IF NOT EXISTS adminbot_update_events_source_idx
         ON adminbot_update_events(source, at DESC);
+      -- The unfiltered feed, newest first: walked backwards it is exactly (at DESC, rowid DESC).
+      CREATE INDEX IF NOT EXISTS adminbot_update_events_at_idx ON adminbot_update_events(at);
 
       -- One row per workshop-matching pass. The pass is thousands of model calls and does not fit
       -- in the request that starts it, so the answer is kept here and the page reads it.
@@ -2564,12 +2572,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[] {
+    // By member within a paper, the key order the per-paper read always had, in both reads.
+    const sql = "SELECT * FROM adminbot_paper_reimbursements";
     const rows = (
       paperId
-        ? this.db
-            .prepare("SELECT * FROM adminbot_paper_reimbursements WHERE paper_id = ?")
-            .all(paperId)
-        : this.db.prepare("SELECT * FROM adminbot_paper_reimbursements").all()
+        ? this.db.prepare(`${sql} WHERE paper_id = ? ORDER BY member_id`).all(paperId)
+        : this.db.prepare(`${sql} ORDER BY paper_id, member_id`).all()
     ) as Array<Record<string, unknown>>;
     return rows.map((row) => ({
       paper_id: String(row.paper_id),
@@ -3240,12 +3248,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => parseJson<AdminBotMemberNotification>(row.payload_json));
   }
 
-  // Filtered in JS rather than SQL: `escalated_at` and `read_at` live inside payload_json, and the
-  // escalated set is small by construction -- it is what one professor is expected to work through.
+  // Narrowed in SQL as the postgres mirror is, so only the small escalated set is parsed.
   listEscalatedMemberNotifications(): AdminBotMemberNotification[] {
-    const rows = this.db
-      .prepare("SELECT payload_json FROM adminbot_member_notifications")
-      .all() as Array<{ payload_json: string }>;
+    const rows = this.db.prepare(escalatedMemberNotificationsSql).all() as Array<{
+      payload_json: string;
+    }>;
     return rows
       .map((row) => parseJson<AdminBotMemberNotification>(row.payload_json))
       .filter((notification) => notification.escalated_at && !notification.read_at)
@@ -3293,20 +3300,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   listLogisticsRequests(memberId?: string): AdminBotLogisticsRequest[] {
-    const rows = (
-      memberId
-        ? this.db
-            .prepare(
-              `SELECT payload_json FROM adminbot_logistics_requests
-               WHERE member_id = ? ORDER BY submitted_at DESC`,
-            )
-            .all(memberId)
-        : this.db
-            .prepare(
-              "SELECT payload_json FROM adminbot_logistics_requests ORDER BY submitted_at DESC",
-            )
-            .all()
-    ) as Array<{ payload_json: string }>;
+    const where = memberId ? "WHERE member_id = ?" : "";
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json FROM adminbot_logistics_requests ${where} ORDER BY submitted_at DESC`,
+      )
+      .all(...(memberId ? [memberId] : [])) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotLogisticsRequest>(row.payload_json));
   }
 
