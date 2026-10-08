@@ -10,6 +10,9 @@ import type {
   AdminBotRemovePendingRequest,
 } from "../../contracts/actions.js";
 import { readJson, sendJson, sendServiceResult } from "../server.http.js";
+import { pageFrom, readPageQuery } from "../server.paging.js";
+import { mapPayload } from "../server.paper-lists.wire.js";
+import { proposalSummaryWire } from "../server.proposals.wire.js";
 import {
   adminSessionOnly,
   approverIdentityFor,
@@ -41,20 +44,34 @@ export const governanceRoutes: readonly Route[] = [
     "/proposals/pending",
     privilegedOnly(({ res, url, ctx }) => {
       const { service } = ctx;
-      const rawLimit = url.searchParams.get("limit");
-      const limit = rawLimit ? Number(rawLimit) : undefined;
-      sendServiceResult(res, service.listPending(limit));
+      // Oldest first, as the queue is worked: the panel shows 25 and asks for the next 25. `total`
+      // is the whole queue, so the badge and "Select all" never read the page as the queue.
+      const page = readPageQuery(url, { defaultLimit: 25, maxLimit: 100 });
+      const pending = mapPayload(service.listPending(page.limit, page.offset), ({ proposals }) => {
+        const { items, ...rest } = pageFrom(proposals, ctx.store.countPending(), page);
+        return { proposals: items, ...rest };
+      });
+      // Opt-in so the gateway tool and older consoles, which read the payload, keep it.
+      sendServiceResult(
+        res,
+        url.searchParams.get("view") === "summary"
+          ? mapPayload(pending, ({ proposals, ...rest }) => ({
+              proposals: proposals.map(proposalSummaryWire),
+              ...rest,
+            }))
+          : pending,
+      );
     }),
   ),
   // The dashboard's attention cards say only how many proposals and held emails are waiting, so
   // they read two numbers here instead of the full queues -- the email list in particular is
-  // built alongside a PaperFlow stage sweep that the cards never show. 50 is the window the
-  // dashboard used to count from /proposals/pending?limit=50, so the number it shows is unchanged.
+  // built alongside a PaperFlow stage sweep that the cards never show. The proposal number is the
+  // whole queue: it used to stop at the 50 the panel loaded, and the panel now pages past that.
   get(
     "/admin/queue-counts",
     adminSessionOnly(({ res, ctx }) => {
       sendJson(res, 200, {
-        pending_proposals: ctx.store.listPending(50).length,
+        pending_proposals: ctx.store.countPending(),
         email_reviews: ctx.store.listEmailReviews().length,
       });
     }),

@@ -3080,9 +3080,16 @@ describe("the calendar routes", () => {
       ).status,
     ).toBe(200);
 
-    await expect((await fetch(`${baseUrl}/opportunities`)).json()).resolves.toMatchObject({
+    const board = (await (await fetch(`${baseUrl}/opportunities`)).json()) as {
+      opportunities: Array<Record<string, unknown>>;
+    };
+    expect(board).toMatchObject({
       opportunities: [{ id: opportunity.id, status: "approved", submitted_by_name: "Plain" }],
     });
+    // The board names the submitter; the review trail stays on the service.
+    for (const field of ["submitted_by_member_id", "decided_by", "decided_at", "created_at"]) {
+      expect(board.opportunities[0]).not.toHaveProperty(field);
+    }
   });
 
   it("refuses an anonymous write and a non-admin decision", async () => {
@@ -4152,7 +4159,7 @@ describe("GET /nudges/escalated", () => {
 
     const privileged = await fetch(`${baseUrl}/nudges/escalated`, { headers: serviceHeaders() });
     expect(privileged.status).toBe(200);
-    await expect(privileged.json()).resolves.toEqual({ members: [] });
+    await expect(privileged.json()).resolves.toEqual({ members: [], total: 0 });
 
     // /notifications is still nobody else's business, service token or not: this route exists
     // because that one deliberately refuses, not as a way around it.
@@ -4384,11 +4391,22 @@ describe("publication mailing list", () => {
     });
     const body = (await preview.json()) as {
       publications: Array<{ id: string }>;
+      excluded: Array<{ id: string; reason: string }>;
+      out_of_range_count: number;
       undated_count: number;
       subject: string;
     };
     expect(body.publications.map((entry) => entry.id)).toEqual(["in-range"]);
     expect(body.undated_count).toBe(3);
+    // The undated papers are listed by name; the one outside the range is only counted, since the
+    // tab never lists those and they grow with every paper the lab has written.
+    expect(body.excluded.map((entry) => entry.id).toSorted()).toEqual([
+      "accepted",
+      "aimed",
+      "undated",
+    ]);
+    expect(body.excluded[0]).not.toHaveProperty("date");
+    expect(body.out_of_range_count).toBe(1);
     // Read-only: a preview must never be the thing that sends.
     expect(sent).toEqual([]);
 

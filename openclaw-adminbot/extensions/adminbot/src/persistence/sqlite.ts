@@ -1193,18 +1193,20 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       );
   }
 
-  listPending(limit?: number): AdminBotStoredProposal[] {
+  listPending(limit?: number, offset = 0): AdminBotStoredProposal[] {
     const max = Number.isFinite(limit) && typeof limit === "number" ? Math.max(0, limit) : 100;
     const rows = this.db
       .prepare(
-        `SELECT payload_json
-          FROM adminbot_proposals
-          WHERE status = 'pending'
-          ORDER BY updated_at ASC
-          LIMIT ?`,
+        `SELECT payload_json FROM adminbot_proposals WHERE status = 'pending'
+          ORDER BY updated_at ASC, id ASC LIMIT ? OFFSET ?`,
       )
-      .all(max) as Array<{ payload_json: string }>;
+      .all(max, Math.max(0, offset)) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotStoredProposal>(row.payload_json));
+  }
+
+  countPending(): number {
+    const sql = "SELECT COUNT(*) AS n FROM adminbot_proposals WHERE status = 'pending'";
+    return Number((this.db.prepare(sql).get() as { n: number }).n);
   }
 
   listProposalsByType(type: AdminBotStoredProposal["type"]): AdminBotStoredProposal[] {

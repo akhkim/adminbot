@@ -31,8 +31,6 @@ function paper(fields: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecord {
 function slots(fields: Partial<PaperSlotOverviewRow> = {}): PaperSlotOverviewRow {
   return {
     paper_id: "p-1",
-    title: "Meta agents for reliable science",
-    current_step: "overleaf_writing",
     provided_count: 3,
     required_count: 3,
     dormant: false,

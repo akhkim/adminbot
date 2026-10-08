@@ -6,6 +6,7 @@
 import { nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
+import { loadMoreAdminQueue } from "../controllers/admin-queues.ts";
 import {
   loadAdminBot,
   loadAdminBotMemberList,
@@ -223,6 +224,10 @@ export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSur
           },
           onRemoveSelectedActions: () => {
             void removeSelectedPendingAdminBotActions(state).finally(() => requestHostUpdate?.());
+            requestHostUpdate?.();
+          },
+          onLoadMoreQueue: (queue) => {
+            void loadMoreAdminQueue(state, queue).finally(() => requestHostUpdate?.());
             requestHostUpdate?.();
           },
           onExecute: (proposal) => void executeAdminBotAction(state, proposal),

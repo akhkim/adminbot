@@ -299,9 +299,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.proposals.set(proposal.id, proposal);
   }
 
-  listPending(limit?: number): AdminBotStoredProposal[] {
+  listPending(limit?: number, offset = 0): AdminBotStoredProposal[] {
     const max = Number.isFinite(limit) && typeof limit === "number" ? limit : this.proposals.size;
-    return [...this.proposals.values()].filter((entry) => entry.status === "pending").slice(0, max);
+    const pending = [...this.proposals.values()].filter((entry) => entry.status === "pending");
+    return pending.slice(Math.max(0, offset), Math.max(0, offset) + max);
+  }
+
+  countPending(): number {
+    return [...this.proposals.values()].filter((entry) => entry.status === "pending").length;
   }
 
   listProposalsByType(type: AdminBotStoredProposal["type"]): AdminBotStoredProposal[] {

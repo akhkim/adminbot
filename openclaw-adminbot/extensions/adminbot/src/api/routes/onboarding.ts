@@ -33,6 +33,7 @@ import {
   readMemberSheet,
   readRosterSheet,
 } from "../server.member-sheet.js";
+import { memberSheetWire } from "../server.member-sheet.wire.js";
 import type { AdminBotPrincipal, AdminBotRouteContext } from "./context.js";
 import {
   adminSessionOnly,
@@ -160,7 +161,7 @@ export const onboardingRoutes: readonly Route[] = [
       }
       if (req.method === "GET") {
         try {
-          sendJson(res, 200, await readMemberSheet(ctx.memberSheet));
+          sendJson(res, 200, memberSheetWire(await readMemberSheet(ctx.memberSheet)));
         } catch (error) {
           sendJson(res, 502, {
             error: { message: describeMemberSheetReadFailure(error, ctx.memberSheet) },

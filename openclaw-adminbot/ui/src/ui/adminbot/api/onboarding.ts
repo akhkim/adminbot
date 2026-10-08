@@ -202,7 +202,30 @@ export async function fetchMemberSheet(
   if (!result.response.ok) {
     return memberSheetFailure(result.response, result.body);
   }
-  return { ok: true, value: result.body as MemberSheetView };
+  return { ok: true, value: withFullRows(result.body as MemberSheetView) };
+}
+
+/**
+ * The service leaves each row's trailing empty cells off; every row is padded back to the header's
+ * width here, so the grid, its edit diff and its column lookups see the same rectangle they did.
+ * An older service's already-full rows pass through unchanged.
+ */
+export function withFullRows(view: MemberSheetView): MemberSheetView {
+  if (!Array.isArray(view?.header) || !Array.isArray(view.rows)) {
+    return view;
+  }
+  const width = view.header.length;
+  return {
+    ...view,
+    rows: view.rows.map((row) =>
+      row.cells.length >= width
+        ? row
+        : {
+            ...row,
+            cells: [...row.cells, ...Array.from({ length: width - row.cells.length }, () => "")],
+          },
+    ),
+  };
 }
 
 /**

@@ -106,13 +106,17 @@ describe("POST /lab-papers/relevance", () => {
       query_kind: string;
       scored: number;
       matches: Array<{ paper_id: string; band: string; evidence: string }>;
-      off_topic: Array<{ paper_id: string }>;
+      off_topic_count: number;
       nothing_relevant: boolean;
     };
     expect(body.query_kind).toBe("keywords");
     expect(body.scored).toBe(2);
     expect(body.matches.map((match) => match.paper_id)).toEqual(["causal-scientist"]);
-    expect(body.off_topic.map((match) => match.paper_id)).toEqual(["optimal-transport"]);
+    // The miss is counted, not listed: the page never draws the misses, and at a lab's full
+    // history they are most of the papers.
+    expect(body.off_topic_count).toBe(1);
+    expect(body).not.toHaveProperty("off_topic");
+    expect(body.matches[0]).not.toHaveProperty("score");
     // Every row says how thin the record behind it was; these carry titles and nothing else.
     expect(body.matches[0]?.evidence).toBe("title_only");
     expect(body.nothing_relevant).toBe(false);

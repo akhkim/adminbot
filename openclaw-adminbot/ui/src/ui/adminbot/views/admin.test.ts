@@ -1565,8 +1565,6 @@ describe("Next step per paper — reads the slot overview", () => {
     return [
       {
         paper_id: "p1",
-        title: "Preserving Historical Truth",
-        current_step: "arxiv_polish",
         provided_count: provided,
         required_count: required,
         dormant: false,
@@ -1581,6 +1579,26 @@ describe("Next step per paper — reads the slot overview", () => {
     const text = container.textContent ?? "";
     expect(text).toContain("arXiv abstract page");
     expect(text).toContain("unblocks social posts");
+  });
+
+  it("dates the nudge from the paper's own deadline", () => {
+    // The overview row stopped repeating the deadline, so the message reads it off the paper.
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        paperSlotOverview: overview(["arxiv"]),
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members,
+          papers: [{ ...(paper as object), deadline: "2026-09-25" }] as AdminBotPaperRecord[],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+    expect(container.querySelector('[data-testid="nudge-p1"]')?.getAttribute("title")).toContain(
+      "(deadline 2026-09-25)",
+    );
   });
 
   it("counts progress from the slot table, not from artifact links", () => {

@@ -61,32 +61,31 @@ export type Opportunity = {
  * `Opportunity`, which is what the board keys "can this be edited" off -- a bundled row has no
  * server-side identity to edit.
  */
-/** What the refresh sweep read off the entry's own page, waiting on a human. */
+/**
+ * What the refresh sweep read off the entry's own page, waiting on a human. Sent only to a
+ * signed-in viewer; when the sweep looked is not sent at all.
+ */
 export type OpportunityDeadlineProposal = {
   deadline_aoe: string;
   source_url: string;
   evidence: string;
-  found_at: string;
 };
 
 /** Where a sweep found an entry, when a sweep found it rather than a member submitting it. */
 export type OpportunityDiscovery = {
-  feed: string;
   source_url: string;
   evidence: string;
-  found_at: string;
 };
 
+/**
+ * A board row. The review trail (who decided and when, the submitter's id, write stamps) stays
+ * on the service; the row shows the submitter's name only.
+ */
 export type AdminBotOpportunityView = Opportunity & {
   status: OpportunityStatus;
   proposed_deadline?: OpportunityDeadlineProposal;
   discovered?: OpportunityDiscovery;
-  submitted_by_member_id?: string;
   submitted_by_name?: string;
-  created_at: string;
-  updated_at: string;
-  decided_at?: string;
-  decided_by?: string;
 };
 
 /** What the add/edit form sends. The service re-validates all of it. */

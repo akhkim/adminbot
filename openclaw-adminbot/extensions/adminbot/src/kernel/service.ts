@@ -504,7 +504,9 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveProposal(proposal: AdminBotStoredProposal): void;
   getProposal(actionId: string): AdminBotStoredProposal | undefined;
   updateProposal(proposal: AdminBotStoredProposal): void;
-  listPending(limit?: number): AdminBotStoredProposal[];
+  /** Oldest first; `offset` pages through the queue the approval panel works down. */
+  listPending(limit?: number, offset?: number): AdminBotStoredProposal[];
+  countPending(): number;
   listProposalsByType(type: AdminBotActionType): AdminBotStoredProposal[];
   saveDeadlineProposalSubmission(
     proposal: AdminBotStoredProposal,
@@ -2035,11 +2037,14 @@ export class AdminBotService {
     }
   }
 
-  listPending(limit?: number): AdminBotServiceResponse<{ proposals: AdminBotStoredProposal[] }> {
+  listPending(
+    limit?: number,
+    offset?: number,
+  ): AdminBotServiceResponse<{ proposals: AdminBotStoredProposal[] }> {
     return {
       ok: true,
       status: 200,
-      payload: { proposals: this.store.listPending(limit) },
+      payload: { proposals: this.store.listPending(limit, offset) },
     };
   }
 
@@ -8388,7 +8393,12 @@ export class AdminBotService {
     paperflow_candidates: AdminBotEmailReviewPaperflowCandidate[];
     recent_resolutions: AdminBotResolvedEmailReviewItem[];
   }> {
-    const stageResult = this.collectPaperflowStageNudges();
+    const reviews = this.store.listEmailReviews();
+    // Candidates are only ever offered against a held message, and the walk that finds them visits
+    // every open paper. An empty queue -- the usual state -- needs neither the walk nor the list.
+    const stageResult = reviews.length
+      ? this.collectPaperflowStageNudges()
+      : ({ ok: true, status: 200, payload: { items: [] } } as const);
     if (!stageResult.ok) {
       return stageResult;
     }
@@ -8419,7 +8429,7 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: {
-        reviews: this.store.listEmailReviews(),
+        reviews,
         recent_resolutions: recentResolutions,
         paperflow_candidates: stageResult.payload.items.map((item) => ({
           paper_id: item.paper_id,

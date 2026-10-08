@@ -17,14 +17,11 @@ function recommendation(
   status: "allowed" | "prohibited" | "unclear" = "allowed",
 ): WorkshopNudgeRecommendation {
   return {
-    pair_id: `paper-1::${status}`,
     final_rank: 1,
     topic_relevance: 0.9,
-    match_rationale: "The call asks for work on reliable agents.",
     topic_evidence: ["AI safety", "reliable agents", "Trace)"],
     rank_explanation:
       "90% fit to the workshop's call for papers: The call asks for work on reliable agents. Attendance was unknown.",
-    draft_fragment: "• “A safe paper” → Safety Workshop\n  Submission: 2035-09-01 AoE",
     paper: {
       paper_id: "paper-1",
       title: "A safe paper",
@@ -35,10 +32,8 @@ function recommendation(
     workshop: {
       workshop_id: status,
       name: `${status} workshop`,
-      parent_conference_key: "neurips-2035",
       parent_conference: "NeurIPS 2035",
       conference_location: "Test City",
-      topics: ["AI safety"],
       archival_status: "non_archival",
       cross_submission_status: status,
       cross_submission_evidence: `${status} in the official call`,
@@ -46,7 +41,6 @@ function recommendation(
       profile_extracted_at: "2035-01-01T00:00:00Z",
       routes: [
         {
-          deadline_id: `${status}-submission`,
           label: "Submission",
           submission_type: "direct",
           deadline_aoe: "2035-09-01 23:59:59",
@@ -73,8 +67,6 @@ function state(overrides: Partial<WorkshopNudgeReviewState> = {}): WorkshopNudge
           recommendations: [allowed, recommendation("unclear"), recommendation("prohibited")],
           draft: {
             text: "Hi Ada —\n\nExact server message",
-            pair_ids: [allowed.pair_id],
-            recommendations: [allowed],
           },
         },
       ],

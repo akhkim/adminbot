@@ -954,10 +954,9 @@ function renderOutstanding(row: PaperSlotOverviewRow, outstanding: number) {
 }
 
 /** Venue and deadline as the card's subtitle -- the two facts that decide how urgent it is. */
-function renderCardVenue(paper: AdminBotPaperRecord, props: MyWorkProps) {
-  const row = overviewFor(props, paper.id);
-  const venue = row?.venue ?? paper.venue ?? paper.artifacts?.conference;
-  const deadline = row?.deadline ?? paper.deadline;
+function renderCardVenue(paper: AdminBotPaperRecord) {
+  const venue = paper.venue ?? paper.artifacts?.conference;
+  const deadline = paper.deadline;
   if (!venue && !deadline) {
     return nothing;
   }
@@ -1277,7 +1276,7 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                 : nothing}
             </span>
             <span class="my-work-item__meta">${(paper.authors ?? []).join(", ")}</span>
-            ${renderCardVenue(paper, props)} ${renderCardSummary(paper, props)}
+            ${renderCardVenue(paper)} ${renderCardSummary(paper, props)}
           </span>
         </button>
         <button
@@ -2499,7 +2498,7 @@ function renderNudgePreview(props: MyWorkProps) {
                 <span class="nudge-preview__count">
                   ${t("paperSlots.nudgeItems", {
                     items: String(batch.item_count),
-                    papers: String(batch.paper_titles.length),
+                    papers: String(batch.paper_count),
                   })}
                 </span>
                 ${batch.deliverable

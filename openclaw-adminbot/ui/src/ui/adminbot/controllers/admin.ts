@@ -41,7 +41,7 @@ import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data
 import { invalidateMemberMap, type MemberMap } from "../data/member-map.ts";
 import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
 import { paperScopeForTab, papersReadyFor } from "../papers-required.ts";
-import { type AdminQueueCounts, loadAdminQueues } from "./admin-queues.ts";
+import { type AdminQueueCounts, type AdminQueuePages, loadAdminQueues } from "./admin-queues.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
 
@@ -218,21 +218,17 @@ export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
   };
 }
 
-/** One lab paper placed against the query. Mirrors LabPaperRelevance in the service. */
+/**
+ * One lab paper placed against the query. Mirrors LabPaperHitWire in the service, which leaves
+ * off the raw and centered scores the page never draws (the bar comes from `margin`).
+ */
 export type AdminBotLabPaperHit = {
   paper_id: string;
   title: string;
-  score: number;
   margin: number;
   band: "core" | "related" | "peripheral" | "off_topic";
-  segments: Array<{
-    segment_id: string;
-    label: string;
-    score: number;
-    margin: number;
-    band: string;
-  }>;
-  best_segment?: { segment_id: string; label: string; score: number; margin: number; band: string };
+  segments: Array<{ segment_id: string; label: string; band: string }>;
+  best_segment?: { segment_id: string; label: string; band: string };
   matched_terms: string[];
   /** How much text the placement was made from. Most records are `title_only`. */
   evidence: "rich" | "thin" | "title_only";
@@ -243,9 +239,10 @@ export type AdminBotLabPaperReport = {
   segment_count: number;
   scored: number;
   matches: AdminBotLabPaperHit[];
-  off_topic: AdminBotLabPaperHit[];
+  /** How many papers missed. The misses themselves are not sent; nothing lists them. */
+  off_topic_count?: number;
   nothing_relevant: boolean;
-  uncovered_segments: Array<{ id: string; label: string; text: string }>;
+  uncovered_segments: Array<{ id: string; label: string }>;
 };
 
 export type AdminBotLabPapersState = {
@@ -263,17 +260,15 @@ export function createEmptyLabPapersState(): AdminBotLabPapersState {
 }
 
 export type WorkshopNudgeRecommendation = {
-  pair_id: string;
+  /** Which entry of the service's `workshops` map `workshop` was restored from. */
+  workshop_id?: string;
   final_rank?: number;
-  match_rationale: string;
   topic_relevance: number;
   topic_evidence: string[];
   rank_explanation: string;
-  draft_fragment?: string;
   paper: {
     paper_id: string;
     title: string;
-    year?: number;
     current_submission_state?: string;
     publication_sources: string[];
     recipient_display_name?: string;
@@ -281,17 +276,14 @@ export type WorkshopNudgeRecommendation = {
   workshop: {
     workshop_id: string;
     name: string;
-    parent_conference_key: string;
     parent_conference: string;
     conference_location: string;
-    topics: string[];
     archival_status: "archival" | "non_archival" | "mixed" | "unknown";
     cross_submission_status: "allowed" | "prohibited" | "unclear";
     cross_submission_evidence: string;
     cross_submission_source_url: string;
     profile_extracted_at: string;
     routes: Array<{
-      deadline_id: string;
       label: string;
       submission_type: string;
       deadline_aoe: string;
@@ -320,8 +312,6 @@ export type WorkshopNudgeResult = {
     recommendations: WorkshopNudgeRecommendation[];
     draft: {
       text: string;
-      pair_ids: string[];
-      recommendations: WorkshopNudgeRecommendation[];
     } | null;
   }>;
   unresolved_recipients: Array<{
@@ -673,6 +663,8 @@ export type AdminBotDashboardData = {
   settings: AdminBotSettings | null;
   /** The dashboard's attention-card numbers; undefined until that page has read them. */
   queueCounts?: AdminQueueCounts;
+  /** How much of each paged queue is loaded; absent until its first page is read. */
+  queuePages?: AdminQueuePages;
   /** Undefined until the Settings tab has read it; null when nothing is stored. */
   sensitiveInfo?: AdminBotSensitiveInfoRecord | null;
   loadedAt: number | null;

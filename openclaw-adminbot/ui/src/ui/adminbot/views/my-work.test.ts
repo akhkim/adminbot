@@ -35,7 +35,7 @@ function batch(fields: Partial<PaperNudgeBatch> = {}): PaperNudgeBatch {
     member_name: "Ada Lovelace",
     deliverable: true,
     item_count: 2,
-    paper_titles: ["Causal abstraction"],
+    paper_count: 1,
     message: "*Causal abstraction* still needs:\n\u2022 Talk slides",
     ...fields,
   };
@@ -44,8 +44,6 @@ function batch(fields: Partial<PaperNudgeBatch> = {}): PaperNudgeBatch {
 function overviewRow(overrides: Partial<PaperSlotOverviewRow> = {}): PaperSlotOverviewRow {
   return {
     paper_id: "p1",
-    title: "Causal abstraction",
-    current_step: "overleaf_writing",
     provided_count: 3,
     required_count: 21,
     dormant: false,
@@ -294,7 +292,9 @@ describe("renderMyWork", () => {
 
   it("keeps the card head to phrasing content, which is all a button may hold", () => {
     const { container } = draw({
-      overview: [overviewRow({ venue: "ICLR 2027", deadline: "2026-09-24" })],
+      // From the paper itself: the overview row no longer repeats the paper's own fields.
+      papers: [paper({ venue: "ICLR 2027", deadline: "2026-09-24" })],
+      overview: [overviewRow()],
     });
     const toggle = container.querySelector('[data-testid="my-work-toggle-p1"]');
     // Browsers cope with a <div> or a <p> in here, but it is invalid and assistive technology is
@@ -339,7 +339,9 @@ describe("renderMyWork", () => {
 
   it("carries the venue and its deadline as the card's subtitle", () => {
     const { container } = draw({
-      overview: [overviewRow({ venue: "ICLR 2027", deadline: "2026-09-24" })],
+      // From the paper itself: the overview row no longer repeats the paper's own fields.
+      papers: [paper({ venue: "ICLR 2027", deadline: "2026-09-24" })],
+      overview: [overviewRow()],
     });
     const head = container.querySelector('[data-testid="my-work-toggle-p1"]');
     expect(head?.textContent).toContain("ICLR 2027");
