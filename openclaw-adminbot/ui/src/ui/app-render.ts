@@ -151,13 +151,9 @@ import {
 import { renderGettingStarted } from "./adminbot/views/getting-started.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate, renderSessionRestorePending } from "./adminbot/views/login-gate.ts";
-import {
-  ownPapers,
-  renderMyWork,
-  renderPaperCardDialog,
-  type MyWorkProps,
-} from "./adminbot/views/my-work.ts";
-import { paperTripDraftFrom } from "./adminbot/views/paper-cycle.ts";
+import { ownPapers } from "./adminbot/views/my-work-papers.ts";
+import type { MyWorkProps } from "./adminbot/views/my-work.ts";
+import { paperTripDraftFrom } from "./adminbot/views/paper-trip-draft.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
 import {
   createChatSessionsLoadOverrides,
@@ -648,6 +644,18 @@ const renderConfig = (props: ConfigProps) =>
   renderLazyView(lazyConfig, (m) => m.renderConfig(props));
 const renderQuickSettings = (props: QuickSettingsProps) =>
   renderLazyView(lazyQuickSettings, (m) => m.renderQuickSettings(props));
+// My Work and the paper card it shares with Active Papers carry the whole paper workflow (slots,
+// the cycle checklist, the grid). The card opens on top of a page that is already showing, so it
+// stays out of view until its code arrives rather than flashing a loading card.
+const lazyMyWork = createLazyView(() => import("./adminbot/views/my-work.ts"), notifyLazyViewHost);
+const renderMyWork = (state: AppViewState, props: MyWorkProps) =>
+  renderLazyView(lazyMyWork, (m) => m.renderMyWork(state, props));
+const renderPaperCardDialog = (
+  params: Parameters<typeof import("./adminbot/views/my-work.ts").renderPaperCardDialog>[0],
+) => {
+  const myWork = lazyMyWork.read();
+  return myWork ? myWork.renderPaperCardDialog(params) : nothing;
+};
 const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
   notifyLazyViewHost,
@@ -1764,6 +1772,11 @@ export function renderApp(state: AppViewState) {
       ? () => updatableState.requestUpdate?.()
       : undefined;
   setLazyViewHost(requestHostUpdate);
+  // Active Papers opens the paper card on a row click; fetch its code while the table is up so
+  // the card appears on the click, as it did when it shipped in the entry bundle.
+  if (state.tab === "adminbotPapers" || state.tab === "adminbotProfessor") {
+    lazyMyWork.read();
+  }
 
   // Opening the workshop tab reads the stored pass. It never starts one -- that is Refresh, and it
   // is thousands of model calls. Self-limiting: the read sets `loading` synchronously and leaves a

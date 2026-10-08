@@ -7,7 +7,6 @@ import {
   adminBotProjectChannelName,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { isPaperFeedbackSlot } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
-import { paperInvolvesMember } from "../../../../../extensions/adminbot/src/contracts/paper-involvement.js";
 import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -35,7 +34,7 @@ import type {
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
 import { aoeInstantMs } from "../data/deadline-time.ts";
 import { DEADLINE_SUMMARIES } from "../data/deadlines-summary.ts";
-import { paperSteps, stepLabels } from "../data/paper-steps.ts";
+import { paperSteps } from "../data/paper-steps.ts";
 import {
   ARCHIVAL_VENUES,
   type CatalogVenue,
@@ -114,7 +113,9 @@ import {
   readVenueTargets,
   venueTargetMatches,
 } from "../venue-targets.ts";
+import { onViewSessionReset } from "../view-session-reset.ts";
 import { channelExists, nearbyChannels } from "./my-work-channels.ts";
+import { ownPapers, paperProgress, stepLabel } from "./my-work-papers.ts";
 import { generateLinkedInDraft, generateXDraft } from "./my-work-social-drafts.ts";
 import { paperTripDraftFrom, renderPaperCycle, type PaperTripDraft } from "./paper-cycle.ts";
 import { renderPaperFeedback } from "./paper-feedback.ts";
@@ -128,6 +129,7 @@ import { renderPaperPiReview } from "./paper-pi-review.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
 import { renderPaperTimeline } from "./paper-timeline.ts";
 import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
+export { ownPapers, paperProgress, stepLabel } from "./my-work-papers.ts";
 import { findOwnMember } from "./profile-fields.ts";
 import { renderRecentEdits } from "./recent-edits.ts";
 
@@ -296,30 +298,6 @@ export function reviewerName(state: AppViewState): string {
  * somebody picked them, and it is checked first because it is the only line here that is not a
  * guess about a string the venue owns.
  */
-export function ownPapers(state: AppViewState): AdminBotPaperRecord[] {
-  const member = findOwnMember(state);
-  // The same rule GET /papers?scope=mine applies, so a page that read only the viewer's papers
-  // shows the rows it used to pick out of the full list. Names compare as people (isSamePerson):
-  // a raw lowercase comparison once hid a co-first author's paper behind the "*" marking it.
-  return (state.adminBotData?.papers ?? []).filter((paper) =>
-    paperInvolvesMember(paper, state.memberId, member?.name),
-  );
-}
-
-// Progress is position in the PaperPublish pipeline, not a number someone types. A paper at
-// "Submission" is 3 of 8 through, and that is the only progress the lab actually tracks.
-export function paperProgress(paper: AdminBotPaperRecord): { index: number; percent: number } {
-  const index = paperSteps.indexOf(paper.current_step as AdminBotPaperStep);
-  if (index < 0) {
-    return { index: -1, percent: 0 };
-  }
-  return { index, percent: Math.round(((index + 1) / paperSteps.length) * 100) };
-}
-
-export function stepLabel(step: string): string {
-  return stepLabels[step] ?? step;
-}
-
 function saveStep(props: MyWorkProps, paper: AdminBotPaperRecord, step: AdminBotPaperStep) {
   props.onSavePaper({
     id: paper.id,
@@ -2583,6 +2561,9 @@ export function resetMyWorkSessionState(): void {
   emailTasks.clear();
   decisionDrafts.clear();
 }
+
+// The page is lazy, so it registers its own reset rather than the shell importing it to clear it.
+onViewSessionReset(resetMyWorkSessionState);
 
 /** The venue as the banner names it, so the mail and the heading never disagree. */
 function venueOf(paper: AdminBotPaperRecord): string {

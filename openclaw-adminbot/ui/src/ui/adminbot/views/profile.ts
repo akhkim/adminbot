@@ -71,7 +71,7 @@ import { onViewSessionReset } from "../view-session-reset.ts";
 import { renderMemberBadgeSymbols, badgeCountLabel } from "./badge-symbols.ts";
 import { renderCountrySelect } from "./country-select.ts";
 import { renderMemberSelect } from "./member-select.ts";
-import { ownPapers } from "./my-work.ts";
+import { ownPapers } from "./my-work-papers.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 import {
   blankFields,
