@@ -107,6 +107,20 @@ export function sendJson(res: ServerResponse, status: number, body: unknown): vo
   res.setHeader("Vary", "Accept-Encoding");
   // Inline photos go out as /avatars/<hash> (see ./avatars.ts) rather than megabytes of base64.
   const json = JSON.stringify(body, avatarJsonReplacer);
+  if (status === 200 && res.req?.method === "GET") {
+    // A weak validator over the exact bytes this caller was about to receive. It is computed
+    // after every role projection has run, so two callers whose projections differ can never
+    // share a tag, and a matching tag means the caller already holds this very body. no-store
+    // stays: the console keeps the previous body in memory, per session, and revalidates
+    // explicitly -- nothing personal lands in the browser's disk cache.
+    const etag = jsonEtag(json);
+    res.setHeader("ETag", etag);
+    if (etagMatches(res.req.headers["if-none-match"], etag)) {
+      res.statusCode = 304;
+      res.end();
+      return;
+    }
+  }
   // Roster and paper payloads run to megabytes of repetitive JSON, which gzip shrinks ~5-10x.
   // Small bodies are not worth the CPU or the header bytes.
   if (json.length >= GZIP_MIN_BYTES && acceptsGzip(res.req)) {
@@ -118,6 +132,23 @@ export function sendJson(res: ServerResponse, status: number, body: unknown): vo
 }
 
 const GZIP_MIN_BYTES = 1024;
+
+function jsonEtag(json: string): string {
+  return `W/"${createHash("sha256").update(json).digest("base64url").slice(0, 27)}"`;
+}
+
+// If-None-Match uses weak comparison (RFC 9110 13.1.2): `W/` is ignored on both sides, and the
+// header may carry a list or `*`.
+function etagMatches(header: string | string[] | undefined, etag: string): boolean {
+  if (typeof header !== "string" || !header) {
+    return false;
+  }
+  const opaque = etag.replace(/^W\//, "");
+  return header
+    .split(",")
+    .map((candidate) => candidate.trim())
+    .some((candidate) => candidate === "*" || candidate.replace(/^W\//, "") === opaque);
+}
 
 function acceptsGzip(req: IncomingMessage | undefined): boolean {
   const header = req?.headers?.["accept-encoding"];
