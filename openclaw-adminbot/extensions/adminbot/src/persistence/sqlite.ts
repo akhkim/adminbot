@@ -135,7 +135,6 @@ import {
 } from "./reference-scans.js";
 import { SqliteAuditLog } from "./sqlite.audit.js";
 import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
-import { listSqliteLogisticsRequests } from "./sqlite.logistics.js";
 import { listSqliteMeetingsPage } from "./sqlite.meetings.js";
 import { escalatedMemberNotificationsSql } from "./sqlite.member-notifications.js";
 import {
@@ -3383,12 +3382,13 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   listLogisticsRequests(memberId?: string): AdminBotLogisticsRequest[] {
-    return listSqliteLogisticsRequests(this.db, memberId, { withoutFileBytes: false });
-  }
-
-  /** As listLogisticsRequests, with every file's `data_base64` left out. */
-  listLogisticsRequestSummaries(memberId?: string): AdminBotLogisticsRequest[] {
-    return listSqliteLogisticsRequests(this.db, memberId, { withoutFileBytes: true });
+    const where = memberId ? "WHERE member_id = ?" : "";
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json FROM adminbot_logistics_requests ${where} ORDER BY submitted_at DESC`,
+      )
+      .all(...(memberId ? [memberId] : [])) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotLogisticsRequest>(row.payload_json));
   }
 
   deleteLogisticsRequest(requestId: string): boolean {
