@@ -447,7 +447,6 @@ import {
 } from "./service.deadline-recommendations.js";
 import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import { LabSharingService } from "./service.lab-sharing.js";
-import { withPaperTimeline } from "./service.paper-timeline.js";
 import { piReviewSlotDenial } from "./service.pi-review.js";
 import { prepareSocialDraft, socialDraftSupersedes } from "./service.social-drafts.js";
 
@@ -5822,7 +5821,7 @@ export class AdminBotService {
     }
     const needles = memberRelevanceNeedles(member);
     const papers = this.store.listPapers().filter((paper) => paperMatchesNeedles(paper, needles));
-    return { ok: true, status: 200, payload: { papers: papers.map(withPaperTimeline) } };
+    return { ok: true, status: 200, payload: { papers } };
   }
 
   /**
@@ -10064,7 +10063,7 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: {
-        papers: this.store.listPapers(page).map(withPaperTimeline),
+        papers: this.store.listPapers(page),
         ...(page
           ? { total: this.store.countPapers(page.q), limit: page.limit, offset: page.offset }
           : {}),
@@ -10139,10 +10138,7 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: {
-        nudges: this.store
-          .listPapers()
-          .map(withPaperTimeline)
-          .flatMap((paper) => duePaperNudges(paper, nowIso)),
+        nudges: this.store.listPapers().flatMap((paper) => duePaperNudges(paper, nowIso)),
       },
     };
   }
@@ -15930,7 +15926,6 @@ function duePaperNudges(paper: AdminBotPaperRecord, nowIso: string): AdminBotPap
         message:
           `Authors have not replied for ${elapsedBusinessDays} business days. ` +
           `Ask the head professor to remind them about ${paper.current_step}.`,
-        ...(paper.timeline ? { timeline: paper.timeline } : {}),
       },
     ];
   }
@@ -15945,7 +15940,6 @@ function duePaperNudges(paper: AdminBotPaperRecord, nowIso: string): AdminBotPap
       step: paper.current_step,
       recipients: paper.authors,
       message: `Remind authors to complete ${paper.current_step} for "${paper.title}".`,
-      ...(paper.timeline ? { timeline: paper.timeline } : {}),
     },
   ];
 }

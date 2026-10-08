@@ -532,25 +532,6 @@ export type AdminBotPaperStep =
   | "social_posts"
   | "slide_making"
   | "poster_making";
-export type AdminBotPaperTimelineItem = {
-  step: AdminBotPaperStep;
-  label: string;
-  dependency_group: string;
-  depends_on: AdminBotPaperStep[];
-  status: "complete" | "current" | "upcoming" | "blocked";
-  offset_start_business_day: number;
-  offset_end_business_day: number;
-  duration_business_days: number;
-  color: string;
-};
-
-export type AdminBotPaperTimeline = {
-  progress_percent: number;
-  current_step_index: number;
-  total_estimated_business_days: number;
-  items: AdminBotPaperTimelineItem[];
-};
-
 export type AdminBotPaperRecord = {
   id: string;
   title: string;
@@ -606,7 +587,6 @@ export type AdminBotPaperRecord = {
   // Set by the service when a member files a paper themselves; one of the signals that lets the
   // UI offer them the edit form.
   submitted_by_member_id?: string;
-  timeline?: AdminBotPaperTimeline;
   created_at: string;
   updated_at: string;
 };
@@ -636,7 +616,6 @@ export type AdminBotPaperNudge = {
   recipients: string[];
   message: string;
   business_days_since_author_dm?: number;
-  timeline?: AdminBotPaperTimeline;
 };
 
 export type AdminBotExecutionResult = {

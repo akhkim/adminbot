@@ -19,6 +19,7 @@ import type {
   AdminBotSensitiveInfoRecord,
   AdminBotSettingsInput,
 } from "../../contracts/actions.js";
+import { paperStepProgress } from "../../contracts/paper-progress.js";
 import { resolveCalendarSource } from "../../workflows/calendar/source.js";
 import { selectUnreviewedApplicants } from "../../workflows/members/applicant-sheet.js";
 import {
@@ -934,7 +935,6 @@ function paperNudgeProposal(params: PaperNudgeProposalParams): AdminBotActionPro
         current_step: params.paper.current_step,
         authors: params.paper.authors,
       },
-      ...(params.paper.timeline ? { timeline: params.paper.timeline } : {}),
     },
     ...(params.idempotencyKey ? { idempotency_key: params.idempotencyKey } : {}),
     undo_plan:
@@ -943,16 +943,13 @@ function paperNudgeProposal(params: PaperNudgeProposalParams): AdminBotActionPro
 }
 
 function paperNudgeMessage(paper: AdminBotPaperRecord, recipientLabel: string): string {
-  const current = paper.timeline?.items.find(
-    (item) => item.status === "current" || item.status === "blocked",
-  );
-  const next = paper.timeline?.items.find((item) => item.status === "upcoming");
-  const currentLabel = current?.label ?? paper.current_step;
-  const nextLabel = next ? ` Next dependency: ${next.label}.` : "";
-  const progress = paper.timeline ? ` Timeline progress: ${paper.timeline.progress_percent}%.` : "";
+  const progress = paperStepProgress(paper);
+  const currentLabel = progress.currentLabel ?? paper.current_step;
+  const nextLabel = progress.nextLabel ? ` Next dependency: ${progress.nextLabel}.` : "";
   return (
     `Hi ${recipientLabel}, please nudge ${paper.authors.join(", ")} about ` +
-    `\"${paper.title}\". Current step: ${currentLabel}.${progress}${nextLabel}`
+    `\"${paper.title}\". Current step: ${currentLabel}.` +
+    ` Timeline progress: ${progress.progressPercent}%.${nextLabel}`
   );
 }
 function slackMessageProposal(params: SlackMessageParams): AdminBotActionProposal {

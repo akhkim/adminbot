@@ -3100,7 +3100,7 @@ describe("AdminBotService", () => {
     });
   });
 
-  it("adds a progress-based paper timeline to listed papers and due nudges", () => {
+  it("does not attach a computed timeline to listed papers or due nudges", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertPaper({
@@ -3115,35 +3115,14 @@ describe("AdminBotService", () => {
       }),
     );
 
+    // Readers derive the step label and progress from `current_step` (contracts/paper-progress),
+    // so the ~2 KB per-paper timeline is not part of any list response.
     const [paper] = unwrap(service.listPapers()).papers;
-    expect(paper?.timeline).toMatchObject({
-      // Progress is work-based (11 of 16 estimated days), so it does not move when parallel
-      // branches shorten the schedule.
-      progress_percent: 69,
-      // The critical path, not the sum of every estimate: slides and poster run alongside the
-      // arXiv/announcement chain, taking 4 days off the schedule's 16 days of work.
-      total_estimated_business_days: 12,
-      items: expect.arrayContaining([
-        expect.objectContaining({ step: "overleaf_writing", status: "complete" }),
-        expect.objectContaining({ step: "social_posts", status: "current" }),
-        expect.objectContaining({ step: "slide_making", status: "upcoming" }),
-        expect.objectContaining({ step: "poster_making", status: "upcoming" }),
-      ]),
-    });
-
-    // The flow branches at the submission: slides hang off it rather than off the announcements,
-    // so the two chains overlap in time instead of queueing behind one another.
-    const byStep = new Map(paper?.timeline?.items.map((item) => [item.step, item]));
-    expect(byStep.get("slide_making")?.depends_on).toEqual(["submission"]);
-    expect(byStep.get("google_drive_pdf")?.depends_on).toEqual(["submission"]);
-    expect(byStep.get("slide_making")?.offset_start_business_day).toBe(
-      byStep.get("google_drive_pdf")?.offset_start_business_day,
-    );
-    expect(byStep.get("brainstorming_docs")?.depends_on).toEqual([]);
-    expect(unwrap(service.listPaperNudges("2026-06-02T00:00:00.000Z")).nudges[0]).toMatchObject({
-      paper_id: "paper-timeline",
-      timeline: expect.objectContaining({ progress_percent: 69 }),
-    });
+    expect(paper?.current_step).toBe("social_posts");
+    expect(paper).not.toHaveProperty("timeline");
+    const [nudge] = unwrap(service.listPaperNudges("2026-06-02T00:00:00.000Z")).nudges;
+    expect(nudge).toMatchObject({ paper_id: "paper-timeline", step: "social_posts" });
+    expect(nudge).not.toHaveProperty("timeline");
   });
   it("deletes paper records and records an audit event", () => {
     const service = new AdminBotService();
@@ -3242,7 +3221,6 @@ describe("AdminBotService", () => {
         step: "arxiv_polish",
         recipients: ["alice", "bob"],
         message: 'Remind authors to complete arxiv_polish for "Causal Garden Planning".',
-        timeline: expect.objectContaining({ current_step_index: 4, progress_percent: 56 }),
       }),
     ]);
     expect(unwrap(service.listPaperNudges("2026-06-04T12:00:00.000Z")).nudges).toEqual([

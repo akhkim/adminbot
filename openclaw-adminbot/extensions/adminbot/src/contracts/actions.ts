@@ -1935,38 +1935,6 @@ export const adminBotPaperSteps = [
 
 export type AdminBotPaperStep = (typeof adminBotPaperSteps)[number];
 
-export const adminBotPaperTimelineDependencyGroups = [
-  "ideation",
-  "writing",
-  "submission",
-  "release",
-  "outreach",
-  "materials",
-] as const;
-
-export type AdminBotPaperTimelineDependencyGroup =
-  (typeof adminBotPaperTimelineDependencyGroups)[number];
-
-export type AdminBotPaperTimelineStatus = "complete" | "current" | "upcoming" | "blocked";
-
-export type AdminBotPaperTimelineItem = {
-  step: AdminBotPaperStep;
-  label: string;
-  dependency_group: AdminBotPaperTimelineDependencyGroup;
-  depends_on: AdminBotPaperStep[];
-  status: AdminBotPaperTimelineStatus;
-  offset_start_business_day: number;
-  offset_end_business_day: number;
-  duration_business_days: number;
-  color: string;
-};
-
-export type AdminBotPaperTimeline = {
-  progress_percent: number;
-  current_step_index: number;
-  total_estimated_business_days: number;
-  items: AdminBotPaperTimelineItem[];
-};
 export type AdminBotPaperArtifactLinks = {
   /** Publication track is independent of presentation_type; blank explicitly clears it. */
   publication_track?: string;
@@ -2231,7 +2199,6 @@ export type AdminBotPaperRecordInput = {
 };
 
 export type AdminBotPaperRecord = AdminBotPaperRecordInput & {
-  timeline?: AdminBotPaperTimeline;
   created_at: string;
   updated_at: string;
 };
@@ -2244,7 +2211,6 @@ export type AdminBotPaperNudge = {
   recipients: string[];
   message: string;
   business_days_since_author_dm?: number;
-  timeline?: AdminBotPaperTimeline;
 };
 
 // Member nudge: an admin-composed message (paper-flow reminder or general announcement) sent to a
