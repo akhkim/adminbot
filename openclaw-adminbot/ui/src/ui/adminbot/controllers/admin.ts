@@ -1184,7 +1184,7 @@ async function loadAdminBotOverSession(
     // The sensitive-info notes are read by the Settings tab alone (loadAdminBotSensitiveInfo), so
     // they no longer ride along on every admin page load.
     const [pending, emailReview, nudges, conferenceRosters, settings] = await Promise.all([
-      optional("/proposals/pending?limit=50"),
+      optional("/proposals/pending?limit=50&view=summary"),
       optional("/automation/email/review"),
       optional("/papers/nudges"),
       optional("/papers/conference-rosters"),

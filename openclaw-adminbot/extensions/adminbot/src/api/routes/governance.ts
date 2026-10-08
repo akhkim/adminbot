@@ -10,6 +10,8 @@ import type {
   AdminBotRemovePendingRequest,
 } from "../../contracts/actions.js";
 import { readJson, sendJson, sendServiceResult } from "../server.http.js";
+import { mapPayload } from "../server.paper-lists.wire.js";
+import { proposalSummaryWire } from "../server.proposals.wire.js";
 import {
   adminSessionOnly,
   approverIdentityFor,
@@ -43,7 +45,16 @@ export const governanceRoutes: readonly Route[] = [
       const { service } = ctx;
       const rawLimit = url.searchParams.get("limit");
       const limit = rawLimit ? Number(rawLimit) : undefined;
-      sendServiceResult(res, service.listPending(limit));
+      const pending = service.listPending(limit);
+      // Opt-in so the gateway tool and older consoles, which read the payload, keep it.
+      sendServiceResult(
+        res,
+        url.searchParams.get("view") === "summary"
+          ? mapPayload(pending, ({ proposals }) => ({
+              proposals: proposals.map(proposalSummaryWire),
+            }))
+          : pending,
+      );
     }),
   ),
   post(/^\/proposals\/([^/]+)\/remove$/u, async ({ req, res, principal, ctx, params }) => {
