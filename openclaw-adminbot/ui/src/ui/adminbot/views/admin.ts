@@ -997,14 +997,13 @@ function papersForMember(
 }
 
 /**
- * A paper still moving through the pipeline. Explicitly marked complete, or a timeline that has
- * run to 100%, both mean the work is done and its venue is no longer something to announce about.
+ * A paper still moving through the pipeline. Only an explicit "complete" ends it: step progress
+ * (contracts/paper-progress) reaches 100% on that and nothing else, so it needs no second check.
  * Kept separate from `conferencesForMember` so the members sheet keeps listing every conference a
  * person has touched, while announcements only offer the ones with live work behind them.
  */
 function isOngoingPaper(paper: AdminBotPaperRecord): boolean {
-  if (paper.reminder?.status === "complete") return false;
-  return (paper.timeline?.progress_percent ?? 0) < 100;
+  return paper.reminder?.status !== "complete";
 }
 
 // Conferences a member has *ongoing* papers for, which is what makes them worth announcing to.

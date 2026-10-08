@@ -55,7 +55,11 @@ describe.each(["memory", "sqlite"] as const)("list ordering and Unicode search (
         "b",
         "e1",
       ]);
-      expect(store.countPapers("ÉMILE")).toBe(2);
+      expect(store.countPapers({ q: "ÉMILE" })).toBe(2);
+      expect(store.countPapers()).toBe(4);
+      // The total under an author filter is that author's papers, not the lab's.
+      expect(store.countPapers({ authorMemberId: "recipient" })).toBe(2);
+      expect(store.countPapers({ authorMemberId: "recipient", q: "bob" })).toBe(0);
       expect(
         store
           .listPapers({ limit: 1, offset: 0, authorMemberId: "recipient" })

@@ -226,6 +226,36 @@ describe("the paper-evidence reads", () => {
   });
 });
 
+describe("reading one paper", () => {
+  it("returns the paper in the list's projection, and 404 for one that does not exist", async () => {
+    const { baseUrl } = await startLab();
+    const one = await call(baseUrl, "GET", "/papers/p1");
+    expect(one.status).toBe(200);
+    expect(one.body).toMatchObject({ id: "p1", current_step: "overleaf_writing" });
+    expect(one.body).not.toHaveProperty("timeline");
+    const listed = await call(baseUrl, "GET", "/papers");
+    expect(listed.body.papers.find((paper: { id: string }) => paper.id === "p1")).toEqual(one.body);
+    expect((await call(baseUrl, "GET", "/papers/nope")).status).toBe(404);
+    // The literal reads beside it are still theirs, not swallowed as a paper id.
+    expect((await call(baseUrl, "GET", "/papers/nudges")).body).toHaveProperty("nudges");
+    expect((await call(baseUrl, "GET", "/papers/slot-overview")).body).toHaveProperty("papers");
+  });
+
+  it("refuses the arXiv password as an artifact and takes it on its slot instead", async () => {
+    const { baseUrl } = await startLab();
+    const put = await call(baseUrl, "PUT", "/papers/p1", {
+      title: "Causal abstraction",
+      authors: ["Ada Lovelace"],
+      current_step: "arxiv_polish",
+      artifacts: { arxiv_paper_password: "ab12cd" },
+    });
+    expect(put.status).toBe(400);
+    expect((await call(baseUrl, "GET", "/papers/p1")).body.artifacts ?? {}).not.toHaveProperty(
+      "arxiv_paper_password",
+    );
+  });
+});
+
 describe("writing a slot over HTTP", () => {
   it("stores a good link as provided", async () => {
     const { baseUrl } = await startLab();

@@ -881,8 +881,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return page ? papers.slice(page.offset, page.offset + page.limit) : papers;
   }
 
-  countPapers(q?: string): number {
-    return [...this.papers.values()].filter((paper) => !q || paperMatchesQuery(paper, q)).length;
+  countPapers(filter?: { q?: string; authorMemberId?: string }): number {
+    return this.listPapers(filter && { ...filter, limit: Number.MAX_SAFE_INTEGER, offset: 0 })
+      .length;
   }
 
   deletePaper(paperId: string): boolean {
