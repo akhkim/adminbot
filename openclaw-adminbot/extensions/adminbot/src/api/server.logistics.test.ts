@@ -246,6 +246,37 @@ describe("logistics request routes", () => {
     expect(body.requests[0]?.member_id).toBe("ada");
   });
 
+  it("lists the queue's columns and leaves the rest to opening the request", async () => {
+    const lab = await startLab();
+    const submitted = await submit(lab, "ada", {
+      kind: "recommendation_letters",
+      schools: [
+        {
+          school: "MIT",
+          program: "PhD CS",
+          letter_deadline: "2026-12-01",
+          deadline_timezone: "UTC",
+        },
+      ],
+      facts: [{ project: "Paper A", contribution: "Ran every experiment." }],
+    });
+    const listed = (await (
+      await fetch(`${lab.baseUrl}/logistics/requests`, { headers: asMember(lab, "zhijing") })
+    ).json()) as { requests: Record<string, unknown>[] };
+    expect(listed.requests[0]).not.toHaveProperty("facts");
+    expect(listed.requests[0]?.schools).toEqual([
+      { school: "MIT", letter_deadline: "2026-12-01", deadline_timezone: "UTC" },
+    ]);
+
+    const opened = (await (
+      await fetch(`${lab.baseUrl}/logistics/requests/${submitted.request.id}`, {
+        headers: asMember(lab, "zhijing"),
+      })
+    ).json()) as { facts?: unknown[]; schools?: { program?: string }[] };
+    expect(opened.facts).toHaveLength(1);
+    expect(opened.schools?.[0]?.program).toBe("PhD CS");
+  });
+
   it("shows an admin the lab's queue and a member only their own", async () => {
     const lab = await startLab();
     await submit(lab, "ada", LETTERS);
@@ -368,10 +399,11 @@ describe("logistics request routes", () => {
     });
     const listed = (
       (await list.json()) as {
-        requests: { documents: { data_base64?: string }[] }[];
+        requests: { documents?: { data_base64?: string }[] }[];
       }
     ).requests;
-    expect(listed[0]?.documents[0]?.data_base64).toBeUndefined();
+    // The list row does not name the files at all: they are drawn only on the opened request.
+    expect(listed[0]).not.toHaveProperty("documents");
 
     const opened = await fetch(`${lab.baseUrl}/logistics/requests/${submitted.request.id}`, {
       headers: asMember(lab, "ada"),

@@ -80,6 +80,14 @@ export type LogisticsRequestInput = {
   meetings?: LogisticsMeeting[];
 };
 
+/**
+ * A request as the service sends it.
+ *
+ * The list read (`fetchLogisticsRequests`) fills in only the queue's columns: who, kind, status,
+ * the stamps, the signed-and-sent line, and on each school or meeting just the fields its deadline
+ * is read from. Everything else -- files, description, facts, links, the lab's answer -- arrives
+ * with `fetchLogisticsRequest`, which is what opening a request already calls.
+ */
 export type LogisticsRequest = LogisticsRequestInput & {
   id: string;
   member_id: string;
