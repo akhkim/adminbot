@@ -20,7 +20,11 @@ import {
   privilegedOnly,
   requireMemberPrivileged,
 } from "./guards.js";
-import { mapPayload, slotOverviewWireRow } from "../server.paper-lists.wire.js";
+import {
+  conferenceRosterWire,
+  mapPayload,
+  slotOverviewWireRow,
+} from "../server.paper-lists.wire.js";
 import { get, post, type Route } from "./router.js";
 
 export const paperAdminRoutes: readonly Route[] = [
@@ -225,7 +229,12 @@ export const paperAdminRoutes: readonly Route[] = [
     "/papers/conference-rosters",
     privilegedOnly(({ res, ctx }) => {
       const { service } = ctx;
-      sendServiceResult(res, service.listConferenceRosters());
+      sendServiceResult(
+        res,
+        mapPayload(service.listConferenceRosters(), (p) => ({
+          conferences: p.conferences.map(conferenceRosterWire),
+        })),
+      );
     }),
   ),
   get(

@@ -22,7 +22,7 @@ import {
 } from "../api/meetings.ts";
 import type { StandingMeeting } from "../api/meetings.ts";
 import { queueMemberOnboardingGuide } from "../api/onboarding.ts";
-import type { ConferenceRoster } from "../api/paper-admin.ts";
+import { readConferenceRosters, type ConferenceRoster } from "../api/paper-admin.ts";
 import { saveOwnPaper } from "../api/papers.ts";
 import type { LocationDrift } from "../api/profile.ts";
 import type { MemberNotification } from "../api/workspace.ts";
@@ -1219,7 +1219,7 @@ async function loadAdminBotOverSession(
       papers: host.adminBotData.papers,
       papersLoadedAt: host.adminBotData.papersLoadedAt,
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
-      conferenceRosters: readArray<ConferenceRoster>(conferenceRosters, "conferences"),
+      conferenceRosters: readConferenceRosters(conferenceRosters),
       settings:
         Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
       sensitiveInfo: host.adminBotData.sensitiveInfo,

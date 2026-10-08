@@ -300,8 +300,51 @@ export async function fetchConferenceRosters(
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as { conferences?: ConferenceRoster[] } | null;
-  return { ok: true, value: body?.conferences ?? [] };
+  return { ok: true, value: readConferenceRosters(result.body) };
+}
+
+type ConferenceRosterWire = Omit<ConferenceRoster, "people" | "papers_awaiting"> & {
+  paper_titles?: Record<string, string>;
+  people: Array<
+    Omit<ConferenceRosterPerson, "papers"> & {
+      papers: Array<{ paper_id: string; title?: string; attending: "yes" | "no" | "unknown" }>;
+    }
+  >;
+  papers_awaiting: Array<{ paper_id: string; title?: string; unanswered: number }>;
+};
+
+/**
+ * The rosters as the views draw them, titles put back.
+ *
+ * The service names each paper's title once per conference in `paper_titles` and points at it by
+ * id from the people and the awaiting list. A service older than that sends the titles inline,
+ * which this reads as-is, so the page works against either while the two deploy at different times.
+ */
+export function readConferenceRosters(body: unknown): ConferenceRoster[] {
+  const conferences = (body as { conferences?: unknown } | null)?.conferences;
+  if (!Array.isArray(conferences)) {
+    return [];
+  }
+  return (conferences as ConferenceRosterWire[]).map(({ paper_titles, ...conference }) => {
+    const titleOf = (paper: { paper_id: string; title?: string }) =>
+      paper.title ?? paper_titles?.[paper.paper_id] ?? "";
+    return {
+      ...conference,
+      people: conference.people.map((person) => ({
+        ...person,
+        papers: person.papers.map((paper) => ({
+          paper_id: paper.paper_id,
+          title: titleOf(paper),
+          attending: paper.attending,
+        })),
+      })),
+      papers_awaiting: conference.papers_awaiting.map((paper) => ({
+        paper_id: paper.paper_id,
+        title: titleOf(paper),
+        unanswered: paper.unanswered,
+      })),
+    };
+  });
 }
 
 export type PaperNudgeBatch = {
