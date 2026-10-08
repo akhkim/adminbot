@@ -353,7 +353,8 @@ export type PaperNudgeBatch = {
   /** False when there is no Slack id on file. The preview says so before anything is sent. */
   deliverable: boolean;
   item_count: number;
-  paper_titles: string[];
+  /** How many papers the batch spans. Read from `paper_titles` when an older service sends that. */
+  paper_count: number;
   /** The composed message, exactly as it would arrive. */
   message: string;
 };
@@ -375,8 +376,19 @@ export async function fetchPaperNudgeBatches(
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as { batches?: PaperNudgeBatch[] } | null;
-  return { ok: true, value: body?.batches ?? [] };
+  const body = result.body as {
+    batches?: Array<Omit<PaperNudgeBatch, "paper_count"> & {
+      paper_count?: number;
+      paper_titles?: string[];
+    }>;
+  } | null;
+  return {
+    ok: true,
+    value: (body?.batches ?? []).map(({ paper_titles, paper_count, ...batch }) => ({
+      ...batch,
+      paper_count: paper_count ?? paper_titles?.length ?? 0,
+    })),
+  };
 }
 
 /**

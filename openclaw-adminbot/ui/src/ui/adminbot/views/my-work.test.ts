@@ -35,7 +35,7 @@ function batch(fields: Partial<PaperNudgeBatch> = {}): PaperNudgeBatch {
     member_name: "Ada Lovelace",
     deliverable: true,
     item_count: 2,
-    paper_titles: ["Causal abstraction"],
+    paper_count: 1,
     message: "*Causal abstraction* still needs:\n\u2022 Talk slides",
     ...fields,
   };

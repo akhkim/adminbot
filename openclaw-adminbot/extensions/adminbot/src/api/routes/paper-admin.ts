@@ -23,6 +23,7 @@ import {
 import {
   conferenceRosterWire,
   mapPayload,
+  nudgeBatchWire,
   slotOverviewWireRow,
 } from "../server.paper-lists.wire.js";
 import { get, post, type Route } from "./router.js";
@@ -243,7 +244,10 @@ export const paperAdminRoutes: readonly Route[] = [
       const { service } = ctx;
       sendServiceResult(
         res,
-        service.collectPaperNudgeBatches(url.searchParams.get("now") ?? undefined),
+        mapPayload(
+          service.collectPaperNudgeBatches(url.searchParams.get("now") ?? undefined),
+          (p) => ({ ...p, batches: p.batches.map(nudgeBatchWire) }),
+        ),
       );
     }),
   ),

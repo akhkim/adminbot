@@ -521,8 +521,10 @@ describe("the global nudge, end to end", () => {
       member_id: "ada",
       member_name: "Ada Lovelace",
       deliverable: true,
-      paper_titles: ["Causal abstraction"],
+      // A count: the titles are already in the message the preview quotes in full.
+      paper_count: 1,
     });
+    expect(preview.body.batches[0]).not.toHaveProperty("paper_titles");
     // The composed message, verbatim -- the preview is the send, looked at rather than performed.
     expect(preview.body.batches[0].message).toContain("Project folder or brainstorm doc");
     expect(sent).toHaveLength(0);

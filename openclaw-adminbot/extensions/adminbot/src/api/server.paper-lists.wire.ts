@@ -6,7 +6,11 @@
 // repeated once per paper and the lab's paper count is what grows. Anything a row drops is either
 // already on the paper record the page holds from GET /papers, or is read on GET /papers/:id.
 
-import type { AdminBotPaperSlotOverviewRow, AdminBotServiceResponse } from "../kernel/service.js";
+import type {
+  AdminBotNudgeBatch,
+  AdminBotPaperSlotOverviewRow,
+  AdminBotServiceResponse,
+} from "../kernel/service.js";
 import type {
   ConferenceAttendancePaper,
   ConferenceAttendancePerson,
@@ -101,4 +105,15 @@ export function conferenceRosterWire(conference: ConferenceAttendanceView): Conf
       unanswered,
     })),
   };
+}
+
+/** One person's nudge preview, with a count where the title list was. */
+export type NudgeBatchWire = Omit<AdminBotNudgeBatch, "paper_titles"> & { paper_count: number };
+
+/**
+ * The preview draws "N items across M papers" from the title list and nothing else; the titles
+ * themselves are already spelled out in `message`, which is what the preview shows in full.
+ */
+export function nudgeBatchWire({ paper_titles, ...batch }: AdminBotNudgeBatch): NudgeBatchWire {
+  return { ...batch, paper_count: paper_titles.length };
 }
