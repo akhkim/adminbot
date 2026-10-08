@@ -84,3 +84,101 @@ describe("renderPaperCardDialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe("focused PI paper review", () => {
+  it("saves feedback separately from publication approval", () => {
+    const onSaveSlot = vi.fn();
+    const container = document.createElement("div");
+    document.body.append(container);
+    render(
+      renderPaperCardDialog({
+        state: state(),
+        paper,
+        reviewOnly: true,
+        onClose: vi.fn(),
+        props: props({
+          onSaveSlot,
+          slots: {
+            [paper.id]: {
+              slots: [
+                {
+                  paper_id: paper.id,
+                  slot: "feedback_arxiv",
+                  status: "provided",
+                  value_text: JSON.stringify({
+                    reason: "Ready for arXiv?",
+                    url: "https://overleaf.com/project/test",
+                  }),
+                },
+              ],
+            },
+          } as never,
+        }),
+      }),
+      container,
+    );
+    expect(container.querySelector('[data-testid="paper-pi-review"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="my-work-item-p-1"]')).toBeNull();
+    const textarea = container.querySelector("textarea")!;
+    textarea.value = "Clarify Figure 2.";
+    container
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    const [id, slot, input] = onSaveSlot.mock.calls[0];
+    expect([id, slot]).toEqual([paper.id, "feedback_arxiv"]);
+    expect(JSON.parse(input.value_text)).toMatchObject({
+      reviewed: true,
+      review_note: "Clarify Figure 2.",
+    });
+    expect(onSaveSlot).not.toHaveBeenCalledWith(paper.id, "pi_approval", expect.anything());
+    const approve = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Approve publication"),
+    )!;
+    approve.click();
+    expect(onSaveSlot).toHaveBeenCalledWith(paper.id, "pi_approval", { done: true });
+  });
+  it("keeps a typed review after a failed save and offers retry when loading fails", () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const reviewProps = props({
+      slots: {
+        [paper.id]: {
+          slots: [
+            {
+              slot: "feedback_arxiv",
+              status: "provided",
+              value_text: JSON.stringify({
+                reason: "Review this draft",
+                url: "https://overleaf.com/project/test",
+              }),
+            },
+          ],
+        },
+      } as never,
+    });
+    const drawReview = () =>
+      render(
+        renderPaperCardDialog({
+          state: state(),
+          props: reviewProps,
+          paper,
+          reviewOnly: true,
+          onClose: vi.fn(),
+        }),
+        container,
+      );
+    drawReview();
+    container.querySelector("textarea")!.value = "Keep my feedback";
+    reviewProps.slotsError = "Save failed";
+    drawReview();
+    expect(container.querySelector("textarea")!.value).toBe("Keep my feedback");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Save failed");
+    reviewProps.slots = {};
+    reviewProps.onLoadSlots = vi.fn();
+    drawReview();
+    Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === "Retry")!
+      .click();
+    expect(reviewProps.onLoadSlots).toHaveBeenCalledWith(paper.id);
+  });
+});

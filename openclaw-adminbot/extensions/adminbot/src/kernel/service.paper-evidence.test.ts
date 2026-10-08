@@ -162,13 +162,15 @@ describe("verifyPaperEvidence", () => {
   // one advanced on three ticks and a file Google confirmed.
   it("names which of the evidence a machine confirmed when a paper advances", async () => {
     const service = lab(probeReturning({ status: "found", canEdit: true }));
+    unwrap(service.upsertLabMember({ id: "pi", name: "Head Professor" }));
+    unwrap(service.updateSettings({ head_professor_member_id: "pi" }));
     const give = (slot: string, input: Record<string, unknown>) =>
       unwrap(
         service.setPaperSlot({
           paperId: "p1",
           slot,
           input: input as never,
-          memberId: "ada",
+          memberId: slot === "pi_approval" ? "pi" : "ada",
           privileged: true,
         }),
       );
@@ -304,7 +306,7 @@ describe("the public record", () => {
           paperId: "p1",
           slot,
           input: { url },
-          memberId: "ada",
+          memberId: slot === "pi_approval" ? "pi" : "ada",
           privileged: true,
         }),
       );

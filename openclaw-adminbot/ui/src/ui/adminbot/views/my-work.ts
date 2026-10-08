@@ -1,6 +1,6 @@
 import { html, nothing } from "lit";
-import "../paper-visibility.ts";
 import { ref } from "lit/directives/ref.js";
+import "../paper-visibility.ts";
 import {
   adminBotNormalizePaperAlias,
   adminBotPaperAliasMaxLength,
@@ -14,7 +14,6 @@ import { icons } from "../../icons.ts";
 import type { PaperNudgeBatch, PaperSlotOverviewRow } from "../api/paper-admin.ts";
 import { mapImportColumns } from "../api/paper-admin.ts";
 import type { PaperCycle } from "../api/papers.ts";
-import { draftLinkedInPost } from "../api/papers.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { cancelAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import {
@@ -35,6 +34,7 @@ import type {
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
 import { aoeInstantMs } from "../data/deadline-time.ts";
 import { DEADLINE_SUMMARIES } from "../data/deadlines-summary.ts";
+import { paperSteps, stepLabels } from "../data/paper-steps.ts";
 import {
   ARCHIVAL_VENUES,
   type CatalogVenue,
@@ -113,7 +113,8 @@ import {
   readVenueTargets,
   venueTargetMatches,
 } from "../venue-targets.ts";
-import { paperSteps, stepLabels } from "./admin.ts";
+import { channelExists, nearbyChannels } from "./my-work-channels.ts";
+import { generateLinkedInDraft, generateXDraft } from "./my-work-social-drafts.ts";
 import { paperTripDraftFrom, renderPaperCycle, type PaperTripDraft } from "./paper-cycle.ts";
 import { renderPaperFeedback } from "./paper-feedback.ts";
 import {
@@ -122,10 +123,11 @@ import {
   renderPaperLegacy,
   type PaperLegacyState,
 } from "./paper-legacy.ts";
+import { renderPaperPiReview } from "./paper-pi-review.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
 import { renderPaperTimeline } from "./paper-timeline.ts";
 import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
-import { findOwnMember } from "./profile.ts";
+import { findOwnMember } from "./profile-fields.ts";
 import { renderRecentEdits } from "./recent-edits.ts";
 
 export type MyWorkProps = {
@@ -212,7 +214,12 @@ export type MyWorkProps = {
   viewerIsAdmin?: boolean;
   memberId: string | null;
   memberName: (memberId: string) => string;
-  onSaveDraft: (paperId: string, platform: string, body: string) => void;
+  onSaveDraft: (
+    paperId: string,
+    platform: string,
+    body: string,
+    xThread?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XThreadDraft,
+  ) => void;
   onCirculateDraft: (paperId: string, draftId: string) => void;
   onConsent: (paperId: string, draftId: string, decision: string, comment?: string) => void;
   onSetAttendee: (
@@ -1216,38 +1223,15 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
     cycleClosed: cycle.cycleClosed,
     memberId: props.memberId,
     memberName: props.memberName,
-    onSaveDraft: (platform: string, body: string) => props.onSaveDraft(paper.id, platform, body),
+    paperAuthors: paper.authors ?? [],
+    creditMembers: state.adminBotData?.members ?? [],
+    onSaveDraft: (platform, body, xThread) => props.onSaveDraft(paper.id, platform, body, xThread),
     onCirculateDraft: (draftId: string) => props.onCirculateDraft(paper.id, draftId),
-    // The old dialog's generate path, minus the PDF picker: the service reads the Drive copy the
-    // card already chases. Result lands in the panel's textarea as a stored draft, so the usual
-    // sign-off row takes over from there.
-    onGenerateLinkedInDraft: async (venue: string, note: string, pdfBase64?: string) => {
-      const stored = loadStoredMemberSession();
-      if (!stored) {
-        globalThis.alert?.("Sign in first — drafting runs against your own session.");
-        return;
-      }
-      try {
-        const result = await draftLinkedInPost(
-          {
-            paperId: paper.id,
-            ...(pdfBase64 ? { pdfBase64 } : {}),
-            ...(paper.artifacts?.arxiv_url ? { url: paper.artifacts.arxiv_url } : {}),
-            ...(venue ? { venue } : {}),
-            ...(note ? { note } : {}),
-          },
-          stored.sessionToken ?? "",
-          resolveAdminBotBaseUrl(state.settings),
-        );
-        if (!result.ok) {
-          globalThis.alert?.(result.message ?? "Could not generate the draft.");
-          return;
-        }
-        props.onSaveDraft(paper.id, "linkedin", result.value.text);
-      } catch (error) {
-        globalThis.alert?.((error as Error).message);
-      }
-    },
+    // Result lands in the panel's textarea as a stored draft; see my-work-social-drafts.ts.
+    onGenerateLinkedInDraft: (venue: string, note: string, pdfBase64?: string) =>
+      generateLinkedInDraft(state, paper, props.onSaveDraft, venue, note, pdfBase64),
+    onGenerateXDraft: (_venue, _note, pdfBase64, announcement, credits) =>
+      generateXDraft(state, paper, props.onSaveDraft, pdfBase64, announcement, credits),
     onConsent: (draftId: string, decision: string, comment?: string) =>
       props.onConsent(paper.id, draftId, decision, comment),
     onSetAttendee: (name: string, memberId: string | undefined, attending: string) =>
@@ -1916,34 +1900,6 @@ function channelMismatch(props: MyWorkProps, alias: string): boolean {
     return false;
   }
   return !channelExists(check.channels, alias);
-}
-
-/** Slack channel names are lowercase, so the comparison is too. */
-function channelExists(channels: readonly string[], alias: string): boolean {
-  const wanted = adminBotProjectChannelName(alias).toLowerCase();
-  return channels.some((channel) => channel.replace(/^#/u, "").toLowerCase() === wanted);
-}
-
-/**
- * Channels that look like near-misses for what was typed, so a mismatch is actionable.
- *
- * A bare "no channel matches" leaves the member guessing at a name they cannot see from here.
- * Matching on the shared prefix is enough to surface the usual mistake -- `cais2` against
- * `#proj-cais`, `causal-ai` against `#proj-cais` -- without listing a workspace at them.
- */
-function nearbyChannels(channels: readonly string[], alias: string): string[] {
-  const wanted = alias.toLowerCase();
-  if (wanted.length < 2) {
-    return [];
-  }
-  return channels
-    .map((channel) => channel.replace(/^#/u, ""))
-    .filter((channel) => channel.startsWith("proj-"))
-    .filter((channel) => {
-      const suffix = channel.slice("proj-".length).toLowerCase();
-      return suffix.startsWith(wanted.slice(0, 3)) || wanted.startsWith(suffix.slice(0, 3));
-    })
-    .slice(0, 5);
 }
 
 /**
@@ -2821,6 +2777,7 @@ function showPaperDialog(element?: Element) {
  * asking the same question twice.
  */
 export function renderPaperCardDialog(params: {
+  reviewOnly?: boolean;
   state: AppViewState;
   props: MyWorkProps;
   paper: AdminBotPaperRecord;
@@ -2828,8 +2785,11 @@ export function renderPaperCardDialog(params: {
 }) {
   return html`
     <dialog
-      class="paper-card-dialog"
+      class=${params.reviewOnly
+        ? "paper-card-dialog paper-card-dialog--review"
+        : "paper-card-dialog"}
       data-testid="paper-card-dialog"
+      aria-label=${params.reviewOnly ? `Review ${params.paper.title}` : params.paper.title}
       ${ref(showPaperDialog)}
       @click=${(event: Event) => {
         // The backdrop is the dialog itself; a click that lands on a child is not a dismissal.
@@ -2861,7 +2821,12 @@ export function renderPaperCardDialog(params: {
           </button>
         </div>
         <div class="paper-card-dialog__body">
-          ${renderItem(params.state, params.paper, { ...params.props, openIds: [params.paper.id] })}
+          ${params.reviewOnly
+            ? renderPaperPiReview(params.paper, params.props)
+            : renderItem(params.state, params.paper, {
+                ...params.props,
+                openIds: [params.paper.id],
+              })}
         </div>
       </div>
     </dialog>
