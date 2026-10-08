@@ -409,6 +409,11 @@ import {
   type NudgeItem,
 } from "../workflows/papers/paper-slots.js";
 import { duePaperNudges } from "../workflows/papers/paper-reminder-nudges.js";
+import {
+  paperForResponse,
+  withheldArtifactWriteError,
+  withoutTimeline,
+} from "../workflows/papers/paper-response.js";
 import { derivePaperStage, isStageAhead } from "../workflows/papers/paper-stage.js";
 import {
   openPaperflowStage,
@@ -5822,7 +5827,7 @@ export class AdminBotService {
     }
     const needles = memberRelevanceNeedles(member);
     const papers = this.store.listPapers().filter((paper) => paperMatchesNeedles(paper, needles));
-    return { ok: true, status: 200, payload: { papers } };
+    return { ok: true, status: 200, payload: { papers: papers.map(paperForResponse) } };
   }
 
   /**
@@ -5842,6 +5847,11 @@ export class AdminBotService {
       return serviceError(400, validation);
     }
     const existing = this.store.getPaper(paper.id);
+    // The arXiv password lives on its slot, whose read is redacted; see paper-response.ts.
+    const refusal = withheldArtifactWriteError(paper.artifacts, existing?.artifacts);
+    if (refusal) {
+      return serviceError(400, refusal);
+    }
     const settings = this.resolveSettings();
     const now = new Date().toISOString();
     const headProfessorMemberId =
@@ -5849,8 +5859,8 @@ export class AdminBotService {
       existing?.reminder?.head_professor_member_id ??
       settings.head_professor_member_id;
     const stored: AdminBotPaperRecord = {
-      ...existing,
-      ...paper,
+      ...(existing ? withoutTimeline(existing) : {}),
+      ...withoutTimeline(paper),
       // Both name lists are trimmed and de-blanked on write rather than on read. The stage sweep
       // matches authors by name and an empty row would look like an author nobody can resolve,
       // which reads as "this paper has no lab member on it" -- the one state that stops the chase.
@@ -5956,7 +5966,7 @@ export class AdminBotService {
       });
     }
     this.syncConferenceChannel(stored);
-    return { ok: true, status: 200, payload: stored };
+    return { ok: true, status: 200, payload: paperForResponse(stored) };
   }
 
   /**
@@ -6017,7 +6027,7 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: {
-        paper,
+        paper: paperForResponse(paper),
         slots: redactPaperSlots(paperSlotRows(paperId, stored, drafts), entitled),
         drafts,
         consents: drafts.flatMap((draft) => this.store.listSocialConsents(draft.id)),
@@ -10064,7 +10074,7 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: {
-        papers: this.store.listPapers(page),
+        papers: this.store.listPapers(page).map(paperForResponse),
         ...(page
           ? { total: this.store.countPapers(page.q), limit: page.limit, offset: page.offset }
           : {}),

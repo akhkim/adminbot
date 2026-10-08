@@ -480,7 +480,6 @@ describe("AdminBotService paper coauthors", () => {
         artifacts: {
           topic: "causal abstraction",
           submission_url: "https://openreview.net/forum?id=abc",
-          arxiv_paper_password: "ab12cd",
           venue_targets: JSON.stringify([
             { venue_id: "iclr 2027", label: "ICLR 2027", confidence: 80 },
           ]),
@@ -501,8 +500,6 @@ describe("AdminBotService paper coauthors", () => {
     expect(stored?.artifacts).toMatchObject({
       topic: "causal abstraction",
       submission_url: "https://openreview.net/forum?id=abc",
-      // The column that used to accept text and drop it.
-      arxiv_paper_password: "ab12cd",
     });
     // The roster link the grid preserves has to survive the write, not just the UI merge.
     expect(stored?.author_links).toEqual([
@@ -3124,6 +3121,71 @@ describe("AdminBotService", () => {
     expect(nudge).toMatchObject({ paper_id: "paper-timeline", step: "social_posts" });
     expect(nudge).not.toHaveProperty("timeline");
   });
+  // The arXiv password is a credential. Its home is the `arxiv_paper_password` slot, whose read is
+  // redacted for anyone who is not an author or an admin; as an artifact it went to every member.
+  it("refuses the arXiv password as a paper artifact, from admins and members alike", () => {
+    const service = new AdminBotService();
+    const paper = {
+      id: "pw",
+      title: "Password",
+      authors: ["alice"],
+      current_step: "arxiv_polish" as const,
+      artifacts: { arxiv_paper_password: "ab12cd" } as never,
+    };
+    expect(service.upsertPaper(paper)).toMatchObject({
+      ok: false,
+      status: 400,
+      error: { message: expect.stringContaining("/papers/:id/slots/arxiv_paper_password") },
+    });
+    expect(unwrap(service.listPapers()).papers).toEqual([]);
+  });
+
+  it("never returns a stored arXiv password or timeline, and keeps a legacy one intact", () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    unwrap(
+      service.upsertPaper({
+        id: "legacy",
+        title: "Legacy",
+        authors: ["alice"],
+        current_step: "arxiv_polish",
+        artifacts: { arxiv_url: "https://arxiv.org/abs/2601.00001" },
+      }),
+    );
+    // A record written before the slot existed, and one a client saved its old timeline back onto.
+    const stored = store.getPaper("legacy")!;
+    store.savePaper({
+      ...stored,
+      artifacts: { ...stored.artifacts, arxiv_paper_password: "ab12cd" },
+      timeline: { progress_percent: 56 },
+    } as never);
+
+    const listed = unwrap(service.listPapers({ limit: 10, offset: 0 })).papers[0];
+    expect(listed?.artifacts).toEqual({ arxiv_url: "https://arxiv.org/abs/2601.00001" });
+    expect(listed).not.toHaveProperty("timeline");
+    const cycle = unwrap(service.listPaperSlots("legacy", { isAdmin: true })).paper;
+    expect(cycle.artifacts).not.toHaveProperty("arxiv_paper_password");
+    expect(cycle).not.toHaveProperty("timeline");
+
+    // Re-saving what the store holds is not a write of the password: it is carried, not refused,
+    // and not returned. The timeline is dropped on the way in.
+    const saved = unwrap(service.upsertPaper({ ...store.getPaper("legacy")!, title: "Renamed" }));
+    expect(saved.artifacts).not.toHaveProperty("arxiv_paper_password");
+    expect(saved).not.toHaveProperty("timeline");
+    expect(store.getPaper("legacy")).toMatchObject({
+      title: "Renamed",
+      artifacts: { arxiv_paper_password: "ab12cd" },
+    });
+    expect(store.getPaper("legacy")).not.toHaveProperty("timeline");
+    // Changing it through the record is still refused.
+    expect(
+      service.upsertPaper({
+        ...store.getPaper("legacy")!,
+        artifacts: { arxiv_paper_password: "zz99zz" } as never,
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
+  });
+
   it("deletes paper records and records an audit event", () => {
     const service = new AdminBotService();
     unwrap(

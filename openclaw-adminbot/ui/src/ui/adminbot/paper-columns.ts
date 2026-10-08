@@ -202,9 +202,9 @@ export function parseVenueTargets(value: string): VenueTarget[] | undefined {
   return targets;
 }
 
-// Columns follow the slot registry in fields_update.md. `arxiv_paper_password` is listed
-// because the layout is part of the design being reviewed, but it has no field on the record
-// yet, so it is rendered disabled rather than accepting text this UI would then drop.
+// Columns follow the slot registry in fields_update.md. `arxiv_paper_password` is slot-only: it is
+// written to the `arxiv_paper_password` evidence slot, whose read is redacted for anyone who is not
+// an author or an admin, and never to the paper record, which every member can list.
 const STEP_OPTIONS = adminBotPaperSteps.map((step) => ({
   value: step,
   label: step.replaceAll("_", " "),
@@ -598,11 +598,10 @@ const RECORD_COLUMNS: Column[] = [
     slot: "arxiv_paper_password",
     kind: "text",
     format: "Six letters or digits",
-    save: "arxivPaperPassword",
     label: "arXiv paper password",
     short: "arXiv pw",
     pattern: /^[A-Za-z0-9]{6}$/u,
-    hint: "Six characters — stored in plain text on the record every coauthor can read",
+    hint: "Six characters — readable only by the paper's authors and admins",
   },
   {
     key: "google_slides_url",

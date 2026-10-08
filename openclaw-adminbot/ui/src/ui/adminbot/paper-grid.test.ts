@@ -603,11 +603,16 @@ describe("the fields the card carries", () => {
     expect(cellError(columnFor("current_step"), "not_a_step")).toBeTruthy();
   });
 
-  it("writes the arXiv password that used to be dropped", () => {
+  // The record is listed to every member; the slot's read is redacted for anyone who is not an
+  // author or an admin. So the password goes to the slot and never rides in the paper save.
+  it("writes the arXiv password to its slot, never onto the paper record", () => {
     const state = emptyPaperGridState();
     state.edits.set("p1", new Map([["arxiv_paper_password", "ab12cd"]]));
-    const [save] = pendingSaves(state, [rich()]);
-    expect(save).toMatchObject({ arxivPaperPassword: "ab12cd" });
+    expect(pendingSaves(state, [rich()])).toEqual([]);
+    state.cycles = { p1: { slots: [] } } as GridCycles;
+    expect(pendingSlotWrites(state, [rich()])).toEqual([
+      expect.objectContaining({ slot: "arxiv_paper_password", input: { value_text: "ab12cd" } }),
+    ]);
     expect(cellError(columnFor("arxiv_paper_password"), "nope")).toBeTruthy();
   });
 
