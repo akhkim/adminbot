@@ -149,7 +149,23 @@ export const meetingsRoutes: readonly Route[] = [
     }
     const inviteEmails = await readGroupMeetingInvite(ctx, service.groupMeetingSchedule());
     if (req.method === "GET") {
-      sendServiceResult(res, service.collectMeetingAttendanceNudges({ inviteEmails }));
+      const preview = service.collectMeetingAttendanceNudges({ inviteEmails });
+      // Each row's missed meetings are the streak itself -- a row exists only when every one of
+      // `meetings` was missed -- so the preview names them once instead of once per person.
+      sendServiceResult(
+        res,
+        preview.ok
+          ? {
+              ...preview,
+              payload: {
+                ...preview.payload,
+                absent: preview.payload.absent.map(
+                  ({ missed_meeting_ids: _ids, missed_topics: _topics, ...row }) => row,
+                ),
+              },
+            }
+          : preview,
+      );
       return;
     }
     sendServiceResult(
