@@ -39,6 +39,7 @@ import {
   matchRows,
   parseSheet,
 } from "./paper-import.ts";
+import { onViewSessionReset } from "./view-session-reset.ts";
 
 /**
  * Above this many papers the grid is offered. Below it, the cards are the better surface.
@@ -754,6 +755,9 @@ export function clearHistory(): void {
   sessionHistory = [];
   purgeLegacyHistory();
 }
+// The sheet loads with whichever page first draws it (My Projects or Active Papers), so it clears
+// its own history at sign-out rather than relying on one of them having loaded.
+onViewSessionReset(clearHistory);
 
 /**
  * What changed, comparing each pending edit against what is stored.

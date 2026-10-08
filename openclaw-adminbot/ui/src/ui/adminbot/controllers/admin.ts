@@ -1151,6 +1151,18 @@ async function loadAdminBotOverSession(
     };
   };
   try {
+    // A page that draws only the viewer's own papers reads only those, unless this session already
+    // holds the whole list -- then a reload keeps the whole list current for the pages that use it.
+    // The paper read does not depend on the profile, so both go out together; the profile still
+    // lands first on screen whenever it answers first.
+    const paperScope = paperScopeForTab((host as { tab?: unknown }).tab, host.memberPrivilegeLevel);
+    const ownOnly = paperScope === "own" && !host.adminBotData.papersLoadedAt;
+    const papersRead = includePapers
+      ? read(ownOnly ? "/papers?scope=mine" : "/papers")
+      : Promise.resolve(undefined);
+    // If the profile read fails first, that error is the one reported; this keeps the paper
+    // read's own failure from surfacing as an unhandled rejection.
+    papersRead.catch(() => undefined);
     const selfResponse = await readSelf();
     if (!isCurrent()) {
       return;
@@ -1170,13 +1182,7 @@ async function loadAdminBotOverSession(
     // it first blanked the whole page for the length of the reload.
     host.adminBotData = { ...host.adminBotData, members: memberRows };
     host.requestUpdate?.();
-    // A page that draws only the viewer's own papers reads only those, unless this session already
-    // holds the whole list -- then a reload keeps the whole list current for the pages that use it.
-    const paperScope = paperScopeForTab((host as { tab?: unknown }).tab, host.memberPrivilegeLevel);
-    const ownOnly = paperScope === "own" && !host.adminBotData.papersLoadedAt;
-    const papers = includePapers
-      ? await read(ownOnly ? "/papers?scope=mine" : "/papers")
-      : undefined;
+    const papers = await papersRead;
     if (!isCurrent()) {
       return;
     }

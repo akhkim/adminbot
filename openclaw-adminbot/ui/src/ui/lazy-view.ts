@@ -1,5 +1,5 @@
 // Control UI module implements lazy view behavior.
-import { html } from "lit";
+import { html, type TemplateResult } from "lit";
 import { t } from "../i18n/index.ts";
 
 type LazyState<T> = {
@@ -85,7 +85,7 @@ function formatLazyViewError(error: unknown): string {
   return t("lazyView.unknownError");
 }
 
-export function renderLazyView<M>(view: LazyView<M>, render: (mod: M) => unknown) {
+export function renderLazyView<M, R>(view: LazyView<M>, render: (mod: M) => R): R | TemplateResult {
   const mod = view.read();
   if (mod !== null) {
     return render(mod);

@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import type {
@@ -524,7 +525,11 @@ export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
       ${!props.loading && !props.error && props.meetings.length === 0
         ? html`<p class="muted">${t("adminbotMeetings.empty")}</p>`
         : nothing}
-      ${props.meetings.slice(0, visibleCount).map((meeting) => renderMeeting(props, meeting))}
+      ${repeat(
+        props.meetings.slice(0, visibleCount),
+        (meeting) => meeting.id,
+        (meeting) => renderMeeting(props, meeting),
+      )}
       ${visibleCount < props.meetings.length || props.hasMore
         ? html`<button
             class="btn meetings__more"

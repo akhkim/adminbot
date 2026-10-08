@@ -9,6 +9,7 @@
 // Read-only about content: an admin reading a request cannot edit what the member wrote. Correcting
 // a request is the member's own form, and answering one is the status control at the bottom.
 import { html, nothing } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
 import type {
@@ -162,7 +163,11 @@ function renderRequestsList(props: AdminBotLogisticsRequestsProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    ${props.requests.map((request) => renderRequestRow(props, request))}
+                    ${repeat(
+                      props.requests,
+                      (request) => request.id,
+                      (request) => renderRequestRow(props, request),
+                    )}
                   </tbody>
                 </table>
               </div>

@@ -21,6 +21,9 @@ import type {
 // answer with one owner; each of these is a set of rows about several people, and the useful
 // question is "who has not answered yet" rather than "is it filled in".
 import { renderDateControl } from "../date-control.ts";
+import { paperTripDraftFrom, type PaperTrip, type PaperTripDraft } from "./paper-trip-draft.ts";
+
+export { paperTripDraftFrom, type PaperTrip, type PaperTripDraft } from "./paper-trip-draft.ts";
 
 export type PaperCycleProps = {
   paperId: string;
@@ -747,29 +750,6 @@ function renderAttendees(props: PaperCycleProps) {
   `;
 }
 
-/** One member's own plan for the conference this paper was accepted to. */
-export type PaperTrip = {
-  conference_key: string;
-  member_id: string;
-  intent: "going" | "undecided";
-  funding: "none" | "fee_only" | "flight_only" | "full_travel";
-  needs_lodging: boolean;
-  arrival_on?: string;
-  departure_on?: string;
-  needs_visa_letter: boolean;
-  notes?: string;
-};
-
-export type PaperTripDraft = {
-  intent: PaperTrip["intent"];
-  funding: PaperTrip["funding"];
-  needs_lodging: boolean;
-  needs_visa_letter: boolean;
-  arrival_on: string;
-  departure_on: string;
-  notes: string;
-};
-
 const TRIP_INTENT_LABELS: Record<PaperTrip["intent"], string> = {
   going: "I'm going in person",
   undecided: "Still deciding",
@@ -788,20 +768,6 @@ const TRIP_FUNDING_LABELS: Record<PaperTrip["funding"], string> = {
   flight_only: "Flight only",
   full_travel: "Full travel (fee, flights and accommodation)",
 };
-
-export function paperTripDraftFrom(trip: PaperTrip | null | undefined): PaperTripDraft {
-  return {
-    // Undecided rather than going: a form that opens on "yes" collects agreement rather than an
-    // answer, and this one books flights.
-    intent: trip?.intent ?? "undecided",
-    funding: trip?.funding ?? "none",
-    needs_lodging: trip?.needs_lodging ?? false,
-    needs_visa_letter: trip?.needs_visa_letter ?? false,
-    arrival_on: trip?.arrival_on ?? "",
-    departure_on: trip?.departure_on ?? "",
-    notes: trip?.notes ?? "",
-  };
-}
 
 /**
  * What the reader needs for this conference: money, a bed, a visa letter.

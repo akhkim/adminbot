@@ -135,7 +135,6 @@ import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
 import type { ConferencePapersTab } from "./adminbot/views/conference-papers.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
-import { resetMyWorkSessionState } from "./adminbot/views/my-work.ts";
 import type { PaperTripDraft } from "./adminbot/views/paper-cycle.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
@@ -1347,7 +1346,6 @@ export class OpenClawApp extends LitElement {
   }
 
   resetMemberViewSessionState() {
-    resetMyWorkSessionState();
     resetViewSessions();
   }
 

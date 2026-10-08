@@ -2,12 +2,8 @@ import "./adminbot/offline/offline-access.ts";
 // oxlint-disable max-lines -- grandfathered at 3976 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
-import "./adminbot/views/reference-checker.ts";
-import "./adminbot/views/openreview-citation-checks.ts";
 import { guard } from "lit/directives/guard.js";
 import { styleMap } from "lit/directives/style-map.js";
-import "./adminbot/views/reference-checker.ts";
-import "./adminbot/views/openreview-citation-checks.ts";
 import { i18n, t } from "../i18n/index.ts";
 import {
   canAccessTab,
@@ -88,7 +84,6 @@ import {
 } from "./adminbot/controllers/paper-slots.ts";
 import { deleteAdminBotPaper } from "./adminbot/controllers/papers.ts";
 import { readAdminBotProfileOverview } from "./adminbot/controllers/profile-overview-paging.ts";
-import "./components/feedback-widget.ts";
 import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
 import { exportAdminBotTabUsage, loadAdminBotTabUsage } from "./adminbot/controllers/tab-usage.ts";
 import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
@@ -151,13 +146,9 @@ import {
 import { renderGettingStarted } from "./adminbot/views/getting-started.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate, renderSessionRestorePending } from "./adminbot/views/login-gate.ts";
-import {
-  ownPapers,
-  renderMyWork,
-  renderPaperCardDialog,
-  type MyWorkProps,
-} from "./adminbot/views/my-work.ts";
-import { paperTripDraftFrom } from "./adminbot/views/paper-cycle.ts";
+import { ownPapers } from "./adminbot/views/my-work-papers.ts";
+import type { MyWorkProps } from "./adminbot/views/my-work.ts";
+import { paperTripDraftFrom } from "./adminbot/views/paper-trip-draft.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
 import {
   createChatSessionsLoadOverrides,
@@ -178,6 +169,15 @@ import {
   dismissChatError,
   switchChatSession,
 } from "./app-render.helpers.ts";
+import {
+  renderChat,
+  renderConfig,
+  renderMyWork,
+  renderPaperCardDialog,
+  renderQuickSettings,
+  renderReferenceCheckerPage,
+  warmPaperCard,
+} from "./app-render.lazy-pages.ts";
 import { warnQueryToken } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
@@ -203,6 +203,7 @@ import {
 import { setAssistantAvatarOverride } from "./controllers/assistant-identity.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
+import "./components/dashboard-header.ts";
 import {
   applyConfig,
   ensureAgentConfigEntry,
@@ -219,7 +220,6 @@ import {
   removeConfigFormValue,
   updateMcpServerEnabled,
 } from "./controllers/config.ts";
-import "./components/dashboard-header.ts";
 import {
   buildNewCronForm,
   loadCronJobsPage,
@@ -333,11 +333,10 @@ import {
   resolveModelPrimary,
   sortLocaleStrings,
 } from "./views/agents-utils.ts";
-import { renderChat } from "./views/chat.ts";
 import { renderCommandPalette } from "./views/command-palette.ts";
 import { getPresetById } from "./views/config-presets.ts";
-import { renderQuickSettings, type QuickSettingsChannel } from "./views/config-quick.ts";
-import { renderConfig, type ConfigProps } from "./views/config.ts";
+import type { QuickSettingsChannel } from "./views/config-quick.ts";
+import type { ConfigProps } from "./views/config.ts";
 import {
   renderCronQuickCreate,
   createDefaultDraft,
@@ -1750,6 +1749,7 @@ export function renderApp(state: AppViewState) {
       ? () => updatableState.requestUpdate?.()
       : undefined;
   setLazyViewHost(requestHostUpdate);
+  warmPaperCard(state.tab);
 
   // Opening the workshop tab reads the stored pass. It never starts one -- that is Refresh, and it
   // is thousands of model calls. Self-limiting: the read sets `loading` synchronously and leaves a
@@ -3673,14 +3673,10 @@ export function renderApp(state: AppViewState) {
             )
           : nothing}
         ${state.tab === "adminbotReferenceChecker"
-          ? html`<adminbot-reference-checker
-                .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-                .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
-              ></adminbot-reference-checker>
-              <adminbot-openreview-citation-checks
-                .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-                .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
-              ></adminbot-openreview-citation-checks>`
+          ? renderReferenceCheckerPage(
+              resolveAdminBotBaseUrl(state.settings),
+              loadStoredMemberSession()?.sessionToken ?? "",
+            )
           : nothing}
         ${state.tab === "adminbotConferencePapers"
           ? renderLazyView(lazyConferencePapers, (m) =>
