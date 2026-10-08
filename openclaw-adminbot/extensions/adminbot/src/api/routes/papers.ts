@@ -18,6 +18,7 @@ import {
 } from "./guards.js";
 import { readListPage, limitParam } from "./query-params.js";
 import { del, get, post, put, type Route } from "./router.js";
+import { principalRole, sendNotModified, versionEtag } from "./version-etag.js";
 
 // 20 MB of PDF, plus base64's third and the JSON around it. Matches the Control UI's own check.
 export const LINKEDIN_DRAFT_BODY_LIMIT_BYTES = Math.ceil(20 * 1024 * 1024 * 1.4);
@@ -165,12 +166,26 @@ export const papersRoutes: readonly Route[] = [
         return;
       }
       const { id, name } = principal.member;
-      sendJson(res, 200, {
-        papers: ctx.store
-          .listPapers()
-          .filter((paper) => paperInvolvesMember(paper, id, name))
-          .map(paperForResponse),
-      });
+      // The filter reads the member's id and name, so both are in the tag.
+      const version = ctx.store.paperVersion?.();
+      const etag =
+        version === undefined
+          ? undefined
+          : versionEtag("papers.mine", [version, principalRole(principal), id, name]);
+      if (etag && sendNotModified(res, etag)) {
+        return;
+      }
+      sendJson(
+        res,
+        200,
+        {
+          papers: ctx.store
+            .listPapers()
+            .filter((paper) => paperInvolvesMember(paper, id, name))
+            .map(paperForResponse),
+        },
+        { etag },
+      );
       return;
     }
     const page = readListPage(url);
@@ -178,7 +193,21 @@ export const papersRoutes: readonly Route[] = [
       sendJson(res, 400, { error: { message: "invalid list pagination or search" } });
       return;
     }
-    sendServiceResult(res, service.listPapers(page));
+    const version = ctx.store.paperVersion?.();
+    const etag =
+      version === undefined
+        ? undefined
+        : versionEtag("papers", [
+            version,
+            principalRole(principal),
+            page?.limit,
+            page?.offset,
+            page?.q,
+          ]);
+    if (etag && sendNotModified(res, etag)) {
+      return;
+    }
+    sendServiceResult(res, service.listPapers(page), { etag });
   }),
   get(
     "/papers/paperflow-stages",

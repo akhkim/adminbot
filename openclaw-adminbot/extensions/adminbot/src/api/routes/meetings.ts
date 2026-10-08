@@ -25,6 +25,7 @@ import {
   sendJson,
   sendServiceResult,
 } from "../server.http.js";
+import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import type { AdminBotRouteContext } from "./context.js";
 import {
   adminSessionOnly,
@@ -34,6 +35,36 @@ import {
   requirePrivileged,
 } from "./guards.js";
 import { del, get, post, put, route, type Route } from "./router.js";
+import { principalRole, sendNotModified, versionEtag } from "./version-etag.js";
+
+/**
+ * The version tag for GET /meetings, or undefined to fall back to the body hash.
+ *
+ * The body is the stored meetings filtered by the duration floor (a setting), redacted to the
+ * viewer's own line unless they are an admin, and paged by the query. A member the store does not
+ * know gets a 404 from the service, so no tag is made for them.
+ */
+function meetingsEtag(
+  ctx: AdminBotRouteContext,
+  principal: AdminBotMemberPrincipal,
+  url: URL,
+): string | undefined {
+  const version = ctx.store.meetingVersion?.();
+  const isAdmin = principal.member.privilege_level === "admin";
+  if (version === undefined || (!isAdmin && !ctx.store.getLabMember(principal.member.id))) {
+    return undefined;
+  }
+  const settings = ctx.store.getSettings();
+  return versionEtag("meetings", [
+    version,
+    principalRole(principal),
+    isAdmin ? null : principal.member.id,
+    settings ? (settings.meeting_minimum_minutes ?? "unset") : "default",
+    url.searchParams.get("limit"),
+    url.searchParams.get("before_started_at"),
+    url.searchParams.get("before_id"),
+  ]);
+}
 
 export const meetingsRoutes: readonly Route[] = [
   get("/lab/meetings", async ({ res, ctx, principal }) => {
@@ -65,6 +96,10 @@ export const meetingsRoutes: readonly Route[] = [
           sendJson(res, 400, { error: { message: "invalid meetings page" } });
           return;
         }
+        const etag = meetingsEtag(ctx, principal, url);
+        if (etag && sendNotModified(res, etag)) {
+          return;
+        }
         const all = isAdmin
           ? service.listMeetings()
           : service.listMeetingsForMember(principal.member.id);
@@ -73,6 +108,7 @@ export const meetingsRoutes: readonly Route[] = [
           all.ok
             ? { ...all, payload: { meetings: all.payload.meetings.map(meetingListRow) } }
             : all,
+          { etag },
         );
         return;
       }
@@ -95,6 +131,10 @@ export const meetingsRoutes: readonly Route[] = [
           ? { before: { started_at: beforeStartedAt, id: beforeId } }
           : {}),
       };
+      const etag = meetingsEtag(ctx, principal, url);
+      if (etag && sendNotModified(res, etag)) {
+        return;
+      }
       const listed = isAdmin
         ? service.listMeetingsPage(page)
         : service.listMeetingsPageForMember(principal.member.id, page);
@@ -106,6 +146,7 @@ export const meetingsRoutes: readonly Route[] = [
               payload: { ...listed.payload, meetings: listed.payload.meetings.map(meetingListRow) },
             }
           : listed,
+        { etag },
       );
     }),
   ),
