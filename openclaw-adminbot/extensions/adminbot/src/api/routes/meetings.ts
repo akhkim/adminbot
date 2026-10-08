@@ -48,7 +48,11 @@ export const meetingsRoutes: readonly Route[] = [
       sendJson(res, standing.error.status, { error: { message: standing.error.message } });
       return;
     }
-    sendJson(res, 200, { meetings: standing.meetings });
+    // The form ticks a box per meeting and reads who is on it; how a meeting was classified and
+    // which calendar events it was folded from are the calendar sync's business.
+    sendJson(res, 200, {
+      meetings: standing.meetings.map(({ id, title, attendees }) => ({ id, title, attendees })),
+    });
   }),
   get(
     "/meetings",

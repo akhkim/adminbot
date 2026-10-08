@@ -13,8 +13,10 @@ import { authedJson, type AuthResult, calendarFailure, mapErrorResponse } from "
 export type StandingMeeting = {
   id: string;
   title: string;
-  kind: "group" | "theme" | "project";
-  event_ids: string[];
+  /** Not sent: the Meetings checkboxes need only the id, the title and who is on it. */
+  kind?: "group" | "theme" | "project";
+  /** Not sent, for the same reason. */
+  event_ids?: string[];
   /** Lowercased addresses. */
   attendees: string[];
 };
