@@ -73,13 +73,16 @@ async function setup(databasePath?: string, gptEnabled = true) {
   return { app, url, db, scanPdf, scanGptZero };
 }
 
-function session(app: Awaited<ReturnType<typeof setup>>["app"], admin = true) {
-  const memberId = admin ? "upload-admin" : "upload-member";
+function session(
+  app: Awaited<ReturnType<typeof setup>>["app"],
+  level: "admin" | "member" | "trial" | "external_collaborator" = "admin",
+) {
+  const memberId = `upload-${level}`;
   const sessionToken = `${memberId}-session`;
   app.service.upsertLabMember({
     id: memberId,
     name: "Synthetic User",
-    privilege_level: admin ? "admin" : "member",
+    privilege_level: level,
   });
   app.store.saveSession({
     member_id: memberId,
@@ -242,11 +245,26 @@ describe("ad hoc PDF checks", () => {
     expect(await retry.text()).toContain('"type":"complete"');
   });
 
-  it("rejects anonymous, ordinary member, service-token and unapproved uploads", async () => {
+  it("allows members to check PDFs with either provider", async () => {
+    const { app, url, scanPdf, scanGptZero } = await setup();
+    const headers = session(app, "member");
+    for (const target of [
+      endpoint,
+      "/reference-check/pdf?checker=gptzero&consent=upload-to-gptzero",
+    ]) {
+      expect((await fetch(url + target, { method: "POST", headers, body: pdf })).status).toBe(200);
+    }
+    expect(scanPdf).toHaveBeenCalledTimes(1);
+    expect(scanGptZero).toHaveBeenCalledTimes(1);
+    expect((await fetch(url + "/openreview/citation-checks", { headers })).status).toBe(403);
+  });
+
+  it("rejects anonymous, trial member, external collaborator, service-token and unapproved uploads", async () => {
     const { app, url, scanPdf } = await setup();
     for (const [headers, status] of [
       [{ "Content-Type": "application/pdf" }, 401],
-      [session(app, false), 403],
+      [session(app, "trial"), 403],
+      [session(app, "external_collaborator"), 403],
       [{ Authorization: `Bearer ${token}`, "Content-Type": "application/pdf" }, 403],
     ] as const) {
       expect((await fetch(url + endpoint, { method: "POST", headers, body: pdf })).status).toBe(

@@ -2029,7 +2029,12 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "POST" && url.pathname === "/reference-check/pdf") {
-    if (!requireMemberPrivileged(res, principal)) {
+    if (
+      principal.kind !== "member" ||
+      (principal.member.privilege_level !== "member" &&
+        principal.member.privilege_level !== "admin")
+    ) {
+      sendJson(res, 403, { error: { message: "Member or admin session required" } });
       return;
     }
     await ctx.checkUploadedPdf(req, res, principalActor(principal));
