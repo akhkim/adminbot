@@ -13,6 +13,7 @@ import {
   fetchMeeting,
   fetchMeetingAttendanceNudges,
   fetchMeetings,
+  MEETINGS_PAGE_SIZE,
   saveMeetingAttendance,
   sendMeetingAttendanceNudges,
   type MeetingAttendee,
@@ -57,7 +58,7 @@ export async function loadAdminBotMeetings(host: AdminBotHost): Promise<void> {
   host.adminBotMeetingsError = null;
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   try {
-    const result = await fetchMeetings(stored.sessionToken, baseUrl, { limit: 12 });
+    const result = await fetchMeetings(stored.sessionToken, baseUrl, { limit: MEETINGS_PAGE_SIZE });
     if (!sameSession(stored.sessionToken) || host.adminBotMeetingsRequestVersion !== version) {
       return;
     }
@@ -67,7 +68,7 @@ export async function loadAdminBotMeetings(host: AdminBotHost): Promise<void> {
     }
     host.adminBotMeetings = result.value.meetings;
     host.adminBotMeetingsNextCursor = result.value.next_cursor ?? null;
-    host.adminBotMeetingsVisibleCount = 12;
+    host.adminBotMeetingsVisibleCount = MEETINGS_PAGE_SIZE;
     // A fresh list is a fresh look: rosters held from before it are dropped, so an opened fold is
     // as current as the rows around it. Reading one again is a revalidation, not a download.
     host.adminBotMeetingRosters = {};
@@ -93,7 +94,10 @@ export async function loadMoreAdminBotMeetings(host: AdminBotHost): Promise<void
   host.adminBotMeetingsError = null;
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   try {
-    const result = await fetchMeetings(stored.sessionToken, baseUrl, { limit: 12, before });
+    const result = await fetchMeetings(stored.sessionToken, baseUrl, {
+      limit: MEETINGS_PAGE_SIZE,
+      before,
+    });
     if (
       !sameSession(stored.sessionToken) ||
       host.adminBotMeetingsRequestVersion !== version ||
@@ -111,7 +115,7 @@ export async function loadMoreAdminBotMeetings(host: AdminBotHost): Promise<void
     host.adminBotMeetings = [...loaded, ...fresh];
     host.adminBotMeetingsVisibleCount = Math.min(
       host.adminBotMeetings.length,
-      host.adminBotMeetingsVisibleCount + 12,
+      host.adminBotMeetingsVisibleCount + MEETINGS_PAGE_SIZE,
     );
     host.adminBotMeetingsNextCursor = result.value.next_cursor ?? null;
   } finally {

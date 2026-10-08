@@ -106,6 +106,13 @@ export type MeetingRosters = Record<
 
 export type MeetingCursor = Pick<MeetingRecord, "started_at" | "id">;
 
+/**
+ * How many meetings the tab reads at a time: the first page it paints and every "show more".
+ * Small on purpose -- the tab is opened to catch up on the last few meetings, and anything older
+ * is one click away. The service pages GET /meetings by the same default when no `limit` is sent.
+ */
+export const MEETINGS_PAGE_SIZE = 10;
+
 export type MeetingPage = { meetings: MeetingRecord[]; next_cursor?: MeetingCursor };
 
 export async function fetchMeetings(

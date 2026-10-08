@@ -200,36 +200,36 @@ describe("renderAdminBotMeetings", () => {
   });
 
   it("renders recordings in bounded batches and lets the reader request the next batch", () => {
-    const meetings = Array.from({ length: 26 }, (_, index) => ({
+    const meetings = Array.from({ length: 22 }, (_, index) => ({
       ...MEETING,
       id: `recording-${index}`,
       topic: `Recording ${index}`,
     }));
     const onShowMore = vi.fn();
-    const view = renderView({ meetings, visibleCount: 12, onShowMore });
-    expect(view.querySelectorAll(".meetings__card")).toHaveLength(12);
+    const view = renderView({ meetings, visibleCount: 10, onShowMore });
+    expect(view.querySelectorAll(".meetings__card")).toHaveLength(10);
     const button = view.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']");
-    expect(button?.textContent).toContain("Show 12 more");
+    expect(button?.textContent).toContain("Show 10 more");
     button?.click();
-    expect(onShowMore).toHaveBeenCalledWith(24);
-    const expanded = renderView({ meetings, visibleCount: 24, onShowMore });
-    expect(expanded.querySelectorAll(".meetings__card")).toHaveLength(24);
+    expect(onShowMore).toHaveBeenCalledWith(20);
+    const expanded = renderView({ meetings, visibleCount: 20, onShowMore });
+    expect(expanded.querySelectorAll(".meetings__card")).toHaveLength(20);
     expanded.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']")?.click();
-    expect(onShowMore).toHaveBeenLastCalledWith(26);
-    expect(renderView({ meetings, visibleCount: 26 }).querySelector(".meetings__more")).toBeNull();
+    expect(onShowMore).toHaveBeenLastCalledWith(22);
+    expect(renderView({ meetings, visibleCount: 22 }).querySelector(".meetings__more")).toBeNull();
   });
 
   it("offers the next server page and disables repeated requests while it loads", () => {
     const onShowMore = vi.fn();
-    const meetings = Array.from({ length: 12 }, (_, index) => ({
+    const meetings = Array.from({ length: 10 }, (_, index) => ({
       ...MEETING,
       id: `recording-${index}`,
     }));
-    const view = renderView({ meetings, visibleCount: 12, hasMore: true, onShowMore });
+    const view = renderView({ meetings, visibleCount: 10, hasMore: true, onShowMore });
     const button = view.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']");
     button?.click();
-    expect(onShowMore).toHaveBeenCalledWith(24);
-    const loading = renderView({ meetings, visibleCount: 12, hasMore: true, loadingMore: true });
+    expect(onShowMore).toHaveBeenCalledWith(20);
+    const loading = renderView({ meetings, visibleCount: 10, hasMore: true, loadingMore: true });
     expect(
       loading.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']")?.disabled,
     ).toBe(true);

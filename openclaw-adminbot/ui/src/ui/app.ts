@@ -4,14 +4,14 @@ import { i18n, I18nController, isSupportedLocale, t } from "../i18n/index.ts";
 import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
 import type { CalendarEvent, CalendarEventDraft, LabCalendar } from "./adminbot/api/calendar.ts";
 import type { LabBroadcast } from "./adminbot/api/lab-sharing.ts";
-import type {
-  MeetingAttendanceNudgePreview,
-  MeetingAttendanceNudgeResult,
-  MeetingRecord,
-  MeetingCursor,
+import {
+  MEETINGS_PAGE_SIZE,
+  type MeetingAttendanceNudgePreview,
+  type MeetingAttendanceNudgeResult,
+  type MeetingRecord,
+  type MeetingCursor,
 } from "./adminbot/api/meetings.ts";
-import type { MemberAdoptionSummary } from "./adminbot/api/members.ts";
-import type { MemberProfileOverviewRow } from "./adminbot/api/members.ts";
+import type { MemberAdoptionSummary, MemberProfileOverviewRow } from "./adminbot/api/members.ts";
 import type { EscalatedNudgeRow } from "./adminbot/api/nudges.ts";
 import type {
   PublicationDigestPreview,
@@ -411,7 +411,7 @@ export class OpenClawApp extends LitElement {
   adminBotMeetingsRequestVersion = 0;
   @state() adminBotMeetingsLoadingMore = false;
   @state() adminBotMeetingsNextCursor: MeetingCursor | null = null;
-  @state() adminBotMeetingsVisibleCount = 12;
+  @state() adminBotMeetingsVisibleCount = MEETINGS_PAGE_SIZE;
   @state() adminBotMeetingsSaving = false;
   @state() adminBotMeetingsError: string | null = null;
   @state() calendarEvents?: CalendarEvent[];

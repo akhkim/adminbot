@@ -8,6 +8,7 @@ import type {
   MeetingRecord,
   MeetingRosters,
 } from "../api/meetings.ts";
+import { MEETINGS_PAGE_SIZE } from "../api/meetings.ts";
 // Meeting Recordings: what was recorded, who was there, and what the local model made of it.
 //
 // The tab is a catch-up surface first. Someone who missed Tuesday opens it to watch the recording
@@ -534,14 +535,19 @@ export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
             @click=${() =>
               props.onShowMore(
                 visibleCount < props.meetings.length
-                  ? Math.min(props.meetings.length, visibleCount + 12)
-                  : visibleCount + 12,
+                  ? Math.min(props.meetings.length, visibleCount + MEETINGS_PAGE_SIZE)
+                  : visibleCount + MEETINGS_PAGE_SIZE,
               )}
           >
             ${props.loadingMore
               ? t("adminbotMeetings.loading")
               : t("professor.showMore", {
-                  count: String(Math.min(12, props.meetings.length - visibleCount || 12)),
+                  count: String(
+                    Math.min(
+                      MEETINGS_PAGE_SIZE,
+                      props.meetings.length - visibleCount || MEETINGS_PAGE_SIZE,
+                    ),
+                  ),
                 })}
           </button>`
         : nothing}

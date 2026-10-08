@@ -16,6 +16,7 @@ import {
   signupMember,
   startImpersonation,
 } from "../api/auth.ts";
+import { MEETINGS_PAGE_SIZE } from "../api/meetings.ts";
 import { setOnboardingStep } from "../api/onboarding.ts";
 import { acknowledgeOnboardingStep } from "../api/profile.ts";
 import { forgetAdminQueues } from "../controllers/admin-queues.ts";
@@ -694,7 +695,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotMeetingsRequestVersion = (host.adminBotMeetingsRequestVersion ?? 0) + 1;
   host.adminBotMeetingsNextCursor = null;
   host.adminBotMeetingsLoadingMore = false;
-  host.adminBotMeetingsVisibleCount = 12;
+  host.adminBotMeetingsVisibleCount = MEETINGS_PAGE_SIZE;
   host.adminBotMeetingsLoading = false;
   host.adminBotMeetingsSaving = false;
   host.adminBotMeetingsError = null;
