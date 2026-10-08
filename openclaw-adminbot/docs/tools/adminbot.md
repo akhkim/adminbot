@@ -29,6 +29,7 @@ You need a local AdminBot service listening on loopback, for example
 | `POST /proposals`                     | Create one typed action proposal.                                 |
 | `POST /privacy/tasks`                 | Route reasoning through the VM-local privacy gate.                |
 | `GET /proposals/pending`              | Return pending approval items.                                    |
+| `GET /admin/queue-counts`             | Return how many proposals and held emails await an administrator. |
 | `GET /settings`                       | Return service defaults such as member privilege and escalation.  |
 | `PUT /settings`                       | Update AdminBot service defaults.                                 |
 | `GET /lab/members`                    | Return lab members and computed access profiles.                  |

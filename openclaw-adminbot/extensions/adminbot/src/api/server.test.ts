@@ -2108,6 +2108,9 @@ describe("AdminBot member-side restrictions", () => {
     const pending = await fetch(`${baseUrl}/proposals/pending`, { headers });
     expect(pending.status).toBe(403);
 
+    const counts = await fetch(`${baseUrl}/admin/queue-counts`, { headers });
+    expect(counts.status).toBe(403);
+
     const settings = await fetch(`${baseUrl}/settings`, { headers });
     expect(settings.status).toBe(403);
   });
@@ -2166,6 +2169,14 @@ describe("AdminBot member-side restrictions", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(pending.status).toBe(200);
+
+    // The dashboard's counts agree with the queues they summarize.
+    const counts = await fetch(`${baseUrl}/admin/queue-counts`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(counts.status).toBe(200);
+    const { proposals } = (await pending.json()) as { proposals: unknown[] };
+    expect(await counts.json()).toEqual({ pending_proposals: proposals.length, email_reviews: 0 });
   });
 
   it("keeps other people's papers and paper deletion out of a plain member's reach", async () => {
@@ -2871,6 +2882,7 @@ describe("anonymous reimbursement access", () => {
       ["GET", "/settings"],
       ["GET", "/lab/members"],
       ["GET", "/proposals/pending"],
+      ["GET", "/admin/queue-counts"],
       ["POST", "/proposals"],
       ["POST", "/automation/email/run"],
     ] as const) {
