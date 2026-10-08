@@ -2110,6 +2110,23 @@ export function renderApp(state: AppViewState) {
   const activePaperCard = state.adminBotPaperCardId
     ? (state.adminBotData?.papers ?? []).find((paper) => paper.id === state.adminBotPaperCardId)
     : undefined;
+  const piReviewOnly = isHeadProfessorViewer({
+    memberId: state.memberId,
+    headProfessorMemberId: state.adminBotData?.settings?.head_professor_member_id,
+  });
+  const selectedReview = state.adminBotPiReview?.find(
+    (row) => row.paperId === state.adminBotPaperCardId,
+  );
+  const activeReviewPaper =
+    activePaperCard ??
+    (selectedReview
+      ? {
+          id: selectedReview.paperId,
+          title: selectedReview.title,
+          authors: selectedReview.authors,
+          artifacts: { google_drive_pdf_url: selectedReview.drivePdfUrl },
+        }
+      : undefined);
   const headerError = !isChat && state.lastError !== state.chatError ? state.lastError : null;
   const chatViewError = state.lastError;
   const chatHeaderHidden = isChat && (state.onboarding || state.chatHeaderControlsHidden);
@@ -4263,18 +4280,17 @@ export function renderApp(state: AppViewState) {
              author-facing summaries that came with the deck (the "Blocked" roll-up, the
              pre-registration and decision banners) are the reader's own view of their own work, and
              the admin equivalents are the table and the Reported blockers board. -->
-        ${(state.tab === "adminbotPapers" || state.tab === "adminbotProfessor") && activePaperCard
+        ${(state.tab === "adminbotPapers" || state.tab === "adminbotProfessor") &&
+        (piReviewOnly ? activeReviewPaper : activePaperCard)
           ? renderPaperCardDialog({
               state,
               props: {
                 ...paperWorkspaceProps(state, requestHostUpdate),
                 canNudge: adminBotMode === "admin",
               },
-              paper: activePaperCard,
-              reviewOnly: isHeadProfessorViewer({
-                memberId: state.memberId,
-                headProfessorMemberId: state.adminBotData?.settings?.head_professor_member_id,
-              }),
+              ...(piReviewOnly
+                ? { reviewOnly: true as const, paper: activeReviewPaper! }
+                : { reviewOnly: false as const, paper: activePaperCard! }),
               onClose: () => {
                 state.adminBotPaperCardId = null;
                 requestHostUpdate?.();

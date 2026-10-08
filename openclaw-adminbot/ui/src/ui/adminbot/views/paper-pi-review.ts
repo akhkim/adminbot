@@ -35,7 +35,10 @@ function formatDeadline(value: string) {
 }
 
 /** A PI decision, not the author's entire publication checklist. */
-export function renderPaperPiReview(paper: AdminBotPaperRecord, props: MyWorkProps) {
+export function renderPaperPiReview(
+  paper: Pick<AdminBotPaperRecord, "id" | "title" | "authors" | "artifacts">,
+  props: MyWorkProps,
+) {
   const cycle = props.slots[paper.id];
   if (!cycle) {
     return props.slotsError
