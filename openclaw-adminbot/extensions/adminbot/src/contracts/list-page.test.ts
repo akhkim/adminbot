@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { ADMIN_LIST_PAGE_MAX, ADMIN_LIST_PAGE_SIZE, pageOf, readAdminListPage } from "./list-page.js";
+import {
+  ADMIN_LIST_PAGE_MAX,
+  ADMIN_LIST_PAGE_SIZE,
+  pageOf,
+  readAdminListPage,
+} from "./list-page.js";
 
 const read = (query: string) => readAdminListPage(new URLSearchParams(query));
 
