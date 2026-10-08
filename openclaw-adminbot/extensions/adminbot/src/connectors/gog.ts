@@ -356,6 +356,19 @@ export function createGogAdminBotExecutor(
       if (!args) {
         return { handled: false };
       }
+      if (proposal.type === "calendar.create_birthday") {
+        const response = JSON.parse(await capture(args)) as {
+          id?: unknown;
+          event?: { id?: unknown };
+        };
+        const id = response.event?.id ?? response.id;
+        if (typeof id !== "string" || !id.trim()) {
+          throw new Error(
+            "birthday creation returned no event id; inspect the calendar before retrying",
+          );
+        }
+        return { handled: true, artifacts: { event_id: id } };
+      }
       await run(args);
       return { handled: true };
     },

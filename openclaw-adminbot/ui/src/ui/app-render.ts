@@ -775,8 +775,8 @@ function paperWorkspaceProps(
     memberName: (memberId: string) =>
       (state.adminBotData?.members ?? []).find((member) => member.id === memberId)?.name ??
       memberId,
-    onSaveDraft: (paperId, platform, body) => {
-      void saveAdminBotSocialDraft(state, paperId, platform, body).finally(() =>
+    onSaveDraft: (paperId, platform, body, xThread) => {
+      void saveAdminBotSocialDraft(state, paperId, platform, body, xThread).finally(() =>
         requestHostUpdate?.(),
       );
     },
@@ -3394,6 +3394,11 @@ export function renderApp(state: AppViewState) {
                 void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
               },
               onOpen: (tab) => state.setTab(tab),
+              onOpenPaper: (paperId) => {
+                state.adminBotPaperCardId = paperId;
+                void loadAdminBotPaperSlots(state, paperId).finally(() => requestHostUpdate?.());
+                requestHostUpdate?.();
+              },
               expanded: state.professorExpandedLists,
               onToggleExpand: (id) => {
                 const next = new Set(state.professorExpandedLists);
@@ -3525,7 +3530,7 @@ export function renderApp(state: AppViewState) {
              author-facing summaries that came with the deck (the "Blocked" roll-up, the
              pre-registration and decision banners) are the reader's own view of their own work, and
              the admin equivalents are the table and the Reported blockers board. -->
-        ${state.tab === "adminbotPapers" && activePaperCard
+        ${(state.tab === "adminbotPapers" || state.tab === "adminbotProfessor") && activePaperCard
           ? renderPaperCardDialog({
               state,
               props: {
@@ -3533,6 +3538,10 @@ export function renderApp(state: AppViewState) {
                 canNudge: adminBotMode === "admin",
               },
               paper: activePaperCard,
+              reviewOnly: isHeadProfessorViewer({
+                memberId: state.memberId,
+                headProfessorMemberId: state.adminBotData?.settings?.head_professor_member_id,
+              }),
               onClose: () => {
                 state.adminBotPaperCardId = null;
                 requestHostUpdate?.();
