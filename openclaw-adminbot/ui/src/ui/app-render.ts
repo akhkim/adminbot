@@ -142,6 +142,7 @@ import {
   resetAdminBotLogisticsForm,
 } from "./adminbot/surfaces/logistics.ts";
 import { renderMeetingsSurface } from "./adminbot/surfaces/meetings.ts";
+import { renderProfessorSurface } from "./adminbot/surfaces/professor.ts";
 import { renderProfileSurface } from "./adminbot/surfaces/profile.ts";
 import type { AdminBotSurfaceScope } from "./adminbot/surfaces/scope.ts";
 import { renderTimeAvailabilitySurface } from "./adminbot/surfaces/time-availability.ts";
@@ -160,7 +161,6 @@ import {
   type MyWorkProps,
 } from "./adminbot/views/my-work.ts";
 import { paperTripDraftFrom } from "./adminbot/views/paper-cycle.ts";
-import { renderProfessorView } from "./adminbot/views/professor.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
 import {
@@ -775,8 +775,8 @@ function paperWorkspaceProps(
     memberName: (memberId: string) =>
       (state.adminBotData?.members ?? []).find((member) => member.id === memberId)?.name ??
       memberId,
-    onSaveDraft: (paperId, platform, body) => {
-      void saveAdminBotSocialDraft(state, paperId, platform, body).finally(() =>
+    onSaveDraft: (paperId, platform, body, xThread) => {
+      void saveAdminBotSocialDraft(state, paperId, platform, body, xThread).finally(() =>
         requestHostUpdate?.(),
       );
     },
@@ -3379,60 +3379,7 @@ export function renderApp(state: AppViewState) {
         ${renderDashboardSurface(state, adminBotSurfaces)}
         ${renderProfileSurface(state, adminBotSurfaces)}
         ${state.tab === "gettingStarted" ? renderGettingStarted(state) : nothing}
-        ${state.tab === "adminbotProfessor" && adminBotMode === "admin"
-          ? renderProfessorView({
-              localChatSessionToken: loadStoredMemberSession()?.sessionToken ?? "",
-              requests: state.adminBotLogisticsRequests ?? [],
-              requestsLoading: state.adminBotLogisticsRequestsLoading,
-              papers: state.adminBotData?.papers ?? [],
-              profiles: state.adminBotProfileOverview ?? [],
-              escalated: state.adminBotEscalatedNudges ?? [],
-              piReview: state.adminBotPiReview ?? [],
-              piReviewLoading: state.adminBotProfileOverviewLoading,
-              piReviewError: state.adminBotPiReviewError,
-              onRetryPiReview: () => {
-                void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
-              },
-              onOpen: (tab) => state.setTab(tab),
-              expanded: state.professorExpandedLists,
-              onToggleExpand: (id) => {
-                const next = new Set(state.professorExpandedLists);
-                if (next.has(id)) {
-                  next.delete(id);
-                } else {
-                  next.add(id);
-                }
-                state.professorExpandedLists = next;
-                requestHostUpdate?.();
-              },
-              broadcast: state.adminBotBroadcast ?? null,
-              broadcastDraft: state.adminBotBroadcastDraft,
-              broadcastExpiry: state.adminBotBroadcastExpiry,
-              broadcastAvailability: state.adminBotBroadcastAvailability,
-              broadcastTimezone: state.adminBotBroadcastTimezone,
-              broadcastBusy: state.adminBotBroadcastBusy,
-              broadcastNotice: state.adminBotBroadcastNotice,
-              onBroadcastDraftChange: (value) => {
-                state.adminBotBroadcastDraft = value;
-                requestHostUpdate?.();
-              },
-              onBroadcastExpiryChange: (value) => {
-                state.adminBotBroadcastExpiry = value;
-                requestHostUpdate?.();
-              },
-              onBroadcastAvailabilityChange: (value) => {
-                state.adminBotBroadcastAvailability = value;
-                requestHostUpdate?.();
-              },
-              onBroadcastTimezoneChange: (value) => {
-                state.adminBotBroadcastTimezone = value;
-                requestHostUpdate?.();
-              },
-              onBroadcastPublish: (draft) => {
-                void state.publishBroadcast?.(draft).finally(() => requestHostUpdate?.());
-              },
-            })
-          : nothing}
+        ${renderProfessorSurface(state, adminBotSurfaces)}
         ${state.tab === "adminbotTravel" && adminBotMode === "admin"
           ? renderLazyView(lazyTravel, (m) =>
               m.renderTravel({
@@ -3525,7 +3472,7 @@ export function renderApp(state: AppViewState) {
              author-facing summaries that came with the deck (the "Blocked" roll-up, the
              pre-registration and decision banners) are the reader's own view of their own work, and
              the admin equivalents are the table and the Reported blockers board. -->
-        ${state.tab === "adminbotPapers" && activePaperCard
+        ${(state.tab === "adminbotPapers" || state.tab === "adminbotProfessor") && activePaperCard
           ? renderPaperCardDialog({
               state,
               props: {
@@ -3533,6 +3480,10 @@ export function renderApp(state: AppViewState) {
                 canNudge: adminBotMode === "admin",
               },
               paper: activePaperCard,
+              reviewOnly: isHeadProfessorViewer({
+                memberId: state.memberId,
+                headProfessorMemberId: state.adminBotData?.settings?.head_professor_member_id,
+              }),
               onClose: () => {
                 state.adminBotPaperCardId = null;
                 requestHostUpdate?.();

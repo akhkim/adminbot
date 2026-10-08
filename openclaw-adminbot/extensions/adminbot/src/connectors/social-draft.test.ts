@@ -1,12 +1,58 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createLinkedInDraftRunner,
+  createXDraftRunner,
   extractPaperFromPdf,
   generateLinkedInDraft,
   type SocialDraftFetch,
 } from "./social-draft.js";
 
 const env = { OPENROUTER_API_KEY: "sk-or-v1-test" } as NodeJS.ProcessEnv;
+
+describe("X PDF draft runner", () => {
+  it("extracts the PDF, uses grounded JSON and keeps all authors", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        completion(
+          JSON.stringify({
+            title: "Paper",
+            authors: ["External Author"],
+            abstract: "We compare two methods.",
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        completion(
+          JSON.stringify({
+            posts: [{ text: "Which method works?" }, { text: "We compare two methods." }],
+          }),
+        ),
+      ) as unknown as SocialDraftFetch;
+    const result = await createXDraftRunner({ env, fetchImpl })({
+      pdfBase64: "cGRm",
+      members: [],
+      url: "https://arxiv.org/abs/2608.27510",
+    });
+    expect(result.posts).toHaveLength(4);
+    expect(result.posts[2].text).toContain("External Author");
+    expect(result.issues).toHaveLength(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+  it("refuses malformed generated threads", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        completion(JSON.stringify({ title: "Paper", authors: [], abstract: "Evidence." })),
+      )
+      .mockResolvedValueOnce(
+        completion(JSON.stringify({ posts: [{ text: "" }] })),
+      ) as unknown as SocialDraftFetch;
+    await expect(
+      createXDraftRunner({ env, fetchImpl })({ pdfBase64: "cGRm", members: [] }),
+    ).rejects.toThrow("invalid thread");
+  });
+});
 
 function completion(content: string, ok = true, status = 200) {
   return {
@@ -142,9 +188,7 @@ describe("draft generation", () => {
   });
 
   it("honors an OPENROUTER_MODEL override", async () => {
-    const fetchImpl = vi.fn(async () =>
-      completion("post text"),
-    ) as unknown as SocialDraftFetch;
+    const fetchImpl = vi.fn(async () => completion("post text")) as unknown as SocialDraftFetch;
     const draft = await generateLinkedInDraft(input, {
       env: { ...env, OPENROUTER_MODEL: "anthropic/claude-opus-4.5" },
       fetchImpl,

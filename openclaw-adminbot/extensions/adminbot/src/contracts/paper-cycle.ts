@@ -39,6 +39,7 @@ export type AdminBotSocialDraftRecord = {
   paper_id: string;
   platform: AdminBotSocialPlatform;
   body: string;
+  x_thread?: import("../workflows/papers/x-draft.js").XThreadDraft;
   /** Which model wrote it, or empty when a person did. */
   model?: string;
   generated_at: string;
