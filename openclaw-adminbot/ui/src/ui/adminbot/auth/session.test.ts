@@ -654,6 +654,21 @@ describe("offline GET cache and mutation outbox", () => {
     ).resolves.toEqual({ ok: false, kind: "unreachable" });
   });
 
+  it("keeps nothing of the viewed member when the browser refuses to save the session", async () => {
+    await resetAdminBotOfflineMemory();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, { member: {} }));
+    saveStoredMemberSession({ sessionToken: "admin-session", expiresAt: "" });
+    // Quota full, or storage blocked: the View-as session cannot be written to localStorage.
+    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError");
+    });
+    const impersonator = { sessionToken: "admin-session", expiresAt: "" };
+    saveStoredMemberSession({ sessionToken: "viewed-session", expiresAt: "", impersonator });
+    await fetchMemberResource("/lab/members/self", "viewed-session", BASE_URL);
+    await settle();
+    await expect(stored("viewed-session", "/lab/members/self")).resolves.toBeUndefined();
+  });
+
   it("revalidates against the disk copy after a page refresh and writes nothing on a 304", async () => {
     await resetAdminBotOfflineMemory();
     const fetchMock = vi

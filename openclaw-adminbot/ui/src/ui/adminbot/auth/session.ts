@@ -534,10 +534,16 @@ async function authedJsonOnce(
 }
 
 // A View-as session belongs to the member being viewed; nothing of theirs is kept on the
-// admin's device.
+// admin's device. The token is also held in memory: localStorage can refuse the write (quota,
+// blocked storage), and a View-as that only localStorage knew about would then fail open and have
+// the viewed member's reads written to disk as if they were the admin's own.
+let viewAsToken: string | null = null;
+
 function isViewingAs(token: string | null): boolean {
+  if (!token) return false;
+  if (token === viewAsToken) return true;
   const stored = loadStoredMemberSession();
-  return Boolean(token && stored?.impersonator && stored.sessionToken === token);
+  return Boolean(stored?.impersonator && stored.sessionToken === token);
 }
 
 /**
@@ -1100,6 +1106,7 @@ export function saveStoredMemberSession(next: StoredMemberSession): void {
     // untouched too: its rows are principal-scoped and never replayed, so no unsent work is lost.
     forgetOfflineReads(next.impersonator ? null : next.sessionToken);
   }
+  viewAsToken = next.impersonator ? next.sessionToken : null;
   const storage = getSafeLocalStorage();
   try {
     storage?.setItem(
@@ -1120,6 +1127,7 @@ export function clearStoredMemberSession(): void {
   forgetSessionReads();
   forgetOfflineReads();
   lastAuthedCall = undefined;
+  viewAsToken = null;
   const storage = getSafeLocalStorage();
   try {
     storage?.removeItem(SESSION_STORAGE_KEY);
