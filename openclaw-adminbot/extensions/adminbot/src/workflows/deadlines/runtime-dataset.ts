@@ -10,10 +10,28 @@ let cached: { file: string; version: string; items: readonly unknown[] } | undef
  * nanosecond mtime moves -- an atomic rename-replace always changes the inode -- and an invalid file
  * is never cached, so it keeps throwing until it is fixed.
  */
-export function readDeadlineDataset(
-  file = process.env.ADMINBOT_DEADLINE_DATASET_PATH ??
-    resolve("extensions/adminbot/content/deadlines/deadlines.json"),
-): readonly unknown[] {
+function defaultDatasetFile(): string {
+  return (
+    process.env.ADMINBOT_DEADLINE_DATASET_PATH ??
+    resolve("extensions/adminbot/content/deadlines/deadlines.json")
+  );
+}
+
+/**
+ * The stat token readDeadlineDataset keys its cache on, for ETags that depend on the dataset. A
+ * missing file reads as one fixed token: the service then serves the compiled snapshot, which does
+ * not change while the process runs.
+ */
+export function deadlineDatasetVersion(file = defaultDatasetFile()): string {
+  try {
+    const stat = statSync(file, { bigint: true });
+    return `${stat.ino}:${stat.size}:${stat.mtimeNs}`;
+  } catch {
+    return "unreadable";
+  }
+}
+
+export function readDeadlineDataset(file = defaultDatasetFile()): readonly unknown[] {
   const stat = statSync(file, { bigint: true });
   const version = `${stat.ino}:${stat.size}:${stat.mtimeNs}`;
   if (cached?.file === file && cached.version === version) {

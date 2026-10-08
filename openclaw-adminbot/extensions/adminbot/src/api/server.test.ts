@@ -1818,6 +1818,24 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(body.members[0]?.missing_fields).toContain("cv_url");
   });
 
+  it("shows a member who is not an admin only their own incomplete fields", async () => {
+    const { baseUrl } = await startService();
+    seedMember(baseUrl, "blank", { name: "Blank" });
+    seedMember(baseUrl, "plain", {
+      name: "Plain",
+      email: "plain@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "plain", "plain@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "plain@cs.toronto.edu");
+    const res = await fetch(`${baseUrl}/members/mandatory-fields-incomplete`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { members: Array<{ id: string }> };
+    expect(body.members.map((member) => member.id)).toEqual(["plain"]);
+  });
+
   it("lets the service principal (unlike /nudges/send) run the daily mandatory-fields reminder, since it takes no caller-supplied content", async () => {
     const executor = { execute: async () => ({ handled: true }) };
     const { baseUrl } = await startService({ executor });

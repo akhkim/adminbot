@@ -62,6 +62,8 @@ export async function handleLogisticsRoute(
   service: AdminBotService,
   member: LogisticsRouteMember,
   onMeetingRequested?: MeetingRequestHook,
+  /** The queue read's version tag, when the router could make one (routes/logistics.ts). */
+  queueEtag?: string,
 ): Promise<void> {
   const isAdmin = member.privilege_level === "admin";
   // Falls back to the id rather than sending a blank first column: a row nobody can be matched to
@@ -91,7 +93,7 @@ export async function handleLogisticsRoute(
       page,
       (request) => request.id,
     );
-    sendJson(res, 200, { requests: rows.map(logisticsListRow), ...rest });
+    sendJson(res, 200, { requests: rows.map(logisticsListRow), ...rest }, { etag: queueEtag });
     return;
   }
   if (req.method === "POST" && url.pathname === "/logistics/requests") {

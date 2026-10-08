@@ -9,8 +9,8 @@
 // The rule that keeps this safe: every input to the body must be in `parts`. The version covers
 // stored rows; the caller adds whatever the projection reads from the principal (role, and the
 // member's id or name where the body is filtered or redacted by them), the query parameters, and
-// any setting the body is filtered by. A route whose body has an input with no cheap version
-// (GET /lab/members reads badges, deadlines and an external dataset) stays on the byte hash.
+// any setting the body is filtered by. A route whose body has an input with no cheap version stays
+// on the byte hash; the member views version theirs in members-etag.ts.
 import { createHash, randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import { etagMatches } from "../server.http.js";

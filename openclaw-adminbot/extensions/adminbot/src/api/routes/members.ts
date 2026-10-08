@@ -45,6 +45,7 @@ import type { AdminBotRouteContext } from "./context.js";
 import {
   adminSessionOnly,
   approverIdentityFor,
+  isPrivileged,
   memberOnly,
   principalActor,
   privilegedOnly,
@@ -52,10 +53,12 @@ import {
   requirePrivileged,
 } from "./guards.js";
 import { readStandingMeetings } from "./meetings.js";
+import { memberViewEtag } from "./members-etag.js";
 import { memberOnboardingDeps } from "./onboarding.js";
 import { readListPage, limitParam } from "./query-params.js";
 import { del, get, post, put, route, type Route, under } from "./router.js";
 import { requestIsSecure, sendAuthResult } from "./session.js";
+import { sendNotModified } from "./version-etag.js";
 
 export const membersRoutes: readonly Route[] = [
   // Member requests: anyone signed in may propose adding somebody; only an admin decides. Ahead of
@@ -110,6 +113,10 @@ export const membersRoutes: readonly Route[] = [
         sendJson(res, 400, { error: { message: "summary view cannot be paginated" } });
         return;
       }
+      const etag = memberViewEtag(ctx.store, principal, "lab-members", { view });
+      if (etag && sendNotModified(res, etag)) {
+        return;
+      }
       const result = service.listLabMemberSummaries(
         principal.kind === "member" ? principal.member.id : undefined,
       );
@@ -128,7 +135,12 @@ export const membersRoutes: readonly Route[] = [
               },
             }
           : result,
+        { etag },
       );
+      return;
+    }
+    const etag = memberViewEtag(ctx.store, principal, "lab-members", { page });
+    if (etag && sendNotModified(res, etag)) {
       return;
     }
     // A page carries the card projection; the unpaged read stays full for the agent tools.
@@ -146,6 +158,7 @@ export const membersRoutes: readonly Route[] = [
             },
           }
         : result,
+      { etag },
     );
   }),
   get(
@@ -422,11 +435,23 @@ export const membersRoutes: readonly Route[] = [
       sendServiceResult(res, service.migrateMemberNotesToFields(principalActor(principal)));
     }),
   ),
-  get("/members/mandatory-fields-incomplete", ({ res, ctx }) => {
+  get("/members/mandatory-fields-incomplete", ({ res, principal, ctx }) => {
     const { service } = ctx;
-    // Read-only roster scan (same shape as /papers/nudges), so no privilege gate: it powers the
-    // dashboard's own-profile warning too, which any signed-in member may load.
-    sendServiceResult(res, service.listMembersWithIncompleteMandatoryFields());
+    // Open to anyone signed in for the dashboard's own-profile warning, but everybody's
+    // completeness is the admin's profile overview: a member who is not an admin gets their row.
+    const result = service.listMembersWithIncompleteMandatoryFields();
+    const ownOnly = principal.kind === "member" && !isPrivileged(principal);
+    sendServiceResult(
+      res,
+      result.ok && ownOnly
+        ? {
+            ...result,
+            payload: {
+              members: result.payload.members.filter(({ id }) => id === principal.member.id),
+            },
+          }
+        : result,
+    );
   }),
   get(
     "/members/profile-overview",
