@@ -9,6 +9,7 @@ import {
   type AdminBotLabMemberInput,
   redactConfidentialMemberFields,
 } from "../../contracts/actions.js";
+import { ADMIN_LIST_PAGE_SIZE, pageOf, readAdminListPage } from "../../contracts/list-page.js";
 import {
   type AdminBotMemberRequestStatus,
   adminBotMemberRequestStatuses,
@@ -17,6 +18,13 @@ import { memberAttends } from "../../workflows/calendar/standing-meetings.js";
 import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import type { AdminBotWriteOrigin } from "../../workflows/members/adoption.js";
 import { privilegeForMemberTypeChange } from "../../workflows/members/member-type-access.js";
+import {
+  deskAdoption,
+  filterOverviewRows,
+  type ProfileReminderInclude,
+  readProfileOverviewFilter,
+  remindScopeFor,
+} from "../../workflows/members/profile-overview-filter.js";
 import { profileOverviewWireRow } from "../../workflows/members/profile-overview-row.js";
 import { sameMemberType } from "../../workflows/members/roster-sync.js";
 import { isTravelHistorySubject } from "../../workflows/members/travel-history.js";
@@ -422,22 +430,40 @@ export const membersRoutes: readonly Route[] = [
   }),
   get(
     "/members/profile-overview",
-    privilegedOnly(({ res, ctx }) => {
+    privilegedOnly(({ res, url, ctx }) => {
       const { service } = ctx;
-      // Rows leave out the zeroed counters the client fills in itself; see profileOverviewWireRow.
+      const desk = url.searchParams.get("view") === "desk";
+      const page = readAdminListPage(url.searchParams);
+      const filter = readProfileOverviewFilter(url.searchParams);
+      if (page === "invalid" || filter === "invalid") {
+        sendJson(res, 400, { error: { message: "invalid profile overview page" } });
+        return;
+      }
       const overview = service.listMemberProfileOverview();
-      sendServiceResult(
-        res,
-        overview.ok
-          ? {
-              ...overview,
-              payload: {
-                ...overview.payload,
-                members: overview.payload.members.map(profileOverviewWireRow),
-              },
-            }
-          : overview,
-      );
+      if (!overview.ok) {
+        sendServiceResult(res, overview);
+        return;
+      }
+      // The roll-ups are taken over everybody before anything is cut, so the figures at the top of
+      // the page and on My Desk are exact however little of the roster travels with them.
+      const { members, ...rollUp } = overview.payload;
+      if (desk) {
+        const heads = deskAdoption(members, ADMIN_LIST_PAGE_SIZE);
+        sendJson(res, 200, {
+          ...rollUp,
+          members: heads.members.map(profileOverviewWireRow),
+          desk: heads.counts,
+        });
+        return;
+      }
+      // Rows leave out the zeroed counters the client fills in itself; see profileOverviewWireRow.
+      const { rows, ...rest } = pageOf(filterOverviewRows(members, filter), page);
+      sendJson(res, 200, {
+        ...rollUp,
+        members: rows.map(profileOverviewWireRow),
+        ...rest,
+        summary: { remind_count: remindScopeFor(members, filter).memberIds.length },
+      });
     }),
   ),
   post(
@@ -446,13 +472,36 @@ export const membersRoutes: readonly Route[] = [
       const { service } = ctx;
       const reminderBody = readRecord(await readJsonOrEmpty(req));
       const rawInclude = asString(reminderBody.include);
-      const include =
+      let include: ProfileReminderInclude | undefined =
         rawInclude === "profile" || rawInclude === "timeline" || rawInclude === "both"
           ? rawInclude
           : undefined;
-      const reminderRecipients = Array.isArray(reminderBody.recipient_member_ids)
+      let reminderRecipients = Array.isArray(reminderBody.recipient_member_ids)
         ? reminderBody.recipient_member_ids.filter((id): id is string => typeof id === "string")
         : undefined;
+      // The Lab Overview no longer holds every row, so it sends the filter it is showing and the
+      // people are resolved here, by the same function that counted them for the button.
+      if (typeof reminderBody.filter === "string") {
+        const filter = readProfileOverviewFilter(new URLSearchParams(reminderBody.filter));
+        const overview = service.listMemberProfileOverview();
+        if (filter === "invalid" || !overview.ok) {
+          if (overview.ok) {
+            sendJson(res, 400, { error: { message: "invalid profile overview filter" } });
+          } else {
+            sendServiceResult(res, overview);
+          }
+          return;
+        }
+        const scope = remindScopeFor(overview.payload.members, filter);
+        // An empty recipient list means "everyone" to the service, so a filter that matches nobody
+        // must stop here rather than turn into the whole roster.
+        if (!scope.memberIds.length) {
+          sendJson(res, 200, { created: [], skipped: [] });
+          return;
+        }
+        include = scope.include;
+        reminderRecipients = scope.memberIds;
+      }
       sendServiceResult(
         res,
         await service.sendMandatoryFieldsReminders(principalActor(principal), {
