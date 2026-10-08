@@ -457,7 +457,11 @@ export const membersRoutes: readonly Route[] = [
         return;
       }
       // Rows leave out the zeroed counters the client fills in itself; see profileOverviewWireRow.
-      const { rows, ...rest } = pageOf(filterOverviewRows(members, filter), page);
+      const { rows, ...rest } = pageOf(
+        filterOverviewRows(members, filter),
+        page,
+        (row) => row.id,
+      );
       sendJson(res, 200, {
         ...rollUp,
         members: rows.map(profileOverviewWireRow),
@@ -479,6 +483,12 @@ export const membersRoutes: readonly Route[] = [
       let reminderRecipients = Array.isArray(reminderBody.recipient_member_ids)
         ? reminderBody.recipient_member_ids.filter((id): id is string => typeof id === "string")
         : undefined;
+      // An empty recipient list means "everyone" to the service, so a list that names nobody --
+      // empty, or nothing in it an id -- sends to nobody rather than the whole roster.
+      if (reminderRecipients && !reminderRecipients.length && typeof reminderBody.filter !== "string") {
+        sendJson(res, 200, { created: [], skipped: [] });
+        return;
+      }
       // The Lab Overview no longer holds every row, so it sends the filter it is showing and the
       // people are resolved here, by the same function that counted them for the button.
       if (typeof reminderBody.filter === "string") {

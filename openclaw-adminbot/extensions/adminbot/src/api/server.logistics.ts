@@ -86,7 +86,11 @@ export async function handleLogisticsRoute(
       sendServiceResult(res, listed);
       return;
     }
-    const { rows, ...rest } = pageOf(selectLogisticsQueue(listed.payload.requests, query), page);
+    const { rows, ...rest } = pageOf(
+      selectLogisticsQueue(listed.payload.requests, query),
+      page,
+      (request) => request.id,
+    );
     sendJson(res, 200, { requests: rows.map(logisticsListRow), ...rest });
     return;
   }

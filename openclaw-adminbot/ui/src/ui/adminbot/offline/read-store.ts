@@ -215,15 +215,23 @@ async function commit(puts: StoredRead[], deletes: string[], forGeneration: numb
   // Checked after the await and immediately before the transaction is created: a wipe that ran
   // in between has already dropped these rows from `pending`, and must not see them land after.
   if (forGeneration !== generation) return;
-  await new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction(GET_STORE, "readwrite");
-    const store = transaction.objectStore(GET_STORE);
-    for (const key of deletes) store.delete(key);
-    for (const row of puts) store.put(row);
-    transaction.addEventListener("complete", () => resolve());
-    transaction.addEventListener("abort", () => reject(transaction.error));
-    transaction.addEventListener("error", () => reject(transaction.error));
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(GET_STORE, "readwrite");
+      const store = transaction.objectStore(GET_STORE);
+      for (const key of deletes) store.delete(key);
+      for (const row of puts) store.put(row);
+      transaction.addEventListener("complete", () => resolve());
+      transaction.addEventListener("abort", () => reject(transaction.error));
+      transaction.addEventListener("error", () => reject(transaction.error));
+    });
+  } catch (error) {
+    // The index already lists these rows (storeOfflineRead records them when it queues). Left as
+    // is, a quota abort would make every later copy of the same bytes "unchanged" and never retried
+    // for the life of the page; reload it from what is actually on disk instead.
+    if (forGeneration === generation) meta = null;
+    throw error;
+  }
   stats.transactions += 1;
   stats.puts += puts.length;
   stats.deletes += deletes.length;

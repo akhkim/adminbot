@@ -35,4 +35,43 @@ describe("admin list pages", () => {
     expect(last).toEqual({ rows: [40, 41, 42, 43, 44], total: 45 });
     expect(pageOf(rows, { limit: 20, offset: 99 })).toEqual({ rows: [], total: 45 });
   });
+
+  describe("a cursor anchored on the last row shown", () => {
+    const idOf = (row: string) => row;
+    const ids = (page: { rows: string[] }) => page.rows;
+
+    it("names the last row it served, and reads it back", () => {
+      const first = pageOf(["a", "b", "c"], { limit: 2, offset: 0 }, idOf);
+      expect(first).toEqual({ rows: ["a", "b"], total: 3, next_cursor: "2~b" });
+      expect(read("cursor=2~b&limit=2")).toEqual({ limit: 2, offset: 2, after: "b" });
+      // An id may carry anything; only the offset in front has a shape.
+      expect(read(`cursor=${encodeURIComponent("2~logreq_7~x")}`)).toMatchObject({
+        offset: 2,
+        after: "logreq_7~x",
+      });
+      for (const query of ["cursor=x~b", "cursor=~b", "cursor=2~"]) {
+        expect(read(query)).toBe("invalid");
+      }
+    });
+
+    it("does not skip a row when one already shown leaves the list", () => {
+      // Page 1 showed a and b; then a was settled and dropped out of the open queue.
+      const page = { limit: 2, offset: 2, after: "b" };
+      expect(ids(pageOf(["b", "c", "d", "e"], page, idOf))).toEqual(["c", "d"]);
+    });
+
+    it("never starts later than the offset would", () => {
+      // A row arrived above: b is served again, which a client appending by id drops, not skipped.
+      const page = { limit: 2, offset: 2, after: "b" };
+      expect(ids(pageOf(["x", "a", "b", "c", "d"], page, idOf))).toEqual(["b", "c"]);
+      // The anchor moved down the list: start where the offset says, as before.
+      expect(ids(pageOf(["a", "c", "d", "e", "b"], page, idOf))).toEqual(["d", "e"]);
+      // The anchor is gone: the offset is all there is to go on.
+      expect(ids(pageOf(["a", "c", "d"], page, idOf))).toEqual(["d"]);
+    });
+
+    it("keeps reading a plain offset cursor", () => {
+      expect(ids(pageOf(["a", "b", "c", "d"], { limit: 2, offset: 2 }, idOf))).toEqual(["c", "d"]);
+    });
+  });
 });
