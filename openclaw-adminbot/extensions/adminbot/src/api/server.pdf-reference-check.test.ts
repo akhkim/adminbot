@@ -76,8 +76,8 @@ async function setup(databasePath?: string, gptEnabled = true) {
 function session(
   app: Awaited<ReturnType<typeof setup>>["app"],
   level: "admin" | "member" | "trial" | "external_collaborator" = "admin",
+  memberId = `upload-${level}`,
 ) {
-  const memberId = `upload-${level}`;
   const sessionToken = `${memberId}-session`;
   app.service.upsertLabMember({
     id: memberId,
@@ -333,7 +333,7 @@ describe("ad hoc PDF checks", () => {
     expect((await fetch(url + endpoint, { method: "POST", headers, body: pdf })).status).toBe(200);
   });
 
-  it("rejects concurrent checks and releases the guard when the scan finishes", async () => {
+  it("rejects simultaneous checks by the same user and permits retry after completion", async () => {
     const { app, url, scanPdf } = await setup();
     const headers = session(app);
     let release!: () => void;
@@ -356,6 +356,92 @@ describe("ad hoc PDF checks", () => {
       release();
     }
     expect((await first).status).toBe(200);
+    expect((await fetch(url + endpoint, { method: "POST", headers, body: pdf })).status).toBe(200);
+  });
+  it("shares five slots across users and providers and recovers a slot after failure", async () => {
+    const { app, url, scanPdf, scanGptZero } = await setup();
+    let finish!: () => void;
+    let fail!: (error: Error) => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const failed = new Promise<never>((_resolve, reject) => {
+      fail = reject;
+    });
+    scanPdf.mockImplementation(async () => {
+      await gate;
+      return { findings: [] };
+    });
+    scanGptZero.mockImplementationOnce(() => failed);
+    const headers = Array.from({ length: 6 }, (_, i) => session(app, "member", `parallel-${i}`));
+    const send = (index: number, target = endpoint) =>
+      fetch(url + target, {
+        method: "POST",
+        headers: headers[index],
+        body: pdf,
+      });
+    const running = [
+      send(0),
+      send(1),
+      send(2),
+      send(3),
+      send(4, "/reference-check/pdf?checker=gptzero&consent=upload-to-gptzero"),
+    ];
+    try {
+      await vi.waitFor(() => {
+        expect(scanPdf).toHaveBeenCalledTimes(4);
+        expect(scanGptZero).toHaveBeenCalledOnce();
+      });
+      const full = await send(5);
+      expect(full.status).toBe(429);
+      expect((await full.json()).error.message).toContain("All five");
+      fail(new Error("Synthetic failure"));
+      expect((await running[4]).status).toBe(502);
+      running.push(send(5));
+      await vi.waitFor(() => expect(scanPdf).toHaveBeenCalledTimes(5));
+      finish();
+      expect((await Promise.all(running)).map((r) => r.status)).toEqual([
+        200, 200, 200, 200, 502, 200,
+      ]);
+    } finally {
+      finish();
+      fail(new Error("Test cleanup"));
+      await Promise.allSettled(running);
+    }
+  });
+
+  it("releases the user's slot after cancelled work stops", async () => {
+    const { app, url, scanPdf } = await setup();
+    const headers = session(app, "member");
+    let stopped = false;
+    scanPdf.mockImplementationOnce(
+      (_bytes, signal) =>
+        new Promise((_resolve, reject) => {
+          signal!.addEventListener(
+            "abort",
+            () => {
+              stopped = true;
+              reject(new Error("Cancelled"));
+            },
+            { once: true },
+          );
+        }),
+    );
+    const controller = new AbortController();
+    const request = fetch(url + endpoint, {
+      method: "POST",
+      headers,
+      body: pdf,
+      signal: controller.signal,
+    });
+    const rejected = expect(request).rejects.toThrow();
+    try {
+      await vi.waitFor(() => expect(scanPdf).toHaveBeenCalledOnce());
+    } finally {
+      controller.abort();
+    }
+    await rejected;
+    await vi.waitFor(() => expect(stopped).toBe(true));
     expect((await fetch(url + endpoint, { method: "POST", headers, body: pdf })).status).toBe(200);
   });
 });

@@ -289,3 +289,10 @@ CheckIfExist lookups. No stream data is persisted.
 
 Not-found citations offer a **Search Google Scholar** link. Existing matches offer a database link when the provider supplies one. Clicking it opens
 Scholar with that citation as the search query; AdminBot does not query Scholar automatically.
+
+### Concurrent manual checks
+
+Each AdminBot service process permits at most five manual PDF checks at once, shared across
+CheckIfExist and GPTZero, with one active check per user. Additional requests receive HTTP 429
+and must be retried; there is no waiting queue. Slots are released when work finishes, including
+failed or cancelled work. A provider that cannot be cancelled retains its slot until it stops.

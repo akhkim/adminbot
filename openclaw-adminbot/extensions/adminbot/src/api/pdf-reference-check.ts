@@ -15,6 +15,30 @@ import { AdminBotService } from "../kernel/service.js";
 import { AdminBotMemoryStore } from "../persistence/memory.js";
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
+const MAX_CONCURRENT_CHECKS = 5;
+
+function createCheckLimiter() {
+  const activeUsers = new Set<string>();
+  return (userId: string) => {
+    if (activeUsers.has(userId)) {
+      return { error: "You already have a PDF check running. Wait for it to finish." };
+    }
+    if (activeUsers.size >= MAX_CONCURRENT_CHECKS) {
+      return { error: "All five PDF checking slots are busy. Try again shortly." };
+    }
+    // No await between checking and reserving: acquisition is atomic within this process.
+    activeUsers.add(userId);
+    let released = false;
+    return {
+      release() {
+        if (!released) {
+          released = true;
+          activeUsers.delete(userId);
+        }
+      },
+    };
+  };
+}
 
 /** What the durable audit ledger keeps of one check: who sent what where, never the PDF. */
 export type PdfReferenceCheckAudit = {
@@ -37,7 +61,7 @@ export function createPdfReferenceCheckHandler(
   scanGptZero?: ReferenceScanDependencies["scanPdf"],
   audit?: (event: PdfReferenceCheckAudit) => void,
 ) {
-  let busy = false;
+  const tryAcquire = createCheckLimiter();
   return async (req: IncomingMessage, res: ServerResponse, adminId: string) => {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "application/json");
@@ -97,11 +121,11 @@ export function createPdfReferenceCheckHandler(
       reply(413, { error: { message: "PDFs must be 20 MB or smaller." } });
       return;
     }
-    if (busy) {
-      reply(429, { error: { message: "Another PDF check is running. Try again shortly." } });
+    const permit = tryAcquire(adminId);
+    if (permit.error !== undefined) {
+      reply(429, { error: { message: permit.error } });
       return;
     }
-    busy = true;
     let scanFailure: ReferenceCheckError | GptZeroScanError | undefined;
     // Set when the executor hands the PDF to the provider; only then is there something to audit.
     let sent: { pdf_sha256: string; completed: boolean } | undefined;
@@ -235,7 +259,7 @@ export function createPdfReferenceCheckHandler(
       clearTimeout(timeout);
       clearTimeout(deadline);
       res.off("close", abort);
-      busy = false;
+      permit.release();
     }
   };
 }
