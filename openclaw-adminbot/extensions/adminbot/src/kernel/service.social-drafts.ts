@@ -1,7 +1,7 @@
 // Social-draft content rules, cut from service.ts so it stays under its file-size ratchet.
 // Pure: the service still owns the paper lookup, the ownership check and every store write.
 import { randomUUID } from "node:crypto";
-import type { AdminBotSocialDraftRecord } from "../contracts/actions.js";
+import type { AdminBotSocialDraftRecord } from "../contracts/paper-cycle.js";
 import { readXThreadDraft } from "../workflows/papers/x-draft.js";
 
 /**
