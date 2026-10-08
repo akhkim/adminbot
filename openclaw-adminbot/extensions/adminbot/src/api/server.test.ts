@@ -4330,11 +4330,22 @@ describe("publication mailing list", () => {
     });
     const body = (await preview.json()) as {
       publications: Array<{ id: string }>;
+      excluded: Array<{ id: string; reason: string }>;
+      out_of_range_count: number;
       undated_count: number;
       subject: string;
     };
     expect(body.publications.map((entry) => entry.id)).toEqual(["in-range"]);
     expect(body.undated_count).toBe(3);
+    // The undated papers are listed by name; the one outside the range is only counted, since the
+    // tab never lists those and they grow with every paper the lab has written.
+    expect(body.excluded.map((entry) => entry.id).toSorted()).toEqual([
+      "accepted",
+      "aimed",
+      "undated",
+    ]);
+    expect(body.excluded[0]).not.toHaveProperty("date");
+    expect(body.out_of_range_count).toBe(1);
     // Read-only: a preview must never be the thing that sends.
     expect(sent).toEqual([]);
 

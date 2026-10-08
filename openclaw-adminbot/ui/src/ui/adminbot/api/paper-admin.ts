@@ -42,12 +42,17 @@ export type PublicationDigestPreview = {
   /** Every venue the records mention. Always returned, so one call fills the picker. */
   venues: PublicationDigestVenue[];
   publications: PublicationDigestEntry[];
+  /**
+   * The papers the preview lists as left out: undated ones, and in venue mode the undecided ones.
+   * Papers left out only for their date fall outside the range and arrive as a count instead; an
+   * older service still lists them here, and the view filters by reason either way.
+   */
   excluded: Array<{
     id: string;
     title: string;
     reason: "no_date" | "out_of_range" | "not_accepted";
-    date?: PublicationDigestEntry["date"];
   }>;
+  out_of_range_count?: number;
   undated_count: number;
   /** Venue mode: papers naming the venue with no decision recorded. */
   pending_count: number;

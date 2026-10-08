@@ -22,6 +22,7 @@ import {
 } from "./guards.js";
 import {
   conferenceRosterWire,
+  mailingExclusionsWire,
   mapPayload,
   nudgeBatchWire,
   slotOverviewWireRow,
@@ -68,11 +69,14 @@ export const paperAdminRoutes: readonly Route[] = [
       const venue = url.searchParams.get("venue")?.trim() ?? "";
       sendServiceResult(
         res,
-        service.collectPublicationMailing({
-          fromIso: url.searchParams.get("from") ?? "",
-          toIso: url.searchParams.get("to") ?? "",
-          ...(venue ? { venue } : {}),
-        }),
+        mapPayload(
+          service.collectPublicationMailing({
+            fromIso: url.searchParams.get("from") ?? "",
+            toIso: url.searchParams.get("to") ?? "",
+            ...(venue ? { venue } : {}),
+          }),
+          ({ excluded, ...digest }) => ({ ...digest, ...mailingExclusionsWire(excluded) }),
+        ),
       );
     }),
   ),

@@ -16,6 +16,7 @@ import type {
   ConferenceAttendancePerson,
   ConferenceAttendanceView,
 } from "../workflows/papers/conference-attendance.js";
+import type { PublicationExclusion } from "../workflows/papers/publication-list.js";
 
 /** Reshape a successful payload and pass a failure through untouched, status and all. */
 export function mapPayload<T, U>(
@@ -116,4 +117,22 @@ export type NudgeBatchWire = Omit<AdminBotNudgeBatch, "paper_titles"> & { paper_
  */
 export function nudgeBatchWire({ paper_titles, ...batch }: AdminBotNudgeBatch): NudgeBatchWire {
   return { ...batch, paper_count: paper_titles.length };
+}
+
+/**
+ * The mailing-list preview's exclusions, cut to the ones it lists.
+ *
+ * The preview names the papers nothing can date and, in venue mode, the papers with no decision
+ * yet; the rest of the lab's papers are excluded only for falling outside the range, which the tab
+ * never lists and which grows with every paper the lab has ever written. They go out as a count.
+ */
+export function mailingExclusionsWire(excluded: readonly PublicationExclusion[]): {
+  excluded: Array<Pick<PublicationExclusion, "id" | "title" | "reason">>;
+  out_of_range_count: number;
+} {
+  const listed = excluded.filter((entry) => entry.reason !== "out_of_range");
+  return {
+    excluded: listed.map(({ id, title, reason }) => ({ id, title, reason })),
+    out_of_range_count: excluded.length - listed.length,
+  };
 }
