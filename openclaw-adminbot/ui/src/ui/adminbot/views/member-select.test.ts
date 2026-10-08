@@ -42,4 +42,41 @@ describe("member picker with a large roster", () => {
       .dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     expect(onPick).toHaveBeenCalledWith("member-100");
   });
+
+  it("reports the row the pointer or the arrow keys rest on, before any pick", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const onHighlight = vi.fn();
+    const onPick = vi.fn();
+    const options = [
+      { id: "ada", name: "Ada" },
+      { id: "grace", name: "Grace" },
+    ];
+    render(
+      renderMemberSelect({
+        options,
+        value: "",
+        placeholder: "Search",
+        label: "Member",
+        disabled: false,
+        onPick,
+        onHighlight,
+      }),
+      container,
+    );
+    const picker = container.querySelector("adminbot-member-select")!;
+    const settle = () => (picker as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    await settle();
+    const input = picker.querySelector<HTMLInputElement>("input")!;
+    input.focus();
+    await settle();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    await settle();
+    expect(onHighlight).toHaveBeenLastCalledWith("grace");
+    picker
+      .querySelectorAll<HTMLElement>('[role="option"]')[0]!
+      .dispatchEvent(new MouseEvent("mouseenter"));
+    expect(onHighlight).toHaveBeenLastCalledWith("ada");
+    expect(onPick).not.toHaveBeenCalled();
+  });
 });

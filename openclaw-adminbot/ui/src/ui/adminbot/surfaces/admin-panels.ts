@@ -31,6 +31,7 @@ import {
   removePendingAdminBotAction,
   removeSelectedPendingAdminBotActions,
 } from "../controllers/governance.ts";
+import { adminBotDuplicatePairs } from "../controllers/member-detail.ts";
 import {
   approveAdminBotMemberRequest,
   editAdminBotMemberRequest,
@@ -138,6 +139,11 @@ export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSur
                 }
               : undefined,
           rosterLoadedAt: state.adminBotRosterLoadedAt,
+          // The roster's rows are summaries; the duplicate check compares whole records.
+          duplicatePairs:
+            adminBotPanel === "members" && adminBotMode === "admin"
+              ? adminBotDuplicatePairs(state, () => requestHostUpdate?.())
+              : undefined,
           rosterLoading: state.adminBotRosterLoading,
           rosterError: state.adminBotRosterError,
           onLoadFullRoster: () => {
