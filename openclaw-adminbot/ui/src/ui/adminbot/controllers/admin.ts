@@ -16,6 +16,7 @@ import type { LabBroadcast } from "../api/lab-sharing.ts";
 import {
   type MeetingRecord,
   type MeetingCursor,
+  type MeetingRosters,
   type MeetingAttendanceNudgePreview,
   type MeetingAttendanceNudgeResult,
   fetchStandingMeetings,
@@ -793,6 +794,7 @@ export type AdminBotHost = {
   adminBotMeetingNudgeBusy?: boolean;
   adminBotMeetingNudgeError?: string | null;
   adminBotMeetingNudgeResult?: MeetingAttendanceNudgeResult | null;
+  adminBotMeetingRosters?: MeetingRosters;
   // What the lab has told this member. Undefined is "not read yet"; [] is a real "nothing".
   adminBotNotifications?: MemberNotification[];
   adminBotNotificationsError?: string | null;

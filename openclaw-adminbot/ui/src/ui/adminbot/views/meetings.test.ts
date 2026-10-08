@@ -128,6 +128,7 @@ describe("renderAdminBotMeetings", () => {
     const view = renderView({
       viewerIsAdmin: true,
       members: [{ id: "m-bo", name: "Bo Quiet" }],
+      rosters: { "zoom-812-2026-08-12": { attendees: [] } },
       onToggleAttendance,
     });
     view.querySelector<HTMLInputElement>("input[type=checkbox]")?.click();
@@ -137,6 +138,58 @@ describe("renderAdminBotMeetings", () => {
       source: "manual",
       present: true,
     });
+  });
+
+  // An admin's rows arrive without a roster. Drawing every member unticked until it lands would
+  // read as "nobody came", and a tick on that would save a roster built from nothing.
+  it("draws the admin editor from the roster read for that meeting, and nothing before it", () => {
+    const members = [
+      { id: "m-ada", name: "Ada Attendee" },
+      { id: "m-bo", name: "Bo Quiet" },
+    ];
+    const before = renderView({ viewerIsAdmin: true, members, rosters: {} });
+    expect(before.querySelectorAll("input[type=checkbox]")).toHaveLength(0);
+    document.body.innerHTML = "";
+    const after = renderView({
+      viewerIsAdmin: true,
+      members,
+      rosters: {
+        "zoom-812-2026-08-12": {
+          attendees: [{ member_id: "m-ada", display_name: "Ada", source: "manual", present: true }],
+        },
+      },
+    });
+    const ticks = after.querySelectorAll<HTMLInputElement>("input[type=checkbox]");
+    expect([...ticks].map((tick) => tick.checked)).toEqual([true, false]);
+  });
+
+  it("asks for an admin's roster on hover, focus and open", () => {
+    const onRosterIntent = vi.fn();
+    const view = renderView({ viewerIsAdmin: true, rosters: {}, onRosterIntent });
+    const fold = view.querySelector<HTMLDetailsElement>("details.meetings__attendance");
+    fold?.dispatchEvent(new Event("pointerenter"));
+    fold?.querySelector("summary")?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    if (fold) {
+      fold.open = true;
+    }
+    fold?.dispatchEvent(new Event("toggle"));
+    expect(onRosterIntent.mock.calls).toEqual([
+      ["zoom-812-2026-08-12", false],
+      ["zoom-812-2026-08-12", false],
+      ["zoom-812-2026-08-12", true],
+    ]);
+  });
+
+  it("asks for nothing on a member's fold", () => {
+    const onRosterIntent = vi.fn();
+    const view = renderView({ onRosterIntent });
+    const fold = view.querySelector<HTMLDetailsElement>("details.meetings__attendance");
+    fold?.dispatchEvent(new Event("pointerenter"));
+    if (fold) {
+      fold.open = true;
+    }
+    fold?.dispatchEvent(new Event("toggle"));
+    expect(onRosterIntent).not.toHaveBeenCalled();
   });
 
   it("distinguishes an empty lab from one that is still loading", () => {

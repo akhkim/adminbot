@@ -78,12 +78,31 @@ export type MeetingRecord = {
     generated_at: string;
     model: string;
   };
+  /**
+   * A member's row: their own line. An admin's list row leaves the roster out -- it is read per
+   * meeting with `fetchMeeting` when its attendance is opened -- and the PUT reply and
+   * `fetchMeeting` carry the whole of it.
+   */
   attendees?: MeetingAttendee[];
-  /** Present only on the member view; the admin view carries the roster itself. */
+  /** Who was present, counted: on a member's row and an admin's list row, not the roster read. */
   attendee_count?: number;
   source: "zoom_email" | "manual";
   notes?: string;
 };
+
+/**
+ * The rosters an admin has opened this session, by meeting id. An entry with no `attendees` is a
+ * read in flight; a meeting with no entry has not been asked for (or its read failed, so the next
+ * intent asks again).
+ */
+export type MeetingRosters = Record<
+  string,
+  {
+    attendees?: MeetingAttendee[];
+    loading?: boolean;
+    /** Say so if this read fails. */ report?: boolean;
+  }
+>;
 
 export type MeetingCursor = Pick<MeetingRecord, "started_at" | "id">;
 
@@ -122,6 +141,31 @@ export async function fetchMeetings(
       ...(body?.next_cursor ? { next_cursor: body.next_cursor } : {}),
     },
   };
+}
+
+/**
+ * One meeting with its roster (GET /meetings/:id): what an admin's card reads when its attendance
+ * is opened. A plain GET through authedJson, so two cards' worth of intent for the same meeting
+ * share one request and a re-read revalidates by ETag.
+ */
+export async function fetchMeeting(
+  meetingId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MeetingRecord>> {
+  const result = await authedJson(
+    baseUrl,
+    `/meetings/${encodeURIComponent(meetingId)}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as MeetingRecord };
 }
 
 export async function saveMeetingAttendance(
