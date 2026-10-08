@@ -51,12 +51,10 @@ export type MemberOnboardingStep = {
   acknowledged_at?: string;
 };
 
-// Onboarding checklist generated once when a member's account is first approved (see the
-// AdminBot service's `onboarding.ts`) and returned as part of the member record thereafter.
+// A member's onboarding checklist, with its text attached from the service's catalog (see the
+// AdminBot service's `onboarding.ts`). `steps` is the whole of it: what is done, left or current is
+// a filter over each step's `status`.
 export type MemberOnboarding = {
-  current_step?: MemberOnboardingStep;
-  completed: MemberOnboardingStep[];
-  remaining: MemberOnboardingStep[];
   steps: MemberOnboardingStep[];
 };
 

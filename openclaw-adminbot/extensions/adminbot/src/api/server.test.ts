@@ -479,8 +479,11 @@ describe("AdminBot mock service", () => {
     // approved the account, like every other new member's.
     expect(invited).toEqual(["calendar-person@cs.toronto.edu"]);
 
+    // Onboarding is owner-only, so the checklist is read as the admin, not the service principal.
     const members = (await (
-      await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() })
+      await fetch(`${baseUrl}/lab/members`, {
+        headers: { Authorization: `Bearer ${adminSession}` },
+      })
     ).json()) as {
       members: Array<{ id: string; onboarding?: { steps: Array<{ id: string; status: string }> } }>;
     };
@@ -1964,7 +1967,9 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(own.status).toBe(200);
     await expect(own.json()).resolves.toMatchObject({
       onboarding: {
-        completed: expect.arrayContaining([expect.objectContaining({ id: "linkedin" })]),
+        steps: expect.arrayContaining([
+          expect.objectContaining({ id: "linkedin", status: "complete" }),
+        ]),
       },
     });
 
@@ -2219,21 +2224,22 @@ describe("onboarding acknowledgement", () => {
 
     const before = (await (
       await fetch(`${baseUrl}/auth/session`, { headers: { Authorization: `Bearer ${token}` } })
-    ).json()) as { member: { onboarding: { current_step?: { id: string } } } };
-    const firstStepId = before.member.onboarding.current_step!.id;
+    ).json()) as { member: { onboarding: { steps: Array<{ id: string; status: string }> } } };
+    const currentOf = (onboarding: { steps: Array<{ id: string; status: string }> }) =>
+      onboarding.steps.find((step) => step.status === "current")?.id;
+    const firstStepId = currentOf(before.member.onboarding)!;
 
     const res = await ack(baseUrl, token, firstStepId);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       onboarding: {
-        current_step?: { id: string };
         steps: Array<{ id: string; status: string; acknowledged_at?: string }>;
       };
     };
     const acknowledged = body.onboarding.steps.find((step) => step.id === firstStepId);
     expect(acknowledged?.status).toBe("complete");
     expect(acknowledged?.acknowledged_at).toBeTruthy();
-    expect(body.onboarding.current_step?.id).not.toBe(firstStepId);
+    expect(currentOf(body.onboarding)).not.toBe(firstStepId);
   });
 
   it("persists the acknowledgement on the member record", async () => {

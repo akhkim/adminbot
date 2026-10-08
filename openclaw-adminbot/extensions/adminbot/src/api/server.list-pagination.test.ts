@@ -38,11 +38,9 @@ describe.each(["memory", "sqlite"] as const)("paginated list routes (%s)", (kind
         personal_circumstances: "private-self",
         field_provenance: { name: { source: "member", at: "2026-09-01T00:00:00.000Z" } },
         onboarding: {
-          completed: [],
-          remaining: [],
           steps: [
             {
-              id: "social",
+              id: "linkedin",
               label: "Follow the lab",
               category: "Welcome",
               status: "remaining",
@@ -149,7 +147,11 @@ describe.each(["memory", "sqlite"] as const)("paginated list routes (%s)", (kind
         id: "ada",
         personal_circumstances: "private-self",
         field_provenance: { name: { source: "member" } },
-        onboarding: { steps: [{ id: "social", detail: expect.any(String) }] },
+        onboarding: {
+          steps: expect.arrayContaining([
+            expect.objectContaining({ id: "linkedin", detail: expect.any(String) }),
+          ]),
+        },
       });
       expect(ownSummary.self.access).toEqual(expect.any(Array));
       expect(

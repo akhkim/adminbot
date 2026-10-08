@@ -46,17 +46,17 @@ describe("buildOnboardingSteps", () => {
 });
 
 describe("resolveMemberOnboarding", () => {
-  it("splits steps into completed/remaining and exposes the current step", () => {
+  it("keeps the checklist as steps alone, with one current step", () => {
     const onboarding = resolveMemberOnboarding();
-    expect(onboarding.completed.map((step) => step.id)).toEqual(["calendar_invite"]);
-    expect(onboarding.remaining.length).toBe(onboarding.steps.length - 1);
-    expect(onboarding.current_step?.status).toBe("current");
+    expect(Object.keys(onboarding)).toEqual(["steps"]);
+    expect(
+      onboarding.steps.filter((step) => step.status === "complete").map((step) => step.id),
+    ).toEqual(["calendar_invite"]);
+    expect(onboarding.steps.filter((step) => step.status === "current")).toHaveLength(1);
   });
 
   it("keeps acknowledgements while refreshing step content", () => {
     const onboarding = resolveMemberOnboarding({
-      completed: [],
-      remaining: [],
       steps: [
         {
           id: "linkedin",
@@ -81,8 +81,6 @@ describe("resolveMemberOnboarding", () => {
   // Control UI renders as empty list items because it reads `bullet.text`.
   it("replaces bullets stored under the pre-structured shape", () => {
     const legacy = {
-      completed: [],
-      remaining: [],
       steps: [
         {
           id: "calendar_conventions",

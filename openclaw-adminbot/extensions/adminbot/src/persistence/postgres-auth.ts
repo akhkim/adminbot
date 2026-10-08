@@ -14,6 +14,11 @@ import type { AdminBotLoginEvent, AdminBotLoginLocation } from "../contracts/act
 import type { AdminBotLabMemberSummary, AdminBotListPage } from "../kernel/service.js";
 import type { AdminBotAuthStore } from "../workflows/identity/auth.js";
 import { summarizeLabMember } from "../workflows/members/member-summary.js";
+import {
+  labMemberRowReader,
+  readLabMemberRow,
+  toStoredLabMember,
+} from "../workflows/onboarding/onboarding-storage.js";
 
 // Match SQLite's JS lowercase search, including non-ASCII names and topics.
 function memberMatchesQuery(member: AdminBotLabMember, q: string): boolean {
@@ -119,7 +124,12 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
        (id, privilege_level, updated_at, payload_json) VALUES ($1, $2, $3, $4)
        ON CONFLICT (id) DO UPDATE SET privilege_level = EXCLUDED.privilege_level,
          updated_at = EXCLUDED.updated_at, payload_json = EXCLUDED.payload_json`,
-      [member.id, member.privilege_level, member.updated_at, JSON.stringify(member)],
+      [
+        member.id,
+        member.privilege_level,
+        member.updated_at,
+        JSON.stringify(toStoredLabMember(member)),
+      ],
     );
   }
 
@@ -141,7 +151,7 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
       `SELECT payload_json FROM ${this.table("adminbot_lab_members")} WHERE id = $1`,
       [memberId],
     );
-    return row ? (JSON.parse(row.payload_json) as AdminBotLabMember) : undefined;
+    return row ? readLabMemberRow(row.payload_json) : undefined;
   }
 
   async listLabMembers(page?: AdminBotListPage): Promise<AdminBotLabMember[]> {
@@ -154,8 +164,9 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
          ORDER BY translate(m.payload_json::jsonb ->> 'name',
            'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') COLLATE "C" NULLS FIRST, m.id`,
       );
+      const read = labMemberRowReader();
       const matches = rows
-        .map((row) => JSON.parse(row.payload_json) as AdminBotLabMember)
+        .map((row) => read(row.payload_json))
         .filter((member) => memberMatchesQuery(member, q));
       return page ? matches.slice(page.offset, page.offset + page.limit) : matches;
     }
@@ -173,15 +184,17 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
       `SELECT m.payload_json FROM ${this.table("adminbot_lab_members")} m ${search} ORDER BY ${order} ${limit}`,
       values,
     );
-    return rows.map((row) => JSON.parse(row.payload_json) as AdminBotLabMember);
+    const read = labMemberRowReader();
+    return rows.map((row) => read(row.payload_json));
   }
 
   async listLabMemberSummaries(): Promise<AdminBotLabMemberSummary[]> {
     const rows = await this.rows<{ payload_json: string }>(
       `SELECT payload_json FROM ${this.table("adminbot_lab_members")}`,
     );
+    const read = labMemberRowReader();
     return rows
-      .map((row) => JSON.parse(row.payload_json) as AdminBotLabMember)
+      .map((row) => read(row.payload_json))
       .sort(
         (left, right) =>
           Buffer.compare(
@@ -740,7 +753,7 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
               memberId,
               preparedMember!.privilege_level,
               preparedMember!.updated_at,
-              JSON.stringify(preparedMember),
+              JSON.stringify(toStoredLabMember(preparedMember!)),
             ],
           );
         }

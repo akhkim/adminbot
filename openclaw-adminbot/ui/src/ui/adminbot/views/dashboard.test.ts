@@ -105,8 +105,6 @@ describe("renderDashboard", () => {
               required: true,
             },
           ],
-          completed: [],
-          remaining: [],
         },
         adminBotOnboardingAcknowledged: false,
       } as unknown as Partial<AppViewState>),

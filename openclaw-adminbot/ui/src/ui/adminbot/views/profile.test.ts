@@ -674,9 +674,6 @@ describe("renderProfile onboarding pointer", () => {
     const member = createMember();
     const state = createState(member, {
       adminBotOnboarding: {
-        current_step: step("linkedin", "current"),
-        remaining: [step("gpu", "remaining")],
-        completed: [step("calendar", "complete")],
         steps: [
           step("linkedin", "current"),
           step("gpu", "remaining"),
@@ -700,8 +697,6 @@ describe("renderProfile onboarding pointer", () => {
     const onNavigateToTab = vi.fn();
     const state = createState(createMember(), {
       adminBotOnboarding: {
-        remaining: [step("gpu", "remaining")],
-        completed: [],
         steps: [step("gpu", "remaining")],
       },
     } as unknown as Partial<AppViewState>);

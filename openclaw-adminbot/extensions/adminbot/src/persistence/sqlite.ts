@@ -90,7 +90,10 @@ import {
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import { meetsDurationFloor } from "../workflows/meetings/records.js";
-import { resolveMemberOnboarding } from "../workflows/onboarding/onboarding.js";
+import {
+  labMemberRowReader,
+  toStoredLabMember,
+} from "../workflows/onboarding/onboarding-storage.js";
 import {
   adminBotEmailReviewFromRow,
   adminBotResolvedEmailReviewFromRow,
@@ -910,7 +913,6 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ensurePaperAiTextCheckSchema(this.db);
     ensureLabInterestSchema(this.db);
     ensureAdminBotEmailReviewSchema(this.db);
-    this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
     this.migratePaperSlotColumns();
     migrateSocialDraftColumns(this.db);
@@ -1120,29 +1122,6 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           "UPDATE adminbot_lab_members SET privilege_level = 'member', payload_json = ? WHERE id = ?",
         )
         .run(migrated, row.id);
-    }
-  }
-
-  // Members seeded before the checklist gained structured bullets still carry the step shape from
-  // signup day, which the Control UI renders as empty bullets. Rewrite every stored checklist from
-  // the current definitions once at open so runtime only ever reads the canonical shape; this is
-  // idempotent because `resolveMemberOnboarding` derives content and keeps only acknowledgements.
-  private migrateStoredOnboarding(): void {
-    const rows = this.db
-      .prepare("SELECT id, payload_json FROM adminbot_lab_members")
-      .all() as Array<{ id: string; payload_json: string }>;
-    for (const row of rows) {
-      const member = parseJson<AdminBotLabMember>(row.payload_json);
-      if (!member.onboarding) {
-        continue;
-      }
-      const onboarding = resolveMemberOnboarding(member.onboarding);
-      if (JSON.stringify(onboarding) === JSON.stringify(member.onboarding)) {
-        continue;
-      }
-      this.db
-        .prepare("UPDATE adminbot_lab_members SET payload_json = ? WHERE id = ?")
-        .run(JSON.stringify({ ...member, onboarding }), row.id);
     }
   }
 
@@ -1387,7 +1366,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           updated_at = excluded.updated_at,
           payload_json = excluded.payload_json`,
       )
-      .run(member.id, member.privilege_level, member.updated_at, JSON.stringify(member));
+      .run(
+        member.id,
+        member.privilege_level,
+        member.updated_at,
+        JSON.stringify(toStoredLabMember(member)),
+      );
     this.members.invalidate();
   }
 
@@ -1428,7 +1412,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       .all(...(q ? [q, q, q, q] : []), page.limit, page.offset) as Array<{
       payload_json: string;
     }>;
-    return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
+    const read = labMemberRowReader();
+    return rows.map((row) => read(row.payload_json));
   }
 
   searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }> {
@@ -3865,7 +3850,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
             preparedMember.id,
             preparedMember.privilege_level,
             preparedMember.updated_at,
-            JSON.stringify(preparedMember),
+            JSON.stringify(toStoredLabMember(preparedMember)),
           );
       }
       this.db

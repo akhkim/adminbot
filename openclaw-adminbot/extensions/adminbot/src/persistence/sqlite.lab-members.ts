@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { AdminBotLabMember } from "../contracts/actions.js";
 import type { AdminBotLabMemberSummary } from "../kernel/service.js";
 import { summarizeLabMember } from "../workflows/members/member-summary.js";
+import { labMemberRowReader } from "../workflows/onboarding/onboarding-storage.js";
 
 type Snapshot = {
   version: number;
@@ -56,6 +57,7 @@ export class SqliteLabMemberCache {
     if (this.snapshot?.version === version) {
       return this.snapshot;
     }
+    const read = labMemberRowReader();
     const members = (
       this.db
         .prepare(
@@ -63,7 +65,7 @@ export class SqliteLabMemberCache {
            ORDER BY json_extract(payload_json, '$.name')`,
         )
         .all() as Array<{ payload_json: string }>
-    ).map((row) => JSON.parse(row.payload_json) as AdminBotLabMember);
+    ).map((row) => read(row.payload_json));
     this.snapshot = { version, members, byId: new Map(members.map((m) => [m.id, m])) };
     return this.snapshot;
   }

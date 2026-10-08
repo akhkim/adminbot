@@ -1096,9 +1096,6 @@ export type AdminBotMemberOnboardingStep = {
 export type AdminBotOnboardingCycleReason = "registration" | "status_change" | "privilege_change";
 
 export type AdminBotMemberOnboarding = {
-  current_step?: AdminBotMemberOnboardingStep;
-  completed: AdminBotMemberOnboardingStep[];
-  remaining: AdminBotMemberOnboardingStep[];
   steps: AdminBotMemberOnboardingStep[];
   /**
    * When the current cycle opened: at registration, or when the member's standing last changed.
