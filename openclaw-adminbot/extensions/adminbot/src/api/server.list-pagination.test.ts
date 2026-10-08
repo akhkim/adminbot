@@ -99,19 +99,19 @@ describe.each(["memory", "sqlite"] as const)("paginated list routes (%s)", (kind
       const adaSummary = summary.body.members.find((member: { id: string }) => member.id === "ada");
       expect(adaSummary).toMatchObject({
         id: "ada",
-        onboarding: { steps: [{ id: "social", status: "remaining" }] },
         assigned_badges: [{ badge_id: "community_building__ambassador" }],
       });
+      // The service principal is neither the member nor an admin, so the owner-only bookkeeping
+      // goes the same way as the confidential answers.
+      expect(adaSummary.onboarding).toBeUndefined();
       expect(adaSummary.field_provenance).toBeUndefined();
       expect(adaSummary.access).toBeUndefined();
       expect(adaSummary.personal_circumstances).toBeUndefined();
-      expect(adaSummary.onboarding.steps[0].detail).toBeUndefined();
-      expect(
-        summary.body.members.find((member: { id: string }) => member.id === "ben").onboarding,
-      ).toBeUndefined();
-      expect(
-        summary.body.members.find((member: { id: string }) => member.id === "cy").onboarding,
-      ).toBeNull();
+      for (const id of ["ben", "cy"]) {
+        expect(
+          summary.body.members.find((member: { id: string }) => member.id === id),
+        ).not.toHaveProperty("onboarding");
+      }
 
       const claim = await mock.auth.claim({
         member_id: "ada",

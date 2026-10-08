@@ -1673,6 +1673,54 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(adaToService.availability).toHaveLength(1);
   });
 
+  // Checklist progress, per-field provenance and resolved grants are bookkeeping for the member and
+  // the admins, and most of a record's bytes. A peer's roster read carries none of them.
+  it("keeps onboarding, provenance and access off a peer's roster read", async () => {
+    const { baseUrl } = await startService();
+    for (const [id, privilege] of [
+      ["ada", "member"],
+      ["peer", "member"],
+      ["boss", "admin"],
+    ] as const) {
+      seedMember(baseUrl, id, {
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: privilege,
+      });
+    }
+    const tokens = new Map<string, string>();
+    for (const id of ["peer", "boss"]) {
+      await approveClaim(baseUrl, id, `${id}@cs.toronto.edu`);
+      tokens.set(id, await loginToken(baseUrl, `${id}@cs.toronto.edu`));
+    }
+    const readAs = async (id: string, path: string) => {
+      const token = tokens.get(id)!;
+      const res = await fetch(`${baseUrl}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return (await res.json()) as {
+        members: Array<Record<string, unknown>>;
+        self?: Record<string, unknown>;
+      };
+    };
+    const owned = ["onboarding", "field_provenance", "access"];
+
+    for (const path of ["/lab/members", "/lab/members?view=summary", "/lab/members?limit=10"]) {
+      const asPeer = await readAs("peer", path);
+      const ada = asPeer.members.find((member) => member.id === "ada")!;
+      expect(ada.name, path).toBe("ada");
+      for (const field of owned) {
+        expect(field in ada, `${path} ${field}`).toBe(false);
+      }
+      const own = asPeer.members.find((member) => member.id === "peer")!;
+      expect(own.access ?? asPeer.self?.access, path).toBeDefined();
+
+      const asAdmin = await readAs("boss", path);
+      const adaToAdmin = asAdmin.members.find((member) => member.id === "ada")!;
+      expect(adaToAdmin.onboarding, path).toBeDefined();
+    }
+  });
+
   it("lets a member write, and clear, the overall note on their own schedule", async () => {
     const { baseUrl } = await startService();
     seedMember(baseUrl, "ada", {

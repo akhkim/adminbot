@@ -81,3 +81,43 @@ describe("member field visibility", () => {
     expect(admin.intake_form_url).toBe("https://forms.google.com/response");
   });
 });
+
+describe("owner-only member bookkeeping", () => {
+  const record = {
+    ...member,
+    onboarding: { steps: [{ id: "linkedin", status: "complete" }] },
+    field_provenance: { github_url: { source: "admin", at: "2026-01-01T00:00:00.000Z" } },
+    access: [{ system: "slack", level: "member" }],
+  };
+
+  it("strips checklist progress, provenance and grants from a peer's view", () => {
+    const seen = redactConfidentialMemberFields(record, {
+      memberId: "ada",
+      isAdmin: false,
+      isMemberSession: true,
+    });
+    expect("onboarding" in seen).toBe(false);
+    expect("field_provenance" in seen).toBe(false);
+    expect("access" in seen).toBe(false);
+    expect(seen.github_url).toBe("https://github.com/mei");
+  });
+
+  it("strips them for the service principal too, which no agent tool needs them for", () => {
+    const seen = redactConfidentialMemberFields(record, { isAdmin: false });
+    expect("onboarding" in seen).toBe(false);
+    expect("field_provenance" in seen).toBe(false);
+    expect("access" in seen).toBe(false);
+  });
+
+  it("keeps them for the member themselves and for an admin", () => {
+    for (const viewer of [
+      { memberId: "mei", isAdmin: false, isMemberSession: true },
+      { memberId: "ada", isAdmin: true, isMemberSession: true },
+    ]) {
+      const seen = redactConfidentialMemberFields(record, viewer);
+      expect(seen.onboarding).toEqual(record.onboarding);
+      expect(seen.field_provenance).toEqual(record.field_provenance);
+      expect(seen.access).toEqual(record.access);
+    }
+  });
+});
