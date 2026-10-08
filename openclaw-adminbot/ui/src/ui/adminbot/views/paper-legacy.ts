@@ -42,6 +42,7 @@ import { icons } from "../../icons.ts";
 import type { PaperCycle, PaperSlotRow } from "../api/papers.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
+import { paperSteps, stepLabels } from "../data/paper-steps.ts";
 import { renderDateControl } from "../date-control.ts";
 import {
   PRESENTATION_FORMATS,
@@ -49,7 +50,6 @@ import {
   presentationFormat,
   publicationTrack,
 } from "../paper-classification.ts";
-import { paperSteps, stepLabels } from "./admin.ts";
 import { renderOpenReviewIdentity } from "./paper-slots.ts";
 
 /** What one control writes back, and to which of the two stores. */

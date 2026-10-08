@@ -258,7 +258,6 @@ import type { ReferenceScanStore } from "../contracts/reference-scans.js";
 import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
-import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import {
   isDeadlineMilestoneId,
@@ -313,7 +312,7 @@ import {
   stampFieldProvenance,
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
-import { birthdayEventPayload, validateBirthday } from "../workflows/members/birthday.js";
+import { validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
   localEventAudience,
@@ -438,6 +437,11 @@ import {
   selectPublications,
 } from "../workflows/papers/publication-list.js";
 import {
+  birthdayProposalStillCurrent,
+  reconcileBirthdayEvent,
+  reconcileExecutedBirthday,
+} from "./service.birthday.js";
+import {
   recommendationDirectory,
   previewRecommendation,
   sendRecommendation,
@@ -445,6 +449,8 @@ import {
 import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import { LabSharingService } from "./service.lab-sharing.js";
 import { withPaperTimeline } from "./service.paper-timeline.js";
+import { piReviewSlotDenial } from "./service.pi-review.js";
+import { prepareSocialDraft, socialDraftSupersedes } from "./service.social-drafts.js";
 
 // Ordinary approvals require an administrator; a recommendation is approved by its verified author.
 type AdminBotApproverRole = Extract<AdminBotPrivilegeLevel, "admin"> | "recommender";
@@ -644,7 +650,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   /** The whole ledger, or one domain's slice. */
   listNudgeLedger(domain?: string): AdminBotNudgeLedgerRecord[];
   saveSocialDraft(record: AdminBotSocialDraftRecord): void;
-  listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[];
+  listSocialDrafts(paperId?: string, draftId?: string): AdminBotSocialDraftRecord[];
   saveSocialConsent(record: AdminBotSocialConsentRecord): void;
   listSocialConsents(draftId?: string): AdminBotSocialConsentRecord[];
   saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void;
@@ -1608,37 +1614,13 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
-  /**
-   * Propose the recurring all-day event for a member's birthday.
-   *
-   * A proposal rather than a direct write, because reaching Google is an external effect and every
-   * one of those goes through the approval gate. The card an admin sees is also the last place a
-   * typo'd date, or somebody who filled the field in without noticing where it would show up, can
-   * be caught before it is on a calendar the whole lab reads.
-   *
-   * Changing a birthday proposes an event for the new date and does not retract the old one --
-   * cancelling the previous event needs its Google event id, which the proposal only learns at
-   * execution time. Until that is wired, a corrected date leaves the first event to be removed by
-   * hand.
-   */
-  private proposeBirthdayEvent(member: AdminBotLabMember): void {
-    const calendar = resolveLabCalendar();
-    const payload = birthdayEventPayload(member, calendar.id, new Date());
-    if (!payload) {
-      return;
-    }
-    const name = member.preferred_name?.trim() || member.name.trim();
-    this.createProposal({
-      type: "calendar.create_birthday",
-      summary: `Add ${name}'s birthday to the lab calendar`,
-      target: { member_id: member.id, birthday: member.birthday?.trim() ?? "" },
-      proposed_payload: payload,
-      rationale: "A member set their birthday on their profile so the lab can send wishes.",
-      undo_plan: "Delete the recurring event from the lab calendar and clear the profile field.",
-      // Keyed on the date as well as the member, so re-saving the same birthday collapses onto one
-      // proposal while a corrected date is genuinely a new one.
-      idempotency_key: `birthday:${member.id}:${member.birthday?.trim() ?? ""}`,
-    });
+  /** What service.birthday.ts needs to propose or withdraw a member's birthday event. */
+  private get birthdayDeps() {
+    return {
+      store: this.store,
+      removePending: (id: string, request: { note: string }) => this.removePending(id, request),
+      createProposal: (proposal: AdminBotActionProposal) => this.createProposal(proposal),
+    };
   }
 
   /**
@@ -2649,6 +2631,9 @@ export class AdminBotService {
     ) {
       return serviceError(409, "proposal does not have the required approvals");
     }
+    if (!birthdayProposalStillCurrent(this.store, proposal)) {
+      return serviceError(409, "birthday proposal no longer matches an eligible member");
+    }
     const now = new Date().toISOString();
     const dryRun = request.dry_run !== false;
     const baseResult = {
@@ -2819,6 +2804,7 @@ export class AdminBotService {
     proposal.updated_at = now;
     this.store.updateProposal(proposal);
     this.store.saveExecutionResult(result);
+    reconcileExecutedBirthday(this.birthdayDeps, proposal, now);
     this.recordAudit({
       type: "execution.executed",
       action_id: actionId,
@@ -3233,13 +3219,7 @@ export class AdminBotService {
         ...(moved.timezone ? { timezone: moved.timezone } : {}),
       });
     }
-    // Same hook, same reason: a birthday can be set from the member's own form, an admin's editor
-    // or the roster import, and all three land here. Only on an actual change -- re-saving a
-    // profile must not propose the same event again, and the idempotency key makes a retry of the
-    // *same* date collapse onto one proposal rather than stacking cards on an admin.
-    if (stored.birthday?.trim() && stored.birthday.trim() !== existing?.birthday?.trim()) {
-      this.proposeBirthdayEvent(stored);
-    }
+    reconcileBirthdayEvent(this.birthdayDeps, stored);
     // The same hook again, for theme membership. This is what makes onboarding automatic: a new
     // member describing their research is a profile write, so the channels they belong in are
     // proposed the moment they say what they work on, rather than waiting for a sweep.
@@ -5296,7 +5276,9 @@ export class AdminBotService {
       id: survivor.id,
       updated_at: now,
     };
+    reconcileBirthdayEvent(this.birthdayDeps, duplicate, true);
     this.store.saveLabMember(merged);
+    reconcileBirthdayEvent(this.birthdayDeps, merged);
     const moved = this.store.reassignMemberReferences(params.duplicateId, params.survivorId);
     this.store.revokeSessionsForMember(params.duplicateId, now);
     this.store.deleteLabMember(params.duplicateId);
@@ -5362,6 +5344,7 @@ export class AdminBotService {
     // Sessions first and through the revoke path rather than the purge, so a signed-in browser
     // stops working by the route that records that it did -- same order as the merge.
     this.store.revokeSessionsForMember(member.id, now);
+    reconcileBirthdayEvent(this.birthdayDeps, member, true);
     const removed = this.store.purgeMemberReferences(member.id);
     this.store.deleteLabMember(member.id);
     this.recordAudit({
@@ -6121,6 +6104,15 @@ export class AdminBotService {
     const context = this.paperSlotContext(params);
     if (!context.ok) {
       return context.error;
+    }
+    const piDenial = piReviewSlotDenial({
+      slot: params.slot,
+      valueText: params.input.value_text,
+      memberId: params.memberId,
+      headProfessorMemberId: this.resolveSettings().head_professor_member_id,
+    });
+    if (piDenial) {
+      return serviceError(403, piDenial);
     }
     const result = applyPaperSlotWrite({
       existing: context.existing,
@@ -7023,6 +7015,7 @@ export class AdminBotService {
     platform: string;
     body: string;
     model?: string;
+    xThread?: unknown;
     memberId: string;
     privileged: boolean;
   }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord }> {
@@ -7033,29 +7026,13 @@ export class AdminBotService {
     if (!params.privileged && !this.memberOwnsPaperId(params.memberId, paper)) {
       return serviceError(403, "members can only edit papers they authored");
     }
-    if (params.platform !== "x" && params.platform !== "linkedin") {
-      return serviceError(400, "platform must be x or linkedin");
+    const prepared = prepareSocialDraft(params);
+    if (!prepared.ok) {
+      return serviceError(400, prepared.message);
     }
-    const body = params.body.trim();
-    if (!body) {
-      return serviceError(400, "a draft needs a body");
-    }
-    const now = new Date().toISOString();
-    const draft: AdminBotSocialDraftRecord = {
-      // Random suffix, not just the clock: two saves inside the same millisecond would otherwise
-      // share an id, and the second would upsert over the first instead of superseding it --
-      // losing the very version somebody may already have consented to.
-      id: `${params.paperId}-${params.platform}-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`,
-      paper_id: params.paperId,
-      platform: params.platform,
-      body,
-      generated_at: now,
-      generated_by_member_id: params.memberId,
-      status: "draft",
-      ...(params.model ? { model: params.model } : {}),
-    };
+    const { draft } = prepared;
     for (const existing of this.store.listSocialDrafts(params.paperId)) {
-      if (existing.platform !== params.platform || existing.status === "superseded") {
+      if (!socialDraftSupersedes(existing, draft)) {
         continue;
       }
       this.store.saveSocialDraft({
@@ -7085,7 +7062,7 @@ export class AdminBotService {
     memberId: string;
     privileged: boolean;
   }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord; asked: string[] }> {
-    const draft = this.store.listSocialDrafts().find((row) => row.id === params.draftId);
+    const draft = this.store.listSocialDrafts(undefined, params.draftId)[0];
     if (!draft) {
       return serviceError(404, "draft not found");
     }
@@ -7143,7 +7120,7 @@ export class AdminBotService {
     decision: string;
     comment?: string;
   }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord }> {
-    const draft = this.store.listSocialDrafts().find((row) => row.id === params.draftId);
+    const draft = this.store.listSocialDrafts(undefined, params.draftId)[0];
     if (!draft) {
       return serviceError(404, "draft not found");
     }

@@ -12,12 +12,8 @@ import {
   saveStoredMemberSession,
   type LabMember,
 } from "../auth/session.ts";
-import {
-  blankFields,
-  renderProfile,
-  resetProfileSessionState,
-  type ProfileProps,
-} from "./profile.ts";
+import { blankFields } from "./profile-fields.ts";
+import { renderProfile, resetProfileSessionState, type ProfileProps } from "./profile.ts";
 
 function createMember(overrides: Partial<LabMember> = {}): LabMember {
   return {

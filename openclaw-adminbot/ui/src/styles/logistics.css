@@ -1966,3 +1966,23 @@ adminbot-offline-access .btn {
   max-width: 100%;
   white-space: normal;
 }
+
+.paper-card-dialog--review {
+  width: min(42rem, 94vw);
+}
+.paper-card-dialog--review .paper-card-dialog__header strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.paper-card-dialog--review .paper-card-dialog__header button {
+  flex-shrink: 0;
+}
+
+.paper-card-dialog--review .card {
+  padding: 16px;
+}
+
+.paper-card-dialog--review h4,
+.paper-card-dialog--review p {
+  margin: 8px 0;
+}

@@ -140,6 +140,7 @@ import {
   resetAdminBotLogisticsForm,
 } from "./adminbot/surfaces/logistics.ts";
 import { renderMeetingsSurface } from "./adminbot/surfaces/meetings.ts";
+import { renderProfessorSurface } from "./adminbot/surfaces/professor.ts";
 import { resolveProfileGate } from "./adminbot/surfaces/profile-gate.ts";
 import { loadProfileSurfaceReads, renderProfileSurface } from "./adminbot/surfaces/profile.ts";
 import type { AdminBotSurfaceScope } from "./adminbot/surfaces/scope.ts";
@@ -159,7 +160,6 @@ import {
   type MyWorkProps,
 } from "./adminbot/views/my-work.ts";
 import { paperTripDraftFrom } from "./adminbot/views/paper-cycle.ts";
-import { renderProfessorView } from "./adminbot/views/professor.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
 import {
@@ -287,7 +287,12 @@ import { getCronJobPayload } from "./cron-payload.ts";
 import { formatTimeMs } from "./format.ts";
 import { formatRelativeTimestamp } from "./format.ts";
 import { icons } from "./icons.ts";
-import { createLazyView, renderLazyView } from "./lazy-view.ts";
+import {
+  createLazyView,
+  notifyLazyViewHost,
+  renderLazyView,
+  setLazyViewHost,
+} from "./lazy-view.ts";
 import {
   iconForTab,
   isLogisticsTab,
@@ -346,10 +351,6 @@ import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.t
 import { renderGuestReimbursements } from "./views/guest-reimbursements.ts";
 import { renderMcp } from "./views/mcp.ts";
 import { renderOverview } from "./views/overview.ts";
-
-let pendingUpdate: (() => void) | undefined;
-
-const notifyLazyViewChanged = () => pendingUpdate?.();
 
 function runUiTask<Args extends unknown[]>(
   task: (...args: Args) => Promise<unknown>,
@@ -632,64 +633,61 @@ function renderChatRecentSession(state: AppViewState, row: GatewaySessionRow) {
 
 // Lazy-loaded view modules are deferred so the initial bundle stays small.
 // The shared loader renders visible fallback states instead of leaving a tab blank.
-const lazyAgents = createLazyView(() => import("./views/agents.ts"), notifyLazyViewChanged);
-const lazyActivity = createLazyView(() => import("./views/activity.ts"), notifyLazyViewChanged);
-const lazyChannels = createLazyView(() => import("./views/channels.ts"), notifyLazyViewChanged);
-const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewChanged);
+const lazyAgents = createLazyView(() => import("./views/agents.ts"), notifyLazyViewHost);
+const lazyActivity = createLazyView(() => import("./views/activity.ts"), notifyLazyViewHost);
+const lazyChannels = createLazyView(() => import("./views/channels.ts"), notifyLazyViewHost);
+const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewHost);
 const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyPublicShell = createLazyView(
   () => import("./adminbot/views/public-shell.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyOpportunities = createLazyView(
   () => import("./adminbot/views/opportunities.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
-const lazyTravel = createLazyView(
-  () => import("./adminbot/views/travel.ts"),
-  notifyLazyViewChanged,
-);
+const lazyTravel = createLazyView(() => import("./adminbot/views/travel.ts"), notifyLazyViewHost);
 const lazyGrantReport = createLazyView(
   () => import("./adminbot/views/grant-report.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyMailingList = createLazyView(
   () => import("./adminbot/views/mailing-list.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyConferencePapers = createLazyView(
   () => import("./adminbot/views/conference-papers.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyWorkshopNudges = createLazyView(
   () => import("./adminbot/views/workshop-nudges.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
-const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewChanged);
-const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewChanged);
-const lazyNodes = createLazyView(() => import("./views/nodes.ts"), notifyLazyViewChanged);
-const lazySessions = createLazyView(() => import("./views/sessions.ts"), notifyLazyViewChanged);
-const lazySkills = createLazyView(() => import("./views/skills.ts"), notifyLazyViewChanged);
-const lazyUsage = createLazyView(() => import("./views/usage.ts"), notifyLazyViewChanged);
+const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewHost);
+const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewHost);
+const lazyNodes = createLazyView(() => import("./views/nodes.ts"), notifyLazyViewHost);
+const lazySessions = createLazyView(() => import("./views/sessions.ts"), notifyLazyViewHost);
+const lazySkills = createLazyView(() => import("./views/skills.ts"), notifyLazyViewHost);
+const lazyUsage = createLazyView(() => import("./views/usage.ts"), notifyLazyViewHost);
 const lazyAdminBotRegistrations = createLazyView(
   () => import("./adminbot/views/registrations.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyAdminBotBadges = createLazyView(
   () => import("./adminbot/views/badges.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 
 const lazyAdminBotOnboarding = createLazyView(
   () => import("./adminbot/views/onboarding.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyAdminBotCalendar = createLazyView(
   () => import("./adminbot/views/calendar.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 
 /**
@@ -774,8 +772,8 @@ function paperWorkspaceProps(
     memberName: (memberId: string) =>
       (state.adminBotData?.members ?? []).find((member) => member.id === memberId)?.name ??
       memberId,
-    onSaveDraft: (paperId, platform, body) => {
-      void saveAdminBotSocialDraft(state, paperId, platform, body).finally(() =>
+    onSaveDraft: (paperId, platform, body, xThread) => {
+      void saveAdminBotSocialDraft(state, paperId, platform, body, xThread).finally(() =>
         requestHostUpdate?.(),
       );
     },
@@ -1754,7 +1752,7 @@ export function renderApp(state: AppViewState) {
     typeof updatableState.requestUpdate === "function"
       ? () => updatableState.requestUpdate?.()
       : undefined;
-  pendingUpdate = requestHostUpdate;
+  setLazyViewHost(requestHostUpdate);
 
   const profileGate = resolveProfileGate(state, requestHostUpdate);
   if ("loadingView" in profileGate) {
@@ -3379,60 +3377,7 @@ export function renderApp(state: AppViewState) {
         ${renderDashboardSurface(state, adminBotSurfaces)}
         ${renderProfileSurface(state, adminBotSurfaces)}
         ${state.tab === "gettingStarted" ? renderGettingStarted(state) : nothing}
-        ${state.tab === "adminbotProfessor" && adminBotMode === "admin"
-          ? renderProfessorView({
-              localChatSessionToken: loadStoredMemberSession()?.sessionToken ?? "",
-              requests: state.adminBotLogisticsRequests ?? [],
-              requestsLoading: state.adminBotLogisticsRequestsLoading,
-              papers: state.adminBotData?.papers ?? [],
-              profiles: state.adminBotProfileOverview ?? [],
-              escalated: state.adminBotEscalatedNudges ?? [],
-              piReview: state.adminBotPiReview ?? [],
-              piReviewLoading: state.adminBotProfileOverviewLoading,
-              piReviewError: state.adminBotPiReviewError,
-              onRetryPiReview: () => {
-                void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
-              },
-              onOpen: (tab) => state.setTab(tab),
-              expanded: state.professorExpandedLists,
-              onToggleExpand: (id) => {
-                const next = new Set(state.professorExpandedLists);
-                if (next.has(id)) {
-                  next.delete(id);
-                } else {
-                  next.add(id);
-                }
-                state.professorExpandedLists = next;
-                requestHostUpdate?.();
-              },
-              broadcast: state.adminBotBroadcast ?? null,
-              broadcastDraft: state.adminBotBroadcastDraft,
-              broadcastExpiry: state.adminBotBroadcastExpiry,
-              broadcastAvailability: state.adminBotBroadcastAvailability,
-              broadcastTimezone: state.adminBotBroadcastTimezone,
-              broadcastBusy: state.adminBotBroadcastBusy,
-              broadcastNotice: state.adminBotBroadcastNotice,
-              onBroadcastDraftChange: (value) => {
-                state.adminBotBroadcastDraft = value;
-                requestHostUpdate?.();
-              },
-              onBroadcastExpiryChange: (value) => {
-                state.adminBotBroadcastExpiry = value;
-                requestHostUpdate?.();
-              },
-              onBroadcastAvailabilityChange: (value) => {
-                state.adminBotBroadcastAvailability = value;
-                requestHostUpdate?.();
-              },
-              onBroadcastTimezoneChange: (value) => {
-                state.adminBotBroadcastTimezone = value;
-                requestHostUpdate?.();
-              },
-              onBroadcastPublish: (draft) => {
-                void state.publishBroadcast?.(draft).finally(() => requestHostUpdate?.());
-              },
-            })
-          : nothing}
+        ${renderProfessorSurface(state, adminBotSurfaces)}
         ${state.tab === "adminbotTravel" && adminBotMode === "admin"
           ? renderLazyView(lazyTravel, (m) =>
               m.renderTravel({
@@ -3525,7 +3470,7 @@ export function renderApp(state: AppViewState) {
              author-facing summaries that came with the deck (the "Blocked" roll-up, the
              pre-registration and decision banners) are the reader's own view of their own work, and
              the admin equivalents are the table and the Reported blockers board. -->
-        ${state.tab === "adminbotPapers" && activePaperCard
+        ${(state.tab === "adminbotPapers" || state.tab === "adminbotProfessor") && activePaperCard
           ? renderPaperCardDialog({
               state,
               props: {
@@ -3533,6 +3478,10 @@ export function renderApp(state: AppViewState) {
                 canNudge: adminBotMode === "admin",
               },
               paper: activePaperCard,
+              reviewOnly: isHeadProfessorViewer({
+                memberId: state.memberId,
+                headProfessorMemberId: state.adminBotData?.settings?.head_professor_member_id,
+              }),
               onClose: () => {
                 state.adminBotPaperCardId = null;
                 requestHostUpdate?.();
