@@ -169,6 +169,15 @@ import {
   dismissChatError,
   switchChatSession,
 } from "./app-render.helpers.ts";
+import {
+  renderChat,
+  renderConfig,
+  renderMyWork,
+  renderPaperCardDialog,
+  renderQuickSettings,
+  renderReferenceCheckerPage,
+  warmPaperCard,
+} from "./app-render.lazy-pages.ts";
 import { warnQueryToken } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
@@ -194,6 +203,7 @@ import {
 import { setAssistantAvatarOverride } from "./controllers/assistant-identity.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
+import "./components/dashboard-header.ts";
 import {
   applyConfig,
   ensureAgentConfigEntry,
@@ -210,7 +220,6 @@ import {
   removeConfigFormValue,
   updateMcpServerEnabled,
 } from "./controllers/config.ts";
-import "./components/dashboard-header.ts";
 import {
   buildNewCronForm,
   loadCronJobsPage,
@@ -324,10 +333,9 @@ import {
   resolveModelPrimary,
   sortLocaleStrings,
 } from "./views/agents-utils.ts";
-import type { ChatProps } from "./views/chat.ts";
 import { renderCommandPalette } from "./views/command-palette.ts";
 import { getPresetById } from "./views/config-presets.ts";
-import type { QuickSettingsChannel, QuickSettingsProps } from "./views/config-quick.ts";
+import type { QuickSettingsChannel } from "./views/config-quick.ts";
 import type { ConfigProps } from "./views/config.ts";
 import {
   renderCronQuickCreate,
@@ -625,42 +633,6 @@ const lazyAgents = createLazyView(() => import("./views/agents.ts"), notifyLazyV
 const lazyActivity = createLazyView(() => import("./views/activity.ts"), notifyLazyViewHost);
 const lazyChannels = createLazyView(() => import("./views/channels.ts"), notifyLazyViewHost);
 const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewHost);
-// Chat and the gateway settings pages are operator surfaces most members never open; the chat
-// renderer alone drags the markdown runtime with it. They load on first use like the pages above,
-// behind these same-named shims so the call sites below read as they always have.
-const lazyChat = createLazyView(() => import("./views/chat.ts"), notifyLazyViewHost);
-const lazyConfig = createLazyView(() => import("./views/config.ts"), notifyLazyViewHost);
-const lazyQuickSettings = createLazyView(
-  () => import("./views/config-quick.ts"),
-  notifyLazyViewHost,
-);
-const renderChat = (props: ChatProps) => renderLazyView(lazyChat, (m) => m.renderChat(props));
-const renderConfig = (props: ConfigProps) =>
-  renderLazyView(lazyConfig, (m) => m.renderConfig(props));
-const renderQuickSettings = (props: QuickSettingsProps) =>
-  renderLazyView(lazyQuickSettings, (m) => m.renderQuickSettings(props));
-// The reference checker's two elements define themselves on import; loading them with the page
-// keeps them out of the entry, and the page renders them once both are defined.
-const lazyReferenceChecker = createLazyView(
-  () =>
-    Promise.all([
-      import("./adminbot/views/reference-checker.ts"),
-      import("./adminbot/views/openreview-citation-checks.ts"),
-    ]),
-  notifyLazyViewHost,
-);
-// My Work and the paper card it shares with Active Papers carry the whole paper workflow (slots,
-// the cycle checklist, the grid). The card opens on top of a page that is already showing, so it
-// stays out of view until its code arrives rather than flashing a loading card.
-const lazyMyWork = createLazyView(() => import("./adminbot/views/my-work.ts"), notifyLazyViewHost);
-const renderMyWork = (state: AppViewState, props: MyWorkProps) =>
-  renderLazyView(lazyMyWork, (m) => m.renderMyWork(state, props));
-const renderPaperCardDialog = (
-  params: Parameters<typeof import("./adminbot/views/my-work.ts").renderPaperCardDialog>[0],
-) => {
-  const myWork = lazyMyWork.read();
-  return myWork ? myWork.renderPaperCardDialog(params) : nothing;
-};
 const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
   notifyLazyViewHost,
@@ -1777,11 +1749,7 @@ export function renderApp(state: AppViewState) {
       ? () => updatableState.requestUpdate?.()
       : undefined;
   setLazyViewHost(requestHostUpdate);
-  // Active Papers opens the paper card on a row click; fetch its code while the table is up so
-  // the card appears on the click, as it did when it shipped in the entry bundle.
-  if (state.tab === "adminbotPapers" || state.tab === "adminbotProfessor") {
-    lazyMyWork.read();
-  }
+  warmPaperCard(state.tab);
 
   // Opening the workshop tab reads the stored pass. It never starts one -- that is Refresh, and it
   // is thousands of model calls. Self-limiting: the read sets `loading` synchronously and leaves a
@@ -3705,17 +3673,9 @@ export function renderApp(state: AppViewState) {
             )
           : nothing}
         ${state.tab === "adminbotReferenceChecker"
-          ? renderLazyView(
-              lazyReferenceChecker,
-              () =>
-                html`<adminbot-reference-checker
-                    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-                    .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
-                  ></adminbot-reference-checker>
-                  <adminbot-openreview-citation-checks
-                    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-                    .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
-                  ></adminbot-openreview-citation-checks>`,
+          ? renderReferenceCheckerPage(
+              resolveAdminBotBaseUrl(state.settings),
+              loadStoredMemberSession()?.sessionToken ?? "",
             )
           : nothing}
         ${state.tab === "adminbotConferencePapers"
