@@ -384,6 +384,12 @@ export const papersRoutes: readonly Route[] = [
       );
     },
   ),
+  // One paper, readable by whoever can read GET /papers, in the same projection. After every literal
+  // `/papers/<name>` GET (here and in paper-admin.ts, which is mounted first), which it would
+  // otherwise swallow.
+  get(/^\/papers\/([^/]+)$/u, ({ res, params, ctx }) => {
+    sendServiceResult(res, ctx.service.getPaper(decodeURIComponent(params[1])));
+  }),
   put(/^\/papers\/([^/]+)$/u, async ({ req, res, principal, ctx, params }) => {
     const { service } = ctx;
     const paperId = decodeURIComponent(params[1]);

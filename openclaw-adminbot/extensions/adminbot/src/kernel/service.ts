@@ -385,6 +385,12 @@ import {
   memberRelevanceNeedles,
   textMatchesNeedles,
 } from "../workflows/papers/openreview-matching.js";
+import { duePaperNudges } from "../workflows/papers/paper-reminder-nudges.js";
+import {
+  paperForResponse,
+  withheldArtifactWriteError,
+  withoutTimeline,
+} from "../workflows/papers/paper-response.js";
 import { planPaperBackfill } from "../workflows/papers/paper-slot-backfill.js";
 import {
   actionablePaperSlots,
@@ -408,12 +414,6 @@ import {
   waivePaperSlot,
   type NudgeItem,
 } from "../workflows/papers/paper-slots.js";
-import { duePaperNudges } from "../workflows/papers/paper-reminder-nudges.js";
-import {
-  paperForResponse,
-  withheldArtifactWriteError,
-  withoutTimeline,
-} from "../workflows/papers/paper-response.js";
 import { derivePaperStage, isStageAhead } from "../workflows/papers/paper-stage.js";
 import {
   openPaperflowStage,
@@ -10080,6 +10080,14 @@ export class AdminBotService {
           : {}),
       },
     };
+  }
+
+  /** One paper, in the same projection as the list it is a row of. */
+  getPaper(paperId: string): AdminBotServiceResponse<AdminBotPaperRecord> {
+    const paper = this.store.getPaper(paperId);
+    return paper
+      ? { ok: true, status: 200, payload: paperForResponse(paper) }
+      : serviceError(404, "paper not found");
   }
 
   listConferenceAttendance(): AdminBotServiceResponse<{
