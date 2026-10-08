@@ -10,14 +10,15 @@ import {
   jsdomOptimizedDeps,
   resolveDefaultVitestPool,
 } from "../test/vitest/vitest.shared.config.ts";
+import { controlUiBrowserOnlySharedModuleAliases } from "./vite.config.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
+// The Node-only redact module is swapped for the browser one by the same importer-scoped plugin the
+// build uses. A path alias here had drifted to "../logging/redact.js" after the importers moved a level
+// deeper, so tests loaded the Node module and every chat view failed on node:url.
+const browserOnlySharedModules = controlUiBrowserOnlySharedModuleAliases();
 const workspaceSourceAliases = [
-  {
-    find: "../logging/redact.js",
-    replacement: path.resolve(here, "src/ui/browser-redact.ts"),
-  },
   {
     find: "openclaw/plugin-sdk/test-fixtures",
     replacement: path.resolve(repoRoot, "src/plugin-sdk/test-fixtures.ts"),
@@ -110,6 +111,7 @@ function resolveChromiumLaunchOptions(): { executablePath: string } | undefined 
 const chromiumLaunchOptions = resolveChromiumLaunchOptions();
 
 export default defineConfig({
+  plugins: [browserOnlySharedModules],
   resolve: {
     alias: workspaceSourceAliases,
   },
@@ -117,6 +119,7 @@ export default defineConfig({
     ...sharedUiTestConfig,
     projects: [
       defineProject({
+        plugins: [browserOnlySharedModules],
         resolve: {
           alias: workspaceSourceAliases,
         },
@@ -131,6 +134,7 @@ export default defineConfig({
         },
       }),
       defineProject({
+        plugins: [browserOnlySharedModules],
         resolve: {
           alias: workspaceSourceAliases,
         },
@@ -144,6 +148,7 @@ export default defineConfig({
         },
       }),
       defineProject({
+        plugins: [browserOnlySharedModules],
         resolve: {
           alias: workspaceSourceAliases,
         },
