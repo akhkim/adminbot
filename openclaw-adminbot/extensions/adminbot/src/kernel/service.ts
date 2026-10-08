@@ -376,6 +376,11 @@ import {
   buildAuthorLinks,
 } from "../workflows/papers/author-links.js";
 import {
+  memberOwnsPaper,
+  paperIdsByOwner,
+  rosterNameCounts,
+} from "../workflows/papers/paper-ownership.js";
+import {
   buildConferenceAttendance,
   expectedConferenceAttendees,
   mergeConferenceAttendance,
@@ -5038,7 +5043,9 @@ export class AdminBotService {
       registered: number;
       unregistered: number;
     }> = [];
-    for (const member of this.store.listLabMembers()) {
+    const roster = this.store.listLabMembers();
+    const owned = paperIdsByOwner(roster, papers, rosterNameCounts(roster));
+    for (const member of roster) {
       if (member.status === "alumni" || member.status === "external") {
         continue;
       }
@@ -5054,7 +5061,8 @@ export class AdminBotService {
         excluded.push(member.id);
         continue;
       }
-      const own = papers.filter((paper) => this.memberOwnsPaper(member, paper));
+      const ownIds = new Set(owned.get(member.id));
+      const own = papers.filter((paper) => ownIds.has(paper.id));
       if (own.length === 0) {
         continue;
       }
@@ -5777,29 +5785,12 @@ export class AdminBotService {
   }
 
   private memberOwnsPaper(member: AdminBotLabMember, paper: AdminBotPaperRecord): boolean {
-    if (paper.submitted_by_member_id === member.id) {
-      return true;
-    }
-    if (paper.first_author_member_id === member.id) {
-      return true;
-    }
-    if (authorMemberIds(paper.author_links ?? []).includes(member.id)) {
-      return true;
-    }
-    const authors = paper.authors.map((author) => author.trim().toLocaleLowerCase());
-    const unique = [member.id, member.email]
-      .flatMap((value) => (value ? [value.toLocaleLowerCase()] : []))
-      .some((value) => authors.includes(value));
-    if (unique) {
-      return true;
-    }
-    const name = member.name.trim().toLocaleLowerCase();
-    if (!name || !authors.includes(name)) {
-      return false;
-    }
-    return (
-      this.store.listLabMembers().filter((entry) => entry.name.trim().toLocaleLowerCase() === name)
-        .length === 1
+    return memberOwnsPaper(
+      member,
+      paper,
+      (name) =>
+        this.store.listLabMembers().filter((entry) => entry.name.trim().toLocaleLowerCase() === name)
+          .length,
     );
   }
 
@@ -10875,9 +10866,10 @@ export class AdminBotService {
     const papers = this.store.listPapers();
     const weeklyUpdates = this.store.listPaperWeeklyUpdates();
     const activity = this.memberActivityCounts();
-    const members = this.store
-      .listLabMembers()
-      .filter(isActiveRosterMember)
+    const roster = this.store.listLabMembers();
+    const active = roster.filter(isActiveRosterMember);
+    const ownedPaperIds = paperIdsByOwner(active, papers, rosterNameCounts(roster));
+    const members = active
       .map((member) => {
         const missing = missingMandatoryProfileFields(member);
         const timeline = countTimelineEntries(member);
@@ -10896,9 +10888,7 @@ export class AdminBotService {
           self_filled_field_count: selfFilledFieldCount(member, MANDATORY_PROFILE_FIELDS),
           projects: projectAdoption({
             memberId: member.id,
-            paperIds: papers
-              .filter((paper) => this.memberOwnsPaper(member, paper))
-              .map((paper) => paper.id),
+            paperIds: ownedPaperIds.get(member.id) ?? [],
             updates: weeklyUpdates,
           }),
           timeline,
