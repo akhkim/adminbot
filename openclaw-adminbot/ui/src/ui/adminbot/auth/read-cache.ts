@@ -13,8 +13,13 @@ type RememberedRead = { etag: string; text: string; url: string };
 // results must not grow without bound, so the oldest entry goes first.
 const MAX_REMEMBERED_READS = 200;
 
+// How long a pending read stays joinable. A read still pending past this has most likely stalled
+// on a dead connection; later loaders start their own rather than wait on it. Generous enough that
+// a slow first load of a large roster is still shared.
+const JOIN_WINDOW_MS = 15_000;
+
 const remembered = new Map<string, RememberedRead>();
-const inFlight = new Map<string, Promise<unknown>>();
+const inFlight = new Map<string, { promise: Promise<unknown>; startedAt: number }>();
 
 function readKey(token: string | null, url: string): string {
   return `${token ?? ""}\n${url}`;
@@ -52,22 +57,27 @@ export function forgetRead(token: string | null, url: string): void {
  * One request per session and URL at a time.
  *
  * A caller that arrives while the same read is pending gets that read's promise rather than a
- * second request. `forgetReadsInFlight` drops the bookkeeping after any write, so a reload that a
+ * second request, unless that read has been pending past JOIN_WINDOW_MS. `forgetReadsInFlight` drops the bookkeeping after any write, so a reload that a
  * save triggers never joins a read that started before the save landed.
  */
-export function sharedRead<T>(token: string | null, url: string, start: () => Promise<T>): Promise<T> {
+export function sharedRead<T>(
+  token: string | null,
+  url: string,
+  start: () => Promise<T>,
+): Promise<T> {
   const key = readKey(token, url);
-  const pending = inFlight.get(key) as Promise<T> | undefined;
-  if (pending) {
-    return pending;
+  const pending = inFlight.get(key);
+  if (pending && Date.now() - pending.startedAt < JOIN_WINDOW_MS) {
+    return pending.promise as Promise<T>;
   }
-  const promise = start().finally(() => {
-    if (inFlight.get(key) === promise) {
+  const entry = { promise: undefined as unknown as Promise<T>, startedAt: Date.now() };
+  entry.promise = start().finally(() => {
+    if (inFlight.get(key) === entry) {
       inFlight.delete(key);
     }
   });
-  inFlight.set(key, promise);
-  return promise;
+  inFlight.set(key, entry);
+  return entry.promise;
 }
 
 export function forgetReadsInFlight(): void {
