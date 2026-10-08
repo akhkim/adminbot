@@ -45,6 +45,7 @@ import type { AdminBotRouteContext } from "./context.js";
 import {
   adminSessionOnly,
   approverIdentityFor,
+  isPrivileged,
   memberOnly,
   principalActor,
   privilegedOnly,
@@ -434,11 +435,23 @@ export const membersRoutes: readonly Route[] = [
       sendServiceResult(res, service.migrateMemberNotesToFields(principalActor(principal)));
     }),
   ),
-  get("/members/mandatory-fields-incomplete", ({ res, ctx }) => {
+  get("/members/mandatory-fields-incomplete", ({ res, principal, ctx }) => {
     const { service } = ctx;
-    // Read-only roster scan (same shape as /papers/nudges), so no privilege gate: it powers the
-    // dashboard's own-profile warning too, which any signed-in member may load.
-    sendServiceResult(res, service.listMembersWithIncompleteMandatoryFields());
+    // Open to anyone signed in for the dashboard's own-profile warning, but everybody's
+    // completeness is the admin's profile overview: a member who is not an admin gets their row.
+    const result = service.listMembersWithIncompleteMandatoryFields();
+    const ownOnly = principal.kind === "member" && !isPrivileged(principal);
+    sendServiceResult(
+      res,
+      result.ok && ownOnly
+        ? {
+            ...result,
+            payload: {
+              members: result.payload.members.filter(({ id }) => id === principal.member.id),
+            },
+          }
+        : result,
+    );
   }),
   get(
     "/members/profile-overview",
