@@ -2649,12 +2649,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[] {
+    // By member within a paper, the key order the per-paper read always had, in both reads.
+    const sql = "SELECT * FROM adminbot_paper_reimbursements";
     const rows = (
       paperId
-        ? this.db
-            .prepare("SELECT * FROM adminbot_paper_reimbursements WHERE paper_id = ?")
-            .all(paperId)
-        : this.db.prepare("SELECT * FROM adminbot_paper_reimbursements").all()
+        ? this.db.prepare(`${sql} WHERE paper_id = ? ORDER BY member_id`).all(paperId)
+        : this.db.prepare(`${sql} ORDER BY paper_id, member_id`).all()
     ) as Array<Record<string, unknown>>;
     return rows.map((row) => ({
       paper_id: String(row.paper_id),

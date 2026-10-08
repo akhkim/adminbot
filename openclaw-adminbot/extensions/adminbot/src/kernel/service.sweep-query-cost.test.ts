@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AdminBotMemoryStore } from "../persistence/memory.js";
 import { AdminBotSqliteStore } from "../persistence/sqlite.js";
+import { PaperTableSnapshot } from "./paper-table-snapshot.js";
 import { AdminBotService } from "./service.js";
 
 const NOW = "2026-05-01T12:00:00.000Z";
@@ -84,7 +85,8 @@ function seed(store: SeedStore, papers: number): void {
         paper_id: id,
         platform,
         body: `Draft for ${id}`,
-        generated_at: `2026-04-0${platform === "x" ? 1 : 2}T00:00:00.000Z`,
+        // Half the papers generate both drafts in one go, so they tie on the time.
+        generated_at: `2026-04-0${platform === "x" || index % 2 ? 1 : 2}T00:00:00.000Z`,
         status: index % 2 === 0 ? "circulated" : "draft",
       } as never);
     }
@@ -97,18 +99,22 @@ function seed(store: SeedStore, papers: number): void {
       } as never);
     }
     if (accepted) {
-      store.saveConferenceAttendee({
-        paper_id: id,
-        attendee_key: `member:m${index % members}`,
-        member_id: `m${index % members}`,
-        name: author,
-        attending: index % 2 === 0 ? "yes" : "unknown",
-      } as never);
-      store.savePaperReimbursement({
-        paper_id: id,
-        member_id: `m${index % members}`,
-        status: index % 2 === 0 ? "pending" : "submitted",
-      } as never);
+      // Written in descending key order, with a shared name, so no read gets its order for free.
+      for (const offset of [5, 3, 0]) {
+        const memberId = `m${(index + offset) % members}`;
+        store.saveConferenceAttendee({
+          paper_id: id,
+          attendee_key: `member:${memberId}`,
+          member_id: memberId,
+          name: offset === 0 ? author : "Same Name",
+          attending: (index + offset) % 2 === 0 ? "yes" : "unknown",
+        } as never);
+        store.savePaperReimbursement({
+          paper_id: id,
+          member_id: memberId,
+          status: (index + offset) % 2 === 0 ? "pending" : "submitted",
+        } as never);
+      }
     }
     if (index % 2 === 1) {
       store.savePaperMentorRun({
@@ -194,6 +200,30 @@ describe("all-paper sweeps read each per-paper table once", () => {
     expect(parsed.slotOverview.payload.papers).toHaveLength(30);
     expect(parsed.conferences.payload.conferences.length).toBeGreaterThan(0);
     expect(parsed.nudgeBatches.payload.batches.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["memory", () => new AdminBotMemoryStore()],
+    ["sqlite", sqliteStore],
+  ] as const)("hands each paper exactly its own read, ties included (%s)", (_name, makeStore) => {
+    const store = makeStore();
+    seed(store, 30);
+    const snapshot = new PaperTableSnapshot(store);
+    const reads = [
+      "listPaperSlots",
+      "listSocialDrafts",
+      "listConferenceAttendees",
+      "listPaperReimbursements",
+      "listPaperMentorRuns",
+      "listPaperflowEvidence",
+    ] as const;
+    for (const paper of store.listPapers()) {
+      for (const read of reads) {
+        expect(JSON.stringify(snapshot[read](paper.id)), `${read}(${paper.id})`).toBe(
+          JSON.stringify(store[read](paper.id)),
+        );
+      }
+    }
   });
 
   it("runs the same number of statements for 10 papers as for 40", () => {
