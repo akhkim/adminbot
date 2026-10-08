@@ -141,10 +141,6 @@ import {
   type PublishedDeadlineRecord,
 } from "../contracts/deadline-proposals.js";
 import { stageProposalConflict } from "../contracts/deadline-proposals.stage.js";
-import {
-  deadlineBoardEntryId,
-  deadlineInputFromBoardEntry,
-} from "../workflows/deadlines/board-entry.js";
 import type { DeadlineRecommendationInput } from "../contracts/deadline-recommendations.js";
 import { adminBotDriveFileId, type AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type {
@@ -261,6 +257,10 @@ import type { ReferenceScanStore } from "../contracts/reference-scans.js";
 import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import {
+  deadlineBoardEntryId,
+  deadlineInputFromBoardEntry,
+} from "../workflows/deadlines/board-entry.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import {
   isDeadlineMilestoneId,
@@ -379,12 +379,6 @@ import {
   authorNamesFromLinks,
   buildAuthorLinks,
 } from "../workflows/papers/author-links.js";
-import { PaperTableSnapshot, type PaperRowReader } from "./paper-table-snapshot.js";
-import {
-  memberOwnsPaper,
-  paperIdsByOwner,
-  rosterNameCounts,
-} from "../workflows/papers/paper-ownership.js";
 import {
   buildConferenceAttendance,
   expectedConferenceAttendees,
@@ -396,6 +390,11 @@ import {
   memberRelevanceNeedles,
   textMatchesNeedles,
 } from "../workflows/papers/openreview-matching.js";
+import {
+  memberOwnsPaper,
+  paperIdsByOwner,
+  rosterNameCounts,
+} from "../workflows/papers/paper-ownership.js";
 import { duePaperNudges } from "../workflows/papers/paper-reminder-nudges.js";
 import {
   paperForResponse,
@@ -452,6 +451,7 @@ import {
   venueKey,
   selectPublications,
 } from "../workflows/papers/publication-list.js";
+import { PaperTableSnapshot, type PaperRowReader } from "./paper-table-snapshot.js";
 import {
   birthdayProposalStillCurrent,
   reconcileBirthdayEvent,
@@ -5796,8 +5796,9 @@ export class AdminBotService {
       member,
       paper,
       (name) =>
-        this.store.listLabMembers().filter((entry) => entry.name.trim().toLocaleLowerCase() === name)
-          .length,
+        this.store
+          .listLabMembers()
+          .filter((entry) => entry.name.trim().toLocaleLowerCase() === name).length,
     );
   }
 
@@ -7269,13 +7270,14 @@ export class AdminBotService {
   listConferenceRosters(): AdminBotServiceResponse<{
     conferences: ConferenceAttendanceView[];
   }> {
-    const entries = this.withPaperTables(() => this.store
-      .listPapers()
-      .filter((paper) => isConferenceBranchOpen(paper))
-      .map((paper) => ({
-        paper,
-        attendees: this.paperRows().listConferenceAttendees(paper.id),
-      })),
+    const entries = this.withPaperTables(() =>
+      this.store
+        .listPapers()
+        .filter((paper) => isConferenceBranchOpen(paper))
+        .map((paper) => ({
+          paper,
+          attendees: this.paperRows().listConferenceAttendees(paper.id),
+        })),
     );
     const conferences = buildConferenceAttendance(entries).map((conference) => ({
       ...conference,

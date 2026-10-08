@@ -77,7 +77,11 @@ describe("paperIdsByOwner", () => {
 
   it("does not match a name another roster member shares, even when that member is not listed", () => {
     const papers = [paper("p1", { authors: ["Ada Lovelace"] })];
-    const owned = paperIdsByOwner([roster[0] as AdminBotLabMember], papers, rosterNameCounts(roster));
+    const owned = paperIdsByOwner(
+      [roster[0] as AdminBotLabMember],
+      papers,
+      rosterNameCounts(roster),
+    );
     expect(owned.get("m1")).toEqual([]);
   });
 });
