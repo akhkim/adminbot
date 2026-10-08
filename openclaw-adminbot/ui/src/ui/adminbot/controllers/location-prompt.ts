@@ -7,6 +7,9 @@ import { answerLocationPrompt, fetchLocationDrifts, fetchLocationPrompt } from "
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { loadAdminBot, type AdminBotHost } from "./admin.ts";
 
+let promptInFlight: string | null = null;
+let driftsInFlight: string | null = null;
+
 function sameSession(token: string): boolean {
   return loadStoredMemberSession()?.sessionToken === token;
 }
@@ -17,10 +20,16 @@ export async function loadAdminBotLocationPrompt(host: AdminBotHost): Promise<vo
     return;
   }
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
-  // The render pass asks while this is undefined; mark it asked before awaiting so the renders in
-  // between do not each start another request.
-  host.adminBotLocationDrift = null;
-  const result = await fetchLocationPrompt(stored.sessionToken, baseUrl);
+  // The render pass asks while the answer is undefined, so every render before it lands would start
+  // another identical request. Tracked by token, not on the host, so a member who signs in while
+  // the previous one's request is in flight still gets asked.
+  if (promptInFlight === stored.sessionToken) {
+    return;
+  }
+  promptInFlight = stored.sessionToken;
+  const result = await fetchLocationPrompt(stored.sessionToken, baseUrl).finally(() => {
+    if (promptInFlight === stored.sessionToken) promptInFlight = null;
+  });
   if (!sameSession(stored.sessionToken)) {
     return;
   }
@@ -73,12 +82,17 @@ export async function loadAdminBotLocationDrifts(host: AdminBotHost): Promise<vo
   if (!stored) {
     return;
   }
-  // Same render-pass guard as the prompt above: undefined means "never asked".
-  host.adminBotLocationDrifts = [];
+  // Same render-pass guard as the prompt above.
+  if (driftsInFlight === stored.sessionToken) {
+    return;
+  }
+  driftsInFlight = stored.sessionToken;
   const result = await fetchLocationDrifts(
     stored.sessionToken,
     resolveAdminBotBaseUrl(host.settings),
-  );
+  ).finally(() => {
+    if (driftsInFlight === stored.sessionToken) driftsInFlight = null;
+  });
   if (!sameSession(stored.sessionToken)) {
     return;
   }

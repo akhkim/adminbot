@@ -54,7 +54,7 @@ export async function resolveAdminBotEmailReview(
           ? "Attached the email to the paper. AdminBot will stop reminders for that stage."
           : "Removed the email from AdminBot's review queue without changing any paper.",
     };
-    await loadAdminBot(host);
+    await loadAdminBot(host, undefined, undefined, true);
   } finally {
     if (!sessionToken || loadStoredMemberSession()?.sessionToken === sessionToken) {
       host.adminBotBusyActionId = null;

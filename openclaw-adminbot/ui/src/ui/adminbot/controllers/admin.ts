@@ -732,6 +732,7 @@ export function createEmptyAdminBotStandingMeetings(): AdminBotStandingMeetingsS
 
 export type AdminBotHost = {
   requestUpdate?: () => void;
+  memberPrivilegeLevel?: string | null;
   adminBotStandingMeetings?: AdminBotStandingMeetingsState;
   client: GatewayBrowserClient | null;
   connected: boolean;
@@ -1349,10 +1350,15 @@ export async function loadAdminBotRoster(host: AdminBotHost): Promise<void> {
   }
 }
 
+// Defaults are for the reload after a write: the viewer's own mode (a plain member asked in admin
+// mode spends five reads on queues the service refuses), and the lab paper list only when this
+// session has already loaded it -- a write on a page without papers has nothing to refresh there.
 export async function loadAdminBot(
   host: AdminBotHost,
-  mode: AdminBotLoadMode = "admin",
-  includePapers = true,
+  mode: AdminBotLoadMode = loadStoredMemberSession() && host.memberPrivilegeLevel !== "admin"
+    ? "general"
+    : "admin",
+  includePapers = Boolean(host.adminBotData.papersLoadedAt),
   preserveRoster = false,
 ): Promise<void> {
   // A write may have changed a member row; the next roster-dependent tab reloads it on demand.
@@ -1909,7 +1915,7 @@ export async function saveAdminBotPaper(
       ...(paper.reminderStatus ? { reminder: { status: paper.reminderStatus } } : {}),
     });
     host.adminBotNotice = { kind: "success", text: `Saved paper ${paper.id}.` };
-    await loadAdminBot(host);
+    await loadAdminBot(host, undefined, undefined, true);
     return true;
   } catch (err) {
     host.adminBotNotice = {

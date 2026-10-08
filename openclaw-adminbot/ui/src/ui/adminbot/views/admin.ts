@@ -730,7 +730,7 @@ function submitSettingsForm(event: Event, props: AdminBotProps): void {
 function submitSensitiveInfoForm(event: Event, props: AdminBotProps): void {
   event.preventDefault();
   const form = event.currentTarget;
-  if (!(form instanceof HTMLFormElement)) {
+  if (!(form instanceof HTMLFormElement) || props.data.sensitiveInfo === undefined) {
     return;
   }
   const data = new FormData(form);
@@ -862,13 +862,7 @@ function renderSettings(
             <textarea name="markdown" rows="18">${sensitiveInfo?.markdown ?? ""}</textarea>
           </label>
           <div class="adminbot-form__actions">
-            <button
-              class="btn btn--sm primary"
-              type="submit"
-              ?disabled=${sensitiveInfo === undefined}
-            >
-              Save markdown
-            </button>
+            <button class="btn btn--sm primary" type="submit">Save markdown</button>
           </div>
         </form>
         <div class="adminbot-kv">

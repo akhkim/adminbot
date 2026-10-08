@@ -31,7 +31,6 @@ import {
   toggleWorkshopNudgeRecipient,
   updateWorkshopNudgeView,
   loadAdminBot,
-  loadAdminBotSensitiveInfo,
   loadAdminBotMemberList,
   loadAdminBotStandingMeetings,
   loadAdminBotRoster,
@@ -2663,16 +2662,6 @@ export function renderApp(state: AppViewState) {
     state.adminBotLocationDrifts === undefined
   ) {
     void state.loadLocationDrifts?.().finally(() => requestHostUpdate?.());
-  }
-  // The sensitive-info notes render only on Settings. undefined is "never read"; the loader dedupes
-  // per session, so renders while it is in flight share one request.
-  if (
-    state.tab === "adminbotSettings" &&
-    adminBotMode === "admin" &&
-    hasMemberSession &&
-    state.adminBotData.sensitiveInfo === undefined
-  ) {
-    void loadAdminBotSensitiveInfo(state).finally(() => requestHostUpdate?.());
   }
   // Asked once, when the member opens their own profile -- which is where the banner renders and
   // the only place its answer makes sense. Undefined is "not asked yet"; null is a real "nothing

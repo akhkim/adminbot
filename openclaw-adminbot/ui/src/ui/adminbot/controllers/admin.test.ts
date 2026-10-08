@@ -94,7 +94,7 @@ describe("loadAdminBot", () => {
       settings: { adminBotUrl: "http://127.0.0.1:8765" } as UiSettings,
     };
 
-    await loadAdminBot(host, "admin");
+    await loadAdminBot(host, "admin", true);
 
     expect(calls).toContain("adminbot_get_sensitive_info");
     expect(host.adminBotError).toBeNull();
@@ -131,7 +131,7 @@ describe("loadAdminBot", () => {
       },
     });
 
-    await loadAdminBot(host, "general");
+    await loadAdminBot(host, "general", true);
 
     expect(calls).toEqual(["adminbot_list_lab_members", "adminbot_list_papers"]);
     expect(host.adminBotData.members).toHaveLength(1);
@@ -281,7 +281,7 @@ describe("loadAdminBot over the member session", () => {
           })
         : Promise.resolve(json({ papers: [] })),
     );
-    const pending = loadAdminBot(host, "general");
+    const pending = loadAdminBot(host, "general", true);
     clearStoredMemberSession();
     host.adminBotData = createEmptyAdminBotDashboardData();
     resolveMembers(json({ member: { id: "old-private" } }));
@@ -311,7 +311,7 @@ describe("loadAdminBot over the member session", () => {
       "/papers": () => json({ papers: [{ id: "paper-1" }] }),
     });
 
-    await loadAdminBot(host, "general");
+    await loadAdminBot(host, "general", true);
 
     expect(calls).toEqual([]);
     expect(host.adminBotData.members).toHaveLength(1);
@@ -377,7 +377,7 @@ describe("loadAdminBot over the member session", () => {
       return Promise.resolve(json({}));
     });
 
-    const pending = loadAdminBot(host, "general");
+    const pending = loadAdminBot(host, "general", true);
     await vi.waitFor(() => expect(host.adminBotData.members[0]?.id).toBe("pat"));
     expect(host.adminBotData.loadedAt).toBeNull();
     expect(host.adminBotLoading).toBe(true);
@@ -418,7 +418,7 @@ describe("loadAdminBot over the member session", () => {
       return Promise.resolve(json({}));
     });
 
-    const pending = loadAdminBot(host, "general");
+    const pending = loadAdminBot(host, "general", true);
     await vi.waitFor(() => expect(host.adminBotData.members[0]?.id).toBe("pat"));
     await loadAdminBotRoster(host);
     expect(host.adminBotData.members).toHaveLength(2);
@@ -442,7 +442,7 @@ describe("loadAdminBot over the member session", () => {
         }),
       "/papers": () => json({ papers: [] }),
     });
-    await loadAdminBot(host, "general");
+    await loadAdminBot(host, "general", true);
     expect(host.adminBotData.members).toEqual([{ id: "pat", name: "Pat" }]);
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/lab/members"))).toBe(true);
   });
@@ -468,7 +468,7 @@ describe("loadAdminBot over the member session", () => {
       "/papers": () => json({ papers: [] }),
     });
 
-    await loadAdminBot(host, "general");
+    await loadAdminBot(host, "general", true);
     expect(host.adminBotData.members).toEqual([
       expect.objectContaining({ id: "pat", milestones: [{ id: "deadline-1" }] }),
     ]);
@@ -515,7 +515,7 @@ describe("loadAdminBot over the member session", () => {
       "/sensitive-info": () => json({ error: { message: "nope" } }, 403),
     });
 
-    await loadAdminBot(host, "admin");
+    await loadAdminBot(host, "admin", true);
 
     expect(host.adminBotError).toBeNull();
     expect(host.adminBotData.members).toHaveLength(1);
@@ -534,7 +534,7 @@ describe("loadAdminBot over the member session", () => {
       "/sensitive-info": () => json({ markdown: "secret\n", path: "notes.md" }),
     });
 
-    await loadAdminBot(host, "admin");
+    await loadAdminBot(host, "admin", true);
     const sensitiveReads = () =>
       fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/sensitive-info")).length;
     expect(sensitiveReads()).toBe(0);
@@ -552,10 +552,10 @@ describe("loadAdminBot over the member session", () => {
       "/papers": () => json({ papers: [{ id: "paper-1" }] }),
       "/proposals/pending": () => json({ proposals: [{ id: "proposal-1" }] }),
     });
-    await loadAdminBot(host, "admin");
+    await loadAdminBot(host, "admin", true);
     expect(host.adminBotData.proposals).toHaveLength(1);
 
-    const reloading = loadAdminBot(host, "admin");
+    const reloading = loadAdminBot(host, "admin", true);
     await Promise.resolve();
     expect(host.adminBotData.proposals).toHaveLength(1);
     expect(host.adminBotData.papers).toHaveLength(1);
@@ -571,7 +571,7 @@ describe("loadAdminBot over the member session", () => {
       "/papers": () => json({ papers: [] }),
     });
 
-    await loadAdminBot(host, "general");
+    await loadAdminBot(host, "general", true);
 
     expect(host.adminBotError).not.toBeNull();
     expect(host.adminBotLoading).toBe(false);
