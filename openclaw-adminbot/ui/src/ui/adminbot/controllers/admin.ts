@@ -787,6 +787,9 @@ export type AdminBotHost = {
   adminBotMeetingNudgeError?: string | null;
   adminBotMeetingNudgeResult?: MeetingAttendanceNudgeResult | null;
   adminBotMeetingRosters?: MeetingRosters;
+  // Whole records read on open; the summary roster carries list cells only (member-detail.ts).
+  adminBotMemberDetails?: import("./member-detail.ts").AdminBotMemberDetails;
+  adminBotDuplicatePairs?: import("./member-detail.ts").AdminBotDuplicatePairs;
   // What the lab has told this member. Undefined is "not read yet"; [] is a real "nothing".
   adminBotNotifications?: MemberNotification[];
   adminBotNotificationsError?: string | null;
@@ -1291,7 +1294,12 @@ export async function loadAdminBotRoster(host: AdminBotHost): Promise<void> {
     }
     const response = readRecord(result.value);
     const self = readRecord(response.self) as AdminBotLabMember;
-    const roster = readArray<AdminBotLabMember>(response, "members");
+    // Summary rows leave out empty and default fields (member-summary-row.ts); the one default a
+    // reader compares against is filled back in here, so an absent level still reads "member".
+    const roster = readArray<AdminBotLabMember>(response, "members").map((member) => ({
+      ...member,
+      privilege_level: member.privilege_level ?? "member",
+    }));
     host.adminBotData = {
       ...host.adminBotData,
       members: self.id ? roster.map((member) => (member.id === self.id ? self : member)) : roster,
@@ -1328,6 +1336,8 @@ export async function loadAdminBot(
     host.adminBotRosterLoadedAt = null;
     host.adminBotRosterLoading = false;
     host.adminBotRosterError = null;
+    // Whole records read for one view (member-detail.ts) go stale with the rows they sit over.
+    host.adminBotMemberDetails = {};
   }
   if (!preserveRoster && host.adminBotMemberList?.loadedAt) {
     host.adminBotMemberList = { ...host.adminBotMemberList, loadedAt: null };

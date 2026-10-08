@@ -268,6 +268,8 @@ export type MemberAuthHost = {
   adminBotMeetingNudgeBusy?: boolean;
   adminBotMeetingNudgeError?: string | null;
   adminBotMeetingRosters?: import("../api/meetings.ts").MeetingRosters;
+  adminBotMemberDetails?: import("../controllers/member-detail.ts").AdminBotMemberDetails;
+  adminBotDuplicatePairs?: import("../controllers/member-detail.ts").AdminBotDuplicatePairs;
   calendarEvents?: import("../api/calendar.ts").CalendarEvent[];
   calendarEventsLoading?: boolean;
   calendarEventsError?: string | null;
@@ -710,6 +712,8 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotMeetingNudgeBusy = false;
   host.adminBotMeetingNudgeError = null;
   host.adminBotMeetingRosters = {};
+  host.adminBotMemberDetails = {};
+  host.adminBotDuplicatePairs = undefined;
   host.calendarEvents = undefined;
   host.calendarEventsLoading = false;
   host.calendarEventsError = null;
