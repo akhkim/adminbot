@@ -39,6 +39,7 @@ import {
 import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
 import { invalidateMemberMap, type MemberMap } from "../data/member-map.ts";
 import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
+import { paperScopeForTab, papersReadyFor } from "../papers-required.ts";
 import { type AdminQueueCounts, loadAdminQueues } from "./admin-queues.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
@@ -653,6 +654,12 @@ export type AdminBotDashboardData = {
   members: AdminBotLabMember[];
   papers: AdminBotPaperRecord[];
   papersLoadedAt: number | null;
+  /**
+   * When `papers` holds only the viewer's own papers (`GET /papers?scope=mine`, for the Profile
+   * and a plain member's Dashboard). papersLoadedAt stays null then, so a page that needs the
+   * whole list still reads it; see papers-required.ts.
+   */
+  ownPapersLoadedAt?: number | null;
   nudges: AdminBotPaperNudge[];
   /**
    * Who is going to each conference the lab has an accepted paper at.
@@ -849,6 +856,7 @@ export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
     members: [],
     papers: [],
     papersLoadedAt: null,
+    ownPapersLoadedAt: null,
     nudges: [],
     settings: null,
     loadedAt: null,
@@ -1168,20 +1176,27 @@ async function loadAdminBotOverSession(
     // it first blanked the whole page for the length of the reload.
     host.adminBotData = { ...host.adminBotData, members: memberRows };
     host.requestUpdate?.();
-    const papers = includePapers ? await read("/papers") : undefined;
+    // A page that draws only the viewer's own papers reads only those, unless this session already
+    // holds the whole list -- then a reload keeps the whole list current for the pages that use it.
+    const paperScope = paperScopeForTab((host as { tab?: unknown }).tab, host.memberPrivilegeLevel);
+    const ownOnly = paperScope === "own" && !host.adminBotData.papersLoadedAt;
+    const papers = includePapers
+      ? await read(ownOnly ? "/papers?scope=mine" : "/papers")
+      : undefined;
     if (!isCurrent()) {
       return;
     }
     // A load after the page was drawn is a reload (every write triggers one), which re-reads the
     // page's queues -- except a page's first paper read, which is navigation, not a write.
     const reloading =
-      Boolean(host.adminBotData.loadedAt) && !(includePapers && !host.adminBotData.papersLoadedAt);
+      Boolean(host.adminBotData.loadedAt) &&
+      !(includePapers && !papersReadyFor(host.adminBotData, paperScope));
+    const paperRows = readArray<AdminBotPaperRecord>(papers, "papers");
     host.adminBotData = {
       ...host.adminBotData,
       members: currentMemberRows(),
-      ...(includePapers
-        ? { papers: readArray<AdminBotPaperRecord>(papers, "papers"), papersLoadedAt: Date.now() }
-        : {}),
+      ...(includePapers && ownOnly ? { papers: paperRows, ownPapersLoadedAt: Date.now() } : {}),
+      ...(includePapers && !ownOnly ? { papers: paperRows, papersLoadedAt: Date.now() } : {}),
       // Admin queues still need their own read before the first dashboard is complete; a reload
       // keeps the previous stamp so the page stays drawn.
       loadedAt: mode === "general" ? Date.now() : host.adminBotData.loadedAt,
@@ -1307,7 +1322,7 @@ export async function loadAdminBot(
   mode: AdminBotLoadMode = loadStoredMemberSession() && host.memberPrivilegeLevel !== "admin"
     ? "general"
     : "admin",
-  includePapers = Boolean(host.adminBotData.papersLoadedAt),
+  includePapers = Boolean(host.adminBotData.papersLoadedAt || host.adminBotData.ownPapersLoadedAt),
   preserveRoster = false,
 ): Promise<void> {
   // A write may have changed a member row; the next roster-dependent tab reloads it on demand.

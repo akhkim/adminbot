@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type { UiSettings } from "../../storage.ts";
 import { clearStoredMemberSession, saveStoredMemberSession } from "../auth/session.ts";
+import { papersMissingFor } from "../papers-required.ts";
+import { ensureAdminQueuesForTab } from "./admin-queues.ts";
 import {
   ADMINBOT_SERVICE_UNREACHABLE_MESSAGE,
   createEmptyAdminBotDashboardData,
@@ -15,7 +17,6 @@ import {
   saveAdminBotPaper,
   type AdminBotHost,
 } from "./admin.js";
-import { ensureAdminQueuesForTab } from "./admin-queues.ts";
 import {
   approveAdminBotAction,
   removePendingAdminBotAction,
@@ -676,6 +677,67 @@ describe("loadAdminBot over the member session", () => {
 
       expect(host.adminBotData.proposals).toHaveLength(1);
       expect(host.adminBotData.emailReviews).toHaveLength(1);
+    });
+  });
+
+  describe("paper scope per page", () => {
+    function paperFetch() {
+      const fetchMock = routedFetch({
+        "/lab/members/self": () => json({ member: { id: "ada", name: "Ada Author" } }),
+        "/papers?scope=mine": () => json({ papers: [{ id: "mine" }] }),
+        "/papers": () => json({ papers: [{ id: "mine" }, { id: "theirs" }] }),
+      });
+      return () =>
+        fetchMock.mock.calls
+          .map(([url]) => new URL(String(url)))
+          .filter((url) => url.pathname === "/papers")
+          .map((url) => url.search);
+    }
+
+    it("reads only a plain member's own papers for the dashboard, and the lab list later", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "dashboard", memberPrivilegeLevel: "member" });
+      const paperReads = paperFetch();
+
+      await loadAdminBot(host, "general", true);
+      expect(paperReads()).toEqual(["?scope=mine"]);
+      expect(host.adminBotData.papers.map((paper) => paper.id)).toEqual(["mine"]);
+      // The scoped read is not mistaken for the whole list...
+      expect(host.adminBotData.papersLoadedAt).toBeNull();
+      expect(papersMissingFor(host)).toBe(false);
+      // ...so a page that needs every paper still reads it, and a write there keeps it whole.
+      Object.assign(host, { tab: "adminbotMembers" });
+      expect(papersMissingFor(host)).toBe(true);
+      await loadAdminBot(host, "general", true, true);
+      Object.assign(host, { tab: "dashboard" });
+      await loadAdminBot(host);
+      expect(paperReads()).toEqual(["?scope=mine", "", ""]);
+      expect(host.adminBotData.papers).toHaveLength(2);
+    });
+
+    it("re-reads the own papers after a write on the profile", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "profile", memberPrivilegeLevel: "member" });
+      const paperReads = paperFetch();
+
+      await loadAdminBot(host, "general", true);
+      await loadAdminBot(host);
+
+      expect(paperReads()).toEqual(["?scope=mine", "?scope=mine"]);
+    });
+
+    it("keeps the admin dashboard on the lab-wide list", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "dashboard", memberPrivilegeLevel: "admin" });
+      const paperReads = paperFetch();
+
+      await loadAdminBot(host, "general", true);
+
+      expect(paperReads()).toEqual([""]);
+      expect(host.adminBotData.papersLoadedAt).not.toBeNull();
     });
   });
 
