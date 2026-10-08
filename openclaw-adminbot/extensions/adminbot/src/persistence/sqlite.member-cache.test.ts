@@ -202,3 +202,24 @@ describe("stored onboarding", () => {
     expect(JSON.stringify(storedRow(file, "a"))).toBe(legacy);
   });
 });
+
+describe("lab member version", () => {
+  it("moves on this connection's writes and on another connection's commits, not on reads", () => {
+    const { file, store } = openStore();
+    store.saveLabMember(member("a", "Ada"));
+    const first = store.labMemberVersion();
+    store.listLabMembers();
+    expect(store.labMemberVersion()).toBe(first);
+
+    store.saveLabMember(member("b", "Bea"));
+    const second = store.labMemberVersion();
+    expect(second).not.toBe(first);
+
+    const other = new DatabaseSync(file);
+    other
+      .prepare("UPDATE adminbot_lab_members SET payload_json = ? WHERE id = 'a'")
+      .run(JSON.stringify(member("a", "Ada Lovelace")));
+    other.close();
+    expect(store.labMemberVersion()).not.toBe(second);
+  });
+});

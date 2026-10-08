@@ -1395,6 +1395,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return this.members.get(memberId);
   }
 
+  labMemberVersion(): number {
+    return this.members.version();
+  }
+
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[] {
     if (!page) {
       return [...this.members.list()];

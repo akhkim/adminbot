@@ -6,6 +6,8 @@ import { labMemberRowReader } from "../workflows/onboarding/onboarding-storage.j
 
 type Snapshot = {
   version: number;
+  /** Counts rebuilds, so it moves on this connection's writes too, which `data_version` does not. */
+  generation: number;
   members: readonly AdminBotLabMember[];
   byId: ReadonlyMap<string, AdminBotLabMember>;
   summaries?: readonly AdminBotLabMemberSummary[];
@@ -22,6 +24,7 @@ type Snapshot = {
  */
 export class SqliteLabMemberCache {
   private snapshot: Snapshot | undefined;
+  private generation = 0;
 
   constructor(private readonly db: DatabaseSync) {}
 
@@ -31,6 +34,11 @@ export class SqliteLabMemberCache {
 
   list(): readonly AdminBotLabMember[] {
     return this.current().members;
+  }
+
+  /** A token that changes whenever the parsed roster is rebuilt; equal tokens, same members. */
+  version(): number {
+    return this.current().generation;
   }
 
   get(memberId: string): AdminBotLabMember | undefined {
@@ -66,7 +74,13 @@ export class SqliteLabMemberCache {
         )
         .all() as Array<{ payload_json: string }>
     ).map((row) => read(row.payload_json));
-    this.snapshot = { version, members, byId: new Map(members.map((m) => [m.id, m])) };
+    this.generation += 1;
+    this.snapshot = {
+      version,
+      generation: this.generation,
+      members,
+      byId: new Map(members.map((m) => [m.id, m])),
+    };
     return this.snapshot;
   }
 }

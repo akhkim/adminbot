@@ -1238,15 +1238,23 @@ describe("AdminBot mock service", () => {
     const body = (await response.json()) as {
       mode: string;
       places: Array<{ label: string; members: Array<{ name: string; source: string }> }>;
-      unplaced: Array<{ name: string }>;
+      unplaced?: unknown;
+      unplaced_count: number;
     };
     expect(body.mode).toBe("full");
     expect(body.places[0]?.label).toBe("Toronto");
     expect(body.places[0]?.members[0]).toMatchObject({ name: "Ada", source: "roster" });
+    // The dashboard card needs how many, not who: the names come only on request.
+    expect(body.unplaced).toBeUndefined();
+    expect(body.unplaced_count).toBeGreaterThan(0);
+    const listed = (await (
+      await fetch(`${baseUrl}/member-map?unplaced=list`, { headers: serviceHeaders() })
+    ).json()) as { unplaced: Array<{ name: string }>; unplaced_count: number };
     // The full path still surfaces the unplaced name -- proving the two summary checks above
     // are actually testing something the admin view does show, not a name that was never in
     // the data to begin with.
-    expect(body.unplaced.map((entry) => entry.name)).toContain("Zedunia");
+    expect(listed.unplaced.map((entry) => entry.name)).toContain("Zedunia");
+    expect(listed.unplaced).toHaveLength(body.unplaced_count);
   });
 
   it("reports a 503 for a map refresh when no slack lookup is configured", async () => {
