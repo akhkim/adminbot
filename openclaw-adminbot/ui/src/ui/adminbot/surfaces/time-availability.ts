@@ -31,11 +31,12 @@ export function renderTimeAvailabilitySurface(state: AppViewState, scope: AdminB
   const selectedMemberId = state.adminBotTimeAvailabilityMemberId || (state.memberId ?? "");
   // The roster row is a list cell; an admin looking at somebody else reads their whole schedule.
   // Your own row is already whole, and a member never reads anyone else's through this view.
+  // The loader re-renders the host itself whenever it changes a record. Re-rendering again when it
+  // settles would loop: it settles at once for a record already read, in flight or failed, and
+  // every render asks again.
   const readDetail = (memberId: string, report: boolean, retry = false) => {
     if (accessRole === "admin" && memberId && memberId !== state.memberId) {
-      void loadAdminBotMemberDetail(state, memberId, { report, retry }).finally(() =>
-        requestHostUpdate?.(),
-      );
+      void loadAdminBotMemberDetail(state, memberId, { report, retry });
     }
   };
   // After this render, not inside it: the read marks itself pending on the host straight away.
