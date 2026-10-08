@@ -21,7 +21,6 @@ import type {
   AdminBotOpenReviewMilestoneRecord,
   AdminBotPaperRecord,
   AdminBotPasswordReset,
-  AdminBotRegistrationKind,
   AdminBotRegistrationStatus,
   AdminBotSettings,
   AdminBotStoredProposal,
@@ -135,18 +134,23 @@ import {
 } from "./reference-scans.js";
 import { SqliteAuditLog } from "./sqlite.audit.js";
 import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
+import { listSqliteMeetingsPage } from "./sqlite.meetings.js";
 import {
   MEMBER_ATTRIBUTION_COLUMNS,
   MEMBER_OWNED_COLUMNS,
   MEMBER_REFERENCE_COLUMNS,
 } from "./sqlite.member-columns.js";
-import { listSqliteMeetingsPage } from "./sqlite.meetings.js";
-import { SqliteTableVersions } from "./sqlite.table-versions.js";
+import {
+  REGISTRATION_COLUMNS,
+  rowToRegistration,
+  type AccountRegistrationRow,
+} from "./sqlite.registration-rows.js";
 import {
   listSqliteSocialDrafts,
   migrateSocialDraftColumns,
   saveSqliteSocialDraft,
 } from "./sqlite.social-drafts.js";
+import { SqliteTableVersions } from "./sqlite.table-versions.js";
 import { SqliteVenuePaperIndex } from "./sqlite.venue-papers.js";
 
 const require = createRequire(import.meta.url);
@@ -4140,35 +4144,4 @@ function optionalText(row: Record<string, unknown>, key: string): Record<string,
 
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
-}
-
-const REGISTRATION_COLUMNS = `SELECT id, kind, member_id, email, password_scrypt, profile_json, status, created_at, decided_at, decided_by
-  FROM adminbot_account_registrations`;
-
-type AccountRegistrationRow = {
-  id: string;
-  kind: AdminBotRegistrationKind;
-  member_id: string | null;
-  email: string;
-  password_scrypt: string;
-  profile_json: string | null;
-  status: AdminBotRegistrationStatus;
-  created_at: string;
-  decided_at: string | null;
-  decided_by: string | null;
-};
-
-function rowToRegistration(row: AccountRegistrationRow): AdminBotAccountRegistration {
-  return {
-    id: row.id,
-    kind: row.kind,
-    email: row.email,
-    password_scrypt: row.password_scrypt,
-    status: row.status,
-    created_at: row.created_at,
-    ...(row.member_id ? { member_id: row.member_id } : {}),
-    ...(row.profile_json ? { profile_json: row.profile_json } : {}),
-    ...(row.decided_at ? { decided_at: row.decided_at } : {}),
-    ...(row.decided_by ? { decided_by: row.decided_by } : {}),
-  };
 }
