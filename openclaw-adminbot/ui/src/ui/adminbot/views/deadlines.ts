@@ -48,6 +48,7 @@ import {
   type Urgency,
 } from "../data/deadline-time.ts";
 import { DEADLINE_VENUES, type DeadlineMilestone, type DeadlineVenue } from "../data/deadlines.ts";
+import { milestoneEndInstant } from "../data/milestone-time.ts";
 import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
 import { renderDateControl } from "../date-control.ts";
 import { renderDeadlineDate, renderDeadlineDateLabel } from "./deadline-date.ts";
@@ -330,31 +331,6 @@ export function milestoneDateLabel(entry: DeadlineMilestone, displayZone?: strin
     : plainDateLabel(entry.date ?? "");
 }
 
-/**
- * When a stage stops being something still ahead.
- *
- * Schedule dates are calendar days, not AoE timestamps, so a day is spent only once it is over:
- * read as 23:59:59 in the same AoE frame the submissions use. A period ends when its last day
- * does -- a conference running through Friday is still happening on Friday.
- */
-export function milestoneEndInstant(milestone: DeadlineMilestone): number {
-  if (milestone.planning_at) {
-    return Date.parse(milestone.planning_at);
-  }
-  if (/(?:Z|[+-]\d{2}:\d{2})$/u.test(milestone.date ?? "")) {
-    return Date.parse(milestone.date!);
-  }
-  const value =
-    milestone.kind === "period"
-      ? (milestone.ends ?? milestone.starts ?? "")
-      : (milestone.date ?? "");
-  const day = /(\d{4})-(\d{2})-(\d{2})/u.exec(value)?.[0];
-  if (!day) {
-    return Number.NaN;
-  }
-  return aoeInstantMs(/[ T]\d{2}:\d{2}/u.test(value) ? value : `${day} 23:59:59`);
-}
-
 /** One dated stage of a venue, as the board counts down to it. */
 export type DeadlineStage = {
   key: string;
@@ -383,6 +359,23 @@ export function venueStages(
   venue: DeadlineVenue,
   displayZone?: string,
   venues: readonly DeadlineVenue[] = [],
+): readonly DeadlineStage[] {
+  // The clock is not an input, and the board asks for every row on its one-second tick.
+  const byZone =
+    stagesCache.get(venues) ?? new Map<string, WeakMap<DeadlineVenue, DeadlineStage[]>>();
+  const byVenue = byZone.get(displayZone ?? "") ?? new WeakMap<DeadlineVenue, DeadlineStage[]>();
+  stagesCache.set(venues, byZone.set(displayZone ?? "", byVenue));
+  const stages = byVenue.get(venue) ?? computeVenueStages(venue, displayZone, venues);
+  byVenue.set(venue, stages);
+  return stages;
+}
+// Keyed by the dataset array, which a reload replaces rather than edits.
+const stagesCache = new WeakMap<object, Map<string, WeakMap<DeadlineVenue, DeadlineStage[]>>>();
+
+function computeVenueStages(
+  venue: DeadlineVenue,
+  displayZone: string | undefined,
+  venues: readonly DeadlineVenue[],
 ): DeadlineStage[] {
   const stages: DeadlineStage[] = [];
   const submission = deadlineInstantMs(venue);

@@ -5539,6 +5539,7 @@ describe("AdminBotService", () => {
       unwrap(
         service.upsertLabMember({
           receives_nudges: true,
+          member_type: "full",
           id: "ada",
           name: "Ada",
           birthday: "03-14",
@@ -5551,6 +5552,7 @@ describe("AdminBotService", () => {
       unwrap(
         service.upsertLabMember({
           receives_nudges: true,
+          member_type: "full",
           id: "ada",
           name: "Ada Attendee",
           birthday: "03-14",
@@ -5564,6 +5566,7 @@ describe("AdminBotService", () => {
       unwrap(
         service.upsertLabMember({
           receives_nudges: true,
+          member_type: "full",
           id: "ada",
           name: "Ada",
           birthday: "03-14",
@@ -5572,12 +5575,13 @@ describe("AdminBotService", () => {
       unwrap(
         service.upsertLabMember({
           receives_nudges: true,
+          member_type: "full",
           id: "ada",
           name: "Ada",
           birthday: "03-15",
         }),
       );
-      expect(birthdayProposals(service)).toHaveLength(2);
+      expect(birthdayProposals(service)).toHaveLength(1);
     });
 
     it("proposes nothing for a member without a birthday", () => {
@@ -5585,6 +5589,84 @@ describe("AdminBotService", () => {
       unwrap(service.upsertLabMember({ receives_nudges: true, id: "ada", name: "Ada" }));
       expect(birthdayProposals(service)).toHaveLength(0);
     });
+
+    it("creates on gaining eligibility and withdraws pending events on losing it", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "birthday-member",
+          name: "Test",
+          birthday: "03-14",
+          member_type: "coauthor-minor",
+        }),
+      );
+      expect(birthdayProposals(service)).toHaveLength(0);
+      unwrap(
+        service.upsertLabMember({
+          id: "birthday-member",
+          name: "Test",
+          member_type: "coauthor-major",
+        }),
+      );
+      expect(birthdayProposals(service)).toHaveLength(1);
+      unwrap(
+        service.upsertLabMember({
+          id: "birthday-member",
+          name: "Test",
+          member_type: "coauthor-minor",
+        }),
+      );
+      expect(birthdayProposals(service)).toHaveLength(0);
+      unwrap(service.upsertLabMember({ id: "birthday-member", name: "Test", member_type: "full" }));
+      expect(birthdayProposals(service)).toHaveLength(1);
+    });
+
+    it.each(["role", "clear", "delete"])(
+      "queues exact recurring-event removal for %s",
+      async (change) => {
+        const service = new AdminBotService(undefined, {
+          executor: {
+            execute: async () => ({ handled: true, artifacts: { event_id: "birthday-series" } }),
+          },
+        });
+        unwrap(
+          service.upsertLabMember({
+            id: "birthday-member",
+            name: "Test",
+            birthday: "03-14",
+            member_type: "full",
+          }),
+        );
+        const proposal = birthdayProposals(service)[0];
+        unwrap(
+          service.approve(proposal.id, {
+            payload_hash: proposal.payload_hash,
+            approver_role: "admin",
+          }),
+        );
+        unwrap(await service.execute(proposal.id, { dry_run: false }));
+        if (change === "delete")
+          unwrap(
+            service.deleteLabMember({ memberId: "birthday-member", actorId: "admin", force: true }),
+          );
+        else
+          unwrap(
+            service.upsertLabMember({
+              id: "birthday-member",
+              name: "Test",
+              ...(change === "role" ? { member_type: "coauthor-minor" } : { birthday: "" }),
+            }),
+          );
+        const removals = unwrap(service.listPending()).proposals.filter(
+          (p) => p.type === "calendar.cancel",
+        );
+        expect(removals).toHaveLength(1);
+        expect(removals[0].proposed_payload).toEqual(
+          expect.objectContaining({ event_id: "birthday-series" }),
+        );
+        expect(removals[0].status).toBe("pending");
+      },
+    );
 
     it("rejects a birthday carrying a year", () => {
       const service = new AdminBotService();

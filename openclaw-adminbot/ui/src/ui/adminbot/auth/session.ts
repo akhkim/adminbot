@@ -7,6 +7,7 @@
 import { getSafeLocalStorage } from "../../../local-storage.ts";
 import type { UiSettings } from "../../storage.ts";
 import { normalizeOptionalString } from "../../string-coerce.ts";
+import { readApiJson } from "../data/api-json.ts";
 import type { AvailabilityRow, TimeOffRow } from "../data/availability.js";
 import { configureDraftSync } from "../offline/draft-sync.ts";
 import {
@@ -314,14 +315,6 @@ function parseRetryAfterSeconds(body: unknown, response: Response): number | und
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export async function readJson(response: Response): Promise<unknown> {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
 // Maps AdminBot HTTP status codes onto the closed AuthErrorKind set. `weakOn400`
 // distinguishes claim/signup (400 = weak password) from login (no 400 contract);
 // `pendingOn403` folds login's pending-approval code out of the generic 403.
@@ -452,7 +445,7 @@ export async function authedJson(
   }
   const offlineScope = await offlineScopePromise;
   if (lastAuthedCall === call && offlineScope) lastAuthedCall = { ...call, offlineScope };
-  const body = await readJson(response);
+  const body = await readApiJson(response);
   const serviceMessage = (body as { error?: { message?: unknown } } | null)?.error?.message;
   if (
     method === "GET" &&
@@ -686,7 +679,7 @@ export async function fetchRelevantPapers(
   } catch {
     return { ok: false, kind: "unreachable" };
   }
-  const body = await readJson(response);
+  const body = await readApiJson(response);
   if (!response.ok) {
     return { ok: false, ...mapErrorResponse(response, body, { weakOn400: false }) };
   }
@@ -711,7 +704,7 @@ export async function fetchPendingRegistrations(
   } catch {
     return { ok: false, kind: "unreachable" };
   }
-  const body = await readJson(response);
+  const body = await readApiJson(response);
   if (!response.ok) {
     if (response.status === 403) {
       return { ok: false, kind: "forbidden" };
@@ -865,7 +858,7 @@ export async function fetchRoster(
   } catch {
     return { ok: false, kind: "unreachable" };
   }
-  const body = await readJson(response);
+  const body = await readApiJson(response);
   if (!response.ok) {
     return { ok: false, ...mapErrorResponse(response, body, { weakOn400: false }) };
   }
@@ -918,7 +911,7 @@ export async function fetchMemberSession(
     }
     return { ok: false, kind: "unreachable" };
   }
-  const body = await readJson(response);
+  const body = await readApiJson(response);
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
       const scope = await resolveOfflineScope(baseUrl, token);

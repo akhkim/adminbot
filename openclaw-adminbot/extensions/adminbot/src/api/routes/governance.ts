@@ -16,12 +16,13 @@ import {
   privilegedOnly,
   requireMemberPrivileged,
 } from "./guards.js";
+import { limitParam } from "./query-params.js";
 import { get, post, type Route } from "./router.js";
 
 export const governanceRoutes: readonly Route[] = [
   post("/proposals", async ({ req, res, ctx }) => {
     const { service } = ctx;
-    const body = (await readJson(req)) as AdminBotActionProposal;
+    const body = (await readJson(req, 3_000_000)) as AdminBotActionProposal;
     sendServiceResult(res, service.createProposal(body));
   }),
   post("/privacy/tasks", async ({ req, res, ctx }) => {
@@ -92,9 +93,9 @@ export const governanceRoutes: readonly Route[] = [
   ),
   get(
     "/audit",
-    privilegedOnly(({ res, ctx }) => {
-      const { service } = ctx;
-      sendJson(res, 200, { events: service.listAuditEvents() });
+    privilegedOnly(({ res, url, ctx }) => {
+      const events = ctx.service.listAuditEvents();
+      sendJson(res, 200, { events: events.slice(-(limitParam(url) ?? events.length)) });
     }),
   ),
 ];

@@ -3,6 +3,7 @@
 //
 // Its own file rather than more of service.test.ts, which is already the longest in the extension.
 import { describe, expect, it, vi } from "vitest";
+import { AdminBotMemoryStore } from "../persistence/memory.js";
 import { AdminBotService } from "./service.js";
 
 function unwrap<T>(
@@ -765,4 +766,87 @@ it("queues an author's feedback with reason and deadlines without publication ap
     }),
   );
   expect(unwrap(service.listPiReviewQueue()).papers).toHaveLength(0);
+});
+
+describe("roster reads on the all-paper sweeps", () => {
+  // Every roster read parses every member's whole payload (avatars included), so a sweep that
+  // re-reads it per paper costs seconds on the real lab and blocks the synchronous store meanwhile.
+  it("reads the roster once per sweep, not once per paper", async () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    seed(service);
+    for (const id of ["p2", "p3", "p4"]) {
+      unwrap(
+        service.upsertPaper({
+          id,
+          title: `Paper ${id}`,
+          authors: ["Ada Lovelace", "Bob Coauthor"],
+          current_step: "overleaf_writing",
+        }),
+      );
+    }
+    const reads = vi.spyOn(store, "listLabMembers");
+    for (const sweep of [
+      () => service.listPaperSlotOverview(),
+      () => service.collectPaperNudgeBatches(),
+      () => service.collectWeeklyUpdateGaps(),
+    ]) {
+      reads.mockClear();
+      unwrap(sweep());
+      expect(reads.mock.calls.length).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe("PI review completion authorization", () => {
+  it("lets only the configured PI complete feedback or approve publication", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(service.updateSettings({ head_professor_member_id: "ada" }));
+    const input = {
+      value_text: JSON.stringify({
+        reason: "Review please",
+        url: "https://overleaf.com/project/test",
+        reviewed: true,
+        review_note: "Looks ready",
+      }),
+    };
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "feedback_arxiv",
+        input,
+        memberId: "bob",
+        privileged: true,
+      }).status,
+    ).toBe(403);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        input: { done: true },
+        memberId: "bob",
+        privileged: true,
+      }).status,
+    ).toBe(403);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "feedback_arxiv",
+        input,
+        memberId: "ada",
+        privileged: true,
+      }).ok,
+    ).toBe(true);
+    expect(unwrap(service.listPiReviewQueue()).papers).toEqual([]);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        input: { done: true },
+        memberId: "ada",
+        privileged: true,
+      }).ok,
+    ).toBe(true);
+  });
 });

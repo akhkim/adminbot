@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../contracts/actions.js";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
-import { createAdminBotSqliteService } from "./sqlite.js";
+import { createAdminBotSqliteService, sqliteServiceOptions } from "./sqlite.js";
 
 const tempDirs: string[] = [];
 
@@ -31,6 +31,81 @@ function unwrap<T>(
 }
 
 describe("AdminBotSqliteStore", () => {
+  it("retains stage-specific X figures across reopen and supersedes only the same stage", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(
+      first.service.upsertPaper({
+        id: "x-paper",
+        title: "Synthetic paper",
+        authors: ["Synthetic Author"],
+        current_step: "overleaf_writing",
+      }),
+    );
+    const release = unwrap(
+      first.service.saveSocialDraft({
+        paperId: "x-paper",
+        platform: "x",
+        body: "ignored",
+        memberId: "test",
+        privileged: true,
+        xThread: {
+          stage: "arxiv",
+          posts: [
+            {
+              text: "1/1 Release",
+              images: [
+                { data_uri: "data:image/png;base64,iVBORw0KGgo=", alt_text: "Synthetic figure" },
+              ],
+            },
+          ],
+        },
+      }),
+    ).draft;
+    const poster = unwrap(
+      first.service.saveSocialDraft({
+        paperId: "x-paper",
+        platform: "x",
+        body: "",
+        memberId: "test",
+        privileged: true,
+        xThread: { stage: "poster", posts: [{ text: "1/1 Come chat" }] },
+      }),
+    ).draft;
+    first.close();
+    const second = createAdminBotSqliteService({ databasePath });
+    try {
+      expect(second.store.listSocialDrafts(undefined, release.id)[0]).toMatchObject({
+        body: "1/1 Release",
+        status: "draft",
+        x_thread: { stage: "arxiv", posts: [{ images: [{ alt_text: "Synthetic figure" }] }] },
+      });
+      unwrap(
+        second.service.saveSocialDraft({
+          paperId: "x-paper",
+          platform: "x",
+          body: "",
+          memberId: "test",
+          privileged: true,
+          xThread: { stage: "poster", posts: [{ text: "1/1 Updated poster" }] },
+        }),
+      );
+      expect(second.store.listSocialDrafts(undefined, poster.id)[0].status).toBe("superseded");
+      expect(second.store.listSocialDrafts(undefined, release.id)[0].status).toBe("draft");
+      expect(
+        second.service.saveSocialDraft({
+          paperId: "x-paper",
+          platform: "x",
+          body: "",
+          memberId: "test",
+          privileged: false,
+          xThread: { stage: "arxiv", posts: [{ text: "Unauthorized edit" }] },
+        }),
+      ).toMatchObject({ ok: false, status: 403 });
+    } finally {
+      second.close();
+    }
+  });
   it("preserves the injected Drive checker in the durable service", async () => {
     const seen: string[] = [];
     const durable = createAdminBotSqliteService({
@@ -830,5 +905,32 @@ describe("AdminBotSqliteStore", () => {
       scope: "paper records",
     });
     second.close();
+  });
+});
+
+describe("sqliteServiceOptions", () => {
+  // An allowlist here once dropped these, so they worked against the memory store in tests and
+  // silently did nothing in production.
+  it("forwards every wired service option, not just an allowlist", () => {
+    const deadlineDataset = () => [];
+    const arxivProbe = { probe: async () => ({ ok: true }) } as never;
+    const openReviewProbe = { probe: async () => ({ ok: true }) } as never;
+    const reviewSlackProfilePhoto = (async () => ({})) as never;
+    const options = sqliteServiceOptions({
+      databasePath: "/unused.sqlite",
+      auditRetentionDays: 30,
+      deadlineDataset,
+      arxivProbe,
+      openReviewProbe,
+      reviewSlackProfilePhoto,
+    });
+    expect(options).toMatchObject({
+      auditRetentionDays: 30,
+      deadlineDataset,
+      arxivProbe,
+      openReviewProbe,
+      reviewSlackProfilePhoto,
+    });
+    expect(options).not.toHaveProperty("databasePath");
   });
 });
