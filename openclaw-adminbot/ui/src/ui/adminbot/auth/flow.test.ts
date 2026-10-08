@@ -339,7 +339,7 @@ describe("memberPrivilegeLevel wiring", () => {
       adminBotLocationDrift: { current_city: "A's city" } as never,
       adminBotLocationDrifts: [{ current_city: "A's city" }] as never,
       adminBotMeetings: [{ id: "A's meeting", recording: { passcode: "private" } }] as never,
-      adminBotMeetingsVisibleCount: 24,
+      adminBotMeetingsVisibleCount: 20,
       adminBotMeetingsNextCursor: { started_at: "2026-08-12T14:00:00Z", id: "A's meeting" },
       adminBotMeetingsLoadingMore: true,
       adminBotMeetingNudgePreview: { members: [{ id: "a" }] } as never,
@@ -406,7 +406,7 @@ describe("memberPrivilegeLevel wiring", () => {
     expect(host.adminBotLocationDrift).toBeUndefined();
     expect(host.adminBotLocationDrifts).toBeUndefined();
     expect(host.adminBotMeetings).toBeUndefined();
-    expect(host.adminBotMeetingsVisibleCount).toBe(12);
+    expect(host.adminBotMeetingsVisibleCount).toBe(10);
     expect(host.adminBotMeetingsNextCursor).toBeNull();
     expect(host.adminBotMeetingsLoadingMore).toBe(false);
     expect(host.adminBotMeetingNudgePreview).toBeNull();
@@ -443,8 +443,6 @@ describe("memberPrivilegeLevel wiring", () => {
 
 describe("onboarding checklist acknowledgement", () => {
   const onboarding = {
-    completed: [],
-    remaining: [],
     steps: [
       {
         id: "profile_photo",
@@ -797,8 +795,6 @@ describe("toggleOnboardingStep", () => {
     saveStoredMemberSession({ sessionToken: "sess-tok", expiresAt: "later" });
     const refreshed = {
       steps: [{ id: "linkedin", status: "complete", label: "Connect on LinkedIn" }],
-      completed: [],
-      remaining: [],
     };
     const spy = vi
       .spyOn(globalThis, "fetch")

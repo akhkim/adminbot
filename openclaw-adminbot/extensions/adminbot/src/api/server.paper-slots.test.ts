@@ -206,16 +206,21 @@ describe("the paper-evidence reads", () => {
     const { baseUrl } = await startLab();
     const result = await call(baseUrl, "GET", "/papers/slot-overview");
     expect(result.status).toBe(200);
-    expect(result.body.papers[0]).toMatchObject({
+    expect(result.body.papers[0]).toEqual({
       paper_id: "p1",
-      venue: "ICLR 2027",
       provided_count: 0,
+      required_count: expect.any(Number),
       // Only the one thing that is actually askable: everything else is behind it.
       missing_slots: ["project_folder"],
-      first_author_member_id: "ada",
       dormant: false,
       closed: false,
+      cycle_closed: false,
+      escalating: false,
     });
+    // The paper's own fields stay on the paper: the page already holds them from GET /papers,
+    // and repeating them here cost every row of a 1000-paper lab another 330 bytes.
+    expect(result.body.papers[0]).not.toHaveProperty("title");
+    expect(result.body.papers[0]).not.toHaveProperty("attendance");
   });
 
   it("returns all 28 slots for one paper, blanks included", async () => {
@@ -223,6 +228,36 @@ describe("the paper-evidence reads", () => {
     const result = await call(baseUrl, "GET", "/papers/p1/slots");
     expect(result.status).toBe(200);
     expect(result.body.slots).toHaveLength(28);
+  });
+});
+
+describe("reading one paper", () => {
+  it("returns the paper in the list's projection, and 404 for one that does not exist", async () => {
+    const { baseUrl } = await startLab();
+    const one = await call(baseUrl, "GET", "/papers/p1");
+    expect(one.status).toBe(200);
+    expect(one.body).toMatchObject({ id: "p1", current_step: "overleaf_writing" });
+    expect(one.body).not.toHaveProperty("timeline");
+    const listed = await call(baseUrl, "GET", "/papers");
+    expect(listed.body.papers.find((paper: { id: string }) => paper.id === "p1")).toEqual(one.body);
+    expect((await call(baseUrl, "GET", "/papers/nope")).status).toBe(404);
+    // The literal reads beside it are still theirs, not swallowed as a paper id.
+    expect((await call(baseUrl, "GET", "/papers/nudges")).body).toHaveProperty("nudges");
+    expect((await call(baseUrl, "GET", "/papers/slot-overview")).body).toHaveProperty("papers");
+  });
+
+  it("refuses the arXiv password as an artifact and takes it on its slot instead", async () => {
+    const { baseUrl } = await startLab();
+    const put = await call(baseUrl, "PUT", "/papers/p1", {
+      title: "Causal abstraction",
+      authors: ["Ada Lovelace"],
+      current_step: "arxiv_polish",
+      artifacts: { arxiv_paper_password: "ab12cd" },
+    });
+    expect(put.status).toBe(400);
+    expect((await call(baseUrl, "GET", "/papers/p1")).body.artifacts ?? {}).not.toHaveProperty(
+      "arxiv_paper_password",
+    );
   });
 });
 
@@ -486,8 +521,10 @@ describe("the global nudge, end to end", () => {
       member_id: "ada",
       member_name: "Ada Lovelace",
       deliverable: true,
-      paper_titles: ["Causal abstraction"],
+      // A count: the titles are already in the message the preview quotes in full.
+      paper_count: 1,
     });
+    expect(preview.body.batches[0]).not.toHaveProperty("paper_titles");
     // The composed message, verbatim -- the preview is the send, looked at rather than performed.
     expect(preview.body.batches[0].message).toContain("Project folder or brainstorm doc");
     expect(sent).toHaveLength(0);

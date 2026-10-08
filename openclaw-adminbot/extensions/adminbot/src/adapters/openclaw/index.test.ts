@@ -396,35 +396,6 @@ describe("AdminBot tool handlers", () => {
                 title: "Paper One",
                 authors: ["alice"],
                 current_step: "social_posts",
-                timeline: {
-                  progress_percent: 69,
-                  current_step_index: 5,
-                  total_estimated_business_days: 16,
-                  items: [
-                    {
-                      step: "social_posts",
-                      label: "Announcements",
-                      dependency_group: "outreach",
-                      depends_on: ["arxiv_polish"],
-                      status: "current",
-                      offset_start_business_day: 11,
-                      offset_end_business_day: 12,
-                      duration_business_days: 1,
-                      color: "#db2777",
-                    },
-                    {
-                      step: "slide_making",
-                      label: "Slides",
-                      dependency_group: "materials",
-                      depends_on: ["social_posts"],
-                      status: "upcoming",
-                      offset_start_business_day: 12,
-                      offset_end_business_day: 14,
-                      duration_business_days: 2,
-                      color: "#d97706",
-                    },
-                  ],
-                },
                 created_at: "2026-06-01T00:00:00.000Z",
                 updated_at: "2026-06-01T00:00:00.000Z",
               },
@@ -475,11 +446,15 @@ describe("AdminBot tool handlers", () => {
           action: "send",
           channel: "slack",
           target: "user:U123",
-          timeline: expect.objectContaining({ progress_percent: 69 }),
+          // Derived from `current_step`; the API no longer sends a computed timeline.
+          message: expect.stringContaining(
+            "Current step: Announcements. Timeline progress: 69%. Next dependency: Slides.",
+          ),
         }),
         idempotency_key: "nudge-paper-1",
       }),
     });
+    expect(calls.at(-1)?.body).not.toHaveProperty("proposed_payload.timeline");
   });
   it("maps settings and paper list helpers to the service endpoints", async () => {
     const { fetchImpl, calls } = captureFetch();
@@ -569,7 +544,7 @@ describe("AdminBot tool handlers", () => {
       },
     });
     expect(calls[1]).toEqual({
-      url: "http://127.0.0.1:8765/papers/nudges?now=2026-06-04T00%3A00%3A00.000Z",
+      url: "http://127.0.0.1:8765/papers/nudges?limit=100&now=2026-06-04T00%3A00%3A00.000Z",
       body: undefined,
     });
   });

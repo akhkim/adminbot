@@ -1305,12 +1305,10 @@ class AdminbotDeadlinesView extends LitElement {
     }
     if (changed.has("proposalStore")) {
       void this.loadPublishedDeadlines();
-      if (this.accessRole !== "anonymous" && this.memberId) {
-        void this.loadProposals();
-      }
     }
+    // One read however many of these changed: the first render sets all three at once.
     if (
-      (changed.has("accessRole") || changed.has("memberId")) &&
+      (changed.has("proposalStore") || changed.has("accessRole") || changed.has("memberId")) &&
       this.accessRole !== "anonymous" &&
       this.memberId
     ) {

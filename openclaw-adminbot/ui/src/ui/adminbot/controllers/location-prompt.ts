@@ -7,6 +7,11 @@ import { answerLocationPrompt, fetchLocationDrifts, fetchLocationPrompt } from "
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { loadAdminBot, type AdminBotHost } from "./admin.ts";
 
+let promptInFlight: { token: string; request: ReturnType<typeof fetchLocationPrompt> } | null =
+  null;
+let driftsInFlight: { token: string; request: ReturnType<typeof fetchLocationDrifts> } | null =
+  null;
+
 function sameSession(token: string): boolean {
   return loadStoredMemberSession()?.sessionToken === token;
 }
@@ -17,7 +22,20 @@ export async function loadAdminBotLocationPrompt(host: AdminBotHost): Promise<vo
     return;
   }
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
-  const result = await fetchLocationPrompt(stored.sessionToken, baseUrl);
+  // The render pass asks while the answer is undefined, so every render before it lands would start
+  // another identical request. Tracked by token, not on the host, so a member who signs in while
+  // the previous one's request is in flight still gets asked.
+  //
+  // A repeat ask waits on the request in flight rather than returning at once. The render pass
+  // re-renders when its ask settles, so an ask that settled immediately would re-render, ask again
+  // and settle again -- a microtask loop that starves the very response it is waiting for.
+  if (promptInFlight?.token !== stored.sessionToken) {
+    const request = fetchLocationPrompt(stored.sessionToken, baseUrl).finally(() => {
+      if (promptInFlight?.request === request) promptInFlight = null;
+    });
+    promptInFlight = { token: stored.sessionToken, request };
+  }
+  const result = await promptInFlight.request;
   if (!sameSession(stored.sessionToken)) {
     return;
   }
@@ -70,10 +88,17 @@ export async function loadAdminBotLocationDrifts(host: AdminBotHost): Promise<vo
   if (!stored) {
     return;
   }
-  const result = await fetchLocationDrifts(
-    stored.sessionToken,
-    resolveAdminBotBaseUrl(host.settings),
-  );
+  // Same render-pass guard as the prompt above, waiting on the request in flight for the same reason.
+  if (driftsInFlight?.token !== stored.sessionToken) {
+    const request = fetchLocationDrifts(
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    ).finally(() => {
+      if (driftsInFlight?.request === request) driftsInFlight = null;
+    });
+    driftsInFlight = { token: stored.sessionToken, request };
+  }
+  const result = await driftsInFlight.request;
   if (!sameSession(stored.sessionToken)) {
     return;
   }

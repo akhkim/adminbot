@@ -508,7 +508,8 @@ export function renderMemberMapWebUi(): string {
 
     async function load() {
       try {
-        const data = await api("/member-map");
+        // This page lists the unplaced by name so the gazetteer can be extended; ask for them.
+        const data = await api("/member-map?unplaced=list");
         // Reading and reacting to individual member locations by name is the privileged action;
         // triggering a real Slack lookup on their behalf is too, so both stay admin-only.
         document.getElementById("map-refresh").hidden = data.mode !== "full";

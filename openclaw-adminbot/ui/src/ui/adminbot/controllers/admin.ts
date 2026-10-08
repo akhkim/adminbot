@@ -16,6 +16,7 @@ import type { LabBroadcast } from "../api/lab-sharing.ts";
 import {
   type MeetingRecord,
   type MeetingCursor,
+  type MeetingRosters,
   type MeetingAttendanceNudgePreview,
   type MeetingAttendanceNudgeResult,
   fetchStandingMeetings,
@@ -39,6 +40,8 @@ import {
 import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
 import { invalidateMemberMap, type MemberMap } from "../data/member-map.ts";
 import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
+import { paperScopeForTab, papersReadyFor } from "../papers-required.ts";
+import { type AdminQueueCounts, type AdminQueuePages, loadAdminQueues } from "./admin-queues.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
 
@@ -82,7 +85,8 @@ export type AdminBotLabMember = {
   // Whether AdminBot may write to this person at all. Absent reads as no: the list is one the lab
   // adds to, so a row nobody has decided about is silent. See adminBotReceivesNudges.
   receives_nudges?: boolean;
-  access: AdminBotAccessGrant[];
+  /** Owner-only, and absent from the summary and paged roster reads. */
+  access?: AdminBotAccessGrant[];
   role?: string;
   status?: AdminBotMemberStatus;
   research_branch?: string;
@@ -181,6 +185,8 @@ export type AdminBotVenueSearchResult = {
 export type AdminBotVenuePapersState = {
   sources: AdminBotVenueSourceView[];
   loadingSources: boolean;
+  /** The list has been answered, if only with nothing; `sources` being empty does not say so. */
+  sourcesLoaded: boolean;
   venueId: string;
   categories: VenuePaperCategory[];
   loadingCategories: boolean;
@@ -201,6 +207,7 @@ export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
   return {
     sources: [],
     loadingSources: false,
+    sourcesLoaded: false,
     venueId: "",
     categories: [],
     loadingCategories: false,
@@ -214,21 +221,17 @@ export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
   };
 }
 
-/** One lab paper placed against the query. Mirrors LabPaperRelevance in the service. */
+/**
+ * One lab paper placed against the query. Mirrors LabPaperHitWire in the service, which leaves
+ * off the raw and centered scores the page never draws (the bar comes from `margin`).
+ */
 export type AdminBotLabPaperHit = {
   paper_id: string;
   title: string;
-  score: number;
   margin: number;
   band: "core" | "related" | "peripheral" | "off_topic";
-  segments: Array<{
-    segment_id: string;
-    label: string;
-    score: number;
-    margin: number;
-    band: string;
-  }>;
-  best_segment?: { segment_id: string; label: string; score: number; margin: number; band: string };
+  segments: Array<{ segment_id: string; label: string; band: string }>;
+  best_segment?: { segment_id: string; label: string; band: string };
   matched_terms: string[];
   /** How much text the placement was made from. Most records are `title_only`. */
   evidence: "rich" | "thin" | "title_only";
@@ -239,9 +242,10 @@ export type AdminBotLabPaperReport = {
   segment_count: number;
   scored: number;
   matches: AdminBotLabPaperHit[];
-  off_topic: AdminBotLabPaperHit[];
+  /** How many papers missed. The misses themselves are not sent; nothing lists them. */
+  off_topic_count?: number;
   nothing_relevant: boolean;
-  uncovered_segments: Array<{ id: string; label: string; text: string }>;
+  uncovered_segments: Array<{ id: string; label: string }>;
 };
 
 export type AdminBotLabPapersState = {
@@ -259,17 +263,15 @@ export function createEmptyLabPapersState(): AdminBotLabPapersState {
 }
 
 export type WorkshopNudgeRecommendation = {
-  pair_id: string;
+  /** Which entry of the service's `workshops` map `workshop` was restored from. */
+  workshop_id?: string;
   final_rank?: number;
-  match_rationale: string;
   topic_relevance: number;
   topic_evidence: string[];
   rank_explanation: string;
-  draft_fragment?: string;
   paper: {
     paper_id: string;
     title: string;
-    year?: number;
     current_submission_state?: string;
     publication_sources: string[];
     recipient_display_name?: string;
@@ -277,17 +279,14 @@ export type WorkshopNudgeRecommendation = {
   workshop: {
     workshop_id: string;
     name: string;
-    parent_conference_key: string;
     parent_conference: string;
     conference_location: string;
-    topics: string[];
     archival_status: "archival" | "non_archival" | "mixed" | "unknown";
     cross_submission_status: "allowed" | "prohibited" | "unclear";
     cross_submission_evidence: string;
     cross_submission_source_url: string;
     profile_extracted_at: string;
     routes: Array<{
-      deadline_id: string;
       label: string;
       submission_type: string;
       deadline_aoe: string;
@@ -316,8 +315,6 @@ export type WorkshopNudgeResult = {
     recommendations: WorkshopNudgeRecommendation[];
     draft: {
       text: string;
-      pair_ids: string[];
-      recommendations: WorkshopNudgeRecommendation[];
     } | null;
   }>;
   unresolved_recipients: Array<{
@@ -477,14 +474,6 @@ export type AdminBotPaperSaveInput = {
   googleSlidesUrl?: string;
   posterUrl?: string;
   /**
-   * arXiv's own per-paper password, which coauthors need to claim ownership of a submission.
-   *
-   * Plain text on a record every coauthor can read, and it rides in `artifacts` like the links
-   * beside it -- so it is as readable as the paper's Overleaf URL, and no more protected. That is
-   * the trade the lab asked for: the alternative was a column that silently accepted nothing.
-   */
-  arxivPaperPassword?: string;
-  /**
    * Conference pre-registration, JSON-encoded. See venue-targets.ts for the shape and for why it
    * lives in `artifacts` rather than a column: the service merges that map on write, so this
    * needs no schema change and becomes a backfill once the table exists.
@@ -532,25 +521,6 @@ export type AdminBotPaperStep =
   | "social_posts"
   | "slide_making"
   | "poster_making";
-export type AdminBotPaperTimelineItem = {
-  step: AdminBotPaperStep;
-  label: string;
-  dependency_group: string;
-  depends_on: AdminBotPaperStep[];
-  status: "complete" | "current" | "upcoming" | "blocked";
-  offset_start_business_day: number;
-  offset_end_business_day: number;
-  duration_business_days: number;
-  color: string;
-};
-
-export type AdminBotPaperTimeline = {
-  progress_percent: number;
-  current_step_index: number;
-  total_estimated_business_days: number;
-  items: AdminBotPaperTimelineItem[];
-};
-
 export type AdminBotPaperRecord = {
   id: string;
   title: string;
@@ -606,7 +576,6 @@ export type AdminBotPaperRecord = {
   // Set by the service when a member files a paper themselves; one of the signals that lets the
   // UI offer them the edit form.
   submitted_by_member_id?: string;
-  timeline?: AdminBotPaperTimeline;
   created_at: string;
   updated_at: string;
 };
@@ -636,7 +605,6 @@ export type AdminBotPaperNudge = {
   recipients: string[];
   message: string;
   business_days_since_author_dm?: number;
-  timeline?: AdminBotPaperTimeline;
 };
 
 export type AdminBotExecutionResult = {
@@ -680,6 +648,12 @@ export type AdminBotDashboardData = {
   members: AdminBotLabMember[];
   papers: AdminBotPaperRecord[];
   papersLoadedAt: number | null;
+  /**
+   * When `papers` holds only the viewer's own papers (`GET /papers?scope=mine`, for the Profile
+   * and a plain member's Dashboard). papersLoadedAt stays null then, so a page that needs the
+   * whole list still reads it; see papers-required.ts.
+   */
+  ownPapersLoadedAt?: number | null;
   nudges: AdminBotPaperNudge[];
   /**
    * Who is going to each conference the lab has an accepted paper at.
@@ -690,7 +664,12 @@ export type AdminBotDashboardData = {
    */
   conferenceRosters?: ConferenceRoster[];
   settings: AdminBotSettings | null;
-  sensitiveInfo: AdminBotSensitiveInfoRecord | null;
+  /** The dashboard's attention-card numbers; undefined until that page has read them. */
+  queueCounts?: AdminQueueCounts;
+  /** How much of each paged queue is loaded; absent until its first page is read. */
+  queuePages?: AdminQueuePages;
+  /** Undefined until the Settings tab has read it; null when nothing is stored. */
+  sensitiveInfo?: AdminBotSensitiveInfoRecord | null;
   loadedAt: number | null;
 };
 
@@ -731,6 +710,7 @@ export function createEmptyAdminBotStandingMeetings(): AdminBotStandingMeetingsS
 
 export type AdminBotHost = {
   requestUpdate?: () => void;
+  memberPrivilegeLevel?: string | null;
   adminBotStandingMeetings?: AdminBotStandingMeetingsState;
   client: GatewayBrowserClient | null;
   connected: boolean;
@@ -809,6 +789,10 @@ export type AdminBotHost = {
   adminBotMeetingNudgeBusy?: boolean;
   adminBotMeetingNudgeError?: string | null;
   adminBotMeetingNudgeResult?: MeetingAttendanceNudgeResult | null;
+  adminBotMeetingRosters?: MeetingRosters;
+  // Whole records read on open; the summary roster carries list cells only (member-detail.ts).
+  adminBotMemberDetails?: import("./member-detail.ts").AdminBotMemberDetails;
+  adminBotDuplicatePairs?: import("./member-detail.ts").AdminBotDuplicatePairs;
   // What the lab has told this member. Undefined is "not read yet"; [] is a real "nothing".
   adminBotNotifications?: MemberNotification[];
   adminBotNotificationsError?: string | null;
@@ -872,9 +856,9 @@ export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
     members: [],
     papers: [],
     papersLoadedAt: null,
+    ownPapersLoadedAt: null,
     nudges: [],
     settings: null,
-    sensitiveInfo: null,
     loadedAt: null,
   };
 }
@@ -1148,13 +1132,6 @@ async function loadAdminBotOverSession(
     }
     return result.value;
   };
-  const optional = async (path: string): Promise<unknown> => {
-    const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
-    if (result.ok && result.cached) {
-      usedCache = true;
-    }
-    return result.ok ? result.value : undefined;
-  };
   const readSelf = async (): Promise<unknown> => {
     const result = await fetchMemberResource(
       "/lab/members/self",
@@ -1180,6 +1157,18 @@ async function loadAdminBotOverSession(
     };
   };
   try {
+    // A page that draws only the viewer's own papers reads only those, unless this session already
+    // holds the whole list -- then a reload keeps the whole list current for the pages that use it.
+    // The paper read does not depend on the profile, so both go out together; the profile still
+    // lands first on screen whenever it answers first.
+    const paperScope = paperScopeForTab((host as { tab?: unknown }).tab, host.memberPrivilegeLevel);
+    const ownOnly = paperScope === "own" && !host.adminBotData.papersLoadedAt;
+    const papersRead = includePapers
+      ? read(ownOnly ? "/papers?scope=mine" : "/papers")
+      : Promise.resolve(undefined);
+    // If the profile read fails first, that error is the one reported; this keeps the paper
+    // read's own failure from surfacing as an unhandled rejection.
+    papersRead.catch(() => undefined);
     const selfResponse = await readSelf();
     if (!isCurrent()) {
       return;
@@ -1195,63 +1184,46 @@ async function loadAdminBotOverSession(
     const currentMemberRows = () =>
       host.adminBotRosterLoadedAt ? host.adminBotData.members : memberRows;
     // The profile and public deadlines can render while the larger paper read is still pending.
-    host.adminBotData = { ...createEmptyAdminBotDashboardData(), members: memberRows };
+    // A reload after a save keeps what is already on screen and replaces it as reads land; clearing
+    // it first blanked the whole page for the length of the reload.
+    host.adminBotData = { ...host.adminBotData, members: memberRows };
     host.requestUpdate?.();
-    const papers = includePapers ? await read("/papers") : undefined;
+    const papers = await papersRead;
     if (!isCurrent()) {
       return;
     }
+    // A load after the page was drawn is a reload (every write triggers one), which re-reads the
+    // page's queues -- except a page's first paper read, which is navigation, not a write.
+    const reloading =
+      Boolean(host.adminBotData.loadedAt) &&
+      !(includePapers && !papersReadyFor(host.adminBotData, paperScope));
+    const paperRows = readArray<AdminBotPaperRecord>(papers, "papers");
     host.adminBotData = {
-      ...createEmptyAdminBotDashboardData(),
+      ...host.adminBotData,
       members: currentMemberRows(),
-      papers: readArray<AdminBotPaperRecord>(papers, "papers"),
-      papersLoadedAt: includePapers ? Date.now() : null,
-      // Admin queues still need their own read before the dashboard is complete.
-      loadedAt: mode === "general" ? Date.now() : null,
+      ...(includePapers && ownOnly ? { papers: paperRows, ownPapersLoadedAt: Date.now() } : {}),
+      ...(includePapers && !ownOnly ? { papers: paperRows, papersLoadedAt: Date.now() } : {}),
+      // Admin queues still need their own read before the first dashboard is complete; a reload
+      // keeps the previous stamp so the page stays drawn.
+      loadedAt: mode === "general" ? Date.now() : host.adminBotData.loadedAt,
     };
     host.requestUpdate?.();
     host.adminBotUsingCachedReads = usedCache;
     if (mode === "general") {
       return;
     }
-    const [pending, emailReview, nudges, conferenceRosters, settings, sensitiveInfo] =
-      await Promise.all([
-        optional("/proposals/pending?limit=50"),
-        optional("/automation/email/review"),
-        optional("/papers/nudges"),
-        optional("/papers/conference-rosters"),
-        optional("/settings"),
-        optional("/sensitive-info"),
-      ]);
+    // Only the queues the active page draws, plus the session's settings once (admin-queues.ts);
+    // each lands on its own and keeps its previous rows until it does. The sensitive-info notes
+    // are read by the Settings tab alone (loadAdminBotSensitiveInfo).
+    const queuesCached = await loadAdminQueues(host, session, {
+      tab: (host as { tab?: unknown }).tab,
+      refresh: reloading,
+    });
     if (!isCurrent()) {
       return;
     }
-    const settingsRecord = readRecord(settings);
-    const sensitiveInfoRecord = readRecord(sensitiveInfo);
-    const markdown = readString(sensitiveInfoRecord, "markdown");
-    const filePath = readString(sensitiveInfoRecord, "path");
-    host.adminBotData = {
-      proposals: readArray<AdminBotActionProposal>(pending, "proposals"),
-      emailReviews: readArray<AdminBotEmailReviewItem>(emailReview, "reviews"),
-      emailReviewCandidates: readArray<AdminBotEmailReviewPaperflowCandidate>(
-        emailReview,
-        "paperflow_candidates",
-      ),
-      emailReviewHistory: readArray<AdminBotResolvedEmailReviewItem>(
-        emailReview,
-        "recent_resolutions",
-      ),
-      members: currentMemberRows(),
-      papers: readArray<AdminBotPaperRecord>(papers, "papers"),
-      papersLoadedAt: includePapers ? Date.now() : null,
-      nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
-      conferenceRosters: readArray<ConferenceRoster>(conferenceRosters, "conferences"),
-      settings:
-        Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
-      sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,
-      loadedAt: Date.now(),
-    };
-    host.adminBotUsingCachedReads = usedCache;
+    host.adminBotData = { ...host.adminBotData, loadedAt: Date.now() };
+    host.adminBotUsingCachedReads = usedCache || queuesCached;
   } catch (err) {
     if (isCurrent()) {
       host.adminBotError = err instanceof Error ? err.message : String(err);
@@ -1266,6 +1238,38 @@ async function loadAdminBotOverSession(
       if (isCurrent()) host.adminBotOfflinePendingWrites = pendingCount;
     }
   }
+}
+
+let sensitiveInfoRequest: { token: string; promise: Promise<void> } | null = null;
+
+/** The admin-only sensitive-info notes, read when the Settings tab opens rather than on boot. */
+export function loadAdminBotSensitiveInfo(host: AdminBotHost, force = false): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    return Promise.resolve();
+  }
+  if (sensitiveInfoRequest?.token === stored.sessionToken && !force) {
+    return sensitiveInfoRequest.promise;
+  }
+  const promise = (async () => {
+    const result = await fetchMemberResource(
+      "/sensitive-info",
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken || !result.ok) {
+      return;
+    }
+    const record = readRecord(result.value);
+    const markdown = readString(record, "markdown");
+    const filePath = readString(record, "path");
+    host.adminBotData = {
+      ...host.adminBotData,
+      sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,
+    };
+  })();
+  sensitiveInfoRequest = { token: stored.sessionToken, promise };
+  return promise;
 }
 
 /** Full roster only for surfaces that use other members' schedules, names, or badges. */
@@ -1299,7 +1303,12 @@ export async function loadAdminBotRoster(host: AdminBotHost): Promise<void> {
     }
     const response = readRecord(result.value);
     const self = readRecord(response.self) as AdminBotLabMember;
-    const roster = readArray<AdminBotLabMember>(response, "members");
+    // Summary rows leave out empty and default fields (member-summary-row.ts); the one default a
+    // reader compares against is filled back in here, so an absent level still reads "member".
+    const roster = readArray<AdminBotLabMember>(response, "members").map((member) => ({
+      ...member,
+      privilege_level: member.privilege_level ?? "member",
+    }));
     host.adminBotData = {
       ...host.adminBotData,
       members: self.id ? roster.map((member) => (member.id === self.id ? self : member)) : roster,
@@ -1316,10 +1325,15 @@ export async function loadAdminBotRoster(host: AdminBotHost): Promise<void> {
   }
 }
 
+// Defaults are for the reload after a write: the viewer's own mode (a plain member asked in admin
+// mode spends five reads on queues the service refuses), and the lab paper list only when this
+// session has already loaded it -- a write on a page without papers has nothing to refresh there.
 export async function loadAdminBot(
   host: AdminBotHost,
-  mode: AdminBotLoadMode = "admin",
-  includePapers = true,
+  mode: AdminBotLoadMode = loadStoredMemberSession() && host.memberPrivilegeLevel !== "admin"
+    ? "general"
+    : "admin",
+  includePapers = Boolean(host.adminBotData.papersLoadedAt || host.adminBotData.ownPapersLoadedAt),
   preserveRoster = false,
 ): Promise<void> {
   // A write may have changed a member row; the next roster-dependent tab reloads it on demand.
@@ -1331,6 +1345,8 @@ export async function loadAdminBot(
     host.adminBotRosterLoadedAt = null;
     host.adminBotRosterLoading = false;
     host.adminBotRosterError = null;
+    // Whole records read for one view (member-detail.ts) go stale with the rows they sit over.
+    host.adminBotMemberDetails = {};
   }
   if (!preserveRoster && host.adminBotMemberList?.loadedAt) {
     host.adminBotMemberList = { ...host.adminBotMemberList, loadedAt: null };
@@ -1777,10 +1793,6 @@ export async function saveAdminBotPaper(
     ...(paper.nudgeLog === undefined ? {} : { nudge_log: paper.nudgeLog }),
     ...(paper.nudgeSeenAt === undefined ? {} : { nudge_seen_at: paper.nudgeSeenAt }),
     ...(paper.topic ? { topic: paper.topic } : {}),
-    // Sent even when empty, so clearing it actually clears it.
-    ...(paper.arxivPaperPassword === undefined
-      ? {}
-      : { arxiv_paper_password: paper.arxivPaperPassword }),
   };
   // Governance-shaped fields go on the record itself rather than into `artifacts`, and only when
   // the form actually offered one -- an untouched control must not clear a stored value.
@@ -1876,7 +1888,7 @@ export async function saveAdminBotPaper(
       ...(paper.reminderStatus ? { reminder: { status: paper.reminderStatus } } : {}),
     });
     host.adminBotNotice = { kind: "success", text: `Saved paper ${paper.id}.` };
-    await loadAdminBot(host);
+    await loadAdminBot(host, undefined, undefined, true);
     return true;
   } catch (err) {
     host.adminBotNotice = {
@@ -1908,7 +1920,12 @@ export async function saveAdminBotSensitiveInfo(
   try {
     await invokeAdminBotTool(host, "adminbot_update_sensitive_info", { markdown });
     host.adminBotNotice = { kind: "success", text: "Saved sensitive-information markdown." };
-    await loadAdminBot(host);
+    // Nothing else changed, so patch the one field instead of reloading the whole workspace.
+    const path = host.adminBotData.sensitiveInfo?.path;
+    host.adminBotData = {
+      ...host.adminBotData,
+      sensitiveInfo: { markdown, ...(path ? { path } : {}) },
+    };
   } catch (err) {
     host.adminBotNotice = {
       kind: "error",

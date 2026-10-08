@@ -21,7 +21,6 @@ import type {
   AdminBotOpenReviewMilestoneRecord,
   AdminBotPaperRecord,
   AdminBotPasswordReset,
-  AdminBotRegistrationKind,
   AdminBotRegistrationStatus,
   AdminBotSettings,
   AdminBotStoredProposal,
@@ -89,8 +88,10 @@ import {
   type AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
-import { meetsDurationFloor } from "../workflows/meetings/records.js";
-import { resolveMemberOnboarding } from "../workflows/onboarding/onboarding.js";
+import {
+  labMemberRowReader,
+  toStoredLabMember,
+} from "../workflows/onboarding/onboarding-storage.js";
 import {
   adminBotEmailReviewFromRow,
   adminBotResolvedEmailReviewFromRow,
@@ -133,11 +134,25 @@ import {
 } from "./reference-scans.js";
 import { SqliteAuditLog } from "./sqlite.audit.js";
 import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
+import { listSqliteMeetingsPage } from "./sqlite.meetings.js";
+import {
+  MEMBER_ATTRIBUTION_COLUMNS,
+  MEMBER_OWNED_COLUMNS,
+  MEMBER_REFERENCE_COLUMNS,
+} from "./sqlite.member-columns.js";
+import {
+  REGISTRATION_COLUMNS,
+  rowToRegistration,
+  type AccountRegistrationRow,
+} from "./sqlite.registration-rows.js";
+import { escalatedMemberNotificationsSql } from "./sqlite.member-notifications.js";
 import {
   listSqliteSocialDrafts,
   migrateSocialDraftColumns,
   saveSqliteSocialDraft,
 } from "./sqlite.social-drafts.js";
+import { cacheStatements } from "./sqlite.statement-cache.js";
+import { SqliteTableVersions } from "./sqlite.table-versions.js";
 import { SqliteVenuePaperIndex } from "./sqlite.venue-papers.js";
 
 const require = createRequire(import.meta.url);
@@ -158,6 +173,20 @@ const PAPER_SEARCH = `(
   EXISTS (SELECT 1 FROM json_each(p.payload_json, '$.authors') author
     WHERE instr(adminbot_lower(author.value), ?) > 0)
 )`;
+
+const PAPER_AUTHOR = `EXISTS (SELECT 1 FROM json_each(p.payload_json, '$.author_links') a
+  WHERE json_extract(a.value, '$.member_id') = ?)`;
+
+/** One filter for a paper page and its total, so the two cannot count different sets. */
+function paperFilterSql(filter?: { q?: string; authorMemberId?: string }) {
+  const q = filter?.q?.toLowerCase();
+  const author = filter?.authorMemberId;
+  const clauses = [...(q ? [PAPER_SEARCH] : []), ...(author ? [PAPER_AUTHOR] : [])];
+  return {
+    where: clauses.length ? `WHERE ${clauses.map((clause) => `(${clause})`).join(" AND ")}` : "",
+    params: [...(q ? [q, q, q] : []), ...(author ? [author] : [])],
+  };
+}
 
 export type AdminBotSqliteServiceOptions = AdminBotServiceOptions & {
   databasePath: string;
@@ -204,14 +233,17 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   private readonly failedRequests: FailedExternalRequestLedger;
   private readonly venueIndex: SqliteVenuePaperIndex;
   private readonly members: SqliteLabMemberCache;
+  private readonly versions: SqliteTableVersions;
   private readonly audit: SqliteAuditLog;
 
   constructor(readonly databasePath: string) {
     ensureDatabaseDirectory(databasePath);
     const sqlite = requireNodeSqlite();
     this.db = new sqlite.DatabaseSync(databasePath);
+    cacheStatements(this.db);
     this.venueIndex = new SqliteVenuePaperIndex(this.db);
     this.members = new SqliteLabMemberCache(this.db);
+    this.versions = new SqliteTableVersions(this.db);
     this.audit = new SqliteAuditLog(this.db);
     // SQLite's built-in lower() only handles ASCII; use the same fold as the in-memory store.
     this.db.function("adminbot_lower", { deterministic: true }, (value) =>
@@ -235,6 +267,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_proposals_pending_idx
         ON adminbot_proposals(status, updated_at);
+      -- The deadline board reads one action type; ties keep rowid order, as the full scan's sort did.
+      CREATE INDEX IF NOT EXISTS adminbot_proposals_type_idx
+        ON adminbot_proposals(action_type, created_at);
 
       CREATE TABLE IF NOT EXISTS adminbot_deadline_submission_keys (
         submitter_member_id TEXT NOT NULL,
@@ -869,6 +904,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         ON adminbot_update_events(slot_id, at DESC);
       CREATE INDEX IF NOT EXISTS adminbot_update_events_source_idx
         ON adminbot_update_events(source, at DESC);
+      -- The unfiltered feed, newest first: walked backwards it is exactly (at DESC, rowid DESC).
+      CREATE INDEX IF NOT EXISTS adminbot_update_events_at_idx ON adminbot_update_events(at);
 
       -- One row per workshop-matching pass. The pass is thousands of model calls and does not fit
       -- in the request that starts it, so the answer is kept here and the page reads it.
@@ -910,7 +947,6 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ensurePaperAiTextCheckSchema(this.db);
     ensureLabInterestSchema(this.db);
     ensureAdminBotEmailReviewSchema(this.db);
-    this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
     this.migratePaperSlotColumns();
     migrateSocialDraftColumns(this.db);
@@ -1123,29 +1159,6 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     }
   }
 
-  // Members seeded before the checklist gained structured bullets still carry the step shape from
-  // signup day, which the Control UI renders as empty bullets. Rewrite every stored checklist from
-  // the current definitions once at open so runtime only ever reads the canonical shape; this is
-  // idempotent because `resolveMemberOnboarding` derives content and keeps only acknowledgements.
-  private migrateStoredOnboarding(): void {
-    const rows = this.db
-      .prepare("SELECT id, payload_json FROM adminbot_lab_members")
-      .all() as Array<{ id: string; payload_json: string }>;
-    for (const row of rows) {
-      const member = parseJson<AdminBotLabMember>(row.payload_json);
-      if (!member.onboarding) {
-        continue;
-      }
-      const onboarding = resolveMemberOnboarding(member.onboarding);
-      if (JSON.stringify(onboarding) === JSON.stringify(member.onboarding)) {
-        continue;
-      }
-      this.db
-        .prepare("UPDATE adminbot_lab_members SET payload_json = ? WHERE id = ?")
-        .run(JSON.stringify({ ...member, onboarding }), row.id);
-    }
-  }
-
   saveProposal(proposal: AdminBotStoredProposal): void {
     this.db
       .prepare(
@@ -1200,18 +1213,20 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       );
   }
 
-  listPending(limit?: number): AdminBotStoredProposal[] {
+  listPending(limit?: number, offset = 0): AdminBotStoredProposal[] {
     const max = Number.isFinite(limit) && typeof limit === "number" ? Math.max(0, limit) : 100;
     const rows = this.db
       .prepare(
-        `SELECT payload_json
-          FROM adminbot_proposals
-          WHERE status = 'pending'
-          ORDER BY updated_at ASC
-          LIMIT ?`,
+        `SELECT payload_json FROM adminbot_proposals WHERE status = 'pending'
+          ORDER BY updated_at ASC, id ASC LIMIT ? OFFSET ?`,
       )
-      .all(max) as Array<{ payload_json: string }>;
+      .all(max, Math.max(0, offset)) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotStoredProposal>(row.payload_json));
+  }
+
+  countPending(): number {
+    const sql = "SELECT COUNT(*) AS n FROM adminbot_proposals WHERE status = 'pending'";
+    return Number((this.db.prepare(sql).get() as { n: number }).n);
   }
 
   listProposalsByType(type: AdminBotStoredProposal["type"]): AdminBotStoredProposal[] {
@@ -1299,6 +1314,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         record.published_at,
         JSON.stringify(record),
       );
+    this.versions.bump("deadlines");
   }
 
   listPublishedDeadlines(): PublishedDeadlineRecord[] {
@@ -1387,7 +1403,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           updated_at = excluded.updated_at,
           payload_json = excluded.payload_json`,
       )
-      .run(member.id, member.privilege_level, member.updated_at, JSON.stringify(member));
+      .run(
+        member.id,
+        member.privilege_level,
+        member.updated_at,
+        JSON.stringify(toStoredLabMember(member)),
+      );
     this.members.invalidate();
   }
 
@@ -1411,6 +1432,31 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return this.members.get(memberId);
   }
 
+  labMemberVersion(): number {
+    return this.members.version();
+  }
+
+  paperVersion(): string {
+    return this.versions.version("papers");
+  }
+
+  meetingVersion(): string {
+    return this.versions.version("meetings");
+  }
+
+  /**
+   * Every stored input to a member view: the roster, badge definitions and awards, and the
+   * published deadlines a member's milestones are reconciled against. Merge and delete rewrite
+   * badge rows too, but they also invalidate the roster, so its generation already moves.
+   */
+  labMemberViewVersion(): string {
+    return [
+      this.members.version(),
+      this.versions.version("badges"),
+      this.versions.version("deadlines"),
+    ].join(":");
+  }
+
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[] {
     if (!page) {
       return [...this.members.list()];
@@ -1428,7 +1474,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       .all(...(q ? [q, q, q, q] : []), page.limit, page.offset) as Array<{
       payload_json: string;
     }>;
-    return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
+    const read = labMemberRowReader();
+    return rows.map((row) => read(row.payload_json));
   }
 
   searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }> {
@@ -1490,6 +1537,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         badge.updated_at,
         JSON.stringify(badge),
       );
+    this.versions.bump("badges");
   }
 
   getBadgeDefinition(badgeId: string): AdminBotBadgeDefinition | undefined {
@@ -1553,6 +1601,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
+    } finally {
+      this.versions.bump("badges");
     }
   }
 
@@ -1604,6 +1654,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     const result = this.db
       .prepare("DELETE FROM adminbot_badge_assignments WHERE member_id = ? AND badge_id = ?")
       .run(memberId, badgeId) as { changes?: number };
+    this.versions.bump("badges");
     return (result.changes ?? 0) > 0;
   }
 
@@ -1915,123 +1966,13 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return (result.changes ?? 0) > 0;
   }
 
-  /**
-   * Every table that names a member, and the column it names them in.
-   *
-   * Written out rather than discovered from the schema at runtime: a column called `member_id` is
-   * not automatically a roster reference, and a merge that repointed the wrong one would be a
-   * silent data corruption rather than a failure. Adding a table with a member column means adding
-   * it here, which the merge test asserts by counting what moved.
-   */
-  private static readonly MEMBER_REFERENCE_COLUMNS: ReadonlyArray<[string, string]> = [
-    ["adminbot_account_registrations", "member_id"],
-    ["adminbot_tab_visits", "member_id"],
-    ["adminbot_badge_assignments", "member_id"],
-    ["adminbot_badge_nominations", "member_id"],
-    ["adminbot_cv_changes", "member_id"],
-    ["adminbot_logistics_requests", "member_id"],
-    ["adminbot_login_events", "member_id"],
-    ["adminbot_member_locations", "member_id"],
-    ["adminbot_nudge_ledger", "member_id"],
-    ["adminbot_opportunities", "submitted_by_member_id"],
-    ["adminbot_paper_conference_attendees", "member_id"],
-    ["adminbot_paper_reimbursements", "member_id"],
-    ["adminbot_paper_social_draft_consents", "member_id"],
-    ["adminbot_paper_social_drafts", "generated_by_member_id"],
-    ["adminbot_paper_slots", "provided_by_member_id"],
-    ["adminbot_paper_slots", "waived_by_member_id"],
-    ["adminbot_password_resets", "member_id"],
-    // Both member columns on an update event move. `member_id` is who typed, and repointing it is
-    // what keeps the merged member's authorship -- and so their adoption rate -- intact.
-    // `subject_member_id` is whose record was touched, and a merge that moved one without the
-    // other would turn a self-edit into an admin edit, or the reverse.
-    ["adminbot_update_events", "member_id"],
-    ["adminbot_update_events", "subject_member_id"],
-    // The login itself. Moving it is the point of a merge -- one person with two accounts ends up
-    // with one account they can still sign in to -- and the collision rule decides which address
-    // that is: if the survivor already has a credential, theirs stands and the duplicate's row is
-    // dropped, so the retired address stops working. Both outcomes are in the merge's audit line.
-    //
-    // Live sessions are deliberately NOT in this sweep. They are repointable in principle, but a
-    // session is a bearer of someone's identity and a merge is a human judgement that two records
-    // are one person; if that judgement is ever wrong, a repointed session hands one person's
-    // signed-in browser the other's record. The service revokes the retired member's sessions
-    // instead, which costs a sign-in and cannot be wrong.
-    ["adminbot_member_credentials", "member_id"],
-  ];
-
-  /**
-   * Every table a delete must clear, which is the merge list plus the rows a merge keeps.
-   *
-   * The extras are the rows that only ever meant something as *this* member's: a notification is
-   * addressed to them, a feedback entry and a weekly update are authored by them, and a deadline
-   * submission key records which of them filed it. A merge leaves those alone because the survivor
-   * inherits them; a delete has nobody to inherit, so leaving them would strand rows pointing at
-   * an id the roster can no longer resolve -- the dashboard would render a notification for a
-   * member who is gone, and `listMemberProfileOverview` would count an author who does not exist.
-   *
-   * Sessions are still not here. They are revoked through `revokeSessionsForMember` before the
-   * purge runs, for the same reason a merge revokes rather than repoints: a session is a bearer of
-   * someone's identity, and it should stop working through the path that records that it did.
-   */
-  /**
-   * The rows a delete removes outright: they exist only because this member did.
-   *
-   * The merge list minus the three attribution columns below, plus the rows a merge keeps because
-   * a survivor inherits them. A notification is addressed to this member, a feedback entry and a
-   * weekly update are authored by them, an attendee row and a reimbursement are about them -- none
-   * of it means anything once they are gone, and leaving it strands rows naming an id the roster
-   * can no longer resolve.
-   *
-   * Sessions are not here. They are revoked through `revokeSessionsForMember` before the purge
-   * runs, for the reason the merge gives: a session should stop working through the path that
-   * records that it did.
-   */
-  private static readonly MEMBER_OWNED_COLUMNS: ReadonlyArray<[string, string]> = [
-    ["adminbot_account_registrations", "member_id"],
-    ["adminbot_tab_visits", "member_id"],
-    ["adminbot_badge_assignments", "member_id"],
-    ["adminbot_badge_nominations", "member_id"],
-    ["adminbot_cv_changes", "member_id"],
-    ["adminbot_logistics_requests", "member_id"],
-    ["adminbot_login_events", "member_id"],
-    ["adminbot_member_locations", "member_id"],
-    ["adminbot_nudge_ledger", "member_id"],
-    ["adminbot_paper_conference_attendees", "member_id"],
-    ["adminbot_paper_reimbursements", "member_id"],
-    ["adminbot_paper_social_draft_consents", "member_id"],
-    ["adminbot_password_resets", "member_id"],
-    ["adminbot_update_events", "member_id"],
-    ["adminbot_update_events", "subject_member_id"],
-    ["adminbot_member_credentials", "member_id"],
-    ["adminbot_member_notifications", "member_id"],
-    ["adminbot_feedback", "member_id"],
-    ["adminbot_paper_weekly_updates", "member_id"],
-    ["adminbot_deadline_submission_keys", "submitter_member_id"],
-  ];
-
-  /**
-   * Columns that merely say *who* did something to a record the lab keeps anyway.
-   *
-   * Cleared rather than deleted, which is the whole difference between this and the list above: a
-   * paper slot is the paper's evidence and a social draft is the paper's copy. Deleting them
-   * because the person who filed them left would throw away the artifact to erase the signature --
-   * the lab would lose an arXiv link because an intern was removed from the roster. The row stays
-   * and the attribution goes.
-   */
-  private static readonly MEMBER_ATTRIBUTION_COLUMNS: ReadonlyArray<[string, string]> = [
-    ["adminbot_paper_slots", "provided_by_member_id"],
-    ["adminbot_paper_slots", "waived_by_member_id"],
-    ["adminbot_paper_social_drafts", "generated_by_member_id"],
-  ];
-
   purgeMemberReferences(memberId: string): Record<string, number> {
     const removed: Record<string, number> = {};
     // One transaction, for the reason the merge gives: a half-purged member leaves rows naming an
     // id nothing can resolve, which is worse than a member who is still there.
     this.db.exec("BEGIN");
     try {
-      for (const [table, column] of AdminBotSqliteStore.MEMBER_OWNED_COLUMNS) {
+      for (const [table, column] of MEMBER_OWNED_COLUMNS) {
         const result = this.db
           .prepare(`DELETE FROM "${table}" WHERE ${column} = ?`)
           .run(memberId) as { changes?: number };
@@ -2093,7 +2034,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
             (removed["adminbot_badge_suggestions.suggested_by"] ?? 0) + (cleared.changes ?? 0);
         }
       }
-      for (const [table, column] of AdminBotSqliteStore.MEMBER_ATTRIBUTION_COLUMNS) {
+      for (const [table, column] of MEMBER_ATTRIBUTION_COLUMNS) {
         const result = this.db
           .prepare(`UPDATE "${table}" SET ${column} = NULL WHERE ${column} = ?`)
           .run(memberId) as { changes?: number };
@@ -2118,7 +2059,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     // has no `transaction()` wrapper.
     this.db.exec("BEGIN");
     try {
-      for (const [table, column] of AdminBotSqliteStore.MEMBER_REFERENCE_COLUMNS) {
+      for (const [table, column] of MEMBER_REFERENCE_COLUMNS) {
         // The tall tables key on (subject, member), so a row that would collide with one the
         // survivor already has is dropped rather than updated -- two attendee rows for one person
         // on one paper is not a merge, it is a duplicate with a new name. INSERT OR REPLACE
@@ -2274,6 +2215,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   savePaper(paper: AdminBotPaperRecord): void {
+    this.versions.bump("papers");
     this.db
       .prepare(
         `INSERT INTO adminbot_papers (
@@ -2298,45 +2240,29 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[] {
-    const q = page?.q?.toLowerCase();
-    const clauses = [
-      ...(q ? [PAPER_SEARCH] : []),
-      ...(page?.authorMemberId
-        ? [
-            "EXISTS (SELECT 1 FROM json_each(p.payload_json, '$.author_links') a WHERE json_extract(a.value, '$.member_id') = ?)",
-          ]
-        : []),
-    ];
-    const where = clauses.length
-      ? `WHERE ${clauses.map((clause) => `(${clause})`).join(" AND ")}`
-      : "";
+    const { where, params } = paperFilterSql(page);
     const rows = this.db
       .prepare(
         `SELECT p.payload_json FROM adminbot_papers p ${where}
           ORDER BY ${page ? "json_extract(p.payload_json, '$.title') COLLATE NOCASE, p.id" : "json_extract(p.payload_json, '$.title')"}
           ${page ? "LIMIT ? OFFSET ?" : ""}`,
       )
-      .all(
-        ...(q ? [q, q, q] : []),
-        ...(page?.authorMemberId ? [page.authorMemberId] : []),
-        ...(page ? [page.limit, page.offset] : []),
-      ) as Array<{
+      .all(...params, ...(page ? [page.limit, page.offset] : [])) as Array<{
       payload_json: string;
     }>;
     return rows.map((row) => parseJson<AdminBotPaperRecord>(row.payload_json));
   }
 
-  countPapers(q?: string): number {
-    const needle = q?.toLowerCase();
+  countPapers(filter?: { q?: string; authorMemberId?: string }): number {
+    const { where, params } = paperFilterSql(filter);
     const row = this.db
-      .prepare(
-        `SELECT COUNT(*) AS total FROM adminbot_papers p ${needle ? `WHERE ${PAPER_SEARCH}` : ""}`,
-      )
-      .get(...(needle ? [needle, needle, needle] : [])) as { total: number };
+      .prepare(`SELECT COUNT(*) AS total FROM adminbot_papers p ${where}`)
+      .get(...params) as { total: number };
     return row.total;
   }
 
   deletePaper(paperId: string): boolean {
+    this.versions.bump("papers");
     // Everything hanging off the paper goes with it. Leaving any of it would let a re-created id
     // inherit the evidence, the drafts and the consents of a paper somebody deleted.
     const drafts = this.db
@@ -2646,12 +2572,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[] {
+    // By member within a paper, the key order the per-paper read always had, in both reads.
+    const sql = "SELECT * FROM adminbot_paper_reimbursements";
     const rows = (
       paperId
-        ? this.db
-            .prepare("SELECT * FROM adminbot_paper_reimbursements WHERE paper_id = ?")
-            .all(paperId)
-        : this.db.prepare("SELECT * FROM adminbot_paper_reimbursements").all()
+        ? this.db.prepare(`${sql} WHERE paper_id = ? ORDER BY member_id`).all(paperId)
+        : this.db.prepare(`${sql} ORDER BY paper_id, member_id`).all()
     ) as Array<Record<string, unknown>>;
     return rows.map((row) => ({
       paper_id: String(row.paper_id),
@@ -3215,6 +3141,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   saveMeeting(meeting: AdminBotMeetingRecord): void {
+    this.versions.bump("meetings");
     this.db
       .prepare(
         `INSERT INTO adminbot_meetings (
@@ -3250,50 +3177,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     before?: AdminBotMeetingCursor;
     minimumMinutes: number;
   }): AdminBotMeetingRecord[] {
-    const chunkSize = Math.max(64, options.limit);
-    const first = this.db.prepare(
-      `SELECT id, started_at, payload_json FROM adminbot_meetings
-       ORDER BY COALESCE(julianday(started_at), 0) DESC, id DESC LIMIT ?`,
-    );
-    const after = this.db.prepare(
-      `SELECT id, started_at, payload_json FROM adminbot_meetings
-       WHERE COALESCE(julianday(started_at), 0) <= COALESCE(julianday(?), 0)
-         AND (COALESCE(julianday(started_at), 0) < COALESCE(julianday(?), 0) OR id < ?)
-       ORDER BY COALESCE(julianday(started_at), 0) DESC, id DESC LIMIT ?`,
-    );
-    const meetings: AdminBotMeetingRecord[] = [];
-    let before = options.before;
-    while (meetings.length < options.limit) {
-      const rows = (
-        before
-          ? after.all(before.started_at, before.started_at, before.id, chunkSize)
-          : first.all(chunkSize)
-      ) as Array<{
-        id: string;
-        started_at: string;
-        payload_json: string;
-      }>;
-      if (rows.length === 0) {
-        break;
-      }
-      for (const row of rows) {
-        before = { started_at: row.started_at, id: row.id };
-        const meeting = parseJson<AdminBotMeetingRecord>(row.payload_json);
-        if (meetsDurationFloor(meeting, options.minimumMinutes)) {
-          meetings.push(meeting);
-          if (meetings.length === options.limit) {
-            break;
-          }
-        }
-      }
-      if (rows.length < chunkSize) {
-        break;
-      }
-    }
-    return meetings;
+    return listSqliteMeetingsPage(this.db, options);
   }
 
   deleteMeeting(meetingId: string): boolean {
+    this.versions.bump("meetings");
     return this.db.prepare("DELETE FROM adminbot_meetings WHERE id = ?").run(meetingId).changes > 0;
   }
 
@@ -3360,12 +3248,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => parseJson<AdminBotMemberNotification>(row.payload_json));
   }
 
-  // Filtered in JS rather than SQL: `escalated_at` and `read_at` live inside payload_json, and the
-  // escalated set is small by construction -- it is what one professor is expected to work through.
+  // Narrowed in SQL as the postgres mirror is, so only the small escalated set is parsed.
   listEscalatedMemberNotifications(): AdminBotMemberNotification[] {
-    const rows = this.db
-      .prepare("SELECT payload_json FROM adminbot_member_notifications")
-      .all() as Array<{ payload_json: string }>;
+    const rows = this.db.prepare(escalatedMemberNotificationsSql).all() as Array<{
+      payload_json: string;
+    }>;
     return rows
       .map((row) => parseJson<AdminBotMemberNotification>(row.payload_json))
       .filter((notification) => notification.escalated_at && !notification.read_at)
@@ -3402,6 +3289,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         request.updated_at,
         JSON.stringify(request),
       );
+    this.versions.bump("logistics");
   }
 
   getLogisticsRequest(requestId: string): AdminBotLogisticsRequest | undefined {
@@ -3412,28 +3300,26 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   listLogisticsRequests(memberId?: string): AdminBotLogisticsRequest[] {
-    const rows = (
-      memberId
-        ? this.db
-            .prepare(
-              `SELECT payload_json FROM adminbot_logistics_requests
-               WHERE member_id = ? ORDER BY submitted_at DESC`,
-            )
-            .all(memberId)
-        : this.db
-            .prepare(
-              "SELECT payload_json FROM adminbot_logistics_requests ORDER BY submitted_at DESC",
-            )
-            .all()
-    ) as Array<{ payload_json: string }>;
+    const where = memberId ? "WHERE member_id = ?" : "";
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json FROM adminbot_logistics_requests ${where} ORDER BY submitted_at DESC`,
+      )
+      .all(...(memberId ? [memberId] : [])) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotLogisticsRequest>(row.payload_json));
   }
 
   deleteLogisticsRequest(requestId: string): boolean {
+    this.versions.bump("logistics");
     return (
       this.db.prepare("DELETE FROM adminbot_logistics_requests WHERE id = ?").run(requestId)
         .changes > 0
     );
+  }
+
+  /** The queue's rows; merge and purge repoint member_id, and they move the roster generation. */
+  logisticsVersion(): string {
+    return `${this.members.version()}:${this.versions.version("logistics")}`;
   }
 
   getSettings(): AdminBotSettings | undefined {
@@ -3865,7 +3751,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
             preparedMember.id,
             preparedMember.privilege_level,
             preparedMember.updated_at,
-            JSON.stringify(preparedMember),
+            JSON.stringify(toStoredLabMember(preparedMember)),
           );
       }
       this.db
@@ -4264,35 +4150,4 @@ function optionalText(row: Record<string, unknown>, key: string): Record<string,
 
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
-}
-
-const REGISTRATION_COLUMNS = `SELECT id, kind, member_id, email, password_scrypt, profile_json, status, created_at, decided_at, decided_by
-  FROM adminbot_account_registrations`;
-
-type AccountRegistrationRow = {
-  id: string;
-  kind: AdminBotRegistrationKind;
-  member_id: string | null;
-  email: string;
-  password_scrypt: string;
-  profile_json: string | null;
-  status: AdminBotRegistrationStatus;
-  created_at: string;
-  decided_at: string | null;
-  decided_by: string | null;
-};
-
-function rowToRegistration(row: AccountRegistrationRow): AdminBotAccountRegistration {
-  return {
-    id: row.id,
-    kind: row.kind,
-    email: row.email,
-    password_scrypt: row.password_scrypt,
-    status: row.status,
-    created_at: row.created_at,
-    ...(row.member_id ? { member_id: row.member_id } : {}),
-    ...(row.profile_json ? { profile_json: row.profile_json } : {}),
-    ...(row.decided_at ? { decided_at: row.decided_at } : {}),
-    ...(row.decided_by ? { decided_by: row.decided_by } : {}),
-  };
 }

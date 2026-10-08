@@ -89,11 +89,19 @@ export async function runAdminBotVenueIndexJob(host: AdminBotHost): Promise<void
  * profile edit, but re-loading the list must never overwrite a sentence the member is part way
  * through typing.
  */
-export async function loadAdminBotVenueSources(host: AdminBotHost): Promise<void> {
+/**
+ * `profileReady` lets the caller read the conference list alongside the member's own profile: the
+ * list request goes out at once, and the interests box waits for the profile before prefilling.
+ */
+export async function loadAdminBotVenueSources(
+  host: AdminBotHost,
+  profileReady?: Promise<unknown>,
+): Promise<void> {
   const session = optionalSession(host);
   host.adminBotVenuePapers = { ...host.adminBotVenuePapers, loadingSources: true, error: null };
   try {
     const result = await fetchVenueSources(session.sessionToken, session.baseUrl);
+    await profileReady?.catch(() => undefined);
     if (!result.ok) {
       host.adminBotVenuePapers = {
         ...host.adminBotVenuePapers,
@@ -109,6 +117,7 @@ export async function loadAdminBotVenueSources(host: AdminBotHost): Promise<void
       ...state,
       sources,
       loadingSources: false,
+      sourcesLoaded: true,
       // Default to the first conference an admin listed; the list is ordered deliberately.
       venueId: state.venueId || (sources[0]?.venue_id ?? ""),
       interests: state.interestsTouched
@@ -280,6 +289,9 @@ export async function refreshWorkshopNudgePreview(
     };
     return;
   }
+  // Handed over to the read, which puts `loading` straight back up in the same tick: left set
+  // here, the read would take it for a read already in flight and never ask.
+  host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, loading: false };
   await loadWorkshopNudgePreview(host);
 }
 

@@ -31,7 +31,7 @@ import {
 import { nextStepFor } from "../next-step.ts";
 import { renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderMemberMap } from "./member-map.ts";
-import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
+import { ownPapers, paperProgress, stepLabel } from "./my-work-papers.ts";
 import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile-fields.ts";
 
 // One thing waiting on the viewer. `detail` is optional supporting text -- the queue items say
@@ -197,17 +197,20 @@ function proposalsItem(state: AppViewState, role: AccessRole): AttentionItem | n
   if (role !== "admin") {
     return null;
   }
-  const pending = (state.adminBotData?.proposals ?? []).filter(
-    (proposal) => proposal.status === "pending",
-  );
-  if (!pending.length) {
+  // The dashboard reads only the count (/admin/queue-counts); the list is there when another page
+  // loaded it first, before the count has landed.
+  const pending =
+    state.adminBotData?.queueCounts?.pendingProposals ??
+    (state.adminBotData?.proposals ?? []).filter((proposal) => proposal.status === "pending")
+      .length;
+  if (!pending) {
     return null;
   }
   return {
     id: "proposals",
     title: t("dashboard.proposals.title"),
     summary: t("dashboard.proposals.summary", {
-      count: String(pending.length),
+      count: String(pending),
     }),
     actionLabel: t("dashboard.proposals.open"),
     onAction: () => state.setTab("adminbot"),
@@ -218,15 +221,16 @@ function emailReviewsItem(state: AppViewState, role: AccessRole): AttentionItem 
   if (role !== "admin") {
     return null;
   }
-  const reviews = state.adminBotData?.emailReviews ?? [];
-  if (reviews.length === 0) {
+  const reviews =
+    state.adminBotData?.queueCounts?.emailReviews ?? (state.adminBotData?.emailReviews ?? []).length;
+  if (reviews === 0) {
     return null;
   }
   return {
     id: "email-reviews",
     title: "Emails need a decision",
-    summary: `${reviews.length} ${
-      reviews.length === 1 ? "message was" : "messages were"
+    summary: `${reviews} ${
+      reviews === 1 ? "message was" : "messages were"
     } held because AdminBot could not safely decide what to update.`,
     actionLabel: "Review emails",
     onAction: () => state.setTab("adminbot"),

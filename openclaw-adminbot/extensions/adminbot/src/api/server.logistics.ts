@@ -16,7 +16,13 @@ import {
   type AdminBotLogisticsRequestInput,
   type AdminBotLogisticsRequestStatus,
 } from "../contracts/actions.js";
+import { pageOf, readAdminListPage } from "../contracts/list-page.js";
 import type { AdminBotService } from "../kernel/service.js";
+import { logisticsListRow } from "../workflows/logistics/list-row.js";
+import {
+  readLogisticsQueueQuery,
+  selectLogisticsQueue,
+} from "../workflows/logistics/queue-select.js";
 import { MAX_REQUEST_BYTES } from "../workflows/logistics/requests.js";
 import { asString, readJson, readRecord, sendJson, sendServiceResult } from "./server.http.js";
 
@@ -56,6 +62,8 @@ export async function handleLogisticsRoute(
   service: AdminBotService,
   member: LogisticsRouteMember,
   onMeetingRequested?: MeetingRequestHook,
+  /** The queue read's version tag, when the router could make one (routes/logistics.ts). */
+  queueEtag?: string,
 ): Promise<void> {
   const isAdmin = member.privilege_level === "admin";
   // Falls back to the id rather than sending a blank first column: a row nobody can be matched to
@@ -63,8 +71,29 @@ export async function handleLogisticsRoute(
   const memberName = member.name?.trim() || member.id;
   if (req.method === "GET" && url.pathname === "/logistics/requests") {
     // The whole of the access decision, and it is one argument: an admin reads the lab's queue,
-    // everyone else reads their own requests.
-    sendServiceResult(res, service.listLogisticsRequests(isAdmin ? undefined : member.id));
+    // everyone else reads their own requests. Each row carries only what the queue draws; opening
+    // one is GET /logistics/requests/:id, which the tab already does for the files.
+    //
+    // One page at a time, filtered and sorted before the page is cut so a search still finds a
+    // request that is not on the first page. `total` is the whole filtered list, which is what the
+    // queue's counts are read from -- never the length of the page.
+    const page = readAdminListPage(url.searchParams);
+    const query = readLogisticsQueueQuery(url.searchParams);
+    if (page === "invalid" || query === "invalid") {
+      sendJson(res, 400, { error: { message: "invalid logistics page" } });
+      return;
+    }
+    const listed = service.listLogisticsRequests(isAdmin ? undefined : member.id);
+    if (!listed.ok) {
+      sendServiceResult(res, listed);
+      return;
+    }
+    const { rows, ...rest } = pageOf(
+      selectLogisticsQueue(listed.payload.requests, query),
+      page,
+      (request) => request.id,
+    );
+    sendJson(res, 200, { requests: rows.map(logisticsListRow), ...rest }, { etag: queueEtag });
     return;
   }
   if (req.method === "POST" && url.pathname === "/logistics/requests") {

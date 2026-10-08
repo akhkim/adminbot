@@ -34,7 +34,7 @@ import type {
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
 import { aoeInstantMs } from "../data/deadline-time.ts";
 import { DEADLINE_SUMMARIES } from "../data/deadlines-summary.ts";
-import { paperSteps, stepLabels } from "../data/paper-steps.ts";
+import { paperSteps } from "../data/paper-steps.ts";
 import {
   ARCHIVAL_VENUES,
   type CatalogVenue,
@@ -113,7 +113,9 @@ import {
   readVenueTargets,
   venueTargetMatches,
 } from "../venue-targets.ts";
+import { onViewSessionReset } from "../view-session-reset.ts";
 import { channelExists, nearbyChannels } from "./my-work-channels.ts";
+import { ownPapers, paperProgress, stepLabel } from "./my-work-papers.ts";
 import { generateLinkedInDraft, generateXDraft } from "./my-work-social-drafts.ts";
 import { paperTripDraftFrom, renderPaperCycle, type PaperTripDraft } from "./paper-cycle.ts";
 import { renderPaperFeedback } from "./paper-feedback.ts";
@@ -127,6 +129,7 @@ import { renderPaperPiReview } from "./paper-pi-review.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
 import { renderPaperTimeline } from "./paper-timeline.ts";
 import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
+export { ownPapers, paperProgress, stepLabel } from "./my-work-papers.ts";
 import { findOwnMember } from "./profile-fields.ts";
 import { renderRecentEdits } from "./recent-edits.ts";
 
@@ -295,39 +298,6 @@ export function reviewerName(state: AppViewState): string {
  * somebody picked them, and it is checked first because it is the only line here that is not a
  * guess about a string the venue owns.
  */
-export function ownPapers(state: AppViewState): AdminBotPaperRecord[] {
-  const member = findOwnMember(state);
-  const memberId = state.memberId;
-  const name = member?.name ?? "";
-  return (state.adminBotData?.papers ?? []).filter(
-    (paper) =>
-      (memberId && paper.submitted_by_member_id === memberId) ||
-      (memberId && paper.first_author_member_id === memberId) ||
-      (memberId && paper.mentor_member_id === memberId) ||
-      (memberId && (paper.author_links ?? []).some((link) => link.member_id === memberId)) ||
-      // Author entries carry marks that are about authorship, not identity -- "Joeun Yook*" for
-      // equal contribution, "Yook, Joeun" from a BibTeX paste, an accent the roster spells
-      // differently. This used to be a raw lowercase comparison, so a co-first author was
-      // invisible on their own paper: the one character the venue added to mark the credit was
-      // the character that hid it.
-      (name.length > 0 && (paper.authors ?? []).some((author) => isSamePerson(author, name))),
-  );
-}
-
-// Progress is position in the PaperPublish pipeline, not a number someone types. A paper at
-// "Submission" is 3 of 8 through, and that is the only progress the lab actually tracks.
-export function paperProgress(paper: AdminBotPaperRecord): { index: number; percent: number } {
-  const index = paperSteps.indexOf(paper.current_step as AdminBotPaperStep);
-  if (index < 0) {
-    return { index: -1, percent: 0 };
-  }
-  return { index, percent: Math.round(((index + 1) / paperSteps.length) * 100) };
-}
-
-export function stepLabel(step: string): string {
-  return stepLabels[step] ?? step;
-}
-
 function saveStep(props: MyWorkProps, paper: AdminBotPaperRecord, step: AdminBotPaperStep) {
   props.onSavePaper({
     id: paper.id,
@@ -962,10 +932,9 @@ function renderOutstanding(row: PaperSlotOverviewRow, outstanding: number) {
 }
 
 /** Venue and deadline as the card's subtitle -- the two facts that decide how urgent it is. */
-function renderCardVenue(paper: AdminBotPaperRecord, props: MyWorkProps) {
-  const row = overviewFor(props, paper.id);
-  const venue = row?.venue ?? paper.venue ?? paper.artifacts?.conference;
-  const deadline = row?.deadline ?? paper.deadline;
+function renderCardVenue(paper: AdminBotPaperRecord) {
+  const venue = paper.venue ?? paper.artifacts?.conference;
+  const deadline = paper.deadline;
   if (!venue && !deadline) {
     return nothing;
   }
@@ -1285,7 +1254,7 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                 : nothing}
             </span>
             <span class="my-work-item__meta">${(paper.authors ?? []).join(", ")}</span>
-            ${renderCardVenue(paper, props)} ${renderCardSummary(paper, props)}
+            ${renderCardVenue(paper)} ${renderCardSummary(paper, props)}
           </span>
         </button>
         <button
@@ -2507,7 +2476,7 @@ function renderNudgePreview(props: MyWorkProps) {
                 <span class="nudge-preview__count">
                   ${t("paperSlots.nudgeItems", {
                     items: String(batch.item_count),
-                    papers: String(batch.paper_titles.length),
+                    papers: String(batch.paper_count),
                   })}
                 </span>
                 ${batch.deliverable
@@ -2592,6 +2561,9 @@ export function resetMyWorkSessionState(): void {
   emailTasks.clear();
   decisionDrafts.clear();
 }
+
+// The page is lazy, so it registers its own reset rather than the shell importing it to clear it.
+onViewSessionReset(resetMyWorkSessionState);
 
 /** The venue as the banner names it, so the mail and the heading never disagree. */
 function venueOf(paper: AdminBotPaperRecord): string {

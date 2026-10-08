@@ -8,15 +8,15 @@
   "limit": 2200,
   "grandfathered": {
     "extensions/adminbot/src/contracts/actions.ts": {
-      "max": 3182,
+      "max": 3139,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "extensions/adminbot/src/kernel/service.ts": {
-      "max": 16154,
+      "max": 16102,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "extensions/adminbot/src/persistence/sqlite.ts": {
-      "max": 4298,
+      "max": 4153,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "extensions/adminbot/src/workflows/deadlines/generated/dataset.ts": {
@@ -164,15 +164,15 @@
       "reason": "Static venue data used only as a default parameter; move to a lazily loaded JSON asset."
     },
     "ui/src/ui/adminbot/views/admin.ts": {
-      "max": 4054,
+      "max": 4038,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "ui/src/ui/adminbot/views/deadlines.ts": {
-      "max": 3552,
+      "max": 3550,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "ui/src/ui/adminbot/views/my-work.ts": {
-      "max": 3155,
+      "max": 3127,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "ui/src/ui/adminbot/views/time-availability.ts": {
@@ -184,11 +184,11 @@
       "reason": "Upstream core file; split when touched, never grow."
     },
     "ui/src/ui/app-render.ts": {
-      "max": 4875,
+      "max": 4817,
       "reason": "Upstream core file; split when touched, never grow."
     },
     "ui/src/ui/app.ts": {
-      "max": 2206,
+      "max": 2204,
       "reason": "Upstream core file; split when touched, never grow."
     },
     "ui/src/ui/views/chat.ts": {

@@ -2,12 +2,8 @@ import "./adminbot/offline/offline-access.ts";
 // oxlint-disable max-lines -- grandfathered at 3976 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
-import "./adminbot/views/reference-checker.ts";
-import "./adminbot/views/openreview-citation-checks.ts";
 import { guard } from "lit/directives/guard.js";
 import { styleMap } from "lit/directives/style-map.js";
-import "./adminbot/views/reference-checker.ts";
-import "./adminbot/views/openreview-citation-checks.ts";
 import { i18n, t } from "../i18n/index.ts";
 import {
   canAccessTab,
@@ -59,7 +55,7 @@ import {
   executeAdminBotAction,
   removePendingAdminBotAction,
 } from "./adminbot/controllers/governance.ts";
-import { loadAdminBotLogisticsRequests } from "./adminbot/controllers/logistics.ts";
+import { readAdminBotLogisticsLists } from "./adminbot/controllers/logistics-paging.ts";
 import {
   loadAdminBotMailingList,
   sendAdminBotMailingList,
@@ -87,12 +83,7 @@ import {
   withdrawAdminBotTrip,
 } from "./adminbot/controllers/paper-slots.ts";
 import { deleteAdminBotPaper } from "./adminbot/controllers/papers.ts";
-import {
-  loadAdminBotProfileOverview,
-  remindAdminBotIncompleteProfiles,
-  seedAdminBotNudgeList,
-} from "./adminbot/controllers/profile-overview.ts";
-import "./components/feedback-widget.ts";
+import { readAdminBotProfileOverview } from "./adminbot/controllers/profile-overview-paging.ts";
 import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
 import { exportAdminBotTabUsage, loadAdminBotTabUsage } from "./adminbot/controllers/tab-usage.ts";
 import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
@@ -131,7 +122,7 @@ import "./components/feedback-widget.ts";
 import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import { configureDraftSync, retryDraftSync } from "./adminbot/offline/draft-sync.ts";
-import { needsLabPapers } from "./adminbot/papers-required.ts";
+import { needsLabPapers, papersMissingFor } from "./adminbot/papers-required.ts";
 import { needsLabRoster } from "./adminbot/roster-required.ts";
 import { renderAdminPanelsSurface } from "./adminbot/surfaces/admin-panels.ts";
 import { renderCollaborateSurface } from "./adminbot/surfaces/collaborate.ts";
@@ -143,6 +134,7 @@ import {
 } from "./adminbot/surfaces/logistics.ts";
 import { renderMeetingsSurface } from "./adminbot/surfaces/meetings.ts";
 import { renderProfessorSurface } from "./adminbot/surfaces/professor.ts";
+import { renderProfileOverviewSurface } from "./adminbot/surfaces/profile-overview.ts";
 import { renderProfileSurface } from "./adminbot/surfaces/profile.ts";
 import type { AdminBotSurfaceScope } from "./adminbot/surfaces/scope.ts";
 import { renderTimeAvailabilitySurface } from "./adminbot/surfaces/time-availability.ts";
@@ -154,14 +146,9 @@ import {
 import { renderGettingStarted } from "./adminbot/views/getting-started.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate, renderSessionRestorePending } from "./adminbot/views/login-gate.ts";
-import {
-  ownPapers,
-  renderMyWork,
-  renderPaperCardDialog,
-  type MyWorkProps,
-} from "./adminbot/views/my-work.ts";
-import { paperTripDraftFrom } from "./adminbot/views/paper-cycle.ts";
-import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
+import { ownPapers } from "./adminbot/views/my-work-papers.ts";
+import type { MyWorkProps } from "./adminbot/views/my-work.ts";
+import { paperTripDraftFrom } from "./adminbot/views/paper-trip-draft.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
 import {
   createChatSessionsLoadOverrides,
@@ -182,6 +169,15 @@ import {
   dismissChatError,
   switchChatSession,
 } from "./app-render.helpers.ts";
+import {
+  renderChat,
+  renderConfig,
+  renderMyWork,
+  renderPaperCardDialog,
+  renderQuickSettings,
+  renderReferenceCheckerPage,
+  warmPaperCard,
+} from "./app-render.lazy-pages.ts";
 import { warnQueryToken } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
@@ -207,6 +203,7 @@ import {
 import { setAssistantAvatarOverride } from "./controllers/assistant-identity.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
+import "./components/dashboard-header.ts";
 import {
   applyConfig,
   ensureAgentConfigEntry,
@@ -223,7 +220,6 @@ import {
   removeConfigFormValue,
   updateMcpServerEnabled,
 } from "./controllers/config.ts";
-import "./components/dashboard-header.ts";
 import {
   buildNewCronForm,
   loadCronJobsPage,
@@ -337,11 +333,10 @@ import {
   resolveModelPrimary,
   sortLocaleStrings,
 } from "./views/agents-utils.ts";
-import { renderChat } from "./views/chat.ts";
 import { renderCommandPalette } from "./views/command-palette.ts";
 import { getPresetById } from "./views/config-presets.ts";
-import { renderQuickSettings, type QuickSettingsChannel } from "./views/config-quick.ts";
-import { renderConfig, type ConfigProps } from "./views/config.ts";
+import type { QuickSettingsChannel } from "./views/config-quick.ts";
+import type { ConfigProps } from "./views/config.ts";
 import {
   renderCronQuickCreate,
   createDefaultDraft,
@@ -1754,6 +1749,7 @@ export function renderApp(state: AppViewState) {
       ? () => updatableState.requestUpdate?.()
       : undefined;
   setLazyViewHost(requestHostUpdate);
+  warmPaperCard(state.tab);
 
   // Opening the workshop tab reads the stored pass. It never starts one -- that is Refresh, and it
   // is thousands of model calls. Self-limiting: the read sets `loading` synchronously and leaves a
@@ -2546,10 +2542,10 @@ export function renderApp(state: AppViewState) {
   // A member's own record starts every signed-in view. The paper list and full roster are fetched
   // only for pages that use them; asking for both on Meetings or Availability delayed those views.
   //
-  // `state.connected` stays on the gateway-driven half only. A member reads over their own HTTP
-  // session (loadAdminBot prefers loadStoredMemberSession), which needs no gateway socket at all --
-  // requiring one was the second half of why the landing page came up blank for plain members.
-  const hasMemberSession = Boolean(state.memberId);
+  // `state.connected` stays on the gateway-driven half only: a member reads over the stored HTTP
+  // session, which needs no socket (requiring one blanked plain members' landing page). That stored
+  // session, not just `memberId`: every read below needs it, and a gate without it re-asks forever.
+  const hasMemberSession = Boolean(state.memberId && loadStoredMemberSession());
   const needsRosterForTab = needsLabRoster(state.tab, adminBotMode, adminBotPanel);
   const needsPapersForTab =
     needsLabPapers(state.tab) || adminBotPanel === "papers" || (isChat && isAdminBotChat);
@@ -2567,7 +2563,7 @@ export function renderApp(state: AppViewState) {
     hasMemberSession &&
     needsPapersForTab &&
     Boolean(state.adminBotData.loadedAt) &&
-    !state.adminBotData.papersLoadedAt;
+    papersMissingFor(state);
   if (
     state.tab !== "adminbotMeetings" &&
     (hasMemberSession || wantsGatewayAdminBotLoad) &&
@@ -2773,18 +2769,7 @@ export function renderApp(state: AppViewState) {
     state.adminBotTabUsageLoadedAt = Date.now();
     void loadAdminBotTabUsage(state).finally(() => requestHostUpdate?.());
   }
-  // Same "never asked" sentinel as the logistics queue: the overview is read when the tab is
-  // opened, and re-read after a reminder run clears the stamp.
-  if (
-    (state.tab === "adminbotProfileOverview" || state.tab === "adminbotProfessor") &&
-    hasMemberSession &&
-    !state.adminBotProfileOverviewLoading &&
-    !state.adminBotProfileOverviewError &&
-    state.adminBotProfileOverviewLoadedAt === null
-  ) {
-    state.adminBotProfileOverviewLoadedAt = Date.now();
-    void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
-  }
+  readAdminBotProfileOverview(state, hasMemberSession, requestHostUpdate);
   // The travel timeline, read when the tab is opened and not again. A sign-in log does not change
   // while somebody is reading their own year off it, and the only thing that re-reads it is the
   // range buttons, which pass their own range through.
@@ -2813,22 +2798,11 @@ export function renderApp(state: AppViewState) {
     state.adminBotPaperSlotsLoadedAt = Date.now();
     void loadAdminBotPaperSlotOverview(state).finally(() => requestHostUpdate?.());
   }
-  // The request list is fetched when the tab is opened in view mode -- including on a reload that
-  // lands straight on it, which the mode-change handler alone would miss. `requests.length` is not
-  // the sentinel: a lab with no requests would re-ask on every render.
-  if (
-    // My Desk summarises the same queue, so it needs the same read. Without this the letter
-    // section would be empty until somebody happened to open Requests first.
-    (isLogisticsTab(state.tab) || state.tab === "adminbotProfessor") &&
-    (state.adminBotLogisticsMode === "view" || state.tab === "adminbotProfessor") &&
-    hasMemberSession &&
-    !state.adminBotLogisticsRequestsLoading &&
-    !state.adminBotLogisticsRequestsError &&
-    state.adminBotLogisticsRequestsLoadedAt === null
-  ) {
-    state.adminBotLogisticsRequestsLoadedAt = Date.now();
-    void loadAdminBotLogisticsRequests(state).finally(() => requestHostUpdate?.());
-  }
+  readAdminBotLogisticsLists(
+    state,
+    { isAdmin: accessRole === "admin", hasMemberSession },
+    requestHostUpdate,
+  );
   // The member roster is the Membership tab, so it reads itself when the tab opens rather than
   // waiting for a "Load the sheet" press: an operator who opens Membership and sees an empty panel
   // reads it as broken, and it was. `memberSheetLoadedAt` is the sentinel rather than `memberSheet`
@@ -3413,35 +3387,7 @@ export function renderApp(state: AppViewState) {
               },
             })
           : nothing}
-        ${state.tab === "adminbotProfileOverview"
-          ? renderAdminBotProfileOverview({
-              members: state.adminBotProfileOverview,
-              mandatoryFieldCount: state.adminBotProfileOverviewFieldCount,
-              adoption: state.adminBotProfileAdoption ?? null,
-              loading: state.adminBotProfileOverviewLoading,
-              error: state.adminBotProfileOverviewError,
-              notice: state.adminBotProfileOverviewNotice,
-              reminding: state.adminBotProfileOverviewReminding,
-              filter: state.adminBotProfileOverviewFilter,
-              onFilterChange: (filter) => {
-                state.adminBotProfileOverviewFilter = filter;
-                requestHostUpdate?.();
-              },
-              onRemind: (scope) => {
-                void remindAdminBotIncompleteProfiles(state, scope).finally(() =>
-                  requestHostUpdate?.(),
-                );
-              },
-              onSeedNudgeList: () => {
-                void seedAdminBotNudgeList(state).finally(() => requestHostUpdate?.());
-              },
-              // The follow-up to a thin row is a look at the person, which is Lab Members' job.
-              onOpenMember: (memberId: string) => {
-                state.selectedMemberId = memberId;
-                state.setTab("adminbotMembers");
-              },
-            })
-          : nothing}
+        ${renderProfileOverviewSurface(state, adminBotSurfaces)}
         ${renderLogisticsSurface(state, adminBotSurfaces)}
         ${renderMeetingsSurface(state, adminBotSurfaces)}
         ${renderTimeAvailabilitySurface(state, adminBotSurfaces)}
@@ -3727,14 +3673,10 @@ export function renderApp(state: AppViewState) {
             )
           : nothing}
         ${state.tab === "adminbotReferenceChecker"
-          ? html`<adminbot-reference-checker
-                .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-                .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
-              ></adminbot-reference-checker>
-              <adminbot-openreview-citation-checks
-                .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-                .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
-              ></adminbot-openreview-citation-checks>`
+          ? renderReferenceCheckerPage(
+              resolveAdminBotBaseUrl(state.settings),
+              loadStoredMemberSession()?.sessionToken ?? "",
+            )
           : nothing}
         ${state.tab === "adminbotConferencePapers"
           ? renderLazyView(lazyConferencePapers, (m) =>

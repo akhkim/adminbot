@@ -2,6 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { forgetSessionReads } from "../auth/read-cache.ts";
 import {
   OPPORTUNITIES,
   type AdminBotOpportunityView,
@@ -18,11 +19,19 @@ import {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-04T12:00:00Z"));
+  // The board reads the service on connect. A test that serves nothing must still not reach the
+  // real network: a read left pending there is shared with the next test's read of the same URL.
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify({ opportunities: [] }), { status: 200 })),
+  );
 });
 
 afterEach(() => {
   servedNames = [];
   document.body.innerHTML = "";
+  forgetSessionReads();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 

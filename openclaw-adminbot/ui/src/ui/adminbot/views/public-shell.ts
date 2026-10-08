@@ -145,10 +145,10 @@ function renderPublicPanel(state: AppViewState) {
   if (state.tab === "adminbotConferencePapers") {
     // The signed-in app loads this list from refreshActiveTab, which only runs behind a gateway
     // connection a visitor does not have. Kicked from here instead, once: `loadingSources` is set
-    // synchronously by the loader and `error` survives a failure, so neither a slow request nor a
-    // dead service turns this into a loop. The state slice is reactive, so the answer re-renders.
+    // synchronously by the loader, `error` survives a failure and `sourcesLoaded` an empty answer,
+    // so no reply turns this into a loop. The state slice is reactive, so the answer re-renders.
     const papers = state.adminBotVenuePapers;
-    if (papers.sources.length === 0 && !papers.loadingSources && !papers.error) {
+    if (!papers.sourcesLoaded && !papers.loadingSources && !papers.error) {
       void loadAdminBotVenueSources(state);
     }
     return renderConferencePapers({

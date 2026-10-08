@@ -3,8 +3,10 @@
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 import type { AdminBotPaperRecordInput } from "../../contracts/actions.js";
+import { paperInvolvesMember } from "../../contracts/paper-involvement.js";
 import type { AdminBotPaperSlotInput } from "../../contracts/paper-slots.js";
 import { resolvePaperPdfSource } from "../../workflows/papers/paper-pdf-source.js";
+import { paperForResponse } from "../../workflows/papers/paper-response.js";
 import { readXAnnouncement, readXCredits } from "../../workflows/papers/x-draft.js";
 import { asString, readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
 import {
@@ -16,6 +18,7 @@ import {
 } from "./guards.js";
 import { readListPage, limitParam } from "./query-params.js";
 import { del, get, post, put, type Route } from "./router.js";
+import { principalRole, sendNotModified, versionEtag } from "./version-etag.js";
 
 // 20 MB of PDF, plus base64's third and the JSON around it. Matches the Control UI's own check.
 export const LINKEDIN_DRAFT_BODY_LIMIT_BYTES = Math.ceil(20 * 1024 * 1024 * 1.4);
@@ -152,14 +155,59 @@ export const papersRoutes: readonly Route[] = [
       { status: 400, message: "member principal required" },
     ),
   ),
-  get("/papers", ({ res, url, ctx }) => {
+  get("/papers", ({ res, url, principal, ctx }) => {
     const { service } = ctx;
+    // The viewer's own papers only (contracts/paper-involvement.ts): the Dashboard and Profile
+    // draw nothing else, and for a lab with hundreds of papers the whole list was most of their
+    // load. Same projection as the full list, so a row is identical whichever read brought it.
+    if (url.searchParams.get("scope") === "mine") {
+      if (principal.kind !== "member") {
+        sendJson(res, 400, { error: { message: "member principal required" } });
+        return;
+      }
+      const { id, name } = principal.member;
+      // The filter reads the member's id and name, so both are in the tag.
+      const version = ctx.store.paperVersion?.();
+      const etag =
+        version === undefined
+          ? undefined
+          : versionEtag("papers.mine", [version, principalRole(principal), id, name]);
+      if (etag && sendNotModified(res, etag)) {
+        return;
+      }
+      sendJson(
+        res,
+        200,
+        {
+          papers: ctx.store
+            .listPapers()
+            .filter((paper) => paperInvolvesMember(paper, id, name))
+            .map(paperForResponse),
+        },
+        { etag },
+      );
+      return;
+    }
     const page = readListPage(url);
     if (page === "invalid") {
       sendJson(res, 400, { error: { message: "invalid list pagination or search" } });
       return;
     }
-    sendServiceResult(res, service.listPapers(page));
+    const version = ctx.store.paperVersion?.();
+    const etag =
+      version === undefined
+        ? undefined
+        : versionEtag("papers", [
+            version,
+            principalRole(principal),
+            page?.limit,
+            page?.offset,
+            page?.q,
+          ]);
+    if (etag && sendNotModified(res, etag)) {
+      return;
+    }
+    sendServiceResult(res, service.listPapers(page), { etag });
   }),
   get(
     "/papers/paperflow-stages",
@@ -384,6 +432,12 @@ export const papersRoutes: readonly Route[] = [
       );
     },
   ),
+  // One paper, readable by whoever can read GET /papers, in the same projection. After every literal
+  // `/papers/<name>` GET (here and in paper-admin.ts, which is mounted first), which it would
+  // otherwise swallow.
+  get(/^\/papers\/([^/]+)$/u, ({ res, params, ctx }) => {
+    sendServiceResult(res, ctx.service.getPaper(decodeURIComponent(params[1])));
+  }),
   put(/^\/papers\/([^/]+)$/u, async ({ req, res, principal, ctx, params }) => {
     const { service } = ctx;
     const paperId = decodeURIComponent(params[1]);

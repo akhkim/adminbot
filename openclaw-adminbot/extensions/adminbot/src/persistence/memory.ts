@@ -299,9 +299,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.proposals.set(proposal.id, proposal);
   }
 
-  listPending(limit?: number): AdminBotStoredProposal[] {
+  listPending(limit?: number, offset = 0): AdminBotStoredProposal[] {
     const max = Number.isFinite(limit) && typeof limit === "number" ? limit : this.proposals.size;
-    return [...this.proposals.values()].filter((entry) => entry.status === "pending").slice(0, max);
+    const pending = [...this.proposals.values()].filter((entry) => entry.status === "pending");
+    return pending.slice(Math.max(0, offset), Math.max(0, offset) + max);
+  }
+
+  countPending(): number {
+    return [...this.proposals.values()].filter((entry) => entry.status === "pending").length;
   }
 
   listProposalsByType(type: AdminBotStoredProposal["type"]): AdminBotStoredProposal[] {
@@ -881,8 +886,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return page ? papers.slice(page.offset, page.offset + page.limit) : papers;
   }
 
-  countPapers(q?: string): number {
-    return [...this.papers.values()].filter((paper) => !q || paperMatchesQuery(paper, q)).length;
+  countPapers(filter?: { q?: string; authorMemberId?: string }): number {
+    return this.listPapers(filter && { ...filter, limit: Number.MAX_SAFE_INTEGER, offset: 0 })
+      .length;
   }
 
   deletePaper(paperId: string): boolean {

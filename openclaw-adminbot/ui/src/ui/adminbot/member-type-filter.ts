@@ -28,43 +28,12 @@ export const ADMINBOT_MEMBER_TYPE_FILTERS = [
 
 export type AdminBotMemberTypeFilterValue = (typeof ADMINBOT_MEMBER_TYPE_FILTERS)[number]["value"];
 
-/**
- * One member's types as a set.
- *
- * The column holds a comma-separated list, because people are genuinely more than one thing --
- * "alumni, coauthor-major" is somebody who left and still writes with the lab. Splitting rather
- * than substring-matching is what keeps "coauthor-major" from also matching "coauthor-minor"
- * on a row that carries both.
- */
-export function memberTypeTokens(memberType: string | undefined): Set<string> {
-  return new Set(
-    (memberType ?? "")
-      .split(",")
-      .map((entry) => entry.trim().toLocaleLowerCase())
-      .filter(Boolean),
-  );
-}
-
-/**
- * Whether a row survives the filter.
- *
- * An empty selection shows everyone. That is the important case: the filter is off by default, and
- * a filter whose "nothing ticked" state hid the whole table would read as a broken page rather
- * than as an unset control.
- *
- * Ticking more than one is a union -- "alumni or major coauthor" -- because these are labels a
- * person holds, not a hierarchy to intersect.
- */
-export function matchesMemberTypeFilter(
-  memberType: string | undefined,
-  selected: readonly string[],
-): boolean {
-  if (selected.length === 0) {
-    return true;
-  }
-  const tokens = memberTypeTokens(memberType);
-  return selected.some((value) => tokens.has(value));
-}
+// Matching lives with the service, which filters the Lab Overview before paging it; re-exported so
+// the Active Papers tab and this one still ask one module.
+export {
+  matchesMemberTypeFilter,
+  memberTypeTokens,
+} from "../../../../extensions/adminbot/src/workflows/members/profile-overview-filter.js";
 
 /**
  * The checkbox group, drawn the same way on both tabs.

@@ -13,6 +13,14 @@ import {
   sendJson,
   sendServiceResult,
 } from "../server.http.js";
+import { pageOf, readPageQuery } from "../server.paging.js";
+import {
+  conferenceRosterWire,
+  mailingExclusionsWire,
+  mapPayload,
+  nudgeBatchWire,
+  slotOverviewWireRow,
+} from "../server.paper-lists.wire.js";
 import {
   adminSessionOnly,
   memberOnly,
@@ -62,11 +70,14 @@ export const paperAdminRoutes: readonly Route[] = [
       const venue = url.searchParams.get("venue")?.trim() ?? "";
       sendServiceResult(
         res,
-        service.collectPublicationMailing({
-          fromIso: url.searchParams.get("from") ?? "",
-          toIso: url.searchParams.get("to") ?? "",
-          ...(venue ? { venue } : {}),
-        }),
+        mapPayload(
+          service.collectPublicationMailing({
+            fromIso: url.searchParams.get("from") ?? "",
+            toIso: url.searchParams.get("to") ?? "",
+            ...(venue ? { venue } : {}),
+          }),
+          ({ excluded, ...digest }) => ({ ...digest, ...mailingExclusionsWire(excluded) }),
+        ),
       );
     }),
   ),
@@ -151,7 +162,12 @@ export const paperAdminRoutes: readonly Route[] = [
     const { service } = ctx;
     // Read-only, and the same records GET /papers already returns to any signed-in member -- this
     // just adds what is outstanding on each. The write and the send below are the gated halves.
-    sendServiceResult(res, service.listPaperSlotOverview(url.searchParams.get("now") ?? undefined));
+    sendServiceResult(
+      res,
+      mapPayload(service.listPaperSlotOverview(url.searchParams.get("now") ?? undefined), (p) => ({
+        papers: p.papers.map(slotOverviewWireRow),
+      })),
+    );
   }),
   post(
     "/papers/evidence/verify/run",
@@ -219,7 +235,12 @@ export const paperAdminRoutes: readonly Route[] = [
     "/papers/conference-rosters",
     privilegedOnly(({ res, ctx }) => {
       const { service } = ctx;
-      sendServiceResult(res, service.listConferenceRosters());
+      sendServiceResult(
+        res,
+        mapPayload(service.listConferenceRosters(), (p) => ({
+          conferences: p.conferences.map(conferenceRosterWire),
+        })),
+      );
     }),
   ),
   get(
@@ -228,7 +249,10 @@ export const paperAdminRoutes: readonly Route[] = [
       const { service } = ctx;
       sendServiceResult(
         res,
-        service.collectPaperNudgeBatches(url.searchParams.get("now") ?? undefined),
+        mapPayload(
+          service.collectPaperNudgeBatches(url.searchParams.get("now") ?? undefined),
+          (p) => ({ ...p, batches: p.batches.map(nudgeBatchWire) }),
+        ),
       );
     }),
   ),
@@ -327,7 +351,16 @@ export const paperAdminRoutes: readonly Route[] = [
   ),
   get("/papers/nudges", ({ res, url, ctx }) => {
     const { service } = ctx;
-    sendServiceResult(res, service.listPaperNudges(url.searchParams.get("now") ?? undefined));
+    // One due nudge per stalled paper, so the list grows with the lab's projects. The board shows
+    // 25 and pages; the metric and the chat panel's count read `total`.
+    const page = readPageQuery(url, { defaultLimit: 25, maxLimit: 100 });
+    sendServiceResult(
+      res,
+      mapPayload(service.listPaperNudges(url.searchParams.get("now") ?? undefined), (p) => {
+        const { items, ...paging } = pageOf(p.nudges, page);
+        return { ...p, nudges: items, ...paging };
+      }),
+    );
   }),
   post(
     "/papers/author-links/backfill",

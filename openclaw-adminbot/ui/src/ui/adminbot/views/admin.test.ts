@@ -1374,32 +1374,6 @@ describe("renderAdminBot announcements panel", () => {
   });
 });
 
-const item = (
-  step: string,
-  start: number,
-  end: number,
-  dependsOn: string[],
-): NonNullable<AdminBotPaperRecord["timeline"]>["items"][number] =>
-  ({
-    step,
-    label: stepLabelFixtures[step] ?? step,
-    dependency_group: "release",
-    depends_on: dependsOn,
-    status: "upcoming",
-    offset_start_business_day: start,
-    offset_end_business_day: end,
-    duration_business_days: end - start,
-    color: "#2563eb",
-  }) as NonNullable<AdminBotPaperRecord["timeline"]>["items"][number];
-
-const stepLabelFixtures: Record<string, string> = {
-  brainstorming_docs: "Brainstorming docs",
-  overleaf_writing: "Overleaf writing",
-  submission: "Submission",
-  google_drive_pdf: "Drive PDF",
-  slide_making: "Slides",
-};
-
 const paper = (overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecord => ({
   id: "paper-1",
   title: "World Models Survey",
@@ -1591,8 +1565,6 @@ describe("Next step per paper — reads the slot overview", () => {
     return [
       {
         paper_id: "p1",
-        title: "Preserving Historical Truth",
-        current_step: "arxiv_polish",
         provided_count: provided,
         required_count: required,
         dormant: false,
@@ -1607,6 +1579,26 @@ describe("Next step per paper — reads the slot overview", () => {
     const text = container.textContent ?? "";
     expect(text).toContain("arXiv abstract page");
     expect(text).toContain("unblocks social posts");
+  });
+
+  it("dates the nudge from the paper's own deadline", () => {
+    // The overview row stopped repeating the deadline, so the message reads it off the paper.
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        paperSlotOverview: overview(["arxiv"]),
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members,
+          papers: [{ ...(paper as object), deadline: "2026-09-25" }] as AdminBotPaperRecord[],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+    expect(container.querySelector('[data-testid="nudge-p1"]')?.getAttribute("title")).toContain(
+      "(deadline 2026-09-25)",
+    );
   });
 
   it("counts progress from the slot table, not from artifact links", () => {

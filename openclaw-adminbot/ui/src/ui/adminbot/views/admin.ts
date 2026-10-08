@@ -44,7 +44,6 @@ import type {
   AdminBotDashboardData,
   AdminBotLabMember,
   AdminBotMemberNudgeState,
-  AdminBotPaperNudge,
   AdminBotPaperRecord,
   AdminBotPaperSaveInput,
   AdminBotPaperStep,
@@ -100,6 +99,7 @@ export type BlockerSort = "stage" | "age" | "paper";
  * somebody looks.
  */
 export type PreregSort = "readiness" | "deadline" | "title" | "editLink" | "viewLink";
+import { adminQueueTotal, type PagedAdminQueue } from "../controllers/admin-queues.ts";
 import { paperSteps, stepLabels } from "../data/paper-steps.ts";
 import {
   PAPER_GRID_THRESHOLD,
@@ -113,12 +113,14 @@ import {
 } from "../paper-grid.ts";
 import { onViewSessionReset } from "../view-session-reset.ts";
 import { renderAdminBotEmailReview } from "./email-review.ts";
+import { renderNudges } from "./nudge-board.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
   paperOverviewRows,
   renderPaperOverviewTable,
   type PaperOverviewFilter,
 } from "./paper-overview.ts";
+import { renderQueueMore } from "./queue-more.ts";
 import { renderAdminBotReimbursements } from "./reimbursements.ts";
 
 export type AdminBotProps = {
@@ -224,6 +226,7 @@ export type AdminBotProps = {
   };
   onMemberListChange?: (query: string, offset: number) => void;
   rosterLoadedAt?: number | null;
+  duplicatePairs?: MemberDuplicatePair<AdminBotLabMember>[] | null; // service pairs; null: reading
   rosterLoading?: boolean;
   rosterError?: string | null;
   onLoadFullRoster?: () => void;
@@ -238,6 +241,8 @@ export type AdminBotProps = {
   onToggleActionSelected: (proposalId: string) => void;
   onSetSelectedActions: (proposalIds: string[]) => void;
   onRemoveSelectedActions: () => void;
+  /** Reads the next page of a paged queue; absent where the queues are not paged (the gateway). */
+  onLoadMoreQueue?: (queue: PagedAdminQueue) => void;
   onExecute: (proposal: AdminBotActionProposal) => void;
   onResolveEmailReview: (messageId: string, resolution: AdminBotEmailReviewResolution) => void;
   // `options.onboard` is the Add-member form's tick: save the record, then put them through
@@ -730,7 +735,7 @@ function submitSettingsForm(event: Event, props: AdminBotProps): void {
 function submitSensitiveInfoForm(event: Event, props: AdminBotProps): void {
   event.preventDefault();
   const form = event.currentTarget;
-  if (!(form instanceof HTMLFormElement)) {
+  if (!(form instanceof HTMLFormElement) || props.data.sensitiveInfo === undefined) {
     return;
   }
   const data = new FormData(form);
@@ -744,7 +749,7 @@ function submitSensitiveInfoForm(event: Event, props: AdminBotProps): void {
 function renderSettings(
   props: AdminBotProps,
   settings: AdminBotSettings | null,
-  sensitiveInfo: AdminBotSensitiveInfoRecord | null,
+  sensitiveInfo: AdminBotSensitiveInfoRecord | null | undefined,
 ) {
   if (!settings) {
     return html`<div class="muted">Settings have not loaded yet.</div>`;
@@ -981,7 +986,12 @@ function renderPendingActions(props: AdminBotProps) {
         `;
       })}
     </div>
+    ${renderQueueMore(props.data.queuePages?.proposals, proposals.length, more(props, "proposals"))}
   `;
+}
+
+function more(props: AdminBotProps, queue: PagedAdminQueue) {
+  return props.onLoadMoreQueue && (() => props.onLoadMoreQueue?.(queue));
 }
 
 function papersForMember(
@@ -997,14 +1007,13 @@ function papersForMember(
 }
 
 /**
- * A paper still moving through the pipeline. Explicitly marked complete, or a timeline that has
- * run to 100%, both mean the work is done and its venue is no longer something to announce about.
+ * A paper still moving through the pipeline. Only an explicit "complete" ends it: step progress
+ * (contracts/paper-progress) reaches 100% on that and nothing else, so it needs no second check.
  * Kept separate from `conferencesForMember` so the members sheet keeps listing every conference a
  * person has touched, while announcements only offer the ones with live work behind them.
  */
 function isOngoingPaper(paper: AdminBotPaperRecord): boolean {
-  if (paper.reminder?.status === "complete") return false;
-  return (paper.timeline?.progress_percent ?? 0) < 100;
+  return paper.reminder?.status !== "complete";
 }
 
 // Conferences a member has *ongoing* papers for, which is what makes them worth announcing to.
@@ -2056,10 +2065,8 @@ const DUPLICATE_REASONS: Record<string, string> = {
   name_contains: "one name is the other plus a middle name",
 };
 const DUPLICATE_PAGE_SIZE = 20;
-const duplicateViews = new WeakMap<
-  readonly AdminBotLabMember[],
-  { pairs: MemberDuplicatePair<AdminBotLabMember>[]; page: number }
->();
+type DuplicateView = { pairs: MemberDuplicatePair<AdminBotLabMember>[]; page: number };
+const duplicateViews = new WeakMap<object, DuplicateView>(); // keyed by the pairs' source array
 
 /** The fields this record has that the other one does not -- the half it would contribute. */
 function contributedFields(candidate: AdminBotLabMember, other: AdminBotLabMember): string[] {
@@ -2149,13 +2156,13 @@ function renderMembersWithoutEmail(props: AdminBotProps, members: AdminBotLabMem
 }
 
 function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
-  if (props.mode !== "admin" || !props.onMergeMembers) {
+  if (props.mode !== "admin" || !props.onMergeMembers || props.duplicatePairs === null) {
     return nothing;
   }
-  const cached = duplicateViews.get(members);
-  const view = cached ?? { pairs: findDuplicateMembers(members), page: 0 };
+  const cached = duplicateViews.get(props.duplicatePairs ?? members);
+  const view = cached ?? { pairs: props.duplicatePairs ?? findDuplicateMembers(members), page: 0 };
   if (!cached) {
-    duplicateViews.set(members, view);
+    duplicateViews.set(props.duplicatePairs ?? members, view);
   }
   const { pairs } = view;
   if (pairs.length === 0) {
@@ -2585,7 +2592,7 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     ${board(t("paperOverview.details.travel"), renderTravelBoard(props))}
     ${board(t("paperOverview.details.blockers"), renderBlockers(props, papers))}
     ${board(t("paperOverview.details.nextSteps"), renderNextSteps(props, papers))}
-    ${board(t("paperOverview.details.nudges"), renderNudges(props.data.nudges))}
+    ${board(t("paperOverview.details.nudges"), renderNudges(props.data, more(props, "nudges")))}
     ${board(t("paperOverview.details.add"), renderAddPaperCard(props, { governance: true }))}
   `;
 }
@@ -3333,7 +3340,7 @@ function nextStepNudgeMessage(
   label: string,
   waitingOn: string,
 ): string {
-  const deadline = row.deadline ? ` (deadline ${row.deadline})` : "";
+  const deadline = paper.deadline ? ` (deadline ${paper.deadline})` : "";
   return `"${paper.title}"${deadline} is waiting on ${waitingOn} for: ${label}. ${row.provided_count} of ${row.required_count} fields are in.`;
 }
 
@@ -3408,31 +3415,6 @@ function renderNextSteps(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
           </article>
         `;
       })}
-    </div>
-  `;
-}
-
-function renderNudges(nudges: AdminBotPaperNudge[]) {
-  if (nudges.length === 0) {
-    return html`<div class="adminbot-empty adminbot-empty--compact">No due paper nudges.</div>`;
-  }
-  return html`
-    <div class="adminbot-nudge-list">
-      ${nudges.map(
-        (nudge) => html`
-          <article class="adminbot-nudge adminbot-nudge--${nudge.type}">
-            <div class="adminbot-nudge__header">
-              <strong>${nudge.title}</strong>
-              <span>${nudge.type === "head_professor_escalation" ? "Escalate" : "Nudge"}</span>
-            </div>
-            <p>${nudge.message}</p>
-            <div class="adminbot-action__meta">
-              <span>${stepLabels[nudge.step] ?? friendly(nudge.step)}</span>
-              <span>${nudge.recipients.join(", ") || "No recipients"}</span>
-            </div>
-          </article>
-        `,
-      )}
     </div>
   `;
 }
@@ -3916,6 +3898,8 @@ function renderPanel(props: AdminBotProps) {
             </section>
             ${renderAdminBotEmailReview({
               reviews: props.data.emailReviews ?? [],
+              page: props.data.queuePages?.emailReview,
+              onMore: more(props, "emailReview"),
               candidates: props.data.emailReviewCandidates ?? [],
               recentResolutions: props.data.emailReviewHistory ?? [],
               busyActionId: props.busyActionId,
@@ -4034,7 +4018,7 @@ export function renderAdminBot(props: AdminBotProps) {
         ? html`<div class="adminbot-metrics">
             ${general
               ? nothing
-              : renderMetric("Pending", props.data.proposals.length, "approval queue")}
+              : renderMetric("Pending", adminQueueTotal(props.data, "proposals"), "approval queue")}
             ${renderMetric(
               "Members",
               props.data.members.length,
@@ -4043,7 +4027,7 @@ export function renderAdminBot(props: AdminBotProps) {
             ${renderMetric("Papers", props.data.papers.length, "publication pipeline")}
             ${general
               ? renderMetric("Updated", loadedAt, "read-only view")
-              : renderMetric("Nudges", props.data.nudges.length, `loaded ${loadedAt}`)}
+              : renderMetric("Nudges", adminQueueTotal(props.data, "nudges"), `loaded ${loadedAt}`)}
           </div>`
         : nothing}
       ${firstLoadPending || firstLoadFailed

@@ -712,6 +712,19 @@ describe("renderDeadlines", () => {
     });
   });
 
+  it("reads the proposal list once when the page opens", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const store = new TestProposalStore();
+    const list = vi.spyOn(store, "list");
+    render(
+      renderDeadlines({ role: "member", memberId: "member-1", proposalStore: store }),
+      container,
+    );
+    await settle(container);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
   it("lets a signed-in member submit a pending server-backed proposal", async () => {
     const container = document.createElement("div");
     document.body.append(container);

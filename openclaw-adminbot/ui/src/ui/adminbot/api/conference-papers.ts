@@ -134,7 +134,7 @@ export async function searchLabPaperRelevance(
  * the boundary is what keeps a page that renders "3 of 2540 calls failed" from rendering
  * "undefined of 2540 calls failed" against a service that has never heard of failed calls.
  */
-function withWorkshopRunDefaults(body: unknown): unknown {
+export function withWorkshopRunDefaults(body: unknown): unknown {
   if (!body || typeof body !== "object") {
     return body;
   }
@@ -145,6 +145,47 @@ function withWorkshopRunDefaults(body: unknown): unknown {
   return {
     ...run,
     calls_failed: typeof run.calls_failed === "number" ? run.calls_failed : 0,
+    ...(run.preview && typeof run.preview === "object"
+      ? { preview: withWorkshopProfiles(run.preview as Record<string, unknown>) }
+      : {}),
+  };
+}
+
+/**
+ * Put each pair's workshop profile back on the pair.
+ *
+ * The service sends every profile once, in `workshops`, and has each pair name its workshop by id
+ * -- the same profile used to ride on every pair and again inside every draft. The page reads
+ * `recommendation.workshop`, so it is restored here. An older service still nests the profile and
+ * sends no `workshops`; that body passes through untouched.
+ */
+function withWorkshopProfiles(preview: Record<string, unknown>): Record<string, unknown> {
+  const workshops = preview.workshops;
+  if (!workshops || typeof workshops !== "object") {
+    return preview;
+  }
+  const profiles = workshops as Record<string, unknown>;
+  const hydrate = (entries: unknown): unknown =>
+    Array.isArray(entries)
+      ? entries.map((entry) => {
+          const pair = entry as Record<string, unknown>;
+          return typeof pair.workshop_id === "string" && !pair.workshop
+            ? { ...pair, workshop: profiles[pair.workshop_id] }
+            : pair;
+        })
+      : entries;
+  const withPairs = (groups: unknown): unknown =>
+    Array.isArray(groups)
+      ? groups.map((group) => {
+          const record = group as Record<string, unknown>;
+          return { ...record, recommendations: hydrate(record.recommendations) };
+        })
+      : groups;
+  const { workshops: _workshops, ...rest } = preview;
+  return {
+    ...rest,
+    recipients: withPairs(preview.recipients),
+    unresolved_recipients: withPairs(preview.unresolved_recipients),
   };
 }
 

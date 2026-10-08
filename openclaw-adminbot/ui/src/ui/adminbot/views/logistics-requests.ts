@@ -9,6 +9,7 @@
 // Read-only about content: an admin reading a request cannot edit what the member wrote. Correcting
 // a request is the member's own form, and answering one is the status control at the bottom.
 import { html, nothing } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
 import type {
@@ -21,6 +22,7 @@ import type {
 } from "../api/logistics.ts";
 import { logisticsDeadlineText } from "../data/logistics-queue.ts";
 import { attachmentDataUrl, formatFileSize } from "../data/logistics-requests.ts";
+import { renderLoadMore, type LoadMoreProps } from "../load-more.ts";
 import { SCHOOL_FIELDS, TEMPLATE_FOLDER_URL, type SchoolField } from "./logistics-fields.ts";
 import { logisticsStatusLabel } from "./logistics-status.ts";
 
@@ -28,6 +30,8 @@ export type AdminBotLogisticsRequestsProps = {
   requests: LogisticsRequest[];
   loading: boolean;
   error: string | null;
+  /** Older requests, a page at a time; the list is cut on the service, most recent first. */
+  more?: LoadMoreProps;
   /** The request opened in full, with its file bytes. Null is the list. */
   open: LogisticsRequest | null;
   openLoading: boolean;
@@ -159,10 +163,15 @@ function renderRequestsList(props: AdminBotLogisticsRequestsProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    ${props.requests.map((request) => renderRequestRow(props, request))}
+                    ${repeat(
+                      props.requests,
+                      (request) => request.id,
+                      (request) => renderRequestRow(props, request),
+                    )}
                   </tbody>
                 </table>
               </div>
+              ${renderLoadMore(props.more, "logistics-requests-more")}
             `
           : html`<p class="logistics-requests__empty">
               ${props.viewerIsAdmin

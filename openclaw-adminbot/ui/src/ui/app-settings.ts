@@ -2,13 +2,18 @@ import { ADMINBOT_PASSWORD_RESET_PATH } from "../../../extensions/adminbot/src/c
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
-import { loadAdminBot, type AdminBotHost } from "./adminbot/controllers/admin.ts";
+import { ensureAdminQueuesForTab } from "./adminbot/controllers/admin-queues.ts";
+import {
+  loadAdminBot,
+  loadAdminBotSensitiveInfo,
+  type AdminBotHost,
+} from "./adminbot/controllers/admin.ts";
 import { loadAdminBotVenueSources } from "./adminbot/controllers/conference-papers.ts";
 import {
   loadAdminBotRegistrations,
   type AdminBotRegistrationsHost,
 } from "./adminbot/data/registrations.ts";
-import { needsLabPapers } from "./adminbot/papers-required.ts";
+import { needsLabPapers, papersMissingFor } from "./adminbot/papers-required.ts";
 import { refreshChat } from "./app-chat.ts";
 import {
   startLogsPolling,
@@ -19,6 +24,7 @@ import {
   stopDebugPolling,
 } from "./app-polling.ts";
 import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll.ts";
+import { resetChatViewStateIfLoaded } from "./chat/view-reset.ts";
 import {
   beginControlUiRefresh,
   controlUiNowMs,
@@ -81,7 +87,6 @@ import { startThemeTransition, type ThemeTransitionContext } from "./theme-trans
 import { resolveTheme, type ResolvedTheme, type ThemeMode, type ThemeName } from "./theme.ts";
 import type { AgentsListResult, AttentionItem } from "./types.ts";
 import { normalizeLocalUserIdentity } from "./user-identity.ts";
-import { resetChatViewState } from "./views/chat.ts";
 
 export { setLastActiveSessionKey } from "./app-last-active-session.ts";
 
@@ -414,8 +419,7 @@ export function setThemeMode(
 }
 
 async function refreshAgentsTab(host: SettingsHost, app: SettingsAppHost) {
-  await loadAgents(app);
-  await loadConfig(app);
+  await Promise.all([loadAgents(app), loadConfig(app)]);
   const agentIds = host.agentsList?.agents?.map((entry) => entry.id) ?? [];
   if (agentIds.length > 0) {
     void loadAgentIdentities(app, agentIds);
@@ -462,16 +466,21 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
   // Navigation should reuse the session's dashboard read where the page has its own Refresh button.
   const needsPapers = needsLabPapers(host.tab);
   const loadAdminBotOnce = () =>
-    app.adminBotLoading ||
-    (app.adminBotData?.loadedAt && (!needsPapers || app.adminBotData.papersLoadedAt))
+    app.adminBotLoading || (app.adminBotData?.loadedAt && (!needsPapers || !papersMissingFor(app)))
       ? Promise.resolve()
       : loadAdminBot(
           app,
-          "admin",
+          // A plain member asked in "admin" mode spends five reads on queues the service refuses.
+          (app as { memberPrivilegeLevel?: string | null }).memberPrivilegeLevel === "admin"
+            ? "admin"
+            : "general",
           needsPapers,
-          Boolean(app.adminBotData?.loadedAt && needsPapers && !app.adminBotData.papersLoadedAt),
+          Boolean(app.adminBotData?.loadedAt && needsPapers && papersMissingFor(app)),
         );
   const refreshRun = beginControlUiRefresh(host, host.tab);
+  // The admin queues this page draws (proposals, email review, nudges...), read alongside the
+  // page's own loads and only when this session has not read them yet; see admin-queues.ts.
+  const adminQueues = ensureAdminQueuesForTab(app, host.tab);
   try {
     switch (host.tab) {
       case "config":
@@ -490,8 +499,10 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "overview":
         await loadOverview(host);
         break;
-      case "adminbot":
       case "adminbotSettings":
+        await Promise.all([loadAdminBotOnce(), loadAdminBotSensitiveInfo(app, true)]);
+        break;
+      case "adminbot":
       case "adminbotMembers":
       case "adminbotPapers":
       case "adminbotAnnouncements":
@@ -500,10 +511,11 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         break;
       // Needs the roster too: the interests box is prefilled from the viewer's own topics, which
       // only exist once the member list has loaded.
-      case "adminbotConferencePapers":
-        await loadAdminBotOnce();
-        await loadAdminBotVenueSources(app);
+      case "adminbotConferencePapers": {
+        const profile = loadAdminBotOnce();
+        await Promise.all([profile, loadAdminBotVenueSources(app, profile)]);
         break;
+      }
       // The audience filters read the roster and the papers; the event list is a separate read.
       case "adminbotCalendar": {
         const loadEvents = (app as { loadCalendarEvents?: () => Promise<void> }).loadCalendarEvents;
@@ -571,6 +583,7 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         scheduleLogsScroll(host as unknown as Parameters<typeof scheduleLogsScroll>[0], true);
         break;
     }
+    await adminQueues;
     finishControlUiRefresh(host, refreshRun, "ok");
   } catch (err) {
     finishControlUiRefresh(host, refreshRun, "error");
@@ -767,7 +780,7 @@ function applyTabSelection(
 
   // Cleanup chat module state when navigating away from chat
   if (prev === "chat" && next !== "chat") {
-    resetChatViewState();
+    resetChatViewStateIfLoaded();
   }
 
   if (next === "chat") {

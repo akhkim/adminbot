@@ -6,6 +6,7 @@
 import { nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
+import { loadMoreAdminQueue } from "../controllers/admin-queues.ts";
 import {
   loadAdminBot,
   loadAdminBotMemberList,
@@ -30,6 +31,7 @@ import {
   removePendingAdminBotAction,
   removeSelectedPendingAdminBotActions,
 } from "../controllers/governance.ts";
+import { adminBotDuplicatePairs } from "../controllers/member-detail.ts";
 import {
   approveAdminBotMemberRequest,
   editAdminBotMemberRequest,
@@ -137,6 +139,11 @@ export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSur
                 }
               : undefined,
           rosterLoadedAt: state.adminBotRosterLoadedAt,
+          // The roster's rows are summaries; the duplicate check compares whole records.
+          duplicatePairs:
+            adminBotPanel === "members" && adminBotMode === "admin"
+              ? adminBotDuplicatePairs(state, () => requestHostUpdate?.())
+              : undefined,
           rosterLoading: state.adminBotRosterLoading,
           rosterError: state.adminBotRosterError,
           onLoadFullRoster: () => {
@@ -223,6 +230,10 @@ export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSur
           },
           onRemoveSelectedActions: () => {
             void removeSelectedPendingAdminBotActions(state).finally(() => requestHostUpdate?.());
+            requestHostUpdate?.();
+          },
+          onLoadMoreQueue: (queue) => {
+            void loadMoreAdminQueue(state, queue).finally(() => requestHostUpdate?.());
             requestHostUpdate?.();
           },
           onExecute: (proposal) => void executeAdminBotAction(state, proposal),

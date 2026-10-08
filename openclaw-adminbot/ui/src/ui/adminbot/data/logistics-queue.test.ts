@@ -3,6 +3,7 @@ import type { LogisticsRequest } from "../api/logistics.ts";
 import {
   DEFAULT_LOGISTICS_QUEUE_OPTIONS,
   logisticsDeadlineText,
+  logisticsQueueQueryFor,
   selectLogisticsQueue,
 } from "./logistics-queue.ts";
 
@@ -79,7 +80,11 @@ describe("the request queue's deadlines and controls", () => {
   });
 
   it("supports requester, submission-time, and status sorting", () => {
-    const latest = { ...tokyo, submitted_at: "2026-09-29T10:00:00Z", status: "completed" as const };
+    const latest = {
+      ...tokyo,
+      submitted_at: "2026-09-29T10:00:00Z",
+      status: "in_progress" as const,
+    };
     for (const sortBy of ["user", "submitted", "status"] as const) {
       expect(
         selectLogisticsQueue(
@@ -89,5 +94,39 @@ describe("the request queue's deadlines and controls", () => {
         ).map((r) => r.id),
       ).toEqual(["Bo", "Ada"]);
     }
+  });
+
+  it("keeps open requests ahead of finished ones whichever way it is sorted", () => {
+    const done = { ...tokyo, submitted_at: "2026-09-29T10:00:00Z", status: "completed" as const };
+    for (const sortDirection of ["asc", "desc"] as const) {
+      expect(
+        selectLogisticsQueue(
+          [done, aoe],
+          { ...DEFAULT_LOGISTICS_QUEUE_OPTIONS, sortBy: "submitted", sortDirection },
+          true,
+        ).map((r) => r.id),
+      ).toEqual(["Ada", "Bo"]);
+    }
+  });
+
+  it("asks the service the question the controls on screen ask", () => {
+    expect(logisticsQueueQueryFor(DEFAULT_LOGISTICS_QUEUE_OPTIONS, false)).toEqual({
+      status: "open",
+      sort: "deadline",
+      dir: "asc",
+    });
+    expect(logisticsQueueQueryFor(DEFAULT_LOGISTICS_QUEUE_OPTIONS, true).status).toBe("all");
+    expect(
+      logisticsQueueQueryFor(
+        {
+          search: "  MIT ",
+          kind: "book_meeting",
+          status: "completed",
+          sortBy: "user",
+          sortDirection: "desc",
+        },
+        false,
+      ),
+    ).toEqual({ status: "completed", kind: "book_meeting", q: "MIT", sort: "user", dir: "desc" });
   });
 });

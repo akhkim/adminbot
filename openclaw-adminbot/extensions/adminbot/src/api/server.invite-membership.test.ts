@@ -150,6 +150,27 @@ describe("POST /meetings/invite-membership/run", () => {
       `${SERIES}_R20261005T133000`,
     ]);
     expect(proposal?.proposed_payload.event_id).not.toBe(SERIES);
+
+    // The queue's summary view drops the payload but keeps what the row draws and approval needs.
+    const summary = await fetch(`${baseUrl}/proposals/pending?view=summary`, {
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+    });
+    const row = (
+      (await summary.json()) as { proposals: Array<Record<string, unknown>> }
+    ).proposals.find((entry) => entry.id === body.proposal_id);
+    expect(row).not.toHaveProperty("proposed_payload");
+    expect(Object.keys(row ?? {}).sort()).toEqual([
+      "approval_requirement",
+      "approvals",
+      "created_at",
+      "id",
+      "payload_hash",
+      "risk_tier",
+      "status",
+      "summary",
+      "type",
+      "updated_at",
+    ]);
   });
 
   // The access design seats major coauthors on the lab calendar as well as the Monday meeting.

@@ -117,7 +117,6 @@ const SYNONYMS: Record<string, string[]> = {
   submission_url: ["submission", "openreview", "submissionlink"],
   google_drive_pdf_url: ["drivepdf", "pdf", "drivelink"],
   arxiv_url: ["arxiv", "arxivlink", "preprint"],
-  arxiv_paper_password: ["arxivpassword", "arxivpw", "paperpassword"],
   google_slides_url: ["slides", "deck", "presentation", "googleslides"],
   poster_url: ["poster"],
 };

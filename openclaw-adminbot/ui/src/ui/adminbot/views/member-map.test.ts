@@ -60,6 +60,16 @@ describe("parseMemberMap", () => {
     expect(map.unplaced).toBe(1);
   });
 
+  it("reads the unplaced count the full map sends in place of the list", () => {
+    const map = parseMemberMap({
+      mode: "full",
+      places: [],
+      unplaced_count: 3,
+      counts: { placed: 0, unplaced: 2, unknown: 1 },
+    })!;
+    expect(map.unplaced).toBe(3);
+  });
+
   it("sorts places by headcount so the list reads as a ranking", () => {
     const map = parseMemberMap({
       ...summary,

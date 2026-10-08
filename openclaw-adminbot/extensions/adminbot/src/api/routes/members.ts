@@ -9,6 +9,7 @@ import {
   type AdminBotLabMemberInput,
   redactConfidentialMemberFields,
 } from "../../contracts/actions.js";
+import { ADMIN_LIST_PAGE_SIZE, pageOf, readAdminListPage } from "../../contracts/list-page.js";
 import {
   type AdminBotMemberRequestStatus,
   adminBotMemberRequestStatuses,
@@ -17,6 +18,14 @@ import { memberAttends } from "../../workflows/calendar/standing-meetings.js";
 import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import type { AdminBotWriteOrigin } from "../../workflows/members/adoption.js";
 import { privilegeForMemberTypeChange } from "../../workflows/members/member-type-access.js";
+import {
+  deskAdoption,
+  filterOverviewRows,
+  type ProfileReminderInclude,
+  readProfileOverviewFilter,
+  remindScopeFor,
+} from "../../workflows/members/profile-overview-filter.js";
+import { profileOverviewWireRow } from "../../workflows/members/profile-overview-row.js";
 import { sameMemberType } from "../../workflows/members/roster-sync.js";
 import { isTravelHistorySubject } from "../../workflows/members/travel-history.js";
 import { newMemberIdentity } from "../member-create.js";
@@ -36,6 +45,7 @@ import type { AdminBotRouteContext } from "./context.js";
 import {
   adminSessionOnly,
   approverIdentityFor,
+  isPrivileged,
   memberOnly,
   principalActor,
   privilegedOnly,
@@ -43,10 +53,13 @@ import {
   requirePrivileged,
 } from "./guards.js";
 import { readStandingMeetings } from "./meetings.js";
+import { memberSummaryRow } from "./member-summary-row.js";
+import { memberViewEtag } from "./members-etag.js";
 import { memberOnboardingDeps } from "./onboarding.js";
 import { readListPage, limitParam } from "./query-params.js";
 import { del, get, post, put, route, type Route, under } from "./router.js";
 import { requestIsSecure, sendAuthResult } from "./session.js";
+import { sendNotModified } from "./version-etag.js";
 
 export const membersRoutes: readonly Route[] = [
   // Member requests: anyone signed in may propose adding somebody; only an admin decides. Ahead of
@@ -101,6 +114,10 @@ export const membersRoutes: readonly Route[] = [
         sendJson(res, 400, { error: { message: "summary view cannot be paginated" } });
         return;
       }
+      const etag = memberViewEtag(ctx.store, principal, "lab-members", { view });
+      if (etag && sendNotModified(res, etag)) {
+        return;
+      }
       const result = service.listLabMemberSummaries(
         principal.kind === "member" ? principal.member.id : undefined,
       );
@@ -110,8 +127,11 @@ export const membersRoutes: readonly Route[] = [
           ? {
               ...result,
               payload: {
+                // Compact rows (member-summary-row.ts); the caller's own full record is `self`.
                 members: result.payload.members.map((member) =>
-                  redactConfidentialMemberFields(member, viewer),
+                  memberSummaryRow(redactConfidentialMemberFields(member, viewer), {
+                    isAdmin: isPrivileged(principal),
+                  }),
                 ),
                 ...(result.payload.self
                   ? { self: redactConfidentialMemberFields(result.payload.self, viewer) }
@@ -119,9 +139,15 @@ export const membersRoutes: readonly Route[] = [
               },
             }
           : result,
+        { etag },
       );
       return;
     }
+    const etag = memberViewEtag(ctx.store, principal, "lab-members", { page });
+    if (etag && sendNotModified(res, etag)) {
+      return;
+    }
+    // A page carries the card projection; the unpaged read stays full for the agent tools.
     const result = service.listLabMembers(page);
     sendServiceResult(
       res,
@@ -136,6 +162,7 @@ export const membersRoutes: readonly Route[] = [
             },
           }
         : result,
+      { etag },
     );
   }),
   get(
@@ -156,6 +183,38 @@ export const membersRoutes: readonly Route[] = [
       return;
     }
     sendServiceResult(res, service.listRecentUpdatesForMember(memberId, limitParam(url)));
+  }),
+  // One member's whole record, for a view that opens it: the summary roster carries only what list
+  // cells show (member-summary-row.ts). Your own, or an admin's read of anyone's -- the same
+  // audience that may read a schedule -- and redacted for the reader like every roster read.
+  get(/^\/lab\/members\/([^/]+)\/detail$/u, ({ res, principal, ctx, params }) => {
+    const memberId = decodeURIComponent(params[1]!);
+    const isSelf = principal.kind === "member" && principal.member.id === memberId;
+    if (!isSelf && !requirePrivileged(res, principal)) {
+      return;
+    }
+    const etag = memberViewEtag(ctx.store, principal, "lab-members.detail", { view: memberId });
+    if (etag && sendNotModified(res, etag)) {
+      return;
+    }
+    const result = ctx.service.getLabMemberView(memberId);
+    sendServiceResult(
+      res,
+      result.ok
+        ? {
+            ...result,
+            payload: {
+              member: redactConfidentialMemberFields(result.payload.member, {
+                ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
+                isAdmin:
+                  principal.kind === "member" && principal.member.privilege_level === "admin",
+                isMemberSession: principal.kind === "member",
+              }),
+            },
+          }
+        : result,
+      { etag },
+    );
   }),
   get(/^\/lab\/members\/([^/]+)\/travel$/u, ({ res, url, principal, ctx, params }) => {
     const { service } = ctx;
@@ -412,17 +471,60 @@ export const membersRoutes: readonly Route[] = [
       sendServiceResult(res, service.migrateMemberNotesToFields(principalActor(principal)));
     }),
   ),
-  get("/members/mandatory-fields-incomplete", ({ res, ctx }) => {
+  get("/members/mandatory-fields-incomplete", ({ res, principal, ctx }) => {
     const { service } = ctx;
-    // Read-only roster scan (same shape as /papers/nudges), so no privilege gate: it powers the
-    // dashboard's own-profile warning too, which any signed-in member may load.
-    sendServiceResult(res, service.listMembersWithIncompleteMandatoryFields());
+    // Open to anyone signed in for the dashboard's own-profile warning, but everybody's
+    // completeness is the admin's profile overview: a member who is not an admin gets their row.
+    const result = service.listMembersWithIncompleteMandatoryFields();
+    const ownOnly = principal.kind === "member" && !isPrivileged(principal);
+    sendServiceResult(
+      res,
+      result.ok && ownOnly
+        ? {
+            ...result,
+            payload: {
+              members: result.payload.members.filter(({ id }) => id === principal.member.id),
+            },
+          }
+        : result,
+    );
   }),
   get(
     "/members/profile-overview",
-    privilegedOnly(({ res, ctx }) => {
+    privilegedOnly(({ res, url, ctx }) => {
       const { service } = ctx;
-      sendServiceResult(res, service.listMemberProfileOverview());
+      const desk = url.searchParams.get("view") === "desk";
+      const page = readAdminListPage(url.searchParams);
+      const filter = readProfileOverviewFilter(url.searchParams);
+      if (page === "invalid" || filter === "invalid") {
+        sendJson(res, 400, { error: { message: "invalid profile overview page" } });
+        return;
+      }
+      const overview = service.listMemberProfileOverview();
+      if (!overview.ok) {
+        sendServiceResult(res, overview);
+        return;
+      }
+      // The roll-ups are taken over everybody before anything is cut, so the figures at the top of
+      // the page and on My Desk are exact however little of the roster travels with them.
+      const { members, ...rollUp } = overview.payload;
+      if (desk) {
+        const heads = deskAdoption(members, ADMIN_LIST_PAGE_SIZE);
+        sendJson(res, 200, {
+          ...rollUp,
+          members: heads.members.map(profileOverviewWireRow),
+          desk: heads.counts,
+        });
+        return;
+      }
+      // Rows leave out the zeroed counters the client fills in itself; see profileOverviewWireRow.
+      const { rows, ...rest } = pageOf(filterOverviewRows(members, filter), page, (row) => row.id);
+      sendJson(res, 200, {
+        ...rollUp,
+        members: rows.map(profileOverviewWireRow),
+        ...rest,
+        summary: { remind_count: remindScopeFor(members, filter).memberIds.length },
+      });
     }),
   ),
   post(
@@ -431,13 +533,46 @@ export const membersRoutes: readonly Route[] = [
       const { service } = ctx;
       const reminderBody = readRecord(await readJsonOrEmpty(req));
       const rawInclude = asString(reminderBody.include);
-      const include =
+      let include: ProfileReminderInclude | undefined =
         rawInclude === "profile" || rawInclude === "timeline" || rawInclude === "both"
           ? rawInclude
           : undefined;
-      const reminderRecipients = Array.isArray(reminderBody.recipient_member_ids)
+      let reminderRecipients = Array.isArray(reminderBody.recipient_member_ids)
         ? reminderBody.recipient_member_ids.filter((id): id is string => typeof id === "string")
         : undefined;
+      // An empty recipient list means "everyone" to the service, so a list that names nobody --
+      // empty, or nothing in it an id -- sends to nobody rather than the whole roster.
+      if (
+        reminderRecipients &&
+        !reminderRecipients.length &&
+        typeof reminderBody.filter !== "string"
+      ) {
+        sendJson(res, 200, { created: [], skipped: [] });
+        return;
+      }
+      // The Lab Overview no longer holds every row, so it sends the filter it is showing and the
+      // people are resolved here, by the same function that counted them for the button.
+      if (typeof reminderBody.filter === "string") {
+        const filter = readProfileOverviewFilter(new URLSearchParams(reminderBody.filter));
+        const overview = service.listMemberProfileOverview();
+        if (filter === "invalid" || !overview.ok) {
+          if (overview.ok) {
+            sendJson(res, 400, { error: { message: "invalid profile overview filter" } });
+          } else {
+            sendServiceResult(res, overview);
+          }
+          return;
+        }
+        const scope = remindScopeFor(overview.payload.members, filter);
+        // An empty recipient list means "everyone" to the service, so a filter that matches nobody
+        // must stop here rather than turn into the whole roster.
+        if (!scope.memberIds.length) {
+          sendJson(res, 200, { created: [], skipped: [] });
+          return;
+        }
+        include = scope.include;
+        reminderRecipients = scope.memberIds;
+      }
       sendServiceResult(
         res,
         await service.sendMandatoryFieldsReminders(principalActor(principal), {

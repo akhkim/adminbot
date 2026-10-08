@@ -2,6 +2,7 @@
 //
 // Mirrors the service's api/routes/members.ts. Cut from auth/session.ts, which keeps the session
 // lifecycle and the request plumbing every zone shares.
+import type { DeskAdoptionCounts } from "../../../../../extensions/adminbot/src/workflows/members/profile-overview-filter.js";
 import {
   authedJson,
   type AuthResult,
@@ -499,13 +500,33 @@ export type MemberProfileOverview = {
    * short forever.
    */
   mandatoryFieldCount: number;
+  /** The whole filtered roster's length; `members` is one page of it. */
+  total: number;
+  nextCursor: string | null;
+  /** How many people the Remind button reaches under this filter, over every page. */
+  remindCount: number | null;
+  /** My Desk's adoption columns' exact lengths. Only a `view=desk` read carries them. */
+  desk: DeskAdoptionCounts | null;
 };
 
+/**
+ * One page of the Lab Overview, or My Desk's adoption heads with `view=desk`.
+ *
+ * `query` carries the page (`limit`, `cursor`) and the page's filter; the service filters before it
+ * pages, and counts the Remind button over everything the filter matches.
+ */
 export async function fetchMemberProfileOverview(
   sessionToken: string,
   baseUrl: string,
+  query?: URLSearchParams,
 ): Promise<AuthResult<MemberProfileOverview>> {
-  const result = await authedJson(baseUrl, "/members/profile-overview", "GET", sessionToken);
+  const search = query?.toString();
+  const result = await authedJson(
+    baseUrl,
+    `/members/profile-overview${search ? `?${search}` : ""}`,
+    "GET",
+    sessionToken,
+  );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
@@ -516,6 +537,10 @@ export async function fetchMemberProfileOverview(
     members?: Array<Partial<MemberProfileOverviewRow>>;
     mandatory_field_count?: number;
     adoption?: MemberAdoptionSummary;
+    total?: number;
+    next_cursor?: string;
+    summary?: { remind_count?: number };
+    desk?: DeskAdoptionCounts;
   } | null;
   const members = (body?.members ?? []).map(profileOverviewRow);
   return {
@@ -531,6 +556,11 @@ export async function fetchMemberProfileOverview(
         project_rate: 0,
         signed_in_ever: 0,
       },
+      // An older service sends everybody and no total, which is the same as one page of all of it.
+      total: body?.total ?? members.length,
+      nextCursor: body?.next_cursor ?? null,
+      remindCount: body?.summary?.remind_count ?? null,
+      desk: body?.desk ?? null,
     },
   };
 }
@@ -545,6 +575,11 @@ export async function fetchMemberProfileOverview(
  * render and the whole page comes up blank. Zeroed here instead, in the same place and for the same
  * reason `adoption` already is, because an absent count means "this service cannot tell us", which
  * on this page reads the same as none.
+ *
+ * The current service relies on this too: it leaves out each of these when it equals the fill-in
+ * here (zero counts, no gaps, the default privilege), so a lab of mostly dormant rows is not a
+ * thousand copies of the same zeroes. A change to a fill-in value here is a change to what those
+ * rows say.
  */
 function profileOverviewRow(row: Partial<MemberProfileOverviewRow>): MemberProfileOverviewRow {
   return {
@@ -695,6 +730,11 @@ export async function runMandatoryFieldsReminder(
    * the daily cron does.
    */
   scope?: { include: "profile" | "timeline" | "both"; memberIds: string[] },
+  /**
+   * The page's filter as a query string. Sent in place of the ids, which the page no longer holds
+   * all of: the service resolves the people with the same function that counted the button.
+   */
+  filter?: URLSearchParams,
 ): Promise<AuthResult<{ created: number; skipped: number }>> {
   const result = await authedJson(
     baseUrl,
@@ -703,7 +743,11 @@ export async function runMandatoryFieldsReminder(
     sessionToken,
     {
       ...(scope ? { include: scope.include } : {}),
-      ...(scope?.memberIds.length ? { recipient_member_ids: scope.memberIds } : {}),
+      ...(filter
+        ? { filter: filter.toString() }
+        : scope?.memberIds.length
+          ? { recipient_member_ids: scope.memberIds }
+          : {}),
     },
   );
   if ("unreachable" in result) {

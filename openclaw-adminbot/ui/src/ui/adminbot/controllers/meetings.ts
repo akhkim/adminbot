@@ -1,20 +1,24 @@
 // The Meeting Recordings tab's side of the wire.
 //
-// Three calls: read the list, correct a roster, file a meeting nobody's notice arrived for. Reads
-// are the common case by a wide margin -- the pipeline fills this tab on its own, and the writes
-// exist for the days it does not.
+// Four calls: read the list, read one meeting's roster, correct a roster, file a meeting nobody's
+// notice arrived for. Reads are the common case by a wide margin -- the pipeline fills this tab on
+// its own, and the writes exist for the days it does not.
 //
-// What a member is allowed to see is decided by the service, not here: the same GET returns the
-// full roster to an admin and one line plus a headcount to everyone else. This controller renders
+// What a member is allowed to see is decided by the service, not here: a member's list row is their
+// own line plus a headcount. An admin's list row is the headcount alone, and the roster is read per
+// meeting when its attendance is about to open, then kept for the session. This controller renders
 // whatever came back, which is why a bug in this file cannot leak an attendance list.
 import {
   createMeeting,
+  fetchMeeting,
   fetchMeetingAttendanceNudges,
   fetchMeetings,
+  MEETINGS_PAGE_SIZE,
   saveMeetingAttendance,
   sendMeetingAttendanceNudges,
   type MeetingAttendee,
   type MeetingRecord,
+  type MeetingRosters,
 } from "../api/meetings.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { AdminBotHost } from "./admin.ts";
@@ -54,7 +58,7 @@ export async function loadAdminBotMeetings(host: AdminBotHost): Promise<void> {
   host.adminBotMeetingsError = null;
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   try {
-    const result = await fetchMeetings(stored.sessionToken, baseUrl, { limit: 12 });
+    const result = await fetchMeetings(stored.sessionToken, baseUrl, { limit: MEETINGS_PAGE_SIZE });
     if (!sameSession(stored.sessionToken) || host.adminBotMeetingsRequestVersion !== version) {
       return;
     }
@@ -64,7 +68,10 @@ export async function loadAdminBotMeetings(host: AdminBotHost): Promise<void> {
     }
     host.adminBotMeetings = result.value.meetings;
     host.adminBotMeetingsNextCursor = result.value.next_cursor ?? null;
-    host.adminBotMeetingsVisibleCount = 12;
+    host.adminBotMeetingsVisibleCount = MEETINGS_PAGE_SIZE;
+    // A fresh list is a fresh look: rosters held from before it are dropped, so an opened fold is
+    // as current as the rows around it. Reading one again is a revalidation, not a download.
+    host.adminBotMeetingRosters = {};
   } finally {
     if (sameSession(stored.sessionToken) && host.adminBotMeetingsRequestVersion === version) {
       host.adminBotMeetingsLoading = false;
@@ -87,7 +94,10 @@ export async function loadMoreAdminBotMeetings(host: AdminBotHost): Promise<void
   host.adminBotMeetingsError = null;
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   try {
-    const result = await fetchMeetings(stored.sessionToken, baseUrl, { limit: 12, before });
+    const result = await fetchMeetings(stored.sessionToken, baseUrl, {
+      limit: MEETINGS_PAGE_SIZE,
+      before,
+    });
     if (
       !sameSession(stored.sessionToken) ||
       host.adminBotMeetingsRequestVersion !== version ||
@@ -105,7 +115,7 @@ export async function loadMoreAdminBotMeetings(host: AdminBotHost): Promise<void
     host.adminBotMeetings = [...loaded, ...fresh];
     host.adminBotMeetingsVisibleCount = Math.min(
       host.adminBotMeetings.length,
-      host.adminBotMeetingsVisibleCount + 12,
+      host.adminBotMeetingsVisibleCount + MEETINGS_PAGE_SIZE,
     );
     host.adminBotMeetingsNextCursor = result.value.next_cursor ?? null;
   } finally {
@@ -115,12 +125,71 @@ export async function loadMoreAdminBotMeetings(host: AdminBotHost): Promise<void
   }
 }
 
+function setRoster(
+  host: AdminBotHost,
+  meetingId: string,
+  entry: MeetingRosters[string] | undefined,
+): void {
+  // A new object, not a mutated one, for the same reason replaceMeeting builds a new array.
+  const { [meetingId]: _previous, ...rest } = host.adminBotMeetingRosters ?? {};
+  host.adminBotMeetingRosters = entry ? { ...rest, [meetingId]: entry } : rest;
+  host.requestUpdate?.();
+}
+
+/**
+ * Read one meeting's roster for the admin attendance editor, once per meeting per session.
+ *
+ * Called on intent -- the pointer reaching the attendance summary, focus landing on it -- as well
+ * as on open, so the roster is usually here before the <details> unfolds and its first paint is
+ * the ticked roster rather than an empty one. A read already held or in flight is not repeated;
+ * the request layer would share it anyway, but this keeps a hovered list of fifty cards from
+ * queueing fifty promises. `report` is false for the intent reads: a failed prefetch of something
+ * nobody opened is not worth a banner; an open, or an open while that read is out, reports.
+ */
+export async function loadAdminBotMeetingRoster(
+  host: AdminBotHost,
+  meetingId: string,
+  options: { report: boolean },
+): Promise<void> {
+  const held = host.adminBotMeetingRosters?.[meetingId];
+  if (held?.attendees || held?.loading) {
+    // The fold opened while its prefetch was still out: if that read fails, it should now say so.
+    if (held.loading && options.report) {
+      held.report = true;
+    }
+    return;
+  }
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    return;
+  }
+  const pending: MeetingRosters[string] = { loading: true, report: options.report };
+  setRoster(host, meetingId, pending);
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  const result = await fetchMeeting(meetingId, stored.sessionToken, baseUrl);
+  // A sign-out, or a save that replied with the roster first, replaced the pending entry; what is
+  // there now is newer than this read.
+  if (!sameSession(stored.sessionToken) || host.adminBotMeetingRosters?.[meetingId] !== pending) {
+    return;
+  }
+  if (!result.ok) {
+    setRoster(host, meetingId, undefined);
+    if (pending.report) {
+      host.adminBotMeetingsError = failureText(result, "Could not load attendance.", baseUrl);
+    }
+    return;
+  }
+  setRoster(host, meetingId, { attendees: result.value.attendees ?? [] });
+}
+
 /**
  * Tick or untick one person on one meeting.
  *
- * The whole corrected line is sent rather than a delta, and the list is replaced from the server's
- * reply rather than patched locally: the service re-stamps every line as `manual` on the way in,
- * and a locally patched row would show the wrong source until the next reload.
+ * The whole corrected line is sent rather than a delta, and the roster is replaced from the
+ * server's reply rather than patched locally: the service re-stamps every line as `manual` on the
+ * way in, and a locally patched row would show the wrong source until the next reload. The reply
+ * is the whole meeting, so the list row is rebuilt from it too -- its headcount moves with the
+ * tick -- without reading the list again.
  */
 export async function setAdminBotMeetingAttendance(
   host: AdminBotHost,
@@ -144,7 +213,12 @@ export async function setAdminBotMeetingAttendance(
       host.adminBotMeetingsError = failureText(result, "Could not save attendance.", baseUrl);
       return;
     }
-    host.adminBotMeetings = replaceMeeting(host.adminBotMeetings ?? [], result.value);
+    const { attendees, ...row } = result.value;
+    host.adminBotMeetings = replaceMeeting(host.adminBotMeetings ?? [], {
+      ...row,
+      attendee_count: (attendees ?? []).filter((line) => line.present).length,
+    });
+    setRoster(host, meetingId, { attendees: attendees ?? [] });
   } finally {
     if (sameSession(stored.sessionToken)) {
       host.adminBotMeetingsSaving = false;
@@ -188,7 +262,14 @@ export async function fileAdminBotMeeting(
       host.adminBotMeetingsError = failureText(result, "Could not file the meeting.", baseUrl);
       return false;
     }
-    host.adminBotMeetings = [result.value, ...(host.adminBotMeetings ?? [])];
+    // A hand-filed meeting has nobody on it yet, and the reply says so; holding that as its roster
+    // saves the read an admin's first tick would otherwise wait on.
+    const { attendees, ...row } = result.value;
+    host.adminBotMeetings = [
+      { ...row, attendee_count: (attendees ?? []).filter((line) => line.present).length },
+      ...(host.adminBotMeetings ?? []),
+    ];
+    setRoster(host, result.value.id, { attendees: attendees ?? [] });
     return true;
   } finally {
     if (sameSession(stored.sessionToken)) {

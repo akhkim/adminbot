@@ -14,27 +14,39 @@
  * Fold a name to something two records for the same person can agree on.
  *
  * The accent strip is what makes "Schölkopf" match "Scholkopf"; the catch-all that follows is
- * what makes "Joeun Yook*" match "Joeun Yook". Dropping every character outside a-z is blunt on
- * purpose -- it needs no list of which footnote symbols a venue happens to use this year.
+ * what makes "Joeun Yook*" match "Joeun Yook". Dropping every character outside a-z and 0-9 is
+ * blunt on purpose -- it needs no list of which footnote symbols a venue happens to use this year.
  */
 export function normalizePersonName(value: string): string {
-  return value
+  return withoutAffiliationMarks(value)
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
     .toLowerCase()
-    .replace(/[^a-z ]/gu, " ")
+    .replace(/[^a-z0-9 ]/gu, " ")
     .replace(/\s+/gu, " ")
     .trim();
 }
 
+/**
+ * Drop affiliation numbers: superscripts anywhere, and plain digits written onto a name ("Yook1,2"
+ * from a pasted PDF author list). A number standing on its own is kept, because it can be the only
+ * thing telling two people apart -- placeholder rosters say "Member 1" and "Member 2", and folding
+ * every digit away made them one person who saw both people's papers.
+ */
+function withoutAffiliationMarks(value: string): string {
+  return value.replace(/\p{No}+/gu, " ").replace(/(?<=\p{L})\d[\d,]*/gu, "");
+}
+
 /** arXiv and BibTeX render authors as "Last, First"; everything downstream wants "First Last". */
 export function toFirstLast(author: string): string {
-  const comma = author.indexOf(",");
+  // Affiliation marks first: the comma in "Yook1,2" separates two affiliations, not Last and First.
+  const entry = withoutAffiliationMarks(author);
+  const comma = entry.indexOf(",");
   if (comma < 0) {
-    return author.trim();
+    return entry.trim();
   }
-  const last = author.slice(0, comma).trim();
-  const first = author.slice(comma + 1).trim();
+  const last = entry.slice(0, comma).trim();
+  const first = entry.slice(comma + 1).trim();
   return first ? `${first} ${last}` : last;
 }
 

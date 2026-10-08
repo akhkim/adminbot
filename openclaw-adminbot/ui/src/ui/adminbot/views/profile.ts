@@ -71,7 +71,7 @@ import { onViewSessionReset } from "../view-session-reset.ts";
 import { renderMemberBadgeSymbols, badgeCountLabel } from "./badge-symbols.ts";
 import { renderCountrySelect } from "./country-select.ts";
 import { renderMemberSelect } from "./member-select.ts";
-import { ownPapers } from "./my-work.ts";
+import { ownPapers } from "./my-work-papers.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 import {
   blankFields,
@@ -477,7 +477,8 @@ function consumePendingFieldFocus(): void {
 export function badgesFor(state: AppViewState, member: LabMember): string[] {
   const badges: string[] = [];
   const onboarding = state.adminBotOnboarding;
-  if (onboarding && !(onboarding.remaining ?? []).length && (onboarding.steps ?? []).length) {
+  const steps = onboarding?.steps ?? [];
+  if (steps.length && steps.every((step) => step.status === "complete")) {
     badges.push(t("profile.badges.onboarded"));
   }
   if (!blankFields(member).length) {

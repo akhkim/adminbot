@@ -128,6 +128,7 @@ describe("renderAdminBotMeetings", () => {
     const view = renderView({
       viewerIsAdmin: true,
       members: [{ id: "m-bo", name: "Bo Quiet" }],
+      rosters: { "zoom-812-2026-08-12": { attendees: [] } },
       onToggleAttendance,
     });
     view.querySelector<HTMLInputElement>("input[type=checkbox]")?.click();
@@ -139,6 +140,58 @@ describe("renderAdminBotMeetings", () => {
     });
   });
 
+  // An admin's rows arrive without a roster. Drawing every member unticked until it lands would
+  // read as "nobody came", and a tick on that would save a roster built from nothing.
+  it("draws the admin editor from the roster read for that meeting, and nothing before it", () => {
+    const members = [
+      { id: "m-ada", name: "Ada Attendee" },
+      { id: "m-bo", name: "Bo Quiet" },
+    ];
+    const before = renderView({ viewerIsAdmin: true, members, rosters: {} });
+    expect(before.querySelectorAll("input[type=checkbox]")).toHaveLength(0);
+    document.body.innerHTML = "";
+    const after = renderView({
+      viewerIsAdmin: true,
+      members,
+      rosters: {
+        "zoom-812-2026-08-12": {
+          attendees: [{ member_id: "m-ada", display_name: "Ada", source: "manual", present: true }],
+        },
+      },
+    });
+    const ticks = after.querySelectorAll<HTMLInputElement>("input[type=checkbox]");
+    expect([...ticks].map((tick) => tick.checked)).toEqual([true, false]);
+  });
+
+  it("asks for an admin's roster on hover, focus and open", () => {
+    const onRosterIntent = vi.fn();
+    const view = renderView({ viewerIsAdmin: true, rosters: {}, onRosterIntent });
+    const fold = view.querySelector<HTMLDetailsElement>("details.meetings__attendance");
+    fold?.dispatchEvent(new Event("pointerenter"));
+    fold?.querySelector("summary")?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    if (fold) {
+      fold.open = true;
+    }
+    fold?.dispatchEvent(new Event("toggle"));
+    expect(onRosterIntent.mock.calls).toEqual([
+      ["zoom-812-2026-08-12", false],
+      ["zoom-812-2026-08-12", false],
+      ["zoom-812-2026-08-12", true],
+    ]);
+  });
+
+  it("asks for nothing on a member's fold", () => {
+    const onRosterIntent = vi.fn();
+    const view = renderView({ onRosterIntent });
+    const fold = view.querySelector<HTMLDetailsElement>("details.meetings__attendance");
+    fold?.dispatchEvent(new Event("pointerenter"));
+    if (fold) {
+      fold.open = true;
+    }
+    fold?.dispatchEvent(new Event("toggle"));
+    expect(onRosterIntent).not.toHaveBeenCalled();
+  });
+
   it("distinguishes an empty lab from one that is still loading", () => {
     expect(renderView({ meetings: [], loading: true }).textContent).toContain("Loading meetings");
     expect(renderView({ meetings: [], loading: false }).textContent).toContain(
@@ -147,36 +200,36 @@ describe("renderAdminBotMeetings", () => {
   });
 
   it("renders recordings in bounded batches and lets the reader request the next batch", () => {
-    const meetings = Array.from({ length: 26 }, (_, index) => ({
+    const meetings = Array.from({ length: 22 }, (_, index) => ({
       ...MEETING,
       id: `recording-${index}`,
       topic: `Recording ${index}`,
     }));
     const onShowMore = vi.fn();
-    const view = renderView({ meetings, visibleCount: 12, onShowMore });
-    expect(view.querySelectorAll(".meetings__card")).toHaveLength(12);
+    const view = renderView({ meetings, visibleCount: 10, onShowMore });
+    expect(view.querySelectorAll(".meetings__card")).toHaveLength(10);
     const button = view.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']");
-    expect(button?.textContent).toContain("Show 12 more");
+    expect(button?.textContent).toContain("Show 10 more");
     button?.click();
-    expect(onShowMore).toHaveBeenCalledWith(24);
-    const expanded = renderView({ meetings, visibleCount: 24, onShowMore });
-    expect(expanded.querySelectorAll(".meetings__card")).toHaveLength(24);
+    expect(onShowMore).toHaveBeenCalledWith(20);
+    const expanded = renderView({ meetings, visibleCount: 20, onShowMore });
+    expect(expanded.querySelectorAll(".meetings__card")).toHaveLength(20);
     expanded.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']")?.click();
-    expect(onShowMore).toHaveBeenLastCalledWith(26);
-    expect(renderView({ meetings, visibleCount: 26 }).querySelector(".meetings__more")).toBeNull();
+    expect(onShowMore).toHaveBeenLastCalledWith(22);
+    expect(renderView({ meetings, visibleCount: 22 }).querySelector(".meetings__more")).toBeNull();
   });
 
   it("offers the next server page and disables repeated requests while it loads", () => {
     const onShowMore = vi.fn();
-    const meetings = Array.from({ length: 12 }, (_, index) => ({
+    const meetings = Array.from({ length: 10 }, (_, index) => ({
       ...MEETING,
       id: `recording-${index}`,
     }));
-    const view = renderView({ meetings, visibleCount: 12, hasMore: true, onShowMore });
+    const view = renderView({ meetings, visibleCount: 10, hasMore: true, onShowMore });
     const button = view.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']");
     button?.click();
-    expect(onShowMore).toHaveBeenCalledWith(24);
-    const loading = renderView({ meetings, visibleCount: 12, hasMore: true, loadingMore: true });
+    expect(onShowMore).toHaveBeenCalledWith(20);
+    const loading = renderView({ meetings, visibleCount: 10, hasMore: true, loadingMore: true });
     expect(
       loading.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']")?.disabled,
     ).toBe(true);

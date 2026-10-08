@@ -245,6 +245,7 @@ export type AdminBotTimeAvailabilityProps = {
   onRefresh?: () => void;
   selectedMemberId: string;
   onMemberChange: (memberId: string) => void;
+  onMemberHighlight?: (memberId: string) => void; // admin picker: read before the pick lands
   range: TimeAvailabilityRange;
   onRangeChange: (range: TimeAvailabilityRange) => void;
   /**
@@ -1966,8 +1967,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const emptyOptionLabel = props.loading
     ? t("adminbotTimeAvailability.loadingUsers")
     : t("adminbotTimeAvailability.selectUser");
-  // Whose schedules this viewer may read. An admin plans for the lab, so they get everyone; anyone
-  // else gets self plus the narrow authorized collaborator snapshots.
+  // Readable schedules: an admin plans for the lab; others get self plus authorized snapshots.
   const readableMembers = props.viewerIsAdmin
     ? props.members
     : [
@@ -1986,8 +1986,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const dismissedDeadlines = (selectedMember?.dismissed_deadlines ?? []).filter(
     (name): name is string => typeof name === "string",
   );
-  // Built from the same bins the bars use, so "where you are" and "what you are committed to" are
-  // divided into the same periods and cannot drift apart when the range switch changes.
+  // The bars' own bins, so "where you are" and "what you are committed to" can never drift apart.
   const whereStrip = whereBins(
     rangeBins(props.range, Date.now()),
     storedTrips,
@@ -2059,6 +2058,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                 label: t("adminbotTimeAvailability.selectUser"),
                 disabled: props.loading || readableMembers.length === 0,
                 onPick: (memberId: string) => props.onMemberChange(memberId),
+                onHighlight: props.onMemberHighlight,
               })}
             </label>`
           : html`<p
