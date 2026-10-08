@@ -67,6 +67,7 @@ import {
   saveStoredMemberSession,
   stopImpersonation,
 } from "./session.ts";
+import { forgetSessionReads } from "./read-cache.ts";
 
 const MIN_CLAIM_PASSWORD_LENGTH = 10;
 
@@ -549,6 +550,8 @@ async function connectAsMember(
 }
 
 function clearMemberScopedData(host: MemberAuthHost): void {
+  // Kept read bodies and shared in-flight reads are the departing member's data too.
+  forgetSessionReads();
   host.adminBotRosterRequestId = (host.adminBotRosterRequestId ?? 0) + 1;
   host.adminBotRosterLoadedAt = null;
   host.adminBotRosterLoading = false;
