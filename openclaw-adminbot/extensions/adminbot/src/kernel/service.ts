@@ -624,6 +624,8 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[];
   countPapers(filter?: { q?: string; authorMemberId?: string }): number;
   deletePaper(paperId: string): boolean;
+  /** Changes on every paper write (api/version-etag.ts); without it /papers hashes its body. */
+  paperVersion?(): string;
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
   /** One paper's slots, or every paper's when the id is omitted. */
   listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
@@ -700,6 +702,8 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     minimumMinutes: number;
   }): AdminBotMeetingRecord[];
   deleteMeeting(meetingId: string): boolean;
+  /** Changes on every meeting write, like paperVersion. */
+  meetingVersion?(): string;
   hasAttachedMeetingArtifact(fileId: string): boolean;
   recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void;
   /**
