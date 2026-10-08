@@ -30,7 +30,7 @@ import type { Tab } from "../../navigation.ts";
 import type { LabBroadcast } from "../api/lab-sharing.ts";
 import type { LogisticsRequest } from "../api/logistics.ts";
 import type { MemberProfileOverviewRow } from "../api/members.ts";
-import type { EscalatedNudgeRow } from "../api/nudges.ts";
+import { escalatedNudgeTotal, type EscalatedNudgeRow } from "../api/nudges.ts";
 import type { PiReviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { renderDateControl } from "../date-control.ts";
@@ -479,6 +479,8 @@ function moreToggle(params: {
 function rows(params: {
   id: string;
   items: unknown[];
+  /** The whole list's size when only a page of it was read; the items' count otherwise. */
+  total?: number;
   empty: string;
   expanded: ReadonlySet<string>;
   onToggleExpand: (id: string) => void;
@@ -489,17 +491,18 @@ function rows(params: {
   const open = params.expanded.has(params.id);
   const shown = params.items.slice(0, open ? EXPANDED_ROWS : PREVIEW_ROWS);
   const listId = `professor-list-${params.id}`;
+  const total = Math.max(params.total ?? 0, params.items.length);
   return html`<ul id=${listId} class="professor__list" data-open=${open ? "true" : "false"}>
       ${shown}
     </ul>
-    ${params.items.length > PREVIEW_ROWS
+    ${total > PREVIEW_ROWS
       ? moreToggle({
           id: params.id,
           controls: listId,
           open,
           shown: shown.length,
-          hidden: params.items.length - shown.length,
-          total: params.items.length,
+          hidden: total - shown.length,
+          total,
           onToggleExpand: params.onToggleExpand,
         })
       : nothing}`;
@@ -863,7 +866,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
         id: "escalated",
         title: t("professor.escalated.title"),
         blurb: t("professor.escalated.blurb"),
-        count: props.escalated.length,
+        count: escalatedNudgeTotal(props.escalated),
         // Announcements is where she writes to somebody, which is the whole point of an
         // escalation: the automatic chasing is finished and it now wants a person.
         tab: "adminbotAnnouncements",
@@ -871,6 +874,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
         onOpen: props.onOpen,
         body: rows({
           id: "escalated",
+          total: escalatedNudgeTotal(props.escalated),
           items: props.escalated.map((row) =>
             rowButton({
               action: t("professor.escalated.open"),

@@ -1,10 +1,10 @@
 /* @vitest-environment jsdom */
 // My Desk: what lands in each queue, and what does not.
 import { render } from "lit";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LogisticsRequest } from "../api/logistics.ts";
 import type { MemberProfileOverviewRow } from "../api/members.ts";
-import type { EscalatedNudgeRow } from "../api/nudges.ts";
+import { type EscalatedNudgeRow, fetchEscalatedNudges } from "../api/nudges.ts";
 import type { PiReviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import {
@@ -659,6 +659,29 @@ describe("renderProfessorView", () => {
       });
       const section = container.querySelector('[data-testid="professor-escalated"]');
       expect(section?.textContent).toContain("2 things outstanding");
+    });
+
+    it("counts the whole queue when the service sent only its first page", async () => {
+      const members = Array.from({ length: 20 }, (_, i) => ({
+        member_id: `m-${i}`,
+        name: `Member ${i}`,
+        escalated_at: "2026-08-20T09:00:00.000Z",
+        notifications: [{ id: `n-${i}`, title: "Poster", created_at: "2026-08-14T09:00:00Z" }],
+      }));
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(JSON.stringify({ members, total: 43, next_offset: 20 }), { status: 200 }),
+        );
+      const read = await fetchEscalatedNudges("tok", "http://127.0.0.1:8765");
+      fetchMock.mockRestore();
+      expect(read.ok).toBe(true);
+      const escalated = read.ok ? read.value : [];
+      expect(escalated[0]?.items[0]?.body).toBe("");
+      const { container } = draw({ escalated });
+      const section = container.querySelector('[data-testid="professor-escalated"]');
+      expect(section?.textContent).toContain("43");
+      expect(section?.textContent).toContain("Show 38 more");
     });
 
     it("sits at the bottom even when somebody is waiting on her", () => {
