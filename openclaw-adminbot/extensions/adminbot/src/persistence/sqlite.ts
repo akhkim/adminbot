@@ -138,12 +138,12 @@ import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
 import { listSqliteLogisticsRequests } from "./sqlite.logistics.js";
 import { listSqliteMeetingsPage } from "./sqlite.meetings.js";
 import { escalatedMemberNotificationsSql } from "./sqlite.member-notifications.js";
-import { SqliteTableVersions } from "./sqlite.table-versions.js";
 import {
   listSqliteSocialDrafts,
   migrateSocialDraftColumns,
   saveSqliteSocialDraft,
 } from "./sqlite.social-drafts.js";
+import { SqliteTableVersions } from "./sqlite.table-versions.js";
 import { SqliteVenuePaperIndex } from "./sqlite.venue-papers.js";
 
 const require = createRequire(import.meta.url);
@@ -257,6 +257,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_proposals_pending_idx
         ON adminbot_proposals(status, updated_at);
+      -- The deadline board reads one action type; ties keep rowid order, as the full scan's sort did.
+      CREATE INDEX IF NOT EXISTS adminbot_proposals_type_idx
+        ON adminbot_proposals(action_type, created_at);
 
       CREATE TABLE IF NOT EXISTS adminbot_deadline_submission_keys (
         submitter_member_id TEXT NOT NULL,
@@ -891,6 +894,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         ON adminbot_update_events(slot_id, at DESC);
       CREATE INDEX IF NOT EXISTS adminbot_update_events_source_idx
         ON adminbot_update_events(source, at DESC);
+      -- The unfiltered feed, newest first: walked backwards it is exactly (at DESC, rowid DESC).
+      CREATE INDEX IF NOT EXISTS adminbot_update_events_at_idx ON adminbot_update_events(at);
 
       -- One row per workshop-matching pass. The pass is thousands of model calls and does not fit
       -- in the request that starts it, so the answer is kept here and the page reads it.
@@ -3327,9 +3332,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   // Narrowed in SQL as the postgres mirror is, so only the small escalated set is parsed.
   listEscalatedMemberNotifications(): AdminBotMemberNotification[] {
-    const rows = this.db
-      .prepare(escalatedMemberNotificationsSql)
-      .all() as Array<{ payload_json: string }>;
+    const rows = this.db.prepare(escalatedMemberNotificationsSql).all() as Array<{
+      payload_json: string;
+    }>;
     return rows
       .map((row) => parseJson<AdminBotMemberNotification>(row.payload_json))
       .filter((notification) => notification.escalated_at && !notification.read_at)

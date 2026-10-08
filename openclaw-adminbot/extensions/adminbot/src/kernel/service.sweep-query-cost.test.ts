@@ -154,9 +154,8 @@ function sweeps(service: AdminBotService) {
 
 /** The same service with the per-sweep table snapshot switched off: one read per paper, as before. */
 function perPaperReads(service: AdminBotService): AdminBotService {
-  (service as unknown as { withPaperTables: <T>(sweep: () => T) => T }).withPaperTables = (
-    sweep,
-  ) => sweep();
+  (service as unknown as { withPaperTables: <T>(sweep: () => T) => T }).withPaperTables = (sweep) =>
+    sweep();
   return service;
 }
 
