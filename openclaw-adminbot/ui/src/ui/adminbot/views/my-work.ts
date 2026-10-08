@@ -34,6 +34,7 @@ import type {
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
 import { aoeInstantMs } from "../data/deadline-time.ts";
 import { DEADLINE_SUMMARIES } from "../data/deadlines-summary.ts";
+import { paperSteps, stepLabels } from "../data/paper-steps.ts";
 import {
   ARCHIVAL_VENUES,
   type CatalogVenue,
@@ -112,7 +113,6 @@ import {
   readVenueTargets,
   venueTargetMatches,
 } from "../venue-targets.ts";
-import { paperSteps, stepLabels } from "./admin.ts";
 import { channelExists, nearbyChannels } from "./my-work-channels.ts";
 import { generateLinkedInDraft, generateXDraft } from "./my-work-social-drafts.ts";
 import { paperTripDraftFrom, renderPaperCycle, type PaperTripDraft } from "./paper-cycle.ts";
@@ -127,7 +127,7 @@ import { renderPaperPiReview } from "./paper-pi-review.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
 import { renderPaperTimeline } from "./paper-timeline.ts";
 import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
-import { findOwnMember } from "./profile.ts";
+import { findOwnMember } from "./profile-fields.ts";
 import { renderRecentEdits } from "./recent-edits.ts";
 
 export type MyWorkProps = {

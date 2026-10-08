@@ -288,7 +288,12 @@ import { getCronJobPayload } from "./cron-payload.ts";
 import { formatTimeMs } from "./format.ts";
 import { formatRelativeTimestamp } from "./format.ts";
 import { icons } from "./icons.ts";
-import { createLazyView, renderLazyView } from "./lazy-view.ts";
+import {
+  createLazyView,
+  notifyLazyViewHost,
+  renderLazyView,
+  setLazyViewHost,
+} from "./lazy-view.ts";
 import {
   iconForTab,
   isLogisticsTab,
@@ -347,10 +352,6 @@ import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.t
 import { renderGuestReimbursements } from "./views/guest-reimbursements.ts";
 import { renderMcp } from "./views/mcp.ts";
 import { renderOverview } from "./views/overview.ts";
-
-let pendingUpdate: (() => void) | undefined;
-
-const notifyLazyViewChanged = () => pendingUpdate?.();
 
 function runUiTask<Args extends unknown[]>(
   task: (...args: Args) => Promise<unknown>,
@@ -633,64 +634,61 @@ function renderChatRecentSession(state: AppViewState, row: GatewaySessionRow) {
 
 // Lazy-loaded view modules are deferred so the initial bundle stays small.
 // The shared loader renders visible fallback states instead of leaving a tab blank.
-const lazyAgents = createLazyView(() => import("./views/agents.ts"), notifyLazyViewChanged);
-const lazyActivity = createLazyView(() => import("./views/activity.ts"), notifyLazyViewChanged);
-const lazyChannels = createLazyView(() => import("./views/channels.ts"), notifyLazyViewChanged);
-const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewChanged);
+const lazyAgents = createLazyView(() => import("./views/agents.ts"), notifyLazyViewHost);
+const lazyActivity = createLazyView(() => import("./views/activity.ts"), notifyLazyViewHost);
+const lazyChannels = createLazyView(() => import("./views/channels.ts"), notifyLazyViewHost);
+const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewHost);
 const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyPublicShell = createLazyView(
   () => import("./adminbot/views/public-shell.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyOpportunities = createLazyView(
   () => import("./adminbot/views/opportunities.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
-const lazyTravel = createLazyView(
-  () => import("./adminbot/views/travel.ts"),
-  notifyLazyViewChanged,
-);
+const lazyTravel = createLazyView(() => import("./adminbot/views/travel.ts"), notifyLazyViewHost);
 const lazyGrantReport = createLazyView(
   () => import("./adminbot/views/grant-report.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyMailingList = createLazyView(
   () => import("./adminbot/views/mailing-list.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyConferencePapers = createLazyView(
   () => import("./adminbot/views/conference-papers.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyWorkshopNudges = createLazyView(
   () => import("./adminbot/views/workshop-nudges.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
-const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewChanged);
-const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewChanged);
-const lazyNodes = createLazyView(() => import("./views/nodes.ts"), notifyLazyViewChanged);
-const lazySessions = createLazyView(() => import("./views/sessions.ts"), notifyLazyViewChanged);
-const lazySkills = createLazyView(() => import("./views/skills.ts"), notifyLazyViewChanged);
-const lazyUsage = createLazyView(() => import("./views/usage.ts"), notifyLazyViewChanged);
+const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewHost);
+const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewHost);
+const lazyNodes = createLazyView(() => import("./views/nodes.ts"), notifyLazyViewHost);
+const lazySessions = createLazyView(() => import("./views/sessions.ts"), notifyLazyViewHost);
+const lazySkills = createLazyView(() => import("./views/skills.ts"), notifyLazyViewHost);
+const lazyUsage = createLazyView(() => import("./views/usage.ts"), notifyLazyViewHost);
 const lazyAdminBotRegistrations = createLazyView(
   () => import("./adminbot/views/registrations.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyAdminBotBadges = createLazyView(
   () => import("./adminbot/views/badges.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 
 const lazyAdminBotOnboarding = createLazyView(
   () => import("./adminbot/views/onboarding.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 const lazyAdminBotCalendar = createLazyView(
   () => import("./adminbot/views/calendar.ts"),
-  notifyLazyViewChanged,
+  notifyLazyViewHost,
 );
 
 /**
@@ -1755,7 +1753,7 @@ export function renderApp(state: AppViewState) {
     typeof updatableState.requestUpdate === "function"
       ? () => updatableState.requestUpdate?.()
       : undefined;
-  pendingUpdate = requestHostUpdate;
+  setLazyViewHost(requestHostUpdate);
 
   // Opening the workshop tab reads the stored pass. It never starts one -- that is Refresh, and it
   // is thousands of model calls. Self-limiting: the read sets `loading` synchronously and leaves a
