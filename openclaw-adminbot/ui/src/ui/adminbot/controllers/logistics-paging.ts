@@ -13,6 +13,7 @@ import type { Tab } from "../../navigation.ts";
 import { fetchLogisticsRequests, type LogisticsRequest } from "../api/logistics.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { logisticsQueueQueryFor, type LogisticsQueueOptions } from "../data/logistics-queue.ts";
+import { appendPage } from "../load-more.ts";
 import type { LogisticsMode } from "../views/logistics.ts";
 import { loadAdminBotLogisticsRequests, type AdminBotLogisticsHost } from "./logistics.ts";
 
@@ -124,8 +125,11 @@ export async function loadAdminBotDeskLetters(host: AdminBotLogisticsHost): Prom
   const token = stored.sessionToken;
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   host.adminBotDeskLetters = { ...host.adminBotDeskLetters, loading: true, loadedAt: Date.now() };
-  const letters: LogisticsRequest[] = [];
+  let letters: LogisticsRequest[] = [];
   let cursor: string | null = null;
+  // The desk counts these, so a part-read list is worse than the last whole one: it shows fewer
+  // letters due with nothing to say the rest are missing. A failed page keeps what was on screen.
+  let complete = false;
   try {
     for (let page = 0; page < DESK_LETTER_PAGES; page += 1) {
       const params = new URLSearchParams({
@@ -142,15 +146,21 @@ export async function loadAdminBotDeskLetters(host: AdminBotLogisticsHost): Prom
       if (loadStoredMemberSession()?.sessionToken !== token || !result.ok) {
         break;
       }
-      letters.push(...result.value.requests);
+      // Offset pages: a letter added between two reads pushes one already read onto the next page.
+      letters = appendPage(letters, result.value.requests);
       cursor = result.value.nextCursor;
+      complete = !cursor || page === DESK_LETTER_PAGES - 1;
       if (!cursor) {
         break;
       }
     }
   } finally {
     if (loadStoredMemberSession()?.sessionToken === token) {
-      host.adminBotDeskLetters = { ...host.adminBotDeskLetters, requests: letters, loading: false };
+      host.adminBotDeskLetters = {
+        ...host.adminBotDeskLetters,
+        ...(complete ? { requests: letters } : {}),
+        loading: false,
+      };
     }
   }
 }
