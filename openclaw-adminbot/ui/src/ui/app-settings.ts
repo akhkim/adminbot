@@ -24,6 +24,7 @@ import {
   stopDebugPolling,
 } from "./app-polling.ts";
 import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll.ts";
+import { resetChatViewStateIfLoaded } from "./chat/view-reset.ts";
 import {
   beginControlUiRefresh,
   controlUiNowMs,
@@ -86,7 +87,6 @@ import { startThemeTransition, type ThemeTransitionContext } from "./theme-trans
 import { resolveTheme, type ResolvedTheme, type ThemeMode, type ThemeName } from "./theme.ts";
 import type { AgentsListResult, AttentionItem } from "./types.ts";
 import { normalizeLocalUserIdentity } from "./user-identity.ts";
-import { resetChatViewState } from "./views/chat.ts";
 
 export { setLastActiveSessionKey } from "./app-last-active-session.ts";
 
@@ -780,7 +780,7 @@ function applyTabSelection(
 
   // Cleanup chat module state when navigating away from chat
   if (prev === "chat" && next !== "chat") {
-    resetChatViewState();
+    resetChatViewStateIfLoaded();
   }
 
   if (next === "chat") {

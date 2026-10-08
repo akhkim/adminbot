@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { html, render } from "lit";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "../i18n/index.ts";
 import { createEmptyAdminBotDashboardData } from "./adminbot/controllers/admin.ts";
 import type { AppViewState } from "./app-view-state.ts";
@@ -227,6 +227,13 @@ function createState(overrides: Partial<AppViewState> = {}): AppViewState {
     ...overrides,
   } as unknown as AppViewState;
 }
+
+// Chat and Quick Settings are lazy pages: load them once so every test below renders them in place.
+beforeAll(async () => {
+  renderApp(createState());
+  renderApp(createState({ tab: "chat" }));
+  await vi.dynamicImportSettled();
+});
 
 beforeEach(async () => {
   await i18n.setLocale("en");

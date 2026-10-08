@@ -57,6 +57,7 @@ import {
   renderFallbackIndicator,
 } from "../chat/status-indicators.ts";
 import { getExpandedToolCards, syncToolCardExpansionState } from "../chat/tool-expansion-state.ts";
+import { registerChatViewReset } from "../chat/view-reset.ts";
 import type { EmbedSandboxMode } from "../embed-sandbox.ts";
 import { formatRelativeTimestamp } from "../format.ts";
 import { icons } from "../icons.ts";
@@ -389,6 +390,8 @@ export function resetChatViewState() {
   chatItemsBySession.clear();
   composerDraftMirrors.clear();
 }
+
+registerChatViewReset(resetChatViewState);
 
 function resolveChatHistoryRenderCap(messageCount: number): number {
   return Math.min(Math.max(0, messageCount), CHAT_HISTORY_RENDER_LIMIT);

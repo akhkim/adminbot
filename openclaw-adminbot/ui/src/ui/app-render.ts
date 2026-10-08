@@ -333,11 +333,11 @@ import {
   resolveModelPrimary,
   sortLocaleStrings,
 } from "./views/agents-utils.ts";
-import { renderChat } from "./views/chat.ts";
+import type { ChatProps } from "./views/chat.ts";
 import { renderCommandPalette } from "./views/command-palette.ts";
 import { getPresetById } from "./views/config-presets.ts";
-import { renderQuickSettings, type QuickSettingsChannel } from "./views/config-quick.ts";
-import { renderConfig, type ConfigProps } from "./views/config.ts";
+import type { QuickSettingsChannel, QuickSettingsProps } from "./views/config-quick.ts";
+import type { ConfigProps } from "./views/config.ts";
 import {
   renderCronQuickCreate,
   createDefaultDraft,
@@ -634,6 +634,20 @@ const lazyAgents = createLazyView(() => import("./views/agents.ts"), notifyLazyV
 const lazyActivity = createLazyView(() => import("./views/activity.ts"), notifyLazyViewHost);
 const lazyChannels = createLazyView(() => import("./views/channels.ts"), notifyLazyViewHost);
 const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewHost);
+// Chat and the gateway settings pages are operator surfaces most members never open; the chat
+// renderer alone drags the markdown runtime with it. They load on first use like the pages above,
+// behind these same-named shims so the call sites below read as they always have.
+const lazyChat = createLazyView(() => import("./views/chat.ts"), notifyLazyViewHost);
+const lazyConfig = createLazyView(() => import("./views/config.ts"), notifyLazyViewHost);
+const lazyQuickSettings = createLazyView(
+  () => import("./views/config-quick.ts"),
+  notifyLazyViewHost,
+);
+const renderChat = (props: ChatProps) => renderLazyView(lazyChat, (m) => m.renderChat(props));
+const renderConfig = (props: ConfigProps) =>
+  renderLazyView(lazyConfig, (m) => m.renderConfig(props));
+const renderQuickSettings = (props: QuickSettingsProps) =>
+  renderLazyView(lazyQuickSettings, (m) => m.renderQuickSettings(props));
 const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
   notifyLazyViewHost,
