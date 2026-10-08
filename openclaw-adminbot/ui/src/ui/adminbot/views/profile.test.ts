@@ -589,7 +589,12 @@ describe("renderProfile autosave", () => {
         expect.stringContaining("/drive/check-edit-access"),
         expect.objectContaining({ method: "POST", credentials: "omit" }),
       );
-      expect(state.profileAccountChecks.one_on_one_folder_url).toMatchObject({ status: "warning" });
+      // Reading the reply's body is stream I/O, not a microtask, so one tick is not always enough.
+      await vi.waitFor(() =>
+        expect(state.profileAccountChecks.one_on_one_folder_url).toMatchObject({
+          status: "warning",
+        }),
+      );
       render(renderProfile(state, { onSave: vi.fn() }), container);
       await vi.advanceTimersByTimeAsync(0);
       expect(fetchMock).toHaveBeenCalledTimes(1);
