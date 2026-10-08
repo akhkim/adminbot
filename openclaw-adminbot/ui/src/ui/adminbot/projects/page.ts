@@ -49,6 +49,7 @@ import {
   type ProjectTab,
 } from "./model.ts";
 import type { ProjectsNavState } from "./nav.ts";
+import { generateLinkedInDraft, generateXDraft } from "./social-drafts.ts";
 
 type PageState = ProjectsNavState;
 
@@ -474,6 +475,8 @@ function renderCycle(state: PageState, paper: AdminBotPaperRecord) {
   const names = new Map(
     (state.adminBotData?.members ?? []).map((member) => [member.id, member.name]),
   );
+  const saveDraft: Parameters<typeof generateXDraft>[2] = (paperId, platform, body, xThread) =>
+    void saveAdminBotSocialDraft(state, paperId, platform, body, xThread).finally(done);
   return renderPaperCycle({
     paperId: paper.id,
     drafts: cycle.drafts,
@@ -488,8 +491,13 @@ function renderCycle(state: PageState, paper: AdminBotPaperRecord) {
     ...(cycle.conferenceKey ? tripProps(state, cycle.conferenceKey, cycle.myTrip ?? null) : {}),
     memberId: state.memberId ?? null,
     memberName: (memberId) => names.get(memberId) ?? memberId,
-    onSaveDraft: (platform, body) =>
-      void saveAdminBotSocialDraft(state, paper.id, platform, body).finally(done),
+    paperAuthors: paper.authors ?? [],
+    creditMembers: state.adminBotData?.members ?? [],
+    onSaveDraft: (platform, body, xThread) => saveDraft(paper.id, platform, body, xThread),
+    onGenerateLinkedInDraft: (venue, note, pdfBase64) =>
+      void generateLinkedInDraft(state, paper, saveDraft, venue, note, pdfBase64),
+    onGenerateXDraft: (_venue, _note, pdfBase64, announcement, credits) =>
+      void generateXDraft(state, paper, saveDraft, pdfBase64, announcement, credits),
     onCirculateDraft: (draftId) =>
       void circulateAdminBotSocialDraft(state, paper.id, draftId).finally(done),
     onConsent: (draftId, decision, comment) =>

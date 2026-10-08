@@ -3,9 +3,9 @@
 import { html, nothing } from "lit";
 import { adminBotNormalizePaperAlias } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { saveAdminBotPaper } from "../controllers/admin.ts";
+import { paperSteps } from "../data/paper-steps.ts";
 import { readHiddenPapers } from "../hidden-papers.ts";
-import { paperSteps } from "../views/admin.ts";
-import { findOwnMember } from "../views/profile.ts";
+import { findOwnMember } from "../views/profile-fields.ts";
 import { navigateToProject, PROJECT_LANES, venuePosition, type ProjectSummary } from "./model.ts";
 import { renderLaneDots, type ProjectsNavState } from "./nav.ts";
 

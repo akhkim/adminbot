@@ -32,6 +32,7 @@ import {
   postAdminBotLabSharingRequest,
   searchAdminBotLabSharingMembers,
 } from "../controllers/lab-sharing.ts";
+import { onViewSessionReset } from "../view-session-reset.ts";
 import { renderLabSharingResources } from "./lab-sharing-resources.ts";
 
 // ---------------------------------------------------------------------------
@@ -306,6 +307,7 @@ export function resetLabSharingSessionState(): void {
   confirmingGeneralCall = false;
   confirmingDeleteRequestId = null;
 }
+onViewSessionReset(resetLabSharingSessionState);
 
 // ---------------------------------------------------------------------------
 // 1. Director status strip

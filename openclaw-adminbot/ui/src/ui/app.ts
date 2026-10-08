@@ -130,10 +130,9 @@ import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
 import type { ProjectSummary } from "./adminbot/projects/model.ts";
+import { resetViewSessions } from "./adminbot/view-session-reset.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
-import { resetAdminViewSessionState } from "./adminbot/views/admin.ts";
 import type { ConferencePapersTab } from "./adminbot/views/conference-papers.ts";
-import { resetLabSharingSessionState } from "./adminbot/views/lab-sharing.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import type { PaperTripDraft } from "./adminbot/views/paper-cycle.ts";
 import {
@@ -145,15 +144,16 @@ import {
   EMPTY_PROFILE_OVERVIEW_FILTER,
   type ProfileOverviewFilter,
 } from "./adminbot/views/profile-overview.ts";
-import { resetProfileSessionState } from "./adminbot/views/profile.ts";
 import type { TimeChartWindow } from "./adminbot/views/time-allocation-chart.ts";
-import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
-  type MilestoneDraft,
-  type TimeAvailabilityDraft,
-  type TimeAvailabilityRange,
+} from "./adminbot/views/time-availability.drafts.ts";
+import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/time-availability.trips.ts";
+import type {
+  MilestoneDraft,
+  TimeAvailabilityDraft,
+  TimeAvailabilityRange,
 } from "./adminbot/views/time-availability.ts";
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
@@ -1339,9 +1339,7 @@ export class OpenClawApp extends LitElement {
   }
 
   resetMemberViewSessionState() {
-    resetProfileSessionState();
-    resetLabSharingSessionState();
-    resetAdminViewSessionState();
+    resetViewSessions();
   }
 
   async beginViewAs(memberId: string) {

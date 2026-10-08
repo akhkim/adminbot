@@ -8,8 +8,8 @@ import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/p
 import type { AdminBotMyProjectSummary } from "../../../../../extensions/adminbot/src/workflows/papers/my-projects.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AdminBotPaperRecord, AdminBotPaperStep } from "../controllers/admin.ts";
-import { paperSteps, stepLabels } from "../views/admin.ts";
-import { findOwnMember } from "../views/profile.ts";
+import { paperSteps, stepLabels } from "../data/paper-steps.ts";
+import { findOwnMember } from "../views/profile-fields.ts";
 
 export type { AdminBotMyProjectSummary as ProjectSummary };
 
