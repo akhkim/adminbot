@@ -386,6 +386,12 @@ import {
   memberRelevanceNeedles,
   textMatchesNeedles,
 } from "../workflows/papers/openreview-matching.js";
+import { duePaperNudges } from "../workflows/papers/paper-reminder-nudges.js";
+import {
+  paperForResponse,
+  withheldArtifactWriteError,
+  withoutTimeline,
+} from "../workflows/papers/paper-response.js";
 import { planPaperBackfill } from "../workflows/papers/paper-slot-backfill.js";
 import {
   actionablePaperSlots,
@@ -448,7 +454,6 @@ import {
 } from "./service.deadline-recommendations.js";
 import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import { LabSharingService } from "./service.lab-sharing.js";
-import { withPaperTimeline } from "./service.paper-timeline.js";
 import { piReviewSlotDenial } from "./service.pi-review.js";
 import { prepareSocialDraft, socialDraftSupersedes } from "./service.social-drafts.js";
 
@@ -617,7 +622,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   savePaper(paper: AdminBotPaperRecord): void;
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
   listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[];
-  countPapers(q?: string): number;
+  countPapers(filter?: { q?: string; authorMemberId?: string }): number;
   deletePaper(paperId: string): boolean;
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
   /** One paper's slots, or every paper's when the id is omitted. */
@@ -5824,7 +5829,7 @@ export class AdminBotService {
     }
     const needles = memberRelevanceNeedles(member);
     const papers = this.store.listPapers().filter((paper) => paperMatchesNeedles(paper, needles));
-    return { ok: true, status: 200, payload: { papers: papers.map(withPaperTimeline) } };
+    return { ok: true, status: 200, payload: { papers: papers.map(paperForResponse) } };
   }
 
   /**
@@ -5844,6 +5849,11 @@ export class AdminBotService {
       return serviceError(400, validation);
     }
     const existing = this.store.getPaper(paper.id);
+    // The arXiv password lives on its slot, whose read is redacted; see paper-response.ts.
+    const refusal = withheldArtifactWriteError(paper.artifacts, existing?.artifacts);
+    if (refusal) {
+      return serviceError(400, refusal);
+    }
     const settings = this.resolveSettings();
     const now = new Date().toISOString();
     const headProfessorMemberId =
@@ -5851,8 +5861,8 @@ export class AdminBotService {
       existing?.reminder?.head_professor_member_id ??
       settings.head_professor_member_id;
     const stored: AdminBotPaperRecord = {
-      ...existing,
-      ...paper,
+      ...(existing ? withoutTimeline(existing) : {}),
+      ...withoutTimeline(paper),
       // Both name lists are trimmed and de-blanked on write rather than on read. The stage sweep
       // matches authors by name and an empty row would look like an author nobody can resolve,
       // which reads as "this paper has no lab member on it" -- the one state that stops the chase.
@@ -5958,7 +5968,7 @@ export class AdminBotService {
       });
     }
     this.syncConferenceChannel(stored);
-    return { ok: true, status: 200, payload: stored };
+    return { ok: true, status: 200, payload: paperForResponse(stored) };
   }
 
   /**
@@ -6019,7 +6029,7 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: {
-        paper,
+        paper: paperForResponse(paper),
         slots: redactPaperSlots(paperSlotRows(paperId, stored, drafts), entitled),
         drafts,
         consents: drafts.flatMap((draft) => this.store.listSocialConsents(draft.id)),
@@ -10066,12 +10076,20 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: {
-        papers: this.store.listPapers(page).map(withPaperTimeline),
+        papers: this.store.listPapers(page).map(paperForResponse),
         ...(page
-          ? { total: this.store.countPapers(page.q), limit: page.limit, offset: page.offset }
+          ? { total: this.store.countPapers(page), limit: page.limit, offset: page.offset }
           : {}),
       },
     };
+  }
+
+  /** One paper, in the same projection as the list it is a row of. */
+  getPaper(paperId: string): AdminBotServiceResponse<AdminBotPaperRecord> {
+    const paper = this.store.getPaper(paperId);
+    return paper
+      ? { ok: true, status: 200, payload: paperForResponse(paper) }
+      : serviceError(404, "paper not found");
   }
 
   listConferenceAttendance(): AdminBotServiceResponse<{
@@ -10141,10 +10159,7 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: {
-        nudges: this.store
-          .listPapers()
-          .map(withPaperTimeline)
-          .flatMap((paper) => duePaperNudges(paper, nowIso)),
+        nudges: this.store.listPapers().flatMap((paper) => duePaperNudges(paper, nowIso)),
       },
     };
   }
@@ -15899,60 +15914,6 @@ function mergeAccessGrants(
   );
 }
 
-function duePaperNudges(paper: AdminBotPaperRecord, nowIso: string): AdminBotPaperNudge[] {
-  const reminder = paper.reminder;
-  if (reminder?.status !== "waiting_on_authors") {
-    return [];
-  }
-  if (reminder.last_author_dm_at && replyAfterLastDm(reminder)) {
-    return [];
-  }
-  const escalationBusinessDays = reminder.escalation_after_business_days ?? 3;
-  const elapsedBusinessDays = reminder.last_author_dm_at
-    ? countBusinessDays(reminder.last_author_dm_at, nowIso)
-    : 0;
-  if (
-    reminder.last_author_dm_at &&
-    elapsedBusinessDays >= escalationBusinessDays &&
-    reminder.head_professor_member_id
-  ) {
-    return [
-      {
-        type: "head_professor_escalation",
-        paper_id: paper.id,
-        title: paper.title,
-        step: paper.current_step,
-        recipients: [reminder.head_professor_member_id],
-        business_days_since_author_dm: elapsedBusinessDays,
-        message:
-          `Authors have not replied for ${elapsedBusinessDays} business days. ` +
-          `Ask the head professor to remind them about ${paper.current_step}.`,
-      },
-    ];
-  }
-  if (reminder.next_nudge_at && reminder.next_nudge_at > nowIso) {
-    return [];
-  }
-  return [
-    {
-      type: "author_nudge",
-      paper_id: paper.id,
-      title: paper.title,
-      step: paper.current_step,
-      recipients: paper.authors,
-      message: `Remind authors to complete ${paper.current_step} for "${paper.title}".`,
-    },
-  ];
-}
-
-function replyAfterLastDm(reminder: { last_author_dm_at?: string; last_author_reply_at?: string }) {
-  return Boolean(
-    reminder.last_author_dm_at &&
-    reminder.last_author_reply_at &&
-    reminder.last_author_reply_at > reminder.last_author_dm_at,
-  );
-}
-
 function normalizeSlackChannelName(value: string): string {
   return value
     .trim()
@@ -16022,26 +15983,6 @@ function inferSlackChannelPrefix(params: {
 function normalizeOptionalString(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
-}
-
-function countBusinessDays(startIso: string, endIso: string): number {
-  const start = new Date(startIso);
-  const end = new Date(endIso);
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
-    return 0;
-  }
-  let days = 0;
-  const oneDayMs = 24 * 60 * 60 * 1000;
-  const startDay = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
-  const endDay = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
-  for (let dayMs = startDay + oneDayMs; dayMs <= endDay; dayMs += oneDayMs) {
-    const cursor = new Date(dayMs);
-    const day = cursor.getUTCDay();
-    if (day !== 0 && day !== 6) {
-      days += 1;
-    }
-  }
-  return days;
 }
 
 function hasApproval(

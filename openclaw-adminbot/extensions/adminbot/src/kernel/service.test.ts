@@ -480,7 +480,6 @@ describe("AdminBotService paper coauthors", () => {
         artifacts: {
           topic: "causal abstraction",
           submission_url: "https://openreview.net/forum?id=abc",
-          arxiv_paper_password: "ab12cd",
           venue_targets: JSON.stringify([
             { venue_id: "iclr 2027", label: "ICLR 2027", confidence: 80 },
           ]),
@@ -501,8 +500,6 @@ describe("AdminBotService paper coauthors", () => {
     expect(stored?.artifacts).toMatchObject({
       topic: "causal abstraction",
       submission_url: "https://openreview.net/forum?id=abc",
-      // The column that used to accept text and drop it.
-      arxiv_paper_password: "ab12cd",
     });
     // The roster link the grid preserves has to survive the write, not just the UI merge.
     expect(stored?.author_links).toEqual([
@@ -3100,7 +3097,7 @@ describe("AdminBotService", () => {
     });
   });
 
-  it("adds a progress-based paper timeline to listed papers but not to due nudges", () => {
+  it("does not attach a computed timeline to listed papers or due nudges", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertPaper({
@@ -3115,37 +3112,103 @@ describe("AdminBotService", () => {
       }),
     );
 
+    // Readers derive the step label and progress from `current_step` (contracts/paper-progress),
+    // so the ~2 KB per-paper timeline is not part of any list response.
     const [paper] = unwrap(service.listPapers()).papers;
-    expect(paper?.timeline).toMatchObject({
-      // Progress is work-based (11 of 16 estimated days), so it does not move when parallel
-      // branches shorten the schedule.
-      progress_percent: 69,
-      // The critical path, not the sum of every estimate: slides and poster run alongside the
-      // arXiv/announcement chain, taking 4 days off the schedule's 16 days of work.
-      total_estimated_business_days: 12,
-      items: expect.arrayContaining([
-        expect.objectContaining({ step: "overleaf_writing", status: "complete" }),
-        expect.objectContaining({ step: "social_posts", status: "current" }),
-        expect.objectContaining({ step: "slide_making", status: "upcoming" }),
-        expect.objectContaining({ step: "poster_making", status: "upcoming" }),
-      ]),
-    });
-
-    // The flow branches at the submission: slides hang off it rather than off the announcements,
-    // so the two chains overlap in time instead of queueing behind one another.
-    const byStep = new Map(paper?.timeline?.items.map((item) => [item.step, item]));
-    expect(byStep.get("slide_making")?.depends_on).toEqual(["submission"]);
-    expect(byStep.get("google_drive_pdf")?.depends_on).toEqual(["submission"]);
-    expect(byStep.get("slide_making")?.offset_start_business_day).toBe(
-      byStep.get("google_drive_pdf")?.offset_start_business_day,
-    );
-    expect(byStep.get("brainstorming_docs")?.depends_on).toEqual([]);
-    // The nudge names the paper; the timeline stays on the paper record so a 1000-paper sweep
-    // does not ship it twice.
+    expect(paper?.current_step).toBe("social_posts");
+    expect(paper).not.toHaveProperty("timeline");
     const [nudge] = unwrap(service.listPaperNudges("2026-06-02T00:00:00.000Z")).nudges;
-    expect(nudge).toMatchObject({ paper_id: "paper-timeline" });
+    expect(nudge).toMatchObject({ paper_id: "paper-timeline", step: "social_posts" });
     expect(nudge).not.toHaveProperty("timeline");
   });
+  // The arXiv password is a credential. Its home is the `arxiv_paper_password` slot, whose read is
+  // redacted for anyone who is not an author or an admin; as an artifact it went to every member.
+  it("refuses the arXiv password as a paper artifact, from admins and members alike", () => {
+    const service = new AdminBotService();
+    const paper = {
+      id: "pw",
+      title: "Password",
+      authors: ["alice"],
+      current_step: "arxiv_polish" as const,
+      artifacts: { arxiv_paper_password: "ab12cd" } as never,
+    };
+    expect(service.upsertPaper(paper)).toMatchObject({
+      ok: false,
+      status: 400,
+      error: { message: expect.stringContaining("/papers/:id/slots/arxiv_paper_password") },
+    });
+    expect(unwrap(service.listPapers()).papers).toEqual([]);
+  });
+
+  it("never returns a stored arXiv password or timeline, and keeps a legacy one intact", () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    unwrap(
+      service.upsertPaper({
+        id: "legacy",
+        title: "Legacy",
+        authors: ["alice"],
+        current_step: "arxiv_polish",
+        artifacts: { arxiv_url: "https://arxiv.org/abs/2601.00001" },
+      }),
+    );
+    // A record written before the slot existed, and one a client saved its old timeline back onto.
+    const stored = store.getPaper("legacy")!;
+    store.savePaper({
+      ...stored,
+      artifacts: { ...stored.artifacts, arxiv_paper_password: "ab12cd" },
+      timeline: { progress_percent: 56 },
+    } as never);
+
+    const listed = unwrap(service.listPapers({ limit: 10, offset: 0 })).papers[0];
+    expect(listed?.artifacts).toEqual({ arxiv_url: "https://arxiv.org/abs/2601.00001" });
+    expect(listed).not.toHaveProperty("timeline");
+    const cycle = unwrap(service.listPaperSlots("legacy", { isAdmin: true })).paper;
+    expect(cycle.artifacts).not.toHaveProperty("arxiv_paper_password");
+    expect(cycle).not.toHaveProperty("timeline");
+
+    // Re-saving what the store holds is not a write of the password: it is carried, not refused,
+    // and not returned. The timeline is dropped on the way in.
+    const saved = unwrap(service.upsertPaper({ ...store.getPaper("legacy")!, title: "Renamed" }));
+    expect(saved.artifacts).not.toHaveProperty("arxiv_paper_password");
+    expect(saved).not.toHaveProperty("timeline");
+    expect(store.getPaper("legacy")).toMatchObject({
+      title: "Renamed",
+      artifacts: { arxiv_paper_password: "ab12cd" },
+    });
+    expect(store.getPaper("legacy")).not.toHaveProperty("timeline");
+    // Changing it through the record is still refused.
+    expect(
+      service.upsertPaper({
+        ...store.getPaper("legacy")!,
+        artifacts: { arxiv_paper_password: "zz99zz" } as never,
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
+  });
+
+  it("pages one author's papers with that author's total, not the lab's", () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    for (const [id, memberId] of [
+      ["p1", "ada"],
+      ["p2", "ada"],
+      ["p3", "bob"],
+    ] as const) {
+      store.savePaper({
+        id,
+        title: id,
+        authors: [memberId],
+        author_links: [{ name: memberId, member_id: memberId }],
+        current_step: "overleaf_writing",
+        created_at: "2026-09-01T00:00:00.000Z",
+        updated_at: "2026-09-01T00:00:00.000Z",
+      });
+    }
+    const page = unwrap(service.listPapers({ limit: 1, offset: 0, authorMemberId: "ada" }));
+    expect(page.papers.map((paper) => paper.id)).toEqual(["p1"]);
+    expect(page.total).toBe(2);
+  });
+
   it("deletes paper records and records an audit event", () => {
     const service = new AdminBotService();
     unwrap(

@@ -478,14 +478,6 @@ export type AdminBotPaperSaveInput = {
   googleSlidesUrl?: string;
   posterUrl?: string;
   /**
-   * arXiv's own per-paper password, which coauthors need to claim ownership of a submission.
-   *
-   * Plain text on a record every coauthor can read, and it rides in `artifacts` like the links
-   * beside it -- so it is as readable as the paper's Overleaf URL, and no more protected. That is
-   * the trade the lab asked for: the alternative was a column that silently accepted nothing.
-   */
-  arxivPaperPassword?: string;
-  /**
    * Conference pre-registration, JSON-encoded. See venue-targets.ts for the shape and for why it
    * lives in `artifacts` rather than a column: the service merges that map on write, so this
    * needs no schema change and becomes a backfill once the table exists.
@@ -533,25 +525,6 @@ export type AdminBotPaperStep =
   | "social_posts"
   | "slide_making"
   | "poster_making";
-export type AdminBotPaperTimelineItem = {
-  step: AdminBotPaperStep;
-  label: string;
-  dependency_group: string;
-  depends_on: AdminBotPaperStep[];
-  status: "complete" | "current" | "upcoming" | "blocked";
-  offset_start_business_day: number;
-  offset_end_business_day: number;
-  duration_business_days: number;
-  color: string;
-};
-
-export type AdminBotPaperTimeline = {
-  progress_percent: number;
-  current_step_index: number;
-  total_estimated_business_days: number;
-  items: AdminBotPaperTimelineItem[];
-};
-
 export type AdminBotPaperRecord = {
   id: string;
   title: string;
@@ -607,7 +580,6 @@ export type AdminBotPaperRecord = {
   // Set by the service when a member files a paper themselves; one of the signals that lets the
   // UI offer them the edit form.
   submitted_by_member_id?: string;
-  timeline?: AdminBotPaperTimeline;
   created_at: string;
   updated_at: string;
 };
@@ -637,7 +609,6 @@ export type AdminBotPaperNudge = {
   recipients: string[];
   message: string;
   business_days_since_author_dm?: number;
-  timeline?: AdminBotPaperTimeline;
 };
 
 export type AdminBotExecutionResult = {
@@ -1817,10 +1788,6 @@ export async function saveAdminBotPaper(
     ...(paper.nudgeLog === undefined ? {} : { nudge_log: paper.nudgeLog }),
     ...(paper.nudgeSeenAt === undefined ? {} : { nudge_seen_at: paper.nudgeSeenAt }),
     ...(paper.topic ? { topic: paper.topic } : {}),
-    // Sent even when empty, so clearing it actually clears it.
-    ...(paper.arxivPaperPassword === undefined
-      ? {}
-      : { arxiv_paper_password: paper.arxivPaperPassword }),
   };
   // Governance-shaped fields go on the record itself rather than into `artifacts`, and only when
   // the form actually offered one -- an untouched control must not clear a stored value.

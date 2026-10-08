@@ -1934,38 +1934,6 @@ export const adminBotPaperSteps = [
 
 export type AdminBotPaperStep = (typeof adminBotPaperSteps)[number];
 
-export const adminBotPaperTimelineDependencyGroups = [
-  "ideation",
-  "writing",
-  "submission",
-  "release",
-  "outreach",
-  "materials",
-] as const;
-
-export type AdminBotPaperTimelineDependencyGroup =
-  (typeof adminBotPaperTimelineDependencyGroups)[number];
-
-export type AdminBotPaperTimelineStatus = "complete" | "current" | "upcoming" | "blocked";
-
-export type AdminBotPaperTimelineItem = {
-  step: AdminBotPaperStep;
-  label: string;
-  dependency_group: AdminBotPaperTimelineDependencyGroup;
-  depends_on: AdminBotPaperStep[];
-  status: AdminBotPaperTimelineStatus;
-  offset_start_business_day: number;
-  offset_end_business_day: number;
-  duration_business_days: number;
-  color: string;
-};
-
-export type AdminBotPaperTimeline = {
-  progress_percent: number;
-  current_step_index: number;
-  total_estimated_business_days: number;
-  items: AdminBotPaperTimelineItem[];
-};
 export type AdminBotPaperArtifactLinks = {
   /** Publication track is independent of presentation_type; blank explicitly clears it. */
   publication_track?: string;
@@ -1991,15 +1959,6 @@ export type AdminBotPaperArtifactLinks = {
   linkedin_draft_url?: string;
   google_slides_url?: string;
   poster_url?: string;
-  /**
-   * arXiv's own per-paper password, which a coauthor needs to claim ownership of a submission.
-   *
-   * Stored beside the links because that is what it is used with, and with the same protection:
-   * none beyond the record's own access rules. Every coauthor of the paper can read it, as they
-   * can its Overleaf edit link. It lived as a disabled column in the bulk grid for a while,
-   * accepting text it then dropped, which is worse than either storing it or not offering it.
-   */
-  arxiv_paper_password?: string;
 };
 
 export type AdminBotPaperReminderState = {
@@ -2230,7 +2189,6 @@ export type AdminBotPaperRecordInput = {
 };
 
 export type AdminBotPaperRecord = AdminBotPaperRecordInput & {
-  timeline?: AdminBotPaperTimeline;
   created_at: string;
   updated_at: string;
 };
@@ -2243,8 +2201,6 @@ export type AdminBotPaperNudge = {
   recipients: string[];
   message: string;
   business_days_since_author_dm?: number;
-  // No `timeline`: it used to ride along on every nudge (about 470 bytes each) but nothing that
-  // reads nudges draws it, and GET /papers already carries it on the paper itself.
 };
 
 // Member nudge: an admin-composed message (paper-flow reminder or general announcement) sent to a
