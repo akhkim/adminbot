@@ -419,8 +419,7 @@ export function setThemeMode(
 }
 
 async function refreshAgentsTab(host: SettingsHost, app: SettingsAppHost) {
-  await loadAgents(app);
-  await loadConfig(app);
+  await Promise.all([loadAgents(app), loadConfig(app)]);
   const agentIds = host.agentsList?.agents?.map((entry) => entry.id) ?? [];
   if (agentIds.length > 0) {
     void loadAgentIdentities(app, agentIds);
@@ -512,10 +511,11 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         break;
       // Needs the roster too: the interests box is prefilled from the viewer's own topics, which
       // only exist once the member list has loaded.
-      case "adminbotConferencePapers":
-        await loadAdminBotOnce();
-        await loadAdminBotVenueSources(app);
+      case "adminbotConferencePapers": {
+        const profile = loadAdminBotOnce();
+        await Promise.all([profile, loadAdminBotVenueSources(app, profile)]);
         break;
+      }
       // The audience filters read the roster and the papers; the event list is a separate read.
       case "adminbotCalendar": {
         const loadEvents = (app as { loadCalendarEvents?: () => Promise<void> }).loadCalendarEvents;
