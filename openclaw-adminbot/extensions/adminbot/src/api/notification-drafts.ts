@@ -167,10 +167,11 @@ export function createNotificationDraftHandler(
     } finally {
       clearTimeout(timeout);
       res.off("close", abort);
+      // Generation has finished; independent temporary-directory cleanup must not block retries.
+      busy = false;
       if (directory) {
         await rm(directory, { recursive: true, force: true });
       }
-      busy = false;
     }
   };
 }

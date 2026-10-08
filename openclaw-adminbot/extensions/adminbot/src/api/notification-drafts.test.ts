@@ -5,6 +5,19 @@ import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { createAdminBotMockService } from "./server.js";
 const drive = vi.hoisted(() => vi.fn());
+const cleanup = vi.hoisted(() => vi.fn());
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    rm: async (...args: Parameters<typeof actual.rm>) => {
+      if (String(args[0]).includes("adminbot-notification-drafts-")) {
+        await cleanup();
+      }
+      return actual.rm(...args);
+    },
+  };
+});
 vi.mock("../connectors/gog.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../connectors/gog.js")>()),
   readDriveFileBase64: drive,
@@ -13,6 +26,7 @@ const apps: ReturnType<typeof createAdminBotMockService>[] = [];
 const directories: string[] = [];
 afterEach(async () => {
   drive.mockReset();
+  cleanup.mockReset();
   for (const app of apps.splice(0)) {
     await new Promise<void>((resolve) => {
       app.server.close(() => resolve());
@@ -256,4 +270,27 @@ it("accepts CSV with the same results as JSON and rejects malformed CSV", async 
   expect(
     (await send({ ...input, notifications: undefined, notifications_csv: "bad" })).status,
   ).toBe(422);
+});
+
+it("accepts the next generation while the previous temporary directory is being removed", async () => {
+  const { url, headers } = await setup();
+  const auth = headers(true);
+  let release!: () => void;
+  const pendingCleanup = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  cleanup.mockImplementationOnce(() => pendingCleanup);
+  const send = () =>
+    fetch(url, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify(input),
+    });
+  try {
+    expect((await send()).status).toBe(200);
+    expect(cleanup).toHaveBeenCalled();
+    expect((await send()).status).toBe(200);
+  } finally {
+    release();
+  }
 });
