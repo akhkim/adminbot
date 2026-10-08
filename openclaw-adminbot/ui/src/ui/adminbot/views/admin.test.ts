@@ -1374,32 +1374,6 @@ describe("renderAdminBot announcements panel", () => {
   });
 });
 
-const item = (
-  step: string,
-  start: number,
-  end: number,
-  dependsOn: string[],
-): NonNullable<AdminBotPaperRecord["timeline"]>["items"][number] =>
-  ({
-    step,
-    label: stepLabelFixtures[step] ?? step,
-    dependency_group: "release",
-    depends_on: dependsOn,
-    status: "upcoming",
-    offset_start_business_day: start,
-    offset_end_business_day: end,
-    duration_business_days: end - start,
-    color: "#2563eb",
-  }) as NonNullable<AdminBotPaperRecord["timeline"]>["items"][number];
-
-const stepLabelFixtures: Record<string, string> = {
-  brainstorming_docs: "Brainstorming docs",
-  overleaf_writing: "Overleaf writing",
-  submission: "Submission",
-  google_drive_pdf: "Drive PDF",
-  slide_making: "Slides",
-};
-
 const paper = (overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecord => ({
   id: "paper-1",
   title: "World Models Survey",
