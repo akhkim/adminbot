@@ -544,7 +544,7 @@ describe("AdminBot tool handlers", () => {
       },
     });
     expect(calls[1]).toEqual({
-      url: "http://127.0.0.1:8765/papers/nudges?now=2026-06-04T00%3A00%3A00.000Z",
+      url: "http://127.0.0.1:8765/papers/nudges?limit=100&now=2026-06-04T00%3A00%3A00.000Z",
       body: undefined,
     });
   });

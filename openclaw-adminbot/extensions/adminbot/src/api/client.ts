@@ -164,8 +164,10 @@ export class AdminBotClient {
   }
 
   async listPaperNudges(nowIso?: string, signal?: AbortSignal): Promise<unknown> {
-    const params = nowIso ? `?now=${encodeURIComponent(nowIso)}` : "";
-    return this.request("GET", `/papers/nudges${params}`, undefined, signal);
+    // The route's ceiling rather than its 25-row board page: the agent reads the list to act on it,
+    // and `total` / `next_offset` in the reply say when even this much is not all of it.
+    const params = new URLSearchParams({ limit: "100", ...(nowIso ? { now: nowIso } : {}) });
+    return this.request("GET", `/papers/nudges?${params}`, undefined, signal);
   }
 
   async listOpenReviewStatus(signal?: AbortSignal): Promise<unknown> {

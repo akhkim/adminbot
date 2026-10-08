@@ -13,13 +13,7 @@ import {
   sendJson,
   sendServiceResult,
 } from "../server.http.js";
-import {
-  adminSessionOnly,
-  memberOnly,
-  principalActor,
-  privilegedOnly,
-  requireMemberPrivileged,
-} from "./guards.js";
+import { pageOf, readPageQuery } from "../server.paging.js";
 import {
   conferenceRosterWire,
   mailingExclusionsWire,
@@ -27,6 +21,13 @@ import {
   nudgeBatchWire,
   slotOverviewWireRow,
 } from "../server.paper-lists.wire.js";
+import {
+  adminSessionOnly,
+  memberOnly,
+  principalActor,
+  privilegedOnly,
+  requireMemberPrivileged,
+} from "./guards.js";
 import { get, post, type Route } from "./router.js";
 
 export const paperAdminRoutes: readonly Route[] = [
@@ -350,7 +351,16 @@ export const paperAdminRoutes: readonly Route[] = [
   ),
   get("/papers/nudges", ({ res, url, ctx }) => {
     const { service } = ctx;
-    sendServiceResult(res, service.listPaperNudges(url.searchParams.get("now") ?? undefined));
+    // One due nudge per stalled paper, so the list grows with the lab's projects. The board shows
+    // 25 and pages; the metric and the chat panel's count read `total`.
+    const page = readPageQuery(url, { defaultLimit: 25, maxLimit: 100 });
+    sendServiceResult(
+      res,
+      mapPayload(service.listPaperNudges(url.searchParams.get("now") ?? undefined), (p) => {
+        const { items, ...paging } = pageOf(p.nudges, page);
+        return { ...p, nudges: items, ...paging };
+      }),
+    );
   }),
   post(
     "/papers/author-links/backfill",

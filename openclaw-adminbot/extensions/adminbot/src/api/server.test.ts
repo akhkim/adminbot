@@ -4146,7 +4146,7 @@ describe("GET /nudges/escalated", () => {
 
     const privileged = await fetch(`${baseUrl}/nudges/escalated`, { headers: serviceHeaders() });
     expect(privileged.status).toBe(200);
-    await expect(privileged.json()).resolves.toEqual({ members: [] });
+    await expect(privileged.json()).resolves.toEqual({ members: [], total: 0 });
 
     // /notifications is still nobody else's business, service token or not: this route exists
     // because that one deliberately refuses, not as a way around it.

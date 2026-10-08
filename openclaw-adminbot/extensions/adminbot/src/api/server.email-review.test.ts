@@ -136,6 +136,7 @@ describe("email review routes", () => {
           sender: "notifications@openreview.net",
         }),
       ],
+      total: 1,
       paperflow_candidates: [
         expect.objectContaining({
           paper_id: "paper-1",

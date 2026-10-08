@@ -504,7 +504,9 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveProposal(proposal: AdminBotStoredProposal): void;
   getProposal(actionId: string): AdminBotStoredProposal | undefined;
   updateProposal(proposal: AdminBotStoredProposal): void;
-  listPending(limit?: number): AdminBotStoredProposal[];
+  /** Oldest first; `offset` pages through the queue the approval panel works down. */
+  listPending(limit?: number, offset?: number): AdminBotStoredProposal[];
+  countPending(): number;
   listProposalsByType(type: AdminBotActionType): AdminBotStoredProposal[];
   saveDeadlineProposalSubmission(
     proposal: AdminBotStoredProposal,
@@ -2035,11 +2037,14 @@ export class AdminBotService {
     }
   }
 
-  listPending(limit?: number): AdminBotServiceResponse<{ proposals: AdminBotStoredProposal[] }> {
+  listPending(
+    limit?: number,
+    offset?: number,
+  ): AdminBotServiceResponse<{ proposals: AdminBotStoredProposal[] }> {
     return {
       ok: true,
       status: 200,
-      payload: { proposals: this.store.listPending(limit) },
+      payload: { proposals: this.store.listPending(limit, offset) },
     };
   }
 
