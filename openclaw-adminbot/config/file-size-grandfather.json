@@ -8,15 +8,15 @@
   "limit": 2200,
   "grandfathered": {
     "extensions/adminbot/src/contracts/actions.ts": {
-      "max": 3181,
+      "max": 3138,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "extensions/adminbot/src/kernel/service.ts": {
-      "max": 16151,
+      "max": 16100,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "extensions/adminbot/src/persistence/sqlite.ts": {
-      "max": 4287,
+      "max": 4286,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "extensions/adminbot/src/workflows/deadlines/generated/dataset.ts": {
@@ -164,7 +164,7 @@
       "reason": "Static venue data used only as a default parameter; move to a lazily loaded JSON asset."
     },
     "ui/src/ui/adminbot/views/admin.ts": {
-      "max": 4054,
+      "max": 4039,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "ui/src/ui/adminbot/views/deadlines.ts": {
@@ -172,7 +172,7 @@
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "ui/src/ui/adminbot/views/my-work.ts": {
-      "max": 3147,
+      "max": 3146,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "ui/src/ui/adminbot/views/time-availability.ts": {
