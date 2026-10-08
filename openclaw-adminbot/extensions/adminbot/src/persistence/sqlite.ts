@@ -3282,6 +3282,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         request.updated_at,
         JSON.stringify(request),
       );
+    this.versions.bump("logistics");
   }
 
   getLogisticsRequest(requestId: string): AdminBotLogisticsRequest | undefined {
@@ -3310,10 +3311,16 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   deleteLogisticsRequest(requestId: string): boolean {
+    this.versions.bump("logistics");
     return (
       this.db.prepare("DELETE FROM adminbot_logistics_requests WHERE id = ?").run(requestId)
         .changes > 0
     );
+  }
+
+  /** The queue's rows; merge and purge repoint member_id, and they move the roster generation. */
+  logisticsVersion(): string {
+    return `${this.members.version()}:${this.versions.version("logistics")}`;
   }
 
   getSettings(): AdminBotSettings | undefined {

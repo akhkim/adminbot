@@ -36,6 +36,22 @@ function meeting(id: string, minutes: number): AdminBotMeetingRecord {
   };
 }
 
+function letterRequest() {
+  return {
+    kind: "recommendation_letters" as const,
+    schools: [
+      {
+        school: "MIT",
+        letter_deadline: "2026-12-01",
+        letter_deadline_time: "17:00",
+        deadline_timezone: "America/New_York",
+      },
+    ],
+    facts: [{ project: "AdminBot", contribution: "wrote the approval gate" }],
+    cv_overleaf_url: "https://overleaf.com/read/abc",
+  };
+}
+
 async function startLab() {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "adminbot-version-etag-"));
   const databasePath = path.join(tempDir, "state.sqlite");
@@ -104,6 +120,7 @@ async function startLab() {
       }).ok,
     ).toBe(true);
   }
+  expect(mock.service.submitLogisticsRequest("ada", letterRequest()).ok).toBe(true);
   mock.store.saveMeeting(meeting("1", 30));
   mock.store.saveMeeting(meeting("2", 60));
   const get = async (route: string, as: string, etag?: string) =>
@@ -129,7 +146,10 @@ const ROUTES = [
   "/lab/members?limit=20&offset=0",
   "/lab/members?limit=20&offset=0&q=ada",
   "/lab/members/self",
+  "/logistics/requests",
+  "/logistics/requests?limit=20&q=mit",
 ];
+const LOGISTICS = ROUTES.filter((route) => route.startsWith("/logistics"));
 const MEMBER_VIEWS = ROUTES.filter((route) => route.startsWith("/lab/members"));
 
 /** Every store read a body build of these routes makes. */
@@ -143,6 +163,7 @@ function bodyBuildSpies(lab: Lab) {
     vi.spyOn(lab.mock.service, "listLabMembers"),
     vi.spyOn(lab.mock.service, "listLabMemberSummaries"),
     vi.spyOn(lab.mock.service, "getLabMemberView"),
+    vi.spyOn(lab.mock.store, "listLogisticsRequests"),
   ];
 }
 
@@ -186,7 +207,8 @@ describe("version ETags on the heavy list routes (sqlite)", () => {
       if (
         route.startsWith("/meetings") ||
         route === "/papers?scope=mine" ||
-        MEMBER_VIEWS.includes(route)
+        MEMBER_VIEWS.includes(route) ||
+        LOGISTICS.includes(route)
       ) {
         // Filtered or redacted per member.
         expect(tags.get("ada"), route).not.toBe(tags.get("grace"));
@@ -275,6 +297,21 @@ describe("version ETags on the heavy list routes (sqlite)", () => {
             published_by_member_id: "zhijing",
           }),
       ],
+      [LOGISTICS, () => lab.mock.service.submitLogisticsRequest("grace", letterRequest())],
+      [
+        LOGISTICS,
+        () => {
+          const [request] = lab.mock.store.listLogisticsRequests("grace");
+          lab.mock.store.saveLogisticsRequest({ ...request!, status: "in_progress" });
+        },
+      ],
+      [
+        LOGISTICS,
+        () =>
+          lab.mock.store.deleteLogisticsRequest(
+            lab.mock.store.listLogisticsRequests("grace")[0]!.id,
+          ),
+      ],
     ];
     for (const [routes, write] of changes) {
       const before = new Map<string, string>();
@@ -306,8 +343,8 @@ describe("version ETags on the heavy list routes (sqlite)", () => {
     }
     const response = await lab.get("/papers", "zhijing", etag);
     expect(response.status).toBe(200);
-    expect(((await response.json()) as { papers: { id: string }[] }).papers.map((p) => p.id)).toContain(
-      "px",
-    );
+    expect(
+      ((await response.json()) as { papers: { id: string }[] }).papers.map((p) => p.id),
+    ).toContain("px");
   });
 });

@@ -1,3 +1,4 @@
+import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 // Requests to the PI: signatures, rec letters, meeting requests, and the call sheet.
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
@@ -9,8 +10,33 @@ import {
 } from "../server.call-sheet.js";
 import { readJsonOrEmpty, sendJson, sendServiceResult } from "../server.http.js";
 import { handleLogisticsRoute } from "../server.logistics.js";
+import type { AdminBotRouteContext } from "./context.js";
 import { adminSessionOnly, memberOnly, principalActor, privilegedOnly } from "./guards.js";
 import { post, route, type Route, under } from "./router.js";
+import { principalRole, sendNotModified, versionEtag } from "./version-etag.js";
+
+/**
+ * GET /logistics/requests is the stored rows, scoped to the caller unless they are an admin,
+ * filtered, sorted and paged by the query. Nothing in it reads the clock or a setting, so the
+ * store's logistics version, the scope and the query string are every input.
+ */
+function logisticsQueueEtag(
+  ctx: AdminBotRouteContext,
+  principal: AdminBotMemberPrincipal,
+  url: URL,
+): string | undefined {
+  const version = (ctx.store as { logisticsVersion?(): string }).logisticsVersion?.();
+  if (version === undefined) {
+    return undefined;
+  }
+  const isAdmin = principal.member.privilege_level === "admin";
+  return versionEtag("logistics.requests", [
+    version,
+    principalRole(principal),
+    isAdmin ? null : principal.member.id,
+    url.search,
+  ]);
+}
 
 export const logisticsRoutes: readonly Route[] = [
   route(
@@ -18,6 +44,13 @@ export const logisticsRoutes: readonly Route[] = [
     under("/logistics/requests"),
     memberOnly(async ({ req, res, url, ctx, principal }) => {
       const { service } = ctx;
+      const etag =
+        req.method === "GET" && url.pathname === "/logistics/requests"
+          ? logisticsQueueEtag(ctx, principal, url)
+          : undefined;
+      if (etag && sendNotModified(res, etag)) {
+        return;
+      }
       const callSheetForSubmit = ctx.autoQueueMeetingRequests ? ctx.callSheet : undefined;
       await handleLogisticsRoute(
         req,
@@ -29,6 +62,7 @@ export const logisticsRoutes: readonly Route[] = [
           ? (requestId) =>
               queueCallSheetRow(service, callSheetForSubmit, principalActor(principal), requestId)
           : undefined,
+        etag,
       );
     }),
   ),
