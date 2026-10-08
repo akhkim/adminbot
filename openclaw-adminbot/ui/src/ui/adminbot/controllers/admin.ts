@@ -690,7 +690,8 @@ export type AdminBotDashboardData = {
    */
   conferenceRosters?: ConferenceRoster[];
   settings: AdminBotSettings | null;
-  sensitiveInfo: AdminBotSensitiveInfoRecord | null;
+  /** Undefined until the Settings tab has read it; null when nothing is stored. */
+  sensitiveInfo?: AdminBotSensitiveInfoRecord | null;
   loadedAt: number | null;
 };
 
@@ -874,7 +875,6 @@ export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
     papersLoadedAt: null,
     nudges: [],
     settings: null,
-    sensitiveInfo: null,
     loadedAt: null,
   };
 }
@@ -1195,41 +1195,42 @@ async function loadAdminBotOverSession(
     const currentMemberRows = () =>
       host.adminBotRosterLoadedAt ? host.adminBotData.members : memberRows;
     // The profile and public deadlines can render while the larger paper read is still pending.
-    host.adminBotData = { ...createEmptyAdminBotDashboardData(), members: memberRows };
+    // A reload after a save keeps what is already on screen and replaces it as reads land; clearing
+    // it first blanked the whole page for the length of the reload.
+    host.adminBotData = { ...host.adminBotData, members: memberRows };
     host.requestUpdate?.();
     const papers = includePapers ? await read("/papers") : undefined;
     if (!isCurrent()) {
       return;
     }
     host.adminBotData = {
-      ...createEmptyAdminBotDashboardData(),
+      ...host.adminBotData,
       members: currentMemberRows(),
-      papers: readArray<AdminBotPaperRecord>(papers, "papers"),
-      papersLoadedAt: includePapers ? Date.now() : null,
-      // Admin queues still need their own read before the dashboard is complete.
-      loadedAt: mode === "general" ? Date.now() : null,
+      ...(includePapers
+        ? { papers: readArray<AdminBotPaperRecord>(papers, "papers"), papersLoadedAt: Date.now() }
+        : {}),
+      // Admin queues still need their own read before the first dashboard is complete; a reload
+      // keeps the previous stamp so the page stays drawn.
+      loadedAt: mode === "general" ? Date.now() : host.adminBotData.loadedAt,
     };
     host.requestUpdate?.();
     host.adminBotUsingCachedReads = usedCache;
     if (mode === "general") {
       return;
     }
-    const [pending, emailReview, nudges, conferenceRosters, settings, sensitiveInfo] =
-      await Promise.all([
-        optional("/proposals/pending?limit=50"),
-        optional("/automation/email/review"),
-        optional("/papers/nudges"),
-        optional("/papers/conference-rosters"),
-        optional("/settings"),
-        optional("/sensitive-info"),
-      ]);
+    // The sensitive-info notes are read by the Settings tab alone (loadAdminBotSensitiveInfo), so
+    // they no longer ride along on every admin page load.
+    const [pending, emailReview, nudges, conferenceRosters, settings] = await Promise.all([
+      optional("/proposals/pending?limit=50"),
+      optional("/automation/email/review"),
+      optional("/papers/nudges"),
+      optional("/papers/conference-rosters"),
+      optional("/settings"),
+    ]);
     if (!isCurrent()) {
       return;
     }
     const settingsRecord = readRecord(settings);
-    const sensitiveInfoRecord = readRecord(sensitiveInfo);
-    const markdown = readString(sensitiveInfoRecord, "markdown");
-    const filePath = readString(sensitiveInfoRecord, "path");
     host.adminBotData = {
       proposals: readArray<AdminBotActionProposal>(pending, "proposals"),
       emailReviews: readArray<AdminBotEmailReviewItem>(emailReview, "reviews"),
@@ -1242,13 +1243,13 @@ async function loadAdminBotOverSession(
         "recent_resolutions",
       ),
       members: currentMemberRows(),
-      papers: readArray<AdminBotPaperRecord>(papers, "papers"),
-      papersLoadedAt: includePapers ? Date.now() : null,
+      papers: host.adminBotData.papers,
+      papersLoadedAt: host.adminBotData.papersLoadedAt,
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
       conferenceRosters: readArray<ConferenceRoster>(conferenceRosters, "conferences"),
       settings:
         Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
-      sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,
+      sensitiveInfo: host.adminBotData.sensitiveInfo,
       loadedAt: Date.now(),
     };
     host.adminBotUsingCachedReads = usedCache;
@@ -1266,6 +1267,38 @@ async function loadAdminBotOverSession(
       if (isCurrent()) host.adminBotOfflinePendingWrites = pendingCount;
     }
   }
+}
+
+let sensitiveInfoRequest: { token: string; promise: Promise<void> } | null = null;
+
+/** The admin-only sensitive-info notes, read when the Settings tab opens rather than on boot. */
+export function loadAdminBotSensitiveInfo(host: AdminBotHost, force = false): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    return Promise.resolve();
+  }
+  if (sensitiveInfoRequest?.token === stored.sessionToken && !force) {
+    return sensitiveInfoRequest.promise;
+  }
+  const promise = (async () => {
+    const result = await fetchMemberResource(
+      "/sensitive-info",
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken || !result.ok) {
+      return;
+    }
+    const record = readRecord(result.value);
+    const markdown = readString(record, "markdown");
+    const filePath = readString(record, "path");
+    host.adminBotData = {
+      ...host.adminBotData,
+      sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,
+    };
+  })();
+  sensitiveInfoRequest = { token: stored.sessionToken, promise };
+  return promise;
 }
 
 /** Full roster only for surfaces that use other members' schedules, names, or badges. */
@@ -1908,7 +1941,12 @@ export async function saveAdminBotSensitiveInfo(
   try {
     await invokeAdminBotTool(host, "adminbot_update_sensitive_info", { markdown });
     host.adminBotNotice = { kind: "success", text: "Saved sensitive-information markdown." };
-    await loadAdminBot(host);
+    // Nothing else changed, so patch the one field instead of reloading the whole workspace.
+    const path = host.adminBotData.sensitiveInfo?.path;
+    host.adminBotData = {
+      ...host.adminBotData,
+      sensitiveInfo: { markdown, ...(path ? { path } : {}) },
+    };
   } catch (err) {
     host.adminBotNotice = {
       kind: "error",

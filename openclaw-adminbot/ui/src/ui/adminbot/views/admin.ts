@@ -744,7 +744,7 @@ function submitSensitiveInfoForm(event: Event, props: AdminBotProps): void {
 function renderSettings(
   props: AdminBotProps,
   settings: AdminBotSettings | null,
-  sensitiveInfo: AdminBotSensitiveInfoRecord | null,
+  sensitiveInfo: AdminBotSensitiveInfoRecord | null | undefined,
 ) {
   if (!settings) {
     return html`<div class="muted">Settings have not loaded yet.</div>`;
@@ -862,7 +862,13 @@ function renderSettings(
             <textarea name="markdown" rows="18">${sensitiveInfo?.markdown ?? ""}</textarea>
           </label>
           <div class="adminbot-form__actions">
-            <button class="btn btn--sm primary" type="submit">Save markdown</button>
+            <button
+              class="btn btn--sm primary"
+              type="submit"
+              ?disabled=${sensitiveInfo === undefined}
+            >
+              Save markdown
+            </button>
           </div>
         </form>
         <div class="adminbot-kv">

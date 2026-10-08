@@ -11,6 +11,7 @@ import {
   loadAdminBot,
   loadAdminBotMemberList,
   loadAdminBotRoster,
+  loadAdminBotSensitiveInfo,
   saveAdminBotPaper,
   type AdminBotHost,
 } from "./admin.js";
@@ -138,7 +139,7 @@ describe("loadAdminBot", () => {
     expect(host.adminBotData.proposals).toEqual([]);
     expect(host.adminBotData.nudges).toEqual([]);
     expect(host.adminBotData.settings).toBeNull();
-    expect(host.adminBotData.sensitiveInfo).toBeNull();
+    expect(host.adminBotData.sensitiveInfo).toBeUndefined();
   });
 });
 
@@ -521,7 +522,45 @@ describe("loadAdminBot over the member session", () => {
     expect(host.adminBotData.papers).toHaveLength(1);
     expect(host.adminBotData.proposals).toEqual([]);
     expect(host.adminBotData.settings).toBeNull();
-    expect(host.adminBotData.sensitiveInfo).toBeNull();
+    expect(host.adminBotData.sensitiveInfo).toBeUndefined();
+  });
+
+  it("leaves the sensitive-info notes to the Settings tab", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = routedFetch({
+      "/lab/members/self": () => json({ member: { id: "pat" } }),
+      "/papers": () => json({ papers: [] }),
+      "/sensitive-info": () => json({ markdown: "secret\n", path: "notes.md" }),
+    });
+
+    await loadAdminBot(host, "admin");
+    const sensitiveReads = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/sensitive-info")).length;
+    expect(sensitiveReads()).toBe(0);
+
+    await Promise.all([loadAdminBotSensitiveInfo(host), loadAdminBotSensitiveInfo(host)]);
+    expect(sensitiveReads()).toBe(1);
+    expect(host.adminBotData.sensitiveInfo).toEqual({ markdown: "secret\n", path: "notes.md" });
+  });
+
+  it("keeps the loaded page on screen while a reload runs", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    routedFetch({
+      "/lab/members/self": () => json({ member: { id: "pat" } }),
+      "/papers": () => json({ papers: [{ id: "paper-1" }] }),
+      "/proposals/pending": () => json({ proposals: [{ id: "proposal-1" }] }),
+    });
+    await loadAdminBot(host, "admin");
+    expect(host.adminBotData.proposals).toHaveLength(1);
+
+    const reloading = loadAdminBot(host, "admin");
+    await Promise.resolve();
+    expect(host.adminBotData.proposals).toHaveLength(1);
+    expect(host.adminBotData.papers).toHaveLength(1);
+    expect(host.adminBotData.loadedAt).not.toBeNull();
+    await reloading;
   });
 
   it("reports an error when the member's own profile cannot be read", async () => {

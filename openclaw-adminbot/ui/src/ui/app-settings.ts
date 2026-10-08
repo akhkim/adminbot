@@ -2,7 +2,11 @@ import { ADMINBOT_PASSWORD_RESET_PATH } from "../../../extensions/adminbot/src/c
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
-import { loadAdminBot, type AdminBotHost } from "./adminbot/controllers/admin.ts";
+import {
+  loadAdminBot,
+  loadAdminBotSensitiveInfo,
+  type AdminBotHost,
+} from "./adminbot/controllers/admin.ts";
 import { loadAdminBotVenueSources } from "./adminbot/controllers/conference-papers.ts";
 import {
   loadAdminBotRegistrations,
@@ -467,7 +471,10 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       ? Promise.resolve()
       : loadAdminBot(
           app,
-          "admin",
+          // A plain member asked in "admin" mode spends five reads on queues the service refuses.
+          (app as { memberPrivilegeLevel?: string | null }).memberPrivilegeLevel === "admin"
+            ? "admin"
+            : "general",
           needsPapers,
           Boolean(app.adminBotData?.loadedAt && needsPapers && !app.adminBotData.papersLoadedAt),
         );
@@ -490,8 +497,10 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "overview":
         await loadOverview(host);
         break;
-      case "adminbot":
       case "adminbotSettings":
+        await Promise.all([loadAdminBotOnce(), loadAdminBotSensitiveInfo(app, true)]);
+        break;
+      case "adminbot":
       case "adminbotMembers":
       case "adminbotPapers":
       case "adminbotAnnouncements":

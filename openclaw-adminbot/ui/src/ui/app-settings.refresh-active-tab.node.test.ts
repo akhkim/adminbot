@@ -259,13 +259,24 @@ describe("refreshActiveTab", () => {
     expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
   });
 
+  it("asks for the admin queues only when the viewer is an admin", async () => {
+    const host = createHost();
+    host.tab = "adminbotTimeAvailability";
+    const app = host as typeof host & { memberPrivilegeLevel: string };
+    app.memberPrivilegeLevel = "admin";
+
+    await refreshActiveTab(app as never);
+
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "admin", false, false);
+  });
+
   it("does not request the paper list when Time Availability first opens", async () => {
     const host = createHost();
     host.tab = "adminbotTimeAvailability";
 
     await refreshActiveTab(host as never);
 
-    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(host, "admin", false, false);
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(host, "general", false, false);
   });
 
   it("loads papers after navigating from a non-paper page to Active Papers", async () => {
@@ -278,7 +289,7 @@ describe("refreshActiveTab", () => {
 
     await refreshActiveTab(app as never);
 
-    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "admin", true, true);
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "general", true, true);
   });
 
   it("waits for an in-flight non-paper load before requesting the missing papers", async () => {
@@ -296,7 +307,7 @@ describe("refreshActiveTab", () => {
 
     app.adminBotLoading = false;
     await refreshActiveTab(app as never);
-    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "admin", true, true);
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "general", true, true);
   });
 
   it("does not start a second roster read while the dashboard is loading", async () => {
