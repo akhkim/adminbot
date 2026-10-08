@@ -143,6 +143,7 @@ import {
   migrateSocialDraftColumns,
   saveSqliteSocialDraft,
 } from "./sqlite.social-drafts.js";
+import { cacheStatements } from "./sqlite.statement-cache.js";
 import { SqliteTableVersions } from "./sqlite.table-versions.js";
 import { SqliteVenuePaperIndex } from "./sqlite.venue-papers.js";
 
@@ -231,6 +232,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ensureDatabaseDirectory(databasePath);
     const sqlite = requireNodeSqlite();
     this.db = new sqlite.DatabaseSync(databasePath);
+    cacheStatements(this.db);
     this.venueIndex = new SqliteVenuePaperIndex(this.db);
     this.members = new SqliteLabMemberCache(this.db);
     this.versions = new SqliteTableVersions(this.db);
