@@ -2,7 +2,7 @@
 // A disk write that fails (quota, a closed connection) must not leave the store believing the row
 // landed. The real-IndexedDB rules are in read-store.browser.test.ts; this fakes the database so a
 // transaction can be made to abort on demand.
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Row = { key: string } & Record<string, unknown>;
 
@@ -81,16 +81,12 @@ vi.mock("./offline-db.ts", () => ({
 }));
 
 // The suite shares one module cache across files (isolate: false): a read-store another file loaded
-// first is bound to the real database and would never see the fake. Load a fresh one, and leave
-// none of it behind for the files after this one.
-vi.resetModules();
+// first is bound to the real database and would never see the fake. A query suffix loads a copy of
+// its own, which resolves its database import through the mock above, without resetting the cache
+// the other files' modules live in.
+const FRESH_READ_STORE = "./read-store.ts?commit-failure";
 const { flushOfflineReads, readOfflineRead, resetOfflineReadStore, storeOfflineRead } =
-  await import("./read-store.ts");
-
-afterAll(() => {
-  vi.doUnmock("./offline-db.ts");
-  vi.resetModules();
-});
+  (await import(/* @vite-ignore */ FRESH_READ_STORE)) as typeof import("./read-store.ts");
 
 const ADA = { baseUrl: "http://127.0.0.1:8765", principalKey: "ada" };
 
