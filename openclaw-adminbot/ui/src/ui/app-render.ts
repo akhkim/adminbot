@@ -2542,10 +2542,10 @@ export function renderApp(state: AppViewState) {
   // A member's own record starts every signed-in view. The paper list and full roster are fetched
   // only for pages that use them; asking for both on Meetings or Availability delayed those views.
   //
-  // `state.connected` stays on the gateway-driven half only. A member reads over their own HTTP
-  // session (loadAdminBot prefers loadStoredMemberSession), which needs no gateway socket at all --
-  // requiring one was the second half of why the landing page came up blank for plain members.
-  const hasMemberSession = Boolean(state.memberId);
+  // `state.connected` stays on the gateway-driven half only: a member reads over the stored HTTP
+  // session, which needs no socket (requiring one blanked plain members' landing page). That stored
+  // session, not just `memberId`: every read below needs it, and a gate without it re-asks forever.
+  const hasMemberSession = Boolean(state.memberId && loadStoredMemberSession());
   const needsRosterForTab = needsLabRoster(state.tab, adminBotMode, adminBotPanel);
   const needsPapersForTab =
     needsLabPapers(state.tab) || adminBotPanel === "papers" || (isChat && isAdminBotChat);
