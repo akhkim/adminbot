@@ -68,6 +68,9 @@ export function mergeLabMembersIn(
   store: MemberIdentityStore,
   recordAudit: RecordAudit,
   params: MemberMergeParams,
+  // Birthday-calendar reconciliation (service.birthday.ts): the duplicate's event is withdrawn and
+  // the survivor's re-proposed, since the merge can change who holds which birthday.
+  reconcileBirthday: (member: AdminBotLabMember, removed?: boolean) => void = () => {},
 ): AdminBotServiceResponse<{
   member: AdminBotLabMember;
   conflicts: MemberMergeConflict[];
@@ -95,7 +98,9 @@ export function mergeLabMembersIn(
     id: survivor.id,
     updated_at: now,
   };
+  reconcileBirthday(duplicate, true);
   store.saveLabMember(merged);
+  reconcileBirthday(merged);
   const moved = store.reassignMemberReferences(params.duplicateId, params.survivorId);
   store.revokeSessionsForMember(params.duplicateId, now);
   store.deleteLabMember(params.duplicateId);

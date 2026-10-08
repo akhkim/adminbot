@@ -5,9 +5,14 @@
 
 import { nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
-import { renderLabSharing } from "../views/lab-sharing.ts";
+import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
+// The page's view loads on first visit rather than in the first bundle.
+const lazyLabSharing = createLazyView(() => import("../views/lab-sharing.ts"), notifyLazyViewHost);
+
 export function renderCollaborateSurface(state: AppViewState, _scope: AdminBotSurfaceScope) {
-  return state.tab === "labSharing" ? renderLabSharing(state) : nothing;
+  return state.tab === "labSharing"
+    ? renderLazyView(lazyLabSharing, (m) => m.renderLabSharing(state))
+    : nothing;
 }

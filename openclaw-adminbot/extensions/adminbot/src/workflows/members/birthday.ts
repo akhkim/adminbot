@@ -83,7 +83,13 @@ export function nextOccurrence(birthday: Birthday, today: Date): { year: number 
   const year = today.getUTCFullYear();
   const thisYear = Date.UTC(year, birthday.month - 1, birthday.day);
   const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  return { year: thisYear >= todayUtc ? year : year + 1 };
+  let nextYear = thisYear >= todayUtc ? year : year + 1;
+  if (birthday.month === 2 && birthday.day === 29) {
+    while (new Date(Date.UTC(nextYear, 1, 29)).getUTCMonth() !== 1) {
+      nextYear++;
+    }
+  }
+  return { year: nextYear };
 }
 
 function iso(year: number, month: number, day: number): string {
@@ -137,7 +143,7 @@ export function birthdayEventPayload(
  * which is the exact substitution the doc comment above refuses to make.
  */
 function exclusiveEnd(year: number, birthday: Birthday): string {
-  const lastDay = birthday.month === 2 ? 29 : (DAYS_IN_MONTH[birthday.month] ?? 0);
+  const lastDay = new Date(Date.UTC(year, birthday.month, 0)).getUTCDate();
   if (birthday.day < lastDay) {
     return iso(year, birthday.month, birthday.day + 1);
   }

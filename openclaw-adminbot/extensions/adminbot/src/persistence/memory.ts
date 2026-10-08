@@ -1064,9 +1064,13 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.socialDrafts.set(record.id, record);
   }
 
-  listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[] {
+  listSocialDrafts(paperId?: string, draftId?: string): AdminBotSocialDraftRecord[] {
     return [...this.socialDrafts.values()]
-      .filter((draft) => paperId === undefined || draft.paper_id === paperId)
+      .filter(
+        (draft) =>
+          (paperId === undefined || draft.paper_id === paperId) &&
+          (draftId === undefined || draft.id === draftId),
+      )
       .toSorted((left, right) => right.generated_at.localeCompare(left.generated_at));
   }
 
