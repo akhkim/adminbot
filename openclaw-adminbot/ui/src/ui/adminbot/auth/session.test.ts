@@ -597,6 +597,93 @@ describe("offline GET cache and mutation outbox", () => {
   });
 });
 
+describe("revalidated GET reads", () => {
+  function ifNoneMatch(call: unknown[] | undefined): string | undefined {
+    const headers = (call?.[1] as RequestInit | undefined)?.headers as
+      | Record<string, string>
+      | undefined;
+    return headers?.["If-None-Match"];
+  }
+
+  it("sends the last tag back and reuses the kept body on a 304", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(200, { papers: [{ id: "p1" }] }, { ETag: 'W/"v1"' }))
+      .mockResolvedValueOnce(new Response(null, { status: 304, headers: { ETag: 'W/"v1"' } }));
+
+    const first = await fetchMemberResource("/papers", "ada-session", BASE_URL);
+    expect(ifNoneMatch(fetchMock.mock.calls[0])).toBeUndefined();
+    const second = await fetchMemberResource("/papers", "ada-session", BASE_URL);
+    expect(ifNoneMatch(fetchMock.mock.calls[1])).toBe('W/"v1"');
+    expect(second).toEqual({ ok: true, value: { papers: [{ id: "p1" }] } });
+    // A fresh parse: an in-place edit of the first copy must not come back on the next read.
+    expect((second as { value: unknown }).value).not.toBe((first as { value: unknown }).value);
+  });
+
+  it("never offers one session's tag to another session", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(200, { settings: "admin" }, { ETag: 'W/"admin"' }))
+      .mockResolvedValueOnce(jsonResponse(403, {}));
+    await fetchMemberResource("/settings", "admin-session", BASE_URL);
+    await fetchMemberResource("/settings", "member-session", BASE_URL);
+    expect(ifNoneMatch(fetchMock.mock.calls[1])).toBeUndefined();
+  });
+
+  it("forgets kept bodies when the stored session changes or is cleared", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => jsonResponse(200, { ok: true }, { ETag: 'W/"t"' }));
+    saveStoredMemberSession({ sessionToken: "ada-session", expiresAt: "" });
+    await fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    // View-as swaps the token and parks the admin's; back again is a second swap.
+    saveStoredMemberSession({ sessionToken: "viewed-session", expiresAt: "" });
+    saveStoredMemberSession({ sessionToken: "ada-session", expiresAt: "" });
+    await fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    expect(ifNoneMatch(fetchMock.mock.calls[1])).toBeUndefined();
+
+    await fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    expect(ifNoneMatch(fetchMock.mock.calls[2])).toBe('W/"t"');
+    clearStoredMemberSession();
+    await fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    expect(ifNoneMatch(fetchMock.mock.calls[3])).toBeUndefined();
+  });
+
+  it("shares one request between concurrent reads of the same URL and session", async () => {
+    let release: (response: Response) => void = () => {};
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const a = fetchMemberResource("/papers", "ada-session", BASE_URL);
+    const b = fetchMemberResource("/papers", "ada-session", BASE_URL);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    release(jsonResponse(200, { papers: [] }));
+    await expect(a).resolves.toEqual({ ok: true, value: { papers: [] } });
+    await expect(b).resolves.toEqual({ ok: true, value: { papers: [] } });
+  });
+
+  it("does not let a read after a write join a read from before it", async () => {
+    const pending: Array<(response: Response) => void> = [];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      (_url, init) =>
+        init?.method === "GET"
+          ? new Promise<Response>((resolve) => pending.push(resolve))
+          : Promise.resolve(jsonResponse(200, { ok: true })),
+    );
+    const before = fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    await updateOwnProfile("ada", { name: "Ada" }, "ada-session", BASE_URL);
+    const after = fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    const gets = fetchMock.mock.calls.filter(([, init]) => init?.method === "GET");
+    expect(gets).toHaveLength(2);
+    pending.forEach((resolve, index) => resolve(jsonResponse(200, { n: index })));
+    await expect(before).resolves.toEqual({ ok: true, value: { n: 0 } });
+    await expect(after).resolves.toEqual({ ok: true, value: { n: 1 } });
+  });
+});
+
 describe("email review resolution", () => {
   it("posts the administrator's exact paper and stage decision", async () => {
     const value = { resolution: "paperflow_evidence", evidence_recorded: true };

@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type { UiSettings } from "../../storage.ts";
 import { clearStoredMemberSession, saveStoredMemberSession } from "../auth/session.ts";
+import { papersMissingFor } from "../papers-required.ts";
+import { ensureAdminQueuesForTab } from "./admin-queues.ts";
 import {
   ADMINBOT_SERVICE_UNREACHABLE_MESSAGE,
   createEmptyAdminBotDashboardData,
@@ -547,6 +549,8 @@ describe("loadAdminBot over the member session", () => {
   it("keeps the loaded page on screen while a reload runs", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});
+    // The pending queue is read only for a page that draws it (admin-queues.ts).
+    Object.assign(host, { tab: "adminbot" });
     routedFetch({
       "/lab/members/self": () => json({ member: { id: "pat" } }),
       "/papers": () => json({ papers: [{ id: "paper-1" }] }),
@@ -561,6 +565,180 @@ describe("loadAdminBot over the member session", () => {
     expect(host.adminBotData.papers).toHaveLength(1);
     expect(host.adminBotData.loadedAt).not.toBeNull();
     await reloading;
+  });
+
+  describe("admin queues per page", () => {
+    const queuePaths = [
+      "/proposals/pending",
+      "/automation/email/review",
+      "/papers/nudges",
+      "/papers/conference-rosters",
+      "/admin/queue-counts",
+      "/settings",
+    ];
+    function queueFetch() {
+      const fetchMock = routedFetch({
+        "/lab/members/self": () => json({ member: { id: "pat" } }),
+        "/proposals/pending": () => json({ proposals: [{ id: "proposal-1" }] }),
+        "/automation/email/review": () => json({ reviews: [{ message_id: "m1" }] }),
+        "/papers/nudges": () => json({ nudges: [{ paper_id: "p1" }] }),
+        "/papers/conference-rosters": () => json({ conferences: [] }),
+        "/admin/queue-counts": () => json({ pending_proposals: 4, email_reviews: 2 }),
+        "/settings": () => json({ head_professor_member_id: "prof" }),
+        "/papers": () => json({ papers: [] }),
+      });
+      const reads = () => {
+        const counts: Record<string, number> = {};
+        for (const [url] of fetchMock.mock.calls) {
+          const path = queuePaths.find((candidate) => String(url).includes(candidate));
+          if (path) counts[path] = (counts[path] ?? 0) + 1;
+        }
+        return counts;
+      };
+      return reads;
+    }
+
+    it("reads no queue on a page that draws none, and the settings once", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "adminbotMembers", memberPrivilegeLevel: "admin" });
+      const reads = queueFetch();
+
+      await loadAdminBot(host, "admin", false);
+      await loadAdminBot(host, "admin", false);
+
+      expect(reads()).toEqual({ "/settings": 1 });
+      expect(host.adminBotData.settings?.head_professor_member_id).toBe("prof");
+      expect(host.adminBotData.loadedAt).not.toBeNull();
+    });
+
+    it("gives the dashboard counts instead of the full queues", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "dashboard", memberPrivilegeLevel: "admin" });
+      const reads = queueFetch();
+
+      await loadAdminBot(host, "admin", false);
+
+      expect(reads()).toEqual({ "/admin/queue-counts": 1, "/settings": 1 });
+      expect(host.adminBotData.queueCounts).toEqual({ pendingProposals: 4, emailReviews: 2 });
+      expect(host.adminBotData.proposals).toEqual([]);
+    });
+
+    it("loads a page's queues on first visit only, and again after a write made them stale", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "adminbot", memberPrivilegeLevel: "admin" });
+      const reads = queueFetch();
+      await loadAdminBot(host, "admin", false);
+      expect(host.adminBotData.proposals).toHaveLength(1);
+      expect(host.adminBotData.emailReviews).toHaveLength(1);
+
+      // Navigating to the papers page reads its own queues; returning to Actions reads nothing.
+      Object.assign(host, { tab: "adminbotPapers" });
+      await Promise.all([
+        ensureAdminQueuesForTab(host, "adminbotPapers"),
+        ensureAdminQueuesForTab(host, "adminbotPapers"),
+      ]);
+      await ensureAdminQueuesForTab(host, "adminbot");
+      expect(reads()).toEqual({
+        "/proposals/pending": 1,
+        "/automation/email/review": 1,
+        "/papers/nudges": 1,
+        "/papers/conference-rosters": 1,
+        "/settings": 1,
+      });
+
+      // A write on the papers page reloads that page's queues and leaves the email queue stale;
+      // the next visit to Actions reads it again.
+      await loadAdminBot(host);
+      expect(reads()["/automation/email/review"]).toBe(1);
+      expect(reads()["/proposals/pending"]).toBe(2);
+      expect(reads()["/papers/nudges"]).toBe(2);
+      await ensureAdminQueuesForTab(host, "adminbot");
+      expect(reads()["/automation/email/review"]).toBe(2);
+      expect(reads()["/settings"]).toBe(1);
+    });
+
+    it("keeps a queue's rows when its reload fails", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "adminbot", memberPrivilegeLevel: "admin" });
+      queueFetch();
+      await loadAdminBot(host, "admin", false);
+      vi.restoreAllMocks();
+      routedFetch({
+        "/lab/members/self": () => json({ member: { id: "pat" } }),
+        "/proposals/pending": () => json({ error: { message: "down" } }, 500),
+        "/automation/email/review": () => json({ error: { message: "down" } }, 500),
+      });
+
+      await loadAdminBot(host);
+
+      expect(host.adminBotData.proposals).toHaveLength(1);
+      expect(host.adminBotData.emailReviews).toHaveLength(1);
+    });
+  });
+
+  describe("paper scope per page", () => {
+    function paperFetch() {
+      const fetchMock = routedFetch({
+        "/lab/members/self": () => json({ member: { id: "ada", name: "Ada Author" } }),
+        "/papers?scope=mine": () => json({ papers: [{ id: "mine" }] }),
+        "/papers": () => json({ papers: [{ id: "mine" }, { id: "theirs" }] }),
+      });
+      return () =>
+        fetchMock.mock.calls
+          .map(([url]) => new URL(String(url)))
+          .filter((url) => url.pathname === "/papers")
+          .map((url) => url.search);
+    }
+
+    it("reads only a plain member's own papers for the dashboard, and the lab list later", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "dashboard", memberPrivilegeLevel: "member" });
+      const paperReads = paperFetch();
+
+      await loadAdminBot(host, "general", true);
+      expect(paperReads()).toEqual(["?scope=mine"]);
+      expect(host.adminBotData.papers.map((paper) => paper.id)).toEqual(["mine"]);
+      // The scoped read is not mistaken for the whole list...
+      expect(host.adminBotData.papersLoadedAt).toBeNull();
+      expect(papersMissingFor(host)).toBe(false);
+      // ...so a page that needs every paper still reads it, and a write there keeps it whole.
+      Object.assign(host, { tab: "adminbotMembers" });
+      expect(papersMissingFor(host)).toBe(true);
+      await loadAdminBot(host, "general", true, true);
+      Object.assign(host, { tab: "dashboard" });
+      await loadAdminBot(host);
+      expect(paperReads()).toEqual(["?scope=mine", "", ""]);
+      expect(host.adminBotData.papers).toHaveLength(2);
+    });
+
+    it("re-reads the own papers after a write on the profile", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "profile", memberPrivilegeLevel: "member" });
+      const paperReads = paperFetch();
+
+      await loadAdminBot(host, "general", true);
+      await loadAdminBot(host);
+
+      expect(paperReads()).toEqual(["?scope=mine", "?scope=mine"]);
+    });
+
+    it("keeps the admin dashboard on the lab-wide list", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "dashboard", memberPrivilegeLevel: "admin" });
+      const paperReads = paperFetch();
+
+      await loadAdminBot(host, "general", true);
+
+      expect(paperReads()).toEqual([""]);
+      expect(host.adminBotData.papersLoadedAt).not.toBeNull();
+    });
   });
 
   it("reports an error when the member's own profile cannot be read", async () => {

@@ -172,7 +172,7 @@
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "ui/src/ui/adminbot/views/my-work.ts": {
-      "max": 3155,
+      "max": 3147,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "ui/src/ui/adminbot/views/time-availability.ts": {

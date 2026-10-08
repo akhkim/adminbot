@@ -7,9 +7,17 @@
 import { getSafeLocalStorage } from "../../../local-storage.ts";
 import type { UiSettings } from "../../storage.ts";
 import { normalizeOptionalString } from "../../string-coerce.ts";
-import { readApiJson } from "../data/api-json.ts";
+import { parseApiJson, readApiJson } from "../data/api-json.ts";
 import type { AvailabilityRow, TimeOffRow } from "../data/availability.js";
 import { configureDraftSync } from "../offline/draft-sync.ts";
+import {
+  forgetRead,
+  forgetReadsInFlight,
+  forgetSessionReads,
+  rememberRead,
+  rememberedRead,
+  sharedRead,
+} from "./read-cache.ts";
 import {
   cacheAdminBotGet,
   type AdminBotOfflineScope,
@@ -410,13 +418,44 @@ export async function authedJson(
   token: string | null,
   payload?: unknown,
   signal?: AbortSignal,
-): Promise<{ response: Response; body: unknown; fromCache?: boolean } | { unreachable: true }> {
+): Promise<AuthedJsonResult> {
+  if (method !== "GET") {
+    // A read that started before this write may answer with the state from before it; the reload
+    // the write triggers must send its own request rather than join that one.
+    forgetReadsInFlight();
+    return await authedJsonOnce(baseUrl, path, method, token, payload, signal);
+  }
+  // An abortable read belongs to its caller alone; sharing it would let one caller cancel another.
+  if (signal) {
+    return await authedJsonOnce(baseUrl, path, method, token, payload, signal);
+  }
+  return await sharedRead(token, `${baseUrl}${path}`, () =>
+    authedJsonOnce(baseUrl, path, method, token, payload),
+  );
+}
+
+type AuthedJsonResult =
+  | { response: Response; body: unknown; fromCache?: boolean; revalidated?: boolean }
+  | { unreachable: true };
+
+async function authedJsonOnce(
+  baseUrl: string,
+  path: string,
+  method: "GET" | "POST" | "PUT" | "DELETE",
+  token: string | null,
+  payload?: unknown,
+  signal?: AbortSignal,
+): Promise<AuthedJsonResult> {
+  const url = `${baseUrl}${path}`;
+  // The body this session last received for this URL, if the service tagged it. Sent back as
+  // If-None-Match so an unchanged read costs an empty 304 instead of the whole payload again.
+  const previous = method === "GET" ? rememberedRead(token, url) : undefined;
   const offlineScopePromise = resolveOfflineScope(baseUrl, token);
   const call = { baseUrl, token };
   lastAuthedCall = call;
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}${path}`, {
+    response = await fetch(url, {
       method,
       credentials: "omit",
       ...(signal ? { signal } : {}),
@@ -424,6 +463,7 @@ export async function authedJson(
         "Content-Type": "application/json",
         Accept: "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(previous ? { "If-None-Match": previous.etag } : {}),
       },
       // GET and DELETE carry no body; every other member-session call sends JSON. A DELETE with
       // a JSON body is legal but pointless here, and some proxies drop it.
@@ -443,7 +483,30 @@ export async function authedJson(
   }
   const offlineScope = await offlineScopePromise;
   if (lastAuthedCall === call && offlineScope) lastAuthedCall = { ...call, offlineScope };
-  const body = await readApiJson(response);
+  if (previous && response.status === 304) {
+    // Re-parsed from the kept text rather than handed back as the object a caller already holds,
+    // so a view that patched its copy in place cannot leak that edit into the next read.
+    return {
+      response: { ok: true, status: 200, headers: response.headers, url: previous.url } as Response,
+      body: parseApiJson(previous.text, previous.url),
+      revalidated: true,
+    };
+  }
+  let text = "";
+  try {
+    text = await response.text();
+  } catch {
+    // An unreadable body parses as null below, as readApiJson always reported it.
+  }
+  const body = parseApiJson(text, response.url);
+  if (method === "GET") {
+    const etag = response.status === 200 ? response.headers?.get?.("etag") : null;
+    if (etag) {
+      rememberRead(token, url, { etag, text, url: response.url });
+    } else {
+      forgetRead(token, url);
+    }
+  }
   const serviceMessage = (body as { error?: { message?: unknown } } | null)?.error?.message;
   if (
     method === "GET" &&
@@ -1007,6 +1070,11 @@ export function loadStoredMemberSession(): StoredMemberSession | null {
 }
 
 export function saveStoredMemberSession(next: StoredMemberSession): void {
+  if (loadStoredMemberSession()?.sessionToken !== next.sessionToken) {
+    // Sign-in, View-as and its end all arrive here with a new token; the kept reads belong to the
+    // old one and would never be asked for again.
+    forgetSessionReads();
+  }
   const storage = getSafeLocalStorage();
   try {
     storage?.setItem(
@@ -1024,6 +1092,7 @@ export function saveStoredMemberSession(next: StoredMemberSession): void {
 
 export function clearStoredMemberSession(): void {
   configureDraftSync("signed-out", null);
+  forgetSessionReads();
   lastAuthedCall = undefined;
   const storage = getSafeLocalStorage();
   try {
