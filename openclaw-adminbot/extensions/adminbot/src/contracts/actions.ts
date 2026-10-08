@@ -2243,7 +2243,8 @@ export type AdminBotPaperNudge = {
   recipients: string[];
   message: string;
   business_days_since_author_dm?: number;
-  timeline?: AdminBotPaperTimeline;
+  // No `timeline`: it used to ride along on every nudge (about 470 bytes each) but nothing that
+  // reads nudges draws it, and GET /papers already carries it on the paper itself.
 };
 
 // Member nudge: an admin-composed message (paper-flow reminder or general announcement) sent to a

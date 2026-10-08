@@ -3100,7 +3100,7 @@ describe("AdminBotService", () => {
     });
   });
 
-  it("adds a progress-based paper timeline to listed papers and due nudges", () => {
+  it("adds a progress-based paper timeline to listed papers but not to due nudges", () => {
     const service = new AdminBotService();
     unwrap(
       service.upsertPaper({
@@ -3140,10 +3140,11 @@ describe("AdminBotService", () => {
       byStep.get("google_drive_pdf")?.offset_start_business_day,
     );
     expect(byStep.get("brainstorming_docs")?.depends_on).toEqual([]);
-    expect(unwrap(service.listPaperNudges("2026-06-02T00:00:00.000Z")).nudges[0]).toMatchObject({
-      paper_id: "paper-timeline",
-      timeline: expect.objectContaining({ progress_percent: 69 }),
-    });
+    // The nudge names the paper; the timeline stays on the paper record so a 1000-paper sweep
+    // does not ship it twice.
+    const [nudge] = unwrap(service.listPaperNudges("2026-06-02T00:00:00.000Z")).nudges;
+    expect(nudge).toMatchObject({ paper_id: "paper-timeline" });
+    expect(nudge).not.toHaveProperty("timeline");
   });
   it("deletes paper records and records an audit event", () => {
     const service = new AdminBotService();
@@ -3242,7 +3243,6 @@ describe("AdminBotService", () => {
         step: "arxiv_polish",
         recipients: ["alice", "bob"],
         message: 'Remind authors to complete arxiv_polish for "Causal Garden Planning".',
-        timeline: expect.objectContaining({ current_step_index: 4, progress_percent: 56 }),
       }),
     ]);
     expect(unwrap(service.listPaperNudges("2026-06-04T12:00:00.000Z")).nudges).toEqual([

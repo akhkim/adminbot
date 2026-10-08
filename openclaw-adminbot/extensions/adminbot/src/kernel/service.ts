@@ -15927,7 +15927,6 @@ function duePaperNudges(paper: AdminBotPaperRecord, nowIso: string): AdminBotPap
         message:
           `Authors have not replied for ${elapsedBusinessDays} business days. ` +
           `Ask the head professor to remind them about ${paper.current_step}.`,
-        ...(paper.timeline ? { timeline: paper.timeline } : {}),
       },
     ];
   }
@@ -15942,7 +15941,6 @@ function duePaperNudges(paper: AdminBotPaperRecord, nowIso: string): AdminBotPap
       step: paper.current_step,
       recipients: paper.authors,
       message: `Remind authors to complete ${paper.current_step} for "${paper.title}".`,
-      ...(paper.timeline ? { timeline: paper.timeline } : {}),
     },
   ];
 }
