@@ -18,7 +18,7 @@ describe("Control UI build chunking", () => {
       "config-runtime",
     );
     expect(controlUiManualChunk("/tmp/openclaw-pnpm-node-modules/json5/dist/index.js")).toBe(
-      "config-runtime",
+      "json5-runtime",
     );
     expect(controlUiManualChunk("/tmp/openclaw-pnpm-node-modules/@noble/ed25519/index.js")).toBe(
       "gateway-runtime",
