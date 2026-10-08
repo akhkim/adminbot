@@ -454,9 +454,7 @@ describe("AdminBot tool handlers", () => {
         idempotency_key: "nudge-paper-1",
       }),
     });
-    expect((calls.at(-1)?.body as { proposed_payload: object }).proposed_payload).not.toHaveProperty(
-      "timeline",
-    );
+    expect(calls.at(-1)?.body).not.toHaveProperty("proposed_payload.timeline");
   });
   it("maps settings and paper list helpers to the service endpoints", async () => {
     const { fetchImpl, calls } = captureFetch();

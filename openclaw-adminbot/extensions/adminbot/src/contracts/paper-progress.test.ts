@@ -27,7 +27,10 @@ describe("paperStepProgress", () => {
   });
 
   it("is finished only when the reminder says so", () => {
-    const done = paperStepProgress({ current_step: "submission", reminder: { status: "complete" } });
+    const done = paperStepProgress({
+      current_step: "submission",
+      reminder: { status: "complete" },
+    });
     expect(done).toMatchObject({ complete: true, progressPercent: 100, stepIndex: 2 });
     expect(done).not.toHaveProperty("currentLabel");
     expect(done).not.toHaveProperty("nextLabel");

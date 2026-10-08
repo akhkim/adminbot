@@ -52,6 +52,7 @@ export function paperStepProgress(paper: {
     adminBotPaperStepPlan.findIndex((item) => item.step === paper.current_step),
   );
   const complete = paper.reminder?.status === "complete";
+  const next = complete ? undefined : adminBotPaperStepPlan[stepIndex + 1];
   const done = complete
     ? TOTAL_BUSINESS_DAYS
     : adminBotPaperStepPlan
@@ -63,9 +64,7 @@ export function paperStepProgress(paper: {
     complete,
     blocked: !complete && paper.reminder?.status === "blocked",
     ...(complete ? {} : { currentLabel: adminBotPaperStepPlan[stepIndex]?.label }),
-    ...(complete || !adminBotPaperStepPlan[stepIndex + 1]
-      ? {}
-      : { nextLabel: adminBotPaperStepPlan[stepIndex + 1]!.label }),
+    ...(next ? { nextLabel: next.label } : {}),
     progressPercent: Math.round((done / TOTAL_BUSINESS_DAYS) * 100),
   };
 }
