@@ -24,8 +24,7 @@ import type {
 } from "./adminbot/api/paper-admin.ts";
 import type { PaperCycle } from "./adminbot/api/papers.ts";
 import type { LocationDrift } from "./adminbot/api/profile.ts";
-import type { MemberNotification } from "./adminbot/api/workspace.ts";
-import type { TabVisitReport } from "./adminbot/api/workspace.ts";
+import type { MemberNotification, TabVisitReport } from "./adminbot/api/workspace.ts";
 import {
   type LoginMode,
   type MemberAuthFailure,
@@ -78,6 +77,7 @@ import {
   loadAdminBotLocationDrifts,
   loadAdminBotLocationPrompt,
 } from "./adminbot/controllers/location-prompt.ts";
+import type { DeskLettersState } from "./adminbot/controllers/logistics.ts";
 import { defaultMailingListRange } from "./adminbot/controllers/mailing-list.ts";
 import {
   fileAdminBotMeeting,
@@ -107,6 +107,7 @@ import {
   resetNotificationPopups,
 } from "./adminbot/controllers/notifications.ts";
 import { createEmptyAdminBotMemberNudgeState } from "./adminbot/controllers/nudges.ts";
+import { EMPTY_PROFILE_OVERVIEW_PAGE } from "./adminbot/controllers/profile-overview.ts";
 import type { RecentEditsState } from "./adminbot/controllers/recent-edits.ts";
 import {
   recordAdminBotTabVisit,
@@ -121,7 +122,6 @@ import {
   type MeetingRequestRow,
   type RecommendationSchool,
 } from "./adminbot/data/logistics-draft.ts";
-// Control UI module implements app behavior.
 import {
   DEFAULT_LOGISTICS_QUEUE_OPTIONS,
   type LogisticsQueueOptions,
@@ -129,6 +129,7 @@ import {
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
+import { EMPTY_PAGED_LIST, type PagedListState } from "./adminbot/load-more.ts";
 import { resetViewSessions } from "./adminbot/view-session-reset.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
 import type { ConferencePapersTab } from "./adminbot/views/conference-papers.ts";
@@ -718,14 +719,14 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLogisticsSavedAt: number | null = null;
   @state() adminBotLogisticsSaveError: string | null = null;
   // Admins land on the same page members do; reading everyone's requests is a deliberate step.
-  @state() adminBotLogisticsQueueOptions: LogisticsQueueOptions = {
-    ...DEFAULT_LOGISTICS_QUEUE_OPTIONS,
-  };
+  @state() adminBotLogisticsQueueOptions: LogisticsQueueOptions = DEFAULT_LOGISTICS_QUEUE_OPTIONS;
   @state() adminBotLogisticsMode: LogisticsMode = "make";
   @state() adminBotLogisticsRequests: LogisticsRequest[] = [];
   @state() adminBotLogisticsRequestsLoading = false;
   @state() adminBotLogisticsRequestsError: string | null = null;
   @state() adminBotLogisticsRequestsLoadedAt: number | null = null;
+  @state() adminBotLogisticsPage: PagedListState = EMPTY_PAGED_LIST;
+  @state() adminBotDeskLetters: DeskLettersState = { requests: [], loading: false, loadedAt: null };
   @state() adminBotLogisticsOpenRequestId: string | null = null;
   // The open request is held apart from the list because it is a different read: the list carries
   // no file bytes and this one does.
@@ -753,6 +754,7 @@ export class OpenClawApp extends LitElement {
   // signed-in member to be loaded. See the scope effect in app-render.
   @state() adminBotLogisticsDraftScope: string | null = null;
   @state() adminBotProfileOverview: MemberProfileOverviewRow[] = [];
+  @state() adminBotProfileOverviewPage = EMPTY_PROFILE_OVERVIEW_PAGE;
   @state() adminBotEscalatedNudges: EscalatedNudgeRow[] = [];
   @state() adminBotPiReview: PiReviewRow[] = [];
   @state() adminBotPiReviewError: string | null = null;
@@ -768,9 +770,7 @@ export class OpenClawApp extends LitElement {
   // Defaults to the people with something outstanding, which is what a sweep is looking for.
   @state() myWorkCoauthorDraft: Record<string, { email: string; name: string; twitter: string }> =
     {};
-  @state() adminBotProfileOverviewFilter: ProfileOverviewFilter = {
-    ...EMPTY_PROFILE_OVERVIEW_FILTER,
-  };
+  @state() adminBotProfileOverviewFilter: ProfileOverviewFilter = EMPTY_PROFILE_OVERVIEW_FILTER;
   // Active Papers opens on the sweep rather than the inventory: the page is read to find what needs
   // moving, and "every paper" is one click away for the times it is not.
   // Which paper's card is open over Active Papers, or null. An id and not the record: the papers

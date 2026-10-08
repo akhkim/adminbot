@@ -592,3 +592,100 @@ describe("POST /logistics/rec-letter-reminders/run", () => {
     expect((await byCron.json()) as { reminded: unknown[] }).toEqual({ reminded: [] });
   });
 });
+
+describe("GET /logistics/requests paging", () => {
+  type Page = {
+    requests: { id: string; status: string; member_name: string; schools?: { school: string }[] }[];
+    total: number;
+    next_cursor?: string;
+  };
+  const list = async (
+    lab: Lab,
+    who: string,
+    query = "",
+  ): Promise<{ status: number; body: Page }> => {
+    const res = await fetch(`${lab.baseUrl}/logistics/requests${query}`, {
+      headers: asMember(lab, who),
+    });
+    return { status: res.status, body: (await res.json()) as Page };
+  };
+  const letterFor = (school: string): AdminBotLogisticsRequestInput => ({
+    kind: "recommendation_letters",
+    schools: [{ school, letter_deadline: "2026-12-01", deadline_timezone: "UTC" }],
+  });
+
+  it("sends one page of twenty, open first, with the total and a cursor for the rest", async () => {
+    const lab = await startLab();
+    const ids: string[] = [];
+    for (let index = 0; index < 24; index += 1) {
+      ids.push(
+        (await submit(lab, index % 2 ? "ada" : "grace", letterFor(`School ${index}`))).request.id,
+      );
+    }
+    // The three oldest are finished; with everything included they still sort after every open one.
+    for (const id of ids.slice(0, 3)) {
+      await fetch(`${lab.baseUrl}/logistics/requests/${id}/status`, {
+        method: "PUT",
+        headers: asMember(lab, "zhijing", { "Content-Type": "application/json" }),
+        body: JSON.stringify({ status: "completed" }),
+      });
+    }
+
+    const first = await list(lab, "zhijing");
+    expect(first.status).toBe(200);
+    expect(first.body.requests).toHaveLength(20);
+    expect(first.body.total).toBe(24);
+    expect(first.body.next_cursor).toBe("20");
+    expect(first.body.requests.every((row) => row.status === "submitted")).toBe(true);
+
+    const rest = await list(lab, "zhijing", `?cursor=${first.body.next_cursor}`);
+    expect(rest.body.requests.map((row) => row.status)).toEqual([
+      "submitted",
+      "completed",
+      "completed",
+      "completed",
+    ]);
+    expect(rest.body.next_cursor).toBeUndefined();
+    const seen = new Set([...first.body.requests, ...rest.body.requests].map((row) => row.id));
+    expect(seen.size).toBe(24);
+
+    // The open filter's total is the open count, whatever page is drawn.
+    const open = await list(lab, "zhijing", "?status=open&limit=5");
+    expect(open.body.total).toBe(21);
+    expect(open.body.requests).toHaveLength(5);
+
+    // A member still reads only their own, paged the same way.
+    const mine = await list(lab, "ada");
+    expect(mine.body.total).toBe(12);
+    expect(new Set(mine.body.requests.map((row) => row.member_name))).toEqual(new Set(["ada"]));
+  });
+
+  it("searches the whole queue before cutting the page", async () => {
+    const lab = await startLab();
+    await submit(lab, "ada", letterFor("Oldest University"));
+    for (let index = 0; index < 22; index += 1) {
+      await submit(lab, "grace", letterFor(`School ${index}`));
+    }
+    const found = await list(lab, "zhijing", "?q=oldest");
+    expect(found.body.total).toBe(1);
+    expect(found.body.requests[0]?.schools?.[0]?.school).toBe("Oldest University");
+    const byUser = await list(lab, "zhijing", "?sort=user&dir=asc&limit=1");
+    expect(byUser.body.requests[0]?.member_name).toBe("ada");
+  });
+
+  it("refuses a page past the ceiling or a filter it does not know", async () => {
+    const lab = await startLab();
+    for (const query of [
+      "?limit=51",
+      "?limit=0",
+      "?cursor=abc",
+      "?status=lost",
+      "?sort=size",
+      "?kind=x",
+    ]) {
+      const res = await list(lab, "zhijing", query);
+      expect(res.status, query).toBe(400);
+    }
+    expect((await list(lab, "zhijing", "?limit=50")).status).toBe(200);
+  });
+});

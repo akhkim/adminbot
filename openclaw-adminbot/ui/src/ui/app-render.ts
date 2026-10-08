@@ -59,7 +59,7 @@ import {
   executeAdminBotAction,
   removePendingAdminBotAction,
 } from "./adminbot/controllers/governance.ts";
-import { loadAdminBotLogisticsRequests } from "./adminbot/controllers/logistics.ts";
+import { readAdminBotLogisticsLists } from "./adminbot/controllers/logistics-paging.ts";
 import {
   loadAdminBotMailingList,
   sendAdminBotMailingList,
@@ -87,11 +87,7 @@ import {
   withdrawAdminBotTrip,
 } from "./adminbot/controllers/paper-slots.ts";
 import { deleteAdminBotPaper } from "./adminbot/controllers/papers.ts";
-import {
-  loadAdminBotProfileOverview,
-  remindAdminBotIncompleteProfiles,
-  seedAdminBotNudgeList,
-} from "./adminbot/controllers/profile-overview.ts";
+import { readAdminBotProfileOverview } from "./adminbot/controllers/profile-overview-paging.ts";
 import "./components/feedback-widget.ts";
 import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
 import { exportAdminBotTabUsage, loadAdminBotTabUsage } from "./adminbot/controllers/tab-usage.ts";
@@ -143,6 +139,7 @@ import {
 } from "./adminbot/surfaces/logistics.ts";
 import { renderMeetingsSurface } from "./adminbot/surfaces/meetings.ts";
 import { renderProfessorSurface } from "./adminbot/surfaces/professor.ts";
+import { renderProfileOverviewSurface } from "./adminbot/surfaces/profile-overview.ts";
 import { renderProfileSurface } from "./adminbot/surfaces/profile.ts";
 import type { AdminBotSurfaceScope } from "./adminbot/surfaces/scope.ts";
 import { renderTimeAvailabilitySurface } from "./adminbot/surfaces/time-availability.ts";
@@ -161,7 +158,6 @@ import {
   type MyWorkProps,
 } from "./adminbot/views/my-work.ts";
 import { paperTripDraftFrom } from "./adminbot/views/paper-cycle.ts";
-import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
 import {
   createChatSessionsLoadOverrides,
@@ -2773,18 +2769,7 @@ export function renderApp(state: AppViewState) {
     state.adminBotTabUsageLoadedAt = Date.now();
     void loadAdminBotTabUsage(state).finally(() => requestHostUpdate?.());
   }
-  // Same "never asked" sentinel as the logistics queue: the overview is read when the tab is
-  // opened, and re-read after a reminder run clears the stamp.
-  if (
-    (state.tab === "adminbotProfileOverview" || state.tab === "adminbotProfessor") &&
-    hasMemberSession &&
-    !state.adminBotProfileOverviewLoading &&
-    !state.adminBotProfileOverviewError &&
-    state.adminBotProfileOverviewLoadedAt === null
-  ) {
-    state.adminBotProfileOverviewLoadedAt = Date.now();
-    void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
-  }
+  readAdminBotProfileOverview(state, hasMemberSession, requestHostUpdate);
   // The travel timeline, read when the tab is opened and not again. A sign-in log does not change
   // while somebody is reading their own year off it, and the only thing that re-reads it is the
   // range buttons, which pass their own range through.
@@ -2813,22 +2798,11 @@ export function renderApp(state: AppViewState) {
     state.adminBotPaperSlotsLoadedAt = Date.now();
     void loadAdminBotPaperSlotOverview(state).finally(() => requestHostUpdate?.());
   }
-  // The request list is fetched when the tab is opened in view mode -- including on a reload that
-  // lands straight on it, which the mode-change handler alone would miss. `requests.length` is not
-  // the sentinel: a lab with no requests would re-ask on every render.
-  if (
-    // My Desk summarises the same queue, so it needs the same read. Without this the letter
-    // section would be empty until somebody happened to open Requests first.
-    (isLogisticsTab(state.tab) || state.tab === "adminbotProfessor") &&
-    (state.adminBotLogisticsMode === "view" || state.tab === "adminbotProfessor") &&
-    hasMemberSession &&
-    !state.adminBotLogisticsRequestsLoading &&
-    !state.adminBotLogisticsRequestsError &&
-    state.adminBotLogisticsRequestsLoadedAt === null
-  ) {
-    state.adminBotLogisticsRequestsLoadedAt = Date.now();
-    void loadAdminBotLogisticsRequests(state).finally(() => requestHostUpdate?.());
-  }
+  readAdminBotLogisticsLists(
+    state,
+    { isAdmin: accessRole === "admin", hasMemberSession },
+    requestHostUpdate,
+  );
   // The member roster is the Membership tab, so it reads itself when the tab opens rather than
   // waiting for a "Load the sheet" press: an operator who opens Membership and sees an empty panel
   // reads it as broken, and it was. `memberSheetLoadedAt` is the sentinel rather than `memberSheet`
@@ -3413,35 +3387,7 @@ export function renderApp(state: AppViewState) {
               },
             })
           : nothing}
-        ${state.tab === "adminbotProfileOverview"
-          ? renderAdminBotProfileOverview({
-              members: state.adminBotProfileOverview,
-              mandatoryFieldCount: state.adminBotProfileOverviewFieldCount,
-              adoption: state.adminBotProfileAdoption ?? null,
-              loading: state.adminBotProfileOverviewLoading,
-              error: state.adminBotProfileOverviewError,
-              notice: state.adminBotProfileOverviewNotice,
-              reminding: state.adminBotProfileOverviewReminding,
-              filter: state.adminBotProfileOverviewFilter,
-              onFilterChange: (filter) => {
-                state.adminBotProfileOverviewFilter = filter;
-                requestHostUpdate?.();
-              },
-              onRemind: (scope) => {
-                void remindAdminBotIncompleteProfiles(state, scope).finally(() =>
-                  requestHostUpdate?.(),
-                );
-              },
-              onSeedNudgeList: () => {
-                void seedAdminBotNudgeList(state).finally(() => requestHostUpdate?.());
-              },
-              // The follow-up to a thin row is a look at the person, which is Lab Members' job.
-              onOpenMember: (memberId: string) => {
-                state.selectedMemberId = memberId;
-                state.setTab("adminbotMembers");
-              },
-            })
-          : nothing}
+        ${renderProfileOverviewSurface(state, adminBotSurfaces)}
         ${renderLogisticsSurface(state, adminBotSurfaces)}
         ${renderMeetingsSurface(state, adminBotSurfaces)}
         ${renderTimeAvailabilitySurface(state, adminBotSurfaces)}

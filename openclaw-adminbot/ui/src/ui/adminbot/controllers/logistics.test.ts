@@ -9,10 +9,12 @@ import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type { UiSettings } from "../../storage.ts";
 import type { LogisticsRequest } from "../api/logistics.ts";
 import { clearStoredMemberSession, saveStoredMemberSession } from "../auth/session.ts";
+import { EMPTY_PAGED_LIST } from "../load-more.ts";
 import { resetAdminBotOfflineMemory } from "../offline/outbox.ts";
 import {
   downloadAdminBotLogisticsDocument,
   loadAdminBotLogisticsRequests,
+  loadMoreAdminBotLogisticsRequests,
   openAdminBotLogisticsRequest,
   sendAdminBotSignedDocuments,
   setAdminBotLogisticsRequestStatus,
@@ -39,6 +41,8 @@ function createHost(): AdminBotLogisticsHost {
     adminBotLogisticsRequests: [],
     adminBotLogisticsRequestsLoading: false,
     adminBotLogisticsRequestsError: null,
+    adminBotLogisticsPage: EMPTY_PAGED_LIST,
+    adminBotDeskLetters: { requests: [], loading: false, loadedAt: null },
     adminBotLogisticsOpenRequest: null,
     adminBotLogisticsOpenRequestId: null,
     adminBotLogisticsOpenLoading: false,
@@ -98,6 +102,50 @@ describe("logistics controller", () => {
     expect(host.adminBotLogisticsRequests).toEqual([REQUEST]);
     expect(host.adminBotLogisticsRequestsLoading).toBe(false);
     expect(host.adminBotLogisticsRequestsError).toBeNull();
+  });
+
+  it("asks the next page of the same question and appends it, once per request", async () => {
+    saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });
+    const host = createHost();
+    const second = { ...REQUEST, id: "logreq_2" };
+    const urls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      urls.push(url);
+      return url.includes("cursor=")
+        ? json({ requests: [REQUEST, second], total: 2 })
+        : json({ requests: [REQUEST], total: 2, next_cursor: "1" });
+    });
+    await loadAdminBotLogisticsRequests(host, new URLSearchParams({ status: "open", q: "MIT" }));
+    expect(host.adminBotLogisticsPage).toMatchObject({ total: 2, nextCursor: "1" });
+    await loadMoreAdminBotLogisticsRequests(host);
+    expect(new URL(urls[1]!).searchParams.toString()).toBe("status=open&q=MIT&cursor=1");
+    // A row the first page already showed is not drawn twice when the offset has shifted under it.
+    expect(host.adminBotLogisticsRequests.map((request) => request.id)).toEqual([
+      "logreq_1",
+      "logreq_2",
+    ]);
+    expect(host.adminBotLogisticsPage).toMatchObject({ nextCursor: null, loadingMore: false });
+    await loadMoreAdminBotLogisticsRequests(host);
+    expect(urls).toHaveLength(2);
+  });
+
+  it("shows only the answer to the last question asked", async () => {
+    saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });
+    const host = createHost();
+    const finishers: Array<(response: Response) => void> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      () => new Promise<Response>((resolve) => finishers.push(resolve)),
+    );
+    const first = loadAdminBotLogisticsRequests(host, new URLSearchParams({ q: "a" }));
+    const second = loadAdminBotLogisticsRequests(host, new URLSearchParams({ q: "ab" }));
+    finishers[1]!(json({ requests: [], total: 0 }));
+    await second;
+    finishers[0]!(json({ requests: [REQUEST], total: 1 }));
+    await first;
+    expect(host.adminBotLogisticsRequests).toEqual([]);
+    expect(host.adminBotLogisticsPage).toMatchObject({ total: 0, query: "q=ab" });
+    expect(host.adminBotLogisticsRequestsLoading).toBe(false);
   });
 
   it("does not put an old session's queue back after sign-out", async () => {

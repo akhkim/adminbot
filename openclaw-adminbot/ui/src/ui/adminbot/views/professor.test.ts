@@ -592,6 +592,20 @@ describe("renderProfessorView", () => {
     expect(section?.querySelector('[data-testid="professor-adoption-papers"]')).not.toBeNull();
   });
 
+  it("heads each column and the section with the service's counts, not the rows it was sent", () => {
+    // The service sends each column's head; the counts are over the whole roster.
+    const { container } = draw({
+      profiles: [profile({ id: "a", missing_fields: ["office"] })],
+      adoptionCounts: { profile: 37, timeline: 0, papers: 0, people: 52 },
+      expanded: new Set(["adoption-profile"]),
+    });
+    const section = container.querySelector('[data-testid="professor-adoption"]');
+    expect(section?.querySelector(".professor__count")?.textContent?.trim()).toBe("52");
+    const column = section?.querySelector('[data-testid="professor-adoption-profile"]');
+    expect(column?.querySelector(".ab-num")?.textContent?.trim()).toBe("37");
+    expect(column?.textContent).toContain("37");
+  });
+
   it("sinks a column with nobody in it below the ones with somebody in them", () => {
     const { container } = draw({
       profiles: [profile({ id: "papers", projects: { total: 2, self_updated: 0 } })],

@@ -8,7 +8,9 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
 import { isLogisticsTab } from "../../navigation.ts";
 import { resolveAdminBotBaseUrl } from "../auth/session.ts";
+import { rereadLogisticsQueue } from "../controllers/logistics-paging.ts";
 import {
+  loadMoreAdminBotLogisticsRequests,
   openAdminBotLogisticsRequest,
   sendAdminBotSignedDocuments,
   setAdminBotLogisticsRequestStatus,
@@ -43,6 +45,7 @@ import {
   type SignatureFormState,
   signatureRequestInput,
 } from "../data/logistics-requests.ts";
+import { remainingRows, type LoadMoreProps } from "../load-more.ts";
 import {
   downloadDraftCopies,
   draftScope,
@@ -58,6 +61,20 @@ const lazyLogistics = createLazyView(() => import("../views/logistics.ts"), noti
 
 export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfaceScope) {
   const { accessRole, logisticsScope, logisticsTemplate, requestHostUpdate } = scope;
+  // One page of whichever list is on screen -- the queue for an admin, their own for a member --
+  // asked with the same question the first page was.
+  const more: LoadMoreProps = {
+    remaining: remainingRows(
+      state.adminBotLogisticsPage.total,
+      state.adminBotLogisticsRequests.length,
+      state.adminBotLogisticsPage.nextCursor,
+    ),
+    loading: state.adminBotLogisticsPage.loadingMore,
+    onLoadMore: () => {
+      void loadMoreAdminBotLogisticsRequests(state).finally(() => requestHostUpdate?.());
+      requestHostUpdate?.();
+    },
+  };
   return isLogisticsTab(state.tab)
     ? renderLazyView(lazyLogistics, (m) =>
         m.renderAdminBotLogistics({
@@ -77,6 +94,7 @@ export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfa
             requests: state.adminBotLogisticsRequests,
             loading: state.adminBotLogisticsRequestsLoading,
             error: state.adminBotLogisticsRequestsError,
+            more,
             open: state.adminBotLogisticsOpenRequest,
             openLoading: state.adminBotLogisticsOpenLoading,
             viewerIsAdmin: accessRole === "admin",
@@ -141,13 +159,18 @@ export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfa
                 ...state.adminBotLogisticsQueueOptions,
                 ...patch,
               };
+              // The service cuts the page, so a new filter or sort is a new page 1. Typing waits
+              // for the search to settle; the rows held meanwhile are re-filtered in place.
+              rereadLogisticsQueue(state, requestHostUpdate, { debounce: "search" in patch });
             },
             requests: state.adminBotLogisticsRequests,
             loading: state.adminBotLogisticsRequestsLoading,
             error: state.adminBotLogisticsRequestsError,
+            more,
             showSettled: state.adminBotLogisticsShowSettled,
             onShowSettledChange: (showSettled) => {
               state.adminBotLogisticsShowSettled = showSettled;
+              rereadLogisticsQueue(state, requestHostUpdate, { debounce: false });
             },
             signingId: state.adminBotLogisticsSigningId,
             signedNote: state.adminBotLogisticsSignedNote,

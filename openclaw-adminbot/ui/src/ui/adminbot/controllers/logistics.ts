@@ -29,6 +29,14 @@ import {
   clearRecommendationLettersDraft,
 } from "../data/logistics-draft.ts";
 import { saveAttachment } from "../data/logistics-requests.ts";
+import {
+  appendPage,
+  currentListVersion,
+  EMPTY_PAGED_LIST,
+  isCurrentListVersion,
+  nextListVersion,
+  type PagedListState,
+} from "../load-more.ts";
 
 export type AdminBotLogisticsHost = {
   settings: UiSettings;
@@ -36,6 +44,10 @@ export type AdminBotLogisticsHost = {
   adminBotLogisticsRequests: LogisticsRequest[];
   adminBotLogisticsRequestsLoading: boolean;
   adminBotLogisticsRequestsError: string | null;
+  /** Where the paged list stands: the filtered total, the next page's cursor, the query asked. */
+  adminBotLogisticsPage: PagedListState;
+  /** My Desk's open letters, read apart from the paged queue so its counts cover all of them. */
+  adminBotDeskLetters: DeskLettersState;
   /** The one request opened in full, bytes included. Null is the list. */
   adminBotLogisticsOpenRequest: LogisticsRequest | null;
   adminBotLogisticsOpenRequestId: string | null;
@@ -56,6 +68,18 @@ export type AdminBotLogisticsHost = {
   adminBotSignatureError: string | null;
   /** Set once the form accepted it, so the tab says so instead of looking like nothing happened. */
   adminBotSignatureSubmitted: boolean;
+};
+
+export type DeskLettersState = {
+  requests: LogisticsRequest[];
+  loading: boolean;
+  loadedAt: number | null;
+};
+
+export const EMPTY_DESK_LETTERS: DeskLettersState = {
+  requests: [],
+  loading: false,
+  loadedAt: null,
 };
 
 function failureText(result: { kind: string; message?: string }, baseUrl: string): string {
@@ -81,27 +105,89 @@ function session(host: AdminBotLogisticsHost): { token: string; baseUrl: string 
   };
 }
 
-export async function loadAdminBotLogisticsRequests(host: AdminBotLogisticsHost): Promise<void> {
+/**
+ * Reads page 1 of the list for `query` -- the queue's filter and sort for an admin, nothing (most
+ * recently touched first) for a member's own list.
+ *
+ * Every call starts a new version, so a search typed while an earlier one is in flight shows only
+ * the answer to the last thing typed.
+ */
+export async function loadAdminBotLogisticsRequests(
+  host: AdminBotLogisticsHost,
+  query: URLSearchParams = new URLSearchParams(),
+): Promise<void> {
   const wire = session(host);
   if (!wire) {
     host.adminBotLogisticsRequests = [];
+    host.adminBotLogisticsPage = EMPTY_PAGED_LIST;
     host.adminBotLogisticsRequestsError = t("logistics.requests.error.signIn");
     return;
   }
+  const version = nextListVersion(host, "logistics");
   host.adminBotLogisticsRequestsLoading = true;
   host.adminBotLogisticsRequestsError = null;
   try {
-    const result = await fetchLogisticsRequests(wire.token, wire.baseUrl);
-    if (loadStoredMemberSession()?.sessionToken !== wire.token) return;
+    const result = await fetchLogisticsRequests(wire.token, wire.baseUrl, query);
+    if (!current(host, wire.token, version)) return;
     if (!result.ok) {
       host.adminBotLogisticsRequests = [];
+      host.adminBotLogisticsPage = EMPTY_PAGED_LIST;
       host.adminBotLogisticsRequestsError = failureText(result, wire.baseUrl);
       return;
     }
-    host.adminBotLogisticsRequests = result.value;
+    host.adminBotLogisticsRequests = result.value.requests;
+    host.adminBotLogisticsPage = {
+      total: result.value.total,
+      nextCursor: result.value.nextCursor,
+      loadingMore: false,
+      query: query.toString(),
+    };
   } finally {
-    if (loadStoredMemberSession()?.sessionToken === wire.token) {
+    if (current(host, wire.token, version)) {
       host.adminBotLogisticsRequestsLoading = false;
+    }
+  }
+}
+
+function current(host: AdminBotLogisticsHost, token: string, version: number): boolean {
+  return (
+    loadStoredMemberSession()?.sessionToken === token &&
+    isCurrentListVersion(host, "logistics", version)
+  );
+}
+
+/** The next page of the same question, appended under the rows already shown. */
+export async function loadMoreAdminBotLogisticsRequests(
+  host: AdminBotLogisticsHost,
+): Promise<void> {
+  const page = host.adminBotLogisticsPage;
+  const wire = session(host);
+  if (!wire || !page.nextCursor || page.loadingMore || host.adminBotLogisticsRequestsLoading) {
+    return;
+  }
+  const version = currentListVersion(host, "logistics");
+  const params = new URLSearchParams(page.query);
+  params.set("cursor", page.nextCursor);
+  host.adminBotLogisticsPage = { ...page, loadingMore: true };
+  try {
+    const result = await fetchLogisticsRequests(wire.token, wire.baseUrl, params);
+    if (!current(host, wire.token, version)) return;
+    if (!result.ok) {
+      host.adminBotLogisticsRequestsError = failureText(result, wire.baseUrl);
+      return;
+    }
+    host.adminBotLogisticsRequests = appendPage(
+      host.adminBotLogisticsRequests,
+      result.value.requests,
+    );
+    host.adminBotLogisticsPage = {
+      ...host.adminBotLogisticsPage,
+      total: result.value.total,
+      nextCursor: result.value.nextCursor,
+    };
+  } finally {
+    if (current(host, wire.token, version)) {
+      host.adminBotLogisticsPage = { ...host.adminBotLogisticsPage, loadingMore: false };
     }
   }
 }
@@ -177,6 +263,10 @@ export async function submitAdminBotLogisticsRequest(
     // the queue, and the only moment the author is looking is this one.
     host.adminBotLogisticsCallSheetNote = result.value.call_sheet?.message ?? null;
     host.adminBotLogisticsRequests = [result.value, ...host.adminBotLogisticsRequests];
+    host.adminBotLogisticsPage = {
+      ...host.adminBotLogisticsPage,
+      total: host.adminBotLogisticsPage.total + 1,
+    };
     await clearDraftFor(input.kind, scope);
     return result.value;
   } finally {
@@ -360,16 +450,22 @@ export async function setAdminBotLogisticsRequestStatus(
 }
 
 /**
- * Puts an updated request back into both places it is held.
+ * Puts an updated request back everywhere it is held: the list, My Desk's letters, the open card.
  *
  * A new array, not a mutated one: lit only re-renders a @state() array when the reference changes.
  * The open request keeps whatever file bytes it was opened with -- the writes reply without them,
  * and dropping them here would blank the documents an admin is looking at.
  */
 function replaceRequest(host: AdminBotLogisticsHost, updated: LogisticsRequest): void {
-  host.adminBotLogisticsRequests = host.adminBotLogisticsRequests.map((request) =>
-    request.id === updated.id ? { ...request, ...updated } : request,
-  );
+  const merge = (requests: LogisticsRequest[]) =>
+    requests.map((request) => (request.id === updated.id ? { ...request, ...updated } : request));
+  host.adminBotLogisticsRequests = merge(host.adminBotLogisticsRequests);
+  if (host.adminBotDeskLetters.requests.some((request) => request.id === updated.id)) {
+    host.adminBotDeskLetters = {
+      ...host.adminBotDeskLetters,
+      requests: merge(host.adminBotDeskLetters.requests),
+    };
+  }
   const open = host.adminBotLogisticsOpenRequest;
   if (open?.id === updated.id) {
     host.adminBotLogisticsOpenRequest = {

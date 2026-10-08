@@ -41,9 +41,11 @@ import {
 } from "../controllers/admin.ts";
 import { createEmptyAdminBotMemberRequests } from "../controllers/member-requests.ts";
 import { createEmptyAdminBotMemberNudgeState } from "../controllers/nudges.ts";
+import { EMPTY_PROFILE_OVERVIEW_PAGE } from "../controllers/profile-overview.ts";
 import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
 import { invalidateMemberMap } from "../data/member-map.ts";
 import { localTimezone } from "../data/timezones.ts";
+import { EMPTY_PAGED_LIST } from "../load-more.ts";
 import type { TripDraft } from "../views/time-availability.trips.ts";
 import type { MilestoneDraft, TimeAvailabilityDraft } from "../views/time-availability.ts";
 import { forgetSessionReads } from "./read-cache.ts";
@@ -237,6 +239,7 @@ export type MemberAuthHost = {
   memberSheetOnboardResult?: import("../api/onboarding.ts").MemberSheetOnboardResult | null;
   memberSheetAddRowResult?: import("../api/onboarding.ts").MemberSheetAddRowResult | null;
   adminBotProfileOverview?: import("../api/members.ts").MemberProfileOverviewRow[];
+  adminBotProfileOverviewPage?: import("../controllers/profile-overview.ts").ProfileOverviewPageState;
   adminBotProfileOverviewLoadedAt?: number | null;
   adminBotProfileOverviewLoading?: boolean;
   adminBotProfileOverviewError?: string | null;
@@ -307,6 +310,8 @@ export type MemberAuthHost = {
   adminBotLogisticsRequestsLoading?: boolean;
   adminBotLogisticsRequestsError?: string | null;
   adminBotLogisticsRequestsLoadedAt?: number | null;
+  adminBotLogisticsPage?: import("../load-more.ts").PagedListState;
+  adminBotDeskLetters?: import("../controllers/logistics.ts").DeskLettersState;
   adminBotLogisticsOpenRequestId?: string | null;
   adminBotLogisticsOpenRequest?: import("../api/logistics.ts").LogisticsRequest | null;
   adminBotLogisticsOpenLoading?: boolean;
@@ -676,6 +681,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.memberSheetOnboardResult = null;
   host.memberSheetAddRowResult = null;
   host.adminBotProfileOverview = [];
+  host.adminBotProfileOverviewPage = EMPTY_PROFILE_OVERVIEW_PAGE;
   host.adminBotProfileOverviewLoadedAt = null;
   host.adminBotProfileOverviewLoading = false;
   host.adminBotProfileOverviewError = null;
@@ -750,6 +756,8 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotLogisticsRequestsLoading = false;
   host.adminBotLogisticsRequestsError = null;
   host.adminBotLogisticsRequestsLoadedAt = null;
+  host.adminBotLogisticsPage = EMPTY_PAGED_LIST;
+  host.adminBotDeskLetters = { requests: [], loading: false, loadedAt: null };
   host.adminBotLogisticsOpenRequestId = null;
   host.adminBotLogisticsOpenRequest = null;
   host.adminBotLogisticsOpenLoading = false;

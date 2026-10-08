@@ -184,7 +184,7 @@
       "reason": "Upstream core file; split when touched, never grow."
     },
     "ui/src/ui/app-render.ts": {
-      "max": 4875,
+      "max": 4821,
       "reason": "Upstream core file; split when touched, never grow."
     },
     "ui/src/ui/app.ts": {

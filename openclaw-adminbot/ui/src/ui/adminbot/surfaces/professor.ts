@@ -8,6 +8,7 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
 import { loadStoredMemberSession } from "../auth/session.ts";
 import { loadAdminBotPaperSlots } from "../controllers/paper-slots.ts";
+import { profileOverviewQuery } from "../controllers/profile-overview-paging.ts";
 import { loadAdminBotProfileOverview } from "../controllers/profile-overview.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
@@ -16,20 +17,25 @@ const lazyProfessor = createLazyView(() => import("../views/professor.ts"), noti
 
 export function renderProfessorSurface(state: AppViewState, scope: AdminBotSurfaceScope) {
   const { adminBotMode, requestHostUpdate } = scope;
+  const desk = state.adminBotProfileOverviewPage.view === "desk";
   return state.tab === "adminbotProfessor" && adminBotMode === "admin"
     ? renderLazyView(lazyProfessor, (m) =>
         m.renderProfessorView({
           localChatSessionToken: loadStoredMemberSession()?.sessionToken ?? "",
-          requests: state.adminBotLogisticsRequests ?? [],
-          requestsLoading: state.adminBotLogisticsRequestsLoading,
+          requests: state.adminBotDeskLetters.requests,
+          requestsLoading: state.adminBotDeskLetters.loading,
           papers: state.adminBotData?.papers ?? [],
-          profiles: state.adminBotProfileOverview ?? [],
+          // My Desk's own read (`view=desk`): each adoption column's head, and the exact counts.
+          profiles: desk ? state.adminBotProfileOverview : [],
+          adoptionCounts: desk ? state.adminBotProfileOverviewPage.desk : null,
           escalated: state.adminBotEscalatedNudges ?? [],
           piReview: state.adminBotPiReview ?? [],
           piReviewLoading: state.adminBotProfileOverviewLoading,
           piReviewError: state.adminBotPiReviewError,
           onRetryPiReview: () => {
-            void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
+            void loadAdminBotProfileOverview(state, profileOverviewQuery(state)).finally(() =>
+              requestHostUpdate?.(),
+            );
           },
           onOpen: (tab) => state.setTab(tab),
           onOpenPaper: (paperId) => {

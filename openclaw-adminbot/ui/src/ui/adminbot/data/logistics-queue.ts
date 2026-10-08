@@ -1,13 +1,14 @@
 import {
   normalizeCalendarTimezone,
   requestDeadlineDetails,
+  selectLogisticsQueue as selectSharedQueue,
+  type LogisticsQueueQuery,
 } from "../../../../../extensions/adminbot/logistics-api.js";
 import type {
   LogisticsRequest,
   LogisticsRequestKind,
   LogisticsRequestStatus,
 } from "../api/logistics.ts";
-import { isSettledRequest } from "./logistics-requests.ts";
 
 export type LogisticsQueueOptions = {
   search: string;
@@ -17,13 +18,14 @@ export type LogisticsQueueOptions = {
   sortDirection: "asc" | "desc";
 };
 
-export const DEFAULT_LOGISTICS_QUEUE_OPTIONS: LogisticsQueueOptions = {
+// Frozen: every session starts from this one object, so it must never be written in place.
+export const DEFAULT_LOGISTICS_QUEUE_OPTIONS: Readonly<LogisticsQueueOptions> = Object.freeze({
   search: "",
   kind: "all",
   status: "all",
   sortBy: "deadline",
   sortDirection: "asc",
-};
+});
 
 /** Display the source clock and zone, never the viewer's local date. */
 export function logisticsDeadlineText(request: LogisticsRequest): string {
@@ -44,52 +46,34 @@ export function logisticsDeadlineText(request: LogisticsRequest): string {
   return `${date}, ${deadline.time} ${zone}`;
 }
 
-const STATUS_ORDER = ["submitted", "in_progress", "completed", "declined", "withdrawn"];
+/**
+ * The question the queue's controls ask, as the service reads it.
+ *
+ * "Include finished requests" off is `status=open`, so a term of completed letters never pushes
+ * open work off the first page; a specific status asks for exactly that one, as the filter always
+ * did.
+ */
+export function logisticsQueueQueryFor(
+  options: LogisticsQueueOptions,
+  showSettled: boolean,
+): LogisticsQueueQuery {
+  return {
+    status: options.status !== "all" ? options.status : showSettled ? "all" : "open",
+    ...(options.kind !== "all" ? { kind: options.kind } : {}),
+    ...(options.search.trim() ? { q: options.search.trim() } : {}),
+    sort: options.sortBy,
+    dir: options.sortDirection,
+  };
+}
 
+/**
+ * The same selection the service made, over the rows this tab holds. Run again here so a request
+ * whose status was just changed moves to its place -- or out of the filter -- without a re-read.
+ */
 export function selectLogisticsQueue(
   requests: readonly LogisticsRequest[],
   options: LogisticsQueueOptions,
   showSettled: boolean,
 ): LogisticsRequest[] {
-  const query = options.search.trim().toLocaleLowerCase();
-  // Resolve each deadline only once, including for old records whose cached deadline used an application date.
-  return requests
-    .filter(
-      (request) =>
-        (showSettled || options.status !== "all" || !isSettledRequest(request)) &&
-        (options.kind === "all" || request.kind === options.kind) &&
-        (options.status === "all" || request.status === options.status) &&
-        (!query ||
-          [request.member_name, ...(request.schools ?? []).map((school) => school.school)].some(
-            (value) => value.toLocaleLowerCase().includes(query),
-          )),
-    )
-    .map((request) => ({ request, deadline: requestDeadlineDetails(request)?.at }))
-    .toSorted((left, right) => {
-      let comparison = 0;
-      if (options.sortBy === "deadline") {
-        if (!left.deadline || !right.deadline) {
-          if (left.deadline !== right.deadline) {
-            return left.deadline ? -1 : 1;
-          }
-        } else {
-          comparison = Date.parse(left.deadline) - Date.parse(right.deadline);
-        }
-      } else if (options.sortBy === "submitted") {
-        comparison = Date.parse(left.request.submitted_at) - Date.parse(right.request.submitted_at);
-      } else if (options.sortBy === "user") {
-        comparison = left.request.member_name.localeCompare(right.request.member_name, undefined, {
-          sensitivity: "base",
-        });
-      } else {
-        comparison =
-          STATUS_ORDER.indexOf(left.request.status) - STATUS_ORDER.indexOf(right.request.status);
-      }
-      return (
-        comparison * (options.sortDirection === "asc" ? 1 : -1) ||
-        right.request.submitted_at.localeCompare(left.request.submitted_at) ||
-        left.request.id.localeCompare(right.request.id)
-      );
-    })
-    .map(({ request }) => request);
+  return selectSharedQueue(requests, logisticsQueueQueryFor(options, showSettled));
 }
