@@ -53,6 +53,7 @@ import {
   requirePrivileged,
 } from "./guards.js";
 import { readStandingMeetings } from "./meetings.js";
+import { memberSummaryRow } from "./member-summary-row.js";
 import { memberViewEtag } from "./members-etag.js";
 import { memberOnboardingDeps } from "./onboarding.js";
 import { readListPage, limitParam } from "./query-params.js";
@@ -126,8 +127,11 @@ export const membersRoutes: readonly Route[] = [
           ? {
               ...result,
               payload: {
+                // Compact rows (member-summary-row.ts); the caller's own full record is `self`.
                 members: result.payload.members.map((member) =>
-                  redactConfidentialMemberFields(member, viewer),
+                  memberSummaryRow(redactConfidentialMemberFields(member, viewer), {
+                    isAdmin: isPrivileged(principal),
+                  }),
                 ),
                 ...(result.payload.self
                   ? { self: redactConfidentialMemberFields(result.payload.self, viewer) }
@@ -179,6 +183,38 @@ export const membersRoutes: readonly Route[] = [
       return;
     }
     sendServiceResult(res, service.listRecentUpdatesForMember(memberId, limitParam(url)));
+  }),
+  // One member's whole record, for a view that opens it: the summary roster carries only what list
+  // cells show (member-summary-row.ts). Your own, or an admin's read of anyone's -- the same
+  // audience that may read a schedule -- and redacted for the reader like every roster read.
+  get(/^\/lab\/members\/([^/]+)\/detail$/u, ({ res, principal, ctx, params }) => {
+    const memberId = decodeURIComponent(params[1]!);
+    const isSelf = principal.kind === "member" && principal.member.id === memberId;
+    if (!isSelf && !requirePrivileged(res, principal)) {
+      return;
+    }
+    const etag = memberViewEtag(ctx.store, principal, "lab-members.detail", { view: memberId });
+    if (etag && sendNotModified(res, etag)) {
+      return;
+    }
+    const result = ctx.service.getLabMemberView(memberId);
+    sendServiceResult(
+      res,
+      result.ok
+        ? {
+            ...result,
+            payload: {
+              member: redactConfidentialMemberFields(result.payload.member, {
+                ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
+                isAdmin:
+                  principal.kind === "member" && principal.member.privilege_level === "admin",
+                isMemberSession: principal.kind === "member",
+              }),
+            },
+          }
+        : result,
+      { etag },
+    );
   }),
   get(/^\/lab\/members\/([^/]+)\/travel$/u, ({ res, url, principal, ctx, params }) => {
     const { service } = ctx;
@@ -482,11 +518,7 @@ export const membersRoutes: readonly Route[] = [
         return;
       }
       // Rows leave out the zeroed counters the client fills in itself; see profileOverviewWireRow.
-      const { rows, ...rest } = pageOf(
-        filterOverviewRows(members, filter),
-        page,
-        (row) => row.id,
-      );
+      const { rows, ...rest } = pageOf(filterOverviewRows(members, filter), page, (row) => row.id);
       sendJson(res, 200, {
         ...rollUp,
         members: rows.map(profileOverviewWireRow),
@@ -510,7 +542,11 @@ export const membersRoutes: readonly Route[] = [
         : undefined;
       // An empty recipient list means "everyone" to the service, so a list that names nobody --
       // empty, or nothing in it an id -- sends to nobody rather than the whole roster.
-      if (reminderRecipients && !reminderRecipients.length && typeof reminderBody.filter !== "string") {
+      if (
+        reminderRecipients &&
+        !reminderRecipients.length &&
+        typeof reminderBody.filter !== "string"
+      ) {
         sendJson(res, 200, { created: [], skipped: [] });
         return;
       }
