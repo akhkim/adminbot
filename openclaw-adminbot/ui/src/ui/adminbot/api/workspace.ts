@@ -62,7 +62,8 @@ export async function submitFeedback(
 
 export type MemberNotification = {
   id: string;
-  member_id: string;
+  /** Not sent: every notification on this read is the caller's own. Kept for older services. */
+  member_id?: string;
   /** Open, not a closed union: a service newer than this page can name a sender it does not know. */
   kind: string;
   title: string;
