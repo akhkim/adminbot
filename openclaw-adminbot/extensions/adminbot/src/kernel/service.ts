@@ -619,7 +619,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   savePaper(paper: AdminBotPaperRecord): void;
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
   listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[];
-  countPapers(q?: string): number;
+  countPapers(filter?: { q?: string; authorMemberId?: string }): number;
   deletePaper(paperId: string): boolean;
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
   /** One paper's slots, or every paper's when the id is omitted. */
@@ -10076,7 +10076,7 @@ export class AdminBotService {
       payload: {
         papers: this.store.listPapers(page).map(paperForResponse),
         ...(page
-          ? { total: this.store.countPapers(page.q), limit: page.limit, offset: page.offset }
+          ? { total: this.store.countPapers(page), limit: page.limit, offset: page.offset }
           : {}),
       },
     };

@@ -3186,6 +3186,29 @@ describe("AdminBotService", () => {
     ).toMatchObject({ ok: false, status: 400 });
   });
 
+  it("pages one author's papers with that author's total, not the lab's", () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    for (const [id, memberId] of [
+      ["p1", "ada"],
+      ["p2", "ada"],
+      ["p3", "bob"],
+    ] as const) {
+      store.savePaper({
+        id,
+        title: id,
+        authors: [memberId],
+        author_links: [{ name: memberId, member_id: memberId }],
+        current_step: "overleaf_writing",
+        created_at: "2026-09-01T00:00:00.000Z",
+        updated_at: "2026-09-01T00:00:00.000Z",
+      });
+    }
+    const page = unwrap(service.listPapers({ limit: 1, offset: 0, authorMemberId: "ada" }));
+    expect(page.papers.map((paper) => paper.id)).toEqual(["p1"]);
+    expect(page.total).toBe(2);
+  });
+
   it("deletes paper records and records an audit event", () => {
     const service = new AdminBotService();
     unwrap(

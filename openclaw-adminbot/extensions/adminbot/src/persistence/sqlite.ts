@@ -159,6 +159,20 @@ const PAPER_SEARCH = `(
     WHERE instr(adminbot_lower(author.value), ?) > 0)
 )`;
 
+const PAPER_AUTHOR = `EXISTS (SELECT 1 FROM json_each(p.payload_json, '$.author_links') a
+  WHERE json_extract(a.value, '$.member_id') = ?)`;
+
+/** One filter for a paper page and its total, so the two cannot count different sets. */
+function paperFilterSql(filter?: { q?: string; authorMemberId?: string }) {
+  const q = filter?.q?.toLowerCase();
+  const author = filter?.authorMemberId;
+  const clauses = [...(q ? [PAPER_SEARCH] : []), ...(author ? [PAPER_AUTHOR] : [])];
+  return {
+    where: clauses.length ? `WHERE ${clauses.map((clause) => `(${clause})`).join(" AND ")}` : "",
+    params: [...(q ? [q, q, q] : []), ...(author ? [author] : [])],
+  };
+}
+
 export type AdminBotSqliteServiceOptions = AdminBotServiceOptions & {
   databasePath: string;
 };
@@ -2298,41 +2312,24 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[] {
-    const q = page?.q?.toLowerCase();
-    const clauses = [
-      ...(q ? [PAPER_SEARCH] : []),
-      ...(page?.authorMemberId
-        ? [
-            "EXISTS (SELECT 1 FROM json_each(p.payload_json, '$.author_links') a WHERE json_extract(a.value, '$.member_id') = ?)",
-          ]
-        : []),
-    ];
-    const where = clauses.length
-      ? `WHERE ${clauses.map((clause) => `(${clause})`).join(" AND ")}`
-      : "";
+    const { where, params } = paperFilterSql(page);
     const rows = this.db
       .prepare(
         `SELECT p.payload_json FROM adminbot_papers p ${where}
           ORDER BY ${page ? "json_extract(p.payload_json, '$.title') COLLATE NOCASE, p.id" : "json_extract(p.payload_json, '$.title')"}
           ${page ? "LIMIT ? OFFSET ?" : ""}`,
       )
-      .all(
-        ...(q ? [q, q, q] : []),
-        ...(page?.authorMemberId ? [page.authorMemberId] : []),
-        ...(page ? [page.limit, page.offset] : []),
-      ) as Array<{
+      .all(...params, ...(page ? [page.limit, page.offset] : [])) as Array<{
       payload_json: string;
     }>;
     return rows.map((row) => parseJson<AdminBotPaperRecord>(row.payload_json));
   }
 
-  countPapers(q?: string): number {
-    const needle = q?.toLowerCase();
+  countPapers(filter?: { q?: string; authorMemberId?: string }): number {
+    const { where, params } = paperFilterSql(filter);
     const row = this.db
-      .prepare(
-        `SELECT COUNT(*) AS total FROM adminbot_papers p ${needle ? `WHERE ${PAPER_SEARCH}` : ""}`,
-      )
-      .get(...(needle ? [needle, needle, needle] : [])) as { total: number };
+      .prepare(`SELECT COUNT(*) AS total FROM adminbot_papers p ${where}`)
+      .get(...params) as { total: number };
     return row.total;
   }
 
