@@ -3,7 +3,10 @@
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
-import { createEmptyAdminBotReimbursementState } from "../controllers/admin.ts";
+import {
+  createEmptyAdminBotReimbursementState,
+  createEmptyVenuePapersState,
+} from "../controllers/admin.ts";
 import { AdminBotDeadlineProposalStore } from "../data/deadline-proposals.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { renderPublicShell } from "./public-shell.ts";
@@ -86,6 +89,27 @@ describe("renderPublicShell", () => {
   });
 
   // Public deadline data loads asynchronously without requiring a member session.
+  // An empty list is an answer. Asking again whenever there were no conferences turned every
+  // re-render after the reply into another request, for as long as the visitor stayed.
+  it("reads an empty conference list once", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ sources: [] }), {
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const state = createState({
+      tab: "adminbotConferencePapers",
+      adminBotVenuePapers: createEmptyVenuePapersState(),
+    });
+    renderShell(state);
+    await vi.waitFor(() => expect(state.adminBotVenuePapers.loadingSources).toBe(false));
+    renderShell(state);
+    renderShell(state);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    fetchSpy.mockRestore();
+  });
+
   it("renders the deadline board without a session behind it", async () => {
     vi.spyOn(AdminBotDeadlineProposalStore.prototype, "listPublished").mockResolvedValue(
       DEADLINE_VENUES,
@@ -109,9 +133,7 @@ describe("renderPublicShell", () => {
 describe("public shell theme toggle", () => {
   function toggleIn(state: AppViewState): HTMLButtonElement {
     const container = renderShell(state);
-    const button = container.querySelector<HTMLButtonElement>(
-      '[data-testid="public-shell-theme"]',
-    );
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="public-shell-theme"]');
     expect(button).not.toBeNull();
     return button as HTMLButtonElement;
   }

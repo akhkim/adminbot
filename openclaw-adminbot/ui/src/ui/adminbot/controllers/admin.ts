@@ -185,6 +185,8 @@ export type AdminBotVenueSearchResult = {
 export type AdminBotVenuePapersState = {
   sources: AdminBotVenueSourceView[];
   loadingSources: boolean;
+  /** The list has been answered, if only with nothing; `sources` being empty does not say so. */
+  sourcesLoaded: boolean;
   venueId: string;
   categories: VenuePaperCategory[];
   loadingCategories: boolean;
@@ -205,6 +207,7 @@ export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
   return {
     sources: [],
     loadingSources: false,
+    sourcesLoaded: false,
     venueId: "",
     categories: [],
     loadingCategories: false,

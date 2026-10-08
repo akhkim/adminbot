@@ -117,6 +117,7 @@ export async function loadAdminBotVenueSources(
       ...state,
       sources,
       loadingSources: false,
+      sourcesLoaded: true,
       // Default to the first conference an admin listed; the list is ordered deliberately.
       venueId: state.venueId || (sources[0]?.venue_id ?? ""),
       interests: state.interestsTouched
