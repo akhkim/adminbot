@@ -636,6 +636,8 @@ export type AppViewState = {
   // Profile Overview: how far along every active member's own record is. `loadedAt` is the "ask for
   // it" signal, the same sentinel the logistics queue uses.
   adminBotProfileOverview: import("./adminbot/api/members.ts").MemberProfileOverviewRow[];
+  /** Where the held rows stand: one page of the filtered list, or My Desk's column heads. */
+  adminBotProfileOverviewPage: import("./adminbot/controllers/profile-overview.ts").ProfileOverviewPageState;
   /** Nudges raised to the head professor and still unanswered. Read with the overview beside it. */
   adminBotEscalatedNudges: import("./adminbot/api/nudges.ts").EscalatedNudgeRow[];
   adminBotPiReview: import("./adminbot/api/paper-admin.ts").PiReviewRow[];

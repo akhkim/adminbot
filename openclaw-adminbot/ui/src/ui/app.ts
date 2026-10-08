@@ -106,6 +106,7 @@ import {
   resetNotificationPopups,
 } from "./adminbot/controllers/notifications.ts";
 import { createEmptyAdminBotMemberNudgeState } from "./adminbot/controllers/nudges.ts";
+import { EMPTY_PROFILE_OVERVIEW_PAGE } from "./adminbot/controllers/profile-overview.ts";
 import type { RecentEditsState } from "./adminbot/controllers/recent-edits.ts";
 import {
   recordAdminBotTabVisit,
@@ -753,6 +754,7 @@ export class OpenClawApp extends LitElement {
   // signed-in member to be loaded. See the scope effect in app-render.
   @state() adminBotLogisticsDraftScope: string | null = null;
   @state() adminBotProfileOverview: MemberProfileOverviewRow[] = [];
+  @state() adminBotProfileOverviewPage = EMPTY_PROFILE_OVERVIEW_PAGE;
   @state() adminBotEscalatedNudges: EscalatedNudgeRow[] = [];
   @state() adminBotPiReview: PiReviewRow[] = [];
   @state() adminBotPiReviewError: string | null = null;
