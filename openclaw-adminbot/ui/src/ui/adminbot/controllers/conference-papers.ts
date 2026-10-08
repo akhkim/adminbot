@@ -289,6 +289,9 @@ export async function refreshWorkshopNudgePreview(
     };
     return;
   }
+  // Handed over to the read, which puts `loading` straight back up in the same tick: left set
+  // here, the read would take it for a read already in flight and never ask.
+  host.adminBotWorkshopNudges = { ...host.adminBotWorkshopNudges, loading: false };
   await loadWorkshopNudgePreview(host);
 }
 
