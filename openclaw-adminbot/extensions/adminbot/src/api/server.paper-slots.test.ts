@@ -206,16 +206,21 @@ describe("the paper-evidence reads", () => {
     const { baseUrl } = await startLab();
     const result = await call(baseUrl, "GET", "/papers/slot-overview");
     expect(result.status).toBe(200);
-    expect(result.body.papers[0]).toMatchObject({
+    expect(result.body.papers[0]).toEqual({
       paper_id: "p1",
-      venue: "ICLR 2027",
       provided_count: 0,
+      required_count: expect.any(Number),
       // Only the one thing that is actually askable: everything else is behind it.
       missing_slots: ["project_folder"],
-      first_author_member_id: "ada",
       dormant: false,
       closed: false,
+      cycle_closed: false,
+      escalating: false,
     });
+    // The paper's own fields stay on the paper: the page already holds them from GET /papers,
+    // and repeating them here cost every row of a 1000-paper lab another 330 bytes.
+    expect(result.body.papers[0]).not.toHaveProperty("title");
+    expect(result.body.papers[0]).not.toHaveProperty("attendance");
   });
 
   it("returns all 28 slots for one paper, blanks included", async () => {

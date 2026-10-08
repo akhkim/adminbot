@@ -233,24 +233,20 @@ export async function fetchPiReviewQueue(
 // says what each slot is called and what shape it accepts is imported straight from the service's
 // contracts module (see views/paper-slots.ts), so this file only moves records, never rules.
 
+/**
+ * Only the counts. Title, venue, deadline and step come from the paper record the page already
+ * holds, so the service stopped repeating them on every row; an older service still sends them
+ * and the extra keys are simply ignored.
+ */
 export type PaperSlotOverviewRow = {
   paper_id: string;
-  title: string;
-  venue?: string;
-  deadline?: string;
-  current_step: string;
   provided_count: number;
   required_count: number;
   dormant: boolean;
   closed: boolean;
   missing_slots: string[];
-  missing_acceptance_details?: string[];
-  /** Who is travelling, counted by the service. Absent from a service older than this field. */
-  attendance?: { yes: number; no: number; unknown: number; going?: string[] };
   cycle_closed?: boolean;
   escalating: boolean;
-  first_author_member_id?: string;
-  last_nudged_at?: string;
 };
 
 /** Every paper's outstanding evidence, computed by the service on read. */

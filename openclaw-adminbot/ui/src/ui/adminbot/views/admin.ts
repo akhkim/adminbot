@@ -3332,7 +3332,7 @@ function nextStepNudgeMessage(
   label: string,
   waitingOn: string,
 ): string {
-  const deadline = row.deadline ? ` (deadline ${row.deadline})` : "";
+  const deadline = paper.deadline ? ` (deadline ${paper.deadline})` : "";
   return `"${paper.title}"${deadline} is waiting on ${waitingOn} for: ${label}. ${row.provided_count} of ${row.required_count} fields are in.`;
 }
 

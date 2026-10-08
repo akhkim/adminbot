@@ -20,6 +20,7 @@ import {
   privilegedOnly,
   requireMemberPrivileged,
 } from "./guards.js";
+import { mapPayload, slotOverviewWireRow } from "../server.paper-lists.wire.js";
 import { get, post, type Route } from "./router.js";
 
 export const paperAdminRoutes: readonly Route[] = [
@@ -151,7 +152,12 @@ export const paperAdminRoutes: readonly Route[] = [
     const { service } = ctx;
     // Read-only, and the same records GET /papers already returns to any signed-in member -- this
     // just adds what is outstanding on each. The write and the send below are the gated halves.
-    sendServiceResult(res, service.listPaperSlotOverview(url.searchParams.get("now") ?? undefined));
+    sendServiceResult(
+      res,
+      mapPayload(service.listPaperSlotOverview(url.searchParams.get("now") ?? undefined), (p) => ({
+        papers: p.papers.map(slotOverviewWireRow),
+      })),
+    );
   }),
   post(
     "/papers/evidence/verify/run",
