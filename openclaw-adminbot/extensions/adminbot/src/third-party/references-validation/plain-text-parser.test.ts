@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseGeneric } from "./plain-text-parser.js";
+import { extractReferenceYears, parseGeneric } from "./plain-text-parser.js";
 
 describe("parseGeneric", () => {
   it("does not mistake an author list with middle initials for the title", () => {
@@ -45,5 +45,22 @@ describe("parseGeneric", () => {
         "[3] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In CVPR, 2016.",
       ).title,
     ).toBe("Deep residual learning for image recognition");
+  });
+});
+
+describe("publication year extraction", () => {
+  it.each([
+    ["Ada Example. A synthetic study. In Image Conference, pp. 2082–2086, 2016.", "2016"],
+    ["Ada Example. A synthetic study. Journal, 13:2082-2086, 2016.", "2016"],
+    ["Ada Example. A synthetic study. In Image Conference, p. 2082, 2016.", "2016"],
+    ["Ada Example. Synthetic dataset. https://example.invalid/2020/data, 2009a.", "2009"],
+    ["Ada Example. Synthetic dataset. 2009b.", "2009"],
+    ["Ada Example. (2016). Synthetic study. pp. 2082–2086.", "2016"],
+    ["Ada Example. Synthetic study. 2082.", "2082"],
+    ["Ada Example. Synthetic study. 2016-05-01. pp. 2082–2086.", "2016"],
+    ["Ada Example. Synthetic study. pp. 2082–2086. doi:10.1234/2020.555", undefined],
+  ])("extracts the year from %s", (citation, year) => {
+    expect(extractReferenceYears(citation)[0]).toBe(year);
+    expect(parseGeneric(citation).year).toBe(year);
   });
 });

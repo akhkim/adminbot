@@ -37,15 +37,17 @@ const extractDOI = (ref: string): string | undefined => {
 /**
  * Extract year from a reference string
  */
-const extractYear = (ref: string): string | undefined => {
-  // Look for 4-digit years (1900-2099)
-  const years = ref.match(/\b(19|20)\d{2}\b/g);
-  if (years && years.length > 0) {
-    // Return the first year found (usually publication year)
-    return years[0];
-  }
-  return undefined;
+export const extractReferenceYears = (ref: string): string[] => {
+  const text = ref
+    // Identifiers and pagination can contain year-shaped numbers but are not publication dates.
+    .replace(/https?:\/\/\S+|\b(?:doi|arxiv)\s*:\s*\S+|\b10\.\d{4,9}\/\S+/gi, " ")
+    .replace(/\b((?:19|20)\d{2})-\d{2}-\d{2}\b/g, "$1")
+    .replace(/\b\d+\s*[-–—]\s*\d+\b/g, " ")
+    .replace(/\b(?:pp?\.|pages?)\s*\d+\b/gi, " ");
+  return [...text.matchAll(/\b((?:19|20)\d{2})[a-z]?\b/g)].map((match) => match[1]);
 };
+
+const extractYear = (ref: string): string | undefined => extractReferenceYears(ref)[0];
 
 /**
  * Extract reference number like [1], [23], (1), etc.
