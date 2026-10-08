@@ -7,7 +7,8 @@
 // export is one person's snapshot of it. It can only fill blanks.
 //
 // --paper-submissions reads only URL text in columns E/F of Paper Submissions;
-// it fills missing artifacts on unambiguous exact-title matches, without requiring a Year.
+// it fills missing artifacts on unambiguous exact-title or existing artifact URL matches,
+// without requiring a Year. Shared artifacts and duplicate source rows never establish identity.
 // Source otherwise is a CSV export of the "Formatted Papers" tab of the Quick-Start Survey workbook, which is
 // where the lab actually keeps arXiv and Overleaf URLs. Export it as CSV rather than teaching this
 // script to read xlsx: the repo has no spreadsheet dependency and this does not justify adding one.
@@ -355,12 +356,57 @@ export function pendingSubmissionLinks(
           field = "google_slides_url";
         }
       }
-      if (field && !artifacts[field] && !found.has(field)) {
+      if (
+        field &&
+        !artifacts[field] &&
+        !Object.values(artifacts).includes(value) &&
+        !found.has(field)
+      ) {
         found.set(field, value);
       }
     }
   }
   return [...found].map(([field, value]) => ({ field, value }));
+}
+
+/** Renamed papers need identity evidence: exact URLs, unique in both records and source rows. */
+export function submissionArtifactMatches(
+  rows: readonly SheetRow[],
+  papers: readonly { id: string; payload: PaperPayload }[],
+): Map<string, SheetRow> {
+  const owners = new Map<string, Set<string>>();
+  const titles = new Set(papers.map((paper) => titleKey(paper.payload.title ?? "")));
+  const sourceTitles = new Map<string, number>();
+  for (const row of rows) {
+    const key = titleKey(row.title);
+    sourceTitles.set(key, (sourceTitles.get(key) ?? 0) + 1);
+  }
+  for (const paper of papers) {
+    for (const value of Object.values(paper.payload.artifacts ?? {})) {
+      if (!value) {
+        continue;
+      }
+      const ids = owners.get(value) ?? new Set<string>();
+      ids.add(paper.id);
+      owners.set(value, ids);
+    }
+  }
+  const candidates = new Map<string, SheetRow | null>();
+  for (const row of rows) {
+    const ids = new Set<string>();
+    for (const link of pendingSubmissionLinks({}, row.cells)) {
+      for (const id of owners.get(link.value) ?? []) {
+        ids.add(id);
+      }
+    }
+    // Count every candidate row, even a duplicate title, so it cannot silently win by filtering.
+    for (const id of ids) {
+      const key = titleKey(row.title);
+      const usable = ids.size === 1 && sourceTitles.get(key) === 1 && !titles.has(key);
+      candidates.set(id, candidates.has(id) || !usable ? null : row);
+    }
+  }
+  return new Map([...candidates].filter((entry): entry is [string, SheetRow] => entry[1] !== null));
 }
 
 /**
@@ -448,6 +494,16 @@ async function main(): Promise<void> {
   const usedKeys = new Set<string>();
   const mergeCandidates: Candidate[] = [];
   let matchedExact = 0;
+  let matchedArtifact = 0;
+  const artifactMatches = options.paperSubmissions
+    ? submissionArtifactMatches(
+        kept,
+        papers.map((paper) => ({
+          id: paper.id,
+          payload: JSON.parse(paper.payload_json) as PaperPayload,
+        })),
+      )
+    : new Map<string, SheetRow>();
   const titleCounts = new Map<string, number>();
   for (const paper of papers) {
     const key = titleKey((JSON.parse(paper.payload_json) as PaperPayload).title ?? "");
@@ -464,7 +520,8 @@ async function main(): Promise<void> {
     if (options.paperSubmissions && titleCounts.get(key) !== 1) {
       continue;
     }
-    const row = byTitle.get(key);
+    const exactRow = byTitle.get(key);
+    const row = exactRow ?? (byTitle.has(key) ? undefined : artifactMatches.get(paper.id));
     if (!row) {
       // The paper's whole title is a sheet title's pre-colon half: a placeholder and its finished
       // version. `null` means the head was ambiguous and was deliberately dropped above. These are
@@ -475,7 +532,11 @@ async function main(): Promise<void> {
       }
       continue;
     }
-    matchedExact++;
+    if (exactRow) {
+      matchedExact++;
+    } else {
+      matchedArtifact++;
+    }
     usedKeys.add(titleKey(row.title));
 
     const links = pendingLinks(payload, row, columnIndex, options.paperSubmissions);
@@ -499,6 +560,7 @@ async function main(): Promise<void> {
   console.log(`  skipped, older:          ${skippedOld}`);
   console.log(`  skipped, no year:        ${skippedUndated}`);
   console.log(`matched by exact title:    ${matchedExact}`);
+  console.log(`matched by exact artifact: ${matchedArtifact}`);
   console.log(`placeholder merges to ask: ${mergeCandidates.length}`);
   console.log(`links from exact matches:  ${changes.length}`);
 
