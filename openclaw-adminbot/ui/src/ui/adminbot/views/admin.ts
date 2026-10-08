@@ -226,6 +226,7 @@ export type AdminBotProps = {
   };
   onMemberListChange?: (query: string, offset: number) => void;
   rosterLoadedAt?: number | null;
+  duplicatePairs?: MemberDuplicatePair<AdminBotLabMember>[] | null; // service pairs; null: reading
   rosterLoading?: boolean;
   rosterError?: string | null;
   onLoadFullRoster?: () => void;
@@ -2064,10 +2065,8 @@ const DUPLICATE_REASONS: Record<string, string> = {
   name_contains: "one name is the other plus a middle name",
 };
 const DUPLICATE_PAGE_SIZE = 20;
-const duplicateViews = new WeakMap<
-  readonly AdminBotLabMember[],
-  { pairs: MemberDuplicatePair<AdminBotLabMember>[]; page: number }
->();
+type DuplicateView = { pairs: MemberDuplicatePair<AdminBotLabMember>[]; page: number };
+const duplicateViews = new WeakMap<object, DuplicateView>(); // keyed by the pairs' source array
 
 /** The fields this record has that the other one does not -- the half it would contribute. */
 function contributedFields(candidate: AdminBotLabMember, other: AdminBotLabMember): string[] {
@@ -2157,13 +2156,13 @@ function renderMembersWithoutEmail(props: AdminBotProps, members: AdminBotLabMem
 }
 
 function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
-  if (props.mode !== "admin" || !props.onMergeMembers) {
+  if (props.mode !== "admin" || !props.onMergeMembers || props.duplicatePairs === null) {
     return nothing;
   }
-  const cached = duplicateViews.get(members);
-  const view = cached ?? { pairs: findDuplicateMembers(members), page: 0 };
+  const cached = duplicateViews.get(props.duplicatePairs ?? members);
+  const view = cached ?? { pairs: props.duplicatePairs ?? findDuplicateMembers(members), page: 0 };
   if (!cached) {
-    duplicateViews.set(members, view);
+    duplicateViews.set(props.duplicatePairs ?? members, view);
   }
   const { pairs } = view;
   if (pairs.length === 0) {
