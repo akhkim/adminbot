@@ -17,6 +17,9 @@ export async function loadAdminBotLocationPrompt(host: AdminBotHost): Promise<vo
     return;
   }
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  // The render pass asks while this is undefined; mark it asked before awaiting so the renders in
+  // between do not each start another request.
+  host.adminBotLocationDrift = null;
   const result = await fetchLocationPrompt(stored.sessionToken, baseUrl);
   if (!sameSession(stored.sessionToken)) {
     return;
@@ -70,6 +73,8 @@ export async function loadAdminBotLocationDrifts(host: AdminBotHost): Promise<vo
   if (!stored) {
     return;
   }
+  // Same render-pass guard as the prompt above: undefined means "never asked".
+  host.adminBotLocationDrifts = [];
   const result = await fetchLocationDrifts(
     stored.sessionToken,
     resolveAdminBotBaseUrl(host.settings),
