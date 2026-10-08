@@ -3039,9 +3039,16 @@ describe("the calendar routes", () => {
       ).status,
     ).toBe(200);
 
-    await expect((await fetch(`${baseUrl}/opportunities`)).json()).resolves.toMatchObject({
+    const board = (await (await fetch(`${baseUrl}/opportunities`)).json()) as {
+      opportunities: Array<Record<string, unknown>>;
+    };
+    expect(board).toMatchObject({
       opportunities: [{ id: opportunity.id, status: "approved", submitted_by_name: "Plain" }],
     });
+    // The board names the submitter; the review trail stays on the service.
+    for (const field of ["submitted_by_member_id", "decided_by", "decided_at", "created_at"]) {
+      expect(board.opportunities[0]).not.toHaveProperty(field);
+    }
   });
 
   it("refuses an anonymous write and a non-admin decision", async () => {
