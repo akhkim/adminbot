@@ -516,5 +516,25 @@ if (typeof window !== "undefined") {
   });
   window.addEventListener("online", retryDraftSync);
   window.addEventListener("focus", retryDraftSync);
-  window.setInterval(retryDraftSync, 10000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      retryDraftSync();
+    }
+  });
+  window.setInterval(pollDraftSync, 10000);
+}
+
+// The timer exists for two jobs: pushing edits that have not reached the server yet, and pulling
+// what another device saved. A hidden tab still pushes, but stops pulling three drafts every ten
+// seconds for a page nobody is looking at; showing the tab again pulls at once.
+function pollDraftSync() {
+  if (
+    document.hidden &&
+    ![...working.values()].some(
+      (entry) => entry.row.scope === activeScope && (entry.row.dirty || entry.status === "error"),
+    )
+  ) {
+    return;
+  }
+  retryDraftSync();
 }

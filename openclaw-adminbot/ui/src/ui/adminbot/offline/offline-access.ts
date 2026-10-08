@@ -11,6 +11,12 @@ export class OfflineAccess extends LitElement {
   @state() private storageMessage = "";
   private timer?: number;
   private draftChanged = () => this.requestUpdate();
+  // A hidden tab has no badge to keep current; the check resumes (and runs once) when it is shown.
+  private poll = () => {
+    if (!document.hidden) {
+      this.refresh();
+    }
+  };
   private refresh = () => {
     this.online = navigator.onLine;
     this.requestUpdate();
@@ -33,8 +39,9 @@ export class OfflineAccess extends LitElement {
     window.addEventListener("online", this.refresh);
     window.addEventListener("offline", this.refresh);
     navigator.serviceWorker?.addEventListener("controllerchange", this.refresh);
+    document.addEventListener("visibilitychange", this.poll);
     this.refresh();
-    this.timer = window.setInterval(this.refresh, 10000);
+    this.timer = window.setInterval(this.poll, 10000);
   }
 
   override disconnectedCallback() {
@@ -43,6 +50,7 @@ export class OfflineAccess extends LitElement {
     window.removeEventListener("online", this.refresh);
     window.removeEventListener("offline", this.refresh);
     navigator.serviceWorker?.removeEventListener("controllerchange", this.refresh);
+    document.removeEventListener("visibilitychange", this.poll);
     window.clearInterval(this.timer);
   }
 

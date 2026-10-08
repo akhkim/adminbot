@@ -1262,7 +1262,12 @@ class AdminbotDeadlinesView extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    // The countdowns tick once a second. A hidden tab skips the repaint; the next tick after it is
+    // shown catches the clock up.
     this.timer = window.setInterval(() => {
+      if (document.hidden) {
+        return;
+      }
       this.now = Date.now();
       this.requestUpdate();
     }, 1000);
