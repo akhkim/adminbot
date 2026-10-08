@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { AdminBotSocialDraftRecord } from "../contracts/actions.js";
+import type { AdminBotSocialDraftRecord } from "../contracts/paper-cycle.js";
 
 /**
  * Paper social drafts (LinkedIn posts and X threads), cut from sqlite.ts so the store stays under
