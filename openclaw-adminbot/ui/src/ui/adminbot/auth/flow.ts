@@ -37,6 +37,7 @@ import {
   type SlackChannelCheck,
   type WorkshopNudgeReviewState,
 } from "../controllers/admin.ts";
+import { forgetAdminQueues } from "../controllers/admin-queues.ts";
 import { createEmptyAdminBotMemberRequests } from "../controllers/member-requests.ts";
 import { createEmptyAdminBotMemberNudgeState } from "../controllers/nudges.ts";
 import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
@@ -552,6 +553,7 @@ async function connectAsMember(
 function clearMemberScopedData(host: MemberAuthHost): void {
   // Kept read bodies and shared in-flight reads are the departing member's data too.
   forgetSessionReads();
+  forgetAdminQueues(host);
   host.adminBotRosterRequestId = (host.adminBotRosterRequestId ?? 0) + 1;
   host.adminBotRosterLoadedAt = null;
   host.adminBotRosterLoading = false;

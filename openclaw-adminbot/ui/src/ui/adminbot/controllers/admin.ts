@@ -39,6 +39,7 @@ import {
 import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
 import { invalidateMemberMap, type MemberMap } from "../data/member-map.ts";
 import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
+import { type AdminQueueCounts, loadAdminQueues } from "./admin-queues.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
 
@@ -691,6 +692,8 @@ export type AdminBotDashboardData = {
    */
   conferenceRosters?: ConferenceRoster[];
   settings: AdminBotSettings | null;
+  /** The dashboard's attention-card numbers; undefined until that page has read them. */
+  queueCounts?: AdminQueueCounts;
   /** Undefined until the Settings tab has read it; null when nothing is stored. */
   sensitiveInfo?: AdminBotSensitiveInfoRecord | null;
   loadedAt: number | null;
@@ -1150,13 +1153,6 @@ async function loadAdminBotOverSession(
     }
     return result.value;
   };
-  const optional = async (path: string): Promise<unknown> => {
-    const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
-    if (result.ok && result.cached) {
-      usedCache = true;
-    }
-    return result.ok ? result.value : undefined;
-  };
   const readSelf = async (): Promise<unknown> => {
     const result = await fetchMemberResource(
       "/lab/members/self",
@@ -1205,6 +1201,10 @@ async function loadAdminBotOverSession(
     if (!isCurrent()) {
       return;
     }
+    // A load after the page was drawn is a reload (every write triggers one), which re-reads the
+    // page's queues -- except a page's first paper read, which is navigation, not a write.
+    const reloading =
+      Boolean(host.adminBotData.loadedAt) && !(includePapers && !host.adminBotData.papersLoadedAt);
     host.adminBotData = {
       ...host.adminBotData,
       members: currentMemberRows(),
@@ -1220,41 +1220,18 @@ async function loadAdminBotOverSession(
     if (mode === "general") {
       return;
     }
-    // The sensitive-info notes are read by the Settings tab alone (loadAdminBotSensitiveInfo), so
-    // they no longer ride along on every admin page load.
-    const [pending, emailReview, nudges, conferenceRosters, settings] = await Promise.all([
-      optional("/proposals/pending?limit=50"),
-      optional("/automation/email/review"),
-      optional("/papers/nudges"),
-      optional("/papers/conference-rosters"),
-      optional("/settings"),
-    ]);
+    // Only the queues the active page draws, plus the session's settings once (admin-queues.ts);
+    // each lands on its own and keeps its previous rows until it does. The sensitive-info notes
+    // are read by the Settings tab alone (loadAdminBotSensitiveInfo).
+    const queuesCached = await loadAdminQueues(host, session, {
+      tab: (host as { tab?: unknown }).tab,
+      refresh: reloading,
+    });
     if (!isCurrent()) {
       return;
     }
-    const settingsRecord = readRecord(settings);
-    host.adminBotData = {
-      proposals: readArray<AdminBotActionProposal>(pending, "proposals"),
-      emailReviews: readArray<AdminBotEmailReviewItem>(emailReview, "reviews"),
-      emailReviewCandidates: readArray<AdminBotEmailReviewPaperflowCandidate>(
-        emailReview,
-        "paperflow_candidates",
-      ),
-      emailReviewHistory: readArray<AdminBotResolvedEmailReviewItem>(
-        emailReview,
-        "recent_resolutions",
-      ),
-      members: currentMemberRows(),
-      papers: host.adminBotData.papers,
-      papersLoadedAt: host.adminBotData.papersLoadedAt,
-      nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
-      conferenceRosters: readArray<ConferenceRoster>(conferenceRosters, "conferences"),
-      settings:
-        Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
-      sensitiveInfo: host.adminBotData.sensitiveInfo,
-      loadedAt: Date.now(),
-    };
-    host.adminBotUsingCachedReads = usedCache;
+    host.adminBotData = { ...host.adminBotData, loadedAt: Date.now() };
+    host.adminBotUsingCachedReads = usedCache || queuesCached;
   } catch (err) {
     if (isCurrent()) {
       host.adminBotError = err instanceof Error ? err.message : String(err);

@@ -7,6 +7,7 @@ import {
   loadAdminBotSensitiveInfo,
   type AdminBotHost,
 } from "./adminbot/controllers/admin.ts";
+import { ensureAdminQueuesForTab } from "./adminbot/controllers/admin-queues.ts";
 import { loadAdminBotVenueSources } from "./adminbot/controllers/conference-papers.ts";
 import {
   loadAdminBotRegistrations,
@@ -479,6 +480,9 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
           Boolean(app.adminBotData?.loadedAt && needsPapers && !app.adminBotData.papersLoadedAt),
         );
   const refreshRun = beginControlUiRefresh(host, host.tab);
+  // The admin queues this page draws (proposals, email review, nudges...), read alongside the
+  // page's own loads and only when this session has not read them yet; see admin-queues.ts.
+  const adminQueues = ensureAdminQueuesForTab(app, host.tab);
   try {
     switch (host.tab) {
       case "config":
@@ -580,6 +584,7 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         scheduleLogsScroll(host as unknown as Parameters<typeof scheduleLogsScroll>[0], true);
         break;
     }
+    await adminQueues;
     finishControlUiRefresh(host, refreshRun, "ok");
   } catch (err) {
     finishControlUiRefresh(host, refreshRun, "error");
