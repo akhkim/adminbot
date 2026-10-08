@@ -89,6 +89,8 @@ export type AdminBotRouteContext = {
   importColumnMapper?: ImportColumnMapper;
   // Generates a LinkedIn announcement draft from a paper PDF. Nothing it returns is persisted.
   draftLinkedInPost: import("../../connectors/social-draft.js").LinkedInDraftRunner;
+  draftXPost: import("../../connectors/social-draft.js").XDraftRunner;
+  readArxivPdfBase64: (id: string) => Promise<string>;
   /**
    * Downloads one Drive file and returns it base64-encoded.
    *
@@ -262,6 +264,8 @@ export type AdminBotMockServiceOptions = {
   // Generates a LinkedIn announcement draft from a paper PDF. Injected so tests can assert the
   // route without an OpenRouter round trip; defaults to the real connector.
   linkedInDraftRunner?: import("../../connectors/social-draft.js").LinkedInDraftRunner;
+  xDraftRunner?: import("../../connectors/social-draft.js").XDraftRunner;
+  readArxivPdfBase64?: (id: string) => Promise<string>;
   /** Reads one Drive file as base64, so a draft can use the PDF the paper already names. */
   readDrivePdfBase64?: (fileId: string) => Promise<string>;
   /**

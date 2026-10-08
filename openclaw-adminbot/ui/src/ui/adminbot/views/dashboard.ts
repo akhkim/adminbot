@@ -32,7 +32,7 @@ import { nextStepFor } from "../next-step.ts";
 import { renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderMemberMap } from "./member-map.ts";
 import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
-import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile.ts";
+import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile-fields.ts";
 
 // One thing waiting on the viewer. `detail` is optional supporting text -- the queue items say
 // everything in their summary.

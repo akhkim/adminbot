@@ -34,6 +34,7 @@ describe("adminbot plugin metadata", () => {
       "adminbot-reimbursements",
       "adminbot-slack-management",
       "adminbot-social-posts",
+      "adminbot-twitter-paper-thread",
       "adminbot-workflows",
     ]);
     expect(orchestrator).toContain("name: adminbot-workflows");

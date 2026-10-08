@@ -100,6 +100,7 @@ export type BlockerSort = "stage" | "age" | "paper";
  * somebody looks.
  */
 export type PreregSort = "readiness" | "deadline" | "title" | "editLink" | "viewLink";
+import { paperSteps, stepLabels } from "../data/paper-steps.ts";
 import {
   PAPER_GRID_THRESHOLD,
   clearSavedEdits,
@@ -110,6 +111,7 @@ import {
   unsentSlotEdits,
   type PaperGridState,
 } from "../paper-grid.ts";
+import { onViewSessionReset } from "../view-session-reset.ts";
 import { renderAdminBotEmailReview } from "./email-review.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
@@ -303,30 +305,6 @@ export type AdminBotPanel =
   | "members"
   | "papers"
   | "announcements";
-
-// Exported so My Projects & Papers advances a paper through the same named steps this page shows;
-// two step vocabularies would let the pages disagree about where a paper is.
-export const stepLabels: Record<string, string> = {
-  brainstorming_docs: "Brainstorming docs",
-  overleaf_writing: "Overleaf writing",
-  submission: "Submission",
-  google_drive_pdf: "Drive PDF",
-  arxiv_polish: "arXiv polish",
-  social_posts: "Social posts",
-  slide_making: "Slides",
-  poster_making: "Poster",
-};
-
-export const paperSteps: AdminBotPaperStep[] = [
-  "brainstorming_docs",
-  "overleaf_writing",
-  "submission",
-  "google_drive_pdf",
-  "arxiv_polish",
-  "social_posts",
-  "slide_making",
-  "poster_making",
-];
 
 const privilegeLabels: Record<string, string> = {
   external_collaborator: "External Collaborator",
@@ -2499,6 +2477,7 @@ export function resetAdminViewSessionState(): void {
   openedMemberEditors.clear();
   paperGridState = null;
 }
+onViewSessionReset(resetAdminViewSessionState);
 
 /**
  * Active Papers.

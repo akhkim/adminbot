@@ -23,7 +23,7 @@ import { submitRouteTask } from "./tasks.js";
 export const governanceRoutes: readonly Route[] = [
   post("/proposals", async ({ req, res, ctx }) => {
     const { service } = ctx;
-    const body = (await readJson(req)) as AdminBotActionProposal;
+    const body = (await readJson(req, 3_000_000)) as AdminBotActionProposal;
     sendServiceResult(res, service.createProposal(body));
   }),
   post("/privacy/tasks", async ({ req, res, ctx, principal }) => {

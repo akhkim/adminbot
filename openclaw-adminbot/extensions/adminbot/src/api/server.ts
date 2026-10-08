@@ -14,7 +14,11 @@ import {
   createPublicOpenReviewPdfReader,
 } from "../connectors/reference-scan.js";
 import { createInterviewChannelProvisioner } from "../connectors/slack-interview.js";
-import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
+import {
+  createLinkedInDraftRunner,
+  createXDraftRunner,
+  readArxivPdfBase64,
+} from "../connectors/social-draft.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import { resolveInferenceGateConfig } from "../inference/config.js";
 import { createInferenceGate, setSharedInferenceGate } from "../inference/gate.js";
@@ -470,6 +474,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(iclrIntegrityWatch ? { iclrIntegrityWatch } : {}),
     onboardingSender,
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
+    draftXPost: options.xDraftRunner ?? createXDraftRunner(),
+    readArxivPdfBase64: options.readArxivPdfBase64 ?? readArxivPdfBase64,
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
     ...(memberSheet ? { memberSheet } : {}),
     ...(callSheet ? { callSheet } : {}),
