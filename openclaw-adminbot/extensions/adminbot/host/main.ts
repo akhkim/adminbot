@@ -848,6 +848,10 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
       extractScriptPath: path.join(repoRoot, "scripts/adminbot-cv-extract.py"),
     }),
     ...(cvDigestPublisher ? { cvDigestPublisher } : {}),
+    notificationDraftScriptPath: path.join(
+      repoRoot,
+      "scripts/openreview-notifications/adminbot_bridge.py",
+    ),
     openReviewScriptPath: path.join(repoRoot, "scripts/adminbot-openreview.py"),
     fetchSlackLocations: createSlackLocationReader(repoRoot),
     fetchSlackTimezones: createSlackTimezoneReader(repoRoot),

@@ -12,6 +12,7 @@ stderr.
 
 Subcommands
   discover                 venues this profile serves in, with the review deadline
+  paper-authors --id        read a paper's visible author names and identifiers
   status --venue --role    who still owes a review (the whole point)
   message ... [--send]     post_message through the venue's own message invitation
   load-form --venue        the open reviewing-load/registration form, prefilled
@@ -736,11 +737,32 @@ def cmd_author_submissions(args):
     )
 
 
+def cmd_paper_authors(args):
+    client = connect()
+    try:
+        note = client.get_note(args.id)
+    except Exception:
+        fail("paper_unreadable", "Could not read this paper; check its ID and account access.")
+    authors = value_of(note.content, "authors")
+    authorids = value_of(note.content, "authorids")
+    out({
+        "ok": True,
+        "id": note.id,
+        "title": value_of(note.content, "title"),
+        "authors": authors,
+        "authorids": authorids,
+        "authorids_available": isinstance(authorids, list) and bool(authorids),
+    })
+
+
 def main():
     parser = argparse.ArgumentParser(description="AdminBot OpenReview bridge")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("discover")
+
+    p = sub.add_parser("paper-authors", help="read-only author lookup; no database writes")
+    p.add_argument("--id", required=True, help="paper/forum ID from an OpenReview URL")
 
     p = sub.add_parser("status")
     p.add_argument("--venue", required=True)
@@ -776,6 +798,7 @@ def main():
     args = parser.parse_args()
     handlers = {
         "discover": cmd_discover,
+        "paper-authors": cmd_paper_authors,
         "status": cmd_status,
         "message": cmd_message,
         "load-form": cmd_load_form,

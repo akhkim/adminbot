@@ -51,6 +51,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // the test for whether a surface needs an account.
   adminbotReimbursements: "anonymous",
   adminbotDeadlines: "anonymous",
+  adminbotNotificationDrafts: "admin",
   adminbotOpportunities: "anonymous",
   adminbotConferencePapers: "anonymous",
   adminbotReferenceChecker: "admin",

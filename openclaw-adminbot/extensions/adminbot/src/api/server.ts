@@ -195,6 +195,7 @@ import {
   memberSheetSource,
   resolveMemberSheetConfig,
 } from "./member-sheet-config.js";
+import { createNotificationDraftHandler } from "./notification-drafts.js";
 import { createPdfReferenceCheckHandler } from "./pdf-reference-check.js";
 import {
   previewCallSheetPush,
@@ -426,6 +427,7 @@ export type AdminBotMockServiceOptions = {
   // Path to scripts/adminbot-openreview.py. Injected as a path rather than a built
   // workflow because the workflow needs the store this factory owns; absent in unit
   // setups, which leaves every /openreview route reporting 503 rather than half-working.
+  notificationDraftScriptPath?: string;
   openReviewScriptPath?: string;
   openReviewPythonCommand?: string;
   // Reads each member's location from their Slack profile. Injected from the repo-root
@@ -604,6 +606,7 @@ function createAnonymousRateLimiter(): AnonymousRateLimiter {
 }
 
 type AdminBotRouteContext = {
+  notificationDrafts: ReturnType<typeof createNotificationDraftHandler>;
   // A restart invalidates outstanding packages: regenerate and review against the current rules.
   reimbursementSigningKey: Buffer;
   memberDrafts: MemberDraftStore;
@@ -1159,6 +1162,15 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       })
     : undefined;
   const ctx: AdminBotRouteContext = {
+    notificationDrafts: createNotificationDraftHandler(
+      options.notificationDraftScriptPath,
+      () => store.listLabMembers(),
+      () => store.listPapers().map((paper) => ({
+        title: paper.title,
+        submission_url: paper.artifacts?.submission_url,
+        arxiv_url: paper.artifacts?.arxiv_url,
+      })),
+    ),
     reimbursementSigningKey: randomBytes(32),
     service,
     store,
@@ -2000,6 +2012,13 @@ async function handleAuthenticatedRoute(
     return;
   }
   const { service, privacyBroker, sensitiveInfo } = ctx;
+  if (req.method === "POST" && url.pathname === "/tools/notification-drafts") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    await ctx.notificationDrafts(req, res);
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/drive/check-edit-access") {
     if (principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "member session required" } });

@@ -939,7 +939,13 @@ function firstLine(text: string): string {
  */
 export async function readDriveFileBase64(
   fileId: string,
-  options: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {},
+  options: {
+    command?: string;
+    commandArgsPrefix?: string[];
+    env?: NodeJS.ProcessEnv;
+    maxBytes?: number;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<string> {
   // Resolved rather than bare: under the systemd unit's minimal PATH a bare "gog" ENOENTs, which
   // surfaced as "could not read the Drive copy (spawn gog ENOENT)" on every LinkedIn draft.
@@ -959,10 +965,17 @@ export async function readDriveFileBase64(
   ];
   try {
     await execFile(command, args, {
+      signal: options.signal,
       maxBuffer: GOG_MAX_OUTPUT_BYTES,
       timeout: GOG_TIMEOUT_MS,
       ...(options.env ? { env: options.env } : {}),
     });
+    if (
+      options.maxBytes !== undefined &&
+      (await fs.promises.stat(output)).size > options.maxBytes
+    ) {
+      throw new Error("Drive file exceeds the size limit.");
+    }
     return (await fs.promises.readFile(output)).toString("base64");
   } finally {
     // Best effort: a leftover temp PDF is a copy of a paper sitting on disk, so it goes even when
