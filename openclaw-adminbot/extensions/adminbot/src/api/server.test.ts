@@ -3767,10 +3767,11 @@ describe("the meetings routes", () => {
     expect(adminPage.meetings[0]?.attendees).toBeUndefined();
     expect(adminPage.meetings[1]?.attendees).toBeUndefined();
     expect(adminPage.meetings[1]?.attendee_count).toBe(2);
+    // No `limit` is the default page of ten, which holds all four here.
     const unpaged = await fetch(`${baseUrl}/meetings`, { headers });
-    const legacy = (await unpaged.json()) as { meetings: unknown[]; next_cursor?: unknown };
-    expect(legacy.meetings).toHaveLength(4);
-    expect(legacy.next_cursor).toBeUndefined();
+    const firstPage = (await unpaged.json()) as { meetings: unknown[]; next_cursor?: unknown };
+    expect(firstPage.meetings).toHaveLength(4);
+    expect(firstPage.next_cursor).toBeUndefined();
   });
 
   it("keeps historical recordings with invalid or blank dates reachable across pages", async () => {

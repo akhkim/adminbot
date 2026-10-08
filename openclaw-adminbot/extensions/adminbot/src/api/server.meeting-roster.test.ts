@@ -185,6 +185,57 @@ describe("GET /meetings at a large lab", () => {
   });
 });
 
+describe("GET /meetings paging", () => {
+  // Before the default, a request without `limit` was the whole history -- 25 MB at 200 meetings
+  // of 1,000 attendees. Now it is the first page the tab paints, whoever asks.
+  it("answers a request without a limit with the newest ten and a cursor", async () => {
+    const lab = await startLab();
+    fileMeetings(lab, 12, 5);
+    const response = await fetch(`${lab.baseUrl}/meetings`, { headers: as(lab, "zhijing") });
+    const page = (await response.json()) as {
+      meetings: Array<{ id: string }>;
+      next_cursor?: { started_at: string; id: string };
+    };
+    expect(page.meetings.map((meeting) => meeting.id)).toEqual(
+      Array.from({ length: 10 }, (_, index) => `zoom-${11 - index}`),
+    );
+    expect(page.next_cursor?.id).toBe("zoom-2");
+    const query = new URLSearchParams({
+      before_started_at: page.next_cursor?.started_at ?? "",
+      before_id: page.next_cursor?.id ?? "",
+    });
+    const rest = await fetch(`${lab.baseUrl}/meetings?${query}`, { headers: as(lab, "ada") });
+    const second = (await rest.json()) as {
+      meetings: Array<{ id: string }>;
+      next_cursor?: unknown;
+    };
+    expect(second.meetings.map((meeting) => meeting.id)).toEqual(["zoom-1", "zoom-0"]);
+    expect(second.next_cursor).toBeUndefined();
+  });
+
+  it("refuses a page larger than fifty", async () => {
+    const lab = await startLab();
+    const response = await fetch(`${lab.baseUrl}/meetings?limit=51`, {
+      headers: as(lab, "zhijing"),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  // Measured with this fixture, admin / member: 5,104 / 6,104 bytes at both 10 x 200 and
+  // 10 x 1,000 -- a row's size no longer depends on how many people attended. (A member's row is
+  // the larger one: it carries their own attendance line, which their closed card renders.)
+  it("keeps the first page of ten small at any roster size", async () => {
+    for (const size of [200, 1000]) {
+      const lab = await startLab();
+      fileMeetings(lab, 10, size);
+      const admin = await bytes(lab, "/meetings", "zhijing");
+      const member = await bytes(lab, "/meetings", "ada");
+      expect(admin).toBeLessThan(8_000);
+      expect(member).toBeLessThan(8_000);
+    }
+  });
+});
+
 describe("GET /meetings/:id", () => {
   it("gives an admin the roster, in the list's attendance-line shape", async () => {
     const lab = await startLab();

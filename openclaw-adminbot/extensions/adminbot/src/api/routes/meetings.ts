@@ -38,6 +38,11 @@ import {
 } from "./guards.js";
 import { del, get, post, put, route, type Route } from "./router.js";
 
+/** GET /meetings without `limit`: the first page the Meetings tab paints. */
+export const MEETINGS_PAGE_DEFAULT = 10;
+/** The most one GET /meetings page may hold, whatever `limit` asks for. */
+export const MEETINGS_PAGE_MAX = 50;
+
 export const meetingsRoutes: readonly Route[] = [
   get("/lab/meetings", async ({ res, ctx, principal }) => {
     // The Lab Members form's Meetings checkboxes. Guest lists name real people's addresses, so
@@ -65,27 +70,16 @@ export const meetingsRoutes: readonly Route[] = [
       // An admin's rows leave the roster for GET /meetings/:id; a member's row already carries
       // only their own line, which their closed card does render.
       const row = isAdmin ? meetingListRowWithoutRoster : meetingListRow;
-      const limitText = url.searchParams.get("limit");
-      if (limitText === null) {
-        if (url.searchParams.has("before_started_at") || url.searchParams.has("before_id")) {
-          sendJson(res, 400, { error: { message: "invalid meetings page" } });
-          return;
-        }
-        const all = isAdmin
-          ? service.listMeetings()
-          : service.listMeetingsForMember(principal.member.id);
-        sendServiceResult(
-          res,
-          all.ok ? { ...all, payload: { meetings: all.payload.meetings.map(row) } } : all,
-        );
-        return;
-      }
+      // Always a page. Without `limit` it is the most recent MEETINGS_PAGE_DEFAULT -- what the tab
+      // paints first -- and no request can ask for more than MEETINGS_PAGE_MAX, so a lab with
+      // years of meetings is never one response; `next_cursor` walks the rest.
+      const limitText = url.searchParams.get("limit") ?? String(MEETINGS_PAGE_DEFAULT);
       const beforeStartedAt = url.searchParams.get("before_started_at");
       const beforeId = url.searchParams.get("before_id");
       const limit = Number(limitText);
       if (
         !/^[1-9]\d*$/u.test(limitText) ||
-        limit > 50 ||
+        limit > MEETINGS_PAGE_MAX ||
         (beforeStartedAt === null) !== (beforeId === null) ||
         (beforeStartedAt !== null &&
           (beforeStartedAt.length > 100 || !beforeId?.trim() || beforeId.length > 512))
