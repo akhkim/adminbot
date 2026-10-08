@@ -49,8 +49,6 @@ export async function fetchStandingMeetings(
 export type MeetingAttendee = {
   member_id?: string;
   display_name: string;
-  email?: string;
-  joined_at?: string;
   minutes?: number;
   source: "participant_report" | "transcript" | "manual";
   present: boolean;
@@ -58,7 +56,6 @@ export type MeetingAttendee = {
 
 export type MeetingActionItem = {
   text: string;
-  owner_member_id?: string;
   owner_name?: string;
 };
 
@@ -70,7 +67,8 @@ export type MeetingRecord = {
   /** Recording length to the second, as the Zoom notice stated it. Exact where minutes round. */
   duration_seconds?: number;
   recording: { share_url?: string; passcode?: string; drive_url?: string };
-  transcript?: { processed_at: string; speaker_names: string[]; duration_seconds?: number };
+  /** Whether a transcript was processed and how long it ran; who spoke stays on the server. */
+  transcript?: { processed_at: string; duration_seconds?: number };
   summary?: {
     overview: string;
     decisions: string[];

@@ -16,6 +16,7 @@ import {
   standingMeetings,
 } from "../../workflows/calendar/standing-meetings.js";
 import { groupMeetingInviteEmails } from "../../workflows/meetings/attendance-nudge.js";
+import { meetingListRow } from "../../workflows/meetings/meeting-list-row.js";
 import {
   asString,
   readJson,
@@ -60,9 +61,14 @@ export const meetingsRoutes: readonly Route[] = [
           sendJson(res, 400, { error: { message: "invalid meetings page" } });
           return;
         }
+        const all = isAdmin
+          ? service.listMeetings()
+          : service.listMeetingsForMember(principal.member.id);
         sendServiceResult(
           res,
-          isAdmin ? service.listMeetings() : service.listMeetingsForMember(principal.member.id),
+          all.ok
+            ? { ...all, payload: { meetings: all.payload.meetings.map(meetingListRow) } }
+            : all,
         );
         return;
       }
@@ -85,11 +91,17 @@ export const meetingsRoutes: readonly Route[] = [
           ? { before: { started_at: beforeStartedAt, id: beforeId } }
           : {}),
       };
+      const listed = isAdmin
+        ? service.listMeetingsPage(page)
+        : service.listMeetingsPageForMember(principal.member.id, page);
       sendServiceResult(
         res,
-        isAdmin
-          ? service.listMeetingsPage(page)
-          : service.listMeetingsPageForMember(principal.member.id, page),
+        listed.ok
+          ? {
+              ...listed,
+              payload: { ...listed.payload, meetings: listed.payload.meetings.map(meetingListRow) },
+            }
+          : listed,
       );
     }),
   ),
@@ -109,13 +121,15 @@ export const meetingsRoutes: readonly Route[] = [
       const attendees = Array.isArray(body.attendees)
         ? (body.attendees as AdminBotMeetingAttendee[])
         : [];
+      const saved = service.setMeetingAttendance(
+        decodeURIComponent(params[1]),
+        attendees,
+        principal.kind === "member" ? principal.member.id : "service",
+      );
+      // The reply replaces the row on the tab, so it has the list's shape.
       sendServiceResult(
         res,
-        service.setMeetingAttendance(
-          decodeURIComponent(params[1]),
-          attendees,
-          principal.kind === "member" ? principal.member.id : "service",
-        ),
+        saved.ok ? { ...saved, payload: meetingListRow(saved.payload) } : saved,
       );
     }),
   ),
