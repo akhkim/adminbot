@@ -40,7 +40,7 @@ import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data
 import { invalidateMemberMap, type MemberMap } from "../data/member-map.ts";
 import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
 import { paperScopeForTab, papersReadyFor } from "../papers-required.ts";
-import { type AdminQueueCounts, loadAdminQueues } from "./admin-queues.ts";
+import { type AdminQueueCounts, type AdminQueuePages, loadAdminQueues } from "./admin-queues.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
 
@@ -662,6 +662,8 @@ export type AdminBotDashboardData = {
   settings: AdminBotSettings | null;
   /** The dashboard's attention-card numbers; undefined until that page has read them. */
   queueCounts?: AdminQueueCounts;
+  /** How much of each paged queue is loaded; absent until its first page is read. */
+  queuePages?: AdminQueuePages;
   /** Undefined until the Settings tab has read it; null when nothing is stored. */
   sensitiveInfo?: AdminBotSensitiveInfoRecord | null;
   loadedAt: number | null;
