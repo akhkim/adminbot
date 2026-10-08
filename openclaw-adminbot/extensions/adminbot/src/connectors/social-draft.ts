@@ -1,4 +1,5 @@
 import type { AdminBotLabMember } from "../contracts/actions.js";
+import { adminBotArxivId } from "../contracts/paper-artifact-links.js";
 /**
  * The vendor leg of the LinkedIn draft: PDF extraction and generation, both via OpenRouter.
  *
@@ -47,6 +48,13 @@ import {
   type AdminBotPaperSource,
   type AdminBotVerifiedAuthor,
 } from "../workflows/papers/linkedin-draft.js";
+import {
+  finishXThread,
+  type AdminBotXThreadPost,
+  xAnnouncementPrompt,
+  type XAnnouncementDetails,
+  type XCreditSelection,
+} from "../workflows/papers/x-draft.js";
 
 export type SocialDraftFetch = (
   input: string | URL,
@@ -314,6 +322,118 @@ export type LinkedInDraftResponse = {
 };
 
 export type LinkedInDraftRunner = (request: LinkedInDraftRequest) => Promise<LinkedInDraftResponse>;
+
+export type XDraftRequest = LinkedInDraftRequest & {
+  announcement?: XAnnouncementDetails;
+  credits?: XCreditSelection;
+  organizations?: Array<{ name: string; x_handle?: string }>;
+};
+export type XDraftResponse = {
+  paper: AdminBotPaperSource;
+  posts: AdminBotXThreadPost[];
+  model: string;
+  issues: string[];
+  authors: AdminBotVerifiedAuthor[];
+};
+export type XDraftRunner = (request: XDraftRequest) => Promise<XDraftResponse>;
+
+export async function readArxivPdfBase64(id: string): Promise<string> {
+  if (adminBotArxivId(`https://arxiv.org/abs/${id}`) !== id) {
+    throw new Error("Invalid arXiv ID.");
+  }
+  const response = await fetch(`https://arxiv.org/pdf/${id}`, {
+    redirect: "error",
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`arXiv PDF download failed (${response.status}).`);
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      size += value.length;
+      if (size > 20 * 1024 * 1024) {
+        throw new Error("arXiv PDF exceeds the 20 MB limit.");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel();
+  }
+  const bytes = Buffer.concat(chunks);
+  if (!bytes.subarray(0, 1024).includes(Buffer.from("%PDF-"))) {
+    throw new Error("arXiv returned a non-PDF response.");
+  }
+  return bytes.toString("base64");
+}
+
+export function createXDraftRunner(options: AdminBotSocialDraftOptions = {}): XDraftRunner {
+  return async (request) => {
+    const announcement = request.announcement ?? { stage: "arxiv" as const };
+    const system = xAnnouncementPrompt(announcement);
+    const extracted = await extractPaperFromPdf(request.pdfBase64, {
+      ...options,
+      signal: request.signal,
+    });
+    const paper = { ...extracted, ...(request.url ? { url: request.url } : {}) };
+    const env = options.env ?? process.env;
+    const model = modelFor(env);
+    const content = await callOpenRouter(
+      {
+        model,
+        max_tokens: 3000,
+        temperature: 0.3,
+        reasoning: NO_REASONING,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: system },
+          {
+            role: "user",
+            content: JSON.stringify({
+              title: paper.title,
+              abstract: paper.abstract,
+              confirmed_logistics: announcement,
+            }),
+          },
+        ],
+      },
+      env,
+      options.fetchImpl ?? (globalThis.fetch as SocialDraftFetch),
+      "OpenRouter X draft",
+      request.signal,
+    );
+    const parsed: unknown = JSON.parse(content);
+    const posts = (parsed as { posts?: unknown })?.posts;
+    if (
+      !Array.isArray(posts) ||
+      posts.length < 2 ||
+      posts.length > 20 ||
+      posts.some((post) => !post || typeof post.text !== "string" || !post.text.trim())
+    ) {
+      throw new Error("X draft returned an invalid thread.");
+    }
+    // Model output cannot smuggle media IDs or credits into the structured thread.
+    const finished = finishXThread({
+      posts: posts.map((post) => ({ text: post.text })),
+      paper,
+      members: request.members,
+      organizations: request.credits?.organizations ?? request.organizations,
+      authorSelections: request.credits?.authors,
+    });
+    return {
+      paper,
+      ...finished,
+      model,
+      authors: verifyAuthorsAgainstMembers(paper.authors, request.members),
+    };
+  };
+}
 
 export function createLinkedInDraftRunner(
   options: AdminBotSocialDraftOptions = {},

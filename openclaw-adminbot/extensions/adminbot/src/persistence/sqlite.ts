@@ -133,6 +133,11 @@ import {
 } from "./reference-scans.js";
 import { SqliteAuditLog } from "./sqlite.audit.js";
 import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
+import {
+  listSqliteSocialDrafts,
+  migrateSocialDraftColumns,
+  saveSqliteSocialDraft,
+} from "./sqlite.social-drafts.js";
 import { SqliteVenuePaperIndex } from "./sqlite.venue-papers.js";
 
 const require = createRequire(import.meta.url);
@@ -562,7 +567,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         generated_at TEXT NOT NULL,
         generated_by_member_id TEXT,
         status TEXT NOT NULL,
-        superseded_by TEXT
+        superseded_by TEXT,
+        x_thread TEXT
       );
 
       CREATE INDEX IF NOT EXISTS adminbot_paper_social_drafts_paper_idx
@@ -907,6 +913,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
     this.migratePaperSlotColumns();
+    migrateSocialDraftColumns(this.db);
     this.failedRequests = createFailedRequestLedgerFromDatabase(this.db);
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
@@ -2461,53 +2468,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   saveSocialDraft(record: AdminBotSocialDraftRecord): void {
-    this.db
-      .prepare(
-        `INSERT INTO adminbot_paper_social_drafts
-          (id, paper_id, platform, body, model, generated_at, generated_by_member_id, status, superseded_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           body = excluded.body,
-           model = excluded.model,
-           status = excluded.status,
-           superseded_by = excluded.superseded_by`,
-      )
-      .run(
-        record.id,
-        record.paper_id,
-        record.platform,
-        record.body,
-        record.model ?? null,
-        record.generated_at,
-        record.generated_by_member_id ?? null,
-        record.status,
-        record.superseded_by ?? null,
-      );
+    saveSqliteSocialDraft(this.db, record);
   }
 
-  listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[] {
-    const rows = (
-      paperId
-        ? this.db
-            .prepare(
-              "SELECT * FROM adminbot_paper_social_drafts WHERE paper_id = ? ORDER BY generated_at DESC",
-            )
-            .all(paperId)
-        : this.db
-            .prepare("SELECT * FROM adminbot_paper_social_drafts ORDER BY generated_at DESC")
-            .all()
-    ) as Array<Record<string, unknown>>;
-    return rows.map((row) => ({
-      id: String(row.id),
-      paper_id: String(row.paper_id),
-      platform: String(row.platform) as AdminBotSocialDraftRecord["platform"],
-      body: String(row.body),
-      generated_at: String(row.generated_at),
-      status: String(row.status) as AdminBotSocialDraftRecord["status"],
-      ...optionalText(row, "model"),
-      ...optionalText(row, "generated_by_member_id"),
-      ...optionalText(row, "superseded_by"),
-    }));
+  listSocialDrafts(paperId?: string, draftId?: string): AdminBotSocialDraftRecord[] {
+    return listSqliteSocialDrafts(this.db, paperId, draftId);
   }
 
   saveSocialConsent(record: AdminBotSocialConsentRecord): void {
