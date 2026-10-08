@@ -20,8 +20,8 @@ export function renderProfessorSurface(state: AppViewState, scope: AdminBotSurfa
     ? renderLazyView(lazyProfessor, (m) =>
         m.renderProfessorView({
           localChatSessionToken: loadStoredMemberSession()?.sessionToken ?? "",
-          requests: state.adminBotLogisticsRequests ?? [],
-          requestsLoading: state.adminBotLogisticsRequestsLoading,
+          requests: state.adminBotDeskLetters.requests,
+          requestsLoading: state.adminBotDeskLetters.loading,
           papers: state.adminBotData?.papers ?? [],
           profiles: state.adminBotProfileOverview ?? [],
           escalated: state.adminBotEscalatedNudges ?? [],

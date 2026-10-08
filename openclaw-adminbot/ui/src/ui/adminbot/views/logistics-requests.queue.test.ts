@@ -6,6 +6,7 @@ import {
   DEFAULT_LOGISTICS_QUEUE_OPTIONS,
   type LogisticsQueueOptions,
 } from "../data/logistics-queue.ts";
+import type { LoadMoreProps } from "../load-more.ts";
 import { renderAdminBotLogisticsQueue } from "./logistics-requests.queue.ts";
 
 type DrawOptions = {
@@ -16,6 +17,7 @@ type DrawOptions = {
   showSettled?: boolean;
   signingId?: string | null;
   signedNote?: string;
+  more?: LoadMoreProps;
 };
 
 function draw(options: DrawOptions = {}) {
@@ -34,6 +36,7 @@ function draw(options: DrawOptions = {}) {
       requests: options.requests ?? [],
       loading: options.loading ?? false,
       error: options.error ?? null,
+      more: options.more,
       showSettled: options.showSettled ?? false,
       onShowSettledChange: (next) => settledToggles.push(next),
       signingId: options.signingId ?? null,
@@ -66,6 +69,33 @@ function request(fields: Partial<LogisticsRequest> = {}): LogisticsRequest {
 function rows(container: HTMLElement): HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>(".logistics-queue__row")];
 }
+
+describe("the queue a page at a time", () => {
+  it("offers the next page, sized to what the service still holds, and asks for it", () => {
+    let asked = 0;
+    const { container } = draw({
+      requests: [request()],
+      more: { remaining: 7, loading: false, onLoadMore: () => (asked += 1) },
+    });
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-testid="logistics-queue-more"]',
+    );
+    expect(button?.className).toBe("btn meetings__more");
+    expect(button?.textContent?.trim()).toBe("Show 7 more");
+    button?.click();
+    expect(asked).toBe(1);
+  });
+
+  it("draws no button once the last page is in, and keeps rows on screen while re-reading", () => {
+    const { container } = draw({
+      requests: [request()],
+      loading: true,
+      more: { remaining: 0, loading: false, onLoadMore: () => {} },
+    });
+    expect(container.querySelector('[data-testid="logistics-queue-more"]')).toBeNull();
+    expect(rows(container)).toHaveLength(1);
+  });
+});
 
 describe("the queue as a spreadsheet", () => {
   it("keeps the queue compact with details available from the member name", () => {

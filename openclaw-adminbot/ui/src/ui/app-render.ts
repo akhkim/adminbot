@@ -59,7 +59,7 @@ import {
   executeAdminBotAction,
   removePendingAdminBotAction,
 } from "./adminbot/controllers/governance.ts";
-import { loadAdminBotLogisticsRequests } from "./adminbot/controllers/logistics.ts";
+import { readAdminBotLogisticsLists } from "./adminbot/controllers/logistics-paging.ts";
 import {
   loadAdminBotMailingList,
   sendAdminBotMailingList,
@@ -2813,22 +2813,11 @@ export function renderApp(state: AppViewState) {
     state.adminBotPaperSlotsLoadedAt = Date.now();
     void loadAdminBotPaperSlotOverview(state).finally(() => requestHostUpdate?.());
   }
-  // The request list is fetched when the tab is opened in view mode -- including on a reload that
-  // lands straight on it, which the mode-change handler alone would miss. `requests.length` is not
-  // the sentinel: a lab with no requests would re-ask on every render.
-  if (
-    // My Desk summarises the same queue, so it needs the same read. Without this the letter
-    // section would be empty until somebody happened to open Requests first.
-    (isLogisticsTab(state.tab) || state.tab === "adminbotProfessor") &&
-    (state.adminBotLogisticsMode === "view" || state.tab === "adminbotProfessor") &&
-    hasMemberSession &&
-    !state.adminBotLogisticsRequestsLoading &&
-    !state.adminBotLogisticsRequestsError &&
-    state.adminBotLogisticsRequestsLoadedAt === null
-  ) {
-    state.adminBotLogisticsRequestsLoadedAt = Date.now();
-    void loadAdminBotLogisticsRequests(state).finally(() => requestHostUpdate?.());
-  }
+  readAdminBotLogisticsLists(
+    state,
+    { isAdmin: accessRole === "admin", hasMemberSession },
+    requestHostUpdate,
+  );
   // The member roster is the Membership tab, so it reads itself when the tab opens rather than
   // waiting for a "Load the sheet" press: an operator who opens Membership and sees an empty panel
   // reads it as broken, and it was. `memberSheetLoadedAt` is the sentinel rather than `memberSheet`

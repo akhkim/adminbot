@@ -17,6 +17,7 @@ import type {
   AdminBotMemberNudgeState,
   AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
+import type { DeskLettersState } from "./adminbot/controllers/logistics.ts";
 import type {
   LetterFact,
   MeetingRequestRow,
@@ -25,6 +26,7 @@ import type {
 import type { LogisticsQueueOptions } from "./adminbot/data/logistics-queue.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
+import type { PagedListState } from "./adminbot/load-more.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import type { TripDraft } from "./adminbot/views/time-availability.trips.ts";
@@ -592,6 +594,10 @@ export type AppViewState = {
   // for the mode the tab is now in. Not `requests.length`, which would re-ask forever in a lab
   // that has no requests yet.
   adminBotLogisticsRequestsLoadedAt: number | null;
+  // The service pages the list: the total for the filter on screen and where the next page starts.
+  adminBotLogisticsPage: PagedListState;
+  // My Desk's open letters, every page of them, so its bucket counts are the whole queue's.
+  adminBotDeskLetters: DeskLettersState;
   // Which request is open, and the copy of it that carries the file bytes. The list deliberately
   // has none, so opening one is a second read and the two are held apart.
   adminBotLogisticsOpenRequestId: string | null;

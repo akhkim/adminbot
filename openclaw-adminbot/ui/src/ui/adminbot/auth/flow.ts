@@ -18,6 +18,7 @@ import {
 } from "../api/auth.ts";
 import { setOnboardingStep } from "../api/onboarding.ts";
 import { acknowledgeOnboardingStep } from "../api/profile.ts";
+import { forgetAdminQueues } from "../controllers/admin-queues.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
@@ -37,14 +38,15 @@ import {
   type SlackChannelCheck,
   type WorkshopNudgeReviewState,
 } from "../controllers/admin.ts";
-import { forgetAdminQueues } from "../controllers/admin-queues.ts";
 import { createEmptyAdminBotMemberRequests } from "../controllers/member-requests.ts";
 import { createEmptyAdminBotMemberNudgeState } from "../controllers/nudges.ts";
 import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
 import { invalidateMemberMap } from "../data/member-map.ts";
 import { localTimezone } from "../data/timezones.ts";
+import { EMPTY_PAGED_LIST } from "../load-more.ts";
 import type { TripDraft } from "../views/time-availability.trips.ts";
 import type { MilestoneDraft, TimeAvailabilityDraft } from "../views/time-availability.ts";
+import { forgetSessionReads } from "./read-cache.ts";
 // Control UI module orchestrates member auth against the app view state.
 //
 // Bridges the pure AdminBot API client (`adminbot-auth.ts`) into the running
@@ -68,7 +70,6 @@ import {
   saveStoredMemberSession,
   stopImpersonation,
 } from "./session.ts";
-import { forgetSessionReads } from "./read-cache.ts";
 
 const MIN_CLAIM_PASSWORD_LENGTH = 10;
 
@@ -305,6 +306,8 @@ export type MemberAuthHost = {
   adminBotLogisticsRequestsLoading?: boolean;
   adminBotLogisticsRequestsError?: string | null;
   adminBotLogisticsRequestsLoadedAt?: number | null;
+  adminBotLogisticsPage?: import("../load-more.ts").PagedListState;
+  adminBotDeskLetters?: import("../controllers/logistics.ts").DeskLettersState;
   adminBotLogisticsOpenRequestId?: string | null;
   adminBotLogisticsOpenRequest?: import("../api/logistics.ts").LogisticsRequest | null;
   adminBotLogisticsOpenLoading?: boolean;
@@ -747,6 +750,8 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotLogisticsRequestsLoading = false;
   host.adminBotLogisticsRequestsError = null;
   host.adminBotLogisticsRequestsLoadedAt = null;
+  host.adminBotLogisticsPage = EMPTY_PAGED_LIST;
+  host.adminBotDeskLetters = { requests: [], loading: false, loadedAt: null };
   host.adminBotLogisticsOpenRequestId = null;
   host.adminBotLogisticsOpenRequest = null;
   host.adminBotLogisticsOpenLoading = false;

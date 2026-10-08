@@ -108,19 +108,52 @@ export type LogisticsRequest = LogisticsRequestInput & {
   decided_at?: string;
 };
 
+/** One page of the list read: the rows, how many the whole filtered list holds, and where it goes on. */
+export type LogisticsRequestsPage = {
+  requests: LogisticsRequest[];
+  /** The filtered list's size, not the page's. Absent from a service that predates paging. */
+  total: number;
+  nextCursor: string | null;
+};
+
+/**
+ * One page of the requests the caller may read.
+ *
+ * `query` carries the page (`limit`, `cursor`) and the queue's filter and sort; the service applies
+ * them before cutting the page, so a search reaches requests that are not on screen yet.
+ */
 export async function fetchLogisticsRequests(
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<LogisticsRequest[]>> {
-  const result = await authedJson(baseUrl, "/logistics/requests", "GET", sessionToken);
+  query?: URLSearchParams,
+): Promise<AuthResult<LogisticsRequestsPage>> {
+  const search = query?.toString();
+  const result = await authedJson(
+    baseUrl,
+    search ? `/logistics/requests?${search}` : "/logistics/requests",
+    "GET",
+    sessionToken,
+  );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as { requests?: LogisticsRequest[] } | null;
-  return { ok: true, value: body?.requests ?? [] };
+  const body = result.body as {
+    requests?: LogisticsRequest[];
+    total?: number;
+    next_cursor?: string;
+  } | null;
+  const requests = body?.requests ?? [];
+  return {
+    ok: true,
+    value: {
+      requests,
+      total: body?.total ?? requests.length,
+      nextCursor: body?.next_cursor ?? null,
+    },
+  };
 }
 
 /** One request with its file bytes -- the only read that carries them. */
