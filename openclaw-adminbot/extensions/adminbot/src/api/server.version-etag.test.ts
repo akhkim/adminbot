@@ -124,7 +124,13 @@ const ROUTES = [
   "/papers?scope=mine",
   "/meetings",
   "/meetings?limit=10",
+  "/lab/members",
+  "/lab/members?view=summary",
+  "/lab/members?limit=20&offset=0",
+  "/lab/members?limit=20&offset=0&q=ada",
+  "/lab/members/self",
 ];
+const MEMBER_VIEWS = ROUTES.filter((route) => route.startsWith("/lab/members"));
 
 /** Every store read a body build of these routes makes. */
 function bodyBuildSpies(lab: Lab) {
@@ -134,6 +140,9 @@ function bodyBuildSpies(lab: Lab) {
     vi.spyOn(lab.mock.store, "countPapers"),
     vi.spyOn(lab.mock.store, "listMeetings"),
     vi.spyOn(lab.mock.store, "listMeetingsPage"),
+    vi.spyOn(lab.mock.service, "listLabMembers"),
+    vi.spyOn(lab.mock.service, "listLabMemberSummaries"),
+    vi.spyOn(lab.mock.service, "getLabMemberView"),
   ];
 }
 
@@ -174,7 +183,11 @@ describe("version ETags on the heavy list routes (sqlite)", () => {
       expect(tags.get("ada"), route).not.toBe(tags.get("zhijing"));
       // An admin presenting a member's tag is sent the admin body, not a 304.
       expect((await lab.get(route, "zhijing", tags.get("ada"))).status, route).toBe(200);
-      if (route.startsWith("/meetings") || route === "/papers?scope=mine") {
+      if (
+        route.startsWith("/meetings") ||
+        route === "/papers?scope=mine" ||
+        MEMBER_VIEWS.includes(route)
+      ) {
         // Filtered or redacted per member.
         expect(tags.get("ada"), route).not.toBe(tags.get("grace"));
       }
@@ -185,6 +198,19 @@ describe("version ETags on the heavy list routes (sqlite)", () => {
 
   it("changes the tag on every write the body depends on", async () => {
     const lab = await startLab();
+    // A published deadline names the proposal it executed; written before any tag is taken.
+    const other = new DatabaseSync(lab.databasePath);
+    try {
+      other
+        .prepare(
+          `INSERT INTO adminbot_proposals
+            (id, status, action_type, risk_tier, payload_hash, created_at, updated_at, payload_json)
+            VALUES ('action-1', 'executed', 'publish_deadline', 'low', 'h', ?, ?, '{}')`,
+        )
+        .run("2026-10-01T00:00:00.000Z", "2026-10-01T00:00:00.000Z");
+    } finally {
+      other.close();
+    }
     const changes: Array<[string[], () => void]> = [
       [
         ["/papers", "/papers?limit=50&offset=0", "/papers?scope=mine"],
@@ -206,11 +232,48 @@ describe("version ETags on the heavy list routes (sqlite)", () => {
         () => lab.mock.service.updateSettings({ meeting_minimum_minutes: 45 }),
       ],
       [
-        ["/member-map", "/member-map?unplaced=list"],
+        ["/member-map", "/member-map?unplaced=list", ...MEMBER_VIEWS],
         () => {
           const ada = lab.mock.store.getLabMember("ada")!;
           lab.mock.store.saveLabMember({ ...ada, location: "Zurich" });
         },
+      ],
+      // A member view also carries badges and reconciles milestones against published deadlines.
+      [
+        MEMBER_VIEWS,
+        () =>
+          lab.mock.store.saveBadgeAssignment({
+            member_id: "zhijing",
+            badge_id: "community_building__ambassador",
+            family_key: "community_building",
+            awarded_at: "2026-10-01T00:00:00.000Z",
+            awarded_by: "zhijing",
+            source: "admin",
+          }),
+      ],
+      [
+        MEMBER_VIEWS,
+        () => lab.mock.store.deleteBadgeAssignment("zhijing", "community_building__ambassador"),
+      ],
+      [
+        MEMBER_VIEWS,
+        () => {
+          const badge = lab.mock.store.getBadgeDefinition("community_building__ambassador")!;
+          lab.mock.store.saveBadgeDefinition({ ...badge, name: "Renamed" });
+        },
+      ],
+      [
+        MEMBER_VIEWS,
+        () =>
+          lab.mock.store.savePublishedDeadline({
+            action_id: "action-1",
+            proposal_id: "proposal-1",
+            deadline_id: "iclr-2027",
+            revision: 1,
+            deadline: {} as never,
+            published_at: "2026-10-01T00:00:00.000Z",
+            published_by_member_id: "zhijing",
+          }),
       ],
     ];
     for (const [routes, write] of changes) {

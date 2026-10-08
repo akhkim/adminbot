@@ -1302,6 +1302,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         record.published_at,
         JSON.stringify(record),
       );
+    this.versions.bump("deadlines");
   }
 
   listPublishedDeadlines(): PublishedDeadlineRecord[] {
@@ -1431,6 +1432,19 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return this.versions.version("meetings");
   }
 
+  /**
+   * Every stored input to a member view: the roster, badge definitions and awards, and the
+   * published deadlines a member's milestones are reconciled against. Merge and delete rewrite
+   * badge rows too, but they also invalidate the roster, so its generation already moves.
+   */
+  labMemberViewVersion(): string {
+    return [
+      this.members.version(),
+      this.versions.version("badges"),
+      this.versions.version("deadlines"),
+    ].join(":");
+  }
+
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[] {
     if (!page) {
       return [...this.members.list()];
@@ -1511,6 +1525,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         badge.updated_at,
         JSON.stringify(badge),
       );
+    this.versions.bump("badges");
   }
 
   getBadgeDefinition(badgeId: string): AdminBotBadgeDefinition | undefined {
@@ -1574,6 +1589,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
+    } finally {
+      this.versions.bump("badges");
     }
   }
 
@@ -1625,6 +1642,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     const result = this.db
       .prepare("DELETE FROM adminbot_badge_assignments WHERE member_id = ? AND badge_id = ?")
       .run(memberId, badgeId) as { changes?: number };
+    this.versions.bump("badges");
     return (result.changes ?? 0) > 0;
   }
 

@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 /** Tables whose GET responses are tagged by version rather than by hashing the body. */
-export type VersionedTable = "papers" | "meetings";
+export type VersionedTable = "papers" | "meetings" | "badges" | "deadlines";
 
 /**
  * A cheap "may have changed" token per table, for the routes that answer 304 before building
@@ -14,7 +14,12 @@ export type VersionedTable = "papers" | "meetings";
  * stale body, so every statement that writes the table must call `bump`.
  */
 export class SqliteTableVersions {
-  private readonly counters: Record<VersionedTable, number> = { papers: 0, meetings: 0 };
+  private readonly counters: Record<VersionedTable, number> = {
+    papers: 0,
+    meetings: 0,
+    badges: 0,
+    deadlines: 0,
+  };
 
   constructor(private readonly db: DatabaseSync) {}
 

@@ -52,10 +52,12 @@ import {
   requirePrivileged,
 } from "./guards.js";
 import { readStandingMeetings } from "./meetings.js";
+import { memberViewEtag } from "./members-etag.js";
 import { memberOnboardingDeps } from "./onboarding.js";
 import { readListPage, limitParam } from "./query-params.js";
 import { del, get, post, put, route, type Route, under } from "./router.js";
 import { requestIsSecure, sendAuthResult } from "./session.js";
+import { sendNotModified } from "./version-etag.js";
 
 export const membersRoutes: readonly Route[] = [
   // Member requests: anyone signed in may propose adding somebody; only an admin decides. Ahead of
@@ -110,6 +112,10 @@ export const membersRoutes: readonly Route[] = [
         sendJson(res, 400, { error: { message: "summary view cannot be paginated" } });
         return;
       }
+      const etag = memberViewEtag(ctx.store, principal, "lab-members", { view });
+      if (etag && sendNotModified(res, etag)) {
+        return;
+      }
       const result = service.listLabMemberSummaries(
         principal.kind === "member" ? principal.member.id : undefined,
       );
@@ -128,7 +134,12 @@ export const membersRoutes: readonly Route[] = [
               },
             }
           : result,
+        { etag },
       );
+      return;
+    }
+    const etag = memberViewEtag(ctx.store, principal, "lab-members", { page });
+    if (etag && sendNotModified(res, etag)) {
       return;
     }
     // A page carries the card projection; the unpaged read stays full for the agent tools.
@@ -146,6 +157,7 @@ export const membersRoutes: readonly Route[] = [
             },
           }
         : result,
+      { etag },
     );
   }),
   get(
