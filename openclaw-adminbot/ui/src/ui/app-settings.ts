@@ -2,6 +2,7 @@ import { ADMINBOT_PASSWORD_RESET_PATH } from "../../../extensions/adminbot/src/c
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
+import { ensureAdminQueuesForTab } from "./adminbot/controllers/admin-queues.ts";
 import {
   loadAdminBot,
   loadAdminBotSensitiveInfo,
@@ -12,7 +13,7 @@ import {
   loadAdminBotRegistrations,
   type AdminBotRegistrationsHost,
 } from "./adminbot/data/registrations.ts";
-import { needsLabPapers } from "./adminbot/papers-required.ts";
+import { needsLabPapers, papersMissingFor } from "./adminbot/papers-required.ts";
 import { refreshChat } from "./app-chat.ts";
 import {
   startLogsPolling,
@@ -466,8 +467,7 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
   // Navigation should reuse the session's dashboard read where the page has its own Refresh button.
   const needsPapers = needsLabPapers(host.tab);
   const loadAdminBotOnce = () =>
-    app.adminBotLoading ||
-    (app.adminBotData?.loadedAt && (!needsPapers || app.adminBotData.papersLoadedAt))
+    app.adminBotLoading || (app.adminBotData?.loadedAt && (!needsPapers || !papersMissingFor(app)))
       ? Promise.resolve()
       : loadAdminBot(
           app,
@@ -476,9 +476,12 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
             ? "admin"
             : "general",
           needsPapers,
-          Boolean(app.adminBotData?.loadedAt && needsPapers && !app.adminBotData.papersLoadedAt),
+          Boolean(app.adminBotData?.loadedAt && needsPapers && papersMissingFor(app)),
         );
   const refreshRun = beginControlUiRefresh(host, host.tab);
+  // The admin queues this page draws (proposals, email review, nudges...), read alongside the
+  // page's own loads and only when this session has not read them yet; see admin-queues.ts.
+  const adminQueues = ensureAdminQueuesForTab(app, host.tab);
   try {
     switch (host.tab) {
       case "config":
@@ -580,6 +583,7 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         scheduleLogsScroll(host as unknown as Parameters<typeof scheduleLogsScroll>[0], true);
         break;
     }
+    await adminQueues;
     finishControlUiRefresh(host, refreshRun, "ok");
   } catch (err) {
     finishControlUiRefresh(host, refreshRun, "error");

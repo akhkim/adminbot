@@ -2108,6 +2108,9 @@ describe("AdminBot member-side restrictions", () => {
     const pending = await fetch(`${baseUrl}/proposals/pending`, { headers });
     expect(pending.status).toBe(403);
 
+    const counts = await fetch(`${baseUrl}/admin/queue-counts`, { headers });
+    expect(counts.status).toBe(403);
+
     const settings = await fetch(`${baseUrl}/settings`, { headers });
     expect(settings.status).toBe(403);
   });
@@ -2166,6 +2169,14 @@ describe("AdminBot member-side restrictions", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(pending.status).toBe(200);
+
+    // The dashboard's counts agree with the queues they summarize.
+    const counts = await fetch(`${baseUrl}/admin/queue-counts`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(counts.status).toBe(200);
+    const { proposals } = (await pending.json()) as { proposals: unknown[] };
+    expect(await counts.json()).toEqual({ pending_proposals: proposals.length, email_reviews: 0 });
   });
 
   it("keeps other people's papers and paper deletion out of a plain member's reach", async () => {
@@ -2481,6 +2492,35 @@ describe("member-authored papers", () => {
       });
       expect(res.status).toBe(400);
     }
+  });
+
+  it("lists only the viewer's own papers for scope=mine", async () => {
+    const { baseUrl } = await startService();
+    const token = await tokenFor(baseUrl, "ada", "Ada Author");
+    const json = serviceHeaders({ "Content-Type": "application/json" });
+    await putPaper(baseUrl, "filed", memberHeaders(token), {
+      title: "Filed by Ada",
+      authors: ["Someone Else"],
+      current_step: "overleaf_writing",
+    });
+    await putPaper(baseUrl, "named", json, {
+      title: "Ada by name",
+      authors: ["Ada Author"],
+      current_step: "overleaf_writing",
+    });
+    await putPaper(baseUrl, "other", json, {
+      title: "Not Ada's",
+      authors: ["Someone Else"],
+      current_step: "overleaf_writing",
+    });
+
+    const mine = await fetch(`${baseUrl}/papers?scope=mine`, { headers: memberHeaders(token) });
+    expect(mine.status).toBe(200);
+    const body = (await mine.json()) as { papers: Array<{ id: string }> };
+    expect(body.papers.map((paper) => paper.id).toSorted()).toEqual(["filed", "named"]);
+
+    const service = await fetch(`${baseUrl}/papers?scope=mine`, { headers: serviceHeaders() });
+    expect(service.status).toBe(400);
   });
 });
 
@@ -2871,6 +2911,7 @@ describe("anonymous reimbursement access", () => {
       ["GET", "/settings"],
       ["GET", "/lab/members"],
       ["GET", "/proposals/pending"],
+      ["GET", "/admin/queue-counts"],
       ["POST", "/proposals"],
       ["POST", "/automation/email/run"],
     ] as const) {

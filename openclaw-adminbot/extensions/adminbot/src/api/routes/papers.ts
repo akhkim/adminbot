@@ -3,8 +3,10 @@
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 import type { AdminBotPaperRecordInput } from "../../contracts/actions.js";
+import { paperInvolvesMember } from "../../contracts/paper-involvement.js";
 import type { AdminBotPaperSlotInput } from "../../contracts/paper-slots.js";
 import { resolvePaperPdfSource } from "../../workflows/papers/paper-pdf-source.js";
+import { paperForResponse } from "../../workflows/papers/paper-response.js";
 import { readXAnnouncement, readXCredits } from "../../workflows/papers/x-draft.js";
 import { asString, readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
 import {
@@ -152,8 +154,25 @@ export const papersRoutes: readonly Route[] = [
       { status: 400, message: "member principal required" },
     ),
   ),
-  get("/papers", ({ res, url, ctx }) => {
+  get("/papers", ({ res, url, principal, ctx }) => {
     const { service } = ctx;
+    // The viewer's own papers only (contracts/paper-involvement.ts): the Dashboard and Profile
+    // draw nothing else, and for a lab with hundreds of papers the whole list was most of their
+    // load. Same projection as the full list, so a row is identical whichever read brought it.
+    if (url.searchParams.get("scope") === "mine") {
+      if (principal.kind !== "member") {
+        sendJson(res, 400, { error: { message: "member principal required" } });
+        return;
+      }
+      const { id, name } = principal.member;
+      sendJson(res, 200, {
+        papers: ctx.store
+          .listPapers()
+          .filter((paper) => paperInvolvesMember(paper, id, name))
+          .map(paperForResponse),
+      });
+      return;
+    }
     const page = readListPage(url);
     if (page === "invalid") {
       sendJson(res, 400, { error: { message: "invalid list pagination or search" } });

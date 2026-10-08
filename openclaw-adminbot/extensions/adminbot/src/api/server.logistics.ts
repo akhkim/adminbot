@@ -17,6 +17,7 @@ import {
   type AdminBotLogisticsRequestStatus,
 } from "../contracts/actions.js";
 import type { AdminBotService } from "../kernel/service.js";
+import { logisticsListRow } from "../workflows/logistics/list-row.js";
 import { MAX_REQUEST_BYTES } from "../workflows/logistics/requests.js";
 import { asString, readJson, readRecord, sendJson, sendServiceResult } from "./server.http.js";
 
@@ -63,8 +64,15 @@ export async function handleLogisticsRoute(
   const memberName = member.name?.trim() || member.id;
   if (req.method === "GET" && url.pathname === "/logistics/requests") {
     // The whole of the access decision, and it is one argument: an admin reads the lab's queue,
-    // everyone else reads their own requests.
-    sendServiceResult(res, service.listLogisticsRequests(isAdmin ? undefined : member.id));
+    // everyone else reads their own requests. Each row carries only what the queue draws; opening
+    // one is GET /logistics/requests/:id, which the tab already does for the files.
+    const listed = service.listLogisticsRequests(isAdmin ? undefined : member.id);
+    sendServiceResult(
+      res,
+      listed.ok
+        ? { ...listed, payload: { requests: listed.payload.requests.map(logisticsListRow) } }
+        : listed,
+    );
     return;
   }
   if (req.method === "POST" && url.pathname === "/logistics/requests") {

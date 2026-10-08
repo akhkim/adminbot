@@ -13,8 +13,10 @@ import { authedJson, type AuthResult, calendarFailure, mapErrorResponse } from "
 export type StandingMeeting = {
   id: string;
   title: string;
-  kind: "group" | "theme" | "project";
-  event_ids: string[];
+  /** Not sent: the Meetings checkboxes need only the id, the title and who is on it. */
+  kind?: "group" | "theme" | "project";
+  /** Not sent, for the same reason. */
+  event_ids?: string[];
   /** Lowercased addresses. */
   attendees: string[];
 };
@@ -49,8 +51,6 @@ export async function fetchStandingMeetings(
 export type MeetingAttendee = {
   member_id?: string;
   display_name: string;
-  email?: string;
-  joined_at?: string;
   minutes?: number;
   source: "participant_report" | "transcript" | "manual";
   present: boolean;
@@ -58,7 +58,6 @@ export type MeetingAttendee = {
 
 export type MeetingActionItem = {
   text: string;
-  owner_member_id?: string;
   owner_name?: string;
 };
 
@@ -70,7 +69,8 @@ export type MeetingRecord = {
   /** Recording length to the second, as the Zoom notice stated it. Exact where minutes round. */
   duration_seconds?: number;
   recording: { share_url?: string; passcode?: string; drive_url?: string };
-  transcript?: { processed_at: string; speaker_names: string[]; duration_seconds?: number };
+  /** Whether a transcript was processed and how long it ran; who spoke stays on the server. */
+  transcript?: { processed_at: string; duration_seconds?: number };
   summary?: {
     overview: string;
     decisions: string[];
@@ -178,7 +178,8 @@ export async function createMeeting(
 export type MeetingAbsence = {
   member_id: string;
   name: string;
-  missed_meeting_ids: string[];
+  /** The streak's meetings. The preview sends them once, on `meetings`; filled in from there. */
+  missed_meeting_ids?: string[];
   missed_topics: string[];
   reason: "invite" | "full_member";
 };
@@ -211,7 +212,25 @@ export async function fetchMeetingAttendanceNudges(
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  return { ok: true, value: result.body as MeetingAttendanceNudgePreview };
+  if (!result.body) {
+    return { ok: true, value: result.body as MeetingAttendanceNudgePreview };
+  }
+  const preview = result.body as Omit<MeetingAttendanceNudgePreview, "absent"> & {
+    absent: Array<Omit<MeetingAbsence, "missed_topics"> & { missed_topics?: string[] }>;
+  };
+  // A row is only ever a member who missed every meeting in the streak, so its missed topics are
+  // the streak's own. An older service still sends them per row, and those are kept.
+  const streakTopics = (preview.meetings ?? []).map((meeting) => meeting.topic);
+  return {
+    ok: true,
+    value: {
+      ...preview,
+      absent: (preview.absent ?? []).map((row) => ({
+        ...row,
+        missed_topics: row.missed_topics ?? streakTopics,
+      })),
+    },
+  };
 }
 
 export async function sendMeetingAttendanceNudges(

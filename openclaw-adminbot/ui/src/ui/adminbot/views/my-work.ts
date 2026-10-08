@@ -7,6 +7,7 @@ import {
   adminBotProjectChannelName,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { isPaperFeedbackSlot } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
+import { paperInvolvesMember } from "../../../../../extensions/adminbot/src/contracts/paper-involvement.js";
 import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -297,20 +298,11 @@ export function reviewerName(state: AppViewState): string {
  */
 export function ownPapers(state: AppViewState): AdminBotPaperRecord[] {
   const member = findOwnMember(state);
-  const memberId = state.memberId;
-  const name = member?.name ?? "";
-  return (state.adminBotData?.papers ?? []).filter(
-    (paper) =>
-      (memberId && paper.submitted_by_member_id === memberId) ||
-      (memberId && paper.first_author_member_id === memberId) ||
-      (memberId && paper.mentor_member_id === memberId) ||
-      (memberId && (paper.author_links ?? []).some((link) => link.member_id === memberId)) ||
-      // Author entries carry marks that are about authorship, not identity -- "Joeun Yook*" for
-      // equal contribution, "Yook, Joeun" from a BibTeX paste, an accent the roster spells
-      // differently. This used to be a raw lowercase comparison, so a co-first author was
-      // invisible on their own paper: the one character the venue added to mark the credit was
-      // the character that hid it.
-      (name.length > 0 && (paper.authors ?? []).some((author) => isSamePerson(author, name))),
+  // The same rule GET /papers?scope=mine applies, so a page that read only the viewer's papers
+  // shows the rows it used to pick out of the full list. Names compare as people (isSamePerson):
+  // a raw lowercase comparison once hid a co-first author's paper behind the "*" marking it.
+  return (state.adminBotData?.papers ?? []).filter((paper) =>
+    paperInvolvesMember(paper, state.memberId, member?.name),
   );
 }
 

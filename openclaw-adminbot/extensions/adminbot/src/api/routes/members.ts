@@ -17,6 +17,7 @@ import { memberAttends } from "../../workflows/calendar/standing-meetings.js";
 import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import type { AdminBotWriteOrigin } from "../../workflows/members/adoption.js";
 import { privilegeForMemberTypeChange } from "../../workflows/members/member-type-access.js";
+import { profileOverviewWireRow } from "../../workflows/members/profile-overview-row.js";
 import { sameMemberType } from "../../workflows/members/roster-sync.js";
 import { isTravelHistorySubject } from "../../workflows/members/travel-history.js";
 import { newMemberIdentity } from "../member-create.js";
@@ -423,7 +424,20 @@ export const membersRoutes: readonly Route[] = [
     "/members/profile-overview",
     privilegedOnly(({ res, ctx }) => {
       const { service } = ctx;
-      sendServiceResult(res, service.listMemberProfileOverview());
+      // Rows leave out the zeroed counters the client fills in itself; see profileOverviewWireRow.
+      const overview = service.listMemberProfileOverview();
+      sendServiceResult(
+        res,
+        overview.ok
+          ? {
+              ...overview,
+              payload: {
+                ...overview.payload,
+                members: overview.payload.members.map(profileOverviewWireRow),
+              },
+            }
+          : overview,
+      );
     }),
   ),
   post(

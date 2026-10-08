@@ -131,7 +131,7 @@ import "./components/feedback-widget.ts";
 import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import { configureDraftSync, retryDraftSync } from "./adminbot/offline/draft-sync.ts";
-import { needsLabPapers } from "./adminbot/papers-required.ts";
+import { needsLabPapers, papersMissingFor } from "./adminbot/papers-required.ts";
 import { needsLabRoster } from "./adminbot/roster-required.ts";
 import { renderAdminPanelsSurface } from "./adminbot/surfaces/admin-panels.ts";
 import { renderCollaborateSurface } from "./adminbot/surfaces/collaborate.ts";
@@ -2567,7 +2567,7 @@ export function renderApp(state: AppViewState) {
     hasMemberSession &&
     needsPapersForTab &&
     Boolean(state.adminBotData.loadedAt) &&
-    !state.adminBotData.papersLoadedAt;
+    papersMissingFor(state);
   if (
     state.tab !== "adminbotMeetings" &&
     (hasMemberSession || wantsGatewayAdminBotLoad) &&

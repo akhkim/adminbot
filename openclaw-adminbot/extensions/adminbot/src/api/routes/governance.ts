@@ -57,6 +57,19 @@ export const governanceRoutes: readonly Route[] = [
       );
     }),
   ),
+  // The dashboard's attention cards say only how many proposals and held emails are waiting, so
+  // they read two numbers here instead of the full queues -- the email list in particular is
+  // built alongside a PaperFlow stage sweep that the cards never show. 50 is the window the
+  // dashboard used to count from /proposals/pending?limit=50, so the number it shows is unchanged.
+  get(
+    "/admin/queue-counts",
+    adminSessionOnly(({ res, ctx }) => {
+      sendJson(res, 200, {
+        pending_proposals: ctx.store.listPending(50).length,
+        email_reviews: ctx.store.listEmailReviews().length,
+      });
+    }),
+  ),
   post(/^\/proposals\/([^/]+)\/remove$/u, async ({ req, res, principal, ctx, params }) => {
     const { service } = ctx;
     if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
