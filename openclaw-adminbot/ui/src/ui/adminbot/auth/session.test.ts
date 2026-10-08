@@ -356,6 +356,27 @@ describe("fetchRelevantPapers", () => {
     const result = await fetchRelevantPapers("sess", BASE_URL);
     expect(result).toEqual({ ok: false, kind: "auth-failed" });
   });
+
+  it("shares a read in flight and revalidates the next one by ETag", async () => {
+    const papers = [{ id: "p1", title: "Causal Systems", current_step: "submission" }];
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(200, { papers }, { ETag: '"papers-1"' }))
+      .mockResolvedValueOnce(new Response(null, { status: 304 }));
+    const [first, second] = await Promise.all([
+      fetchRelevantPapers("sess-shared", BASE_URL),
+      fetchRelevantPapers("sess-shared", BASE_URL),
+    ]);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(first).toEqual({ ok: true, value: papers });
+    expect(second).toEqual({ ok: true, value: papers });
+
+    const third = await fetchRelevantPapers("sess-shared", BASE_URL);
+    expect(spy).toHaveBeenCalledTimes(2);
+    const headers = (spy.mock.calls[1]?.[1]?.headers ?? {}) as Record<string, string>;
+    expect(headers["If-None-Match"]).toBe('"papers-1"');
+    expect(third).toEqual({ ok: true, value: papers });
+  });
 });
 
 describe("stored member session", () => {
@@ -667,12 +688,13 @@ describe("revalidated GET reads", () => {
 
   it("does not let a read after a write join a read from before it", async () => {
     const pending: Array<(response: Response) => void> = [];
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
-      (_url, init) =>
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((_url, init) =>
         init?.method === "GET"
           ? new Promise<Response>((resolve) => pending.push(resolve))
           : Promise.resolve(jsonResponse(200, { ok: true })),
-    );
+      );
     const before = fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
     await updateOwnProfile("ada", { name: "Ada" }, "ada-session", BASE_URL);
     const after = fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);

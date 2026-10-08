@@ -11,6 +11,12 @@ import { parseApiJson, readApiJson } from "../data/api-json.ts";
 import type { AvailabilityRow, TimeOffRow } from "../data/availability.js";
 import { configureDraftSync } from "../offline/draft-sync.ts";
 import {
+  cacheAdminBotGet,
+  type AdminBotOfflineScope,
+  pendingAdminBotOutboxCount,
+  readCachedAdminBotGet,
+} from "../offline/outbox.ts";
+import {
   forgetRead,
   forgetReadsInFlight,
   forgetSessionReads,
@@ -18,12 +24,6 @@ import {
   rememberedRead,
   sharedRead,
 } from "./read-cache.ts";
-import {
-  cacheAdminBotGet,
-  type AdminBotOfflineScope,
-  pendingAdminBotOutboxCount,
-  readCachedAdminBotGet,
-} from "../offline/outbox.ts";
 
 const SESSION_STORAGE_KEY = "openclaw.adminbot.session.v1";
 // v2: the onboarding checklist moved from a post-login popup (dismiss = "seen it") to a standing
@@ -725,26 +725,21 @@ export async function fetchMemberResource(
   return { ok: true, value: result.body, ...(result.fromCache ? { cached: true } : {}) };
 }
 
-// Papers relevant to the signed-in member (GET /papers/relevant) with the session.
+// Papers relevant to the signed-in member (GET /papers/relevant) with the session. Read through
+// authedJson like every other member read, so it revalidates by ETag and a second caller asking
+// while the first is in flight joins that request instead of starting its own.
 export async function fetchRelevantPapers(
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<RelevantPaper[]>> {
-  let response: Response;
-  try {
-    response = await fetch(`${baseUrl}/papers/relevant`, {
-      method: "GET",
-      credentials: "omit",
-      headers: { Accept: "application/json", Authorization: `Bearer ${sessionToken}` },
-    });
-  } catch {
+  const result = await authedJson(baseUrl, "/papers/relevant", "GET", sessionToken);
+  if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
-  const body = await readApiJson(response);
-  if (!response.ok) {
-    return { ok: false, ...mapErrorResponse(response, body, { weakOn400: false }) };
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  const papers = (body as { papers?: RelevantPaper[] } | null)?.papers ?? [];
+  const papers = (result.body as { papers?: RelevantPaper[] } | null)?.papers ?? [];
   return { ok: true, value: papers };
 }
 
