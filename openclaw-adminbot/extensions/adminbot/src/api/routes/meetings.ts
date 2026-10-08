@@ -16,7 +16,10 @@ import {
   standingMeetings,
 } from "../../workflows/calendar/standing-meetings.js";
 import { groupMeetingInviteEmails } from "../../workflows/meetings/attendance-nudge.js";
-import { meetingListRow } from "../../workflows/meetings/meeting-list-row.js";
+import {
+  meetingListRow,
+  meetingListRowWithoutRoster,
+} from "../../workflows/meetings/meeting-list-row.js";
 import {
   asString,
   readJson,
@@ -59,6 +62,9 @@ export const meetingsRoutes: readonly Route[] = [
     memberOnly(({ res, url, principal, ctx }) => {
       const { service } = ctx;
       const isAdmin = principal.member.privilege_level === "admin";
+      // An admin's rows leave the roster for GET /meetings/:id; a member's row already carries
+      // only their own line, which their closed card does render.
+      const row = isAdmin ? meetingListRowWithoutRoster : meetingListRow;
       const limitText = url.searchParams.get("limit");
       if (limitText === null) {
         if (url.searchParams.has("before_started_at") || url.searchParams.has("before_id")) {
@@ -70,9 +76,7 @@ export const meetingsRoutes: readonly Route[] = [
           : service.listMeetingsForMember(principal.member.id);
         sendServiceResult(
           res,
-          all.ok
-            ? { ...all, payload: { meetings: all.payload.meetings.map(meetingListRow) } }
-            : all,
+          all.ok ? { ...all, payload: { meetings: all.payload.meetings.map(row) } } : all,
         );
         return;
       }
@@ -103,7 +107,7 @@ export const meetingsRoutes: readonly Route[] = [
         listed.ok
           ? {
               ...listed,
-              payload: { ...listed.payload, meetings: listed.payload.meetings.map(meetingListRow) },
+              payload: { ...listed.payload, meetings: listed.payload.meetings.map(row) },
             }
           : listed,
       );
@@ -177,6 +181,21 @@ export const meetingsRoutes: readonly Route[] = [
       await service.sendMeetingAttendanceNudges(principalActor(principal), { inviteEmails }),
     );
   }),
+  get(
+    // After /meetings/attendance-nudges, which this pattern would otherwise swallow.
+    /^\/meetings\/([^/]+)$/u,
+    memberOnly(({ res, principal, ctx, params }) => {
+      // One meeting with its roster: what an admin's card reads when its attendance is opened.
+      // The service applies the list's own projection -- the whole roster for an admin, a member's
+      // own line and a headcount for anyone else -- so this read cannot show more than the list.
+      const meetingId = decodeURIComponent(params[1]);
+      const read =
+        principal.member.privilege_level === "admin"
+          ? ctx.service.getListedMeeting(meetingId)
+          : ctx.service.getListedMeeting(meetingId, principal.member.id);
+      sendServiceResult(res, read.ok ? { ...read, payload: meetingListRow(read.payload) } : read);
+    }),
+  ),
   del(
     /^\/meetings\/([^/]+)$/u,
     adminSessionOnly(({ res, principal, params, ctx }) => {

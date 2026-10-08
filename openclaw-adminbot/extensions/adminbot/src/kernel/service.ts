@@ -9354,6 +9354,32 @@ export class AdminBotService {
     };
   }
 
+  /**
+   * One meeting from the list: the whole roster when `memberId` is omitted (the admin view), that
+   * member's own line and a headcount when it is given. A meeting the list hides (under the
+   * duration floor) is a 404 here too, so this read never reaches what the list would not show.
+   */
+  getListedMeeting(
+    meetingId: string,
+    memberId?: string,
+  ): AdminBotServiceResponse<AdminBotMeetingRecord> {
+    if (memberId !== undefined && !this.store.getLabMember(memberId)) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    const meeting = this.store.getMeeting(meetingId);
+    if (
+      !meeting ||
+      !meetsDurationFloor(meeting, this.resolveSettings().meeting_minimum_minutes ?? 0)
+    ) {
+      return serviceError(404, `unknown meeting ${meetingId}`);
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: memberId === undefined ? meeting : redactMeetingForMember(meeting, memberId),
+    };
+  }
+
   /** A bounded archive read for the UI; the unpaged methods above still serve existing callers. */
   listMeetingsPage(options: {
     limit: number;

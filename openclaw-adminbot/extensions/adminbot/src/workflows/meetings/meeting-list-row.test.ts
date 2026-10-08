@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AdminBotMeetingRecord } from "../../contracts/actions.js";
-import { meetingListRow } from "./meeting-list-row.js";
+import { meetingListRow, meetingListRowWithoutRoster } from "./meeting-list-row.js";
 
 const RECORD: AdminBotMeetingRecord = {
   id: "zoom-1",
@@ -81,5 +81,28 @@ describe("meetingListRow", () => {
     expect(row.attendee_count).toBe(7);
     expect(row.attendees).toEqual([]);
     expect(row).not.toHaveProperty("transcript");
+  });
+});
+
+describe("meetingListRowWithoutRoster", () => {
+  it("drops the roster for a headcount of who was present", () => {
+    const row = meetingListRowWithoutRoster({
+      ...RECORD,
+      attendees: [
+        ...(RECORD.attendees ?? []),
+        { member_id: "bo", display_name: "Bo", source: "manual", present: false },
+      ],
+    });
+    expect(row.attendees).toBeUndefined();
+    expect(row.attendee_count).toBe(2);
+    expect(row.transcript).toEqual({
+      processed_at: "2026-09-01T17:00:00.000Z",
+      duration_seconds: 3600,
+    });
+  });
+
+  it("counts nobody on a meeting with no roster yet", () => {
+    const { attendees: _attendees, ...bare } = RECORD;
+    expect(meetingListRowWithoutRoster(bare).attendee_count).toBe(0);
   });
 });
