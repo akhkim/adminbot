@@ -16,6 +16,11 @@ import type {
   ConferenceAttendancePerson,
   ConferenceAttendanceView,
 } from "../workflows/papers/conference-attendance.js";
+import type {
+  LabPaperRelevance,
+  LabRelevanceReport,
+  LabSegmentScore,
+} from "../workflows/papers/lab-relevance.js";
 import type { PublicationExclusion } from "../workflows/papers/publication-list.js";
 
 /** Reshape a successful payload and pass a failure through untouched, status and all. */
@@ -134,5 +139,55 @@ export function mailingExclusionsWire(excluded: readonly PublicationExclusion[])
   return {
     excluded: listed.map(({ id, title, reason }) => ({ id, title, reason })),
     out_of_range_count: excluded.length - listed.length,
+  };
+}
+
+type LabSegmentWire = Pick<LabSegmentScore, "segment_id" | "label" | "band">;
+
+/** One placed paper, as the Lab Papers list draws it. */
+export type LabPaperHitWire = Pick<
+  LabPaperRelevance,
+  "paper_id" | "title" | "margin" | "band" | "matched_terms" | "evidence"
+> & { segments: LabSegmentWire[]; best_segment?: LabSegmentWire };
+
+export type LabRelevanceReportWire = Pick<
+  LabRelevanceReport,
+  "query_kind" | "segment_count" | "scored" | "nothing_relevant"
+> & {
+  matches: LabPaperHitWire[];
+  off_topic_count: number;
+  uncovered_segments: Array<{ id: string; label: string }>;
+};
+
+function labSegmentWire({ segment_id, label, band }: LabSegmentScore): LabSegmentWire {
+  return { segment_id, label, band };
+}
+
+/**
+ * The relevance report without what the page never draws.
+ *
+ * `off_topic` is every paper that missed, which at a lab's full history is most of them, and the
+ * page shows only how many matched out of how many were scored. The raw and centered scores are
+ * diagnostics (the bar is drawn from `margin`), and an uncovered section is listed by its label,
+ * not by the text pasted under it, which the caller already has.
+ */
+export function labRelevanceWire(report: LabRelevanceReport): LabRelevanceReportWire {
+  return {
+    query_kind: report.query_kind,
+    segment_count: report.segment_count,
+    scored: report.scored,
+    nothing_relevant: report.nothing_relevant,
+    matches: report.matches.map((hit) => ({
+      paper_id: hit.paper_id,
+      title: hit.title,
+      margin: hit.margin,
+      band: hit.band,
+      segments: hit.segments.map(labSegmentWire),
+      ...(hit.best_segment ? { best_segment: labSegmentWire(hit.best_segment) } : {}),
+      matched_terms: hit.matched_terms,
+      evidence: hit.evidence,
+    })),
+    off_topic_count: report.off_topic.length,
+    uncovered_segments: report.uncovered_segments.map(({ id, label }) => ({ id, label })),
   };
 }

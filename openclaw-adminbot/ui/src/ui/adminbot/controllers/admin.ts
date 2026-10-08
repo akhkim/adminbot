@@ -215,21 +215,17 @@ export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
   };
 }
 
-/** One lab paper placed against the query. Mirrors LabPaperRelevance in the service. */
+/**
+ * One lab paper placed against the query. Mirrors LabPaperHitWire in the service, which leaves
+ * off the raw and centered scores the page never draws (the bar comes from `margin`).
+ */
 export type AdminBotLabPaperHit = {
   paper_id: string;
   title: string;
-  score: number;
   margin: number;
   band: "core" | "related" | "peripheral" | "off_topic";
-  segments: Array<{
-    segment_id: string;
-    label: string;
-    score: number;
-    margin: number;
-    band: string;
-  }>;
-  best_segment?: { segment_id: string; label: string; score: number; margin: number; band: string };
+  segments: Array<{ segment_id: string; label: string; band: string }>;
+  best_segment?: { segment_id: string; label: string; band: string };
   matched_terms: string[];
   /** How much text the placement was made from. Most records are `title_only`. */
   evidence: "rich" | "thin" | "title_only";
@@ -240,9 +236,10 @@ export type AdminBotLabPaperReport = {
   segment_count: number;
   scored: number;
   matches: AdminBotLabPaperHit[];
-  off_topic: AdminBotLabPaperHit[];
+  /** How many papers missed. The misses themselves are not sent; nothing lists them. */
+  off_topic_count?: number;
   nothing_relevant: boolean;
-  uncovered_segments: Array<{ id: string; label: string; text: string }>;
+  uncovered_segments: Array<{ id: string; label: string }>;
 };
 
 export type AdminBotLabPapersState = {

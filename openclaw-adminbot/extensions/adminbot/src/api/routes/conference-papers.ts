@@ -20,6 +20,7 @@ import {
   sendJson,
   sendServiceResult,
 } from "../server.http.js";
+import { labRelevanceWire } from "../server.paper-lists.wire.js";
 import {
   cancelWorkshopNudgeRun,
   listWorkshopConferences,
@@ -161,7 +162,7 @@ export const conferencePapersRoutes: readonly Route[] = [
         query,
         embed: ctx.embedder,
       });
-      sendJson(res, 200, report);
+      sendJson(res, 200, labRelevanceWire(report));
     } catch (error) {
       // The embedding model being unreachable is the common failure and it is not the caller's
       // fault, so it reads as a gateway error rather than a bad request.
