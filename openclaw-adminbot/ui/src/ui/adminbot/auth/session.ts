@@ -10,15 +10,8 @@ import { normalizeOptionalString } from "../../string-coerce.ts";
 import { parseApiJson, readApiJson } from "../data/api-json.ts";
 import type { AvailabilityRow, TimeOffRow } from "../data/availability.js";
 import { configureDraftSync } from "../offline/draft-sync.ts";
-import {
-  forgetRead,
-  forgetReadsInFlight,
-  forgetSessionReads,
-  rememberRead,
-  rememberedRead,
-  sharedRead,
-} from "./read-cache.ts";
 import { type AdminBotOfflineScope, pendingAdminBotOutboxCount } from "../offline/outbox.ts";
+import { isOfflineReadPath, readOfflineRead, storeOfflineRead } from "../offline/read-store.ts";
 import {
   confirmOwnRead,
   forgetOfflineReads,
@@ -28,7 +21,14 @@ import {
   resolveOfflineScope,
   storedOwnRead,
 } from "./offline-reads.ts";
-import { isOfflineReadPath, readOfflineRead, storeOfflineRead } from "../offline/read-store.ts";
+import {
+  forgetRead,
+  forgetReadsInFlight,
+  forgetSessionReads,
+  rememberRead,
+  rememberedRead,
+  sharedRead,
+} from "./read-cache.ts";
 
 const SESSION_STORAGE_KEY = "openclaw.adminbot.session.v1";
 // v2: the onboarding checklist moved from a post-login popup (dismiss = "seen it") to a standing
@@ -760,29 +760,29 @@ export async function fetchRelevantPapers(
 
 // Pending account requests awaiting an admin decision (GET /auth/registrations).
 // The service only answers this for an admin member session, so 403
-// maps to `forbidden` rather than the generic auth-failed.
+// maps to `forbidden` rather than the generic auth-failed. Read through authedJson so a revisit
+// to the Registrations tab revalidates by ETag instead of downloading the list again.
 export async function fetchPendingRegistrations(
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<MemberRegistration[]>> {
-  let response: Response;
-  try {
-    response = await fetch(`${baseUrl}/auth/registrations?status=pending`, {
-      method: "GET",
-      credentials: "omit",
-      headers: { Accept: "application/json", Authorization: `Bearer ${sessionToken}` },
-    });
-  } catch {
+  const result = await authedJson(
+    baseUrl,
+    "/auth/registrations?status=pending",
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
-  const body = await readApiJson(response);
-  if (!response.ok) {
-    if (response.status === 403) {
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
       return { ok: false, kind: "forbidden" };
     }
-    return { ok: false, ...mapErrorResponse(response, body, { weakOn400: false }) };
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  const registrations = (body as { registrations?: MemberRegistration[] } | null)?.registrations;
+  const registrations = (result.body as { registrations?: MemberRegistration[] } | null)
+    ?.registrations;
   return { ok: true, value: registrations ?? [] };
 }
 
@@ -1091,7 +1091,10 @@ export function saveStoredMemberSession(next: StoredMemberSession): void {
     // old one and would never be asked for again.
     forgetSessionReads();
   }
-  if (previous?.sessionToken !== next.sessionToken || (next.impersonator && !previous?.impersonator)) {
+  if (
+    previous?.sessionToken !== next.sessionToken ||
+    (next.impersonator && !previous?.impersonator)
+  ) {
     // The same for the copies on disk. A new session keeps only its own sign-in snapshot (written
     // just before this by applyMemberSession); a View-as keeps nothing, not even that, because
     // it is another member's data on the admin's device. Unsent drafts are untouched: they live
