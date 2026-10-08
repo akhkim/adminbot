@@ -89,7 +89,6 @@ import {
   type AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
-import { meetsDurationFloor } from "../workflows/meetings/records.js";
 import {
   labMemberRowReader,
   toStoredLabMember,
@@ -136,6 +135,8 @@ import {
 } from "./reference-scans.js";
 import { SqliteAuditLog } from "./sqlite.audit.js";
 import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
+import { listSqliteMeetingsPage } from "./sqlite.meetings.js";
+import { SqliteTableVersions } from "./sqlite.table-versions.js";
 import {
   listSqliteSocialDrafts,
   migrateSocialDraftColumns,
@@ -221,6 +222,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   private readonly failedRequests: FailedExternalRequestLedger;
   private readonly venueIndex: SqliteVenuePaperIndex;
   private readonly members: SqliteLabMemberCache;
+  private readonly versions: SqliteTableVersions;
   private readonly audit: SqliteAuditLog;
 
   constructor(readonly databasePath: string) {
@@ -229,6 +231,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.db = new sqlite.DatabaseSync(databasePath);
     this.venueIndex = new SqliteVenuePaperIndex(this.db);
     this.members = new SqliteLabMemberCache(this.db);
+    this.versions = new SqliteTableVersions(this.db);
     this.audit = new SqliteAuditLog(this.db);
     // SQLite's built-in lower() only handles ASCII; use the same fold as the in-memory store.
     this.db.function("adminbot_lower", { deterministic: true }, (value) =>
@@ -1415,6 +1418,14 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return this.members.version();
   }
 
+  paperVersion(): string {
+    return this.versions.version("papers");
+  }
+
+  meetingVersion(): string {
+    return this.versions.version("meetings");
+  }
+
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[] {
     if (!page) {
       return [...this.members.list()];
@@ -2279,6 +2290,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   savePaper(paper: AdminBotPaperRecord): void {
+    this.versions.bump("papers");
     this.db
       .prepare(
         `INSERT INTO adminbot_papers (
@@ -2325,6 +2337,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   deletePaper(paperId: string): boolean {
+    this.versions.bump("papers");
     // Everything hanging off the paper goes with it. Leaving any of it would let a re-created id
     // inherit the evidence, the drafts and the consents of a paper somebody deleted.
     const drafts = this.db
@@ -3203,6 +3216,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   saveMeeting(meeting: AdminBotMeetingRecord): void {
+    this.versions.bump("meetings");
     this.db
       .prepare(
         `INSERT INTO adminbot_meetings (
@@ -3238,50 +3252,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     before?: AdminBotMeetingCursor;
     minimumMinutes: number;
   }): AdminBotMeetingRecord[] {
-    const chunkSize = Math.max(64, options.limit);
-    const first = this.db.prepare(
-      `SELECT id, started_at, payload_json FROM adminbot_meetings
-       ORDER BY COALESCE(julianday(started_at), 0) DESC, id DESC LIMIT ?`,
-    );
-    const after = this.db.prepare(
-      `SELECT id, started_at, payload_json FROM adminbot_meetings
-       WHERE COALESCE(julianday(started_at), 0) <= COALESCE(julianday(?), 0)
-         AND (COALESCE(julianday(started_at), 0) < COALESCE(julianday(?), 0) OR id < ?)
-       ORDER BY COALESCE(julianday(started_at), 0) DESC, id DESC LIMIT ?`,
-    );
-    const meetings: AdminBotMeetingRecord[] = [];
-    let before = options.before;
-    while (meetings.length < options.limit) {
-      const rows = (
-        before
-          ? after.all(before.started_at, before.started_at, before.id, chunkSize)
-          : first.all(chunkSize)
-      ) as Array<{
-        id: string;
-        started_at: string;
-        payload_json: string;
-      }>;
-      if (rows.length === 0) {
-        break;
-      }
-      for (const row of rows) {
-        before = { started_at: row.started_at, id: row.id };
-        const meeting = parseJson<AdminBotMeetingRecord>(row.payload_json);
-        if (meetsDurationFloor(meeting, options.minimumMinutes)) {
-          meetings.push(meeting);
-          if (meetings.length === options.limit) {
-            break;
-          }
-        }
-      }
-      if (rows.length < chunkSize) {
-        break;
-      }
-    }
-    return meetings;
+    return listSqliteMeetingsPage(this.db, options);
   }
 
   deleteMeeting(meetingId: string): boolean {
+    this.versions.bump("meetings");
     return this.db.prepare("DELETE FROM adminbot_meetings WHERE id = ?").run(meetingId).changes > 0;
   }
 

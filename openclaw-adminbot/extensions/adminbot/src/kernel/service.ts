@@ -626,6 +626,8 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[];
   countPapers(filter?: { q?: string; authorMemberId?: string }): number;
   deletePaper(paperId: string): boolean;
+  /** Changes on every paper write (api/version-etag.ts); without it /papers hashes its body. */
+  paperVersion?(): string;
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
   /** One paper's slots, or every paper's when the id is omitted. */
   listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
@@ -702,6 +704,8 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     minimumMinutes: number;
   }): AdminBotMeetingRecord[];
   deleteMeeting(meetingId: string): boolean;
+  /** Changes on every meeting write, like paperVersion. */
+  meetingVersion?(): string;
   hasAttachedMeetingArtifact(fileId: string): boolean;
   recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void;
   /**
@@ -9342,29 +9346,6 @@ export class AdminBotService {
   }
 
   /**
-   * Every meeting as one member may see it: their own attendance line and a headcount, never the
-   * roster. The redaction happens here rather than in the route so no future caller can reach the
-   * unredacted list by picking a different entry point.
-   */
-  listMeetingsForMember(
-    memberId: string,
-  ): AdminBotServiceResponse<{ meetings: AdminBotMeetingRecord[] }> {
-    const member = this.store.getLabMember(memberId);
-    if (!member) {
-      return serviceError(404, `unknown member ${memberId}`);
-    }
-    return {
-      ok: true,
-      status: 200,
-      payload: {
-        meetings: this.listedMeetings(false).map((meeting) =>
-          redactMeetingForMember(meeting, memberId),
-        ),
-      },
-    };
-  }
-
-  /**
    * One meeting from the list: the whole roster when `memberId` is omitted (the admin view), that
    * member's own line and a headcount when it is given. A meeting the list hides (under the
    * duration floor) is a 404 here too, so this read never reaches what the list would not show.
@@ -9823,7 +9804,7 @@ export class AdminBotService {
    * `memberId` is the whole of the access decision: pass one and the reader sees their own requests
    * and nobody else's, omit it for the admin view. It is decided here rather than in the route so
    * no future caller reaches the lab-wide list by picking a different entry point -- the same
-   * reason listMeetingsForMember exists.
+   * reason listMeetingsPageForMember exists.
    */
   listLogisticsRequests(
     memberId?: string,

@@ -14,6 +14,13 @@ import { updateOwnProfile } from "../api/members.ts";
 import { fetchMemberSheet, nudgeOnboardingStep, setOnboardingStep } from "../api/onboarding.ts";
 import { enqueueAdminBotMutation, resetAdminBotOfflineMemory } from "../offline/outbox.ts";
 import {
+  flushOfflineReads,
+  offlineReadStoreStats,
+  readOfflineRead,
+} from "../offline/read-store.ts";
+import { resolveOfflineScope } from "./offline-reads.ts";
+import { forgetSessionReads } from "./read-cache.ts";
+import {
   clearStoredMemberSession,
   fetchMemberSession,
   fetchMemberResource,
@@ -533,20 +540,48 @@ describe("onboarding step nudge", () => {
 });
 
 describe("offline GET cache and mutation outbox", () => {
-  it("returns the last successful roster only to the same session", async () => {
+  // Disk writes and wipes are fire-and-forget; let them land before looking.
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushOfflineReads();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  async function stored(token: string, path: string) {
+    const scope = await resolveOfflineScope(BASE_URL, token);
+    return scope ? await readOfflineRead(scope, path) : undefined;
+  }
+
+  it("returns the member's own last profile only to the same session", async () => {
     await resetAdminBotOfflineMemory();
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse(200, { members: [{ id: "ada" }] }));
-    await fetchMemberResource("/lab/members", "ada-session", BASE_URL);
+      .mockResolvedValueOnce(jsonResponse(200, { member: { id: "ada" } }));
+    await fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
     fetchMock.mockRejectedValue(new Error("offline"));
 
-    await expect(fetchMemberResource("/lab/members", "ada-session", BASE_URL)).resolves.toEqual({
-      ok: true,
-      value: { members: [{ id: "ada" }] },
-      cached: true,
-    });
-    await expect(fetchMemberResource("/lab/members", "mei-session", BASE_URL)).resolves.toEqual({
+    await expect(
+      fetchMemberResource("/lab/members/self", "ada-session", BASE_URL),
+    ).resolves.toEqual({ ok: true, value: { member: { id: "ada" } }, cached: true });
+    await expect(
+      fetchMemberResource("/lab/members/self", "mei-session", BASE_URL),
+    ).resolves.toEqual({ ok: false, kind: "unreachable" });
+  });
+
+  it("never writes the roster or admin-only reads to disk", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => jsonResponse(200, { secret: "admin-only" }, { ETag: 'W/"a"' }));
+    for (const path of ["/lab/members", "/sensitive-info", "/logistics/requests", "/papers"]) {
+      await fetchMemberResource(path, "admin-session", BASE_URL);
+    }
+    await settle();
+    for (const path of ["/lab/members", "/sensitive-info", "/logistics/requests", "/papers"]) {
+      await expect(stored("admin-session", path)).resolves.toBeUndefined();
+    }
+    expect(offlineReadStoreStats().puts).toBe(0);
+    fetchMock.mockRejectedValue(new Error("offline"));
+    await expect(fetchMemberResource("/lab/members", "admin-session", BASE_URL)).resolves.toEqual({
       ok: false,
       kind: "unreachable",
     });
@@ -556,18 +591,85 @@ describe("offline GET cache and mutation outbox", () => {
     await resetAdminBotOfflineMemory();
     const fetcher = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { members: [] }));
-    await fetchMemberResource("/lab/members", "synthetic", BASE_URL);
+      .mockResolvedValue(jsonResponse(200, { member: {} }));
+    await fetchMemberResource("/lab/members/self", "synthetic", BASE_URL);
     fetcher.mockImplementation(async () => jsonResponse(503, {}));
-    await expect(fetchMemberResource("/lab/members", "synthetic", BASE_URL)).resolves.toMatchObject(
-      { ok: true, cached: true },
-    );
+    await expect(
+      fetchMemberResource("/lab/members/self", "synthetic", BASE_URL),
+    ).resolves.toMatchObject({ ok: true, cached: true });
     for (const code of [401, 403]) {
       fetcher.mockImplementation(async () => jsonResponse(code, {}));
       await expect(
-        fetchMemberResource("/lab/members", "synthetic", BASE_URL),
+        fetchMemberResource("/lab/members/self", "synthetic", BASE_URL),
       ).resolves.toMatchObject({ ok: false });
     }
+  });
+
+  it("wipes the stored copy on a 401", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { member: {} }));
+    await fetchMemberResource("/lab/members/self", "synthetic", BASE_URL);
+    await settle();
+    await expect(stored("synthetic", "/lab/members/self")).resolves.toBeDefined();
+    fetcher.mockResolvedValue(jsonResponse(401, {}));
+    await fetchMemberResource("/papers", "synthetic", BASE_URL);
+    await settle();
+    await expect(stored("synthetic", "/lab/members/self")).resolves.toBeUndefined();
+  });
+
+  it("wipes the stored copies at sign-out", async () => {
+    await resetAdminBotOfflineMemory();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, { member: {} }));
+    saveStoredMemberSession({ sessionToken: "ada-session", expiresAt: "" });
+    await fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    await settle();
+    await expect(stored("ada-session", "/lab/members/self")).resolves.toBeDefined();
+    clearStoredMemberSession();
+    await settle();
+    await expect(stored("ada-session", "/lab/members/self")).resolves.toBeUndefined();
+  });
+
+  it("wipes at View-as start and keeps nothing of the viewed member", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { member: {} }, { ETag: 'W/"v"' }));
+    saveStoredMemberSession({ sessionToken: "admin-session", expiresAt: "" });
+    await fetchMemberResource("/lab/members/self", "admin-session", BASE_URL);
+    await settle();
+    await expect(stored("admin-session", "/lab/members/self")).resolves.toBeDefined();
+    const impersonator = { sessionToken: "admin-session", expiresAt: "" };
+    saveStoredMemberSession({ sessionToken: "viewed-session", expiresAt: "", impersonator });
+    await fetchMemberResource("/lab/members/self", "viewed-session", BASE_URL);
+    await settle();
+    await expect(stored("admin-session", "/lab/members/self")).resolves.toBeUndefined();
+    await expect(stored("viewed-session", "/lab/members/self")).resolves.toBeUndefined();
+    // And at View-as stop: back on the admin's token, nothing of the viewed member survives.
+    saveStoredMemberSession({ sessionToken: "admin-session", expiresAt: "" });
+    fetcher.mockRejectedValue(new Error("offline"));
+    await expect(
+      fetchMemberResource("/lab/members/self", "viewed-session", BASE_URL),
+    ).resolves.toEqual({ ok: false, kind: "unreachable" });
+  });
+
+  it("revalidates against the disk copy after a page refresh and writes nothing on a 304", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(200, { papers: ["mine"] }, { ETag: 'W/"m1"' }))
+      .mockResolvedValueOnce(new Response(null, { status: 304, headers: { ETag: 'W/"m1"' } }));
+    await fetchMemberResource("/papers?scope=mine", "ada-session", BASE_URL);
+    await settle();
+    const writesAfterFirst = offlineReadStoreStats();
+    forgetSessionReads(); // what a page refresh does to the in-memory copies
+    const second = await fetchMemberResource("/papers?scope=mine", "ada-session", BASE_URL);
+    const headers = fetchMock.mock.calls[1]?.[1]?.headers as Record<string, string>;
+    expect(headers["If-None-Match"]).toBe('W/"m1"');
+    expect(second).toEqual({ ok: true, value: { papers: ["mine"] } });
+    await settle();
+    expect(offlineReadStoreStats()).toEqual(writesAfterFirst);
   });
 
   it("does not queue or replay failed profile writes after reconnect", async () => {
@@ -698,8 +800,10 @@ describe("revalidated GET reads", () => {
     const before = fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
     await updateOwnProfile("ada", { name: "Ada" }, "ada-session", BASE_URL);
     const after = fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
-    const gets = fetchMock.mock.calls.filter(([, init]) => init?.method === "GET");
-    expect(gets).toHaveLength(2);
+    // An own read on a cold memory cache looks at its disk copy before going out.
+    await vi.waitFor(() =>
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "GET")).toHaveLength(2),
+    );
     pending.forEach((resolve, index) => resolve(jsonResponse(200, { n: index })));
     await expect(before).resolves.toEqual({ ok: true, value: { n: 0 } });
     await expect(after).resolves.toEqual({ ok: true, value: { n: 1 } });

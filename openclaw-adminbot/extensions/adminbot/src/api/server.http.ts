@@ -97,7 +97,18 @@ export function wireStatus(status: number): number {
   return status === 502 || status === 504 ? 500 : status;
 }
 
-export function sendJson(res: ServerResponse, status: number, body: unknown): void {
+/**
+ * `etag` replaces the body hash with a tag the route derived from a version before building the
+ * body (routes/version-etag.ts), so the 200 carries the same tag its later 304s will match.
+ */
+export type SendJsonOptions = { etag?: string };
+
+export function sendJson(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  options: SendJsonOptions = {},
+): void {
   res.statusCode = wireStatus(status);
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   // Every JSON response here reflects live, mutable state (roster, sessions, map places...);
@@ -113,7 +124,7 @@ export function sendJson(res: ServerResponse, status: number, body: unknown): vo
     // share a tag, and a matching tag means the caller already holds this very body. no-store
     // stays: the console keeps the previous body in memory, per session, and revalidates
     // explicitly -- nothing personal lands in the browser's disk cache.
-    const etag = jsonEtag(json);
+    const etag = options.etag ?? jsonEtag(json);
     res.setHeader("ETag", etag);
     if (etagMatches(res.req.headers["if-none-match"], etag)) {
       res.statusCode = 304;
@@ -139,7 +150,7 @@ function jsonEtag(json: string): string {
 
 // If-None-Match uses weak comparison (RFC 9110 13.1.2): `W/` is ignored on both sides, and the
 // header may carry a list or `*`.
-function etagMatches(header: string | string[] | undefined, etag: string): boolean {
+export function etagMatches(header: string | string[] | undefined, etag: string): boolean {
   if (typeof header !== "string" || !header) {
     return false;
   }
@@ -233,9 +244,10 @@ export function sendRedirect(res: ServerResponse, location: string): void {
 export function sendServiceResult(
   res: ServerResponse,
   result: AdminBotServiceResponse<unknown>,
+  options: SendJsonOptions = {},
 ): void {
   if (result.ok) {
-    sendJson(res, result.status, result.payload);
+    sendJson(res, result.status, result.payload, options);
     return;
   }
   sendJson(res, result.status, { error: result.error });

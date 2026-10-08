@@ -67,7 +67,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Recordings of the lab's own meetings, for the lab's own members. The tab is member-level
   // because the recording and the summary are what someone who missed the meeting came for; the
   // attendance roster inside it is not, and the service hands a member only their own line and a
-  // headcount (listMeetingsForMember). Reading who else was there is an admin act.
+  // headcount (listMeetingsPageForMember). Reading who else was there is an admin act.
   adminbotMeetings: "member",
   // Each of the three request forms starts a request made in the viewer's own name, so each needs
   // an account behind it -- a visitor has no identity for AdminBot to route the signature, the

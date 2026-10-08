@@ -275,7 +275,7 @@ describe("loadAdminBot over the member session", () => {
   it("discards dashboard responses after the session changes", async () => {
     saveStoredMemberSession({ sessionToken: "old-session", expiresAt: "later" });
     const { host } = createHost({});
-    let resolveMembers: (response: Response) => void = () => {};
+    let resolveMembers: ((response: Response) => void) | undefined;
     vi.spyOn(globalThis, "fetch").mockImplementation((input) =>
       String(input).includes("/lab/members")
         ? new Promise<Response>((resolve) => {
@@ -284,9 +284,11 @@ describe("loadAdminBot over the member session", () => {
         : Promise.resolve(json({ papers: [] })),
     );
     const pending = loadAdminBot(host, "general", true);
+    // The read is on the wire only once the session has resolved its offline scope.
+    await vi.waitFor(() => expect(resolveMembers).toBeDefined());
     clearStoredMemberSession();
     host.adminBotData = createEmptyAdminBotDashboardData();
-    resolveMembers(json({ member: { id: "old-private" } }));
+    resolveMembers?.(json({ member: { id: "old-private" } }));
     await pending;
     expect(host.adminBotData.members).toEqual([]);
   });
