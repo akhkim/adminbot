@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import path from "node:path";
@@ -22,7 +22,12 @@ import {
   createGptZeroBibliographyScanner,
   createPublicOpenReviewPdfReader,
 } from "../connectors/reference-scan.js";
-import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
+import { createInterviewChannelProvisioner } from "../connectors/slack-interview.js";
+import {
+  createLinkedInDraftRunner,
+  createXDraftRunner,
+  readArxivPdfBase64,
+} from "../connectors/social-draft.js";
 import {
   adminBotRegistrationStatuses,
   redactConfidentialMemberFields,
@@ -79,6 +84,8 @@ import {
   type AdminBotCvScanDeps,
 } from "../cv-scan.js";
 import { askGuidebook } from "../guidebook/ask.js";
+import { readLlmGatewayStatus } from "../kernel/llm-gateway-client.js";
+import { createLlmLoadRouter, parseLlmNodes, type LlmLoadRouter } from "../kernel/llm-router.js";
 import { ReferenceScans } from "../kernel/reference-scans.js";
 import {
   AdminBotMemoryStore,
@@ -91,7 +98,12 @@ import {
   type AdminBotServiceStore,
   type AdminBotSlackChannelNamingEvent,
 } from "../kernel/service.js";
-import { createAdminBotSqliteService } from "../persistence/sqlite.js";
+import {
+  createMemoryFailedRequestLedger,
+  type FailedExternalRequestLedger,
+} from "../persistence/failed-requests.js";
+import { createMemberDraftStore, type MemberDraftStore } from "../persistence/member-drafts.js";
+import { AdminBotSqliteStore, createAdminBotSqliteService } from "../persistence/sqlite.js";
 import { createAdminBotPrivacyBroker, type AdminBotPrivacyBroker } from "../privacy/broker.js";
 import { createLocalChat, localChatMessages } from "../privacy/local-chat.js";
 import {
@@ -143,6 +155,7 @@ import {
   type AdminBotOnboardingSendRequest,
 } from "../workflows/onboarding/guide-sender.js";
 import { memberGuideStatus } from "../workflows/onboarding/guide-status.js";
+import { readInterviewInvitation } from "../workflows/onboarding/interview.js";
 import { IclrIntegrityWatch } from "../workflows/papers/iclr-integrity-watch.js";
 import {
   createImportColumnMapper,
@@ -167,6 +180,7 @@ import {
   venuePaperCategoryId,
 } from "../workflows/papers/venue-index.js";
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
+import { readXAnnouncement, readXCredits } from "../workflows/papers/x-draft.js";
 // The error class is a runtime value (the generate route catches it), so it cannot ride on the
 // type-only import beside it.
 import { AdminBotReimbursementBlocked } from "../workflows/reimbursements/workflow.js";
@@ -200,8 +214,10 @@ import {
   sendJson,
   sendServiceResult,
 } from "./server.http.js";
+import { prepareInterviewInvitation } from "./server.interview-invitation.js";
 import { handleLabSharingRoute } from "./server.lab-sharing.js";
 import { handleLogisticsRoute } from "./server.logistics.js";
+import { handleMemberDraft } from "./server.member-drafts.js";
 import {
   enrollNewMember,
   type NewMemberOnboardingDeps,
@@ -243,6 +259,8 @@ const DEFAULT_ALLOWED_ORIGINS = [
 ];
 const SESSION_COOKIE = "adminbot_session";
 const SESSION_COOKIE_MAX_AGE_SECONDS = 604800;
+// 20 MB of PDF, plus base64's third and the JSON around it. Matches the Control UI's own check.
+const LINKEDIN_DRAFT_BODY_LIMIT_BYTES = Math.ceil(20 * 1024 * 1024 * 1.4);
 
 /**
  * The lab's member spreadsheet, as the Membership grid reads it.
@@ -352,6 +370,8 @@ export type AdminBotMockServiceOptions = {
   // Generates a LinkedIn announcement draft from a paper PDF. Injected so tests can assert the
   // route without an OpenRouter round trip; defaults to the real connector.
   linkedInDraftRunner?: import("../connectors/social-draft.js").LinkedInDraftRunner;
+  xDraftRunner?: import("../connectors/social-draft.js").XDraftRunner;
+  readArxivPdfBase64?: (id: string) => Promise<string>;
   /** Reads one Drive file as base64, so a draft can use the PDF the paper already names. */
   readDrivePdfBase64?: (fileId: string) => Promise<string>;
   /**
@@ -393,6 +413,8 @@ export type AdminBotMockServiceOptions = {
   // filing unwired (no attempt, no audit event) rather than half-working -- the same shape the
   // retired DCS form script had, for the same reason.
   dcsRosterSheetId?: string;
+  llmRouter?: LlmLoadRouter;
+  failedRequestLedger?: FailedExternalRequestLedger;
   // Approves a pending gateway device pairing on behalf of a signed-in member. Injected from the
   // repo-root composition layer (start-adminbot.mjs) so the extension never imports core
   // device-pairing internals. `allowedScopes` is the ceiling derived from the member's privilege;
@@ -585,6 +607,9 @@ function createAnonymousRateLimiter(): AnonymousRateLimiter {
 
 type AdminBotRouteContext = {
   notificationDrafts: ReturnType<typeof createNotificationDraftHandler>;
+  // A restart invalidates outstanding packages: regenerate and review against the current rules.
+  reimbursementSigningKey: Buffer;
+  memberDrafts: MemberDraftStore;
   service: AdminBotService;
   // The raw store, for the CV change ledger. Everything else goes through the service; this is
   // append-only bookkeeping with no policy of its own, so it does not earn a service method.
@@ -622,6 +647,8 @@ type AdminBotRouteContext = {
   importColumnMapper?: ImportColumnMapper;
   // Generates a LinkedIn announcement draft from a paper PDF. Nothing it returns is persisted.
   draftLinkedInPost: import("../connectors/social-draft.js").LinkedInDraftRunner;
+  draftXPost: import("../connectors/social-draft.js").XDraftRunner;
+  readArxivPdfBase64: (id: string) => Promise<string>;
   /**
    * Downloads one Drive file and returns it base64-encoded.
    *
@@ -653,6 +680,8 @@ type AdminBotRouteContext = {
   // etc.) that sets X-Forwarded-For itself. Otherwise a caller could hand-write that header to
   // spoof the IP rate-limiting and login-location keys off of — see remoteIp().
   trustProxyHeaders: boolean;
+  llmRouter: LlmLoadRouter;
+  failedRequestLedger: FailedExternalRequestLedger;
 };
 
 /**
@@ -700,6 +729,7 @@ type LabCalendarGrant = {
  * reporting success would mark a guide sent that nobody received.
  */
 function executorWithOnboardingGuide(
+  serviceRef: () => AdminBotService,
   inner: AdminBotActionExecutor | undefined,
   sender: () => AdminBotOnboardingSender | undefined,
   labCalendar: () => LabCalendarGrant | undefined,
@@ -710,6 +740,7 @@ function executorWithOnboardingGuide(
 ): AdminBotActionExecutor {
   return {
     async execute(proposal) {
+      const service = serviceRef();
       if (proposal.type === "lab_member.enroll") {
         const run = enroll();
         return run ? run(proposal) : { handled: false, reason: "enrollment is not wired" };
@@ -750,6 +781,17 @@ function executorWithOnboardingGuide(
         template_id: templateId,
         name,
         email,
+        ...(payload.interview ? { interview: readInterviewInvitation(payload.interview) } : {}),
+        ...(Array.isArray(payload.cc)
+          ? { cc: payload.cc.filter((value): value is string => typeof value === "string") }
+          : {}),
+        ...(typeof payload.reply_to === "string" ? { reply_to: payload.reply_to } : {}),
+        ...(typeof payload.body_override === "string"
+          ? { body_override: payload.body_override }
+          : {}),
+        ...(typeof payload.subject_override === "string"
+          ? { subject_override: payload.subject_override }
+          : {}),
         ...(payload.values && typeof payload.values === "object"
           ? { values: payload.values as Record<string, string | undefined> }
           : {}),
@@ -770,6 +812,35 @@ function executorWithOnboardingGuide(
         // Refused rather than thrown: an unfilled placeholder or a missing value is a fixable
         // state, and the reason is what an admin needs to see on the failed approval.
         return { handled: true, delivered: false, reason: result.error.message };
+      }
+      if (payload.interview && result.payload.sent) {
+        const existing = service.listLabMembers();
+        if (
+          existing.ok &&
+          !existing.payload.members.some(
+            (member) => member.email?.toLowerCase() === email.toLowerCase(),
+          )
+        ) {
+          const saved = service.upsertLabMember({
+            id: `interview-${randomUUID()}`,
+            name,
+            email,
+            member_type: "interviewee",
+            collaborator_subgroup: "interviewee",
+            privilege_level: "external_collaborator",
+          });
+          if (!saved.ok) {
+            return {
+              handled: true,
+              delivered: true,
+              artifacts: {
+                template_id: result.payload.template_id,
+                subject: result.payload.subject,
+                warning: `Invitation sent; candidate record needs attention: ${saved.error.message}`,
+              },
+            };
+          }
+        }
       }
       return {
         handled: true,
@@ -838,6 +909,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   } = {};
   const withOnboarding = (executor: AdminBotActionExecutor | undefined) =>
     executorWithOnboardingGuide(
+      () => service,
       executor,
       () => onboardingSenderRef,
       () => onboardingArms.labCalendar,
@@ -867,6 +939,20 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store = new AdminBotMemoryStore();
     service = new AdminBotService(store, wiredOptions);
   }
+  const memberDrafts =
+    store instanceof AdminBotSqliteStore ? store.memberDraftStore() : createMemberDraftStore();
+  const failedRequestLedger =
+    options.failedRequestLedger ??
+    (store instanceof AdminBotSqliteStore
+      ? store.failedRequestLedger()
+      : createMemoryFailedRequestLedger());
+  const llmRouter =
+    options.llmRouter ??
+    createLlmLoadRouter({
+      maxLocal: envInteger("ADMINBOT_LLM_MAX_LOCAL", 8),
+      maxPublic: envInteger("ADMINBOT_LLM_MAX_PUBLIC", 100),
+      nodes: parseLlmNodes(process.env.ADMINBOT_LLM_NODES),
+    });
   const referenceDependencies = options.referenceScanDependencies ?? {
     readPdf: createPublicOpenReviewPdfReader(),
     scanPdf: createGptZeroBibliographyScanner(),
@@ -995,6 +1081,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   const onboardingSender =
     options.onboardingSender ??
     createAdminBotOnboardingSender({
+      provisionInterviewChannel: createInterviewChannelProvisioner(),
       provisionDriveWorkspace: createDriveWorkspaceProvisioner(),
       ...(dcsRosterRecorder ? { addDcsRosterRow: dcsRosterRecorder } : {}),
       // The number lives in settings, never in the repo (see AGENTS.md: no real phone numbers).
@@ -1052,6 +1139,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     options.privacyBroker ??
     createAdminBotPrivacyBroker(undefined, {
       sensitiveTermsProvider: () => sensitiveInfo.listSensitiveTerms(),
+      llmRouter,
     });
   let activeEmailAutomation: Promise<unknown> | undefined;
   const emailAutomationRunner = options.emailAutomationRunner;
@@ -1083,8 +1171,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         arxiv_url: paper.artifacts?.arxiv_url,
       })),
     ),
+    reimbursementSigningKey: randomBytes(32),
     service,
     store,
+    memberDrafts,
     auth,
     privacyBroker,
     localChat: options.localChat ?? createLocalChat(),
@@ -1095,6 +1185,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(iclrIntegrityWatch ? { iclrIntegrityWatch } : {}),
     onboardingSender,
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
+    draftXPost: options.xDraftRunner ?? createXDraftRunner(),
+    readArxivPdfBase64: options.readArxivPdfBase64 ?? readArxivPdfBase64,
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
     ...(memberSheet ? { memberSheet } : {}),
     ...(callSheet ? { callSheet } : {}),
@@ -1147,6 +1239,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     publicDeadlineLimiter: createPublicDeadlineLimiter(),
     trustProxyHeaders:
       options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
+    llmRouter,
+    failedRequestLedger,
   };
   // Needs the route context -- the member sheet, the Monday meeting reader -- so it is bound last.
   onboardingArms.enroll = (proposal) =>
@@ -1903,6 +1997,20 @@ async function handleAuthenticatedRoute(
     sendJson(res, 401, { error: { message: "authentication required" } });
     return;
   }
+  if (url.pathname.startsWith("/member-drafts/")) {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "Member session required" } });
+      return;
+    }
+    await handleMemberDraft(
+      req,
+      res,
+      ctx.memberDrafts,
+      principal.member.id,
+      url.pathname.slice("/member-drafts/".length),
+    );
+    return;
+  }
   const { service, privacyBroker, sensitiveInfo } = ctx;
   if (req.method === "POST" && url.pathname === "/tools/notification-drafts") {
     if (!requireMemberPrivileged(res, principal)) {
@@ -1917,7 +2025,7 @@ async function handleAuthenticatedRoute(
       return;
     }
     const body = readRecord(await readJson(req));
-    sendServiceResult(res, await service.checkDriveEditAccess(asString(body.url)));
+    sendServiceResult(res, await service.checkDriveAccess(asString(body.url)));
     return;
   }
   if (req.method === "POST" && url.pathname === "/reference-check/pdf") {
@@ -2829,6 +2937,19 @@ async function handleAuthenticatedRoute(
             : [];
         })
       : [];
+    const proof = typeof body.submission_proof === "string" ? body.submission_proof : "";
+    const expected = reimbursementPackageProof(ctx.reimbursementSigningKey, funder, artifacts);
+    if (
+      !/^[a-f0-9]{64}$/u.test(proof) ||
+      !timingSafeEqual(Buffer.from(proof), Buffer.from(expected))
+    ) {
+      sendJson(res, 422, {
+        error: {
+          message: "Generate and review the reimbursement forms again before sending them.",
+        },
+      });
+      return;
+    }
     sendServiceResult(
       res,
       await service.submitReimbursement({
@@ -2847,7 +2968,20 @@ async function handleAuthenticatedRoute(
     }
     const body = (await readJson(req)) as AdminBotReimbursementRequest;
     try {
-      sendJson(res, 200, await ctx.reimbursementWorkflow.generate(body));
+      const generated = await ctx.reimbursementWorkflow.generate(body);
+      const funder = body.funder ?? readRecord(body.draft).funder;
+      sendJson(res, 200, {
+        ...generated,
+        ...(funder === "DCS" || funder === "MPI-IS"
+          ? {
+              submission_proof: reimbursementPackageProof(
+                ctx.reimbursementSigningKey,
+                funder,
+                generated.artifacts,
+              ),
+            }
+          : {}),
+      });
     } catch (error) {
       // A blocked package is an answer, not a fault: 422 with the report, so the page can name
       // every rule that failed and what to supply. Letting this fall through to a 500 would tell
@@ -2950,7 +3084,7 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "POST" && url.pathname === "/proposals") {
-    const body = (await readJson(req)) as AdminBotActionProposal;
+    const body = (await readJson(req, 3_000_000)) as AdminBotActionProposal;
     sendServiceResult(res, service.createProposal(body));
     return;
   }
@@ -3279,7 +3413,33 @@ async function handleAuthenticatedRoute(
   }
   if (req.method === "POST" && url.pathname === "/privacy/tasks") {
     const body = (await readJson(req)) as AdminBotPrivacyTaskRequest;
-    sendJson(res, 200, await privacyBroker.handle(body));
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    res.once("close", cancel);
+    try {
+      sendJson(res, 200, await privacyBroker.handle(body, controller.signal));
+    } finally {
+      res.off("close", cancel);
+    }
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/ops/llm-load") {
+    if (!process.env.LLM_GATEWAY_URL) {
+      sendJson(res, 200, ctx.llmRouter.status());
+      return;
+    }
+    try {
+      sendJson(res, 200, await readLlmGatewayStatus());
+    } catch {
+      sendJson(res, 502, { error: { message: "shared LLM gateway is unreachable" } });
+    }
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/ops/failed-requests") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendJson(res, 200, { requests: ctx.failedRequestLedger.list(100) });
     return;
   }
   if (req.method === "GET" && url.pathname === "/proposals/pending") {
@@ -3711,6 +3871,14 @@ async function handleAuthenticatedRoute(
       return;
     }
     await handleMemberRequestRoute(req, res, ctx, url, principal);
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/lab/members/collaborator-schedules") {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "member session required" } });
+      return;
+    }
+    sendServiceResult(res, service.listActiveCollaboratorSchedules(principal.member.id));
     return;
   }
   if (req.method === "GET" && url.pathname === "/lab/members/self") {
@@ -4249,12 +4417,29 @@ async function handleAuthenticatedRoute(
   // the draft is a suggestion a human copies, edits and posts by hand, so storing it would
   // create a stale second copy of something whose only real version ends up on LinkedIn.
   // Nothing here writes -- the PDF is read, the post is returned, both are then forgotten.
-  if (req.method === "POST" && url.pathname === "/papers/linkedin-draft") {
+  if (
+    req.method === "POST" &&
+    ["/papers/linkedin-draft", "/papers/x-draft"].includes(url.pathname)
+  ) {
+    const isX = url.pathname === "/papers/x-draft";
     if (principal.kind === "anonymous") {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
-    const body = readRecord(await readJson(req));
+    // A paper PDF can be attached here, so the default 1 MB JSON ceiling would refuse most real
+    // papers once base64 has added its third.
+    const body = readRecord(await readJson(req, LINKEDIN_DRAFT_BODY_LIMIT_BYTES));
+    let announcement;
+    let credits;
+    if (isX) {
+      try {
+        announcement = readXAnnouncement(body.announcement);
+        credits = readXCredits(body.credits);
+      } catch (error) {
+        sendJson(res, 400, { error: { message: (error as Error).message } });
+        return;
+      }
+    }
     let pdfBase64 = typeof body.pdf_base64 === "string" ? body.pdf_base64 : "";
     // An upload is no longer required. The author has usually already given the lab this exact
     // file -- `drive_pdf_arxiv` is the Drive copy of the PDF they intend to post, and the card
@@ -4273,40 +4458,52 @@ async function handleAuthenticatedRoute(
         sendServiceResult(res, cycle);
         return;
       }
-      const source = resolvePaperPdfSource(cycle.payload.slots);
+      const source = resolvePaperPdfSource(cycle.payload.slots, isX);
       if (source.kind === "none") {
         sendJson(res, 400, { error: { message: source.reason } });
         return;
       }
-      if (!ctx.readDrivePdfBase64) {
-        sendJson(res, 503, {
-          error: {
-            message: "this deployment cannot read Drive files; attach the PDF here instead",
-          },
-        });
-        return;
-      }
-      try {
-        pdfBase64 = await ctx.readDrivePdfBase64(source.fileId);
-      } catch (error) {
-        sendJson(res, 502, {
-          error: {
-            message: `could not read the Drive copy (${(error as Error).message}); attach the PDF here instead`,
-          },
-        });
-        return;
-      }
-      if (!pdfBase64) {
-        sendJson(res, 502, {
-          error: { message: "the Drive copy came back empty; attach the PDF here instead" },
-        });
-        return;
+      if (source.kind === "arxiv") {
+        try {
+          pdfBase64 = await ctx.readArxivPdfBase64(source.id);
+        } catch (error) {
+          sendJson(res, 502, { error: { message: (error as Error).message } });
+          return;
+        }
+        if (typeof body.url !== "string") body.url = source.url;
+      } else {
+        if (!ctx.readDrivePdfBase64) {
+          sendJson(res, 503, {
+            error: {
+              message: "this deployment cannot read Drive files; attach the PDF here instead",
+            },
+          });
+          return;
+        }
+        try {
+          pdfBase64 = await ctx.readDrivePdfBase64(source.fileId);
+        } catch (error) {
+          sendJson(res, 502, {
+            error: {
+              message: `could not read the Drive copy (${(error as Error).message}); attach the PDF here instead`,
+            },
+          });
+          return;
+        }
+        if (!pdfBase64) {
+          sendJson(res, 502, {
+            error: { message: "the Drive copy came back empty; attach the PDF here instead" },
+          });
+          return;
+        }
       }
     }
     const membersResult = service.listLabMembers();
     const members = membersResult.ok ? membersResult.payload.members : [];
     try {
-      const draft = await ctx.draftLinkedInPost({
+      const draft = await (isX ? ctx.draftXPost : ctx.draftLinkedInPost)({
+        ...(announcement ? { announcement } : {}),
+        ...(credits ? { credits } : {}),
         pdfBase64,
         members,
         ...(typeof body.url === "string" ? { url: body.url } : {}),
@@ -4696,6 +4893,22 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  const conferenceInvites = url.pathname.match(
+    /^\/papers\/conference-rosters\/([^/]+)\/channel-invites$/u,
+  );
+  if (req.method === "POST" && conferenceInvites) {
+    if (!requireMemberPrivileged(res, principal)) return;
+    sendServiceResult(
+      res,
+      await service.inviteConferenceAttendees(decodeURIComponent(conferenceInvites[1])),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/papers/conference-travel-export") {
+    if (!requirePrivileged(res, principal)) return;
+    sendServiceResult(res, service.listConferenceTravelExport());
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/papers/conference-rosters") {
     // Who is going to each conference the lab has a paper at. Privileged: a member's own papers'
     // rolls are on their own cards, and the whole lab's travel -- including who has not answered
@@ -4990,13 +5203,14 @@ async function handleAuthenticatedRoute(
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
-    const body = readRecord(await readJson(req));
+    const body = readRecord(await readJson(req, 3_000_000));
     sendServiceResult(
       res,
       service.saveSocialDraft({
         paperId: decodeURIComponent(paperDrafts[1]),
         platform: String(body.platform ?? ""),
         body: String(body.body ?? ""),
+        ...(body.x_thread !== undefined ? { xThread: body.x_thread } : {}),
         ...(typeof body.model === "string" ? { model: body.model } : {}),
         memberId: principal.kind === "member" ? principal.member.id : principalActor(principal),
         privileged: isPrivileged(principal),
@@ -5237,14 +5451,24 @@ async function handleAuthenticatedRoute(
       sendJson(res, 400, { error: { message: "Use up to 20 Slack channel names or IDs." } });
       return;
     }
-    sendServiceResult(
-      res,
-      service.queueOnboardingGuideForMember({
-        memberId: decodeURIComponent(memberOnboardingGuide[1]),
-        actor: principalActor(principal),
-        slackChannels: body.slack_project_channels as string[] | undefined,
-      }),
+    const guide = await queueNewMemberGuide(
+      memberOnboardingDeps(ctx, principal, approverIdentityFor(principal)),
+      decodeURIComponent(memberOnboardingGuide[1]),
+      { slackChannels: body.slack_project_channels as string[] | undefined },
     );
+    if (guide.status === "failed" || guide.status === "skipped") {
+      sendJson(res, guide.status === "skipped" ? 422 : (guide.http_status ?? 502), {
+        error: { message: guide.reason },
+      });
+      return;
+    }
+    sendJson(res, 200, {
+      proposal_id: guide.proposal_id,
+      template_id: guide.template_id,
+      email: guide.email,
+      status: guide.status,
+      detail: guide.detail,
+    });
     return;
   }
   const onboardingStep = /^\/lab\/members\/([^/]+)\/onboarding\/([^/]+)$/u.exec(url.pathname);
@@ -5413,8 +5637,8 @@ async function handleAuthenticatedRoute(
     const onboardBody = (await readJson(req)) as MemberSheetOnboardRequest;
     let onboardResult;
     try {
-      // The admin's click approves enrollment, as on the Members tab; the mail itself still waits
-      // in Pending Actions, which is what this tab has always done with it.
+      // The admin's click approves enrollment, as on the Members tab, and the standard full-member
+      // guide with it; guides for other Member Types still wait in Pending Actions.
       const onboardDeps = memberOnboardingDeps(ctx, principal, approverIdentityFor(principal));
       onboardResult = await onboardFromMemberSheet(service, ctx.memberSheet, onboardBody, {
         enroll: (input) =>
@@ -5610,6 +5834,54 @@ async function handleAuthenticatedRoute(
         dryRun: syncBody.dry_run === true,
         force,
       }),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/onboarding/interviewers") {
+    if (
+      principal.kind !== "member" ||
+      !["member", "admin"].includes(principal.member.privilege_level)
+    ) {
+      sendJson(res, 403, { error: { message: "A lab member session is required." } });
+      return;
+    }
+    const query = (url.searchParams.get("q") || "").trim().toLowerCase().slice(0, 100);
+    sendJson(res, 200, {
+      members: ctx.store
+        .listLabMembers()
+        .filter(
+          (member) =>
+            member.slack_user_id &&
+            ["member", "admin"].includes(member.privilege_level) &&
+            (!query || member.name.toLowerCase().includes(query)),
+        )
+        .slice(0, 50)
+        .map((member) => ({
+          id: member.id,
+          name: member.name,
+          slack_user_id: member.slack_user_id,
+          privilege_level: member.privilege_level,
+        })),
+    });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/onboarding/interview-invitation") {
+    if (
+      principal.kind !== "member" ||
+      !["member", "admin"].includes(principal.member.privilege_level)
+    ) {
+      sendJson(res, 403, { error: { message: "A lab member session is required." } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      await prepareInterviewInvitation(
+        service,
+        readRecord(await readJsonOrEmpty(req)),
+        principal.member,
+        ctx.onboardingSender,
+        () => ctx.store.listProposalsByType("onboarding.send_guide"),
+      ),
     );
     return;
   }
@@ -7169,6 +7441,30 @@ function constantTimeEqual(left: string, right: string): boolean {
     return false;
   }
   return timingSafeEqual(leftBuf, rightBuf);
+}
+
+function envInteger(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function reimbursementPackageProof(
+  key: Buffer,
+  funder: "DCS" | "MPI-IS",
+  artifacts: Array<{ filename: string; data_base64: string }>,
+): string {
+  return createHmac("sha256", key)
+    .update(
+      JSON.stringify({
+        funder,
+        artifacts: artifacts.map(({ filename, data_base64 }) => ({ filename, data_base64 })),
+      }),
+    )
+    .digest("hex");
 }
 
 function trimmedEnv(value: string | undefined): string | undefined {

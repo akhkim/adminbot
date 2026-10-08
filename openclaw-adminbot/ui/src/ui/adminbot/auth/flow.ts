@@ -49,6 +49,7 @@ import {
   clearStoredMemberSession,
   confirmPasswordReset,
   fetchMemberSession,
+  cacheOfflineMemberSession,
   fetchRoster,
   hasAcknowledgedOnboardingChecklist,
   issueDeviceToken,
@@ -215,6 +216,7 @@ export type MemberAuthHost = {
   adminBotBroadcastDraft?: string;
   adminBotBroadcastExpiry?: string;
   adminBotBroadcastAvailability?: string;
+  adminBotBroadcastTimezone?: string;
   adminBotBroadcastBusy?: boolean;
   adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
   adminBotNotice?: { kind: "success" | "error"; text: string } | null;
@@ -239,6 +241,7 @@ export type MemberAuthHost = {
   adminBotProfileAdoption?: import("./session.ts").MemberAdoptionSummary | null;
   adminBotEscalatedNudges?: import("./session.ts").EscalatedNudgeRow[];
   adminBotPiReview?: import("./session.ts").PiReviewRow[];
+  adminBotPiReviewError?: string | null;
   adminBotTravel?: TravelState;
   adminBotLocationDrift?: import("./session.ts").LocationDrift | null;
   adminBotLocationDrifts?: import("./session.ts").LocationDrift[];
@@ -648,6 +651,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotBroadcastDraft = undefined;
   host.adminBotBroadcastExpiry = undefined;
   host.adminBotBroadcastAvailability = undefined;
+  host.adminBotBroadcastTimezone = undefined;
   host.adminBotBroadcastBusy = false;
   host.adminBotBroadcastNotice = null;
   host.adminBotNotice = null;
@@ -672,6 +676,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotProfileAdoption = null;
   host.adminBotEscalatedNudges = [];
   host.adminBotPiReview = [];
+  host.adminBotPiReviewError = null;
   host.adminBotTravel = { ...EMPTY_TRAVEL };
   host.adminBotLocationDrift = undefined;
   host.adminBotLocationDrifts = undefined;
@@ -782,6 +787,11 @@ function clearMemberScopedData(host: MemberAuthHost): void {
 
 async function applyMemberSession(host: MemberAuthHost, session: MemberSession) {
   clearMemberScopedData(host);
+  await cacheOfflineMemberSession(
+    session.session_token,
+    resolveAdminBotBaseUrl(host.settings),
+    session,
+  );
   saveStoredMemberSession({
     sessionToken: session.session_token,
     expiresAt: session.expires_at,
@@ -983,7 +993,9 @@ export async function resumeMemberSession(
       ? hasAcknowledgedOnboardingChecklist(host.memberId)
       : true;
     clearSignedOutView(host);
-    await connectAsMember(host, result.value, stored.sessionToken, isCurrent);
+    if (!result.cached) {
+      await connectAsMember(host, result.value, stored.sessionToken, isCurrent);
+    }
     return "resumed";
   }
   if (result.kind === "unreachable") {

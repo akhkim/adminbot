@@ -1,17 +1,5 @@
-// Templates that start a logistics request -- the routine asks a member makes of the lab, each of
-// which always takes the same shape (a signature, a letter, a meeting slot).
-//
-// Which of the three is on screen is decided by the sidebar tab (see LOGISTICS_TAB_TEMPLATES in
-// navigation.ts) and arrives as `template`. Each form proposes a typed action from
-// contracts/actions.ts, so none of them may reach a connector directly -- propose -> approve ->
-// execute is the only path out of here.
-//
-// Each form has two ways out. Save keeps a draft on the member's own device so a half-filled
-// request survives a reload; Submit sends it to the service (POST /logistics/requests), which
-// stores it, stamps it with the session's member and puts it in the queue an admin works through
-// on the other tab. Storing a request has no external effect, which is why it needs no approval
-// gate -- the day AdminBot sends the letter or books the room, that send is the typed action.
 import { html, nothing } from "lit";
+import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
@@ -25,6 +13,21 @@ import {
   type RecommendationSchool,
 } from "../data/logistics-draft.ts";
 import { formatFileSize } from "../data/logistics-requests.ts";
+// Templates that start a logistics request -- the routine asks a member makes of the lab, each of
+// which always takes the same shape (a signature, a letter, a meeting slot).
+//
+// Which of the three is on screen is decided by the sidebar tab (see LOGISTICS_TAB_TEMPLATES in
+// navigation.ts) and arrives as `template`. Each form proposes a typed action from
+// contracts/actions.ts, so none of them may reach a connector directly -- propose -> approve ->
+// execute is the only path out of here.
+//
+// Each form has two ways out. Save keeps a draft on the member's own device so a half-filled
+// request survives a reload; Submit sends it to the service (POST /logistics/requests), which
+// stores it, stamps it with the session's member and puts it in the queue an admin works through
+// on the other tab. Storing a request has no external effect, which is why it needs no approval
+// gate -- the day AdminBot sends the letter or books the room, that send is the typed action.
+import { renderDateControl } from "../date-control.ts";
+import type { DraftStatus } from "../offline/draft-sync.ts";
 import {
   APPLICATION_STATUS_LIST_ID,
   APPLICATION_STATUS_SUGGESTIONS,
@@ -66,7 +69,7 @@ export type LogisticsTemplate = "documentSignature" | "recommendationLetters" | 
 // Making a request is what this tab is; reading everyone's is an admin's job on top of it.
 export type LogisticsMode = "make" | "view";
 
-// Saving is local-only (IndexedDB on the member's device) and per request type, so each container
+// Saving is local-first and per request type, so each container
 // reports its own outcome rather than sharing one "Saved at" that would follow the member from
 // form to form and describe the wrong draft.
 //
@@ -76,6 +79,14 @@ export type LogisticsMode = "make" | "view";
 type RequestSaveProps = {
   saving: boolean;
   savedAt: number | null;
+  sync?: {
+    status: DraftStatus;
+    hasLegacy?: boolean;
+    onImportLegacy: () => void;
+    onDownload: () => void;
+    error?: string;
+    onResolve: (choice: "mine" | "server") => void;
+  };
   saveError: string | null;
   onSave: () => void;
   onSubmit: () => void;
@@ -409,6 +420,32 @@ function submitBlockText(block: SubmitBlock): string {
   return t("logistics.request.blocked.empty");
 }
 
+function renderDraftSyncStatus(sync: NonNullable<RequestSaveProps["sync"]>) {
+  if (sync.status === "conflict") {
+    return html`
+      Another tab or device saved a different version. Your copy is kept on this device.
+      <button class="btn" type="button" @click=${sync.onDownload}>Download both versions</button>
+      <button class="btn" type="button" @click=${() => sync.onResolve("mine")}>
+        Replace server copy with mine
+      </button>
+      <button class="btn" type="button" @click=${() => sync.onResolve("server")}>
+        Use server copy
+      </button>
+    `;
+  }
+  if (sync.error) {
+    return sync.error;
+  }
+  return {
+    loading: "Opening saved draft…",
+    saving: "Saving on this device…",
+    local: "Saved on this device · waiting to sync",
+    syncing: "Saved on this device · syncing…",
+    synced: "All changes saved",
+    error: "Could not save. Keep this page open and try Save again.",
+  }[sync.status];
+}
+
 function renderRequestActions(props: RequestSaveProps) {
   const saved = props.savedAt
     ? new Date(props.savedAt).toLocaleTimeString([], {
@@ -451,7 +488,11 @@ function renderRequestActions(props: RequestSaveProps) {
     <div class="logistics-request__actions">
       <!-- Status sits with the buttons rather than above them: it is the answer to pressing one of
            them, and a member who just did is looking here. -->
-      <span class="logistics-request__status" role="status">${status}</span>
+      <span class="logistics-request__status" role="status"
+        >${!props.sync || props.submitError || props.submitted || props.saveError
+          ? status
+          : nothing}</span
+      >
       ${props.submitBlocked && !props.submitted
         ? html`
             <span class="logistics-request__blocked" data-testid="logistics-blocked"
@@ -463,7 +504,15 @@ function renderRequestActions(props: RequestSaveProps) {
         class="btn btn--sm"
         type="button"
         ?disabled=${!props.hasContent || props.saving || props.submitting}
-        @click=${props.onDiscard}
+        @click=${(event: Event) => {
+          const confirmation = (event.currentTarget as HTMLButtonElement)
+            .closest(".logistics-request")
+            ?.querySelector<HTMLInputElement>("[data-testid='logistics-email-confirmation']");
+          if (confirmation) {
+            confirmation.checked = false;
+          }
+          props.onDiscard();
+        }}
       >
         ${t("logistics.request.discard")}
       </button>
@@ -483,7 +532,16 @@ function renderRequestActions(props: RequestSaveProps) {
         type="button"
         data-testid="logistics-submit"
         ?disabled=${props.submitting}
-        @click=${props.onSubmit}
+        @click=${(event: Event) => {
+          const button = event.currentTarget as HTMLButtonElement;
+          const confirmation = button
+            .closest(".logistics-request")
+            ?.querySelector<HTMLInputElement>("[data-testid='logistics-email-confirmation']");
+          if (confirmation && !confirmation.reportValidity()) {
+            return;
+          }
+          props.onSubmit();
+        }}
       >
         ${props.submitting
           ? t("logistics.request.submitting")
@@ -541,8 +599,30 @@ function renderSchoolCell(
     row: String(index + 1),
   });
   const placeholder = field.placeholderKey ? t(field.placeholderKey) : nothing;
+  // `live` compares against what is in the box, not against what Lit last wrote. Every keystroke
+  // saves the draft and re-renders, and a plain `.value` binding then writes the value straight back
+  // into the control. Chrome's date and time fields drop their half-typed segment when that happens,
+  // so "14" in the day became "1", then a fresh "4": deadlines landed on the 4th, and a year typed
+  // digit by digit could blank the field. With `live`, the write is skipped when the box already
+  // holds the value, and still happens when a restored draft or a reset really changes it.
+  const input = html`<input
+    class="logistics-schools__input"
+    type=${field.control === "date"
+      ? "date"
+      : field.control === "time"
+        ? "time"
+        : field.control === "url"
+          ? "url"
+          : "text"}
+    ?required=${field.required ?? false}
+    list=${field.listId ?? nothing}
+    aria-label=${label}
+    placeholder=${placeholder}
+    .value=${live(row[field.key])}
+    @input=${onInput}
+  />`;
   return html`
-    <td class="logistics-schools__cell logistics-schools__cell--${field.key}">
+    <td class="logistics-schools__cell logistics-schools__cell--${field.key}" data-label=${label}>
       ${field.control === "notes"
         ? html`
             <textarea
@@ -554,24 +634,7 @@ function renderSchoolCell(
               @input=${onInput}
             ></textarea>
           `
-        : html`
-            <input
-              class="logistics-schools__input"
-              type=${field.control === "date"
-                ? "date"
-                : field.control === "time"
-                  ? "time"
-                  : field.control === "url"
-                    ? "url"
-                    : "text"}
-              ?required=${field.required ?? false}
-              list=${field.listId ?? nothing}
-              aria-label=${label}
-              placeholder=${placeholder}
-              .value=${row[field.key]}
-              @input=${onInput}
-            />
-          `}
+        : html` ${field.control === "date" ? renderDateControl(input, row[field.key]) : input} `}
     </td>
   `;
 }
@@ -720,7 +783,10 @@ function renderFactsSection(props: LettersProps) {
                   (row) => row.id,
                   (row, index) => html`
                     <tr class="logistics-schools__row">
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.facts.project")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="text"
@@ -733,7 +799,10 @@ function renderFactsSection(props: LettersProps) {
                           @input=${update(row, "project")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.facts.contribution")}
+                      >
                         <textarea
                           class="logistics-schools__input logistics-schools__notes"
                           rows="2"
@@ -885,10 +954,16 @@ function renderMeetingSection(props: MeetingProps) {
                   (row) => row.id,
                   (row, index) => html`
                     <tr class="logistics-schools__row">
-                      <td class="logistics-schools__cell logistics-meeting__submitted">
+                      <td
+                        class="logistics-schools__cell logistics-meeting__submitted"
+                        data-label=${t("logistics.meeting.submitted")}
+                      >
                         ${submittedLabel(row.submittedAt)}
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.purpose")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="text"
@@ -898,16 +973,25 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "purpose")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
-                        <input
-                          class="logistics-schools__input"
-                          type="datetime-local"
-                          aria-label=${cellLabel(t("logistics.meeting.preferredTime"), index)}
-                          .value=${row.preferredTime}
-                          @input=${update(row, "preferredTime")}
-                        />
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.preferredTime")}
+                      >
+                        ${renderDateControl(
+                          html`<input
+                            class="logistics-schools__input"
+                            type="datetime-local"
+                            aria-label=${cellLabel(t("logistics.meeting.preferredTime"), index)}
+                            .value=${live(row.preferredTime)}
+                            @input=${update(row, "preferredTime")}
+                          />`,
+                          row.preferredTime,
+                        )}
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.timezone")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="text"
@@ -917,7 +1001,10 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "timezone")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.length")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="number"
@@ -930,7 +1017,7 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "lengthMinutes")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td class="logistics-schools__cell" data-label=${t("logistics.meeting.city")}>
                         <input
                           class="logistics-schools__input"
                           type="text"
@@ -940,7 +1027,10 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "city")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.docPrep")}
+                      >
                         <input
                           class="logistics-schools__input"
                           type="url"
@@ -950,7 +1040,10 @@ function renderMeetingSection(props: MeetingProps) {
                           @input=${update(row, "docPrepUrl")}
                         />
                       </td>
-                      <td class="logistics-schools__cell">
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.whatsappHello")}
+                      >
                         <select
                           class="logistics-schools__input"
                           aria-label=${cellLabel(t("logistics.meeting.whatsappHello"), index)}
@@ -962,14 +1055,20 @@ function renderMeetingSection(props: MeetingProps) {
                           <option value="no">${t("logistics.meeting.whatsappNo")}</option>
                         </select>
                       </td>
-                      <td class="logistics-schools__cell">
-                        <input
-                          class="logistics-schools__input"
-                          type="date"
-                          aria-label=${cellLabel(t("logistics.meeting.latestOk"), index)}
-                          .value=${row.latestOkDate}
-                          @input=${update(row, "latestOkDate")}
-                        />
+                      <td
+                        class="logistics-schools__cell"
+                        data-label=${t("logistics.meeting.latestOk")}
+                      >
+                        ${renderDateControl(
+                          html`<input
+                            class="logistics-schools__input"
+                            type="date"
+                            aria-label=${cellLabel(t("logistics.meeting.latestOk"), index)}
+                            .value=${live(row.latestOkDate)}
+                            @input=${update(row, "latestOkDate")}
+                          />`,
+                          row.latestOkDate,
+                        )}
                       </td>
                       <td class="logistics-schools__cell logistics-schools__cell--remove">
                         <button
@@ -1146,14 +1245,17 @@ function renderSignatureRequest(props: SignatureProps) {
           class="adminbot-form__field logistics-signature__field logistics-signature__field--short"
         >
           <span>${t("logistics.signature.deadline")}</span>
-          <input
-            class="logistics-signature__input"
-            type="date"
-            data-testid="logistics-signature-deadline"
-            .value=${form.deadline}
-            @input=${(event: Event) =>
-              props.onForm({ deadline: (event.target as HTMLInputElement).value })}
-          />
+          ${renderDateControl(
+            html`<input
+              class="logistics-signature__input"
+              type="date"
+              data-testid="logistics-signature-deadline"
+              .value=${live(form.deadline)}
+              @input=${(event: Event) =>
+                props.onForm({ deadline: (event.target as HTMLInputElement).value })}
+            />`,
+            form.deadline,
+          )}
         </label>
         <label class="adminbot-form__field logistics-signature__field">
           <span>${t("logistics.signature.context")}</span>
@@ -1245,7 +1347,22 @@ function renderLettersRequest(props: LettersProps) {
         </ul>
         <p class="card-sub">${t("logistics.lettersGuide.reminders")}</p>
         <p>
-          ${t("logistics.lettersGuide.portal")}
+          <label style="display:flex;gap:12px;align-items:flex-start;cursor:pointer">
+            <input
+              type="checkbox"
+              required
+              data-testid="logistics-email-confirmation"
+              style="flex-shrink:0;margin-top:5px"
+            />
+            <span
+              >I confirm that I have sent all application-portal invitations for this request to
+              <strong>zjin.admin@cs.toronto.edu</strong>, not Zhijing's main email.<span
+                class="cron-required-marker"
+                aria-hidden="true"
+                >*</span
+              ></span
+            >
+          </label>
           <a
             href="https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.ypvr8psn5zdy"
             target="_blank"
@@ -1349,7 +1466,29 @@ function renderAdminModes(props: AdminBotLogisticsProps, mode: LogisticsMode) {
 // the three templates has its own tab under "Requests to Zhijing", so arriving here already means
 // having chosen, and a picker would be a second place to make the same choice.
 function renderMakeRequest(props: AdminBotLogisticsProps) {
+  const form =
+    props.template === "recommendationLetters"
+      ? props.letters
+      : props.template === "bookMeeting"
+        ? props.meeting
+        : props.signature;
+  const showSync = props.template !== "documentSignature" || props.signature.editing;
   return html`
+    ${form.sync && showSync
+      ? html`<div class="card logistics-sync" role="status" data-testid="draft-sync-status">
+          <span>${renderDraftSyncStatus(form.sync)}</span>
+          ${form.sync.hasLegacy
+            ? html`<button class="btn" type="button" @click=${form.sync.onImportLegacy}>
+                Restore draft saved by the previous version
+              </button>`
+            : nothing}
+          ${form.sync.status !== "conflict"
+            ? html`<button class="btn" type="button" @click=${form.sync.onDownload}>
+                Download saved copies
+              </button>`
+            : nothing}
+        </div>`
+      : nothing}
     ${props.template === "recommendationLetters"
       ? renderLettersRequest(props.letters)
       : props.template === "documentSignature"

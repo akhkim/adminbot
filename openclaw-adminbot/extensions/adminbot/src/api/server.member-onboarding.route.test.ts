@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMemberInput, AdminBotStoredProposal } from "../contracts/actions.js";
 import type { AdminBotOnboardingSender } from "../workflows/onboarding/guide-sender.js";
 import { createAdminBotMockService } from "./server.js";
+import { queueNewMemberGuide } from "./server.member-onboarding.js";
 
 const SERVICE_TOKEN = "test-service-token";
 const HEADER = [
@@ -302,6 +303,60 @@ describe("approving a sweep joiner's enrollment", () => {
 });
 
 describe("the guide action", () => {
+  it("leaves an unattended full-member import pending without an approving admin", async () => {
+    const { mock, guides } = await startService();
+    mock.service.upsertLabMember({
+      id: "unreviewed",
+      name: "Unreviewed",
+      email: "unreviewed@lab.test",
+      member_type: "full",
+    } as AdminBotLabMemberInput);
+    const result = await queueNewMemberGuide(
+      { service: mock.service, actor: "sheet-sweep" },
+      "unreviewed",
+    );
+    expect(result.status).toBe("queued");
+    expect(guides).toHaveLength(0);
+    if (result.status !== "queued") throw new Error("expected pending guide");
+    expect(mock.service.getProposal(result.proposal_id)?.status).toBe("pending");
+  });
+
+  it("sends a full-member guide immediately on the admin's click and refuses a second send", async () => {
+    const { baseUrl, mock, guides } = await startService();
+    const token = await adminToken(mock, baseUrl);
+    mock.service.upsertLabMember({
+      id: "full-joiner",
+      name: "Full Joiner",
+      email: "joiner@lab.test",
+      member_type: "full",
+    } as AdminBotLabMemberInput);
+    const send = () =>
+      fetch(`${baseUrl}/lab/members/full-joiner/onboarding/guide`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ slack_project_channels: ["#proj-example"] }),
+      });
+    const response = await send();
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result).toMatchObject({
+      status: "done",
+      template_id: "member",
+      email: "joiner@lab.test",
+    });
+    expect(guides).toHaveLength(1);
+    expect(guides[0]).toMatchObject({
+      template_id: "member",
+      slack_project_channels: ["#proj-example"],
+    });
+    const proposal = mock.service.getProposal(result.proposal_id);
+    expect(proposal?.status).toBe("executed");
+    expect(proposal?.approvals).toEqual([
+      expect.objectContaining({ approver_id: "admin", approver_role: "admin" }),
+    ]);
+    expect((await send()).status).toBe(409);
+    expect(guides).toHaveLength(1);
+  });
   it("sends an approved guide with the project channels the admin picked", async () => {
     const { baseUrl, mock, guides } = await startService();
     const token = await adminToken(mock, baseUrl);

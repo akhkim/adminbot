@@ -94,6 +94,7 @@ function draw(overrides: Partial<ProfessorViewProps> = {}) {
   const draft: string[] = [];
   const expiry: string[] = [];
   const availability: string[] = [];
+  const timezone: string[] = [];
   const published: Array<{ message: string; availability: string; expiresOn: string } | null> = [];
   const container = document.createElement("div");
   document.body.append(container);
@@ -112,12 +113,13 @@ function draw(overrides: Partial<ProfessorViewProps> = {}) {
       onBroadcastDraftChange: (value) => draft.push(value),
       onBroadcastExpiryChange: (value) => expiry.push(value),
       onBroadcastAvailabilityChange: (value) => availability.push(value),
+      onBroadcastTimezoneChange: (value) => timezone.push(value),
       onBroadcastPublish: (value) => published.push(value),
       ...overrides,
     }),
     container,
   );
-  return { container, opened, toggled, draft, expiry, availability, published };
+  return { container, opened, toggled, draft, expiry, availability, timezone, published };
 }
 
 /**
@@ -380,7 +382,7 @@ describe("renderProfessorView", () => {
     const { container } = draw();
     const title = (id: string) =>
       container.querySelector(`[data-testid="professor-${id}"] .card-title`)?.textContent ?? "";
-    expect(title("pi-review")).toBe("Approve before it goes public");
+    expect(title("pi-review")).toBe("Paper feedback and publication approval");
     expect(title("drafts")).toBe("Read and comment while they are still writing");
     expect(title("escalated")).toBe("Missing information — needs a word from you");
   });
@@ -744,10 +746,16 @@ describe("the broadcast box", () => {
       broadcastDraft: "Back in Toronto Thursday.",
       broadcastExpiry: "2026-09-30",
       broadcastAvailability: "busy",
+      broadcastTimezone: "America/Toronto",
     });
     container.querySelector<HTMLButtonElement>('[data-testid="professor-broadcast-post"]')?.click();
     expect(published).toEqual([
-      { message: "Back in Toronto Thursday.", availability: "busy", expiresOn: "2026-09-30" },
+      {
+        message: "Back in Toronto Thursday.",
+        availability: "busy",
+        expiresOn: "2026-09-30",
+        timezone: "America/Toronto",
+      },
     ]);
   });
 
@@ -858,6 +866,17 @@ describe("the papers waiting on her yes", () => {
     expect(section?.textContent).toContain("Causal Garden Planning");
   });
 
+  it("opens the selected paper in place on the PI page", () => {
+    const selected: string[] = [];
+    const onOpenPaper = (id: string) => selected.push(id);
+    const { container, opened } = draw({ piReview: [row()], onOpenPaper });
+    container
+      .querySelector<HTMLButtonElement>("#professor-list-pi-review .professor__row")!
+      .click();
+    expect(selected).toEqual(["p1"]);
+    expect(opened).toEqual([]);
+  });
+
   it("leads the page when something is waiting on her", () => {
     const { container } = draw({ piReview: [row()] });
     expect(queueOrder(container)[0]).toBe("professor-pi-review");
@@ -869,4 +888,75 @@ describe("the papers waiting on her yes", () => {
       "No paper is waiting on your approval.",
     );
   });
+});
+
+it("shows an unavailable PI queue with a working retry instead of an empty success", () => {
+  let retried = false;
+  const { container } = draw({
+    piReviewError: "Service unavailable",
+    onRetryPiReview: () => {
+      retried = true;
+    },
+  });
+  const section = container.querySelector('[data-testid="professor-pi-review"]');
+  expect(section?.textContent).toContain("Approval status is unknown");
+  expect(section?.textContent).not.toContain("No paper is waiting");
+  expect(section?.querySelector(".professor__count")?.textContent?.trim()).toBe("—");
+  section?.querySelector<HTMLButtonElement>("button")?.click();
+  expect(retried).toBe(true);
+});
+it("does not claim an empty PI queue while loading", () => {
+  const { container } = draw({ piReviewLoading: true });
+  const section = container.querySelector('[data-testid="professor-pi-review"]');
+  expect(section?.textContent).toContain("Loading PI review queue");
+  expect(section?.textContent).not.toContain("No paper is waiting");
+});
+
+it("allows publishing a time-zone-only edit and reports the input", () => {
+  const { container, timezone, published } = draw({
+    broadcast: {
+      availability: "busy",
+      message: "Reviewing",
+      expires_at: "2099-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      updated_by: "synthetic",
+    },
+    broadcastTimezone: "UTC",
+  });
+  const input = container.querySelector<HTMLInputElement>(
+    '[data-testid="professor-broadcast-timezone"]',
+  )!;
+  input.value = "America/Toronto";
+  input.dispatchEvent(new Event("input"));
+  expect(timezone).toEqual(["America/Toronto"]);
+  const button = container.querySelector<HTMLButtonElement>(
+    '[data-testid="professor-broadcast-post"]',
+  )!;
+  expect(button.disabled).toBe(false);
+  button.click();
+  expect(published[0]).toMatchObject({ timezone: "UTC" });
+});
+
+it("shows feedback reason and both deadlines separately from publication approval", () => {
+  const { container } = draw({
+    piReview: [
+      piReviewRow({
+        feedback: {
+          slot: "feedback_arr",
+          label: "ARR / Overleaf feedback",
+          reason: "Check experimental claims",
+          url: "https://example.com/draft",
+          soft_deadline: "2000-01-01T00:00:00Z",
+          hard_deadline: "2000-01-02T00:00:00Z",
+        },
+      }),
+      piReviewRow({ paperId: "p2", title: "Publication package" }),
+    ],
+  });
+  const queue = container.querySelector('[data-testid="professor-pi-review"]') ?? container;
+  expect(queue.textContent).toContain("Check experimental claims");
+  expect(queue.textContent).toContain("Feedback by (soft)");
+  expect(queue.textContent).toContain("Submission cutoff (hard)");
+  expect(queue.textContent).toContain("Past submission cutoff");
+  expect(queue.textContent).toContain("Publication approval");
 });

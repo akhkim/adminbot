@@ -1,3 +1,7 @@
+import {
+  parsePaperFeedback,
+  type PaperFeedback,
+} from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 // Control UI module implements per-member AdminBot email+password auth.
 //
 // Talks to the standalone AdminBot service (default `http://<host>:8765`).
@@ -12,6 +16,13 @@ import type {
   AdminBotOpportunityDraft,
   AdminBotOpportunityView,
 } from "../data/opportunities-data.ts";
+import { configureDraftSync } from "../offline/draft-sync.ts";
+import {
+  cacheAdminBotGet,
+  type AdminBotOfflineScope,
+  pendingAdminBotOutboxCount,
+  readCachedAdminBotGet,
+} from "../offline/outbox.ts";
 
 const SESSION_STORAGE_KEY = "openclaw.adminbot.session.v1";
 // v2: the onboarding checklist moved from a post-login popup (dismiss = "seen it") to a standing
@@ -85,8 +96,9 @@ export type AssignedBadge = {
   family_key: string;
   awarded_at: string;
   awarded_by: string;
-  source: "admin" | "nomination";
+  source: "admin" | "nomination" | "self_report";
   count?: number;
+  follower_count?: number;
   nomination_id?: string;
   evidence?: string;
   category: string;
@@ -246,8 +258,12 @@ export type LabMember = {
   cv_url?: string | null;
   intake_form_url?: string | null;
   intake_form_unavailable?: boolean;
+  arr_reviewer_qualified?: boolean | null;
+  arr_review_capacity?: number | null;
   linkedin_url?: string | null;
   twitter_url?: string | null;
+  twitter_followers?: number;
+  linkedin_followers?: number;
   github_url?: string | null;
   scholar_url?: string | null;
   avatar_url?: string | null;
@@ -283,6 +299,8 @@ export type MemberProfileUpdate = {
   cv_url?: string;
   intake_form_url?: string;
   intake_form_unavailable?: boolean;
+  arr_reviewer_qualified?: boolean | null;
+  arr_review_capacity?: number | null;
   linkedin_url?: string;
   twitter_url?: string;
   github_url?: string;
@@ -421,10 +439,11 @@ export type AuthErrorKind =
   // to do with credentials: a long-lived dev service outliving the console that calls it. It used
   // to fall through to auth-failed, which sent people to check their login for a problem that was
   // really a process needing a restart.
-  | "not-found";
+  | "not-found"
+  | "invalid-response";
 
 export type AuthResult<T> =
-  | { ok: true; value: T }
+  | { ok: true; value: T; cached?: boolean }
   // `message` carries the service's own explanation, and is only ever populated for a 400 --
   // a validation refusal names the field it rejected ("LinkedIn link must be a profile URL"),
   // which no generic client-side string can. Auth and rate-limit failures deliberately keep
@@ -520,6 +539,54 @@ async function postJson(
   return { response, body: await readJson(response) };
 }
 
+let lastAuthedCall:
+  | { baseUrl: string; token: string | null; offlineScope?: AdminBotOfflineScope }
+  | undefined;
+
+async function resolveOfflineScope(
+  baseUrl: string,
+  token: string | null,
+): Promise<AdminBotOfflineScope | undefined> {
+  if (!token) return undefined;
+  if (typeof crypto === "undefined" || !crypto.subtle) {
+    return undefined;
+  }
+  let digest: ArrayBuffer;
+  try {
+    digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  } catch {
+    // Offline storage must never make an otherwise-valid online request unusable. If the
+    // browser cannot derive a non-secret session identity, fail closed by disabling cache/outbox.
+    return undefined;
+  }
+  const principalKey = [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  return {
+    baseUrl: baseUrl.replace(/\/+$/u, ""),
+    principalKey,
+  };
+}
+
+export async function pendingQueuedAdminBotWriteCount(
+  token: string,
+  baseUrl: string,
+): Promise<number> {
+  const scope = await resolveOfflineScope(baseUrl, token);
+  return scope ? pendingAdminBotOutboxCount(scope) : 0;
+}
+
+export async function flushQueuedAdminBotWrites(): Promise<{ flushed: number; remaining: number }> {
+  const auth = lastAuthedCall;
+  if (!auth?.offlineScope) {
+    return { flushed: 0, remaining: 0 };
+  }
+  // Old generic outbox entries may represent approvals or non-idempotent submissions.
+  // Retain them for recovery, but never execute them on reconnect. Only revisioned
+  // member drafts have an automatic synchronization contract.
+  return { flushed: 0, remaining: await pendingAdminBotOutboxCount(auth.offlineScope) };
+}
+
 // Bearer-authenticated POST/PUT for member-session routes. Same unreachable
 // sentinel + credentials:"omit" contract as postJson.
 async function authedJson(
@@ -532,7 +599,10 @@ async function authedJson(
   token: string | null,
   payload?: unknown,
   signal?: AbortSignal,
-): Promise<{ response: Response; body: unknown } | { unreachable: true }> {
+): Promise<{ response: Response; body: unknown; fromCache?: boolean } | { unreachable: true }> {
+  const offlineScopePromise = resolveOfflineScope(baseUrl, token);
+  const call = { baseUrl, token };
+  lastAuthedCall = call;
   let response: Response;
   try {
     response = await fetch(`${baseUrl}${path}`, {
@@ -549,9 +619,36 @@ async function authedJson(
       ...(method === "GET" || method === "DELETE" ? {} : { body: JSON.stringify(payload) }),
     });
   } catch {
+    const offlineScope = await offlineScopePromise;
+    if (method === "GET") {
+      const cached = offlineScope
+        ? await readCachedAdminBotGet(offlineScope, path).catch(() => undefined)
+        : undefined;
+      if (cached !== undefined) {
+        return { response: { ok: true, status: 200 } as Response, body: cached, fromCache: true };
+      }
+    }
     return { unreachable: true };
   }
-  return { response, body: await readJson(response) };
+  const offlineScope = await offlineScopePromise;
+  if (lastAuthedCall === call && offlineScope) lastAuthedCall = { ...call, offlineScope };
+  const body = await readJson(response);
+  const serviceMessage = (body as { error?: { message?: unknown } } | null)?.error?.message;
+  if (
+    method === "GET" &&
+    [502, 503, 504].includes(response.status) &&
+    offlineScope &&
+    typeof serviceMessage !== "string"
+  ) {
+    const cached = await readCachedAdminBotGet(offlineScope, path).catch(() => undefined);
+    if (cached !== undefined) {
+      return { response: { ok: true, status: 200 } as Response, body: cached, fromCache: true };
+    }
+  }
+  if (method === "GET" && response.ok && offlineScope) {
+    void cacheAdminBotGet(offlineScope, path, body).catch(() => {});
+  }
+  return { response, body };
 }
 
 // Self-service profile edit (PUT /lab/members/:id) with the member session. Only
@@ -1100,13 +1197,15 @@ export async function mergeLabMembersAsAdmin(
 }
 
 export type MemberOnboardingGuideQueued = {
+  status?: "done" | "queued";
   proposal_id: string;
   template_id: string;
   email: string;
 };
 
 // Puts one roster member through onboarding: the service composes nothing here, it files an
-// `onboarding.send_guide` proposal for approval. Admin Bearer session only, like every other write
+// `onboarding.send_guide` proposal. Standard full-member guides are approved and sent immediately;
+// other guides wait for review. Admin Bearer session only, like every other write
 // on this page that reaches a person -- the shared service principal is refused (403) by the route
 // itself.
 //
@@ -1453,7 +1552,14 @@ export type MemberSheetEditResult = {
 };
 
 export type MemberSheetOnboardResult = {
-  created: { sheet_row: number; email: string; template_id: string; proposal_id: string }[];
+  /** `sent`: already mailed on this admin's approval. `queued`: waiting in Pending Actions. */
+  created: {
+    sheet_row: number;
+    email: string;
+    template_id: string;
+    proposal_id: string;
+    status?: "sent" | "queued";
+  }[];
   /** Rows not yet on the roster, added with the access their Member Type grants. */
   enrolled?: {
     sheet_row: number;
@@ -1950,7 +2056,42 @@ export type LinkedInDraftAuthor = {
   member_id?: string;
   linkedin_url?: string;
   linkedin_urn?: string;
+  twitter_url?: string;
 };
+
+export type XDraft = {
+  paper: LinkedInDraft["paper"];
+  posts: Array<{ text: string }>;
+  model: string;
+  issues: string[];
+  authors: LinkedInDraftAuthor[];
+};
+
+export async function draftXPost(
+  request: {
+    pdfBase64?: string;
+    paperId: string;
+    url?: string;
+    credits?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XCreditSelection;
+    announcement?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XAnnouncementDetails;
+  },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<XDraft>> {
+  const result = await authedJson(baseUrl, "/papers/x-draft", "POST", sessionToken, {
+    paper_id: request.paperId,
+    ...(request.announcement ? { announcement: request.announcement } : {}),
+    ...(request.credits ? { credits: request.credits } : {}),
+    ...(request.pdfBase64 ? { pdf_base64: request.pdfBase64 } : {}),
+    ...(request.url ? { url: request.url } : {}),
+  });
+  if ("unreachable" in result) return { ok: false, kind: "unreachable" };
+  if (!result.response.ok) {
+    const body = result.body as { error?: { message?: string } } | null;
+    return { ok: false, kind: "draft-failed", message: body?.error?.message ?? "X draft failed" };
+  }
+  return { ok: true, value: result.body as XDraft };
+}
 
 export type LinkedInDraft = {
   paper: { title: string; authors: string[]; abstract: string; url?: string };
@@ -2135,7 +2276,7 @@ export async function fetchMemberResource(
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  return { ok: true, value: result.body };
+  return { ok: true, value: result.body, ...(result.fromCache ? { cached: true } : {}) };
 }
 
 /** Lists the conferences an admin has made searchable, with how fresh each index is. */
@@ -3299,6 +3440,27 @@ export async function fetchRoster(
   return { ok: true, value: members };
 }
 
+export async function cacheOfflineMemberSession(
+  token: string,
+  baseUrl: string,
+  session: MemberSessionInfo,
+): Promise<void> {
+  const scope = await resolveOfflineScope(baseUrl, token);
+  if (!scope) {
+    return;
+  }
+  // Never persist gateway credentials with the offline identity snapshot.
+  await cacheAdminBotGet(scope, "/offline-identity", {
+    expires_at: session.expires_at,
+    member: {
+      id: session.member.id,
+      privilege_level: session.member.privilege_level,
+      onboarding: session.member.onboarding,
+    },
+    gateway: { token: "" },
+  }).catch(() => {});
+}
+
 export async function fetchMemberSession(
   token: string,
   baseUrl: string,
@@ -3307,14 +3469,30 @@ export async function fetchMemberSession(
   try {
     response = await fetch(`${baseUrl}/auth/session`, {
       method: "GET",
+      signal: AbortSignal.timeout(5000),
       credentials: "omit",
       headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
     });
   } catch {
+    const scope = await resolveOfflineScope(baseUrl, token);
+    const cached = scope
+      ? ((await readCachedAdminBotGet(scope, "/offline-identity").catch(() => undefined)) as
+          | MemberSessionInfo
+          | undefined)
+      : undefined;
+    if (cached?.member?.id && Date.parse(cached.expires_at) > Date.now()) {
+      return { ok: true, value: cached, cached: true };
+    }
     return { ok: false, kind: "unreachable" };
   }
   const body = await readJson(response);
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      const scope = await resolveOfflineScope(baseUrl, token);
+      if (scope) {
+        await cacheAdminBotGet(scope, "/offline-identity", null).catch(() => {});
+      }
+    }
     // Only an explicit authentication rejection invalidates a stored login. Proxy outages,
     // rate limits and rolling-deploy 404s must not turn a refresh into a forced sign-in.
     if (response.status !== 401 && response.status !== 403) {
@@ -3322,6 +3500,7 @@ export async function fetchMemberSession(
     }
     return { ok: false, kind: "auth-failed" };
   }
+  await cacheOfflineMemberSession(token, baseUrl, body as MemberSessionInfo);
   return { ok: true, value: body as MemberSessionInfo };
 }
 
@@ -3375,6 +3554,13 @@ export async function logoutMember(token: string, baseUrl: string): Promise<void
     });
   } catch {
     // Best-effort: local session is cleared regardless of server reachability.
+  } finally {
+    if (
+      lastAuthedCall?.token === token &&
+      lastAuthedCall.baseUrl.replace(/\/+$/u, "") === baseUrl.replace(/\/+$/u, "")
+    ) {
+      lastAuthedCall = undefined;
+    }
   }
 }
 
@@ -3437,6 +3623,8 @@ export function saveStoredMemberSession(next: StoredMemberSession): void {
 }
 
 export function clearStoredMemberSession(): void {
+  configureDraftSync("signed-out", null);
+  lastAuthedCall = undefined;
   const storage = getSafeLocalStorage();
   try {
     storage?.removeItem(SESSION_STORAGE_KEY);
@@ -3672,6 +3860,7 @@ export async function sendMeetingAttendanceNudges(
  * them, and this page should render that rather than crash on it.
  */
 export type LabBroadcast = {
+  timezone?: string;
   id?: string;
   availability: "available" | "busy" | "away" | "unknown";
   message: string;
@@ -3712,7 +3901,12 @@ export async function fetchLabBroadcasts(
  * than deletes -- see the contract note -- so the archive keeps it either way.
  */
 export async function publishLabBroadcast(
-  draft: { availability: LabBroadcast["availability"]; message: string; expires_at: string } | null,
+  draft: {
+    availability: LabBroadcast["availability"];
+    message: string;
+    expires_at: string;
+    timezone?: string;
+  } | null,
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<{ status: LabBroadcast | null; history: LabBroadcast[] }>> {
@@ -4400,6 +4594,7 @@ export type EscalatedNudgeRow = {
 
 /** One paper waiting on the head professor's yes to post. */
 export type PiReviewRow = {
+  feedback?: PaperFeedback & { label: string; slot: string };
   paperId: string;
   title: string;
   authors: string[];
@@ -4415,9 +4610,8 @@ export type PiReviewRow = {
 /**
  * The papers at the PI gate (GET /papers/pi-review).
  *
- * A 404 reads as an empty queue for the same reason the escalation queue does: the page ships from
- * Vercel on merge and the service follows on the host, so a service that predates the route should
- * render as "nothing waiting", not as a broken panel.
+ * A missing endpoint or invalid response leaves approval status unknown; only a successful
+ * queue response can establish that nobody is waiting.
  */
 export async function fetchPiReviewQueue(
   sessionToken: string,
@@ -4428,12 +4622,34 @@ export async function fetchPiReviewQueue(
     return { ok: false, kind: "unreachable" };
   }
   if (result.response.status === 404) {
-    return { ok: true, value: [] };
+    return {
+      ok: false,
+      kind: "not-found",
+      message: "The backend does not support the PI review queue yet.",
+    };
   }
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as { papers?: Array<Record<string, unknown>> };
+  const body = result.body as { papers?: Array<Record<string, unknown>> } | null;
+  if (
+    !body ||
+    !Array.isArray(body.papers) ||
+    body.papers.some(
+      (row) =>
+        !row ||
+        typeof row.paper_id !== "string" ||
+        !row.paper_id.trim() ||
+        typeof row.title !== "string" ||
+        !row.title.trim(),
+    )
+  ) {
+    return {
+      ok: false,
+      kind: "invalid-response",
+      message: "The backend returned an invalid PI review queue.",
+    };
+  }
   const rows = (body.papers ?? []).flatMap((row) => {
     const paperId = typeof row.paper_id === "string" ? row.paper_id : "";
     const title = typeof row.title === "string" ? row.title : "";
@@ -4451,6 +4667,13 @@ export async function fetchPiReviewQueue(
         ...(typeof row.venue === "string" ? { venue: row.venue } : {}),
         ...(typeof row.waiting_since === "string" ? { waitingSince: row.waiting_since } : {}),
         ...(typeof row.drive_pdf_url === "string" ? { drivePdfUrl: row.drive_pdf_url } : {}),
+        ...(row.feedback &&
+        typeof row.feedback === "object" &&
+        parsePaperFeedback(JSON.stringify(row.feedback)) &&
+        typeof (row.feedback as Record<string, unknown>).label === "string" &&
+        typeof (row.feedback as Record<string, unknown>).slot === "string"
+          ? { feedback: row.feedback as PiReviewRow["feedback"] }
+          : {}),
         packageComplete: row.package_complete === true,
       },
     ];
@@ -4655,6 +4878,7 @@ export async function fetchPaperSlotOverview(
 
 /** One person at one conference. Mirrors ConferenceAttendancePerson in the service. */
 export type ConferenceRosterPerson = {
+  avatar_url?: string;
   attendee_key: string;
   member_id?: string;
   name: string;
@@ -4675,13 +4899,7 @@ export type ConferenceRoster = {
   papers_awaiting: Array<{ paper_id: string; title: string; unanswered: number }>;
 };
 
-/**
- * Who is going to each conference, across every accepted paper.
- *
- * A 404 means the service predates this route -- the Control UI ships on merge and the service is
- * deployed separately, so a new tab can reach a server that has never heard of it. Empty rather
- * than an error, so the page says "nothing recorded" instead of "unreachable".
- */
+/** Privileged attendance read; an unavailable backend is not an empty roster. */
 export async function fetchConferenceRosters(
   sessionToken: string,
   baseUrl: string,
@@ -4689,9 +4907,6 @@ export async function fetchConferenceRosters(
   const result = await authedJson(baseUrl, "/papers/conference-rosters", "GET", sessionToken);
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
-  }
-  if (result.response.status === 404) {
-    return { ok: true, value: [] };
   }
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
@@ -4852,6 +5067,7 @@ export async function submitReimbursementPackage(
   input: {
     funder: "DCS" | "MPI-IS";
     artifacts: Array<{ filename: string; data_base64: string }>;
+    submission_proof?: string;
     trip_title?: string;
   },
   sessionToken: string,
@@ -4867,12 +5083,12 @@ export async function submitReimbursementPackage(
   return { ok: true, value: result.body as { proposal_id: string; to: string; reply_to: string } };
 }
 
-export async function checkDriveEditAccess(
+export async function checkDriveAccess(
   url: string,
   sessionToken: string,
   baseUrl: string,
   signal?: AbortSignal,
-): Promise<AuthResult<{ status: "editable" | "not_editable" | "unverified"; message: string }>> {
+): Promise<AuthResult<{ status: "accessible" | "inaccessible" | "unverified"; message: string }>> {
   const result = await authedJson(
     baseUrl,
     "/drive/check-edit-access",
@@ -4889,7 +5105,7 @@ export async function checkDriveEditAccess(
   }
   return {
     ok: true,
-    value: result.body as { status: "editable" | "not_editable" | "unverified"; message: string },
+    value: result.body as { status: "accessible" | "inaccessible" | "unverified"; message: string },
   };
 }
 
@@ -5063,6 +5279,7 @@ export type PaperSocialDraft = {
   paper_id: string;
   platform: "x" | "linkedin";
   body: string;
+  x_thread?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XThreadDraft;
   model?: string;
   generated_at: string;
   status: "draft" | "circulated" | "approved" | "superseded";
@@ -5175,7 +5392,11 @@ export async function fetchPaperSlots(
 /** Save a social draft. Supersedes whatever it replaces, server-side. */
 export async function savePaperSocialDraft(
   paperId: string,
-  input: { platform: string; body: string },
+  input: {
+    platform: string;
+    body: string;
+    x_thread?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XThreadDraft;
+  },
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<PaperSocialDraft>> {

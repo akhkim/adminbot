@@ -16,6 +16,8 @@ import {
   fetchPaperNudgeBatches,
   fetchPaperSlotOverview,
   fetchPaperSlots,
+  fetchPiReviewQueue,
+  type PiReviewRow,
   loadStoredMemberSession,
   recordPaperSocialConsent,
   resolveAdminBotBaseUrl,
@@ -35,6 +37,8 @@ import type { PaperTripDraft } from "../views/paper-cycle.ts";
 
 export type AdminBotPaperSlotsHost = {
   settings: UiSettings;
+  adminBotPiReview?: PiReviewRow[];
+  adminBotPiReviewError?: string | null;
   /** The roster, for deciding who may be nudged. See `nudgeableBatches`. */
   adminBotData?: {
     members?: {
@@ -292,28 +296,50 @@ export async function saveAdminBotPaperSlot(
     host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
     return;
   }
-  host.adminBotPaperSlotsError = null;
-  const result = await savePaperSlot(paperId, slot, input, wire.token, wire.baseUrl);
-  if (!sameSession(wire.token)) {
+  const feedbackRequest = slot.startsWith("feedback_") || slot === "pi_approval";
+  if (feedbackRequest && host.adminBotPaperSlotsBusyId) {
     return;
   }
-  if (!result.ok) {
-    host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
-    return;
+  if (feedbackRequest) {
+    host.adminBotPaperSlotsBusyId = paperId;
   }
-  const cycle = host.adminBotPaperSlots[paperId];
-  if (cycle) {
-    host.adminBotPaperSlots = {
-      ...host.adminBotPaperSlots,
-      [paperId]: {
-        ...cycle,
-        slots: cycle.slots.map((row) => (row.slot === slot ? result.value : row)),
-      },
-    };
+  try {
+    host.adminBotPaperSlotsError = null;
+    const result = await savePaperSlot(paperId, slot, input, wire.token, wire.baseUrl);
+    if (!sameSession(wire.token)) {
+      return;
+    }
+    if (!result.ok) {
+      host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
+      return;
+    }
+    const cycle = host.adminBotPaperSlots[paperId];
+    if (cycle) {
+      host.adminBotPaperSlots = {
+        ...host.adminBotPaperSlots,
+        [paperId]: {
+          ...cycle,
+          slots: cycle.slots.map((row) => (row.slot === slot ? result.value : row)),
+        },
+      };
+    }
+    // The header counts and the outstanding list are computed by the service, so a write only
+    // reaches them through a re-read.
+    host.adminBotPaperSlotsLoadedAt = null;
+    if (feedbackRequest && host.adminBotPiReview !== undefined) {
+      const queue = await fetchPiReviewQueue(wire.token, wire.baseUrl);
+      if (sameSession(wire.token)) {
+        if (queue.ok) {
+          host.adminBotPiReview = queue.value;
+        }
+        host.adminBotPiReviewError = queue.ok ? null : failureText(queue, wire.baseUrl);
+      }
+    }
+  } finally {
+    if (feedbackRequest) {
+      host.adminBotPaperSlotsBusyId = null;
+    }
   }
-  // The header counts and the outstanding list are computed by the service, so a write only
-  // reaches them through a re-read.
-  host.adminBotPaperSlotsLoadedAt = null;
 }
 
 /**
@@ -371,9 +397,15 @@ export function saveAdminBotSocialDraft(
   paperId: string,
   platform: string,
   body: string,
+  xThread?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XThreadDraft,
 ): Promise<void> {
   return mutateCycle(host, paperId, (token, baseUrl) =>
-    savePaperSocialDraft(paperId, { platform, body }, token, baseUrl),
+    savePaperSocialDraft(
+      paperId,
+      { platform, body, ...(xThread ? { x_thread: xThread } : {}) },
+      token,
+      baseUrl,
+    ),
   );
 }
 

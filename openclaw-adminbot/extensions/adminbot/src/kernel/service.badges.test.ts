@@ -13,6 +13,81 @@ function unwrap<T>(
 }
 
 describe("AdminBotService badges", () => {
+  it("preserves self-reported follower counts and rejects invalid values", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        id: "audience",
+        name: "Example",
+        twitter_followers: 10000,
+        linkedin_followers: 1200,
+      }),
+    );
+    unwrap(service.upsertLabMember({ id: "audience", name: "Example" }));
+    expect(unwrap(service.listLabMembers()).members[0]).toMatchObject({
+      twitter_followers: 10000,
+      linkedin_followers: 1200,
+    });
+    for (const value of [-1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(
+        service.upsertLabMember({ id: "audience", name: "Example", twitter_followers: value }).ok,
+      ).toBe(false);
+    }
+    expect(
+      service.upsertLabMember({ id: "audience", name: "Example", linkedin_followers: -1 }).ok,
+    ).toBe(false);
+  });
+  it("derives the higher follower count without changing historical awards", () => {
+    const service = new AdminBotService();
+    const member = { id: "audience", name: "Example" };
+    const badges = () => unwrap(service.listLabMembers()).members[0].assigned_badges ?? [];
+    unwrap(
+      service.upsertLabMember({ ...member, twitter_followers: 1000, linkedin_followers: 900 }),
+    );
+    expect(badges()).toHaveLength(0);
+    unwrap(service.upsertLabMember({ ...member, linkedin_followers: 1001 }));
+    expect(badges()).toMatchObject([{ source: "self_report", follower_count: 1001 }]);
+    unwrap(service.upsertLabMember({ ...member, twitter_followers: 10000 }));
+    expect(badges()).toMatchObject([{ follower_count: 10000 }]);
+    unwrap(service.upsertLabMember({ ...member, twitter_followers: 0, linkedin_followers: 0 }));
+    expect(badges()).toHaveLength(0);
+    unwrap(
+      service.assignBadge("audience", "community_building__media_impact", "admin", undefined, 3),
+    );
+    unwrap(service.upsertLabMember({ ...member, twitter_followers: 10000 }));
+    expect(badges()).toMatchObject([{ source: "self_report", follower_count: 10000 }]);
+    unwrap(service.upsertLabMember({ ...member, twitter_followers: 0 }));
+    expect(badges()).toMatchObject([{ source: "admin", count: 3 }]);
+  });
+  it("upgrades only stock Media Impact wording and preserves customized definitions", () => {
+    const seed = adminBotDefaultBadgeDefinitions.find(
+      (b) => b.id === "community_building__media_impact",
+    )!;
+    for (const customized of [false, true]) {
+      const store = new AdminBotMemoryStore();
+      const description = customized
+        ? "Lab-specific criteria"
+        : "Research was covered by press or cited in a policy or industry document.";
+      store.saveBadgeDefinition({
+        ...seed,
+        description,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+      const service = new AdminBotService(store);
+      expect(store.getBadgeDefinition(seed.id)?.description).toBe(
+        customized ? description : seed.description,
+      );
+      expect(unwrap(service.listBadgeDefinitions()).badges.some((b) => b.id === seed.id)).toBe(
+        true,
+      );
+      const updated = store.getBadgeDefinition(seed.id);
+      const restarted = new AdminBotService(store);
+      expect(unwrap(restarted.listBadgeDefinitions()).badges.find((b) => b.id === seed.id)).toEqual(
+        updated,
+      );
+    }
+  });
   it("seeds the default badge catalog including tiered families", () => {
     const service = new AdminBotService();
 

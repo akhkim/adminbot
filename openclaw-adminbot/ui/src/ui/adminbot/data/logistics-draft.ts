@@ -5,20 +5,11 @@
 // thread, into a store with a ~5MB cap that the whole origin shares. IndexedDB stores a File
 // directly through structured clone and is async.
 //
-// A draft never leaves the browser: saving is a convenience so a half-filled request survives a
-// reload, not a submission. Submitting is POST /logistics/requests -- see controllers/logistics.ts
-// -- and a submitted request clears the draft it was built from, so the two can never both claim
-// to be "the request".
+// Drafts save locally first and sync as private working copies. Submitting remains a separate
+// explicit action through POST /logistics/requests.
+import { loadWorkingDraft, saveWorkingDraft } from "../offline/draft-sync.ts";
+import type { Opportunity } from "./opportunities-data.ts";
 import { localTimezone } from "./timezones.ts";
-
-const DB_NAME = "adminbot-logistics";
-const DB_VERSION = 1;
-const STORE_NAME = "drafts";
-// One draft per request type, never a shared record: the three forms hold different things and a
-// member half-way through one must not lose it by opening another.
-const SIGNATURE_DRAFT_KEY = "document-signature";
-const LETTERS_DRAFT_KEY = "recommendation-letters";
-const MEETING_DRAFT_KEY = "book-meeting";
 
 /**
  * The suffix that makes a draft key one person's.
@@ -32,11 +23,8 @@ export function logisticsDraftScope(memberId: string | null | undefined): string
   return memberId?.trim() || "anonymous";
 }
 
-function scopedKey(key: string, scope: string): string {
-  return `${key}:${scope}`;
-}
-
 export type LogisticsDraft = {
+  editingId?: string;
   description: string;
   signatureFiles: File[];
   attachments: File[];
@@ -44,6 +32,8 @@ export type LogisticsDraft = {
 };
 
 export type LogisticsDraftHost = {
+  adminBotLogisticsEditingId?: string | null;
+  tab?: string;
   adminBotLogisticsDescription: string;
   adminBotLogisticsSignatureFiles: File[];
   adminBotLogisticsAttachments: File[];
@@ -96,6 +86,7 @@ export type LetterFact = {
 };
 
 export type RecommendationLettersDraft = {
+  editingId?: string;
   schools: RecommendationSchool[];
   facts: LetterFact[];
   // The two links the request travels with: the CV the letter is written against, and the member's
@@ -106,6 +97,8 @@ export type RecommendationLettersDraft = {
 };
 
 export type RecommendationLettersDraftHost = {
+  adminBotLogisticsEditingId?: string | null;
+  tab?: string;
   adminBotLettersSchools: RecommendationSchool[];
   adminBotLettersFacts: LetterFact[];
   adminBotLettersCvOverleafUrl: string;
@@ -149,9 +142,15 @@ export type MeetingRequestRow = {
   latestOkDate: string;
 };
 
-export type MeetingRequestDraft = { meetings: MeetingRequestRow[]; savedAt: number };
+export type MeetingRequestDraft = {
+  editingId?: string;
+  meetings: MeetingRequestRow[];
+  savedAt: number;
+};
 
 export type MeetingRequestDraftHost = {
+  adminBotLogisticsEditingId?: string | null;
+  tab?: string;
   adminBotMeetingRows: MeetingRequestRow[];
   adminBotMeetingSaving: boolean;
   adminBotMeetingSavedAt: number | null;
@@ -191,6 +190,67 @@ export function createSchoolRow(fields: Partial<RecommendationSchool> = {}): Rec
     deadlineTimezone: fields.deadlineTimezone?.trim() || "AoE",
     id: `school-${schoolRowCount}`,
   };
+}
+
+/**
+ * The school row an Opportunities entry fills in: who hosts it, what it is, where it lives, and its
+ * application date when the board has one.
+ *
+ * The letter deadline is left for the member. It is the one required column, and it is often not
+ * the application deadline -- many schools take letters days or weeks later -- so copying the
+ * application date into it would put a guess in the field the professor plans around.
+ */
+export function opportunitySchoolFields(opportunity: Opportunity): Partial<RecommendationSchool> {
+  const org = opportunity.org?.trim();
+  const deadline = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/u.exec(opportunity.deadline_aoe);
+  return {
+    school: org || opportunity.name,
+    program: org ? opportunity.name : "",
+    programLink: opportunity.link ?? "",
+    // Opportunities are kept in AoE, so the time zone has to come with the date.
+    ...(deadline ? { applicationDeadline: deadline[1], applicationDeadlineTime: deadline[2] } : {}),
+    deadlineTimezone: "AoE",
+  };
+}
+
+/**
+ * The schools table with one more pre-filled row.
+ *
+ * Blank rows go, because the form opens with one and a pre-filled school should not sit under an
+ * empty line. A school already in the table is left alone, so pressing the button twice, or for
+ * a program the member already typed in, does not add the same school twice.
+ */
+export function withPrefilledSchool(
+  schools: RecommendationSchool[],
+  fields: Partial<RecommendationSchool>,
+): RecommendationSchool[] {
+  const link = fields.programLink?.trim();
+  const school = fields.school?.trim() ?? "";
+  const program = fields.program?.trim() ?? "";
+  const already = schools.some((row) =>
+    link
+      ? row.programLink.trim() === link
+      : row.school.trim() === school && row.program.trim() === program,
+  );
+  if (already) {
+    return schools;
+  }
+  return [...schools.filter((row) => !isEmptySchoolRow(row)), createSchoolRow(fields)];
+}
+
+// Schools an Opportunities row asked to add, waiting for the letters draft to finish loading.
+// Module state rather than app state, like the profile page's focus hand-off: it is consumed once,
+// and it must not be saved or restored with anything.
+let queuedLetterSchools: Partial<RecommendationSchool>[] = [];
+
+export function queueLetterSchool(fields: Partial<RecommendationSchool>): void {
+  queuedLetterSchools.push(fields);
+}
+
+export function takeQueuedLetterSchools(): Partial<RecommendationSchool>[] {
+  const queued = queuedLetterSchools;
+  queuedLetterSchools = [];
+  return queued;
 }
 
 export function isEmptySchoolRow(row: RecommendationSchool): boolean {
@@ -243,7 +303,7 @@ export function parseRecommendationLettersDraft(value: unknown): RecommendationL
   ) {
     return null;
   }
-  return { schools, facts, cvOverleafUrl, driveFolderUrl, savedAt };
+  return { schools, facts, cvOverleafUrl, driveFolderUrl, savedAt, ...draftEditingId(record) };
 }
 
 const EMPTY_FACT: Omit<LetterFact, "id"> = { project: "", contribution: "" };
@@ -353,7 +413,7 @@ export function parseMeetingRequestDraft(value: unknown): MeetingRequestDraft | 
   if (meetings.every(isEmptyMeetingRow)) {
     return null;
   }
-  return { meetings, savedAt };
+  return { meetings, savedAt, ...draftEditingId(record) };
 }
 
 function isFile(value: unknown): value is File {
@@ -386,105 +446,62 @@ export function parseLogisticsDraft(value: unknown): LogisticsDraft | null {
   if (!description && !signatureFiles.length && !attachments.length) {
     return null;
   }
-  return { description, signatureFiles, attachments, savedAt };
-}
-
-function openDatabase(): Promise<IDBDatabase> {
-  const factory: IDBFactory | undefined = globalThis.indexedDB;
-  if (factory === undefined) {
-    // Private-mode browsers and non-DOM test environments have no IndexedDB. Saving reports this
-    // rather than pretending the draft was written.
-    return Promise.reject(new Error("This browser has no local storage available."));
-  }
-  return new Promise((resolve, reject) => {
-    const request = factory.open(DB_NAME, DB_VERSION);
-    request.addEventListener("upgradeneeded", () => {
-      if (!request.result.objectStoreNames.contains(STORE_NAME)) {
-        request.result.createObjectStore(STORE_NAME);
-      }
-    });
-    request.addEventListener("success", () => resolve(request.result));
-    request.addEventListener("error", () =>
-      reject(request.error ?? new Error("Could not open local storage.")),
-    );
-  });
-}
-
-async function withStore<T>(
-  mode: IDBTransactionMode,
-  run: (store: IDBObjectStore) => IDBRequest<T>,
-): Promise<T> {
-  const db = await openDatabase();
-  try {
-    return await new Promise<T>((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, mode);
-      const request = run(transaction.objectStore(STORE_NAME));
-      request.addEventListener("success", () => resolve(request.result));
-      request.addEventListener("error", () =>
-        reject(request.error ?? new Error("Local storage write failed.")),
-      );
-      transaction.addEventListener("abort", () =>
-        reject(transaction.error ?? new Error("Local storage write failed.")),
-      );
-    });
-  } finally {
-    // Closing is deferred until the transaction settles; an open handle blocks a later version
-    // upgrade in another tab.
-    db.close();
-  }
+  return { description, signatureFiles, attachments, savedAt, ...draftEditingId(record) };
 }
 
 export async function saveLogisticsDraft(draft: LogisticsDraft, scope: string): Promise<void> {
-  await withStore("readwrite", (store) => store.put(draft, scopedKey(SIGNATURE_DRAFT_KEY, scope)));
+  await saveWorkingDraft(scope, "document-signature", draft);
 }
-
 export async function loadLogisticsDraft(scope: string): Promise<LogisticsDraft | null> {
-  const stored = await withStore("readonly", (store) =>
-    store.get(scopedKey(SIGNATURE_DRAFT_KEY, scope)),
-  );
-  return parseLogisticsDraft(stored);
+  return parseLogisticsDraft(await loadWorkingDraft(scope, "document-signature"));
 }
-
 export async function clearLogisticsDraft(scope: string): Promise<void> {
-  await withStore("readwrite", (store) => store.delete(scopedKey(SIGNATURE_DRAFT_KEY, scope)));
+  await saveWorkingDraft(scope, "document-signature", null);
 }
-
 export async function saveRecommendationLettersDraft(
   draft: RecommendationLettersDraft,
   scope: string,
 ): Promise<void> {
-  await withStore("readwrite", (store) => store.put(draft, scopedKey(LETTERS_DRAFT_KEY, scope)));
+  await saveWorkingDraft(scope, "recommendation-letters", draft);
 }
-
 export async function loadRecommendationLettersDraft(
   scope: string,
 ): Promise<RecommendationLettersDraft | null> {
-  const stored = await withStore("readonly", (store) =>
-    store.get(scopedKey(LETTERS_DRAFT_KEY, scope)),
-  );
-  return parseRecommendationLettersDraft(stored);
+  return parseRecommendationLettersDraft(await loadWorkingDraft(scope, "recommendation-letters"));
 }
-
 export async function clearRecommendationLettersDraft(scope: string): Promise<void> {
-  await withStore("readwrite", (store) => store.delete(scopedKey(LETTERS_DRAFT_KEY, scope)));
+  await saveWorkingDraft(scope, "recommendation-letters", null);
 }
-
 export async function saveMeetingRequestDraft(
   draft: MeetingRequestDraft,
   scope: string,
 ): Promise<void> {
-  await withStore("readwrite", (store) => store.put(draft, scopedKey(MEETING_DRAFT_KEY, scope)));
+  await saveWorkingDraft(scope, "book-meeting", draft);
 }
-
 export async function loadMeetingRequestDraft(scope: string): Promise<MeetingRequestDraft | null> {
-  const stored = await withStore("readonly", (store) =>
-    store.get(scopedKey(MEETING_DRAFT_KEY, scope)),
-  );
-  return parseMeetingRequestDraft(stored);
+  return parseMeetingRequestDraft(await loadWorkingDraft(scope, "book-meeting"));
+}
+export async function clearMeetingRequestDraft(scope: string): Promise<void> {
+  await saveWorkingDraft(scope, "book-meeting", null);
 }
 
-export async function clearMeetingRequestDraft(scope: string): Promise<void> {
-  await withStore("readwrite", (store) => store.delete(scopedKey(MEETING_DRAFT_KEY, scope)));
+function draftEditingId(record: Record<string, unknown>): { editingId?: string } {
+  return typeof record.editingId === "string" ? { editingId: record.editingId } : {};
+}
+
+const editVersions = new WeakMap<object, Map<string, number>>();
+function editVersion(host: object, kind: string, advance = false): number {
+  let versions = editVersions.get(host);
+  if (!versions) {
+    versions = new Map();
+    editVersions.set(host, versions);
+  }
+  const version = (versions.get(kind) ?? 0) + (advance ? 1 : 0);
+  versions.set(kind, version);
+  return version;
+}
+function sameScope(host: object, scope: string) {
+  return !("adminBotLogisticsDraftScope" in host) || host.adminBotLogisticsDraftScope === scope;
 }
 
 function describeError(error: unknown): string {
@@ -496,6 +513,7 @@ export async function saveAdminBotLogisticsDraft(
   host: LogisticsDraftHost,
   scope: string,
 ): Promise<void> {
+  const version = editVersion(host, "Logistics", true);
   host.adminBotLogisticsSaving = true;
   host.adminBotLogisticsSaveError = null;
   const savedAt = Date.now();
@@ -506,14 +524,21 @@ export async function saveAdminBotLogisticsDraft(
         signatureFiles: host.adminBotLogisticsSignatureFiles,
         attachments: host.adminBotLogisticsAttachments,
         savedAt,
+        ...(host.adminBotLogisticsEditingId ? { editingId: host.adminBotLogisticsEditingId } : {}),
       },
       scope,
     );
-    host.adminBotLogisticsSavedAt = savedAt;
+    if (sameScope(host, scope) && editVersion(host, "Logistics") === version) {
+      host.adminBotLogisticsSavedAt = savedAt;
+    }
   } catch (error) {
-    host.adminBotLogisticsSaveError = describeError(error);
+    if (sameScope(host, scope)) {
+      host.adminBotLogisticsSaveError = describeError(error);
+    }
   } finally {
-    host.adminBotLogisticsSaving = false;
+    if (sameScope(host, scope) && editVersion(host, "Logistics") === version) {
+      host.adminBotLogisticsSaving = false;
+    }
   }
 }
 
@@ -526,14 +551,24 @@ export async function restoreAdminBotLogisticsDraft(
   host: LogisticsDraftHost,
   scope: string,
 ): Promise<void> {
+  const version = editVersion(host, "Logistics");
+  const before = host.adminBotLogisticsDescription;
   const draft = await loadLogisticsDraft(scope).catch(() => null);
-  if (!draft || !scopeStillActive(host, scope)) {
+  if (
+    !draft ||
+    editVersion(host, "Logistics") !== version ||
+    host.adminBotLogisticsDescription !== before ||
+    !scopeStillActive(host, scope)
+  ) {
     return;
   }
   host.adminBotLogisticsDescription = draft.description;
   host.adminBotLogisticsSignatureFiles = draft.signatureFiles;
   host.adminBotLogisticsAttachments = draft.attachments;
   host.adminBotLogisticsSavedAt = draft.savedAt || null;
+  if (host.tab === "adminbotSignatures" && draft.editingId) {
+    host.adminBotLogisticsEditingId = draft.editingId;
+  }
 }
 
 /**
@@ -545,6 +580,7 @@ export async function saveAdminBotLettersDraft(
   host: RecommendationLettersDraftHost,
   scope: string,
 ): Promise<void> {
+  const version = editVersion(host, "Letters", true);
   host.adminBotLettersSaving = true;
   host.adminBotLettersSaveError = null;
   const savedAt = Date.now();
@@ -556,14 +592,21 @@ export async function saveAdminBotLettersDraft(
         cvOverleafUrl: host.adminBotLettersCvOverleafUrl,
         driveFolderUrl: host.adminBotLettersDriveFolderUrl,
         savedAt,
+        ...(host.adminBotLogisticsEditingId ? { editingId: host.adminBotLogisticsEditingId } : {}),
       },
       scope,
     );
-    host.adminBotLettersSavedAt = savedAt;
+    if (sameScope(host, scope) && editVersion(host, "Letters") === version) {
+      host.adminBotLettersSavedAt = savedAt;
+    }
   } catch (error) {
-    host.adminBotLettersSaveError = describeError(error);
+    if (sameScope(host, scope)) {
+      host.adminBotLettersSaveError = describeError(error);
+    }
   } finally {
-    host.adminBotLettersSaving = false;
+    if (sameScope(host, scope) && editVersion(host, "Letters") === version) {
+      host.adminBotLettersSaving = false;
+    }
   }
 }
 
@@ -572,8 +615,15 @@ export async function restoreAdminBotLettersDraft(
   host: RecommendationLettersDraftHost,
   scope: string,
 ): Promise<void> {
+  const version = editVersion(host, "Letters");
+  const before = host.adminBotLettersSchools;
   const draft = await loadRecommendationLettersDraft(scope).catch(() => null);
-  if (!draft || !scopeStillActive(host, scope)) {
+  if (
+    !draft ||
+    editVersion(host, "Letters") !== version ||
+    host.adminBotLettersSchools !== before ||
+    !scopeStillActive(host, scope)
+  ) {
     return;
   }
   host.adminBotLettersSchools = draft.schools;
@@ -585,6 +635,9 @@ export async function restoreAdminBotLettersDraft(
   host.adminBotLettersCvOverleafUrl = draft.cvOverleafUrl;
   host.adminBotLettersDriveFolderUrl = draft.driveFolderUrl;
   host.adminBotLettersSavedAt = draft.savedAt || null;
+  if (host.tab === "adminbotRecLetters" && draft.editingId) {
+    host.adminBotLogisticsEditingId = draft.editingId;
+  }
 }
 
 /** The meeting table's own save and restore, on the same contract as the other two. */
@@ -592,16 +645,30 @@ export async function saveAdminBotMeetingDraft(
   host: MeetingRequestDraftHost,
   scope: string,
 ): Promise<void> {
+  const version = editVersion(host, "Meeting", true);
   host.adminBotMeetingSaving = true;
   host.adminBotMeetingSaveError = null;
   const savedAt = Date.now();
   try {
-    await saveMeetingRequestDraft({ meetings: host.adminBotMeetingRows, savedAt }, scope);
-    host.adminBotMeetingSavedAt = savedAt;
+    await saveMeetingRequestDraft(
+      {
+        meetings: host.adminBotMeetingRows,
+        savedAt,
+        ...(host.adminBotLogisticsEditingId ? { editingId: host.adminBotLogisticsEditingId } : {}),
+      },
+      scope,
+    );
+    if (sameScope(host, scope) && editVersion(host, "Meeting") === version) {
+      host.adminBotMeetingSavedAt = savedAt;
+    }
   } catch (error) {
-    host.adminBotMeetingSaveError = describeError(error);
+    if (sameScope(host, scope)) {
+      host.adminBotMeetingSaveError = describeError(error);
+    }
   } finally {
-    host.adminBotMeetingSaving = false;
+    if (sameScope(host, scope) && editVersion(host, "Meeting") === version) {
+      host.adminBotMeetingSaving = false;
+    }
   }
 }
 
@@ -610,10 +677,20 @@ export async function restoreAdminBotMeetingDraft(
   host: MeetingRequestDraftHost,
   scope: string,
 ): Promise<void> {
+  const version = editVersion(host, "Meeting");
+  const before = host.adminBotMeetingRows;
   const draft = await loadMeetingRequestDraft(scope).catch(() => null);
-  if (!draft || !scopeStillActive(host, scope)) {
+  if (
+    !draft ||
+    editVersion(host, "Meeting") !== version ||
+    host.adminBotMeetingRows !== before ||
+    !scopeStillActive(host, scope)
+  ) {
     return;
   }
   host.adminBotMeetingRows = draft.meetings;
   host.adminBotMeetingSavedAt = draft.savedAt || null;
+  if (host.tab === "adminbotMeetingRequests" && draft.editingId) {
+    host.adminBotLogisticsEditingId = draft.editingId;
+  }
 }

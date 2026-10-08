@@ -310,6 +310,35 @@ export function createGogAdminBotExecutor(
   const capture = options.capture ?? createGogCapture(options.env);
   return {
     async execute(proposal) {
+      if (proposal.type === "calendar.add_attendees") {
+        const payload = requirePayload(proposal);
+        const args = buildCalendarAddAttendeesArgs(proposal);
+        const eventId = requireString(payload, "event_id");
+        const readArgs = rootArgs("calendar.event", optionalString(payload, "account"));
+        readArgs.push(
+          "calendar",
+          "event",
+          optionalString(payload, "calendar_id") ?? "primary",
+          eventId,
+        );
+        const existing = new Set(
+          parseEventAttendees(await capture(readArgs), eventId, true).map((attendee) =>
+            attendee.email.toLowerCase(),
+          ),
+        );
+        const missing = [
+          ...new Set(
+            (recipients(payload.attendees) ?? "")
+              .split(",")
+              .map((email) => email.trim().toLowerCase()),
+          ),
+        ].filter((email) => email && !existing.has(email));
+        if (missing.length > 0) {
+          args[args.indexOf("--add-attendee") + 1] = missing.join(",");
+          await run(args);
+        }
+        return { handled: true };
+      }
       if (proposal.type === "calendar.remove_attendees") {
         await removeCalendarAttendees(proposal, run, capture);
         return { handled: true };
@@ -326,6 +355,19 @@ export function createGogAdminBotExecutor(
       const args = buildGogArgs(proposal);
       if (!args) {
         return { handled: false };
+      }
+      if (proposal.type === "calendar.create_birthday") {
+        const response = JSON.parse(await capture(args)) as {
+          id?: unknown;
+          event?: { id?: unknown };
+        };
+        const id = response.event?.id ?? response.id;
+        if (typeof id !== "string" || !id.trim()) {
+          throw new Error(
+            "birthday creation returned no event id; inspect the calendar before retrying",
+          );
+        }
+        return { handled: true, artifacts: { event_id: id } };
       }
       await run(args);
       return { handled: true };
@@ -770,7 +812,7 @@ async function removeCalendarAttendees(
 
 type EventAttendee = { email: string; optional: boolean; resource: boolean };
 
-function parseEventAttendees(stdout: string, eventId: string): EventAttendee[] {
+function parseEventAttendees(stdout: string, eventId: string, allowEmpty = false): EventAttendee[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(stdout);
@@ -782,6 +824,9 @@ function parseEventAttendees(stdout: string, eventId: string): EventAttendee[] {
     record.event && typeof record.event === "object" ? record.event : record
   ) as Record<string, unknown>;
   if (!Array.isArray(event.attendees)) {
+    if (allowEmpty && event.id === eventId && event.attendees === undefined) {
+      return [];
+    }
     // An event with no guest list at all cannot be the meeting a removal was planned against.
     throw new Error(`gog calendar event ${eventId} returned no attendee list`);
   }
@@ -830,7 +875,7 @@ function buildCalendarDeleteArgs(proposal: AdminBotStoredProposal): string[] {
 export function createGogDriveProbe(
   options: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {},
 ): AdminBotDriveProbe {
-  const command = options.command ?? "gog";
+  const command = options.command ?? resolveGogExecutable(options.env);
   return async (fileId) => {
     // The id comes from `adminBotDriveFileId`, which accepts a closed charset -- but this is the
     // last point before it becomes an argument, so it is checked here too rather than trusted.
@@ -853,7 +898,7 @@ export function createGogDriveProbe(
         ...(options.env ? { env: options.env } : {}),
       });
       const payload = JSON.parse(stdout) as Record<string, unknown>;
-      const file = (payload.result ?? payload) as Record<string, unknown>;
+      const file = (payload.file ?? payload.result ?? payload) as Record<string, unknown>;
       const name = typeof file.name === "string" ? file.name : undefined;
       const capabilities = file.capabilities as Record<string, unknown> | undefined;
       const editable =
@@ -902,7 +947,9 @@ export async function readDriveFileBase64(
     signal?: AbortSignal;
   } = {},
 ): Promise<string> {
-  const command = options.command ?? "gog";
+  // Resolved rather than bare: under the systemd unit's minimal PATH a bare "gog" ENOENTs, which
+  // surfaced as "could not read the Drive copy (spawn gog ENOENT)" on every LinkedIn draft.
+  const command = options.command ?? resolveGogExecutable(options.env);
   const output = path.join(
     os.tmpdir(),
     `adminbot-drive-${fileId.replace(/[^a-zA-Z0-9_-]/gu, "")}-${Date.now()}.pdf`,

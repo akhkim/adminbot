@@ -1,32 +1,12 @@
-// The signed-in member's own work: one card per project or paper, and inside each card the whole
-// list of what that paper still owes.
-//
-// Shaped like the profile page on purpose. A member's own record is a list of typed fields with a
-// required mark, a hint about the shape each accepts, and autosave; the evidence a paper collects
-// is the same kind of list, so it is rendered the same way rather than as a second vocabulary for
-// the same idea. Closed, a card is a title and a progress line. Open, it is the form.
-//
-// The global nudge at the top is the same button Profile Overview carries, pointed at papers: it
-// composes nothing and picks nobody. The service walks every live paper, finds the artifacts whose
-// upstream evidence is already in, and messages whoever the slot registry says owes each one --
-// the first author for nearly all of them. Admin-only, because it messages the whole lab.
-//
-// Projects and papers are the same thing here because they are the same record in AdminBot: a
-// paper row moves through the PaperPublish steps from brainstorming to poster. Advancing one from
-// this page writes `current_step` through the same endpoint the Active Papers page uses, so the
-// two pages can never disagree about where something is -- they share both the step vocabulary
-// (`stepLabels` / `paperSteps`) and the write path.
-//
-// Blockers are real records now, not browser state: they are written onto the paper the same way
-// the step is, so an admin sees a report the moment it is filed. See blockers.ts.
-import "../paper-visibility.ts";
 import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
+import "../paper-visibility.ts";
 import {
   adminBotNormalizePaperAlias,
   adminBotPaperAliasMaxLength,
   adminBotProjectChannelName,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import { isPaperFeedbackSlot } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -34,6 +14,7 @@ import { icons } from "../../icons.ts";
 import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
 import {
   draftLinkedInPost,
+  draftXPost,
   loadStoredMemberSession,
   mapImportColumns,
   resolveAdminBotBaseUrl,
@@ -66,6 +47,28 @@ import {
   parseVenue,
   venueYears,
 } from "../data/venue-catalog.ts";
+// The signed-in member's own work: one card per project or paper, and inside each card the whole
+// list of what that paper still owes.
+//
+// Shaped like the profile page on purpose. A member's own record is a list of typed fields with a
+// required mark, a hint about the shape each accepts, and autosave; the evidence a paper collects
+// is the same kind of list, so it is rendered the same way rather than as a second vocabulary for
+// the same idea. Closed, a card is a title and a progress line. Open, it is the form.
+//
+// The global nudge at the top is the same button Profile Overview carries, pointed at papers: it
+// composes nothing and picks nobody. The service walks every live paper, finds the artifacts whose
+// upstream evidence is already in, and messages whoever the slot registry says owes each one --
+// the first author for nearly all of them. Admin-only, because it messages the whole lab.
+//
+// Projects and papers are the same thing here because they are the same record in AdminBot: a
+// paper row moves through the PaperPublish steps from brainstorming to poster. Advancing one from
+// this page writes `current_step` through the same endpoint the Active Papers page uses, so the
+// two pages can never disagree about where something is -- they share both the step vocabulary
+// (`stepLabels` / `paperSteps`) and the write path.
+//
+// Blockers are real records now, not browser state: they are written onto the paper the same way
+// the step is, so an admin sees a report the moment it is filed. See blockers.ts.
+import { renderDateControl } from "../date-control.ts";
 import {
   decisionEmailSentStamp,
   decisionOf,
@@ -115,12 +118,14 @@ import {
 } from "../venue-targets.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { paperTripDraftFrom, renderPaperCycle, type PaperTripDraft } from "./paper-cycle.ts";
+import { renderPaperFeedback } from "./paper-feedback.ts";
 import {
   cancelPaperLegacyAutosave,
   emptyPaperLegacyState,
   renderPaperLegacy,
   type PaperLegacyState,
 } from "./paper-legacy.ts";
+import { renderPaperPiReview } from "./paper-pi-review.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
 import { renderPaperTimeline } from "./paper-timeline.ts";
 import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
@@ -129,6 +134,7 @@ import { renderRecentEdits } from "./recent-edits.ts";
 
 export type MyWorkProps = {
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
+  onSaveBlocker?: (paper: AdminBotPaperSaveInput) => Promise<boolean>;
   /**
    * Which papers this surface is about. Defaults to the signed-in member's own, which is what
    * My Projects & Papers means; Active Papers passes the whole lab. The cards, their fields and
@@ -210,7 +216,12 @@ export type MyWorkProps = {
   viewerIsAdmin?: boolean;
   memberId: string | null;
   memberName: (memberId: string) => string;
-  onSaveDraft: (paperId: string, platform: string, body: string) => void;
+  onSaveDraft: (
+    paperId: string,
+    platform: string,
+    body: string,
+    xThread?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XThreadDraft,
+  ) => void;
   onCirculateDraft: (paperId: string, draftId: string) => void;
   onConsent: (paperId: string, draftId: string, decision: string, comment?: string) => void;
   onSetAttendee: (
@@ -249,6 +260,11 @@ export type BlockerDraft = {
   /** The blocker being edited, keyed by filing time. Absent when filing a new one. */
   at?: string;
   text: string;
+  title?: string;
+  note?: string;
+  stage?: string;
+  saving?: boolean;
+  error?: string;
 };
 
 export type Blocker = {
@@ -433,11 +449,16 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
   return html`
     <form
       class="blocker-form"
-      @submit=${(event: SubmitEvent) => {
+      @submit=${async (event: SubmitEvent) => {
         event.preventDefault();
+        if (draft.saving) return;
         const data = new FormData(event.currentTarget as HTMLFormElement);
         const title = String(data.get("title") ?? "").trim();
-        if (!title) {
+        const titleInput = (event.currentTarget as HTMLFormElement).elements.namedItem(
+          "title",
+        ) as HTMLInputElement;
+        titleInput.setCustomValidity(title ? "" : "Enter a short description of what is blocked.");
+        if (!titleInput.reportValidity()) {
           return;
         }
         const fields = {
@@ -445,13 +466,25 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
           title,
           note: String(data.get("note") ?? "").trim(),
         };
-        props.onSavePaper(
-          editing
-            ? editBlockerInput(paper, editing.at, fields)
-            : // Named at filing time so the admin list can say who to go ask.
-              fileBlockerInput(paper, { ...fields, by: findOwnMember(state)?.name ?? "" }),
-        );
-        state.myWorkBlockerDraft = null;
+        Object.assign(draft, fields, { saving: true, error: undefined });
+        props.onRerender?.();
+        try {
+          const saved = await props.onSaveBlocker?.(
+            editing
+              ? editBlockerInput(paper, editing.at, fields)
+              : // Named at filing time so the admin list can say who to go ask.
+                fileBlockerInput(paper, { ...fields, by: findOwnMember(state)?.name ?? "" }),
+          );
+          if (state.myWorkBlockerDraft !== draft) return;
+          if (saved) state.myWorkBlockerDraft = null;
+          else draft.error = "Could not save the blocker report. Your draft is kept. Try again.";
+        } catch {
+          if (state.myWorkBlockerDraft === draft)
+            draft.error = "Could not save the blocker report. Your draft is kept. Try again.";
+        } finally {
+          draft.saving = false;
+          props.onRerender?.();
+        }
       }}
     >
       <p class="blocker-form__notice">
@@ -465,10 +498,18 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
       <div class="blocker-form__fields">
         <label class="register__field">
           <span class="register__label">Which stage is blocked?</span>
-          <select class="input" name="stage" data-testid=${`blocker-stage-${paper.id}`}>
+          <select
+            class="input"
+            name="stage"
+            ?disabled=${draft.saving}
+            data-testid=${`blocker-stage-${paper.id}`}
+          >
             ${paperSteps.map(
               (step) => html`
-                <option value=${step} ?selected=${step === (editing?.stage || paper.current_step)}>
+                <option
+                  value=${step}
+                  ?selected=${step === (draft.stage || editing?.stage || paper.current_step)}
+                >
                   ${stepLabel(step)}
                 </option>
               `,
@@ -477,13 +518,16 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
         </label>
 
         <label class="register__field">
-          <span class="register__label">What is blocked? (short)</span>
+          <span class="register__label">What is blocked? (short, required)</span>
           <input
             class="input"
             name="title"
+            ?disabled=${draft.saving}
+            required
+            @input=${(event: Event) => (event.target as HTMLInputElement).setCustomValidity("")}
             maxlength=${BLOCKER_TITLE_MAX}
             placeholder="e.g. OpenReview rejects the PDF"
-            .value=${editing?.title ?? ""}
+            .value=${draft.title ?? editing?.title ?? ""}
             data-testid=${`blocker-title-${paper.id}`}
           />
           <span class="register__hint">Up to ${BLOCKER_TITLE_MAX} characters.</span>
@@ -495,20 +539,31 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
         <textarea
           class="input"
           name="note"
+          ?disabled=${draft.saving}
           rows="4"
           placeholder=${t("myWork.blockers.placeholder")}
         >
-${editing?.note ?? ""}</textarea
+${draft.note ?? editing?.note ?? ""}</textarea
         >
       </label>
 
+      ${draft.error ? html`<p role="alert">${draft.error}</p>` : nothing}
       <div class="blocker-form__footer">
         <p class="blocker-form__reviewer">
           ${t("myWork.blockers.reviewer", { name: reviewerName(state) })}
         </p>
         <div class="register__actions">
-          <button type="submit" class="btn primary">
-            ${editing ? "Save changes" : t("myWork.blockers.submit")}
+          <button
+            type="submit"
+            class="btn primary"
+            ?disabled=${draft.saving}
+            aria-busy=${Boolean(draft.saving)}
+          >
+            ${draft.saving
+              ? "Saving report…"
+              : editing
+                ? "Save changes"
+                : t("myWork.blockers.submit")}
           </button>
           <button
             type="button"
@@ -798,14 +853,17 @@ function renderProjectDetails(
           </label>
           <label class="my-work-details__field">
             <span>Started on</span>
-            <input
-              class="input"
-              type="date"
-              data-testid=${`my-work-details-started-${paper.id}`}
-              .value=${draft.startedOn}
-              @input=${(event: Event) =>
-                edited({ startedOn: (event.target as HTMLInputElement).value })}
-            />
+            ${renderDateControl(
+              html`<input
+                class="input"
+                type="date"
+                data-testid=${`my-work-details-started-${paper.id}`}
+                .value=${draft.startedOn}
+                @input=${(event: Event) =>
+                  edited({ startedOn: (event.target as HTMLInputElement).value })}
+              />`,
+              draft.startedOn,
+            )}
           </label>
         </div>
         ${draft.error
@@ -1167,12 +1225,14 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
     cycleClosed: cycle.cycleClosed,
     memberId: props.memberId,
     memberName: props.memberName,
-    onSaveDraft: (platform: string, body: string) => props.onSaveDraft(paper.id, platform, body),
+    paperAuthors: paper.authors ?? [],
+    creditMembers: state.adminBotData?.members ?? [],
+    onSaveDraft: (platform, body, xThread) => props.onSaveDraft(paper.id, platform, body, xThread),
     onCirculateDraft: (draftId: string) => props.onCirculateDraft(paper.id, draftId),
     // The old dialog's generate path, minus the PDF picker: the service reads the Drive copy the
     // card already chases. Result lands in the panel's textarea as a stored draft, so the usual
     // sign-off row takes over from there.
-    onGenerateLinkedInDraft: async (venue: string, note: string) => {
+    onGenerateLinkedInDraft: async (venue: string, note: string, pdfBase64?: string) => {
       const stored = loadStoredMemberSession();
       if (!stored) {
         globalThis.alert?.("Sign in first — drafting runs against your own session.");
@@ -1182,6 +1242,7 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
         const result = await draftLinkedInPost(
           {
             paperId: paper.id,
+            ...(pdfBase64 ? { pdfBase64 } : {}),
             ...(paper.artifacts?.arxiv_url ? { url: paper.artifacts.arxiv_url } : {}),
             ...(venue ? { venue } : {}),
             ...(note ? { note } : {}),
@@ -1194,6 +1255,37 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
           return;
         }
         props.onSaveDraft(paper.id, "linkedin", result.value.text);
+      } catch (error) {
+        globalThis.alert?.((error as Error).message);
+      }
+    },
+    onGenerateXDraft: async (_venue, _note, pdfBase64, announcement, credits) => {
+      const stored = loadStoredMemberSession();
+      if (!stored) {
+        globalThis.alert?.("Sign in first.");
+        return;
+      }
+      try {
+        const result = await draftXPost(
+          {
+            paperId: paper.id,
+            ...(announcement ? { announcement } : {}),
+            ...(credits ? { credits } : {}),
+            ...(pdfBase64 ? { pdfBase64 } : {}),
+            ...(paper.artifacts?.arxiv_url ? { url: paper.artifacts.arxiv_url } : {}),
+          },
+          stored.sessionToken ?? "",
+          resolveAdminBotBaseUrl(state.settings),
+        );
+        if (!result.ok) {
+          globalThis.alert?.(result.message ?? "Could not generate the X thread.");
+          return;
+        }
+        props.onSaveDraft(paper.id, "x", result.value.posts.map((post) => post.text).join("\n\n"), {
+          stage: announcement?.stage ?? "arxiv",
+          posts: result.value.posts,
+        });
+        if (result.value.issues.length) globalThis.alert?.(result.value.issues.join("\n"));
       } catch (error) {
         globalThis.alert?.((error as Error).message);
       }
@@ -1436,7 +1528,7 @@ function renderLegacyExtras(state: AppViewState, paper: AdminBotPaperRecord, pro
         slots: props.slots[paper.id]?.slots ?? [],
         paper,
       })}
-      ${renderNextStep(paper)}
+      ${renderNextStep(paper)} ${renderLegacyFeedback(paper, props)}
     `,
     bottom: html`
       ${renderCompletion(paper, props)} ${renderWeeklyUpdates(paper, props)}
@@ -1449,6 +1541,26 @@ function renderLegacyExtras(state: AppViewState, paper: AdminBotPaperRecord, pro
       ${renderDeletePaper(paper, props)}
     `,
   };
+}
+
+/**
+ * The card's feedback-request form, drawn in the legacy view.
+ *
+ * The legacy view is where My Projects opens, and its field list skips the feedback slots because
+ * a generic text box cannot build the request the service validates -- so without this the form
+ * would only be reachable by leaving the default view. Gated on the slots having loaded, as the
+ * card gates it, so an unfetched paper does not offer a form for rows it has not seen.
+ */
+function renderLegacyFeedback(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const slots = props.slots[paper.id]?.slots ?? [];
+  if (!slots.some((row) => isPaperFeedbackSlot(row.slot))) {
+    return nothing;
+  }
+  return renderPaperFeedback({
+    slots,
+    loading: props.slotsBusyId === paper.id,
+    onSaveSlot: (slot, input) => props.onSaveSlot(paper.id, slot, input),
+  });
 }
 
 /**
@@ -2104,13 +2216,13 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
 
       <label class="register__field">
         <span class="register__label">Started on</span>
-        <input
+        ${renderDateControl(html`<input
           class="input"
           name="started_on"
           type="date"
           required
           data-testid="my-work-add-started-on"
-        />
+        />`)}
         <span class="register__hint">
           When work actually began, which is often well before the paper is filed here.
         </span>
@@ -2750,16 +2862,26 @@ function showPaperDialog(element?: Element) {
  * Always expanded: the dialog was opened to read this paper, so making its body a second click is
  * asking the same question twice.
  */
-export function renderPaperCardDialog(params: {
-  state: AppViewState;
-  props: MyWorkProps;
-  paper: AdminBotPaperRecord;
-  onClose: () => void;
-}) {
+export function renderPaperCardDialog(
+  params: {
+    state: AppViewState;
+    props: MyWorkProps;
+    onClose: () => void;
+  } & (
+    | {
+        reviewOnly: true;
+        paper: Pick<AdminBotPaperRecord, "id" | "title" | "authors" | "artifacts">;
+      }
+    | { reviewOnly?: false; paper: AdminBotPaperRecord }
+  ),
+) {
   return html`
     <dialog
-      class="paper-card-dialog"
+      class=${params.reviewOnly
+        ? "paper-card-dialog paper-card-dialog--review"
+        : "paper-card-dialog"}
       data-testid="paper-card-dialog"
+      aria-label=${params.reviewOnly ? `Review ${params.paper.title}` : params.paper.title}
       ${ref(showPaperDialog)}
       @click=${(event: Event) => {
         // The backdrop is the dialog itself; a click that lands on a child is not a dismissal.
@@ -2791,7 +2913,12 @@ export function renderPaperCardDialog(params: {
           </button>
         </div>
         <div class="paper-card-dialog__body">
-          ${renderItem(params.state, params.paper, { ...params.props, openIds: [params.paper.id] })}
+          ${params.reviewOnly
+            ? renderPaperPiReview(params.paper, params.props)
+            : renderItem(params.state, params.paper, {
+                ...params.props,
+                openIds: [params.paper.id],
+              })}
         </div>
       </div>
     </dialog>

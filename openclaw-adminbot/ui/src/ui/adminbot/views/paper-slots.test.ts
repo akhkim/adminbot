@@ -392,7 +392,11 @@ describe("renderPaperSlots", () => {
   });
 
   it("sends the value, never a status -- the service decides what counts as provided", async () => {
-    const { container, saved } = await draw([]);
+    const { container, saved } = await draw([
+      row({ slot: "feedback_arr" }),
+      row({ slot: "feedback_arxiv" }),
+      row({ slot: "feedback_camera_ready" }),
+    ]);
     const input = container.querySelector<HTMLInputElement>(
       '[data-testid="paper-slot-p1-project_folder"]',
     );
@@ -418,13 +422,14 @@ describe("renderPaperSlots", () => {
     expect(container.textContent).toContain("the link must be a /abs/ URL");
   });
 
-  it("dims a slot that is not reachable yet, without narrating why", async () => {
+  it("keeps slots visually open and editable before prerequisites", async () => {
     // The "Waiting on X" line, the "unblocks Y" line and the host/path spec were three rows of
     // small grey type under every field. The dimming carries the same meaning without turning the
     // card into a dependency graph.
     const { container } = await draw([]);
     const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
-    expect(overleaf?.className).toContain("paper-slot--blocked");
+    expect(overleaf?.className).not.toContain("paper-slot--blocked");
+    expect(overleaf?.querySelector<HTMLInputElement>("input")?.disabled).toBe(false);
     expect(overleaf?.textContent).not.toContain("Waiting on");
     expect(overleaf?.textContent).not.toContain("unblocks");
   });
@@ -478,7 +483,11 @@ describe("renderPaperSlots", () => {
   });
 
   it("gives the enum slot a state and a place, and locks the place until a state is picked", async () => {
-    const { container, saved } = await draw([]);
+    const { container, saved } = await draw([
+      row({ slot: "feedback_arr" }),
+      row({ slot: "feedback_arxiv" }),
+      row({ slot: "feedback_camera_ready" }),
+    ]);
     const state = container.querySelector<HTMLSelectElement>(
       '[data-testid="paper-slot-p1-poster_physical"]',
     );
@@ -580,10 +589,10 @@ describe("renderPaperSlots -- only what is ready", () => {
     expect(container.querySelector('[data-testid="paper-slot-p1-project_folder"]')).not.toBeNull();
   });
 
-  it("says how many are held back, so nothing looks lost", async () => {
+  it("explains that all fields are available at any project stage", async () => {
     const { container } = await draw([], false, { showAll: false });
     expect(container.querySelector(".paper-slots__filter-text")?.textContent).toContain(
-      "further off",
+      "available at any project stage",
     );
   });
 });
@@ -684,10 +693,12 @@ describe("field guidance", () => {
       row({ slot: "authors_ack", status: "provided", provided_at: "2026-09-08T10:00:00.000Z" }),
     ];
 
-    it("tells the authors the paper has gone to her, and when", async () => {
+    it("reports readiness without claiming notification delivery", async () => {
       const { container } = await draw(atGate);
       const note = container.querySelector('[data-testid="paper-slot-pi-sent-p1"]');
-      expect(note?.textContent).toContain("Sent to Zhijing to review");
+      expect(note?.textContent).toContain("Ready for PI approval");
+      expect(note?.textContent).toContain("does not confirm a notification was delivered");
+      expect(note?.textContent).not.toContain("Sent to Zhijing");
       expect(note?.textContent).toContain("2026-09-08");
     });
 
@@ -708,5 +719,68 @@ describe("field guidance", () => {
       ]);
       expect(container.querySelector('[data-testid="paper-slot-pi-sent-p1"]')).toBeNull();
     });
+  });
+});
+
+describe("paper feedback requests", () => {
+  it("offers three queue actions and preserves a reason and deadline times", async () => {
+    const { container, saved } = await draw([
+      row({ slot: "feedback_arr" }),
+      row({ slot: "feedback_arxiv" }),
+      row({ slot: "feedback_camera_ready" }),
+    ]);
+    const forms = container.querySelectorAll<HTMLFormElement>(
+      '[data-testid="paper-feedback"] form',
+    );
+    expect(forms.length).toBe(3);
+    const form = forms[0];
+    (form.elements.namedItem("url") as HTMLInputElement).value =
+      "https://www.overleaf.com/read/synthetic";
+    (form.elements.namedItem("reason") as HTMLTextAreaElement).value =
+      "Please check the experiments before ARR submission";
+    (form.elements.namedItem("soft") as HTMLInputElement).value = "2027-01-01T10:00";
+    (form.elements.namedItem("hard") as HTMLInputElement).value = "2027-01-02T10:00";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved[0].slot).toBe("feedback_arr");
+    const request = JSON.parse(saved[0].input.value_text!);
+    expect(request.reason).toContain("experiments");
+    expect(Date.parse(request.soft_deadline)).toBeLessThan(Date.parse(request.hard_deadline));
+  });
+  it("rejects reversed deadlines without clearing the draft", async () => {
+    const { container, saved } = await draw([
+      row({ slot: "feedback_arr" }),
+      row({ slot: "feedback_arxiv" }),
+      row({ slot: "feedback_camera_ready" }),
+    ]);
+    const form = container.querySelector<HTMLFormElement>('[data-testid="paper-feedback"] form')!;
+    (form.elements.namedItem("url") as HTMLInputElement).value = "https://example.com/draft";
+    (form.elements.namedItem("reason") as HTMLTextAreaElement).value = "Check claims";
+    (form.elements.namedItem("soft") as HTMLInputElement).value = "2027-02-02T10:00";
+    (form.elements.namedItem("hard") as HTMLInputElement).value = "2027-02-01T10:00";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved).toHaveLength(0);
+    expect(form.querySelector('[role="alert"]')?.textContent).toContain("cannot follow");
+    expect((form.elements.namedItem("reason") as HTMLTextAreaElement).value).toBe("Check claims");
+  });
+  it("shows confirmed queued state and allows removing a late request", async () => {
+    const { container, saved } = await draw([
+      row({
+        slot: "feedback_arxiv",
+        status: "provided",
+        value_text: JSON.stringify({
+          reason: "Check abstract",
+          url: "https://example.com/draft",
+          hard_deadline: "2000-01-01T00:00:00Z",
+        }),
+      }),
+    ]);
+    const card = container.querySelector('[data-testid="paper-feedback"]')!;
+    expect(card.textContent).toContain("Queued: arXiv feedback");
+    expect(card.textContent).toContain("soft submission");
+    const remove = [...card.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Remove"),
+    )!;
+    remove.click();
+    expect(saved).toEqual([{ slot: "feedback_arxiv", input: { value_text: "" } }]);
   });
 });

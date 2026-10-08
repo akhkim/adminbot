@@ -87,6 +87,17 @@ pnpm ui:dev
 `pnpm gateway:watch` does not rebuild `dist/control-ui`; rerun `pnpm ui:build` after `ui/`
 changes. On memory-constrained boxes, prefer targeted builds/tests over whole-tree sweeps.
 
+## Hosting
+
+The Control UI deploys through the existing Vercel Git integration from `main`, using
+[`openclaw-adminbot/vercel.json`](openclaw-adminbot/vercel.json). Merge a checked PR normally;
+do not create throwaway commits or impersonate another author to trigger a deployment. The
+old random-commit workflow could not push to protected `main` and was redundant with this
+integration. A fork preview can require Vercel team authorization separately.
+
+After merge, verify the Vercel **Production** deployment's exact commit and the affected live
+UI. A successful frontend deployment does not establish an Aurora backend release.
+
 ## Relationship to upstream OpenClaw
 
 This repo has **no shared git history** with upstream `openclaw/openclaw`. AdminBot development

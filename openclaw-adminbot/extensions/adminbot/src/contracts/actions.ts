@@ -251,6 +251,7 @@ export type AdminBotAccessGrant = {
 export const adminBotMemberRoles = [
   "Undergraduate Student",
   "Master's Student",
+  "Predoctoral gap-year researcher",
   "PhD Student",
   "Postdoc",
   "Research Assistant",
@@ -521,6 +522,9 @@ export function isAdminBotFullMember(member: { privilege_level?: string }): bool
 }
 
 export const adminBotMandatoryProfileFields = [
+  // Required only when arr_reviewer_qualified is true.
+  "arr_review_capacity",
+  "arr_reviewer_qualified",
   "name",
   "calendar_email",
   "location",
@@ -530,6 +534,9 @@ export const adminBotMandatoryProfileFields = [
   "github_url",
   "linkedin_url",
   "linkedin_urn",
+  "twitter_url",
+  "personal_website",
+  "intake_form_url",
   "cv_url",
   // Where the member's one-on-one notes live. Required of the record because the folder is what
   // every later one-on-one is filed into: a blank here is not "this person has no meetings", it is
@@ -537,6 +544,9 @@ export const adminBotMandatoryProfileFields = [
   // an answer the member can give (see SELF_PROFILE_EDITABLE_FIELDS).
   "one_on_one_folder_url",
   "openreview_id",
+  "affiliation",
+  "hours_per_week",
+  "joined_month",
 ] as const;
 
 export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFields)[number];
@@ -796,6 +806,8 @@ export type AdminBotMemberActivityCounts = {
  * once rather than composed per person.
  */
 export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfileField, string> = {
+  arr_reviewer_qualified: "ARR reviewer qualification",
+  arr_review_capacity: "ARR review capacity",
   name: "Name",
   calendar_email: "Calendar email",
   location: "Location",
@@ -805,9 +817,15 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   github_url: "GitHub",
   linkedin_url: "LinkedIn",
   linkedin_urn: "LinkedIn URN",
+  twitter_url: "X / Twitter",
+  personal_website: "Website",
+  intake_form_url: "Application form response link (or mark that you cannot find it)",
   cv_url: "CV",
   one_on_one_folder_url: "Link to 1:1 Folder",
   openreview_id: "OpenReview",
+  affiliation: "Main affiliation",
+  hours_per_week: "Hours per week on Jinesis projects",
+  joined_month: "Joined month",
 };
 
 /**
@@ -1508,6 +1526,9 @@ export type AdminBotLabMemberInput = {
   // rather than a link the profile can render for them.
   intake_form_url?: string;
   intake_form_unavailable?: boolean;
+  /** Self-reported ARR eligibility; not verified or a reviewing assignment. */
+  arr_reviewer_qualified?: boolean | null;
+  arr_review_capacity?: number | null;
   /**
    * The Google Drive folder holding this member's one-on-one notes.
    *
@@ -1529,8 +1550,12 @@ export type AdminBotLabMemberInput = {
   // Members read theirs off https://linkedin-urn-collector.vercel.app and paste it here.
   linkedin_urn?: string;
   twitter_url?: string;
+  /** Self-reported; used only for the Media Impact audience badge. */
+  twitter_followers?: number;
+  linkedin_followers?: number;
   github_url?: string;
   scholar_url?: string;
+  acl_anthology_url?: string;
   // Never propose or assign this person as an emergency reviewer, whatever their topic
   // match. Governance-owned: it encodes a standing commitment about someone's time, so
   // it is deliberately absent from the fields a member may edit on their own profile.
@@ -3012,20 +3037,11 @@ export const adminBotLogisticsSettledStatuses = [
   "withdrawn",
 ] as const satisfies readonly AdminBotLogisticsRequestStatus[];
 
-/**
- * How long somebody stays in the recommendation-letter help channel after their last letter is
- * settled.
- *
- * Three months, measured from the most recent settled request rather than the first. An application
- * season runs roughly two months across different school deadlines, so a member routinely has one
- * request closed while another is still open; a shorter window, or one measured from the earliest
- * close, would take them out of the channel in the middle of their own season. The extra month past
- * a two-month season is the margin for a late deadline or a school that comes back with questions.
- */
-export const adminBotRecLetterChannelRetentionDays = 90;
+/** Calendar months on either side of a letter deadline. */
+export const adminBotRecLetterChannelWindowMonths = 3;
 
-/** The channel the letter-request sweep manages. A name, because that is what the connector takes. */
-export const ADMINBOT_REC_LETTER_CHANNEL = "help-rec-letter-request";
+/** The existing Slack channel managed by the letter-request sweep. */
+export const ADMINBOT_REC_LETTER_CHANNEL = "help-rec-letters";
 
 /**
  * A file travelling with a request, bytes and all.

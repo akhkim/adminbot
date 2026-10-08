@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { Value } from "typebox/value";
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotEmailPayload, AdminBotStoredProposal } from "../contracts/actions.js";
@@ -12,6 +14,7 @@ import {
   buildIntegrityScoreArgs,
   readGogSheetRows,
   readGogSheetTabs,
+  readDriveFileBase64,
 } from "./gog.js";
 
 function proposal(
@@ -30,6 +33,22 @@ function proposal(
 }
 
 describe("createGogAdminBotExecutor", () => {
+  it("retains the birthday series id for later approved removal", async () => {
+    const capture = vi.fn(async () => JSON.stringify({ event: { id: "series-1" } }));
+    const executor = createGogAdminBotExecutor({ capture });
+    await expect(
+      executor.execute(
+        proposal("calendar.create_birthday", {
+          summary: "Test birthday",
+          from: "2028-02-29",
+          to: "2028-03-01",
+          all_day: true,
+        }),
+      ),
+    ).resolves.toEqual({ handled: true, artifacts: { event_id: "series-1" } });
+    expect(capture.mock.calls[0][0]).toContain("--all-day");
+  });
+
   it("maps approved email sends to a non-interactive exact gog command", async () => {
     const run = vi.fn(async () => {});
     const executor = createGogAdminBotExecutor({ run });
@@ -120,7 +139,13 @@ describe("createGogAdminBotExecutor", () => {
     ["calendar.cancel", { event_id: "event-1" }],
   ] as const)("sends no email for %s", async (type, payload) => {
     const run = vi.fn(async () => {});
-    const executor = createGogAdminBotExecutor({ run });
+    const executor = createGogAdminBotExecutor({
+      run,
+      capture: async (args) => {
+        if (type === "calendar.create_birthday") run(args);
+        return JSON.stringify({ id: "birthday-series", attendees: [] });
+      },
+    });
 
     await executor.execute(proposal(type, payload));
 
@@ -135,7 +160,10 @@ describe("createGogAdminBotExecutor", () => {
   // move the event or rewrite its title as a side effect.
   it("adds attendees to an existing event without replacing the guest list", async () => {
     const run = vi.fn(async () => {});
-    const executor = createGogAdminBotExecutor({ run });
+    const executor = createGogAdminBotExecutor({
+      run,
+      capture: async () => JSON.stringify({ attendees: [] }),
+    });
 
     await executor.execute(
       proposal("calendar.add_attendees", {
@@ -160,6 +188,55 @@ describe("createGogAdminBotExecutor", () => {
     expect(args).not.toContain("--attendees");
     expect(args).not.toContain("--summary");
     expect(args).not.toContain("--from");
+  });
+
+  it("skips existing attendees and adds only missing addresses on retries", async () => {
+    const run = vi.fn(async () => {});
+    const capture = vi.fn(async () =>
+      JSON.stringify({ attendees: [{ email: "ADA@example.com" }] }),
+    );
+    const executor = createGogAdminBotExecutor({ run, capture });
+    await executor.execute(
+      proposal("calendar.add_attendees", { event_id: "event-9", attendees: ["ada@example.com"] }),
+    );
+    expect(run).not.toHaveBeenCalled();
+    await executor.execute(
+      proposal("calendar.add_attendees", {
+        event_id: "event-9",
+        attendees: ["ada@example.com", "mei@example.com", "MEI@example.com"],
+      }),
+    );
+    expect(run).toHaveBeenCalledTimes(1);
+    const args = run.mock.calls[0]?.[0] as string[];
+    expect(args[args.indexOf("--add-attendee") + 1]).toBe("mei@example.com");
+  });
+
+  it.each(["not json", JSON.stringify({}), JSON.stringify({ event: { id: "wrong-event" } })])(
+    "does not write when the live attendee read is invalid: %s",
+    async (response) => {
+      const run = vi.fn(async () => {});
+      const executor = createGogAdminBotExecutor({ run, capture: async () => response });
+      await expect(
+        executor.execute(
+          proposal("calendar.add_attendees", {
+            event_id: "event-9",
+            attendees: ["ada@example.com"],
+          }),
+        ),
+      ).rejects.toThrow();
+      expect(run).not.toHaveBeenCalled();
+    },
+  );
+  it("can add the first guest to an event with no attendee list", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({
+      run,
+      capture: async () => JSON.stringify({ event: { id: "event-9" } }),
+    });
+    await executor.execute(
+      proposal("calendar.add_attendees", { event_id: "event-9", attendees: ["ada@example.com"] }),
+    );
+    expect(run).toHaveBeenCalledTimes(1);
   });
 
   describe("calendar.remove_attendees", () => {
@@ -748,6 +825,44 @@ describe("sheet.update_cells", () => {
 });
 
 describe("the Drive probe", () => {
+  it.each([
+    [true, true, true],
+    [true, false, false],
+    [false, true, false],
+  ])(
+    "reads gog's file envelope with folder rights %s/%s",
+    async (canEdit, canAddChildren, editable) => {
+      const probe = createGogDriveProbe({
+        command: process.execPath,
+        commandArgsPrefix: [
+          "-e",
+          `process.stdout.write(JSON.stringify({file:{name:"Synthetic folder",mimeType:"application/vnd.google-apps.folder",capabilities:{canEdit:${canEdit},canAddChildren:${canAddChildren}}}}))`,
+          "--",
+        ],
+      });
+      expect(await probe("1SyntheticEditableFolder")).toEqual({
+        status: "found",
+        name: "Synthetic folder",
+        canEdit: editable,
+      });
+    },
+  );
+
+  it("uses GOG_BIN on the service's restricted PATH for metadata reads", async () => {
+    const probe = createGogDriveProbe({
+      env: { ...process.env, GOG_BIN: process.execPath, PATH: "/nonexistent" },
+      commandArgsPrefix: [
+        "-e",
+        'process.stdout.write(JSON.stringify({result:{mimeType:"application/vnd.google-apps.folder",capabilities:{canEdit:true,canAddChildren:true}}}))',
+        "--",
+      ],
+    });
+    expect(await probe("1SyntheticEditableFolder")).toMatchObject({
+      status: "found",
+      canEdit: true,
+    });
+  });
+
   it("reads a file it can see, and says what it is called", async () => {
     const probe = createGogDriveProbe({
       command: process.execPath,
@@ -859,5 +974,28 @@ describe("paper_integrity.sheet_scores", () => {
     expect(() =>
       buildIntegrityScoreArgs(proposal({ spreadsheet_id: "sheet-1", ...payload })),
     ).toThrow(/paper_integrity\.sheet_scores/u);
+  });
+});
+
+describe("readDriveFileBase64", () => {
+  // The service's systemd unit runs with a PATH that does not include ~/.local/bin, so a bare
+  // "gog" spawn ENOENTs there. This reproduces that: PATH holds no gog, only GOG_BIN names it.
+  it("finds gog through GOG_BIN when PATH does not have it", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-gog-"));
+    const fakeGog = path.join(dir, "gog");
+    fs.writeFileSync(
+      fakeGog,
+      '#!/bin/sh\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = "--output" ]; then printf "%%PDF-fake" > "$2"; fi\n  shift\ndone\n',
+      { mode: 0o755 },
+    );
+    try {
+      await expect(
+        readDriveFileBase64("1AbCdEfGhIjKlMnOp", {
+          env: { GOG_BIN: fakeGog, PATH: "/usr/bin:/bin" },
+        }),
+      ).resolves.toBe(Buffer.from("%PDF-fake").toString("base64"));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

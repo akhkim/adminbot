@@ -5198,7 +5198,7 @@ adminbot-deadline-timezone {
 .deadline-group__summary {
   display: grid;
   position: relative;
-  grid-template-columns: 7.75rem minmax(0, 1fr) 15rem 14rem;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: var(--space-3);
   width: 100%;
@@ -5249,8 +5249,9 @@ adminbot-deadline-timezone {
 .deadline-group__heading {
   display: flex;
   min-width: 0;
-  flex-direction: column;
-  gap: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1);
 }
 
 .deadline-group__heading strong {
@@ -5258,8 +5259,8 @@ adminbot-deadline-timezone {
   color: var(--text-strong);
   font-size: var(--control-ui-text-lg);
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .deadline-group__heading small,
@@ -5270,7 +5271,7 @@ adminbot-deadline-timezone {
 
 .deadline-group__count {
   white-space: normal;
-  text-align: right;
+  text-align: left;
   padding: 0;
   border: 0;
   border-radius: var(--radius-full);
@@ -6088,14 +6089,6 @@ adminbot-deadline-timezone {
   white-space: nowrap;
 }
 
-.deadline-table__location {
-  max-width: 16rem;
-  overflow: hidden;
-  color: var(--muted) !important;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .deadline-table .deadline-card__actions {
   display: inline-flex;
   flex-wrap: nowrap;
@@ -6184,36 +6177,6 @@ adminbot-deadline-timezone {
 .deadline-archival__explanation strong {
   display: block;
   margin-bottom: var(--space-1);
-}
-
-@container deadline-board (max-width: 64em) {
-  .deadline-group__summary {
-    grid-template-columns: max-content minmax(0, 1fr);
-    gap: var(--space-1) var(--space-2);
-  }
-
-  .deadline-group__summary-countdown {
-    grid-row: 3;
-    grid-column: 1;
-  }
-
-  .deadline-group__heading {
-    grid-row: 1;
-    grid-column: 1 / -1;
-  }
-
-  .deadline-group__summary-date {
-    grid-row: 2;
-    grid-column: 1 / -1;
-  }
-
-  .deadline-group__count {
-    grid-row: 3;
-    grid-column: 2;
-    max-width: 10rem;
-    text-align: right;
-    justify-self: end;
-  }
 }
 
 @container deadline-board (max-width: 96em) {
@@ -10592,6 +10555,24 @@ adminbot-deadline-timezone {
   color: var(--muted);
 }
 
+/* The logistics drop zone, tightened to sit between the context inputs and the draft box. Both
+   classes, because logistics.css loads after this file and would otherwise win the tie. */
+.logistics-upload__drop.paper-cycle__pdf-drop {
+  margin-top: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+/* Outside the logistics page nothing sizes or strokes a bare icon svg, so it rendered at 0x0. */
+.paper-cycle__pdf-drop .logistics-upload__drop-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* Generate sits left; sign-off rides the right edge, matching how the card's action rows read. */
 .paper-cycle__draft-actions {
   display: flex;
@@ -11359,10 +11340,15 @@ adminbot-paper-visibility {
 }
 .deadline-board
   [data-entry-type="workshop"]
-  :is(.btn, .deadline-card__source, .deadline-card__actions, deadline-recommendation) {
+  :is(
+    .btn:not(.primary),
+    .deadline-card__source,
+    .deadline-card__actions,
+    deadline-recommendation
+  ) {
   color: var(--muted);
 }
-.deadline-board [data-entry-type="workshop"] :is(.btn, .deadline-card__source):hover {
+.deadline-board [data-entry-type="workshop"] :is(.btn:not(.primary), .deadline-card__source):hover {
   color: var(--text-strong);
 }
 .deadline-board .deadline-group[data-group-kind="workshops"] .deadline-group__heading strong {
@@ -12095,7 +12081,7 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   color: var(--muted);
 }
 .deadline-board .deadline-group__heading {
-  display: grid;
+  display: flex;
   gap: 4px;
 }
 .deadline-board .deadline-group__heading > strong,
@@ -12173,7 +12159,7 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   box-sizing: border-box;
 }
 .deadline-board .deadline-group__heading {
-  gap: var(--deadline-row-gap);
+  gap: var(--space-1);
 }
 .deadline-board .deadline-group__heading > strong,
 .deadline-board .deadline-group__heading > small {
@@ -12250,11 +12236,13 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  min-width: 32px;
-  height: 28px;
-  min-height: 28px;
-  padding: 0;
+  width: auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 12px;
+  gap: 6px;
+  font-weight: 600;
+  line-height: 1.2;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg);
@@ -12292,12 +12280,15 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-@media (pointer: coarse) {
-  .deadline-board .deadline-card__timeline-button,
-  .deadline-board deadline-recommendation::part(deadline-action) {
-    height: 32px;
-    min-height: 32px;
-  }
+.deadline-board .deadline-card__timeline-button {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--primary-foreground);
+}
+.deadline-board .deadline-card__timeline-button:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--primary-foreground);
 }
 
 .adminbot-member-badge-symbols {
@@ -12316,4 +12307,189 @@ html[data-theme="light"] .deadline-board [data-urgency] {
 .adminbot-member-badge-symbols small {
   color: var(--text);
   font-size: 0.75em;
+}
+
+/* Deadline actions lead; venue identity remains supporting context. */
+.deadline-board .deadline-action__venue {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--muted);
+  margin: 4px 0;
+}
+.deadline-board .deadline-table__stage {
+  font-weight: 700;
+}
+.deadline-recent {
+  border: 1px solid var(--warn);
+  border-left: 4px solid var(--warn);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.deadline-recent summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.deadline-recent p {
+  color: var(--muted);
+}
+.deadline-recent ul {
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+.deadline-recent li {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.deadline-recent li > strong {
+  display: block;
+  font-size: 1.125rem;
+}
+
+.deadline-board .deadline-action__title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.deadline-board .deadline-board__hero-name.deadline-action__venue,
+.deadline-board .deadline-card__name.deadline-action__venue {
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+.deadline-conference-attendance {
+  padding: 0 var(--space-4) var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+.deadline-conference-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+  margin: var(--space-1) 0;
+}
+.deadline-conference-people li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.deadline-conference-people img,
+.deadline-conference-initials {
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+}
+.deadline-conference-initials {
+  display: inline-grid;
+  place-items: center;
+  background: var(--bg-accent);
+  font-size: 12px;
+}
+.deadline-conference-attendance .btn {
+  justify-self: start;
+  white-space: normal;
+  text-align: left;
+}
+
+/* Paper thread composer: focused editing with an adjacent, readable preview. */
+.paper-cycle__composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+.paper-cycle__thread,
+.paper-cycle__preview {
+  min-width: 0;
+}
+.paper-cycle__post {
+  min-width: 0;
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--branch-border);
+  border-radius: 12px;
+}
+.paper-cycle__post legend {
+  display: flex;
+  gap: 24px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+.paper-cycle__post textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+.paper-cycle__post label {
+  display: block;
+  margin-top: 12px;
+  font-size: var(--control-ui-text-sm);
+}
+.paper-cycle__post input[type="file"] {
+  max-width: 100%;
+  margin-top: 6px;
+}
+.paper-cycle__post img,
+.paper-cycle__preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+.paper-cycle__preview h5 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.paper-cycle__preview-post {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--branch-border);
+}
+.paper-cycle__preview-post p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  margin: 8px 0 12px;
+}
+.paper-cycle__post-number {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--branch-border);
+  border-radius: 50%;
+  color: var(--muted);
+}
+.paper-cycle__draft-settings {
+  margin-bottom: 20px;
+}
+.paper-cycle__draft-settings summary {
+  cursor: pointer;
+  padding: 8px 0;
+  color: var(--muted);
+}
+.paper-cycle__draft-settings[open] summary {
+  margin-bottom: 12px;
+}
+.paper-cycle__over-limit {
+  color: var(--danger, #dc2626);
+}
+@media (max-width: 760px) {
+  .paper-cycle__composer {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+}
+
+.paper-cycle__attachments summary {
+  cursor: pointer;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
 }

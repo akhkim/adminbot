@@ -1,5 +1,9 @@
 import { render } from "lit";
 import { beforeAll, describe, expect, it } from "vitest";
+import {
+  isPaperFeedbackSlot,
+  paperFeedbackSlots,
+} from "../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 import { adminBotPaperSlots } from "../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import {
@@ -418,6 +422,16 @@ describe("what a column asks for", () => {
     }
   });
 
+  // Regression: with no feedback case a feedback slot fell through to a link cell, and a link
+  // reaches the service as `url`, which the feedback kind reads as empty -- so pasting into it
+  // cleared the request instead of queueing one.
+  it("draws no cell for a feedback request, which only the feedback form can write", () => {
+    const slotKeys = new Set(gridColumns().flatMap((column) => (column.slot ? [column.slot] : [])));
+    for (const slot of Object.keys(paperFeedbackSlots)) {
+      expect(slotKeys.has(slot as never), `${slot} has a cell`).toBe(false);
+    }
+  });
+
   it("still rejects the arXiv PDF, which is what its note is for", () => {
     const arxiv = gridColumns().find((column) => column.key === "arxiv_url");
     expect(cellError(arxiv!, "https://arxiv.org/pdf/2508.01234")).toBeDefined();
@@ -663,10 +677,10 @@ describe("evidence columns", () => {
 
   const columnFor = (key: string) => gridColumns()[columnIndexOf(key)]!;
 
-  it("gives every slot in the registry a column, once", () => {
+  it("gives every evidence slot in the registry a column, once", () => {
     const slotted = gridColumns().flatMap((column) => (column.slot ? [column.slot] : []));
     expect(new Set(slotted).size, "no slot may appear twice").toBe(slotted.length);
-    for (const slot of adminBotPaperSlots) {
+    for (const slot of adminBotPaperSlots.filter((entry) => !isPaperFeedbackSlot(entry))) {
       expect(slotted, `${slot} should be reachable from the sheet`).toContain(slot);
     }
   });
@@ -849,6 +863,17 @@ describe("the sheet as drawn", () => {
     render(renderPaperGrid(props), host);
     return { host, state, loaded, saved, slotWrites, props };
   }
+
+  it("shows and edits native dates without losing the grid save path", () => {
+    const { host, state } = draw({ papers: [{ ...paperRow2(), started_on: "2026-11-03" }] });
+    const input = host.querySelector<HTMLInputElement>('input[type="date"]')!;
+    expect(input.value).toBe("2026-11-03");
+    expect(input.parentElement!.querySelector("output")!.textContent).toBe("2026-11-03");
+    input.value = "2026-03-11";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(input.parentElement!.querySelector("output")!.textContent).toBe("2026-03-11");
+    expect(pendingSaves(state, [paperRow2()])[0]).toMatchObject({ startedOn: "2026-03-11" });
+  });
 
   it("draws a chip per band, with the evidence one off", () => {
     const { host } = draw();

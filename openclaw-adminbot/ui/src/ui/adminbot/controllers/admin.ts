@@ -55,6 +55,7 @@ import {
   updateSettingsAsAdmin,
   updateOwnSchedule,
   mergeLabMembersAsAdmin,
+  pendingQueuedAdminBotWriteCount,
   fetchSlackChannelNames,
   deleteLabMemberAsAdmin,
   fetchMembersWithoutEmail,
@@ -781,6 +782,7 @@ export type AdminBotReimbursementState = {
   busy: boolean;
   error: string | null;
   artifacts: AdminBotReimbursementArtifact[];
+  submissionProof?: string;
   /** Which finance office is paying. Undefined until the claimant chooses; nothing runs before. */
   funder?: AdminBotReimbursementFunder;
   /** The pre-submission report, once a check has run. */
@@ -865,6 +867,8 @@ export type AdminBotHost = {
   adminBotMemberMapRequestId?: number;
   adminBotLoading: boolean;
   adminBotError: string | null;
+  adminBotUsingCachedReads?: boolean;
+  adminBotOfflinePendingWrites?: number;
   adminBotData: AdminBotDashboardData;
   adminBotRosterLoadedAt?: number | null;
   adminBotRosterLoading?: boolean;
@@ -1267,6 +1271,8 @@ async function loadAdminBotOverSession(
   const isCurrent = () => loadStoredMemberSession()?.sessionToken === session.sessionToken;
   host.adminBotLoading = true;
   host.adminBotError = null;
+  host.adminBotUsingCachedReads = false;
+  let usedCache = false;
   const read = async (path: string): Promise<unknown> => {
     const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
     if (!result.ok) {
@@ -1274,10 +1280,16 @@ async function loadAdminBotOverSession(
         result.kind === "unreachable" ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE : result.kind,
       );
     }
+    if (result.cached) {
+      usedCache = true;
+    }
     return result.value;
   };
   const optional = async (path: string): Promise<unknown> => {
     const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
+    if (result.ok && result.cached) {
+      usedCache = true;
+    }
     return result.ok ? result.value : undefined;
   };
   const readSelf = async (): Promise<unknown> => {
@@ -1287,6 +1299,7 @@ async function loadAdminBotOverSession(
       session.baseUrl,
     );
     if (result.ok) {
+      if (result.cached) usedCache = true;
       return result.value;
     }
     if (result.kind !== "not-found" || !host.memberId) {
@@ -1334,6 +1347,7 @@ async function loadAdminBotOverSession(
       loadedAt: mode === "general" ? Date.now() : null,
     };
     host.requestUpdate?.();
+    host.adminBotUsingCachedReads = usedCache;
     if (mode === "general") {
       return;
     }
@@ -1374,6 +1388,7 @@ async function loadAdminBotOverSession(
       sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,
       loadedAt: Date.now(),
     };
+    host.adminBotUsingCachedReads = usedCache;
   } catch (err) {
     if (isCurrent()) {
       host.adminBotError = err instanceof Error ? err.message : String(err);
@@ -1381,6 +1396,11 @@ async function loadAdminBotOverSession(
   } finally {
     if (isCurrent()) {
       host.adminBotLoading = false;
+      const pendingCount = await pendingQueuedAdminBotWriteCount(
+        session.sessionToken,
+        session.baseUrl,
+      );
+      if (isCurrent()) host.adminBotOfflinePendingWrites = pendingCount;
     }
   }
 }
@@ -2819,7 +2839,10 @@ async function onboardSavedMember(
   }
   return {
     kind: "success",
-    text: `Saved member ${memberId}. Their ${result.value.template_id} onboarding email draft is queued in Pending Actions. An admin must review, approve, and execute it there; no email has been sent yet.`,
+    text:
+      result.value.status === "done"
+        ? `Saved member ${memberId}. Their standard onboarding email has been sent.`
+        : `Saved member ${memberId}. Their ${result.value.template_id} onboarding email draft is queued in Pending Actions. An admin must review, approve, and execute it there; no email has been sent yet.`,
   };
 }
 
@@ -3414,7 +3437,7 @@ export async function markAdminBotNudgesSeen(host: AdminBotHost): Promise<void> 
 export async function saveAdminBotPaper(
   host: AdminBotHost,
   paper: AdminBotPaperSaveInput,
-): Promise<void> {
+): Promise<boolean> {
   host.adminBotNotice = null;
   const artifacts = {
     ...(paper.overleafEditUrl ? { overleaf_edit_url: paper.overleafEditUrl } : {}),
@@ -3477,7 +3500,8 @@ export async function saveAdminBotPaper(
   // for break-glass sessions that hold a gateway token but no member login.
   const stored = loadStoredMemberSession();
   if (stored) {
-    return serializeMemberSave(
+    let success = false;
+    await serializeMemberSave(
       host,
       JSON.stringify(["paper", stored.sessionToken, paper.id]),
       async () => {
@@ -3505,6 +3529,7 @@ export async function saveAdminBotPaper(
           host.adminBotNotice = { kind: "error", text: paperSaveErrorText(saved.kind) };
           return;
         }
+        success = true;
         host.adminBotNotice = { kind: "success", text: `Saved paper ${paper.id}.` };
         const updated = saved.value as AdminBotPaperRecord;
         if (updated?.id === paper.id) {
@@ -3518,6 +3543,7 @@ export async function saveAdminBotPaper(
         }
       },
     );
+    return success;
   }
   try {
     await invokeAdminBotTool(host, "adminbot_upsert_paper", {
@@ -3539,11 +3565,13 @@ export async function saveAdminBotPaper(
     });
     host.adminBotNotice = { kind: "success", text: `Saved paper ${paper.id}.` };
     await loadAdminBot(host);
+    return true;
   } catch (err) {
     host.adminBotNotice = {
       kind: "error",
       text: formatAdminBotToolError(err),
     };
+    return false;
   }
 }
 
@@ -3690,6 +3718,7 @@ type ReimbursementConversationResult = {
 
 type ReimbursementGenerationResult = {
   artifacts: AdminBotReimbursementArtifact[];
+  submission_proof?: string;
 };
 
 export async function sendAdminBotReimbursementMessage(
@@ -3772,6 +3801,7 @@ export async function generateAdminBotReimbursement(host: AdminBotHost): Promise
       ...host.adminBotReimbursement,
       busy: false,
       artifacts: Array.isArray(result.artifacts) ? result.artifacts : [],
+      submissionProof: result.submission_proof,
     };
   } catch (err) {
     if (host.adminBotReimbursement !== requestState) {
@@ -3811,6 +3841,7 @@ export async function submitAdminBotReimbursement(host: AdminBotHost): Promise<v
     const result = await submitReimbursementPackage(
       {
         funder: state.funder,
+        submission_proof: state.submissionProof,
         artifacts: state.artifacts.map((artifact) => ({
           filename: artifact.filename,
           data_base64: artifact.data_base64,
@@ -3835,7 +3866,8 @@ export async function submitAdminBotReimbursement(host: AdminBotHost): Promise<v
         error:
           result.kind === "unreachable"
             ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-            : "Couldn't send the package. Check the office address in settings and try again.",
+            : (result.message ??
+              "Couldn't send the package. Check the office address in settings and try again."),
       };
       return;
     }
@@ -4009,6 +4041,7 @@ export async function generateGuestReimbursement(host: GuestReimbursementHost): 
       ...host.adminBotReimbursement,
       busy: false,
       artifacts: Array.isArray(result.artifacts) ? result.artifacts : [],
+      submissionProof: result.submission_proof,
     };
   } catch (err) {
     host.adminBotReimbursement = {
