@@ -2493,6 +2493,35 @@ describe("member-authored papers", () => {
       expect(res.status).toBe(400);
     }
   });
+
+  it("lists only the viewer's own papers for scope=mine", async () => {
+    const { baseUrl } = await startService();
+    const token = await tokenFor(baseUrl, "ada", "Ada Author");
+    const json = serviceHeaders({ "Content-Type": "application/json" });
+    await putPaper(baseUrl, "filed", memberHeaders(token), {
+      title: "Filed by Ada",
+      authors: ["Someone Else"],
+      current_step: "overleaf_writing",
+    });
+    await putPaper(baseUrl, "named", json, {
+      title: "Ada by name",
+      authors: ["Ada Author"],
+      current_step: "overleaf_writing",
+    });
+    await putPaper(baseUrl, "other", json, {
+      title: "Not Ada's",
+      authors: ["Someone Else"],
+      current_step: "overleaf_writing",
+    });
+
+    const mine = await fetch(`${baseUrl}/papers?scope=mine`, { headers: memberHeaders(token) });
+    expect(mine.status).toBe(200);
+    const body = (await mine.json()) as { papers: Array<{ id: string }> };
+    expect(body.papers.map((paper) => paper.id).toSorted()).toEqual(["filed", "named"]);
+
+    const service = await fetch(`${baseUrl}/papers?scope=mine`, { headers: serviceHeaders() });
+    expect(service.status).toBe(400);
+  });
 });
 
 describe("AdminBot device pairing approval", () => {

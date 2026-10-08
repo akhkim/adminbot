@@ -35,6 +35,7 @@ You need a local AdminBot service listening on loopback, for example
 | `GET /lab/members`                    | Return lab members and computed access profiles.                  |
 | `PUT /lab/members/{member_id}`        | Create or update one lab member.                                  |
 | `GET /papers`                         | Return paper pipeline records with computed timeline estimates.   |
+| `GET /papers?scope=mine`              | Return only the papers the signed-in member is involved in.       |
 | `PUT /papers/{paper_id}`              | Create or update one paper pipeline record.                       |
 | `GET /papers/nudges`                  | Return due paper reminders and PI escalations.                    |
 | `POST /approvals/{action_id}/approve` | Approve one immutable payload by hash.                            |
