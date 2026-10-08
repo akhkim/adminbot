@@ -136,6 +136,7 @@ import {
 import { SqliteAuditLog } from "./sqlite.audit.js";
 import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
 import { listSqliteMeetingsPage } from "./sqlite.meetings.js";
+import { escalatedMemberNotificationsSql } from "./sqlite.member-notifications.js";
 import { SqliteTableVersions } from "./sqlite.table-versions.js";
 import {
   listSqliteSocialDrafts,
@@ -3323,11 +3324,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => parseJson<AdminBotMemberNotification>(row.payload_json));
   }
 
-  // Filtered in JS rather than SQL: `escalated_at` and `read_at` live inside payload_json, and the
-  // escalated set is small by construction -- it is what one professor is expected to work through.
+  // Narrowed in SQL as the postgres mirror is, so only the small escalated set is parsed.
   listEscalatedMemberNotifications(): AdminBotMemberNotification[] {
     const rows = this.db
-      .prepare("SELECT payload_json FROM adminbot_member_notifications")
+      .prepare(escalatedMemberNotificationsSql)
       .all() as Array<{ payload_json: string }>;
     return rows
       .map((row) => parseJson<AdminBotMemberNotification>(row.payload_json))
