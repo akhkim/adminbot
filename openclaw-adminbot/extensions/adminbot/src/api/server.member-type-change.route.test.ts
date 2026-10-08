@@ -332,8 +332,11 @@ describe("PUT /lab/members/:id changing Member Type", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(listed.status).toBe(200);
-    const body = (await listed.json()) as { meetings: Array<{ id: string; kind: string }> };
-    expect(body.meetings).toMatchObject([{ id: SERIES, kind: "group" }]);
+    const body = (await listed.json()) as { meetings: Array<Record<string, unknown>> };
+    // Only what the Meetings checkboxes read: no classification, no folded event ids.
+    expect(body.meetings).toEqual([
+      { id: SERIES, title: expect.any(String), attendees: ["cora@lab.test"] },
+    ]);
 
     const service = await fetch(`${baseUrl}/lab/meetings`, {
       headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },

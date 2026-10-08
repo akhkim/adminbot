@@ -545,6 +545,11 @@ export async function fetchMemberProfileOverview(
  * render and the whole page comes up blank. Zeroed here instead, in the same place and for the same
  * reason `adoption` already is, because an absent count means "this service cannot tell us", which
  * on this page reads the same as none.
+ *
+ * The current service relies on this too: it leaves out each of these when it equals the fill-in
+ * here (zero counts, no gaps, the default privilege), so a lab of mostly dormant rows is not a
+ * thousand copies of the same zeroes. A change to a fill-in value here is a change to what those
+ * rows say.
  */
 function profileOverviewRow(row: Partial<MemberProfileOverviewRow>): MemberProfileOverviewRow {
   return {
