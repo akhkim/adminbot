@@ -63,3 +63,22 @@ export function meetingListRow(meeting: AdminBotMeetingRecord): AdminBotMeetingL
       : {}),
   };
 }
+
+/**
+ * An admin's list row: the card without its roster.
+ *
+ * The roster is the whole weight of the admin list -- at 50 meetings of 200 people it was ~1.2 MB,
+ * nearly all attendance lines -- and a closed card renders none of it: attendance sits in a
+ * folded <details>. The roster is read per meeting from GET /meetings/:id when an admin opens it.
+ * The headcount stays, the same number a member's row carries, so a row still says how many were
+ * there without a second read.
+ */
+export function meetingListRowWithoutRoster(
+  meeting: AdminBotMeetingRecord,
+): AdminBotMeetingListRow {
+  const { attendees: _attendees, ...row } = meetingListRow(meeting);
+  return {
+    ...row,
+    attendee_count: (meeting.attendees ?? []).filter((attendee) => attendee.present).length,
+  };
+}

@@ -88,7 +88,7 @@ describe("member-owned location and meeting caches", () => {
     });
     const app = host();
     await loadAdminBotMeetings(app);
-    expect(requests[0]).toContain("/meetings?limit=12");
+    expect(requests[0]).toContain("/meetings?limit=10");
     await loadMoreAdminBotMeetings(app);
     expect(requests[1]).toContain("before_id=newest");
     expect(app.adminBotMeetings?.map((meeting) => meeting.id)).toEqual(["newest", "older"]);

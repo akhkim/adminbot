@@ -2869,7 +2869,8 @@ export type AdminBotMeetingRecord = AdminBotMeetingRecordInput & {
   /**
    * How many people were present. Derived on read, never stored: a member is not shown the roster,
    * and a headcount is the part of it that is useful to whoever missed the meeting without naming
-   * anybody. Absent on the admin view, which has the roster itself.
+   * anybody. An admin's list row carries it in place of the roster; the admin roster read
+   * (GET /meetings/:id) leaves it out, having the roster itself.
    */
   attendee_count?: number;
 };

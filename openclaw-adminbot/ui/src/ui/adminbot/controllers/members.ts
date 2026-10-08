@@ -594,5 +594,10 @@ export async function saveAdminBotOwnSchedule(
     return;
   }
   host.adminBotNotice = { kind: "success", text: "Saved your schedule." };
-  await loadAdminBot(host, "admin", Boolean(host.adminBotData.papersLoadedAt));
+  // No paper read, whichever scope (lab or own) this session has loaded: a schedule is
+  // availability, time off, milestones, trips and dismissed deadlines on the member record, and
+  // GET /papers is drawn from the paper store alone, so nothing it returns can have changed. The
+  // papers already on screen stay as they are -- loadAdminBot leaves them and their stamps alone
+  // when it is told not to include them.
+  await loadAdminBot(host, "admin", false);
 }

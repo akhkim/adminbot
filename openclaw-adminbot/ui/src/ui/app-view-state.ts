@@ -5,6 +5,7 @@ import type {
   MeetingAttendanceNudgeResult,
   MeetingAttendee,
   MeetingRecord,
+  MeetingRosters,
   MeetingCursor,
 } from "./adminbot/api/meetings.ts";
 import type { LocationDrift } from "./adminbot/api/profile.ts";
@@ -523,6 +524,7 @@ export type AppViewState = {
   adminBotMeetingNudgeResult?: MeetingAttendanceNudgeResult | null;
   adminBotMeetingNudgeBusy?: boolean;
   adminBotMeetingNudgeError?: string | null;
+  adminBotMeetingRosters?: MeetingRosters;
   // What the lab has told this member. Undefined is "not read yet"; [] is a real "nothing".
   adminBotNotifications?: MemberNotification[];
   /** The live lab-wide broadcast, or null for none. `undefined` means "not loaded yet". */

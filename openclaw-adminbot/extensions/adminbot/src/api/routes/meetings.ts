@@ -16,7 +16,10 @@ import {
   standingMeetings,
 } from "../../workflows/calendar/standing-meetings.js";
 import { groupMeetingInviteEmails } from "../../workflows/meetings/attendance-nudge.js";
-import { meetingListRow } from "../../workflows/meetings/meeting-list-row.js";
+import {
+  meetingListRow,
+  meetingListRowWithoutRoster,
+} from "../../workflows/meetings/meeting-list-row.js";
 import {
   asString,
   readJson,
@@ -34,6 +37,11 @@ import {
   requirePrivileged,
 } from "./guards.js";
 import { del, get, post, put, route, type Route } from "./router.js";
+
+/** GET /meetings without `limit`: the first page the Meetings tab paints. */
+export const MEETINGS_PAGE_DEFAULT = 10;
+/** The most one GET /meetings page may hold, whatever `limit` asks for. */
+export const MEETINGS_PAGE_MAX = 50;
 
 export const meetingsRoutes: readonly Route[] = [
   get("/lab/meetings", async ({ res, ctx, principal }) => {
@@ -59,29 +67,19 @@ export const meetingsRoutes: readonly Route[] = [
     memberOnly(({ res, url, principal, ctx }) => {
       const { service } = ctx;
       const isAdmin = principal.member.privilege_level === "admin";
-      const limitText = url.searchParams.get("limit");
-      if (limitText === null) {
-        if (url.searchParams.has("before_started_at") || url.searchParams.has("before_id")) {
-          sendJson(res, 400, { error: { message: "invalid meetings page" } });
-          return;
-        }
-        const all = isAdmin
-          ? service.listMeetings()
-          : service.listMeetingsForMember(principal.member.id);
-        sendServiceResult(
-          res,
-          all.ok
-            ? { ...all, payload: { meetings: all.payload.meetings.map(meetingListRow) } }
-            : all,
-        );
-        return;
-      }
+      // An admin's rows leave the roster for GET /meetings/:id; a member's row already carries
+      // only their own line, which their closed card does render.
+      const row = isAdmin ? meetingListRowWithoutRoster : meetingListRow;
+      // Always a page. Without `limit` it is the most recent MEETINGS_PAGE_DEFAULT -- what the tab
+      // paints first -- and no request can ask for more than MEETINGS_PAGE_MAX, so a lab with
+      // years of meetings is never one response; `next_cursor` walks the rest.
+      const limitText = url.searchParams.get("limit") ?? String(MEETINGS_PAGE_DEFAULT);
       const beforeStartedAt = url.searchParams.get("before_started_at");
       const beforeId = url.searchParams.get("before_id");
       const limit = Number(limitText);
       if (
         !/^[1-9]\d*$/u.test(limitText) ||
-        limit > 50 ||
+        limit > MEETINGS_PAGE_MAX ||
         (beforeStartedAt === null) !== (beforeId === null) ||
         (beforeStartedAt !== null &&
           (beforeStartedAt.length > 100 || !beforeId?.trim() || beforeId.length > 512))
@@ -103,7 +101,7 @@ export const meetingsRoutes: readonly Route[] = [
         listed.ok
           ? {
               ...listed,
-              payload: { ...listed.payload, meetings: listed.payload.meetings.map(meetingListRow) },
+              payload: { ...listed.payload, meetings: listed.payload.meetings.map(row) },
             }
           : listed,
       );
@@ -177,6 +175,21 @@ export const meetingsRoutes: readonly Route[] = [
       await service.sendMeetingAttendanceNudges(principalActor(principal), { inviteEmails }),
     );
   }),
+  get(
+    // After /meetings/attendance-nudges, which this pattern would otherwise swallow.
+    /^\/meetings\/([^/]+)$/u,
+    memberOnly(({ res, principal, ctx, params }) => {
+      // One meeting with its roster: what an admin's card reads when its attendance is opened.
+      // The service applies the list's own projection -- the whole roster for an admin, a member's
+      // own line and a headcount for anyone else -- so this read cannot show more than the list.
+      const meetingId = decodeURIComponent(params[1]);
+      const read =
+        principal.member.privilege_level === "admin"
+          ? ctx.service.getListedMeeting(meetingId)
+          : ctx.service.getListedMeeting(meetingId, principal.member.id);
+      sendServiceResult(res, read.ok ? { ...read, payload: meetingListRow(read.payload) } : read);
+    }),
+  ),
   del(
     /^\/meetings\/([^/]+)$/u,
     adminSessionOnly(({ res, principal, params, ctx }) => {

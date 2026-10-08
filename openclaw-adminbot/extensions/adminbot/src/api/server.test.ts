@@ -3623,7 +3623,7 @@ describe("the meetings routes", () => {
     return result.payload;
   }
 
-  it("gives an admin the full roster", async () => {
+  it("gives an admin a headcount on the list and the full roster on the meeting read", async () => {
     const { baseUrl } = await startService();
     const token = await memberToken(baseUrl, "root", "Root Admin", "admin");
     await memberToken(baseUrl, "ada", "Ada Attendee");
@@ -3644,8 +3644,16 @@ describe("the meetings routes", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { meetings: Array<Record<string, unknown>> };
-    expect(body.meetings[0]?.attendees).toHaveLength(2);
-    expect(body.meetings[0]?.attendee_count).toBeUndefined();
+    expect(body.meetings[0]?.attendees).toBeUndefined();
+    expect(body.meetings[0]?.attendee_count).toBe(2);
+
+    const detail = await fetch(`${baseUrl}/meetings/zoom-812-2026-08-12`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(detail.status).toBe(200);
+    const meeting = (await detail.json()) as Record<string, unknown>;
+    expect(meeting.attendees).toHaveLength(2);
+    expect(meeting.attendee_count).toBeUndefined();
   });
 
   // Who sat in a lab meeting is personal data about everyone else in it. A member gets the
@@ -3752,13 +3760,18 @@ describe("the meetings routes", () => {
     const admin = await fetch(`${baseUrl}/meetings?limit=2`, {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
-    const adminPage = (await admin.json()) as { meetings: Array<{ attendees: unknown[] }> };
+    const adminPage = (await admin.json()) as {
+      meetings: Array<{ attendees?: unknown[]; attendee_count?: number }>;
+    };
+    // The roster is read per meeting (GET /meetings/:id); a row carries the headcount.
     expect(adminPage.meetings[0]?.attendees).toBeUndefined();
-    expect(adminPage.meetings[1]?.attendees).toHaveLength(2);
+    expect(adminPage.meetings[1]?.attendees).toBeUndefined();
+    expect(adminPage.meetings[1]?.attendee_count).toBe(2);
+    // No `limit` is the default page of ten, which holds all four here.
     const unpaged = await fetch(`${baseUrl}/meetings`, { headers });
-    const legacy = (await unpaged.json()) as { meetings: unknown[]; next_cursor?: unknown };
-    expect(legacy.meetings).toHaveLength(4);
-    expect(legacy.next_cursor).toBeUndefined();
+    const firstPage = (await unpaged.json()) as { meetings: unknown[]; next_cursor?: unknown };
+    expect(firstPage.meetings).toHaveLength(4);
+    expect(firstPage.next_cursor).toBeUndefined();
   });
 
   it("keeps historical recordings with invalid or blank dates reachable across pages", async () => {
