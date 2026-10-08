@@ -23,7 +23,7 @@ import {
   upcomingMajorDeadlines,
   urgencyOf,
 } from "../data/deadline-time.ts";
-import { AOE_TIMEZONE, localTimezone, timezoneOptions } from "../data/timezones.ts";
+import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
 // A member's committed time: an hours-per-week chart over a timeline, the commitments behind it,
 // and the dated milestones they are planning back from.
 //
@@ -189,19 +189,6 @@ export type TimeAvailabilityDraft = {
   editingIndex: number | null;
 };
 
-export const EMPTY_TIME_AVAILABILITY_DRAFT: TimeAvailabilityDraft = {
-  category: "jinesis",
-  customLabel: "",
-  project: "",
-  start: "",
-  end: "",
-  hoursPerWeek: "",
-  wholeDay: true,
-  note: "",
-  link: "",
-  editingIndex: null,
-};
-
 export type MilestoneDraft = {
   date: string;
   label: string;
@@ -220,16 +207,12 @@ export type MilestoneDraft = {
   timezone: string;
 };
 
-export const EMPTY_MILESTONE_DRAFT: MilestoneDraft = {
-  date: "",
-  label: "",
-  link: "",
-  time: "",
-  // Prefilled with the browser's own zone rather than blank. Someone who types a time almost
-  // always means their own clock, and a zone they have to go and find first is how a field ends up
-  // answered wrong or left empty.
-  timezone: localTimezone(),
-};
+import { EMPTY_TIME_AVAILABILITY_DRAFT } from "./time-availability.drafts.ts";
+
+export {
+  EMPTY_MILESTONE_DRAFT,
+  EMPTY_TIME_AVAILABILITY_DRAFT,
+} from "./time-availability.drafts.ts";
 
 /** Everything the editor may rewrite. An omitted list is left as it is. */
 export type SchedulePatch = {

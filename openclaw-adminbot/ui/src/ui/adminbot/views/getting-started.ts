@@ -20,7 +20,7 @@ import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.
 import { icons } from "../../icons.ts";
 import { toggleOnboardingStep } from "../auth/flow.ts";
 import type { MemberOnboardingStep } from "../auth/session.ts";
-import { blankFields, findOwnMember } from "./profile.ts";
+import { blankFields, findOwnMember } from "./profile-fields.ts";
 
 // Auto-granted at registration approval (see auth.ts); there is nothing for the member to do, so
 // it gets no self-attestation toggle.

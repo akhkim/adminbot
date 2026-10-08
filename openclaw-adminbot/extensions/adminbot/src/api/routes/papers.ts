@@ -5,6 +5,7 @@
 import type { AdminBotPaperRecordInput } from "../../contracts/actions.js";
 import type { AdminBotPaperSlotInput } from "../../contracts/paper-slots.js";
 import { resolvePaperPdfSource } from "../../workflows/papers/paper-pdf-source.js";
+import { readXAnnouncement, readXCredits } from "../../workflows/papers/x-draft.js";
 import { asString, readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
 import {
   adminSessionOnly,
@@ -41,8 +42,9 @@ export const papersRoutes: readonly Route[] = [
   // the draft is a suggestion a human copies, edits and posts by hand, so storing it would
   // create a stale second copy of something whose only real version ends up on LinkedIn.
   // Nothing here writes -- the PDF is read, the post is returned, both are then forgotten.
-  post("/papers/linkedin-draft", async ({ req, res, ctx, principal }) => {
+  post(/^\/papers\/(?:linkedin|x)-draft$/u, async ({ req, res, url, ctx, principal }) => {
     const { service } = ctx;
+    const isX = url.pathname === "/papers/x-draft";
     if (principal.kind === "anonymous") {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
@@ -50,6 +52,17 @@ export const papersRoutes: readonly Route[] = [
     // A paper PDF can be attached here, so the default 1 MB JSON ceiling would refuse most real
     // papers once base64 has added its third.
     const body = readRecord(await readJson(req, LINKEDIN_DRAFT_BODY_LIMIT_BYTES));
+    let announcement;
+    let credits;
+    if (isX) {
+      try {
+        announcement = readXAnnouncement(body.announcement);
+        credits = readXCredits(body.credits);
+      } catch (error) {
+        sendJson(res, 400, { error: { message: (error as Error).message } });
+        return;
+      }
+    }
     let pdfBase64 = typeof body.pdf_base64 === "string" ? body.pdf_base64 : "";
     // An upload is no longer required. The author has usually already given the lab this exact
     // file -- `drive_pdf_arxiv` is the Drive copy of the PDF they intend to post, and the card
@@ -68,40 +81,54 @@ export const papersRoutes: readonly Route[] = [
         sendServiceResult(res, cycle);
         return;
       }
-      const source = resolvePaperPdfSource(cycle.payload.slots);
+      const source = resolvePaperPdfSource(cycle.payload.slots, isX);
       if (source.kind === "none") {
         sendJson(res, 400, { error: { message: source.reason } });
         return;
       }
-      if (!ctx.readDrivePdfBase64) {
-        sendJson(res, 503, {
-          error: {
-            message: "this deployment cannot read Drive files; attach the PDF here instead",
-          },
-        });
-        return;
-      }
-      try {
-        pdfBase64 = await ctx.readDrivePdfBase64(source.fileId);
-      } catch (error) {
-        sendJson(res, 502, {
-          error: {
-            message: `could not read the Drive copy (${(error as Error).message}); attach the PDF here instead`,
-          },
-        });
-        return;
-      }
-      if (!pdfBase64) {
-        sendJson(res, 502, {
-          error: { message: "the Drive copy came back empty; attach the PDF here instead" },
-        });
-        return;
+      if (source.kind === "arxiv") {
+        try {
+          pdfBase64 = await ctx.readArxivPdfBase64(source.id);
+        } catch (error) {
+          sendJson(res, 502, { error: { message: (error as Error).message } });
+          return;
+        }
+        if (typeof body.url !== "string") {
+          body.url = source.url;
+        }
+      } else {
+        if (!ctx.readDrivePdfBase64) {
+          sendJson(res, 503, {
+            error: {
+              message: "this deployment cannot read Drive files; attach the PDF here instead",
+            },
+          });
+          return;
+        }
+        try {
+          pdfBase64 = await ctx.readDrivePdfBase64(source.fileId);
+        } catch (error) {
+          sendJson(res, 502, {
+            error: {
+              message: `could not read the Drive copy (${(error as Error).message}); attach the PDF here instead`,
+            },
+          });
+          return;
+        }
+        if (!pdfBase64) {
+          sendJson(res, 502, {
+            error: { message: "the Drive copy came back empty; attach the PDF here instead" },
+          });
+          return;
+        }
       }
     }
     const membersResult = service.listLabMembers();
     const members = membersResult.ok ? membersResult.payload.members : [];
     try {
-      const draft = await ctx.draftLinkedInPost({
+      const draft = await (isX ? ctx.draftXPost : ctx.draftLinkedInPost)({
+        ...(announcement ? { announcement } : {}),
+        ...(credits ? { credits } : {}),
         pdfBase64,
         members,
         ...(typeof body.url === "string" ? { url: body.url } : {}),
@@ -237,13 +264,14 @@ export const papersRoutes: readonly Route[] = [
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
-    const body = readRecord(await readJson(req));
+    const body = readRecord(await readJson(req, 3_000_000));
     sendServiceResult(
       res,
       service.saveSocialDraft({
         paperId: decodeURIComponent(params[1]),
         platform: String(body.platform ?? ""),
         body: String(body.body ?? ""),
+        ...(body.x_thread !== undefined ? { xThread: body.x_thread } : {}),
         ...(typeof body.model === "string" ? { model: body.model } : {}),
         memberId: principal.kind === "member" ? principal.member.id : principalActor(principal),
         privileged: isPrivileged(principal),

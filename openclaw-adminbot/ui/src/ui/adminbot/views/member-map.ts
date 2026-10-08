@@ -15,15 +15,32 @@
 import { html, LitElement, nothing, svg } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { MemberMap, MemberMapPlace } from "../data/member-map.ts";
-import { WORLD_OUTLINE_PATH, WORLD_OUTLINE_VIEW } from "../data/world-outline.ts";
 
-// Taken from the generated outline rather than declared twice: the path is baked into this exact
-// projection, so a mismatch here would slide every dot off the coastline it belongs on.
-const VIEW_WIDTH = WORLD_OUTLINE_VIEW.width;
-const VIEW_HEIGHT = WORLD_OUTLINE_VIEW.height;
+// The projection data/world-outline.ts was generated for. Declared here rather than imported so the
+// 43kB coastline stays out of the console's first load; member-map.test.ts asserts the two match,
+// since a mismatch would slide every dot off the coastline it belongs on.
+const VIEW_WIDTH = 360;
+const VIEW_HEIGHT = 180;
 // Latitude is clipped well short of the poles: nobody in the gazetteer lives past these, and the
 // full ±90 range wastes a third of the height on empty ice.
-const LAT_LIMIT = WORLD_OUTLINE_VIEW.latLimit;
+const LAT_LIMIT = 72;
+
+// The coastline arrives on its own: dots, grid and list draw at once and the land fills in under
+// them when the chunk lands. A failed fetch is forgotten so the next element to connect retries.
+let worldOutlinePath: string | null = null;
+let worldOutlineLoad: Promise<void> | undefined;
+
+export function loadWorldOutline(): Promise<void> {
+  worldOutlineLoad ??= import("../data/world-outline.ts").then(
+    (mod) => {
+      worldOutlinePath = mod.WORLD_OUTLINE_PATH;
+    },
+    () => {
+      worldOutlineLoad = undefined;
+    },
+  );
+  return worldOutlineLoad;
+}
 
 const MIN_RADIUS = 3;
 const MAX_RADIUS = 10;
@@ -87,7 +104,7 @@ function renderPlot(map: MemberMap) {
         count: String(map.counts.placed),
       })}</title>
       <rect class="member-map__ocean" x="0" y="0" width=${VIEW_WIDTH} height=${VIEW_HEIGHT}></rect>
-      <path class="member-map__land" d=${WORLD_OUTLINE_PATH}></path>
+      ${worldOutlinePath ? svg`<path class="member-map__land" d=${worldOutlinePath}></path>` : nothing}
       ${[-120, -60, 0, 60, 120].map(
         (lon) => svg`
           <line
@@ -188,9 +205,7 @@ function renderAvatars(place: MemberMapPlace) {
               alt=""
               title=${member.name}
             />`
-          : html`<span
-              class="member-map__avatar member-map__avatar--fallback"
-              title=${member.name}
+          : html`<span class="member-map__avatar member-map__avatar--fallback" title=${member.name}
               >${member.name.slice(0, 1).toUpperCase()}</span
             >`,
       )}
@@ -305,6 +320,13 @@ class AdminbotMemberMap extends LitElement {
     return this;
   }
 
+  override connectedCallback(): void {
+    super.connectedCallback();
+    if (!worldOutlinePath) {
+      void loadWorldOutline().then(() => this.requestUpdate());
+    }
+  }
+
   private dialog(): HTMLDialogElement | null {
     return this.querySelector("dialog");
   }
@@ -403,23 +425,23 @@ class AdminbotMemberMap extends LitElement {
         >
           ${this.opened
             ? html`<div class="member-map__dialog-panel">
-            <div class="member-map__head">
-              <div>
-                <h2 class="dashboard-summary__title">${t("dashboard.memberMap.title")}</h2>
-                <p class="dashboard-summary__headline">${headline}</p>
-              </div>
-              <button
-                type="button"
-                class="btn btn--sm"
-                data-testid="member-map-close"
-                @click=${() => this.close()}
-              >
-                ${t("dashboard.memberMap.collapse")}
-              </button>
-            </div>
-              <div class="member-map__dialog-plot">${renderPlot(map)}</div>
-              ${renderList(map, true, this.expandedPlaces, (key) => this.toggleExpanded(key))}
-            </div>`
+                <div class="member-map__head">
+                  <div>
+                    <h2 class="dashboard-summary__title">${t("dashboard.memberMap.title")}</h2>
+                    <p class="dashboard-summary__headline">${headline}</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn--sm"
+                    data-testid="member-map-close"
+                    @click=${() => this.close()}
+                  >
+                    ${t("dashboard.memberMap.collapse")}
+                  </button>
+                </div>
+                <div class="member-map__dialog-plot">${renderPlot(map)}</div>
+                ${renderList(map, true, this.expandedPlaces, (key) => this.toggleExpanded(key))}
+              </div>`
             : nothing}
         </dialog>
       </article>
