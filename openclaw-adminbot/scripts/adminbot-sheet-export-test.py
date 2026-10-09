@@ -296,3 +296,5 @@ assert exporter.paper_review_fields({"venue": "arXiv"}, {}, [{"slot": "feedback_
 assert exporter.paper_review_fields({}, {})["review_category"] == "Not recorded"
 assert exporter.paper_review_fields({"venue": "REALM workshop @EMNLP"}, {})["review_category"] == "REALM workshop @EMNLP"
 print("PASS: canonical review categories, year removal, aliases, deduplication and unfamiliar venue preservation")
+
+assert exporter.paper_review_fields({"venue": "EMNLP 2026 (main)"}, {})["review_category"] == "EMNLP"

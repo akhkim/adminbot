@@ -158,6 +158,7 @@ def paper_review_fields(record, members, slots=()):
         category = ' '.join(category.split())
         key = re.sub(r'\b(?:19|20)\d{2}\b', '', category).strip().lower()
         key = re.sub(r'^(?:committed to|accepted at)\s+', '', key)
+        key = re.sub(r'\s*\(main\)$', '', key).strip()
         key = key.replace('-', ' ')
         if category:
             categories.append(aliases.get(key, category))
