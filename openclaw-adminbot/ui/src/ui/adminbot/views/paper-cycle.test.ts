@@ -538,3 +538,14 @@ describe("what you need for this trip", () => {
     expect(saves).toEqual([1]);
   });
 });
+
+it("starts paper sections collapsed and preserves a reader's expansion on rerender", () => {
+  const { container, props } = draw({ conferenceOpen: true });
+  const sections = [...container.querySelectorAll<HTMLDetailsElement>("details.paper-cycle__group")];
+  expect(sections.length).toBeGreaterThan(1);
+  expect(sections.every((section) => !section.open)).toBe(true);
+  expect(sections.every((section) => section.querySelector("summary")?.textContent?.trim())).toBe(true);
+  sections[0]!.open = true;
+  render(renderPaperCycle(props), container);
+  expect(sections[0]!.open).toBe(true);
+});
