@@ -160,6 +160,7 @@ import { loadChannelsTab, refreshActiveTab, setTab } from "./app-settings.ts";
 function createHost() {
   return {
     tab: "agents",
+    memberPrivilegeLevel: "admin",
     connected: true,
     client: {},
     agentsPanel: "overview",
@@ -255,6 +256,28 @@ describe("refreshActiveTab", () => {
     await refreshActiveTab(app as never);
 
     expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "adminbot",
+    "adminbotSettings",
+    "adminbotMembers",
+    "adminbotPapers",
+    "adminbotAnnouncements",
+    "adminbotTimeAvailability",
+    "adminbotConferencePapers",
+    "adminbotCalendar",
+  ])("uses member loading on %s while viewing as a member", async (tab) => {
+    const host = createHost();
+    host.tab = tab as typeof host.tab;
+    host.memberPrivilegeLevel = "member";
+    await refreshActiveTab(host as never);
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(
+      host,
+      "general",
+      expect.any(Boolean),
+      false,
+    );
   });
 
   it("does not request the paper list when Time Availability first opens", async () => {

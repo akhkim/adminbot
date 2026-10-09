@@ -7,6 +7,26 @@ import type { AppViewState } from "./app-view-state.ts";
 import { OpenClawApp } from "./app.ts";
 
 describe("Meeting Recordings entry", () => {
+  it("loads papers when a gateway operator leaves a previously loaded non-paper page", async () => {
+    clearStoredMemberSession();
+    const calls: string[] = [];
+    const app = new OpenClawApp();
+    app.connected = true;
+    app.tab = "adminbotPapers";
+    app.adminBotData = { ...app.adminBotData, loadedAt: Date.now(), papersLoadedAt: null };
+    app.client = {
+      request: async (_method: string, params: { name?: string }) => {
+        const name = params?.name ?? "";
+        calls.push(name);
+        return { ok: true, output: name === "adminbot_list_papers" ? { papers: [] } : {} };
+      },
+    } as never;
+    const container = document.createElement("div");
+    render(renderApp(app as unknown as AppViewState), container);
+    await vi.waitFor(() => expect(app.adminBotData.papersLoadedAt).not.toBeNull());
+    expect(calls).toContain("adminbot_list_papers");
+  });
+
   afterEach(() => {
     clearStoredMemberSession();
     vi.restoreAllMocks();

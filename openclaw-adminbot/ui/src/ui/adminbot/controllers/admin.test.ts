@@ -100,6 +100,26 @@ describe("loadAdminBot", () => {
     expect(host.adminBotData.sensitiveInfo).toBeNull();
   });
 
+  it.each(["admin", "general"] as const)(
+    "skips the paper tool on non-paper pages in %s mode, then loads it on demand",
+    async (mode) => {
+      const { host, calls } = createHost({
+        adminbot_list_lab_members: { members: [{ id: "member-1" }] },
+        adminbot_list_papers: { papers: [{ id: "paper-1" }] },
+      });
+      await loadAdminBot(host, mode, false);
+      expect(calls).not.toContain("adminbot_list_papers");
+      expect(host.adminBotData.papers).toEqual([]);
+      expect(host.adminBotData.papersLoadedAt).toBeNull();
+      expect(host.adminBotData.members).toHaveLength(1);
+      expect(host.adminBotLoading).toBe(false);
+      await loadAdminBot(host, mode, true);
+      expect(calls.filter((name) => name === "adminbot_list_papers")).toHaveLength(1);
+      expect(host.adminBotData.papers).toHaveLength(1);
+      expect(host.adminBotData.papersLoadedAt).not.toBeNull();
+    },
+  );
+
   it("loads only member and paper records in general mode", async () => {
     const { host, calls } = createHost({
       adminbot_list_lab_members: {
@@ -384,6 +404,48 @@ describe("loadAdminBot over the member session", () => {
     await pending;
     expect(host.adminBotData.papers[0]?.id).toBe("paper-1");
     expect(host.adminBotData.loadedAt).not.toBeNull();
+  });
+
+  it("starts admin queues while papers are still pending", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    host.memberId = "pat";
+    let resolvePapers: (response: Response) => void = () => {};
+    const fetched: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const path = new URL(String(input)).pathname;
+      fetched.push(path);
+      if (path === "/lab/members/self") {
+        return Promise.resolve(json({ member: { id: "pat" } }));
+      }
+      if (path === "/papers") {
+        return new Promise<Response>((resolve) => {
+          resolvePapers = resolve;
+        });
+      }
+      return Promise.resolve(json({}));
+    });
+    const pending = loadAdminBot(host, "admin");
+    try {
+      await vi.waitFor(() => expect(fetched).toContain("/papers"));
+      expect(fetched).toEqual(
+        expect.arrayContaining([
+          "/proposals/pending",
+          "/automation/email/review",
+          "/papers/nudges",
+          "/papers/conference-rosters",
+          "/settings",
+          "/sensitive-info",
+        ]),
+      );
+      expect(host.adminBotData.members[0]?.id).toBe("pat");
+      expect(host.adminBotLoading).toBe(true);
+    } finally {
+      resolvePapers(json({ papers: [{ id: "paper-1" }] }));
+      await pending;
+    }
+    expect(host.adminBotData.papers[0]?.id).toBe("paper-1");
+    expect(host.adminBotLoading).toBe(false);
   });
 
   it("preserves a roster that arrives while papers are still loading", async () => {

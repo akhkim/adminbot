@@ -1334,6 +1334,19 @@ async function loadAdminBotOverSession(
     // The profile and public deadlines can render while the larger paper read is still pending.
     host.adminBotData = { ...createEmptyAdminBotDashboardData(), members: memberRows };
     host.requestUpdate?.();
+    // These queues do not depend on papers; overlap their network waits.
+    const adminReads = Promise.allSettled(
+      mode === "admin"
+        ? [
+            optional("/proposals/pending?limit=50"),
+            optional("/automation/email/review"),
+            optional("/papers/nudges"),
+            optional("/papers/conference-rosters"),
+            optional("/settings"),
+            optional("/sensitive-info"),
+          ]
+        : [],
+    );
     const papers = includePapers ? await read("/papers") : undefined;
     if (!isCurrent()) {
       return;
@@ -1351,15 +1364,9 @@ async function loadAdminBotOverSession(
     if (mode === "general") {
       return;
     }
-    const [pending, emailReview, nudges, conferenceRosters, settings, sensitiveInfo] =
-      await Promise.all([
-        optional("/proposals/pending?limit=50"),
-        optional("/automation/email/review"),
-        optional("/papers/nudges"),
-        optional("/papers/conference-rosters"),
-        optional("/settings"),
-        optional("/sensitive-info"),
-      ]);
+    const [pending, emailReview, nudges, conferenceRosters, settings, sensitiveInfo] = (
+      await adminReads
+    ).map((result) => (result.status === "fulfilled" ? result.value : undefined));
     if (!isCurrent()) {
       return;
     }
@@ -1507,7 +1514,7 @@ export async function loadAdminBot(
     if (mode === "general") {
       const [members, papers] = await Promise.all([
         invokeAdminBotTool(host, "adminbot_list_lab_members"),
-        invokeAdminBotTool(host, "adminbot_list_papers"),
+        includePapers ? invokeAdminBotTool(host, "adminbot_list_papers") : undefined,
       ]);
       if (!gatewayLoadIsCurrent()) {
         return;
@@ -1516,7 +1523,7 @@ export async function loadAdminBot(
         ...createEmptyAdminBotDashboardData(),
         members: readArray<AdminBotLabMember>(members, "members"),
         papers: readArray<AdminBotPaperRecord>(papers, "papers"),
-        papersLoadedAt: Date.now(),
+        papersLoadedAt: includePapers ? Date.now() : null,
         loadedAt: Date.now(),
       };
       return;
@@ -1531,7 +1538,7 @@ export async function loadAdminBot(
     ] = await Promise.allSettled([
       invokeAdminBotTool(host, "adminbot_list_pending_actions", { limit: 50 }),
       invokeAdminBotTool(host, "adminbot_list_lab_members"),
-      invokeAdminBotTool(host, "adminbot_list_papers"),
+      includePapers ? invokeAdminBotTool(host, "adminbot_list_papers") : undefined,
       invokeAdminBotTool(host, "adminbot_list_paper_nudges"),
       invokeAdminBotTool(host, "adminbot_get_settings"),
       invokeAdminBotTool(host, "adminbot_get_sensitive_info"),
@@ -1563,7 +1570,7 @@ export async function loadAdminBot(
       emailReviewHistory: [],
       members: readArray<AdminBotLabMember>(members, "members"),
       papers: readArray<AdminBotPaperRecord>(papers, "papers"),
-      papersLoadedAt: Date.now(),
+      papersLoadedAt: includePapers ? Date.now() : null,
       nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
       settings:
         Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
