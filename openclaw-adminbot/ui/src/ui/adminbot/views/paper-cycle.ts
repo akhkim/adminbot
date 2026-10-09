@@ -877,10 +877,10 @@ function renderMyTrip(props: PaperCycleProps) {
                     edit({ needs_lodging: (event.target as HTMLInputElement).checked })}
                 />
                 <span
-                  >I want a bed in whatever the lab books
+                  >I’d like a place in the lab’s shared accommodation
                   <small
-                    >Asked separately from the money: you might need no funding and still want to
-                    stay with everyone.</small
+                    >Select this even if you do not need funding. Your request applies to this
+                    conference and year; enter the dates you need accommodation below.</small
                   ></span
                 >
               </label>
