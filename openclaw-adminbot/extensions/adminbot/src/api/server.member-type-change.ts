@@ -19,6 +19,7 @@ import {
   type AdminBotAuditEvent,
   type AdminBotLabMember,
 } from "../contracts/actions.js";
+import { adminBotCalendarEmail } from "../contracts/member-outreach-email.js";
 import type { AdminBotService } from "../kernel/service.js";
 import {
   type AdminBotStandingMeeting,
@@ -90,9 +91,7 @@ export type MemberTypeChangeDeps = {
 
 /** The Google identity to invite: an ACL or a guest slot is granted to a Google account. */
 function calendarAddress(member: AdminBotLabMember): string | undefined {
-  return (
-    (member.calendar_email ?? member.email ?? member.correspondence_email)?.trim() || undefined
-  );
+  return adminBotCalendarEmail(member) || undefined;
 }
 
 async function runAction(

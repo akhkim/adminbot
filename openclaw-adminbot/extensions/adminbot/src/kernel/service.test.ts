@@ -2034,7 +2034,7 @@ describe("AdminBotService", () => {
       expect(proposal?.status).not.toBe("executed");
     });
 
-    it("reports somebody with no calendar address rather than guessing one", async () => {
+    it("uses the saved account email when Calendar email is absent", async () => {
       const { service } = labWith([
         { id: "ada", name: "Ada", slack_user_id: "U-ADA", email: "ada@cs.toronto.edu" },
       ]);
@@ -2045,8 +2045,10 @@ describe("AdminBotService", () => {
           calendarId: "cal-1",
         }),
       );
-      expect(result.invited).toEqual([]);
-      expect(result.skipped[0]?.reason).toContain("calendar_email");
+      expect(result.invited).toEqual([
+        { event_id: "e1", channel: "meeting-causal-inference", attendees: ["ada@cs.toronto.edu"] },
+      ]);
+      expect(result.skipped).toEqual([]);
     });
 
     // Guests and the bot itself are in channels and are not on the roster. Not an error.
@@ -5522,7 +5524,7 @@ describe("AdminBotService", () => {
       expect(result.invited).toEqual([]);
       expect(result.skipped).toContainEqual({
         member_id: "no-email",
-        reason: "member has no calendar_email",
+        reason: "member has no usable calendar or contact email",
       });
     });
   });

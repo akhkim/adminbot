@@ -52,3 +52,17 @@ function firstAddress(value: string | undefined): string {
 export function adminBotOutreachEmail(member: AdminBotAddressableMember): string {
   return firstAddress(member.correspondence_email) || firstAddress(member.email);
 }
+
+/** Calendar destination: explicit Calendar account, login account, then other saved contact. */
+export function adminBotCalendarEmail(
+  member: AdminBotAddressableMember & { calendar_email?: string },
+): string {
+  for (const value of [member.calendar_email, member.email, member.correspondence_email]) {
+    for (const candidate of (value ?? "").split(/[/,;\s]+/u)) {
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(candidate)) {
+        return candidate;
+      }
+    }
+  }
+  return "";
+}

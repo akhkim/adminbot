@@ -177,7 +177,10 @@ import {
   type MemberDuplicatePair,
   type MemberMergeConflict,
 } from "../contracts/member-duplicates.js";
-import { adminBotOutreachEmail } from "../contracts/member-outreach-email.js";
+import {
+  adminBotCalendarEmail,
+  adminBotOutreachEmail,
+} from "../contracts/member-outreach-email.js";
 import { normalizeMemberProfileValues } from "../contracts/member-profile-values.js";
 import {
   type AdminBotMemberRequest,
@@ -1906,9 +1909,12 @@ export class AdminBotService {
         if (!memberThemeIds(member).includes(themeId)) {
           continue;
         }
-        const email = member.calendar_email?.trim();
+        const email = adminBotCalendarEmail(member);
         if (!email) {
-          skipped.push({ member_id: member.id, reason: "member has no calendar_email" });
+          skipped.push({
+            member_id: member.id,
+            reason: "member has no usable calendar or contact email",
+          });
           continue;
         }
         if (already.has(email.toLowerCase())) {
@@ -13436,10 +13442,8 @@ export class AdminBotService {
    * the channel; this follows the channel, so somebody added by hand is picked up too and somebody
    * who left the channel is not re-invited.
    *
-   * The address is `calendar_email`, which is the field that exists for exactly this: a Google
-   * invite has to reach the account the person keeps their calendar in, which is routinely not the
-   * address the lab mails them at. Somebody without one is reported, not guessed at -- an invite to
-   * the wrong Google account is silently not seen.
+   * The explicit Calendar address takes priority, followed by the account address and saved
+   * correspondence address. Members with no usable saved address are reported, never guessed.
    *
    * Attendees are added, never removed. Leaving a recurring meeting is the attendee's own decision
    * and a sweep that undid it every night would be the lab overruling them once a day.
@@ -13495,9 +13499,12 @@ export class AdminBotService {
         if (adminBotIsAlumniMember(member)) {
           continue;
         }
-        const email = member.calendar_email?.trim();
+        const email = adminBotCalendarEmail(member);
         if (!email) {
-          skipped.push({ member_id: member.id, reason: "member has no calendar_email" });
+          skipped.push({
+            member_id: member.id,
+            reason: "member has no usable calendar or contact email",
+          });
           continue;
         }
         attendees.push(email);

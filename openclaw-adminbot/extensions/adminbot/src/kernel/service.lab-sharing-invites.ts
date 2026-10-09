@@ -4,6 +4,7 @@ import type {
   AdminBotLabMember,
   AdminBotPaperRecord,
 } from "../contracts/actions.js";
+import { adminBotCalendarEmail } from "../contracts/member-outreach-email.js";
 import type { AdminBotService, AdminBotServiceStore } from "./service.js";
 
 const fail = (status: number, message: string) => ({
@@ -73,9 +74,8 @@ export class LabSharingInvites {
     if (body.kind !== "collaboration" && body.kind !== "call") {
       return fail(400, "Choose collaboration or call.");
     }
-    const address =
-      body.kind === "call" ? recipient.calendar_email || recipient.email : recipient.email;
-    const sender = body.kind === "call" ? actor.calendar_email || actor.email : actor.email;
+    const address = body.kind === "call" ? adminBotCalendarEmail(recipient) : recipient.email;
+    const sender = body.kind === "call" ? adminBotCalendarEmail(actor) : actor.email;
     if (!address?.trim() || !sender?.trim()) {
       return fail(400, "The members need contact details on their profiles.");
     }
