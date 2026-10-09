@@ -253,7 +253,7 @@ assert exporter.people_review_fields({'slack_user_id': 'U1', 'slack_channels': [
 assert exporter.people_review_fields({'slack_user_id': 'U1', 'slack_channels': []})['slack_active'] == 'Recorded no'
 assert exporter.people_review_fields({'slack_channels': ['jinesis-active']})['slack_active'] == 'Unknown'
 assert exporter.people_review_fields({'slack_user_id': 'U1'})['slack_active'] == 'Unknown'
-assert sorted([{'id': 'unknown'}, {'id': 'old', 'joined_month': '2025-01'}, {'id': 'new', 'joined_month': '2026-10'}], key=exporter.people_sort_key)[0]['id'] == 'new'
+assert sorted([{'id': 'unknown'}, {'id': 'old', 'joined_month': '2025-01'}, {'id': 'new', 'joined_month': '2026-10'}], key=exporter.people_sort_key)[0]['id'] == 'old'
 assert exporter.paper_review_fields({'artifacts': {'conference': 'NeurIPS 2026'}}, {})['review_category'] == 'NeurIPS 2026'
 print('PASS: recorded channel membership, unknown evidence, inactive status and joined-month ordering')
 
@@ -261,7 +261,16 @@ assert exporter.paper_review_fields({}, {}, [{'slot': 'feedback_arr', 'status': 
 views = [r['addFilterView']['filter'] for r in refresh.refresh_requests(direct, properties) if 'addFilterView' in r]
 inactive = next(v for v in views if v['title'] == 'Review inactive members')
 assert inactive['criteria'][str(columns.index('membership_review'))]['condition']['values'] == [{'userEnteredValue': 'Review inactive'}]
-assert next(v for v in views if v['title'] == 'By joined date')['sortSpecs'][0]['sortOrder'] == 'DESCENDING'
-print('PASS: inactive-only filter view, descending joined view, explicit feedback categories')
+assert next(v for v in views if v['title'] == 'By joined date')['sortSpecs'][0]['sortOrder'] == 'ASCENDING'
+print('PASS: inactive-only filter view, ascending joined view, explicit feedback categories')
 
 assert exporter.people_review_fields({'status': 'active', 'member_type': 'coauthor-major, alumni'})['membership_review'] == 'Review inactive'
+
+assert exporter.normalized_join_date('Jan-26') == '2026-01'
+assert exporter.normalized_join_date('June 2025') == '2025-06'
+assert exporter.normalized_join_date('2025') == '2025'
+assert exporter.normalized_join_date('1/1/2026') == '2026-01-01'
+for invalid in ('1000-01', '206-09', '26-Jun', '2/3/2026', '2026-02-30'):
+    assert exporter.normalized_join_date(invalid) == '', invalid
+assert [r['id'] for r in sorted([{'id': 'unknown'}, {'id': 'later', 'joined_month': 'Jan-26'}, {'id': 'earlier', 'joined_month': 'June 2025'}], key=exporter.people_sort_key)] == ['earlier', 'later', 'unknown']
+print('PASS: canonical join dates, precision, ambiguous values and oldest-first ordering')

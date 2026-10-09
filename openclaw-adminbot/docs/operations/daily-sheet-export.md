@@ -46,7 +46,7 @@ Going attendees is immediately after started_on (column I), and this order is re
 
 ## People and paper review views (October 9, 2026)
 
-PeopleList now defaults to newest recorded join date/month first, with missing or invalid
+PeopleList now defaults to oldest recorded join date/month first, with missing or invalid
 dates last; database creation is never substituted for joining. Membership type remains
 the recorded value. Native views offer joined-date sorting, membership type, Slack active
 channel, and inactive-member review. The inactive view uses explicit inactive/alumni/removed
@@ -62,3 +62,5 @@ feedback and the recorded venue (including NeurIPS when explicitly stored). Empt
 remains blank. The early draft/Overleaf project link remains clickable without requiring PI
 readiness. These protected exports remain one-way; category or link changes are made in
 AdminBot, not through export cells. No paper type, acceptance or approval is invented.
+
+Join dates use YYYY-MM-DD, YYYY-MM or YYYY according to recorded precision. Clear English month formats are normalized. Ambiguous or implausible values remain blank in join_date, with their original value in join_date_basis for review; no live member records are changed.

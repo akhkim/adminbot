@@ -143,8 +143,6 @@ def refresh_requests(batch, properties):
                 specification['sortSpecs'] = [{'dimensionIndex': headers.index(column), 'sortOrder': 'ASCENDING'}
                                               for column in [sort_column, 'title' if title == 'PaperList' else 'name']]
                 fields += ',sortSpecs'
-                if sort_column == 'join_date':
-                    specification['sortSpecs'][0]['sortOrder'] = 'DESCENDING'
                 if view_title == 'Review inactive members':
                     specification['criteria'] = {str(headers.index('membership_review')): {'condition': {'type': 'TEXT_EQ', 'values': [{'userEnteredValue': 'Review inactive'}]}}}
                     fields += ',criteria'

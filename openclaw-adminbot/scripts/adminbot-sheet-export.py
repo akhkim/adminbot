@@ -199,14 +199,34 @@ def paper_sort_key(record):
             record.get('title', ''), record['id'])
 
 
-def people_sort_key(record):
-    # A joined month is month precision, not a fabricated day or database creation date.
-    value = record.get('join_date') or record.get('joined_month') or ''
+def normalized_join_date(value):
+    value = str(value or '').strip()
+    for pattern, precision in (('%Y-%m-%d', 'day'), ('%Y-%m', 'month'),
+                               ('%b-%y', 'month'), ('%B %Y', 'month'),
+                               ('%b %Y', 'month'), ('%Y', 'year')):
+        try:
+            date = datetime.datetime.strptime(value, pattern).date()
+            if not 1900 <= date.year <= datetime.date.today().year + 1:
+                continue
+            return date.strftime({'day': '%Y-%m-%d', 'month': '%Y-%m', 'year': '%Y'}[precision])
+        except ValueError:
+            pass
+    # A numeric slash date is safe only when both locale interpretations agree.
     try:
-        date = datetime.date.fromisoformat(value + '-01' if len(value) == 7 else value[:10])
-        return (0, -date.toordinal(), str(record.get('name', '')).casefold(), record['id'])
-    except (ValueError, TypeError):
-        return (1, 0, str(record.get('name', '')).casefold(), record['id'])
+        us = datetime.datetime.strptime(value, '%m/%d/%Y').date()
+        uk = datetime.datetime.strptime(value, '%d/%m/%Y').date()
+        if us == uk and 1900 <= us.year <= datetime.date.today().year + 1:
+            return us.isoformat()
+    except ValueError:
+        pass
+    return ''
+
+
+def people_sort_key(record):
+    value = normalized_join_date(record.get('join_date') or record.get('joined_month'))
+    # Preserve source precision; this padding is used only for chronological sorting.
+    return (0 if value else 1, value.ljust(10, '0'),
+            str(record.get('name', '')).casefold(), record['id'])
 
 
 def people_review_fields(record):
@@ -236,9 +256,10 @@ def full_people_values(connection, members, papers, timestamp):
         avatar = record.get('avatar_url', '')
         if isinstance(avatar, str) and avatar.startswith('data:image/') and len(avatar) > 50000:
             record['avatar_url'] = '[Embedded profile image omitted: exceeds Google Sheets cell limit]'
-        record['join_date'] = record.get('join_date') or record.get('joined_month', '')
+        raw_join_date = record.get('join_date') or record.get('joined_month', '')
+        record['join_date'] = normalized_join_date(raw_join_date)
         record.update(people_review_fields(record))
-        record['join_date_basis'] = record.get('join_date_basis', 'joined_month' if record.get('joined_month') else '')
+        record['join_date_basis'] = ('Needs review: ' + str(raw_join_date)) if raw_join_date and not record['join_date'] else record.get('join_date_basis', 'joined_month' if record.get('joined_month') else '')
         onboarding = record.get('onboarding') or {}
         if onboarding:
             for source, target in [('steps', 'steps_total'), ('completed', 'completed_count'), ('remaining', 'remaining_count')]:
