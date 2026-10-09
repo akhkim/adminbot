@@ -3551,6 +3551,7 @@ export async function saveAdminBotPaper(
       title: paper.title,
       authors: paper.authors,
       currentStep: paper.currentStep,
+      ...(paper.venue === undefined ? {} : { venue: paper.venue }),
       ...(paper.venueDecision ? { venueDecision: paper.venueDecision } : {}),
       ...(paper.acceptedVenue === undefined ? {} : { acceptedVenue: paper.acceptedVenue }),
       ...(paper.acceptedYear === undefined

@@ -519,6 +519,7 @@ export default defineToolPlugin({
         title: Type.String(),
         authors: Type.Array(Type.String()),
         currentStep: paperStepSchema,
+        venue: Type.Optional(Type.String()),
         venueDecision: Type.Optional(paperVenueDecisionSchema),
         acceptedVenue: Type.Optional(Type.String()),
         // Empty string is the explicit clear emitted by the project card's "Not said" controls.
