@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import json
+import re
 import sqlite3
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -147,10 +148,23 @@ def paper_review_fields(record, members, slots=()):
         links['overleaf_link'] = (link(view.get('url')) if view.get('status') == 'provided' else '')
         if not links['overleaf_link'] and view.get('status') != 'invalid':
             links['overleaf_link'] = link(artifacts.get('overleaf_view_url'))
+    categories = [label for slot, label in [('feedback_arr', 'ARR'), ('feedback_arxiv', 'arXiv'), ('feedback_camera_ready', 'Camera-ready')]
+                  if by_slot.get(slot, {}).get('status') == 'provided']
+    aliases = {'arr': 'ARR', 'arr acceptance': 'ARR', 'arxiv': 'arXiv',
+               'camera ready': 'Camera-ready', 'neurips': 'NeurIPS', 'nips': 'NeurIPS',
+               'icml': 'ICML', 'iclr': 'ICLR', 'emnlp': 'EMNLP', 'acl': 'ACL',
+               'naacl': 'NAACL', 'aaai': 'AAAI', 'aistats': 'AISTATS', 'colt': 'COLT'}
+    for category in str(record.get('venue') or artifacts.get('conference') or '').split(','):
+        category = ' '.join(category.split())
+        key = re.sub(r'\b(?:19|20)\d{2}\b', '', category).strip().lower()
+        key = re.sub(r'^(?:committed to|accepted at)\s+', '', key)
+        key = key.replace('-', ' ')
+        if category:
+            categories.append(aliases.get(key, category))
     owner_id = record.get('lead_owner_member_id')
     owner = members.get(owner_id, {}).get('name', owner_id or '')
     return {
-        'review_category': ', '.join(dict.fromkeys([label for slot, label in [('feedback_arr', 'ARR'), ('feedback_arxiv', 'arXiv'), ('feedback_camera_ready', 'Camera-ready')] if by_slot.get(slot, {}).get('status') == 'provided'] + ([record.get('venue') or artifacts.get('conference')] if record.get('venue') or artifacts.get('conference') else []))),
+        'review_category': ', '.join(dict.fromkeys(categories)) or 'Not recorded',
         'venue': record.get('venue') or artifacts.get('conference', ''),
         'lead_owner': record.get('lead_owner') or owner,
         'deadline': record.get('deadline', ''),

@@ -254,7 +254,7 @@ assert exporter.people_review_fields({'slack_user_id': 'U1', 'slack_channels': [
 assert exporter.people_review_fields({'slack_channels': ['jinesis-active']})['slack_active'] == 'Unknown'
 assert exporter.people_review_fields({'slack_user_id': 'U1'})['slack_active'] == 'Unknown'
 assert sorted([{'id': 'unknown'}, {'id': 'old', 'joined_month': '2025-01'}, {'id': 'new', 'joined_month': '2026-10'}], key=exporter.people_sort_key)[0]['id'] == 'old'
-assert exporter.paper_review_fields({'artifacts': {'conference': 'NeurIPS 2026'}}, {})['review_category'] == 'NeurIPS 2026'
+assert exporter.paper_review_fields({'artifacts': {'conference': 'NeurIPS 2026'}}, {})['review_category'] == 'NeurIPS'
 print('PASS: recorded channel membership, unknown evidence, inactive status and joined-month ordering')
 
 assert exporter.paper_review_fields({}, {}, [{'slot': 'feedback_arr', 'status': 'provided'}, {'slot': 'feedback_arxiv', 'status': 'provided'}])['review_category'] == 'ARR, arXiv'
@@ -290,3 +290,9 @@ view = next(r['addFilterView']['filter'] for r in refresh.refresh_requests(direc
 assert view['criteria'][str(exporter.PAPERS.index('pi_review_status'))]['condition']['values'] == [{'userEnteredValue': 'awaiting PI approval'}]
 assert view['sortSpecs'][0] == {'dimensionIndex': exporter.PAPERS.index('review_ready_date'), 'sortOrder': 'ASCENDING'}
 print('PASS: authoritative PI labels, pending-first oldest-wait ordering and native approval filter')
+
+assert exporter.paper_review_fields({"venue": " ARR Acceptance, Committed to EMNLP 2026, neurips 2026, NeurIPS "}, {})["review_category"] == "ARR, EMNLP, NeurIPS"
+assert exporter.paper_review_fields({"venue": "arXiv"}, {}, [{"slot": "feedback_arxiv", "status": "provided"}])["review_category"] == "arXiv"
+assert exporter.paper_review_fields({}, {})["review_category"] == "Not recorded"
+assert exporter.paper_review_fields({"venue": "REALM workshop @EMNLP"}, {})["review_category"] == "REALM workshop @EMNLP"
+print("PASS: canonical review categories, year removal, aliases, deduplication and unfamiliar venue preservation")
