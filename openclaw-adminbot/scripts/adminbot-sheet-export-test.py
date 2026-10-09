@@ -263,3 +263,5 @@ inactive = next(v for v in views if v['title'] == 'Review inactive members')
 assert inactive['criteria'][str(columns.index('membership_review'))]['condition']['values'] == [{'userEnteredValue': 'Review inactive'}]
 assert next(v for v in views if v['title'] == 'By joined date')['sortSpecs'][0]['sortOrder'] == 'DESCENDING'
 print('PASS: inactive-only filter view, descending joined view, explicit feedback categories')
+
+assert exporter.people_review_fields({'status': 'active', 'member_type': 'coauthor-major, alumni'})['membership_review'] == 'Review inactive'

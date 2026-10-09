@@ -217,7 +217,7 @@ def people_review_fields(record):
         active = 'Recorded yes' if any(str(c).lstrip('#').casefold() == 'jinesis-active' for c in channels) else 'Recorded no'
     status = str(record.get('status') or '').casefold()
     return {'slack_active': active, 'membership_review':
-            'Review inactive' if status in ('inactive', 'alumni', 'removed') or 'alumni' in str(record.get('member_type', '')).replace('_', '-').split(',') else
+            'Review inactive' if status in ('inactive', 'alumni', 'removed') or 'alumni' in {token.strip() for token in str(record.get('member_type', '')).replace('_', '-').split(',')} else
             'Status unknown' if not status else 'Recorded ' + status}
 
 
