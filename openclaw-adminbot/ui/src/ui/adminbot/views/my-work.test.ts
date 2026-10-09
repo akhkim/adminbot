@@ -166,6 +166,17 @@ function draw(options: DrawOptions = {}) {
   const container = document.createElement("div");
   document.body.append(container);
   render(renderMyWork(state, props), container);
+  // Field-edit fixtures explicitly open the cards and groups they exercise.
+  for (const button of container.querySelectorAll<HTMLButtonElement>(
+    '.paper-legacy__collapse[aria-expanded="false"]',
+  ))
+    button.click();
+  render(renderMyWork(state, props), container);
+  for (const button of container.querySelectorAll<HTMLButtonElement>(
+    '.paper-legacy__group-toggle[aria-expanded="false"]',
+  ))
+    button.click();
+  render(renderMyWork(state, props), container);
   return {
     container,
     toggled,
