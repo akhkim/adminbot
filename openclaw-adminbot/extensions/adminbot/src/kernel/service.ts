@@ -379,6 +379,8 @@ import {
 } from "../workflows/papers/author-links.js";
 import {
   buildConferenceAttendance,
+  canonicalConferenceTripKey,
+  canonicalConferenceTrips,
   expectedConferenceAttendees,
   mergeConferenceAttendance,
   paperConferenceKey,
@@ -6074,7 +6076,9 @@ export class AdminBotService {
     // and a card that leaked it would be doing so on every paper they share.
     const myTrip =
       tripKey && viewer?.memberId
-        ? this.store.listConferenceTrips(tripKey).find((trip) => trip.member_id === viewer.memberId)
+        ? canonicalConferenceTrips(this.store.listConferenceTrips()).find(
+            (trip) => trip.conference_key === tripKey && trip.member_id === viewer.memberId,
+          )
         : undefined;
     return {
       ok: true,
@@ -7400,7 +7404,7 @@ export class AdminBotService {
         });
       }
     }
-    for (const trip of this.store.listConferenceTrips()) {
+    for (const trip of canonicalConferenceTrips(this.store.listConferenceTrips())) {
       const key = `${trip.conference_key}/member:${trip.member_id}`;
       const existing = rows.get(key);
       // Undecided plans cannot create a Going attendee or a confirmed bed request.
@@ -7536,7 +7540,7 @@ export class AdminBotService {
     paperId?: string;
     notes?: string;
   }): AdminBotServiceResponse<{ trip: AdminBotConferenceTripRecord }> {
-    const conferenceKey = params.conferenceKey.trim();
+    const conferenceKey = canonicalConferenceTripKey(params.conferenceKey);
     if (!conferenceKey) {
       return serviceError(400, "a conference is required");
     }
@@ -7601,14 +7605,24 @@ export class AdminBotService {
     conferenceKey: string;
     memberId: string;
   }): AdminBotServiceResponse<{ withdrawn: boolean }> {
-    const conferenceKey = params.conferenceKey.trim();
+    const conferenceKey = canonicalConferenceTripKey(params.conferenceKey);
     if (!conferenceKey) {
       return serviceError(400, "a conference is required");
     }
     if (!this.store.getLabMember(params.memberId)) {
       return serviceError(404, `unknown member ${params.memberId}`);
     }
-    const withdrawn = this.store.deleteConferenceTrip(conferenceKey, params.memberId);
+    // Remove all stored aliases, otherwise an older answer reappears after withdrawal.
+    const aliases = this.store
+      .listConferenceTrips()
+      .filter(
+        (trip) =>
+          trip.member_id === params.memberId &&
+          canonicalConferenceTripKey(trip.conference_key) === conferenceKey,
+      );
+    const withdrawn = aliases
+      .map((trip) => this.store.deleteConferenceTrip(trip.conference_key, params.memberId))
+      .some(Boolean);
     if (withdrawn) {
       // Only when something was actually removed: an audit line for a no-op would make the trail
       // say somebody changed their mind when they did not.
