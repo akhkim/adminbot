@@ -274,3 +274,5 @@ for invalid in ('1000-01', '206-09', '26-Jun', '2/3/2026', '2026-02-30'):
     assert exporter.normalized_join_date(invalid) == '', invalid
 assert [r['id'] for r in sorted([{'id': 'unknown'}, {'id': 'later', 'joined_month': 'Jan-26'}, {'id': 'earlier', 'joined_month': 'June 2025'}], key=exporter.people_sort_key)] == ['earlier', 'later', 'unknown']
 print('PASS: canonical join dates, precision, ambiguous values and oldest-first ordering')
+
+assert [r['id'] for r in sorted([{'id': 'day', 'join_date': '2026-01-01'}, {'id': 'month', 'join_date': '2026-01'}, {'id': 'year', 'join_date': '2026'}], key=exporter.people_sort_key)] == ['year', 'month', 'day']

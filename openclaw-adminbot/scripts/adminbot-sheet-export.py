@@ -225,7 +225,7 @@ def normalized_join_date(value):
 def people_sort_key(record):
     value = normalized_join_date(record.get('join_date') or record.get('joined_month'))
     # Preserve source precision; this padding is used only for chronological sorting.
-    return (0 if value else 1, value.ljust(10, '0'),
+    return (0 if value else 1, value + {4: '-00-00', 7: '-00'}.get(len(value), ''),
             str(record.get('name', '')).casefold(), record['id'])
 
 
