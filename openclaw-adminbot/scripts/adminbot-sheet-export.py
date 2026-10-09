@@ -28,10 +28,10 @@ PAPER_LINKS = {
     'linkedin_post_link': (None, 'linkedin_post'),
 }
 PAPERS = ('id', 'title', 'pi_review_status', 'review_category', 'accepted_year', 'accepted_venue',
-          'acceptance_notification_date', 'review_ready_date', 'started_on', 'going_attendees',
+          'acceptance_notification_date', 'overleaf_edit_link', 'started_on', 'going_attendees',
           'missing_recorded_artifacts', 'invalid_recorded_artifacts', 'current_step', 'venue',
           'venue_decision', 'lead_owner', 'deadline', 'blocker', 'next_action', 'last_updated',
-          'draft_link', *PAPER_LINKS, 'papermentor_review_status',
+          'draft_link', *PAPER_LINKS, 'review_ready_date', 'papermentor_review_status',
           'coauthor_feedback_status', 'affiliation_checked', 'github_link_checked',
           'paper_mentor_checked', 'feedback_givers', 'artifact_statuses', 'authors')
 
@@ -143,6 +143,7 @@ def paper_review_fields(record, members, slots=()):
         links[field] = (link(evidence.get('url')) if evidence.get('status') == 'provided' else '')
         if not links[field] and evidence.get('status') != 'invalid':
             links[field] = link(artifacts.get(artifact))
+    overleaf_edit_link = links['overleaf_link']
     view = by_slot.get('overleaf_view', {})
     if not links['overleaf_link'] and by_slot.get('overleaf_edit', {}).get('status') != 'invalid':
         links['overleaf_link'] = (link(view.get('url')) if view.get('status') == 'provided' else '')
@@ -173,6 +174,7 @@ def paper_review_fields(record, members, slots=()):
         'next_action': record.get('next_action', ''),
         'last_updated': record.get('updated_at', ''),
         'draft_link': links['overleaf_link'] or links['pdf_link'],
+        'overleaf_edit_link': overleaf_edit_link,
         **links,
     }
 

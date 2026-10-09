@@ -68,3 +68,5 @@ Join dates use YYYY-MM-DD, YYYY-MM or YYYY according to recorded precision. Clea
 PaperList refreshes pi_review_status from stored PaperFlow slots on every export, never from a sheet edit. Provided PI approval reads Approved; waived approval stays explicitly Approval waived. Missing/unknown approval is never presented as approved. Ready papers awaiting approval come first, oldest wait first. Use Awaiting PI approval for the pending-only queue or By PI approval to group all states. This is a refreshed daily snapshot, not a live subscription; feedback requests remain separate from permission to publish.
 
 Review categories normalize known venue spellings, remove years from known categories, deduplicate recorded feedback/venue labels, and use Not recorded for missing evidence. Unfamiliar venue text is preserved; source venue/year records are unchanged.
+
+The early review_ready_date position is now overleaf_edit_link (edit evidence only, existing URL safety applies). review_ready_date remains later in the export for oldest-wait approval sorting. View-only links remain in overleaf_link and are not mislabeled as edit links.

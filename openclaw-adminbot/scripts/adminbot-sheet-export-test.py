@@ -130,7 +130,7 @@ stage_view = next(r['addFilterView']['filter'] for r in requests
                   if r.get('addFilterView', {}).get('filter', {}).get('title') == 'By stage')
 assert stage_view['sortSpecs'][0]['dimensionIndex'] == exporter.PAPERS.index('current_step')
 assert exporter.PAPERS[:9] == ('id', 'title', 'pi_review_status', 'review_category', 'accepted_year',
-    'accepted_venue', 'acceptance_notification_date', 'review_ready_date', 'started_on')
+    'accepted_venue', 'acceptance_notification_date', 'overleaf_edit_link', 'started_on')
 assert stage_view['range']['endColumnIndex'] == len(exporter.PAPERS)
 properties['PeopleList']['filterViews'] = [{'title': 'PeopleList sort and filter', 'filterViewId': 42}]
 resized = refresh.refresh_requests(direct, properties)
@@ -298,3 +298,8 @@ assert exporter.paper_review_fields({"venue": "REALM workshop @EMNLP"}, {})["rev
 print("PASS: canonical review categories, year removal, aliases, deduplication and unfamiliar venue preservation")
 
 assert exporter.paper_review_fields({"venue": "EMNLP 2026 (main)"}, {})["review_category"] == "EMNLP"
+
+assert review["overleaf_edit_link"] == "https://www.overleaf.com/project/123"
+assert exporter.paper_review_fields({}, {}, [{"slot": "overleaf_view", "status": "provided", "url": "https://www.overleaf.com/project/456"}])["overleaf_edit_link"] == ""
+assert exporter.PAPERS.index("review_ready_date") > exporter.PAPERS.index("overleaf_edit_link")
+print("PASS: early edit-only Overleaf column, no view fallback mislabeled edit, waiting-date sorting preserved")
