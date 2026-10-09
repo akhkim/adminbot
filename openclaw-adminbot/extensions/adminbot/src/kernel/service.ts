@@ -6918,12 +6918,17 @@ export class AdminBotService {
   listPiReviewQueue(): AdminBotServiceResponse<{ papers: PiReviewRow[] }> {
     const candidates = this.store
       .listPapers()
-      .filter((paper) => !isPaperClosed(paper))
       .map((paper) => ({ paper, slots: this.store.listPaperSlots(paper.id) }));
     return {
       ok: true,
       status: 200,
-      payload: { papers: [...paperFeedbackQueue(candidates), ...piReviewQueue(candidates)] },
+      payload: {
+        papers: [
+          // A previous venue rejection does not cancel an explicit request to review a revision.
+          ...paperFeedbackQueue(candidates),
+          ...piReviewQueue(candidates.filter(({ paper }) => !isPaperClosed(paper))),
+        ],
+      },
     };
   }
 
