@@ -303,3 +303,13 @@ assert review["overleaf_edit_link"] == "https://www.overleaf.com/project/123"
 assert exporter.paper_review_fields({}, {}, [{"slot": "overleaf_view", "status": "provided", "url": "https://www.overleaf.com/project/456"}])["overleaf_edit_link"] == ""
 assert exporter.PAPERS.index("review_ready_date") > exporter.PAPERS.index("overleaf_edit_link")
 print("PASS: early edit-only Overleaf column, no view fallback mislabeled edit, waiting-date sorting preserved")
+
+edit_index = exporter.PAPERS.index("overleaf_edit_link")
+edit_values = [list(exporter.PAPERS), [""] * len(exporter.PAPERS)]
+edit_values[1][edit_index] = "https://www.overleaf.com/project/123"
+edit_request = next(r["updateCells"] for r in refresh.paper_style_requests(properties["PaperList"], edit_values) if "updateCells" in r and r["updateCells"]["range"]["startColumnIndex"] == edit_index)
+assert edit_request["rows"][0]["values"][0]["userEnteredFormat"]["textFormat"]["link"]["uri"] == edit_values[1][edit_index]
+edit_values[1][edit_index] = ""
+empty_request = next(r["updateCells"] for r in refresh.paper_style_requests(properties["PaperList"], edit_values) if "updateCells" in r and r["updateCells"]["range"]["startColumnIndex"] == edit_index)
+assert empty_request["rows"][0]["values"] == [{}]
+print("PASS: explicit early Overleaf hyperlink and blank-cell stale-link clearing")

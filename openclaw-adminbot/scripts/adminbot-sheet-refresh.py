@@ -59,16 +59,17 @@ def paper_style_requests(properties, values):
                 'pixelSize': width,
                 'hiddenByUser': not any(str(row[index]).strip() for row in values[1:])},
             'fields': 'pixelSize,hiddenByUser'}})
-    requests.extend([
-        {'repeatCell': {'range': {**area, 'startRowIndex': 1, 'startColumnIndex': link_start, 'endColumnIndex': link_end},
-            'cell': {'userEnteredFormat': {'wrapStrategy': 'CLIP', 'textFormat': {
-                'underline': True, 'foregroundColor': {'red': .12, 'green': .34, 'blue': .67}}}},
-            'fields': 'userEnteredFormat.wrapStrategy,userEnteredFormat.textFormat.underline,userEnteredFormat.textFormat.foregroundColor'}},
-        {'updateCells': {'range': {**area, 'startRowIndex': 1, 'startColumnIndex': link_start, 'endColumnIndex': link_end},
-            'rows': [{'values': [{'userEnteredFormat': {'textFormat': {
-                'link': {'uri': value}}}} if value else {} for value in row[link_start:link_end]]} for row in values[1:]],
-            'fields': 'userEnteredFormat.textFormat.link'}},
-    ])
+    for link_start, link_end in [(link_start, link_end), (exporter.PAPERS.index("overleaf_edit_link"), exporter.PAPERS.index("overleaf_edit_link") + 1)]:
+        requests.extend([
+            {'repeatCell': {'range': {**area, 'startRowIndex': 1, 'startColumnIndex': link_start, 'endColumnIndex': link_end},
+                'cell': {'userEnteredFormat': {'wrapStrategy': 'CLIP', 'textFormat': {
+                    'underline': True, 'foregroundColor': {'red': .12, 'green': .34, 'blue': .67}}}},
+                'fields': 'userEnteredFormat.wrapStrategy,userEnteredFormat.textFormat.underline,userEnteredFormat.textFormat.foregroundColor'}},
+            {'updateCells': {'range': {**area, 'startRowIndex': 1, 'startColumnIndex': link_start, 'endColumnIndex': link_end},
+                'rows': [{'values': [{'userEnteredFormat': {'textFormat': {
+                    'link': {'uri': value}}}} if value else {} for value in row[link_start:link_end]]} for row in values[1:]],
+                'fields': 'userEnteredFormat.textFormat.link'}},
+        ])
     return requests
 
 
