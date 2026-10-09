@@ -70,12 +70,15 @@ function draw(options: {
   render(
     renderPaperOverviewTable({
       rows: options.rows,
-      filter: { ...EMPTY_PAPER_OVERVIEW_FILTER, ...options.filter },
+      filter: { ...EMPTY_PAPER_OVERVIEW_FILTER, collapsed: [], ...options.filter },
       onFilterChange: (next) => filters.push(next),
       onOpenPaper: (id) => opened.push(id),
       stages: [{ value: "overleaf_writing", label: "Overleaf writing" }],
       ...(options.memberTypes
-        ? { memberTypeOf: (memberId?: string) => (memberId ? options.memberTypes?.[memberId] : undefined) }
+        ? {
+            memberTypeOf: (memberId?: string) =>
+              memberId ? options.memberTypes?.[memberId] : undefined,
+          }
         : {}),
     }),
     container,
@@ -301,7 +304,7 @@ describe("the member type filter", () => {
       .querySelector<HTMLInputElement>('[data-testid="paper-overview-type-alumni"]')
       ?.dispatchEvent(new Event("change", { bubbles: true }));
     expect(drawn.filters).toEqual([
-      { ...EMPTY_PAPER_OVERVIEW_FILTER, memberTypes: ["alumni"] },
+      { ...EMPTY_PAPER_OVERVIEW_FILTER, collapsed: [], memberTypes: ["alumni"] },
     ]);
   });
 
@@ -497,7 +500,9 @@ describe("renderPaperOverviewTable", () => {
     container
       .querySelector<HTMLButtonElement>('[data-testid="paper-overview-figure-attention"]')
       ?.click();
-    expect(filters).toEqual([{ ...EMPTY_PAPER_OVERVIEW_FILTER, state: "attention" }]);
+    expect(filters).toEqual([
+      { ...EMPTY_PAPER_OVERVIEW_FILTER, collapsed: [], state: "attention" },
+    ]);
   });
 
   it("says a filter matched nothing rather than that the lab has no papers", () => {
@@ -552,6 +557,21 @@ describe("folding a person's papers away", () => {
     build({
       papers: [paper(), paper({ id: "p-2", title: "Second paper" })],
     });
+
+  it("starts folded and lets the reader open a person", () => {
+    const { container, filters } = draw({
+      rows: two(),
+      filter: { state: "all", collapsed: undefined },
+    });
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid^="paper-overview-person-toggle-"]',
+    );
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.textContent).not.toContain("Second paper");
+    toggle?.click();
+    const reopened = draw({ rows: two(), filter: filters.at(-1) });
+    expect(reopened.container.textContent).toContain("Second paper");
+  });
 
   it("asks the page to fold, keyed by person", () => {
     const { container, filters } = draw({ rows: two(), filter: { state: "all" } });

@@ -44,10 +44,18 @@ type Drawn = {
 };
 
 function draw(
-  options: { papers?: AdminBotPaperRecord[]; slots?: Record<string, PaperCycle> } = {},
+  options: {
+    papers?: AdminBotPaperRecord[];
+    slots?: Record<string, PaperCycle>;
+    collapsedDefault?: boolean;
+  } = {},
 ): Drawn {
   document.body.replaceChildren();
   const state = emptyPaperLegacyState();
+  // Field-edit cases deliberately expand the fixture; defaults are tested separately.
+  if (!options.collapsedDefault) {
+    for (const item of options.papers ?? [paper()]) state.initializedPapers.add(item.id);
+  }
   const saved: AdminBotPaperSaveInput[] = [];
   const slotWrites: Drawn["slotWrites"] = [];
   const loaded: string[] = [];
@@ -214,11 +222,13 @@ describe("renderPaperLegacy", () => {
 describe("collectLegacyWrites", () => {
   it("sends nothing when nothing was typed", () => {
     const state = emptyPaperLegacyState();
+
     expect(collectLegacyWrites(state, paper(), cycle())).toEqual({ record: null, slots: [] });
   });
 
   it("routes a record field to the paper write and a slot to its own", () => {
     const state = emptyPaperLegacyState();
+
     state.edits.set(
       "p1",
       new Map([
@@ -239,6 +249,7 @@ describe("collectLegacyWrites", () => {
   // archival paper quietly recorded it as non-archival.
   it("keeps an archival paper archival when another field is saved", () => {
     const state = emptyPaperLegacyState();
+
     state.edits.set("p1", new Map([["title", "Renamed"]]));
     const writes = collectLegacyWrites(state, paper({ is_archival: true }), cycle());
     expect(writes.record?.isArchival).toBe("true");
@@ -248,6 +259,7 @@ describe("collectLegacyWrites", () => {
   // its own field and the format, which that record never had, goes out blank.
   it("splits a combined track into its own field", () => {
     const state = emptyPaperLegacyState();
+
     state.edits.set("p1", new Map([["title", "Renamed"]]));
     const writes = collectLegacyWrites(state, paper({ presentation_type: "findings" }), cycle());
     expect(writes.record?.publicationTrack).toBe("findings");
@@ -256,6 +268,7 @@ describe("collectLegacyWrites", () => {
 
   it("sends no slot writes when only the record changed", () => {
     const state = emptyPaperLegacyState();
+
     state.edits.set("p1", new Map([["title", "Renamed"]]));
     // The whole reason the slots are diffed: a typo fix in the title must not fire 24 requests.
     expect(collectLegacyWrites(state, paper(), cycle()).slots).toEqual([]);
@@ -263,6 +276,7 @@ describe("collectLegacyWrites", () => {
 
   it("holds back a field that failed validation and still sends the rest", () => {
     const state = emptyPaperLegacyState();
+
     state.edits.set(
       "p1",
       new Map([
@@ -276,6 +290,7 @@ describe("collectLegacyWrites", () => {
 
   it("writes a boolean slot as done rather than as text", () => {
     const state = emptyPaperLegacyState();
+
     state.edits.set("p1", new Map([["fixes_merged", "yes"]]));
     expect(collectLegacyWrites(state, paper(), cycle()).slots).toEqual([
       { slot: "fixes_merged", input: { done: true } },
@@ -284,6 +299,7 @@ describe("collectLegacyWrites", () => {
 
   it("carries the poster's free-text note alongside its state", () => {
     const state = emptyPaperLegacyState();
+
     state.edits.set(
       "p1",
       new Map([
@@ -301,12 +317,14 @@ describe("collectLegacyWrites", () => {
 
   it("never writes a derived slot, whose status comes from the drafts", () => {
     const state = emptyPaperLegacyState();
+
     state.edits.set("p1", new Map([["x_draft", "yes"]]));
     expect(collectLegacyWrites(state, paper(), cycle()).slots).toEqual([]);
   });
 
   it("holds a half-typed year back rather than deciding the paper with it", () => {
     const state = emptyPaperLegacyState();
+
     state.edits.set(
       "p1",
       new Map([
@@ -512,6 +530,7 @@ describe("the card's own controls", () => {
   function drawWithExtras(): Drawn & { rerender: () => void } {
     document.body.replaceChildren();
     const state = emptyPaperLegacyState();
+    state.initializedPapers.add("p1");
     const container = document.createElement("div");
     document.body.append(container);
     const props = {
@@ -552,4 +571,10 @@ describe("the card's own controls", () => {
     expect(drawn.container.querySelector('[data-testid="top-p1"]')).toBeNull();
     expect(drawn.container.querySelector('[data-testid="bottom-p1"]')).toBeNull();
   });
+});
+
+it("starts legacy paper cards and their groups collapsed", () => {
+  const drawn = draw({ collapsedDefault: true });
+  expect(drawn.state.collapsed.has("p1")).toBe(true);
+  expect(drawn.state.collapsedGroups.size).toBeGreaterThan(0);
 });

@@ -1525,7 +1525,8 @@ describe("renderAdminBot papers panel — member self-service", () => {
     expect(
       container.querySelectorAll('[id^="adminbot-edit-paper-"] form.adminbot-form'),
     ).toHaveLength(0);
-    expect(container.querySelectorAll('[data-testid^="paper-overview-open-"]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-testid^="paper-overview-open-"]')).toHaveLength(0);
+    expect(container.querySelectorAll(".paper-overview__person-toggle")).toHaveLength(2);
   });
 
   it("keeps deletion out of the member view", () => {
@@ -1545,8 +1546,10 @@ describe("renderAdminBot papers panel — member self-service", () => {
 
     const row = container.querySelector(".paper-overview__row");
     expect(row).not.toBeNull();
-    // The title opens the record, so a paper is still read and edited in one place.
-    expect(row?.querySelector("button.logistics-requests__open")).not.toBeNull();
+    // Person headings remain available while their papers start folded away.
+    expect(
+      row?.querySelector("button.paper-overview__person-toggle")?.getAttribute("aria-expanded"),
+    ).toBe("false");
     expect(container.querySelector('[id^="adminbot-edit-paper-"]')).toBeNull();
   });
 
@@ -1860,13 +1863,13 @@ describe("pre-registration venue table", () => {
     );
   });
 
-  it("folds the active papers table into a disclosure that arrives open", () => {
+  it("folds the active papers table into a disclosure that arrives closed", () => {
     const container = drawWith({});
     const table = container.querySelector('[data-testid="adminbot-paper-overview"]');
     const details = table?.closest("details.paper-overview__board");
     expect(details).not.toBeNull();
-    // Open on arrival: this is the tab's subject, not a detail under it.
-    expect((details as HTMLDetailsElement).open).toBe(true);
+    // Closed on arrival; the heading remains the entry point.
+    expect((details as HTMLDetailsElement).open).toBe(false);
     expect(details?.querySelector("summary")?.textContent).toContain("Active papers");
   });
 

@@ -19,12 +19,9 @@
 // second should cost nothing once you have read the first.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
-import {
-  matchesMemberTypeFilter,
-  renderMemberTypeFilter,
-} from "../member-type-filter.ts";
 import type { PaperSlotOverviewRow } from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
+import { matchesMemberTypeFilter, renderMemberTypeFilter } from "../member-type-filter.ts";
 
 /**
  * Which papers the page is looking at.
@@ -48,7 +45,7 @@ export type PaperOverviewFilter = {
    * below them off the screen, and an administrator scanning for who is stuck should be able to
    * put that person's stack away without losing the row that says how they are doing.
    */
-  collapsed: string[];
+  collapsed?: string[];
   /**
    * Roster member types to show, as a union. Empty means every type.
    *
@@ -65,7 +62,6 @@ export const EMPTY_PAPER_OVERVIEW_FILTER: PaperOverviewFilter = {
   venue: "",
   stage: "",
   state: "all",
-  collapsed: [],
   memberTypes: [],
 };
 
@@ -900,7 +896,9 @@ function renderPersonOutstandingCell(person: PaperPersonRow) {
 
 /** Fold one person's papers away, or bring them back. */
 function togglePerson(props: PaperOverviewProps, key: string) {
-  const collapsed = new Set(props.filter.collapsed ?? []);
+  const collapsed = new Set(
+    props.filter.collapsed ?? paperPersonRows(props.rows).map((person) => person.key),
+  );
   if (collapsed.has(key)) {
     collapsed.delete(key);
   } else {
@@ -910,7 +908,8 @@ function togglePerson(props: PaperOverviewProps, key: string) {
 }
 
 function renderPersonRow(props: PaperOverviewProps, person: PaperPersonRow) {
-  const collapsed = (props.filter.collapsed ?? []).includes(person.key);
+  const collapsed =
+    props.filter.collapsed === undefined || props.filter.collapsed.includes(person.key);
   return html`
     <tr
       class="profile-overview__row paper-overview__row"

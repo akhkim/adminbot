@@ -406,7 +406,7 @@ function renderDraft(
       </div>
       ${generate
         ? html`
-            <details class="paper-cycle__draft-settings" ?open=${platform !== "x" || !draft}>
+            <details class="paper-cycle__draft-settings">
               <summary>
                 ${platform === "x" ? "Source, credits and announcement details" : "Draft settings"}
               </summary>
