@@ -59,7 +59,7 @@ def paper_style_requests(properties, values):
                 'pixelSize': width,
                 'hiddenByUser': not any(str(row[index]).strip() for row in values[1:])},
             'fields': 'pixelSize,hiddenByUser'}})
-    for link_start, link_end in [(link_start, link_end), (exporter.PAPERS.index("overleaf_edit_link"), exporter.PAPERS.index("overleaf_edit_link") + 1)]:
+    for link_start, link_end in [(link_start, link_end), (exporter.PAPERS.index("overleaf_edit_link"), exporter.PAPERS.index("overleaf_edit_link") + 1), (exporter.PAPERS.index("feedback_manuscript_link"), exporter.PAPERS.index("feedback_manuscript_link") + 1)]:
         requests.extend([
             {'repeatCell': {'range': {**area, 'startRowIndex': 1, 'startColumnIndex': link_start, 'endColumnIndex': link_end},
                 'cell': {'userEnteredFormat': {'wrapStrategy': 'CLIP', 'textFormat': {
@@ -129,7 +129,7 @@ def refresh_requests(batch, properties):
             requests.append({'addTable': {'table': table}})
         views = [(title + ' sort and filter', None)]
         if title == 'PaperList':
-            views += [('Awaiting PI approval', 'review_ready_date'), ('By PI approval', 'pi_review_status'), ('By stage', 'current_step'), ('By venue', 'venue'), ('By review category', 'review_category')]
+            views += [('Awaiting PI feedback', 'feedback_requested_date'), ('Awaiting PI approval', 'review_ready_date'), ('By PI approval', 'pi_review_status'), ('By stage', 'current_step'), ('By venue', 'venue'), ('By review category', 'review_category')]
         else:
             views += [('By joined date', 'join_date'), ('Review inactive members', 'membership_review'), ('By membership type', 'member_type'), ('By Slack active channel', 'slack_active')]
         for view_title, sort_column in views:
@@ -144,6 +144,9 @@ def refresh_requests(batch, properties):
                 specification['sortSpecs'] = [{'dimensionIndex': headers.index(column), 'sortOrder': 'ASCENDING'}
                                               for column in [sort_column, 'title' if title == 'PaperList' else 'name']]
                 fields += ',sortSpecs'
+                if view_title == 'Awaiting PI feedback':
+                    specification['criteria'] = {str(headers.index('feedback_review_status')): {'condition': {'type': 'TEXT_EQ', 'values': [{'userEnteredValue': 'awaiting PI feedback'}]}}}
+                    fields += ',criteria'
                 if view_title == 'Awaiting PI approval':
                     specification['criteria'] = {str(headers.index('pi_review_status')): {'condition': {'type': 'TEXT_EQ', 'values': [{'userEnteredValue': 'awaiting PI approval'}]}}}
                     fields += ',criteria'

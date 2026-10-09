@@ -9,6 +9,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qsl
 
+FEEDBACK_SLOTS = {'feedback_arr': 'ARR', 'feedback_arxiv': 'arXiv', 'feedback_camera_ready': 'Camera-ready'}
+
 PEOPLE = ('id', 'name', 'member_type', 'status', 'affiliation', 'research_topics')
 PAPER_LINKS = {
     'overleaf_link': ('overleaf_edit_url', 'overleaf_edit'),
@@ -33,7 +35,8 @@ PAPERS = ('id', 'title', 'pi_review_status', 'review_category', 'accepted_year',
           'venue_decision', 'lead_owner', 'deadline', 'blocker', 'next_action', 'last_updated',
           'draft_link', *PAPER_LINKS, 'review_ready_date', 'papermentor_review_status',
           'coauthor_feedback_status', 'affiliation_checked', 'github_link_checked',
-          'paper_mentor_checked', 'feedback_givers', 'artifact_statuses', 'authors')
+          'paper_mentor_checked', 'feedback_givers', 'artifact_statuses', 'authors',
+          'feedback_review_status', 'pending_feedback_types', 'feedback_requested_date', 'feedback_manuscript_link')
 
 PEOPLE_COLUMNS = tuple('''id join_date join_date_basis slack_active membership_review preferred_name member_type
 test_onboard_batch receives_nudges email calendar_email slack_user_id merch_requests
@@ -137,6 +140,33 @@ def paper_review_fields(record, members, slots=()):
         return value
 
     by_slot = {row['slot']: row for row in slots}
+    pending_feedback = []
+    for row in slots:
+        if row['slot'] not in FEEDBACK_SLOTS or row.get('status') != 'provided':
+            continue
+        try:
+            request = json.loads(row.get('value_text') or '')
+            if not isinstance(request, dict) or not isinstance(request.get('reason'), str) or not request['reason'].strip() or len(request['reason']) > 2000:
+                continue
+            url = request.get('url')
+            if not isinstance(url, str) or urlsplit(url).scheme != 'https' or not urlsplit(url).netloc or ('reviewed' in request and not isinstance(request['reviewed'], bool)):
+                continue
+            if 'review_note' in request and (not isinstance(request['review_note'], str) or len(request['review_note']) > 4000):
+                continue
+            dates = {}
+            for field in ('soft_deadline', 'hard_deadline'):
+                if field in request:
+                    value = request[field]
+                    if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})', value):
+                        raise ValueError('Invalid feedback deadline')
+                    dates[field] = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+            if dates.get('soft_deadline') and dates.get('hard_deadline') and dates['soft_deadline'] > dates['hard_deadline']:
+                continue
+            if not request.get('reviewed', False):
+                pending_feedback.append((row, request))
+        except (ValueError, TypeError):
+            continue
+    pending_feedback.sort(key=lambda pair: (pair[0].get('provided_at') or '9999', pair[0]['slot']))
     links = {}
     for field, (artifact, slot) in PAPER_LINKS.items():
         evidence = by_slot.get(slot, {})
@@ -166,6 +196,10 @@ def paper_review_fields(record, members, slots=()):
     owner_id = record.get('lead_owner_member_id')
     owner = members.get(owner_id, {}).get('name', owner_id or '')
     return {
+        'feedback_review_status': 'awaiting PI feedback' if pending_feedback else '',
+        'pending_feedback_types': ', '.join(FEEDBACK_SLOTS[row['slot']] for row, _ in pending_feedback),
+        'feedback_requested_date': pending_feedback[0][0].get('provided_at') or '' if pending_feedback else '',
+        'feedback_manuscript_link': link(pending_feedback[0][1]['url']) if pending_feedback else '',
         'review_category': ', '.join(dict.fromkeys(categories)) or 'Not recorded',
         'venue': record.get('venue') or artifacts.get('conference', ''),
         'lead_owner': record.get('lead_owner') or owner,
@@ -185,7 +219,7 @@ def paper_evidence_fields(record, slots):
     def status(name):
         return by_slot.get(name, {}).get('status', 'not recorded')
     settled = lambda name: status(name) in ('provided', 'waived')
-    ready = settled('authors_ack') and settled('drive_pdf_arxiv') and not settled('pi_approval')
+    ready = record.get('venue_decision') != 'reject' and settled('authors_ack') and settled('drive_pdf_arxiv') and not settled('pi_approval')
     checks = record.get('checks') or {}
     return {
         'review_ready_date': by_slot.get('authors_ack', {}).get('provided_at', '') if ready else '',
@@ -214,8 +248,11 @@ def paper_sort_key(record):
         except ValueError:
             return (1, 0)
     year = record.get('accepted_year')
-    return ((0, date_key(record.get('review_ready_date')))
-            if record.get('pi_review_status') == 'awaiting PI approval' else (1, (1, 0)),
+    waits = [record.get(field) for field, active in (
+        ('review_ready_date', record.get('pi_review_status') == 'awaiting PI approval'),
+        ('feedback_requested_date', record.get('feedback_review_status') == 'awaiting PI feedback'),
+    ) if active]
+    return ((0, min(date_key(value) for value in waits)) if waits else (1, (1, 0)),
             (0, -int(year)) if str(year).isdigit() else (1, 0),
             date_key(record.get('acceptance_notification_date'), True),
             date_key(record.get('review_ready_date')), date_key(record.get('started_on')),
@@ -404,9 +441,10 @@ def snapshot(connection, timestamp, people_values=None, full_people=False):
         if connection.execute("SELECT 1 FROM sqlite_master WHERE name='adminbot_paper_slots'").fetchone():
             link_slots = [slot for _, slot in PAPER_LINKS.values() if slot] + ['overleaf_view']
             placeholders = ','.join('?' for _ in link_slots)
-            for paper_id, slot, status, provided_at, url in connection.execute(
-                    f'SELECT paper_id,slot,status,provided_at,CASE WHEN slot IN ({placeholders}) THEN url ELSE NULL END FROM adminbot_paper_slots', link_slots):
-                slots_by_paper[paper_id].append({'slot': slot, 'status': status, 'provided_at': provided_at, 'url': url})
+            feedback_placeholders = ','.join('?' for _ in FEEDBACK_SLOTS)
+            for paper_id, slot, status, provided_at, url, feedback in connection.execute(
+                    f'SELECT paper_id,slot,status,provided_at,CASE WHEN slot IN ({placeholders}) THEN url ELSE NULL END,CASE WHEN slot IN ({feedback_placeholders}) THEN value_text ELSE NULL END FROM adminbot_paper_slots', [*link_slots, *FEEDBACK_SLOTS]):
+                slots_by_paper[paper_id].append({'slot': slot, 'status': status, 'provided_at': provided_at, 'url': url, 'value_text': feedback})
         for table, tab, fields in (
             ('adminbot_lab_members', 'PeopleList', ordered_people_columns(PEOPLE)),
             ('adminbot_papers', 'PaperList', PAPERS),

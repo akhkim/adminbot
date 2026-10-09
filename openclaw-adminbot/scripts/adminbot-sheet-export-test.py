@@ -125,7 +125,7 @@ assert len(clears) == 2
 assert {r['range']['sheetId'] for r in clears} == {1, 2}
 assert len([r for r in requests if 'addTable' in r]) == 2
 assert all(r['range']['startRowIndex'] == 1 for r in clears)
-assert len([r for r in requests if 'addFilterView' in r]) == 11
+assert len([r for r in requests if 'addFilterView' in r]) == 12
 stage_view = next(r['addFilterView']['filter'] for r in requests
                   if r.get('addFilterView', {}).get('filter', {}).get('title') == 'By stage')
 assert stage_view['sortSpecs'][0]['dimensionIndex'] == exporter.PAPERS.index('current_step')
@@ -149,7 +149,7 @@ assert updated_table['range']['endRowIndex'] == len(direct['data'][1]['values'])
 assert updated_table['columnProperties'][exporter.PAPERS.index('current_step')]['columnType'] == 'TEXT'  # No stage supplied in this synthetic row.
 assert not any('deleteBanding' in r for r in converted)
 paper_views = [r['addFilterView']['filter'] for r in converted if r.get('addFilterView', {}).get('filter', {}).get('tableId') == 'paper-table']
-assert len(paper_views) == 6
+assert len(paper_views) == 7
 assert all(v['tableId'] == 'paper-table' and 'range' not in v for v in paper_views)
 properties['PaperList']['filterViews'] = [{'title': 'By stage', 'filterViewId': 43, 'tableId': 'paper-table'}]
 migrated = refresh.refresh_requests(direct, properties)
@@ -212,8 +212,8 @@ visibility_values[1][3] = 'New material'
 assert not column_visibility(visibility_values)[3]
 print('PASS: empty columns hidden, populated columns restored, zero/false values retained')
 
-c.execute('CREATE TABLE adminbot_paper_slots(paper_id TEXT, slot TEXT, status TEXT, provided_at TEXT, url TEXT)')
-c.executemany('INSERT INTO adminbot_paper_slots VALUES (?,?,?,?,?)', [
+c.execute('CREATE TABLE adminbot_paper_slots(paper_id TEXT, slot TEXT, status TEXT, provided_at TEXT, url TEXT, value_text TEXT, provided_by_member_id TEXT, waived_by_member_id TEXT)')
+c.executemany('INSERT INTO adminbot_paper_slots(paper_id,slot,status,provided_at,url) VALUES (?,?,?,?,?)', [
     ('paper', 'drive_pdf_arxiv', 'provided', '2026-10-01', 'https://drive.google.com/file/d/pdf/view'),
     ('paper', 'project_folder', 'provided', '2026-10-01', 'https://drive.google.com/drive/folders/folder'),
     ('paper', 'overleaf_share', 'provided', '2026-10-01', 'NEVER_EXPORT_SHARE_TOKEN'),
@@ -313,3 +313,34 @@ edit_values[1][edit_index] = ""
 empty_request = next(r["updateCells"] for r in refresh.paper_style_requests(properties["PaperList"], edit_values) if "updateCells" in r and r["updateCells"]["range"]["startColumnIndex"] == edit_index)
 assert empty_request["rows"][0]["values"] == [{}]
 print("PASS: explicit early Overleaf hyperlink and blank-cell stale-link clearing")
+
+
+feedback = {'reason': 'Review revised draft', 'url': 'https://www.overleaf.com/project/revised', 'soft_deadline': '2026-10-09T12:00:00Z', 'hard_deadline': '2026-10-12T12:00:00Z'}
+request_slot = {'slot': 'feedback_arr', 'status': 'provided', 'provided_at': '2026-10-05T12:00:00Z', 'value_text': json.dumps(feedback)}
+fields = exporter.paper_review_fields({'venue_decision': 'reject'}, {}, [request_slot])
+assert fields['feedback_review_status'] == 'awaiting PI feedback'
+assert fields['pending_feedback_types'] == 'ARR'
+assert fields['feedback_requested_date'] == request_slot['provided_at']
+assert fields['feedback_manuscript_link'] == feedback['url']
+assert exporter.paper_evidence_fields({'venue_decision': 'reject'}, slots)['pi_review_status'] != 'awaiting PI approval'
+for request in [dict(feedback, reviewed=True), dict(feedback, reviewed='false'), dict(feedback, reason=''), dict(feedback, hard_deadline='not a date'), dict(feedback, soft_deadline='2026-10-13T12:00:00Z')]:
+    assert exporter.paper_review_fields({}, {}, [dict(request_slot, value_text=json.dumps(request))])['feedback_review_status'] == ''
+private_link_fields = exporter.paper_review_fields({}, {}, [dict(request_slot, value_text=json.dumps(dict(feedback, url='https://www.overleaf.com/read/PRIVATE_TOKEN')))])
+assert private_link_fields['feedback_review_status'] == 'awaiting PI feedback' and private_link_fields['feedback_manuscript_link'] == ''
+assert exporter.paper_review_fields({}, {}, [dict(request_slot, status='missing')])['feedback_review_status'] == ''
+assert exporter.paper_review_fields({}, {}, [dict(request_slot, value_text='{bad json')])['feedback_review_status'] == ''
+c.execute('INSERT INTO adminbot_paper_slots(paper_id,slot,status,provided_at,value_text) VALUES (?,?,?,?,?)', ('paper', request_slot['slot'], request_slot['status'], request_slot['provided_at'], request_slot['value_text']))
+c.execute('INSERT INTO adminbot_paper_slots(paper_id,slot,status,value_text) VALUES (?,?,?,?)', ('paper', 'arxiv_paper_password', 'provided', 'NEVER_EXPORT_SECRET'))
+c.commit()
+pending_export = exporter.snapshot(c, '2026-10-09T12:00:00Z', full_people=True)
+paper_values = pending_export['data'][1]['values']
+assert dict(zip(paper_values[0], paper_values[1]))['feedback_review_status'] == 'awaiting PI feedback'
+assert 'NEVER_EXPORT_SECRET' not in json.dumps(pending_export) and 'Review revised draft' not in json.dumps(pending_export)
+feedback_view = next(r['addFilterView']['filter'] for r in refresh.refresh_requests(pending_export, properties) if r.get('addFilterView', {}).get('filter', {}).get('title') == 'Awaiting PI feedback')
+assert feedback_view['criteria'][str(exporter.PAPERS.index('feedback_review_status'))]['condition']['values'] == [{'userEnteredValue': 'awaiting PI feedback'}]
+assert feedback_view['sortSpecs'][0]['dimensionIndex'] == exporter.PAPERS.index('feedback_requested_date')
+assert exporter.paper_sort_key({'id': 'feedback', **fields}) < exporter.paper_sort_key({'id': 'other', 'accepted_year': 2027})
+link_index = exporter.PAPERS.index('feedback_manuscript_link')
+link_request = next(r['updateCells'] for r in refresh.paper_style_requests(properties['PaperList'], paper_values) if r.get('updateCells', {}).get('fields') == 'userEnteredFormat.textFormat.link' and r['updateCells']['range']['startColumnIndex'] == link_index)
+assert link_request['rows'][0]['values'][0]['userEnteredFormat']['textFormat']['link']['uri'] == feedback['url']
+print('PASS: rejected-paper feedback, reviewed/malformed exclusion, separate publication gate, native feedback view/link, pending-first sorting and secret exclusion')
