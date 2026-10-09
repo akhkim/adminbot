@@ -125,7 +125,7 @@ assert len(clears) == 2
 assert {r['range']['sheetId'] for r in clears} == {1, 2}
 assert len([r for r in requests if 'addTable' in r]) == 2
 assert all(r['range']['startRowIndex'] == 1 for r in clears)
-assert len([r for r in requests if 'addFilterView' in r]) == 9
+assert len([r for r in requests if 'addFilterView' in r]) == 11
 stage_view = next(r['addFilterView']['filter'] for r in requests
                   if r.get('addFilterView', {}).get('filter', {}).get('title') == 'By stage')
 assert stage_view['sortSpecs'][0]['dimensionIndex'] == exporter.PAPERS.index('current_step')
@@ -149,7 +149,7 @@ assert updated_table['range']['endRowIndex'] == len(direct['data'][1]['values'])
 assert updated_table['columnProperties'][exporter.PAPERS.index('current_step')]['columnType'] == 'TEXT'  # No stage supplied in this synthetic row.
 assert not any('deleteBanding' in r for r in converted)
 paper_views = [r['addFilterView']['filter'] for r in converted if r.get('addFilterView', {}).get('filter', {}).get('tableId') == 'paper-table']
-assert len(paper_views) == 4
+assert len(paper_views) == 6
 assert all(v['tableId'] == 'paper-table' and 'range' not in v for v in paper_views)
 properties['PaperList']['filterViews'] = [{'title': 'By stage', 'filterViewId': 43, 'tableId': 'paper-table'}]
 migrated = refresh.refresh_requests(direct, properties)
@@ -276,3 +276,17 @@ assert [r['id'] for r in sorted([{'id': 'unknown'}, {'id': 'later', 'joined_mont
 print('PASS: canonical join dates, precision, ambiguous values and oldest-first ordering')
 
 assert [r['id'] for r in sorted([{'id': 'day', 'join_date': '2026-01-01'}, {'id': 'month', 'join_date': '2026-01'}, {'id': 'year', 'join_date': '2026'}], key=exporter.people_sort_key)] == ['year', 'month', 'day']
+
+assert exporter.paper_evidence_fields({}, [{'slot': 'pi_approval', 'status': 'provided'}])['pi_review_status'] == 'Approved'
+assert exporter.paper_evidence_fields({}, [{'slot': 'pi_approval', 'status': 'waived'}])['pi_review_status'] == 'Approval waived'
+assert exporter.paper_evidence_fields({}, [{'slot': 'pi_approval', 'status': 'missing'}])['pi_review_status'] == 'Not ready for PI approval'
+assert exporter.paper_evidence_fields({}, [])['pi_review_status'] == 'Not recorded'
+pending = [{'id': 'new-pending', 'pi_review_status': 'awaiting PI approval', 'review_ready_date': '2026-10-09'},
+           {'id': 'approved', 'pi_review_status': 'Approved', 'accepted_year': 2027},
+           {'id': 'old-pending', 'pi_review_status': 'awaiting PI approval', 'review_ready_date': '2026-10-01'}]
+assert [r['id'] for r in sorted(pending, key=exporter.paper_sort_key)] == ['old-pending', 'new-pending', 'approved']
+view = next(r['addFilterView']['filter'] for r in refresh.refresh_requests(direct, properties)
+            if r.get('addFilterView', {}).get('filter', {}).get('title') == 'Awaiting PI approval')
+assert view['criteria'][str(exporter.PAPERS.index('pi_review_status'))]['condition']['values'] == [{'userEnteredValue': 'awaiting PI approval'}]
+assert view['sortSpecs'][0] == {'dimensionIndex': exporter.PAPERS.index('review_ready_date'), 'sortOrder': 'ASCENDING'}
+print('PASS: authoritative PI labels, pending-first oldest-wait ordering and native approval filter')

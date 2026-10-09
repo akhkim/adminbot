@@ -128,7 +128,7 @@ def refresh_requests(batch, properties):
             requests.append({'addTable': {'table': table}})
         views = [(title + ' sort and filter', None)]
         if title == 'PaperList':
-            views += [('By stage', 'current_step'), ('By venue', 'venue'), ('By review category', 'review_category')]
+            views += [('Awaiting PI approval', 'review_ready_date'), ('By PI approval', 'pi_review_status'), ('By stage', 'current_step'), ('By venue', 'venue'), ('By review category', 'review_category')]
         else:
             views += [('By joined date', 'join_date'), ('Review inactive members', 'membership_review'), ('By membership type', 'member_type'), ('By Slack active channel', 'slack_active')]
         for view_title, sort_column in views:
@@ -143,6 +143,9 @@ def refresh_requests(batch, properties):
                 specification['sortSpecs'] = [{'dimensionIndex': headers.index(column), 'sortOrder': 'ASCENDING'}
                                               for column in [sort_column, 'title' if title == 'PaperList' else 'name']]
                 fields += ',sortSpecs'
+                if view_title == 'Awaiting PI approval':
+                    specification['criteria'] = {str(headers.index('pi_review_status')): {'condition': {'type': 'TEXT_EQ', 'values': [{'userEnteredValue': 'awaiting PI approval'}]}}}
+                    fields += ',criteria'
                 if view_title == 'Review inactive members':
                     specification['criteria'] = {str(headers.index('membership_review')): {'condition': {'type': 'TEXT_EQ', 'values': [{'userEnteredValue': 'Review inactive'}]}}}
                     fields += ',criteria'

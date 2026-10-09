@@ -64,3 +64,5 @@ readiness. These protected exports remain one-way; category or link changes are 
 AdminBot, not through export cells. No paper type, acceptance or approval is invented.
 
 Join dates use YYYY-MM-DD, YYYY-MM or YYYY according to recorded precision. Clear English month formats are normalized. Ambiguous or implausible values remain blank in join_date, with their original value in join_date_basis for review; no live member records are changed.
+
+PaperList refreshes pi_review_status from stored PaperFlow slots on every export, never from a sheet edit. Provided PI approval reads Approved; waived approval stays explicitly Approval waived. Missing/unknown approval is never presented as approved. Ready papers awaiting approval come first, oldest wait first. Use Awaiting PI approval for the pending-only queue or By PI approval to group all states. This is a refreshed daily snapshot, not a live subscription; feedback requests remain separate from permission to publish.

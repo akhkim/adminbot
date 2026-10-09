@@ -172,7 +172,11 @@ def paper_evidence_fields(record, slots):
     checks = record.get('checks') or {}
     return {
         'review_ready_date': by_slot.get('authors_ack', {}).get('provided_at', '') if ready else '',
-        'pi_review_status': 'awaiting PI approval' if ready else status('pi_approval'),
+        'pi_review_status': 'awaiting PI approval' if ready else {
+            'provided': 'Approved', 'waived': 'Approval waived',
+            'missing': 'Not ready for PI approval', 'invalid': 'Invalid approval evidence',
+            'not recorded': 'Not recorded',
+        }.get(status('pi_approval'), 'Not recorded'),
         'papermentor_review_status': status('papermentor_review'),
         'coauthor_feedback_status': status('coauthor_feedback'),
         'missing_recorded_artifacts': ', '.join(sorted(row['slot'] for row in slots if row['status'] == 'missing')),
@@ -193,7 +197,9 @@ def paper_sort_key(record):
         except ValueError:
             return (1, 0)
     year = record.get('accepted_year')
-    return ((0, -int(year)) if str(year).isdigit() else (1, 0),
+    return ((0, date_key(record.get('review_ready_date')))
+            if record.get('pi_review_status') == 'awaiting PI approval' else (1, (1, 0)),
+            (0, -int(year)) if str(year).isdigit() else (1, 0),
             date_key(record.get('acceptance_notification_date'), True),
             date_key(record.get('review_ready_date')), date_key(record.get('started_on')),
             record.get('title', ''), record['id'])
