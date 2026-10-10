@@ -1,5 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { CalendarMembershipReader } from "../connectors/calendar-membership.js";
+import type {
+  CalendarMembershipReader,
+  CalendarAccessReader,
+} from "../connectors/calendar-membership.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
@@ -451,6 +454,7 @@ import {
 import {
   calendarMembershipWriteError,
   ineligibleCalendarEmails,
+  isRestrictedCalendarEvent,
   syncCalendarMembership,
 } from "./service.calendar-membership.js";
 import {
@@ -1161,6 +1165,7 @@ const DEFAULT_ACTION_POLICIES = {
   // Same tier as adding somebody to an event: it shows them every event on the lab's calendar, and
   // an admin says yes before that happens. The admin-driven onboarding paths approve it on the
   // click that started them; the weekly sweep leaves it in Pending Actions.
+  "calendar.revoke_lab_calendar": approvalPolicy("T3", ["admin"]),
   "calendar.grant_lab_calendar": approvalPolicy("T3", ["admin"]),
   "calendar.reschedule": approvalPolicy("T3", ["admin"]),
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
@@ -1934,7 +1939,11 @@ export class AdminBotService {
           });
           continue;
         }
-        if (ineligible.has(email.trim().toLowerCase()) || already.has(email.toLowerCase())) {
+        if (
+          (isRestrictedCalendarEvent(meeting.event_id) &&
+            ineligible.has(email.trim().toLowerCase())) ||
+          already.has(email.toLowerCase())
+        ) {
           continue;
         }
         attendees.push(email);
@@ -1952,7 +1961,11 @@ export class AdminBotService {
           event_id: meeting.event_id,
           // Do not re-propose known ineligible guests; additions leave their removal to cleanup.
           attendees: [...new Set([...(meeting.attendees ?? []), ...unique])]
-            .filter((email) => !ineligible.has(email.trim().toLowerCase()))
+            .filter(
+              (email) =>
+                !isRestrictedCalendarEvent(meeting.event_id) ||
+                !ineligible.has(email.trim().toLowerCase()),
+            )
             .toSorted(),
         },
         rationale: "Members whose stated research interests place them in this theme.",
@@ -3278,13 +3291,18 @@ export class AdminBotService {
 
   private calendarMembershipCleanup: ReturnType<typeof syncCalendarMembership> | undefined;
 
-  syncLabCalendarMembership(calendarId: string, read: CalendarMembershipReader) {
+  syncLabCalendarMembership(
+    calendarId: string,
+    read: CalendarMembershipReader,
+    readAccess: CalendarAccessReader,
+  ) {
     if (!this.calendarMembershipCleanup) {
       this.calendarMembershipCleanup = syncCalendarMembership(
         this,
         this.store,
         calendarId,
         read,
+        readAccess,
       ).finally(() => {
         this.calendarMembershipCleanup = undefined;
       });
@@ -13628,7 +13646,10 @@ export class AdminBotService {
           });
           continue;
         }
-        if (ineligible.has(email.trim().toLowerCase())) {
+        if (
+          isRestrictedCalendarEvent(meetings[0]?.event_id) &&
+          ineligible.has(email.trim().toLowerCase())
+        ) {
           skipped.push({
             member_id: member.id,
             reason: "member is not eligible for lab calendar invitations",

@@ -63,7 +63,13 @@ async function startService(
   running.push({ mock, cleanupPaths: [sensitiveInfoPath] });
   const baseUrl = `http://127.0.0.1:${address.port}`;
   for (const row of [
-    { id: "full", privilege_level: "member", status: "active", email: "full@cs.toronto.edu" },
+    {
+      id: "full",
+      member_type: "full",
+      privilege_level: "member",
+      status: "active",
+      email: "full@cs.toronto.edu",
+    },
     { id: "trial", privilege_level: "trial", status: "active", email: "trial@cs.toronto.edu" },
     {
       id: "major",

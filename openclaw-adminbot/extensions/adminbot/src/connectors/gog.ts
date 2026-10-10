@@ -9,6 +9,8 @@ import type { AdminBotActionExecutor } from "../kernel/service.js";
 import {
   calendarMembershipReader,
   removeFilteredCalendarAttendees,
+  calendarAccessReader,
+  revokeCalendarAccess,
 } from "./calendar-membership.js";
 import { renderEmailBodyHtml, renderEmailBodyText } from "./email-html.js";
 
@@ -307,6 +309,10 @@ function optionalAccount(env: NodeJS.ProcessEnv | undefined): string | undefined
   return (env ?? process.env).GOG_ACCOUNT?.trim() || undefined;
 }
 
+export function createGogCalendarAccessReader(env?: NodeJS.ProcessEnv) {
+  return calendarAccessReader(createGogCapture(env));
+}
+
 export function createGogCalendarMembershipReader(env?: NodeJS.ProcessEnv) {
   return calendarMembershipReader(createGogCapture(env));
 }
@@ -345,6 +351,10 @@ export function createGogAdminBotExecutor(
           args[args.indexOf("--add-attendee") + 1] = missing.join(",");
           await run(args);
         }
+        return { handled: true };
+      }
+      if (proposal.type === "calendar.revoke_lab_calendar") {
+        await revokeCalendarAccess(requirePayload(proposal), capture, run);
         return { handled: true };
       }
       if (proposal.type === "calendar.remove_attendees") {

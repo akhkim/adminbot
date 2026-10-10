@@ -3,7 +3,10 @@ import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import path from "node:path";
 import { createArxivProbe } from "../connectors/arxiv.js";
-import type { CalendarMembershipReader } from "../connectors/calendar-membership.js";
+import type {
+  CalendarMembershipReader,
+  CalendarAccessReader,
+} from "../connectors/calendar-membership.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
 import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
@@ -449,6 +452,7 @@ export type AdminBotMockServiceOptions = {
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
   // Complete future event inventory for the Sunday membership policy.
   readCalendarMembership?: CalendarMembershipReader;
+  readCalendarAccess?: CalendarAccessReader;
   // Complete human membership of the two active channels; unavailable reads fail closed.
   readActiveChannels?: ActiveChannelReader;
   // Every open public channel name in the workspace, for the project form's "this channel already
@@ -647,6 +651,7 @@ type AdminBotRouteContext = {
   ) => Promise<ReadonlyMap<string, number>>;
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
   readCalendarMembership?: CalendarMembershipReader;
+  readCalendarAccess?: CalendarAccessReader;
   readActiveChannels?: ActiveChannelReader;
   fetchSlackChannelNames?: () => Promise<string[]>;
   readCalendarEvents?: import("../workflows/calendar/events.js").CalendarEventsReader;
@@ -1225,6 +1230,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.resolveSlackUserIdsByEmail
       ? { resolveSlackUserIdsByEmail: options.resolveSlackUserIdsByEmail }
       : {}),
+    ...(options.readCalendarAccess ? { readCalendarAccess: options.readCalendarAccess } : {}),
     ...(options.readCalendarMembership
       ? { readCalendarMembership: options.readCalendarMembership }
       : {}),
@@ -6135,7 +6141,7 @@ async function handleAuthenticatedRoute(
     if (!requirePrivileged(res, principal)) {
       return;
     }
-    if (!ctx.readCalendarMembership) {
+    if (!ctx.readCalendarMembership || !ctx.readCalendarAccess) {
       sendJson(res, 503, { error: { message: "Calendar membership reader is unavailable" } });
       return;
     }
@@ -6143,6 +6149,7 @@ async function handleAuthenticatedRoute(
       const result = await service.syncLabCalendarMembership(
         ctx.labCalendar.id,
         ctx.readCalendarMembership,
+        ctx.readCalendarAccess,
       );
       sendJson(res, result.failed.length ? 502 : 200, result);
     } catch (error) {

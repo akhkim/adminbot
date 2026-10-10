@@ -205,13 +205,11 @@ const ACCESS_ITEMS = [
     },
   },
   {
-    // The two standing invites. `belongsOnSurface` (surface-membership.ts) reads this row for
-    // external collaborators, so granting it here is what puts somebody on the lab calendar and the
-    // Monday meeting -- there is no second list of who belongs.
+    // Subscription and Monday meeting access is limited to full members and major coauthors.
     id: "lab_calendar_group_meeting",
     label: "Lab calendar and Monday Group Meeting",
     detail: "View access to the lab calendar and an invite to the Monday Group Meeting.",
-    cells: { own_pace_advisee: "yes", coauthor_major: "yes" },
+    cells: { coauthor_major: "yes" },
   },
   {
     id: "weekly_meeting",

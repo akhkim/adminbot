@@ -303,7 +303,7 @@ export async function applyMemberTypeChange(
       step: "lab_calendar",
       status: "skipped",
       detail:
-        "calendar shares are not revoked automatically; remove them in the lab calendar's sharing settings if needed",
+        "known ineligible members' direct calendar shares are removed by the Sunday cleanup; remove them in calendar sharing settings for immediate revocation",
     });
   }
 

@@ -440,7 +440,7 @@ describe("AdminBot mock service", () => {
     expect(await loginToken(baseUrl, "new@cs.toronto.edu")).toBeTruthy();
   });
 
-  it("approving a registration invites the account email to the lab calendar and seeds an onboarding checklist", async () => {
+  it("approving an unclassified registration does not grant calendar access and seeds a checklist", async () => {
     const invited: string[] = [];
     const { baseUrl } = await startService({
       calendarInviteRunner: async (email) => {
@@ -475,9 +475,8 @@ describe("AdminBot mock service", () => {
     expect(approved.status).toBe(200);
     const approveBody = (await approved.json()) as { member_id: string };
 
-    // Granted through the typed `calendar.grant_lab_calendar` action, approved by the admin who
-    // approved the account, like every other new member's.
-    expect(invited).toEqual(["calendar-person@cs.toronto.edu"]);
+    // Portal approval alone does not establish full/major membership.
+    expect(invited).toEqual([]);
 
     const members = (await (
       await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() })
@@ -485,8 +484,6 @@ describe("AdminBot mock service", () => {
       members: Array<{ id: string; onboarding?: { steps: Array<{ id: string; status: string }> } }>;
     };
     const created = members.members.find((m) => m.id === approveBody.member_id);
-    const calendarStep = created?.onboarding?.steps.find((step) => step.id === "calendar_invite");
-    expect(calendarStep?.status).toBe("complete");
     expect(created?.onboarding?.steps.length).toBeGreaterThan(1);
   });
 
@@ -4147,6 +4144,7 @@ describe("lab calendar invite backfill route", () => {
     });
     seedMember(baseUrl, "ada", {
       name: "Ada",
+      member_type: "full",
       email: "ada@cs.toronto.edu",
       privilege_level: "member",
     });

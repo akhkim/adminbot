@@ -1836,6 +1836,7 @@ describe("lab calendar invite backfill", () => {
     store.saveLabMember({
       ...member(id, `${id}@cs.toronto.edu`),
       privilege_level: "member",
+      member_type: "full",
       ...overrides,
     });
   }
@@ -1900,8 +1901,8 @@ describe("lab calendar invite backfill", () => {
     const invites: string[] = [];
     const { store, auth } = labWith(invites);
     seed(store, "ada");
-    seed(store, "ext", { privilege_level: "external_collaborator" });
-    seed(store, "gone", { status: "alumni" });
+    seed(store, "ext", { privilege_level: "external_collaborator", member_type: "coauthor-minor" });
+    seed(store, "gone", { status: "alumni", member_type: "alumni" });
     const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
     if (!result.ok) {
       throw new Error(result.error.message);
@@ -1928,6 +1929,7 @@ describe("lab calendar invite backfill", () => {
     store.saveLabMember({
       ...member("noaddr", ""),
       privilege_level: "member",
+      member_type: "full",
       email: undefined as unknown as string,
     });
     const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
