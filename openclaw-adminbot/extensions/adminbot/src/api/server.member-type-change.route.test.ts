@@ -341,36 +341,50 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     expect(service.status).toBe(403);
   });
 
-  it("applies the Meetings checkboxes, and a changed Monday box outranks the type", async () => {
-    const { baseUrl, mock, executed } = await startService({
-      sheetRows: [["Cora Coauthor", "coauthor-major", "cora@lab.test", ""]],
-      meeting: ["admin@cs.toronto.edu"],
-    });
-    const token = await adminToken(mock, baseUrl);
+  it.each([
+    { memberType: "alumni", allowed: false },
+    { memberType: "full, alumni", allowed: true },
+  ])(
+    "enforces calendar eligibility for a Meetings checkbox with $memberType",
+    async ({ memberType, allowed }) => {
+      const { baseUrl, mock, executed } = await startService({
+        sheetRows: [["Cora Coauthor", "coauthor-major", "cora@lab.test", ""]],
+        meeting: ["admin@cs.toronto.edu"],
+      });
+      const token = await adminToken(mock, baseUrl);
 
-    // Cora is not on the Monday meeting; the admin ticks it while also making her alumni, which on
-    // its own would keep her off it.
-    const response = await save(baseUrl, token, "cora", {
-      member_type: "alumni",
-      meetings: [SERIES],
-    });
-    const body = (await response.json()) as ChangeBody & {
-      meeting_changes?: Array<{ step: string; status: string }>;
-      meetings?: unknown;
-    };
+      // An explicit meeting selection cannot bypass eligibility. Full alumni remain eligible.
+      const response = await save(baseUrl, token, "cora", {
+        member_type: memberType,
+        meetings: [SERIES],
+      });
+      const body = (await response.json()) as ChangeBody & {
+        meeting_changes?: Array<{ step: string; status: string }>;
+        meetings?: unknown;
+      };
 
-    expect(body.meetings).toBeUndefined();
-    expect(body.meeting_changes).toEqual([
-      expect.objectContaining({ step: "meeting", status: "done" }),
-    ]);
-    const types = executed.map((proposal) => proposal.type);
-    expect(types).toContain("calendar.add_attendees");
-    expect(types).not.toContain("calendar.remove_attendees");
-    const stored = mock.service.listLabMembers();
-    expect(stored.ok && stored.payload.members.find((row) => row.id === "cora")).not.toHaveProperty(
-      "meetings",
-    );
-  });
+      expect(body.meetings).toBeUndefined();
+      expect(body.meeting_changes).toEqual([
+        expect.objectContaining({
+          step: "meeting",
+          status: allowed ? "done" : "failed",
+          ...(!allowed
+            ? {
+                detail:
+                  "Known lab members invited to the lab calendar must be full members or major coauthors",
+              }
+            : {}),
+        }),
+      ]);
+      const types = executed.map((proposal) => proposal.type);
+      expect(types.includes("calendar.add_attendees")).toBe(allowed);
+      expect(types).not.toContain("calendar.remove_attendees");
+      const stored = mock.service.listLabMembers();
+      expect(
+        stored.ok && stored.payload.members.find((row) => row.id === "cora"),
+      ).not.toHaveProperty("meetings");
+    },
+  );
 });
 
 describe("new member creation", () => {
