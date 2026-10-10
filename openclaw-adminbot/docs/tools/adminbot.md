@@ -546,12 +546,21 @@ approver -- which is what pressing **Add member** twice on one id produces. Onbo
 admin sign-in; over break-glass gateway access the record still saves and the notice says the guide
 was not queued.
 
+Opening a member in the editor shows their **Onboarding email** status. When nothing has gone out
+(never queued, failed or rejected) it offers **Send onboarding email**; once the guide has been
+sent it offers **Resend onboarding email**, for a mail that went to spam or was never read. Both
+ask for confirmation in the panel and call the same `POST /lab/members/{id}/onboarding/guide`, a
+resend with `{"resend": true}`. A resend lifts only the "already sent" refusal: a copy still
+waiting for an approver is refused either way, and the resend is filed with
+`add_dcs_roster_row: false` so DCS is not asked for a second account. It needs an admin member
+session; the service token is refused.
+
 ### Changing a Member Type
 
-Changing **Member type** on an existing member on the Lab Members tab re-onboards them, without
-the welcome mail, and applies it on the spot. The admin's save is the approval: each external
-step is still a typed proposal, approved by that admin, executed and audited, the same way Add
-row works. None of them waits in Pending Actions. `PUT /lab/members/{id}` does this only for a
+Changing **Member type** on an existing member on the Lab Members tab re-onboards them and
+applies it on the spot. The admin's save is the approval: each external step is still a typed
+proposal, approved by that admin, executed and audited, the same way Add row works. Only a
+non-standard guide waits in Pending Actions (below). `PUT /lab/members/{id}` does this only for a
 genuine admin session and only when the type actually changes (compared token-wise, so
 `Coauthor-Major ` is not a change). The service token still cannot set the field.
 
@@ -573,8 +582,12 @@ genuine admin session and only when the type actually changes (compared token-wi
   (`calendar.grant_lab_calendar`, recorded as `auth.calendar_invite_sent` like the backfill). No
   action revokes a calendar share, so a loss is reported in the notice for someone to handle by
   hand.
-- **One email, in one case:** somebody moving _into_ alumni gets the `alumni` guide
-  (`onboarding.send_guide`). Every other change sends nothing.
+- **The new type's onboarding email**, when the new type calls for a different guide than the old
+  one did (`onboarding.send_guide`). Setting a blank type to `full` sends the full-member guide;
+  `full` to `full, alumni` sends nothing, since `full` still decides the guide. The full-member and
+  alumni guides go out on the admin's save; every other guide waits in Pending Actions, as it does
+  from Add member. A guide the address has already been sent, or that is already waiting, is
+  reported as skipped rather than sent twice. Types that send no mail send nothing here either.
 
 **Meetings** is a second checkbox field listing the lab calendar's standing meetings: the Monday
 group meeting and every recurring `Theme:` and `Proj:` series (`GET /lab/meetings`, admin only).

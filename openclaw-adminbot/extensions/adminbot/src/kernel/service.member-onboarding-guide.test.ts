@@ -128,6 +128,65 @@ describe("onboarding a member added from the roster", () => {
     expect(unwrap(queue(service)).template_id).toBe("member");
   });
 
+  describe("an admin's explicit resend", () => {
+    const resend = (service: AdminBotService) =>
+      service.queueOnboardingGuideForMember({ memberId: "grace", actor: "ada", resend: true });
+    const sentOnce = () => {
+      const service = new AdminBotService();
+      add(service, { member_type: "full" });
+      service.recordOnboardingGuideSent({
+        actor: "ada",
+        template_id: "member",
+        email: "grace@lab.co",
+        sent: true,
+      });
+      return service;
+    };
+
+    it("files a second guide for somebody it has already reached", () => {
+      const service = sentOnce();
+      expect(unwrap(resend(service)).template_id).toBe("member");
+      expect(filed(service)).toHaveLength(1);
+      expect(filed(service)[0]?.summary).toMatch(/^Resend/);
+      // The first send already asked DCS for their account; asking again would mint a second one.
+      expect(filed(service)[0]?.proposed_payload).toMatchObject({
+        resend: true,
+        add_dcs_roster_row: false,
+      });
+    });
+
+    it("still refuses while a copy is waiting for an approver", () => {
+      const service = new AdminBotService();
+      add(service, { member_type: "full" });
+      unwrap(queue(service));
+      expect(resend(service)).toMatchObject({ ok: false, status: 409 });
+      expect(filed(service)).toHaveLength(1);
+    });
+
+    it("refuses a second resend while the first is waiting", () => {
+      const service = sentOnce();
+      unwrap(resend(service));
+      expect(resend(service)).toMatchObject({ ok: false, status: 409 });
+      expect(filed(service)).toHaveLength(1);
+    });
+
+    // Nothing reached them, so this is a first send and it files the DCS request like one.
+    it("is an ordinary send for somebody never mailed", () => {
+      const service = new AdminBotService();
+      add(service, { member_type: "full" });
+      unwrap(resend(service));
+      const payload = filed(service)[0]?.proposed_payload as Record<string, unknown>;
+      expect(payload.resend).toBeUndefined();
+      expect(payload.add_dcs_roster_row).toBeUndefined();
+    });
+
+    it("keeps refusing a member type whose onboarding is not a mail", () => {
+      const service = new AdminBotService();
+      add(service, { member_type: "acquaintance" });
+      expect(resend(service)).toMatchObject({ ok: false, status: 422 });
+    });
+  });
+
   it("refuses an id no member has", () => {
     const service = new AdminBotService();
     expect(queue(service, "nobody")).toMatchObject({ ok: false, status: 404 });

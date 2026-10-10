@@ -78,9 +78,9 @@ export async function enrollNewMember(
   return applyMemberTypeChange(
     {
       ...deps,
-      // The guide step below is this person's one onboarding mail; the alumni farewell inside a
-      // type change would be a second copy of it.
-      skipAlumniMail: true,
+      // The guide step below is this person's one onboarding mail; the guide inside a type change
+      // would be a second copy of it.
+      skipGuide: true,
       guideSendsSlackConnect: templateForMemberType(member.member_type).ok,
       skipGroupMeeting: options.skipGroupMeeting,
       skipSheet:
@@ -121,6 +121,8 @@ export async function queueNewMemberGuide(
     values?: Record<string, string>;
     slackChannels?: readonly string[];
     send?: boolean;
+    /** See `queueOnboardingGuideForMember`: an admin mailing the guide again on purpose. */
+    resend?: boolean;
   } = {},
 ): Promise<NewMemberGuideStep> {
   const queued = deps.service.queueOnboardingGuideForMember({
@@ -129,6 +131,7 @@ export async function queueNewMemberGuide(
     ...(options.email ? { email: options.email } : {}),
     ...(options.values ? { values: options.values } : {}),
     ...(options.slackChannels ? { slackChannels: options.slackChannels } : {}),
+    ...(options.resend ? { resend: true } : {}),
   });
   if (!queued.ok) {
     // 422 is a Member Type the design does not mail, or nobody to mail: a decision, not a fault.
