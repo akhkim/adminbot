@@ -443,6 +443,11 @@ import {
 } from "../workflows/papers/publication-list.js";
 import { readXThreadDraft } from "../workflows/papers/x-draft.js";
 import {
+  enforceActiveChannels,
+  isActiveChannelEligible,
+  type ActiveChannelReader,
+} from "./service.active-channels.js";
+import {
   recommendationDirectory,
   previewRecommendation,
   sendRecommendation,
@@ -991,6 +996,7 @@ import {
   type AdminBotTabVisitReport,
 } from "../contracts/tab-visits.js";
 import { AdminBotMemoryStore } from "../persistence/memory.js";
+import { ADMINBOT_ACTIVE_CHANNELS } from "../workflows/members/access-audit.js";
 import {
   adminBotCityChannelMinimumMembers,
   buildCityChannelMessage,
@@ -3252,6 +3258,76 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
+  private activeChannelCleanup: ReturnType<typeof enforceActiveChannels> | undefined;
+
+  syncActiveChannels(read: ActiveChannelReader) {
+    // Overlapping cron/manual requests share a pass, rather than creating duplicate proposals.
+    if (!this.activeChannelCleanup) {
+      this.activeChannelCleanup = enforceActiveChannels(this, this.store, read).finally(() => {
+        this.activeChannelCleanup = undefined;
+      });
+    }
+    return this.activeChannelCleanup;
+  }
+
+  private inviteLinkedMemberToActiveChannels(member: AdminBotLabMember): void {
+    const userId = member.slack_user_id?.trim();
+    if (!userId || !/^[UW][A-Z0-9]+$/u.test(userId) || !isActiveChannelEligible(member)) {
+      return;
+    }
+    for (const channel of ADMINBOT_ACTIVE_CHANNELS) {
+      const lastRemoval = this.store
+        .listProposalsByType("slack.remove_from_channel")
+        .filter((proposal) => {
+          const payload = proposal.proposed_payload as Record<string, unknown> | undefined;
+          return (
+            proposal.status === "executed" &&
+            payload?.channel === channel &&
+            payload.user_id === userId
+          );
+        })
+        .toSorted((left, right) => left.updated_at.localeCompare(right.updated_at))
+        .at(-1);
+      // A successful removal supersedes the cached channel list. Each removal starts a new
+      // invitation cycle, while repeated directory passes within that cycle still deduplicate.
+      if (
+        !lastRemoval &&
+        member.slack_channels?.some((name) => name.replace(/^#/u, "").toLowerCase() === channel)
+      ) {
+        continue;
+      }
+      const key = `active-channel-link:${member.id}:${userId}:${channel}${lastRemoval ? `:after:${lastRemoval.id}` : ""}`;
+      const previous = this.store
+        .listProposalsByType("slack.invite_to_channel")
+        .find((proposal) => proposal.idempotency_key === key);
+      if (previous?.status === "executed" || previous?.status === "rejected") {
+        continue;
+      }
+      const proposed = previous
+        ? { ok: true as const, payload: previous }
+        : this.createProposal({
+            type: "slack.invite_to_channel",
+            summary: `Add ${member.name} to #${channel} (linked Slack account)`,
+            target: {
+              service: "slack",
+              channel: "slack",
+              target: channel,
+              recipientMemberId: member.id,
+            },
+            proposed_payload: { channel, user_id: userId },
+            idempotency_key: key,
+            undo_plan: "An admin can remove the member from the channel.",
+          });
+      if (proposed.ok) {
+        void this.execute(proposed.payload.id, { dry_run: false, idempotency_key: key }).catch(
+          () => {
+            // The typed proposal retains the failure for review; never fail the profile save.
+          },
+        );
+      }
+    }
+  }
+
   private afterLabMemberWritten(
     existing: AdminBotLabMember | undefined,
     member: AdminBotLabMemberInput,
@@ -3261,6 +3337,9 @@ export class AdminBotService {
     origin: AdminBotWriteOrigin,
   ): void {
     this.clearResolvedProfileNotifications(stored);
+    if (existing && stored.slack_user_id?.trim() !== existing.slack_user_id?.trim()) {
+      this.inviteLinkedMemberToActiveChannels(stored);
+    }
     // Same patch, same rules, same instant as the provenance stamp above -- see
     // changedProfileFields for why these two must not drift. Provenance keeps the latest writer
     // per field; this keeps every writer, which is the half that survives a bulk re-import.
@@ -10338,6 +10417,9 @@ export class AdminBotService {
         this.store.saveLabMember({ ...member, slack_user_id: slackUserId, updated_at: now });
         idsResolved += 1;
       }
+    }
+    for (const member of this.store.listLabMembers()) {
+      this.inviteLinkedMemberToActiveChannels(member);
     }
     let timezonesChecked = 0;
     let timezonesUpdated = 0;

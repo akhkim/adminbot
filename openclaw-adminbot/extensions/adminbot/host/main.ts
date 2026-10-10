@@ -27,6 +27,7 @@ import {
 import { createAdminBotMessageExecutor } from "../src/connectors/message.js";
 import { createAdminBotOpenReviewExecutor } from "../src/connectors/openreview.js";
 import { createAdminBotOverleafExecutor } from "../src/connectors/overleaf.js";
+import { createActiveChannelReader } from "../src/connectors/slack-active-channels.js";
 import {
   adminBotSlackBotToken,
   createAdminBotSlackAdminExecutor,
@@ -674,7 +675,8 @@ const SLACK_HISTORY_LIMIT = 400;
 
 /**
  * Resolves Slack user ids for members the roster has never linked to Slack, by email against the
- * workspace directory -- the seam a member self-editing `slack_user_id` normally fills in by hand.
+ * workspace directory. The read-only helper resolves SecretRefs through the launcher seam;
+ * members never need to enter a Slack id.
  * One directory listing covers the whole workspace, so this never scales with roster size the way
  * a per-member CLI call would.
  */
@@ -691,15 +693,12 @@ export function createSlackDirectoryEmailResolver(repoRoot: string) {
       const { stdout } = await execFileAsync(
         process.execPath,
         [
-          path.join(repoRoot, "openclaw.mjs"),
-          "directory",
-          "peers",
-          "list",
-          "--channel",
-          "slack",
-          "--json",
+          "--import",
+          "tsx",
+          path.join(repoRoot, "scripts/adminbot-slack-email-lookup.ts"),
+          JSON.stringify([...wanted]),
         ],
-        { timeout: 60_000, maxBuffer: 16 * 1024 * 1024 },
+        { cwd: repoRoot, timeout: 5 * 60_000, maxBuffer: 16 * 1024 * 1024 },
       );
       const entries = JSON.parse(stdout.trim().split("\n").at(-1) ?? "[]") as Array<{
         id?: string;
@@ -717,9 +716,10 @@ export function createSlackDirectoryEmailResolver(repoRoot: string) {
           resolved.set(email, bareId);
         }
       }
-    } catch (error) {
-      console.warn(
-        `slack directory lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+    } catch {
+      // Do not print child stderr or config details: credential resolution errors can be sensitive.
+      throw new Error(
+        "Slack directory lookup failed; check the configured account and users:read.email permission",
       );
     }
     return resolved;
@@ -863,6 +863,7 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     // The token is read per call, so a deployment that adds SLACK_BOT_TOKEN later starts working
     // without a restart -- and one without it fails the call, which the route turns into a 503
     // the form can explain rather than a silent pass.
+    readActiveChannels: createActiveChannelReader(),
     fetchSlackChannelNames: () =>
       listSlackChannelNames(
         adminBotSlackBotToken(process.env),

@@ -1725,3 +1725,31 @@ The configured bot needs Slack permissions for private-channel listing/creation,
 reads/invites, `auth.test`, and email lookup, plus the existing Slack Connect and Gmail sender.
 Missing permissions stop execution; preview and queueing never provision a channel. This needs
 an Aurora backend release as well as the frontend release.
+
+### Weekly active Slack channel cleanup
+
+`adminbot-active-channels` runs Sunday at 08:00 in the gateway's configured timezone
+(`0 8 * * 0` in `config/adminbot-cron.json`). After deployment, register/update it using
+`scripts/adminbot-cron-sync.sh`, as with the other scheduled jobs.
+
+The job calls `POST /members/active-channels/sync` with the service token. The route also
+accepts admin sessions; ordinary members cannot run it and callers cannot supply targets.
+It reads the complete live membership of `jinesis-active` and `random-active`, then removes
+human accounts with no matching eligible SQLite member. Eligibility uses the same resolved
+member classification as active-channel invitations: full or coauthor-major. Alumni with
+one of these classifications remain eligible. Unmatched accounts and missing membership
+types are removed, not queued for manual review. Bots/app accounts are excluded. There is
+no separate exemption for human admins. Calendar and other channels are unaffected.
+
+This is a standing automatic policy: each removal is a normal T3 `slack.remove_from_channel`
+proposal, approved against its exact payload hash by `system:weekly-active-channel-policy`,
+then executed and audited. Other removal proposals still require their existing approvals.
+Repeat runs deduplicate removals within the UTC Sunday week; a later week can remove an
+account that was re-added. Failed executions are reported and can be retried. Concurrent
+requests share the same pass.
+
+Slack requires the existing `SLACK_BOT_TOKEN` (directory/channel reads) and
+`SLACK_USER_TOKEN` (channel removals), with the corresponding Slack permissions.
+An empty SQLite member roster, failed/incomplete Slack read, or unavailable connector fails
+closed. Run only against the intended production member database. Local tests use synthetic
+Slack responses and never contact Slack or remove live users.

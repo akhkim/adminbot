@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  type AdminBotStoredProposal,
   adminBotAdminOwnedProfileFields,
   adminBotMemberAnswerableProfileFields,
   adminBotSlackActivityOf,
@@ -5680,6 +5681,139 @@ describe("AdminBotService", () => {
       });
       expect(result.ok).toBe(false);
     });
+  });
+
+  it("invites an entitled member after automatic Slack linking without manual profile fields", async () => {
+    const execute = vi.fn(async (_proposal: AdminBotStoredProposal) => ({ handled: true }));
+    const service = new AdminBotService(undefined, { executor: { execute } });
+    unwrap(
+      service.upsertLabMember({
+        id: "linked",
+        name: "Synthetic Member",
+        member_type: "full",
+        email: "linked@example.com",
+      }),
+    );
+    await service.refreshMemberDirectoryFromSlack(
+      { resolveSlackUserIdsByEmail: async () => new Map([["linked@example.com", "U123ABC"]]) },
+      "admin",
+    );
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+    expect(execute.mock.calls.map(([proposal]) => proposal.proposed_payload)).toEqual(
+      expect.arrayContaining([
+        { channel: "jinesis-active", user_id: "U123ABC" },
+        { channel: "random-active", user_id: "U123ABC" },
+      ]),
+    );
+    await service.refreshMemberDirectoryFromSlack(
+      { resolveSlackUserIdsByEmail: async () => new Map() },
+      "admin",
+    );
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not invite unclassified members or malformed Slack identities", async () => {
+    const execute = vi.fn(async (_proposal: AdminBotStoredProposal) => ({ handled: true }));
+    const service = new AdminBotService(undefined, { executor: { execute } });
+    unwrap(service.upsertLabMember({ id: "unknown", name: "Unknown", slack_user_id: "U123ABC" }));
+    unwrap(
+      service.upsertLabMember({
+        id: "invalid",
+        name: "Invalid",
+        member_type: "full",
+        slack_user_id: "username",
+      }),
+    );
+    await Promise.resolve();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("defers invitations for imported linked records until directory reconciliation", async () => {
+    const execute = vi.fn(async (_proposal: AdminBotStoredProposal) => ({ handled: true }));
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store, { executor: { execute } });
+    unwrap(
+      service.upsertLabMember({
+        id: "imported",
+        name: "Imported",
+        member_type: "full",
+        slack_user_id: "U123ABC",
+      }),
+    );
+    expect(store.listProposalsByType("slack.invite_to_channel")).toEqual([]);
+    expect(execute).not.toHaveBeenCalled();
+    await service.refreshMemberDirectoryFromSlack({}, "admin");
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+  });
+
+  it.each([
+    { member_type: "full", allowed: true },
+    { member_type: "coauthor-major", allowed: true },
+    { member_type: "full", status: "alumni" as const, allowed: true },
+    { member_type: "full, alumni", allowed: true },
+    { member_type: "alumni, coauthor-major", allowed: true },
+    { member_type: "own-pace-advisee", allowed: false },
+    { member_type: "coauthor-minor", allowed: false },
+    { member_type: "alumni", allowed: false },
+    { collaborator_subgroup: "own_pace_advisee" as const, allowed: false },
+    { collaborator_subgroup: "coauthor_major" as const, allowed: true },
+    { allowed: false },
+  ])(
+    "limits active-channel invitations to full and coauthor-major: %j",
+    async ({ allowed, ...fields }) => {
+      const execute = vi.fn(async (_proposal: AdminBotStoredProposal) => ({ handled: true }));
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store, { executor: { execute } });
+      unwrap(service.upsertLabMember({ id: "eligible-test", name: "Synthetic Member", ...fields }));
+      // Exercise both immediate linking and the directory catch-up path.
+      unwrap(
+        service.upsertLabMember({
+          id: "eligible-test",
+          name: "Synthetic Member",
+          slack_user_id: "U123ABC",
+        }),
+      );
+      await service.refreshMemberDirectoryFromSlack({}, "admin");
+      if (allowed) {
+        await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+        expect(execute.mock.calls.map(([proposal]) => proposal.proposed_payload)).toEqual(
+          expect.arrayContaining([
+            { channel: "jinesis-active", user_id: "U123ABC" },
+            { channel: "random-active", user_id: "U123ABC" },
+          ]),
+        );
+      } else {
+        expect(store.listProposalsByType("slack.invite_to_channel")).toEqual([]);
+        expect(execute).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it("catches up previously linked eligible members and retries audited connector failures", async () => {
+    const store = new AdminBotMemoryStore();
+    store.saveLabMember({
+      id: "existing",
+      name: "Existing",
+      privilege_level: "member",
+      member_type: "full",
+      slack_user_id: "U123ABC",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    const execute = vi
+      .fn(async (_proposal: AdminBotStoredProposal) => ({ handled: true }))
+      .mockRejectedValueOnce(new Error("Slack unavailable"));
+    const service = new AdminBotService(store, { executor: { execute } });
+    await service.refreshMemberDirectoryFromSlack({}, "admin");
+    await vi.waitFor(() =>
+      expect(service.listAuditEvents().some((event) => event.type === "execution.failed")).toBe(
+        true,
+      ),
+    );
+    await service.refreshMemberDirectoryFromSlack({}, "admin");
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(3));
+    await service.refreshMemberDirectoryFromSlack({}, "admin");
+    expect(execute).toHaveBeenCalledTimes(3);
   });
 
   describe("refreshMemberDirectoryFromSlack", () => {
