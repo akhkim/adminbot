@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import path from "node:path";
 import { createArxivProbe } from "../connectors/arxiv.js";
+import type { CalendarMembershipReader } from "../connectors/calendar-membership.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
 import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
@@ -446,6 +447,8 @@ export type AdminBotMockServiceOptions = {
   // Backfills `slack_user_id` for members the roster has never linked to Slack, by matching
   // roster email against the workspace directory.
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
+  // Complete future event inventory for the Sunday membership policy.
+  readCalendarMembership?: CalendarMembershipReader;
   // Complete human membership of the two active channels; unavailable reads fail closed.
   readActiveChannels?: ActiveChannelReader;
   // Every open public channel name in the workspace, for the project form's "this channel already
@@ -643,6 +646,7 @@ type AdminBotRouteContext = {
     channelIds: string[],
   ) => Promise<ReadonlyMap<string, number>>;
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
+  readCalendarMembership?: CalendarMembershipReader;
   readActiveChannels?: ActiveChannelReader;
   fetchSlackChannelNames?: () => Promise<string[]>;
   readCalendarEvents?: import("../workflows/calendar/events.js").CalendarEventsReader;
@@ -1220,6 +1224,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       : {}),
     ...(options.resolveSlackUserIdsByEmail
       ? { resolveSlackUserIdsByEmail: options.resolveSlackUserIdsByEmail }
+      : {}),
+    ...(options.readCalendarMembership
+      ? { readCalendarMembership: options.readCalendarMembership }
       : {}),
     ...(options.readActiveChannels ? { readActiveChannels: options.readActiveChannels } : {}),
     ...(options.fetchSlackChannelNames
@@ -6122,6 +6129,27 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, await service.sweepThesisMilestones(principalActor(principal)));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/members/calendar-membership/sync") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.readCalendarMembership) {
+      sendJson(res, 503, { error: { message: "Calendar membership reader is unavailable" } });
+      return;
+    }
+    try {
+      const result = await service.syncLabCalendarMembership(
+        ctx.labCalendar.id,
+        ctx.readCalendarMembership,
+      );
+      sendJson(res, result.failed.length ? 502 : 200, result);
+    } catch (error) {
+      sendJson(res, 503, {
+        error: { message: error instanceof Error ? error.message : "Calendar cleanup failed" },
+      });
+    }
     return;
   }
   if (req.method === "POST" && url.pathname === "/members/active-channels/sync") {
