@@ -119,6 +119,59 @@ describe("weekly active-channel policy", () => {
     }
     expect(store.getProposal(proposal.payload.id)?.status).toBe("pending");
   });
+  it.each([false, true])(
+    "re-invites after removal and promotion, with stale cached membership: %s",
+    async (staleCache) => {
+      const store = new AdminBotMemoryStore();
+      const execute = vi.fn(async () => ({ handled: true }));
+      const service = new AdminBotService(store, { executor: { execute } });
+      const update = (memberType: string, cached = false) => {
+        const result = service.upsertLabMember({
+          id: "returning",
+          name: "Returning Member",
+          member_type: memberType,
+          privilege_level: "member",
+          slack_user_id: "URETURNING",
+          slack_channels: cached ? ["jinesis-active", "random-active"] : [],
+        });
+        if (!result.ok) {
+          throw new Error(result.error.message);
+        }
+      };
+      update("full");
+      await service.refreshMemberDirectoryFromSlack({}, "test-admin");
+      await vi.waitFor(() =>
+        expect(
+          store
+            .listProposalsByType("slack.invite_to_channel")
+            .filter((p) => p.status === "executed"),
+        ).toHaveLength(2),
+      );
+      for (const [cycle, date] of ["2030-01-06", "2030-01-13"].entries()) {
+        update("own-pace-advisee", staleCache);
+        await enforceActiveChannels(
+          service,
+          store,
+          async () => [
+            { channel: "jinesis-active", userIds: ["URETURNING"] },
+            { channel: "random-active", userIds: ["URETURNING"] },
+          ],
+          new Date(`${date}T08:00:00Z`),
+        );
+        update("full", staleCache);
+        await service.refreshMemberDirectoryFromSlack({}, "test-admin");
+        await vi.waitFor(() =>
+          expect(
+            store
+              .listProposalsByType("slack.invite_to_channel")
+              .filter((p) => p.status === "executed"),
+          ).toHaveLength(4 + cycle * 2),
+        );
+        await service.refreshMemberDirectoryFromSlack({}, "test-admin");
+        expect(execute).toHaveBeenCalledTimes(6 + cycle * 4);
+      }
+    },
+  );
   it("does not weaken ordinary removal approvals", async () => {
     const { service, execute } = lab();
     const result = service.createProposal({

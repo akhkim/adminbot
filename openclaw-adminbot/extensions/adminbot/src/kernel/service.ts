@@ -3216,12 +3216,27 @@ export class AdminBotService {
       return;
     }
     for (const channel of ADMINBOT_ACTIVE_CHANNELS) {
+      const lastRemoval = this.store
+        .listProposalsByType("slack.remove_from_channel")
+        .filter((proposal) => {
+          const payload = proposal.proposed_payload as Record<string, unknown> | undefined;
+          return (
+            proposal.status === "executed" &&
+            payload?.channel === channel &&
+            payload.user_id === userId
+          );
+        })
+        .toSorted((left, right) => left.updated_at.localeCompare(right.updated_at))
+        .at(-1);
+      // A successful removal supersedes the cached channel list. Each removal starts a new
+      // invitation cycle, while repeated directory passes within that cycle still deduplicate.
       if (
+        !lastRemoval &&
         member.slack_channels?.some((name) => name.replace(/^#/u, "").toLowerCase() === channel)
       ) {
         continue;
       }
-      const key = `active-channel-link:${member.id}:${userId}:${channel}`;
+      const key = `active-channel-link:${member.id}:${userId}:${channel}${lastRemoval ? `:after:${lastRemoval.id}` : ""}`;
       const previous = this.store
         .listProposalsByType("slack.invite_to_channel")
         .find((proposal) => proposal.idempotency_key === key);
