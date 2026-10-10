@@ -7,6 +7,13 @@
   },
   "jobs": [
     {
+      "name": "adminbot-active-channels",
+      "description": "Remove non-full/non-major-coauthor accounts from active Slack channels",
+      "cron": "0 8 * * 0",
+      "argv": ["bash", "scripts/adminbot-active-channels-cron.sh"],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-email",
       "description": "Hourly inbound email triage pass",
       "cron": "5 * * * *",

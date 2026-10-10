@@ -27,6 +27,7 @@ import {
 import { createAdminBotMessageExecutor } from "../src/connectors/message.js";
 import { createAdminBotOpenReviewExecutor } from "../src/connectors/openreview.js";
 import { createAdminBotOverleafExecutor } from "../src/connectors/overleaf.js";
+import { createActiveChannelReader } from "../src/connectors/slack-active-channels.js";
 import {
   adminBotSlackBotToken,
   createAdminBotSlackAdminExecutor,
@@ -858,6 +859,7 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     // The token is read per call, so a deployment that adds SLACK_BOT_TOKEN later starts working
     // without a restart -- and one without it fails the call, which the route turns into a 503
     // the form can explain rather than a silent pass.
+    readActiveChannels: createActiveChannelReader(),
     fetchSlackChannelNames: () =>
       listSlackChannelNames(
         adminBotSlackBotToken(process.env),

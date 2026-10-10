@@ -438,6 +438,11 @@ import {
   selectPublications,
 } from "../workflows/papers/publication-list.js";
 import {
+  enforceActiveChannels,
+  isActiveChannelEligible,
+  type ActiveChannelReader,
+} from "./service.active-channels.js";
+import {
   recommendationDirectory,
   previewRecommendation,
   sendRecommendation,
@@ -1005,7 +1010,6 @@ import {
 import {
   hasAccessConsequences,
   memberTypeAccessDelta,
-  memberTypeAccessProfile,
   type MemberTypeAccessDelta,
 } from "../workflows/members/member-type-access.js";
 import {
@@ -3194,14 +3198,21 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
+  private activeChannelCleanup: ReturnType<typeof enforceActiveChannels> | undefined;
+
+  syncActiveChannels(read: ActiveChannelReader) {
+    // Overlapping cron/manual requests share a pass, rather than creating duplicate proposals.
+    if (!this.activeChannelCleanup) {
+      this.activeChannelCleanup = enforceActiveChannels(this, this.store, read).finally(() => {
+        this.activeChannelCleanup = undefined;
+      });
+    }
+    return this.activeChannelCleanup;
+  }
+
   private inviteLinkedMemberToActiveChannels(member: AdminBotLabMember): void {
     const userId = member.slack_user_id?.trim();
-    const access = memberTypeAccessProfile(member);
-    if (
-      !userId ||
-      !/^[UW][A-Z0-9]+$/u.test(userId) ||
-      (access.subgroup_source !== "full_member" && access.subgroup !== "coauthor_major")
-    ) {
+    if (!userId || !/^[UW][A-Z0-9]+$/u.test(userId) || !isActiveChannelEligible(member)) {
       return;
     }
     for (const channel of ADMINBOT_ACTIVE_CHANNELS) {

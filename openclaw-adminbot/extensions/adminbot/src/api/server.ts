@@ -83,6 +83,7 @@ import { askGuidebook } from "../guidebook/ask.js";
 import { readLlmGatewayStatus } from "../kernel/llm-gateway-client.js";
 import { createLlmLoadRouter, parseLlmNodes, type LlmLoadRouter } from "../kernel/llm-router.js";
 import { ReferenceScans } from "../kernel/reference-scans.js";
+import type { ActiveChannelReader } from "../kernel/service.active-channels.js";
 import {
   AdminBotMemoryStore,
   AdminBotService,
@@ -436,6 +437,8 @@ export type AdminBotMockServiceOptions = {
   // Backfills `slack_user_id` for members the roster has never linked to Slack, by matching
   // roster email against the workspace directory.
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
+  // Complete human membership of the two active channels; unavailable reads fail closed.
+  readActiveChannels?: ActiveChannelReader;
   // Every open public channel name in the workspace, for the project form's "this channel already
   // exists" check. Injected like the Slack reads above: reaching Slack is a composition-layer
   // concern, and left unset the route answers 503 so the form can say the check is unavailable
@@ -630,6 +633,7 @@ type AdminBotRouteContext = {
     channelIds: string[],
   ) => Promise<ReadonlyMap<string, number>>;
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
+  readActiveChannels?: ActiveChannelReader;
   fetchSlackChannelNames?: () => Promise<string[]>;
   readCalendarEvents?: import("../workflows/calendar/events.js").CalendarEventsReader;
   draftCalendarEvent?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
@@ -1194,6 +1198,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.resolveSlackUserIdsByEmail
       ? { resolveSlackUserIdsByEmail: options.resolveSlackUserIdsByEmail }
       : {}),
+    ...(options.readActiveChannels ? { readActiveChannels: options.readActiveChannels } : {}),
     ...(options.fetchSlackChannelNames
       ? { fetchSlackChannelNames: options.fetchSlackChannelNames }
       : {}),
@@ -6054,6 +6059,26 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, await service.sweepThesisMilestones(principalActor(principal)));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/members/active-channels/sync") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.readActiveChannels) {
+      sendJson(res, 503, { error: { message: "Slack active-channel reader is unavailable" } });
+      return;
+    }
+    try {
+      const result = await service.syncActiveChannels(ctx.readActiveChannels);
+      sendJson(res, result.failed.length ? 502 : 200, result);
+    } catch (error) {
+      sendJson(res, 503, {
+        error: {
+          message: error instanceof Error ? error.message : "Active-channel cleanup failed",
+        },
+      });
+    }
     return;
   }
   if (req.method === "POST" && url.pathname === "/members/city-channels/sync") {
