@@ -5662,6 +5662,49 @@ describe("AdminBotService", () => {
     await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
   });
 
+  it.each([
+    { member_type: "full", allowed: true },
+    { member_type: "coauthor-major", allowed: true },
+    { member_type: "full", status: "alumni" as const, allowed: true },
+    { member_type: "full, alumni", allowed: true },
+    { member_type: "alumni, coauthor-major", allowed: true },
+    { member_type: "own-pace-advisee", allowed: false },
+    { member_type: "coauthor-minor", allowed: false },
+    { member_type: "alumni", allowed: false },
+    { collaborator_subgroup: "own_pace_advisee" as const, allowed: false },
+    { collaborator_subgroup: "coauthor_major" as const, allowed: true },
+    { allowed: false },
+  ])(
+    "limits active-channel invitations to full and coauthor-major: %j",
+    async ({ allowed, ...fields }) => {
+      const execute = vi.fn(async (_proposal: AdminBotStoredProposal) => ({ handled: true }));
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store, { executor: { execute } });
+      unwrap(service.upsertLabMember({ id: "eligible-test", name: "Synthetic Member", ...fields }));
+      // Exercise both immediate linking and the directory catch-up path.
+      unwrap(
+        service.upsertLabMember({
+          id: "eligible-test",
+          name: "Synthetic Member",
+          slack_user_id: "U123ABC",
+        }),
+      );
+      await service.refreshMemberDirectoryFromSlack({}, "admin");
+      if (allowed) {
+        await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+        expect(execute.mock.calls.map(([proposal]) => proposal.proposed_payload)).toEqual(
+          expect.arrayContaining([
+            { channel: "jinesis-active", user_id: "U123ABC" },
+            { channel: "random-active", user_id: "U123ABC" },
+          ]),
+        );
+      } else {
+        expect(store.listProposalsByType("slack.invite_to_channel")).toEqual([]);
+        expect(execute).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it("catches up previously linked eligible members and retries audited connector failures", async () => {
     const store = new AdminBotMemoryStore();
     store.saveLabMember({

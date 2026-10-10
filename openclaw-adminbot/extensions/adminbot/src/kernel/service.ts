@@ -3200,8 +3200,7 @@ export class AdminBotService {
     if (
       !userId ||
       !/^[UW][A-Z0-9]+$/u.test(userId) ||
-      (access.subgroup_source !== "full_member" &&
-        !access.grants.some((grant) => grant.item === "active_channels"))
+      (access.subgroup_source !== "full_member" && access.subgroup !== "coauthor_major")
     ) {
       return;
     }
