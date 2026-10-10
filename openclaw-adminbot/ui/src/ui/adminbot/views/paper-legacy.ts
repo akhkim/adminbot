@@ -979,9 +979,8 @@ export function renderPaperLegacy(props: PaperLegacyProps): TemplateResult {
     <div class="paper-legacy" data-testid="paper-legacy">
       <div class="paper-legacy__head">
         <p class="paper-legacy__lead">
-          Every field on every paper, laid out like your profile. Click a paper's heading to
-          minimize it, or a section's to fold that section away. The card view groups the same
-          answers by what each one unblocks.
+          Click a paper's heading to open it, then open the section you need. The card view groups
+          the same answers by what each one unblocks.
         </p>
         <button
           type="button"
