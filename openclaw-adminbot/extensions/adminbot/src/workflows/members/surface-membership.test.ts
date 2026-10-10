@@ -11,8 +11,8 @@ const member = (over: Partial<AdminBotLabMember> & { id: string }): AdminBotLabM
   }) as AdminBotLabMember;
 
 const ROSTER: AdminBotLabMember[] = [
-  member({ id: "full", email: "full@lab.test" }),
-  member({ id: "admin", privilege_level: "admin", email: "admin@lab.test" }),
+  member({ id: "full", member_type: "full", email: "full@lab.test" }),
+  member({ id: "admin", member_type: "full", privilege_level: "admin", email: "admin@lab.test" }),
   member({ id: "trial", privilege_level: "trial", email: "trial@lab.test" }),
   member({
     id: "major",
@@ -31,7 +31,7 @@ const ROSTER: AdminBotLabMember[] = [
 ];
 
 describe("belongsOnSurface", () => {
-  it("seats major coauthors and own-pace advisees on both, as the access design's row says", () => {
+  it("seats major coauthors but not own-pace advisees on either surface", () => {
     const major = ROSTER.find((entry) => entry.id === "major")!;
     expect(belongsOnSurface(major, "group_meeting")).toBe(true);
     expect(belongsOnSurface(major, "lab_calendar")).toBe(true);
@@ -40,8 +40,8 @@ describe("belongsOnSurface", () => {
       privilege_level: "external_collaborator",
       member_type: "own-pace-advisee",
     });
-    expect(belongsOnSurface(advisee, "group_meeting")).toBe(true);
-    expect(belongsOnSurface(advisee, "lab_calendar")).toBe(true);
+    expect(belongsOnSurface(advisee, "group_meeting")).toBe(false);
+    expect(belongsOnSurface(advisee, "lab_calendar")).toBe(false);
     // An alumnus keeps the subgroup on the record but has left, and leaving wins.
     expect(belongsOnSurface({ ...advisee, status: "alumni" }, "lab_calendar")).toBe(false);
   });
@@ -59,13 +59,13 @@ describe("belongsOnSurface", () => {
     }
   });
 
-  // Removal is the destructive direction, so a row the two signals disagree about stays put.
-  it("treats either full signal as enough", () => {
+  // Membership classification, not portal privilege, determines access.
+  it("keeps full members including alumni regardless of portal privilege", () => {
     const byType = member({ id: "t", privilege_level: "trial", member_type: "full" });
     expect(belongsOnSurface(byType, "lab_calendar")).toBe(true);
-    // ...but an alumni token still wins over it.
+    // Full alumni retain access.
     const left = member({ id: "l", privilege_level: "member", member_type: "full, alumni" });
-    expect(belongsOnSurface(left, "lab_calendar")).toBe(false);
+    expect(belongsOnSurface(left, "lab_calendar")).toBe(true);
   });
 });
 
@@ -97,7 +97,7 @@ describe("surfaceMembershipPlan", () => {
     ]);
     expect(plan.keep.toSorted()).toEqual(["full@lab.test", "major@other.test"]);
     expect(plan.remove.find((entry) => entry.member_id === "minor")?.reason).toContain(
-      "not an own-pace advisee or major coauthor",
+      "not a full member or major coauthor",
     );
   });
 
@@ -126,7 +126,7 @@ describe("surfaceMembershipPlan", () => {
     // so the caller can remove exactly what the invite holds.
     expect(plan.remove).toHaveLength(1);
     expect(plan.remove[0]?.email).toBe("X.Cal@Lab.test");
-    expect(plan.remove[0]?.reason).toBe("has left the lab");
+    expect(plan.remove[0]?.reason).toBe("is not a full member or major coauthor");
   });
 
   it("does not remove one address twice when the invite repeats it", () => {

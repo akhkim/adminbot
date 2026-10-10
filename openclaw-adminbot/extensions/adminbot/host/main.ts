@@ -20,6 +20,7 @@ import {
 import { createCompositeAdminBotExecutor } from "../src/connectors/composite.js";
 import {
   createGogCalendarMembershipReader,
+  createGogCalendarAccessReader,
   createGogDriveProbe,
   readDriveFileBase64,
   createGogAdminBotExecutor,
@@ -865,6 +866,7 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     // without a restart -- and one without it fails the call, which the route turns into a 503
     // the form can explain rather than a silent pass.
     readCalendarMembership: createGogCalendarMembershipReader(),
+    readCalendarAccess: createGogCalendarAccessReader(),
     readActiveChannels: createActiveChannelReader(),
     fetchSlackChannelNames: () =>
       listSlackChannelNames(

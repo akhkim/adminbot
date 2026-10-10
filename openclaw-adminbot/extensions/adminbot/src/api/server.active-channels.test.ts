@@ -39,6 +39,7 @@ async function startLab(): Promise<Lab> {
   );
   const mock = createAdminBotMockService({
     serviceToken: SERVICE_TOKEN,
+    readCalendarAccess: async () => [],
     readCalendarMembership: async () => [],
     readActiveChannels: async () => [
       { channel: "jinesis-active", userIds: [] },

@@ -22,7 +22,13 @@ function seededService() {
     },
   });
   const rows = [
-    { id: "full", privilege_level: "member", status: "active", email: "full@cs.toronto.edu" },
+    {
+      id: "full",
+      member_type: "full",
+      privilege_level: "member",
+      status: "active",
+      email: "full@cs.toronto.edu",
+    },
     { id: "trial", privilege_level: "trial", status: "active", email: "trial@cs.toronto.edu" },
     {
       id: "major",

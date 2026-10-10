@@ -1762,27 +1762,32 @@ The same Sunday 08:00 `adminbot-active-channels` job also calls
 failure makes the combined job fail. Re-sync the cron manifest after deployment to
 apply its increased 30-minute timeout. No additional cron job is needed.
 
-The calendar pass reads **all upcoming events** on `ADMINBOT_LAB_CALENDAR_ID`, including
-recurring series and modified occurrences, following every page without a fixed
-look-ahead cutoff. Recurring masters are updated, so their guest changes apply to the
-series. Past one-off events are excluded. It retains full members and major coauthors
-(including alumni), matching calendar, main, and correspondence email addresses from
-SQLite. Only known ineligible members are removed; unmatched external guests (such as
-invited speakers) are preserved. Organizers, the calendar's own address,
-and resource bookings are protected.
+The calendar pass restricts **only the Monday group meeting and direct calendar
+subscription access**. Monday is identified by `ADMINBOT_GROUP_MEETING_EVENT_ID`
+(normalized to its recurring series), including upcoming modified occurrences. Social,
+theme, project and other event guest lists are untouched by this policy.
 
-Each removal retains the existing T3 proposal, hash-bound approval, execution and audit
-trail, using `system:weekly-calendar-membership-policy` as the standing policy approver.
-The executor re-reads each event and subtracts only approved addresses, preserving other
-guests, RSVP states and optional/resource metadata. Empty guest lists are valid when all
-human guests are ineligible. An empty member database or incomplete Google read fails
-closed. Approved lab-calendar event invitations also reject known ineligible member emails
-while allowing unmatched external guests;
-ordinary events on other calendars are unaffected.
+Full members and major coauthors (including alumni with those classifications) remain
+eligible. Calendar, main and correspondence addresses are matched against SQLite.
+Only known ineligible members are removed; unmatched guests such as invited speakers
+are preserved. Organizers, the calendar's own address and resources are protected.
+
+The same pass reads all calendar-sharing ACL pages and revokes known ineligible users'
+direct permissions. Owners, unmatched accounts, group/domain/public grants are untouched;
+inherited or public access cannot be revoked per member by this job. The Google account
+must have permission to manage the calendar's sharing settings.
+
+Event removals use `calendar.remove_attendees`; subscription removals use the new T3
+`calendar.revoke_lab_calendar` action. Both require hash-bound approval, execution and
+audit, using `system:weekly-calendar-membership-policy` for this standing policy. The
+executor re-reads before writing, preserving remaining guests and RSVP metadata and
+refusing to remove a changed/owner ACL. Empty rosters or incomplete inventories fail
+closed before any writes. Monday invitations and subscription grants enforce eligibility
+at execution; other event invitations are unrestricted by this membership rule.
 
 This requires `gog api call` support (verified against gog 0.43.0) and the configured
-Google account's Calendar read/write access. It uses Calendar `events.list/get/patch`
-through the existing gog credentials. Updates remain silent (`sendUpdates=none`).
+Google account's Calendar read/write access. It uses Calendar `events.list/get/patch` and `acl.list/delete`
+through the existing gog credentials. Event updates remain silent (`sendUpdates=none`).
 The endpoint is restricted to service tokens/admins and accepts no calendar or recipient
-overrides. This filters **event guest lists**, not calendar-sharing ACLs; it does not
-revoke permission to view the shared calendar itself.
+overrides. ACL deletion uses Google's deletion endpoint,
+which has no notification parameter. This does not repair invitations removed by older runs.

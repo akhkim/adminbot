@@ -2,6 +2,7 @@
 export type CalendarMemberEvent = {
   id: string;
   status?: string;
+  recurringEventId?: string;
   organizer: { email: string };
   attendees: Array<Record<string, unknown> & { email: string }>;
 };
@@ -60,6 +61,9 @@ export function parseMembershipEvent(value: unknown): CalendarMemberEvent {
   return {
     id: event.id,
     organizer: { email: organizer.email },
+    ...(typeof event.recurringEventId === "string"
+      ? { recurringEventId: event.recurringEventId }
+      : {}),
     attendees: attendees as CalendarMemberEvent["attendees"],
   };
 }
@@ -167,4 +171,100 @@ export async function removeFilteredCalendarAttendees(
     "--body",
     JSON.stringify({ attendees: keep }),
   ]);
+}
+
+export type CalendarAccessRule = {
+  id: string;
+  role: string;
+  scope: { type: string; value?: string };
+};
+export type CalendarAccessReader = (calendarId: string) => Promise<CalendarAccessRule[]>;
+
+function aclArgs(method: string, params: Record<string, unknown>) {
+  return args(method, params).map((arg) =>
+    arg === `calendar.events.${method}` ? `calendar.acl.${method}` : arg,
+  );
+}
+
+function parseAccessRule(value: unknown): CalendarAccessRule {
+  const rule = value as CalendarAccessRule | undefined;
+  if (
+    !rule ||
+    typeof rule.id !== "string" ||
+    !rule.id ||
+    !["none", "freeBusyReader", "reader", "writer", "owner"].includes(rule.role) ||
+    !["user", "group", "domain", "default"].includes(rule.scope?.type) ||
+    (rule.scope.type !== "default" &&
+      (typeof rule.scope.value !== "string" || !rule.scope.value.trim()))
+  ) {
+    throw new Error("Invalid calendar sharing rule");
+  }
+  return rule;
+}
+
+export function calendarAccessReader(capture: Capture): CalendarAccessReader {
+  return async (calendarId) => {
+    const rules: CalendarAccessRule[] = [];
+    const seen = new Set<string>();
+    let pageToken: string | undefined;
+    do {
+      const body = JSON.parse(
+        await capture(
+          aclArgs("list", {
+            calendarId,
+            maxResults: 250,
+            showDeleted: false,
+            ...(pageToken ? { pageToken } : {}),
+          }),
+        ),
+      );
+      if (
+        body.kind !== "calendar#acl" ||
+        (body.items !== undefined && !Array.isArray(body.items))
+      ) {
+        throw new Error("Invalid calendar sharing list");
+      }
+      rules.push(...(body.items ?? []).map(parseAccessRule));
+      pageToken = body.nextPageToken;
+      if (pageToken !== undefined && (typeof pageToken !== "string" || seen.has(pageToken))) {
+        throw new Error("Invalid calendar sharing pagination token");
+      }
+      if (pageToken) {
+        seen.add(pageToken);
+      }
+    } while (pageToken);
+    return rules;
+  };
+}
+
+export async function revokeCalendarAccess(
+  payload: Record<string, unknown>,
+  capture: Capture,
+  run: (args: string[]) => Promise<void>,
+) {
+  const { calendar_id: calendarId, rule_id: ruleId, email } = payload;
+  if (
+    typeof calendarId !== "string" ||
+    !calendarId ||
+    typeof ruleId !== "string" ||
+    !ruleId ||
+    typeof email !== "string" ||
+    !email.trim()
+  ) {
+    throw new Error("Invalid calendar access revocation payload");
+  }
+  // A fresh complete read makes retries harmless and protects a rule promoted to owner.
+  const rule = (await calendarAccessReader(capture)(calendarId)).find((item) => item.id === ruleId);
+  if (!rule || rule.role === "none") {
+    return;
+  }
+  if (
+    rule.role === "owner" ||
+    rule.scope.type !== "user" ||
+    rule.scope.value?.trim().toLowerCase() !== email.trim().toLowerCase() ||
+    email.trim().toLowerCase() === calendarId.trim().toLowerCase()
+  ) {
+    throw new Error("Calendar sharing rule changed; refusing revocation");
+  }
+  await run([...aclArgs("delete", { calendarId, ruleId }), "--allow-write", "--force"]);
 }

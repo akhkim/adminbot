@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   calendarMembershipReader,
+  calendarAccessReader,
+  revokeCalendarAccess,
   removeFilteredCalendarAttendees,
 } from "./calendar-membership.js";
 const event = (id: string) => ({
@@ -65,5 +67,79 @@ describe("calendar membership connector", () => {
     expect(JSON.parse(args[args.indexOf("--body") + 1])).toEqual({
       attendees: [{ email: "new@example.org", responseStatus: "accepted" }],
     });
+  });
+});
+
+describe("calendar subscription connector", () => {
+  it("reads every ACL page, then revokes the exact user rule", async () => {
+    const capture = vi
+      .fn()
+      .mockResolvedValueOnce(
+        JSON.stringify({ kind: "calendar#acl", items: [], nextPageToken: "next" }),
+      )
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          kind: "calendar#acl",
+          items: [
+            {
+              id: "user:minor",
+              role: "reader",
+              scope: { type: "user", value: "minor@example.org" },
+            },
+          ],
+        }),
+      );
+    const run = vi.fn(async (_args: string[]) => {});
+    await revokeCalendarAccess(
+      { calendar_id: "lab", rule_id: "user:minor", email: "minor@example.org" },
+      capture,
+      run,
+    );
+    expect(capture).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[0][0]).toContain("calendar.acl.delete");
+    expect(JSON.parse(run.mock.calls[0][0][run.mock.calls[0][0].indexOf("--params") + 1])).toEqual({
+      calendarId: "lab",
+      ruleId: "user:minor",
+    });
+  });
+  it.each(["owner", "writer"])("refuses a changed ACL with role %s", async (role) => {
+    const capture = vi
+      .fn()
+      .mockResolvedValue(
+        JSON.stringify({
+          kind: "calendar#acl",
+          items: [{ id: "rule", role, scope: { type: "user", value: "different@example.org" } }],
+        }),
+      );
+    const run = vi.fn(async (_args: string[]) => {});
+    await expect(
+      revokeCalendarAccess(
+        { calendar_id: "lab", rule_id: "rule", email: "minor@example.org" },
+        capture,
+        run,
+      ),
+    ).rejects.toThrow("changed");
+    expect(run).not.toHaveBeenCalled();
+  });
+  it("treats an already removed rule as a no-op", async () => {
+    const run = vi.fn(async (_args: string[]) => {});
+    await revokeCalendarAccess(
+      { calendar_id: "lab", rule_id: "gone", email: "minor@example.org" },
+      async () => JSON.stringify({ kind: "calendar#acl", items: [] }),
+      run,
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+  it("refuses incomplete and repeated ACL pages", async () => {
+    await expect(
+      calendarAccessReader(async () =>
+        JSON.stringify({ kind: "calendar#acl", items: [{ id: "bad" }] }),
+      )("lab"),
+    ).rejects.toThrow("Invalid");
+    await expect(
+      calendarAccessReader(async () =>
+        JSON.stringify({ kind: "calendar#acl", nextPageToken: "same" }),
+      )("lab"),
+    ).rejects.toThrow("pagination");
   });
 });

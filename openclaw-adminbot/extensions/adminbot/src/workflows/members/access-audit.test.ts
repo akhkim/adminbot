@@ -324,15 +324,15 @@ describe("auditMemberAccess — onboarding side effects apply to who gets them",
   });
 
   it("grades the calendar invite by the access design's standing-invites row", () => {
-    // Own-pace advisees and major coauthors hold the lab calendar and Monday meeting row; a minor
-    // coauthor does not. The audit has to agree with `belongsOnSurface`, which is what the invite
-    // sweep itself asks.
-    for (const type of ["coauthor-major", "own-pace-advisee"]) {
+    // The audit follows the full/major policy used by subscription and Monday invitations.
+    for (const type of ["full", "coauthor-major"]) {
       const row = auditMemberAccess(member({ member_type: type }), evidence());
       expect(finding(row, "baseline_calendar_invite").verdict, type).not.toBe("not_applicable");
     }
-    const minor = auditMemberAccess(member({ member_type: "coauthor-minor" }), evidence());
-    expect(finding(minor, "baseline_calendar_invite").verdict).toBe("not_applicable");
+    for (const type of ["coauthor-minor", "own-pace-advisee"]) {
+      const row = auditMemberAccess(member({ member_type: type }), evidence());
+      expect(finding(row, "baseline_calendar_invite").verdict).toBe("not_applicable");
+    }
   });
 
   it("asks the DCS roster row only of the template that files it", () => {
