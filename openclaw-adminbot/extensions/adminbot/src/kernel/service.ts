@@ -12517,6 +12517,11 @@ export class AdminBotService {
     email?: string;
     /** Template values the sheet does not hold, collected by the Onboarding tab. */
     values?: Record<string, string>;
+    /**
+     * An admin's explicit request to mail the guide again to somebody it has already reached, for
+     * the mail that went to spam or was never read. Never set by the sweep or the sheet import.
+     */
+    resend?: boolean;
   }): AdminBotServiceResponse<{ proposal_id: string; template_id: string; email: string }> {
     const member = this.store.getLabMember(params.memberId);
     if (!member) {
@@ -12552,20 +12557,13 @@ export class AdminBotService {
         details.recipient.trim().toLowerCase() === recipient
       );
     });
-    if (alreadySent) {
+    if (alreadySent && !params.resend) {
       return serviceError(
         409,
         `the ${template.templateId} onboarding guide has already been sent to ${email}`,
       );
     }
-    const alreadyQueued = this.store.listProposalsByType("onboarding.send_guide").some((stored) => {
-      if (
-        stored.status !== "pending" &&
-        stored.status !== "approved" &&
-        stored.status !== "executed"
-      ) {
-        return false;
-      }
+    const earlier = this.store.listProposalsByType("onboarding.send_guide").filter((stored) => {
       const payload = (stored.proposed_payload ?? {}) as Record<string, unknown>;
       return (
         payload.template_id === template.templateId &&
@@ -12573,21 +12571,34 @@ export class AdminBotService {
         payload.email.trim().toLowerCase() === recipient
       );
     });
-    if (alreadyQueued) {
+    // A resend lifts only the "already reached them" refusal. A copy still waiting for an
+    // approver is refused either way: approving that one is the resend, and filing a second
+    // would put two of the same mail in the queue.
+    const waiting = earlier.some(
+      (stored) => stored.status === "pending" || stored.status === "approved",
+    );
+    const executed = earlier.some((stored) => stored.status === "executed");
+    if (waiting || (executed && !params.resend)) {
       return serviceError(
         409,
         `the ${template.templateId} onboarding guide for ${email} is already queued or sent`,
       );
     }
+    const resend = params.resend === true && (alreadySent || executed);
     const proposal = this.createProposal({
       type: "onboarding.send_guide",
-      summary: `Onboarding guide (${template.templateId}) to ${member.name || member.id} <${email}> -- added to the roster by ${params.actor}`,
+      summary: resend
+        ? `Resend onboarding guide (${template.templateId}) to ${member.name || member.id} <${email}> -- requested by ${params.actor}`
+        : `Onboarding guide (${template.templateId}) to ${member.name || member.id} <${email}> -- added to the roster by ${params.actor}`,
       target: { service: "google", channel: "email", target: email },
       proposed_payload: {
         template_id: template.templateId,
         name: member.name,
         email,
         member_id: member.id,
+        // The first send already filed this person's DCS roster row; a second row would ask DCS
+        // for a second account under a second password.
+        ...(resend ? { resend: true, add_dcs_roster_row: false } : {}),
         ...(params.values && Object.keys(params.values).length > 0
           ? { values: params.values }
           : {}),
