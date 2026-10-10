@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { CalendarMembershipReader } from "../connectors/calendar-membership.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
@@ -447,6 +448,11 @@ import {
   isActiveChannelEligible,
   type ActiveChannelReader,
 } from "./service.active-channels.js";
+import {
+  calendarMembershipWriteError,
+  ineligibleCalendarEmails,
+  syncCalendarMembership,
+} from "./service.calendar-membership.js";
 import {
   recommendationDirectory,
   previewRecommendation,
@@ -1892,7 +1898,12 @@ export class AdminBotService {
     const skipped: AdminBotMemberNudgeSkip[] = [];
     const invited: Array<{ event_id: string; theme: ResearchThemeId; attendees: string[] }> = [];
     const joined: Array<{ channel: string; theme: ResearchThemeId; member_id: string }> = [];
-    const eligible = this.store.listLabMembers().filter(isThemeMeetingEligible);
+    const members = this.store.listLabMembers();
+    const eligible = members.filter(isThemeMeetingEligible);
+    const ineligible =
+      params.calendarId === resolveLabCalendar().id
+        ? ineligibleCalendarEmails(members)
+        : new Set<string>();
 
     for (const themeId of RESEARCH_THEME_IDS) {
       const matches = themeMeetings(themeId, params.meetings ?? []);
@@ -1923,7 +1934,7 @@ export class AdminBotService {
           });
           continue;
         }
-        if (already.has(email.toLowerCase())) {
+        if (ineligible.has(email.trim().toLowerCase()) || already.has(email.toLowerCase())) {
           continue;
         }
         attendees.push(email);
@@ -1939,9 +1950,10 @@ export class AdminBotService {
         proposed_payload: {
           calendar_id: params.calendarId,
           event_id: meeting.event_id,
-          // The whole set that will be on the event, existing attendees included: this action type
-          // adds rather than replaces, but the approval card should show the result, not the delta.
-          attendees: [...new Set([...(meeting.attendees ?? []), ...unique])].toSorted(),
+          // Do not re-propose known ineligible guests; additions leave their removal to cleanup.
+          attendees: [...new Set([...(meeting.attendees ?? []), ...unique])]
+            .filter((email) => !ineligible.has(email.trim().toLowerCase()))
+            .toSorted(),
         },
         rationale: "Members whose stated research interests place them in this theme.",
         undo_plan: "Remove the attendees with calendar.remove_attendees.",
@@ -2722,6 +2734,12 @@ export class AdminBotService {
       });
       return { ok: true, status: 200, payload: result };
     }
+    const membershipError = proposal.type.startsWith("calendar.")
+      ? calendarMembershipWriteError(proposal, this.store.listLabMembers(), resolveLabCalendar().id)
+      : undefined;
+    if (membershipError) {
+      return this.executionFailure(proposal, membershipError.status, membershipError.message);
+    }
     let handled: boolean;
     let delivered = true;
     let notDeliveredReason = "";
@@ -3256,6 +3274,22 @@ export class AdminBotService {
     this.store.saveLabMember(stored);
     this.afterLabMemberWritten(existing, member, stored, privilegeLevel, now, origin);
     return { ok: true, status: 200, payload: stored };
+  }
+
+  private calendarMembershipCleanup: ReturnType<typeof syncCalendarMembership> | undefined;
+
+  syncLabCalendarMembership(calendarId: string, read: CalendarMembershipReader) {
+    if (!this.calendarMembershipCleanup) {
+      this.calendarMembershipCleanup = syncCalendarMembership(
+        this,
+        this.store,
+        calendarId,
+        read,
+      ).finally(() => {
+        this.calendarMembershipCleanup = undefined;
+      });
+    }
+    return this.calendarMembershipCleanup;
   }
 
   private activeChannelCleanup: ReturnType<typeof enforceActiveChannels> | undefined;
@@ -13544,7 +13578,12 @@ export class AdminBotService {
     }>
   > {
     const bySlack = new Map<string, AdminBotLabMember>();
-    for (const member of this.store.listLabMembers()) {
+    const members = this.store.listLabMembers();
+    const ineligible =
+      params.calendarId === resolveLabCalendar().id
+        ? ineligibleCalendarEmails(members)
+        : new Set<string>();
+    for (const member of members) {
       const slack = member.slack_user_id?.trim();
       if (slack) {
         bySlack.set(slack, member);
@@ -13586,6 +13625,13 @@ export class AdminBotService {
           skipped.push({
             member_id: member.id,
             reason: "member has no usable calendar or contact email",
+          });
+          continue;
+        }
+        if (ineligible.has(email.trim().toLowerCase())) {
+          skipped.push({
+            member_id: member.id,
+            reason: "member is not eligible for lab calendar invitations",
           });
           continue;
         }

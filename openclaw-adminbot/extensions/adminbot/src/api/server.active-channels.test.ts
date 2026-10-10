@@ -39,6 +39,7 @@ async function startLab(): Promise<Lab> {
   );
   const mock = createAdminBotMockService({
     serviceToken: SERVICE_TOKEN,
+    readCalendarMembership: async () => [],
     readActiveChannels: async () => [
       { channel: "jinesis-active", userIds: [] },
       { channel: "random-active", userIds: [] },
@@ -120,19 +121,22 @@ async function startLab(): Promise<Lab> {
 }
 
 describe("active-channel cleanup authorization", () => {
-  it("allows service/admin and denies members/anonymous", async () => {
-    const { baseUrl, tokens } = await startLab();
-    for (const [token, expected] of [
-      [undefined, 401],
-      [tokens.ada, 403],
-      [tokens.zhijing, 200],
-      [SERVICE_TOKEN, 200],
-    ] as const) {
-      const response = await fetch(`${baseUrl}/members/active-channels/sync`, {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      expect(response.status).toBe(expected);
-    }
-  });
+  it.each(["active-channels", "calendar-membership"])(
+    "allows service/admin and denies members/anonymous for %s",
+    async (endpoint) => {
+      const { baseUrl, tokens } = await startLab();
+      for (const [token, expected] of [
+        [undefined, 401],
+        [tokens.ada, 403],
+        [tokens.zhijing, 200],
+        [SERVICE_TOKEN, 200],
+      ] as const) {
+        const response = await fetch(`${baseUrl}/members/${endpoint}/sync`, {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        expect(response.status).toBe(expected);
+      }
+    },
+  );
 });

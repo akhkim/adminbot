@@ -19,6 +19,7 @@ import {
 } from "../src/api/server.js";
 import { createCompositeAdminBotExecutor } from "../src/connectors/composite.js";
 import {
+  createGogCalendarMembershipReader,
   createGogDriveProbe,
   readDriveFileBase64,
   createGogAdminBotExecutor,
@@ -863,6 +864,7 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     // The token is read per call, so a deployment that adds SLACK_BOT_TOKEN later starts working
     // without a restart -- and one without it fails the call, which the route turns into a 503
     // the form can explain rather than a silent pass.
+    readCalendarMembership: createGogCalendarMembershipReader(),
     readActiveChannels: createActiveChannelReader(),
     fetchSlackChannelNames: () =>
       listSlackChannelNames(

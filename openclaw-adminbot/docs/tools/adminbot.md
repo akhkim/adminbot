@@ -1739,7 +1739,8 @@ human accounts with no matching eligible SQLite member. Eligibility uses the sam
 member classification as active-channel invitations: full or coauthor-major. Alumni with
 one of these classifications remain eligible. Unmatched accounts and missing membership
 types are removed, not queued for manual review. Bots/app accounts are excluded. There is
-no separate exemption for human admins. Calendar and other channels are unaffected.
+no separate exemption for human admins. The Slack pass leaves other channels untouched;
+the calendar pass is described below.
 
 This is a standing automatic policy: each removal is a normal T3 `slack.remove_from_channel`
 proposal, approved against its exact payload hash by `system:weekly-active-channel-policy`,
@@ -1753,3 +1754,35 @@ Slack requires the existing `SLACK_BOT_TOKEN` (directory/channel reads) and
 An empty SQLite member roster, failed/incomplete Slack read, or unavailable connector fails
 closed. Run only against the intended production member database. Local tests use synthetic
 Slack responses and never contact Slack or remove live users.
+
+### Sunday lab calendar event membership
+
+The same Sunday 08:00 `adminbot-active-channels` job also calls
+`POST /members/calendar-membership/sync`. Both passes run even when one fails; any
+failure makes the combined job fail. Re-sync the cron manifest after deployment to
+apply its increased 30-minute timeout. No additional cron job is needed.
+
+The calendar pass reads **all upcoming events** on `ADMINBOT_LAB_CALENDAR_ID`, including
+recurring series and modified occurrences, following every page without a fixed
+look-ahead cutoff. Recurring masters are updated, so their guest changes apply to the
+series. Past one-off events are excluded. It retains full members and major coauthors
+(including alumni), matching calendar, main, and correspondence email addresses from
+SQLite. Only known ineligible members are removed; unmatched external guests (such as
+invited speakers) are preserved. Organizers, the calendar's own address,
+and resource bookings are protected.
+
+Each removal retains the existing T3 proposal, hash-bound approval, execution and audit
+trail, using `system:weekly-calendar-membership-policy` as the standing policy approver.
+The executor re-reads each event and subtracts only approved addresses, preserving other
+guests, RSVP states and optional/resource metadata. Empty guest lists are valid when all
+human guests are ineligible. An empty member database or incomplete Google read fails
+closed. Approved lab-calendar event invitations also reject known ineligible member emails
+while allowing unmatched external guests;
+ordinary events on other calendars are unaffected.
+
+This requires `gog api call` support (verified against gog 0.43.0) and the configured
+Google account's Calendar read/write access. It uses Calendar `events.list/get/patch`
+through the existing gog credentials. Updates remain silent (`sendUpdates=none`).
+The endpoint is restricted to service tokens/admins and accepts no calendar or recipient
+overrides. This filters **event guest lists**, not calendar-sharing ACLs; it does not
+revoke permission to view the shared calendar itself.
