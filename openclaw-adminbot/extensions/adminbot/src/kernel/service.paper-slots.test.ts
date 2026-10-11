@@ -819,3 +819,61 @@ describe("PI review completion authorization", () => {
     ).toBe(true);
   });
 });
+
+it("keeps resubmission feedback visible after rejection without reopening publication approval", () => {
+  const service = new AdminBotService();
+  seed(service);
+  unwrap(service.updateSettings({ head_professor_member_id: "ada" }));
+  unwrap(
+    service.upsertPaper({
+      id: "p1",
+      title: "Causal abstraction",
+      authors: ["Ada Lovelace", "Bob Coauthor"],
+      current_step: "overleaf_writing",
+      first_author_member_id: "ada",
+      venue_decision: "reject",
+    }),
+  );
+  for (const slot of ["authors_ack", "drive_pdf_arxiv"] as const) {
+    unwrap(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot,
+        input: { done: true },
+        memberId: "ada",
+        privileged: true,
+      }),
+    );
+  }
+  const feedback = {
+    reason: "Review the revised submission",
+    url: "https://example.test/revision",
+    soft_deadline: "2026-10-09T12:00:00.000Z",
+    hard_deadline: "2026-10-12T12:00:00.000Z",
+  };
+  unwrap(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input: { value_text: JSON.stringify(feedback) },
+      memberId: "ada",
+      privileged: false,
+    }),
+  );
+  const queue = unwrap(service.listPiReviewQueue()).papers;
+  expect(queue).toHaveLength(1);
+  expect(queue[0]).toMatchObject({
+    paper_id: "p1",
+    feedback: { ...feedback, slot: "feedback_arr" },
+  });
+  unwrap(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input: { value_text: JSON.stringify({ ...feedback, reviewed: true }) },
+      memberId: "ada",
+      privileged: true,
+    }),
+  );
+  expect(unwrap(service.listPiReviewQueue()).papers).toEqual([]);
+});
