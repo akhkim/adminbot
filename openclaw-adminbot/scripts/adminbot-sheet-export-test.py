@@ -344,3 +344,40 @@ link_index = exporter.PAPERS.index('feedback_manuscript_link')
 link_request = next(r['updateCells'] for r in refresh.paper_style_requests(properties['PaperList'], paper_values) if r.get('updateCells', {}).get('fields') == 'userEnteredFormat.textFormat.link' and r['updateCells']['range']['startColumnIndex'] == link_index)
 assert link_request['rows'][0]['values'][0]['userEnteredFormat']['textFormat']['link']['uri'] == feedback['url']
 print('PASS: rejected-paper feedback, reviewed/malformed exclusion, separate publication gate, native feedback view/link, pending-first sorting and secret exclusion')
+
+# Exercise both queues through the database snapshot, including a paper in both.
+queued = sqlite3.connect(':memory:')
+c.backup(queued)
+queued.execute('DELETE FROM adminbot_papers')
+queued.execute('DELETE FROM adminbot_paper_slots')
+for paper_id, decision in [('approval', None), ('feedback', 'reject'), ('both', None),
+                           ('undated', 'reject'), ('reviewed', None), ('approved', None)]:
+    queued.execute('INSERT INTO adminbot_papers VALUES (?,?)', (paper_id, json.dumps({
+        'id': paper_id, 'title': paper_id, 'venue_decision': decision,
+        'accepted_year': 2027, 'pi_review_status': 'Approved'})))
+for paper_id, date in [('approval', '2026-10-02T00:00:00Z'), ('both', '2026-10-04T00:00:00Z')]:
+    for slot in ('authors_ack', 'drive_pdf_arxiv'):
+        queued.execute('INSERT INTO adminbot_paper_slots(paper_id,slot,status,provided_at) VALUES (?,?,?,?)',
+                       (paper_id, slot, 'provided', date))
+for paper_id, slot, date, reviewed in [
+    ('both', 'feedback_arxiv', '2026-10-01T00:00:00Z', False),
+    ('feedback', 'feedback_arr', '2026-10-03T00:00:00Z', False),
+    ('undated', 'feedback_camera_ready', None, False),
+    ('reviewed', 'feedback_arr', '2026-09-01T00:00:00Z', True),
+]:
+    queued.execute('INSERT INTO adminbot_paper_slots(paper_id,slot,status,provided_at,value_text) VALUES (?,?,?,?,?)',
+                   (paper_id, slot, 'provided', date, json.dumps(dict(feedback, reviewed=reviewed))))
+queued.execute('INSERT INTO adminbot_paper_slots(paper_id,slot,status) VALUES (?,?,?)',
+               ('approved', 'pi_approval', 'provided'))
+queued.commit()
+queued_values = exporter.snapshot(queued, '2026-10-11T00:00:00Z')['data'][1]['values']
+queued_rows = [dict(zip(queued_values[0], row)) for row in queued_values[1:]]
+assert [row['id'] for row in queued_rows[:4]] == ['both', 'approval', 'feedback', 'undated']
+assert queued_rows[0]['pi_review_status'] == 'awaiting PI approval'
+assert queued_rows[0]['pending_feedback_types'] == 'arXiv'
+assert queued_rows[2]['pi_review_status'] != 'awaiting PI approval'
+assert queued_rows[2]['pending_feedback_types'] == 'ARR'
+assert queued_rows[3]['pending_feedback_types'] == 'Camera-ready'
+assert all(not row['feedback_review_status'] for row in queued_rows[4:])
+assert next(row for row in queued_rows if row['id'] == 'approved')['pi_review_status'] == 'Approved'
+print('PASS: database-backed combined PI queue, oldest of both requests, undated pending last, reviewed exclusion and authoritative statuses')
