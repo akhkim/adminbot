@@ -1409,6 +1409,7 @@ describe("saveAdminBotPaper", () => {
 
     await saveAdminBotPaper(host, {
       ...baseInput,
+      venue: "ICML 2026",
       venueDecision: "reject",
       acceptedVenue: "ACL 2026",
       acceptedYear: "2026",
@@ -1418,6 +1419,7 @@ describe("saveAdminBotPaper", () => {
 
     expect(toolInvocations).toContain("adminbot_upsert_paper");
     expect(toolArgs).toMatchObject({
+      venue: "ICML 2026",
       venueDecision: "reject",
       acceptedVenue: "ACL 2026",
       acceptedYear: 2026,

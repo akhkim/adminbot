@@ -454,6 +454,18 @@ describe("AdminBotService paper coauthors", () => {
     ).toMatchObject({ ok: false });
   });
 
+  it("persists an author's corrected target conference year", () => {
+    const service = lab();
+    unwrap(service.upsertOwnPaper("joeun-yook", {
+      id: "icml-year", title: "Synthetic ICML paper", authors: ["Joeun Yook"],
+      current_step: "brainstorming_docs", venue: "ICML 2027",
+    }));
+    unwrap(service.upsertOwnPaper("joeun-yook", { id: "icml-year", venue: "ICML 2026" }));
+    expect(unwrap(service.listPapers()).papers.find(paper => paper.id === "icml-year")?.venue).toBe("ICML 2026");
+    unwrap(service.upsertOwnPaper("joeun-yook", { id: "icml-year", venue: "" }));
+    expect(unwrap(service.listPapers()).papers.find(paper => paper.id === "icml-year")?.venue).toBe("");
+  });
+
   // The bulk grid writes the same fields to the same row as the card. This is the service half of
   // that claim: everything the grid offers as editable has to survive a member write.
   it("stores every field the bulk grid can edit", () => {
