@@ -1,0 +1,3 @@
+# Conference trip identity evidence
+
+Actual `renderPaperCycle` with production styles; synthetic member and service-loaded trip, external actions disabled. Desktop dark theme; no UI layout changes. Before shows the missing-trip state from the old exact-key lookup, after shows the saved lodging answer under the canonical conference key. Native crops retain readable controls; context originals are included. These are component fixtures, not authenticated production or external booking tests. Service/API regression tests verify restoration, deduplication, updates and withdrawal. Matching trailing year only is removed; city, workshop and different-year text remain distinct. Records without city text do not acquire a guessed destination.
