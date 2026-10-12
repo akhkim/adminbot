@@ -6,7 +6,7 @@ import type {
   MeetingAttendanceNudgeResult,
   MeetingAttendee,
   MeetingRecord,
-} from "../auth/session.ts";
+} from "../api/meetings.ts";
 // Meeting Recordings: what was recorded, who was there, and what the local model made of it.
 //
 // The tab is a catch-up surface first. Someone who missed Tuesday opens it to watch the recording

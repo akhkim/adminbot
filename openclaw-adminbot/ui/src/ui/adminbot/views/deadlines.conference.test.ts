@@ -1,6 +1,6 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
-import type { ConferenceRoster } from "../auth/session.ts";
+import type { ConferenceRoster } from "../api/paper-admin.ts";
 import type { DeadlineVenue } from "../data/deadlines.ts";
 import { conferenceRosterFor, renderConferenceAttendance } from "./deadlines.conference.ts";
 

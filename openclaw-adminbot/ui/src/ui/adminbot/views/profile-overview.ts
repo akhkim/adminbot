@@ -16,15 +16,12 @@ import {
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
-import {
-  matchesMemberTypeFilter,
-  renderMemberTypeFilter,
-} from "../member-type-filter.ts";
 import type {
   MemberActivityCounts,
   MemberAdoptionSummary,
   MemberProfileOverviewRow,
-} from "../auth/session.ts";
+} from "../api/members.ts";
+import { matchesMemberTypeFilter, renderMemberTypeFilter } from "../member-type-filter.ts";
 
 /** Zero counts render as an em dash rather than "0", which reads as a measurement. */
 const countOrDash = (value: number) => (value > 0 ? String(value) : "—");

@@ -2,7 +2,8 @@
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
-import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
+import type { PaperNudgeBatch, PaperSlotOverviewRow } from "../api/paper-admin.ts";
+import type { PaperCycle } from "../api/papers.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
 import { loadHistory, recordHistory } from "../paper-grid.ts";
 import {

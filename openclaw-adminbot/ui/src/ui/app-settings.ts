@@ -2,11 +2,8 @@ import { ADMINBOT_PASSWORD_RESET_PATH } from "../../../extensions/adminbot/src/c
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
-import {
-  loadAdminBot,
-  loadAdminBotVenueSources,
-  type AdminBotHost,
-} from "./adminbot/controllers/admin.ts";
+import { loadAdminBot, type AdminBotHost } from "./adminbot/controllers/admin.ts";
+import { loadAdminBotVenueSources } from "./adminbot/controllers/conference-papers.ts";
 import {
   loadAdminBotRegistrations,
   type AdminBotRegistrationsHost,

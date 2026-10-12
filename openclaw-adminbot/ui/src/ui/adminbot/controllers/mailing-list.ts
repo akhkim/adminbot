@@ -9,12 +9,11 @@ import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
   fetchPublicationDigest,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
   sendPublicationDigest,
   type PublicationDigestPreview,
   type PublicationDigestVenue,
-} from "../auth/session.ts";
+} from "../api/paper-admin.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 
 export type AdminBotMailingListHost = {
   settings: UiSettings;

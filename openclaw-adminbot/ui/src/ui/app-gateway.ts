@@ -7,12 +7,9 @@ import {
   GATEWAY_EVENT_UPDATE_AVAILABLE,
   type GatewayUpdateAvailableEventPayload,
 } from "../../../src/gateway/events.js";
+import { pairDevice } from "./adminbot/api/auth.ts";
 import { recoverFromRejectedDeviceToken } from "./adminbot/auth/flow.ts";
-import {
-  loadStoredMemberSession,
-  pairDevice,
-  resolveAdminBotBaseUrl,
-} from "./adminbot/auth/session.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "./adminbot/auth/session.ts";
 import {
   clearPendingQueueItemsForRun,
   createChatSessionsLoadOverrides,

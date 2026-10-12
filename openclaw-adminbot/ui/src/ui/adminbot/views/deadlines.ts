@@ -1,4 +1,5 @@
 import { html, nothing, LitElement, type TemplateResult } from "lit";
+import { live } from "lit/directives/live.js";
 // Shared rendering for public and signed-in deadline surfaces.
 // Stays in the app document flow so the page owns one vertical scroll.
 import { t } from "../../../i18n/index.ts";
@@ -6,12 +7,8 @@ import { icons } from "../../icons.ts";
 import type { UiSettings } from "../../storage.ts";
 import "./deadlines.recommendation.ts";
 import type { AccessRole } from "../access.ts";
-import {
-  resolveAdminBotBaseUrl,
-  loadStoredMemberSession,
-  fetchConferenceRosters,
-  type ConferenceRoster,
-} from "../auth/session.ts";
+import { fetchConferenceRosters, type ConferenceRoster } from "../api/paper-admin.ts";
+import { resolveAdminBotBaseUrl, loadStoredMemberSession } from "../auth/session.ts";
 import {
   deadlineMilestoneRow,
   hasDeadlineMilestone,
@@ -1830,7 +1827,7 @@ class AdminbotDeadlinesView extends LitElement {
                   ?autofocus=${Boolean(target)}
                   type="date"
                   required
-                  .value=${value?.deadlineDate ?? ""}
+                  .value=${live(value?.deadlineDate ?? "")}
                   aria-invalid=${String(Boolean(this.proposalErrors.deadlineDate))}
                 />`,
                 value?.deadlineDate ?? "",
@@ -1842,7 +1839,7 @@ class AdminbotDeadlinesView extends LitElement {
               <input
                 name="deadlineTime"
                 type="time"
-                .value=${value?.deadlineTime ?? ""}
+                .value=${live(value?.deadlineTime ?? "")}
                 aria-invalid=${String(Boolean(this.proposalErrors.deadlineTime))}
               />
               ${this.renderProposalFieldError("deadlineTime")}

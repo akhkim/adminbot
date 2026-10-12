@@ -32,19 +32,25 @@ type Lab = {
   tokens: Record<string, string>;
 };
 
-async function startLab(): Promise<Lab> {
+// `readers: false` builds a deployment with neither the calendar nor the Slack reader wired, which
+// is what a host without those credentials looks like.
+async function startLab({ readers = true }: { readers?: boolean } = {}): Promise<Lab> {
   const sensitiveInfoPath = path.join(
     os.tmpdir(),
     `adminbot-active-channels-${Date.now()}-${Math.random().toString(16).slice(2)}.md`,
   );
   const mock = createAdminBotMockService({
     serviceToken: SERVICE_TOKEN,
-    readCalendarAccess: async () => [],
-    readCalendarMembership: async () => [],
-    readActiveChannels: async () => [
-      { channel: "jinesis-active", userIds: [] },
-      { channel: "random-active", userIds: [] },
-    ],
+    ...(readers
+      ? {
+          readCalendarAccess: async () => [],
+          readCalendarMembership: async () => [],
+          readActiveChannels: async () => [
+            { channel: "jinesis-active", userIds: [] },
+            { channel: "random-active", userIds: [] },
+          ],
+        }
+      : {}),
     sensitiveInfoPath,
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
@@ -138,6 +144,41 @@ describe("active-channel cleanup authorization", () => {
         });
         expect(response.status).toBe(expected);
       }
+    },
+  );
+
+  // The Sunday cron (scripts/adminbot-active-channels-cron.sh) calls both with the service token.
+  // A route that went missing would answer 404 there and the sweep would silently stop; one whose
+  // reader is unwired must say so with a 503 rather than report an empty, "successful" sweep.
+  it.each([
+    ["active-channels", "Slack active-channel reader is unavailable"],
+    ["calendar-membership", "Calendar membership reader is unavailable"],
+  ])("fails closed with 503 when the %s reader is not wired", async (endpoint, message) => {
+    const { baseUrl, tokens } = await startLab({ readers: false });
+    for (const token of [SERVICE_TOKEN, tokens.zhijing]) {
+      const response = await fetch(`${baseUrl}/members/${endpoint}/sync`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(response.status).toBe(503);
+      expect(((await response.json()) as { error: { message: string } }).error.message).toBe(
+        message,
+      );
+    }
+  });
+
+  it.each(["active-channels", "calendar-membership"])(
+    "refuses a member session for %s before reading anything",
+    async (endpoint) => {
+      const { baseUrl, tokens } = await startLab({ readers: false });
+      const response = await fetch(`${baseUrl}/members/${endpoint}/sync`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokens.ada}` },
+      });
+      expect(response.status).toBe(403);
+      expect(((await response.json()) as { error: { message: string } }).error.message).toBe(
+        "insufficient privileges",
+      );
     },
   );
 });

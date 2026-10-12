@@ -18,7 +18,7 @@ import type {
   LogisticsRequestInput,
   LogisticsRequestKind,
   LogisticsSchool,
-} from "../auth/session.ts";
+} from "../api/logistics.ts";
 import type { LetterFact, MeetingRequestRow, RecommendationSchool } from "./logistics-draft.ts";
 import {
   createFactRow,
@@ -35,7 +35,7 @@ export type {
   LogisticsRequestInput,
   LogisticsRequestKind,
   LogisticsRequestStatus,
-} from "../auth/session.ts";
+} from "../api/logistics.ts";
 
 /**
  * The per-file ceiling, mirrored from the service.

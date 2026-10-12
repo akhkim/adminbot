@@ -1,9 +1,9 @@
 /* @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ token: "synthetic-token", fetch: vi.fn(), queue: vi.fn() }));
+vi.mock("../api/onboarding.ts", () => ({ queueMemberOnboardingGuide: mocks.queue }));
 vi.mock("../auth/session.ts", () => ({
   fetchMemberResource: mocks.fetch,
-  queueMemberOnboardingGuide: mocks.queue,
   loadStoredMemberSession: () => (mocks.token ? { sessionToken: mocks.token } : null),
   resolveAdminBotBaseUrl: () => "http://127.0.0.1:8765",
 }));

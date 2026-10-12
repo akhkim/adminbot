@@ -1,5 +1,6 @@
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { live } from "lit/directives/live.js";
 import { ref } from "lit/directives/ref.js";
 import {
   adminBotMemberFieldVisibility,
@@ -29,15 +30,15 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
+import type { BadgeDefinition } from "../api/badges.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
+import { checkDriveAccess } from "../api/profile.ts";
 import {
-  checkDriveAccess,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   type AssignedBadge,
-  type BadgeDefinition,
   type BadgeSuggestionInput,
   type LabMember,
-  type MemberProfileUpdate,
 } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
@@ -980,7 +981,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
     case "date":
       return html`
         ${renderDateControl(
-          html`<input class="input" name=${field.key} type="date" .value=${currentValue} />`,
+          html`<input class="input" name=${field.key} type="date" .value=${live(currentValue)} />`,
           currentValue,
         )}
       `;

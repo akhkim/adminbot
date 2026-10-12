@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { live } from "lit/directives/live.js";
 import {
   X_ANNOUNCEMENT_STAGES,
   readXThreadDraft,
@@ -13,7 +14,7 @@ import type {
   PaperReimbursement,
   PaperSocialConsent,
   PaperSocialDraft,
-} from "../auth/session.ts";
+} from "../api/papers.ts";
 // The parts of a paper card that are lists rather than single fields: the social drafts and who
 // has signed off on them, who is going to the conference, and who has been reimbursed.
 //
@@ -895,7 +896,7 @@ function renderMyTrip(props: PaperCycleProps) {
                           class="input"
                           type="date"
                           data-testid=${`paper-trip-arrival-${props.paperId}`}
-                          .value=${draft.arrival_on}
+                          .value=${live(draft.arrival_on)}
                           @input=${(event: Event) =>
                             edit({ arrival_on: (event.target as HTMLInputElement).value })}
                         />`,
@@ -909,7 +910,7 @@ function renderMyTrip(props: PaperCycleProps) {
                           class="input"
                           type="date"
                           data-testid=${`paper-trip-departure-${props.paperId}`}
-                          .value=${draft.departure_on}
+                          .value=${live(draft.departure_on)}
                           @input=${(event: Event) =>
                             edit({ departure_on: (event.target as HTMLInputElement).value })}
                         />`,
