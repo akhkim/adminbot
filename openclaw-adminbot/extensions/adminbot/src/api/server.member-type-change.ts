@@ -1,24 +1,21 @@
 /**
  * A Member Type changed on the Lab Members tab, applied on the spot.
  *
- * Changing somebody's type is re-onboarding them without the welcome mail: their access level moves
- * with it, and the rooms and meetings that follow from the new type are joined or left. The admin's
- * save is the approval, the same rule Add row uses (see `approveAndExecute`), so every external step
- * is still a typed proposal, approved by that admin, executed and audited -- just not left waiting
- * in Pending Actions.
+ * Changing somebody's type is re-onboarding them: their access level moves with it, and the rooms
+ * and meetings that follow from the new type are joined or left. The admin's save is the approval,
+ * the same rule Add row uses (see `approveAndExecute`), so every external step is still a typed
+ * proposal, approved by that admin, executed and audited -- just not left waiting in Pending
+ * Actions.
  *
- * One mail is sent, and only in one case: somebody moving *into* alumni gets the alumni guide.
- * Every other step is silent -- Slack channel moves notify inside Slack only, calendar writes pass
- * `--send-updates none`, and the lab-calendar share suppresses Google's notification.
+ * One mail is sent: the onboarding guide for the new type, when that type calls for a different
+ * guide than the old one did. Every other step is silent -- Slack channel moves notify inside Slack
+ * only, calendar writes pass `--send-updates none`, and the lab-calendar share suppresses Google's
+ * notification.
  *
  * Each step is reported on its own and none stops the others: the database write has already
  * happened, and a Slack outage should not also leave the Monday meeting unreconciled.
  */
-import {
-  adminBotIsAlumniType,
-  type AdminBotAuditEvent,
-  type AdminBotLabMember,
-} from "../contracts/actions.js";
+import { type AdminBotAuditEvent, type AdminBotLabMember } from "../contracts/actions.js";
 import { adminBotCalendarEmail } from "../contracts/member-outreach-email.js";
 import type { AdminBotService } from "../kernel/service.js";
 import {
@@ -40,7 +37,7 @@ import {
 } from "./server.member-sheet.js";
 
 export type MemberTypeChangeStep = {
-  step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "alumni_mail" | "meeting";
+  step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "guide" | "meeting";
   /** The channel, series or address the step was about. */
   target?: string;
   /** `queued`: filed for an admin to approve in Pending Actions, because nobody approved it here. */
@@ -78,8 +75,8 @@ export type MemberTypeChangeDeps = {
   skipGroupMeeting?: boolean;
   /** Why the sheet step does not apply, e.g. the row was just written or was read from the sheet. */
   skipSheet?: string;
-  /** New members get their guide from the onboarding step, so the alumni mail here would repeat it. */
-  skipAlumniMail?: boolean;
+  /** New members get their guide from the onboarding step, so the guide here would repeat it. */
+  skipGuide?: boolean;
   /**
    * The onboarding guide this person is about to be sent mints their Slack Connect invite, so this
    * change must not file a second one.
@@ -127,6 +124,14 @@ export async function applyMemberTypeChange(
   const delta = memberAccessDelta(before, after);
   const steps: MemberTypeChangeStep[] = [];
   const label = after.name || after.id;
+  // Decided up front because the guide, when one is due, carries this person's Slack Connect invite
+  // and step 2 must then not file a second.
+  const previousGuide = templateForMemberType(before.member_type);
+  const nextGuide = templateForMemberType(after.member_type);
+  const guideDue =
+    !deps.skipGuide &&
+    nextGuide.ok &&
+    (!previousGuide.ok || previousGuide.templateId !== nextGuide.templateId);
   const typeNote = `member type ${before.member_type?.trim() || "unset"} -> ${
     after.member_type?.trim() || "unset"
   }`;
@@ -189,7 +194,7 @@ export async function applyMemberTypeChange(
     ADMINBOT_FRIENDS_CHANNELS.includes(channel),
   );
   const connectAddress = calendarAddress(after);
-  if (!slackUserId && gainsFriendsChannel && !deps.guideSendsSlackConnect) {
+  if (!slackUserId && gainsFriendsChannel && !deps.guideSendsSlackConnect && !guideDue) {
     steps.push(
       connectAddress
         ? await runAction(deps, "slack", "#friends-and-collaborators", {
@@ -307,60 +312,47 @@ export async function applyMemberTypeChange(
     });
   }
 
-  // 5. The one mail: moving into alumni. Only when alumni is what decides their template -- a row
-  //    that is also `full` would otherwise be sent the alumni farewell while still in the lab.
-  if (
-    !deps.skipAlumniMail &&
-    !adminBotIsAlumniType(before.member_type) &&
-    adminBotIsAlumniType(after.member_type)
-  ) {
-    const template = templateForMemberType(after.member_type);
-    if (!template.ok || template.templateId !== "alumni") {
+  // 5. The one mail: the onboarding guide for the new type, when it differs from the old type's.
+  //    The template decides, not the raw type: `full` -> `full, alumni` still onboards as a full
+  //    member and is owed nothing new.
+  if (guideDue) {
+    const queued = deps.service.queueOnboardingGuideForMember({
+      memberId: after.id,
+      actor: deps.actor,
+    });
+    if (!queued.ok) {
+      // 409 is a guide already sent or waiting, 422 is nobody to mail: answers, not faults.
       steps.push({
-        step: "alumni_mail",
-        status: "skipped",
-        detail: template.ok
-          ? `their type onboards as ${template.templateId}, not alumni`
-          : template.reason,
+        step: "guide",
+        status: queued.status === 409 || queued.status === 422 ? "skipped" : "failed",
+        detail: queued.error.message,
       });
     } else {
-      const queued = deps.service.queueOnboardingGuideForMember({
-        memberId: after.id,
-        actor: deps.actor,
-      });
-      if (!queued.ok) {
-        steps.push({ step: "alumni_mail", status: "failed", detail: queued.error.message });
-      } else {
-        const guide = deps.service.getProposal(queued.payload.proposal_id);
-        const sent = !deps.approver
-          ? ({ ok: "queued" } as const)
-          : guide
-            ? await approveAndExecute(deps.service, guide, deps.approver)
-            : { ok: false as const, reason: `proposal ${queued.payload.proposal_id} vanished` };
-        steps.push(
-          sent.ok === "queued"
-            ? {
-                step: "alumni_mail",
-                target: queued.payload.email,
-                status: "queued",
-                proposal_id: queued.payload.proposal_id,
-              }
-            : sent.ok
-              ? {
-                  step: "alumni_mail",
-                  target: queued.payload.email,
-                  status: "done",
-                  proposal_id: queued.payload.proposal_id,
-                }
-              : {
-                  step: "alumni_mail",
-                  target: queued.payload.email,
-                  status: "failed",
-                  detail: sent.reason,
-                  proposal_id: queued.payload.proposal_id,
-                },
-        );
-      }
+      const { proposal_id: proposalId, email, template_id: templateId } = queued.payload;
+      // The split Add member makes: the standard full-member guide -- and the alumni guide, which
+      // this step always sent -- go out on the saving admin's approval. Every other template
+      // carries per-person copy an approver should read first, so it waits in Pending Actions.
+      const approver =
+        templateId === "member" || templateId === "alumni" ? deps.approver : undefined;
+      const guide = deps.service.getProposal(proposalId);
+      const sent = !approver
+        ? ({ ok: "queued" } as const)
+        : guide
+          ? await approveAndExecute(deps.service, guide, approver)
+          : { ok: false as const, reason: `proposal ${proposalId} vanished` };
+      steps.push(
+        sent.ok === "queued"
+          ? { step: "guide", target: email, status: "queued", proposal_id: proposalId }
+          : sent.ok
+            ? { step: "guide", target: email, status: "done", proposal_id: proposalId }
+            : {
+                step: "guide",
+                target: email,
+                status: "failed",
+                detail: sent.reason,
+                proposal_id: proposalId,
+              },
+      );
     }
   }
 

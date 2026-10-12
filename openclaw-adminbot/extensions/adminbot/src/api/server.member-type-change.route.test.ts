@@ -210,14 +210,14 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     const removal = executed.find((proposal) => proposal.type === "calendar.remove_attendees");
     expect(removal?.proposed_payload.removed_attendees).toEqual(["cora@lab.test"]);
     // The one mail this change sends, through the onboarding sender rather than the executor.
-    expect(steps.find((step) => step.step === "alumni_mail")?.status).toBe("done");
+    expect(steps.find((step) => step.step === "guide")?.status).toBe("done");
     expect(mailed.map((entry) => entry.email)).toEqual(["cora@lab.test"]);
     expect(mock.service.listPending().ok && mock.service.listPending().payload).toMatchObject({
       proposals: [],
     });
   });
 
-  it("promotes a coauthor to full without mail and without leaving the lab's rooms", async () => {
+  it("promotes a coauthor to full with the full-member guide, without leaving the lab's rooms", async () => {
     const { baseUrl, mock, executed, mailed, calendarShares } = await startService({
       sheetRows: [["Cora Coauthor", "coauthor-major", "cora@lab.test", ""]],
       meeting: ["admin@cs.toronto.edu", "cora@lab.test"],
@@ -238,7 +238,64 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     // A major coauthor already holds the lab calendar through the access design's standing-invites
     // row, so becoming full shares nothing new.
     expect(calendarShares.filter((email) => email !== "admin@cs.toronto.edu")).toEqual([]);
+    // A new type with a new guide is re-onboarding: the full-member guide goes out on this save.
+    expect(mailed).toEqual([{ email: "cora@lab.test", template: "member" }]);
+    expect(body.member_type_change?.steps.find((step) => step.step === "guide")).toMatchObject({
+      status: "done",
+      target: "cora@lab.test",
+    });
+  });
+
+  it("sends nothing when the new type onboards with the same guide", async () => {
+    const { baseUrl, mock, mailed } = await startService();
+    const token = await adminToken(mock, baseUrl);
+    await save(baseUrl, token, "cora", { member_type: "full" });
+    expect(mailed).toHaveLength(1);
+
+    // `full` still decides the template, so the alumni tag adds nothing to mail.
+    const body = (await (
+      await save(baseUrl, token, "cora", { member_type: "full, alumni" })
+    ).json()) as ChangeBody;
+    expect(body.member_type_change?.steps.some((step) => step.step === "guide")).toBe(false);
+    expect(mailed).toHaveLength(1);
+  });
+
+  it("queues a non-standard guide for approval instead of sending it on the save", async () => {
+    const { baseUrl, mock, mailed } = await startService();
+    const token = await adminToken(mock, baseUrl);
+
+    const body = (await (
+      await save(baseUrl, token, "cora", { member_type: "coauthor-minor" })
+    ).json()) as ChangeBody;
+
+    const guide = body.member_type_change?.steps.find((step) => step.step === "guide");
+    expect(guide).toMatchObject({ status: "queued", target: "cora@lab.test" });
     expect(mailed).toEqual([]);
+    const pending = mock.service.listPending();
+    expect(
+      pending.ok &&
+        pending.payload.proposals.some(
+          (proposal) =>
+            proposal.type === "onboarding.send_guide" &&
+            (proposal.proposed_payload as { template_id?: string }).template_id ===
+              "coauthor_minor",
+        ),
+    ).toBe(true);
+  });
+
+  it("does not mail a guide the person has already been sent", async () => {
+    const { baseUrl, mock, mailed } = await startService();
+    const token = await adminToken(mock, baseUrl);
+    await save(baseUrl, token, "cora", { member_type: "full" });
+    await save(baseUrl, token, "cora", { member_type: "coauthor-major" });
+    const back = (await (
+      await save(baseUrl, token, "cora", { member_type: "full" })
+    ).json()) as ChangeBody;
+
+    expect(back.member_type_change?.steps.find((step) => step.step === "guide")).toMatchObject({
+      status: "skipped",
+    });
+    expect(mailed.filter((entry) => entry.template === "member")).toHaveLength(1);
   });
 
   it("lets an explicit Privilege in the same save win", async () => {
@@ -267,7 +324,8 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     expect(
       stillAdmin.ok && stillAdmin.payload.members.find((row) => row.id === "admin"),
     ).toMatchObject({ privilege_level: "admin", member_type: "full" });
-    expect(mailed).toEqual([]);
+    // Cora's move into `full` is the only mail; the refused self-demotion sends nothing.
+    expect(mailed).toEqual([{ email: "cora@lab.test", template: "member" }]);
 
     // Another admin can take it away.
     const demoted = (await (
