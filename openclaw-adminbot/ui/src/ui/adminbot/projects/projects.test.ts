@@ -2,6 +2,7 @@ import { render } from "lit";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   openLanes,
+  ownPapers,
   projectPath,
   projectRouteFromPath,
   venuePosition,
@@ -117,5 +118,90 @@ describe("sidebar project list", () => {
     render(renderProjectsNav(state()), container);
     expect(container.querySelector('[data-testid="projects-nav-p1"]')).toBeNull();
     expect(container.querySelector('[data-testid="projects-nav-p2"]')).not.toBeNull();
+  });
+});
+describe("ownPapers — whose paper is it", () => {
+  function stateWith(authors: string[], memberName: string) {
+    return {
+      memberId: "me",
+      adminBotData: {
+        members: [{ id: "me", name: memberName, privilege_level: "member", access: [] }],
+        papers: [
+          {
+            id: "p1",
+            title: "Preserving Historical Truth",
+            authors,
+            current_step: "arxiv_polish",
+            submitted_by_member_id: "someone-else",
+          },
+        ],
+      },
+    } as never;
+  }
+
+  it("finds a paper where the author list marks equal contribution", () => {
+    // Regression: a co-first author could not see their own paper, because the venue's asterisk
+    // made the name compare unequal to the roster's.
+    const papers = ownPapers(stateWith(["Francesco Ortu*", "Joeun Yook*"], "Joeun Yook"));
+    expect(papers.map((p) => p.title)).toEqual(["Preserving Historical Truth"]);
+  });
+
+  it("finds a paper listing the name with an accent the roster omits", () => {
+    expect(ownPapers(stateWith(["Bernhard Schölkopf"], "Bernhard Scholkopf"))).toHaveLength(1);
+  });
+
+  it("does not claim somebody else's paper", () => {
+    expect(ownPapers(stateWith(["Andrew Yook", "Jane Doe"], "Joeun Yook"))).toHaveLength(0);
+  });
+
+  // The point of the recorded links: a paper one coauthor files shows up for all of them, whatever
+  // the paper happens to call them.
+  it("shows a coauthor a paper somebody else filed, by recorded link rather than by spelling", () => {
+    const state = {
+      memberId: "andrew-kim",
+      adminBotData: {
+        members: [{ id: "andrew-kim", name: "Andrew Kim", privilege_level: "member", access: [] }],
+        papers: [
+          {
+            id: "adminbot",
+            title: "AdminBot",
+            // The printed list spells him a way the roster does not, and he did not file it.
+            authors: ["Joeun Yook*", "A. K. Kim", "Zhijing Jin"],
+            author_links: [
+              { name: "Joeun Yook*", member_id: "joeun-yook" },
+              { name: "A. K. Kim", member_id: "andrew-kim" },
+              { name: "Zhijing Jin", member_id: "zhijing-jin" },
+            ],
+            current_step: "brainstorming_docs",
+            submitted_by_member_id: "joeun-yook",
+          },
+        ],
+      },
+    } as never;
+    expect(ownPapers(state).map((paper) => paper.title)).toEqual(["AdminBot"]);
+  });
+
+  it("does not show a paper to an external coauthor's address", () => {
+    const state = {
+      memberId: "bs@tue.mpg.de",
+      adminBotData: {
+        members: [{ id: "bs@tue.mpg.de", name: "Bernhard", privilege_level: "member", access: [] }],
+        papers: [
+          {
+            id: "adminbot",
+            title: "AdminBot",
+            authors: ["Joeun Yook", "Bernhard Schölkopf"],
+            // An external is an email on the paper, never a member id, so nothing keys off them.
+            author_links: [
+              { name: "Joeun Yook", member_id: "joeun-yook" },
+              { name: "Bernhard Schölkopf", email: "bs@tue.mpg.de" },
+            ],
+            current_step: "brainstorming_docs",
+            submitted_by_member_id: "joeun-yook",
+          },
+        ],
+      },
+    } as never;
+    expect(ownPapers(state)).toHaveLength(0);
   });
 });

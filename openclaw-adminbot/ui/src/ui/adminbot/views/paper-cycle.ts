@@ -47,15 +47,16 @@ export type PaperCycleProps = {
   /**
    * LinkedIn only: run the model draft with the panel's venue/context inputs and store the text.
    * `pdfBase64` is a PDF dropped on the panel; absent, the service reads the card's Drive copy.
+   * May return the request's promise: the panel awaits it to keep its button disabled meanwhile.
    */
-  onGenerateLinkedInDraft?: (venue: string, note: string, pdfBase64?: string) => void;
+  onGenerateLinkedInDraft?: (venue: string, note: string, pdfBase64?: string) => unknown;
   onGenerateXDraft?: (
     venue: string,
     note: string,
     pdfBase64?: string,
     announcement?: XAnnouncementDetails,
     credits?: XCreditSelection,
-  ) => void;
+  ) => unknown;
   onConsent: (draftId: string, decision: string, comment?: string) => void;
   onSetAttendee: (name: string, memberId: string | undefined, attending: string) => void;
   /**

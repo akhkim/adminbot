@@ -122,5 +122,14 @@ describe("GET /my/projects", () => {
       "talk",
       "venue",
     ]);
+
+    // A signed-out session is no session: the route answers as it does to nobody at all.
+    await fetch(`${baseUrl}/auth/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect((await fetch(route, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(
+      401,
+    );
   });
 });

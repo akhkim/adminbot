@@ -211,20 +211,6 @@
   font-size: var(--control-ui-text-xs);
 }
 
-.project-new {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: end;
-}
-
-.project-new label {
-  display: grid;
-  gap: 2px;
-  color: var(--muted);
-  font-size: var(--control-ui-text-xs);
-}
-
 /* ---- one project ---- */
 
 .project__back {
@@ -309,136 +295,66 @@
   margin: 0 0 var(--space-3);
   color: var(--muted);
 }
-
-.project__slots {
-  display: grid;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-.project__slot {
-  display: grid;
-  gap: 4px;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 6px);
-}
-
-.project__slot.is-child {
-  margin-left: var(--space-4);
-}
-
-.project__slot.is-provided,
-.project__slot.is-waived {
-  opacity: 0.75;
-}
-
-.project__slot.is-invalid {
-  border-color: var(--danger);
-}
-
-.project__slot-head {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.project__slot-label {
-  color: var(--text-strong);
-}
-
-.project__status {
-  color: var(--muted);
-  font-size: var(--control-ui-text-xs);
-}
-
-.project__slot.is-provided .project__status {
-  color: var(--ok);
-}
-
-.project__slot small {
-  color: var(--muted);
-}
-
-.project__slot-form,
-.project__form,
-.project__decision {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: end;
-}
-
-.project__slot-form input,
-.project__slot-form select {
-  flex: 1 1 220px;
-  min-width: 0;
-}
-
-.project__decision label {
-  display: grid;
-  gap: 2px;
-  color: var(--muted);
-  font-size: var(--control-ui-text-xs);
-}
-
-.project__stages {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--control-ui-text-xs);
-}
-
-.project__stages li {
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--muted);
-}
-
-.project__stages .is-closed {
-  color: var(--ok);
-}
-
-.project__blocker {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  padding-left: var(--space-2);
-  border-left: 3px solid var(--warn);
-}
-
 .project__error {
   color: var(--danger);
 }
 
-/* Form controls take the app's field look rather than the browser's. */
-.projects input:not([type="checkbox"]),
-.projects select,
-.project input:not([type="checkbox"]),
-.project select {
-  height: var(--control-h-md);
-  padding: 0 10px;
-  border: 1px solid var(--input);
-  border-radius: var(--radius-md);
-  background: var(--bg-accent);
-  color: var(--text);
-  font-size: var(--control-ui-input-text-size);
-  outline: none;
+.project__meta {
+  margin-top: 2px;
+  font-size: var(--control-ui-text-xs);
 }
 
-.projects input::placeholder,
-.project input::placeholder {
+.project__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* ---- papers the active list leaves out ---- */
+
+.projects__others {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.projects__others-title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-sm);
+}
+
+.projects__other-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.projects__other {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: 6px var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+}
+
+.projects__other-link {
+  color: var(--text-strong);
+  text-decoration: none;
+}
+
+.projects__other-link:hover {
+  text-decoration: underline;
+}
+
+.projects__other-meta {
   color: var(--muted);
-}
-
-.projects input:disabled,
-.project input:disabled,
-.project select:disabled {
-  opacity: 0.55;
+  font-size: var(--control-ui-text-xs);
 }
 
 .project input[type="checkbox"],

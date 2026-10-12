@@ -13,6 +13,14 @@ made-up projects for a made-up admin. No live records, members, or messages.
 - `5-venue-tab.png` — the submission, the venue decision, and the venue's stages.
 - `7-choose-papers.png` — "Choose papers" turns the sidebar list into hide/show checkboxes.
 
+These predate bringing the old card's controls onto the pages. Since then the Project tab also
+carries the decision banner, project details, target editor, completion, the timeline and next
+steps, the step controls and PaperFlow map, the people on the paper, edit history and delete (and,
+for an admin, the lab-wide author nudge); the lane tabs draw the existing checklist renderer one
+branch per tab, so a slot is never locked behind its upstream and the feedback request form sits on
+Writing; the card list gained Add a project, the flat view and the sheet, the decision banners and
+blocker roll-up, and the papers that are not active. Shots 3–5 no longer match and need retaking.
+
 Driven with Playwright against system Chrome: card and tab clicks, a reload on
 `/my-work/<paper>/venue` (lands on the same tab), and Back (returns to the previous tab) were
 exercised. The gateway was not running, so the shell shows its "disconnected" pill; nothing on

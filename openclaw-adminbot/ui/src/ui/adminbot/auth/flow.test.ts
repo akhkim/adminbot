@@ -368,6 +368,7 @@ describe("memberPrivilegeLevel wiring", () => {
       myWorkProjectDraft: "A's project",
       myWorkProjectAlias: "a-private",
       myWorkProjectEdits: { a: { title: "A's title", alias: "x", startedOn: "", error: null } },
+      myWorkBlockerDraft: { paperId: "a", text: "", title: "A's blocker" },
       myProjects: [{ paper_id: "a", title: "A's project" }] as never,
       myProjectsChoosing: true,
       adminBotVenueFilter: "A's venue",
@@ -431,6 +432,7 @@ describe("memberPrivilegeLevel wiring", () => {
     expect(host.myWorkProjectDraft).toBeNull();
     expect(host.myWorkProjectAlias).toBe("");
     expect(host.myWorkProjectEdits).toEqual({});
+    expect(host.myWorkBlockerDraft).toBeNull();
     expect(host.myProjects).toBeNull();
     expect(host.myProjectsChoosing).toBe(false);
     expect(host.adminBotVenueFilter).toBe("");

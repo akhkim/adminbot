@@ -5,7 +5,6 @@
 
 import { nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
-import { isHeadProfessorViewer } from "../access.ts";
 import {
   loadAdminBot,
   loadAdminBotMemberList,
@@ -45,11 +44,7 @@ import {
   saveAdminBotOwnProfile,
 } from "../controllers/members.ts";
 import { sendAdminBotMemberNudge } from "../controllers/nudges.ts";
-import {
-  loadAdminBotPaperSlots,
-  saveAdminBotPaperSlot,
-  toggleAdminBotPaperCard,
-} from "../controllers/paper-slots.ts";
+import { loadAdminBotPaperSlots, saveAdminBotPaperSlot } from "../controllers/paper-slots.ts";
 import { deleteAdminBotPaper } from "../controllers/papers.ts";
 import { loadAdminBotRecentEdits } from "../controllers/recent-edits.ts";
 import {
@@ -58,7 +53,7 @@ import {
   submitAdminBotReimbursement,
 } from "../controllers/reimbursements.ts";
 import { saveAdminBotSettings } from "../controllers/workspace.ts";
-import { navigateToProject } from "../projects/model.ts";
+import { openPaperForViewer } from "../projects/open-paper.ts";
 import { renderAdminBot } from "../views/admin.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
@@ -181,25 +176,8 @@ export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSur
           state.adminBotPreregMissingEdit = value;
         },
         // A paper opens on its project page, the same page its authors work on -- except for the
-        // head professor, whose job here is the review rather than the authors' checklist.
-        onOpenPaperCard: (paperId) => {
-          if (
-            !isHeadProfessorViewer({
-              memberId: state.memberId,
-              headProfessorMemberId: state.adminBotData?.settings?.head_professor_member_id,
-            })
-          ) {
-            navigateToProject(state, paperId);
-            return;
-          }
-          state.adminBotPaperCardId = paperId;
-          // The card reads the paper's evidence cycle, which is fetched the first time a
-          // card is opened. Toggling it open here is what triggers that read.
-          if (!state.adminBotPaperSlotsOpen.includes(paperId)) {
-            void toggleAdminBotPaperCard(state, paperId).finally(() => requestHostUpdate?.());
-          }
-          requestHostUpdate?.();
-        },
+        // head professor, whose job here is the review, not the authors' checklist.
+        onOpenPaperCard: (paperId) => openPaperForViewer(state, paperId, requestHostUpdate),
         paperFilter: state.adminBotPaperFilter,
         onPaperFilter: (filter) => {
           state.adminBotPaperFilter = filter;

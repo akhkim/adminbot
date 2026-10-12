@@ -170,15 +170,12 @@ export type MemberAuthHost = {
   adminBotActiveCommitmentType?: string | null;
   adminBotTimeAvailabilitySaving?: boolean;
   myWorkCoauthorDraft?: Record<string, { email: string; name: string; twitter: string }>;
-  myWorkBlockerDraft?: import("../views/my-work.ts").BlockerDraft | null;
+  myWorkBlockerDraft?: import("../projects/workspace.ts").BlockerDraft | null;
   myWorkProjectDraft?: string | null;
   myWorkProjectAlias?: string;
   myWorkProjectError?: string | null;
-  myWorkProjectEdits?: Record<
-    string,
-    { title: string; alias: string; startedOn: string; error: string | null }
-  >;
-  myWorkProjectVenues?: Array<{ venueId: string; year: number; confidence: number }>;
+  myWorkProjectEdits?: Record<string, import("../projects/workspace.ts").ProjectDetailsDraft>;
+  myWorkProjectVenues?: import("../projects/workspace.ts").ProjectVenueDraft[];
   myProjects?: import("../projects/model.ts").ProjectSummary[] | null;
   myProjectsError?: string | null;
   myProjectsChoosing?: boolean;

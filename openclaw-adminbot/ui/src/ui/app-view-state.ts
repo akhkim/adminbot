@@ -727,20 +727,23 @@ export type AppViewState = {
   myProjectsError: string | null;
   /** The sidebar list is showing its hide/show checkboxes. */
   myProjectsChoosing: boolean;
-  myProjectsNewOpen: boolean;
-  myWorkBlockerDraft: import("./adminbot/views/my-work.ts").BlockerDraft | null;
-  // Non-null while the "add a project" field is open; holds what has been typed.
+  /** A blocker report being written or edited on one paper, filed onto the paper record. */
+  myWorkBlockerDraft: import("./adminbot/projects/workspace.ts").BlockerDraft | null;
+  // Non-null while the "add a project" form is open; holds what has been typed.
   myWorkProjectDraft: string | null;
   myWorkProjectAlias: string;
-  /** Why the add-project form refused, or null. */
+  /**
+   * Why the add-project form refused, or null. Every refusal says why: a bare return files nothing
+   * and says nothing, and the alias -- which becomes a Slack channel -- is the one that bites.
+   */
   myWorkProjectError: string | null;
-  /** Per-paper drafts for the card's own "project details" editor, keyed by paper id. */
+  /** Per-paper drafts for a project's own details editor, keyed by paper id. */
   myWorkProjectEdits: Record<
     string,
-    { title: string; alias: string; startedOn: string; error: string | null }
+    import("./adminbot/projects/workspace.ts").ProjectDetailsDraft
   >;
   /** Venue rows on the add-project form: a paper can be aimed at several, each with its own odds. */
-  myWorkProjectVenues: Array<{ venueId: string; year: number; confidence: number }>;
+  myWorkProjectVenues: import("./adminbot/projects/workspace.ts").ProjectVenueDraft[];
   myWorkChannelCheck: import("./adminbot/controllers/admin.ts").SlackChannelCheck;
   // Which profile section is in edit mode, if any.
   profileEditingSection: "basics" | null;

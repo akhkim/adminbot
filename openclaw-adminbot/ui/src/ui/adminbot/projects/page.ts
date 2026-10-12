@@ -1,46 +1,32 @@
-// One project's page at /my-work/<paper>/<tab>: a Project tab for the record itself, and a tab
-// per lane holding that lane's checklist as a plain form.
+// One project's page at /my-work/<paper>/<tab>: a Project tab for the record itself, and a tab per
+// lane holding that lane's checklist.
 //
 // Reads the paper from the lab list the page already holds and its checklist from the per-paper
-// cycle read; every write goes through the existing controllers, so the service's own checks
-// (who may fill which slot, what shape a link must have) are the ones that apply.
+// cycle read. Every write goes through the workspace props (surfaces/projects.ts), so the service's
+// own checks -- who may fill which slot, what shape a link must have -- are the ones that apply.
+//
+// The Project tab carries what the old card did around the checklist: the decision banner, the
+// blockers, where the paper is aimed and whether it is finished, its details and people, the
+// timeline and next steps, the weekly log, its history, and delete. The lane tabs carry the
+// checklist itself, drawn by the same renderer the flat view uses, one branch per tab, with the
+// venue decision on Venue and the drafts and conference rows on Social.
 import { html, nothing, type TemplateResult } from "lit";
-import {
-  adminBotPaperPresentationTypes,
-  type AdminBotPaperStep,
-} from "../../../../../extensions/adminbot/src/contracts/actions.js";
-import {
-  adminBotPaperSlotRegistry,
-  adminBotPaperSlots,
-  adminBotPosterPhysicalStates,
-  isAdminBotPaperSlotSettled,
-  type AdminBotPaperSlot,
-} from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
-import type { PaperSlotRow } from "../api/papers.ts";
-import { fileBlockerInput, openEntries, resolveBlockerInput } from "../blockers.ts";
-import {
-  saveAdminBotPaper,
-  type AdminBotPaperRecord,
-  type AdminBotPaperSaveInput,
-} from "../controllers/admin.ts";
-import {
-  circulateAdminBotSocialDraft,
-  editAdminBotTrip,
-  loadAdminBotPaperSlots,
-  recordAdminBotSocialConsent,
-  saveAdminBotPaperSlot,
-  saveAdminBotPaperWeeklyUpdate,
-  saveAdminBotSocialDraft,
-  saveAdminBotTrip,
-  setAdminBotPaperAttendee,
-  setAdminBotPaperReimbursement,
-  withdrawAdminBotTrip,
-} from "../controllers/paper-slots.ts";
+import type { AdminBotPaperRecord } from "../controllers/admin.ts";
+import { isPaperCompleted } from "../paper-completion.ts";
 import { openPreRegistrationDialog } from "../pre-registration.ts";
-import { paperTripDraftFrom, renderPaperCycle } from "../views/paper-cycle.ts";
-import { renderPaperWeeklyUpdates } from "../views/paper-weekly-updates.ts";
+import { renderPaperDetails, renderPaperSlots } from "../views/paper-slots.ts";
+import { renderPaperTimeline } from "../views/paper-timeline.ts";
+import {
+  renderBlockerForm,
+  renderPaperBlockers,
+  renderReportBlockerButton,
+} from "./blocker-report.ts";
+import { renderCycle, renderWeeklyUpdates } from "./cycle.ts";
+import { renderDecisionBanners } from "./decisions.ts";
+import { renderProjectDetails } from "./details.ts";
 import {
   navigateToProject,
+  ownPapers,
   PROJECT_LANES,
   stepLabel,
   venuePosition,
@@ -49,13 +35,43 @@ import {
   type ProjectTab,
 } from "./model.ts";
 import type { ProjectsNavState } from "./nav.ts";
+import { renderNudgePanel } from "./nudge.ts";
+import { renderDeletePaper, renderHideButton, renderPaperRecentEdits } from "./paper-actions.ts";
+import {
+  renderAcceptance,
+  renderCompletion,
+  renderNextStep,
+  renderOutstanding,
+  renderStepControls,
+} from "./progress.ts";
+import { renderTarget, renderVenueTargets } from "./venues.ts";
+import type { PaperWorkspaceProps } from "./workspace.ts";
 
 type PageState = ProjectsNavState;
 
 /** Papers whose checklist this page has asked for, so a failed read is not retried every render. */
 const requested = new Set<string>();
 
-export function renderProjectPage(state: PageState, paperId: string, tab: ProjectTab) {
+/** Forgets which checklists were asked for, so the next member's pages read their own. */
+export function resetProjectPageState(): void {
+  requested.clear();
+}
+
+function requestCycle(props: PaperWorkspaceProps, paperId: string): void {
+  if (props.slots[paperId] || requested.has(paperId) || !props.onLoadSlots) {
+    return;
+  }
+  requested.add(paperId);
+  // Out of the render pass: a read that settles synchronously in a test would re-enter Lit.
+  queueMicrotask(() => props.onLoadSlots?.(paperId));
+}
+
+export function renderProjectPage(
+  state: PageState,
+  props: PaperWorkspaceProps,
+  paperId: string,
+  tab: ProjectTab,
+) {
   const paper = state.adminBotData?.papers?.find((candidate) => candidate.id === paperId);
   if (!paper) {
     return html`<p class="projects__empty">
@@ -63,35 +79,61 @@ export function renderProjectPage(state: PageState, paperId: string, tab: Projec
       <a href="#" @click=${(event: Event) => back(event, state)}>Back to your projects</a>
     </p>`;
   }
-  if (!requested.has(paperId)) {
-    requested.add(paperId);
-    void loadAdminBotPaperSlots(state, paperId).finally(() => state.requestUpdate?.());
-  }
+  requestCycle(props, paperId);
   const summary = state.myProjects?.find((project) => project.paper_id === paperId);
   const lane = PROJECT_LANES.find((candidate) => candidate.segment === tab);
+  const own = ownPapers(state).some((candidate) => candidate.id === paper.id);
+  const cycle = props.slots[paper.id];
   return html`<section class="project" data-testid=${`project-${paperId}`}>
     <a class="project__back" href="#" @click=${(event: Event) => back(event, state)}
       >‹ My projects</a
     >
     <header class="project__head">
-      <h2>${paper.title}</h2>
+      <h2>
+        ${paper.title}
+        ${isPaperCompleted(paper)
+          ? html`<span class="my-work-item__badge" data-testid=${`my-work-done-badge-${paper.id}`}
+              >Completed</span
+            >`
+          : nothing}
+      </h2>
       <p>
         ${paper.alias ? html`<span class="project__alias">#${paper.alias}</span>` : nothing}
         ${summary ? venuePosition(summary) : paper.venue || "No venue picked yet"} ·
         ${stepLabel(paper.current_step)}
       </p>
+      <p class="project__meta">${(paper.authors ?? []).join(", ")}</p>
+      <div class="project__actions">
+        ${renderReportBlockerButton(state, props, paper)}
+        ${own ? renderHideButton(props, paper) : nothing}
+      </div>
     </header>
+    ${renderPaperBlockers(state, props, paper)} ${renderBlockerForm(state, props, paper)}
     <nav class="project__tabs" role="tablist">
       ${renderTabLink(state, paperId, "project", "Project", tab, undefined)}
       ${PROJECT_LANES.map((candidate) =>
         renderTabLink(state, paperId, candidate.segment, candidate.label, tab, summary, candidate),
       )}
     </nav>
-    ${state.adminBotPaperSlotsError
-      ? html`<p class="project__error" role="alert">${state.adminBotPaperSlotsError}</p>`
+    ${props.slotsError
+      ? html`<p class="project__error my-work__error-line" role="alert">
+          ${props.slotsError}
+          ${!cycle && props.onLoadSlots
+            ? html`<button
+                type="button"
+                class="btn btn--sm"
+                data-testid="project-retry"
+                @click=${() => props.onLoadSlots?.(paper.id)}
+              >
+                Retry
+              </button>`
+            : nothing}
+        </p>`
       : nothing}
     <div class="project__body">
-      ${lane ? renderLaneTab(state, paper, lane) : renderProjectTab(state, paper, summary)}
+      ${lane
+        ? renderLaneTab(state, props, paper, lane)
+        : renderProjectTab(state, props, paper, summary, own)}
     </div>
   </section>`;
 }
@@ -127,393 +169,187 @@ function renderTabLink(
   >`;
 }
 
-/** Every write here is the whole required record plus the changed fields, as the service wants. */
-function savePaper(
-  state: PageState,
-  paper: AdminBotPaperRecord,
-  fields: Partial<AdminBotPaperSaveInput>,
-) {
-  void saveAdminBotPaper(state, {
-    id: paper.id,
-    title: paper.title,
-    authors: paper.authors ?? [],
-    currentStep: paper.current_step as AdminBotPaperStep,
-    ...fields,
-  }).then(() => {
-    state.myProjects = null;
-    state.requestUpdate?.();
-  });
-}
-
 // ---------------------------------------------------------------- Project tab
 
-function renderProjectTab(
+function renderOpenWork(
   state: PageState,
+  props: PaperWorkspaceProps,
   paper: AdminBotPaperRecord,
   summary: ProjectSummary | undefined,
 ) {
-  const cycle = state.adminBotPaperSlots[paper.id];
-  const blockers = openEntries(paper);
-  const viewer = state.memberId ?? "";
+  if (summary?.todos.length) {
+    return html`<ul class="project__todos">
+      ${summary.todos.map((todo) => {
+        const lane = PROJECT_LANES.find((candidate) => candidate.branch === todo.lane);
+        return html`<li class=${todo.ready ? "is-ready" : "is-waiting"}>
+          <span class="lane-dot lane-dot--${todo.lane}" aria-hidden="true"></span>
+          <a
+            href="#"
+            @click=${(event: Event) => {
+              event.preventDefault();
+              navigateToProject(state, paper.id, lane?.segment ?? "project");
+            }}
+            >${todo.label}</a
+          >
+          <small>${todo.ready ? "can be done now" : `waiting · ${lane?.label ?? ""}`}</small>
+        </li>`;
+      })}
+    </ul>`;
+  }
+  // Not one of the viewer's active projects -- finished, rejected, dormant, or somebody else's
+  // paper opened from Active Papers -- so the sidebar summary does not carry it. The service's
+  // overview row still says how it stands.
+  const row = props.overview.find((candidate) => candidate.paper_id === paper.id);
+  return row ? html`<p>${renderOutstanding(row)}</p>` : html`<p>Nothing open.</p>`;
+}
+
+function renderProjectTab(
+  state: PageState,
+  props: PaperWorkspaceProps,
+  paper: AdminBotPaperRecord,
+  summary: ProjectSummary | undefined,
+  own: boolean,
+) {
+  const cycle = props.slots[paper.id];
   return html`
+    ${own ? renderDecisionBanners([paper], props, state.adminBotData?.members ?? []) : nothing}
     <div class="project__grid">
       <section class="project__panel">
         <h3>What is open</h3>
-        ${summary?.todos.length
-          ? html`<ul class="project__todos">
-              ${summary.todos.map((todo) => {
-                const lane = PROJECT_LANES.find((candidate) => candidate.branch === todo.lane);
-                return html`<li class=${todo.ready ? "is-ready" : "is-waiting"}>
-                  <span class="lane-dot lane-dot--${todo.lane}" aria-hidden="true"></span>
-                  <a
-                    href="#"
-                    @click=${(event: Event) => {
-                      event.preventDefault();
-                      navigateToProject(state, paper.id, lane?.segment ?? "project");
-                    }}
-                    >${todo.label}</a
-                  >
-                  <small
-                    >${todo.ready ? "can be done now" : `waiting · ${lane?.label ?? ""}`}</small
-                  >
-                </li>`;
-              })}
-            </ul>`
-          : html`<p>Nothing open.</p>`}
+        ${renderOpenWork(state, props, paper, summary)}
       </section>
-      <section class="project__panel">
+      <section class="project__panel" data-testid="project-target">
         <h3>Where it is going</h3>
         <p>${summary ? venuePosition(summary) : paper.venue || "No venue picked yet"}</p>
-        <button
-          type="button"
-          class="btn"
-          data-testid="project-prereg"
-          @click=${() =>
-            openPreRegistrationDialog({
-              papers: [paper],
-              onSavePaper: (input) => savePaper(state, paper, input),
-              onDone: () => state.requestUpdate?.(),
-            })}
-        >
-          Pre-register venues
-        </button>
-        ${paper.venue_decision === "accept"
-          ? html`<button
-              type="button"
-              class="btn"
-              @click=${() =>
-                savePaper(state, paper, {
-                  completedAt: paper.artifacts?.completed_at ? "" : new Date().toISOString(),
-                })}
-            >
-              ${paper.artifacts?.completed_at ? "Reopen project" : "Mark project complete"}
-            </button>`
-          : nothing}
+        ${renderVenueTargets(paper)} ${renderTarget(paper, props)}
+        <div>
+          <button
+            type="button"
+            class="btn btn--sm"
+            data-testid="project-prereg"
+            @click=${() =>
+              openPreRegistrationDialog({
+                papers: [paper],
+                onSavePaper: props.onSavePaper,
+                onDone: () => props.onRerender?.(),
+              })}
+          >
+            Pre-register venues
+          </button>
+        </div>
+        ${renderCompletion(paper, props)}
       </section>
       <section class="project__panel">
-        <h3>Blockers</h3>
-        ${blockers.map(
-          (entry) => html`<div class="project__blocker">
-            <strong>${entry.title}</strong> <small>${entry.note}</small>
-            <button
-              type="button"
-              class="btn"
-              @click=${() =>
-                void saveAdminBotPaper(state, resolveBlockerInput(paper, entry.at, viewer))}
-            >
-              Resolved
-            </button>
-          </div>`,
-        )}
-        <form
-          class="project__form"
-          @submit=${(event: SubmitEvent) => {
-            event.preventDefault();
-            const form = event.currentTarget as HTMLFormElement;
-            const data = new FormData(form);
-            const title = String(data.get("title") ?? "").trim();
-            if (!title) {
-              return;
-            }
-            void saveAdminBotPaper(
-              state,
-              fileBlockerInput(paper, {
-                stage: paper.current_step,
-                title,
-                note: String(data.get("note") ?? "").trim(),
-                by: viewer,
-              }),
-            );
-            form.reset();
-          }}
-        >
-          <input name="title" placeholder="What is stuck?" maxlength="70" />
-          <input name="note" placeholder="Details (optional)" />
-          <button type="submit" class="btn">Report a blocker</button>
-        </form>
+        <h3>Progress</h3>
+        ${renderNextStep(paper)} ${renderStepControls(paper, props)}
       </section>
     </div>
+    ${renderPaperTimeline({ paperId: paper.id, slots: cycle?.slots ?? [], paper })}
+    ${renderProjectDetails(state, props, paper)}
+    <section class="project__panel" data-testid="project-people">
+      ${renderPaperDetails({
+        paperId: paper.id,
+        details: {
+          authors: paper.authors ?? [],
+          // The picker renders when the roster is on hand; without it the block falls back to the
+          // old text box rather than an author list nobody can add to.
+          authorLinks: paper.author_links ?? [],
+          members: (state.adminBotData?.members ?? []).map((member) =>
+            member.email
+              ? { id: member.id, name: member.name, hint: member.email }
+              : { id: member.id, name: member.name },
+          ),
+          coauthorDraft: state.myWorkCoauthorDraft?.[paper.id] ?? {
+            email: "",
+            name: "",
+            twitter: "",
+          },
+          onCoauthorDraftChange: (draft) => {
+            const current = state.myWorkCoauthorDraft?.[paper.id] ?? {
+              email: "",
+              name: "",
+              twitter: "",
+            };
+            state.myWorkCoauthorDraft = {
+              ...state.myWorkCoauthorDraft,
+              [paper.id]: { ...current, ...draft },
+            };
+            props.onRerender?.();
+          },
+          feedbackGivers: paper.feedback_givers ?? [],
+          venue: paper.venue ?? paper.artifacts?.conference ?? "",
+          authorRoles: paper.author_roles ?? "",
+          // The same paper save every other control here uses, so the people and the step pointer
+          // cannot end up on different records.
+          onSaveDetails: (details) =>
+            props.onSavePaper({
+              id: paper.id,
+              title: paper.title,
+              authors: details.authors,
+              // The links are the author list now; `authors` rides along for an older service.
+              ...(details.authorLinks ? { authorLinks: details.authorLinks } : {}),
+              feedbackGivers: details.feedbackGivers,
+              venue: details.venue,
+              authorRoles: details.authorRoles,
+              currentStep: paper.current_step,
+            }),
+        },
+      })}
+    </section>
     ${cycle
       ? html`<section class="project__panel">
           <h3>Weekly updates</h3>
-          ${renderPaperWeeklyUpdates({
-            paperId: paper.id,
-            updates: cycle.weeklyUpdates,
-            ...(state.memberId ? { memberId: state.memberId } : {}),
-            onSave: (body) =>
-              void saveAdminBotPaperWeeklyUpdate(state, paper.id, body).finally(() =>
-                state.requestUpdate?.(),
-              ),
-            busy: state.adminBotPaperSlotsBusyId === paper.id,
-          })}
+          ${renderWeeklyUpdates(paper, props)}
         </section>`
       : nothing}
+    ${renderNudgePanel(props)}
+    <!-- Who moved this paper, and when, then the one destructive control: last, so it is not
+         something to hit while scrolling. -->
+    ${renderPaperRecentEdits(state, props, paper)} ${renderDeletePaper(paper, props)}
   `;
 }
 
 // ---------------------------------------------------------------- lane tabs
 
-function renderLaneTab(state: PageState, paper: AdminBotPaperRecord, lane: ProjectLane) {
-  const cycle = state.adminBotPaperSlots[paper.id];
-  if (!cycle) {
-    return html`<p class="projects__empty">Loading this paper's checklist…</p>`;
-  }
-  const rows = new Map(cycle.slots.map((row) => [row.slot, row]));
-  const slots = adminBotPaperSlots.filter(
-    (slot) => adminBotPaperSlotRegistry[slot].branch === lane.branch,
-  );
+function renderLaneTab(
+  state: PageState,
+  props: PaperWorkspaceProps,
+  paper: AdminBotPaperRecord,
+  lane: ProjectLane,
+) {
+  const cycle = props.slots[paper.id];
   const extra: TemplateResult | typeof nothing =
     lane.branch === "venue"
-      ? renderVenueDecision(state, paper, cycle.stages)
+      ? html`<section class="project__panel">
+          <h3>Venue decision</h3>
+          ${renderAcceptance(paper, props)}
+        </section>`
       : lane.branch === "social"
-        ? renderCycle(state, paper)
+        ? renderCycle(state, paper, props)
         : nothing;
   return html`<p class="project__legend">${lane.legend}.</p>
-    <div class="project__slots">
-      ${slots.map((slot) => renderSlot(state, paper.id, slot, rows))}
-    </div>
+    ${cycle
+      ? renderPaperSlots({
+          paperId: paper.id,
+          paperTitle: paper.title,
+          slots: cycle.slots,
+          stages: cycle.stages,
+          loading: props.slotsBusyId === paper.id,
+          onSaveSlot: (slot, input) => props.onSaveSlot(paper.id, slot, input),
+          branch: lane.branch,
+          // "Write the draft" on a social gate opens the drafts below it on the same tab.
+          ...(lane.branch === "social"
+            ? {
+                onOpenDraft: () => {
+                  const el = document.getElementById(`paper-social-drafts-${paper.id}`);
+                  if (el instanceof HTMLDetailsElement) {
+                    el.open = true;
+                    el.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }
+                },
+              }
+            : {}),
+        })
+      : html`<p class="projects__empty">Loading this paper's checklist…</p>`}
     ${extra}`;
-}
-
-const STATUS_TEXT: Record<PaperSlotRow["status"], string> = {
-  missing: "Open",
-  provided: "Done",
-  invalid: "Needs fixing",
-  waived: "Waived",
-};
-
-function renderSlot(
-  state: PageState,
-  paperId: string,
-  slot: AdminBotPaperSlot,
-  rows: Map<string, PaperSlotRow>,
-) {
-  const definition = adminBotPaperSlotRegistry[slot];
-  const row = rows.get(slot) ?? { paper_id: paperId, slot, status: "missing" as const };
-  const settled = (name: string) => isAdminBotPaperSlotSettled(rows.get(name)?.status ?? "missing");
-  const waitingOn = definition.upstream.filter((name) => !settled(name));
-  const blocked = waitingOn.length > 0;
-  const busy = state.adminBotPaperSlotsBusyId === paperId;
-  const save = (input: {
-    url?: string;
-    value_text?: string;
-    value_note?: string;
-    done?: boolean;
-  }) =>
-    void saveAdminBotPaperSlot(state, paperId, slot, input).finally(() => {
-      state.myProjects = null;
-      state.requestUpdate?.();
-    });
-  const submit = (event: SubmitEvent) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget as HTMLFormElement);
-    const value = String(data.get("value") ?? "").trim();
-    const note = String(data.get("note") ?? "").trim();
-    if (definition.kind === "link" || definition.kind === "feedback") {
-      save({ url: value });
-    } else if (definition.kind === "enum") {
-      save({ value_text: value, value_note: note });
-    } else {
-      save({ value_text: value });
-    }
-  };
-  let control: TemplateResult;
-  if (definition.derived) {
-    control = html`<small>Ticks itself once a draft below is approved.</small>`;
-  } else if (definition.kind === "bool") {
-    control = html`<label class="project__check">
-      <input
-        type="checkbox"
-        .checked=${settled(slot)}
-        ?disabled=${blocked || busy}
-        @change=${(event: Event) => save({ done: (event.target as HTMLInputElement).checked })}
-      />
-      Done
-    </label>`;
-  } else {
-    const input =
-      definition.kind === "enum"
-        ? html`<select name="value" ?disabled=${blocked}>
-              ${adminBotPosterPhysicalStates.map(
-                (option) =>
-                  html`<option value=${option} ?selected=${row.value_text === option}>
-                    ${option.replaceAll("_", " ")}
-                  </option>`,
-              )}
-            </select>
-            <input
-              name="note"
-              placeholder="Where it is"
-              .value=${row.value_note ?? ""}
-              ?disabled=${blocked}
-            />`
-        : html`<input
-            name="value"
-            type=${definition.kind === "secret6"
-              ? "password"
-              : definition.kind === "text"
-                ? "text"
-                : "url"}
-            .value=${definition.kind === "secret6" ? "" : (row.url ?? row.value_text ?? "")}
-            placeholder=${definition.example ?? ""}
-            ?disabled=${blocked}
-          />`;
-    control = html`<form class="project__slot-form" @submit=${submit}>
-      ${input}<button type="submit" class="btn" ?disabled=${blocked || busy}>Save</button>
-    </form>`;
-  }
-  return html`<div
-    class="project__slot is-${row.status} ${definition.subOf ? "is-child" : ""}"
-    data-testid=${`project-slot-${slot}`}
-  >
-    <div class="project__slot-head">
-      <span class="project__slot-label">${definition.label}</span>
-      <span class="project__status">${STATUS_TEXT[row.status]}</span>
-    </div>
-    ${row.status === "invalid" && row.invalid_reason
-      ? html`<small class="project__error">${row.invalid_reason}</small>`
-      : nothing}
-    ${blocked
-      ? html`<small
-          >Waits on
-          ${waitingOn.map((name) => adminBotPaperSlotRegistry[name].label).join(", ")}</small
-        >`
-      : nothing}
-    ${control}
-  </div>`;
-}
-
-function renderVenueDecision(
-  state: PageState,
-  paper: AdminBotPaperRecord,
-  stages: Array<{ stage: string; label: string; state: string }>,
-) {
-  const decision = paper.venue_decision ?? "pending";
-  const field = (key: keyof AdminBotPaperSaveInput) => (event: Event) =>
-    savePaper(state, paper, { [key]: (event.target as HTMLInputElement).value });
-  return html`<section class="project__panel">
-    <h3>Venue decision</h3>
-    <div class="project__decision">
-      <label
-        >Decision
-        <select @change=${field("venueDecision")} data-testid="project-decision">
-          ${["pending", "accept", "reject"].map(
-            (value) =>
-              html`<option value=${value} ?selected=${decision === value}>${value}</option>`,
-          )}
-        </select></label
-      >
-      ${decision === "accept"
-        ? html`<label
-              >Venue <input .value=${paper.accepted_venue ?? ""} @change=${field("acceptedVenue")}
-            /></label>
-            <label
-              >Year
-              <input
-                type="number"
-                .value=${String(paper.accepted_year ?? "")}
-                @change=${field("acceptedYear")}
-            /></label>
-            <label
-              >Archival
-              <select @change=${field("isArchival")}>
-                <option value="" ?selected=${paper.is_archival === undefined}>Not said</option>
-                <option value="true" ?selected=${paper.is_archival === true}>Archival</option>
-                <option value="false" ?selected=${paper.is_archival === false}>Non-archival</option>
-              </select></label
-            >
-            <label
-              >Presentation
-              <select @change=${field("presentationType")}>
-                <option value="">Not said</option>
-                ${adminBotPaperPresentationTypes.map(
-                  (type) =>
-                    html`<option value=${type} ?selected=${paper.presentation_type === type}>
-                      ${type}
-                    </option>`,
-                )}
-              </select></label
-            >`
-        : nothing}
-    </div>
-    ${stages.length
-      ? html`<ol class="project__stages">
-          ${stages.map((stage) => html`<li class="is-${stage.state}">${stage.label}</li>`)}
-        </ol>`
-      : nothing}
-  </section>`;
-}
-
-/** Social drafts, coauthor sign-off, and the conference roll call: the existing cycle panel. */
-function renderCycle(state: PageState, paper: AdminBotPaperRecord) {
-  const cycle = state.adminBotPaperSlots[paper.id];
-  if (!cycle) {
-    return nothing;
-  }
-  const done = () => state.requestUpdate?.();
-  const names = new Map(
-    (state.adminBotData?.members ?? []).map((member) => [member.id, member.name]),
-  );
-  return renderPaperCycle({
-    paperId: paper.id,
-    drafts: cycle.drafts,
-    consents: cycle.consents,
-    attendees: cycle.attendees,
-    reimbursements: cycle.reimbursements,
-    conferenceOpen:
-      paper.venue_decision === "accept" && cycle.missingAcceptanceDetails.length === 0,
-    missingAcceptanceDetails: cycle.missingAcceptanceDetails,
-    cycleClosed: cycle.cycleClosed,
-    // The reader's own trip, once the service has named the conference this paper goes to.
-    ...(cycle.conferenceKey ? tripProps(state, cycle.conferenceKey, cycle.myTrip ?? null) : {}),
-    memberId: state.memberId ?? null,
-    memberName: (memberId) => names.get(memberId) ?? memberId,
-    onSaveDraft: (platform, body) =>
-      void saveAdminBotSocialDraft(state, paper.id, platform, body).finally(done),
-    onCirculateDraft: (draftId) =>
-      void circulateAdminBotSocialDraft(state, paper.id, draftId).finally(done),
-    onConsent: (draftId, decision, comment) =>
-      void recordAdminBotSocialConsent(state, paper.id, draftId, decision, comment).finally(done),
-    onSetAttendee: (name, memberId, attending) =>
-      void setAdminBotPaperAttendee(state, paper.id, name, memberId, attending).finally(done),
-    onSetReimbursement: (memberId, status) =>
-      void setAdminBotPaperReimbursement(state, paper.id, memberId, status).finally(done),
-  });
-}
-
-function tripProps(state: PageState, key: string, trip: Parameters<typeof paperTripDraftFrom>[0]) {
-  const base = paperTripDraftFrom(trip);
-  const done = () => state.requestUpdate?.();
-  return {
-    myTrip: trip,
-    tripDraft: state.adminBotTripDrafts[key] ?? base,
-    tripSaving: state.adminBotTripSavingKey === key,
-    onEditTrip: (patch: Parameters<typeof editAdminBotTrip>[2]) => {
-      editAdminBotTrip(state, key, patch, base);
-      done();
-    },
-    onSaveTrip: () =>
-      void saveAdminBotTrip(state, key, state.adminBotTripDrafts[key] ?? base).finally(done),
-    onWithdrawTrip: () => void withdrawAdminBotTrip(state, key).finally(done),
-  };
 }

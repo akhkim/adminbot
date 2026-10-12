@@ -7,16 +7,18 @@ import type { AdminBotPaperSlotBranch } from "../../../../../extensions/adminbot
 import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
 import type { AdminBotMyProjectSummary } from "../../../../../extensions/adminbot/src/workflows/papers/my-projects.js";
 import type { AppViewState } from "../../app-view-state.ts";
-import type { AdminBotPaperRecord, AdminBotPaperStep } from "../controllers/admin.ts";
+import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { paperSteps, stepLabels } from "../views/admin.ts";
 import { findOwnMember } from "../views/profile.ts";
 
 export type { AdminBotMyProjectSummary as ProjectSummary };
 
+export type ProjectLaneSegment = "writing" | "venue" | "archival" | "talk" | "social";
+
 export type ProjectLane = {
   branch: AdminBotPaperSlotBranch;
   /** The tab's URL segment. */
-  segment: string;
+  segment: ProjectLaneSegment;
   label: string;
   /** The hover legend on a lane dot. */
   legend: string;
@@ -56,7 +58,7 @@ export const PROJECT_LANES: readonly ProjectLane[] = [
   },
 ];
 
-export type ProjectTab = "project" | ProjectLane["segment"];
+export type ProjectTab = "project" | ProjectLaneSegment;
 
 export type ProjectRoute = { paperId: string | null; tab: ProjectTab };
 
@@ -155,7 +157,7 @@ export function ownPapers(state: AppViewState): AdminBotPaperRecord[] {
 
 // Progress is position in the PaperPublish pipeline, not a number someone types.
 export function paperProgress(paper: AdminBotPaperRecord): { index: number; percent: number } {
-  const index = paperSteps.indexOf(paper.current_step as AdminBotPaperStep);
+  const index = paperSteps.indexOf(paper.current_step);
   if (index < 0) {
     return { index: -1, percent: 0 };
   }
