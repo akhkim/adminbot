@@ -205,6 +205,7 @@ import {
 import { needsLabPapers } from "./adminbot/papers-required.ts";
 import { needsLabRoster } from "./adminbot/roster-required.ts";
 import { renderAdminBot, type AdminBotPanel } from "./adminbot/views/admin.ts";
+import { renderArrReviewers } from "./adminbot/views/arr-reviewers.ts";
 import {
   renderChangePasswordPopover,
   renderChangePasswordTrigger,
@@ -2849,7 +2850,9 @@ export function renderApp(state: AppViewState) {
   // Meeting Recordings joins this for the same reason: its admin attendance editor lists every
   // member, including the ones no import found, so it needs the roster while rendering its own view.
   const wantsRosterOnly =
-    state.tab === "adminbotTimeAvailability" || state.tab === "adminbotMeetings";
+    state.tab === "adminbotTimeAvailability" ||
+    state.tab === "adminbotMeetings" ||
+    state.tab === "adminbotArrReviewers";
   const wantsGatewayAdminBotLoad =
     ((isChat && isAdminBotChat) || adminBotPanel || wantsRosterOnly) && state.connected;
   const needsFirstPaperRead =
@@ -3802,6 +3805,23 @@ export function renderApp(state: AppViewState) {
               },
               onExport: () => {
                 void exportAdminBotTabUsage(state).finally(() => requestHostUpdate?.());
+              },
+            })
+          : nothing}
+        ${state.tab === "adminbotArrReviewers" && !rosterPendingForTab
+          ? renderArrReviewers({
+              members: state.adminBotData.members,
+              loading: hasMemberSession ? state.adminBotRosterLoading : state.adminBotLoading,
+              error: hasMemberSession ? state.adminBotRosterError : state.adminBotError,
+              onRefresh: () => {
+                if (hasMemberSession) {
+                  state.adminBotRosterLoadedAt = null;
+                  void loadAdminBotRoster(state).finally(() => requestHostUpdate?.());
+                } else {
+                  void loadAdminBot(state, adminBotMode, false).finally(() =>
+                    requestHostUpdate?.(),
+                  );
+                }
               },
             })
           : nothing}

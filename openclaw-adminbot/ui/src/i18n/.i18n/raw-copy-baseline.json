@@ -3832,6 +3832,55 @@
     },
     {
       "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/arr-reviewers.ts",
+      "text": "ARR Eligible Reviewers"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/arr-reviewers.ts",
+      "text": "Loading reviewers…"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/arr-reviewers.ts",
+      "text": "Name"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/arr-reviewers.ts",
+      "text": "No users have confirmed ARR reviewer qualification yet."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/arr-reviewers.ts",
+      "text": "Papers they can review"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/arr-reviewers.ts",
+      "text": "Qualification and review capacity are self-reported in My Profile."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/arr-reviewers.ts",
+      "text": "Refresh"
+    },
+    {
+      "count": 1,
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/badge-tier-rows.ts",
@@ -6565,7 +6614,28 @@
       "kind": "html-attribute",
       "name": "aria-label",
       "path": "ui/src/ui/adminbot/views/member-guide-status.ts",
+      "text": "Confirm onboarding email"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/member-guide-status.ts",
       "text": "Onboarding email status"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-guide-status.ts",
+      "text": "Cancel"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/member-guide-status.ts",
+      "text": "Confirm"
     },
     {
       "count": 1,
@@ -8035,13 +8105,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Asked separately from the money: you might need no funding and still want to stay with everyone."
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Confirmed attendees / dates"
     },
     {
@@ -8119,7 +8182,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "I want a bed in whatever the lab books"
+      "text": "I’d like a place in the lab’s shared accommodation"
     },
     {
       "count": 1,
@@ -8211,6 +8274,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Say so early — these take weeks to arrange."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Select this even if you do not need funding. Your request applies to this conference and year; enter the dates you need accommodation below."
     },
     {
       "count": 1,
