@@ -66,27 +66,6 @@ describe("deadline proposal validation", () => {
 });
 
 describe("AdminBot deadline proposal store", () => {
-  it.each([
-    ["old HTML page", () => new Response("<html>Deadlines</html>")],
-    ["missing route", () => new Response("Not found", { status: 404 })],
-    ["null payload", () => new Response("null")],
-  ])("falls back to the legacy dataset for a %s", async (_name, response) => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(response())
-      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ id: "legacy" }] })));
-    const store = new AdminBotDeadlineProposalStore(
-      () => "https://admin.example",
-      () => undefined,
-      fetchImpl,
-    );
-    await expect(store.listPublished()).resolves.toEqual([{ id: "legacy" }]);
-    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
-      "https://admin.example/deadlines",
-      "https://admin.example/deadlines/venues.json",
-    ]);
-  });
-
   it("keeps an empty current dataset without falling back", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [] })));
     const store = new AdminBotDeadlineProposalStore(
@@ -108,7 +87,7 @@ describe("AdminBot deadline proposal store", () => {
     await expect(store.listPublished()).rejects.toThrow("invalid dataset");
   });
 
-  it.each([401, 403, 500])("does not hide HTTP %s with a legacy fallback", async (status) => {
+  it.each([401, 403, 404, 500])("does not hide HTTP %s with a legacy fallback", async (status) => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response("{}", { status }));
     const store = new AdminBotDeadlineProposalStore(
       () => "https://admin.example",

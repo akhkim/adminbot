@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { live } from "lit/directives/live.js";
 import { t } from "../../../i18n/index.ts";
 import { todayIso, type TripRow, type WhereBin } from "../data/availability.ts";
 import { timezoneForLocation } from "../data/timezone-for-location.ts";
@@ -227,14 +228,22 @@ export function renderTrips(props: TripsProps) {
               <label class="adminbot-form__field">
                 <span>${t("adminbotTimeAvailability.trips.from")}</span>
                 ${renderDateControl(
-                  html`<input type="date" .value=${props.draft.start} @input=${field("start")} />`,
+                  html`<input
+                    type="date"
+                    .value=${live(props.draft.start)}
+                    @input=${field("start")}
+                  />`,
                   props.draft.start,
                 )}
               </label>
               <label class="adminbot-form__field">
                 <span>${t("adminbotTimeAvailability.trips.to")}</span>
                 ${renderDateControl(
-                  html`<input type="date" .value=${props.draft.end} @input=${field("end")} />`,
+                  html`<input
+                    type="date"
+                    .value=${live(props.draft.end)}
+                    @input=${field("end")}
+                  />`,
                   props.draft.end,
                 )}
               </label>

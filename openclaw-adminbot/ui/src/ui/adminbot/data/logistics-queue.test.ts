@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LogisticsRequest } from "../auth/session.ts";
+import type { LogisticsRequest } from "../api/logistics.ts";
 import {
   DEFAULT_LOGISTICS_QUEUE_OPTIONS,
   logisticsDeadlineText,

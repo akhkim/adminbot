@@ -2,12 +2,10 @@
 // My Desk: what lands in each queue, and what does not.
 import { render } from "lit";
 import { afterEach, describe, expect, it } from "vitest";
-import type {
-  EscalatedNudgeRow,
-  LogisticsRequest,
-  MemberProfileOverviewRow,
-  PiReviewRow,
-} from "../auth/session.ts";
+import type { LogisticsRequest } from "../api/logistics.ts";
+import type { MemberProfileOverviewRow } from "../api/members.ts";
+import type { EscalatedNudgeRow } from "../api/nudges.ts";
+import type { PiReviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import {
   incompleteProfiles,
@@ -864,6 +862,17 @@ describe("the papers waiting on her yes", () => {
     expect(section?.textContent).toContain("paper password still missing");
     // Still listed: the missing password is the authors' errand, not a reason to stall her yes.
     expect(section?.textContent).toContain("Causal Garden Planning");
+  });
+
+  it("opens the selected paper in place on the PI page", () => {
+    const selected: string[] = [];
+    const onOpenPaper = (id: string) => selected.push(id);
+    const { container, opened } = draw({ piReview: [row()], onOpenPaper });
+    container
+      .querySelector<HTMLButtonElement>("#professor-list-pi-review .professor__row")!
+      .click();
+    expect(selected).toEqual(["p1"]);
+    expect(opened).toEqual([]);
   });
 
   it("leads the page when something is waiting on her", () => {

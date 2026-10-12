@@ -110,6 +110,31 @@ export default defineToolPlugin({
         paperId: Type.Optional(Type.String()),
         title: Type.Optional(Type.String()),
         summary: Type.String({ minLength: 1 }),
+        xThread: Type.Optional(
+          Type.Object({
+            stage: Type.Union([
+              Type.Literal("arxiv"),
+              Type.Literal("acceptance"),
+              Type.Literal("attendance"),
+              Type.Literal("poster"),
+            ]),
+            posts: Type.Array(
+              Type.Object({
+                text: Type.String({ minLength: 1 }),
+                images: Type.Optional(
+                  Type.Array(
+                    Type.Object({
+                      data_uri: Type.String(),
+                      alt_text: Type.String({ minLength: 1, maxLength: 1000 }),
+                    }),
+                    { maxItems: 4 },
+                  ),
+                ),
+              }),
+              { minItems: 1, maxItems: 100 },
+            ),
+          }),
+        ),
         url: Type.Optional(Type.String()),
         authors: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
         tone: Type.Optional(Type.String()),
@@ -494,6 +519,7 @@ export default defineToolPlugin({
         title: Type.String(),
         authors: Type.Array(Type.String()),
         currentStep: paperStepSchema,
+        venue: Type.Optional(Type.String()),
         venueDecision: Type.Optional(paperVenueDecisionSchema),
         acceptedVenue: Type.Optional(Type.String()),
         // Empty string is the explicit clear emitted by the project card's "Not said" controls.

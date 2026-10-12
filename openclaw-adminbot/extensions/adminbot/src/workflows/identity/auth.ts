@@ -1,3 +1,4 @@
+import { adminBotCalendarEmail } from "../../contracts/member-outreach-email.js";
 import {
   createHash,
   randomBytes,
@@ -1174,12 +1175,7 @@ export class AdminBotAuthService {
       }
       // The Google account first: an ACL is granted to a Google identity, and the professional
       // address on file is often a departmental alias that is not one.
-      const email = (
-        member.calendar_email ??
-        member.email ??
-        member.correspondence_email ??
-        ""
-      ).trim();
+      const email = adminBotCalendarEmail(member);
       if (!email) {
         noAddress.push({ id: member.id, name: member.name });
         continue;

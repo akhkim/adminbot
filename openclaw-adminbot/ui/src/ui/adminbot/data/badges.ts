@@ -1,24 +1,26 @@
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
-  approveBadgeNomination,
-  approveBadgeSuggestion,
   assignBadgeToMember,
   createBadge,
   fetchBadgeNominations,
   fetchBadges,
   fetchBadgeSuggestions,
-  loadStoredMemberSession,
-  rejectBadgeNomination,
-  rejectBadgeSuggestion,
   removeBadgeFromMember,
-  resolveAdminBotBaseUrl,
   submitBadgeNomination,
   submitBadgeSuggestion,
   updateBadge,
-  type AuthErrorKind,
   type BadgeDefinition,
   type BadgeDefinitionInput,
+} from "../api/badges.ts";
+import {
+  approveBadgeNomination,
+  approveBadgeSuggestion,
+  loadStoredMemberSession,
+  rejectBadgeNomination,
+  rejectBadgeSuggestion,
+  resolveAdminBotBaseUrl,
+  type AuthErrorKind,
   type BadgeNominationView,
   type BadgeSuggestionInput,
   type BadgeSuggestionView,

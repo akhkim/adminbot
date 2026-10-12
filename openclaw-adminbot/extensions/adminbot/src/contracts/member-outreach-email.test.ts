@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adminBotOutreachEmail } from "./member-outreach-email.js";
+import { adminBotCalendarEmail, adminBotOutreachEmail } from "./member-outreach-email.js";
 
 describe("adminBotOutreachEmail", () => {
   it("prefers the correspondence address over the login address", () => {
@@ -51,5 +51,34 @@ describe("adminBotOutreachEmail", () => {
   it("is empty when neither address is usable", () => {
     expect(adminBotOutreachEmail({})).toBe("");
     expect(adminBotOutreachEmail({ email: "   ", correspondence_email: "@" })).toBe("");
+  });
+});
+
+describe("calendar email fallback", () => {
+  it("prefers the explicit Calendar account, then login, then saved contact", () => {
+    expect(
+      adminBotCalendarEmail({
+        calendar_email: "calendar@example.test",
+        email: "login@example.test",
+        correspondence_email: "contact@example.test",
+      }),
+    ).toBe("calendar@example.test");
+    expect(
+      adminBotCalendarEmail({
+        calendar_email: "   ",
+        email: "login@example.test",
+        correspondence_email: "contact@example.test",
+      }),
+    ).toBe("login@example.test");
+    expect(
+      adminBotCalendarEmail({
+        email: " ",
+        correspondence_email: "contact@example.test / other@example.test",
+      }),
+    ).toBe("contact@example.test");
+    expect(adminBotCalendarEmail({ calendar_email: "bad@", email: "login@example.test" })).toBe(
+      "login@example.test",
+    );
+    expect(adminBotCalendarEmail({})).toBe("");
   });
 });

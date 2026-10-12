@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { live } from "lit/directives/live.js";
 import { i18n, t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
@@ -953,14 +954,19 @@ function renderCommitmentForm(form: CommitmentFormProps) {
         <label class="adminbot-form__field">
           <span>${t("adminbotTimeAvailability.startDate")}</span>
           ${renderDateControl(
-            html`<input type="date" .value=${draft.start} required @input=${field("start")} />`,
+            html`<input
+              type="date"
+              .value=${live(draft.start)}
+              required
+              @input=${field("start")}
+            />`,
             draft.start,
           )}
         </label>
         <label class="adminbot-form__field">
           <span>${t("adminbotTimeAvailability.endDate")}</span>
           ${renderDateControl(
-            html`<input type="date" .value=${draft.end} required @input=${field("end")} />`,
+            html`<input type="date" .value=${live(draft.end)} required @input=${field("end")} />`,
             draft.end,
           )}
         </label>
@@ -1264,7 +1270,7 @@ function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: M
         <label class="adminbot-form__field">
           <span>${t("adminbotTimeAvailability.milestones.date")}</span>
           ${renderDateControl(
-            html`<input type="date" .value=${draft.date} @input=${field("date")} />`,
+            html`<input type="date" .value=${live(draft.date)} @input=${field("date")} />`,
             draft.date,
           )}
         </label>
@@ -1276,7 +1282,7 @@ function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: M
           <input
             type="time"
             data-testid="time-availability-milestone-time"
-            .value=${draft.time}
+            .value=${live(draft.time)}
             @input=${field("time")}
           />
         </label>

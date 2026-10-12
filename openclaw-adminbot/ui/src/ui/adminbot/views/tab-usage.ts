@@ -10,7 +10,7 @@
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
-import type { TabVisitRate, TabVisitReport } from "../auth/session.ts";
+import type { TabVisitRate, TabVisitReport } from "../api/workspace.ts";
 import { TAB_USAGE_WINDOWS } from "../controllers/tab-usage.ts";
 
 export type TabUsageViewProps = {

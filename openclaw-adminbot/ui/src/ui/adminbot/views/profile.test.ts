@@ -6,11 +6,11 @@ import {
   ADMINBOT_ELEVATOR_PITCH_MAX,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
 import {
   clearStoredMemberSession,
   saveStoredMemberSession,
   type LabMember,
-  type MemberProfileUpdate,
 } from "../auth/session.ts";
 import {
   blankFields,
@@ -593,7 +593,11 @@ describe("renderProfile autosave", () => {
         expect.stringContaining("/drive/check-edit-access"),
         expect.objectContaining({ method: "POST", credentials: "omit" }),
       );
-      expect(state.profileAccountChecks.one_on_one_folder_url).toMatchObject({ status: "warning" });
+      await vi.waitFor(() => {
+        expect(state.profileAccountChecks.one_on_one_folder_url).toMatchObject({
+          status: "warning",
+        });
+      });
       render(renderProfile(state, { onSave: vi.fn() }), container);
       await vi.advanceTimersByTimeAsync(0);
       expect(fetchMock).toHaveBeenCalledTimes(1);

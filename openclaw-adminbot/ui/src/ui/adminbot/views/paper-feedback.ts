@@ -21,8 +21,15 @@ export function renderPaperFeedback(
         <summary>${label}</summary>
         ${request
           ? html`<p role="status">
-                <strong>${t("paperFeedback.queued", { label })}</strong><br />${request.reason}
+                <strong
+                  >${request.reviewed
+                    ? "Feedback completed"
+                    : t("paperFeedback.queued", { label })}</strong
+                ><br />${request.reason}
               </p>
+              ${request.review_note
+                ? html`<p style="white-space: pre-wrap">${request.review_note}</p>`
+                : nothing}
               <p>
                 ${t("paperFeedback.soft")}
                 ${request.soft_deadline

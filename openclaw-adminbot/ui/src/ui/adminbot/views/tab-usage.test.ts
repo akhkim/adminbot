@@ -2,7 +2,7 @@
 // The read side: what the usage table says, and what it refuses to imply.
 import { render } from "lit";
 import { afterEach, describe, expect, it } from "vitest";
-import type { TabVisitRate, TabVisitReport } from "../auth/session.ts";
+import type { TabVisitRate, TabVisitReport } from "../api/workspace.ts";
 import {
   dwellLabel,
   renderAdminBotTabUsage,

@@ -40,6 +40,24 @@ describe("paper feedback requests", () => {
       ]),
     ).toEqual([]);
   });
+  it("keeps completed feedback but removes it from the pending queue", () => {
+    const value = JSON.stringify({
+      ...request,
+      reviewed: true,
+      review_note: "Ready after fixing Figure 2.",
+    });
+    const parsed = parsePaperFeedback(value);
+    expect(parsed?.review_note).toBe("Ready after fixing Figure 2.");
+    expect(
+      paperFeedbackQueue([
+        {
+          paper: { id: "p", title: "Test", authors: [] } as never,
+          slots: [{ paper_id: "p", slot: "feedback_arr", status: "provided", value_text: value }],
+        },
+      ]),
+    ).toEqual([]);
+    expect(parsePaperFeedback(JSON.stringify({ ...request, reviewed: "yes" }))).toBeNull();
+  });
   it("rejects missing reason, unsafe links, invalid times and reversed deadlines", () => {
     for (const patch of [
       { reason: "" },

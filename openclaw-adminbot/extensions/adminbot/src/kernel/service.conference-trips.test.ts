@@ -1,7 +1,7 @@
 // Signing up for a conference at the service boundary: what a member may say about their own
 // trip, and who is allowed to read what everybody else said.
 import { describe, expect, it } from "vitest";
-import { AdminBotService } from "./service.js";
+import { AdminBotMemoryStore, AdminBotService } from "./service.js";
 
 function unwrap<T>(
   result: { ok: true; payload: T } | { ok: false; error: { message: string } },
@@ -380,5 +380,69 @@ describe("withdrawConferenceTrip", () => {
         memberId: "nobody",
       }),
     ).toMatchObject({ ok: false, status: 404 });
+  });
+});
+
+describe("conference trip year aliases", () => {
+  it("combines legacy lodging answers, restores them on the paper card, and withdraws all aliases", () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    for (const id of ["ada", "bob"]) {
+      unwrap(
+        service.upsertLabMember({ id, name: id, privilege_level: "member", status: "active" }),
+      );
+    }
+    unwrap(
+      service.upsertPaper({
+        id: "revision",
+        title: "Synthetic trip",
+        authors: ["ada"],
+        accepted_venue: "NeurIPS 2026",
+        accepted_year: 2026,
+        venue_decision: "accept",
+        is_archival: true,
+        presentation_type: "poster",
+        current_step: "submission",
+      }),
+    );
+    const legacy = {
+      conference_key: "neurips2026:2026",
+      member_id: "ada",
+      intent: "going" as const,
+      funding: "none" as const,
+      needs_lodging: true,
+      needs_visa_letter: false,
+      arrival_on: "2026-12-01",
+      departure_on: "2026-12-06",
+      updated_at: "2026-10-01T00:00:00Z",
+    };
+    store.saveConferenceTrip(legacy);
+    store.saveConferenceTrip({ ...legacy, conference_key: "neurips:2026", member_id: "bob" });
+    expect(
+      unwrap(service.listPaperSlots("revision", { memberId: "ada", isAdmin: false })).my_trip,
+    ).toMatchObject({ conference_key: "neurips:2026", needs_lodging: true });
+    let rows = unwrap(service.listConferenceTravelExport()).rows;
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.conference_key === "neurips:2026")).toBe(true);
+    unwrap(
+      service.setConferenceTrip({
+        conferenceKey: "neurips2026:2026",
+        memberId: "ada",
+        intent: "going",
+        funding: "none",
+        needsLodging: false,
+      }),
+    );
+    rows = unwrap(service.listConferenceTravelExport()).rows;
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.member_id === "ada")?.needs_lodging).toBe(false);
+    expect(
+      unwrap(service.withdrawConferenceTrip({ conferenceKey: "neurips2026:2026", memberId: "ada" }))
+        .withdrawn,
+    ).toBe(true);
+    expect(store.listConferenceTrips().filter((trip) => trip.member_id === "ada")).toHaveLength(0);
+    expect(
+      unwrap(service.listPaperSlots("revision", { memberId: "ada", isAdmin: false })).my_trip,
+    ).toBeUndefined();
   });
 });

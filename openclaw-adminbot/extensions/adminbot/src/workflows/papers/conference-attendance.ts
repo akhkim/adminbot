@@ -1,3 +1,4 @@
+import type { AdminBotPaperRecord } from "../../contracts/actions.js";
 // Who is going to which conference, derived rather than remembered.
 //
 // The attendee table was a free-text list somebody had to think to fill in: no row existed until
@@ -18,8 +19,7 @@
 // does not apply here: nobody asks the external author anything. The first author answers for
 // everyone on the paper, which is what they were already doing by hand, and "the visiting coauthor
 // is presenting the poster" is exactly the fact a conference roster exists to carry.
-
-import type { AdminBotPaperRecord } from "../../contracts/actions.js";
+import type { AdminBotConferenceTripRecord } from "../../contracts/conference-trips.js";
 import {
   adminBotAttendeeKey,
   type AdminBotAttendanceState,
@@ -163,15 +163,44 @@ export type ConferenceAttendanceView = {
 /**
  * The key two spellings of the same conference have to agree on.
  *
- * Case and punctuation only. Nothing tries to know that "EMNLP" and "Conference on Empirical
+ * Case, punctuation and a repeated matching year only. City/track words stay distinct. Nothing tries to know that "EMNLP" and "Conference on Empirical
  * Methods in NLP" are the same event: guessing that wrong merges two conferences into one roster,
  * which is worse than showing two rows an admin can see are the same.
  */
 export function conferenceKey(venue: string, year: number): string {
-  return `${venue
+  const normalized = venue
     .trim()
     .toLocaleLowerCase()
-    .replace(/[^a-z0-9]+/gu, "")}:${year}`;
+    .replace(/[^a-z0-9]+/gu, "");
+  // Acceptance forms sometimes include the year in both fields. Keep other years and tracks.
+  const suffix = String(year);
+  const family = normalized.endsWith(suffix) ? normalized.slice(0, -suffix.length) : normalized;
+  return `${family || normalized}:${year}`;
+}
+
+export function canonicalConferenceTripKey(key: string): string {
+  const match = /^(.*):(\d{4})$/u.exec(key.trim());
+  return match ? conferenceKey(match[1], Number(match[2])) : key.trim();
+}
+
+/** Old keys remain stored; the latest explicit answer wins for one member/event. */
+export function canonicalConferenceTrips(
+  trips: readonly AdminBotConferenceTripRecord[],
+): AdminBotConferenceTripRecord[] {
+  const latest = new Map<string, AdminBotConferenceTripRecord>();
+  for (const trip of trips) {
+    const conference_key = canonicalConferenceTripKey(trip.conference_key);
+    const key = `${conference_key}/member:${trip.member_id}`;
+    const previous = latest.get(key);
+    if (
+      !previous ||
+      trip.updated_at > previous.updated_at ||
+      (trip.updated_at === previous.updated_at && trip.conference_key === conference_key)
+    ) {
+      latest.set(key, { ...trip, conference_key });
+    }
+  }
+  return [...latest.values()];
 }
 
 /**

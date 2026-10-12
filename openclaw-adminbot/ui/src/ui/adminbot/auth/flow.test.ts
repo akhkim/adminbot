@@ -5,9 +5,9 @@ import type { UiSettings } from "../../storage.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
-  createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
 } from "../controllers/admin.ts";
+import { createEmptyAdminBotMemberNudgeState } from "../controllers/nudges.ts";
 import {
   type MemberAuthHost,
   acknowledgeOnboardingChecklist,
@@ -365,6 +365,9 @@ describe("memberPrivilegeLevel wiring", () => {
       adminBotTimeAwayDraft: { note: "A's holiday" } as never,
       adminBotMilestoneDraft: { label: "A's deadline" } as never,
       adminBotTripDraft: { note: "A's trip" } as never,
+      myWorkProjectDraft: "A's project",
+      myWorkProjectAlias: "a-private",
+      myWorkProjectEdits: { a: { title: "A's title", alias: "x", startedOn: "", error: null } },
       myProjects: [{ paper_id: "a", title: "A's project" }] as never,
       myProjectsChoosing: true,
       adminBotVenueFilter: "A's venue",
@@ -425,6 +428,9 @@ describe("memberPrivilegeLevel wiring", () => {
     expect(host.adminBotTimeAwayDraft?.note).toBe("");
     expect(host.adminBotMilestoneDraft?.label).toBe("");
     expect(host.adminBotTripDraft?.note).toBe("");
+    expect(host.myWorkProjectDraft).toBeNull();
+    expect(host.myWorkProjectAlias).toBe("");
+    expect(host.myWorkProjectEdits).toEqual({});
     expect(host.myProjects).toBeNull();
     expect(host.myProjectsChoosing).toBe(false);
     expect(host.adminBotVenueFilter).toBe("");

@@ -69,6 +69,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./adminbot/controllers/admin.ts", () => ({
   loadAdminBot: mocks.loadAdminBotMock,
+}));
+vi.mock("./adminbot/controllers/conference-papers.ts", () => ({
   loadAdminBotVenueSources: vi.fn(async () => {}),
 }));
 vi.mock("./app-chat.ts", () => ({

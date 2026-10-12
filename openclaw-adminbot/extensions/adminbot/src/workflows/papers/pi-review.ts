@@ -131,7 +131,7 @@ export function paperFeedbackQueue(candidates: readonly PiReviewCandidate[]): Pi
           return [];
         }
         const feedback = parsePaperFeedback(row.value_text);
-        if (!feedback) {
+        if (!feedback || feedback.reviewed) {
           return [];
         }
         return [

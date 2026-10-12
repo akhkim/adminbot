@@ -16,7 +16,7 @@ import {
   isAdminBotPaperSlotSettled,
   type AdminBotPaperSlot,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
-import type { PaperSlotRow } from "../auth/session.ts";
+import type { PaperSlotRow } from "../api/papers.ts";
 import { fileBlockerInput, openEntries, resolveBlockerInput } from "../blockers.ts";
 import {
   saveAdminBotPaper,

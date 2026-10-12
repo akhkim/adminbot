@@ -1,8 +1,9 @@
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
-import "./interview-invite.ts";
 import { ifDefined } from "lit/directives/if-defined.js";
+import "./interview-invite.ts";
+import { live } from "lit/directives/live.js";
 import "./member-guide-status.ts";
 import {
   adminBotIsAlumniMember,
@@ -27,14 +28,10 @@ import {
 import { t } from "../../../i18n/index.ts";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
-import type {
-  AdminBotEmailReviewResolution,
-  ConferenceRoster,
-  MemberNudgeChannel,
-  MemberProfileUpdate,
-  PaperSlotOverviewRow,
-  PaperSlotRow,
-} from "../auth/session.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
+import type { ConferenceRoster, PaperSlotOverviewRow } from "../api/paper-admin.ts";
+import type { PaperSlotRow } from "../api/papers.ts";
+import type { AdminBotEmailReviewResolution, MemberNudgeChannel } from "../auth/session.ts";
 import {
   type BlockerRow,
   blockerAgeDays,
@@ -47,7 +44,6 @@ import type {
   AdminBotActionProposal,
   AdminBotDashboardData,
   AdminBotLabMember,
-  AdminBotLabMemberSaveInput,
   AdminBotMemberNudgeState,
   AdminBotPaperNudge,
   AdminBotPaperRecord,
@@ -56,15 +52,16 @@ import type {
   AdminBotSensitiveInfoRecord,
   AdminBotReimbursementState,
   AdminBotSettings,
-  AdminBotSettingsSaveInput,
   AdminBotStandingMeetingsState,
   AdminBotVenueSource,
 } from "../controllers/admin.ts";
+import type { AdminBotLabMemberSaveInput } from "../controllers/members.ts";
 import {
   EMPTY_RECENT_EDITS,
   recentEditsKey,
   type RecentEditsState,
 } from "../controllers/recent-edits.ts";
+import type { AdminBotSettingsSaveInput } from "../controllers/workspace.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
 import { renderDateControl } from "../date-control.ts";
@@ -1232,7 +1229,7 @@ function renderRegistryField(
         />`;
       case "date":
         return html`${renderDateControl(
-          html`<input name=${field.key} type="date" .value=${value} />`,
+          html`<input name=${field.key} type="date" .value=${live(value)} />`,
           value,
         )}`;
       case "link":
