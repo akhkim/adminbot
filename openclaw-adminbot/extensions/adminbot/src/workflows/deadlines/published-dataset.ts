@@ -130,7 +130,6 @@ function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<str
     deadline_label: label,
     deadline_aoe: aoe,
     deadline_at: latest.deadline.deadlineTime ? new Date(instant).toISOString() : "",
-    deadline_planning_at: new Date(instant).toISOString(),
     deadline_date: latest.deadline.deadlineDate,
     deadline_timezone: latest.deadline.timezone,
     deadline_time_precision: latest.deadline.deadlineTime ? "exact" : "date_only",

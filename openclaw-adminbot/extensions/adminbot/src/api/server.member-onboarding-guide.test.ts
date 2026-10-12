@@ -108,11 +108,16 @@ async function memberToken(
   return ((await res.json()) as { session_token: string }).session_token;
 }
 
-function onboard(baseUrl: string, memberId: string, headers: Record<string, string>) {
+function onboard(
+  baseUrl: string,
+  memberId: string,
+  headers: Record<string, string>,
+  body: Record<string, unknown> = {},
+) {
   return fetch(`${baseUrl}/lab/members/${memberId}/onboarding/guide`, {
     method: "POST",
     headers: jsonHeaders(headers),
-    body: "{}",
+    body: JSON.stringify(body),
   });
 }
 
@@ -214,6 +219,86 @@ describe("onboarding a member from their roster row", () => {
     const { baseUrl, mock } = await lab();
     expect([401, 403]).toContain((await onboard(baseUrl, "grace", {})).status);
     expect(filed(mock)).toHaveLength(0);
+  });
+
+  // The Members tab's Resend button: the first mail went to spam or was never read.
+  describe("resending a guide that already went out", () => {
+    async function sentOnce() {
+      const sender = fakeSender("sent");
+      const { baseUrl, mock } = await lab(sender);
+      const token = await memberToken(mock, baseUrl, "admin", "admin@cs.toronto.edu");
+      const first = await onboard(baseUrl, "grace", { Authorization: `Bearer ${token}` });
+      expect(first.status).toBe(200);
+      return { sender, baseUrl, mock, token };
+    }
+
+    it("still refuses a plain second send", async () => {
+      const { sender, baseUrl, mock, token } = await sentOnce();
+      const res = await onboard(baseUrl, "grace", { Authorization: `Bearer ${token}` });
+      expect(res.status).toBe(409);
+      expect(sender).toHaveBeenCalledTimes(1);
+      expect(filed(mock)).toHaveLength(1);
+    });
+
+    it("sends again when the admin asks for a resend, without a second DCS request", async () => {
+      const { sender, baseUrl, mock, token } = await sentOnce();
+      const res = await onboard(
+        baseUrl,
+        "grace",
+        { Authorization: `Bearer ${token}` },
+        { resend: true },
+      );
+      expect(res.status).toBe(200);
+      await expect(res.json()).resolves.toMatchObject({ status: "done", email: "grace@lab.co" });
+      expect(sender).toHaveBeenCalledTimes(2);
+      expect(sender.mock.calls[1]?.[0]).toMatchObject({
+        template_id: "member",
+        email: "grace@lab.co",
+        add_dcs_roster_row: false,
+      });
+      expect(filed(mock)).toHaveLength(2);
+      expect(filed(mock)[1]?.proposed_payload).toMatchObject({ resend: true });
+    });
+
+    it("refuses a resend from a member session that is not an admin", async () => {
+      const { sender, baseUrl, mock } = await sentOnce();
+      const token = await memberToken(mock, baseUrl, "pat", "pat@cs.toronto.edu");
+      const res = await onboard(
+        baseUrl,
+        "grace",
+        { Authorization: `Bearer ${token}` },
+        { resend: true },
+      );
+      expect(res.status).toBe(403);
+      expect(sender).toHaveBeenCalledTimes(1);
+      expect(filed(mock)).toHaveLength(1);
+    });
+
+    it("refuses a resend from the service principal", async () => {
+      const { sender, baseUrl, mock } = await sentOnce();
+      const res = await onboard(
+        baseUrl,
+        "grace",
+        { Authorization: `Bearer ${SERVICE_TOKEN}` },
+        { resend: true },
+      );
+      expect(res.status).toBe(403);
+      expect(sender).toHaveBeenCalledTimes(1);
+      expect(filed(mock)).toHaveLength(1);
+    });
+
+    it("rejects a resend flag that is not a boolean", async () => {
+      const { sender, baseUrl, mock, token } = await sentOnce();
+      const res = await onboard(
+        baseUrl,
+        "grace",
+        { Authorization: `Bearer ${token}` },
+        { resend: "yes" },
+      );
+      expect(res.status).toBe(400);
+      expect(sender).toHaveBeenCalledTimes(1);
+      expect(filed(mock)).toHaveLength(1);
+    });
   });
 
   it("passes the service's reason through when there is no guide to send", async () => {

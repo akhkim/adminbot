@@ -47,6 +47,16 @@ async function start(): Promise<{ baseUrl: string; requests: LinkedInDraftReques
         authors: [],
       };
     },
+    xDraftRunner: async (request) => {
+      requests.push(request);
+      return {
+        paper: { title: "Paper", authors: [], abstract: "Evidence." },
+        posts: [{ text: "1/2 Question" }, { text: "2/2 Finding" }],
+        model: "test/model",
+        issues: [],
+        authors: [],
+      };
+    },
   });
   await new Promise<void>((resolve, reject) => {
     mock.server.once("error", reject);
@@ -74,6 +84,25 @@ async function draft(baseUrl: string, pdfBase64: string): Promise<number> {
 }
 
 describe("POST /papers/linkedin-draft", () => {
+  it("exposes a separate authenticated X draft endpoint", async () => {
+    const { baseUrl, requests } = await start();
+    const anonymous = await fetch(`${baseUrl}/papers/x-draft`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(anonymous.status).toBe(401);
+    const response = await fetch(`${baseUrl}/papers/x-draft`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ pdf_base64: "cGRm" }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      posts: [{ text: "1/2 Question" }, { text: "2/2 Finding" }],
+    });
+    expect(requests).toHaveLength(1);
+  });
   it("takes an attached PDF far larger than the default JSON ceiling", async () => {
     const { baseUrl, requests } = await start();
     const pdfBase64 = Buffer.alloc(5 * 1024 * 1024, 1).toString("base64");

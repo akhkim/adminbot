@@ -32,6 +32,20 @@ describe("driveFileIdFromUrl", () => {
 });
 
 describe("resolvePaperPdfSource", () => {
+  it("prefers the versioned arXiv PDF for X over the Drive copy", () => {
+    expect(
+      resolvePaperPdfSource(
+        [
+          slot({ slot: "arxiv", url: "https://arxiv.org/abs/2608.27510v2" }),
+          slot({
+            slot: "drive_pdf_arxiv",
+            url: "https://drive.google.com/file/d/1PdF9xAbCdEf/view",
+          }),
+        ],
+        true,
+      ),
+    ).toEqual({ kind: "arxiv", id: "2608.27510v2", url: "https://arxiv.org/abs/2608.27510v2" });
+  });
   it("finds the Drive copy the card already collected", () => {
     const source = resolvePaperPdfSource([
       slot({ slot: "overleaf_edit", url: "https://overleaf.com/project/65f2" }),

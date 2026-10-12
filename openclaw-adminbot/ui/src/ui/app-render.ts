@@ -641,6 +641,10 @@ const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
   notifyLazyViewChanged,
 );
+const lazyNotificationDrafts = createLazyView(
+  () => import("./adminbot/views/notification-drafts.ts"),
+  notifyLazyViewChanged,
+);
 const lazyPublicShell = createLazyView(
   () => import("./adminbot/views/public-shell.ts"),
   notifyLazyViewChanged,
@@ -775,8 +779,8 @@ function paperWorkspaceProps(
     memberName: (memberId: string) =>
       (state.adminBotData?.members ?? []).find((member) => member.id === memberId)?.name ??
       memberId,
-    onSaveDraft: (paperId, platform, body) => {
-      void saveAdminBotSocialDraft(state, paperId, platform, body).finally(() =>
+    onSaveDraft: (paperId, platform, body, xThread) => {
+      void saveAdminBotSocialDraft(state, paperId, platform, body, xThread).finally(() =>
         requestHostUpdate?.(),
       );
     },
@@ -955,7 +959,7 @@ async function sendFeedback(state: AppViewState, event: CustomEvent): Promise<vo
 // see. Correct it before rendering rather than after: a privileged panel with no data behind it is
 // worse than landing on the role's own default.
 function withAccessibleTab<T extends AppViewState>(state: T, role: AccessRole): T {
-  const allowed = resolveAccessibleTab(state.tab, role);
+  const allowed = resolveAccessibleTab(state.tab, role, state.memberPrivilegeLevel ?? null);
   if (allowed !== state.tab) {
     state.tab = allowed;
   }
@@ -1844,6 +1848,23 @@ export function renderApp(state: AppViewState) {
   const activePaperCard = state.adminBotPaperCardId
     ? (state.adminBotData?.papers ?? []).find((paper) => paper.id === state.adminBotPaperCardId)
     : undefined;
+  const piReviewOnly = isHeadProfessorViewer({
+    memberId: state.memberId,
+    headProfessorMemberId: state.adminBotData?.settings?.head_professor_member_id,
+  });
+  const selectedReview = state.adminBotPiReview?.find(
+    (row) => row.paperId === state.adminBotPaperCardId,
+  );
+  const activeReviewPaper =
+    activePaperCard ??
+    (selectedReview
+      ? {
+          id: selectedReview.paperId,
+          title: selectedReview.title,
+          authors: selectedReview.authors,
+          artifacts: { google_drive_pdf_url: selectedReview.drivePdfUrl },
+        }
+      : undefined);
   const headerError = !isChat && state.lastError !== state.chatError ? state.lastError : null;
   const chatViewError = state.lastError;
   const chatHeaderHidden = isChat && (state.onboarding || state.chatHeaderControlsHidden);
@@ -3228,6 +3249,7 @@ export function renderApp(state: AppViewState) {
                     group.tabs as readonly Tab[],
                     accessRole,
                     state.adminBotOnboarding?.steps,
+                    state.memberPrivilegeLevel ?? null,
                   );
                   // A group whose every tab is out of reach renders nothing at all, header
                   // included: an empty "Settings" heading reads as a broken sidebar.
@@ -3394,6 +3416,11 @@ export function renderApp(state: AppViewState) {
                 void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
               },
               onOpen: (tab) => state.setTab(tab),
+              onOpenPaper: (paperId) => {
+                state.adminBotPaperCardId = paperId;
+                void loadAdminBotPaperSlots(state, paperId).finally(() => requestHostUpdate?.());
+                requestHostUpdate?.();
+              },
               expanded: state.professorExpandedLists,
               onToggleExpand: (id) => {
                 const next = new Set(state.professorExpandedLists);
@@ -3525,14 +3552,17 @@ export function renderApp(state: AppViewState) {
              author-facing summaries that came with the deck (the "Blocked" roll-up, the
              pre-registration and decision banners) are the reader's own view of their own work, and
              the admin equivalents are the table and the Reported blockers board. -->
-        ${state.tab === "adminbotPapers" && activePaperCard
+        ${(state.tab === "adminbotPapers" || state.tab === "adminbotProfessor") &&
+        (piReviewOnly ? activeReviewPaper : activePaperCard)
           ? renderPaperCardDialog({
               state,
               props: {
                 ...paperWorkspaceProps(state, requestHostUpdate),
                 canNudge: adminBotMode === "admin",
               },
-              paper: activePaperCard,
+              ...(piReviewOnly
+                ? { reviewOnly: true as const, paper: activeReviewPaper! }
+                : { reviewOnly: false as const, paper: activePaperCard! }),
               onClose: () => {
                 state.adminBotPaperCardId = null;
                 requestHostUpdate?.();
@@ -3722,6 +3752,14 @@ export function renderApp(state: AppViewState) {
               }),
             )
           : nothing}
+        ${state.tab === "adminbotNotificationDrafts" && adminBotMode === "admin"
+          ? renderLazyView(lazyNotificationDrafts, (m) =>
+              m.renderNotificationDrafts(
+                resolveAdminBotBaseUrl(state.settings),
+                loadStoredMemberSession()?.sessionToken ?? "",
+              ),
+            )
+          : nothing}
         ${state.tab === "adminbotOpportunities"
           ? renderLazyView(lazyOpportunities, (m) =>
               m.renderOpportunities({
@@ -3782,10 +3820,12 @@ export function renderApp(state: AppViewState) {
                 .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
                 .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
               ></adminbot-reference-checker>
-              <adminbot-openreview-citation-checks
-                .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-                .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
-              ></adminbot-openreview-citation-checks>`
+              ${state.memberPrivilegeLevel === "admin"
+                ? html`<adminbot-openreview-citation-checks
+                    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+                    .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
+                  ></adminbot-openreview-citation-checks>`
+                : nothing}`
           : nothing}
         ${state.tab === "adminbotConferencePapers"
           ? renderLazyView(lazyConferencePapers, (m) =>

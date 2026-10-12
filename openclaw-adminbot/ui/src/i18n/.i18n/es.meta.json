@@ -1324,12 +1324,12 @@
     "tabUsage.untimed",
     "tabUsage.window"
   ],
-  "generatedAt": "2026-10-05T18:28:22.432Z",
+  "generatedAt": "2026-10-08T17:51:25.403Z",
   "locale": "es",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "caedf51c404ca8d38192de79bd2a5ac4b0bc09c8a5607215c19dfb1a0c7e7c7a",
-  "totalKeys": 2469,
-  "translatedKeys": 1146,
+  "sourceHash": "ca62ed307c88106a1af4681b7bdcfde81460eaec376ba677deb93a050e062054",
+  "totalKeys": 2471,
+  "translatedKeys": 1148,
   "workflow": 1
 }

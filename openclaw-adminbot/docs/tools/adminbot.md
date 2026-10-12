@@ -546,12 +546,21 @@ approver -- which is what pressing **Add member** twice on one id produces. Onbo
 admin sign-in; over break-glass gateway access the record still saves and the notice says the guide
 was not queued.
 
+Opening a member in the editor shows their **Onboarding email** status. When nothing has gone out
+(never queued, failed or rejected) it offers **Send onboarding email**; once the guide has been
+sent it offers **Resend onboarding email**, for a mail that went to spam or was never read. Both
+ask for confirmation in the panel and call the same `POST /lab/members/{id}/onboarding/guide`, a
+resend with `{"resend": true}`. A resend lifts only the "already sent" refusal: a copy still
+waiting for an approver is refused either way, and the resend is filed with
+`add_dcs_roster_row: false` so DCS is not asked for a second account. It needs an admin member
+session; the service token is refused.
+
 ### Changing a Member Type
 
-Changing **Member type** on an existing member on the Lab Members tab re-onboards them, without
-the welcome mail, and applies it on the spot. The admin's save is the approval: each external
-step is still a typed proposal, approved by that admin, executed and audited, the same way Add
-row works. None of them waits in Pending Actions. `PUT /lab/members/{id}` does this only for a
+Changing **Member type** on an existing member on the Lab Members tab re-onboards them and
+applies it on the spot. The admin's save is the approval: each external step is still a typed
+proposal, approved by that admin, executed and audited, the same way Add row works. Only a
+non-standard guide waits in Pending Actions (below). `PUT /lab/members/{id}` does this only for a
 genuine admin session and only when the type actually changes (compared token-wise, so
 `Coauthor-Major ` is not a change). The service token still cannot set the field.
 
@@ -573,8 +582,12 @@ genuine admin session and only when the type actually changes (compared token-wi
   (`calendar.grant_lab_calendar`, recorded as `auth.calendar_invite_sent` like the backfill). No
   action revokes a calendar share, so a loss is reported in the notice for someone to handle by
   hand.
-- **One email, in one case:** somebody moving _into_ alumni gets the `alumni` guide
-  (`onboarding.send_guide`). Every other change sends nothing.
+- **The new type's onboarding email**, when the new type calls for a different guide than the old
+  one did (`onboarding.send_guide`). Setting a blank type to `full` sends the full-member guide;
+  `full` to `full, alumni` sends nothing, since `full` still decides the guide. The full-member and
+  alumni guides go out on the admin's save; every other guide waits in Pending Actions, as it does
+  from Add member. A guide the address has already been sent, or that is already waiting, is
+  reported as skipped rather than sent twice. Types that send no mail send nothing here either.
 
 **Meetings** is a second checkbox field listing the lab calendar's standing meetings: the Monday
 group meeting and every recurring `Theme:` and `Proj:` series (`GET /lab/meetings`, admin only).
@@ -1725,3 +1738,69 @@ The configured bot needs Slack permissions for private-channel listing/creation,
 reads/invites, `auth.test`, and email lookup, plus the existing Slack Connect and Gmail sender.
 Missing permissions stop execution; preview and queueing never provision a channel. This needs
 an Aurora backend release as well as the frontend release.
+
+### Weekly active Slack channel cleanup
+
+`adminbot-active-channels` runs Sunday at 08:00 in the gateway's configured timezone
+(`0 8 * * 0` in `config/adminbot-cron.json`). After deployment, register/update it using
+`scripts/adminbot-cron-sync.sh`, as with the other scheduled jobs.
+
+The job calls `POST /members/active-channels/sync` with the service token. The route also
+accepts admin sessions; ordinary members cannot run it and callers cannot supply targets.
+It reads the complete live membership of `jinesis-active` and `random-active`, then removes
+human accounts with no matching eligible SQLite member. Eligibility uses the same resolved
+member classification as active-channel invitations: full or coauthor-major. Alumni with
+one of these classifications remain eligible. Unmatched accounts and missing membership
+types are removed, not queued for manual review. Bots/app accounts are excluded. There is
+no separate exemption for human admins. The Slack pass leaves other channels untouched;
+the calendar pass is described below.
+
+This is a standing automatic policy: each removal is a normal T3 `slack.remove_from_channel`
+proposal, approved against its exact payload hash by `system:weekly-active-channel-policy`,
+then executed and audited. Other removal proposals still require their existing approvals.
+Repeat runs deduplicate removals within the UTC Sunday week; a later week can remove an
+account that was re-added. Failed executions are reported and can be retried. Concurrent
+requests share the same pass.
+
+Slack requires the existing `SLACK_BOT_TOKEN` (directory/channel reads) and
+`SLACK_USER_TOKEN` (channel removals), with the corresponding Slack permissions.
+An empty SQLite member roster, failed/incomplete Slack read, or unavailable connector fails
+closed. Run only against the intended production member database. Local tests use synthetic
+Slack responses and never contact Slack or remove live users.
+
+### Sunday lab calendar event membership
+
+The same Sunday 08:00 `adminbot-active-channels` job also calls
+`POST /members/calendar-membership/sync`. Both passes run even when one fails; any
+failure makes the combined job fail. Re-sync the cron manifest after deployment to
+apply its increased 30-minute timeout. No additional cron job is needed.
+
+The calendar pass restricts **only the Monday group meeting and direct calendar
+subscription access**. Monday is identified by `ADMINBOT_GROUP_MEETING_EVENT_ID`
+(normalized to its recurring series), including upcoming modified occurrences. Social,
+theme, project and other event guest lists are untouched by this policy.
+
+Full members and major coauthors (including alumni with those classifications) remain
+eligible. Calendar, main and correspondence addresses are matched against SQLite.
+Only known ineligible members are removed; unmatched guests such as invited speakers
+are preserved. Organizers, the calendar's own address and resources are protected.
+
+The same pass reads all calendar-sharing ACL pages and revokes known ineligible users'
+direct permissions. Owners, unmatched accounts, group/domain/public grants are untouched;
+inherited or public access cannot be revoked per member by this job. The Google account
+must have permission to manage the calendar's sharing settings.
+
+Event removals use `calendar.remove_attendees`; subscription removals use the new T3
+`calendar.revoke_lab_calendar` action. Both require hash-bound approval, execution and
+audit, using `system:weekly-calendar-membership-policy` for this standing policy. The
+executor re-reads before writing, preserving remaining guests and RSVP metadata and
+refusing to remove a changed/owner ACL. Empty rosters or incomplete inventories fail
+closed before any writes. Monday invitations and subscription grants enforce eligibility
+at execution; other event invitations are unrestricted by this membership rule.
+
+This requires `gog api call` support (verified against gog 0.43.0) and the configured
+Google account's Calendar read/write access. It uses Calendar `events.list/get/patch` and `acl.list/delete`
+through the existing gog credentials. Event updates remain silent (`sendUpdates=none`).
+The endpoint is restricted to service tokens/admins and accepts no calendar or recipient
+overrides. ACL deletion uses Google's deletion endpoint,
+which has no notification parameter. This does not repair invitations removed by older runs.

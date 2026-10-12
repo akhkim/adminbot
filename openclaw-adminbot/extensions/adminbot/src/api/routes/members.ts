@@ -462,6 +462,48 @@ export const membersRoutes: readonly Route[] = [
     }),
   ),
   post(
+    "/members/calendar-membership/sync",
+    privilegedOnly(async ({ res, ctx }) => {
+      const { service } = ctx;
+      if (!ctx.readCalendarMembership || !ctx.readCalendarAccess) {
+        sendJson(res, 503, { error: { message: "Calendar membership reader is unavailable" } });
+        return;
+      }
+      try {
+        const result = await service.syncLabCalendarMembership(
+          ctx.labCalendar.id,
+          ctx.readCalendarMembership,
+          ctx.readCalendarAccess,
+        );
+        sendJson(res, result.failed.length ? 502 : 200, result);
+      } catch (error) {
+        sendJson(res, 503, {
+          error: { message: error instanceof Error ? error.message : "Calendar cleanup failed" },
+        });
+      }
+    }),
+  ),
+  post(
+    "/members/active-channels/sync",
+    privilegedOnly(async ({ res, ctx }) => {
+      const { service } = ctx;
+      if (!ctx.readActiveChannels) {
+        sendJson(res, 503, { error: { message: "Slack active-channel reader is unavailable" } });
+        return;
+      }
+      try {
+        const result = await service.syncActiveChannels(ctx.readActiveChannels);
+        sendJson(res, result.failed.length ? 502 : 200, result);
+      } catch (error) {
+        sendJson(res, 503, {
+          error: {
+            message: error instanceof Error ? error.message : "Active-channel cleanup failed",
+          },
+        });
+      }
+    }),
+  ),
+  post(
     "/members/city-channels/sync",
     privilegedOnly(async ({ res, principal, ctx }) => {
       const { service } = ctx;

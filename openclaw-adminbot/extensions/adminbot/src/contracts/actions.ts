@@ -32,6 +32,7 @@ export const adminBotActionTypes = [
   // weekly sheet sweep -- can queue the grant for approval like every other step, instead of either
   // skipping it or granting access with nobody having said yes.
   "calendar.grant_lab_calendar",
+  "calendar.revoke_lab_calendar",
   "calendar.reschedule",
   "calendar.cancel",
   "email.draft",

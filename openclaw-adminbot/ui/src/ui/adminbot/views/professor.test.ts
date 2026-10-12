@@ -864,6 +864,17 @@ describe("the papers waiting on her yes", () => {
     expect(section?.textContent).toContain("Causal Garden Planning");
   });
 
+  it("opens the selected paper in place on the PI page", () => {
+    const selected: string[] = [];
+    const onOpenPaper = (id: string) => selected.push(id);
+    const { container, opened } = draw({ piReview: [row()], onOpenPaper });
+    container
+      .querySelector<HTMLButtonElement>("#professor-list-pi-review .professor__row")!
+      .click();
+    expect(selected).toEqual(["p1"]);
+    expect(opened).toEqual([]);
+  });
+
   it("leads the page when something is waiting on her", () => {
     const { container } = draw({ piReview: [row()] });
     expect(queueOrder(container)[0]).toBe("professor-pi-review");

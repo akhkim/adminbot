@@ -7395,6 +7395,146 @@
     },
     {
       "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Conference"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Notifications after"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Notifications JSON or CSV"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Writing style"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "e.g. NeurIPS"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Author IDs are read from OpenReview and matched to member profiles to add saved X handles. Nothing is posted or saved to the database. Review titles, tracks, and mentions before sharing."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Conference"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Copy draft"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Download PNG"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Include downloadable PNG images"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Looking up authors and creating your drafts and images…"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "No accepted papers matched this date and conference."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Notifications after"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "OpenReview To Tweet"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Random template"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "The cutoff is exclusive, at midnight UTC, using the notification creation date."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Turn acceptance notifications into tweet drafts and paper-list images."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Use Google Drive instead"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Without an upload, Generate drafts loads the latest CSV from Google Drive."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/notification-drafts.ts",
+      "text": "Writing style"
+    },
+    {
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/openreview-citation-checks.ts",
@@ -7490,6 +7630,13 @@
       "name": "title",
       "path": "ui/src/ui/adminbot/views/opportunities.ts",
       "text": "Remove"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Start a recommendation letter request with this program filled in"
     },
     {
       "count": 1,
@@ -7632,6 +7779,13 @@
       "text": "Remove this opportunity?"
     },
     {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/opportunities.ts",
+      "text": "Request a letter"
+    },
+    {
       "count": 2,
       "kind": "html-text",
       "name": "text",
@@ -7767,6 +7921,20 @@
     {
       "count": 1,
       "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Announcement to make"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Thread preview"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Add an author"
@@ -7790,6 +7958,20 @@
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Confirmed X handle (optional; otherwise use name)"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Describe the finding shown; required when adding a figure"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "ICML 2026, poster Wed Jul 8 Hall A #3015"
     },
     {
@@ -7805,6 +7987,20 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Add"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Add a figure"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Announcement stage"
     },
     {
       "count": 1,
@@ -7846,7 +8042,35 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Confirmed attendees / dates"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Confirmed conference"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Confirmed local date/time, hall, poster number"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Drop the paper PDF here"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Each announcement has its own template and saved thread for this paper."
     },
     {
       "count": 1,
@@ -7861,6 +8085,20 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Extra context"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Figure description"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Figures and text are saved together. Coauthor review is optional. Saving creates a new draft version."
     },
     {
       "count": 1,
@@ -7909,6 +8147,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "New figure description"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "No coauthors on the roster to ask, so this is approved as it stands."
     },
     {
@@ -7930,7 +8175,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Optional — or click to choose. Used instead of the Drive copy on the card."
+      "text": "Paper announcement"
     },
     {
       "count": 1,
@@ -7951,14 +8196,21 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Say so early — these take weeks to arrange."
+      "text": "Reviewed paper figure (PNG/JPEG, under 512 KB)"
     },
     {
-      "count": 2,
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Send to coauthors for sign-off"
+      "text": "Save thread and figures"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Say so early — these take weeks to arrange."
     },
     {
       "count": 1,
@@ -7979,6 +8231,27 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Text updates as you type. Figures reflect the saved draft."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Thread preview"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Use exact roster match; otherwise keep name"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Venue / session"
     },
     {
@@ -7987,6 +8260,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "What do you need the lab to cover?"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "What would you like to announce?"
     },
     {
       "count": 1,
@@ -8169,6 +8449,69 @@
       "name": "label",
       "path": "ui/src/ui/adminbot/views/paper-legacy.ts",
       "text": "Year"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-pi-review.ts",
+      "text": "Approve only when this version is ready to be posted publicly. This does not submit it to arXiv."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-pi-review.ts",
+      "text": "Approve publication"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-pi-review.ts",
+      "text": "Completing feedback does not approve publication."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-pi-review.ts",
+      "text": "Feedback (optional)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-pi-review.ts",
+      "text": "Feedback completed"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-pi-review.ts",
+      "text": "Loading paper review…"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-pi-review.ts",
+      "text": "Publication approval"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-pi-review.ts",
+      "text": "Publication approved"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-pi-review.ts",
+      "text": "Retry"
     },
     {
       "count": 1,
@@ -8819,7 +9162,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/reimbursements.ts",
-      "text": "Details the assistant will place into both canonical forms."
+      "text": "Details the assistant will place into the selected institute's forms."
     },
     {
       "count": 2,
@@ -8892,7 +9235,7 @@
       "text": "Purpose"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/reimbursements.ts",

@@ -13,7 +13,11 @@ import {
   createPublicOpenReviewPdfReader,
 } from "../connectors/reference-scan.js";
 import { createInterviewChannelProvisioner } from "../connectors/slack-interview.js";
-import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
+import {
+  createLinkedInDraftRunner,
+  createXDraftRunner,
+  readArxivPdfBase64,
+} from "../connectors/social-draft.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import { createLlmLoadRouter, parseLlmNodes } from "../kernel/llm-router.js";
@@ -57,6 +61,7 @@ import { createAdminBotOpenReviewWorkflow } from "../workflows/papers/openreview
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
 import { defaultCallSheet } from "./call-sheet-config.js";
 import { memberSheetSource, resolveMemberSheetConfig } from "./member-sheet-config.js";
+import { createNotificationDraftHandler } from "./notification-drafts.js";
 import {
   warnIfLabCalendarUnconfigured,
   type SlackConnectOnboardingInviter,
@@ -380,6 +385,16 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       })
     : undefined;
   const ctx: AdminBotRouteContext = {
+    notificationDrafts: createNotificationDraftHandler(
+      options.notificationDraftScriptPath,
+      () => store.listLabMembers(),
+      () =>
+        store.listPapers().map((paper) => ({
+          title: paper.title,
+          submission_url: paper.artifacts?.submission_url,
+          arxiv_url: paper.artifacts?.arxiv_url,
+        })),
+    ),
     reimbursementSigningKey: randomBytes(32),
     service,
     store,
@@ -394,6 +409,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(iclrIntegrityWatch ? { iclrIntegrityWatch } : {}),
     onboardingSender,
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
+    draftXPost: options.xDraftRunner ?? createXDraftRunner(),
+    readArxivPdfBase64: options.readArxivPdfBase64 ?? readArxivPdfBase64,
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
     ...(memberSheet ? { memberSheet } : {}),
     ...(callSheet ? { callSheet } : {}),
@@ -424,6 +441,11 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.resolveSlackUserIdsByEmail
       ? { resolveSlackUserIdsByEmail: options.resolveSlackUserIdsByEmail }
       : {}),
+    ...(options.readCalendarAccess ? { readCalendarAccess: options.readCalendarAccess } : {}),
+    ...(options.readCalendarMembership
+      ? { readCalendarMembership: options.readCalendarMembership }
+      : {}),
+    ...(options.readActiveChannels ? { readActiveChannels: options.readActiveChannels } : {}),
     ...(options.fetchSlackChannelNames
       ? { fetchSlackChannelNames: options.fetchSlackChannelNames }
       : {}),
