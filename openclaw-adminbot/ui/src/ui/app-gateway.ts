@@ -926,10 +926,11 @@ function maybeAutoApproveDevicePairing(
 // AUTH_TOKEN_MISSING is the tokenless case: sign-in clears the shared token on the assumption a
 // device token was minted, so when minting failed the browser connects with no auth at all and the
 // gateway closes it as "gateway token missing". AUTH_DEVICE_TOKEN_MISMATCH is the token-we-hold-is-
-// rejected case. Both dead-end into an endless retry unless the credential itself is replaced.
+// rejected case. A scope upgrade also needs a replacement token. These dead-end into repeated retries otherwise.
 const MEMBER_DEVICE_TOKEN_RECOVERABLE_CODES = new Set<string>([
   ConnectErrorDetailCodes.AUTH_TOKEN_MISSING,
   ConnectErrorDetailCodes.AUTH_DEVICE_TOKEN_MISMATCH,
+  ConnectErrorDetailCodes.AUTH_SCOPE_MISMATCH,
 ]);
 
 // Handles a connect the gateway refused for want of an acceptable credential. Recovery re-mints the
@@ -1004,7 +1005,7 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
     mode: "webchat",
     instanceId: host.clientInstanceId,
     // Request only the operator scopes the signed-in member's privilege allows, so device pairing
-    // approves a read-only device for plain members (the gateway then denies them operator.write).
+    // approves read and chat scopes for plain members (the gateway then denies them operator.write).
     operatorScopes: resolveMemberOperatorScopes(host.memberPrivilegeLevel),
     onHello: (hello) => {
       if (host.client !== client) {

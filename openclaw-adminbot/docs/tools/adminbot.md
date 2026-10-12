@@ -1804,3 +1804,17 @@ through the existing gog credentials. Event updates remain silent (`sendUpdates=
 The endpoint is restricted to service tokens/admins and accepts no calendar or recipient
 overrides. ACL deletion uses Google's deletion endpoint,
 which has no notification parameter. This does not repair invitations removed by older runs.
+
+### Member chat permissions
+
+Ordinary members receive `operator.read` and `operator.chat` on their own paired device.
+Chat sending and stopping use the narrow chat permission; `operator.write` remains required
+for privileged gateway tools. Member turns stay in their own session, cannot select another
+transcript or deliver to an external channel, and run without slash commands or model tools.
+ACP tool runtimes are unavailable to chat-only devices. Admin and existing write clients keep
+their prior chat access.
+
+After this change is released, a signed-in browser with an older read-only device token re-mints
+its credential once on a scope mismatch. If recovery fails, sign out and back in. Do not grant
+broad write scope manually to repair member chat. Both the gateway and the Control UI must be
+updated; this code change does not approve or deploy a production device by itself.

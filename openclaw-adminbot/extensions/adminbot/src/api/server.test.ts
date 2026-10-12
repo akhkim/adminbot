@@ -2407,7 +2407,7 @@ describe("AdminBot device pairing approval", () => {
     return await loginToken(baseUrl, `${id}@cs.toronto.edu`);
   }
 
-  it("approves a plain member's device with read-only scope", async () => {
+  it("approves a plain member's device with read and chat scope", async () => {
     const calls: ApproverCall[] = [];
     const { baseUrl } = await startService({ devicePairingApprover: fakeApprover(calls) });
     const token = await seededMemberToken(baseUrl, "plain", "member");
@@ -2418,8 +2418,13 @@ describe("AdminBot device pairing approval", () => {
       body: JSON.stringify({ requestId: "req-1" }),
     });
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toMatchObject({ approved: true, scopes: ["operator.read"] });
-    expect(calls).toEqual([{ requestId: "req-1", allowedScopes: ["operator.read"] }]);
+    await expect(res.json()).resolves.toMatchObject({
+      approved: true,
+      scopes: ["operator.read", "operator.chat"],
+    });
+    expect(calls).toEqual([
+      { requestId: "req-1", allowedScopes: ["operator.read", "operator.chat"] },
+    ]);
   });
 
   it("approves an admin's device with write scope", async () => {
@@ -2436,6 +2441,7 @@ describe("AdminBot device pairing approval", () => {
     expect(calls[0]?.allowedScopes).toEqual([
       "operator.admin",
       "operator.read",
+      "operator.chat",
       "operator.write",
       "operator.approvals",
       "operator.pairing",
@@ -2501,7 +2507,7 @@ describe("AdminBot device token issuance", () => {
     result: import("./server.js").DeviceTokenIssuance = {
       ok: true,
       token: "device-token",
-      scopes: ["operator.read"],
+      scopes: ["operator.read", "operator.chat"],
     },
   ) {
     return async (params: IssuerCall) => {
@@ -2532,7 +2538,7 @@ describe("AdminBot device token issuance", () => {
     });
   }
 
-  it("mints a read-only token for a plain member", async () => {
+  it("mints a read and chat token for a plain member", async () => {
     const calls: IssuerCall[] = [];
     const { baseUrl } = await startService({ deviceTokenIssuer: fakeIssuer(calls) });
     const token = await seededMemberToken(baseUrl, "plain", "member");
@@ -2545,14 +2551,14 @@ describe("AdminBot device token issuance", () => {
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       token: "device-token",
-      scopes: ["operator.read"],
+      scopes: ["operator.read", "operator.chat"],
       deviceId: "dev-1",
     });
     expect(calls[0]).toMatchObject({
       deviceId: "dev-1",
       publicKey: "pk-1",
       platform: "Win32",
-      allowedScopes: ["operator.read"],
+      allowedScopes: ["operator.read", "operator.chat"],
     });
   });
 
@@ -2579,6 +2585,7 @@ describe("AdminBot device token issuance", () => {
     expect(calls[0]?.allowedScopes).toEqual([
       "operator.admin",
       "operator.read",
+      "operator.chat",
       "operator.write",
       "operator.approvals",
       "operator.pairing",
