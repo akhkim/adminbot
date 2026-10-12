@@ -207,6 +207,7 @@ import {
   proposeCallSheetPush,
   queueCallSheetRow,
 } from "./server.call-sheet.js";
+import { handleDeadlineExtraction } from "./server.deadline-extraction.js";
 import { handleDeadlineRecommendationRoute } from "./server.deadline-recommendations.js";
 import {
   PayloadTooLargeError,
@@ -2163,6 +2164,14 @@ async function handleAuthenticatedRoute(
         error: { message: error instanceof Error ? error.message : "scan proposal failed" },
       });
     }
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/internal/deadlines/extract-schedule") {
+    if (principal.kind !== "service") {
+      sendJson(res, 403, { error: { message: "The collection service token is required." } });
+      return;
+    }
+    await handleDeadlineExtraction(req, res);
     return;
   }
   if (

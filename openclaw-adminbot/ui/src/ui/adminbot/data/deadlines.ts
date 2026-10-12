@@ -19,6 +19,9 @@ export type DeadlineMilestone = {
   /** reviews | rebuttal | notification | cycle_end | camera_ready | conference */
   milestone: string;
   label: string;
+  source_url?: string;
+  evidence?: string;
+  planning_at?: string;
   /** How to read the date: an AoE cutoff, a day the venue acts on, or a span. */
   kind: "deadline" | "date" | "period";
   /** Set for kind "deadline" and "date". */
@@ -88,6 +91,10 @@ export type DeadlineVenue = {
    *  when the venue has published none of it. The board counts down to the
    *  submission only; these render as a quiet list beside it. */
   schedule: DeadlineMilestone[];
+  schedule_status?: string;
+  schedule_issues?: string[];
+  schedule_checked_at?: string;
+  schedule_extracted_at?: string;
   deadline_label: string;
   deadline_aoe: string;
   notification_aoe?: string;
