@@ -1,5 +1,6 @@
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { live } from "lit/directives/live.js";
 import { ref } from "lit/directives/ref.js";
 import {
   adminBotMemberFieldVisibility,
@@ -980,7 +981,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
     case "date":
       return html`
         ${renderDateControl(
-          html`<input class="input" name=${field.key} type="date" .value=${currentValue} />`,
+          html`<input class="input" name=${field.key} type="date" .value=${live(currentValue)} />`,
           currentValue,
         )}
       `;

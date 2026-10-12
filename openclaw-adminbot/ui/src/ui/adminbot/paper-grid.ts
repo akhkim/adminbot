@@ -15,6 +15,7 @@
 // bulk tool.
 
 import { html, nothing, type TemplateResult } from "lit";
+import { live } from "lit/directives/live.js";
 import type { AdminBotPaperStep } from "../../../../extensions/adminbot/src/contracts/actions.js";
 import {
   adminBotPaperSlotRegistry,
@@ -1471,7 +1472,7 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
                         : column.kind === "number"
                           ? "number"
                           : "text"}
-                      .value=${value}
+                      .value=${live(value)}
                       ?disabled=${!isWritable(column) || unloaded}
                       ?readonly=${column.kind === "readonly"}
                       placeholder=${unloaded ? "…" : ""}
