@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "../../../i18n/index.ts";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
 import { saveStoredMemberSession } from "../auth/session.ts";
+import { resetAdminBotOfflineMemory } from "../offline/outbox.ts";
 import {
   type AdminBotBadgesHost,
   loadAdminBadgeNominations,
@@ -45,6 +46,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 describe("adminbot-badges data", () => {
   beforeEach(async () => {
+    await resetAdminBotOfflineMemory();
     await i18n.setLocale("en");
     vi.stubGlobal("localStorage", createStorageMock());
     saveStoredMemberSession({ sessionToken: "sess-tok", expiresAt: "later" });

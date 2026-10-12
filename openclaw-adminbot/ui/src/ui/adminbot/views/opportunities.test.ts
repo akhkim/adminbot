@@ -2,8 +2,18 @@
 
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AdminBotOpportunityView, Opportunity } from "../data/opportunities-data.ts";
-import { categoryCount, opportunityRows, renderOpportunities } from "./opportunities.ts";
+import {
+  OPPORTUNITIES,
+  type AdminBotOpportunityView,
+  type Opportunity,
+} from "../data/opportunities-data.ts";
+import { PHD_PROGRAMS } from "../data/opportunities-phd-programs.ts";
+import {
+  categoryCount,
+  opportunityRows,
+  renderOpportunities,
+  type BoardEntry,
+} from "./opportunities.ts";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -11,23 +21,26 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  servedNames = [];
   document.body.innerHTML = "";
   vi.useRealTimers();
 });
 
-async function renderView(): Promise<HTMLElement> {
+let servedNames: string[] = [];
+
+async function renderView(
+  options: Parameters<typeof renderOpportunities>[0] = {},
+): Promise<HTMLElement> {
   const container = document.createElement("div");
   document.body.append(container);
-  render(renderOpportunities(), container);
+  render(renderOpportunities(options), container);
   const element = container.querySelector("adminbot-opportunities-view") as {
     updateComplete?: Promise<unknown>;
   } | null;
   await element?.updateComplete;
-  // The contributed half is fetched in connectedCallback, so the first paint predates it. Fake
-  // timers are in force, so drain microtasks by hand rather than waiting on a clock that is frozen.
-  for (let i = 0; i < 10; i += 1) {
-    await Promise.resolve();
-  }
+  await vi.waitFor(() => {
+    for (const name of servedNames) expect(container.textContent).toContain(name);
+  });
   await element?.updateComplete;
   return container;
 }
@@ -58,6 +71,16 @@ describe("opportunityRows", () => {
   it("orders undated entries by name so the list is stable", () => {
     const undated = opportunityRows("rising_stars", FIXTURE).map((row) => row.item.name);
     expect(undated).toEqual(["A Program", "B Program"]);
+  });
+
+  // Most PhD programs share a name, so the host is what tells two rows apart.
+  it("orders undated entries by host first, then by name", () => {
+    const programs: Opportunity[] = [
+      { id: "z", name: "PhD in CS", org: "Zurich", category: "phd", deadline_aoe: "" },
+      { id: "a2", name: "PhD in Robotics", org: "Austin", category: "phd", deadline_aoe: "" },
+      { id: "a1", name: "PhD in CS", org: "Austin", category: "phd", deadline_aoe: "" },
+    ];
+    expect(opportunityRows("phd", programs).map((row) => row.item.id)).toEqual(["a1", "a2", "z"]);
   });
 
   it("filters to a single category", () => {
@@ -116,8 +139,32 @@ describe("renderOpportunities", () => {
     phdTab.click();
     await view.updateComplete;
     expect(phdTab.getAttribute("aria-selected")).toBe("true");
-    // No PhD entries are seeded yet, so the empty state is what should show.
-    expect(container.textContent ?? "").toContain("Nothing listed here yet.");
+    expect(container.textContent ?? "").toContain("Stanford University");
+    expect(container.textContent ?? "").not.toContain("Rising Stars in EECS");
+  });
+});
+
+// Imported once from the lab's spreadsheet; these hold the shape the board and the letter
+// pre-fill rely on, so a hand edit later cannot quietly break either.
+describe("the bundled PhD programs", () => {
+  it("are all PhD entries with a host and a program page, and undated", () => {
+    expect(PHD_PROGRAMS.length).toBe(156);
+    for (const program of PHD_PROGRAMS) {
+      expect(program.category).toBe("phd");
+      expect(program.org?.trim()).toBeTruthy();
+      expect(program.link).toMatch(/^https?:\/\//u);
+      expect(program.deadline_aoe).toBe("");
+    }
+  });
+
+  it("give every bundled entry its own id", () => {
+    const ids = OPPORTUNITIES.map((entry) => entry.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("list each program page once", () => {
+    const links = PHD_PROGRAMS.map((program) => program.link?.replace(/\/+$/u, ""));
+    expect(new Set(links).size).toBe(links.length);
   });
 });
 
@@ -139,6 +186,7 @@ describe("who may contribute", () => {
   }
 
   function serveContributed(entries: AdminBotOpportunityView[]): void {
+    servedNames = entries.map((entry) => entry.name);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(JSON.stringify({ opportunities: entries }), { status: 200 })),
@@ -174,6 +222,51 @@ describe("who may contribute", () => {
 
     expect(container.querySelector(".opp-fab")).not.toBeNull();
     expect(container.querySelector(".opp-actions")).not.toBeNull();
+  });
+
+  describe("requesting a letter", () => {
+    const button = (container: HTMLElement, name: string) =>
+      [...container.querySelectorAll<HTMLElement>(".opp-row")]
+        .find((row) => row.querySelector(".opp-name")?.textContent?.includes(name))
+        ?.querySelector<HTMLButtonElement>('[data-testid="opp-request-letter"]') ?? null;
+
+    it("offers a member a button per program that hands the entry over", async () => {
+      signIn();
+      serveContributed([contributed()]);
+      const asked: BoardEntry[] = [];
+      const container = await renderView({ onRequestLetter: (entry) => asked.push(entry) });
+
+      const stanford = [...container.querySelectorAll<HTMLElement>(".opp-row")].find((row) =>
+        row.querySelector(".opp-org")?.textContent?.includes("Stanford University"),
+      );
+      stanford?.querySelector<HTMLButtonElement>('[data-testid="opp-request-letter"]')?.click();
+      button(container, "Member Find")?.click();
+
+      expect(asked.map((entry) => entry.org ?? entry.name)).toEqual([
+        "Stanford University",
+        "Member Find",
+      ]);
+    });
+
+    it("shows no button where the app gives no way to the letters tab", async () => {
+      signIn();
+      serveContributed([contributed()]);
+      const container = await renderView();
+      expect(container.querySelector('[data-testid="opp-request-letter"]')).toBeNull();
+    });
+
+    it("shows no button to a signed-out visitor", async () => {
+      serveContributed([contributed()]);
+      const container = await renderView({ onRequestLetter: () => {} });
+      expect(container.querySelector('[data-testid="opp-request-letter"]')).toBeNull();
+    });
+
+    it("does not offer it on an entry still awaiting review", async () => {
+      signIn();
+      serveContributed([contributed({ status: "pending" })]);
+      const container = await renderView({ onRequestLetter: () => {} });
+      expect(button(container, "Member Find")).toBeNull();
+    });
   });
 
   it("marks an entry still waiting on review, and never a bundled one", async () => {

@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "AdminBot Offline Workspace",
+  "version": "1.0.0",
+  "description": "Open your AdminBot workspace for offline reading and manual drafts.",
+  "permissions": ["storage"],
+  "action": { "default_popup": "popup.html", "default_title": "Open AdminBot" }
+}

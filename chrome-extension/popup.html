@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>AdminBot Offline</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+<h1>AdminBot</h1>
+<p>Open your saved workspace, even without a connection.</p>
+<form id="workspace">
+<label for="url">Portal URL</label>
+<input id="url" type="url" required placeholder="https://your-portal.example/">
+<button type="submit">Open workspace</button>
+</form>
+<p id="status" role="status"></p>
+<p>First, open the portal online and wait for “Ready on this device.” Open the records you need before disconnecting. Manual drafts sync when you return.</p>
+<p>This shortcut uses your portal's existing browser storage and sign-in. It does not copy records or credentials into the extension.</p>
+<script type="module" src="popup.js"></script>
+</body></html>

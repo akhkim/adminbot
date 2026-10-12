@@ -158,3 +158,17 @@ describe("sweepGraduations", () => {
     expect(result.ceremony).toBeUndefined();
   });
 });
+
+describe("profile year-month validation", () => {
+  it("rejects malformed months on admin and self updates, and accepts valid months or clearing", () => {
+    const service = serviceWith();
+    for (const field of ["joined_month", "graduated_month"] as const) {
+      for (const value of ["Jan-26", "2026-00", "2026-13", "2026-1"]) {
+        expect(service.updateOwnProfile("mei", { [field]: value } as never).ok).toBe(false);
+        expect(service.upsertLabMember({ id: "mei", [field]: value } as never).ok).toBe(false);
+      }
+      expect(service.updateOwnProfile("mei", { [field]: "2026-01" } as never).ok).toBe(true);
+      expect(service.updateOwnProfile("mei", { [field]: "" } as never).ok).toBe(true);
+    }
+  });
+});

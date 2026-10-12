@@ -1,5 +1,6 @@
 import { html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
+import { renderDateControl } from "../date-control.ts";
 type Invite = {
   id: string;
   status: string;
@@ -80,7 +81,10 @@ export class LabSharingInvites extends LitElement {
       const response = await fetch(`${this.baseUrl.replace(/\/$/u, "")}${path}`, {
         method: body === undefined ? "GET" : "POST",
         signal: controller.signal,
-        headers: { Authorization: `Bearer ${this.sessionToken}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${this.sessionToken}`,
+          "Content-Type": "application/json",
+        },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       const data = await response.json();
@@ -90,9 +94,11 @@ export class LabSharingInvites extends LitElement {
       return data;
     } catch (error) {
       if (controller.signal.aborted) {
-        throw new Error(body === undefined
-          ? "Invitations took too long to load. Try Refresh invitations."
-          : "The request timed out. It may have been accepted. Refresh invitations before trying again.");
+        throw new Error(
+          body === undefined
+            ? "Invitations took too long to load. Try Refresh invitations."
+            : "The request timed out. It may have been accepted. Refresh invitations before trying again.",
+        );
       }
       throw error;
     } finally {
@@ -113,10 +119,13 @@ export class LabSharingInvites extends LitElement {
         return;
       }
       const openProjects = new Set(
-        directory.requests.filter((request: { status: string }) => request.status === "open")
+        directory.requests
+          .filter((request: { status: string }) => request.status === "open")
           .map((request: { paper_id: string }) => request.paper_id),
       );
-      this.projects = directory.projects.filter((project: { id: string }) => openProjects.has(project.id));
+      this.projects = directory.projects.filter((project: { id: string }) =>
+        openProjects.has(project.id),
+      );
       if (!this.projects.some((project) => project.id === this.paper)) {
         this.paper = "";
       }
@@ -159,7 +168,8 @@ export class LabSharingInvites extends LitElement {
         }
       } catch {
         if (generation === this.generation) {
-          this.error = "Your request was accepted, but history could not refresh. Use Refresh invitations to check its status.";
+          this.error =
+            "Your request was accepted, but history could not refresh. Use Refresh invitations to check its status.";
         }
       }
     } catch (error) {
@@ -181,16 +191,20 @@ export class LabSharingInvites extends LitElement {
       value: string,
       set: (value: string) => void,
       type = "datetime-local",
-    ) =>
-      html`<label class="lab-sharing-ask__field"
-        ><span>${label}</span
-        ><input
-          class="lab-sharing-ask__input"
-          type=${type}
-          required
-          .value=${value}
-          @input=${(event: Event) => set((event.target as HTMLInputElement).value)}
-      /></label>`;
+    ) => {
+      const input = html`<input
+        class="lab-sharing-ask__input"
+        type=${type}
+        required
+        .value=${value}
+        @input=${(event: Event) => set((event.target as HTMLInputElement).value)}
+      />`;
+      return html`<label class="lab-sharing-ask__field"
+        ><span>${label}</span>${type === "datetime-local"
+          ? renderDateControl(input, value)
+          : input}</label
+      >`;
+    };
     return html`<section class="lab-sharing lab-sharing-directory" aria-label="Project invitations">
       <h2 class="lab-sharing-seek__title">Project invitations</h2>
       <p>
@@ -269,11 +283,13 @@ export class LabSharingInvites extends LitElement {
               Request invitation
             </button>
           </form>`
-        : this.busy || this.error ? nothing : html`<p>
-            ${this.projects.length
-              ? "Select a member above to prepare an invitation."
-              : "Open a help request for a project you manage in Open projects above, then refresh invitations."}
-          </p>`}
+        : this.busy || this.error
+          ? nothing
+          : html`<p>
+              ${this.projects.length
+                ? "Select a member above to prepare an invitation."
+                : "Open a help request for a project you manage in Open projects above, then refresh invitations."}
+            </p>`}
       <h3 class="lab-sharing-request__project">Your invitation requests</h3>
       ${this.invites.length
         ? this.invites.map(

@@ -41,3 +41,23 @@ it("stops exposing the status exactly at expiry and fails closed for invalid tim
   expect(currentDirectorStatus(status, NaN)).toBeNull();
   expect(currentDirectorStatus(null, now)).toBeNull();
 });
+
+it("publishes only an explicit valid time zone, never the caller's city", () => {
+  expect(
+    validateDirectorStatus(
+      { ...input, timezone: " America/Toronto ", current_city: "Private city" },
+      now,
+    ),
+  ).toEqual({
+    availability: "busy",
+    message: "Reviewing papers",
+    expires_at: "2026-09-07T01:00:00.000Z",
+    timezone: "America/Toronto",
+  });
+  expect(validateDirectorStatus({ ...input, timezone: " " }, now)).toEqual(
+    validateDirectorStatus(input, now),
+  );
+  for (const timezone of [null, 123, "Invalid/Zone", "Toronto"]) {
+    expect(typeof validateDirectorStatus({ ...input, timezone }, now)).toBe("string");
+  }
+});

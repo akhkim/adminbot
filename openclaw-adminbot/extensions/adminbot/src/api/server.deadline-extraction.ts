@@ -99,7 +99,6 @@ export async function extractDeadlineSchedule(
     temperature: 0,
     maxTokens: 12000,
     requireComplete: true,
-    background: true,
     verifyModel: true,
     messages: [
       { role: "system", content: prompt },
@@ -126,10 +125,17 @@ export async function extractDeadlineSchedule(
   return result;
 }
 
+/**
+ * The only cancellation is the collector going away. `completeLocally` goes through the shared LLM
+ * gateway, which queues local requests FIFO behind every other client (the OpenClaw gateway's chat
+ * included) with no deadline, and its client cannot tell a queued request from a running one. A
+ * fixed timeout here would therefore abort extractions that were merely waiting their turn. The
+ * collector bounds its own wait; its disconnect aborts this request, which drops it from the
+ * gateway queue or cancels the running generation.
+ */
 export async function handleDeadlineExtraction(req: IncomingMessage, res: ServerResponse) {
   const controller = new AbortController();
   const cancel = () => controller.abort();
-  const timeout = setTimeout(cancel, 120000);
   res.once("close", cancel);
   try {
     const result = await extractDeadlineSchedule(await readJson(req), controller.signal);
@@ -148,7 +154,6 @@ export async function handleDeadlineExtraction(req: IncomingMessage, res: Server
       });
     }
   } finally {
-    clearTimeout(timeout);
     res.off("close", cancel);
   }
 }

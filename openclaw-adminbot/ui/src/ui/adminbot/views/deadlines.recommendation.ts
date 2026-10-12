@@ -501,6 +501,7 @@ export class DeadlineRecommendation extends LitElement {
           <circle cx="9" cy="7" r="4" />
           <path d="M2 21v-2a7 7 0 0 1 14 0v2M19 8v6m-3-3h6" />
         </svg>
+        <span>Recommend</span>
       </button>
       <span role="status" aria-live="polite">${this.notice}</span>
       <dialog

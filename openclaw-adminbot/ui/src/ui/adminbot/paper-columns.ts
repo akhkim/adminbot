@@ -15,6 +15,7 @@ import {
   ADMINBOT_LAB_OVERLEAF_HOST,
   OVERLEAF_COM_HOST,
 } from "../../../../extensions/adminbot/src/contracts/overleaf.js";
+import { isPaperFeedbackSlot } from "../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 import {
   adminBotPaperSlotRegistry,
   adminBotPaperSlots,
@@ -743,7 +744,10 @@ const MIRRORED_SLOTS = new Set<AdminBotPaperSlot>(
  */
 export const COLUMNS: Column[] = [
   ...RECORD_COLUMNS,
-  ...adminBotPaperSlots.filter((slot) => !MIRRORED_SLOTS.has(slot)).map(slotColumn),
+  // Feedback requests are written only by the card's feedback form; see isPaperFeedbackSlot.
+  ...adminBotPaperSlots
+    .filter((slot) => !MIRRORED_SLOTS.has(slot) && !isPaperFeedbackSlot(slot))
+    .map(slotColumn),
 ];
 
 /**

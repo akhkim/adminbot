@@ -349,6 +349,7 @@ describe("memberPrivilegeLevel wiring", () => {
       adminBotNotice: { kind: "success", text: "A's calendar update" },
       adminBotBroadcastExpiry: "A's date",
       adminBotBroadcastAvailability: "A's private hours",
+      adminBotBroadcastTimezone: "America/Toronto",
       adminBotMemberNudge: {
         channel: "email",
         message: "A's private announcement",
@@ -415,6 +416,7 @@ describe("memberPrivilegeLevel wiring", () => {
     expect(host.adminBotNotice).toBeNull();
     expect(host.adminBotBroadcastExpiry).toBeUndefined();
     expect(host.adminBotBroadcastAvailability).toBeUndefined();
+    expect(host.adminBotBroadcastTimezone).toBeUndefined();
     expect(host.adminBotMemberNudge).toEqual(createEmptyAdminBotMemberNudgeState());
     expect(host.adminBotSelectedActionIds).toEqual([]);
     expect(host.adminBotBulkActionBusy).toBe(false);

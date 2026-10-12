@@ -1,5 +1,4 @@
-import { localModelCapacity } from "./local-model-capacity.js";
-
+import { routeLlmFetch } from "../kernel/llm-gateway-client.js";
 /**
  * Loopback-only HTTP clients for the guidebook corpus.
  *
@@ -143,10 +142,11 @@ export async function completeLocally(params: {
   temperature?: number;
   /** Output ceiling. Unset leaves it to the server, which for a reasoning model means "a lot". */
   maxTokens?: number;
-  /** Reject truncated structured output when the caller requires a complete response. */
+  /**
+   * Fail closed unless generation stopped on its own. A structured-output caller would otherwise
+   * receive JSON cut off at the token ceiling, which may still parse as a smaller valid result.
+   */
   requireComplete?: boolean;
-  /** Yield to other completions and retry within the caller’s original timeout. */
-  background?: boolean;
   /**
    * Further request fields, spread over the payload last.
    *
@@ -157,25 +157,20 @@ export async function completeLocally(params: {
    */
   extra?: Record<string, unknown>;
 }): Promise<string> {
-  const parsed = (await localModelCapacity.run(
-    params.background === true,
+  const parsed = (await postJson(
+    routeLlmFetch(params.fetchImpl, "local"),
+    params.baseUrl,
+    "chat/completions",
+    params.apiKey,
+    {
+      model: params.model,
+      messages: params.messages,
+      temperature: params.temperature ?? 0.2,
+      ...(params.maxTokens === undefined ? {} : { max_tokens: params.maxTokens }),
+      ...params.extra,
+    },
+    params.purposeLabel ?? "guidebook answer",
     params.signal,
-    (signal) =>
-      postJson(
-        params.fetchImpl,
-        params.baseUrl,
-        "chat/completions",
-        params.apiKey,
-        {
-          model: params.model,
-          messages: params.messages,
-          temperature: params.temperature ?? 0.2,
-          ...(params.maxTokens === undefined ? {} : { max_tokens: params.maxTokens }),
-          ...params.extra,
-        },
-        params.purposeLabel ?? "guidebook answer",
-        signal,
-      ),
   )) as {
     model?: string;
     choices?: Array<{ finish_reason?: string; message?: { content?: unknown } }>;

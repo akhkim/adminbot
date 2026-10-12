@@ -30,3 +30,81 @@
   --cm-success: var(--ok);
   --cm-danger: var(--danger);
 }
+
+/* Phone controls need a full touch target even when desktop variants are compact. */
+@media (max-width: 600px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
+  :root {
+    --control-h-sm: 44px;
+    --control-h-md: 44px;
+    --control-h-lg: 44px;
+  }
+
+  .content .input,
+  .content .adminbot-multiselect__summary,
+  .content .btn {
+    min-height: 44px;
+  }
+}
+
+/* Shared phone rules cover compact controls in both lab and operator pages. */
+@media (max-width: 600px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
+  .shell .content button,
+  .shell .content .btn,
+  .shell .content select,
+  .shell .content summary,
+  .shell .content input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(.sr-only),
+  .shell .content textarea,
+  .shell .content label:has(> input[type="checkbox"]),
+  .shell .content label:has(> input[type="radio"]) {
+    min-height: 44px;
+  }
+
+  .shell .content input:not([type="checkbox"]):not([type="radio"]),
+  .shell .content select,
+  .shell .content textarea {
+    font-size: 16px;
+  }
+
+  .shell .content input[type="file"]:not(.sr-only) {
+    max-width: 100%;
+    min-height: 44px;
+  }
+
+  .shell .nav-item,
+  .shell .topbar-theme-mode__btn,
+  .shell .sidebar-utility-link,
+  .shell .content .profile__help-trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .shell .content .dashboard-card__step--action,
+  .shell .content .lab-sharing-tag,
+  .shell .content .profile__project-chip {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .adminbot-reimbursement-workspace,
+  .adminbot-reimbursement-composer,
+  .adminbot-receipt-drop {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .shell .content input[type="file"]:not(.sr-only) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .shell .content .profile__help-bubble {
+    position: fixed;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    left: 16px;
+    right: 16px;
+    width: auto;
+    max-width: none;
+    transform: none;
+  }
+}

@@ -1,4 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
+import type {
+  CalendarMembershipReader,
+  CalendarAccessReader,
+} from "../connectors/calendar-membership.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
@@ -9,8 +13,7 @@ import {
   adminBotDormantChaseMemberTypes,
   adminBotIsAlumniMember,
   adminBotProjectChannelName,
-  adminBotLogisticsSettledStatuses,
-  adminBotRecLetterChannelRetentionDays,
+  adminBotRecLetterChannelWindowMonths,
   adminBotNormalizePaperAlias,
   adminBotPaperAliasMaxLength,
   adminBotNudgeRosterDecision,
@@ -130,6 +133,7 @@ import {
   type AdminBotConferenceTripRecord,
 } from "../contracts/conference-trips.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
+import { adminBotIsPersonalCorrespondenceEmail } from "../contracts/correspondence-email.js";
 import {
   deadlineProposalDuplicateKey,
   isDeadlinePublicationPayload,
@@ -177,7 +181,10 @@ import {
   type MemberDuplicatePair,
   type MemberMergeConflict,
 } from "../contracts/member-duplicates.js";
-import { adminBotOutreachEmail } from "../contracts/member-outreach-email.js";
+import {
+  adminBotCalendarEmail,
+  adminBotOutreachEmail,
+} from "../contracts/member-outreach-email.js";
 import { normalizeMemberProfileValues } from "../contracts/member-profile-values.js";
 import {
   type AdminBotMemberRequest,
@@ -219,6 +226,7 @@ import {
   type AdminBotSocialDraftRecord,
   type AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
+import { parsePaperFeedback } from "../contracts/paper-feedback.js";
 import type { PaperAiTextCheckStore } from "../contracts/paper-integrity-checks.js";
 import {
   adminBotPaperSlotBranchPriority,
@@ -274,6 +282,7 @@ import {
 } from "../workflows/logistics/rec-letter-reminders.js";
 import {
   byUrgency,
+  deadlineInstant,
   prepareLogisticsRequest,
   withoutAttachmentBytes,
   withCurrentLogisticsDeadline,
@@ -377,6 +386,8 @@ import {
 } from "../workflows/papers/author-links.js";
 import {
   buildConferenceAttendance,
+  canonicalConferenceTripKey,
+  canonicalConferenceTrips,
   expectedConferenceAttendees,
   mergeConferenceAttendance,
   paperConferenceKey,
@@ -419,6 +430,7 @@ import {
   reviewProvesFixesMerged,
   type PaperMentorContext,
 } from "../workflows/papers/papermentor-nudges.js";
+import { paperFeedbackQueue } from "../workflows/papers/pi-review.js";
 import {
   buildPiReviewNotice,
   isAwaitingPiReview,
@@ -435,6 +447,18 @@ import {
   venueKey,
   selectPublications,
 } from "../workflows/papers/publication-list.js";
+import { readXThreadDraft } from "../workflows/papers/x-draft.js";
+import {
+  enforceActiveChannels,
+  isActiveChannelEligible,
+  type ActiveChannelReader,
+} from "./service.active-channels.js";
+import {
+  calendarMembershipWriteError,
+  ineligibleCalendarEmails,
+  isRestrictedCalendarEvent,
+  syncCalendarMembership,
+} from "./service.calendar-membership.js";
 import {
   recommendationDirectory,
   previewRecommendation,
@@ -641,7 +665,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   /** The whole ledger, or one domain's slice. */
   listNudgeLedger(domain?: string): AdminBotNudgeLedgerRecord[];
   saveSocialDraft(record: AdminBotSocialDraftRecord): void;
-  listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[];
+  listSocialDrafts(paperId?: string, draftId?: string): AdminBotSocialDraftRecord[];
   saveSocialConsent(record: AdminBotSocialConsentRecord): void;
   listSocialConsents(draftId?: string): AdminBotSocialConsentRecord[];
   saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void;
@@ -984,6 +1008,7 @@ import {
   type AdminBotTabVisitReport,
 } from "../contracts/tab-visits.js";
 import { AdminBotMemoryStore } from "../persistence/memory.js";
+import { ADMINBOT_ACTIVE_CHANNELS } from "../workflows/members/access-audit.js";
 import {
   adminBotCityChannelMinimumMembers,
   buildCityChannelMessage,
@@ -1142,6 +1167,7 @@ const DEFAULT_ACTION_POLICIES = {
   // Same tier as adding somebody to an event: it shows them every event on the lab's calendar, and
   // an admin says yes before that happens. The admin-driven onboarding paths approve it on the
   // click that started them; the weekly sweep leaves it in Pending Actions.
+  "calendar.revoke_lab_calendar": approvalPolicy("T3", ["admin"]),
   "calendar.grant_lab_calendar": approvalPolicy("T3", ["admin"]),
   "calendar.reschedule": approvalPolicy("T3", ["admin"]),
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
@@ -1531,7 +1557,30 @@ export class AdminBotService {
   private seedDefaultBadges(): void {
     const now = new Date().toISOString();
     for (const seed of adminBotDefaultBadgeDefinitions) {
-      if (this.store.getBadgeDefinition(seed.id)) {
+      const existing = this.store.getBadgeDefinition(seed.id);
+      if (existing) {
+        if (
+          seed.id === "community_building__media_impact" &&
+          existing.name === seed.name &&
+          existing.category === seed.category &&
+          existing.description ===
+            "Research was covered by press or cited in a policy or industry document."
+        ) {
+          this.store.saveBadgeDefinition({
+            ...existing,
+            description: seed.description,
+            updated_at: now,
+          });
+        }
+        if (
+          seed.id === "team_contributor__infra_builder" &&
+          !existing.tier &&
+          existing.name === seed.name &&
+          existing.category === seed.category &&
+          existing.description === seed.description
+        ) {
+          this.store.saveBadgeDefinition({ ...existing, tier: "Good", updated_at: now });
+        }
         continue;
       }
       const familyKey =
@@ -1584,22 +1633,51 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
-  /**
-   * Propose the recurring all-day event for a member's birthday.
-   *
-   * A proposal rather than a direct write, because reaching Google is an external effect and every
-   * one of those goes through the approval gate. The card an admin sees is also the last place a
-   * typo'd date, or somebody who filled the field in without noticing where it would show up, can
-   * be caught before it is on a calendar the whole lab reads.
-   *
-   * Changing a birthday proposes an event for the new date and does not retract the old one --
-   * cancelling the previous event needs its Google event id, which the proposal only learns at
-   * execution time. Until that is wired, a corrected date leaves the first event to be removed by
-   * hand.
-   */
-  private proposeBirthdayEvent(member: AdminBotLabMember): void {
-    const calendar = resolveLabCalendar();
-    const payload = birthdayEventPayload(member, calendar.id, new Date());
+  /** Reconcile calendar proposals; external writes still require approval. */
+  private reconcileBirthdayEvent(member: AdminBotLabMember, removed = false): void {
+    const eligible = !removed && isThemeMeetingEligible(member) && Boolean(member.birthday?.trim());
+    let current = false;
+    for (const proposal of this.store.listProposalsByType("calendar.create_birthday")) {
+      if (proposal.target?.member_id !== member.id) {
+        continue;
+      }
+      const cancellations = this.store
+        .listProposalsByType("calendar.cancel")
+        .filter((cancel) => cancel.target?.birthday_action_id === proposal.id);
+      if (
+        eligible &&
+        proposal.target?.birthday === member.birthday?.trim() &&
+        proposal.status !== "rejected" &&
+        !cancellations.some((cancel) => cancel.status !== "rejected")
+      ) {
+        current = true;
+        continue;
+      }
+      if (proposal.status === "pending" || proposal.status === "approved") {
+        this.removePending(proposal.id, { note: "Birthday or membership changed." });
+      }
+      const execution = this.store.getExecutionResult(proposal.id);
+      const eventId = execution?.artifacts?.event_id;
+      if (execution?.status === "executed" && eventId && cancellations.length === 0) {
+        const payload = proposal.proposed_payload as Record<string, unknown>;
+        this.createProposal({
+          type: "calendar.cancel",
+          summary: `Remove ${member.name}'s previous birthday event`,
+          target: { member_id: member.id, birthday_action_id: proposal.id },
+          proposed_payload: {
+            calendar_id: payload.calendar_id,
+            event_id: eventId,
+            ...(payload.account ? { account: payload.account } : {}),
+          },
+          rationale: "The birthday changed, was cleared, or the member is no longer eligible.",
+          idempotency_key: `birthday-remove:${proposal.id}`,
+        });
+      }
+    }
+    if (!eligible || current) {
+      return;
+    }
+    const payload = birthdayEventPayload(member, resolveLabCalendar().id, new Date());
     if (!payload) {
       return;
     }
@@ -1609,11 +1687,8 @@ export class AdminBotService {
       summary: `Add ${name}'s birthday to the lab calendar`,
       target: { member_id: member.id, birthday: member.birthday?.trim() ?? "" },
       proposed_payload: payload,
-      rationale: "A member set their birthday on their profile so the lab can send wishes.",
-      undo_plan: "Delete the recurring event from the lab calendar and clear the profile field.",
-      // Keyed on the date as well as the member, so re-saving the same birthday collapses onto one
-      // proposal while a corrected date is genuinely a new one.
-      idempotency_key: `birthday:${member.id}:${member.birthday?.trim() ?? ""}`,
+      rationale: "A full or major coauthor member supplied their optional birthday.",
+      undo_plan: "Delete the recurring event from the lab calendar.",
     });
   }
 
@@ -1830,7 +1905,12 @@ export class AdminBotService {
     const skipped: AdminBotMemberNudgeSkip[] = [];
     const invited: Array<{ event_id: string; theme: ResearchThemeId; attendees: string[] }> = [];
     const joined: Array<{ channel: string; theme: ResearchThemeId; member_id: string }> = [];
-    const eligible = this.store.listLabMembers().filter(isThemeMeetingEligible);
+    const members = this.store.listLabMembers();
+    const eligible = members.filter(isThemeMeetingEligible);
+    const ineligible =
+      params.calendarId === resolveLabCalendar().id
+        ? ineligibleCalendarEmails(members)
+        : new Set<string>();
 
     for (const themeId of RESEARCH_THEME_IDS) {
       const matches = themeMeetings(themeId, params.meetings ?? []);
@@ -1853,12 +1933,19 @@ export class AdminBotService {
         if (!memberThemeIds(member).includes(themeId)) {
           continue;
         }
-        const email = member.calendar_email?.trim();
+        const email = adminBotCalendarEmail(member);
         if (!email) {
-          skipped.push({ member_id: member.id, reason: "member has no calendar_email" });
+          skipped.push({
+            member_id: member.id,
+            reason: "member has no usable calendar or contact email",
+          });
           continue;
         }
-        if (already.has(email.toLowerCase())) {
+        if (
+          (isRestrictedCalendarEvent(meeting.event_id) &&
+            ineligible.has(email.trim().toLowerCase())) ||
+          already.has(email.toLowerCase())
+        ) {
           continue;
         }
         attendees.push(email);
@@ -1874,9 +1961,14 @@ export class AdminBotService {
         proposed_payload: {
           calendar_id: params.calendarId,
           event_id: meeting.event_id,
-          // The whole set that will be on the event, existing attendees included: this action type
-          // adds rather than replaces, but the approval card should show the result, not the delta.
-          attendees: [...new Set([...(meeting.attendees ?? []), ...unique])].toSorted(),
+          // Do not re-propose known ineligible guests; additions leave their removal to cleanup.
+          attendees: [...new Set([...(meeting.attendees ?? []), ...unique])]
+            .filter(
+              (email) =>
+                !isRestrictedCalendarEvent(meeting.event_id) ||
+                !ineligible.has(email.trim().toLowerCase()),
+            )
+            .toSorted(),
         },
         rationale: "Members whose stated research interests place them in this theme.",
         undo_plan: "Remove the attendees with calendar.remove_attendees.",
@@ -2625,6 +2717,17 @@ export class AdminBotService {
     ) {
       return serviceError(409, "proposal does not have the required approvals");
     }
+    if (proposal.type === "calendar.create_birthday") {
+      const member = this.store.getLabMember(String(proposal.target?.member_id ?? ""));
+      if (
+        !member ||
+        !isThemeMeetingEligible(member) ||
+        !member.birthday?.trim() ||
+        member.birthday.trim() !== proposal.target?.birthday
+      ) {
+        return serviceError(409, "birthday proposal no longer matches an eligible member");
+      }
+    }
     const now = new Date().toISOString();
     const dryRun = request.dry_run !== false;
     const baseResult = {
@@ -2645,6 +2748,12 @@ export class AdminBotService {
         },
       });
       return { ok: true, status: 200, payload: result };
+    }
+    const membershipError = proposal.type.startsWith("calendar.")
+      ? calendarMembershipWriteError(proposal, this.store.listLabMembers(), resolveLabCalendar().id)
+      : undefined;
+    if (membershipError) {
+      return this.executionFailure(proposal, membershipError.status, membershipError.message);
     }
     let handled: boolean;
     let delivered = true;
@@ -2795,6 +2904,21 @@ export class AdminBotService {
     proposal.updated_at = now;
     this.store.updateProposal(proposal);
     this.store.saveExecutionResult(result);
+    if (proposal.type === "calendar.create_birthday") {
+      const memberId = String(proposal.target?.member_id ?? "");
+      const member = this.store.getLabMember(memberId);
+      this.reconcileBirthdayEvent(
+        member ?? {
+          id: memberId,
+          name: memberId,
+          privilege_level: "external_collaborator",
+          access: [],
+          created_at: now,
+          updated_at: now,
+        },
+        !member,
+      );
+    }
     this.recordAudit({
       type: "execution.executed",
       action_id: actionId,
@@ -3046,6 +3170,18 @@ export class AdminBotService {
     }
     member = normalizeMemberProfileValues(member);
     const existing = this.store.getLabMember(member.id);
+    for (const field of ["joined_month", "graduated_month"] as const) {
+      const value = member[field];
+      // Full-record editors may resend legacy values. Preserve those until explicitly corrected.
+      if (
+        value !== undefined &&
+        value !== "" &&
+        value !== existing?.[field] &&
+        (typeof value !== "string" || !/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(value))
+      ) {
+        return serviceError(400, `${field} must be a valid year-month (YYYY-MM)`);
+      }
+    }
     const privilegeLevel =
       member.privilege_level ?? existing?.privilege_level ?? DEFAULT_MEMBER_PRIVILEGE_LEVEL;
     // This is a patch, not a replace: `stored` below is {...existing, ...member}, and callers send
@@ -3054,6 +3190,24 @@ export class AdminBotService {
     // `availability` and nothing else, and validating the patch alone read that as a member with no
     // name at all. Every other check in validateLabMember is already guarded on `!== undefined`, so
     // it still only inspects what this request actually sent.
+    if (
+      member.correspondence_email !== undefined &&
+      member.correspondence_email !== existing?.correspondence_email
+    ) {
+      const correspondenceError = validateEmailFormat(
+        member.correspondence_email,
+        "correspondence email",
+      );
+      if (correspondenceError) {
+        return serviceError(400, correspondenceError);
+      }
+      if (adminBotIsPersonalCorrespondenceEmail(member.correspondence_email)) {
+        return serviceError(
+          400,
+          "Use an institutional or company email for correspondence, rather than a personal email address.",
+        );
+      }
+    }
     const validation = validateLabMember(
       { ...member, name: member.name ?? existing?.name ?? "" },
       privilegeLevel,
@@ -3137,6 +3291,97 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
+  private calendarMembershipCleanup: ReturnType<typeof syncCalendarMembership> | undefined;
+
+  syncLabCalendarMembership(
+    calendarId: string,
+    read: CalendarMembershipReader,
+    readAccess: CalendarAccessReader,
+  ) {
+    if (!this.calendarMembershipCleanup) {
+      this.calendarMembershipCleanup = syncCalendarMembership(
+        this,
+        this.store,
+        calendarId,
+        read,
+        readAccess,
+      ).finally(() => {
+        this.calendarMembershipCleanup = undefined;
+      });
+    }
+    return this.calendarMembershipCleanup;
+  }
+
+  private activeChannelCleanup: ReturnType<typeof enforceActiveChannels> | undefined;
+
+  syncActiveChannels(read: ActiveChannelReader) {
+    // Overlapping cron/manual requests share a pass, rather than creating duplicate proposals.
+    if (!this.activeChannelCleanup) {
+      this.activeChannelCleanup = enforceActiveChannels(this, this.store, read).finally(() => {
+        this.activeChannelCleanup = undefined;
+      });
+    }
+    return this.activeChannelCleanup;
+  }
+
+  private inviteLinkedMemberToActiveChannels(member: AdminBotLabMember): void {
+    const userId = member.slack_user_id?.trim();
+    if (!userId || !/^[UW][A-Z0-9]+$/u.test(userId) || !isActiveChannelEligible(member)) {
+      return;
+    }
+    for (const channel of ADMINBOT_ACTIVE_CHANNELS) {
+      const lastRemoval = this.store
+        .listProposalsByType("slack.remove_from_channel")
+        .filter((proposal) => {
+          const payload = proposal.proposed_payload as Record<string, unknown> | undefined;
+          return (
+            proposal.status === "executed" &&
+            payload?.channel === channel &&
+            payload.user_id === userId
+          );
+        })
+        .toSorted((left, right) => left.updated_at.localeCompare(right.updated_at))
+        .at(-1);
+      // A successful removal supersedes the cached channel list. Each removal starts a new
+      // invitation cycle, while repeated directory passes within that cycle still deduplicate.
+      if (
+        !lastRemoval &&
+        member.slack_channels?.some((name) => name.replace(/^#/u, "").toLowerCase() === channel)
+      ) {
+        continue;
+      }
+      const key = `active-channel-link:${member.id}:${userId}:${channel}${lastRemoval ? `:after:${lastRemoval.id}` : ""}`;
+      const previous = this.store
+        .listProposalsByType("slack.invite_to_channel")
+        .find((proposal) => proposal.idempotency_key === key);
+      if (previous?.status === "executed" || previous?.status === "rejected") {
+        continue;
+      }
+      const proposed = previous
+        ? { ok: true as const, payload: previous }
+        : this.createProposal({
+            type: "slack.invite_to_channel",
+            summary: `Add ${member.name} to #${channel} (linked Slack account)`,
+            target: {
+              service: "slack",
+              channel: "slack",
+              target: channel,
+              recipientMemberId: member.id,
+            },
+            proposed_payload: { channel, user_id: userId },
+            idempotency_key: key,
+            undo_plan: "An admin can remove the member from the channel.",
+          });
+      if (proposed.ok) {
+        void this.execute(proposed.payload.id, { dry_run: false, idempotency_key: key }).catch(
+          () => {
+            // The typed proposal retains the failure for review; never fail the profile save.
+          },
+        );
+      }
+    }
+  }
+
   private afterLabMemberWritten(
     existing: AdminBotLabMember | undefined,
     member: AdminBotLabMemberInput,
@@ -3146,6 +3391,9 @@ export class AdminBotService {
     origin: AdminBotWriteOrigin,
   ): void {
     this.clearResolvedProfileNotifications(stored);
+    if (existing && stored.slack_user_id?.trim() !== existing.slack_user_id?.trim()) {
+      this.inviteLinkedMemberToActiveChannels(stored);
+    }
     // Same patch, same rules, same instant as the provenance stamp above -- see
     // changedProfileFields for why these two must not drift. Provenance keeps the latest writer
     // per field; this keeps every writer, which is the half that survives a bulk re-import.
@@ -3179,13 +3427,7 @@ export class AdminBotService {
         ...(moved.timezone ? { timezone: moved.timezone } : {}),
       });
     }
-    // Same hook, same reason: a birthday can be set from the member's own form, an admin's editor
-    // or the roster import, and all three land here. Only on an actual change -- re-saving a
-    // profile must not propose the same event again, and the idempotency key makes a retry of the
-    // *same* date collapse onto one proposal rather than stacking cards on an admin.
-    if (stored.birthday?.trim() && stored.birthday.trim() !== existing?.birthday?.trim()) {
-      this.proposeBirthdayEvent(stored);
-    }
+    this.reconcileBirthdayEvent(stored);
     // The same hook again, for theme membership. This is what makes onboarding automatic: a new
     // member describing their research is a profile write, so the channels they belong in are
     // proposed the moment they say what they work on, rather than waiting for a sweep.
@@ -3366,6 +3608,73 @@ export class AdminBotService {
     };
   }
 
+  listActiveCollaboratorSchedules(viewerId: string): AdminBotServiceResponse<{
+    members: Pick<
+      AdminBotLabMember,
+      "id" | "name" | "hours_per_week" | "availability" | "time_off"
+    >[];
+  }> {
+    if (!this.store.getLabMember(viewerId)) {
+      return { ok: false, status: 404, error: { message: "member not found" } };
+    }
+    const ids = new Set<string>();
+    // Read only this viewer's papers, including every page rather than silently truncating.
+    for (let offset = 0; ; offset += 200) {
+      const papers = this.store.listPapers({ authorMemberId: viewerId, limit: 200, offset });
+      for (const paper of papers) {
+        const progress = paperSlotProgress(
+          paper.id,
+          this.store.listPaperSlots(paper.id),
+          this.store.listSocialDrafts(paper.id),
+        );
+        if (progress.provided >= progress.total) {
+          continue;
+        }
+        for (const author of paper.author_links ?? []) {
+          if (author.member_id && author.member_id !== viewerId) {
+            ids.add(author.member_id);
+          }
+        }
+      }
+      if (papers.length < 200) {
+        break;
+      }
+    }
+    const members = [...ids]
+      .flatMap((id) => {
+        const member = this.store.getLabMember(id);
+        if (!member) {
+          return [];
+        }
+        return [
+          {
+            id: member.id,
+            name: member.name,
+            hours_per_week: member.hours_per_week,
+            availability: (member.availability ?? []).map(
+              ({ start, end, project, hours_per_week }) => ({
+                start,
+                end,
+                project,
+                hours_per_week,
+              }),
+            ),
+            time_off: (member.time_off ?? []).map(
+              ({ start, end, kind, availability, hours_per_week }) => ({
+                start,
+                end,
+                kind,
+                availability,
+                hours_per_week,
+              }),
+            ),
+          },
+        ];
+      })
+      .toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+    return { ok: true, status: 200, payload: { members } };
+  }
+
   listBadgeDefinitions(): AdminBotServiceResponse<{ badges: AdminBotBadgeDefinition[] }> {
     return { ok: true, status: 200, payload: { badges: this.store.listBadgeDefinitions() } };
   }
@@ -3481,7 +3790,14 @@ export class AdminBotService {
     badgeId: string,
     actor: string,
     evidenceInput?: string,
+    countInput?: unknown,
   ): AdminBotServiceResponse<{ assignment: AdminBotAssignedBadge }> {
+    if (
+      countInput !== undefined &&
+      (typeof countInput !== "number" || !Number.isSafeInteger(countInput) || countInput < 1)
+    ) {
+      return serviceError(400, "badge count must be a positive safe integer");
+    }
     const member = this.store.getLabMember(memberId);
     if (!member) {
       return serviceError(404, "member not found");
@@ -3511,6 +3827,11 @@ export class AdminBotService {
       awarded_at: now,
       awarded_by: actor,
       source: "admin",
+      count:
+        (countInput as number | undefined) ??
+        this.store.listBadgeAssignments(memberId).find((entry) => entry.badge_id === badge.id)
+          ?.count ??
+        1,
       ...(evidence ? { evidence } : {}),
     });
     const assignment = this.assignedBadgesFor(memberId).find(
@@ -3519,7 +3840,12 @@ export class AdminBotService {
     this.recordAudit({
       type: "badge.assigned",
       actor,
-      details: { member_id: memberId, badge_id: badge.id, family_key: badge.family_key },
+      details: {
+        member_id: memberId,
+        badge_id: badge.id,
+        family_key: badge.family_key,
+        count: assignment?.count ?? 1,
+      },
     });
     if (!assignment) {
       return serviceError(500, "badge assignment could not be read back");
@@ -4048,6 +4374,58 @@ export class AdminBotService {
     return { ok: true, status: 201, payload: { request } };
   }
 
+  editMemberRequest(
+    requestId: string,
+    actor: string,
+    body: Record<string, unknown>,
+  ): AdminBotServiceResponse<{ request: AdminBotMemberRequest }> {
+    if (this.store.getLabMember(actor)?.privilege_level !== "admin") {
+      return serviceError(403, "only an admin can edit a member request");
+    }
+    const existing = this.store.getMemberRequest(requestId);
+    if (!existing) {
+      return serviceError(404, "member request not found");
+    }
+    if (existing.status !== "pending") {
+      return serviceError(409, "only pending member requests can be edited");
+    }
+    if (body.expected_updated_at !== existing.updated_at) {
+      return serviceError(409, "this request changed; reload it before editing");
+    }
+    const read = readAdminBotMemberRequest(body);
+    if (!read.ok) {
+      return serviceError(400, read.error);
+    }
+    const email = read.profile.email.toLowerCase();
+    if (
+      this.store.listLabMembers().some((member) => member.email?.trim().toLowerCase() === email) ||
+      this.store
+        .listMemberRequests({ status: "pending" })
+        .some(
+          (request) => request.id !== requestId && request.profile.email.toLowerCase() === email,
+        )
+    ) {
+      return serviceError(409, "this email already belongs to a member or pending request");
+    }
+    const request: AdminBotMemberRequest = {
+      ...existing,
+      profile: read.profile,
+      note: read.note,
+      updated_at: new Date(Math.max(Date.now(), Date.parse(existing.updated_at) + 1)).toISOString(),
+    };
+    this.store.saveMemberRequest(request);
+    this.recordAudit({
+      type: "lab_member_request.edited",
+      actor,
+      details: {
+        request_id: requestId,
+        previous_member_type: existing.profile.member_type,
+        member_type: request.profile.member_type,
+      },
+    });
+    return { ok: true, status: 200, payload: { request } };
+  }
+
   /** An admin reads every request; anyone else reads only their own. */
   listMemberRequests(viewer: {
     memberId: string;
@@ -4069,6 +4447,7 @@ export class AdminBotService {
   claimMemberRequest(
     requestId: string,
     adminId: string,
+    expectedUpdatedAt?: string,
   ): AdminBotServiceResponse<{ request: AdminBotMemberRequest }> {
     const existing = this.store.getMemberRequest(requestId);
     if (!existing) {
@@ -4076,6 +4455,9 @@ export class AdminBotService {
     }
     if (existing.status !== "pending") {
       return serviceError(409, `this request was already ${existing.status}`);
+    }
+    if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== existing.updated_at) {
+      return serviceError(409, "this request changed; reload it before approving");
     }
     const now = new Date().toISOString();
     const claimed: AdminBotMemberRequest = {
@@ -4254,6 +4636,31 @@ export class AdminBotService {
     assigned: AdminBotAssignedBadge[],
     deadlines?: unknown[],
   ): T & { assigned_badges?: AdminBotAssignedBadge[] } {
+    const followers = Math.max(member?.twitter_followers ?? 0, member?.linkedin_followers ?? 0);
+    const mediaBadge =
+      Number.isSafeInteger(followers) && followers > 1000
+        ? this.store.getBadgeDefinition("community_building__media_impact")
+        : undefined;
+    // Audience eligibility is derived from the member record; legacy awards remain untouched.
+    const visibleAssignments: AdminBotAssignedBadge[] = [];
+    if (mediaBadge && Number.isSafeInteger(followers) && followers > 1000) {
+      visibleAssignments.push({
+        ...mediaBadge,
+        badge_id: mediaBadge.id,
+        member_id: member.id,
+        awarded_at: member?.updated_at ?? mediaBadge.updated_at,
+        awarded_by: member.id,
+        source: "self_report",
+        follower_count: followers,
+        description: "More than 1,000 followers on X or LinkedIn (self-reported; higher count).",
+      });
+    }
+    assigned = [
+      ...visibleAssignments,
+      ...assigned.filter(
+        (badge) => !visibleAssignments.some((derived) => derived.badge_id === badge.badge_id),
+      ),
+    ];
     if (member.milestones?.length) {
       member = {
         ...member,
@@ -4282,7 +4689,10 @@ export class AdminBotService {
             ...assignment,
             category: badge.category,
             name: badge.name,
-            description: badge.description,
+            description:
+              badge.id === "community_building__media_impact"
+                ? "Historical Media Impact award; this count records awards, not followers."
+                : badge.description,
             ...(badge.criteria_url ? { criteria_url: badge.criteria_url } : {}),
             ...(badge.tier ? { tier: badge.tier } : {}),
             sort_order: badge.sort_order,
@@ -5067,7 +5477,9 @@ export class AdminBotService {
       id: survivor.id,
       updated_at: now,
     };
+    this.reconcileBirthdayEvent(duplicate, true);
     this.store.saveLabMember(merged);
+    this.reconcileBirthdayEvent(merged);
     const moved = this.store.reassignMemberReferences(params.duplicateId, params.survivorId);
     this.store.revokeSessionsForMember(params.duplicateId, now);
     this.store.deleteLabMember(params.duplicateId);
@@ -5133,6 +5545,7 @@ export class AdminBotService {
     // Sessions first and through the revoke path rather than the purge, so a signed-in browser
     // stops working by the route that records that it did -- same order as the merge.
     this.store.revokeSessionsForMember(member.id, now);
+    this.reconcileBirthdayEvent(member, true);
     const removed = this.store.purgeMemberReferences(member.id);
     this.store.deleteLabMember(member.id);
     this.recordAudit({
@@ -5388,6 +5801,12 @@ export class AdminBotService {
       if (input[field] !== undefined) {
         return serviceError(400, `${field} cannot be changed from a self profile update`);
       }
+    }
+    if (
+      input.arr_reviewer_qualified !== undefined &&
+      typeof input.arr_reviewer_qualified !== "boolean"
+    ) {
+      return serviceError(400, "Choose whether you are a qualified ARR reviewer");
     }
     const patch: Partial<AdminBotLabMemberInput> = {};
     for (const field of SELF_PROFILE_EDITABLE_FIELDS) {
@@ -5738,6 +6157,7 @@ export class AdminBotService {
         at: now,
       });
     }
+    this.syncConferenceChannel(stored);
     return { ok: true, status: 200, payload: stored };
   }
 
@@ -5793,7 +6213,9 @@ export class AdminBotService {
     // and a card that leaked it would be doing so on every paper they share.
     const myTrip =
       tripKey && viewer?.memberId
-        ? this.store.listConferenceTrips(tripKey).find((trip) => trip.member_id === viewer.memberId)
+        ? canonicalConferenceTrips(this.store.listConferenceTrips()).find(
+            (trip) => trip.conference_key === tripKey && trip.member_id === viewer.memberId,
+          )
         : undefined;
     return {
       ok: true,
@@ -5885,6 +6307,21 @@ export class AdminBotService {
     const context = this.paperSlotContext(params);
     if (!context.ok) {
       return context.error;
+    }
+    if (
+      params.slot === "pi_approval" &&
+      params.memberId !== this.resolveSettings().head_professor_member_id?.trim()
+    ) {
+      return serviceError(403, "Only the head professor can approve publication.");
+    }
+    if (params.slot.startsWith("feedback_") && params.input.value_text) {
+      const feedback = parsePaperFeedback(params.input.value_text);
+      if (
+        (feedback?.reviewed || feedback?.review_note) &&
+        params.memberId !== this.resolveSettings().head_professor_member_id?.trim()
+      ) {
+        return serviceError(403, "Only the head professor can record paper feedback completion.");
+      }
     }
     const result = applyPaperSlotWrite({
       existing: context.existing,
@@ -6408,21 +6845,15 @@ export class AdminBotService {
           continue;
         }
         if (result.status === "found") {
+          // Opening the file is the whole test. AdminBot only reads paper evidence, so a Viewer
+          // share or an "anyone with the link" share proves the link as well as Editor does.
           if (check.verifier === "google_drive") {
-            if (!("canEdit" in result) || typeof result.canEdit !== "boolean") {
-              unreadable.push({
-                paper_id: paper.id,
-                slot: row.slot,
-                reason: "AdminBot could not confirm edit access to this Drive file",
-              });
-              continue;
-            }
-            if (!result.canEdit) {
+            if ("trashed" in result && result.trashed) {
               this.store.savePaperSlot({
                 ...row,
                 status: "invalid",
                 invalid_reason:
-                  "Share this Drive file with Jinesis.adminbot@gmail.com as Editor; general access may stay restricted",
+                  "This Drive file is in the trash. Restore it or paste a different link",
                 validated_at: undefined,
                 verified_by: undefined,
                 verified_at: undefined,
@@ -6486,11 +6917,19 @@ export class AdminBotService {
     };
   }
 
-  /** A read-only check of a pasted Drive link using AdminBot's own Google account. */
-  async checkDriveEditAccess(
-    url: string,
-  ): Promise<
-    AdminBotServiceResponse<{ status: "editable" | "not_editable" | "unverified"; message: string }>
+  /**
+   * A read-only check of a pasted Drive link using AdminBot's own Google account.
+   *
+   * Asks only whether AdminBot can open the file, not whether it can edit it. Every link checked
+   * here is one AdminBot reads (a CV, a 1:1 folder, a letters folder) and never writes into, so
+   * Viewer access or an "anyone with the link" share is enough. Demanding Editor turned members away
+   * for links that already worked.
+   */
+  async checkDriveAccess(url: string): Promise<
+    AdminBotServiceResponse<{
+      status: "accessible" | "inaccessible" | "unverified";
+      message: string;
+    }>
   > {
     const id = adminBotDriveFileId(url);
     if (!id) {
@@ -6507,11 +6946,21 @@ export class AdminBotService {
       };
     }
     const result = await this.options.driveProbe(id);
-    if (result.status === "found" && !result.trashed && result.canEdit === true) {
+    if (result.status === "found" && !result.trashed) {
       return {
         ok: true,
         status: 200,
-        payload: { status: "editable", message: "AdminBot can edit this file." },
+        payload: { status: "accessible", message: "AdminBot can open this file." },
+      };
+    }
+    if (result.status === "found") {
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          status: "inaccessible",
+          message: "This file is in the Drive trash. Restore it or paste a different link.",
+        },
       };
     }
     if (result.status === "missing") {
@@ -6519,20 +6968,9 @@ export class AdminBotService {
         ok: true,
         status: 200,
         payload: {
-          status: "not_editable",
+          status: "inaccessible",
           message:
-            "AdminBot cannot open this file. Check the link or share it with Jinesis.adminbot@gmail.com as Editor; general access may stay restricted.",
-        },
-      };
-    }
-    if (result.status === "found" && result.canEdit === false) {
-      return {
-        ok: true,
-        status: 200,
-        payload: {
-          status: "not_editable",
-          message:
-            "Share this file with Jinesis.adminbot@gmail.com as Editor. You can keep general access restricted.",
+            "AdminBot cannot open this file. Check the link, then either share it with Jinesis.adminbot@gmail.com (Viewer is enough) or set general access to anyone with the link.",
         },
       };
     }
@@ -6542,7 +6980,7 @@ export class AdminBotService {
       payload: {
         status: "unverified",
         message:
-          "AdminBot could not confirm edit access. Check the link and share it with Jinesis.adminbot@gmail.com as Editor.",
+          "AdminBot could not check access to this file right now. Make sure Jinesis.adminbot@gmail.com or anyone with the link can view it.",
       },
     };
   }
@@ -6577,7 +7015,7 @@ export class AdminBotService {
               ...(adminBotDriveFileId(url) ? { id: adminBotDriveFileId(url) } : {}),
               reason: "no Drive file id in the link",
               missingReason:
-                "AdminBot cannot access this Drive file — check the link or share it with Jinesis.adminbot@gmail.com as Editor",
+                "AdminBot cannot access this Drive file — check the link, then share it with Jinesis.adminbot@gmail.com (Viewer is enough) or set general access to anyone with the link",
             }
           : undefined;
       }
@@ -6619,13 +7057,20 @@ export class AdminBotService {
 
   /** The papers waiting on the head professor's yes, oldest wait first. */
   listPiReviewQueue(): AdminBotServiceResponse<{ papers: PiReviewRow[] }> {
-    const papers = piReviewQueue(
-      this.store
-        .listPapers()
-        .filter((paper) => !isPaperClosed(paper))
-        .map((paper) => ({ paper, slots: this.store.listPaperSlots(paper.id) })),
-    );
-    return { ok: true, status: 200, payload: { papers } };
+    const candidates = this.store
+      .listPapers()
+      .map((paper) => ({ paper, slots: this.store.listPaperSlots(paper.id) }));
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        papers: [
+          // A previous venue rejection does not cancel an explicit request to review a revision.
+          ...paperFeedbackQueue(candidates),
+          ...piReviewQueue(candidates.filter(({ paper }) => !isPaperClosed(paper))),
+        ],
+      },
+    };
   }
 
   /**
@@ -6784,6 +7229,7 @@ export class AdminBotService {
     platform: string;
     body: string;
     model?: string;
+    xThread?: unknown;
     memberId: string;
     privileged: boolean;
   }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord }> {
@@ -6797,7 +7243,18 @@ export class AdminBotService {
     if (params.platform !== "x" && params.platform !== "linkedin") {
       return serviceError(400, "platform must be x or linkedin");
     }
-    const body = params.body.trim();
+    let xThread;
+    if (params.xThread !== undefined) {
+      if (params.platform !== "x") {
+        return serviceError(400, "Only X drafts support threads.");
+      }
+      try {
+        xThread = readXThreadDraft(params.xThread);
+      } catch (error) {
+        return serviceError(400, (error as Error).message);
+      }
+    }
+    const body = xThread ? xThread.posts.map((post) => post.text).join("\n\n") : params.body.trim();
     if (!body) {
       return serviceError(400, "a draft needs a body");
     }
@@ -6810,13 +7267,19 @@ export class AdminBotService {
       paper_id: params.paperId,
       platform: params.platform,
       body,
+      ...(xThread ? { x_thread: xThread } : {}),
       generated_at: now,
       generated_by_member_id: params.memberId,
       status: "draft",
       ...(params.model ? { model: params.model } : {}),
     };
     for (const existing of this.store.listSocialDrafts(params.paperId)) {
-      if (existing.platform !== params.platform || existing.status === "superseded") {
+      if (
+        existing.platform !== params.platform ||
+        existing.status === "superseded" ||
+        (params.platform === "x" &&
+          (existing.x_thread?.stage ?? "arxiv") !== (xThread?.stage ?? "arxiv"))
+      ) {
         continue;
       }
       this.store.saveSocialDraft({
@@ -6846,7 +7309,7 @@ export class AdminBotService {
     memberId: string;
     privileged: boolean;
   }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord; asked: string[] }> {
-    const draft = this.store.listSocialDrafts().find((row) => row.id === params.draftId);
+    const draft = this.store.listSocialDrafts(undefined, params.draftId)[0];
     if (!draft) {
       return serviceError(404, "draft not found");
     }
@@ -6904,7 +7367,7 @@ export class AdminBotService {
     decision: string;
     comment?: string;
   }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord }> {
-    const draft = this.store.listSocialDrafts().find((row) => row.id === params.draftId);
+    const draft = this.store.listSocialDrafts(undefined, params.draftId)[0];
     if (!draft) {
       return serviceError(404, "draft not found");
     }
@@ -6998,6 +7461,7 @@ export class AdminBotService {
       actor: params.actorId,
       details: { paper_id: params.paperId, attending: params.attending },
     });
+    this.syncConferenceChannel(paper);
     return { ok: true, status: 200, payload: { attendee } };
   }
 
@@ -7037,7 +7501,157 @@ export class AdminBotService {
         paper,
         attendees: this.store.listConferenceAttendees(paper.id),
       }));
-    return { ok: true, status: 200, payload: { conferences: buildConferenceAttendance(entries) } };
+    const conferences = buildConferenceAttendance(entries).map((conference) => ({
+      ...conference,
+      people: conference.people.map((person) => ({
+        ...person,
+        avatar_url: person.member_id
+          ? this.store.getLabMember(person.member_id)?.avatar_url
+          : undefined,
+      })),
+    }));
+    return { ok: true, status: 200, payload: { conferences } };
+  }
+
+  /** Admin export: attendance is not a lodging commitment. No free-text travel notes. */
+  listConferenceTravelExport() {
+    const rosters = this.listConferenceRosters();
+    if (!rosters.ok) return rosters;
+    const rows = new Map<
+      string,
+      {
+        conference_key: string;
+        conference: string;
+        member_id: string;
+        name: string;
+        going_source: string;
+        trip_intent: string;
+        needs_lodging: boolean | null;
+        arrival_on: string;
+        departure_on: string;
+      }
+    >();
+    for (const conference of rosters.payload.conferences) {
+      for (const person of conference.people.filter((person) => person.attending === "yes")) {
+        rows.set(`${conference.key}/${person.attendee_key}`, {
+          conference_key: conference.key,
+          conference: conference.label,
+          member_id: person.member_id ?? "",
+          name: person.name,
+          going_source: "paper attendance",
+          trip_intent: "",
+          needs_lodging: null,
+          arrival_on: "",
+          departure_on: "",
+        });
+      }
+    }
+    for (const trip of canonicalConferenceTrips(this.store.listConferenceTrips())) {
+      const key = `${trip.conference_key}/member:${trip.member_id}`;
+      const existing = rows.get(key);
+      // Undecided plans cannot create a Going attendee or a confirmed bed request.
+      if (!existing && trip.intent !== "going") continue;
+      rows.set(key, {
+        conference_key: trip.conference_key,
+        conference: existing?.conference ?? trip.conference_key,
+        member_id: trip.member_id,
+        name: this.store.getLabMember(trip.member_id)?.name ?? trip.member_id,
+        going_source: existing
+          ? trip.intent === "going"
+            ? "paper attendance and personal trip"
+            : "paper attendance"
+          : "personal trip",
+        trip_intent: trip.intent,
+        needs_lodging: trip.intent === "going" ? trip.needs_lodging : null,
+        arrival_on: trip.arrival_on ?? "",
+        departure_on: trip.departure_on ?? "",
+      });
+    }
+    return {
+      ok: true as const,
+      status: 200,
+      payload: {
+        rows: [...rows.values()].sort(
+          (a, b) =>
+            a.conference_key.localeCompare(b.conference_key) || a.name.localeCompare(b.name),
+        ),
+      },
+    };
+  }
+
+  private syncConferenceChannel(paper: AdminBotPaperRecord): void {
+    const key = paperConferenceKey(paper);
+    if (!key) return;
+    // Persist the approved proposal before yielding. Slack outages must not fail a paper save;
+    // the existing action audit retains failures for retry, and execution deduplicates saves.
+    void this.inviteConferenceAttendees(key).catch(() => {});
+  }
+
+  /** Uses the existing Slack proposal/approval/execution gate. */
+  async inviteConferenceAttendees(conferenceKey: string): Promise<
+    AdminBotServiceResponse<{
+      channel: string;
+      invited: number;
+      skipped: number;
+      failed: number;
+    }>
+  > {
+    const roster = this.listConferenceRosters();
+    if (!roster.ok) return roster;
+    const conference = roster.payload.conferences.find((entry) => entry.key === conferenceKey);
+    if (!conference) return serviceError(404, "accepted conference not found");
+    // Use the exact recorded venue/year, never a caller-supplied channel or user ID.
+    const venue = conference.venue
+      .replace(new RegExp(`\\b${conference.year}\\b`, "gu"), "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, "-")
+      .replace(/^-|-$/gu, "");
+    if (!venue) return serviceError(400, "conference venue has no channel name");
+    const channel = `conf-${venue}-${conference.year}`;
+    let invited = 0,
+      skipped = 0,
+      failed = 0;
+    for (const person of conference.people) {
+      const member = person.member_id ? this.store.getLabMember(person.member_id) : undefined;
+      if (
+        person.attending !== "yes" ||
+        !member?.slack_user_id ||
+        member.slack_channels?.some((name) => name.replace(/^#/u, "").toLowerCase() === channel)
+      ) {
+        skipped++;
+        continue;
+      }
+      const proposal = this.createProposal({
+        type: "slack.invite_to_channel",
+        summary: `Add ${member.name} to #${channel}`,
+        target: {
+          service: "slack",
+          channel: "slack",
+          target: channel,
+          recipientMemberId: member.id,
+        },
+        proposed_payload: { channel, user_id: member.slack_user_id },
+        rationale: `Confirmed going to ${conference.label} on an accepted paper.`,
+        undo_plan: "The member can leave the channel, or an admin can remove them.",
+        idempotency_key: `conference-channel:${conference.key}:${member.id}`,
+      });
+      if (!proposal.ok) {
+        failed++;
+        continue;
+      }
+      try {
+        const executed = await this.execute(proposal.payload.id, {
+          dry_run: false,
+          idempotency_key: proposal.payload.idempotency_key,
+        });
+        if (executed.ok && executed.payload.status === "executed") invited++;
+        else failed++;
+      } catch {
+        failed++;
+      }
+    }
+    return { ok: true, status: 200, payload: { channel, invited, skipped, failed } };
   }
 
   /**
@@ -7068,7 +7682,7 @@ export class AdminBotService {
     paperId?: string;
     notes?: string;
   }): AdminBotServiceResponse<{ trip: AdminBotConferenceTripRecord }> {
-    const conferenceKey = params.conferenceKey.trim();
+    const conferenceKey = canonicalConferenceTripKey(params.conferenceKey);
     if (!conferenceKey) {
       return serviceError(400, "a conference is required");
     }
@@ -7133,14 +7747,24 @@ export class AdminBotService {
     conferenceKey: string;
     memberId: string;
   }): AdminBotServiceResponse<{ withdrawn: boolean }> {
-    const conferenceKey = params.conferenceKey.trim();
+    const conferenceKey = canonicalConferenceTripKey(params.conferenceKey);
     if (!conferenceKey) {
       return serviceError(400, "a conference is required");
     }
     if (!this.store.getLabMember(params.memberId)) {
       return serviceError(404, `unknown member ${params.memberId}`);
     }
-    const withdrawn = this.store.deleteConferenceTrip(conferenceKey, params.memberId);
+    // Remove all stored aliases, otherwise an older answer reappears after withdrawal.
+    const aliases = this.store
+      .listConferenceTrips()
+      .filter(
+        (trip) =>
+          trip.member_id === params.memberId &&
+          canonicalConferenceTripKey(trip.conference_key) === conferenceKey,
+      );
+    const withdrawn = aliases
+      .map((trip) => this.store.deleteConferenceTrip(trip.conference_key, params.memberId))
+      .some(Boolean);
     if (withdrawn) {
       // Only when something was actually removed: an audit line for a no-op would make the trail
       // say somebody changed their mind when they did not.
@@ -7156,10 +7780,8 @@ export class AdminBotService {
   /**
    * Mail a cleared reimbursement package to the funder's office.
    *
-   * Only ever called after the ruleset cleared: the workflow refuses to produce forms for a
-   * package with an outstanding blocker, so there is nothing to send for one. The check is not
-   * re-run here because there is nothing left to check -- the artifacts are the evidence that it
-   * passed.
+   * The HTTP caller verifies the server-issued proof of the generated package before calling
+   * this method. Artifacts alone do not establish that the ruleset cleared.
    *
    * Reply-to is the member's correspondence address, not the bot's. A finance office that reads
    * this and has a question has to be able to answer the person whose claim it is; a reply landing
@@ -7211,6 +7833,7 @@ export class AdminBotService {
       proposed_payload: {
         to,
         reply_to: replyTo,
+        cc: [replyTo],
         subject: `Reimbursement claim — ${member.name} — ${label}`,
         body: reimbursementSubmissionBody({
           memberName: member.name,
@@ -9866,6 +10489,9 @@ export class AdminBotService {
         idsResolved += 1;
       }
     }
+    for (const member of this.store.listLabMembers()) {
+      this.inviteLinkedMemberToActiveChannels(member);
+    }
     let timezonesChecked = 0;
     let timezonesUpdated = 0;
     if (deps.fetchSlackTimezones) {
@@ -12044,6 +12670,11 @@ export class AdminBotService {
     email?: string;
     /** Template values the sheet does not hold, collected by the Onboarding tab. */
     values?: Record<string, string>;
+    /**
+     * An admin's explicit request to mail the guide again to somebody it has already reached, for
+     * the mail that went to spam or was never read. Never set by the sweep or the sheet import.
+     */
+    resend?: boolean;
   }): AdminBotServiceResponse<{ proposal_id: string; template_id: string; email: string }> {
     const member = this.store.getLabMember(params.memberId);
     if (!member) {
@@ -12079,16 +12710,13 @@ export class AdminBotService {
         details.recipient.trim().toLowerCase() === recipient
       );
     });
-    if (alreadySent) {
+    if (alreadySent && !params.resend) {
       return serviceError(
         409,
         `the ${template.templateId} onboarding guide has already been sent to ${email}`,
       );
     }
-    const alreadyQueued = this.store.listProposalsByType("onboarding.send_guide").some((stored) => {
-      if (stored.status !== "pending" && stored.status !== "approved") {
-        return false;
-      }
+    const earlier = this.store.listProposalsByType("onboarding.send_guide").filter((stored) => {
       const payload = (stored.proposed_payload ?? {}) as Record<string, unknown>;
       return (
         payload.template_id === template.templateId &&
@@ -12096,21 +12724,34 @@ export class AdminBotService {
         payload.email.trim().toLowerCase() === recipient
       );
     });
-    if (alreadyQueued) {
+    // A resend lifts only the "already reached them" refusal. A copy still waiting for an
+    // approver is refused either way: approving that one is the resend, and filing a second
+    // would put two of the same mail in the queue.
+    const waiting = earlier.some(
+      (stored) => stored.status === "pending" || stored.status === "approved",
+    );
+    const executed = earlier.some((stored) => stored.status === "executed");
+    if (waiting || (executed && !params.resend)) {
       return serviceError(
         409,
-        `the ${template.templateId} onboarding guide for ${email} is already waiting for approval`,
+        `the ${template.templateId} onboarding guide for ${email} is already queued or sent`,
       );
     }
+    const resend = params.resend === true && (alreadySent || executed);
     const proposal = this.createProposal({
       type: "onboarding.send_guide",
-      summary: `Onboarding guide (${template.templateId}) to ${member.name || member.id} <${email}> -- added to the roster by ${params.actor}`,
+      summary: resend
+        ? `Resend onboarding guide (${template.templateId}) to ${member.name || member.id} <${email}> -- requested by ${params.actor}`
+        : `Onboarding guide (${template.templateId}) to ${member.name || member.id} <${email}> -- added to the roster by ${params.actor}`,
       target: { service: "google", channel: "email", target: email },
       proposed_payload: {
         template_id: template.templateId,
         name: member.name,
         email,
         member_id: member.id,
+        // The first send already filed this person's DCS roster row; a second row would ask DCS
+        // for a second account under a second password.
+        ...(resend ? { resend: true, add_dcs_roster_row: false } : {}),
         ...(params.values && Object.keys(params.values).length > 0
           ? { values: params.values }
           : {}),
@@ -12310,19 +12951,8 @@ export class AdminBotService {
   /**
    * Who belongs in the recommendation-letter help channel right now, and who no longer does.
    *
-   * In: anybody with a letter request the lab has not finished with. Out: anybody whose letters
-   * have all been settled for longer than the retention window.
-   *
-   * The window is measured from the *latest* settled request, not the first, and that is the whole
-   * subtlety. An application season runs about two months across different school deadlines, so a
-   * member routinely has one request closed in November and another still open in January. Reading
-   * the earliest settled date would take them out of the channel halfway through their own season,
-   * which is exactly when they need it. Any unsettled request keeps them in regardless of how old
-   * their others are.
-   *
-   * Computed, never stored: membership is a function of the request log and the clock, so there is
-   * no second list to fall out of step with it. That also makes the sweep idempotent -- Slack's own
-   * already_in_channel and not_in_channel are treated as success by the connector.
+   * Eligibility uses each letter deadline, including its timezone, rather than request status
+   * or edit timestamps. Completed applicants still have access during their deadline window.
    */
   recLetterChannelRoster(options: { nowIso?: string } = {}): {
     add: Array<{ member_id: string; member_name: string; slack_user_id: string }>;
@@ -12330,30 +12960,52 @@ export class AdminBotService {
       member_id: string;
       member_name: string;
       slack_user_id: string;
-      settled_at: string;
+      window_ends_at: string;
     }>;
     skipped: AdminBotMemberNudgeSkip[];
   } {
     const now = options.nowIso ? new Date(options.nowIso) : new Date();
-    const cutoff = now.getTime() - adminBotRecLetterChannelRetentionDays * 24 * 60 * 60 * 1000;
-    const settled = new Set<string>(adminBotLogisticsSettledStatuses);
-
-    /** Per member: is anything still open, and when did the most recent one settle. */
-    const state = new Map<string, { open: boolean; lastSettled: number }>();
+    const state = new Map<string, { eligible: boolean; lastEnd: number }>();
     for (const request of this.store.listLogisticsRequests()) {
       if (request.kind !== "recommendation_letters") {
         continue;
       }
-      const entry = state.get(request.member_id) ?? { open: false, lastSettled: 0 };
-      if (settled.has(request.status)) {
-        // `updated_at` is when it reached that status, which is the moment the lab finished with
-        // it. `submitted_at` would start the clock when the member asked, which is backwards.
-        const at = Date.parse(request.updated_at);
-        if (Number.isFinite(at) && at > entry.lastSettled) {
-          entry.lastSettled = at;
+      const entry = state.get(request.member_id) ?? { eligible: false, lastEnd: 0 };
+      if (request.status !== "declined" && request.status !== "withdrawn") {
+        for (const school of request.schools ?? []) {
+          if (
+            !deadlineInstant(
+              school.letter_deadline,
+              school.letter_deadline_time,
+              school.deadline_timezone,
+            )
+          ) {
+            continue;
+          }
+          const boundary = (months: number) => {
+            const date = new Date(`${school.letter_deadline}T00:00:00Z`);
+            const day = date.getUTCDate();
+            date.setUTCDate(1);
+            date.setUTCMonth(date.getUTCMonth() + months);
+            const lastDay = new Date(
+              Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0),
+            ).getUTCDate();
+            date.setUTCDate(Math.min(day, lastDay));
+            return Date.parse(
+              deadlineInstant(
+                date.toISOString().slice(0, 10),
+                school.letter_deadline_time,
+                school.deadline_timezone,
+              ) ?? "",
+            );
+          };
+          const start = boundary(-adminBotRecLetterChannelWindowMonths);
+          const end = boundary(adminBotRecLetterChannelWindowMonths);
+          if (Number.isFinite(start) && Number.isFinite(end)) {
+            entry.eligible ||= start <= now.getTime() && now.getTime() <= end;
+            entry.lastEnd = Math.max(entry.lastEnd, end);
+          }
         }
-      } else {
-        entry.open = true;
       }
       state.set(request.member_id, entry);
     }
@@ -12363,7 +13015,7 @@ export class AdminBotService {
       member_id: string;
       member_name: string;
       slack_user_id: string;
-      settled_at: string;
+      window_ends_at: string;
     }> = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
     for (const [memberId, entry] of state) {
@@ -12382,10 +13034,10 @@ export class AdminBotService {
         member_name: member.name,
         slack_user_id: member.slack_user_id.trim(),
       };
-      if (entry.open) {
+      if (entry.eligible) {
         add.push(row);
-      } else if (entry.lastSettled > 0 && entry.lastSettled <= cutoff) {
-        remove.push({ ...row, settled_at: new Date(entry.lastSettled).toISOString() });
+      } else if (entry.lastEnd > 0 && entry.lastEnd < now.getTime()) {
+        remove.push({ ...row, window_ends_at: new Date(entry.lastEnd).toISOString() });
       }
     }
     const byName = <T extends { member_name: string }>(left: T, right: T) =>
@@ -12409,7 +13061,7 @@ export class AdminBotService {
     AdminBotServiceResponse<{
       channel: string;
       invited: Array<{ member_id: string; proposal_id: string }>;
-      removal_proposals: Array<{ member_id: string; proposal_id: string; settled_at: string }>;
+      removal_proposals: Array<{ member_id: string; proposal_id: string; window_ends_at: string }>;
       skipped: AdminBotMemberNudgeSkip[];
     }>
   > {
@@ -12419,12 +13071,12 @@ export class AdminBotService {
     const removalProposals: Array<{
       member_id: string;
       proposal_id: string;
-      settled_at: string;
+      window_ends_at: string;
     }> = [];
     const skipped: AdminBotMemberNudgeSkip[] = [...roster.skipped];
 
     // The roster is rebuilt from the request log, not from who is in the channel, so without these
-    // two checks every run re-invited everybody with an open request and re-proposed every removal
+    // two checks every run re-invited everybody with an eligible deadline and re-proposed every removal
     // -- once a weekday that was clutter, hourly it would flood Pending Actions with copies.
     const history = (type: "slack.invite_to_channel" | "slack.remove_from_channel") =>
       this.store.listProposalsByType(type).filter((proposal) => {
@@ -12442,10 +13094,10 @@ export class AdminBotService {
         .toSorted((left, right) => left.updated_at.localeCompare(right.updated_at));
       return moves.at(-1)?.type === "slack.invite_to_channel";
     };
-    // One removal per settlement, whatever became of it: pending waits for an admin, executed is
+    // One removal per expired deadline window, whatever became of it: pending waits for an admin, executed is
     // done, and rejected is an admin's answer that should not be asked again every hour.
-    const removalFiledSince = (userId: string, settledAt: string) =>
-      removals.some((proposal) => userOf(proposal) === userId && proposal.created_at >= settledAt);
+    const removalFiledSince = (userId: string, windowEnd: string) =>
+      removals.some((proposal) => userOf(proposal) === userId && proposal.created_at >= windowEnd);
 
     for (const person of roster.add) {
       if (alreadyIn(person.slack_user_id)) {
@@ -12453,7 +13105,7 @@ export class AdminBotService {
       }
       const proposed = this.createProposal({
         type: "slack.invite_to_channel",
-        summary: `Add ${person.member_name} to #${channel} (letter request open)`,
+        summary: `Add ${person.member_name} to #${channel} (within three months of a letter deadline)`,
         target: {
           service: "slack",
           channel: "slack",
@@ -12476,13 +13128,13 @@ export class AdminBotService {
     }
 
     for (const person of roster.remove) {
-      if (removalFiledSince(person.slack_user_id, person.settled_at)) {
+      if (removalFiledSince(person.slack_user_id, person.window_ends_at)) {
         continue;
       }
       // Proposed only. Nothing here executes it -- see the header and the policy table.
       const proposed = this.createProposal({
         type: "slack.remove_from_channel",
-        summary: `Remove ${person.member_name} from #${channel} (letters settled ${person.settled_at.slice(0, 10)})`,
+        summary: `Remove ${person.member_name} from #${channel} (deadline window ended ${person.window_ends_at.slice(0, 10)})`,
         target: {
           service: "slack",
           channel: "slack",
@@ -12499,7 +13151,7 @@ export class AdminBotService {
       removalProposals.push({
         member_id: person.member_id,
         proposal_id: proposed.payload.id,
-        settled_at: person.settled_at,
+        window_ends_at: person.window_ends_at,
       });
     }
 
@@ -12508,7 +13160,7 @@ export class AdminBotService {
       actor,
       details: {
         channel,
-        retention_days: adminBotRecLetterChannelRetentionDays,
+        deadline_window_months: adminBotRecLetterChannelWindowMonths,
         invited: invited.length,
         removals_proposed: removalProposals.length,
         skipped: skipped.length,
@@ -12594,7 +13246,7 @@ export class AdminBotService {
       summary:
         due.length === 1
           ? `Remind ${headProfessor.name}: ${due[0]?.member_name}'s letter is due ${due[0]?.deadline_label ?? due[0]?.deadline_at.slice(0, 10)}`
-          : `Remind ${headProfessor.name} of ${due.length} letters due within ${adminBotRecLetterReminderLeadDays} days`,
+          : `Remind ${headProfessor.name} of ${due.length} letters due within ${adminBotRecLetterReminderLeadDays} business days`,
       target: { service: "email", channel: "email", target: recipient },
       proposed_payload: {
         to: recipient,
@@ -12609,7 +13261,7 @@ export class AdminBotService {
     const executed = await this.execute(proposed.payload.id, { dry_run: false });
     if (!executed.ok) {
       // Unstamped on purpose, unlike the say-once sweeps that announce an event: the window is
-      // three days wide, so a send that failed this morning is worth trying again tomorrow while
+      // open until the deadline, so a send that failed this morning is worth trying again tomorrow while
       // the letter is still worth writing. A reader who gets it twice has lost less than one who
       // never gets it.
       return serviceError(502, `could not email the letter reminder: ${executed.error.message}`);
@@ -12954,10 +13606,8 @@ export class AdminBotService {
    * the channel; this follows the channel, so somebody added by hand is picked up too and somebody
    * who left the channel is not re-invited.
    *
-   * The address is `calendar_email`, which is the field that exists for exactly this: a Google
-   * invite has to reach the account the person keeps their calendar in, which is routinely not the
-   * address the lab mails them at. Somebody without one is reported, not guessed at -- an invite to
-   * the wrong Google account is silently not seen.
+   * The explicit Calendar address takes priority, followed by the account address and saved
+   * correspondence address. Members with no usable saved address are reported, never guessed.
    *
    * Attendees are added, never removed. Leaving a recurring meeting is the attendee's own decision
    * and a sweep that undid it every night would be the lab overruling them once a day.
@@ -12976,7 +13626,12 @@ export class AdminBotService {
     }>
   > {
     const bySlack = new Map<string, AdminBotLabMember>();
-    for (const member of this.store.listLabMembers()) {
+    const members = this.store.listLabMembers();
+    const ineligible =
+      params.calendarId === resolveLabCalendar().id
+        ? ineligibleCalendarEmails(members)
+        : new Set<string>();
+    for (const member of members) {
       const slack = member.slack_user_id?.trim();
       if (slack) {
         bySlack.set(slack, member);
@@ -13013,9 +13668,22 @@ export class AdminBotService {
         if (adminBotIsAlumniMember(member)) {
           continue;
         }
-        const email = member.calendar_email?.trim();
+        const email = adminBotCalendarEmail(member);
         if (!email) {
-          skipped.push({ member_id: member.id, reason: "member has no calendar_email" });
+          skipped.push({
+            member_id: member.id,
+            reason: "member has no usable calendar or contact email",
+          });
+          continue;
+        }
+        if (
+          isRestrictedCalendarEvent(meetings[0]?.event_id) &&
+          ineligible.has(email.trim().toLowerCase())
+        ) {
+          skipped.push({
+            member_id: member.id,
+            reason: "member is not eligible for lab calendar invitations",
+          });
           continue;
         }
         attendees.push(email);
@@ -14108,6 +14776,8 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "cv_url",
   "intake_form_url",
   "intake_form_unavailable",
+  "arr_reviewer_qualified",
+  "arr_review_capacity",
   // The member's own one-on-one folder. Self-editable because in practice either side creates it
   // -- whoever made the folder pastes the link -- and an admin-only field would leave the member
   // looking at a blank row they cannot fill from the link already in their Drive. Mandatory too
@@ -14127,8 +14797,11 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   // supplied a URN yet.
   "linkedin_urn",
   "twitter_url",
+  "twitter_followers",
+  "linkedin_followers",
   "github_url",
   "scholar_url",
+  "acl_anthology_url",
   "calendar_email",
   "joined_month",
   "graduated_month",
@@ -14361,6 +15034,10 @@ function memberHasAnyEmail(member: AdminBotLabMember): boolean {
 
 function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
   return MANDATORY_PROFILE_FIELDS.filter((key) => {
+    if (key === "arr_review_capacity" && member.arr_reviewer_qualified !== true) return false;
+    if (key === "intake_form_url" && member.intake_form_unavailable === true) {
+      return false;
+    }
     const value = member[key];
     if (Array.isArray(value)) {
       return value.filter(Boolean).length === 0;
@@ -14604,6 +15281,20 @@ function validateLabMember(
   ) {
     return "application form unavailable must be true or false";
   }
+  if (
+    member.arr_reviewer_qualified !== undefined &&
+    member.arr_reviewer_qualified !== null &&
+    typeof member.arr_reviewer_qualified !== "boolean"
+  ) {
+    return "ARR reviewer qualification must be true, false, or null";
+  }
+  if (
+    member.arr_review_capacity !== undefined &&
+    member.arr_review_capacity !== null &&
+    (!Number.isSafeInteger(member.arr_review_capacity) || member.arr_review_capacity < 0)
+  ) {
+    return "ARR review capacity must be a non-negative whole number";
+  }
   const emailError = validateMemberEmail(member.email, existingEmail);
   if (emailError) {
     return emailError;
@@ -14638,6 +15329,12 @@ function validateLabMember(
     );
     if (!roles.length || unknown) {
       return `member role must be one of: ${adminBotMemberRoles.join(", ")}`;
+    }
+  }
+  for (const field of ["twitter_followers", "linkedin_followers"] as const) {
+    const count = member[field];
+    if (count !== undefined && (!Number.isSafeInteger(count) || count < 0)) {
+      return `${field} must be a non-negative safe integer`;
     }
   }
   if (
@@ -14719,7 +15416,8 @@ type SocialUrlFieldSpec = {
     | "linkedin_url"
     | "twitter_url"
     | "github_url"
-    | "scholar_url";
+    | "scholar_url"
+    | "acl_anthology_url";
   label: string;
   freeText?: true;
   // Omitted for personal_website/cv_url: those genuinely point anywhere the member likes.
@@ -14766,6 +15464,13 @@ function validateInlineImage(value: string, spec: SocialUrlFieldSpec): string | 
 }
 
 const SOCIAL_URL_FIELDS: SocialUrlFieldSpec[] = [
+  {
+    field: "acl_anthology_url",
+    label: "ACL Anthology",
+    hosts: new Set(["aclanthology.org"]),
+    path: /^\/people\/[A-Za-z0-9_-]+\/?$/u,
+    shapeMessage: "ACL Anthology link must be a profile URL (https://aclanthology.org/people/...)",
+  },
   { field: "personal_website", label: "personal website" },
   { field: "avatar_url", label: "profile photo", allowInlineImage: true },
   { field: "cv_url", label: "CV", freeText: true },

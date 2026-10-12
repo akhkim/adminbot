@@ -19,6 +19,79 @@ function proposal(payload: unknown): AdminBotStoredProposal {
 }
 
 describe("AdminBot social executor", () => {
+  it("uploads approved figures, writes alt text and replies to the previous post", async () => {
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const fetchImpl: SocialFetch = async (url, init) => {
+      calls.push({ url: String(url), body: JSON.parse(init?.body ?? "{}") });
+      const body = String(url).endsWith("/upload")
+        ? { data: { id: "123" } }
+        : String(url).endsWith("/metadata")
+          ? { data: { success: true } }
+          : { data: { id: String(1000 + calls.length) } };
+      return { ok: true, status: 200, statusText: "OK", text: async () => JSON.stringify(body) };
+    };
+    const executor = createAdminBotSocialExecutor({
+      env: { X_ACCESS_TOKEN: "synthetic-token" },
+      fetchImpl,
+    });
+    await executor.execute(
+      proposal({
+        action: "publish_paper_social_posts",
+        platforms: ["x"],
+        paper: { title: "Synthetic", authors: [], summary: "Evidence" },
+        tags: { resolved: [], missing: [] },
+        x: {
+          posts: ["1/2 Finding", "2/2 Paper"],
+          thread: {
+            stage: "arxiv",
+            posts: [
+              {
+                text: "1/2 Finding",
+                images: [
+                  {
+                    data_uri: "data:image/png;base64,iVBORw0KGgo=",
+                    alt_text: "Synthetic comparison",
+                  },
+                ],
+              },
+              { text: "2/2 Paper" },
+            ],
+          },
+        },
+      }),
+    );
+    expect(calls[0].url).toBe("https://api.x.com/2/media/upload");
+    expect(calls[1].body).toEqual({
+      id: "123",
+      metadata: { alt_text: { text: "Synthetic comparison" } },
+    });
+    expect(calls[2].body).toEqual({ text: "1/2 Finding", media: { media_ids: ["123"] } });
+    expect(calls[3].body).toEqual({ text: "2/2 Paper", reply: { in_reply_to_tweet_id: "1003" } });
+  });
+  it("stops when X returns no post ID instead of publishing unrelated replies", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => "{}",
+    }));
+    const executor = createAdminBotSocialExecutor({
+      env: { X_ACCESS_TOKEN: "synthetic-token" },
+      fetchImpl,
+    });
+    await expect(
+      executor.execute(
+        proposal({
+          action: "publish_paper_social_posts",
+          platforms: ["x"],
+          paper: { title: "Synthetic", authors: [], summary: "Evidence" },
+          tags: { resolved: [], missing: [] },
+          x: { posts: ["First", "Second"] },
+        }),
+      ),
+    ).rejects.toThrow("no post ID");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
   it("posts LinkedIn content and X thread posts through platform APIs", async () => {
     const calls: Array<{ url: string; body?: unknown; headers?: Record<string, string> }> = [];
     const fetchImpl = vi.fn(async (input, init) => {

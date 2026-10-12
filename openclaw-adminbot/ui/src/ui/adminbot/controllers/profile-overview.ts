@@ -34,6 +34,7 @@ export type AdminBotProfileOverviewHost = {
   /** Nudges raised to the head professor and still unanswered. Empty until the first read. */
   adminBotEscalatedNudges: EscalatedNudgeRow[];
   adminBotPiReview: PiReviewRow[];
+  adminBotPiReviewError: string | null;
 };
 
 function failureText(result: { kind: string; message?: string }, baseUrl: string): string {
@@ -63,10 +64,12 @@ export async function loadAdminBotProfileOverview(
   const wire = session(host);
   if (!wire) {
     host.adminBotProfileOverviewError = t("profileOverview.error.signIn");
+    host.adminBotPiReviewError = host.adminBotProfileOverviewError;
     return;
   }
   host.adminBotProfileOverviewLoading = true;
   host.adminBotProfileOverviewError = null;
+  host.adminBotPiReviewError = null;
   try {
     const result = await fetchMemberProfileOverview(wire.token, wire.baseUrl);
     if (!sameSession(wire.token)) {
@@ -75,6 +78,7 @@ export async function loadAdminBotProfileOverview(
     if (!result.ok) {
       host.adminBotProfileOverview = [];
       host.adminBotProfileOverviewError = failureText(result, wire.baseUrl);
+      host.adminBotPiReviewError = host.adminBotProfileOverviewError;
       return;
     }
     host.adminBotProfileOverview = result.value.members;
@@ -89,13 +93,13 @@ export async function loadAdminBotProfileOverview(
       return;
     }
     host.adminBotEscalatedNudges = escalated.ok ? escalated.value : [];
-    // The same page, the same reader, the same argument: the papers waiting on her yes are a
-    // queue on My Desk, and a third spinner for two rows is worse than loading them together.
+    // An unavailable queue is unknown, not evidence that nobody is waiting.
     const piReview = await fetchPiReviewQueue(wire.token, wire.baseUrl);
     if (!sameSession(wire.token)) {
       return;
     }
     host.adminBotPiReview = piReview.ok ? piReview.value : [];
+    host.adminBotPiReviewError = piReview.ok ? null : failureText(piReview, wire.baseUrl);
   } finally {
     if (sameSession(wire.token)) {
       host.adminBotProfileOverviewLoading = false;

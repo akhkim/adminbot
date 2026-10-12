@@ -41,6 +41,7 @@ export type LabSharingMemberMatch = {
  * drawn around both, and neither exists.
  */
 export type LabSharingSharedStatus = {
+  timezone?: string;
   availability: string;
   message: string;
   updated_at: string;

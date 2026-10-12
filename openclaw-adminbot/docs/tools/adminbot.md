@@ -63,11 +63,47 @@ system `python3` picks the packages up. Rerun
 `install-user-services.sh` directly on the host) to (re)provision it —
 `restart` alone does not rerun this install step.
 
+### Automatic deploys to Aurora
+
+A push to `main` that passes CI deploys itself. `.github/workflows/deploy-aurora.yaml` runs on a
+self-hosted runner on Aurora (GitHub's hosted runners cannot reach the host), and
+`deploy/aurora/auto-deploy.sh` builds the new release beside the live one, rewrites the four units
+that name the release, restarts AdminBot and the Gateway (an outage of a few seconds), and probes
+`/adminbot`, `/deadlines` (200), `/lab/members` (401) and the Gateway's `/healthz`. If the probes
+fail, it restores the previous release and units and fails the job. A rollback restores code, not
+the database.
+
+It refuses, without touching the services, when:
+
+- the commit does not contain the live release's commit. Merge a `deploy/*` branch into `main`
+  before relying on automatic deploys, or they stop here. A commit that the live release already
+  contains is skipped as superseded.
+- `install-user-services.sh` or `install-member-sheet-poller.sh` changed. Unit definitions need a
+  manual `aurora-adminbot-host.sh deploy`.
+- the units do not run from the live release, the writer lock is held, or the build fails.
+- `state/` is on a network filesystem and the host has not opted in with
+  `AURORA_ACCEPT_NETWORK_STATE=1` in the runner's `.env`.
+
+Install the runner once, as the service account. The registration token is valid for an hour:
+
+```bash
+gh api -X POST repos/<owner>/<repo>/actions/runners/registration-token -q .token |
+  ssh aurora 'bash -l /w/406/adminbot/current/deploy/aurora/install-actions-runner.sh \
+    --repo <owner>/<repo> --root /w/406/adminbot --accept-network-state'
+```
+
+The repository is public, so every job any workflow sends to the runner's label would run beside
+the lab's credentials. The runner's job-started hook (`deploy/aurora/runner-job-guard.sh`, installed
+with the allowed values written in) fails every job except `deploy-aurora.yaml` on `main`. Merging
+to `main` is deploying to Aurora, so keep `main` PR-only (no direct pushes) and keep the `aurora`
+environment restricted to `main`. Trigger a deploy by hand with
+`gh workflow run deploy-aurora.yaml --ref main`.
+
 ### Private reasoning and NVIDIA NIM
 
 The AdminBot service classifies every `adminbot_reason` request with local
 Ollama `gemma4:e4b` before any remote call. Generic tasks can use NVIDIA NIM
-`minimaxai/minimax-m3`. Private tasks are replaced with opaque placeholders;
+`nvidia/nemotron-3-ultra-550b-a55b`. Private tasks are replaced with opaque placeholders;
 only the sanitized task reaches NIM, and Gemma fills the placeholders locally.
 Use `privacy="private"` or `sensitiveTerms` to force private handling. Missing
 keys, uncertain or malformed classification, unsafe sanitization, and model
@@ -88,6 +124,26 @@ pnpm tsx start-adminbot.ts
 Vercel should serve static Control UI assets only. Prompts must connect directly
 to the VM gateway over authenticated TLS; do not proxy or log prompts through a
 Vercel Function, analytics collector, or other hosted middleware.
+
+### Load, failover, and offline
+
+The [shared LLM gateway](llm-gateway.md) coordinates AdminBot and PaperMentor across
+processes. Public requests wait when either 100 public or 8 local calls are active.
+Local privacy calls remain capped at 8. Set `LLM_GATEWAY_URL` and `LLM_GATEWAY_TOKEN`
+in participating services and run one gateway with `node --import tsx start-llm-gateway.ts`.
+Without that configuration, the in-process allocator is development-only and cannot
+coordinate separate services. See the gateway guide for GPU tunnels, streaming,
+cancellation, and deployment checks.
+
+Department account filing uses the DCS roster sheet described below; the retired form
+failover is not enabled. Privileged operators can inspect the external-request ledger at
+`GET /ops/failed-requests`; signed-in members can read `GET /ops/llm-load`.
+
+The Control UI caches successful member GETs in account-scoped IndexedDB.
+Recommendation-letter, meeting-request, and signature drafts save locally and sync
+private working copies on reconnect. Final requests and approvals require an explicit
+connected action; legacy queued mutations are retained for recovery and never replayed.
+An on-device SLM is not shipped.
 
 ### Connect Gmail and Calendar with gog
 
@@ -490,12 +546,21 @@ approver -- which is what pressing **Add member** twice on one id produces. Onbo
 admin sign-in; over break-glass gateway access the record still saves and the notice says the guide
 was not queued.
 
+Opening a member in the editor shows their **Onboarding email** status. When nothing has gone out
+(never queued, failed or rejected) it offers **Send onboarding email**; once the guide has been
+sent it offers **Resend onboarding email**, for a mail that went to spam or was never read. Both
+ask for confirmation in the panel and call the same `POST /lab/members/{id}/onboarding/guide`, a
+resend with `{"resend": true}`. A resend lifts only the "already sent" refusal: a copy still
+waiting for an approver is refused either way, and the resend is filed with
+`add_dcs_roster_row: false` so DCS is not asked for a second account. It needs an admin member
+session; the service token is refused.
+
 ### Changing a Member Type
 
-Changing **Member type** on an existing member on the Lab Members tab re-onboards them, without
-the welcome mail, and applies it on the spot. The admin's save is the approval: each external
-step is still a typed proposal, approved by that admin, executed and audited, the same way Add
-row works. None of them waits in Pending Actions. `PUT /lab/members/{id}` does this only for a
+Changing **Member type** on an existing member on the Lab Members tab re-onboards them and
+applies it on the spot. The admin's save is the approval: each external step is still a typed
+proposal, approved by that admin, executed and audited, the same way Add row works. Only a
+non-standard guide waits in Pending Actions (below). `PUT /lab/members/{id}` does this only for a
 genuine admin session and only when the type actually changes (compared token-wise, so
 `Coauthor-Major ` is not a change). The service token still cannot set the field.
 
@@ -517,8 +582,12 @@ genuine admin session and only when the type actually changes (compared token-wi
   (`calendar.grant_lab_calendar`, recorded as `auth.calendar_invite_sent` like the backfill). No
   action revokes a calendar share, so a loss is reported in the notice for someone to handle by
   hand.
-- **One email, in one case:** somebody moving *into* alumni gets the `alumni` guide
-  (`onboarding.send_guide`). Every other change sends nothing.
+- **The new type's onboarding email**, when the new type calls for a different guide than the old
+  one did (`onboarding.send_guide`). Setting a blank type to `full` sends the full-member guide;
+  `full` to `full, alumni` sends nothing, since `full` still decides the guide. The full-member and
+  alumni guides go out on the admin's save; every other guide waits in Pending Actions, as it does
+  from Add member. A guide the address has already been sent, or that is already waiting, is
+  reported as skipped rather than sent twice. Types that send no mail send nothing here either.
 
 **Meetings** is a second checkbox field listing the lab calendar's standing meetings: the Monday
 group meeting and every recurring `Theme:` and `Proj:` series (`GET /lab/meetings`, admin only).
@@ -1645,3 +1714,93 @@ Propose a new deadline can add one stage to an existing conference or workshop, 
 Each dated stage has a details menu. Signed-in members can use Suggest deadline correction there; the form targets that stage only. Adding a stage does not replace the submission date or the rest of the schedule. An existing stage must be corrected through its details instead of added again.
 
 Proposals use the administrator approval queue. Approval is bound to the proposed stage and date. If a stage changes before its correction is published, the correction must be submitted again against the current date.
+
+### Interview invitations
+
+On **Lab members**, open **Invite an interviewee**. Enter the candidate's name and email,
+project, exact task, and two lab interviewers. Search by name if an interviewer is not in the
+current roster page. Both interviewers need a Slack user ID and email on their profiles.
+
+**Preview email** shows the candidate address, interviewer CC addresses, and task. Editing a
+field invalidates the preview. **Submit for admin approval** queues an `onboarding.send_guide`
+proposal in Pending Actions; it does not email or invite anyone. An admin reviews and approves
+the exact payload there.
+
+Execution creates or reuses a private candidate-specific Slack channel, checks that no other
+people occupy it, adds the two interviewers, and sends the candidate's Slack Connect invitation
+and task email. The two interviewers are CC'ed, and replies go to the first interviewer. The
+standard friends/collaborators channel is not used. A successfully sent invitation adds a new
+candidate to the roster as `interviewee` at the external-collaborator privilege level; existing
+member access is preserved. Repeated submissions for a pending, approved, or executed invitation
+are refused.
+
+The configured bot needs Slack permissions for private-channel listing/creation, membership
+reads/invites, `auth.test`, and email lookup, plus the existing Slack Connect and Gmail sender.
+Missing permissions stop execution; preview and queueing never provision a channel. This needs
+an Aurora backend release as well as the frontend release.
+
+### Weekly active Slack channel cleanup
+
+`adminbot-active-channels` runs Sunday at 08:00 in the gateway's configured timezone
+(`0 8 * * 0` in `config/adminbot-cron.json`). After deployment, register/update it using
+`scripts/adminbot-cron-sync.sh`, as with the other scheduled jobs.
+
+The job calls `POST /members/active-channels/sync` with the service token. The route also
+accepts admin sessions; ordinary members cannot run it and callers cannot supply targets.
+It reads the complete live membership of `jinesis-active` and `random-active`, then removes
+human accounts with no matching eligible SQLite member. Eligibility uses the same resolved
+member classification as active-channel invitations: full or coauthor-major. Alumni with
+one of these classifications remain eligible. Unmatched accounts and missing membership
+types are removed, not queued for manual review. Bots/app accounts are excluded. There is
+no separate exemption for human admins. The Slack pass leaves other channels untouched;
+the calendar pass is described below.
+
+This is a standing automatic policy: each removal is a normal T3 `slack.remove_from_channel`
+proposal, approved against its exact payload hash by `system:weekly-active-channel-policy`,
+then executed and audited. Other removal proposals still require their existing approvals.
+Repeat runs deduplicate removals within the UTC Sunday week; a later week can remove an
+account that was re-added. Failed executions are reported and can be retried. Concurrent
+requests share the same pass.
+
+Slack requires the existing `SLACK_BOT_TOKEN` (directory/channel reads) and
+`SLACK_USER_TOKEN` (channel removals), with the corresponding Slack permissions.
+An empty SQLite member roster, failed/incomplete Slack read, or unavailable connector fails
+closed. Run only against the intended production member database. Local tests use synthetic
+Slack responses and never contact Slack or remove live users.
+
+### Sunday lab calendar event membership
+
+The same Sunday 08:00 `adminbot-active-channels` job also calls
+`POST /members/calendar-membership/sync`. Both passes run even when one fails; any
+failure makes the combined job fail. Re-sync the cron manifest after deployment to
+apply its increased 30-minute timeout. No additional cron job is needed.
+
+The calendar pass restricts **only the Monday group meeting and direct calendar
+subscription access**. Monday is identified by `ADMINBOT_GROUP_MEETING_EVENT_ID`
+(normalized to its recurring series), including upcoming modified occurrences. Social,
+theme, project and other event guest lists are untouched by this policy.
+
+Full members and major coauthors (including alumni with those classifications) remain
+eligible. Calendar, main and correspondence addresses are matched against SQLite.
+Only known ineligible members are removed; unmatched guests such as invited speakers
+are preserved. Organizers, the calendar's own address and resources are protected.
+
+The same pass reads all calendar-sharing ACL pages and revokes known ineligible users'
+direct permissions. Owners, unmatched accounts, group/domain/public grants are untouched;
+inherited or public access cannot be revoked per member by this job. The Google account
+must have permission to manage the calendar's sharing settings.
+
+Event removals use `calendar.remove_attendees`; subscription removals use the new T3
+`calendar.revoke_lab_calendar` action. Both require hash-bound approval, execution and
+audit, using `system:weekly-calendar-membership-policy` for this standing policy. The
+executor re-reads before writing, preserving remaining guests and RSVP metadata and
+refusing to remove a changed/owner ACL. Empty rosters or incomplete inventories fail
+closed before any writes. Monday invitations and subscription grants enforce eligibility
+at execution; other event invitations are unrestricted by this membership rule.
+
+This requires `gog api call` support (verified against gog 0.43.0) and the configured
+Google account's Calendar read/write access. It uses Calendar `events.list/get/patch` and `acl.list/delete`
+through the existing gog credentials. Event updates remain silent (`sendUpdates=none`).
+The endpoint is restricted to service tokens/admins and accepts no calendar or recipient
+overrides. ACL deletion uses Google's deletion endpoint,
+which has no notification parameter. This does not repair invitations removed by older runs.
