@@ -1,8 +1,9 @@
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
-import "./interview-invite.ts";
 import { ifDefined } from "lit/directives/if-defined.js";
+import "./interview-invite.ts";
+import { live } from "lit/directives/live.js";
 import "./member-guide-status.ts";
 import {
   adminBotIsAlumniMember,
@@ -1228,7 +1229,7 @@ function renderRegistryField(
         />`;
       case "date":
         return html`${renderDateControl(
-          html`<input name=${field.key} type="date" .value=${value} />`,
+          html`<input name=${field.key} type="date" .value=${live(value)} />`,
           value,
         )}`;
       case "link":

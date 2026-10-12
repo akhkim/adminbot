@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { live } from "lit/directives/live.js";
 import { ref } from "lit/directives/ref.js";
 import "../paper-visibility.ts";
 import {
@@ -748,11 +749,11 @@ function renderProjectDetails(
   // Reads the draft at fire time rather than closing over the one this render saw: the timer
   // outlives the render that set it, and the whole point is to commit what was typed since.
   const commit = (options: { force?: boolean } = {}): void => {
-    const live = (state.myWorkProjectEdits ?? {})[paper.id];
-    if (!live) {
+    const typed = (state.myWorkProjectEdits ?? {})[paper.id];
+    if (!typed) {
       return;
     }
-    const refusal = detailsRefusal(live);
+    const refusal = detailsRefusal(typed);
     if (refusal) {
       patch({ error: refusal });
       return;
@@ -760,26 +761,26 @@ function renderProjectDetails(
     // Only the automatic paths are deduplicated. A press of the button is a deliberate act and
     // always writes: a save that failed leaves the signature recorded, and suppressing the retry
     // would turn the button into exactly the silent no-op it exists to avoid.
-    const signature = detailsSignature(live);
+    const signature = detailsSignature(typed);
     if (!options.force && signature === detailsLastSaved.get(paper.id)) {
       return;
     }
     detailsLastSaved.set(paper.id, signature);
-    const aliasTyped = live.alias.trim();
+    const aliasTyped = typed.alias.trim();
     props.onSavePaper({
       id: paper.id,
-      title: live.title.trim(),
+      title: typed.title.trim(),
       authors: paper.authors ?? [],
       currentStep: paper.current_step as AdminBotPaperStep,
       alias: aliasTyped ? (adminBotNormalizePaperAlias(aliasTyped) ?? "") : "",
-      startedOn: live.startedOn.trim(),
+      startedOn: typed.startedOn.trim(),
     });
     patch({ error: null });
   };
   const edited = (fields: Partial<ProjectDetailsDraft>): void => {
     patch({ ...fields, error: null });
-    const live = (state.myWorkProjectEdits ?? {})[paper.id] ?? stored;
-    if (detailsRefusal(live)) {
+    const typed = (state.myWorkProjectEdits ?? {})[paper.id] ?? stored;
+    if (detailsRefusal(typed)) {
       // Held rather than queued. The message waits for the member to stop or leave, so they are not
       // told off for a short name they are three characters into typing.
       cancelAutosave(detailsSaveTimers.get(paper.id), setTimer);
@@ -809,12 +810,12 @@ function renderProjectDetails(
           // written has had its timer cancelled, and that is exactly the case that must not pass
           // silently -- it is how the create form used to lose a project without saying so.
           // `commit` decides: it writes, or it explains.
-          const live = (state.myWorkProjectEdits ?? {})[paper.id];
+          const typed = (state.myWorkProjectEdits ?? {})[paper.id];
           const changed =
-            live !== undefined &&
-            (live.title !== stored.title ||
-              live.alias !== stored.alias ||
-              live.startedOn !== stored.startedOn);
+            typed !== undefined &&
+            (typed.title !== stored.title ||
+              typed.alias !== stored.alias ||
+              typed.startedOn !== stored.startedOn);
           if (!changed) {
             return;
           }
@@ -855,7 +856,7 @@ function renderProjectDetails(
                 class="input"
                 type="date"
                 data-testid=${`my-work-details-started-${paper.id}`}
-                .value=${draft.startedOn}
+                .value=${live(draft.startedOn)}
                 @input=${(event: Event) =>
                   edited({ startedOn: (event.target as HTMLInputElement).value })}
               />`,

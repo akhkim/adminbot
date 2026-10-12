@@ -1,5 +1,6 @@
 import { html, nothing, LitElement } from "lit";
 import { property, state } from "lit/decorators.js";
+import { live } from "lit/directives/live.js";
 import { t } from "../../../i18n/index.ts";
 import type { PublicationDigestPreview, PublicationDigestVenue } from "../api/paper-admin.ts";
 // Control UI view for the Mailing List tab: the lab's publications in a date range, mailed out.
@@ -97,7 +98,7 @@ class AdminbotMailingListView extends LitElement {
               html`<input
                 type="date"
                 ?disabled=${Boolean(props.venue)}
-                .value=${props.from}
+                .value=${live(props.from)}
                 @change=${(event: Event) =>
                   props.onRangeChange({
                     from: (event.target as HTMLInputElement).value,
@@ -113,7 +114,7 @@ class AdminbotMailingListView extends LitElement {
               html`<input
                 type="date"
                 ?disabled=${Boolean(props.venue)}
-                .value=${props.to}
+                .value=${live(props.to)}
                 @change=${(event: Event) =>
                   props.onRangeChange({
                     from: props.from,
