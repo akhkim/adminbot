@@ -2717,7 +2717,6 @@ class AdminbotDeadlinesView extends LitElement {
       deadline_label: stage.label,
       deadline_aoe: aoe,
       deadline_at: new Date(stage.instant).toISOString(),
-      deadline_planning_at: new Date(stage.instant).toISOString(),
       deadline_time_precision: "exact",
     };
   }
@@ -3334,7 +3333,9 @@ class AdminbotDeadlinesView extends LitElement {
                 ? html`<p class="deadline-group__shared-policy">
                     Organizers must notify authors by
                     ${milestoneDateLabel(notificationPolicy, this.displayZone)}
-                    ${notificationPolicy.status === "source_unavailable"
+                    ${["source_unavailable", "extraction_unavailable"].includes(
+                      notificationPolicy.status ?? "",
+                    )
                       ? html`<span>Latest source check failed</span>`
                       : notificationPolicy.status === "unverified" || !notificationPolicy.evidence
                         ? html`<span>Source not verified</span>`

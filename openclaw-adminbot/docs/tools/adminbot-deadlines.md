@@ -24,19 +24,27 @@ workshop daily only within three days of its deadline; other workshop pages wait
 public GitHub Pages histories needed to recover earlier extension dates are checked concurrently in
 a second bounded pool.
 
-Workshop notification requirements are separate from individual decision dates. The shared
-NeurIPS requirement is represented as a “Notify authors by” milestone, never as each workshop's
-actual decision date. The UI keeps both milestones distinct and displays conflicting observations.
+Workshop notification requirements are separate from individual decision dates. The NeurIPS
+workshop call supplies a shared “Workshops must notify authors by” milestone, collected once for
+the family and reused by its workshops. It is never copied into each workshop's `notification_aoe`.
+A workshop's own supported decision date remains a separate notification milestone; a published
+calendar date later than the shared cutoff raises a conflict instead of replacing either value.
+
+The manually tracked NLP4PI ARR commitment reads its official CFP through the schedule extractor,
+including its decision date. Alternative submission routes remain separate stages with their
+conditions. Its source identity and URL remain configured; its submission and notification dates
+are no longer constants. This change does not add model calls for every discovered workshop.
 
 Both ordinary collection and offline output regeneration migrate legacy workshop notification
 values. Shared NeurIPS values become unverified policy dates; other legacy values remain as
 `notification_previous_aoe` with unverified status. Revision history is retained. The existing
 NLP4PI submission date remains available but is marked unverified if it lacks extraction evidence.
-The UI labels unverified values explicitly.
+Successful extraction replaces these provisional projections; failed checks preserve previous
+observations and their last successful check time. The UI labels unverified values explicitly.
 
 An exact deadline carries `deadline_at` as a UTC instant; the Control UI defaults to the browser timezone. When a source gives only a date, `deadline_at` is empty and `deadline_time_precision` is `date_only`. `deadline_date` retains the published day and `deadline_timezone` records the known zone, or an empty string when the zone is unknown. The original timezone is preserved when the source supplies it; normalized legacy AoE stamps alone do not establish the source timezone.
 
-`deadline_planning_at` is the exact cutoff when known. For a date-only source it is the start of that day in the known zone, or UTC+14 when the zone is unknown. The compatibility field `deadline_aoe` represents the same planning instant for existing scheduled consumers. This boundary is an early planning target, not evidence that submissions close then. The board shows the source day with “time unknown”, uses the normal countdown style, and explains the boundary in the deadline details. Reminder messages, calendar entries and copied member milestones identify these as planning cutoffs. Passing one does not trigger a missed-submission escalation. A matched exact OpenReview cutoff remains authoritative when the website supplies only a date.
+A date-only deadline has a planning cutoff instead of an exact one. It is not stored: consumers compute it from `deadline_date` and `deadline_timezone` as the start of that day in the known zone, or in UTC+14 when the zone is unknown, so it cannot disagree with the published date. The compatibility field `deadline_aoe` represents the same planning instant for existing scheduled consumers. This boundary is an early planning target, not evidence that submissions close then. The board shows the source day with “time unknown”, uses the normal countdown style, and explains the boundary in the deadline details. Reminder messages, calendar entries and copied member milestones identify these as planning cutoffs. Passing one does not trigger a missed-submission escalation. A matched exact OpenReview cutoff remains authoritative when the website supplies only a date.
 
 Conference schedules are collected from configured official CFP and schedule pages, including
 surrounding prose and footnotes. The collector retains venue/track identities in code, not their
@@ -338,4 +346,10 @@ Publication-policy labels open a short explanation by click, tap, or keyboard. T
 
 On phones, filters use two columns when space permits and one column on narrow screens. Search remains full-width, venue chips scroll horizontally, and search and filters use 32px heights, while venue chips and view switches use 28px heights with spacing between separate controls. These compact sizes also apply on desktop.
 
-The frontend temporarily falls back to `/deadlines/venues.json` when `/deadlines` is missing or returns the legacy HTML page instead of a dataset. Empty current datasets remain valid, and authentication or server errors are not hidden by the fallback. Remove this compatibility read after the backend serves JSON at `/deadlines`.
+### Workshop snapshot upgrades
+
+The bundled snapshot already separates unverified historical notification values from individual workshop decisions. Collection reads that representation directly; loading, refreshing, and rewriting outputs do not run historical data migrations. New workshops obtain shared notification requirements only from the organizer source. A failed first extraction leaves the requirement undated; a failed later extraction retains the saved policy and its evidence.
+
+A separate abstract deadline links the two stages but does not establish a mandatory registration requirement. Requirement labels come from source evidence.
+
+The frontend reads deadline data only from `/deadlines` and rejects malformed dataset responses. Deploy the backend that serves this JSON route before deploying the frontend.
