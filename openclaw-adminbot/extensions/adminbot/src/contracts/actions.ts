@@ -1969,6 +1969,8 @@ export type AdminBotPaperTimeline = {
   items: AdminBotPaperTimelineItem[];
 };
 export type AdminBotPaperArtifactLinks = {
+  /** Human confirmation that the paper has been presented; blank reopens it. */
+  completed_at?: string;
   /** Publication track is independent of presentation_type; blank explicitly clears it. */
   publication_track?: string;
   conference?: string;
