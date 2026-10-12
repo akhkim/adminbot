@@ -292,31 +292,41 @@ describe("renderDashboard", () => {
   // attribute is what resolves the countdown's color, so without it every row reads as plain text
   // and a deadline tomorrow looks like one in March.
   it("carries the board's urgency and countdown on each row", () => {
-    const soon = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const container = renderPage(
-      createState({
-        memberId: "ada",
-        adminBotData: {
-          proposals: [],
-          members: [
-            {
-              id: "ada",
-              name: "Ada",
-              milestones: [{ date: soon, label: "Thesis" }],
-            },
-          ],
-        },
-      } as unknown as Partial<AppViewState>),
-      "member",
-    );
-    const row = container.querySelector<HTMLElement>(".dashboard__next-deadline");
-    expect(row?.dataset.urgency).toBe("critical");
-    expect(row?.querySelector(".dashboard__next-deadline-countdown")?.textContent).toMatch(
-      /day|today/u,
-    );
-    // The date splits the same way the board splits it, so the time reads as secondary.
-    expect(row?.querySelector(".deadline-date")).not.toBeNull();
-    expect(row?.querySelector(".deadline-time")).toBeNull();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-12T20:00:00Z"));
+    const deadlines = vi.spyOn(deadlineTime, "upcomingMajorDeadlines").mockReturnValue([]);
+    try {
+      const soon = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const container = renderPage(
+        createState({
+          memberId: "ada",
+          adminBotData: {
+            proposals: [],
+            members: [
+              {
+                id: "ada",
+                name: "Ada",
+                milestones: [{ date: soon, label: "Thesis" }],
+              },
+            ],
+          },
+        } as unknown as Partial<AppViewState>),
+        "member",
+      );
+      const row = [...container.querySelectorAll<HTMLElement>(".dashboard__next-deadline")].find(
+        (candidate) => candidate.textContent?.includes("Thesis"),
+      );
+      expect(row).toBeDefined();
+      expect(row?.dataset.urgency).toBe("critical");
+      expect(row?.querySelector(".dashboard__next-deadline-countdown")?.textContent).toMatch(
+        /day|today/u,
+      );
+      // The date splits the same way the board splits it, so the time reads as secondary.
+      expect(row?.querySelector(".deadline-date")).not.toBeNull();
+      expect(row?.querySelector(".deadline-time")).toBeNull();
+    } finally {
+      deadlines.mockRestore();
+      clock.mockRestore();
+    }
   });
 
   it("keeps the public cutoff in AoE instead of relabeling its UTC instant", () => {
