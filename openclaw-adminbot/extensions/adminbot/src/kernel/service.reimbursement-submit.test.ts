@@ -1,6 +1,7 @@
 // Mailing a cleared package to the funder's office: who it goes to, who answers it, and the two
 // ways it refuses.
 import { describe, expect, it } from "vitest";
+import { createGogAdminBotExecutor } from "../connectors/gog.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import { AdminBotService } from "./service.js";
 
@@ -67,9 +68,27 @@ describe("submitReimbursement", () => {
     );
     // A reply landing in a bot mailbox is a question nobody answers.
     expect(result.reply_to).toBe("ada.personal@example.org");
-    expect((executed[0]?.proposed_payload as Record<string, unknown>).reply_to).toBe(
-      "ada.personal@example.org",
+    const payload = executed[0]!.proposed_payload as Record<string, unknown>;
+    expect(payload.reply_to).toBe("ada.personal@example.org");
+    const calls: string[][] = [];
+    const connector = createGogAdminBotExecutor({ run: async (args) => void calls.push(args) });
+    await connector.execute(executed[0]!);
+    const args = calls[0]!;
+    expect(args).toContain("--cc");
+    expect(args).toContain("--reply-to");
+    expect(args[args.indexOf("--cc") + 1]).toBe("ada.personal@example.org");
+    expect(args[args.indexOf("--reply-to") + 1]).toBe("ada.personal@example.org");
+  });
+
+  it("copies the account address when no correspondence address is set", async () => {
+    const { service, executed } = seeded({ reimbursement_dcs_email: "finance@example.org" });
+    unwrap(service.upsertLabMember({ id: "ada", correspondence_email: "" } as never));
+    unwrap(
+      await service.submitReimbursement({ funder: "DCS", memberId: "ada", artifacts: ARTIFACTS }),
     );
+    const payload = executed[0]?.proposed_payload as Record<string, unknown>;
+    expect(payload.cc).toEqual(["ada@cs.toronto.edu"]);
+    expect(payload.reply_to).toBe("ada@cs.toronto.edu");
   });
 
   it("routes by funder, so one office never receives the other's package", async () => {

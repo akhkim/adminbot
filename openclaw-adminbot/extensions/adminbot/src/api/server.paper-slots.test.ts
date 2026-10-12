@@ -218,11 +218,11 @@ describe("the paper-evidence reads", () => {
     });
   });
 
-  it("returns all 25 slots for one paper, blanks included", async () => {
+  it("returns all 28 slots for one paper, blanks included", async () => {
     const { baseUrl } = await startLab();
     const result = await call(baseUrl, "GET", "/papers/p1/slots");
     expect(result.status).toBe(200);
-    expect(result.body.slots).toHaveLength(25);
+    expect(result.body.slots).toHaveLength(28);
   });
 });
 
@@ -590,7 +590,7 @@ describe("the global nudge, end to end", () => {
     });
     expect(ledger[0]?.last_nudged_at).toBeTruthy();
     // Nothing was stamped for the slot that is already in, or for anything still gated.
-    expect(slots.length).toBe(25);
+    expect(slots.length).toBe(28);
   });
 
   it("keeps its cadence, so a doubled cron cannot nag", async () => {
@@ -607,5 +607,36 @@ describe("the global nudge, end to end", () => {
     const res = await fetch(`${baseUrl}/papers/slot-reminder/run`, { method: "POST" });
     expect(res.status).toBe(401);
     expect(sent).toHaveLength(0);
+  });
+});
+
+describe("conference travel export", () => {
+  it("keeps lab travel private and exposes an authenticated read without sending anything", async () => {
+    const { baseUrl, sent } = await startLab();
+    const route = "/papers/conference-travel-export";
+    expect((await fetch(`${baseUrl}${route}`)).status).toBe(401);
+    const headers = await adminHeaders(baseUrl);
+    const result = await callAs(headers, baseUrl, "GET", route);
+    expect(result.status).toBe(200);
+    expect(result.body.rows).toEqual([]);
+    mockFor(baseUrl).service.upsertLabMember({
+      id: "zhijing",
+      name: "Zhijing Jin",
+      privilege_level: "member",
+    } as AdminBotLabMemberInput);
+    expect((await callAs(headers, baseUrl, "GET", route)).status).toBe(403);
+    expect(sent).toHaveLength(0);
+  });
+});
+
+describe("conference channel invites", () => {
+  it("requires a real admin session before an external action and rejects unknown conferences", async () => {
+    const { baseUrl } = await startLab();
+    const route = "/papers/conference-rosters/emnlp%3A2026/channel-invites";
+    expect((await fetch(`${baseUrl}${route}`, { method: "POST" })).status).toBe(401);
+    expect((await call(baseUrl, "POST", route, {})).status).toBe(403);
+    expect((await callAs(await adminHeaders(baseUrl), baseUrl, "POST", route, {})).status).toBe(
+      404,
+    );
   });
 });

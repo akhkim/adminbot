@@ -70,12 +70,12 @@ export async function handleLogisticsRoute(
   if (req.method === "POST" && url.pathname === "/logistics/requests") {
     const body = (await readJson(req, LOGISTICS_BODY_LIMIT_BYTES)) as AdminBotLogisticsRequestInput;
     if (body.kind === "recommendation_letters" && body.drive_folder_url?.trim()) {
-      const access = await service.checkDriveEditAccess(body.drive_folder_url);
+      const access = await service.checkDriveAccess(body.drive_folder_url);
       if (!access.ok) {
         sendServiceResult(res, access);
         return;
       }
-      if (access.payload.status === "not_editable") {
+      if (access.payload.status === "inaccessible") {
         sendJson(res, 422, { error: { message: access.payload.message } });
         return;
       }

@@ -2,6 +2,7 @@ import type {
   AdminBotPrivacyTaskRequest,
   AdminBotPrivacyTaskResult,
 } from "../contracts/actions.js";
+import { createGatewayFetch } from "./broker.gateway.js";
 
 export type PrivacyBrokerFetch = (
   input: string | URL,
@@ -25,12 +26,17 @@ export type AdminBotPrivacyBrokerConfig = {
   remoteBaseUrl: string;
   remoteModel: string;
   remoteApiKeyEnv: string;
+  publicBaseUrl?: string;
+  publicModel?: string;
+  publicApiKeyEnv?: string;
 };
 
 export type AdminBotPrivacyBrokerOptions = {
   fetchImpl?: PrivacyBrokerFetch;
   env?: NodeJS.ProcessEnv;
   sensitiveTermsProvider?: () => string[] | Promise<string[]>;
+  /** Non-LLM preflight for local vs OpenRouter concurrency. Absent, calls go through unbounded. */
+  llmRouter?: import("../kernel/llm-router.js").LlmLoadRouter;
 };
 
 export type AdminBotPrivacyBroker = {
@@ -45,8 +51,11 @@ export const defaultAdminBotPrivacyBrokerConfig = {
   localModel: "nvidia/Qwen3.5-122B-A10B-NVFP4",
   localApiKeyEnv: "VLLM_API_KEY",
   remoteBaseUrl: "https://integrate.api.nvidia.com/v1",
-  remoteModel: "minimaxai/minimax-m3",
+  remoteModel: "nvidia/nemotron-3-ultra-550b-a55b",
   remoteApiKeyEnv: "NVIDIA_API_KEY",
+  publicBaseUrl: "https://openrouter.ai/api/v1",
+  publicModel: "openai/gpt-5.4-mini",
+  publicApiKeyEnv: "OPENROUTER_API_KEY",
 } satisfies AdminBotPrivacyBrokerConfig;
 
 type PrivacyClassification = {
@@ -68,8 +77,11 @@ export function createAdminBotPrivacyBroker(
   config: AdminBotPrivacyBrokerConfig = defaultAdminBotPrivacyBrokerConfig,
   options: AdminBotPrivacyBrokerOptions = {},
 ): AdminBotPrivacyBroker {
-  const fetchImpl = options.fetchImpl ?? (globalThis.fetch as PrivacyBrokerFetch);
   const env = options.env ?? process.env;
+  const directFetch = options.fetchImpl ?? (globalThis.fetch as PrivacyBrokerFetch);
+  const fetchImpl = env.LLM_GATEWAY_URL
+    ? createGatewayFetch(directFetch, config, env)
+    : wrapFetchWithLlmSlots(directFetch, options.llmRouter);
   return createPrivacyBrokerHandler(config, fetchImpl, env, options.sensitiveTermsProvider);
 }
 
@@ -328,11 +340,17 @@ async function runRemote(
   task: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  const apiKey = env[config.remoteApiKeyEnv]?.trim();
-  if (!apiKey) {
-    throw new Error(`${config.remoteApiKeyEnv} is required for remote reasoning`);
+  const publicKey = config.publicApiKeyEnv ? env[config.publicApiKeyEnv]?.trim() : undefined;
+  const usePublic =
+    Boolean(publicKey) && Boolean(config.publicBaseUrl) && Boolean(config.publicModel);
+  const apiKey = usePublic ? publicKey : env[config.remoteApiKeyEnv]?.trim();
+  const keyEnv = usePublic ? config.publicApiKeyEnv : config.remoteApiKeyEnv;
+  if (!apiKey || !keyEnv) {
+    throw new Error(`${keyEnv ?? config.remoteApiKeyEnv} is required for remote reasoning`);
   }
-  const url = new URL("chat/completions", ensureTrailingSlash(config.remoteBaseUrl));
+  const baseUrl = usePublic ? config.publicBaseUrl! : config.remoteBaseUrl;
+  const model = usePublic ? config.publicModel! : config.remoteModel;
+  const url = new URL("chat/completions", ensureTrailingSlash(baseUrl));
   if (url.protocol !== "https:") {
     throw new Error("remote reasoning URL must use https");
   }
@@ -344,7 +362,7 @@ async function runRemote(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: config.remoteModel,
+      model,
       messages: [{ role: "user", content: task }],
       max_tokens: 4096,
     }),
@@ -359,6 +377,33 @@ async function runRemote(
     throw new Error("remote reasoning model returned no content");
   }
   return content.trim();
+}
+
+function wrapFetchWithLlmSlots(
+  fetchImpl: PrivacyBrokerFetch,
+  router?: import("../kernel/llm-router.js").LlmLoadRouter,
+): PrivacyBrokerFetch {
+  if (!router) {
+    return fetchImpl;
+  }
+  return async (input, init) => {
+    const host = new URL(String(input)).hostname;
+    const kind = LOOPBACK_HOSTS.has(host) ? "local" : "public";
+    const lease = await router.acquire(kind, init?.signal);
+    try {
+      const response = await fetchImpl(input, init);
+      // Fetch resolves at headers; keep capacity reserved through the complete generation.
+      const body = await response.text();
+      return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        text: async () => body,
+      };
+    } finally {
+      lease.release();
+    }
+  };
 }
 
 function parseClassification(content: string): PrivacyClassification {

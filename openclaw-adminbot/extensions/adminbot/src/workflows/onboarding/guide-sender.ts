@@ -32,6 +32,12 @@ import {
   type AdminBotGuideComposeResult,
   type AdminBotGuideOverrides,
 } from "./guide.js";
+import {
+  readInterviewInvitation,
+  interviewBody,
+  INTERVIEW_TASK_MARKER,
+  type InterviewInvitation,
+} from "./interview.js";
 
 const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 45_000;
@@ -82,6 +88,7 @@ export type SlackConnectInviter = (params: {
 
 export type AdminBotOnboardingSendRequest = {
   template_id: string;
+  interview?: InterviewInvitation;
   name: string;
   email: string;
   /** Everything the template needs that the tab collected by hand. */
@@ -180,6 +187,7 @@ export type AdminBotOnboardingSender = (
 
 export type AdminBotOnboardingSenderOptions = {
   env?: NodeJS.ProcessEnv;
+  provisionInterviewChannel?: (email: string, interview: InterviewInvitation) => Promise<string>;
   provisionDriveWorkspace?: DriveWorkspaceProvisioner;
   inviteToSlackConnect?: SlackConnectInviter;
   /**
@@ -415,10 +423,24 @@ export function createAdminBotOnboardingSender(
   const env = options.env ?? process.env;
   const sendEmail = options.sendEmail ?? gogEmailSender(env);
   return async (request) => {
+    let interview: InterviewInvitation | undefined;
+    if (request.interview) {
+      try {
+        if (request.template_id !== "interviewee") {
+          throw new Error("Interview details require the interviewee template.");
+        }
+        interview = readInterviewInvitation(request.interview);
+      } catch (error) {
+        return { ok: false, error: { status: 400, message: String(error) } };
+      }
+    }
     const overrides: AdminBotGuideOverrides = {
       ...(request.subject_override?.trim() ? { subject: request.subject_override } : {}),
       ...(request.body_override?.trim() ? { body: request.body_override } : {}),
     };
+    if (interview) {
+      overrides.body = interviewBody(interview.task);
+    }
     const name = request.name?.trim() ?? "";
     const email = request.email?.trim() ?? "";
     if (!name) {
@@ -443,6 +465,7 @@ export function createAdminBotOnboardingSender(
 
     const base: Record<string, string | undefined> = {
       ...request.values,
+      ...(interview ? { slack_connect_link: undefined } : {}),
       first_name: request.values?.first_name?.trim() || firstNameOf(name),
       // The address the mail is going to, for the copy that has to name it back to the reader
       // ("log in using ..."). Defaulted like first_name so nobody retypes the recipient.
@@ -491,6 +514,12 @@ export function createAdminBotOnboardingSender(
       );
       if (!preview.ok) {
         return { ok: false, error: composeFailure(preview) };
+      }
+      if (interview) {
+        preview.guide.body = preview.guide.body.replace(
+          INTERVIEW_TASK_MARKER,
+          () => interview!.task,
+        );
       }
       // The preview shows the operator exactly what the send would produce, html included.
       return {
@@ -566,7 +595,14 @@ export function createAdminBotOnboardingSender(
           },
         };
       }
+      if (interview && !options.provisionInterviewChannel) {
+        return {
+          ok: false,
+          error: { status: 501, message: "Private interview channels are not configured." },
+        };
+      }
       const channelId =
+        (interview ? await options.provisionInterviewChannel!(email, interview) : undefined) ||
         request.slack_channel_id?.trim() ||
         options.defaultSlackChannelId?.trim() ||
         configuredEnvValue(env[ADMINBOT_ONBOARDING_CHANNEL_ENV]);
@@ -734,6 +770,9 @@ export function createAdminBotOnboardingSender(
           missing: leftover,
         },
       };
+    }
+    if (interview) {
+      guide.body = guide.body.replace(INTERVIEW_TASK_MARKER, () => interview!.task);
     }
     const html = htmlOf(guide.body);
     await sendEmail({

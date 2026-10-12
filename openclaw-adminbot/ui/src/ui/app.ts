@@ -43,7 +43,8 @@ import type {
   PaperSlotOverviewRow,
   TabVisitReport,
 } from "./adminbot/auth/session.ts";
-import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
+import type { AudienceFilter, InviteMode } from "./adminbot/calendar-audience.ts";
+import type { AdminBotLabMember } from "./adminbot/controllers/admin.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
@@ -397,6 +398,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotBroadcastDraft?: string;
   @state() adminBotBroadcastExpiry?: string;
   @state() adminBotBroadcastAvailability?: string;
+  @state() adminBotBroadcastTimezone?: string;
   @state() adminBotBroadcastBusy = false;
   @state() adminBotBroadcastNotice: { kind: "success" | "error"; text: string } | null = null;
   // Which My Desk lists she has opened. Not persisted: it is where she is on the page, not a
@@ -426,6 +428,7 @@ export class OpenClawApp extends LitElement {
   @state() calendarEditingEventId: string | null = null;
   @state() calendarAudience: AudienceFilter = {};
   @state() calendarExcludedMemberIds: string[] = [];
+  @state() calendarInviteMode: InviteMode = "add";
   @state() calendarBusy = false;
   @state() calendarConfirming: "save" | "invite" | null = null;
   @state() rosterMembers: RosterMember[] = [];
@@ -684,6 +687,8 @@ export class OpenClawApp extends LitElement {
   @state() agentsSelectedId: string | null = null;
   @state() adminBotLoading = false;
   @state() adminBotError: string | null = null;
+  @state() adminBotUsingCachedReads = false;
+  @state() adminBotOfflinePendingWrites = 0;
   @state() adminBotData: AdminBotDashboardData = createEmptyAdminBotDashboardData();
   @state() adminBotRosterLoadedAt: number | null = null;
   @state() adminBotRosterLoading = false;
@@ -699,6 +704,10 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMemberMap: MemberMap | null | undefined = undefined;
   @state() adminBotMemberMapLoading = false;
   adminBotMemberMapRequestId = 0;
+  @state() adminBotCollaboratorSchedules: AdminBotLabMember[] = [];
+  @state() adminBotCollaboratorSchedulesLoading = false;
+  @state() adminBotCollaboratorSchedulesError: string | null = null;
+  @state() adminBotCollaboratorSchedulesSession = "";
   @state() adminBotTimeAvailabilityMemberId = "";
   @state() adminBotLogisticsSignatureFiles: File[] = [];
   @state() adminBotLogisticsDescription = "";
@@ -744,6 +753,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotProfileOverview: MemberProfileOverviewRow[] = [];
   @state() adminBotEscalatedNudges: EscalatedNudgeRow[] = [];
   @state() adminBotPiReview: PiReviewRow[] = [];
+  @state() adminBotPiReviewError: string | null = null;
   @state() adminBotProfileOverviewFieldCount = 0;
   // The lab-wide adoption roll-up that heads the same page. Null until the first read answers, so
   // "not loaded" and "nothing adopted" are distinguishable.
@@ -1874,7 +1884,7 @@ export class OpenClawApp extends LitElement {
   }
 
   publishBroadcast(
-    draft: { message: string; availability: string; expiresOn: string } | null,
+    draft: { message: string; availability: string; expiresOn: string; timezone?: string } | null,
   ): Promise<void> {
     return publishAdminBotBroadcast(
       this as unknown as Parameters<typeof publishAdminBotBroadcast>[0],

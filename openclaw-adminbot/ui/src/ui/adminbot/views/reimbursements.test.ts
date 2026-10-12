@@ -41,6 +41,23 @@ function draw(overrides: Partial<AdminBotReimbursementProps> = {}) {
 }
 
 describe("choosing the institute", () => {
+  it("keeps guidance specific to the selected institute and does not call an empty draft complete", () => {
+    const initial = draw().container;
+    expect(initial.textContent).toContain("Choose your institute first");
+    expect(initial.textContent).toContain("Awaiting trip details");
+    expect(initial.textContent).not.toContain("0 details needed");
+    const mpi = draw({ state: state({ funder: "MPI-IS" }) }).container;
+    expect(mpi.textContent).toContain("MPI IS travel reimbursement form and a signable copy");
+    expect(mpi.textContent).not.toContain("gizelda.pereira");
+    expect(mpi.textContent).not.toContain("DCS Expense Form");
+    const generate = [...mpi.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Generate MPI form"),
+    );
+    expect(generate?.disabled).toBe(true);
+    const dcs = draw({ state: state({ funder: "DCS" }) }).container;
+    expect(dcs.textContent).toContain("DCS Expense Form");
+    expect(dcs.textContent).toContain("gizelda.pereira");
+  });
   it("offers both and preselects neither", () => {
     const { container } = draw();
     const uoft = container.querySelector<HTMLInputElement>(

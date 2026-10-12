@@ -1,15 +1,15 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { createLocalChat } from "../privacy/local-chat.js";
 import { extractDeadlineSchedule } from "./server.deadline-extraction.js";
 const body = {
   context: { scope: "Example 2035" },
   documents: { "https://example.org": "Submission September 25, 2035" },
 };
-beforeEach(() => vi.stubEnv("ADMINBOT_LOCAL_MODEL", "test-local"));
-afterEach(() => {
-  vi.unstubAllEnvs();
-  vi.useRealTimers();
+beforeEach(() => {
+  vi.stubEnv("ADMINBOT_LOCAL_MODEL", "test-local");
+  // A host that runs the shared gateway must not reroute the direct-endpoint cases.
+  vi.stubEnv("LLM_GATEWAY_URL", "");
 });
+afterEach(() => vi.unstubAllEnvs());
 function model(content: string, finish_reason = "stop", responseModel = "test-local") {
   return vi.fn(async (_url: string, _init?: { signal?: AbortSignal }) => ({
     ok: true,
@@ -33,37 +33,21 @@ describe("shared local schedule extraction", () => {
       expect.objectContaining({ signal: expect.any(AbortSignal), redirect: "error" }),
     );
   });
-  it("yields an in-flight extraction to chat and resumes after idle time", async () => {
-    vi.useFakeTimers();
-    const caller = new AbortController();
-    let started!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      started = resolve;
-    });
-    let extractionSignal: AbortSignal | undefined;
+  it("queues through the shared LLM gateway's local route when one is configured", async () => {
+    vi.stubEnv("ADMINBOT_LOCAL_BASE_URL", "http://127.0.0.1:8000/v1");
+    vi.stubEnv("LLM_GATEWAY_URL", "http://127.0.0.1:8766");
+    vi.stubEnv("LLM_GATEWAY_TOKEN", "gateway-token");
     const fetcher = model('{"entries":[],"issues":[]}');
-    fetcher.mockImplementationOnce(async (_url, init) => {
-      extractionSignal = init?.signal;
-      started();
-      return await new Promise((_, reject) => {
-        extractionSignal!.addEventListener("abort", () => reject(extractionSignal!.reason), {
-          once: true,
-        });
-      });
+    const caller = new AbortController();
+    expect(await extractDeadlineSchedule(body, caller.signal, fetcher)).toEqual({
+      entries: [],
+      issues: [],
     });
-    const extraction = extractDeadlineSchedule(body, caller.signal, fetcher);
-    await vi.advanceTimersByTimeAsync(2100);
-    await ready;
-    const chat = createLocalChat({
-      env: { ADMINBOT_LOCAL_MODEL: "test-local" },
-      fetchImpl: model("Hello"),
-    });
-    expect(await chat.complete([{ role: "user", content: "Hello" }])).toBe("Hello");
-    expect(extractionSignal?.aborted).toBe(true);
-    expect(caller.signal.aborted).toBe(false);
-    await vi.advanceTimersByTimeAsync(2100);
-    expect(await extraction).toEqual({ entries: [], issues: [] });
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const [endpoint, init] = fetcher.mock.calls[0]!;
+    expect(endpoint).toBe("http://127.0.0.1:8766/local/v1/chat/completions");
+    // The caller's own signal reaches the gateway unchanged: disconnecting is what dequeues it.
+    expect(init?.signal).toBe(caller.signal);
   });
   it.each(["https://example.com/v1", "http://user@localhost/v1", "ftp://localhost/v1"])(
     "rejects unsafe model endpoint %s",

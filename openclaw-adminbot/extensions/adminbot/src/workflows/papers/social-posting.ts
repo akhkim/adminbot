@@ -4,6 +4,7 @@ import {
   type AdminBotPaperAuthorLink,
   type AdminBotPaperRecord,
 } from "../../contracts/actions.js";
+import { readXThreadDraft, validateXThread, type XThreadDraft } from "./x-draft.js";
 
 export type AdminBotSocialPlatform = "linkedin" | "x";
 
@@ -45,6 +46,7 @@ export type AdminBotPaperSocialPayload = {
   };
   x?: {
     posts: string[];
+    thread?: XThreadDraft;
   };
 };
 
@@ -69,6 +71,7 @@ export type AdminBotPaperSocialDraftInput = {
    * voice, so anything that can generate should.
    */
   linkedinText?: string;
+  xThread?: XThreadDraft;
 };
 
 const X_POST_LIMIT = 280;
@@ -133,11 +136,23 @@ export function buildPaperSocialPayload(
       authors,
       ...(paperUrl ? { url: paperUrl } : {}),
     },
-    tags,
+    tags: {
+      ...tags,
+      missing: tags.missing.filter((tag) => !input.xThread || tag.platform !== "x"),
+    },
     ...(platforms.includes("linkedin")
       ? { linkedin: { text: linkedinText, visibility: input.linkedinVisibility ?? "PUBLIC" } }
       : {}),
-    ...(platforms.includes("x") ? { x: { posts: splitForX(xSeed) } } : {}),
+    ...(platforms.includes("x")
+      ? {
+          x: input.xThread
+            ? {
+                posts: input.xThread.posts.map((post) => post.text),
+                thread: readXThreadDraft(input.xThread),
+              }
+            : { posts: splitForX(xSeed) },
+        }
+      : {}),
   };
 }
 
@@ -236,6 +251,14 @@ export function assertSocialPayloadReady(payload: AdminBotPaperSocialPayload): v
     const posts = payload.x?.posts ?? [];
     if (posts.length === 0) {
       throw new Error("at least one X post is required");
+    }
+    if (payload.x?.thread) {
+      const thread = readXThreadDraft(payload.x.thread);
+      if (JSON.stringify(posts) !== JSON.stringify(thread.posts.map((post) => post.text))) {
+        throw new Error("X thread text differs from the approved post list.");
+      }
+      validateXThread(thread.posts);
+      return;
     }
     const tooLong = posts.find((post) => countCodePoints(post) > X_POST_LIMIT);
     if (tooLong) {

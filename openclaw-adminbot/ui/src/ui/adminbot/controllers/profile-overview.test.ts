@@ -13,6 +13,9 @@ function createHost(): AdminBotProfileOverviewHost {
   return {
     settings: { adminBotUrl: "http://127.0.0.1:8765" } as UiSettings,
     adminBotProfileOverview: [],
+    adminBotEscalatedNudges: [],
+    adminBotPiReview: [],
+    adminBotPiReviewError: null,
     adminBotProfileOverviewFieldCount: 0,
     adminBotProfileOverviewLoading: false,
     adminBotProfileOverviewError: null,
@@ -90,6 +93,44 @@ describe("profile overview controller", () => {
     expect(host.adminBotProfileOverviewError).toBe("insufficient privileges");
     expect(host.adminBotProfileOverview).toEqual([]);
   });
+
+  it("keeps a failed PI queue distinct from a successfully empty queue, and retries", async () => {
+    saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });
+    const host = createHost();
+    let failed = true;
+    routedFetch({
+      "/members/profile-overview": () => json({ members: [ROW], mandatory_field_count: 12 }),
+      "/nudges/escalated": () => json({ members: [] }),
+      "/papers/pi-review": () =>
+        failed ? json({ error: { message: "PI queue unavailable" } }, 503) : json({ papers: [] }),
+    });
+    await loadAdminBotProfileOverview(host);
+    expect(host.adminBotPiReviewError).toBe("PI queue unavailable");
+    expect(host.adminBotProfileOverview).toHaveLength(1);
+    failed = false;
+    await loadAdminBotProfileOverview(host);
+    expect(host.adminBotPiReviewError).toBeNull();
+    expect(host.adminBotPiReview).toEqual([]);
+  });
+
+  it.each([
+    [404, {}, "does not support"],
+    [200, {}, "invalid PI review queue"],
+    [200, { papers: [null] }, "invalid PI review queue"],
+  ])(
+    "does not turn HTTP %s or invalid queue data into an empty success",
+    async (status, body, message) => {
+      saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });
+      const host = createHost();
+      routedFetch({
+        "/members/profile-overview": () => json({ members: [ROW], mandatory_field_count: 12 }),
+        "/nudges/escalated": () => json({ members: [] }),
+        "/papers/pi-review": () => json(body, status),
+      });
+      await loadAdminBotProfileOverview(host);
+      expect(host.adminBotPiReviewError).toContain(message);
+    },
+  );
 
   it("reports how many were nudged, and re-reads so the column updates", async () => {
     saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });

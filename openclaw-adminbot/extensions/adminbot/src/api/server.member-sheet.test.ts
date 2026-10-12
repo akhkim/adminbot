@@ -16,6 +16,7 @@ import {
   previewOnboardFromMemberSheet,
   proposeMemberSheetEdits,
   readMemberSheet,
+  writeMemberTypeToSheet,
 } from "./server.member-sheet.js";
 
 const HEADER = [
@@ -286,6 +287,8 @@ describe("onboarding from the roster", () => {
         email: "yuenc2@illinois.edu",
         template_id: "alumni",
         proposal_id: expect.any(String),
+        // Only the standard full-member guide is sent on the admin's click; alumni waits.
+        status: "queued",
       },
     ]);
     // An onboarding.send_guide, not a pre-rendered email.send: the send is what provisions the
@@ -321,7 +324,7 @@ describe("onboarding from the roster", () => {
       throw new Error(again.error.message);
     }
     expect(again.created).toEqual([]);
-    expect(again.skipped[0]!.reason).toContain("already waiting");
+    expect(again.skipped[0]!.reason).toContain("already queued or sent");
   });
 
   // Their onboarding is the backend access grant, so they are enrolled rather than skipped.
@@ -592,5 +595,37 @@ describe("describeMemberSheetReadFailure", () => {
     expect(describeMemberSheetReadFailure(new Error("socket hang up"), target)).toBe(
       "could not read the member sheet: socket hang up",
     );
+  });
+});
+
+describe("member type sheet permissions", () => {
+  it("reports protected cells as an owner action without claiming the sheet was updated", async () => {
+    const service = new AdminBotService(undefined, {
+      executor: {
+        execute: async () => {
+          throw new Error("You are trying to edit a protected cell or object.");
+        },
+      },
+    });
+    const result = await writeMemberTypeToSheet(
+      service,
+      source(),
+      {
+        id: "yuen",
+        name: "Yuen Chen",
+        email: "yuenc2@illinois.edu",
+        member_type: "full",
+        privilege_level: "member",
+        access: [],
+        status: "active",
+        created_at: "2026-09-30",
+        updated_at: "2026-09-30",
+      },
+      ADMIN,
+      "andrew",
+    );
+    expect(result.status).toBe("failed");
+    expect(result.status === "failed" && result.reason).toContain("Ask the spreadsheet owner");
+    expect(result.status === "failed" && result.reason).toContain("sheet was not updated");
   });
 });

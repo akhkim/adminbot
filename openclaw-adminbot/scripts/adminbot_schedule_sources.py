@@ -87,6 +87,10 @@ def scope_of(item):
     return specific if specific in SOURCE_URLS else group
 
 
+# Covers a queue wait behind interactive chat as well as a 12,000-token structured generation.
+EXTRACTION_TIMEOUT_SECONDS = 900
+
+
 def extract_local(context, documents):
     """Ask the authenticated local AdminBot service to run its shared model client."""
     base = os.environ.get('ADMINBOT_SERVICE_BASE_URL', 'http://127.0.0.1:8765').rstrip('/')
@@ -102,7 +106,10 @@ def extract_local(context, documents):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             return None
     try:
-        with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect).open(request, timeout=130) as response:
+        # The service queues this behind other local-model work in the shared LLM gateway and has no
+        # deadline of its own, so this is the only bound; disconnecting cancels the queued request.
+        with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect).open(
+                request, timeout=EXTRACTION_TIMEOUT_SECONDS) as response:
             return json.load(response)
     except Exception as error:
         raise ExtractionUnavailable('local schedule extraction unavailable or invalid') from error

@@ -33,6 +33,9 @@ import type { OpenReviewIdentityReview } from "./paper-artifact-links.js";
 
 /** Every artifact a paper can be asked for. Ordered roughly as the work happens. */
 export const adminBotPaperSlots = [
+  "feedback_arr",
+  "feedback_arxiv",
+  "feedback_camera_ready",
   "project_folder",
   "overleaf_view",
   "overleaf_share",
@@ -72,7 +75,7 @@ export type AdminBotPaperSlot = (typeof adminBotPaperSlots)[number];
  * `adminBotConfidentialPaperSlots`). `enum` carries a closed status plus a free-text note about
  * the physical world, which is why `paper_slots` has both `value_text` and `value_note`.
  */
-export type AdminBotPaperSlotKind = "link" | "bool" | "text" | "secret6" | "enum";
+export type AdminBotPaperSlotKind = "link" | "bool" | "text" | "secret6" | "enum" | "feedback";
 
 /** Who is asked for it. Resolved to a person by the service, never named here. */
 export type AdminBotPaperSlotOwner = "first_author" | "coauthors" | "pi" | "admin";
@@ -251,6 +254,39 @@ export type AdminBotPaperSlotDefinition = {
 const OVERLEAF_HOSTS = [OVERLEAF_COM_HOST, ADMINBOT_LAB_OVERLEAF_HOST] as const;
 
 export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperSlotDefinition> = {
+  feedback_arr: {
+    kind: "feedback",
+    node: "feedback_arr",
+    owner: "first_author",
+    gates: null,
+    branch: "core",
+    label: "ARR / Overleaf feedback",
+    upstream: [],
+    required: false,
+    deadlineBearing: false,
+  },
+  feedback_arxiv: {
+    kind: "feedback",
+    node: "feedback_arxiv",
+    owner: "first_author",
+    gates: null,
+    branch: "core",
+    label: "arXiv feedback",
+    upstream: [],
+    required: false,
+    deadlineBearing: false,
+  },
+  feedback_camera_ready: {
+    kind: "feedback",
+    node: "feedback_camera_ready",
+    owner: "first_author",
+    gates: null,
+    branch: "core",
+    label: "Camera-ready feedback",
+    upstream: [],
+    required: false,
+    deadlineBearing: false,
+  },
   project_folder: {
     kind: "link",
     node: "BR",

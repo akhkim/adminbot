@@ -41,6 +41,7 @@ import type {
 } from "../contracts/badges.js";
 import type { AdminBotConferenceTripRecord } from "../contracts/conference-trips.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
+import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewResolution,
@@ -97,6 +98,10 @@ import {
   adminBotResolvedEmailReviewFromRow,
   ensureAdminBotEmailReviewSchema,
 } from "./email-review.js";
+import {
+  createFailedRequestLedgerFromDatabase,
+  type FailedExternalRequestLedger,
+} from "./failed-requests.js";
 import { discoverHelpRequests } from "./lab-sharing-discovery.js";
 import {
   ensureLabInterestSchema,
@@ -110,6 +115,7 @@ import {
   readDirectorStatus,
 } from "./lab-sharing-status.js";
 import { ensureLabSharingSchema, saveHelpRequest, listHelpRequests } from "./lab-sharing.js";
+import { createMemberDraftStore } from "./member-drafts.js";
 import {
   ensureOpenReviewCitationCheckSchema,
   getOpenReviewCitationCheck,
@@ -151,6 +157,7 @@ export type AdminBotSqliteServiceOptions = {
   databasePath: string;
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
+  driveProbe?: AdminBotDriveProbe;
 };
 
 export function createAdminBotSqliteService(options: AdminBotSqliteServiceOptions) {
@@ -169,6 +176,7 @@ function serviceOptions(options: AdminBotSqliteServiceOptions): AdminBotServiceO
       ? { auditRetentionDays: options.auditRetentionDays }
       : {}),
     ...(options.executor ? { executor: options.executor } : {}),
+    ...(options.driveProbe ? { driveProbe: options.driveProbe } : {}),
     // Read here rather than in the kernel so the service stays free of process globals: both
     // callers (the API server and the hourly email script) build the service through this factory
     // and both already load ~/.openclaw/.env before they do.
@@ -182,7 +190,12 @@ function serviceOptions(options: AdminBotSqliteServiceOptions): AdminBotServiceO
 }
 
 export class AdminBotSqliteStore implements AdminBotServiceStore {
+  memberDraftStore() {
+    return createMemberDraftStore(this.db);
+  }
+
   private readonly db: DatabaseSync;
+  private readonly failedRequests: FailedExternalRequestLedger;
 
   constructor(readonly databasePath: string) {
     ensureDatabaseDirectory(databasePath);
@@ -542,7 +555,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         generated_at TEXT NOT NULL,
         generated_by_member_id TEXT,
         status TEXT NOT NULL,
-        superseded_by TEXT
+        superseded_by TEXT,
+        x_thread TEXT
       );
 
       CREATE INDEX IF NOT EXISTS adminbot_paper_social_drafts_paper_idx
@@ -863,6 +877,19 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       -- Every read is "the newest pass", whether to show its answer or its progress.
       CREATE INDEX IF NOT EXISTS adminbot_workshop_match_runs_started_idx
         ON adminbot_workshop_match_runs(started_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_failed_external_requests (
+        id TEXT PRIMARY KEY,
+        service_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        error_message TEXT NOT NULL,
+        status TEXT NOT NULL,
+        attempt_count INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS adminbot_failed_external_requests_updated_idx
+        ON adminbot_failed_external_requests(updated_at DESC);
     `);
     ensureLabSharingSchema(this.db);
     ensureDirectorStatusSchema(this.db);
@@ -874,6 +901,13 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
     this.migratePaperSlotColumns();
+    const socialColumns = this.db
+      .prepare("PRAGMA table_info(adminbot_paper_social_drafts)")
+      .all() as Array<{ name: string }>;
+    if (!socialColumns.some((column) => column.name === "x_thread")) {
+      this.db.exec("ALTER TABLE adminbot_paper_social_drafts ADD COLUMN x_thread TEXT");
+    }
+    this.failedRequests = createFailedRequestLedgerFromDatabase(this.db);
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
     this.migrateBadgeNominationColumns();
@@ -990,6 +1024,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           WHERE status = 'running'`,
       )
       .run(new Date().toISOString());
+  }
+
+  failedRequestLedger(): FailedExternalRequestLedger {
+    return this.failedRequests;
   }
 
   /**
@@ -2488,13 +2526,14 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.db
       .prepare(
         `INSERT INTO adminbot_paper_social_drafts
-          (id, paper_id, platform, body, model, generated_at, generated_by_member_id, status, superseded_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (id, paper_id, platform, body, model, generated_at, generated_by_member_id, status, superseded_by, x_thread)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            body = excluded.body,
            model = excluded.model,
            status = excluded.status,
-           superseded_by = excluded.superseded_by`,
+           superseded_by = excluded.superseded_by,
+           x_thread = excluded.x_thread`,
       )
       .run(
         record.id,
@@ -2506,20 +2545,23 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         record.generated_by_member_id ?? null,
         record.status,
         record.superseded_by ?? null,
+        record.x_thread ? JSON.stringify(record.x_thread) : null,
       );
   }
 
-  listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[] {
+  listSocialDrafts(paperId?: string, draftId?: string): AdminBotSocialDraftRecord[] {
     const rows = (
-      paperId
-        ? this.db
-            .prepare(
-              "SELECT * FROM adminbot_paper_social_drafts WHERE paper_id = ? ORDER BY generated_at DESC",
-            )
-            .all(paperId)
-        : this.db
-            .prepare("SELECT * FROM adminbot_paper_social_drafts ORDER BY generated_at DESC")
-            .all()
+      draftId
+        ? this.db.prepare("SELECT * FROM adminbot_paper_social_drafts WHERE id = ?").all(draftId)
+        : paperId
+          ? this.db
+              .prepare(
+                "SELECT * FROM adminbot_paper_social_drafts WHERE paper_id = ? ORDER BY generated_at DESC",
+              )
+              .all(paperId)
+          : this.db
+              .prepare("SELECT * FROM adminbot_paper_social_drafts ORDER BY generated_at DESC")
+              .all()
     ) as Array<Record<string, unknown>>;
     return rows.map((row) => ({
       id: String(row.id),
@@ -2531,6 +2573,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       ...optionalText(row, "model"),
       ...optionalText(row, "generated_by_member_id"),
       ...optionalText(row, "superseded_by"),
+      ...(typeof row.x_thread === "string" ? { x_thread: JSON.parse(row.x_thread) } : {}),
     }));
   }
 
