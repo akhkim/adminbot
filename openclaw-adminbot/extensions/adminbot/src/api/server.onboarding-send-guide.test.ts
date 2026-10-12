@@ -80,8 +80,15 @@ describe("executing an approved onboarding guide", () => {
     expect(stored[0]?.status).not.toBe("executed");
   });
 
-  it("refuses rather than reporting success when no sender is configured", async () => {
-    const mock = createAdminBotMockService({ onboardingSender: undefined });
+  // Was `onboardingSender: undefined`, which falls through to the production Gmail sender and
+  // shells out to the real `gog gmail send`. A refusing sender tests the same outcome offline.
+  it("refuses rather than reporting success when the sender cannot send", async () => {
+    const mock = labWith(
+      vi.fn(async () => ({
+        ok: false as const,
+        error: { status: 503, message: "no Gmail account is configured" },
+      })),
+    );
     const filed = unwrap(mock.service.createProposal(proposal as never));
     await approveAndRun(mock, filed.id);
     // Either shape is acceptable; what must not happen is a guide recorded as sent.

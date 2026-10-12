@@ -1,3 +1,8 @@
+import { html, nothing } from "lit";
+import { t } from "../../../i18n/index.ts";
+import { todayIso, type TripRow, type WhereBin } from "../data/availability.ts";
+import { timezoneForLocation } from "../data/timezone-for-location.ts";
+import { localTimezone, timezoneOptions } from "../data/timezones.ts";
 // The trips editor on the Time Availability tab, cut out of time-availability.ts.
 //
 // Logged the way a commitment is, because it is the same act: a member saying in advance what
@@ -14,11 +19,7 @@
 // carry. A time-off row says a member is unavailable and says nothing about where they are, and
 // somebody working normal hours from Berlin is fully available and six hours off the lab's clock.
 // That case is what kept producing 10am invites that land at 4pm.
-import { html, nothing } from "lit";
-import { t } from "../../../i18n/index.ts";
-import { todayIso, type TripRow, type WhereBin } from "../data/availability.ts";
-import { timezoneForLocation } from "../data/timezone-for-location.ts";
-import { localTimezone, timezoneOptions } from "../data/timezones.ts";
+import { renderDateControl } from "../date-control.ts";
 
 export type TripDraft = {
   city: string;
@@ -225,11 +226,17 @@ export function renderTrips(props: TripsProps) {
               </label>
               <label class="adminbot-form__field">
                 <span>${t("adminbotTimeAvailability.trips.from")}</span>
-                <input type="date" .value=${props.draft.start} @input=${field("start")} />
+                ${renderDateControl(
+                  html`<input type="date" .value=${props.draft.start} @input=${field("start")} />`,
+                  props.draft.start,
+                )}
               </label>
               <label class="adminbot-form__field">
                 <span>${t("adminbotTimeAvailability.trips.to")}</span>
-                <input type="date" .value=${props.draft.end} @input=${field("end")} />
+                ${renderDateControl(
+                  html`<input type="date" .value=${props.draft.end} @input=${field("end")} />`,
+                  props.draft.end,
+                )}
               </label>
               <label class="adminbot-form__field">
                 <span>${t("adminbotTimeAvailability.trips.timezone")}</span>

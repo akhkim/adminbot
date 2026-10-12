@@ -212,6 +212,35 @@ class ScheduleTests(unittest.TestCase):
         self.assertFalse(hasattr(collector, 'SCHEDULES'))
         self.assertTrue(all(not row['deadline_aoe'] and not row['notification_aoe'] for row in collector.CONFERENCES))
 
+    def test_undated_conference_never_reaches_the_outputs(self):
+        import json
+        import tempfile
+        spec = importlib.util.spec_from_file_location('collector', pathlib.Path(m.__file__).with_name('adminbot-deadline-collect.py'))
+        collector = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(collector)
+        # A venue with no previous observation whose official schedule has not yielded a date.
+        rows = [dict(id='example_new', name='Example 2035', venue_type='conference', venue_group=SCOPE,
+                     track='main', deadline_label='Paper submission', deadline_aoe=''),
+                dict(id='example_rebuttal', name='Example 2035', venue_type='rebuttal', venue_group=SCOPE,
+                     track='rebuttal', deadline_label='author response', deadline_aoe=''),
+                dict(item(), name='Example 2035', venue_type='conference'),
+                dict(id='example_ws', name='Example Workshop', venue_type='workshop',
+                     venue_group='Example Workshop 2035', deadline_aoe='')]
+        self.assertEqual([row['id'] for row in collector.drop_undated_conferences(rows)],
+                         ['example_paper', 'example_ws'])
+        with tempfile.TemporaryDirectory() as directory:
+            out = pathlib.Path(directory)
+            for folder in ['scripts', 'extensions/adminbot/src/workflows/deadlines/generated',
+                           'ui/src/ui/adminbot/data', 'content']:
+                (out / folder).mkdir(parents=True)
+            collector.HERE = str(out / 'scripts')
+            collector.OUT = str(out / 'content/deadlines.json')
+            collector.DEADLINES_DIR = str(out / 'content')
+            collector.write_outputs(copy.deepcopy(rows))
+            written = json.loads((out / 'content/deadlines.json').read_text())['items']
+        self.assertEqual(sorted(row['id'] for row in written), ['example_paper', 'example_ws'])
+        self.assertTrue(all(row['deadline_aoe'] or row['venue_type'] == 'workshop' for row in written))
+
 
 if __name__ == '__main__':
     unittest.main()

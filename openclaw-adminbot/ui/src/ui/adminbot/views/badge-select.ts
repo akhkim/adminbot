@@ -9,7 +9,7 @@ import { icons } from "../../icons.ts";
 export type BadgeOption = {
   id: string;
   name: string;
-  /** Shown beside the name and searched alongside it -- the badge's category. */
+  /** Searched alongside the name, without displaying a secondary category label. */
   hint?: string;
 };
 
@@ -171,9 +171,6 @@ class AdminbotBadgeSelect extends LitElement {
                       }}
                     >
                       <span class="country-select__name">${option.name}</span>
-                      ${option.hint
-                        ? html`<span class="member-select__hint">${option.hint}</span>`
-                        : null}
                     </li>
                   `,
                 )}

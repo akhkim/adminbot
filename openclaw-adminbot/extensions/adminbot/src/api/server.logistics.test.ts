@@ -135,8 +135,8 @@ async function startLab(
 }
 
 describe("Drive links in letter documents", () => {
-  it("warns on read-only access and refuses an inaccessible recommendation-letter folder", async () => {
-    const probe = vi.fn<AdminBotDriveProbe>(async () => ({ status: "found", canEdit: false }));
+  it("refuses a recommendation-letter folder AdminBot cannot open", async () => {
+    const probe = vi.fn<AdminBotDriveProbe>(async () => ({ status: "missing" }));
     const lab = await startLab(undefined, probe);
     const url = "https://drive.google.com/file/d/1PdF9xAbCdEfGhIjKlMnOpQrStUv/view";
     const unauthenticated = await fetch(`${lab.baseUrl}/drive/check-edit-access`, {
@@ -151,13 +151,22 @@ describe("Drive links in letter documents", () => {
       body: JSON.stringify({ url }),
     });
     expect(checked.status).toBe(200);
-    expect(await checked.json()).toMatchObject({ status: "not_editable" });
+    expect(await checked.json()).toMatchObject({ status: "inaccessible" });
     const letter = await submit(lab, "ada", {
       ...LETTERS,
       drive_folder_url: "https://drive.google.com/drive/folders/1PdF9xAbCdEfGhIjKlMnOpQrStUv",
     });
     expect(letter.status).toBe(422);
     expect(probe).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts a recommendation-letter folder AdminBot can only view", async () => {
+    const lab = await startLab(undefined, async () => ({ status: "found", canEdit: false }));
+    const letter = await submit(lab, "ada", {
+      ...LETTERS,
+      drive_folder_url: "https://drive.google.com/drive/folders/1PdF9xAbCdEfGhIjKlMnOpQrStUv",
+    });
+    expect(letter.status).toBe(201);
   });
 
   it("keeps letter submission available when the Drive checker is offline", async () => {

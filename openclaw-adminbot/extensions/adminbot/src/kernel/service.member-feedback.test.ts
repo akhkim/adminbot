@@ -1,6 +1,71 @@
 import { expect, it } from "vitest";
 import { AdminBotService, AdminBotMemoryStore } from "./service.js";
 
+it("requires capacity in profile completeness only for qualified ARR reviewers", () => {
+  const service = new AdminBotService(new AdminBotMemoryStore());
+  service.upsertLabMember({ id: "arr", name: "Synthetic Reviewer" });
+  for (const [qualified, capacity, missing] of [
+    [false, null, false],
+    [true, null, true],
+    [true, 0, false],
+    [true, 2, false],
+  ] as const) {
+    service.updateOwnProfile("arr", {
+      arr_reviewer_qualified: qualified,
+      arr_review_capacity: capacity,
+    });
+    const overview = service.listMemberProfileOverview();
+    if (!overview.ok) throw new Error(overview.error.message);
+    expect(
+      overview.payload.members
+        .find((member) => member.id === "arr")
+        ?.missing_fields.includes("arr_review_capacity"),
+    ).toBe(missing);
+  }
+});
+
+it("saves, clears, and validates self-reported ARR review capacity", () => {
+  const store = new AdminBotMemoryStore();
+  const service = new AdminBotService(store);
+  service.upsertLabMember({ id: "capacity", name: "Synthetic Reviewer" });
+  for (const capacity of [3, 0, null]) {
+    expect(service.updateOwnProfile("capacity", { arr_review_capacity: capacity })).toMatchObject({
+      ok: true,
+    });
+    expect(store.getLabMember("capacity")?.arr_review_capacity).toBe(capacity);
+  }
+  for (const capacity of [-1, 1.5, "2", true, Number.MAX_SAFE_INTEGER + 1]) {
+    expect(service.updateOwnProfile("capacity", { arr_review_capacity: capacity })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+  }
+  expect(store.getLabMember("capacity")?.arr_review_capacity).toBeNull();
+});
+
+it("lets members declare and clear ARR eligibility, rejecting non-booleans", () => {
+  const store = new AdminBotMemoryStore();
+  const service = new AdminBotService(store);
+  service.upsertLabMember({ id: "reviewer", name: "Synthetic Reviewer" });
+  for (const qualified of [true, false]) {
+    expect(
+      service.updateOwnProfile("reviewer", { arr_reviewer_qualified: qualified }),
+    ).toMatchObject({
+      ok: true,
+      payload: { arr_reviewer_qualified: qualified },
+    });
+    expect(store.getLabMember("reviewer")?.arr_reviewer_qualified).toBe(qualified);
+  }
+  expect(
+    service.updateOwnProfile("reviewer", { arr_reviewer_qualified: "yes" as unknown as boolean }),
+  ).toMatchObject({ ok: false, status: 400 });
+  expect(store.getLabMember("reviewer")?.arr_reviewer_qualified).toBe(false);
+  expect(service.updateOwnProfile("reviewer", { arr_reviewer_qualified: null })).toMatchObject({
+    ok: false,
+    status: 400,
+  });
+});
+
 it("saves an Overleaf CV while preserving unchanged legacy intake data", () => {
   const store = new AdminBotMemoryStore();
   const service = new AdminBotService(store);
@@ -119,6 +184,11 @@ it("accepts free-form GitHub and CV text with optional historical fields", () =>
 it("persists an explicit missing-form answer and validates its type", () => {
   const service = new AdminBotService();
   service.upsertLabMember({ id: "form", name: "Form", privilege_level: "member" });
-  expect(service.updateOwnProfile("form", { intake_form_unavailable: true })).toMatchObject({ ok: true, payload: { intake_form_unavailable: true } });
-  expect(service.updateOwnProfile("form", { intake_form_unavailable: "yes" as unknown as boolean })).toMatchObject({ ok: false, status: 400 });
+  expect(service.updateOwnProfile("form", { intake_form_unavailable: true })).toMatchObject({
+    ok: true,
+    payload: { intake_form_unavailable: true },
+  });
+  expect(
+    service.updateOwnProfile("form", { intake_form_unavailable: "yes" as unknown as boolean }),
+  ).toMatchObject({ ok: false, status: 400 });
 });

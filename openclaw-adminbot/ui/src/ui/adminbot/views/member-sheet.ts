@@ -196,6 +196,9 @@ function renderOnboardResult(state: AppViewState) {
     return nothing;
   }
   const enrolled = result.enrolled ?? [];
+  // A row without a status is from a service older than send-on-approval, where all were queued.
+  const sent = result.created.filter((mail) => mail.status === "sent").length;
+  const queued = result.created.length - sent;
   return html`
     <div
       class="callout ${result.created.length > 0 || enrolled.length > 0 ? "success" : "warning"}"
@@ -206,10 +209,15 @@ function renderOnboardResult(state: AppViewState) {
             with the access their Member Type grants.
           </p>`
         : nothing}
-      ${result.created.length > 0
-        ? html`<p>
-            Queued ${result.created.length} ${result.created.length === 1 ? "email" : "emails"} in
-            Pending Actions. Nothing has been sent yet — approve them there.
+      ${sent > 0
+        ? html`<p data-testid="onboard-result-sent">
+            Sent ${sent} onboarding ${sent === 1 ? "email" : "emails"} on your approval.
+          </p>`
+        : nothing}
+      ${queued > 0
+        ? html`<p data-testid="onboard-result-queued">
+            Queued ${queued} ${queued === 1 ? "email" : "emails"} in Pending Actions.
+            ${queued === 1 ? "It has" : "They have"} not been sent yet — approve them there.
           </p>`
         : nothing}
       ${result.skipped.length > 0
@@ -356,11 +364,11 @@ function renderAddRowResult(state: AppViewState) {
 }
 
 /**
- * What pressing "Queue" will do, shown before it is done.
+ * What pressing the onboard button will do, shown before it is done.
  *
- * Onboarding automates real things -- one composed email per selected member, queued as an
- * approval-gated proposal -- and the only way to trust an automation is to read what it is about
- * to do. The mails here are the very ones confirming queues: same templates, same addresses,
+ * Onboarding automates real things -- one composed email per selected member, sent on this click
+ * for the standard full-member guide and queued as an approval-gated proposal for every other
+ * template -- and the only way to trust an automation is to read what it is about to do. The mails here are the very ones confirming queues: same templates, same addresses,
  * same values, composed by the service on the same code path. Rows that would be skipped are
  * listed with their reasons, so "3 selected, 2 queued" is never a surprise.
  */
@@ -373,19 +381,31 @@ function renderOnboardPreview(state: AppViewState) {
   const planned = preview.planned;
   const accessOnly = preview.access_only ?? [];
   const actionable = planned.length + accessOnly.length;
+  // Mirrors queueNewMemberGuide: the standard full-member guide goes out on this click, every
+  // other template waits for approval.
+  const sendNow = planned.filter((mail) => mail.template_id === "member").length;
+  const queueLater = planned.length - sendNow;
+  const mailPlan = [
+    sendNow > 0
+      ? `${sendNow} ${sendNow === 1 ? "email is" : "emails are"} sent as soon as you confirm.`
+      : "",
+    queueLater > 0
+      ? `${queueLater} ${
+          queueLater === 1 ? "email proposal is" : "email proposals are"
+        } queued in Pending Actions; nothing is sent until an admin approves them there.`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return html`
     <section class="adminbot-onboard-preview" data-testid="onboard-preview">
       <div class="adminbot-onboard-preview__head">
         <strong>Review before onboarding</strong>
         <span>
           ${actionable === 0
-            ? "Nothing would be queued for this selection."
+            ? "Nothing would be sent or queued for this selection."
             : `Anyone not yet on the roster is added with the access their Member Type grants.${
-                planned.length === 0
-                  ? ""
-                  : ` ${planned.length} email ${
-                      planned.length === 1 ? "proposal is" : "proposals are"
-                    } queued in Pending Actions; nothing is sent until an admin approves them there.`
+                mailPlan ? ` ${mailPlan}` : ""
               }`}
         </span>
       </div>
@@ -451,10 +471,14 @@ function renderOnboardPreview(state: AppViewState) {
           @click=${() => void state.onboardSelectedMemberRows?.()}
         >
           ${actionable === 0
-            ? "Nothing to queue"
+            ? "Nothing to onboard"
             : planned.length === 0
               ? `Onboard ${accessOnly.length} ${accessOnly.length === 1 ? "person" : "people"}`
-              : `Queue ${planned.length} ${planned.length === 1 ? "email" : "emails"} for approval`}
+              : sendNow === 0
+                ? `Queue ${planned.length} ${planned.length === 1 ? "email" : "emails"} for approval`
+                : queueLater === 0
+                  ? `Send ${sendNow} ${sendNow === 1 ? "email" : "emails"}`
+                  : `Send ${sendNow}, queue ${queueLater} for approval`}
         </button>
         <button
           class="btn"
@@ -736,7 +760,8 @@ export function renderMemberSheet(state: AppViewState) {
       <p class="adminbot-form__hint">
         Read ${sheet.rows.length} rows and ${sheet.header.length} columns from “${sheet.tab}”. Drag
         the grid to pan. Edits become one approval item; onboarding shows each member's email for
-        review first, and nothing is sent without approval in Pending Actions.
+        review first. Confirming sends the standard full-member guide; every other email waits for
+        approval in Pending Actions.
       </p>
     </section>
   `;

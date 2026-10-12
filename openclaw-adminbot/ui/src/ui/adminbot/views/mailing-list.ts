@@ -1,3 +1,7 @@
+import { html, nothing, LitElement } from "lit";
+import { property, state } from "lit/decorators.js";
+import { t } from "../../../i18n/index.ts";
+import type { PublicationDigestPreview, PublicationDigestVenue } from "../auth/session.ts";
 // Control UI view for the Mailing List tab: the lab's publications in a date range, mailed out.
 //
 // Sits beside the Grant Report on Lab Overview and answers a narrower version of the same
@@ -15,10 +19,7 @@
 // and a paper without one has no date at all. The preview therefore shows what is *excluded* as
 // prominently as what is included, and the send is deliberately a second, separate click on a
 // preview that is already on screen.
-import { html, nothing, LitElement } from "lit";
-import { property, state } from "lit/decorators.js";
-import { t } from "../../../i18n/index.ts";
-import type { PublicationDigestPreview, PublicationDigestVenue } from "../auth/session.ts";
+import { renderDateControl } from "../date-control.ts";
 
 export type MailingListProps = {
   preview: PublicationDigestPreview | null;
@@ -92,29 +93,35 @@ class AdminbotMailingListView extends LitElement {
           </label>
           <label class="adminbot-form__field">
             <span>${t("mailingList.from")}</span>
-            <input
-              type="date"
-              ?disabled=${Boolean(props.venue)}
-              .value=${props.from}
-              @change=${(event: Event) =>
-                props.onRangeChange({
-                  from: (event.target as HTMLInputElement).value,
-                  to: props.to,
-                })}
-            />
+            ${renderDateControl(
+              html`<input
+                type="date"
+                ?disabled=${Boolean(props.venue)}
+                .value=${props.from}
+                @change=${(event: Event) =>
+                  props.onRangeChange({
+                    from: (event.target as HTMLInputElement).value,
+                    to: props.to,
+                  })}
+              />`,
+              props.from,
+            )}
           </label>
           <label class="adminbot-form__field">
             <span>${t("mailingList.to")}</span>
-            <input
-              type="date"
-              ?disabled=${Boolean(props.venue)}
-              .value=${props.to}
-              @change=${(event: Event) =>
-                props.onRangeChange({
-                  from: props.from,
-                  to: (event.target as HTMLInputElement).value,
-                })}
-            />
+            ${renderDateControl(
+              html`<input
+                type="date"
+                ?disabled=${Boolean(props.venue)}
+                .value=${props.to}
+                @change=${(event: Event) =>
+                  props.onRangeChange({
+                    from: props.from,
+                    to: (event.target as HTMLInputElement).value,
+                  })}
+              />`,
+              props.to,
+            )}
           </label>
           <label class="adminbot-form__field adminbot-mailing-list__email">
             <span>${t("mailingList.recipient")}</span>

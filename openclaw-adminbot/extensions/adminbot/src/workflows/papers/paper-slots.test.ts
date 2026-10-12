@@ -77,7 +77,7 @@ function upTo(last: AdminBotPaperSlot): AdminBotPaperSlotRecord[] {
 
 describe("the registry", () => {
   it("declares every slot, so a read can never meet one it has no rules for", () => {
-    expect(adminBotPaperSlots).toHaveLength(25);
+    expect(adminBotPaperSlots).toHaveLength(28);
     for (const slot of adminBotPaperSlots) {
       expect(adminBotPaperSlotRegistry[slot]).toBeDefined();
     }
@@ -144,7 +144,7 @@ describe("the registry", () => {
 describe("paperSlotRows", () => {
   it("returns every slot, blanks included -- the card is a checklist, not a list of answers", () => {
     const rows = paperSlotRows("p1", [provided("overleaf_edit")]);
-    expect(rows).toHaveLength(25);
+    expect(rows).toHaveLength(28);
     expect(rows.find((row) => row.slot === "overleaf_edit")?.status).toBe("provided");
     expect(rows.find((row) => row.slot === "arxiv")?.status).toBe("missing");
   });
@@ -758,4 +758,20 @@ describe("waivePaperSlot", () => {
       }),
     ).toMatchObject({ ok: false });
   });
+});
+
+it("redacts feedback reasons and manuscript links for unrelated viewers", () => {
+  const rows = [
+    {
+      paper_id: "p",
+      slot: "feedback_arr" as const,
+      status: "provided" as const,
+      value_text: JSON.stringify({
+        reason: "Private draft concern",
+        url: "https://example.com/draft",
+      }),
+    },
+  ];
+  expect(redactPaperSlots(rows, false)[0].value_text).toBeUndefined();
+  expect(redactPaperSlots(rows, true)[0].value_text).toBe(rows[0].value_text);
 });

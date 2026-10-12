@@ -24,12 +24,16 @@ describe("General Tools", () => {
   const generalTools = TAB_GROUPS.find((group) => group.label === "generalTools")
     ?.tabs as readonly Tab[];
 
-  it("is open to visitors, every tab of it", () => {
+  it("opens public tools to visitors while protecting account-only tools", () => {
     expect(generalTools.length).toBeGreaterThan(0);
-    expect(visibleTabsForRole(generalTools, "anonymous")).toEqual(generalTools);
-    for (const tab of generalTools) {
-      expect(canAccessTab(tab, "anonymous")).toBe(true);
-    }
+    expect(visibleTabsForRole(generalTools, "anonymous")).toEqual([
+      "adminbotReimbursements",
+      "adminbotDeadlines",
+      "adminbotOpportunities",
+      "adminbotConferencePapers",
+    ]);
+    expect(canAccessTab("adminbotReferenceChecker", "anonymous")).toBe(false);
+    expect(canAccessTab("adminbotNotificationDrafts", "anonymous")).toBe(false);
   });
 });
 
@@ -132,6 +136,7 @@ describe("visibleTabsForRole", () => {
       // Reads a public conference programme against the viewer's own interests, and writes
       // nothing.
       "adminbotConferencePapers",
+      "adminbotReferenceChecker",
     ]);
   });
 

@@ -55,14 +55,17 @@ it("restricts publication, derives actor, hides expired status and clears withou
     message: "Synthetic private draft",
     expires_at: "2026-09-07T01:00:00Z",
     updated_by: "spoof",
+    timezone: "America/Toronto",
+    current_city: "Private city",
   };
   expect(service.save("member", input).status).toBe(403);
   expect(service.save("missing", input).status).toBe(403);
   expect(service.read("missing").status).toBe(403);
   expect(service.save("admin", input).status).toBe(200);
   expect(service.read("member")).toMatchObject({
-    payload: { status: { updated_by: "admin" }, can_manage: false },
+    payload: { status: { updated_by: "admin", timezone: "America/Toronto" }, can_manage: false },
   });
+  expect(store.rows[0]).not.toHaveProperty("current_city");
   expect(JSON.stringify(audit.mock.calls)).not.toContain(input.message);
   now = Date.parse(input.expires_at);
   expect(service.read("member")).toMatchObject({ payload: { status: null } });

@@ -376,6 +376,45 @@ describe("reconcileAudience", () => {
     ]);
   });
 
+  // "Add invitees" is the same invite arithmetic with the removal half switched off: whoever the
+  // filters would have taken off simply stays.
+  it("in add mode invites the same people and takes nobody off", () => {
+    const plan = reconcileAudience({
+      members: roster,
+      papers: [],
+      filter: toronto,
+      attendees: ["in1@cs.toronto.edu", "out@cs.toronto.edu", "speaker@elsewhere.org"],
+      excludedMemberIds: [],
+      mode: "add",
+    });
+
+    expect(plan.invite).toEqual(["in2@cs.toronto.edu"]);
+    expect(plan.remove).toEqual([]);
+    expect(plan.undecided).toEqual([]);
+    expect(plan.keep.toSorted()).toEqual(["in1@cs.toronto.edu", "out@cs.toronto.edu"]);
+    expect(plan.remaining.toSorted()).toEqual([
+      "in1@cs.toronto.edu",
+      "in2@cs.toronto.edu",
+      "out@cs.toronto.edu",
+      "speaker@elsewhere.org",
+    ]);
+  });
+
+  // Unticking in add mode only withholds the invite; it is not a way to uninvite somebody.
+  it("in add mode keeps an unticked member who is already on the event", () => {
+    const plan = reconcileAudience({
+      members: roster,
+      papers: [],
+      filter: toronto,
+      attendees: ["in1@cs.toronto.edu"],
+      excludedMemberIds: ["in1", "in2"],
+      mode: "add",
+    });
+    expect(plan.invite).toEqual([]);
+    expect(plan.remove).toEqual([]);
+    expect(plan.remaining).toEqual(["in1@cs.toronto.edu"]);
+  });
+
   // The write behind a removal replaces the guest list, so the people just invited have to be in
   // the set that remains or the same call would uninvite them.
   it("keeps everyone it is inviting in the remaining set", () => {

@@ -4,10 +4,14 @@ import {
   createMeetingRow,
   createSchoolRow,
   isEmptySchoolRow,
+  opportunitySchoolFields,
   parseLogisticsDraft,
   parseMeetingRequestDraft,
   parseRecommendationLettersDraft,
   logisticsDraftScope,
+  queueLetterSchool,
+  takeQueuedLetterSchools,
+  withPrefilledSchool,
 } from "./logistics-draft.ts";
 
 function makeFile(name: string): File {
@@ -316,5 +320,65 @@ describe("a meeting row's zone on restore", () => {
       savedAt: 1,
     });
     expect(draft?.meetings[0]?.timezone).toBeTruthy();
+  });
+});
+
+describe("a school pre-filled from Opportunities", () => {
+  const stanford = {
+    id: "phd_stanford_university",
+    name: "PhD in Computer Science",
+    category: "phd" as const,
+    org: "Stanford University",
+    deadline_aoe: "",
+    link: "https://www.cs.stanford.edu/admissions/phd-admissions",
+  };
+
+  it("names the school, the program and its page, on AoE", () => {
+    expect(opportunitySchoolFields(stanford)).toEqual({
+      school: "Stanford University",
+      program: "PhD in Computer Science",
+      programLink: "https://www.cs.stanford.edu/admissions/phd-admissions",
+      deadlineTimezone: "AoE",
+    });
+  });
+
+  it("carries a known application date but leaves the letter deadline to the member", () => {
+    const fields = opportunitySchoolFields({ ...stanford, deadline_aoe: "2026-12-01 23:59:59" });
+    expect(fields).toMatchObject({
+      applicationDeadline: "2026-12-01",
+      applicationDeadlineTime: "23:59",
+    });
+    expect(fields.letterDeadline).toBeUndefined();
+  });
+
+  it("uses the entry's name as the school when it has no host", () => {
+    expect(
+      opportunitySchoolFields({ ...stanford, org: undefined, name: "Rising Stars in EECS" }),
+    ).toMatchObject({ school: "Rising Stars in EECS", program: "" });
+  });
+
+  it("replaces the form's blank row instead of adding under it", () => {
+    const rows = withPrefilledSchool([createSchoolRow()], opportunitySchoolFields(stanford));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ school: "Stanford University", deadlineTimezone: "AoE" });
+  });
+
+  it("keeps the schools already typed in and adds the new one after them", () => {
+    const typed = createSchoolRow({ school: "MIT", letterDeadline: "2026-12-15" });
+    const rows = withPrefilledSchool([typed], opportunitySchoolFields(stanford));
+    expect(rows.map((row) => row.school)).toEqual(["MIT", "Stanford University"]);
+    expect(rows[0]).toBe(typed);
+  });
+
+  it("does not add the same program twice", () => {
+    const once = withPrefilledSchool([createSchoolRow()], opportunitySchoolFields(stanford));
+    expect(withPrefilledSchool(once, opportunitySchoolFields(stanford))).toBe(once);
+  });
+
+  it("hands queued schools over once, then forgets them", () => {
+    queueLetterSchool({ school: "A" });
+    queueLetterSchool({ school: "B" });
+    expect(takeQueuedLetterSchools().map((fields) => fields.school)).toEqual(["A", "B"]);
+    expect(takeQueuedLetterSchools()).toEqual([]);
   });
 });

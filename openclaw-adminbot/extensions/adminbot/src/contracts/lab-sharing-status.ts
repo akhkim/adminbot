@@ -18,6 +18,8 @@ export type LabDirectorStatus = {
   id: string;
   availability: "available" | "busy" | "away" | "unknown";
   message: string;
+  /** Explicitly published time zone; never derived from a member's current city. */
+  timezone?: string;
   expires_at: string;
   updated_at: string;
   updated_by: string;
@@ -37,7 +39,7 @@ export const ADMINBOT_BROADCAST_HISTORY_LIMIT = 50;
 export function validateDirectorStatus(
   input: unknown,
   now: number,
-): Pick<LabDirectorStatus, "availability" | "message" | "expires_at"> | string {
+): Pick<LabDirectorStatus, "availability" | "message" | "expires_at" | "timezone"> | string {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return "Expected a shared status.";
   }
@@ -55,6 +57,20 @@ export function validateDirectorStatus(
   ) {
     return "Use a status message of 1 to 500 characters.";
   }
+  let timezone: string | undefined;
+  if (value.timezone !== undefined) {
+    if (typeof value.timezone !== "string") {
+      return "Use a valid time zone, such as America/Toronto, or leave it blank.";
+    }
+    timezone = value.timezone.trim() || undefined;
+    if (timezone) {
+      try {
+        timezone = new Intl.DateTimeFormat("en", { timeZone: timezone }).resolvedOptions().timeZone;
+      } catch {
+        return "Use a valid time zone, such as America/Toronto, or leave it blank.";
+      }
+    }
+  }
   // Require an explicit timezone so the server never interprets an editor's local time.
   if (
     typeof value.expires_at !== "string" ||
@@ -71,6 +87,7 @@ export function validateDirectorStatus(
   return {
     availability: value.availability as LabDirectorStatus["availability"],
     message: value.message.trim(),
+    ...(timezone ? { timezone } : {}),
     expires_at: new Date(expiry).toISOString(),
   };
 }

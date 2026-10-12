@@ -9,6 +9,7 @@ import type {
   MeetingCursor,
   MemberNotification,
 } from "./adminbot/auth/session.ts";
+import type { AdminBotLabMember } from "./adminbot/controllers/admin.ts";
 import type {
   AdminBotDashboardData,
   AdminBotMemberListState,
@@ -159,6 +160,9 @@ export type AppViewState = {
   // Ids the operator unticked from the matched list, so a filter that is right for 39 of 40 people
   // does not have to be abandoned for the one exception.
   calendarExcludedMemberIds?: string[];
+  // Whether a send only adds the chosen people or makes them the whole guest list. Unset reads as
+  // "add", so the send that can uninvite somebody is always one the operator picked.
+  calendarInviteMode?: import("./adminbot/calendar-audience.ts").InviteMode;
   calendarBusy?: boolean;
   loadCalendarEvents?: () => Promise<void>;
   loadMeetings?: () => Promise<void>;
@@ -445,6 +449,10 @@ export type AppViewState = {
   agentsSelectedId: string | null;
   adminBotLoading: boolean;
   adminBotError: string | null;
+  /** Last dashboard GETs were served from the device cache because the service was unreachable. */
+  adminBotUsingCachedReads?: boolean;
+  /** Mutations queued while the AdminBot service was offline. */
+  adminBotOfflinePendingWrites?: number;
   adminBotData: AdminBotDashboardData;
   adminBotRosterLoadedAt: number | null;
   adminBotRosterLoading: boolean;
@@ -493,6 +501,10 @@ export type AppViewState = {
   adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
   adminBotMemberMapRequestId: number;
+  adminBotCollaboratorSchedules: AdminBotLabMember[];
+  adminBotCollaboratorSchedulesLoading: boolean;
+  adminBotCollaboratorSchedulesError: string | null;
+  adminBotCollaboratorSchedulesSession: string;
   adminBotTimeAvailabilityMemberId: string;
   // Meeting Recordings tab. The list as the service returned it -- already redacted for a member,
   // full for an admin -- plus the two flags the view needs to distinguish "still loading" from
@@ -517,6 +529,7 @@ export type AppViewState = {
   adminBotBroadcastDraft?: string;
   adminBotBroadcastExpiry?: string;
   adminBotBroadcastAvailability?: string;
+  adminBotBroadcastTimezone?: string;
   adminBotBroadcastBusy?: boolean;
   adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
   /** The tab-usage window, null until the first read answers. */
@@ -533,6 +546,7 @@ export type AppViewState = {
       message: string;
       availability: string;
       expiresOn: string;
+      timezone?: string;
     } | null,
   ) => Promise<void>;
   adminBotNotificationsError?: string | null;
@@ -615,6 +629,7 @@ export type AppViewState = {
   /** Nudges raised to the head professor and still unanswered. Read with the overview beside it. */
   adminBotEscalatedNudges: import("./adminbot/auth/session.ts").EscalatedNudgeRow[];
   adminBotPiReview: import("./adminbot/auth/session.ts").PiReviewRow[];
+  adminBotPiReviewError: string | null;
   adminBotProfileOverviewFieldCount: number;
   adminBotProfileAdoption?: import("./adminbot/auth/session.ts").MemberAdoptionSummary | null;
   adminBotProfileOverviewLoading: boolean;

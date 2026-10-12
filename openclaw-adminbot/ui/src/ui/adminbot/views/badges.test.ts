@@ -3,6 +3,26 @@ import { describe, expect, it, vi } from "vitest";
 import { renderAdminBotBadges } from "./badges.ts";
 
 describe("renderAdminBotBadges", () => {
+  it("offers an explicit positive total in the assignment editor", () => {
+    const props = {
+      ...baseProps(),
+      assignRowId: "pat",
+      members: [{ id: "pat", name: "Pat", assigned_badges: [] }],
+    };
+    const container = document.createElement("div");
+    render(renderAdminBotBadges(props), container);
+    const count = container.querySelector('input[name="count"]') as HTMLInputElement;
+    expect(count.type).toBe("number");
+    expect(count.value).toBe("1");
+    expect(count.min).toBe("1");
+    expect(count.required).toBe(true);
+    count.value = "3";
+    const form = count.form!;
+    (form.querySelector('input[type="hidden"]') as HTMLInputElement).value = "referral";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(props.onAssign).toHaveBeenCalledWith("pat", "referral", undefined, 3);
+  });
+
   // A colleague's account of somebody's work and a claim about your own read differently, and the
   // queue used to present them identically because only the second kind could exist.
   it("names the colleague who put a nomination forward", () => {

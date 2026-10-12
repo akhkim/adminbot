@@ -17,8 +17,8 @@
  *      and the sheet's Member Type cell -- by the same `applyMemberTypeChange` a type change runs.
  *   3. **The guide** (`onboarding.send_guide`), for the Member Types the access design mails.
  *
- * What differs between paths is only who approves. An admin's click approves each step on the
- * spot; the weekly sweep has nobody present, so its steps are filed and left in Pending Actions.
+ * An admin's click approves enrollment and the standard full-member guide on the spot.
+ * The weekly sweep has nobody present, so its steps are filed and left in Pending Actions.
  */
 import type {
   AdminBotAuditEvent,
@@ -78,9 +78,9 @@ export async function enrollNewMember(
   return applyMemberTypeChange(
     {
       ...deps,
-      // The guide step below is this person's one onboarding mail; the alumni farewell inside a
-      // type change would be a second copy of it.
-      skipAlumniMail: true,
+      // The guide step below is this person's one onboarding mail; the guide inside a type change
+      // would be a second copy of it.
+      skipGuide: true,
       guideSendsSlackConnect: templateForMemberType(member.member_type).ok,
       skipGroupMeeting: options.skipGroupMeeting,
       skipSheet:
@@ -94,17 +94,24 @@ export async function enrollNewMember(
 
 /** How step 3 went, in the shape the Onboarding tab already reports steps in. */
 export type NewMemberGuideStep =
-  | { status: "done"; proposal_id: string; template_id: string; detail: string }
-  | { status: "queued"; proposal_id: string; template_id: string; detail: string }
+  | { status: "done"; proposal_id: string; template_id: string; email: string; detail: string }
+  | { status: "queued"; proposal_id: string; template_id: string; email: string; detail: string }
   | { status: "skipped"; reason: string }
-  | { status: "failed"; reason: string; proposal_id?: string; template_id?: string };
+  | {
+      status: "failed";
+      reason: string;
+      http_status?: number;
+      proposal_id?: string;
+      template_id?: string;
+    };
 
 /**
  * Step 3: the onboarding guide, if this person's Member Type is one the access design mails.
  *
  * Queued through `queueOnboardingGuideForMember`, which refuses a second copy of a guide already
  * sent or waiting -- so a person reached by two paths is mailed once. With an approver it is also
- * approved and sent now; without one it waits in Pending Actions.
+ * approved and sent now. Standard full-member guides use the enrollment admin’s approval
+ * automatically; unattended imports still wait in Pending Actions.
  */
 export async function queueNewMemberGuide(
   deps: Pick<NewMemberOnboardingDeps, "service" | "approver" | "actor">,
@@ -114,6 +121,8 @@ export async function queueNewMemberGuide(
     values?: Record<string, string>;
     slackChannels?: readonly string[];
     send?: boolean;
+    /** See `queueOnboardingGuideForMember`: an admin mailing the guide again on purpose. */
+    resend?: boolean;
   } = {},
 ): Promise<NewMemberGuideStep> {
   const queued = deps.service.queueOnboardingGuideForMember({
@@ -122,19 +131,23 @@ export async function queueNewMemberGuide(
     ...(options.email ? { email: options.email } : {}),
     ...(options.values ? { values: options.values } : {}),
     ...(options.slackChannels ? { slackChannels: options.slackChannels } : {}),
+    ...(options.resend ? { resend: true } : {}),
   });
   if (!queued.ok) {
     // 422 is a Member Type the design does not mail, or nobody to mail: a decision, not a fault.
     return queued.status === 422
       ? { status: "skipped", reason: queued.error.message }
-      : { status: "failed", reason: queued.error.message };
+      : { status: "failed", reason: queued.error.message, http_status: queued.status };
   }
   const { proposal_id: proposalId, template_id: templateId, email } = queued.payload;
-  if (!options.send || !deps.approver) {
+  // Full-member enrollment already has a human admin's approval. Reuse it for the standard
+  // guide; never let an unattended spreadsheet import supply that approval for itself.
+  if ((!options.send && templateId !== "member") || !deps.approver) {
     return {
       status: "queued",
       proposal_id: proposalId,
       template_id: templateId,
+      email,
       detail: `waiting for approval to send to ${email}`,
     };
   }
@@ -147,6 +160,7 @@ export async function queueNewMemberGuide(
         status: "done",
         proposal_id: proposalId,
         template_id: templateId,
+        email,
         detail: `sent to ${email}`,
       }
     : { status: "failed", reason: sent.reason, proposal_id: proposalId, template_id: templateId };

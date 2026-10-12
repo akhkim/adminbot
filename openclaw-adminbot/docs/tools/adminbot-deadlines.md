@@ -54,9 +54,10 @@ An offline `--rewrite-outputs` preserves schedules; it never reinstates a hardco
 The Python collector calls the service-only `POST /internal/deadlines/extract-schedule` operation using
 `ADMINBOT_SERVICE_BASE_URL` (default `http://127.0.0.1:8765`) and `ADMINBOT_SERVICE_TOKEN`. The service
 uses the shared `completeLocally` client with the existing `ADMINBOT_LOCAL_BASE_URL`,
-`ADMINBOT_LOCAL_MODEL`, and optional `VLLM_API_KEY` configuration and shared defaults. Both hops
-require loopback endpoints and reject redirects. Requests cancel after 120 seconds or a client
-disconnect; truncated model output and invalid evidence are rejected.
+`ADMINBOT_LOCAL_MODEL`, and optional `VLLM_API_KEY` configuration and shared defaults; with
+`LLM_GATEWAY_URL` set, that client sends the completion through the shared LLM gateway's `local`
+route like every other local completion. Both hops require loopback endpoints and reject
+redirects. Truncated model output and invalid evidence are rejected.
 Pages are checked once per day per venue/track or ARR cycle, independently of the submission
 cutoff. Shared URLs are fetched once per run. Unchanged normalized text reuses the extracted
 result; a prose or footnote change triggers extraction even if a table is unchanged. `--force-refresh`
@@ -327,7 +328,13 @@ Discovered workshops remain in the dataset with an empty `deadline_aoe` until a 
 
 The board includes undated workshops in their usual venue groups, after dated entries in Upcoming, with “Deadline unknown” and neutral styling. It does not show a countdown or an Add to timeline action. Known notification or conference dates remain available as milestones, without substituting for the missing submission deadline. Undated workshops are excluded from deadline-driven matching, reminders, escalation, and channel digests.
 
-Deadline schedule extraction yields to other completions using the shared local client in the same service process. A foreground request aborts the extraction HTTP request; extraction retries after all foreground requests finish and two seconds elapse without another request. Only one extraction runs at a time. Waiting and retries count toward the original two-minute timeout; disconnects and timeouts stop retries, and the collector retains saved dates. This coordination does not cover separate service processes or clients that bypass the shared client. Releasing inference capacity depends on the model server honoring HTTP disconnect cancellation.
+Deadline schedule extraction takes its turn in the shared LLM gateway's local queue alongside
+chat and every other local completion; the gateway, not the service, decides when it runs (see
+[the gateway guide](llm-gateway.md)). Because a queued request cannot be told apart from a running
+one, the service sets no extraction deadline of its own. The collector waits up to 15 minutes per
+extraction and then disconnects, which removes a queued request from the gateway or cancels a
+running one; the collector then retains the saved dates. Releasing inference capacity depends on
+the model server honoring HTTP disconnect cancellation.
 
 ### Deadline board layout
 
