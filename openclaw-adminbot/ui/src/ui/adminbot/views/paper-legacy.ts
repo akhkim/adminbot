@@ -24,6 +24,7 @@
 
 import { html, nothing, type TemplateResult } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { live } from "lit/directives/live.js";
 import {
   adminBotPaperVenueDecisions,
   type AdminBotPaperStep,
@@ -720,7 +721,7 @@ function renderControl(
     type=${field.control === "date" ? "date" : field.control === "number" ? "number" : "text"}
     placeholder=${ifDefined(field.example)}
     data-testid=${testId}
-    .value=${value}
+    .value=${live(value)}
     @input=${(event: Event) => onEdit((event.target as HTMLInputElement).value)}
   />`;
   return field.control === "date" ? renderDateControl(input, value) : input;

@@ -1,4 +1,5 @@
 import { html, nothing, LitElement } from "lit";
+import { live } from "lit/directives/live.js";
 import {
   deleteOpportunity,
   decideOpportunity,
@@ -485,7 +486,7 @@ class AdminbotOpportunitiesView extends LitElement {
                       html`<input
                         class="opp-form-input opp-form-input--grow"
                         type="datetime-local"
-                        .value=${this.form.deadline_aoe?.slice(0, 16) ?? ""}
+                        .value=${live(this.form.deadline_aoe?.slice(0, 16) ?? "")}
                         @input=${(e: Event) => {
                           const v = (e.target as HTMLInputElement).value;
                           this.updateField("deadline_aoe", v ? `${v.replace("T", " ")}:00` : "");
