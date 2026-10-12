@@ -32,6 +32,15 @@ describe("the card list", () => {
     expect(container.querySelector(".my-work--sheet")).toBeNull();
   });
 
+  it("says on each card how much is on file and when it is due", () => {
+    const { container } = drawOverview({
+      projects: [{ ...summaryFor(paper()), provided_count: 3, deadline: "2026-09-24T23:59:00Z" }],
+    });
+    const meta = container.querySelector('[data-testid="project-card-meta-p1"]')?.textContent;
+    expect(meta).toContain("3/20");
+    expect(meta).toContain("2026-09-24");
+  });
+
   it("says it is still reading rather than claiming there is nothing", () => {
     const { container } = drawOverview({ projects: null });
     expect(container.textContent).toContain("Loading your projects");

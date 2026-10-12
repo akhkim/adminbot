@@ -84,6 +84,9 @@ export function renderProjectPage(
   const lane = PROJECT_LANES.find((candidate) => candidate.segment === tab);
   const own = ownPapers(state).some((candidate) => candidate.id === paper.id);
   const cycle = props.slots[paper.id];
+  // The deadline is what decides how urgent the paper is, so it sits beside where it is aimed.
+  const deadline =
+    props.overview.find((row) => row.paper_id === paper.id)?.deadline ?? paper.deadline;
   return html`<section class="project" data-testid=${`project-${paperId}`}>
     <a class="project__back" href="#" @click=${(event: Event) => back(event, state)}
       >‹ My projects</a
@@ -101,6 +104,10 @@ export function renderProjectPage(
         ${paper.alias ? html`<span class="project__alias">#${paper.alias}</span>` : nothing}
         ${summary ? venuePosition(summary) : paper.venue || "No venue picked yet"} ·
         ${stepLabel(paper.current_step)}
+        ${deadline
+          ? html`· due
+              <span class="ab-num" data-testid="project-deadline">${deadline.slice(0, 10)}</span>`
+          : nothing}
       </p>
       <p class="project__meta">${(paper.authors ?? []).join(", ")}</p>
       <div class="project__actions">

@@ -55,6 +55,13 @@ describe("the page itself", () => {
     ]);
   });
 
+  it("carries the deadline the service has for the paper", () => {
+    const { container } = drawPage({ overview: [overviewRow({ deadline: "2026-09-24" })] });
+    expect(container.querySelector('[data-testid="project-deadline"]')?.textContent).toBe(
+      "2026-09-24",
+    );
+  });
+
   it("says when the paper is not one it can show", () => {
     const { container } = drawPage({ paperId: "missing" });
     expect(container.textContent).toContain("not on your list");

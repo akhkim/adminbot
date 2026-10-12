@@ -41,6 +41,14 @@ function renderCard(project: ProjectSummary) {
     <h3 class="project-card__title">${project.title}</h3>
     ${project.alias ? html`<p class="project-card__alias">#${project.alias}</p>` : nothing}
     <p class="project-card__venue">${venuePosition(project)}</p>
+    <!-- The count and the deadline the old card's subtitle carried: how much is on file, and how
+         soon it is due. -->
+    <p class="project-card__meta" data-testid=${`project-card-meta-${project.paper_id}`}>
+      <span class="ab-num">${project.provided_count}/${project.required_count}</span> on file
+      ${project.deadline
+        ? html`· due <span class="ab-num">${project.deadline.slice(0, 10)}</span>`
+        : nothing}
+    </p>
     ${renderLaneDots(project)}
     ${todos.length
       ? html`<ul class="project-card__todos">
