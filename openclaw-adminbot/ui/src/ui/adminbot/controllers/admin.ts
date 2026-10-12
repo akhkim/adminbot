@@ -71,6 +71,8 @@ export type AdminBotAccessGrant = {
 export type AdminBotMemberStatus = "active" | "part_time" | "on_leave" | "alumni" | "external";
 
 export type AdminBotLabMember = {
+  arr_reviewer_qualified?: boolean | null;
+  arr_review_capacity?: number | null;
   assigned_badges?: import("../auth/session.ts").AssignedBadge[];
   id: string;
   name: string;
