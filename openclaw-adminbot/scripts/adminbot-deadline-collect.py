@@ -169,6 +169,25 @@ PENDING = [
      "https://openreview.net/group?id=IASEAI.org/2027/Conference"),
 ]
 
+
+def drop_undated_conferences(items):
+    """Leave out every non-workshop row that has no deadline yet.
+
+    CONFERENCES carries identities only, so a venue with no previous observation -- newly added,
+    or the previous dataset failed to load -- stays undated until its official schedule yields a
+    date. Only a workshop may be undated in the outputs: the service rejects the whole dataset
+    otherwise and silently keeps serving its built-in copy, so one undated conference would
+    freeze every deadline on the board.
+    """
+    kept = [item for item in items if item.get("deadline_aoe") or item.get("venue_type") == "workshop"]
+    if len(kept) != len(items):
+        kept_ids = {id(item) for item in kept}
+        undated = sorted(item.get("id", "?") for item in items if id(item) not in kept_ids)
+        print(f"WARN: left out {len(undated)} undated non-workshop row(s): {', '.join(undated)}",
+              file=sys.stderr)
+    return kept
+
+
 # Non-workshop venues whose OpenReview invitation is the authoritative date.
 OPENREVIEW_CONFERENCES = [
     dict(id="iaseai2027_submission", name="IASEAI 2027", venue_family="IASEAI",
@@ -1673,6 +1692,7 @@ def write_outputs(items):
     without a sweep -- see --rewrite-outputs. Every writer runs from the one list,
     which keeps the service and Control UI datasets in sync.
     """
+    items[:] = drop_undated_conferences(items)
     migrate_workshop_dates(items)
     attach_abstract_requirements(items)
     items.sort(key=lambda x: (not bool(x["deadline_aoe"]), x["deadline_aoe"], x["name"]))
@@ -1888,6 +1908,7 @@ def main():
             pass
 
     enrich_workshop_sources(items, previous_by_id, clock, force_refresh)
+    items = drop_undated_conferences(items)
     observed_ids = {
         item["id"] for item in items
         if item.get("_source_observed", True)
