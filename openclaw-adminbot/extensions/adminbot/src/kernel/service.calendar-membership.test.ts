@@ -2,10 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { calendarMembershipReader } from "../connectors/calendar-membership.js";
 import { createGogAdminBotExecutor } from "../connectors/gog.js";
 import { resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
-import { isRestrictedCalendarEvent } from "./service.calendar-membership.js";
+import { hasLabCalendarAccess, isRestrictedCalendarEvent } from "./service.calendar-membership.js";
 import { AdminBotMemoryStore, AdminBotService } from "./service.js";
 
 const CALENDAR = "lab@example.org";
+// The one eligible member with a Google account already holds the share, so these event tests see
+// no grant writes.
+const SHARED = async () => [
+  { id: "full", role: "reader", scope: { type: "user", value: "full-calendar@example.org" } },
+];
 afterEach(() => vi.unstubAllEnvs());
 function lab() {
   vi.stubEnv("ADMINBOT_LAB_CALENDAR_ID", CALENDAR);
@@ -60,7 +65,7 @@ function lab() {
 describe("Sunday lab calendar membership", () => {
   it("removes only known ineligible guests, preserving external speakers, eligible alumni, organizer, rooms and RSVPs", async () => {
     const { service, read, run, events, store } = lab();
-    const result = await service.syncLabCalendarMembership(CALENDAR, read, async () => []);
+    const result = await service.syncLabCalendarMembership(CALENDAR, read, SHARED);
     expect(result.failed).toEqual([]);
     expect(result.removed[0].emails).toEqual(["minor@example.org"]);
     expect(events[0].attendees.map((a) => a.email)).toEqual([
@@ -81,11 +86,11 @@ describe("Sunday lab calendar membership", () => {
       risk_tier: "T3",
       approvals: [{ approver_id: "system:weekly-calendar-membership-policy" }],
     });
-    await service.syncLabCalendarMembership(CALENDAR, read, async () => []);
+    await service.syncLabCalendarMembership(CALENDAR, read, SHARED);
     expect(run).toHaveBeenCalledTimes(1);
     // Being re-added later must be corrected even within the same week.
     events[0].attendees.push({ email: "minor@example.org" });
-    await service.syncLabCalendarMembership(CALENDAR, read, async () => []);
+    await service.syncLabCalendarMembership(CALENDAR, read, SHARED);
     expect(run).toHaveBeenCalledTimes(2);
   });
   it("fails closed on a failed inventory or empty member database", async () => {
@@ -100,14 +105,14 @@ describe("Sunday lab calendar membership", () => {
       ),
     ).rejects.toThrow("no Google access");
     await expect(
-      new AdminBotService().syncLabCalendarMembership(CALENDAR, read, async () => []),
+      new AdminBotService().syncLabCalendarMembership(CALENDAR, read, SHARED),
     ).rejects.toThrow("empty member database");
     expect(run).not.toHaveBeenCalled();
   });
   it("reports failed writes without recording execution", async () => {
     const { service, run, read, store } = lab();
     run.mockRejectedValue(new Error("permission denied"));
-    const result = await service.syncLabCalendarMembership(CALENDAR, read, async () => []);
+    const result = await service.syncLabCalendarMembership(CALENDAR, read, SHARED);
     expect(result.failed).toHaveLength(1);
     expect(result.removed).toEqual([]);
     expect(store.listProposalsByType("calendar.remove_attendees")[0].status).not.toBe("executed");
@@ -115,8 +120,8 @@ describe("Sunday lab calendar membership", () => {
   it("shares concurrent passes", async () => {
     const { service, read, run } = lab();
     await Promise.all([
-      service.syncLabCalendarMembership(CALENDAR, read, async () => []),
-      service.syncLabCalendarMembership(CALENDAR, read, async () => []),
+      service.syncLabCalendarMembership(CALENDAR, read, SHARED),
+      service.syncLabCalendarMembership(CALENDAR, read, SHARED),
     ]);
     expect(run).toHaveBeenCalledTimes(1);
   });
@@ -348,6 +353,65 @@ describe("revised calendar scope", () => {
     }
   });
 
+  it("shares the lab calendar with each eligible member's Google account, never a login", async () => {
+    vi.stubEnv("ADMINBOT_LAB_CALENDAR_ID", CALENDAR);
+    try {
+      const store = new AdminBotMemoryStore();
+      const execute = vi.fn(async () => ({ handled: true }));
+      const service = new AdminBotService(store, { executor: { execute } });
+      for (const [id, fields] of [
+        ["gmail", {}],
+        ["explicit", { calendar_email: "explicit@workspace.example.org" }],
+        ["shared", { calendar_email: "shared@gmail.com" }],
+        ["dept", { correspondence_email: "dept@utoronto.example" }],
+      ] as const) {
+        service.upsertLabMember({
+          id,
+          name: id,
+          member_type: "full",
+          email: `${id}@cs.example.org`,
+          ...fields,
+        });
+      }
+      // A legacy free-text row: today's form refuses a personal correspondence address, but the
+      // roster still carries ones written before that rule, and the Gmail in it is a Google account.
+      const legacy = store.getLabMember("gmail");
+      if (!legacy) {
+        throw new Error("fixture missing");
+      }
+      store.saveLabMember({
+        ...legacy,
+        correspondence_email: "gmail.person@umontreal.example / Gmail.Person@gmail.com",
+      });
+      const result = await service.syncLabCalendarMembership(
+        CALENDAR,
+        async () => [],
+        async () => [
+          // Case differs from the roster; still the same Google account.
+          { id: "s", role: "reader", scope: { type: "user", value: "SHARED@gmail.com" } },
+          // A share to the departmental login is not access, and is left alone rather than counted.
+          { id: "d", role: "reader", scope: { type: "user", value: "gmail@cs.example.org" } },
+        ],
+      );
+      expect(result.failed).toEqual([]);
+      expect(
+        result.granted
+          .map((row) => [row.member_id, row.email])
+          .toSorted((a, b) => a[0].localeCompare(b[0])),
+      ).toEqual([
+        ["explicit", "explicit@workspace.example.org"],
+        ["gmail", "Gmail.Person@gmail.com"],
+      ]);
+      expect(result.needs_gmail.map((row) => row.member_id)).toEqual(["dept"]);
+      expect(store.listProposalsByType("calendar.grant_lab_calendar")[0]).toMatchObject({
+        status: "executed",
+        approvals: [{ approver_id: "system:lab-calendar-access-policy" }],
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("does not start writes if the ACL inventory fails", async () => {
     const { service, read, run } = lab();
     await expect(
@@ -356,6 +420,25 @@ describe("revised calendar scope", () => {
       }),
     ).rejects.toThrow("ACL access denied");
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe("hasLabCalendarAccess", () => {
+  it("counts a matching user share or a calendar-wide one, at reader or above", () => {
+    const rule = (role: string, type: string, value?: string) => ({
+      id: "r",
+      role,
+      scope: { type, ...(value ? { value } : {}) },
+    });
+    expect(hasLabCalendarAccess([rule("reader", "user", "A@gmail.com")], "a@gmail.com")).toBe(true);
+    expect(hasLabCalendarAccess([rule("writer", "user", "a@gmail.com")], "a@gmail.com")).toBe(true);
+    expect(hasLabCalendarAccess([rule("reader", "default")], "a@gmail.com")).toBe(true);
+    expect(
+      hasLabCalendarAccess([rule("freeBusyReader", "user", "a@gmail.com")], "a@gmail.com"),
+    ).toBe(false);
+    expect(hasLabCalendarAccess([rule("reader", "user", "b@gmail.com")], "a@gmail.com")).toBe(
+      false,
+    );
   });
 });
 

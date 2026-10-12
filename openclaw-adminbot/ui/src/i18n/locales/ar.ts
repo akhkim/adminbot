@@ -2376,7 +2376,8 @@ export const ar: TranslationMap = {
         "How you would explain your research to a smart person who does not work in it — the question you are chasing and why it matters, in a paragraph you could say out loud. The lab reuses it: introductions to visitors and collaborators, your entry on the shared directory, the blurb that goes out when a paper of yours lands. Research topics above are tags for filtering a roster; this is the part that makes somebody want to talk to you.",
     },
     hints: {
-      calendarEmail: "The Google account your calendar invites should go to.",
+      calendarEmail:
+        "Your Gmail (or other Google account). The lab calendar is shared with this address; without it AdminBot uses any Gmail on your profile.",
       correspondenceEmail: "Where the lab writes to you. Often not your @cs.toronto.edu address.",
       github: "Your profile page, not a repository: github.com/username",
       linkedin: "Your profile page: linkedin.com/in/username",

@@ -16,7 +16,10 @@
  * happened, and a Slack outage should not also leave the Monday meeting unreconciled.
  */
 import { type AdminBotAuditEvent, type AdminBotLabMember } from "../contracts/actions.js";
-import { adminBotCalendarEmail } from "../contracts/member-outreach-email.js";
+import {
+  adminBotCalendarEmail,
+  adminBotCalendarShareEmail,
+} from "../contracts/member-outreach-email.js";
 import type { AdminBotService } from "../kernel/service.js";
 import {
   type AdminBotStandingMeeting,
@@ -289,9 +292,14 @@ export async function applyMemberTypeChange(
   // 4. Read access to the lab calendar, as a typed action like every other step. There is no typed
   //    action that revokes a calendar share, so a loss is reported for somebody to act on.
   if (delta.lab_calendar === "gained") {
-    const address = calendarAddress(after);
+    // A share only works for a Google account, so it never falls back to the departmental login.
+    const address = adminBotCalendarShareEmail(after);
     if (!address) {
-      steps.push({ step: "lab_calendar", status: "skipped", detail: "no address on file" });
+      steps.push({
+        step: "lab_calendar",
+        status: "skipped",
+        detail: "no Gmail or Google Calendar email on file",
+      });
     } else {
       steps.push(
         await runAction(deps, "lab_calendar", address, {

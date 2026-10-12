@@ -2423,7 +2423,8 @@ export const en: TranslationMap = {
     // The shapes the service accepts, stated where the answer is typed. Each one mirrors a rule in
     // SOCIAL_URL_FIELDS or validateOpenReviewId; keep them in step if those change.
     hints: {
-      calendarEmail: "The Google account your calendar invites should go to.",
+      calendarEmail:
+        "Your Gmail (or other Google account). The lab calendar is shared with this address; without it AdminBot uses any Gmail on your profile.",
       correspondenceEmail:
         "This is your official organizational email. Imagine we contact government sectors or external collaborators. Usually you need to be cc’ed via your institutional email.",
       github: "A username, link, or note about your GitHub account.",

@@ -183,6 +183,7 @@ import {
 } from "../contracts/member-duplicates.js";
 import {
   adminBotCalendarEmail,
+  adminBotCalendarShareEmail,
   adminBotOutreachEmail,
 } from "../contracts/member-outreach-email.js";
 import { normalizeMemberProfileValues } from "../contracts/member-profile-values.js";
@@ -267,6 +268,7 @@ import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rul
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import { memberAddresses } from "../workflows/calendar/standing-meetings.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import {
   isDeadlineMilestoneId,
@@ -455,6 +457,7 @@ import {
 } from "./service.active-channels.js";
 import {
   calendarMembershipWriteError,
+  grantLabCalendarAccess,
   ineligibleCalendarEmails,
   isRestrictedCalendarEvent,
   syncCalendarMembership,
@@ -1944,7 +1947,7 @@ export class AdminBotService {
         if (
           (isRestrictedCalendarEvent(meeting.event_id) &&
             ineligible.has(email.trim().toLowerCase())) ||
-          already.has(email.toLowerCase())
+          memberAddresses(member).some((address) => already.has(address))
         ) {
           continue;
         }
@@ -3324,6 +3327,32 @@ export class AdminBotService {
     return this.activeChannelCleanup;
   }
 
+  /**
+   * A member who changes their Calendar email (or adds a Gmail) gets the lab calendar on that
+   * account now, rather than at the Sunday sync. Gaining eligibility is the member-type change's
+   * job, so this only covers somebody who was eligible before and after the save.
+   */
+  private shareLabCalendarWithNewAddress(
+    existing: AdminBotLabMember | undefined,
+    stored: AdminBotLabMember,
+  ): void {
+    if (!existing || !isActiveChannelEligible(existing) || !isActiveChannelEligible(stored)) {
+      return;
+    }
+    const email = adminBotCalendarShareEmail(stored);
+    if (!email || email.toLowerCase() === adminBotCalendarShareEmail(existing).toLowerCase()) {
+      return;
+    }
+    void grantLabCalendarAccess(
+      this,
+      stored,
+      email,
+      `calendar-share:${stored.id}:${email.toLowerCase()}`,
+    ).catch(() => {
+      // The typed proposal retains the failure, and the Sunday sync retries; never fail the save.
+    });
+  }
+
   private inviteLinkedMemberToActiveChannels(member: AdminBotLabMember): void {
     const userId = member.slack_user_id?.trim();
     if (!userId || !/^[UW][A-Z0-9]+$/u.test(userId) || !isActiveChannelEligible(member)) {
@@ -3394,6 +3423,7 @@ export class AdminBotService {
     if (existing && stored.slack_user_id?.trim() !== existing.slack_user_id?.trim()) {
       this.inviteLinkedMemberToActiveChannels(stored);
     }
+    this.shareLabCalendarWithNewAddress(existing, stored);
     // Same patch, same rules, same instant as the provenance stamp above -- see
     // changedProfileFields for why these two must not drift. Provenance keeps the latest writer
     // per field; this keeps every writer, which is the half that survives a bulk re-import.
@@ -12599,7 +12629,13 @@ export class AdminBotService {
         // route files a `lab_member.enroll` for each, and an admin approving that is what sets the
         // level the Member Type implies.
         const saved = this.upsertLabMember(
-          { id: row.member_id, name: row.name, email: row.email, member_type: row.member_type },
+          {
+            id: row.member_id,
+            name: row.name,
+            email: row.email,
+            ...(row.calendar_email ? { calendar_email: row.calendar_email } : {}),
+            member_type: row.member_type,
+          },
           { source: "import", actor: params.actor },
         );
         if (saved.ok) {

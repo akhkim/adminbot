@@ -133,12 +133,18 @@ export function localEventAudience(params: {
   };
 
   for (const member of params.members) {
-    const email = inviteAddressFor(member);
+    // Already on the invite under any address they hold counts as invited -- and keeps that
+    // address, so a removal names what is actually on the guest list.
+    const listed = [member.calendar_email, member.email, member.correspondence_email]
+      .flatMap((value) => (value ?? "").split(/[/,;\s]+/u))
+      .map((address) => address.trim().toLowerCase())
+      .find((address) => address && invited.has(address));
+    const email = listed ?? inviteAddressFor(member);
     if (!email) {
       // No address at all: not invitable, and not something this sweep can fix.
       continue;
     }
-    const onInvite = invited.has(email);
+    const onInvite = Boolean(listed);
     if (onInvite) {
       claimed.add(email);
     }

@@ -4146,6 +4146,7 @@ describe("lab calendar invite backfill route", () => {
       name: "Ada",
       member_type: "full",
       email: "ada@cs.toronto.edu",
+      calendar_email: "ada@gmail.com",
       privilege_level: "member",
     });
     await approveClaim(baseUrl, "root", "root@cs.toronto.edu");
@@ -4178,7 +4179,7 @@ describe("lab calendar invite backfill route", () => {
       body: JSON.stringify({ dry_run: false }),
     });
     expect(ran.status).toBe(200);
-    expect(invited).toContain("ada@cs.toronto.edu");
+    expect(invited).toContain("ada@gmail.com");
   });
 });
 
