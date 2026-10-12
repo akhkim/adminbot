@@ -3,6 +3,10 @@ import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import path from "node:path";
 import { createArxivProbe } from "../connectors/arxiv.js";
+import type {
+  CalendarMembershipReader,
+  CalendarAccessReader,
+} from "../connectors/calendar-membership.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
 import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
@@ -23,7 +27,11 @@ import {
   createPublicOpenReviewPdfReader,
 } from "../connectors/reference-scan.js";
 import { createInterviewChannelProvisioner } from "../connectors/slack-interview.js";
-import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
+import {
+  createLinkedInDraftRunner,
+  createXDraftRunner,
+  readArxivPdfBase64,
+} from "../connectors/social-draft.js";
 import {
   adminBotRegistrationStatuses,
   redactConfidentialMemberFields,
@@ -84,6 +92,7 @@ import { askGuidebook } from "../guidebook/ask.js";
 import { readLlmGatewayStatus } from "../kernel/llm-gateway-client.js";
 import { createLlmLoadRouter, parseLlmNodes, type LlmLoadRouter } from "../kernel/llm-router.js";
 import { ReferenceScans } from "../kernel/reference-scans.js";
+import type { ActiveChannelReader } from "../kernel/service.active-channels.js";
 import {
   AdminBotMemoryStore,
   AdminBotService,
@@ -177,6 +186,7 @@ import {
   venuePaperCategoryId,
 } from "../workflows/papers/venue-index.js";
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
+import { readXAnnouncement, readXCredits } from "../workflows/papers/x-draft.js";
 // The error class is a runtime value (the generate route catches it), so it cannot ride on the
 // type-only import beside it.
 import { AdminBotReimbursementBlocked } from "../workflows/reimbursements/workflow.js";
@@ -191,6 +201,7 @@ import {
   memberSheetSource,
   resolveMemberSheetConfig,
 } from "./member-sheet-config.js";
+import { createNotificationDraftHandler } from "./notification-drafts.js";
 import { createPdfReferenceCheckHandler } from "./pdf-reference-check.js";
 import { isBlockedByProfile } from "./profile-gate.js";
 import {
@@ -366,6 +377,8 @@ export type AdminBotMockServiceOptions = {
   // Generates a LinkedIn announcement draft from a paper PDF. Injected so tests can assert the
   // route without an OpenRouter round trip; defaults to the real connector.
   linkedInDraftRunner?: import("../connectors/social-draft.js").LinkedInDraftRunner;
+  xDraftRunner?: import("../connectors/social-draft.js").XDraftRunner;
+  readArxivPdfBase64?: (id: string) => Promise<string>;
   /** Reads one Drive file as base64, so a draft can use the PDF the paper already names. */
   readDrivePdfBase64?: (fileId: string) => Promise<string>;
   /**
@@ -421,6 +434,7 @@ export type AdminBotMockServiceOptions = {
   // Path to scripts/adminbot-openreview.py. Injected as a path rather than a built
   // workflow because the workflow needs the store this factory owns; absent in unit
   // setups, which leaves every /openreview route reporting 503 rather than half-working.
+  notificationDraftScriptPath?: string;
   openReviewScriptPath?: string;
   openReviewPythonCommand?: string;
   // Reads each member's location from their Slack profile. Injected from the repo-root
@@ -438,6 +452,11 @@ export type AdminBotMockServiceOptions = {
   // Backfills `slack_user_id` for members the roster has never linked to Slack, by matching
   // roster email against the workspace directory.
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
+  // Complete future event inventory for the Sunday membership policy.
+  readCalendarMembership?: CalendarMembershipReader;
+  readCalendarAccess?: CalendarAccessReader;
+  // Complete human membership of the two active channels; unavailable reads fail closed.
+  readActiveChannels?: ActiveChannelReader;
   // Every open public channel name in the workspace, for the project form's "this channel already
   // exists" check. Injected like the Slack reads above: reaching Slack is a composition-layer
   // concern, and left unset the route answers 503 so the form can say the check is unavailable
@@ -599,6 +618,7 @@ function createAnonymousRateLimiter(): AnonymousRateLimiter {
 }
 
 type AdminBotRouteContext = {
+  notificationDrafts: ReturnType<typeof createNotificationDraftHandler>;
   // A restart invalidates outstanding packages: regenerate and review against the current rules.
   reimbursementSigningKey: Buffer;
   memberDrafts: MemberDraftStore;
@@ -632,6 +652,9 @@ type AdminBotRouteContext = {
     channelIds: string[],
   ) => Promise<ReadonlyMap<string, number>>;
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
+  readCalendarMembership?: CalendarMembershipReader;
+  readCalendarAccess?: CalendarAccessReader;
+  readActiveChannels?: ActiveChannelReader;
   fetchSlackChannelNames?: () => Promise<string[]>;
   readCalendarEvents?: import("../workflows/calendar/events.js").CalendarEventsReader;
   draftCalendarEvent?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
@@ -639,6 +662,8 @@ type AdminBotRouteContext = {
   importColumnMapper?: ImportColumnMapper;
   // Generates a LinkedIn announcement draft from a paper PDF. Nothing it returns is persisted.
   draftLinkedInPost: import("../connectors/social-draft.js").LinkedInDraftRunner;
+  draftXPost: import("../connectors/social-draft.js").XDraftRunner;
+  readArxivPdfBase64: (id: string) => Promise<string>;
   /**
    * Downloads one Drive file and returns it base64-encoded.
    *
@@ -1152,6 +1177,15 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       })
     : undefined;
   const ctx: AdminBotRouteContext = {
+    notificationDrafts: createNotificationDraftHandler(
+      options.notificationDraftScriptPath,
+      () => store.listLabMembers(),
+      () => store.listPapers().map((paper) => ({
+        title: paper.title,
+        submission_url: paper.artifacts?.submission_url,
+        arxiv_url: paper.artifacts?.arxiv_url,
+      })),
+    ),
     reimbursementSigningKey: randomBytes(32),
     service,
     store,
@@ -1166,6 +1200,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(iclrIntegrityWatch ? { iclrIntegrityWatch } : {}),
     onboardingSender,
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
+    draftXPost: options.xDraftRunner ?? createXDraftRunner(),
+    readArxivPdfBase64: options.readArxivPdfBase64 ?? readArxivPdfBase64,
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
     ...(memberSheet ? { memberSheet } : {}),
     ...(callSheet ? { callSheet } : {}),
@@ -1196,6 +1232,11 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.resolveSlackUserIdsByEmail
       ? { resolveSlackUserIdsByEmail: options.resolveSlackUserIdsByEmail }
       : {}),
+    ...(options.readCalendarAccess ? { readCalendarAccess: options.readCalendarAccess } : {}),
+    ...(options.readCalendarMembership
+      ? { readCalendarMembership: options.readCalendarMembership }
+      : {}),
+    ...(options.readActiveChannels ? { readActiveChannels: options.readActiveChannels } : {}),
     ...(options.fetchSlackChannelNames
       ? { fetchSlackChannelNames: options.fetchSlackChannelNames }
       : {}),
@@ -2006,6 +2047,13 @@ async function handleAuthenticatedRoute(
     return;
   }
   const { service, privacyBroker, sensitiveInfo } = ctx;
+  if (req.method === "POST" && url.pathname === "/tools/notification-drafts") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    await ctx.notificationDrafts(req, res);
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/drive/check-edit-access") {
     if (principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "member session required" } });
@@ -2016,7 +2064,12 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "POST" && url.pathname === "/reference-check/pdf") {
-    if (!requireMemberPrivileged(res, principal)) {
+    if (
+      principal.kind !== "member" ||
+      (principal.member.privilege_level !== "member" &&
+        principal.member.privilege_level !== "admin")
+    ) {
+      sendJson(res, 403, { error: { message: "Member or admin session required" } });
       return;
     }
     await ctx.checkUploadedPdf(req, res, principalActor(principal));
@@ -3071,7 +3124,7 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "POST" && url.pathname === "/proposals") {
-    const body = (await readJson(req)) as AdminBotActionProposal;
+    const body = (await readJson(req, 3_000_000)) as AdminBotActionProposal;
     sendServiceResult(res, service.createProposal(body));
     return;
   }
@@ -4404,7 +4457,11 @@ async function handleAuthenticatedRoute(
   // the draft is a suggestion a human copies, edits and posts by hand, so storing it would
   // create a stale second copy of something whose only real version ends up on LinkedIn.
   // Nothing here writes -- the PDF is read, the post is returned, both are then forgotten.
-  if (req.method === "POST" && url.pathname === "/papers/linkedin-draft") {
+  if (
+    req.method === "POST" &&
+    ["/papers/linkedin-draft", "/papers/x-draft"].includes(url.pathname)
+  ) {
+    const isX = url.pathname === "/papers/x-draft";
     if (principal.kind === "anonymous") {
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
@@ -4412,6 +4469,17 @@ async function handleAuthenticatedRoute(
     // A paper PDF can be attached here, so the default 1 MB JSON ceiling would refuse most real
     // papers once base64 has added its third.
     const body = readRecord(await readJson(req, LINKEDIN_DRAFT_BODY_LIMIT_BYTES));
+    let announcement;
+    let credits;
+    if (isX) {
+      try {
+        announcement = readXAnnouncement(body.announcement);
+        credits = readXCredits(body.credits);
+      } catch (error) {
+        sendJson(res, 400, { error: { message: (error as Error).message } });
+        return;
+      }
+    }
     let pdfBase64 = typeof body.pdf_base64 === "string" ? body.pdf_base64 : "";
     // An upload is no longer required. The author has usually already given the lab this exact
     // file -- `drive_pdf_arxiv` is the Drive copy of the PDF they intend to post, and the card
@@ -4430,40 +4498,52 @@ async function handleAuthenticatedRoute(
         sendServiceResult(res, cycle);
         return;
       }
-      const source = resolvePaperPdfSource(cycle.payload.slots);
+      const source = resolvePaperPdfSource(cycle.payload.slots, isX);
       if (source.kind === "none") {
         sendJson(res, 400, { error: { message: source.reason } });
         return;
       }
-      if (!ctx.readDrivePdfBase64) {
-        sendJson(res, 503, {
-          error: {
-            message: "this deployment cannot read Drive files; attach the PDF here instead",
-          },
-        });
-        return;
-      }
-      try {
-        pdfBase64 = await ctx.readDrivePdfBase64(source.fileId);
-      } catch (error) {
-        sendJson(res, 502, {
-          error: {
-            message: `could not read the Drive copy (${(error as Error).message}); attach the PDF here instead`,
-          },
-        });
-        return;
-      }
-      if (!pdfBase64) {
-        sendJson(res, 502, {
-          error: { message: "the Drive copy came back empty; attach the PDF here instead" },
-        });
-        return;
+      if (source.kind === "arxiv") {
+        try {
+          pdfBase64 = await ctx.readArxivPdfBase64(source.id);
+        } catch (error) {
+          sendJson(res, 502, { error: { message: (error as Error).message } });
+          return;
+        }
+        if (typeof body.url !== "string") body.url = source.url;
+      } else {
+        if (!ctx.readDrivePdfBase64) {
+          sendJson(res, 503, {
+            error: {
+              message: "this deployment cannot read Drive files; attach the PDF here instead",
+            },
+          });
+          return;
+        }
+        try {
+          pdfBase64 = await ctx.readDrivePdfBase64(source.fileId);
+        } catch (error) {
+          sendJson(res, 502, {
+            error: {
+              message: `could not read the Drive copy (${(error as Error).message}); attach the PDF here instead`,
+            },
+          });
+          return;
+        }
+        if (!pdfBase64) {
+          sendJson(res, 502, {
+            error: { message: "the Drive copy came back empty; attach the PDF here instead" },
+          });
+          return;
+        }
       }
     }
     const membersResult = service.listLabMembers();
     const members = membersResult.ok ? membersResult.payload.members : [];
     try {
-      const draft = await ctx.draftLinkedInPost({
+      const draft = await (isX ? ctx.draftXPost : ctx.draftLinkedInPost)({
+        ...(announcement ? { announcement } : {}),
+        ...(credits ? { credits } : {}),
         pdfBase64,
         members,
         ...(typeof body.url === "string" ? { url: body.url } : {}),
@@ -5163,13 +5243,14 @@ async function handleAuthenticatedRoute(
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
-    const body = readRecord(await readJson(req));
+    const body = readRecord(await readJson(req, 3_000_000));
     sendServiceResult(
       res,
       service.saveSocialDraft({
         paperId: decodeURIComponent(paperDrafts[1]),
         platform: String(body.platform ?? ""),
         body: String(body.body ?? ""),
+        ...(body.x_thread !== undefined ? { xThread: body.x_thread } : {}),
         ...(typeof body.model === "string" ? { model: body.model } : {}),
         memberId: principal.kind === "member" ? principal.member.id : principalActor(principal),
         privileged: isPrivileged(principal),
@@ -5410,10 +5491,17 @@ async function handleAuthenticatedRoute(
       sendJson(res, 400, { error: { message: "Use up to 20 Slack channel names or IDs." } });
       return;
     }
+    if (body.resend !== undefined && typeof body.resend !== "boolean") {
+      sendJson(res, 400, { error: { message: "resend must be true or false." } });
+      return;
+    }
     const guide = await queueNewMemberGuide(
       memberOnboardingDeps(ctx, principal, approverIdentityFor(principal)),
       decodeURIComponent(memberOnboardingGuide[1]),
-      { slackChannels: body.slack_project_channels as string[] | undefined },
+      {
+        slackChannels: body.slack_project_channels as string[] | undefined,
+        resend: body.resend === true,
+      },
     );
     if (guide.status === "failed" || guide.status === "skipped") {
       sendJson(res, guide.status === "skipped" ? 422 : (guide.http_status ?? 502), {
@@ -6071,6 +6159,48 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, await service.sweepThesisMilestones(principalActor(principal)));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/members/calendar-membership/sync") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.readCalendarMembership || !ctx.readCalendarAccess) {
+      sendJson(res, 503, { error: { message: "Calendar membership reader is unavailable" } });
+      return;
+    }
+    try {
+      const result = await service.syncLabCalendarMembership(
+        ctx.labCalendar.id,
+        ctx.readCalendarMembership,
+        ctx.readCalendarAccess,
+      );
+      sendJson(res, result.failed.length ? 502 : 200, result);
+    } catch (error) {
+      sendJson(res, 503, {
+        error: { message: error instanceof Error ? error.message : "Calendar cleanup failed" },
+      });
+    }
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/members/active-channels/sync") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.readActiveChannels) {
+      sendJson(res, 503, { error: { message: "Slack active-channel reader is unavailable" } });
+      return;
+    }
+    try {
+      const result = await service.syncActiveChannels(ctx.readActiveChannels);
+      sendJson(res, result.failed.length ? 502 : 200, result);
+    } catch (error) {
+      sendJson(res, 503, {
+        error: {
+          message: error instanceof Error ? error.message : "Active-channel cleanup failed",
+        },
+      });
+    }
     return;
   }
   if (req.method === "POST" && url.pathname === "/members/city-channels/sync") {

@@ -12396,3 +12396,100 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   white-space: normal;
   text-align: left;
 }
+
+/* Paper thread composer: focused editing with an adjacent, readable preview. */
+.paper-cycle__composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+.paper-cycle__thread,
+.paper-cycle__preview {
+  min-width: 0;
+}
+.paper-cycle__post {
+  min-width: 0;
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--branch-border);
+  border-radius: 12px;
+}
+.paper-cycle__post legend {
+  display: flex;
+  gap: 24px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+.paper-cycle__post textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+.paper-cycle__post label {
+  display: block;
+  margin-top: 12px;
+  font-size: var(--control-ui-text-sm);
+}
+.paper-cycle__post input[type="file"] {
+  max-width: 100%;
+  margin-top: 6px;
+}
+.paper-cycle__post img,
+.paper-cycle__preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+.paper-cycle__preview h5 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.paper-cycle__preview-post {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--branch-border);
+}
+.paper-cycle__preview-post p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  margin: 8px 0 12px;
+}
+.paper-cycle__post-number {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--branch-border);
+  border-radius: 50%;
+  color: var(--muted);
+}
+.paper-cycle__draft-settings {
+  margin-bottom: 20px;
+}
+.paper-cycle__draft-settings summary {
+  cursor: pointer;
+  padding: 8px 0;
+  color: var(--muted);
+}
+.paper-cycle__draft-settings[open] summary {
+  margin-bottom: 12px;
+}
+.paper-cycle__over-limit {
+  color: var(--danger, #dc2626);
+}
+@media (max-width: 760px) {
+  .paper-cycle__composer {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+}
+
+.paper-cycle__attachments summary {
+  cursor: pointer;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}

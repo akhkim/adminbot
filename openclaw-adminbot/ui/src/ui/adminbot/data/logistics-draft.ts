@@ -8,6 +8,7 @@
 // Drafts save locally first and sync as private working copies. Submitting remains a separate
 // explicit action through POST /logistics/requests.
 import { loadWorkingDraft, saveWorkingDraft } from "../offline/draft-sync.ts";
+import type { Opportunity } from "./opportunities-data.ts";
 import { localTimezone } from "./timezones.ts";
 
 /**
@@ -189,6 +190,67 @@ export function createSchoolRow(fields: Partial<RecommendationSchool> = {}): Rec
     deadlineTimezone: fields.deadlineTimezone?.trim() || "AoE",
     id: `school-${schoolRowCount}`,
   };
+}
+
+/**
+ * The school row an Opportunities entry fills in: who hosts it, what it is, where it lives, and its
+ * application date when the board has one.
+ *
+ * The letter deadline is left for the member. It is the one required column, and it is often not
+ * the application deadline -- many schools take letters days or weeks later -- so copying the
+ * application date into it would put a guess in the field the professor plans around.
+ */
+export function opportunitySchoolFields(opportunity: Opportunity): Partial<RecommendationSchool> {
+  const org = opportunity.org?.trim();
+  const deadline = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/u.exec(opportunity.deadline_aoe);
+  return {
+    school: org || opportunity.name,
+    program: org ? opportunity.name : "",
+    programLink: opportunity.link ?? "",
+    // Opportunities are kept in AoE, so the time zone has to come with the date.
+    ...(deadline ? { applicationDeadline: deadline[1], applicationDeadlineTime: deadline[2] } : {}),
+    deadlineTimezone: "AoE",
+  };
+}
+
+/**
+ * The schools table with one more pre-filled row.
+ *
+ * Blank rows go, because the form opens with one and a pre-filled school should not sit under an
+ * empty line. A school already in the table is left alone, so pressing the button twice, or for
+ * a program the member already typed in, does not add the same school twice.
+ */
+export function withPrefilledSchool(
+  schools: RecommendationSchool[],
+  fields: Partial<RecommendationSchool>,
+): RecommendationSchool[] {
+  const link = fields.programLink?.trim();
+  const school = fields.school?.trim() ?? "";
+  const program = fields.program?.trim() ?? "";
+  const already = schools.some((row) =>
+    link
+      ? row.programLink.trim() === link
+      : row.school.trim() === school && row.program.trim() === program,
+  );
+  if (already) {
+    return schools;
+  }
+  return [...schools.filter((row) => !isEmptySchoolRow(row)), createSchoolRow(fields)];
+}
+
+// Schools an Opportunities row asked to add, waiting for the letters draft to finish loading.
+// Module state rather than app state, like the profile page's focus hand-off: it is consumed once,
+// and it must not be saved or restored with anything.
+let queuedLetterSchools: Partial<RecommendationSchool>[] = [];
+
+export function queueLetterSchool(fields: Partial<RecommendationSchool>): void {
+  queuedLetterSchools.push(fields);
+}
+
+export function takeQueuedLetterSchools(): Partial<RecommendationSchool>[] {
+  const queued = queuedLetterSchools;
+  queuedLetterSchools = [];
+  return queued;
 }
 
 export function isEmptySchoolRow(row: RecommendationSchool): boolean {

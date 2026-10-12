@@ -13,7 +13,7 @@ Run `./dev.sh` from the outer repository directory with your personal OpenClaw g
 Open the printed Frontend URL and click Alice in the local account picker. See `dev/README.md`
 for gateway setup. The default CheckIfExist checker needs no API key. The checker selector also offers GPTZero, which requires GPTZERO_API_KEY and bibliography API access.
 
-Admins can open **General Tools → PDF Reference Checker**, drop or choose one PDF, and click
+Members and admins can open **General Tools → PDF Reference Checker**, drop or choose one PDF, and click
 **Submit**. With CheckIfExist selected, the backend extracts its bibliography locally using PDFium and checks the citations
 with the MIT-licensed [CheckIfExist](https://github.com/zabbonat/References-Validation)
 engine. Only extracted citation text goes to Crossref, Semantic Scholar, OpenAlex, DBLP and arXiv;
@@ -25,7 +25,7 @@ reported as not found. Only a total database outage is reported as unable to che
 the extracted bibliography against the original PDF. This does not verify the paper's claims.
 
 The endpoint, `POST /reference-check/pdf?checker=references-validation&consent=query-reference-databases`, accepts a raw
-`application/pdf` body and requires an admin member session. Submit approves the exact upload
+`application/pdf` body and requires a member session with `member` or `admin` privilege. Submit approves the exact upload
 through a request-scoped in-memory proposal/approval/execution flow. Nothing about this scan is
 written to SQLite; no PDF, result, scan history, proposal or scan audit is persisted. No email is
 sent. Results disappear when leaving the page. Repeating the same PDF performs another check.
@@ -272,7 +272,7 @@ as not working with our account because the API returned HTTP 403; choosing it s
 a real request if the service is configured. There is no automatic fallback.
 
 GPTZero uses `POST /reference-check/pdf?checker=gptzero&consent=upload-to-gptzero`.
-The service requires provider-specific consent and an authenticated admin session.
+The service requires provider-specific consent and an authenticated member or admin session. Trial members, external collaborators, visitors, and service tokens cannot use this endpoint.
 Missing GPTZero configuration returns 503. Both manual options use transient approvals
 and keep PDFs, results, proposals and scan audits out of SQLite; the persistent OpenReview
 workflow is separate. GPTZero results show total citations, flagged findings and uncertain
@@ -289,3 +289,10 @@ CheckIfExist lookups. No stream data is persisted.
 
 Not-found citations offer a **Search Google Scholar** link. Existing matches offer a database link when the provider supplies one. Clicking it opens
 Scholar with that citation as the search query; AdminBot does not query Scholar automatically.
+
+### Concurrent manual checks
+
+Each AdminBot service process permits at most five manual PDF checks at once, shared across
+CheckIfExist and GPTZero, with one active check per user. Additional requests receive HTTP 429
+and must be retried; there is no waiting queue. Slots are released when work finishes, including
+failed or cancelled work. A provider that cannot be cancelled retains its slot until it stops.

@@ -33,6 +33,22 @@ function proposal(
 }
 
 describe("createGogAdminBotExecutor", () => {
+  it("retains the birthday series id for later approved removal", async () => {
+    const capture = vi.fn(async () => JSON.stringify({ event: { id: "series-1" } }));
+    const executor = createGogAdminBotExecutor({ capture });
+    await expect(
+      executor.execute(
+        proposal("calendar.create_birthday", {
+          summary: "Test birthday",
+          from: "2028-02-29",
+          to: "2028-03-01",
+          all_day: true,
+        }),
+      ),
+    ).resolves.toEqual({ handled: true, artifacts: { event_id: "series-1" } });
+    expect(capture.mock.calls[0][0]).toContain("--all-day");
+  });
+
   it("maps approved email sends to a non-interactive exact gog command", async () => {
     const run = vi.fn(async () => {});
     const executor = createGogAdminBotExecutor({ run });
@@ -125,7 +141,10 @@ describe("createGogAdminBotExecutor", () => {
     const run = vi.fn(async () => {});
     const executor = createGogAdminBotExecutor({
       run,
-      capture: async () => JSON.stringify({ attendees: [] }),
+      capture: async (args) => {
+        if (type === "calendar.create_birthday") run(args);
+        return JSON.stringify({ id: "birthday-series", attendees: [] });
+      },
     });
 
     await executor.execute(proposal(type, payload));

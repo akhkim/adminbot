@@ -160,12 +160,16 @@ import {
   createSchoolRow,
   clearMeetingRequestDraft,
   clearRecommendationLettersDraft,
+  opportunitySchoolFields,
+  queueLetterSchool,
   restoreAdminBotLettersDraft,
   restoreAdminBotLogisticsDraft,
   restoreAdminBotMeetingDraft,
   saveAdminBotLettersDraft,
   saveAdminBotLogisticsDraft,
   saveAdminBotMeetingDraft,
+  takeQueuedLetterSchools,
+  withPrefilledSchool,
 } from "./adminbot/data/logistics-draft.ts";
 import {
   describeSubmitBlock,
@@ -448,6 +452,27 @@ function tripFor(state: AppViewState, conferenceKey: string) {
   return Object.values(state.adminBotPaperSlots).find(
     (cycle) => cycle.conferenceKey === conferenceKey,
   )?.myTrip;
+}
+
+/**
+ * Adds the schools an Opportunities row asked for to the letters form, and saves the draft.
+ *
+ * Called only once the letters draft is in place. Opening a logistics tab for the first time resets
+ * every form and restores its draft asynchronously, so a row written before that would be wiped by
+ * the reset, or would make the restore skip the member's saved draft.
+ */
+function applyQueuedLetterSchools(
+  state: AppViewState,
+  requestHostUpdate: (() => void) | undefined,
+): void {
+  const queued = takeQueuedLetterSchools();
+  if (queued.length === 0) {
+    return;
+  }
+  state.adminBotLettersSchools = queued.reduce(withPrefilledSchool, state.adminBotLettersSchools);
+  void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
+    requestHostUpdate?.(),
+  );
 }
 
 function adminBotLogisticsScope(state: AppViewState): string {
@@ -885,6 +910,10 @@ const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
   notifyLazyViewChanged,
 );
+const lazyNotificationDrafts = createLazyView(
+  () => import("./adminbot/views/notification-drafts.ts"),
+  notifyLazyViewChanged,
+);
 const lazyPublicShell = createLazyView(
   () => import("./adminbot/views/public-shell.ts"),
   notifyLazyViewChanged,
@@ -1019,8 +1048,8 @@ function paperWorkspaceProps(
     memberName: (memberId: string) =>
       (state.adminBotData?.members ?? []).find((member) => member.id === memberId)?.name ??
       memberId,
-    onSaveDraft: (paperId, platform, body) => {
-      void saveAdminBotSocialDraft(state, paperId, platform, body).finally(() =>
+    onSaveDraft: (paperId, platform, body, xThread) => {
+      void saveAdminBotSocialDraft(state, paperId, platform, body, xThread).finally(() =>
         requestHostUpdate?.(),
       );
     },
@@ -1199,7 +1228,7 @@ async function sendFeedback(state: AppViewState, event: CustomEvent): Promise<vo
 // see. Correct it before rendering rather than after: a privileged panel with no data behind it is
 // worse than landing on the role's own default.
 function withAccessibleTab<T extends AppViewState>(state: T, role: AccessRole): T {
-  const allowed = resolveAccessibleTab(state.tab, role);
+  const allowed = resolveAccessibleTab(state.tab, role, state.memberPrivilegeLevel ?? null);
   if (allowed !== state.tab) {
     state.tab = allowed;
   }
@@ -2114,6 +2143,23 @@ export function renderApp(state: AppViewState) {
   const activePaperCard = state.adminBotPaperCardId
     ? (state.adminBotData?.papers ?? []).find((paper) => paper.id === state.adminBotPaperCardId)
     : undefined;
+  const piReviewOnly = isHeadProfessorViewer({
+    memberId: state.memberId,
+    headProfessorMemberId: state.adminBotData?.settings?.head_professor_member_id,
+  });
+  const selectedReview = state.adminBotPiReview?.find(
+    (row) => row.paperId === state.adminBotPaperCardId,
+  );
+  const activeReviewPaper =
+    activePaperCard ??
+    (selectedReview
+      ? {
+          id: selectedReview.paperId,
+          title: selectedReview.title,
+          authors: selectedReview.authors,
+          artifacts: { google_drive_pdf_url: selectedReview.drivePdfUrl },
+        }
+      : undefined);
   const headerError = !isChat && state.lastError !== state.chatError ? state.lastError : null;
   const chatViewError = state.lastError;
   const chatHeaderHidden = isChat && (state.onboarding || state.chatHeaderControlsHidden);
@@ -3036,6 +3082,7 @@ export function renderApp(state: AppViewState) {
       restoreAdminBotLettersDraft(state, logisticsScope),
       restoreAdminBotMeetingDraft(state, logisticsScope),
     ]).finally(() => {
+      applyQueuedLetterSchools(state, requestHostUpdate);
       requestHostUpdate?.();
       retryDraftSync();
     });
@@ -3491,6 +3538,7 @@ export function renderApp(state: AppViewState) {
                     group.tabs as readonly Tab[],
                     accessRole,
                     state.adminBotOnboarding?.steps,
+                    state.memberPrivilegeLevel ?? null,
                   );
                   // A group whose every tab is out of reach renders nothing at all, header
                   // included: an empty "Settings" heading reads as a broken sidebar.
@@ -3731,6 +3779,11 @@ export function renderApp(state: AppViewState) {
                 void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
               },
               onOpen: (tab) => state.setTab(tab),
+              onOpenPaper: (paperId) => {
+                state.adminBotPaperCardId = paperId;
+                void loadAdminBotPaperSlots(state, paperId).finally(() => requestHostUpdate?.());
+                requestHostUpdate?.();
+              },
               expanded: state.professorExpandedLists,
               onToggleExpand: (id) => {
                 const next = new Set(state.professorExpandedLists);
@@ -4285,14 +4338,17 @@ export function renderApp(state: AppViewState) {
              author-facing summaries that came with the deck (the "Blocked" roll-up, the
              pre-registration and decision banners) are the reader's own view of their own work, and
              the admin equivalents are the table and the Reported blockers board. -->
-        ${state.tab === "adminbotPapers" && activePaperCard
+        ${(state.tab === "adminbotPapers" || state.tab === "adminbotProfessor") &&
+        (piReviewOnly ? activeReviewPaper : activePaperCard)
           ? renderPaperCardDialog({
               state,
               props: {
                 ...paperWorkspaceProps(state, requestHostUpdate),
                 canNudge: adminBotMode === "admin",
               },
-              paper: activePaperCard,
+              ...(piReviewOnly
+                ? { reviewOnly: true as const, paper: activeReviewPaper! }
+                : { reviewOnly: false as const, paper: activePaperCard! }),
               onClose: () => {
                 state.adminBotPaperCardId = null;
                 requestHostUpdate?.();
@@ -4669,8 +4725,31 @@ export function renderApp(state: AppViewState) {
               }),
             )
           : nothing}
+        ${state.tab === "adminbotNotificationDrafts" && adminBotMode === "admin"
+          ? renderLazyView(lazyNotificationDrafts, (m) =>
+              m.renderNotificationDrafts(
+                resolveAdminBotBaseUrl(state.settings),
+                loadStoredMemberSession()?.sessionToken ?? "",
+              ),
+            )
+          : nothing}
         ${state.tab === "adminbotOpportunities"
-          ? renderLazyView(lazyOpportunities, (m) => m.renderOpportunities())
+          ? renderLazyView(lazyOpportunities, (m) =>
+              m.renderOpportunities({
+                // Members only: the letters tab needs a session, and a visitor has nowhere to go.
+                onRequestLetter: state.memberId
+                  ? (opportunity) => {
+                      queueLetterSchool(opportunitySchoolFields(opportunity));
+                      state.setTab("adminbotRecLetters");
+                      // Already loaded this session: add it now. Otherwise the tab's first render
+                      // restores the draft and adds it then (see applyQueuedLetterSchools).
+                      if (state.adminBotLogisticsDraftScope === adminBotLogisticsScope(state)) {
+                        applyQueuedLetterSchools(state, requestHostUpdate);
+                      }
+                    }
+                  : undefined,
+              }),
+            )
           : nothing}
         ${state.tab === "adminbotMailingList" && adminBotMode === "admin"
           ? renderLazyView(lazyMailingList, (m) =>
@@ -4714,10 +4793,12 @@ export function renderApp(state: AppViewState) {
                 .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
                 .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
               ></adminbot-reference-checker>
-              <adminbot-openreview-citation-checks
-                .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-                .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
-              ></adminbot-openreview-citation-checks>`
+              ${state.memberPrivilegeLevel === "admin"
+                ? html`<adminbot-openreview-citation-checks
+                    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+                    .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
+                  ></adminbot-openreview-citation-checks>`
+                : nothing}`
           : nothing}
         ${state.tab === "adminbotConferencePapers"
           ? renderLazyView(lazyConferencePapers, (m) =>

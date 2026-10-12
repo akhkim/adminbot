@@ -88,7 +88,9 @@ function urgencyColor(instant: number, now: number): string {
 type Row = { item: Opportunity | AdminBotOpportunityView; instant: number };
 
 // Dated entries ascending, then undated. NaN never participates in the numeric compare, so the
-// ordering stays total regardless of how many entries are undated.
+// ordering stays total regardless of how many entries are undated. Undated entries go by host
+// first: most PhD programs share a name ("PhD in Computer Science"), so ordering by name alone
+// scatters universities, while ordering by host reads like a list of schools.
 function sortRows(rows: Row[]): Row[] {
   return [...rows].sort((a, b) => {
     const aDated = Number.isFinite(a.instant);
@@ -99,7 +101,10 @@ function sortRows(rows: Row[]): Row[] {
     if (aDated !== bDated) {
       return aDated ? -1 : 1;
     }
-    return a.item.name.localeCompare(b.item.name);
+    return (
+      (a.item.org ?? a.item.name).localeCompare(b.item.org ?? b.item.name) ||
+      a.item.name.localeCompare(b.item.name)
+    );
   });
 }
 
@@ -150,6 +155,22 @@ class AdminbotOpportunitiesView extends LitElement {
   private contributed: AdminBotOpportunityView[] = [];
   private notice: { kind: "error" | "success"; text: string } | null = null;
   private busy = false;
+  private requestLetter: ((entry: BoardEntry) => void) | undefined;
+
+  /**
+   * Opens the Rec Letter Request form with this entry's school filled in.
+   *
+   * Only the signed-in app passes it. The visitor shell renders this element too and has no letters
+   * tab to send anyone to, so without the callback the button simply does not render.
+   */
+  set onRequestLetter(value: ((entry: BoardEntry) => void) | undefined) {
+    this.requestLetter = value;
+    this.requestUpdate();
+  }
+
+  get onRequestLetter(): ((entry: BoardEntry) => void) | undefined {
+    return this.requestLetter;
+  }
 
   protected override createRenderRoot(): HTMLElement {
     return this;
@@ -596,6 +617,21 @@ class AdminbotOpportunitiesView extends LitElement {
           ${item.org ? html`<div class="opp-org">${item.org}</div>` : nothing}
           ${item.eligibility ? html`<div class="opp-elig">${item.eligibility}</div>` : nothing}
           ${item.note ? html`<div class="opp-note">${item.note}</div>` : nothing}
+          <!-- Not offered on an entry still awaiting review: a letter is a real ask of a
+               professor, and it should rest on a program the lab has vetted. -->
+          ${this.signedIn && this.requestLetter && !pending
+            ? html`<div class="opp-letter">
+                <button
+                  class="opp-form-btn"
+                  type="button"
+                  data-testid="opp-request-letter"
+                  title="Start a recommendation letter request with this program filled in"
+                  @click=${() => this.requestLetter?.(item)}
+                >
+                  Request a letter
+                </button>
+              </div>`
+            : nothing}
         </div>
         <!-- Where it came from, when nobody submitted it. A candidate a sweep filed is a claim
              about somebody else's page, so the reviewer gets the line it was read out of and a
@@ -793,6 +829,9 @@ class AdminbotOpportunitiesView extends LitElement {
           color: var(--muted);
           font-size: 11.5px;
           margin-top: 4px;
+        }
+        .opp-letter {
+          margin-top: 8px;
         }
         .opp-notice {
           margin: 0 0 12px;
@@ -1143,6 +1182,10 @@ if (!customElements.get("adminbot-opportunities-view")) {
   customElements.define("adminbot-opportunities-view", AdminbotOpportunitiesView);
 }
 
-export function renderOpportunities() {
-  return html`<adminbot-opportunities-view></adminbot-opportunities-view>`;
+export function renderOpportunities(
+  options: { onRequestLetter?: (entry: BoardEntry) => void } = {},
+) {
+  return html`<adminbot-opportunities-view
+    .onRequestLetter=${options.onRequestLetter}
+  ></adminbot-opportunities-view>`;
 }

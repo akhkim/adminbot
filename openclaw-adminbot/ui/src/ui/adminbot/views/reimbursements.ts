@@ -66,10 +66,18 @@ function renderDraft(props: AdminBotReimbursementProps) {
       <div class="adminbot-reimbursement-summary__header">
         <div>
           <div class="card-title">Form preview</div>
-          <div class="card-sub">Details the assistant will place into both canonical forms.</div>
+          <div class="card-sub">
+            Details the assistant will place into the selected institute's forms.
+          </div>
         </div>
         <span class="pill ${state.ready ? "adminbot-ready" : ""}">
-          ${state.ready ? "Ready to generate" : `${state.missingFields.length} details needed`}
+          ${state.ready
+            ? "Ready to generate"
+            : state.missingFields.length
+              ? `${state.missingFields.length} details needed`
+              : state.check
+                ? "Review required"
+                : "Awaiting trip details"}
         </span>
       </div>
       <dl class="adminbot-reimbursement-fields">
@@ -140,7 +148,11 @@ function renderDraft(props: AdminBotReimbursementProps) {
           ?disabled=${!state.ready || state.busy}
           @click=${onGenerate}
         >
-          ${state.busy ? "Working..." : "Generate both forms"}
+          ${state.busy
+            ? "Working..."
+            : state.funder === "MPI-IS"
+              ? "Generate MPI form and signable copy"
+              : "Generate both forms"}
         </button>
       </div>
       ${state.artifacts.length
@@ -167,7 +179,21 @@ function renderDraft(props: AdminBotReimbursementProps) {
  * the claimant still owes Finance before sending anything, and it renders above the workspace on
  * every path into this tab (signed-in, guest, and public shell).
  */
-function renderComplianceWarning() {
+function renderComplianceWarning(funder: AdminBotReimbursementFunder | undefined) {
+  if (funder !== "DCS") {
+    return html`
+      <section class="callout warning adminbot-reimbursement-warning" role="note">
+        <div class="adminbot-reimbursement-warning__title">
+          Read this before trusting the generated forms
+        </div>
+        <p class="adminbot-reimbursement-warning__lede">
+          ${funder === "MPI-IS"
+            ? "The assistant prepares the MPI IS travel reimbursement form and a signable copy. Check every amount, date and description against your receipts, and review the MPI IS pre-submission report before sending the package to the MPI IS secretariat."
+            : "Choose your institute first so the assistant prepares the correct forms and checks the applicable requirements. Generated forms are drafts: check every line against your receipts before submitting them."}
+        </p>
+      </section>
+    `;
+  }
   return html`
     <section class="callout warning adminbot-reimbursement-warning" role="note">
       <div class="adminbot-reimbursement-warning__title">
@@ -399,11 +425,11 @@ export function renderAdminBotReimbursements(props: AdminBotReimbursementProps) 
         {
           role: "assistant" as const,
           content:
-            "Upload your receipt PDFs and describe the trip. I’ll extract the expenses and ask for anything the two forms still require.",
+            "Upload your receipt PDFs and describe the trip. I’ll extract the expenses and ask for anything your institute's forms still require.",
         },
       ];
   return html`
-    ${renderComplianceWarning()} ${renderFunderPicker(props)}
+    ${renderFunderPicker(props)} ${renderComplianceWarning(props.state.funder)}
     ${renderCheck(props.state.check ?? null)}
     <div class="adminbot-reimbursement-workspace">
       <section class="adminbot-reimbursement-chat" aria-label="Reimbursement assistant">

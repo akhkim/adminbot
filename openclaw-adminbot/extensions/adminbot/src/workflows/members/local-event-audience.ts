@@ -24,6 +24,7 @@
 //      members and must survive every sweep -- they are carried through untouched rather than
 //      being dropped for failing a test that was never about them.
 import type { AdminBotLabMember, AdminBotMemberLocationEntry } from "../../contracts/actions.js";
+import { adminBotCalendarEmail } from "../../contracts/member-outreach-email.js";
 import { dailyLocationRows, type LocationDayRow } from "./location-daily-log.js";
 
 /** One person's place in the diff, with the sentence that put them there. */
@@ -56,7 +57,7 @@ export type LocalEventAudience = {
 
 /** The address the invite uses for a member: the calendar one when they have set it. */
 export function inviteAddressFor(member: AdminBotLabMember): string {
-  return (member.calendar_email?.trim() || member.email?.trim() || "").toLowerCase();
+  return adminBotCalendarEmail(member).toLowerCase();
 }
 
 /**

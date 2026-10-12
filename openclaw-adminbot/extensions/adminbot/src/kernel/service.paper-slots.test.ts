@@ -766,3 +766,114 @@ it("queues an author's feedback with reason and deadlines without publication ap
   );
   expect(unwrap(service.listPiReviewQueue()).papers).toHaveLength(0);
 });
+
+describe("PI review completion authorization", () => {
+  it("lets only the configured PI complete feedback or approve publication", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(service.updateSettings({ head_professor_member_id: "ada" }));
+    const input = {
+      value_text: JSON.stringify({
+        reason: "Review please",
+        url: "https://overleaf.com/project/test",
+        reviewed: true,
+        review_note: "Looks ready",
+      }),
+    };
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "feedback_arxiv",
+        input,
+        memberId: "bob",
+        privileged: true,
+      }).status,
+    ).toBe(403);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        input: { done: true },
+        memberId: "bob",
+        privileged: true,
+      }).status,
+    ).toBe(403);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "feedback_arxiv",
+        input,
+        memberId: "ada",
+        privileged: true,
+      }).ok,
+    ).toBe(true);
+    expect(unwrap(service.listPiReviewQueue()).papers).toEqual([]);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        input: { done: true },
+        memberId: "ada",
+        privileged: true,
+      }).ok,
+    ).toBe(true);
+  });
+});
+
+it("keeps resubmission feedback visible after rejection without reopening publication approval", () => {
+  const service = new AdminBotService();
+  seed(service);
+  unwrap(service.updateSettings({ head_professor_member_id: "ada" }));
+  unwrap(
+    service.upsertPaper({
+      id: "p1",
+      title: "Causal abstraction",
+      authors: ["Ada Lovelace", "Bob Coauthor"],
+      current_step: "overleaf_writing",
+      first_author_member_id: "ada",
+      venue_decision: "reject",
+    }),
+  );
+  for (const slot of ["authors_ack", "drive_pdf_arxiv"] as const) {
+    unwrap(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot,
+        input: { done: true },
+        memberId: "ada",
+        privileged: true,
+      }),
+    );
+  }
+  const feedback = {
+    reason: "Review the revised submission",
+    url: "https://example.test/revision",
+    soft_deadline: "2026-10-09T12:00:00.000Z",
+    hard_deadline: "2026-10-12T12:00:00.000Z",
+  };
+  unwrap(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input: { value_text: JSON.stringify(feedback) },
+      memberId: "ada",
+      privileged: false,
+    }),
+  );
+  const queue = unwrap(service.listPiReviewQueue()).papers;
+  expect(queue).toHaveLength(1);
+  expect(queue[0]).toMatchObject({
+    paper_id: "p1",
+    feedback: { ...feedback, slot: "feedback_arr" },
+  });
+  unwrap(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input: { value_text: JSON.stringify({ ...feedback, reviewed: true }) },
+      memberId: "ada",
+      privileged: true,
+    }),
+  );
+  expect(unwrap(service.listPiReviewQueue()).papers).toEqual([]);
+});

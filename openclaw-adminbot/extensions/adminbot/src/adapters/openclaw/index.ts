@@ -80,6 +80,7 @@ type PaperSocialPostParams = EvidenceParams & {
   paperId?: string;
   title?: string;
   summary: string;
+  xThread?: import("../../workflows/papers/x-draft.js").XThreadDraft;
   url?: string;
   authors?: string[];
   tone?: string;
@@ -177,6 +178,7 @@ type LabMemberParams = {
 };
 
 type PaperParams = {
+  venue?: string;
   id: string;
   title: string;
   authors: string[];
@@ -295,6 +297,7 @@ export function createAdminBotToolHandlers(
         hashtags: params.hashtags,
         platforms: params.platforms,
         linkedinVisibility: params.linkedinVisibility,
+        xThread: params.xThread,
         members,
       });
       const missing = payload.tags.missing.length
@@ -580,6 +583,7 @@ function paperRecord(params: PaperParams): AdminBotPaperRecordInput {
     title: params.title,
     authors: params.authors,
     current_step: params.currentStep,
+    ...(params.venue === undefined ? {} : { venue: params.venue }),
     ...(params.venueDecision ? { venue_decision: params.venueDecision } : {}),
     ...(params.acceptedVenue === undefined ? {} : { accepted_venue: params.acceptedVenue }),
     ...(params.acceptedYear === undefined ? {} : { accepted_year: params.acceptedYear }),
