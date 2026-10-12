@@ -2,7 +2,7 @@
 // group the lab's papers into.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
-import type { PaperSlotOverviewRow } from "../auth/session.ts";
+import type { PaperSlotOverviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
@@ -75,7 +75,10 @@ function draw(options: {
       onOpenPaper: (id) => opened.push(id),
       stages: [{ value: "overleaf_writing", label: "Overleaf writing" }],
       ...(options.memberTypes
-        ? { memberTypeOf: (memberId?: string) => (memberId ? options.memberTypes?.[memberId] : undefined) }
+        ? {
+            memberTypeOf: (memberId?: string) =>
+              memberId ? options.memberTypes?.[memberId] : undefined,
+          }
         : {}),
     }),
     container,
@@ -300,9 +303,7 @@ describe("the member type filter", () => {
     drawn.container
       .querySelector<HTMLInputElement>('[data-testid="paper-overview-type-alumni"]')
       ?.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(drawn.filters).toEqual([
-      { ...EMPTY_PAPER_OVERVIEW_FILTER, memberTypes: ["alumni"] },
-    ]);
+    expect(drawn.filters).toEqual([{ ...EMPTY_PAPER_OVERVIEW_FILTER, memberTypes: ["alumni"] }]);
   });
 
   it("shows every person when no roster lookup is supplied", () => {

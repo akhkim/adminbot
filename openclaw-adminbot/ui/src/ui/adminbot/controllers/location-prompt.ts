@@ -3,13 +3,8 @@
 // Two calls and no state of its own beyond the banner: the answer goes through the service, which
 // writes the profile through the ordinary self-edit path, so the roster reloads afterwards rather
 // than being patched locally.
-import {
-  answerLocationPrompt,
-  fetchLocationDrifts,
-  fetchLocationPrompt,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
-} from "../auth/session.ts";
+import { answerLocationPrompt, fetchLocationDrifts, fetchLocationPrompt } from "../api/profile.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { loadAdminBot, type AdminBotHost } from "./admin.ts";
 
 function sameSession(token: string): boolean {

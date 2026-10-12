@@ -5,9 +5,9 @@ import type { UiSettings } from "../../storage.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
-  createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
 } from "../controllers/admin.ts";
+import { createEmptyAdminBotMemberNudgeState } from "../controllers/nudges.ts";
 import {
   type MemberAuthHost,
   acknowledgeOnboardingChecklist,

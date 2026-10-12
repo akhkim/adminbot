@@ -6,7 +6,7 @@ import type {
   LogisticsRequest,
   LogisticsRequestKind,
   LogisticsRequestStatus,
-} from "../auth/session.ts";
+} from "../api/logistics.ts";
 import { isSettledRequest } from "./logistics-requests.ts";
 
 export type LogisticsQueueOptions = {

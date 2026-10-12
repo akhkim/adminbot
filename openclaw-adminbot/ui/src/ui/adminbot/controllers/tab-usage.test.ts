@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type { UiSettings } from "../../storage.ts";
-import type { TabVisitRow } from "../auth/session.ts";
+import type { TabVisitRow } from "../api/workspace.ts";
 import { saveStoredMemberSession } from "../auth/session.ts";
 import {
   exportAdminBotTabUsage,
