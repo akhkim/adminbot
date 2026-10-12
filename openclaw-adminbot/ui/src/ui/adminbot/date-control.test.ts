@@ -25,3 +25,27 @@ it("shows an unambiguous calendar date and updates before the parent rerenders",
   input.dispatchEvent(new Event("input", { bubbles: true }));
   expect(container.querySelector("output")!.textContent).toBe("YYYY-MM-DD");
 });
+
+// The label is updated on input, before the parent saves and redraws. That early write must leave
+// the label where Lit can still reach it: when it did not, the next redraw threw at this control
+// and every redraw after it stopped there, leaving the rest of the form -- including other date
+// boxes and the handlers that hold the current rows -- on stale values that later overwrote what
+// the member typed.
+it("keeps redrawing after the label was updated on input", () => {
+  const container = document.createElement("div");
+  const draw = (value: string) =>
+    render(
+      html`${renderDateControl(html`<input type="date" .value=${value} />`, value)}
+        <p>${value}</p>`,
+      container,
+    );
+  draw("2026-11-03");
+  const input = container.querySelector("input")!;
+  input.value = "2026-11-14";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  expect(() => draw("2026-11-14")).not.toThrow();
+  expect(() => draw("2026-12-24")).not.toThrow();
+  expect(container.querySelector("output")!.textContent).toBe("2026-12-24");
+  // Rendered after the control: proof the redraw got past it.
+  expect(container.querySelector("p")!.textContent).toBe("2026-12-24");
+});
