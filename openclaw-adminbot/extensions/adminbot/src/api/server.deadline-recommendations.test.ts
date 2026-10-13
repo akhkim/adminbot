@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { createAdminBotMockService } from "./server.js";
 const SERVICE_TOKEN = "test-service-token";
@@ -59,13 +60,16 @@ async function startService(executed: AdminBotStoredProposal[] = []) {
 }
 
 async function adminHeaders(baseUrl: string, mock: ReturnType<typeof createAdminBotMockService>) {
-  seedMember(mock, {
-    id: "admin-1",
-    name: "Ada Admin",
-    email: "ada@cs.toronto.edu",
-    privilege_level: "member",
-    slack_user_id: "UADA",
-  });
+  seedMember(
+    mock,
+    withCompleteProfile({
+      id: "admin-1",
+      name: "Ada Admin",
+      email: "ada@cs.toronto.edu",
+      privilege_level: "member",
+      slack_user_id: "UADA",
+    }),
+  );
   await fetch(`${baseUrl}/auth/claim`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

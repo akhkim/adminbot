@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { withCompleteProfile } from "../../../extensions/adminbot/src/contracts/profile-completion.test-helpers.js";
 import { clearStoredMemberSession, saveStoredMemberSession } from "./adminbot/auth/session.ts";
 import { renderApp } from "./app-render.ts";
 import type { AppViewState } from "./app-view-state.ts";
@@ -73,6 +74,12 @@ describe("Meeting Recordings entry", () => {
     app.connected = false;
     app.memberId = "synthetic-member";
     app.memberPrivilegeLevel = "member";
+    // The profile gate has already read this member's own row and found it complete; without it
+    // the page holds on that read instead of drawing Meetings.
+    app.adminBotData = {
+      ...app.adminBotData,
+      members: [withCompleteProfile({ id: "synthetic-member", privilege_level: "member" })],
+    } as typeof app.adminBotData;
     app.adminBotNotifications = [];
     app.adminBotBroadcast = null;
     const container = document.createElement("div");

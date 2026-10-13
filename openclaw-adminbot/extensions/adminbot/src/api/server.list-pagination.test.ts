@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const token = "test-list-token";
@@ -17,7 +18,12 @@ describe.each(["memory", "sqlite"] as const)("paginated list routes (%s)", (kind
     });
     try {
       for (const member of [
-        { id: "ada", name: "Ada", email: "ada@example.org", research_topics: ["Causality"] },
+        withCompleteProfile({
+          id: "ada",
+          name: "Ada",
+          email: "ada@example.org",
+          research_topics: ["Causality"],
+        }),
         { id: "ben", name: "Ben", email: "ben@example.org", projects: ["Robotics"] },
         { id: "cy", name: "Cy", email: "cy@example.org", personal_circumstances: "private-query" },
       ]) {
@@ -145,6 +151,7 @@ describe.each(["memory", "sqlite"] as const)("paginated list routes (%s)", (kind
         headers: { Authorization: `Bearer ${login.payload.session_token}` },
       });
       const ownSummary = await ownResponse.json();
+      expect(ownResponse.status).toBe(200);
       expect(ownSummary.self).toMatchObject({
         id: "ada",
         personal_circumstances: "private-self",

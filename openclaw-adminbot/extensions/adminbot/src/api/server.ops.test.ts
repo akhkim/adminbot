@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createMemoryFailedRequestLedger } from "../persistence/failed-requests.js";
 import { createAdminBotMockService } from "./server.js";
 
@@ -49,12 +50,14 @@ async function startService(
 }
 
 async function memberSession(baseUrl: string, mock: ReturnType<typeof createAdminBotMockService>) {
-  const seeded = mock.service.upsertLabMember({
-    id: "ada",
-    name: "Ada",
-    email: "ada@cs.toronto.edu",
-    privilege_level: "member",
-  } as AdminBotLabMemberInput);
+  const seeded = mock.service.upsertLabMember(
+    withCompleteProfile({
+      id: "ada",
+      name: "Ada",
+      email: "ada@cs.toronto.edu",
+      privilege_level: "member",
+    } as AdminBotLabMemberInput),
+  );
   if (!seeded.ok) {
     throw new Error(seeded.error.message);
   }

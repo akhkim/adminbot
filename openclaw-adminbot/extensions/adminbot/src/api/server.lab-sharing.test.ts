@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "lab-sharing-service-token";
@@ -50,7 +51,9 @@ async function startLab() {
       privilege_level: "member",
     },
   ]) {
-    const saved = mock.service.upsertLabMember(member as AdminBotLabMemberInput);
+    const saved = mock.service.upsertLabMember(
+      withCompleteProfile(member as AdminBotLabMemberInput),
+    );
     if (!saved.ok) {
       throw new Error(saved.error.message);
     }
@@ -339,12 +342,14 @@ it("creates deduplicated approval-bound invitations without disclosing contacts"
   expect((await fetch(url, { headers: { Authorization: `Bearer ${SERVICE_TOKEN}` } })).status).toBe(
     403,
   );
-  mock.service.upsertLabMember({
-    id: "observer",
-    name: "Observer",
-    email: "observer@lab.test",
-    privilege_level: "member",
-  });
+  mock.service.upsertLabMember(
+    withCompleteProfile({
+      id: "observer",
+      name: "Observer",
+      email: "observer@lab.test",
+      privilege_level: "member",
+    }),
+  );
   expect(
     mock.service.labSharingInvites().request("observer", {
       paper_id: "paper-1",

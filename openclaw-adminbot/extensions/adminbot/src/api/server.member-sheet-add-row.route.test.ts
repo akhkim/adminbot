@@ -3,6 +3,7 @@
 // the admin who clicked is the approver of record.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import type { AdminBotOnboardingSender } from "../workflows/onboarding/guide-sender.js";
 import { createAdminBotMockService } from "./server.js";
 
@@ -66,12 +67,14 @@ async function startService() {
     throw new Error("missing mock service address");
   }
   running.push(mock);
-  const admin = mock.service.upsertLabMember({
-    id: "admin",
-    name: "Admin",
-    email: "admin@cs.toronto.edu",
-    privilege_level: "admin",
-  });
+  const admin = mock.service.upsertLabMember(
+    withCompleteProfile({
+      id: "admin",
+      name: "Admin",
+      email: "admin@cs.toronto.edu",
+      privilege_level: "admin",
+    }),
+  );
   if (!admin.ok) {
     throw new Error(admin.error.message);
   }
