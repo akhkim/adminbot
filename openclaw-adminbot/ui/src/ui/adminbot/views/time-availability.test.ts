@@ -1,5 +1,5 @@
 import { render } from "lit";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
 import { allUpcomingVenues, aoeInstantMs, upcomingMajorDeadlines } from "../data/deadline-time.ts";
 import { EMPTY_TRIP_DRAFT } from "./time-availability.trips.ts";
@@ -1564,6 +1564,16 @@ describe("the where-strip under the chart", () => {
 });
 
 describe("the big-deadlines panel", () => {
+  // A fixed day, not today: the panel reads the bundled deadline dataset, so on the real clock
+  // these tests went red whenever the dataset's last upcoming workshop passed.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-24T12:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   // Its own fixture: the one in "the split tables and the deadline panel" is scoped to that block.
   const scheduled = (overrides: Partial<AdminBotLabMember> = {}) =>
     member({ milestones: [{ date: "2027-06-12", label: "Graduation" }], ...overrides });

@@ -236,12 +236,22 @@ describe("renderDashboard", () => {
   // The whole board used to render here, which made the dashboard mostly a second copy of the
   // Deadlines tab. It is a two-row glance now, and the board is a click away.
   it("shows a two-row deadline glance rather than the whole board", () => {
-    const container = renderPage(createState(), "member");
-    expect(container.querySelector("adminbot-deadlines-view")).toBeNull();
-    const widget = container.querySelector('[data-testid="dashboard-next-deadlines"]');
-    expect(widget).not.toBeNull();
-    expect(widget?.querySelectorAll(".dashboard__next-deadline")).toHaveLength(2);
-    expect(container.querySelector('[data-testid="dashboard-next-deadlines-open"]')).not.toBeNull();
+    // A fixed day: the glance reads the bundled deadline dataset, which on the real clock can run
+    // down to fewer than two upcoming deadlines.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-24T12:00:00Z"));
+    try {
+      const container = renderPage(createState(), "member");
+      expect(container.querySelector("adminbot-deadlines-view")).toBeNull();
+      const widget = container.querySelector('[data-testid="dashboard-next-deadlines"]');
+      expect(widget).not.toBeNull();
+      expect(widget?.querySelectorAll(".dashboard__next-deadline")).toHaveLength(2);
+      expect(
+        container.querySelector('[data-testid="dashboard-next-deadlines-open"]'),
+      ).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // The member's own dated milestones are the ones they plan around, so a glance that showed only
