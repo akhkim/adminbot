@@ -175,6 +175,7 @@ import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discover
 import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
+import type { AdminBotLocationShareRecord } from "../contracts/lab-travel.js";
 import {
   findDuplicateMembers,
   planMemberMerge,
@@ -466,6 +467,7 @@ import {
 } from "./service.deadline-recommendations.js";
 import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import { LabSharingService } from "./service.lab-sharing.js";
+import { LabTravelService } from "./service.lab-travel.js";
 
 // Ordinary approvals require an administrator; a recommendation is approved by its verified author.
 type AdminBotApproverRole = Extract<AdminBotPrivilegeLevel, "admin"> | "recommender";
@@ -675,6 +677,12 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   listConferenceTrips(conferenceKey?: string): AdminBotConferenceTripRecord[];
   /** Withdrawing is deleting: not going is the absence of a row, never a stored value. */
   deleteConferenceTrip(conferenceKey: string, memberId: string): boolean;
+  /** The Travel tab's location opt-in. No row means not sharing. See persistence/location-shares.ts. */
+  saveLocationShare(record: AdminBotLocationShareRecord): void;
+  getLocationShare(memberId: string): AdminBotLocationShareRecord | undefined;
+  listLocationShares(): AdminBotLocationShareRecord[];
+  /** Opting out: the row and the last fix go together. */
+  deleteLocationShare(memberId: string): boolean;
   savePaperReimbursement(record: AdminBotPaperReimbursementRecord): void;
   listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[];
   appendMemberLocation(entry: AdminBotMemberLocationEntry): void;
@@ -1095,6 +1103,11 @@ export type AdminBotActionExecutor = {
 
 export type AdminBotServiceOptions = {
   deadlineDataset?: () => readonly unknown[];
+  /**
+   * The clock the Travel tab reads: which conferences are still upcoming and whether a location fix
+   * is fresh. Injected so a test can stand on a fixed day; production omits it.
+   */
+  now?: () => Date;
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
   reviewSlackProfilePhoto?: (params: { slackUserId: string }) => Promise<{
@@ -5962,6 +5975,17 @@ export class AdminBotService {
     );
   }
 
+  /** The member Travel tab: conference RSVPs, trips and the opt-in location sharing. */
+  labTravel() {
+    return new LabTravelService(
+      this.store,
+      () => this.deadlineReadModel(DEADLINE_VENUES),
+      this,
+      (event) => this.recordAudit(event),
+      this.options.now,
+    );
+  }
+
   private memberOwnsPaper(member: AdminBotLabMember, paper: AdminBotPaperRecord): boolean {
     if (paper.submitted_by_member_id === member.id) {
       return true;
@@ -7546,6 +7570,9 @@ export class AdminBotService {
         });
       }
     }
+    // Trips answered on the Travel tab are keyed per site ("neuripsparis:2026"), which no paper
+    // roster names; the export reads them back as the site the member picked.
+    const siteLabels = this.labTravel().siteLabels();
     for (const trip of canonicalConferenceTrips(this.store.listConferenceTrips())) {
       const key = `${trip.conference_key}/member:${trip.member_id}`;
       const existing = rows.get(key);
@@ -7553,7 +7580,8 @@ export class AdminBotService {
       if (!existing && trip.intent !== "going") continue;
       rows.set(key, {
         conference_key: trip.conference_key,
-        conference: existing?.conference ?? trip.conference_key,
+        conference:
+          existing?.conference ?? siteLabels.get(trip.conference_key) ?? trip.conference_key,
         member_id: trip.member_id,
         name: this.store.getLabMember(trip.member_id)?.name ?? trip.member_id,
         going_source: existing

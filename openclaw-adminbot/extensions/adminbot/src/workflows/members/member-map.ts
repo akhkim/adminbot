@@ -114,9 +114,91 @@ const GAZETTEER: AdminBotMapPlace[] = [
   { key: "melbourne", label: "Melbourne", country: "Australia", lat: -37.8136, lon: 144.9631 },
   { key: "sao-paulo", label: "São Paulo", country: "Brazil", lat: -23.5505, lon: -46.6333 },
   { key: "mexico-city", label: "Mexico City", country: "Mexico", lat: 19.4326, lon: -99.1332 },
+  // Conference cities and the hubs people fly through to reach them. The Travel tab names a
+  // browser location fix by its nearest entry here -- there is deliberately no reverse-geocoding
+  // service, because sending a member's coordinates to a third party is the disclosure the whole
+  // opt-in is built to avoid -- so a gap in this list shows up as "120 km from Lyon" rather than as
+  // the city somebody is actually in.
+  { key: "atlanta", label: "Atlanta", country: "United States", lat: 33.749, lon: -84.388 },
+  { key: "budapest", label: "Budapest", country: "Hungary", lat: 47.4979, lon: 19.0402 },
+  { key: "athens", label: "Athens", country: "Greece", lat: 37.9838, lon: 23.7275 },
+  { key: "zhuhai", label: "Zhuhai", country: "China", lat: 22.2711, lon: 113.5767 },
+  { key: "shenzhen", label: "Shenzhen", country: "China", lat: 22.5431, lon: 114.0579 },
+  { key: "hangzhou", label: "Hangzhou", country: "China", lat: 30.2741, lon: 120.1551 },
+  { key: "lisbon", label: "Lisbon", country: "Portugal", lat: 38.7223, lon: -9.1393 },
+  { key: "dublin", label: "Dublin", country: "Ireland", lat: 53.3498, lon: -6.2603 },
+  { key: "brussels", label: "Brussels", country: "Belgium", lat: 50.8503, lon: 4.3517 },
+  { key: "prague", label: "Prague", country: "Czechia", lat: 50.0755, lon: 14.4378 },
+  { key: "helsinki", label: "Helsinki", country: "Finland", lat: 60.1699, lon: 24.9384 },
+  { key: "oslo", label: "Oslo", country: "Norway", lat: 59.9139, lon: 10.7522 },
+  { key: "lyon", label: "Lyon", country: "France", lat: 45.764, lon: 4.8357 },
+  { key: "hamburg", label: "Hamburg", country: "Germany", lat: 53.5511, lon: 9.9937 },
+  { key: "frankfurt", label: "Frankfurt", country: "Germany", lat: 50.1109, lon: 8.6821 },
+  { key: "lausanne", label: "Lausanne", country: "Switzerland", lat: 46.5197, lon: 6.6323 },
+  { key: "krakow", label: "Kraków", country: "Poland", lat: 50.0647, lon: 19.945 },
+  { key: "istanbul", label: "Istanbul", country: "Turkey", lat: 41.0082, lon: 28.9784 },
+  { key: "kyoto", label: "Kyoto", country: "Japan", lat: 35.0116, lon: 135.7681 },
+  { key: "osaka", label: "Osaka", country: "Japan", lat: 34.6937, lon: 135.5023 },
+  { key: "bangkok", label: "Bangkok", country: "Thailand", lat: 13.7563, lon: 100.5018 },
+  {
+    key: "kuala-lumpur",
+    label: "Kuala Lumpur",
+    country: "Malaysia",
+    lat: 3.139,
+    lon: 101.6869,
+  },
+  {
+    key: "abu-dhabi",
+    label: "Abu Dhabi",
+    country: "United Arab Emirates",
+    lat: 24.4539,
+    lon: 54.3773,
+  },
+  { key: "doha", label: "Doha", country: "Qatar", lat: 25.2854, lon: 51.531 },
+  { key: "honolulu", label: "Honolulu", country: "United States", lat: 21.3069, lon: -157.8583 },
+  {
+    key: "new-orleans",
+    label: "New Orleans",
+    country: "United States",
+    lat: 29.9511,
+    lon: -90.0715,
+  },
+  { key: "austin", label: "Austin", country: "United States", lat: 30.2672, lon: -97.7431 },
+  { key: "san-diego", label: "San Diego", country: "United States", lat: 32.7157, lon: -117.1611 },
+  {
+    key: "philadelphia",
+    label: "Philadelphia",
+    country: "United States",
+    lat: 39.9526,
+    lon: -75.1652,
+  },
+  { key: "denver", label: "Denver", country: "United States", lat: 39.7392, lon: -104.9903 },
+  { key: "ottawa", label: "Ottawa", country: "Canada", lat: 45.4215, lon: -75.6972 },
+  { key: "waterloo", label: "Waterloo", country: "Canada", lat: 43.4643, lon: -80.5204 },
+  { key: "brisbane", label: "Brisbane", country: "Australia", lat: -27.4698, lon: 153.0251 },
+  { key: "auckland", label: "Auckland", country: "New Zealand", lat: -36.8485, lon: 174.7633 },
+  {
+    key: "rio-de-janeiro",
+    label: "Rio de Janeiro",
+    country: "Brazil",
+    lat: -22.9068,
+    lon: -43.1729,
+  },
+  {
+    key: "buenos-aires",
+    label: "Buenos Aires",
+    country: "Argentina",
+    lat: -34.6037,
+    lon: -58.3816,
+  },
 ];
 
 const PLACES_BY_KEY = new Map(GAZETTEER.map((place) => [place.key, place]));
+
+/** Every city the gazetteer knows, for callers that place a coordinate rather than a name. */
+export function gazetteerPlaces(): readonly AdminBotMapPlace[] {
+  return GAZETTEER;
+}
 
 // Approximate centroid (or capital, where that reads better on a low-zoom world map) per
 // country, for placing a member by last-login geolocation, which only ever gives a country —
@@ -264,6 +346,8 @@ const ALIASES: Record<string, string> = {
   "washington dc": "new-york",
   uk: "london",
   england: "london",
+  // AACL-IJCNLP 2026 meets in Hengqin, which is a district of Zhuhai.
+  hengqin: "zhuhai",
 };
 
 // Strip accents so "Zürich" and "Zurich" resolve alike, then reduce to comparable words.
@@ -410,7 +494,13 @@ function resolveMemberPlace(
   // Nothing resolved: still report whatever the highest-priority source with any text wrote,
   // so an unplaced entry always points at the thing worth fixing.
   const raw = slackText || loginText || rosterText;
-  const source: AdminBotMapSource | undefined = slackText ? "slack" : loginText ? "login" : rosterText ? "roster" : undefined;
+  const source: AdminBotMapSource | undefined = slackText
+    ? "slack"
+    : loginText
+      ? "login"
+      : rosterText
+        ? "roster"
+        : undefined;
   return raw && source ? { raw, source } : {};
 }
 

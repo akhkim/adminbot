@@ -2,7 +2,6 @@ import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
 import { allUpcomingVenues, aoeInstantMs, upcomingMajorDeadlines } from "../data/deadline-time.ts";
-import { EMPTY_TRIP_DRAFT } from "./time-availability.trips.ts";
 import {
   allocationBins,
   rangeBins,
@@ -53,8 +52,6 @@ function props(overrides: Partial<AdminBotTimeAvailabilityProps> = {}) {
     onAwayDraftChange: () => {},
     milestoneDraft: { ...EMPTY_MILESTONE_DRAFT },
     onMilestoneDraftChange: () => {},
-    tripDraft: { ...EMPTY_TRIP_DRAFT },
-    onTripDraftChange: () => {},
     // The default fixture is a plain member reading their own schedule, which is the only page a
     // non-admin can reach at all.
     viewerIsAdmin: false,
@@ -1438,7 +1435,7 @@ describe("the split tables and the deadline panel", () => {
 describe("the trips editor's place on the tab", () => {
   // Asked for by position, not just presence: "add a trip" is a sibling of "add a commitment" and
   // reads as one only if it sits in the same stack, after the deadline editor.
-  it("shows the add-commitment button and the trips editor in the stack", () => {
+  it("shows the add-commitment button in the stack", () => {
     const view = renderView();
     // The add-commitment button should be visible when no type is selected
     expect(view.querySelector(".adminbot-time-availability__add-commitment")).not.toBeNull();
@@ -1447,21 +1444,34 @@ describe("the trips editor's place on the tab", () => {
     expect(jinesisView.querySelector('[data-testid="time-availability-editor"]')).not.toBeNull();
   });
 
-  // Where somebody will be is the part of their schedule an admin opens this page for, so the
-  // section stays; the form does not.
-  it("shows an admin someone else's trips without a form to change them", () => {
+  // Trips are logged on the Travel tab. This page keeps showing them -- on the where-strip, which
+  // is where an admin planning around somebody looks -- but offers no second way to log one.
+  it("shows someone's trips on the where-strip, with no trip editor anywhere", () => {
+    const today = new Date();
+    const iso = (offset: number) =>
+      new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset).toLocaleDateString(
+        "en-CA",
+      );
     const view = renderView({
       viewerIsAdmin: true,
       viewerMemberId: "admin",
-      members: [
-        member({ id: "m1", trips: [{ start: "2026-09-01", end: "2026-09-30", city: "Berlin" }] }),
-      ],
+      members: [member({ id: "m1", trips: [{ start: iso(-1), end: iso(3), city: "Berlin" }] })],
     });
-    expect(view.querySelector('[data-testid="time-availability-trip-editor"]')).not.toBeNull();
-    expect(view.querySelector('[data-testid="time-availability-trip-form"]')).toBeNull();
+    expect(view.querySelector('[data-testid="time-availability-where-strip"]')).not.toBeNull();
+    expect(view.textContent).toContain("Berlin");
+    expect(view.querySelector('[data-testid="time-availability-trip-editor"]')).toBeNull();
     // Admin viewing someone else cannot add commitments (not editable)
     expect(view.querySelector(".adminbot-time-availability__add-commitment")).toBeNull();
-    expect(view.textContent).toContain("Berlin");
+  });
+
+  it("offers no Trip Away commitment type to the member either", () => {
+    const view = renderView({ activeCommitmentType: "jinesis" });
+    const tabs = [...view.querySelectorAll(".adminbot-time-availability__commitment-tab")];
+    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual([
+      "Jinesis Commitment",
+      "Non-Jinesis Commitment",
+      "Big Deadline",
+    ]);
   });
 
   it("draws no editor stack at all for a reader with nothing to see", () => {

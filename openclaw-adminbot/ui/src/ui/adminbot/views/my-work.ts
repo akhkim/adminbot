@@ -118,7 +118,7 @@ import {
   venueTargetMatches,
 } from "../venue-targets.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
-import { paperTripDraftFrom, renderPaperCycle, type PaperTripDraft } from "./paper-cycle.ts";
+import { renderPaperCycle } from "./paper-cycle.ts";
 import { renderPaperFeedback } from "./paper-feedback.ts";
 import {
   cancelPaperLegacyAutosave,
@@ -179,17 +179,12 @@ export type MyWorkProps = {
     input: { url?: string; value_text?: string; value_note?: string; done?: boolean },
   ) => void;
   /**
-   * The reader's own conference-trip answers, keyed by conference rather than by paper.
+   * Opens the Travel tab, where the reader RSVPs for the conference a paper was accepted to.
    *
-   * Optional as a set, like the rest of the cycle wiring: Active Papers reuses this renderer over
-   * everybody's papers, and "what do you need paid for" is not a question to put on somebody
-   * else's card.
+   * Optional, like the rest of the cycle wiring: Active Papers reuses this renderer over
+   * everybody's papers, and "are you going" is not a question for somebody else's card.
    */
-  tripDrafts?: Record<string, PaperTripDraft>;
-  tripSavingKey?: string | null;
-  onEditTrip?: (conferenceKey: string, patch: Partial<PaperTripDraft>) => void;
-  onSaveTrip?: (conferenceKey: string) => void;
-  onWithdrawTrip?: (conferenceKey: string) => void;
+  onOpenTravel?: () => void;
   onNudgeAuthors: () => void;
   /** The signed-in member, so their own consent rows get buttons and nobody else's do. */
   /**
@@ -1208,20 +1203,10 @@ function renderCycle(state: AppViewState, paper: AdminBotPaperRecord, props: MyW
     conferenceOpen:
       paper.venue_decision === "accept" && cycle.missingAcceptanceDetails.length === 0,
     missingAcceptanceDetails: cycle.missingAcceptanceDetails,
-    // Only when the service named a conference for this paper and the surface wired the writes.
-    // Both halves matter: without the key there is nothing to key an answer to, and without the
-    // handlers the block would draw controls that do nothing.
-    ...(cycle.conferenceKey && props.onSaveTrip && props.onEditTrip
-      ? {
-          myTrip: cycle.myTrip ?? null,
-          tripDraft:
-            props.tripDrafts?.[cycle.conferenceKey] ?? paperTripDraftFrom(cycle.myTrip ?? null),
-          tripSaving: props.tripSavingKey === cycle.conferenceKey,
-          onEditTrip: (patch: Partial<PaperTripDraft>) =>
-            props.onEditTrip?.(cycle.conferenceKey as string, patch),
-          onSaveTrip: () => props.onSaveTrip?.(cycle.conferenceKey as string),
-          onWithdrawTrip: () => props.onWithdrawTrip?.(cycle.conferenceKey as string),
-        }
+    // Only when the service named a conference for this paper and the surface wired the way to
+    // the Travel tab: without the key there is no trip to read back.
+    ...(cycle.conferenceKey && props.onOpenTravel
+      ? { myTrip: cycle.myTrip ?? null, onOpenTravel: props.onOpenTravel }
       : {}),
     cycleClosed: cycle.cycleClosed,
     memberId: props.memberId,

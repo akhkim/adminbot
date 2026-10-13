@@ -24,11 +24,11 @@ import {
   type SlackChannelCheck,
   type WorkshopNudgeReviewState,
 } from "../controllers/admin.ts";
+import { clearLabTravel, type LabTravelState } from "../controllers/lab-travel.ts";
 import { createEmptyAdminBotMemberRequests } from "../controllers/member-requests.ts";
 import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
 import { invalidateMemberMap } from "../data/member-map.ts";
 import { localTimezone } from "../data/timezones.ts";
-import type { TripDraft } from "../views/time-availability.trips.ts";
 import type { MilestoneDraft, TimeAvailabilityDraft } from "../views/time-availability.ts";
 // Control UI module orchestrates member auth against the app view state.
 //
@@ -163,7 +163,6 @@ export type MemberAuthHost = {
   adminBotTimeAwayDraft?: TimeAvailabilityDraft;
   adminBotTimeAvailabilityDraft?: TimeAvailabilityDraft;
   adminBotMilestoneDraft?: MilestoneDraft;
-  adminBotTripDraft?: TripDraft;
   adminBotAvailabilityNotesDraft?: string | null;
   adminBotActiveCommitmentType?: string | null;
   adminBotTimeAvailabilitySaving?: boolean;
@@ -289,8 +288,6 @@ export type MemberAuthHost = {
   adminBotPaperNudgeBatches?: import("./session.ts").PaperNudgeBatch[] | null;
   adminBotPaperNudgeLoading?: boolean;
   adminBotPaperNudgeSelected?: string[];
-  adminBotTripDrafts?: Record<string, import("../views/paper-cycle.ts").PaperTripDraft>;
-  adminBotTripSavingKey?: string | null;
   adminBotTabUsage?: import("./session.ts").TabVisitReport | null;
   adminBotTabUsageLoadedAt?: number | null;
   adminBotTabUsageLoading?: boolean;
@@ -367,7 +364,7 @@ export type MemberAuthHost = {
   changePasswordNotice: string | null;
   applySettings: (next: UiSettings) => void;
   connect: () => void;
-};
+} & LabTravelState;
 
 function toMemberAuthFailure(
   kind: AuthErrorKind,
@@ -597,14 +594,6 @@ function clearMemberScopedData(host: MemberAuthHost): void {
     time: "",
     timezone: localTimezone(),
   };
-  host.adminBotTripDraft = {
-    city: "",
-    start: "",
-    end: "",
-    timezone: "",
-    note: "",
-    editingIndex: null,
-  };
   host.adminBotAvailabilityNotesDraft = null;
   host.adminBotActiveCommitmentType = null;
   host.adminBotTimeAvailabilitySaving = false;
@@ -724,8 +713,6 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotPaperNudgeBatches = null;
   host.adminBotPaperNudgeLoading = false;
   host.adminBotPaperNudgeSelected = [];
-  host.adminBotTripDrafts = {};
-  host.adminBotTripSavingKey = null;
   host.adminBotTabUsage = null;
   host.adminBotTabUsageLoadedAt = null;
   host.adminBotTabUsageLoading = false;
@@ -783,6 +770,9 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.labSharingAskTags = [];
   host.labSharingInvitedMemberIds = [];
   host.labSharingRespondedInviteIds = [];
+  // Stops this browser's location watch too: the next person to sign in here must not inherit it,
+  // and the opt-in they hold is read fresh for their own session.
+  clearLabTravel(host);
 }
 
 async function applyMemberSession(host: MemberAuthHost, session: MemberSession) {

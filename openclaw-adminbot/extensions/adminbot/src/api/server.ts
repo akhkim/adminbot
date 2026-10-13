@@ -248,6 +248,7 @@ import {
   createPublicDeadlineLimiter,
   handlePublicDeadlineProposal,
 } from "./server.public-deadline-proposals.js";
+import { handleTravelRoute } from "./server.travel.js";
 import {
   cancelWorkshopNudgeRun,
   readWorkshopNudgeRun,
@@ -1179,11 +1180,12 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     notificationDrafts: createNotificationDraftHandler(
       options.notificationDraftScriptPath,
       () => store.listLabMembers(),
-      () => store.listPapers().map((paper) => ({
-        title: paper.title,
-        submission_url: paper.artifacts?.submission_url,
-        arxiv_url: paper.artifacts?.arxiv_url,
-      })),
+      () =>
+        store.listPapers().map((paper) => ({
+          title: paper.title,
+          submission_url: paper.artifacts?.submission_url,
+          arxiv_url: paper.artifacts?.arxiv_url,
+        })),
     ),
     reimbursementSigningKey: randomBytes(32),
     service,
@@ -3888,6 +3890,17 @@ async function handleAuthenticatedRoute(
       return;
     }
     await handleLabSharingRoute(req, res, url, service, principal.member.id);
+    return;
+  }
+  // The member Travel tab. A member session only: the service principal is the agent, and
+  // nothing about where members are -- or are going -- is the agent's to read. The service then
+  // narrows to full members and applies the sharing opt-in (kernel/service.lab-travel.ts).
+  if (url.pathname === "/travel" || url.pathname.startsWith("/travel/")) {
+    if (principal.kind !== "member") {
+      sendJson(res, 403, { error: { message: "A member session is required." } });
+      return;
+    }
+    await handleTravelRoute(req, res, url, service, principal.member.id);
     return;
   }
   // Member requests: anyone signed in may propose adding somebody; only an admin decides. Ahead of

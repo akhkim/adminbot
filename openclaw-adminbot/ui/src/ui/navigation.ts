@@ -20,9 +20,12 @@ export const TAB_GROUPS = [
   // need it -- the ones who just arrived -- it is the first thing to do. It used to be the last two
   // sections of My Profile, which put a checklist somebody walks once at the bottom of a page they
   // edit every week.
+  //
+  // Travel follows Time Availability: where the viewer is going sits next to when they are free,
+  // and the trips it logs are the same schedule rows that page's where-strip draws.
   {
     label: "myInfo",
-    tabs: ["gettingStarted", "profile", "adminbotTimeAvailability", "myWork"],
+    tabs: ["gettingStarted", "profile", "adminbotTimeAvailability", "labTravel", "myWork"],
   },
   // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
   // which is what someone browsing the lab's shared surface came to look at.
@@ -203,6 +206,7 @@ export type Tab =
   | "gettingStarted"
   | "myWork"
   | "labSharing"
+  | "labTravel"
   | "activity"
   | "adminbot"
   | "adminbotRegistrations"
@@ -294,6 +298,8 @@ const TAB_PATHS: Record<Tab, string> = {
   gettingStarted: "/getting-started",
   myWork: "/my-work",
   labSharing: "/lab-sharing",
+  // Not `/travel`, which has been the head professor's travel history since before this tab.
+  labTravel: "/lab-travel",
   activity: "/activity",
   adminbot: "/pending-actions",
   adminbotRegistrations: "/registrations",
@@ -524,6 +530,8 @@ export function iconForTab(tab: Tab): IconName {
       return "book";
     case "labSharing":
       return "link";
+    case "labTravel":
+      return "mapPin";
     case "chat":
       return "messageSquare";
     case "overview":

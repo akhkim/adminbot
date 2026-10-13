@@ -84,6 +84,21 @@ import {
 import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
 import { loadCollaboratorSchedules } from "./adminbot/controllers/collaborator-schedules.ts";
 import {
+  disableSharing,
+  editRsvpDraft,
+  enableSharing,
+  loadLabTravel,
+  lookup,
+  needsLabTravelLoad,
+  openRsvp,
+  savePlans,
+  saveRsvp,
+  shareFromThisDevice,
+  shareTypedCity,
+  syncLocationTracking,
+  withdrawRsvp,
+} from "./adminbot/controllers/lab-travel.ts";
+import {
   loadAdminBotLogisticsRequests,
   openAdminBotLogisticsRequest,
   sendAdminBotSignedDocuments,
@@ -121,17 +136,12 @@ import {
   toggleAdminBotPaperNudgeRecipient,
 } from "./adminbot/controllers/paper-slots.ts";
 import {
-  editAdminBotTrip,
-  saveAdminBotTrip,
-  withdrawAdminBotTrip,
-} from "./adminbot/controllers/paper-slots.ts";
-import {
   loadAdminBotProfileOverview,
   remindAdminBotIncompleteProfiles,
   seedAdminBotNudgeList,
 } from "./adminbot/controllers/profile-overview.ts";
-import "./components/feedback-widget.ts";
 import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
+import "./components/feedback-widget.ts";
 import { exportAdminBotTabUsage, loadAdminBotTabUsage } from "./adminbot/controllers/tab-usage.ts";
 import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
 import { milestoneRows } from "./adminbot/data/availability.ts";
@@ -190,8 +200,8 @@ import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
-import "./components/feedback-widget.ts";
 import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
+import "./components/feedback-widget.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import {
   configureDraftSync,
@@ -212,6 +222,8 @@ import {
 import { renderDashboard } from "./adminbot/views/dashboard.ts";
 import { renderGettingStarted } from "./adminbot/views/getting-started.ts";
 import { renderLabSharing } from "./adminbot/views/lab-sharing.ts";
+import { EMPTY_TRIP_DRAFT } from "./adminbot/views/lab-travel.plans.ts";
+import { renderLabTravel } from "./adminbot/views/lab-travel.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLocationPrompt } from "./adminbot/views/location-prompt.ts";
 import { renderLoginGate, renderSessionRestorePending } from "./adminbot/views/login-gate.ts";
@@ -223,12 +235,10 @@ import {
   renderPaperCardDialog,
   type MyWorkProps,
 } from "./adminbot/views/my-work.ts";
-import { paperTripDraftFrom } from "./adminbot/views/paper-cycle.ts";
 import { renderProfessorView } from "./adminbot/views/professor.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
-import { EMPTY_TRIP_DRAFT } from "./adminbot/views/time-availability.trips.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
@@ -438,19 +448,6 @@ function runUiTask<Args extends unknown[]>(
  * machine hands the next person the last one's half-written request and their attached documents.
  * The submitted requests carry their owner from the service, so this is only about the local half.
  */
-/**
- * The stored trip for one conference, from whichever loaded card carries it.
- *
- * A trip belongs to a conference, not a paper, so every open card at that venue holds the same
- * row -- the first one found is as good as any, and looking it up this way means the draft's
- * starting point does not depend on which card the reader happened to press Save on.
- */
-function tripFor(state: AppViewState, conferenceKey: string) {
-  return Object.values(state.adminBotPaperSlots).find(
-    (cycle) => cycle.conferenceKey === conferenceKey,
-  )?.myTrip;
-}
-
 /**
  * Adds the schools an Opportunities row asked for to the letters form, and saves the draft.
  *
@@ -1002,31 +999,6 @@ function paperWorkspaceProps(
     },
     onSaveSlot: (paperId, slot, input) => {
       void saveAdminBotPaperSlot(state, paperId, slot, input).finally(() => requestHostUpdate?.());
-    },
-    // The reader's own travel answers, keyed by conference. Wired here rather than in the view so
-    // the card can stay a renderer: one trip covers every paper at a venue, and the controller is
-    // what knows which other open cards have to be refreshed when one is saved.
-    tripDrafts: state.adminBotTripDrafts,
-    tripSavingKey: state.adminBotTripSavingKey,
-    onEditTrip: (conferenceKey, patch) => {
-      editAdminBotTrip(
-        state,
-        conferenceKey,
-        patch,
-        paperTripDraftFrom(tripFor(state, conferenceKey)),
-      );
-      requestHostUpdate?.();
-    },
-    onSaveTrip: (conferenceKey) => {
-      void saveAdminBotTrip(
-        state,
-        conferenceKey,
-        state.adminBotTripDrafts[conferenceKey] ??
-          paperTripDraftFrom(tripFor(state, conferenceKey)),
-      ).finally(() => requestHostUpdate?.());
-    },
-    onWithdrawTrip: (conferenceKey) => {
-      void withdrawAdminBotTrip(state, conferenceKey).finally(() => requestHostUpdate?.());
     },
     onNudgeAuthors: () => {
       void nudgeAdminBotPaperAuthors(state).finally(() => requestHostUpdate?.());
@@ -2019,6 +1991,69 @@ function renderNudgeBell(state: AppViewState) {
   `;
 }
 
+/** The Travel tab, wired to its controller. Every action re-renders when it settles. */
+function renderLabTravelTab(state: AppViewState, requestHostUpdate: (() => void) | undefined) {
+  const update = () => requestHostUpdate?.();
+  const settle = (work: Promise<unknown>) => {
+    update();
+    void work.finally(update);
+  };
+  return renderLabTravel(
+    {
+      overview: state.labTravel ?? null,
+      loading: Boolean(state.labTravelLoading),
+      error: state.labTravelError ?? null,
+      notice: state.labTravelNotice ?? null,
+      busy: state.labTravelBusy ?? null,
+      onRetry: () => {
+        state.labTravelError = null;
+        settle(loadLabTravel(state));
+      },
+      rsvpOpen: state.labTravelRsvpOpen ?? null,
+      rsvpDrafts: state.labTravelRsvpDrafts ?? {},
+      onOpenRsvp: (key) => {
+        openRsvp(state, key);
+        update();
+      },
+      onEditRsvp: (site, patch) => {
+        editRsvpDraft(state, site, patch);
+        update();
+      },
+      onSaveRsvp: (site) => settle(saveRsvp(state, site)),
+      onWithdrawRsvp: (site) => settle(withdrawRsvp(state, site)),
+      planDraft: state.labTravelPlanDraft ?? EMPTY_TRIP_DRAFT,
+      onPlanDraftChange: (draft) => {
+        state.labTravelPlanDraft = draft;
+        update();
+      },
+      onSavePlans: (trips) => settle(savePlans(state, trips)),
+      sharing: state.labTravelSharing ?? null,
+      device: state.labTravelDevice ?? { status: "idle" },
+      onEnableSharing: () => settle(enableSharing(state, update)),
+      onDisableSharing: () => settle(disableSharing(state)),
+      onShareFromDevice: () => {
+        shareFromThisDevice(state, update);
+        update();
+      },
+      cityDraft: state.labTravelCityDraft ?? "",
+      onCityDraftChange: (value) => {
+        state.labTravelCityDraft = value;
+        update();
+      },
+      onShareCity: () => settle(shareTypedCity(state)),
+      lookupDraft: state.labTravelLookupDraft ?? { place: "", from: "", to: "" },
+      onLookupDraftChange: (draft) => {
+        state.labTravelLookupDraft = draft;
+        update();
+      },
+      onLookup: () => settle(lookup(state)),
+      lookup: state.labTravelLookup ?? null,
+      lookupError: state.labTravelLookupError ?? null,
+    },
+    state.memberId ?? null,
+  );
+}
+
 export function renderApp(state: AppViewState) {
   const updatableState = state as AppViewState & { requestUpdate?: () => void };
   const requestHostUpdate =
@@ -2026,6 +2061,14 @@ export function renderApp(state: AppViewState) {
       ? () => updatableState.requestUpdate?.()
       : undefined;
   pendingUpdate = requestHostUpdate;
+
+  // Keeps an opted-in member's shared location current on every tab, not only Travel: "who is
+  // near me" is answered for whoever opens AdminBot in a new city, wherever they land. Cheap when
+  // nothing changed; it reads the opt-in once per session and stops on sign-out.
+  syncLocationTracking(state, () => requestHostUpdate?.());
+  if (state.tab === "labTravel" && needsLabTravelLoad(state)) {
+    void loadLabTravel(state).finally(() => requestHostUpdate?.());
+  }
 
   // Opening the workshop tab reads the stored pass. It never starts one -- that is Refresh, and it
   // is thousands of model calls. Self-limiting: the read sets `loading` synchronously and leaves a
@@ -3782,6 +3825,7 @@ export function renderApp(state: AppViewState) {
             )
           : nothing}
         ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}
+        ${state.tab === "labTravel" ? renderLabTravelTab(state, requestHostUpdate) : nothing}
         ${state.tab === "adminbotTabUsage"
           ? renderAdminBotTabUsage({
               report: state.adminBotTabUsage,
@@ -4163,12 +4207,6 @@ export function renderApp(state: AppViewState) {
           : nothing}
         ${state.tab === "adminbotTimeAvailability" && !rosterPendingForTab
           ? renderAdminBotTimeAvailability({
-              // The trips log's draft lives on the view state so a re-render underneath the
-              // typist -- the roster reloading, a save landing -- cannot wipe half-entered input.
-              tripDraft: state.adminBotTripDraft ?? EMPTY_TRIP_DRAFT,
-              onTripDraftChange: (draft) => {
-                state.adminBotTripDraft = draft;
-              },
               collaborators:
                 state.adminBotCollaboratorSchedulesSession ===
                 loadStoredMemberSession()?.sessionToken
@@ -4269,6 +4307,9 @@ export function renderApp(state: AppViewState) {
               // The pre-registration and decision banners belong to whoever is reading. Active
               // Papers, which shares this renderer, does not set this.
               personal: true,
+              // An accepted paper's card reads back the reader's RSVP and sends them to Travel to
+              // give or change it. Here only: it is a question about the reader's own trip.
+              onOpenTravel: () => state.setTab("labTravel"),
               // Which surface to fall back to, not what it lets anyone do: everybody now opens on
               // the flat view, and this decides what "Back to cards" hands them afterwards -- an
               // administrator arrives here to file links across every paper at once, so they get

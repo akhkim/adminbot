@@ -25,3 +25,19 @@ it("shows an unambiguous calendar date and updates before the parent rerenders",
   input.dispatchEvent(new Event("input", { bubbles: true }));
   expect(container.querySelector("output")!.textContent).toBe("YYYY-MM-DD");
 });
+
+// Regression: the input handler rewrote the <output>'s text directly, which deleted Lit's markers
+// for a child text part, so the parent's next render threw and abandoned the rest of its update --
+// a draft-backed form then never saw its own date and its submit button stayed disabled.
+it("survives the parent re-rendering after the member types a date", () => {
+  const container = document.createElement("div");
+  const draw = (value: string) =>
+    render(renderDateControl(html`<input type="date" .value=${value} />`, value), container);
+  draw("");
+  const input = container.querySelector("input")!;
+  input.value = "2026-11-02";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  expect(() => draw("2026-11-02")).not.toThrow();
+  expect(() => draw("2026-11-05")).not.toThrow();
+  expect(container.querySelector("output")!.textContent).toBe("2026-11-05");
+});

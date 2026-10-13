@@ -59,6 +59,7 @@ describe("iconForTab", () => {
       gettingStarted: "check",
       myWork: "book",
       labSharing: "link",
+      labTravel: "mapPin",
       adminbotNotificationDrafts: "send",
       adminbotOpportunities: "zap",
       chat: "messageSquare",
@@ -123,6 +124,7 @@ describe("titleForTab", () => {
       gettingStarted: "Getting Started",
       myWork: "My Projects & Papers",
       labSharing: "Collaborate",
+      labTravel: "Travel",
       adminbotNotificationDrafts: "OpenReview To Tweet",
       adminbotOpportunities: "Opportunities",
       chat: "Chat",
@@ -138,7 +140,7 @@ describe("titleForTab", () => {
       adminbotGrantReport: "Grant Report",
       adminbotMailingList: "Mailing List",
       adminbotProfessor: "My Desk",
-      adminbotTravel: "Travel",
+      adminbotTravel: "Travel History",
       adminbotMeetings: "Meeting Recordings",
       adminbotTimeAvailability: "Time Availability",
       adminbotSignatures: "Signatures for You",
@@ -183,6 +185,7 @@ describe("subtitleForTab", () => {
       // Corrected to the shipped string: the tab has said "Coming soon" for a while and this
       // expectation had not followed, leaving the suite red for a reason unrelated to it.
       labSharing: "Coming soon — share resources, ideas, and collaborate.",
+      labTravel: "Conferences to RSVP for, your other trips, and lab members near you.",
       adminbotNotificationDrafts: "Create tweet drafts and images from notification exports.",
       adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
       chat: "Gateway chat for quick interventions.",
@@ -375,6 +378,9 @@ describe("tabFromPath", () => {
 
   it("routes the Lab Sharing placeholder", () => {
     expect(tabFromPath("/lab-sharing")).toBe("labSharing");
+    // The member Travel tab, kept apart from the head professor's `/travel` history.
+    expect(tabFromPath("/lab-travel")).toBe("labTravel");
+    expect(tabFromPath("/travel")).toBe("adminbotTravel");
   });
 
   it("handles base paths", () => {

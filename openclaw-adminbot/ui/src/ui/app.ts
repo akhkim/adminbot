@@ -72,11 +72,13 @@ import {
   requestAdminBotCalendarDraft,
   saveAdminBotCalendarEvent,
 } from "./adminbot/controllers/calendar.ts";
+import type { LabTravelNotice, LookupDraft, RsvpDraft } from "./adminbot/controllers/lab-travel.ts";
 import {
   answerAdminBotLocationPrompt,
   loadAdminBotLocationDrifts,
   loadAdminBotLocationPrompt,
 } from "./adminbot/controllers/location-prompt.ts";
+import type { LocationTrackerSnapshot } from "./adminbot/controllers/location-tracker.ts";
 import { defaultMailingListRange } from "./adminbot/controllers/mailing-list.ts";
 import {
   fileAdminBotMeeting,
@@ -112,6 +114,7 @@ import {
 } from "./adminbot/controllers/tab-visits.ts";
 import { EMPTY_TRAVEL, type TravelState } from "./adminbot/controllers/travel.ts";
 import type { BadgeLoadError } from "./adminbot/data/badges.ts";
+import type { TravelLookup, TravelOverview, TravelSharing } from "./adminbot/data/lab-travel.ts";
 import {
   createFactRow,
   createSchoolRow,
@@ -131,10 +134,10 @@ import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
 import { resetAdminViewSessionState } from "./adminbot/views/admin.ts";
 import type { ConferencePapersTab } from "./adminbot/views/conference-papers.ts";
 import { resetLabSharingSessionState } from "./adminbot/views/lab-sharing.ts";
+import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/lab-travel.plans.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
 import { resetMyWorkSessionState } from "./adminbot/views/my-work.ts";
-import type { PaperTripDraft } from "./adminbot/views/paper-cycle.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
   type PaperOverviewFilter,
@@ -146,7 +149,6 @@ import {
 } from "./adminbot/views/profile-overview.ts";
 import { resetProfileSessionState } from "./adminbot/views/profile.ts";
 import type { TimeChartWindow } from "./adminbot/views/time-allocation-chart.ts";
-import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
@@ -379,7 +381,24 @@ export class OpenClawApp extends LitElement {
   // not re-render. The view tests could not catch it because they render with a plain object.
   // Declared here for the same reason as the calendar block above: a controller writing a plain
   // class field would change nothing on screen.
-  @state() adminBotTripDraft: TripDraft = EMPTY_TRIP_DRAFT;
+  // The Travel tab (controllers/lab-travel.ts). Declared as state for the same reason: its
+  // controller writes after awaits, and a plain field would change nothing on screen.
+  @state() labTravel?: TravelOverview;
+  @state() labTravelLoadedFor: string | null = null;
+  @state() labTravelLoading = false;
+  @state() labTravelError: string | null = null;
+  @state() labTravelNotice: LabTravelNotice | null = null;
+  @state() labTravelBusy: string | null = null;
+  @state() labTravelRsvpOpen: string | null = null;
+  @state() labTravelRsvpDrafts: Record<string, RsvpDraft> = {};
+  @state() labTravelPlanDraft: TripDraft = EMPTY_TRIP_DRAFT;
+  @state() labTravelLookupDraft: LookupDraft = { place: "", from: "", to: "" };
+  @state() labTravelLookup: TravelLookup | null = null;
+  @state() labTravelLookupError: string | null = null;
+  @state() labTravelCityDraft = "";
+  @state() labTravelSharing: TravelSharing | null = null;
+  @state() labTravelSharingCheckedFor: string | null = null;
+  @state() labTravelDevice: LocationTrackerSnapshot = { status: "idle" };
   @state() adminBotLocationDrift?: LocationDrift | null;
   @state() adminBotLocationDrifts?: LocationDrift[];
   @state() adminBotLocationSaving = false;
@@ -779,8 +798,6 @@ export class OpenClawApp extends LitElement {
     state: "attention",
   };
   @state() adminBotPaperSlotOverview: PaperSlotOverviewRow[] = [];
-  @state() adminBotTripDrafts: Record<string, PaperTripDraft> = {};
-  @state() adminBotTripSavingKey: string | null = null;
   @state() adminBotPaperSlots: Record<string, PaperCycle> = {};
   // Nothing expanded on arrival: the page opens as a scannable list of papers, and the form is
   // what you go into rather than what you land in.

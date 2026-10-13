@@ -2455,6 +2455,10 @@ export type AdminBotAuditEvent = {
     | "lab_status.cleared"
     | "lab_interest.saved"
     | "lab_interest.withdrawn"
+    // The Travel tab's location opt-in switched on or off. Never a position: an audit line per fix
+    // would turn the trail into the location history the opt-in promises not to keep.
+    | "location_sharing.enabled"
+    | "location_sharing.disabled"
     | "proposal.created"
     | "proposal.auto_approved"
     | "proposal.removed"

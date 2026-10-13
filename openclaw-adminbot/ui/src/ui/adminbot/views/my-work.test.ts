@@ -80,7 +80,7 @@ type DrawOptions = {
   viewerIsAdmin?: boolean;
   /** Reuse a state object across two draws, for the controls that keep a draft in view state. */
   state?: AppViewState;
-  /** Wires the trip handlers, which is what makes the card draw the reader's own trip. */
+  /** Wires the way to the Travel tab, which is what makes the card read back the reader's trip. */
   trip?: boolean;
 };
 
@@ -159,9 +159,7 @@ function draw(options: DrawOptions = {}) {
     onConsent: () => {},
     onSetAttendee: () => {},
     onSetReimbursement: () => {},
-    ...(options.trip
-      ? { onEditTrip: () => {}, onSaveTrip: () => {}, onWithdrawTrip: () => {} }
-      : {}),
+    ...(options.trip ? { onOpenTravel: () => {} } : {}),
   };
   const container = document.createElement("div");
   document.body.append(container);
@@ -1738,7 +1736,7 @@ describe("the flat view", () => {
     expect(container.querySelector('[data-testid="paper-legacy"]')).not.toBeNull();
     const extras = container.querySelector('[data-testid="paper-legacy-extras-p1"]');
     expect(extras?.querySelector('[data-testid="paper-attendee-add-p1"]')).not.toBeNull();
-    expect(extras?.querySelector('[data-testid="paper-trip-intent-p1"]')).not.toBeNull();
+    expect(extras?.querySelector('[data-testid="paper-travel-p1"]')).not.toBeNull();
     expect(extras?.querySelector('[data-testid="paper-completion-p1"]')).not.toBeNull();
     // The step picker is already a legacy row; the card's second copy of it stays off this page.
     expect(container.querySelector('[data-testid="my-work-step-p1"]')).toBeNull();
@@ -1806,7 +1804,7 @@ describe("the flat view", () => {
     const { container } = draw({ slots: { p1: cycle }, trip: true });
     expect(container.querySelector('[data-testid="paper-cycle-p1"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="paper-attendee-add-p1"]')).toBeNull();
-    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
+    expect(container.querySelector('[data-testid="paper-travel-p1"]')).toBeNull();
   });
 
   it("offers the button beside the spreadsheet one", () => {
