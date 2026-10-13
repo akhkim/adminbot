@@ -10,16 +10,13 @@ import { EMPTY_SLACK_CHANNEL_CHECK, saveAdminBotPaper } from "../controllers/adm
 import { loadSlackChannelNames } from "../controllers/directory.ts";
 import {
   circulateAdminBotSocialDraft,
-  editAdminBotTrip,
   loadAdminBotPaperSlots,
   recordAdminBotSocialConsent,
   saveAdminBotPaperSlot,
   saveAdminBotPaperWeeklyUpdate,
   saveAdminBotSocialDraft,
-  saveAdminBotTrip,
   setAdminBotPaperAttendee,
   setAdminBotPaperReimbursement,
-  withdrawAdminBotTrip,
 } from "../controllers/paper-slots.ts";
 import { deleteAdminBotPaper } from "../controllers/papers.ts";
 import { loadAdminBotRecentEdits } from "../controllers/recent-edits.ts";
@@ -28,18 +25,7 @@ import { isPiReviewViewer } from "../projects/open-paper.ts";
 import { renderPaperReviewDialog, type ReviewPaper } from "../projects/review-dialog.ts";
 import { renderMyProjects } from "../projects/view.ts";
 import type { PaperWorkspaceProps } from "../projects/workspace.ts";
-import { paperTripDraftFrom } from "../views/paper-cycle.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
-
-/**
- * The stored trip for one conference, from whichever loaded cycle carries it. A trip belongs to a
- * conference, not a paper, so every paper at that venue holds the same row.
- */
-function tripFor(state: AppViewState, conferenceKey: string) {
-  return Object.values(state.adminBotPaperSlots).find(
-    (cycle) => cycle.conferenceKey === conferenceKey,
-  )?.myTrip;
-}
 
 export function paperWorkspaceProps(
   state: AppViewState,
@@ -76,31 +62,9 @@ export function paperWorkspaceProps(
     onSaveSlot: (paperId, slot, input) => {
       void saveAdminBotPaperSlot(state, paperId, slot, input).finally(done);
     },
-    // The reader's own travel answers, keyed by conference. Wired here rather than in the view so
-    // the page stays a renderer: one trip covers every paper at a venue, and the controller knows
-    // which other loaded cycles to refresh when one is saved.
-    tripDrafts: state.adminBotTripDrafts,
-    tripSavingKey: state.adminBotTripSavingKey,
-    onEditTrip: (conferenceKey, patch) => {
-      editAdminBotTrip(
-        state,
-        conferenceKey,
-        patch,
-        paperTripDraftFrom(tripFor(state, conferenceKey)),
-      );
-      requestHostUpdate?.();
-    },
-    onSaveTrip: (conferenceKey) => {
-      void saveAdminBotTrip(
-        state,
-        conferenceKey,
-        state.adminBotTripDrafts[conferenceKey] ??
-          paperTripDraftFrom(tripFor(state, conferenceKey)),
-      ).finally(() => requestHostUpdate?.());
-    },
-    onWithdrawTrip: (conferenceKey) => {
-      void withdrawAdminBotTrip(state, conferenceKey).finally(() => requestHostUpdate?.());
-    },
+    // An accepted paper reads back the reader's RSVP for its conference and sends them to Travel
+    // to give or change it: one RSVP covers every paper at a venue, so it is not a card's form.
+    onOpenTravel: () => state.setTab("labTravel"),
     memberId: state.memberId ?? null,
     memberName: (memberId: string) =>
       (state.adminBotData?.members ?? []).find((member) => member.id === memberId)?.name ??

@@ -92,6 +92,10 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Lab Sharing is the collaboration surface for every member -- ask for help, answer invites,
   // browse open projects. No data on it requires operator privilege.
   labSharing: "member",
+  // Conference RSVPs, the viewer's own trips, and opt-in location sharing between members. Full
+  // members only (see canAccessTab below): it shows who is going where, and the service refuses
+  // trial members and external collaborators on every /travel route regardless of this entry.
+  labTravel: "member",
 
   // Everything else is an operator or governance surface.
   // Active Papers is the lab-wide pipeline across every author, not the viewer's own work -- that
@@ -158,7 +162,7 @@ export function canAccessTab(
   privilegeLevel: string | null = role,
 ): boolean {
   // The broad UI member role also includes trial members and external collaborators.
-  if (tab === "adminbotReferenceChecker") {
+  if (tab === "adminbotReferenceChecker" || tab === "labTravel") {
     return role !== "anonymous" && (privilegeLevel === "member" || privilegeLevel === "admin");
   }
   return rank(role) >= rank(TAB_MINIMUM_ROLE[tab]);

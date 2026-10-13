@@ -118,6 +118,7 @@ import { needsLabRoster } from "./adminbot/roster-required.ts";
 import { renderAdminPanelsSurface } from "./adminbot/surfaces/admin-panels.ts";
 import { renderCollaborateSurface } from "./adminbot/surfaces/collaborate.ts";
 import { renderDashboardSurface } from "./adminbot/surfaces/dashboard.ts";
+import { renderLabTravelSurface, syncLabTravel } from "./adminbot/surfaces/lab-travel.ts";
 import {
   adminBotLogisticsScope,
   renderLogisticsSurface,
@@ -1622,6 +1623,11 @@ export function renderApp(state: AppViewState) {
   const profileBlocked = isProfileBlocked(state);
   resetBlockedProfileBadgeErrors(state);
   if (profileBlocked && state.tab !== "profile") state.setTab("profile");
+  // Every /travel route refuses a member whose profile is incomplete, so location sharing waits
+  // for the profile like every other page.
+  if (!profileBlocked) {
+    syncLabTravel(state, requestHostUpdate);
+  }
 
   // Opening the workshop tab reads the stored pass. It never starts one -- that is Refresh, and it
   // is thousands of model calls. Self-limiting: the read sets `loading` synchronously and leaves a
@@ -3355,6 +3361,7 @@ export function renderApp(state: AppViewState) {
             )
           : nothing}
         ${renderCollaborateSurface(state, adminBotSurfaces)}
+        ${renderLabTravelSurface(state, adminBotSurfaces)}
         ${state.tab === "adminbotTabUsage"
           ? renderAdminBotTabUsage({
               report: state.adminBotTabUsage,

@@ -58,6 +58,9 @@ describe("TAB_GROUPS", () => {
       "gettingStarted",
       "profile",
       "adminbotTimeAvailability",
+      // Where you are going, beside when you are free: its trips are the schedule rows Time
+      // Availability draws.
+      "labTravel",
       "myWork",
     ]);
     // One tab per request template, named for what it asks and who it asks.

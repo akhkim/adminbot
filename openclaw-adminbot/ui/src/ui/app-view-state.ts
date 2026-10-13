@@ -26,8 +26,8 @@ import type { LogisticsQueueOptions } from "./adminbot/data/logistics-queue.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
+import type { TripDraft } from "./adminbot/views/lab-travel.plans.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
-import type { TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import type {
   MilestoneDraft,
   TimeAvailabilityDraft,
@@ -556,7 +556,24 @@ export type AppViewState = {
     } | null,
   ) => Promise<void>;
   adminBotNotificationsError?: string | null;
-  adminBotTripDraft?: TripDraft;
+  // The Travel tab: what the service said, what is being typed, and this browser's side of
+  // location sharing. See controllers/lab-travel.ts, which owns every one of these.
+  labTravel?: import("./adminbot/data/lab-travel.ts").TravelOverview;
+  labTravelLoadedFor?: string | null;
+  labTravelLoading?: boolean;
+  labTravelError?: string | null;
+  labTravelNotice?: import("./adminbot/controllers/lab-travel.ts").LabTravelNotice | null;
+  labTravelBusy?: string | null;
+  labTravelRsvpOpen?: string | null;
+  labTravelRsvpDrafts?: Record<string, import("./adminbot/controllers/lab-travel.ts").RsvpDraft>;
+  labTravelPlanDraft?: TripDraft;
+  labTravelLookupDraft?: import("./adminbot/controllers/lab-travel.ts").LookupDraft;
+  labTravelLookup?: import("./adminbot/data/lab-travel.ts").TravelLookup | null;
+  labTravelLookupError?: string | null;
+  labTravelCityDraft?: string;
+  labTravelSharing?: import("./adminbot/data/lab-travel.ts").TravelSharing | null;
+  labTravelSharingCheckedFor?: string | null;
+  labTravelDevice?: import("./adminbot/controllers/location-tracker.ts").LocationTrackerSnapshot;
   adminBotLocationDrift?: LocationDrift | null;
   adminBotLocationDrifts?: LocationDrift[];
   adminBotLocationSaving?: boolean;
@@ -651,8 +668,6 @@ export type AppViewState = {
   // My Projects & Papers: what each paper still owes, and the slots of whichever cards are open.
   // `loadedAt` is the same "ask for it" sentinel the overview above uses.
   adminBotPaperSlotOverview: import("./adminbot/api/paper-admin.ts").PaperSlotOverviewRow[];
-  adminBotTripDrafts: Record<string, import("./adminbot/views/paper-cycle.ts").PaperTripDraft>;
-  adminBotTripSavingKey: string | null;
   adminBotPaperSlots: Record<string, import("./adminbot/api/papers.ts").PaperCycle>;
   adminBotPaperSlotsOpen: string[];
   adminBotPaperSlotsLoading: boolean;

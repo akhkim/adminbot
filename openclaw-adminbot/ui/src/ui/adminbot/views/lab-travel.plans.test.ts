@@ -5,11 +5,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TripRow } from "../data/availability.ts";
 import {
   EMPTY_TRIP_DRAFT,
-  renderTrips,
+  renderTravelPlans,
   tripDraftError,
+  type TravelPlansProps,
   type TripDraft,
-  type TripsProps,
-} from "./time-availability.trips.ts";
+} from "./lab-travel.plans.ts";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -23,16 +23,15 @@ const BERLIN: TripRow = {
   note: "Internship",
 };
 
-function renderView(overrides: Partial<TripsProps> = {}): HTMLElement {
+function renderView(overrides: Partial<TravelPlansProps> = {}): HTMLElement {
   const container = document.createElement("div");
   document.body.append(container);
   render(
-    renderTrips({
+    renderTravelPlans({
       trips: [BERLIN],
       homeLocation: "Toronto",
       draft: EMPTY_TRIP_DRAFT,
       onDraftChange: vi.fn(),
-      editable: true,
       saving: false,
       onSave: vi.fn(),
       today: "2026-09-15",
@@ -60,9 +59,7 @@ describe("editing a logged trip", () => {
     const onDraftChange = vi.fn();
     const container = renderView({ trips: [BERLIN, TOKYO], onDraftChange });
 
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="time-availability-trip-edit-1"]')
-      ?.click();
+    container.querySelector<HTMLButtonElement>('[data-testid="lab-travel-plan-edit-1"]')?.click();
 
     expect(onDraftChange).toHaveBeenCalledWith({
       city: "Tokyo",
@@ -83,7 +80,7 @@ describe("editing a logged trip", () => {
     });
 
     container
-      .querySelector<HTMLFormElement>('[data-testid="time-availability-trip-form"]')
+      .querySelector<HTMLFormElement>('[data-testid="lab-travel-plan-form"]')
       ?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
 
     const saved = onSave.mock.calls[0]?.[0] as TripRow[];
@@ -102,7 +99,7 @@ describe("editing a logged trip", () => {
     });
 
     container
-      .querySelector<HTMLFormElement>('[data-testid="time-availability-trip-form"]')
+      .querySelector<HTMLFormElement>('[data-testid="lab-travel-plan-form"]')
       ?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
 
     const saved = onSave.mock.calls[0]?.[0] as TripRow[];
@@ -112,12 +109,10 @@ describe("editing a logged trip", () => {
   it("offers a cancel that clears the draft, and only while editing", () => {
     const onDraftChange = vi.fn();
     const idle = renderView({ draft: EMPTY_TRIP_DRAFT });
-    expect(idle.querySelector('[data-testid="time-availability-trip-cancel"]')).toBeNull();
+    expect(idle.querySelector('[data-testid="lab-travel-plan-cancel"]')).toBeNull();
 
     const editing = renderView({ draft: draft({ editingIndex: 0 }), onDraftChange });
-    editing
-      .querySelector<HTMLButtonElement>('[data-testid="time-availability-trip-cancel"]')
-      ?.click();
+    editing.querySelector<HTMLButtonElement>('[data-testid="lab-travel-plan-cancel"]')?.click();
     expect(onDraftChange).toHaveBeenCalledWith(EMPTY_TRIP_DRAFT);
   });
 
@@ -133,9 +128,7 @@ describe("editing a logged trip", () => {
       onSave,
     });
 
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="time-availability-trip-remove-1"]')
-      ?.click();
+    container.querySelector<HTMLButtonElement>('[data-testid="lab-travel-plan-remove-1"]')?.click();
 
     expect(onSave).toHaveBeenCalledWith([BERLIN]);
     expect(onDraftChange).toHaveBeenCalledWith(EMPTY_TRIP_DRAFT);
@@ -149,9 +142,7 @@ describe("editing a logged trip", () => {
       onDraftChange,
     });
 
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="time-availability-trip-remove-0"]')
-      ?.click();
+    container.querySelector<HTMLButtonElement>('[data-testid="lab-travel-plan-remove-0"]')?.click();
 
     expect(onDraftChange).not.toHaveBeenCalled();
   });
@@ -164,13 +155,33 @@ describe("editing a logged trip", () => {
   });
 });
 
-describe("renderTrips", () => {
-  it("renders as one of the tab's editor sections, like the three above it", () => {
+describe("renderTravelPlans", () => {
+  it("renders as a Travel card with its add form", () => {
     const view = renderView();
-    expect(view.querySelector(".adminbot-time-availability__editor")).not.toBeNull();
-    expect(view.querySelector(".adminbot-time-availability__form")).not.toBeNull();
+    expect(view.querySelector('[data-testid="lab-travel-plans"]')).not.toBeNull();
     expect(view.querySelector("button.primary")?.textContent).toContain("Add trip");
-    expect(view.querySelector(".card-title")?.textContent).toContain("Add a trip away from home");
+    expect(view.textContent).toContain("Add a trip away from home");
+  });
+
+  it("titles the form as an edit while one is in progress", () => {
+    expect(renderView({ draft: draft({ editingIndex: 0 }) }).textContent).toContain("Edit trip");
+  });
+
+  it("keeps a row's link when the row is edited", () => {
+    const onSave = vi.fn();
+    const linked: TripRow = { ...BERLIN, link: "https://example.test/visit" };
+    renderView({ trips: [linked], draft: draft({ editingIndex: 0, note: "Changed" }), onSave })
+      .querySelector("form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+    expect(onSave.mock.calls[0]?.[0]?.[0]).toMatchObject({
+      link: "https://example.test/visit",
+      note: "Changed",
+    });
+  });
+
+  it("dims trips that are over", () => {
+    const view = renderView({ today: "2026-10-15" });
+    expect(view.querySelector(".lab-travel__past")).not.toBeNull();
   });
 
   it("lists a trip with its dates and zone, and marks the one running", () => {
@@ -218,9 +229,7 @@ describe("renderTrips", () => {
   it("guesses the timezone from the city as it is typed", () => {
     const onDraftChange = vi.fn();
     const view = renderView({ onDraftChange });
-    const city = view.querySelector<HTMLInputElement>(
-      '[data-testid="time-availability-trip-city"]',
-    )!;
+    const city = view.querySelector<HTMLInputElement>('[data-testid="lab-travel-plan-city"]')!;
     city.value = "Berlin";
     city.dispatchEvent(new Event("input", { bubbles: true }));
     expect(onDraftChange).toHaveBeenCalledWith(
@@ -231,9 +240,7 @@ describe("renderTrips", () => {
   it("never overwrites a timezone the member typed", () => {
     const onDraftChange = vi.fn();
     const view = renderView({ onDraftChange, draft: draft({ timezone: "Asia/Tokyo", city: "" }) });
-    const city = view.querySelector<HTMLInputElement>(
-      '[data-testid="time-availability-trip-city"]',
-    )!;
+    const city = view.querySelector<HTMLInputElement>('[data-testid="lab-travel-plan-city"]')!;
     city.value = "Berlin";
     city.dispatchEvent(new Event("input", { bubbles: true }));
     expect(onDraftChange).toHaveBeenCalledWith(
@@ -245,19 +252,8 @@ describe("renderTrips", () => {
     const onSave = vi.fn();
     const second: TripRow = { start: "2026-11-01", end: "2026-11-05", city: "Vancouver" };
     const view = renderView({ trips: [BERLIN, second], onSave });
-    view
-      .querySelector<HTMLButtonElement>('[data-testid="time-availability-trip-remove-1"]')
-      ?.click();
+    view.querySelector<HTMLButtonElement>('[data-testid="lab-travel-plan-remove-1"]')?.click();
     expect(onSave).toHaveBeenCalledWith([BERLIN]);
-  });
-
-  // An admin reading somebody else's schedule sees where they will be and cannot edit it: the
-  // service routes a member write to their own record.
-  it("is read-only for anyone but the member themselves", () => {
-    const view = renderView({ editable: false });
-    expect(view.querySelector("form")).toBeNull();
-    expect(view.querySelector('[data-testid="time-availability-trip-remove-0"]')).toBeNull();
-    expect(view.textContent).toContain("Berlin");
   });
 
   it("will not submit an incomplete draft", () => {

@@ -8,7 +8,7 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { draftLinkedInPost, draftXPost } from "../api/papers.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
-import { paperTripDraftFrom, renderPaperCycle, type PaperTripDraft } from "../views/paper-cycle.ts";
+import { renderPaperCycle } from "../views/paper-cycle.ts";
 import { renderPaperWeeklyUpdates } from "../views/paper-weekly-updates.ts";
 import type { PaperWorkspaceProps } from "./workspace.ts";
 
@@ -60,20 +60,10 @@ export function renderCycle(
     conferenceOpen:
       paper.venue_decision === "accept" && cycle.missingAcceptanceDetails.length === 0,
     missingAcceptanceDetails: cycle.missingAcceptanceDetails,
-    // Only when the service named a conference for this paper and the surface wired the writes:
-    // without the key there is nothing to key an answer to, and without the handlers the block
-    // would draw controls that do nothing.
-    ...(cycle.conferenceKey && props.onSaveTrip && props.onEditTrip
-      ? {
-          myTrip: cycle.myTrip ?? null,
-          tripDraft:
-            props.tripDrafts?.[cycle.conferenceKey] ?? paperTripDraftFrom(cycle.myTrip ?? null),
-          tripSaving: props.tripSavingKey === cycle.conferenceKey,
-          onEditTrip: (patch: Partial<PaperTripDraft>) =>
-            props.onEditTrip?.(cycle.conferenceKey as string, patch),
-          onSaveTrip: () => props.onSaveTrip?.(cycle.conferenceKey as string),
-          onWithdrawTrip: () => props.onWithdrawTrip?.(cycle.conferenceKey as string),
-        }
+    // Only when the service named a conference for this paper and the surface wired the way to
+    // the Travel tab: without the key there is no trip to read back.
+    ...(cycle.conferenceKey && props.onOpenTravel
+      ? { myTrip: cycle.myTrip ?? null, onOpenTravel: props.onOpenTravel }
       : {}),
     cycleClosed: cycle.cycleClosed,
     memberId: props.memberId,

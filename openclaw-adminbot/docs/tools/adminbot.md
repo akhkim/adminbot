@@ -1636,6 +1636,7 @@ checks and audit logging.
 
 ## Related
 
+- [Travel: conference RSVPs, travel plans and opt-in location sharing](/tools/adminbot-travel)
 - [Email template drift check](/tools/adminbot-email-templates)
 - [PaperFlow stage nudges](/tools/adminbot-paperflow-nudges)
 - [Email triage](/tools/adminbot-email-triage)

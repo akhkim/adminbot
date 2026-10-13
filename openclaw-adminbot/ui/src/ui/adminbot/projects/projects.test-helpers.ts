@@ -175,9 +175,7 @@ export function makeProps(options: DrawOptions = {}) {
     onConsent: () => {},
     onSetAttendee: () => {},
     onSetReimbursement: () => {},
-    ...(options.trip
-      ? { onEditTrip: () => {}, onSaveTrip: () => {}, onWithdrawTrip: () => {} }
-      : {}),
+    ...(options.trip ? { onOpenTravel: () => {} } : {}),
   };
   return { props, recorded };
 }

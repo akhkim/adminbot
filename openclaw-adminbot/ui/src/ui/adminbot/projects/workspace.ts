@@ -12,7 +12,6 @@ import type {
   AdminBotPaperSaveInput,
   SlackChannelCheck,
 } from "../controllers/admin.ts";
-import type { PaperTripDraft } from "../views/paper-cycle.ts";
 
 export type PaperWorkspaceProps = {
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
@@ -39,12 +38,11 @@ export type PaperWorkspaceProps = {
     slot: string,
     input: { url?: string; value_text?: string; value_note?: string; done?: boolean },
   ) => void;
-  /** The reader's own conference-trip answers, keyed by conference rather than by paper. */
-  tripDrafts?: Record<string, PaperTripDraft>;
-  tripSavingKey?: string | null;
-  onEditTrip?: (conferenceKey: string, patch: Partial<PaperTripDraft>) => void;
-  onSaveTrip?: (conferenceKey: string) => void;
-  onWithdrawTrip?: (conferenceKey: string) => void;
+  /**
+   * Opens the Travel tab, where the reader RSVPs for the conference a paper was accepted to. The
+   * card only reads the reader's answer back; the form lives on Travel.
+   */
+  onOpenTravel?: () => void;
   /** The signed-in member, so their own consent rows get buttons and nobody else's do. */
   memberId: string | null;
   memberName: (memberId: string) => string;

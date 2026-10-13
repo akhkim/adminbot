@@ -48,7 +48,6 @@ function host(overrides: Partial<AppViewState> = {}): AppViewState {
     adminBotPiReview: [],
     adminBotPaperSlots: {},
     adminBotPaperSlotOverview: [],
-    adminBotTripDrafts: {},
     adminBotPaperNudgeSelected: [],
     myProjects: [],
     setTab(this: AppViewState, tab: AppViewState["tab"]) {
