@@ -358,6 +358,21 @@ describe("deleting a paper", () => {
 });
 
 describe("editing a project's own details", () => {
+  it("starts details closed and preserves the reader's toggle through a rerender", () => {
+    const { container, rerender } = drawPage();
+    const details = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="my-work-details-p1"]',
+    )!;
+    const toggle = details.querySelector("summary")!;
+    expect(details.open).toBe(false);
+    toggle.click();
+    expect(details.open).toBe(true);
+    rerender();
+    expect(details.open).toBe(true);
+    toggle.click();
+    expect(details.open).toBe(false);
+  });
+
   const typeInto = (
     container: HTMLElement,
     testid: string,
