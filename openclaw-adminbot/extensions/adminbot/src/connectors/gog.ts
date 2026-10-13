@@ -6,6 +6,12 @@ import { promisify } from "node:util";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type { AdminBotActionExecutor } from "../kernel/service.js";
+import {
+  calendarMembershipReader,
+  removeFilteredCalendarAttendees,
+  calendarAccessReader,
+  revokeCalendarAccess,
+} from "./calendar-membership.js";
 import { renderEmailBodyHtml, renderEmailBodyText } from "./email-html.js";
 
 const execFile = promisify(execFileCallback);
@@ -303,6 +309,14 @@ function optionalAccount(env: NodeJS.ProcessEnv | undefined): string | undefined
   return (env ?? process.env).GOG_ACCOUNT?.trim() || undefined;
 }
 
+export function createGogCalendarAccessReader(env?: NodeJS.ProcessEnv) {
+  return calendarAccessReader(createGogCapture(env));
+}
+
+export function createGogCalendarMembershipReader(env?: NodeJS.ProcessEnv) {
+  return calendarMembershipReader(createGogCapture(env));
+}
+
 export function createGogAdminBotExecutor(
   options: GogAdminBotExecutorOptions = {},
 ): AdminBotActionExecutor {
@@ -339,8 +353,17 @@ export function createGogAdminBotExecutor(
         }
         return { handled: true };
       }
+      if (proposal.type === "calendar.revoke_lab_calendar") {
+        await revokeCalendarAccess(requirePayload(proposal), capture, run);
+        return { handled: true };
+      }
       if (proposal.type === "calendar.remove_attendees") {
-        await removeCalendarAttendees(proposal, run, capture);
+        const payload = requirePayload(proposal);
+        if (payload.membership_filter === true) {
+          await removeFilteredCalendarAttendees(payload, capture, run);
+        } else {
+          await removeCalendarAttendees(proposal, run, capture);
+        }
         return { handled: true };
       }
       if (
@@ -355,6 +378,19 @@ export function createGogAdminBotExecutor(
       const args = buildGogArgs(proposal);
       if (!args) {
         return { handled: false };
+      }
+      if (proposal.type === "calendar.create_birthday") {
+        const response = JSON.parse(await capture(args)) as {
+          id?: unknown;
+          event?: { id?: unknown };
+        };
+        const id = response.event?.id ?? response.id;
+        if (typeof id !== "string" || !id.trim()) {
+          throw new Error(
+            "birthday creation returned no event id; inspect the calendar before retrying",
+          );
+        }
+        return { handled: true, artifacts: { event_id: id } };
       }
       await run(args);
       return { handled: true };
@@ -926,7 +962,13 @@ function firstLine(text: string): string {
  */
 export async function readDriveFileBase64(
   fileId: string,
-  options: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {},
+  options: {
+    command?: string;
+    commandArgsPrefix?: string[];
+    env?: NodeJS.ProcessEnv;
+    maxBytes?: number;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<string> {
   // Resolved rather than bare: under the systemd unit's minimal PATH a bare "gog" ENOENTs, which
   // surfaced as "could not read the Drive copy (spawn gog ENOENT)" on every LinkedIn draft.
@@ -946,10 +988,17 @@ export async function readDriveFileBase64(
   ];
   try {
     await execFile(command, args, {
+      signal: options.signal,
       maxBuffer: GOG_MAX_OUTPUT_BYTES,
       timeout: GOG_TIMEOUT_MS,
       ...(options.env ? { env: options.env } : {}),
     });
+    if (
+      options.maxBytes !== undefined &&
+      (await fs.promises.stat(output)).size > options.maxBytes
+    ) {
+      throw new Error("Drive file exceeds the size limit.");
+    }
     return (await fs.promises.readFile(output)).toString("base64");
   } finally {
     // Best effort: a leftover temp PDF is a copy of a paper sitting on disk, so it goes even when

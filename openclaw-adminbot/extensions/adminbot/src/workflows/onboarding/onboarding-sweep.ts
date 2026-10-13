@@ -44,6 +44,7 @@ export type OnboardingCreateTarget = {
   sheet_row: number;
   name: string;
   email: string;
+  calendar_email?: string;
   member_type: string;
   /** The id the member would be given, slugged from the name. */
   member_id: string;
@@ -131,6 +132,7 @@ export function planOnboardingSweep(params: {
           sheet_row: row.sheet_row,
           name: row.name,
           email,
+          ...(row.calendar_email ? { calendar_email: row.calendar_email } : {}),
           member_type: row.member_type,
           member_id: memberId,
         });
@@ -148,6 +150,7 @@ export function planOnboardingSweep(params: {
       sheet_row: row.sheet_row,
       name: row.name,
       email,
+      ...(row.calendar_email ? { calendar_email: row.calendar_email } : {}),
       member_type: row.member_type,
       member_id: memberId,
     });

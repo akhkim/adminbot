@@ -1,3 +1,4 @@
+import { isProfileBlocked } from "./adminbot/views/profile-gate.ts";
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
 import { t } from "../i18n/index.ts";
@@ -275,6 +276,18 @@ export function renderTab(state: AppViewState, tab: Tab, opts?: { collapsed?: bo
   const isActive = tab === "config" ? isSettingsTab(state.tab) : sidebarTabFor(state.tab) === tab;
   const label = pageTitleForTab(tab);
   const collapsed = opts?.collapsed ?? state.settings.navCollapsed;
+  if (tab !== "profile" && isProfileBlocked(state)) {
+    return html`
+      <span
+        class="nav-item nav-item--unimplemented"
+        aria-disabled="true"
+        title=${t("profile.gate.title")}
+      >
+        <span class="nav-item__icon" aria-hidden="true">${icons[iconForTab(tab)]}</span>
+        ${!collapsed ? html`<span class="nav-item__text">${label}</span>` : nothing}
+      </span>
+    `;
+  }
   // A tab whose tool nobody has built yet holds its place without pretending to work: no href, no
   // click handler, so neither a click nor a middle-click routes at a view that does not exist.
   if (!isTabImplemented(tab)) {

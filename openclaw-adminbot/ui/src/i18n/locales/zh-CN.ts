@@ -601,6 +601,7 @@ export const zh_CN: TranslationMap = {
     adminbotReimbursements: "Reimbursements",
     adminbotSettings: "Settings",
     adminbotMembers: "Lab Members",
+    adminbotArrReviewers: "ARR Eligible Reviewers",
     adminbotProfileOverview: "Profile Completeness",
     adminbotTabUsage: "Tab Usage",
     adminbotProfessor: "My Desk",
@@ -619,6 +620,7 @@ export const zh_CN: TranslationMap = {
     adminbotGrantReport: "Grant Report",
     adminbotMailingList: "Mailing List",
     adminbotDeadlines: "Deadlines",
+    adminbotNotificationDrafts: "OpenReview announcements",
     adminbotOpportunities: "Opportunities",
     activity: "活动",
     overview: "概览",
@@ -644,6 +646,7 @@ export const zh_CN: TranslationMap = {
     dreams: "梦境",
   },
   subtitles: {
+    adminbotArrReviewers: "Self-reported ARR reviewer qualification and capacity.",
     dashboard: "What needs you, and where the lab stands.",
     profile: "Your details, and anything still blank.",
     gettingStarted: "Your setup checklist — what is left, and what you have already done.",
@@ -678,6 +681,7 @@ export const zh_CN: TranslationMap = {
       "Every paper mapped to a safety area, and the track record behind each ask.",
     adminbotMailingList: "Mail our publications for a date range to one address.",
     adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
+    adminbotNotificationDrafts: "Create tweet drafts and images from notification exports.",
     adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
     activity: "浏览器本地工具活动摘要。",
     overview: "状态、入口点、健康。",
@@ -2131,6 +2135,12 @@ export const zh_CN: TranslationMap = {
     },
   },
   profile: {
+    gate: {
+      title: "Complete your profile to continue",
+      description:
+        "Fill in the required fields below to use AdminBot. Your progress saves automatically.",
+      retry: "Try again",
+    },
     arrReviewer: {
       label: "I qualify as an ARR reviewer",
       yes: "I confirm that I am a qualified reviewer.",
@@ -2365,7 +2375,8 @@ export const zh_CN: TranslationMap = {
         "How you would explain your research to a smart person who does not work in it — the question you are chasing and why it matters, in a paragraph you could say out loud. The lab reuses it: introductions to visitors and collaborators, your entry on the shared directory, the blurb that goes out when a paper of yours lands. Research topics above are tags for filtering a roster; this is the part that makes somebody want to talk to you.",
     },
     hints: {
-      calendarEmail: "The Google account your calendar invites should go to.",
+      calendarEmail:
+        "Your Gmail (or other Google account). The lab calendar is shared with this address; without it AdminBot uses any Gmail on your profile.",
       correspondenceEmail: "Where the lab writes to you. Often not your @cs.toronto.edu address.",
       github: "Your profile page, not a repository: github.com/username",
       linkedin: "Your profile page: linkedin.com/in/username",

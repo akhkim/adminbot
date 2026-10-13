@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMemberInput, AdminBotStoredProposal } from "../contracts/actions.js";
 import { resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import type { AdminBotCalendarEvent } from "../workflows/calendar/events.js";
 import type { AdminBotOnboardingSender } from "../workflows/onboarding/guide-sender.js";
 import { createAdminBotMockService } from "./server.js";
@@ -104,7 +105,7 @@ async function startService(options: { sheetRows?: string[][]; meeting?: string[
       member_type: "coauthor-major",
     },
   ] as AdminBotLabMemberInput[]) {
-    const saved = mock.service.upsertLabMember(seed);
+    const saved = mock.service.upsertLabMember(withCompleteProfile(seed));
     if (!saved.ok) {
       throw new Error(saved.error.message);
     }
@@ -210,14 +211,14 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     const removal = executed.find((proposal) => proposal.type === "calendar.remove_attendees");
     expect(removal?.proposed_payload.removed_attendees).toEqual(["cora@lab.test"]);
     // The one mail this change sends, through the onboarding sender rather than the executor.
-    expect(steps.find((step) => step.step === "alumni_mail")?.status).toBe("done");
+    expect(steps.find((step) => step.step === "guide")?.status).toBe("done");
     expect(mailed.map((entry) => entry.email)).toEqual(["cora@lab.test"]);
     expect(mock.service.listPending().ok && mock.service.listPending().payload).toMatchObject({
       proposals: [],
     });
   });
 
-  it("promotes a coauthor to full without mail and without leaving the lab's rooms", async () => {
+  it("promotes a coauthor to full with the full-member guide, without leaving the lab's rooms", async () => {
     const { baseUrl, mock, executed, mailed, calendarShares } = await startService({
       sheetRows: [["Cora Coauthor", "coauthor-major", "cora@lab.test", ""]],
       meeting: ["admin@cs.toronto.edu", "cora@lab.test"],
@@ -238,7 +239,64 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     // A major coauthor already holds the lab calendar through the access design's standing-invites
     // row, so becoming full shares nothing new.
     expect(calendarShares.filter((email) => email !== "admin@cs.toronto.edu")).toEqual([]);
+    // A new type with a new guide is re-onboarding: the full-member guide goes out on this save.
+    expect(mailed).toEqual([{ email: "cora@lab.test", template: "member" }]);
+    expect(body.member_type_change?.steps.find((step) => step.step === "guide")).toMatchObject({
+      status: "done",
+      target: "cora@lab.test",
+    });
+  });
+
+  it("sends nothing when the new type onboards with the same guide", async () => {
+    const { baseUrl, mock, mailed } = await startService();
+    const token = await adminToken(mock, baseUrl);
+    await save(baseUrl, token, "cora", { member_type: "full" });
+    expect(mailed).toHaveLength(1);
+
+    // `full` still decides the template, so the alumni tag adds nothing to mail.
+    const body = (await (
+      await save(baseUrl, token, "cora", { member_type: "full, alumni" })
+    ).json()) as ChangeBody;
+    expect(body.member_type_change?.steps.some((step) => step.step === "guide")).toBe(false);
+    expect(mailed).toHaveLength(1);
+  });
+
+  it("queues a non-standard guide for approval instead of sending it on the save", async () => {
+    const { baseUrl, mock, mailed } = await startService();
+    const token = await adminToken(mock, baseUrl);
+
+    const body = (await (
+      await save(baseUrl, token, "cora", { member_type: "coauthor-minor" })
+    ).json()) as ChangeBody;
+
+    const guide = body.member_type_change?.steps.find((step) => step.step === "guide");
+    expect(guide).toMatchObject({ status: "queued", target: "cora@lab.test" });
     expect(mailed).toEqual([]);
+    const pending = mock.service.listPending();
+    expect(
+      pending.ok &&
+        pending.payload.proposals.some(
+          (proposal) =>
+            proposal.type === "onboarding.send_guide" &&
+            (proposal.proposed_payload as { template_id?: string }).template_id ===
+              "coauthor_minor",
+        ),
+    ).toBe(true);
+  });
+
+  it("does not mail a guide the person has already been sent", async () => {
+    const { baseUrl, mock, mailed } = await startService();
+    const token = await adminToken(mock, baseUrl);
+    await save(baseUrl, token, "cora", { member_type: "full" });
+    await save(baseUrl, token, "cora", { member_type: "coauthor-major" });
+    const back = (await (
+      await save(baseUrl, token, "cora", { member_type: "full" })
+    ).json()) as ChangeBody;
+
+    expect(back.member_type_change?.steps.find((step) => step.step === "guide")).toMatchObject({
+      status: "skipped",
+    });
+    expect(mailed.filter((entry) => entry.template === "member")).toHaveLength(1);
   });
 
   it("lets an explicit Privilege in the same save win", async () => {
@@ -267,7 +325,8 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     expect(
       stillAdmin.ok && stillAdmin.payload.members.find((row) => row.id === "admin"),
     ).toMatchObject({ privilege_level: "admin", member_type: "full" });
-    expect(mailed).toEqual([]);
+    // Cora's move into `full` is the only mail; the refused self-demotion sends nothing.
+    expect(mailed).toEqual([{ email: "cora@lab.test", template: "member" }]);
 
     // Another admin can take it away.
     const demoted = (await (
@@ -284,6 +343,7 @@ describe("PUT /lab/members/:id changing Member Type", () => {
       await save(baseUrl, token, "newbie", {
         name: "New Person",
         email: "newbie@cs.toronto.edu",
+        calendar_email: "newbie@gmail.com",
         member_type: "full",
       })
     ).json()) as ChangeBody;
@@ -294,6 +354,24 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     const steps = created.member_type_change?.steps ?? [];
     expect(steps.find((step) => step.step === "lab_calendar")?.status).toBe("done");
     expect(steps.some((step) => step.step === "group_meeting")).toBe(true);
+  });
+
+  it("does not share the lab calendar with a departmental login", async () => {
+    const { baseUrl, mock } = await startService();
+    const token = await adminToken(mock, baseUrl);
+
+    const created = (await (
+      await save(baseUrl, token, "nogmail", {
+        name: "No Gmail",
+        email: "nogmail@cs.toronto.edu",
+        member_type: "full",
+      })
+    ).json()) as ChangeBody;
+
+    // Google would accept the share, but the member could never open the calendar with it.
+    expect(
+      created.member_type_change?.steps.find((step) => step.step === "lab_calendar"),
+    ).toMatchObject({ status: "skipped", detail: "no Gmail or Google Calendar email on file" });
   });
 
   it("does nothing outside the database when the type did not change", async () => {
@@ -341,36 +419,50 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     expect(service.status).toBe(403);
   });
 
-  it("applies the Meetings checkboxes, and a changed Monday box outranks the type", async () => {
-    const { baseUrl, mock, executed } = await startService({
-      sheetRows: [["Cora Coauthor", "coauthor-major", "cora@lab.test", ""]],
-      meeting: ["admin@cs.toronto.edu"],
-    });
-    const token = await adminToken(mock, baseUrl);
+  it.each([
+    { memberType: "alumni", allowed: false },
+    { memberType: "full, alumni", allowed: true },
+  ])(
+    "enforces calendar eligibility for a Meetings checkbox with $memberType",
+    async ({ memberType, allowed }) => {
+      const { baseUrl, mock, executed } = await startService({
+        sheetRows: [["Cora Coauthor", "coauthor-major", "cora@lab.test", ""]],
+        meeting: ["admin@cs.toronto.edu"],
+      });
+      const token = await adminToken(mock, baseUrl);
 
-    // Cora is not on the Monday meeting; the admin ticks it while also making her alumni, which on
-    // its own would keep her off it.
-    const response = await save(baseUrl, token, "cora", {
-      member_type: "alumni",
-      meetings: [SERIES],
-    });
-    const body = (await response.json()) as ChangeBody & {
-      meeting_changes?: Array<{ step: string; status: string }>;
-      meetings?: unknown;
-    };
+      // An explicit meeting selection cannot bypass eligibility. Full alumni remain eligible.
+      const response = await save(baseUrl, token, "cora", {
+        member_type: memberType,
+        meetings: [SERIES],
+      });
+      const body = (await response.json()) as ChangeBody & {
+        meeting_changes?: Array<{ step: string; status: string }>;
+        meetings?: unknown;
+      };
 
-    expect(body.meetings).toBeUndefined();
-    expect(body.meeting_changes).toEqual([
-      expect.objectContaining({ step: "meeting", status: "done" }),
-    ]);
-    const types = executed.map((proposal) => proposal.type);
-    expect(types).toContain("calendar.add_attendees");
-    expect(types).not.toContain("calendar.remove_attendees");
-    const stored = mock.service.listLabMembers();
-    expect(stored.ok && stored.payload.members.find((row) => row.id === "cora")).not.toHaveProperty(
-      "meetings",
-    );
-  });
+      expect(body.meetings).toBeUndefined();
+      expect(body.meeting_changes).toEqual([
+        expect.objectContaining({
+          step: "meeting",
+          status: allowed ? "done" : "failed",
+          ...(!allowed
+            ? {
+                detail:
+                  "Known lab members invited to the lab calendar must be full members or major coauthors",
+              }
+            : {}),
+        }),
+      ]);
+      const types = executed.map((proposal) => proposal.type);
+      expect(types.includes("calendar.add_attendees")).toBe(allowed);
+      expect(types).not.toContain("calendar.remove_attendees");
+      const stored = mock.service.listLabMembers();
+      expect(
+        stored.ok && stored.payload.members.find((row) => row.id === "cora"),
+      ).not.toHaveProperty("meetings");
+    },
+  );
 });
 
 describe("new member creation", () => {
@@ -434,7 +526,9 @@ describe("new member creation", () => {
       });
     expect((await request()).status).toBe(401);
     expect((await request(SERVICE_TOKEN)).status).toBe(403);
-    mock.service.upsertLabMember({ id: "admin", name: "Admin", privilege_level: "member" });
+    mock.service.upsertLabMember(
+      withCompleteProfile({ id: "admin", name: "Admin", privilege_level: "member" }),
+    );
     expect((await request(token)).status).toBe(403);
     const roster = mock.service.listLabMembers();
     expect(

@@ -6,7 +6,7 @@ import type {
   PaperReimbursement,
   PaperSocialConsent,
   PaperSocialDraft,
-} from "../auth/session.ts";
+} from "../api/papers.ts";
 import { renderPaperCycle, type PaperCycleProps } from "./paper-cycle.ts";
 
 type Calls = {
@@ -29,30 +29,27 @@ function draw(overrides: Partial<PaperCycleProps> = {}) {
   };
   const container = document.createElement("div");
   document.body.append(container);
-  render(
-    renderPaperCycle({
-      paperId: "p1",
-      drafts: [],
-      consents: [],
-      attendees: [],
-      reimbursements: [],
-      conferenceOpen: false,
-      missingAcceptanceDetails: [],
-      cycleClosed: false,
-      memberId: "ada",
-      memberName: (id) => id,
-      onSaveDraft: (platform, body) => calls.drafts.push([platform, body]),
-      onCirculateDraft: (id) => calls.circulated.push(id),
-      onGenerateLinkedInDraft: (venue, note) => calls.generated.push([venue, note]),
-      onConsent: (id, decision, comment) => calls.consents.push([id, decision, comment]),
-      onSetAttendee: (name, memberId, attending) =>
-        calls.attendees.push([name, memberId, attending]),
-      onSetReimbursement: (memberId, status) => calls.reimbursements.push([memberId, status]),
-      ...overrides,
-    }),
-    container,
-  );
-  return { container, calls };
+  const props: PaperCycleProps = {
+    paperId: "p1",
+    drafts: [],
+    consents: [],
+    attendees: [],
+    reimbursements: [],
+    conferenceOpen: false,
+    missingAcceptanceDetails: [],
+    cycleClosed: false,
+    memberId: "ada",
+    memberName: (id) => id,
+    onSaveDraft: (platform, body) => calls.drafts.push([platform, body]),
+    onCirculateDraft: (id) => calls.circulated.push(id),
+    onGenerateLinkedInDraft: (venue, note) => calls.generated.push([venue, note]),
+    onConsent: (id, decision, comment) => calls.consents.push([id, decision, comment]),
+    onSetAttendee: (name, memberId, attending) => calls.attendees.push([name, memberId, attending]),
+    onSetReimbursement: (memberId, status) => calls.reimbursements.push([memberId, status]),
+    ...overrides,
+  };
+  render(renderPaperCycle(props), container);
+  return { container, calls, props };
 }
 
 function draft(fields: Partial<PaperSocialDraft> = {}): PaperSocialDraft {
@@ -162,6 +159,129 @@ describe("social drafts", () => {
 });
 
 describe("the linkedin panel's absorbed generator", () => {
+  it("keeps four stage panels and edits a saved figure with its thread", async () => {
+    const saved: unknown[] = [];
+    const { container, props } = draw({
+      onGenerateXDraft: () => {},
+      onSaveDraft: (...args) => {
+        saved.push(args);
+      },
+      drafts: [
+        draft({
+          x_thread: {
+            stage: "poster",
+            posts: [
+              {
+                text: "1/1 Come chat",
+                images: [
+                  { data_uri: "data:image/png;base64,iVBORw0KGgo=", alt_text: "Synthetic results" },
+                ],
+              },
+            ],
+          },
+        }),
+      ],
+    });
+    for (const stage of ["acceptance", "attendance", "poster"]) {
+      expect(container.querySelector(`[data-testid="paper-draft-p1-x-${stage}"]`)).not.toBeNull();
+    }
+    const panel = container.querySelector('[data-testid="paper-draft-p1-x-poster"]');
+    expect(panel?.querySelector("img")?.getAttribute("alt")).toBe("Synthetic results");
+    const text = panel?.querySelector<HTMLTextAreaElement>('[data-post="0"]');
+    if (!text) {
+      throw new Error("Missing thread editor");
+    }
+    text.value = "1/1 Updated invitation";
+    text.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(panel?.querySelector('[data-preview="0"]')?.textContent).toBe(text.value);
+    expect(panel?.querySelector('[data-count="0"]')?.textContent).toBe("22 / 280");
+    expect(panel?.textContent).toContain("Coauthor review is optional");
+    panel
+      ?.querySelector("form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saved).toEqual([
+      [
+        "x",
+        "1/1 Updated invitation",
+        {
+          stage: "poster",
+          posts: [
+            {
+              text: "1/1 Updated invitation",
+              images: [
+                { data_uri: "data:image/png;base64,iVBORw0KGgo=", alt_text: "Synthetic results" },
+              ],
+            },
+          ],
+        },
+      ],
+    ]);
+    expect(() =>
+      render(
+        renderPaperCycle({
+          ...props,
+          drafts: props.drafts.map((item) => ({
+            ...item,
+            x_thread: { stage: "poster" as const, posts: [{ text: "1/1 Saved invitation" }] },
+          })),
+        }),
+        container,
+      ),
+    ).not.toThrow();
+    expect(container.querySelector('[data-preview="0"]')?.textContent).toBe("1/1 Saved invitation");
+  });
+  it("exposes PDF generation in X without unused LinkedIn context inputs", () => {
+    const calls: unknown[] = [];
+    const { container } = draw({
+      onGenerateXDraft: (...args) => {
+        calls.push(args);
+      },
+    });
+    const panel = container.querySelector('[data-testid="paper-draft-p1-x"]');
+    expect(panel?.querySelector('[data-el="pdf"]')).not.toBeNull();
+    expect(panel?.querySelector('[data-el="venue"]')).toBeNull();
+    panel?.querySelector<HTMLButtonElement>('[data-testid="paper-draft-generate-p1-x"]')?.click();
+    expect(calls).toEqual([
+      [
+        "",
+        "",
+        undefined,
+        { stage: "arxiv", venue: undefined, attendees: undefined, session: undefined },
+        { authors: [], organizations: [] },
+      ],
+    ]);
+  });
+  it("selects one announcement and generates that stage", () => {
+    const calls: unknown[] = [];
+    const { container } = draw({
+      onGenerateXDraft: (...args) => {
+        calls.push(args);
+      },
+    });
+    const select = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Announcement to make"]',
+    )!;
+    select.value = "poster";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    const panels = Array.from(container.querySelectorAll<HTMLElement>("[data-announcement-panel]"));
+    expect(
+      panels.filter((panel) => !panel.hidden).map((panel) => panel.dataset.announcementPanel),
+    ).toEqual(["poster"]);
+    const panel = container.querySelector('[data-announcement-panel="poster"]')!;
+    panel.querySelector<HTMLInputElement>('[data-el="x-venue"]')!.value = "SyntheticConf";
+    panel.querySelector<HTMLInputElement>('[data-el="x-session"]')!.value =
+      "9 Oct, Hall A, poster 2";
+    panel
+      .querySelector<HTMLButtonElement>('[data-testid="paper-draft-generate-p1-x-poster"]')!
+      .click();
+    expect((calls[0] as unknown[])[3]).toEqual({
+      stage: "poster",
+      venue: "SyntheticConf",
+      attendees: undefined,
+      session: "9 Oct, Hall A, poster 2",
+    });
+  });
   it("asks for venue and context on linkedin only, ahead of the draft box", () => {
     const { container } = draw();
     const li = container.querySelector('[data-testid="paper-draft-p1-linkedin"]');
@@ -310,111 +430,49 @@ describe("the closing line", () => {
   });
 });
 
-describe("what you need for this trip", () => {
-  /** The card with the trip block wired: conference open, and the handlers present. */
-  function withTrip(overrides: Partial<PaperCycleProps> = {}) {
-    const edits: Array<Partial<import("./paper-cycle.ts").PaperTripDraft>> = [];
-    const saves: number[] = [];
-    const withdrawals: number[] = [];
-    const drawn = draw({
+describe("the way to the Travel tab", () => {
+  // The trip form itself moved to the Travel tab, which lists every conference by site. The card
+  // keeps the reader's answer, read back, and a button to go and give or change it.
+  it("is absent on a paper whose conference is not settled", () => {
+    const { container } = draw({ conferenceOpen: false, onOpenTravel: () => {} });
+    expect(container.querySelector('[data-testid="paper-travel-p1"]')).toBeNull();
+  });
+
+  it("is absent on a surface that wired no way there, like somebody else's card", () => {
+    const { container } = draw({ conferenceOpen: true });
+    expect(container.querySelector('[data-testid="paper-travel-p1"]')).toBeNull();
+    // And the old form is gone everywhere.
+    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
+  });
+
+  it("asks for an RSVP when there is none, and opens Travel", () => {
+    const opened: number[] = [];
+    const { container } = draw({
       conferenceOpen: true,
       myTrip: null,
-      onEditTrip: (patch) => edits.push(patch),
-      onSaveTrip: () => saves.push(1),
-      onWithdrawTrip: () => withdrawals.push(1),
-      ...overrides,
+      onOpenTravel: () => opened.push(1),
     });
-    return { ...drawn, edits, saves, withdrawals };
-  }
-
-  it("is absent on a paper whose conference is not settled", () => {
-    const { container } = draw({ conferenceOpen: false });
-    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
+    expect(container.textContent).toContain("RSVP on the Travel tab");
+    container.querySelector<HTMLButtonElement>('[data-testid="paper-travel-open-p1"]')?.click();
+    expect(opened).toEqual([1]);
   });
 
-  it("is absent on a surface that wired no trip handlers, like somebody else's card", () => {
-    const { container } = draw({ conferenceOpen: true });
-    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
-  });
-
-  it("opens on undecided and asks nothing further until they say they are going", () => {
-    const { container } = withTrip();
-    const intent = container.querySelector<HTMLSelectElement>(
-      '[data-testid="paper-trip-intent-p1"]',
-    );
-    expect(intent?.value).toBe("undecided");
-    expect(container.querySelector('[data-testid="paper-trip-funding-p1"]')).toBeNull();
-  });
-
-  it("asks the money, bed and visa questions once they are going", () => {
-    const { container } = withTrip({
-      tripDraft: {
-        intent: "going",
-        funding: "none",
-        needs_lodging: false,
-        needs_visa_letter: false,
-        arrival_on: "",
-        departure_on: "",
-        notes: "",
-      },
-    });
-    const funding = container.querySelector('[data-testid="paper-trip-funding-p1"]');
-    expect(funding?.textContent).toContain("No financial aid needed");
-    expect(funding?.textContent).toContain("Conference fee only");
-    expect(funding?.textContent).toContain("Flight only");
-    expect(funding?.textContent).toContain("Full travel");
-    expect(container.querySelector('[data-testid="paper-trip-lodging-p1"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="paper-trip-visa-p1"]')).not.toBeNull();
-    // Dates only once a bed is wanted: a headcount alone books the wrong thing.
-    expect(container.querySelector('[data-testid="paper-trip-arrival-p1"]')).toBeNull();
-  });
-
-  it("asks for nights once a bed is wanted", () => {
-    const { container } = withTrip({
-      tripDraft: {
-        intent: "going",
-        funding: "full_travel",
-        needs_lodging: true,
-        needs_visa_letter: false,
-        arrival_on: "",
-        departure_on: "",
-        notes: "",
-      },
-    });
-    expect(container.querySelector('[data-testid="paper-trip-arrival-p1"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="paper-trip-departure-p1"]')).not.toBeNull();
-  });
-
-  it("offers withdrawal only once something is recorded", () => {
-    const empty = withTrip();
-    expect(empty.container.querySelector('[data-testid="paper-trip-withdraw-p1"]')).toBeNull();
-    const filled = withTrip({
+  it("reads back an answer already given", () => {
+    const { container } = draw({
+      conferenceOpen: true,
+      onOpenTravel: () => {},
       myTrip: {
         conference_key: "emnlp:2026",
         member_id: "ada",
         intent: "going",
         funding: "fee_only",
-        needs_lodging: false,
+        needs_lodging: true,
         needs_visa_letter: false,
       },
     });
-    filled.container
-      .querySelector<HTMLButtonElement>('[data-testid="paper-trip-withdraw-p1"]')
-      ?.click();
-    expect(filled.withdrawals).toEqual([1]);
-  });
-
-  it("reports an edit and a save", () => {
-    const { container, edits, saves } = withTrip();
-    const intent = container.querySelector<HTMLSelectElement>(
-      '[data-testid="paper-trip-intent-p1"]',
+    expect(container.textContent).toContain("staying in the lab Airbnb");
+    expect(container.querySelector('[data-testid="paper-travel-open-p1"]')?.textContent).toContain(
+      "Change on Travel",
     );
-    if (intent) {
-      intent.value = "going";
-      intent.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-    expect(edits).toEqual([{ intent: "going" }]);
-    container.querySelector<HTMLButtonElement>('[data-testid="paper-trip-save-p1"]')?.click();
-    expect(saves).toEqual([1]);
   });
 });

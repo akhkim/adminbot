@@ -1,3 +1,4 @@
+import { adminBotArxivId } from "../../contracts/paper-artifact-links.js";
 // Where a paper's PDF can be found when nobody uploaded one.
 //
 // The LinkedIn draft reads the compiled paper to get the title, the ordered author list and the
@@ -36,18 +37,26 @@ export function driveFileIdFromUrl(url: string): string | undefined {
 }
 
 export type PaperPdfSource =
+  | { kind: "arxiv"; id: string; url: string }
   | { kind: "drive"; fileId: string; url: string }
   | { kind: "none"; reason: string };
 
 /**
  * Where to get this paper's PDF from, given what the card has on file.
  *
- * Only the Drive copy today. Overleaf is deliberately not attempted: there is no supported way to
+ * X drafting can prefer the versioned arXiv record. Other callers retain their Drive
+ * default. Overleaf is deliberately not attempted: there is no supported way to
  * ask it for a compiled PDF without driving a browser session as the author, and a draft that
  * silently produced last month's build would be worse than one that says it needs the Drive copy.
  * The message names that, so the answer is a step the author can actually take.
  */
-export function resolvePaperPdfSource(slots: readonly AdminBotPaperSlotRecord[]): PaperPdfSource {
+export function resolvePaperPdfSource(
+  slots: readonly AdminBotPaperSlotRecord[],
+  preferArxiv = false,
+): PaperPdfSource {
+  const arxiv = slots.find((slot) => slot.slot === "arxiv")?.url;
+  const id = arxiv ? adminBotArxivId(arxiv) : undefined;
+  if (preferArxiv && id) return { kind: "arxiv", id, url: `https://arxiv.org/abs/${id}` };
   const drive = slots.find((slot) => slot.slot === "drive_pdf_arxiv");
   const url = drive?.url?.trim() ?? "";
   if (!url) {

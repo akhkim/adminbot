@@ -283,3 +283,15 @@ describe("condenseAuthorRuns", () => {
     expect(condensed).toContain("Gemini: a family of models");
   });
 });
+
+it("splits initial-led references and references following an arXiv or DOI suffix", () => {
+  const entries = [
+    "Alice Example and Bob Sample. First synthetic title. In Test Conference, pp. 123–130, 2023.",
+    "Y. Example, B. Sample, and Z. Test. Second synthetic title. In Test Conference, 2025. arXiv:2504.12345.",
+    "Zelda Example and Ben Sample. Third synthetic title. Test Journal, 2025.",
+    "Xavier Example. Fourth synthetic title. Test Journal, 2022. arXiv:2103.12345.",
+    "Mary Example and John Sample. Fifth synthetic title. Test Journal, 2024. https://doi.org/10.1234/test",
+    "Lei Example. Sixth synthetic title. Test Journal, 2025.",
+  ];
+  expect(splitIntoReferences(entries.join("\n"))).toEqual(entries);
+});
