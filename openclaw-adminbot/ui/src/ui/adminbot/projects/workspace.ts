@@ -5,7 +5,7 @@
 // here is an existing controller call; the service decides what each viewer may change, and these
 // props only decide which affordances are drawn.
 import type { XThreadDraft } from "../../../../../extensions/adminbot/src/workflows/papers/x-draft.js";
-import type { PaperNudgeBatch, PaperSlotOverviewRow } from "../api/paper-admin.ts";
+import type { PaperSlotOverviewRow } from "../api/paper-admin.ts";
 import type { PaperCycle } from "../api/papers.ts";
 import type {
   AdminBotPaperRecord,
@@ -20,6 +20,11 @@ export type PaperWorkspaceProps = {
   onSaveBlocker?: (paper: AdminBotPaperSaveInput) => Promise<boolean>;
   /** Asks the host to re-render. The flat view and the sheet edit in place. */
   onRerender?: () => void;
+  /**
+   * Whether the reader administers the lab. It decides only which drawing the card list opens on
+   * (see opensOnSheet in full-views.ts); what anybody may edit is the service's decision.
+   */
+  viewerIsAdmin?: boolean;
   /** What each paper still owes, computed by the service, so a count here matches what a nudge chases. */
   overview: PaperSlotOverviewRow[];
   /** The whole cycle by paper id, read when a project page (or the flat view) asks for it. */
@@ -27,16 +32,6 @@ export type PaperWorkspaceProps = {
   slotsBusyId: string | null;
   slotsError: string | null;
   slotsNotice: string | null;
-  nudging: boolean;
-  /** Hides the lab-wide nudge from a member. The service re-checks; this is the affordance. */
-  canNudge: boolean;
-  /** The preview, or null when it is closed. Opening it sends nothing. */
-  nudgeBatches: PaperNudgeBatch[] | null;
-  nudgeLoading: boolean;
-  nudgeSelected: string[];
-  onReviewNudges: () => void;
-  onToggleNudgeRecipient: (memberId: string) => void;
-  onNudgeAuthors: () => void;
   /** Fetches one paper's evidence. Optional: a surface without it offers no evidence to fill in. */
   onLoadSlots?: (paperId: string) => void;
   onSaveSlot: (

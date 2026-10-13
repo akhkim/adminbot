@@ -35,7 +35,6 @@ import {
   type ProjectTab,
 } from "./model.ts";
 import type { ProjectsNavState } from "./nav.ts";
-import { renderNudgePanel } from "./nudge.ts";
 import { renderDeletePaper, renderHideButton, renderPaperRecentEdits } from "./paper-actions.ts";
 import {
   renderAcceptance,
@@ -309,7 +308,6 @@ function renderProjectTab(
           ${renderWeeklyUpdates(paper, props)}
         </section>`
       : nothing}
-    ${renderNudgePanel(props)}
     <!-- Who moved this paper, and when, then the one destructive control: last, so it is not
          something to hit while scrolling. -->
     ${renderPaperRecentEdits(state, props, paper)} ${renderDeletePaper(paper, props)}

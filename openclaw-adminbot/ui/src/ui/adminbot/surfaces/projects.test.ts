@@ -1,5 +1,5 @@
 // The wiring behind My Projects & Papers and the head professor's review dialog: which paper opens
-// where, who is offered the lab-wide nudge, and that a write asks the sidebar to read again.
+// where, which drawing the card list lands on, and that a write asks the sidebar to read again.
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -141,9 +141,13 @@ describe("the review dialog surface", () => {
 });
 
 describe("paperWorkspaceProps", () => {
-  it("offers the lab-wide nudge to an administrator only", () => {
-    expect(paperWorkspaceProps(host(), scope({ adminBotMode: "admin" })).canNudge).toBe(true);
-    expect(paperWorkspaceProps(host(), scope({ adminBotMode: "general" })).canNudge).toBe(false);
+  it("tells the card list whether the reader administers the lab", () => {
+    expect(paperWorkspaceProps(host(), scope({ accessRole: "admin" })).viewerIsAdmin).toBe(true);
+    expect(paperWorkspaceProps(host(), scope({ accessRole: "member" })).viewerIsAdmin).toBe(false);
+  });
+
+  it("carries no lab-wide nudge into the project pages", () => {
+    expect("onNudgeAuthors" in paperWorkspaceProps(host(), scope())).toBe(false);
   });
 
   it("asks the sidebar to read the project list again once a paper write lands", async () => {

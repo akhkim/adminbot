@@ -2,18 +2,35 @@
 //
 // No composer and no recipient picker beyond the ticks: the service walks every live paper, finds
 // the artifacts whose upstream evidence is already in, and composes the message to whoever the slot
-// registry says owes each one. Admin-only because it messages the whole lab; `canNudge` hides the
-// affordance and the service re-checks.
+// registry says owes each one. Admin-only because it messages the whole lab: it lives on Active
+// Papers, the page about the whole lab, and is handed to it only in admin mode. `canNudge` hides
+// the affordance; the service re-checks.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
-import type { PaperWorkspaceProps } from "./workspace.ts";
+import type { PaperNudgeBatch, PaperSlotOverviewRow } from "../api/paper-admin.ts";
+
+export type PaperNudgeProps = {
+  /** What each paper still owes; the button counts the papers it would chase. */
+  overview: PaperSlotOverviewRow[];
+  canNudge: boolean;
+  /** The preview, or null when it is closed. Opening it sends nothing. */
+  nudgeBatches: PaperNudgeBatch[] | null;
+  nudgeLoading: boolean;
+  nudgeSelected: string[];
+  nudging: boolean;
+  /** What the last run did, or why it failed. */
+  notice: string | null;
+  onReviewNudges: () => void;
+  onToggleNudgeRecipient: (memberId: string) => void;
+  onNudgeAuthors: () => void;
+};
 
 /**
  * Opens the preview. Disabled at zero rather than hidden: a button that vanishes when the lab is
  * caught up gives no way to tell "everything is in" from "this feature is gone".
  */
-export function renderNudgeButton(props: PaperWorkspaceProps) {
+export function renderNudgeButton(props: PaperNudgeProps) {
   if (!props.canNudge) {
     return nothing;
   }
@@ -45,7 +62,7 @@ export function renderNudgeButton(props: PaperWorkspaceProps) {
  * that will arrive under their name, and be able to leave somebody out of this round without
  * waiving anything. Somebody with no Slack id is shown unticked and unticking rather than hidden.
  */
-export function renderNudgePreview(props: PaperWorkspaceProps) {
+export function renderNudgePreview(props: PaperNudgeProps) {
   const batches = props.nudgeBatches;
   // Gated on its own rather than trusting the button: this names every member who owes something
   // and quotes the message that would go to them.
@@ -114,23 +131,22 @@ export function renderNudgePreview(props: PaperWorkspaceProps) {
 }
 
 /**
- * The nudge as a panel of its own, for a project page an administrator opens. It chases every
- * paper in the lab, not just this one, and says so, along with what the last run did.
+ * The nudge as one section of Active Papers: what it does, the button, what the last run did, and
+ * the preview once it is open. Nothing at all for anyone who may not chase the lab.
  */
-export function renderNudgePanel(props: PaperWorkspaceProps) {
+export function renderPaperNudge(props: PaperNudgeProps) {
   if (!props.canNudge) {
     return nothing;
   }
-  return html`<section class="project__panel" data-testid="project-nudge-panel">
-    <h3>Chase authors (whole lab)</h3>
+  return html`<div class="paper-nudge" data-testid="paper-nudge">
     <p class="muted">
       Messages every author who owes an artifact whose upstream evidence is already in, across every
-      live paper -- not only this one. Nothing is sent until you review the messages.
+      live paper. Nothing is sent until you review the messages and press Send.
     </p>
     <div>${renderNudgeButton(props)}</div>
-    ${props.slotsNotice
-      ? html`<p class="my-work__notice-line" role="status">${props.slotsNotice}</p>`
+    ${props.notice
+      ? html`<p class="my-work__notice-line" role="status">${props.notice}</p>`
       : nothing}
     ${renderNudgePreview(props)}
-  </section>`;
+  </div>`;
 }

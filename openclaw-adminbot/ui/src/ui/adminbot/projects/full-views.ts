@@ -19,6 +19,8 @@ import {
   clearSavedEdits,
   diffForHistory,
   emptyPaperGridState,
+  PAPER_GRID_DEFAULT_THRESHOLD,
+  PAPER_GRID_THRESHOLD,
   recordHistory,
   renderPaperGrid,
   unsentSlotEdits,
@@ -48,18 +50,41 @@ import type { PaperWorkspaceProps } from "./workspace.ts";
 
 export type ProjectsListMode = "cards" | "flat" | "sheet";
 
-let mode: ProjectsListMode = "cards";
+/**
+ * Which drawing this reader has asked for, when they have asked at all. `auto` means they have not,
+ * and `opensOnSheet` decides. A press is the standing answer for the rest of the session -- without
+ * remembering it, "Back to cards" would be undone by the next render looking at the same papers.
+ */
+let choice: ProjectsListMode | "auto" = "auto";
 // Kept across renders so a half-typed field or cell survives a repaint.
 let legacyState: PaperLegacyState | null = null;
 let gridState: PaperGridState | null = null;
 
-export function projectsListMode(): ProjectsListMode {
-  return mode;
+/**
+ * Whether the page lands on the sheet before anybody asks: an administrator as soon as the sheet is
+ * offered at all, and anybody carrying enough papers that the visit is a sweep rather than a read.
+ * The same rule main's My Projects page used (`opensOnSheet` in views/my-work.ts), gated the same
+ * way on the sheet being offered -- below PAPER_GRID_THRESHOLD it is worse than the cards for
+ * everyone, administrators included.
+ */
+export function opensOnSheet(params: { count: number; admin: boolean }): boolean {
+  return (
+    params.count > PAPER_GRID_THRESHOLD &&
+    (params.admin || params.count >= PAPER_GRID_DEFAULT_THRESHOLD)
+  );
+}
+
+/** The drawing the overview shows: the reader's own choice, or the landing rule above. */
+export function projectsListMode(params: { count: number; admin: boolean }): ProjectsListMode {
+  if (choice !== "auto") {
+    return choice;
+  }
+  return opensOnSheet(params) ? "sheet" : "cards";
 }
 
 /** Switches the overview's drawing. The two whole-page views are exclusive: opening one closes the other. */
 export function setProjectsListMode(next: ProjectsListMode): void {
-  mode = next;
+  choice = next;
   legacyState = next === "flat" ? (legacyState ?? emptyPaperLegacyState()) : null;
   gridState = next === "sheet" ? (gridState ?? emptyPaperGridState()) : null;
 }
@@ -68,7 +93,7 @@ export function setProjectsListMode(next: ProjectsListMode): void {
 export function resetProjectsListViews(): void {
   cancelPaperLegacyAutosave();
   clearHistory();
-  mode = "cards";
+  choice = "auto";
   legacyState = null;
   gridState = null;
 }
@@ -224,6 +249,7 @@ export function renderListMode(
   state: AppViewState,
   props: PaperWorkspaceProps,
   papers: AdminBotPaperRecord[],
+  mode: ProjectsListMode,
 ) {
   if (mode === "flat") {
     return html`<div class="my-work my-work--legacy">${renderFlatView(state, props, papers)}</div>`;

@@ -11,9 +11,7 @@ import { loadSlackChannelNames } from "../controllers/directory.ts";
 import {
   circulateAdminBotSocialDraft,
   editAdminBotTrip,
-  loadAdminBotNudgeBatches,
   loadAdminBotPaperSlots,
-  nudgeAdminBotPaperAuthors,
   recordAdminBotSocialConsent,
   saveAdminBotPaperSlot,
   saveAdminBotPaperWeeklyUpdate,
@@ -21,7 +19,6 @@ import {
   saveAdminBotTrip,
   setAdminBotPaperAttendee,
   setAdminBotPaperReimbursement,
-  toggleAdminBotPaperNudgeRecipient,
   withdrawAdminBotTrip,
 } from "../controllers/paper-slots.ts";
 import { deleteAdminBotPaper } from "../controllers/papers.ts";
@@ -46,7 +43,7 @@ function tripFor(state: AppViewState, conferenceKey: string) {
 
 export function paperWorkspaceProps(
   state: AppViewState,
-  scope: Pick<AdminBotSurfaceScope, "adminBotMode" | "requestHostUpdate">,
+  scope: Pick<AdminBotSurfaceScope, "accessRole" | "requestHostUpdate">,
 ): PaperWorkspaceProps {
   const { requestHostUpdate } = scope;
   // A write can change what is open on a project, so the sidebar's summaries are read again after
@@ -70,9 +67,9 @@ export function paperWorkspaceProps(
     slotsBusyId: state.adminBotPaperSlotsBusyId,
     slotsError: state.adminBotPaperSlotsError,
     slotsNotice: state.adminBotPaperSlotsNotice,
-    nudging: state.adminBotPaperSlotsNudging,
-    // Chasing the lab is an admin act. The service re-checks; this only hides the affordance.
-    canNudge: scope.adminBotMode === "admin",
+    // Which drawing the card list lands on, not what anybody may do: the role already resolved for
+    // the whole render, so it cannot disagree with the tabs beside it.
+    viewerIsAdmin: scope.accessRole === "admin",
     onLoadSlots: (paperId) => {
       void loadAdminBotPaperSlots(state, paperId).finally(() => requestHostUpdate?.());
     },
@@ -103,19 +100,6 @@ export function paperWorkspaceProps(
     },
     onWithdrawTrip: (conferenceKey) => {
       void withdrawAdminBotTrip(state, conferenceKey).finally(() => requestHostUpdate?.());
-    },
-    onNudgeAuthors: () => {
-      void nudgeAdminBotPaperAuthors(state).finally(() => requestHostUpdate?.());
-    },
-    nudgeBatches: state.adminBotPaperNudgeBatches,
-    nudgeLoading: state.adminBotPaperNudgeLoading,
-    nudgeSelected: state.adminBotPaperNudgeSelected,
-    onReviewNudges: () => {
-      void loadAdminBotNudgeBatches(state).finally(() => requestHostUpdate?.());
-    },
-    onToggleNudgeRecipient: (memberId: string) => {
-      toggleAdminBotPaperNudgeRecipient(state, memberId);
-      requestHostUpdate?.();
     },
     memberId: state.memberId ?? null,
     memberName: (memberId: string) =>

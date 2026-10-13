@@ -2,18 +2,11 @@
 //
 // Carried over from the old card's tests when the card became this page: where the paper is aimed,
 // its details and their autosave, the venue decision, completion, blockers, delete, the lab-wide
-// nudge, and the X-thread drafting on the Social tab.
+// and the X-thread drafting on the Social tab.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { paperSteps } from "../views/admin.ts";
-import {
-  batch,
-  drawPage,
-  emptyCycle,
-  makeState,
-  overviewRow,
-  paper,
-} from "./projects.test-helpers.ts";
+import { drawPage, emptyCycle, makeState, overviewRow, paper } from "./projects.test-helpers.ts";
 import { resetProjectsSessionState } from "./view.ts";
 
 const api = vi.hoisted(() => ({
@@ -625,74 +618,15 @@ describe("reporting a blocker", () => {
   });
 });
 
+// The nudge chases the whole lab, so it lives on Active Papers (views/paper-nudge.ts), not on any
+// one paper's page -- an administrator's included.
 describe("the lab-wide author nudge", () => {
-  const admin = { canNudge: true } as const;
-
-  it("counts only live papers with something outstanding on the review button", () => {
-    const { container, reviews } = drawPage({
-      ...admin,
-      overview: [overviewRow(), overviewRow({ paper_id: "p2", dormant: true })],
-    });
-    const button = container.querySelector<HTMLButtonElement>(
-      '[data-testid="my-work-review-nudges"]',
-    );
-    expect(button?.textContent).toContain("1");
-    button?.click();
-    // Opening the preview sends nothing -- that is the whole point of the manual flow.
-    expect(reviews).toEqual([1]);
-  });
-
-  it("sends nothing until the preview is open and Send is pressed", () => {
-    const closed = drawPage(admin);
-    expect(closed.container.querySelector('[data-testid="my-work-nudge-authors"]')).toBeNull();
-    const open = drawPage({ ...admin, nudgeBatches: [batch()], nudgeSelected: ["ada"] });
-    open.container
-      .querySelector<HTMLButtonElement>('[data-testid="my-work-nudge-authors"]')!
-      .click();
-    expect(open.nudges).toEqual([1]);
-  });
-
-  it("shows the message verbatim, so somebody reads what goes out under their name", () => {
-    const { container } = drawPage({ ...admin, nudgeBatches: [batch()], nudgeSelected: ["ada"] });
-    expect(container.querySelector(".nudge-preview__message")?.textContent).toContain(
-      "• Talk slides",
-    );
-  });
-
-  it("shows an unreachable person, unticked and unticking", () => {
-    const { container } = drawPage({
-      ...admin,
-      nudgeBatches: [batch({ member_id: "bob", member_name: "Bob", deliverable: false })],
-    });
-    expect(
-      container.querySelector<HTMLInputElement>('[data-testid="nudge-pick-bob"]')?.disabled,
-    ).toBe(true);
-    expect(container.textContent).toContain("No Slack account on file");
-  });
-
-  it("will not send with nobody ticked, and lets an admin drop one person", () => {
-    const none = drawPage({ ...admin, nudgeBatches: [batch()], nudgeSelected: [] });
-    expect(
-      none.container.querySelector<HTMLButtonElement>('[data-testid="my-work-nudge-authors"]')
-        ?.disabled,
-    ).toBe(true);
-    const some = drawPage({ ...admin, nudgeBatches: [batch()], nudgeSelected: ["ada"] });
-    some.container.querySelector<HTMLInputElement>('[data-testid="nudge-pick-ada"]')!.click();
-    expect(some.picked).toEqual(["ada"]);
-  });
-
-  it("disables the review button rather than hiding it when the lab is caught up", () => {
-    const { container } = drawPage({ ...admin, overview: [overviewRow({ missing_slots: [] })] });
-    expect(
-      container.querySelector<HTMLButtonElement>('[data-testid="my-work-review-nudges"]')?.disabled,
-    ).toBe(true);
-  });
-
-  it("keeps the whole surface off a member's page, preview included", () => {
-    const { container } = drawPage({ canNudge: false, nudgeBatches: [batch()] });
-    expect(container.querySelector('[data-testid="project-nudge-panel"]')).toBeNull();
-    expect(container.querySelector('[data-testid="my-work-nudge-preview"]')).toBeNull();
-    expect(container.querySelector('[data-testid="my-work-nudge-authors"]')).toBeNull();
+  it("is not on a project page, whoever is reading", () => {
+    for (const viewerIsAdmin of [false, true]) {
+      const { container } = drawPage({ viewerIsAdmin });
+      expect(container.querySelector('[data-testid="paper-nudge"]')).toBeNull();
+      expect(container.querySelector('[data-testid="my-work-review-nudges"]')).toBeNull();
+    }
   });
 });
 

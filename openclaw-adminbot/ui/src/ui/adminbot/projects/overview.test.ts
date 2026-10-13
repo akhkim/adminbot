@@ -70,8 +70,8 @@ describe("the card list", () => {
     expect(container.querySelector(".my-work__error-line")?.textContent).toContain("Could not");
   });
 
-  it("keeps the lab-wide nudge off the member's own list -- it messages the whole lab", () => {
-    const { container } = drawOverview({ canNudge: true });
+  it("keeps the lab-wide nudge off the reader's own list -- it lives on Active Papers", () => {
+    const { container } = drawOverview({ viewerIsAdmin: true });
     expect(container.querySelector('[data-testid="my-work-review-nudges"]')).toBeNull();
   });
 
@@ -641,6 +641,67 @@ describe("the sheet", () => {
   const papers = (count: number) =>
     Array.from({ length: count }, (_unused, index) => paper({ id: `p${index + 1}` }));
   const onSheet = (container: HTMLElement) => container.querySelector(".my-work--sheet") !== null;
+
+  // The landing rule main's My Projects used (opensOnSheet): an administrator as soon as the sheet
+  // is offered, anybody else from five papers. Below that the cards are the page.
+  describe("the drawing the page lands on", () => {
+    it("lands a member with four papers on the cards, and still offers the sheet", () => {
+      const { container } = drawOverview({ papers: papers(4) });
+      expect(onSheet(container)).toBe(false);
+      expect(container.querySelector('[data-testid="project-card-p1"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="my-work-open-grid"]')).not.toBeNull();
+    });
+
+    it("lands a member with five papers on the sheet", () => {
+      const { container } = drawOverview({ papers: papers(5) });
+      expect(onSheet(container)).toBe(true);
+      expect(container.querySelector('[data-testid="project-card-p1"]')).toBeNull();
+    });
+
+    it("lands an administrator on the sheet as soon as it is offered", () => {
+      expect(onSheet(drawOverview({ papers: papers(3), viewerIsAdmin: true }).container)).toBe(
+        true,
+      );
+    });
+
+    it("leaves an administrator on the cards where the sheet is not offered", () => {
+      const { container } = drawOverview({ papers: papers(2), viewerIsAdmin: true });
+      expect(onSheet(container)).toBe(false);
+      expect(container.querySelector('[data-testid="my-work-open-grid"]')).toBeNull();
+    });
+
+    it("counts only the papers on the reader's list, not the hidden ones", () => {
+      const list = papers(5);
+      const page = drawPage({ papers: list, paperId: "p5" });
+      page.container.querySelector<HTMLButtonElement>('[data-testid="my-work-hide-p5"]')!.click();
+      expect(onSheet(drawOverview({ papers: list }).container)).toBe(false);
+    });
+
+    // A default that reasserted itself on the next render would make Back to cards do nothing.
+    it("keeps the cards once the reader asks for them, and reopens the sheet on request", () => {
+      const list = papers(6);
+      const first = drawOverview({ papers: list });
+      expect(onSheet(first.container)).toBe(true);
+      first.container
+        .querySelector<HTMLButtonElement>(".paper-grid__tools .btn:last-of-type")!
+        .click();
+      expect(onSheet(drawOverview({ papers: list }).container)).toBe(false);
+      const second = drawOverview({ papers: list });
+      second.container
+        .querySelector<HTMLButtonElement>('[data-testid="my-work-open-grid"]')!
+        .click();
+      expect(onSheet(drawOverview({ papers: list }).container)).toBe(true);
+    });
+
+    it("starts over for the next member on this browser", () => {
+      const list = papers(6);
+      drawOverview({ papers: list })
+        .container.querySelector<HTMLButtonElement>(".paper-grid__tools .btn:last-of-type")!
+        .click();
+      resetProjectsSessionState();
+      expect(onSheet(drawOverview({ papers: list }).container)).toBe(true);
+    });
+  });
 
   it("is offered above the threshold and takes the page when asked for", () => {
     const first = drawOverview({ papers: papers(3) });

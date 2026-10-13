@@ -3,7 +3,7 @@
 // Every write the pages make lands in a recorder rather than reaching a controller, so a test can
 // say exactly what a click would have sent to the service.
 import { render } from "lit";
-import type { PaperNudgeBatch, PaperSlotOverviewRow } from "../api/paper-admin.ts";
+import type { PaperSlotOverviewRow } from "../api/paper-admin.ts";
 import type { PaperCycle } from "../api/papers.ts";
 import type {
   AdminBotPaperRecord,
@@ -41,18 +41,6 @@ export function overviewRow(overrides: Partial<PaperSlotOverviewRow> = {}): Pape
     missing_slots: ["overleaf"],
     escalating: false,
     ...overrides,
-  };
-}
-
-export function batch(fields: Partial<PaperNudgeBatch> = {}): PaperNudgeBatch {
-  return {
-    member_id: "ada",
-    member_name: "Ada Lovelace",
-    deliverable: true,
-    item_count: 2,
-    paper_titles: ["Causal abstraction"],
-    message: "*Causal abstraction* still needs:\n• Talk slides",
-    ...fields,
   };
 }
 
@@ -103,10 +91,8 @@ export type DrawOptions = {
   channelCheck?: SlackChannelCheck;
   overview?: PaperSlotOverviewRow[];
   slots?: Record<string, PaperCycle>;
-  canNudge?: boolean;
-  nudging?: boolean;
-  nudgeBatches?: PaperNudgeBatch[] | null;
-  nudgeSelected?: string[];
+  /** Omitted by default, so a plain member is what every test draws as. */
+  viewerIsAdmin?: boolean;
   notice?: string | null;
   error?: string | null;
   /** Reuse a state object across two draws, for the controls that keep a draft in view state. */
@@ -151,9 +137,6 @@ export function makeProps(options: DrawOptions = {}) {
     saved: [] as AdminBotPaperSaveInput[],
     deleted: [] as string[],
     slotWrites: [] as Array<{ paperId: string; slot: string; input: Record<string, unknown> }>,
-    nudges: [] as number[],
-    reviews: [] as number[],
-    picked: [] as string[],
     channelToggles: [] as boolean[],
     drafts: [] as Array<{ paperId: string; platform: string; body: string; xThread?: unknown }>,
     recentEdits: [] as Array<[string, string]>,
@@ -181,15 +164,8 @@ export function makeProps(options: DrawOptions = {}) {
     slotsBusyId: null,
     slotsError: options.error ?? null,
     slotsNotice: options.notice ?? null,
-    nudging: options.nudging ?? false,
-    canNudge: options.canNudge ?? false,
-    nudgeBatches: options.nudgeBatches ?? null,
-    nudgeLoading: false,
-    nudgeSelected: options.nudgeSelected ?? [],
-    onReviewNudges: () => recorded.reviews.push(1),
-    onToggleNudgeRecipient: (id) => recorded.picked.push(id),
+    viewerIsAdmin: options.viewerIsAdmin ?? false,
     onSaveSlot: (paperId, slot, input) => recorded.slotWrites.push({ paperId, slot, input }),
-    onNudgeAuthors: () => recorded.nudges.push(1),
     memberId: "ada",
     memberName: (id) => id,
     onSaveDraft: (paperId, platform, body, xThread) =>

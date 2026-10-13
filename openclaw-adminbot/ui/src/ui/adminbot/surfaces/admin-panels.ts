@@ -44,7 +44,13 @@ import {
   saveAdminBotOwnProfile,
 } from "../controllers/members.ts";
 import { sendAdminBotMemberNudge } from "../controllers/nudges.ts";
-import { loadAdminBotPaperSlots, saveAdminBotPaperSlot } from "../controllers/paper-slots.ts";
+import {
+  loadAdminBotNudgeBatches,
+  loadAdminBotPaperSlots,
+  nudgeAdminBotPaperAuthors,
+  saveAdminBotPaperSlot,
+  toggleAdminBotPaperNudgeRecipient,
+} from "../controllers/paper-slots.ts";
 import { deleteAdminBotPaper } from "../controllers/papers.ts";
 import { loadAdminBotRecentEdits } from "../controllers/recent-edits.ts";
 import {
@@ -178,6 +184,31 @@ export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSur
         // A paper opens on its project page, the same page its authors work on -- except for the
         // head professor, whose job here is the review, not the authors' checklist.
         onOpenPaperCard: (paperId) => openPaperForViewer(state, paperId, requestHostUpdate),
+        // The lab-wide author nudge: preview, then send, through the same controller calls it
+        // always used. Handed over in admin mode only; the service re-checks the send.
+        ...(adminBotMode === "admin"
+          ? {
+              paperNudge: {
+                overview: state.adminBotPaperSlotOverview,
+                canNudge: true,
+                nudgeBatches: state.adminBotPaperNudgeBatches,
+                nudgeLoading: state.adminBotPaperNudgeLoading,
+                nudgeSelected: state.adminBotPaperNudgeSelected,
+                nudging: state.adminBotPaperSlotsNudging,
+                notice: state.adminBotPaperSlotsNotice,
+                onReviewNudges: () => {
+                  void loadAdminBotNudgeBatches(state).finally(() => requestHostUpdate?.());
+                },
+                onToggleNudgeRecipient: (memberId: string) => {
+                  toggleAdminBotPaperNudgeRecipient(state, memberId);
+                  requestHostUpdate?.();
+                },
+                onNudgeAuthors: () => {
+                  void nudgeAdminBotPaperAuthors(state).finally(() => requestHostUpdate?.());
+                },
+              },
+            }
+          : {}),
         paperFilter: state.adminBotPaperFilter,
         onPaperFilter: (filter) => {
           state.adminBotPaperFilter = filter;

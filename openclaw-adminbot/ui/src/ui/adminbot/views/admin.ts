@@ -112,6 +112,7 @@ import {
   type PaperGridState,
 } from "../paper-grid.ts";
 import { renderAdminBotEmailReview } from "./email-review.ts";
+import { renderPaperNudge, type PaperNudgeProps } from "./paper-nudge.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
   paperOverviewRows,
@@ -171,8 +172,10 @@ export type AdminBotProps = {
   /** Active Papers' own filter. Lives on app state so it survives a re-render, like the others. */
   paperFilter?: PaperOverviewFilter;
   onPaperFilter?: (filter: PaperOverviewFilter) => void;
-  /** Opens one paper's own card over the table. See renderPaperCardDialog. */
+  /** Opens one paper: its project page, or the head professor's review. */
   onOpenPaperCard?: (paperId: string) => void;
+  /** The lab-wide author nudge. Absent outside admin mode, which draws no nudge at all. */
+  paperNudge?: PaperNudgeProps;
   /** Redraw after local-only state changes, such as opening the bulk sheet. */
   onRerender?: () => void;
   /**
@@ -2608,6 +2611,11 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     ${board(t("paperOverview.details.blockers"), renderBlockers(props, papers))}
     ${board(t("paperOverview.details.nextSteps"), renderNextSteps(props, papers))}
     ${board(t("paperOverview.details.nudges"), renderNudges(props.data.nudges))}
+    ${props.paperNudge
+      ? board("Chase authors (whole lab)", renderPaperNudge(props.paperNudge), {
+          open: props.paperNudge.nudgeBatches !== null,
+        })
+      : nothing}
     ${board(t("paperOverview.details.add"), renderAddPaperCard(props, { governance: true }))}
   `;
 }

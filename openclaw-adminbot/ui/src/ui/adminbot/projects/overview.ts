@@ -204,7 +204,9 @@ export function renderProjectsOverview(state: OverviewState, props: PaperWorkspa
     state.myProjects === null && !state.myProjectsError
       ? []
       : visible.filter((paper) => !activeIds.has(paper.id));
-  const mode = projectsListMode();
+  // Lands on the sheet for an administrator, or for anybody with five or more papers, as the old
+  // My Projects page did; everyone else lands on the cards. A press on either button outranks it.
+  const mode = projectsListMode({ count: visible.length, admin: props.viewerIsAdmin ?? false });
   const rerender = () => props.onRerender?.();
   const members = state.adminBotData?.members ?? [];
   return html`<section class="projects" data-testid="projects-overview">
@@ -259,7 +261,7 @@ export function renderProjectsOverview(state: OverviewState, props: PaperWorkspa
       : nothing}
     ${mode === "cards"
       ? renderCards(state, props, projects, others, tucked.length)
-      : renderListMode(state, props, visible)}
+      : renderListMode(state, props, visible, mode)}
     <!-- Says how many are held back and offers them straight back. A list that silently drops
          rows is indistinguishable from one that lost them. -->
     ${tucked.length
