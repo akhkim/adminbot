@@ -2441,9 +2441,7 @@ export function renderApp(state: AppViewState) {
   const wantsGatewayAdminBotLoad =
     ((isChat && isAdminBotChat) || adminBotPanel || wantsRosterOnly) && state.connected;
   const needsFirstPaperRead =
-    needsPapersForTab &&
-    Boolean(state.adminBotData.loadedAt) &&
-    !state.adminBotData.papersLoadedAt;
+    needsPapersForTab && Boolean(state.adminBotData.loadedAt) && !state.adminBotData.papersLoadedAt;
   if (
     state.tab !== "adminbotMeetings" &&
     (hasMemberSession || wantsGatewayAdminBotLoad) &&
