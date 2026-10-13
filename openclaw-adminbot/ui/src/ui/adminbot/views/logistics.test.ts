@@ -910,6 +910,30 @@ describe("list of schools", () => {
       drawLetters({ container, schools: [{ ...row, letterDeadline: "" }] });
       expect(input.value).toBe("");
     });
+
+    // The reported "dates switch" case: once one date was typed, its label went out of Lit's
+    // reach and every redraw stopped there, so the next date box still held the handler from
+    // before -- with the rows from before -- and typing in it put the first date back.
+    it("keeps an earlier date when the next one is typed after a redraw", () => {
+      const row = createSchoolRow();
+      const first = drawLetters({ schools: [row] });
+      const container = first.container;
+      const application = cellInput(container, "applicationDeadline")!;
+      typed(application, "2026-12-14");
+      application.dispatchEvent(new Event("input", { bubbles: true }));
+      const afterFirst = first.schoolChanges.at(-1)!;
+      expect(afterFirst[0]?.applicationDeadline).toBe("2026-12-14");
+
+      const second = drawLetters({ container, schools: afterFirst });
+      const letter = cellInput(container, "letterDeadline")!;
+      typed(letter, "2026-12-24");
+      letter.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(second.schoolChanges.at(-1)?.[0]).toMatchObject({
+        applicationDeadline: "2026-12-14",
+        letterDeadline: "2026-12-24",
+      });
+      expect(application.value).toBe("2026-12-14");
+    });
   });
 
   it("gives every column of a row its own control", () => {
