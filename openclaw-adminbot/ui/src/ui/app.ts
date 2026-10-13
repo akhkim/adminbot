@@ -129,13 +129,18 @@ import {
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
+import type { ProjectSummary } from "./adminbot/projects/model.ts";
+import { resetProjectsSessionState } from "./adminbot/projects/view.ts";
+import type {
+  BlockerDraft,
+  ProjectDetailsDraft,
+  ProjectVenueDraft,
+} from "./adminbot/projects/workspace.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
 import { resetAdminViewSessionState } from "./adminbot/views/admin.ts";
 import type { ConferencePapersTab } from "./adminbot/views/conference-papers.ts";
 import { resetLabSharingSessionState } from "./adminbot/views/lab-sharing.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
-import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
-import { resetMyWorkSessionState } from "./adminbot/views/my-work.ts";
 import type { PaperTripDraft } from "./adminbot/views/paper-cycle.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
@@ -765,9 +770,9 @@ export class OpenClawApp extends LitElement {
   @state() adminBotProfileOverviewLoadedAt: number | null = null;
   @state() adminBotProfileOverviewReminding = false;
   @state() adminBotProfileOverviewNotice: string | null = null;
-  // Defaults to the people with something outstanding, which is what a sweep is looking for.
   @state() myWorkCoauthorDraft: Record<string, { email: string; name: string; twitter: string }> =
     {};
+  // Defaults to the people with something outstanding, which is what a sweep is looking for.
   @state() adminBotProfileOverviewFilter: ProfileOverviewFilter = {
     ...EMPTY_PROFILE_OVERVIEW_FILTER,
   };
@@ -864,17 +869,17 @@ export class OpenClawApp extends LitElement {
   @state() adminBotWorkshopNudges: WorkshopNudgeReviewState = createEmptyWorkshopNudgeReviewState();
   @state() adminBotVenueIndexJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() adminBotChannelNamingJob: AdminBotCvDigestJobState = { status: "idle" };
+  @state() myProjects: ProjectSummary[] | null = null;
+  @state() myProjectsLoading = false;
+  @state() myProjectsError: string | null = null;
+  @state() myProjectsChoosing = false;
   @state() myWorkBlockerDraft: BlockerDraft | null = null;
-  @state() myWorkBlockers: Blocker[] = [];
   @state() myWorkProjectDraft: string | null = null;
   @state() myWorkProjectAlias = "";
   @state() myWorkProjectError: string | null = null;
-  @state() myWorkProjectEdits: Record<
-    string,
-    { title: string; alias: string; startedOn: string; error: string | null }
-  > = {};
+  @state() myWorkProjectEdits: Record<string, ProjectDetailsDraft> = {};
+  @state() myWorkProjectVenues: ProjectVenueDraft[] = [];
   @state() myWorkChannelCheck: SlackChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
-  @state() myWorkProjectVenues: Array<{ venueId: string; year: number; confidence: number }> = [];
   @state() profileEditingSection: "basics" | null = null;
   @state() profileAccountChecks: Record<string, ProfileAccountCheck> = {};
   @state() registrations: MemberRegistration[] = [];
@@ -1347,7 +1352,7 @@ export class OpenClawApp extends LitElement {
   }
 
   resetMemberViewSessionState() {
-    resetMyWorkSessionState();
+    resetProjectsSessionState();
     resetProfileSessionState();
     resetLabSharingSessionState();
     resetAdminViewSessionState();

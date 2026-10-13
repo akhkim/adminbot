@@ -16,7 +16,7 @@ export type AdminBotSurfaceScope = {
   adminBotMode: AdminBotLoadMode;
   /** The admin panel this tab opens, if it is one of the panel tabs. */
   adminBotPanel: AdminBotPanel | null;
-  /** The paper Active Papers has opened as a card, resolved from its id on this render. */
+  /** The paper a row opened for the head professor's review, resolved from its id. */
   activePaperCard: AdminBotPaperRecord | undefined;
   hasMemberSession: boolean;
   needsPapersForTab: boolean;

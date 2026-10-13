@@ -23,22 +23,23 @@ specific approval item before anything mutates outside OpenClaw.
 You need a local AdminBot service listening on loopback, for example
 `http://127.0.0.1:8765`. The service must implement these endpoints:
 
-| Endpoint                              | Purpose                                                           |
-| ------------------------------------- | ----------------------------------------------------------------- |
-| `POST /public/deadline-proposals`     | Submit a deadline for administrator review.                       |
-| `POST /proposals`                     | Create one typed action proposal.                                 |
-| `POST /privacy/tasks`                 | Route reasoning through the VM-local privacy gate.                |
-| `GET /proposals/pending`              | Return pending approval items.                                    |
-| `GET /settings`                       | Return service defaults such as member privilege and escalation.  |
-| `PUT /settings`                       | Update AdminBot service defaults.                                 |
-| `GET /lab/members`                    | Return lab members and computed access profiles.                  |
-| `PUT /lab/members/{member_id}`        | Create or update one lab member.                                  |
-| `GET /papers`                         | Return paper pipeline records with computed timeline estimates.   |
-| `PUT /papers/{paper_id}`              | Create or update one paper pipeline record.                       |
-| `GET /papers/nudges`                  | Return due paper reminders and PI escalations.                    |
-| `POST /approvals/{action_id}/approve` | Approve one immutable payload by hash.                            |
-| `POST /actions/{action_id}/execute`   | Execute or simulate an approved action.                           |
-| `GET /audit`                          | Return service audit events for local development and inspection. |
+| Endpoint                              | Purpose                                                            |
+| ------------------------------------- | ------------------------------------------------------------------ |
+| `POST /public/deadline-proposals`     | Submit a deadline for administrator review.                        |
+| `POST /proposals`                     | Create one typed action proposal.                                  |
+| `POST /privacy/tasks`                 | Route reasoning through the VM-local privacy gate.                 |
+| `GET /proposals/pending`              | Return pending approval items.                                     |
+| `GET /settings`                       | Return service defaults such as member privilege and escalation.   |
+| `PUT /settings`                       | Update AdminBot service defaults.                                  |
+| `GET /lab/members`                    | Return lab members and computed access profiles.                   |
+| `PUT /lab/members/{member_id}`        | Create or update one lab member.                                   |
+| `GET /papers`                         | Return paper pipeline records with computed timeline estimates.    |
+| `PUT /papers/{paper_id}`              | Create or update one paper pipeline record.                        |
+| `GET /my/projects`                    | Return the signed-in member's active projects, open work per lane. |
+| `GET /papers/nudges`                  | Return due paper reminders and PI escalations.                     |
+| `POST /approvals/{action_id}/approve` | Approve one immutable payload by hash.                             |
+| `POST /actions/{action_id}/execute`   | Execute or simulate an approved action.                            |
+| `GET /audit`                          | Return service audit events for local development and inspection.  |
 
 Keep external connector credentials in the AdminBot service. Do not place Slack,
 Google, email, calendar, reimbursement, or social media write tokens in OpenClaw

@@ -43,6 +43,18 @@ export const papersRoutes: readonly Route[] = [
   // PDF source and its runner.
   post("/papers/linkedin-draft", draftAnnouncement),
   post("/papers/x-draft", draftAnnouncement),
+  // A member's own active projects, for the sidebar and the project cards. The service token has
+  // no "own" papers, so it is refused rather than answered with somebody's; the member id comes
+  // from the session and never from the query, so `?member_id=` cannot widen it.
+  get(
+    "/my/projects",
+    memberOnly(
+      ({ res, principal, ctx }) => {
+        sendServiceResult(res, ctx.service.listMyProjects(principal.member.id));
+      },
+      { status: 403, message: "member session required" },
+    ),
+  ),
   get(
     "/papers/relevant",
     memberOnly(

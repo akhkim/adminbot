@@ -34,8 +34,6 @@ import {
   loadAdminBotMemberList,
   loadAdminBotStandingMeetings,
   loadAdminBotRoster,
-  EMPTY_SLACK_CHANNEL_CHECK,
-  saveAdminBotPaper,
   markAdminBotNudgesSeen,
 } from "./adminbot/controllers/admin.ts";
 import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
@@ -52,7 +50,6 @@ import {
 import {
   runAdminBotCvDigestJob,
   runAdminBotChannelNamingJob,
-  loadSlackChannelNames,
 } from "./adminbot/controllers/directory.ts";
 import {
   approveAdminBotAction,
@@ -66,34 +63,14 @@ import {
 } from "./adminbot/controllers/mailing-list.ts";
 import { loadAdminBotMemberRequests } from "./adminbot/controllers/member-requests.ts";
 import { saveAdminBotOwnSchedule } from "./adminbot/controllers/members.ts";
-import {
-  circulateAdminBotSocialDraft,
-  loadAdminBotNudgeBatches,
-  loadAdminBotPaperSlotOverview,
-  loadAdminBotPaperSlots,
-  nudgeAdminBotPaperAuthors,
-  recordAdminBotSocialConsent,
-  saveAdminBotPaperSlot,
-  saveAdminBotPaperWeeklyUpdate,
-  saveAdminBotSocialDraft,
-  setAdminBotPaperAttendee,
-  setAdminBotPaperReimbursement,
-  toggleAdminBotPaperCard,
-  toggleAdminBotPaperNudgeRecipient,
-} from "./adminbot/controllers/paper-slots.ts";
-import {
-  editAdminBotTrip,
-  saveAdminBotTrip,
-  withdrawAdminBotTrip,
-} from "./adminbot/controllers/paper-slots.ts";
-import { deleteAdminBotPaper } from "./adminbot/controllers/papers.ts";
+import { loadAdminBotPaperSlotOverview } from "./adminbot/controllers/paper-slots.ts";
+import { loadMyProjects } from "./adminbot/controllers/papers.ts";
 import {
   loadAdminBotProfileOverview,
   remindAdminBotIncompleteProfiles,
   seedAdminBotNudgeList,
 } from "./adminbot/controllers/profile-overview.ts";
 import "./components/feedback-widget.ts";
-import { loadAdminBotRecentEdits } from "./adminbot/controllers/recent-edits.ts";
 import { exportAdminBotTabUsage, loadAdminBotTabUsage } from "./adminbot/controllers/tab-usage.ts";
 import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
 import { milestoneRows } from "./adminbot/data/availability.ts";
@@ -132,6 +109,9 @@ import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import { configureDraftSync, retryDraftSync } from "./adminbot/offline/draft-sync.ts";
 import { needsLabPapers } from "./adminbot/papers-required.ts";
+import { ownPapers } from "./adminbot/projects/model.ts";
+import { renderProjectsNav, type ProjectsNavState } from "./adminbot/projects/nav.ts";
+import { openPaperForViewer } from "./adminbot/projects/open-paper.ts";
 import { needsLabRoster } from "./adminbot/roster-required.ts";
 import { renderAdminPanelsSurface } from "./adminbot/surfaces/admin-panels.ts";
 import { renderCollaborateSurface } from "./adminbot/surfaces/collaborate.ts";
@@ -143,6 +123,7 @@ import {
 } from "./adminbot/surfaces/logistics.ts";
 import { renderMeetingsSurface } from "./adminbot/surfaces/meetings.ts";
 import { renderProfileSurface } from "./adminbot/surfaces/profile.ts";
+import { renderPaperReviewSurface, renderProjectsSurface } from "./adminbot/surfaces/projects.ts";
 import type { AdminBotSurfaceScope } from "./adminbot/surfaces/scope.ts";
 import { renderTimeAvailabilitySurface } from "./adminbot/surfaces/time-availability.ts";
 import type { AdminBotPanel } from "./adminbot/views/admin.ts";
@@ -154,13 +135,6 @@ import {
 import { renderGettingStarted } from "./adminbot/views/getting-started.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate, renderSessionRestorePending } from "./adminbot/views/login-gate.ts";
-import {
-  ownPapers,
-  renderMyWork,
-  renderPaperCardDialog,
-  type MyWorkProps,
-} from "./adminbot/views/my-work.ts";
-import { paperTripDraftFrom } from "./adminbot/views/paper-cycle.ts";
 import { renderProfessorView } from "./adminbot/views/professor.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
@@ -368,19 +342,6 @@ function runUiTask<Args extends unknown[]>(
  * machine hands the next person the last one's half-written request and their attached documents.
  * The submitted requests carry their owner from the service, so this is only about the local half.
  */
-/**
- * The stored trip for one conference, from whichever loaded card carries it.
- *
- * A trip belongs to a conference, not a paper, so every open card at that venue holds the same
- * row -- the first one found is as good as any, and looking it up this way means the draft's
- * starting point does not depend on which card the reader happened to press Save on.
- */
-function tripFor(state: AppViewState, conferenceKey: string) {
-  return Object.values(state.adminBotPaperSlots).find(
-    (cycle) => cycle.conferenceKey === conferenceKey,
-  )?.myTrip;
-}
-
 /**
  * Adds the schools an Opportunities row asked for to the letters form, and saves the draft.
  *
@@ -697,135 +658,6 @@ const lazyAdminBotCalendar = createLazyView(
   () => import("./adminbot/views/calendar.ts"),
   notifyLazyViewChanged,
 );
-
-/**
- * The paper workspace's wiring, shared by the two surfaces that draw it.
- *
- * My Projects & Papers and Active Papers are the same cards over different rows: the member's own
- * papers, or the lab's. Building the handlers once is what keeps that true -- two copies of this
- * object is how the two pages would quietly grow different save paths.
- */
-function paperWorkspaceProps(
-  state: AppViewState,
-  requestHostUpdate: (() => void) | undefined,
-): MyWorkProps {
-  return {
-    onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
-    onSaveBlocker: (paper) => saveAdminBotPaper(state, paper),
-    onRerender: () => requestHostUpdate?.(),
-    // One loader for both objects; the panel says which it is asking about.
-    onLoadRecentEdits: (subject, id) => {
-      void loadAdminBotRecentEdits(state, subject, id).finally(() => requestHostUpdate?.());
-    },
-    overview: state.adminBotPaperSlotOverview,
-    slots: state.adminBotPaperSlots,
-    openIds: state.adminBotPaperSlotsOpen,
-    slotsBusyId: state.adminBotPaperSlotsBusyId,
-    slotsError: state.adminBotPaperSlotsError,
-    slotsNotice: state.adminBotPaperSlotsNotice,
-    nudging: state.adminBotPaperSlotsNudging,
-    // Each surface sets this: Active Papers is where the lab gets chased, and a member's
-    // own page never does. The service re-checks; this only hides the affordance.
-    canNudge: false,
-    onToggleCard: (paperId) => {
-      void toggleAdminBotPaperCard(state, paperId).finally(() => requestHostUpdate?.());
-    },
-    // Same fetch the card makes when it opens, without opening anything: the sheet draws every
-    // paper's evidence at once, so it asks for the rows rather than for a card.
-    onLoadSlots: (paperId) => {
-      void loadAdminBotPaperSlots(state, paperId).finally(() => requestHostUpdate?.());
-    },
-    onSaveSlot: (paperId, slot, input) => {
-      void saveAdminBotPaperSlot(state, paperId, slot, input).finally(() => requestHostUpdate?.());
-    },
-    // The reader's own travel answers, keyed by conference. Wired here rather than in the view so
-    // the card can stay a renderer: one trip covers every paper at a venue, and the controller is
-    // what knows which other open cards have to be refreshed when one is saved.
-    tripDrafts: state.adminBotTripDrafts,
-    tripSavingKey: state.adminBotTripSavingKey,
-    onEditTrip: (conferenceKey, patch) => {
-      editAdminBotTrip(
-        state,
-        conferenceKey,
-        patch,
-        paperTripDraftFrom(tripFor(state, conferenceKey)),
-      );
-      requestHostUpdate?.();
-    },
-    onSaveTrip: (conferenceKey) => {
-      void saveAdminBotTrip(
-        state,
-        conferenceKey,
-        state.adminBotTripDrafts[conferenceKey] ??
-          paperTripDraftFrom(tripFor(state, conferenceKey)),
-      ).finally(() => requestHostUpdate?.());
-    },
-    onWithdrawTrip: (conferenceKey) => {
-      void withdrawAdminBotTrip(state, conferenceKey).finally(() => requestHostUpdate?.());
-    },
-    onNudgeAuthors: () => {
-      void nudgeAdminBotPaperAuthors(state).finally(() => requestHostUpdate?.());
-    },
-    nudgeBatches: state.adminBotPaperNudgeBatches,
-    nudgeLoading: state.adminBotPaperNudgeLoading,
-    nudgeSelected: state.adminBotPaperNudgeSelected,
-    onReviewNudges: () => {
-      void loadAdminBotNudgeBatches(state).finally(() => requestHostUpdate?.());
-    },
-    onToggleNudgeRecipient: (memberId: string) => {
-      toggleAdminBotPaperNudgeRecipient(state, memberId);
-      requestHostUpdate?.();
-    },
-    memberId: state.memberId ?? null,
-    memberName: (memberId: string) =>
-      (state.adminBotData?.members ?? []).find((member) => member.id === memberId)?.name ??
-      memberId,
-    onSaveDraft: (paperId, platform, body, xThread) => {
-      void saveAdminBotSocialDraft(state, paperId, platform, body, xThread).finally(() =>
-        requestHostUpdate?.(),
-      );
-    },
-    onCirculateDraft: (paperId, draftId) => {
-      void circulateAdminBotSocialDraft(state, paperId, draftId).finally(() =>
-        requestHostUpdate?.(),
-      );
-    },
-    onConsent: (paperId, draftId, decision, comment) => {
-      void recordAdminBotSocialConsent(state, paperId, draftId, decision, comment).finally(() =>
-        requestHostUpdate?.(),
-      );
-    },
-    onSetAttendee: (paperId, name, memberId, attending) => {
-      void setAdminBotPaperAttendee(state, paperId, name, memberId, attending).finally(() =>
-        requestHostUpdate?.(),
-      );
-    },
-    onSetReimbursement: (paperId, memberId, status) => {
-      void setAdminBotPaperReimbursement(state, paperId, memberId, status).finally(() =>
-        requestHostUpdate?.(),
-      );
-    },
-    onSaveWeeklyUpdate: (paperId, body) => {
-      void saveAdminBotPaperWeeklyUpdate(state, paperId, body).finally(() => requestHostUpdate?.());
-    },
-    // Offered on every card the page renders. The service is the gate -- an admin may remove any
-    // paper, an author only one they wrote -- so this does not try to guess which is which.
-    onDeletePaper: (paper) => {
-      void deleteAdminBotPaper(state, paper).finally(() => requestHostUpdate?.());
-    },
-    channelCheck: state.myWorkChannelCheck,
-    // Ticking loads the workspace's channel names; unticking drops them, so the next tick asks
-    // again rather than judging an alias against a list from an hour ago.
-    onChannelCheckToggle: (enabled) => {
-      if (!enabled) {
-        state.myWorkChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
-        requestHostUpdate?.();
-        return;
-      }
-      void loadSlackChannelNames(state).finally(() => requestHostUpdate?.());
-    },
-  };
-}
 
 function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminBotPanel | null {
   if (mode === "general") {
@@ -1849,23 +1681,6 @@ export function renderApp(state: AppViewState) {
   const activePaperCard = state.adminBotPaperCardId
     ? (state.adminBotData?.papers ?? []).find((paper) => paper.id === state.adminBotPaperCardId)
     : undefined;
-  const piReviewOnly = isHeadProfessorViewer({
-    memberId: state.memberId,
-    headProfessorMemberId: state.adminBotData?.settings?.head_professor_member_id,
-  });
-  const selectedReview = state.adminBotPiReview?.find(
-    (row) => row.paperId === state.adminBotPaperCardId,
-  );
-  const activeReviewPaper =
-    activePaperCard ??
-    (selectedReview
-      ? {
-          id: selectedReview.paperId,
-          title: selectedReview.title,
-          authors: selectedReview.authors,
-          artifacts: { google_drive_pdf_url: selectedReview.drivePdfUrl },
-        }
-      : undefined);
   const headerError = !isChat && state.lastError !== state.chatError ? state.lastError : null;
   const chatViewError = state.lastError;
   const chatHeaderHidden = isChat && (state.onboarding || state.chatHeaderControlsHidden);
@@ -2823,6 +2638,16 @@ export function renderApp(state: AppViewState) {
   ) {
     void loadAdminBotTravel(state).finally(() => requestHostUpdate?.());
   }
+  // The sidebar lists the member's active projects on every tab, so the list is read once a member
+  // session exists, and again whenever a write clears it.
+  if (
+    hasMemberSession &&
+    state.myProjects === null &&
+    !state.myProjectsLoading &&
+    !state.myProjectsError
+  ) {
+    void loadMyProjects(state);
+  }
   // My Projects & Papers reads the same way: the overview when the tab opens, and again after a
   // nudge run or a slot write clears the stamp. Individual papers' slots are fetched per card, in
   // the toggle handler, since a closed card needs none of them.
@@ -3288,8 +3113,12 @@ export function renderApp(state: AppViewState) {
                           `
                         : nothing}
                       <div class="nav-section__items">
-                        ${groupTabs.map((tab) =>
-                          renderTab(state, tab, { collapsed: navCollapsed }),
+                        ${groupTabs.map(
+                          (tab) =>
+                            html`${renderTab(state, tab, { collapsed: navCollapsed })}${tab ===
+                            "myWork"
+                              ? renderProjectsNav(state as ProjectsNavState)
+                              : nothing}`,
                         )}
                       </div>
                     </section>
@@ -3419,11 +3248,8 @@ export function renderApp(state: AppViewState) {
                 void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
               },
               onOpen: (tab) => state.setTab(tab),
-              onOpenPaper: (paperId) => {
-                state.adminBotPaperCardId = paperId;
-                void loadAdminBotPaperSlots(state, paperId).finally(() => requestHostUpdate?.());
-                requestHostUpdate?.();
-              },
+              // The head professor reviews in place; anybody else goes to the project page.
+              onOpenPaper: (paperId) => openPaperForViewer(state, paperId, requestHostUpdate),
               expanded: state.professorExpandedLists,
               onToggleExpand: (id) => {
                 const next = new Set(state.professorExpandedLists);
@@ -3547,48 +3373,10 @@ export function renderApp(state: AppViewState) {
         ${renderLogisticsSurface(state, adminBotSurfaces)}
         ${renderMeetingsSurface(state, adminBotSurfaces)}
         ${renderTimeAvailabilitySurface(state, adminBotSurfaces)}
-        ${state.tab === "myWork" && !rosterPendingForTab
-          ? renderMyWork(state, {
-              ...paperWorkspaceProps(state, requestHostUpdate),
-              // Chasing the lab is an admin act and it lives on Active Papers now. A member
-              // opening their own page gets their work, and nothing pointed at anyone else.
-              canNudge: false,
-              // The pre-registration and decision banners belong to whoever is reading. Active
-              // Papers, which shares this renderer, does not set this.
-              personal: true,
-              // Which surface to fall back to, not what it lets anyone do: everybody now opens on
-              // the flat view, and this decides what "Back to cards" hands them afterwards -- an
-              // administrator arrives here to file links across every paper at once, so they get
-              // the sheet from the third paper on where a member gets it from the fifth. The role
-              // is the one already resolved for the whole render, so this cannot disagree with the
-              // tabs beside it.
-              viewerIsAdmin: accessRole === "admin",
-            })
-          : nothing}
-        <!-- Active Papers opens one card, from the row that names it. It used to render the whole
-             deck -- a member's own card for every paper in the lab -- above the boards, which meant
-             an administrator scrolled past seventy expanded papers to reach anything. The card is
-             unchanged; what changed is that it arrives when somebody asks for a specific paper. The
-             author-facing summaries that came with the deck (the "Blocked" roll-up, the
-             pre-registration and decision banners) are the reader's own view of their own work, and
-             the admin equivalents are the table and the Reported blockers board. -->
-        ${(state.tab === "adminbotPapers" || state.tab === "adminbotProfessor") &&
-        (piReviewOnly ? activeReviewPaper : activePaperCard)
-          ? renderPaperCardDialog({
-              state,
-              props: {
-                ...paperWorkspaceProps(state, requestHostUpdate),
-                canNudge: adminBotMode === "admin",
-              },
-              ...(piReviewOnly
-                ? { reviewOnly: true as const, paper: activeReviewPaper! }
-                : { reviewOnly: false as const, paper: activePaperCard! }),
-              onClose: () => {
-                state.adminBotPaperCardId = null;
-                requestHostUpdate?.();
-              },
-            })
-          : nothing}
+        ${renderProjectsSurface(state, adminBotSurfaces)}
+        <!-- The head professor's review of one paper, opened from a My Desk queue row or an Active
+             Papers row. Everybody else opening a paper lands on its project page instead. -->
+        ${renderPaperReviewSurface(state, adminBotSurfaces)}
         ${state.tab === "overview"
           ? renderOverview({
               connected: state.connected,

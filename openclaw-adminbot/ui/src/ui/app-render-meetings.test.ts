@@ -83,8 +83,11 @@ describe("Meeting Recordings entry", () => {
     expect(container.querySelector(".login-gate")).toBeNull();
     expect(app.adminBotLoading).toBe(false);
     await vi.waitFor(() => expect(app.adminBotMeetings).toEqual([]));
-    expect(fetchSpy.mock.calls.map(([url]) => String(url))).toEqual([
+    // The meetings, and the sidebar's own project list -- the one read every signed-in page makes.
+    // Not the roster, the lab's papers, or the gateway.
+    expect(fetchSpy.mock.calls.map(([url]) => String(url)).toSorted()).toEqual([
       expect.stringContaining("/meetings"),
+      expect.stringContaining("/my/projects"),
     ]);
   });
 
@@ -116,8 +119,9 @@ describe("Meeting Recordings entry", () => {
     expect(container.querySelector(".meetings")).toBeTruthy();
     expect(container.querySelector('[data-testid="adminbot-roster-state"]')).toBeTruthy();
     await vi.waitFor(() => expect(app.adminBotRosterLoadedAt).not.toBeNull());
-    expect(fetchSpy.mock.calls.map(([url]) => String(url))).toEqual([
+    expect(fetchSpy.mock.calls.map(([url]) => String(url)).toSorted()).toEqual([
       expect.stringContaining("/lab/members?view=summary"),
+      expect.stringContaining("/my/projects"),
     ]);
   });
 });

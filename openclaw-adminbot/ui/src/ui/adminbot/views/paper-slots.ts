@@ -85,6 +85,12 @@ export type PaperSlotsProps = {
   onToggleShowAll?: () => void;
   /** Opens the drafting tool for a social gate. Absent leaves the gate as a read-only checkbox. */
   onOpenDraft?: (platform: "linkedin" | "x") => void;
+  /**
+   * Draws one branch and what belongs to it -- the feedback requests with the writing, the
+   * OpenReview record and the venue ladder with the venue -- for a project page's lane tab. Absent
+   * draws the whole checklist with the people above it, as every other caller wants.
+   */
+  branch?: AdminBotPaperSlotBranch;
 };
 
 /** Plain-English states for the one enum slot. */
@@ -638,8 +644,11 @@ function renderVenueList(
  * they are what the paper *is*, and the steps below are what has been done to it. The author list
  * in particular has to be editable here: it decides who every PaperFlow nudge on this paper
  * reaches, and until now it could only be changed from the admin form.
+ *
+ * Exported for the project page, which draws the people on its Project tab and the evidence on
+ * one tab per branch.
  */
-function renderDetails(props: PaperSlotsProps) {
+export function renderPaperDetails(props: Pick<PaperSlotsProps, "paperId" | "details">) {
   const details = props.details;
   if (!details) {
     return nothing;
@@ -1022,8 +1031,10 @@ export function renderPaperSlots(props: PaperSlotsProps) {
 
   return html`
     <div class="paper-slots" data-testid=${`paper-slots-${props.paperId}`}>
-      ${renderOpenReviewIdentity(props)} ${renderDetails(props)}
-      ${props.slots.some((row) => row.slot.startsWith("feedback_"))
+      ${!props.branch || props.branch === "venue" ? renderOpenReviewIdentity(props) : nothing}
+      ${props.branch ? nothing : renderPaperDetails(props)}
+      ${(!props.branch || props.branch === "core") &&
+      props.slots.some((row) => row.slot.startsWith("feedback_"))
         ? renderPaperFeedback(props)
         : nothing}
       <div class="paper-slots__filter">
@@ -1032,6 +1043,9 @@ export function renderPaperSlots(props: PaperSlotsProps) {
         </span>
       </div>
       ${adminBotPaperSlotChartOrder.map((branch) => {
+        if (props.branch && branch !== props.branch) {
+          return nothing;
+        }
         // Every field stays in the deck once shown -- settled ones keep rendering with their
         // done pill rather than vanishing, so flipping through reviews history too.
         const slots = topLevelSlots(branch).filter((slot) => !slot.startsWith("feedback_"));

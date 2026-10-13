@@ -2,6 +2,7 @@
 //
 // Mirrors the service's api/routes/papers.ts. Cut from auth/session.ts, which keeps the session
 // lifecycle and the request plumbing every zone shares.
+import type { AdminBotMyProjectSummary } from "../../../../../extensions/adminbot/src/workflows/papers/my-projects.js";
 import {
   authedJson,
   type AuthResult,
@@ -318,6 +319,27 @@ export async function deleteConferenceTrip(
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   return { ok: true, value: result.body as { withdrawn: boolean } };
+}
+
+/**
+ * The signed-in member's active projects, each with its open work counted per lane.
+ *
+ * The service decides what "mine" and "active" mean, and takes the member from the session -- no
+ * id is sent, so this cannot be pointed at somebody else's list.
+ */
+export async function fetchMyProjects(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<AdminBotMyProjectSummary[]>> {
+  const result = await authedJson(baseUrl, "/my/projects", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { projects?: AdminBotMyProjectSummary[] } | null;
+  return { ok: true, value: body?.projects ?? [] };
 }
 
 /** The same, for one paper: its record and every evidence slot on it. */

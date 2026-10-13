@@ -170,17 +170,16 @@ export type MemberAuthHost = {
   adminBotActiveCommitmentType?: string | null;
   adminBotTimeAvailabilitySaving?: boolean;
   myWorkCoauthorDraft?: Record<string, { email: string; name: string; twitter: string }>;
-  myWorkBlockerDraft?: import("../views/my-work.ts").BlockerDraft | null;
-  myWorkBlockers?: import("../views/my-work.ts").Blocker[];
+  myWorkBlockerDraft?: import("../projects/workspace.ts").BlockerDraft | null;
   myWorkProjectDraft?: string | null;
   myWorkProjectAlias?: string;
   myWorkProjectError?: string | null;
-  myWorkProjectEdits?: Record<
-    string,
-    { title: string; alias: string; startedOn: string; error: string | null }
-  >;
+  myWorkProjectEdits?: Record<string, import("../projects/workspace.ts").ProjectDetailsDraft>;
+  myWorkProjectVenues?: import("../projects/workspace.ts").ProjectVenueDraft[];
+  myProjects?: import("../projects/model.ts").ProjectSummary[] | null;
+  myProjectsError?: string | null;
+  myProjectsChoosing?: boolean;
   myWorkChannelCheck?: SlackChannelCheck;
-  myWorkProjectVenues?: Array<{ venueId: string; year: number; confidence: number }>;
   profileEditingSection?: "basics" | null;
   profileAccountChecks?: Record<
     string,
@@ -612,13 +611,16 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotTimeAvailabilitySaving = false;
   host.myWorkCoauthorDraft = {};
   host.myWorkBlockerDraft = null;
-  host.myWorkBlockers = [];
   host.myWorkProjectDraft = null;
   host.myWorkProjectAlias = "";
   host.myWorkProjectError = null;
   host.myWorkProjectEdits = {};
-  host.myWorkChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
   host.myWorkProjectVenues = [];
+  // Another member's projects must not survive into this session's sidebar.
+  host.myProjects = null;
+  host.myProjectsError = null;
+  host.myProjectsChoosing = false;
+  host.myWorkChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
   host.profileEditingSection = null;
   host.profileAccountChecks = {};
   host.adminBotVenueFilter = "";
