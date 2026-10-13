@@ -1,7 +1,7 @@
 // The admin's profile sweep: what a row says, and what the page lets an admin do about it.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
-import type { MemberAdoptionSummary, MemberProfileOverviewRow } from "../auth/session.ts";
+import type { MemberAdoptionSummary, MemberProfileOverviewRow } from "../api/members.ts";
 import {
   EMPTY_PROFILE_OVERVIEW_FILTER,
   filterOverviewRows,
@@ -520,9 +520,8 @@ describe("nudge list seeding", () => {
   it("is disabled while a send is in flight", () => {
     const { container } = draw({ members: [member()], reminding: true });
     expect(
-      container.querySelector<HTMLButtonElement>(
-        '[data-testid="profile-overview-seed-nudge-list"]',
-      )?.disabled,
+      container.querySelector<HTMLButtonElement>('[data-testid="profile-overview-seed-nudge-list"]')
+        ?.disabled,
     ).toBe(true);
   });
 });

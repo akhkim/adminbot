@@ -21,7 +21,7 @@ import {
   type AdminBotPaperflowEvidenceRecord,
   type AdminBotPaperflowStage,
 } from "../../contracts/paperflow-stages.js";
-import { isPaperDormant } from "./paper-slots.js";
+import { isPaperClosed, isPaperDormant } from "./paper-slots.js";
 
 /**
  * A member who counts as "full" for the purposes of being handed a paper's venue cycle.
@@ -174,7 +174,7 @@ export function openPaperflowStage(params: {
   now: Date;
 }): OpenPaperflowStage | undefined {
   const { paper, slots, evidence, now } = params;
-  if (isPaperDormant(paper, now)) {
+  if (isPaperDormant(paper, now) || isPaperClosed(paper)) {
     return undefined;
   }
   const seen = new Set(evidence.map((row) => row.stage));

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { adminBotOutreachEmail } from "./member-outreach-email.js";
+import {
+  adminBotCalendarEmail,
+  adminBotCalendarShareEmail,
+  adminBotIsGmailAddress,
+  adminBotOutreachEmail,
+} from "./member-outreach-email.js";
 
 describe("adminBotOutreachEmail", () => {
   it("prefers the correspondence address over the login address", () => {
@@ -51,5 +56,79 @@ describe("adminBotOutreachEmail", () => {
   it("is empty when neither address is usable", () => {
     expect(adminBotOutreachEmail({})).toBe("");
     expect(adminBotOutreachEmail({ email: "   ", correspondence_email: "@" })).toBe("");
+  });
+});
+
+describe("calendar email fallback", () => {
+  it("prefers the explicit Calendar account, then login, then saved contact", () => {
+    expect(
+      adminBotCalendarEmail({
+        calendar_email: "calendar@example.test",
+        email: "login@example.test",
+        correspondence_email: "contact@example.test",
+      }),
+    ).toBe("calendar@example.test");
+    expect(
+      adminBotCalendarEmail({
+        calendar_email: "   ",
+        email: "login@example.test",
+        correspondence_email: "contact@example.test",
+      }),
+    ).toBe("login@example.test");
+    expect(
+      adminBotCalendarEmail({
+        email: " ",
+        correspondence_email: "contact@example.test / other@example.test",
+      }),
+    ).toBe("contact@example.test");
+    expect(adminBotCalendarEmail({ calendar_email: "bad@", email: "login@example.test" })).toBe(
+      "login@example.test",
+    );
+    expect(adminBotCalendarEmail({})).toBe("");
+  });
+
+  it("prefers a Gmail address over a departmental login", () => {
+    expect(
+      adminBotCalendarEmail({
+        email: "login@cs.example.test",
+        correspondence_email: "Someone@umontreal.example / someone@gmail.com",
+      }),
+    ).toBe("someone@gmail.com");
+  });
+});
+
+describe("lab calendar share address", () => {
+  it("uses the explicit Calendar email, then any Gmail address", () => {
+    expect(
+      adminBotCalendarShareEmail({
+        calendar_email: "person@workspace.example.test",
+        email: "person@gmail.com",
+      }),
+    ).toBe("person@workspace.example.test");
+    expect(
+      adminBotCalendarShareEmail({
+        email: "login@cs.example.test",
+        correspondence_email: "p@GMAIL.com",
+      }),
+    ).toBe("p@GMAIL.com");
+    expect(adminBotCalendarShareEmail({ email: "p@googlemail.com" })).toBe("p@googlemail.com");
+  });
+
+  it("never shares with an address that is not a Google account", () => {
+    expect(
+      adminBotCalendarShareEmail({
+        email: "login@cs.example.test",
+        correspondence_email: "contact@example.test",
+      }),
+    ).toBe("");
+    expect(adminBotCalendarShareEmail({ calendar_email: "bad@", email: "x@gmail.com.evil" })).toBe(
+      "",
+    );
+  });
+
+  it("recognizes Gmail addresses only", () => {
+    expect(adminBotIsGmailAddress(" a@gmail.com ")).toBe(true);
+    expect(adminBotIsGmailAddress("a@notgmail.com")).toBe(false);
+    expect(adminBotIsGmailAddress("a@gmail.com.example")).toBe(false);
   });
 });

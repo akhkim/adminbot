@@ -16,6 +16,7 @@ import type {
   AdminBotRegistrationStatus,
 } from "../../contracts/actions.js";
 import { adminBotMemberRoles } from "../../contracts/actions.js";
+import { adminBotCalendarShareEmail } from "../../contracts/member-outreach-email.js";
 import {
   formatAdminBotMemberRoles,
   parseAdminBotMemberRoles,
@@ -1161,27 +1162,28 @@ export class AdminBotAuthService {
       if (event.type !== "auth.calendar_invite_sent") {
         continue;
       }
+      // Keyed by member *and* address: a share to an old non-Google login does not count as
+      // access, so a member whose Gmail changed is invited again at the new address.
       const memberId = event.details?.member_id;
-      if (typeof memberId === "string") {
-        invited.add(memberId);
+      const email = event.details?.email;
+      if (typeof memberId === "string" && typeof email === "string") {
+        invited.add(`${memberId}:${email.trim().toLowerCase()}`);
       }
     }
     const noAddress: Array<{ id: string; name: string }> = [];
     const candidates: Array<{ id: string; name: string; email: string }> = [];
     for (const member of await this.store.listLabMembers()) {
-      if (!belongsOnSurface(member, "lab_calendar") || invited.has(member.id)) {
+      if (!belongsOnSurface(member, "lab_calendar")) {
         continue;
       }
-      // The Google account first: an ACL is granted to a Google identity, and the professional
-      // address on file is often a departmental alias that is not one.
-      const email = (
-        member.calendar_email ??
-        member.email ??
-        member.correspondence_email ??
-        ""
-      ).trim();
+      // Only a Google account: an ACL to a departmental alias is accepted by Google but cannot
+      // open the calendar. No Calendar email and no Gmail is reported, never guessed.
+      const email = adminBotCalendarShareEmail(member);
       if (!email) {
         noAddress.push({ id: member.id, name: member.name });
+        continue;
+      }
+      if (invited.has(`${member.id}:${email.toLowerCase()}`)) {
         continue;
       }
       candidates.push({ id: member.id, name: member.name, email });

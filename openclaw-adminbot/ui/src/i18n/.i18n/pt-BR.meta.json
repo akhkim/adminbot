@@ -1237,6 +1237,7 @@
     "settings.appearance.toggle",
     "subtitles.adminbot",
     "subtitles.adminbotAnnouncements",
+    "subtitles.adminbotArrReviewers",
     "subtitles.adminbotBadges",
     "subtitles.adminbotCalendar",
     "subtitles.adminbotConferencePapers",
@@ -1267,6 +1268,7 @@
     "subtitles.profile",
     "tabs.adminbot",
     "tabs.adminbotAnnouncements",
+    "tabs.adminbotArrReviewers",
     "tabs.adminbotBadges",
     "tabs.adminbotCalendar",
     "tabs.adminbotConferencePapers",
@@ -1324,12 +1326,12 @@
     "tabUsage.untimed",
     "tabUsage.window"
   ],
-  "generatedAt": "2026-10-05T18:28:22.164Z",
+  "generatedAt": "2026-10-12T14:32:01.360Z",
   "locale": "pt-BR",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "caedf51c404ca8d38192de79bd2a5ac4b0bc09c8a5607215c19dfb1a0c7e7c7a",
-  "totalKeys": 2469,
-  "translatedKeys": 1146,
+  "sourceHash": "2232a2590fa3c62576fe8d4a66ff5c883cd21806004d4ede258ee72f98d6e1dd",
+  "totalKeys": 2473,
+  "translatedKeys": 1148,
   "workflow": 1
 }

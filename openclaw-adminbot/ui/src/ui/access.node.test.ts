@@ -24,12 +24,26 @@ describe("General Tools", () => {
   const generalTools = TAB_GROUPS.find((group) => group.label === "generalTools")
     ?.tabs as readonly Tab[];
 
-  it("is open to visitors, every tab of it", () => {
+  it("opens public tools to visitors while protecting account-only tools", () => {
     expect(generalTools.length).toBeGreaterThan(0);
-    expect(visibleTabsForRole(generalTools, "anonymous")).toEqual(generalTools);
-    for (const tab of generalTools) {
-      expect(canAccessTab(tab, "anonymous")).toBe(true);
-    }
+    expect(visibleTabsForRole(generalTools, "anonymous")).toEqual([
+      "adminbotReimbursements",
+      "adminbotDeadlines",
+      "adminbotOpportunities",
+      "adminbotConferencePapers",
+    ]);
+    expect(canAccessTab("adminbotReferenceChecker", "anonymous")).toBe(false);
+    expect(canAccessTab("labTravel", "anonymous")).toBe(false);
+  });
+
+  // Travel names who is going where; the service refuses everyone below a full member on every
+  // /travel route, and the sidebar matches it rather than offering a tab that only says no.
+  it("offers Travel to full members and admins only", () => {
+    expect(canAccessTab("labTravel", "member", "member")).toBe(true);
+    expect(canAccessTab("labTravel", "admin", "admin")).toBe(true);
+    expect(canAccessTab("labTravel", "member", "trial")).toBe(false);
+    expect(canAccessTab("labTravel", "member", "external_collaborator")).toBe(false);
+    expect(canAccessTab("adminbotNotificationDrafts", "anonymous")).toBe(false);
   });
 });
 
@@ -116,6 +130,8 @@ describe("visibleTabsForRole", () => {
       "profile",
       // Your own schedule, next to your own record.
       "adminbotTimeAvailability",
+      // Conference RSVPs, your trips and opt-in location sharing.
+      "labTravel",
       "myWork",
       "labSharing",
       // Recordings of the lab's own meetings sit with Lab Sharing, above the roster.
@@ -132,6 +148,7 @@ describe("visibleTabsForRole", () => {
       // Reads a public conference programme against the viewer's own interests, and writes
       // nothing.
       "adminbotConferencePapers",
+      "adminbotReferenceChecker",
     ]);
   });
 

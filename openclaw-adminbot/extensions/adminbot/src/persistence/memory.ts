@@ -57,6 +57,7 @@ import {
   type LabDirectorStatus,
 } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
+import type { AdminBotLocationShareRecord } from "../contracts/lab-travel.js";
 import type {
   AdminBotMemberRequest,
   AdminBotMemberRequestStatus,
@@ -932,9 +933,13 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.socialDrafts.set(record.id, record);
   }
 
-  listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[] {
+  listSocialDrafts(paperId?: string, draftId?: string): AdminBotSocialDraftRecord[] {
     return [...this.socialDrafts.values()]
-      .filter((draft) => paperId === undefined || draft.paper_id === paperId)
+      .filter(
+        (draft) =>
+          (paperId === undefined || draft.paper_id === paperId) &&
+          (draftId === undefined || draft.id === draftId),
+      )
       .toSorted((left, right) => right.generated_at.localeCompare(left.generated_at));
   }
 
@@ -970,6 +975,29 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
           left.conference_key.localeCompare(right.conference_key) ||
           left.member_id.localeCompare(right.member_id),
       );
+  }
+
+  // The Travel tab's location opt-in, mirroring persistence/location-shares.ts: one row per member
+  // who switched it on, deleted outright when they switch it off.
+  private readonly locationShares = new Map<string, AdminBotLocationShareRecord>();
+
+  saveLocationShare(record: AdminBotLocationShareRecord): void {
+    this.locationShares.set(record.member_id, structuredClone(record));
+  }
+
+  getLocationShare(memberId: string): AdminBotLocationShareRecord | undefined {
+    const row = this.locationShares.get(memberId);
+    return row ? structuredClone(row) : undefined;
+  }
+
+  listLocationShares(): AdminBotLocationShareRecord[] {
+    return [...this.locationShares.values()]
+      .map((row) => structuredClone(row))
+      .toSorted((left, right) => left.member_id.localeCompare(right.member_id));
+  }
+
+  deleteLocationShare(memberId: string): boolean {
+    return this.locationShares.delete(memberId);
   }
 
   saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void {

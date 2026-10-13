@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -71,7 +72,7 @@ function seedMember(
   mock: ReturnType<typeof createAdminBotMockService>,
   input: AdminBotLabMemberInput,
 ): void {
-  const result = mock.service.upsertLabMember(input);
+  const result = mock.service.upsertLabMember(withCompleteProfile(input));
   if (!result.ok) {
     throw new Error(result.error.message);
   }

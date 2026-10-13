@@ -1,5 +1,6 @@
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { live } from "lit/directives/live.js";
 import { ref } from "lit/directives/ref.js";
 import {
   adminBotMemberFieldVisibility,
@@ -29,15 +30,15 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
+import type { BadgeDefinition } from "../api/badges.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
+import { checkDriveAccess } from "../api/profile.ts";
 import {
-  checkDriveAccess,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   type AssignedBadge,
-  type BadgeDefinition,
   type BadgeSuggestionInput,
   type LabMember,
-  type MemberProfileUpdate,
 } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
@@ -68,14 +69,15 @@ import {
   type ProfileFieldGroup,
 } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
+import { ownPapers } from "../projects/model.ts";
 import { renderMemberBadgeSymbols, badgeCountLabel } from "./badge-symbols.ts";
 import { renderCountrySelect } from "./country-select.ts";
 import { renderMemberSelect } from "./member-select.ts";
-import { ownPapers } from "./my-work.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 import { renderRecentEdits } from "./recent-edits.ts";
 
 export type ProfileProps = {
+  badgesDisabled?: boolean;
   onSave: (memberId: string, fields: MemberProfileUpdate) => void;
   /** Fetches this record's edit history, called when the panel is opened. */
   onLoadRecentEdits?: (subject: "member" | "paper", id: string) => void;
@@ -980,7 +982,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
     case "date":
       return html`
         ${renderDateControl(
-          html`<input class="input" name=${field.key} type="date" .value=${currentValue} />`,
+          html`<input class="input" name=${field.key} type="date" .value=${live(currentValue)} />`,
           currentValue,
         )}
       `;
@@ -2080,7 +2082,9 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
       </header>
       ${renderBadgesSection(state, member)} ${renderBasics(state, member, props)}
       ${renderPhotoCompliance(state, member, props)}
-      ${renderBadgeSelfNomination(state, member, props)} ${renderBadgeSuggestion(state, props)}
+      ${props.badgesDisabled
+        ? nothing
+        : html`${renderBadgeSelfNomination(state, member, props)} ${renderBadgeSuggestion(state, props)}`}
       ${renderOnboardingPointer(state, props)}
       <!-- Who has been in this record. Last, and shut: it is history about the fields above, and
            the answer to a question somebody asks occasionally rather than on every visit. Since

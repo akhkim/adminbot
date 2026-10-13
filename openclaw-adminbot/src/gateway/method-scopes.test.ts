@@ -245,6 +245,26 @@ describe("operator scope authorization", () => {
     });
   });
 
+  it("allows chat-only devices to send and stop chat without privileged writes", () => {
+    for (const method of ["chat.send", "chat.abort"]) {
+      expect(authorizeOperatorScopesForMethod(method, ["operator.read", "operator.chat"])).toEqual({
+        allowed: true,
+      });
+      expect(authorizeOperatorScopesForMethod(method, ["operator.write"])).toEqual({
+        allowed: true,
+      });
+      expect(authorizeOperatorScopesForMethod(method, ["operator.read"])).toEqual({
+        allowed: false,
+        missingScope: "operator.chat",
+      });
+    }
+    for (const method of ["tools.invoke", "agent", "send", "chat.inject", "sessions.patch"]) {
+      expect(
+        authorizeOperatorScopesForMethod(method, ["operator.read", "operator.chat"]).allowed,
+      ).toBe(false);
+    }
+  });
+
   it("allows operator.write clients to use unified Talk sessions", () => {
     for (const method of [
       "talk.client.create",

@@ -228,7 +228,7 @@ export function adminBotSlackBotToken(env: NodeJS.ProcessEnv): string {
   return resolveSlackBotToken(env);
 }
 
-async function resolveChannelId(
+export async function resolveChannelId(
   token: string,
   channelName: string,
   fetchImpl: SlackAdminFetch,

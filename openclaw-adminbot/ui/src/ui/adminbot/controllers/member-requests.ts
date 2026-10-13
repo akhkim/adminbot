@@ -1,3 +1,4 @@
+import { queueMemberOnboardingGuide } from "../api/onboarding.ts";
 /**
  * Requests to add somebody to the roster, from the Lab Members tab.
  *
@@ -12,7 +13,6 @@ import {
   loadStoredMemberSession,
   type MemberRequestInput,
   type MemberRequestView,
-  queueMemberOnboardingGuide,
   rejectMemberRequest,
   resolveAdminBotBaseUrl,
   submitMemberRequest,

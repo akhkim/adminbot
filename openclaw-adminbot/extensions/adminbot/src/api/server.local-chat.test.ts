@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createLocalChat } from "../privacy/local-chat.js";
 import { createAdminBotMockService } from "./server.js";
 
@@ -30,13 +31,15 @@ async function setup(localChat?: ReturnType<typeof createLocalChat>) {
     ["other-admin", "admin"],
     ["member", "member"],
   ] as const) {
-    mock.service.upsertLabMember({
-      id,
-      name: id,
-      email: `${id}@example.test`,
-      privilege_level,
-      member_type: "full",
-    });
+    mock.service.upsertLabMember(
+      withCompleteProfile({
+        id,
+        name: id,
+        email: `${id}@example.test`,
+        privilege_level,
+        member_type: "full",
+      }),
+    );
     await mock.auth.claim({
       member_id: id,
       email: `${id}@example.test`,

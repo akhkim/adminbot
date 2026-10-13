@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  type AdminBotStoredProposal,
   adminBotAdminOwnedProfileFields,
   adminBotMemberAnswerableProfileFields,
   adminBotSlackActivityOf,
@@ -453,6 +454,18 @@ describe("AdminBotService paper coauthors", () => {
     ).toMatchObject({ ok: false });
   });
 
+  it("persists an author's corrected target conference year", () => {
+    const service = lab();
+    unwrap(service.upsertOwnPaper("joeun-yook", {
+      id: "icml-year", title: "Synthetic ICML paper", authors: ["Joeun Yook"],
+      current_step: "brainstorming_docs", venue: "ICML 2027",
+    }));
+    unwrap(service.upsertOwnPaper("joeun-yook", { id: "icml-year", venue: "ICML 2026" }));
+    expect(unwrap(service.listPapers()).papers.find(paper => paper.id === "icml-year")?.venue).toBe("ICML 2026");
+    unwrap(service.upsertOwnPaper("joeun-yook", { id: "icml-year", venue: "" }));
+    expect(unwrap(service.listPapers()).papers.find(paper => paper.id === "icml-year")?.venue).toBe("");
+  });
+
   // The bulk grid writes the same fields to the same row as the card. This is the service half of
   // that claim: everything the grid offers as editable has to survive a member write.
   it("stores every field the bulk grid can edit", () => {
@@ -730,6 +743,22 @@ describe("AdminBotService weekly updates", () => {
         authors: ["Ada Lovelace", "Rahul Shrestha"],
         current_step: "brainstorming_docs",
         venue_decision: "reject",
+      }),
+    );
+    expect(unwrap(service.collectWeeklyUpdateGaps(sunday)).gaps).toEqual([]);
+    expect(unwrap(await service.sendWeeklyUpdateNudges("cron", sunday)).created).toEqual([]);
+  });
+
+  it("does not ask for weekly work on a paper explicitly marked presented", async () => {
+    const service = labWithPaper();
+    unwrap(
+      service.upsertPaper({
+        id: "paper",
+        title: "Causal agents",
+        authors: ["Ada Lovelace", "Rahul Shrestha"],
+        current_step: "social_posts",
+        venue_decision: "accept",
+        artifacts: { completed_at: "2026-08-20T12:00:00.000Z" },
       }),
     );
     expect(unwrap(service.collectWeeklyUpdateGaps(sunday)).gaps).toEqual([]);
@@ -2034,7 +2063,7 @@ describe("AdminBotService", () => {
       expect(proposal?.status).not.toBe("executed");
     });
 
-    it("reports somebody with no calendar address rather than guessing one", async () => {
+    it("uses the saved account email when Calendar email is absent", async () => {
       const { service } = labWith([
         { id: "ada", name: "Ada", slack_user_id: "U-ADA", email: "ada@cs.toronto.edu" },
       ]);
@@ -2045,8 +2074,10 @@ describe("AdminBotService", () => {
           calendarId: "cal-1",
         }),
       );
-      expect(result.invited).toEqual([]);
-      expect(result.skipped[0]?.reason).toContain("calendar_email");
+      expect(result.invited).toEqual([
+        { event_id: "e1", channel: "meeting-causal-inference", attendees: ["ada@cs.toronto.edu"] },
+      ]);
+      expect(result.skipped).toEqual([]);
     });
 
     // Guests and the bot itself are in channels and are not on the roster. Not an error.
@@ -5522,7 +5553,7 @@ describe("AdminBotService", () => {
       expect(result.invited).toEqual([]);
       expect(result.skipped).toContainEqual({
         member_id: "no-email",
-        reason: "member has no calendar_email",
+        reason: "member has no usable calendar or contact email",
       });
     });
   });
@@ -5539,6 +5570,7 @@ describe("AdminBotService", () => {
       unwrap(
         service.upsertLabMember({
           receives_nudges: true,
+          member_type: "full",
           id: "ada",
           name: "Ada",
           birthday: "03-14",
@@ -5551,6 +5583,7 @@ describe("AdminBotService", () => {
       unwrap(
         service.upsertLabMember({
           receives_nudges: true,
+          member_type: "full",
           id: "ada",
           name: "Ada Attendee",
           birthday: "03-14",
@@ -5564,6 +5597,7 @@ describe("AdminBotService", () => {
       unwrap(
         service.upsertLabMember({
           receives_nudges: true,
+          member_type: "full",
           id: "ada",
           name: "Ada",
           birthday: "03-14",
@@ -5572,12 +5606,13 @@ describe("AdminBotService", () => {
       unwrap(
         service.upsertLabMember({
           receives_nudges: true,
+          member_type: "full",
           id: "ada",
           name: "Ada",
           birthday: "03-15",
         }),
       );
-      expect(birthdayProposals(service)).toHaveLength(2);
+      expect(birthdayProposals(service)).toHaveLength(1);
     });
 
     it("proposes nothing for a member without a birthday", () => {
@@ -5585,6 +5620,84 @@ describe("AdminBotService", () => {
       unwrap(service.upsertLabMember({ receives_nudges: true, id: "ada", name: "Ada" }));
       expect(birthdayProposals(service)).toHaveLength(0);
     });
+
+    it("creates on gaining eligibility and withdraws pending events on losing it", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "birthday-member",
+          name: "Test",
+          birthday: "03-14",
+          member_type: "coauthor-minor",
+        }),
+      );
+      expect(birthdayProposals(service)).toHaveLength(0);
+      unwrap(
+        service.upsertLabMember({
+          id: "birthday-member",
+          name: "Test",
+          member_type: "coauthor-major",
+        }),
+      );
+      expect(birthdayProposals(service)).toHaveLength(1);
+      unwrap(
+        service.upsertLabMember({
+          id: "birthday-member",
+          name: "Test",
+          member_type: "coauthor-minor",
+        }),
+      );
+      expect(birthdayProposals(service)).toHaveLength(0);
+      unwrap(service.upsertLabMember({ id: "birthday-member", name: "Test", member_type: "full" }));
+      expect(birthdayProposals(service)).toHaveLength(1);
+    });
+
+    it.each(["role", "clear", "delete"])(
+      "queues exact recurring-event removal for %s",
+      async (change) => {
+        const service = new AdminBotService(undefined, {
+          executor: {
+            execute: async () => ({ handled: true, artifacts: { event_id: "birthday-series" } }),
+          },
+        });
+        unwrap(
+          service.upsertLabMember({
+            id: "birthday-member",
+            name: "Test",
+            birthday: "03-14",
+            member_type: "full",
+          }),
+        );
+        const proposal = birthdayProposals(service)[0];
+        unwrap(
+          service.approve(proposal.id, {
+            payload_hash: proposal.payload_hash,
+            approver_role: "admin",
+          }),
+        );
+        unwrap(await service.execute(proposal.id, { dry_run: false }));
+        if (change === "delete")
+          unwrap(
+            service.deleteLabMember({ memberId: "birthday-member", actorId: "admin", force: true }),
+          );
+        else
+          unwrap(
+            service.upsertLabMember({
+              id: "birthday-member",
+              name: "Test",
+              ...(change === "role" ? { member_type: "coauthor-minor" } : { birthday: "" }),
+            }),
+          );
+        const removals = unwrap(service.listPending()).proposals.filter(
+          (p) => p.type === "calendar.cancel",
+        );
+        expect(removals).toHaveLength(1);
+        expect(removals[0].proposed_payload).toEqual(
+          expect.objectContaining({ event_id: "birthday-series" }),
+        );
+        expect(removals[0].status).toBe("pending");
+      },
+    );
 
     it("rejects a birthday carrying a year", () => {
       const service = new AdminBotService();
@@ -5596,6 +5709,139 @@ describe("AdminBotService", () => {
       });
       expect(result.ok).toBe(false);
     });
+  });
+
+  it("invites an entitled member after automatic Slack linking without manual profile fields", async () => {
+    const execute = vi.fn(async (_proposal: AdminBotStoredProposal) => ({ handled: true }));
+    const service = new AdminBotService(undefined, { executor: { execute } });
+    unwrap(
+      service.upsertLabMember({
+        id: "linked",
+        name: "Synthetic Member",
+        member_type: "full",
+        email: "linked@example.com",
+      }),
+    );
+    await service.refreshMemberDirectoryFromSlack(
+      { resolveSlackUserIdsByEmail: async () => new Map([["linked@example.com", "U123ABC"]]) },
+      "admin",
+    );
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+    expect(execute.mock.calls.map(([proposal]) => proposal.proposed_payload)).toEqual(
+      expect.arrayContaining([
+        { channel: "jinesis-active", user_id: "U123ABC" },
+        { channel: "random-active", user_id: "U123ABC" },
+      ]),
+    );
+    await service.refreshMemberDirectoryFromSlack(
+      { resolveSlackUserIdsByEmail: async () => new Map() },
+      "admin",
+    );
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not invite unclassified members or malformed Slack identities", async () => {
+    const execute = vi.fn(async (_proposal: AdminBotStoredProposal) => ({ handled: true }));
+    const service = new AdminBotService(undefined, { executor: { execute } });
+    unwrap(service.upsertLabMember({ id: "unknown", name: "Unknown", slack_user_id: "U123ABC" }));
+    unwrap(
+      service.upsertLabMember({
+        id: "invalid",
+        name: "Invalid",
+        member_type: "full",
+        slack_user_id: "username",
+      }),
+    );
+    await Promise.resolve();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("defers invitations for imported linked records until directory reconciliation", async () => {
+    const execute = vi.fn(async (_proposal: AdminBotStoredProposal) => ({ handled: true }));
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store, { executor: { execute } });
+    unwrap(
+      service.upsertLabMember({
+        id: "imported",
+        name: "Imported",
+        member_type: "full",
+        slack_user_id: "U123ABC",
+      }),
+    );
+    expect(store.listProposalsByType("slack.invite_to_channel")).toEqual([]);
+    expect(execute).not.toHaveBeenCalled();
+    await service.refreshMemberDirectoryFromSlack({}, "admin");
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+  });
+
+  it.each([
+    { member_type: "full", allowed: true },
+    { member_type: "coauthor-major", allowed: true },
+    { member_type: "full", status: "alumni" as const, allowed: true },
+    { member_type: "full, alumni", allowed: true },
+    { member_type: "alumni, coauthor-major", allowed: true },
+    { member_type: "own-pace-advisee", allowed: false },
+    { member_type: "coauthor-minor", allowed: false },
+    { member_type: "alumni", allowed: false },
+    { collaborator_subgroup: "own_pace_advisee" as const, allowed: false },
+    { collaborator_subgroup: "coauthor_major" as const, allowed: true },
+    { allowed: false },
+  ])(
+    "limits active-channel invitations to full and coauthor-major: %j",
+    async ({ allowed, ...fields }) => {
+      const execute = vi.fn(async (_proposal: AdminBotStoredProposal) => ({ handled: true }));
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store, { executor: { execute } });
+      unwrap(service.upsertLabMember({ id: "eligible-test", name: "Synthetic Member", ...fields }));
+      // Exercise both immediate linking and the directory catch-up path.
+      unwrap(
+        service.upsertLabMember({
+          id: "eligible-test",
+          name: "Synthetic Member",
+          slack_user_id: "U123ABC",
+        }),
+      );
+      await service.refreshMemberDirectoryFromSlack({}, "admin");
+      if (allowed) {
+        await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+        expect(execute.mock.calls.map(([proposal]) => proposal.proposed_payload)).toEqual(
+          expect.arrayContaining([
+            { channel: "jinesis-active", user_id: "U123ABC" },
+            { channel: "random-active", user_id: "U123ABC" },
+          ]),
+        );
+      } else {
+        expect(store.listProposalsByType("slack.invite_to_channel")).toEqual([]);
+        expect(execute).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it("catches up previously linked eligible members and retries audited connector failures", async () => {
+    const store = new AdminBotMemoryStore();
+    store.saveLabMember({
+      id: "existing",
+      name: "Existing",
+      privilege_level: "member",
+      member_type: "full",
+      slack_user_id: "U123ABC",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    const execute = vi
+      .fn(async (_proposal: AdminBotStoredProposal) => ({ handled: true }))
+      .mockRejectedValueOnce(new Error("Slack unavailable"));
+    const service = new AdminBotService(store, { executor: { execute } });
+    await service.refreshMemberDirectoryFromSlack({}, "admin");
+    await vi.waitFor(() =>
+      expect(service.listAuditEvents().some((event) => event.type === "execution.failed")).toBe(
+        true,
+      ),
+    );
+    await service.refreshMemberDirectoryFromSlack({}, "admin");
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(3));
+    await service.refreshMemberDirectoryFromSlack({}, "admin");
+    expect(execute).toHaveBeenCalledTimes(3);
   });
 
   describe("refreshMemberDirectoryFromSlack", () => {

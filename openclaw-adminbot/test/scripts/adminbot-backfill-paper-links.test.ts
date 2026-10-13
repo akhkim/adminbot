@@ -2,9 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   pendingSubmissionLinks,
   paperSubmissionGridRows,
+  submissionArtifactMatches,
 } from "../../scripts/adminbot-backfill-paper-links.js";
 
 describe("Paper Submissions E/F link classification", () => {
+  it("does not duplicate an existing URL under a second artifact field", () => {
+    const url = "https://overleaf.com/1234567890abcdef#token";
+    expect(pendingSubmissionLinks({ overleaf_edit_url: url }, ["", "", "", "", url, ""])).toEqual(
+      [],
+    );
+  });
   it("classifies mixed URLs without replacing existing artifacts or reading other columns", () => {
     const rows = [
       "",
@@ -32,6 +39,26 @@ describe("Paper Submissions E/F link classification", () => {
       ]),
     ).toEqual([]);
   });
+});
+
+it("matches renamed papers only with unique exact artifact identity in both directions", () => {
+  const url = "https://overleaf.com/read/uniquepaper";
+  const row = { title: "Old title", year: Number.NaN, cells: ["", "Old title", "", "", url, ""] };
+  const paper = {
+    id: "paper",
+    payload: { title: "New title", artifacts: { overleaf_view_url: url } },
+  };
+  expect([...submissionArtifactMatches([row], [paper]).keys()]).toEqual(["paper"]);
+  expect(submissionArtifactMatches([row, { ...row, title: "Other title" }], [paper]).size).toBe(0);
+  expect(submissionArtifactMatches([row, row], [paper]).size).toBe(0);
+  expect(submissionArtifactMatches([row], [paper, { ...paper, id: "other" }]).size).toBe(0);
+  expect(submissionArtifactMatches([{ ...row, title: "New title" }], [paper]).size).toBe(0);
+  expect(
+    submissionArtifactMatches(
+      [{ ...row, cells: ["", "", "", "", url + "#different", ""] }],
+      [paper],
+    ).size,
+  ).toBe(0);
 });
 
 it("runs the real CLI without Year, preserves existing fields and is idempotent", async () => {
@@ -161,6 +188,32 @@ it("runs the real CLI without Year, preserves existing fields and is idempotent"
           .payload_json,
       ).artifacts.overleaf_view_url,
     ).toBe("https://overleaf.com/read/chiptoken");
+    const identityUrl = "https://overleaf.com/1234567890abcdef#identity";
+    db.prepare("INSERT INTO adminbot_papers VALUES (?, ?)").run(
+      "renamed",
+      JSON.stringify({ title: "Final title", artifacts: { overleaf_edit_url: identityUrl } }),
+    );
+    fs.writeFileSync(
+      csv,
+      `unused,Title,Venue,Authors,links,notes\n,Earlier title,,,${identityUrl},https://docs.google.com/presentation/d/newslides/edit\n`,
+    );
+    expect(run().stdout).toContain("matched by exact artifact: 1");
+    expect(run(true).status).toBe(0);
+    const renamed = JSON.parse(
+      (
+        db.prepare("SELECT payload_json FROM adminbot_papers WHERE id = ?").get("renamed") as {
+          payload_json: string;
+        }
+      ).payload_json,
+    );
+    expect(renamed).toEqual({
+      title: "Final title",
+      artifacts: {
+        overleaf_edit_url: identityUrl,
+        google_slides_url: "https://docs.google.com/presentation/d/newslides/edit",
+      },
+    });
+    expect(run(true).stdout).toContain("Nothing to write.");
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });

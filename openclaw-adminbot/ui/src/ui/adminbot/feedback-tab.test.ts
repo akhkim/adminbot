@@ -36,14 +36,22 @@ describe("feedbackConfigForTab", () => {
   it("points each config at its own source file and stable feature id", () => {
     const myWork = feedbackConfigForTab("myWork");
     expect(myWork?.featureId).toBe("my-work");
-    expect(myWork?.githubFile).toContain("my-work.ts");
+    // views/my-work.ts is gone; the link must name a file that exists.
+    expect(myWork?.githubFile).toMatch(/\/adminbot\/projects\/view\.ts$/u);
     const reimbursements = feedbackConfigForTab("adminbotReimbursements");
     expect(reimbursements?.featureId).toBe("reimbursements");
     expect(reimbursements?.githubFile).toContain("reimbursements.ts");
   });
 
   it("returns null for native OpenClaw surfaces", () => {
-    for (const tab of ["chat", "overview", "activity", "sessions", "config", "instances"] as const) {
+    for (const tab of [
+      "chat",
+      "overview",
+      "activity",
+      "sessions",
+      "config",
+      "instances",
+    ] as const) {
       expect(feedbackConfigForTab(tab)).toBeNull();
     }
   });
