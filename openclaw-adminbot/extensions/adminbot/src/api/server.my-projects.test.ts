@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -77,12 +78,14 @@ describe("GET /my/projects", () => {
   it("lists only the signed-in member's active papers, whatever the query says", async () => {
     const { baseUrl, mock } = await startService();
     for (const id of ["viewer", "stranger"]) {
-      const seeded = mock.service.upsertLabMember({
-        id,
-        name: id === "viewer" ? "Viewer Person" : "Stranger Person",
-        email: `${id}@example.test`,
-        privilege_level: "member",
-      });
+      const seeded = mock.service.upsertLabMember(
+        withCompleteProfile({
+          id,
+          name: id === "viewer" ? "Viewer Person" : "Stranger Person",
+          email: `${id}@example.test`,
+          privilege_level: "member",
+        }),
+      );
       expect(seeded.ok).toBe(true);
     }
     const link = (id: string) => [{ name: id, member_id: id }];

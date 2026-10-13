@@ -2,6 +2,7 @@
 // Defines the closed set accepted by connection auth and method policy.
 export const ADMIN_SCOPE = "operator.admin" as const;
 export const READ_SCOPE = "operator.read" as const;
+export const CHAT_SCOPE = "operator.chat" as const;
 export const WRITE_SCOPE = "operator.write" as const;
 export const APPROVALS_SCOPE = "operator.approvals" as const;
 export const PAIRING_SCOPE = "operator.pairing" as const;
@@ -11,6 +12,7 @@ export const TALK_SECRETS_SCOPE = "operator.talk.secrets" as const;
 export type OperatorScope =
   | typeof ADMIN_SCOPE
   | typeof READ_SCOPE
+  | typeof CHAT_SCOPE
   | typeof WRITE_SCOPE
   | typeof APPROVALS_SCOPE
   | typeof PAIRING_SCOPE
@@ -19,6 +21,7 @@ export type OperatorScope =
 const KNOWN_OPERATOR_SCOPE_VALUES: readonly OperatorScope[] = [
   ADMIN_SCOPE,
   READ_SCOPE,
+  CHAT_SCOPE,
   WRITE_SCOPE,
   APPROVALS_SCOPE,
   PAIRING_SCOPE,

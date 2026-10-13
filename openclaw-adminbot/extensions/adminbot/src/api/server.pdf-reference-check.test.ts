@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ReferenceCheckError, type ReferenceProgress } from "../connectors/reference-check.js";
 import { GptZeroScanError } from "../connectors/reference-scan.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const token = "synthetic-service-token";
@@ -79,11 +80,13 @@ function session(
   memberId = `upload-${level}`,
 ) {
   const sessionToken = `${memberId}-session`;
-  app.service.upsertLabMember({
-    id: memberId,
-    name: "Synthetic User",
-    privilege_level: level,
-  });
+  app.service.upsertLabMember(
+    withCompleteProfile({
+      id: memberId,
+      name: "Synthetic User",
+      privilege_level: level,
+    }),
+  );
   app.store.saveSession({
     member_id: memberId,
     token_hash: createHash("sha256").update(sessionToken).digest("hex"),

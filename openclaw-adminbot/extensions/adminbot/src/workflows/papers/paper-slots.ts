@@ -297,9 +297,13 @@ export function isPaperDormant(paper: AdminBotPaperRecord, now: Date): boolean {
   return (now.getTime() - started) / MONTH_MS > DORMANT_MONTHS;
 }
 
-/** A rejected paper that has not been re-aimed has no frontier: the next move is a venue decision. */
+/** Rejected attempts and papers explicitly marked presented have no outstanding workflow. */
 export function isPaperClosed(paper: AdminBotPaperRecord): boolean {
-  return paper.venue_decision === "reject";
+  const completedAt = paper.artifacts?.completed_at;
+  return (
+    paper.venue_decision === "reject" ||
+    (typeof completedAt === "string" && completedAt.trim().length > 0)
+  );
 }
 
 /**

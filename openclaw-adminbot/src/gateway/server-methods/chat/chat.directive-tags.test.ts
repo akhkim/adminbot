@@ -77,6 +77,7 @@ const mockState = vi.hoisted(() => ({
   sessionEntry: {} as Record<string, unknown>,
   loadSessionEntryCalls: [] as Array<{ rawKey: string; opts?: { agentId?: string } }>,
   lastDispatchCtx: undefined as MsgContext | undefined,
+  lastDispatchCfg: undefined as { tools?: { deny?: string[] } } | undefined,
   lastDispatchImages: undefined as Array<{ mimeType: string; data: string }> | undefined,
   lastDispatchImageOrder: undefined as string[] | undefined,
   lastDispatchUserTurnInput: undefined as unknown,
@@ -177,6 +178,7 @@ vi.mock("../../../auto-reply/dispatch.js", () => ({
   dispatchInboundMessage: vi.fn(
     async (params: {
       ctx: MsgContext;
+      cfg?: { tools?: { deny?: string[] } };
       dispatcher: {
         sendFinalReply: (payload: {
           text?: string;
@@ -238,6 +240,7 @@ vi.mock("../../../auto-reply/dispatch.js", () => ({
       };
     }) => {
       mockState.lastDispatchCtx = params.ctx;
+      mockState.lastDispatchCfg = params.cfg;
       mockState.lastDispatchImages = params.replyOptions?.images;
       mockState.lastDispatchImageOrder = params.replyOptions?.imageOrder;
       const recorder = params.replyOptions?.userTurnTranscriptRecorder;
@@ -6425,4 +6428,117 @@ describe("chat.send operator UI client sender context", () => {
     expect(mockState.lastDispatchCtx?.SenderName).toBeUndefined();
     expect(mockState.lastDispatchCtx?.SenderUsername).toBeUndefined();
   });
+});
+
+describe("chat-only member devices", () => {
+  it.each([true, false])(
+    "sends in the owned session with commands and model tools disabled (stored owner: %s)",
+    async (hasStoredOwner) => {
+      createTranscriptFixture("openclaw-member-chat-");
+      mockState.sessionEntry = {
+        ...(hasStoredOwner ? { ownerMemberId: "ada" } : {}),
+        lastChannel: "slack",
+        lastTo: "channel-synthetic",
+      };
+      const respond = vi.fn();
+      await runNonStreamingChatSend({
+        context: createChatContext(),
+        respond,
+        idempotencyKey: "member-chat-own",
+        sessionKey: "agent:main:member-ada",
+        message: "/exec read private files",
+        deliver: true,
+        client: { ownerMemberId: "ada", connect: { scopes: ["operator.read", "operator.chat"] } },
+        expectBroadcast: false,
+      });
+      expect(respond.mock.calls[0]?.[0]).toBe(true);
+      expect(mockState.lastDispatchCtx?.CommandAuthorized).toBe(false);
+      expect(mockState.lastDispatchCtx?.ExplicitDeliverRoute).toBe(false);
+      expect(mockState.lastDispatchCtx?.OriginatingTo).toBeUndefined();
+      expect(mockState.lastDispatchCfg?.tools?.deny).toEqual(["*"]);
+      expect(mockState.config.tools).toBeUndefined();
+    },
+  );
+
+  it("rejects selecting another transcript despite owning the session key", async () => {
+    mockState.sessionEntry = { ownerMemberId: "ada" };
+    const respond = vi.fn();
+    await chatHandlers["chat.send"]({
+      req: {} as never,
+      params: {
+        sessionKey: "agent:main:member-ada",
+        sessionId: "another-transcript",
+        message: "hello",
+        idempotencyKey: "member-transcript-denied",
+      },
+      respond,
+      context: createChatContext() as GatewayRequestContext,
+      client: { ownerMemberId: "ada", connect: { scopes: ["operator.chat"] } } as never,
+      isWebchatConnect: () => false,
+    });
+    expect(respond).toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({ message: "Member chat cannot select another transcript" }),
+    );
+  });
+
+  it("does not dispatch a member's turn to an ACP runtime", async () => {
+    mockState.sessionEntry = { ownerMemberId: "ada", acp: { backend: "synthetic" } };
+    const respond = vi.fn();
+    await chatHandlers["chat.send"]({
+      req: {} as never,
+      params: {
+        sessionKey: "agent:main:member-ada",
+        message: "hello",
+        idempotencyKey: "member-acp-denied",
+      },
+      respond,
+      context: createChatContext() as GatewayRequestContext,
+      client: { ownerMemberId: "ada", connect: { scopes: ["operator.chat"] } } as never,
+      isWebchatConnect: () => false,
+    });
+    expect(respond).toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({ message: "Member chat cannot use an ACP tool runtime" }),
+    );
+  });
+
+  it.each([
+    { member: "ada", key: "agent:main:member-bob", owner: "bob" },
+    { member: "ada", key: "agent:main:member-ada", owner: "bob" },
+    { member: undefined, key: "agent:main:member-ada", owner: "ada" },
+    { member: "ada", key: "main", owner: undefined },
+  ])(
+    "rejects sending and stopping outside the member's own session: %j",
+    async ({ member, key, owner }) => {
+      mockState.sessionEntry = owner ? { ownerMemberId: owner } : {};
+      const context = createChatContext();
+      const client = {
+        ownerMemberId: member,
+        connect: { scopes: ["operator.read", "operator.chat"] },
+      };
+      for (const method of ["chat.send", "chat.abort"] as const) {
+        const respond = vi.fn();
+        await chatHandlers[method]({
+          req: {} as never,
+          params:
+            method === "chat.send"
+              ? { sessionKey: key, message: "hello", idempotencyKey: "denied-member-chat" }
+              : { sessionKey: key },
+          respond,
+          context: context as GatewayRequestContext,
+          client: client as never,
+          isWebchatConnect: () => false,
+        });
+        expect(respond).toHaveBeenCalledWith(
+          false,
+          undefined,
+          expect.objectContaining({ message: "Chat is limited to your own member session" }),
+        );
+        expect(context.chatAbortControllers.size).toBe(0);
+      }
+    },
+  );
 });

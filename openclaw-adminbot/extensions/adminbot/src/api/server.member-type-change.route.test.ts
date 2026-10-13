@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMemberInput, AdminBotStoredProposal } from "../contracts/actions.js";
 import { resolveGroupMeetingEventId } from "../contracts/group-meeting.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import type { AdminBotCalendarEvent } from "../workflows/calendar/events.js";
 import type { AdminBotOnboardingSender } from "../workflows/onboarding/guide-sender.js";
 import { createAdminBotMockService } from "./server.js";
@@ -104,7 +105,7 @@ async function startService(options: { sheetRows?: string[][]; meeting?: string[
       member_type: "coauthor-major",
     },
   ] as AdminBotLabMemberInput[]) {
-    const saved = mock.service.upsertLabMember(seed);
+    const saved = mock.service.upsertLabMember(withCompleteProfile(seed));
     if (!saved.ok) {
       throw new Error(saved.error.message);
     }
@@ -342,6 +343,7 @@ describe("PUT /lab/members/:id changing Member Type", () => {
       await save(baseUrl, token, "newbie", {
         name: "New Person",
         email: "newbie@cs.toronto.edu",
+        calendar_email: "newbie@gmail.com",
         member_type: "full",
       })
     ).json()) as ChangeBody;
@@ -352,6 +354,24 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     const steps = created.member_type_change?.steps ?? [];
     expect(steps.find((step) => step.step === "lab_calendar")?.status).toBe("done");
     expect(steps.some((step) => step.step === "group_meeting")).toBe(true);
+  });
+
+  it("does not share the lab calendar with a departmental login", async () => {
+    const { baseUrl, mock } = await startService();
+    const token = await adminToken(mock, baseUrl);
+
+    const created = (await (
+      await save(baseUrl, token, "nogmail", {
+        name: "No Gmail",
+        email: "nogmail@cs.toronto.edu",
+        member_type: "full",
+      })
+    ).json()) as ChangeBody;
+
+    // Google would accept the share, but the member could never open the calendar with it.
+    expect(
+      created.member_type_change?.steps.find((step) => step.step === "lab_calendar"),
+    ).toMatchObject({ status: "skipped", detail: "no Gmail or Google Calendar email on file" });
   });
 
   it("does nothing outside the database when the type did not change", async () => {
@@ -506,7 +526,9 @@ describe("new member creation", () => {
       });
     expect((await request()).status).toBe(401);
     expect((await request(SERVICE_TOKEN)).status).toBe(403);
-    mock.service.upsertLabMember({ id: "admin", name: "Admin", privilege_level: "member" });
+    mock.service.upsertLabMember(
+      withCompleteProfile({ id: "admin", name: "Admin", privilege_level: "member" }),
+    );
     expect((await request(token)).status).toBe(403);
     const roster = mock.service.listLabMembers();
     expect(

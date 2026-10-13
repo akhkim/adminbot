@@ -3,6 +3,7 @@
 // turn one into a member, and approving it is the same save an admin's own Add member makes.
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMember, AdminBotLabMemberInput } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -55,7 +56,7 @@ function seedMember(
   mock: ReturnType<typeof createAdminBotMockService>,
   input: AdminBotLabMemberInput,
 ): void {
-  const result = mock.service.upsertLabMember(input);
+  const result = mock.service.upsertLabMember(withCompleteProfile(input));
   if (!result.ok) {
     throw new Error(result.error.message);
   }
@@ -148,6 +149,7 @@ async function lab() {
 const ADA = {
   name: "Ada Lovelace",
   email: "ada@example.org",
+  calendar_email: "ada@gmail.com",
   member_type: "full",
   affiliation: "Analytical Engines",
   note: "Started with us this week.",
@@ -293,7 +295,7 @@ describe("member requests", () => {
     };
     const steps = approved.member.member_type_change?.steps ?? [];
     expect(steps.find((step) => step.step === "lab_calendar")?.status).toBe("done");
-    expect(calendarShares).toEqual(["ada@example.org"]);
+    expect(calendarShares).toEqual(["ada@gmail.com"]);
   });
 
   it("lets anyone signed in propose, and shows each requester only their own", async () => {

@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -80,12 +81,16 @@ async function startLab({ readers = true }: { readers?: boolean } = {}): Promise
     ["grace", "member"],
     ["zhijing", "admin"],
   ] as const) {
-    const seeded = mock.service.upsertLabMember({
-      id,
-      name: id,
-      email: `${id}@cs.toronto.edu`,
-      privilege_level: privilege,
-    });
+    // Complete profiles keep the profile gate out of the way, so a member 403 proves the
+    // route's own admin check rather than profile_incomplete.
+    const seeded = mock.service.upsertLabMember(
+      withCompleteProfile({
+        id,
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: privilege,
+      }),
+    );
     if (!seeded.ok) {
       throw new Error(seeded.error.message);
     }
@@ -143,6 +148,9 @@ describe("active-channel cleanup authorization", () => {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         expect(response.status).toBe(expected);
+        if (expected === 403) {
+          expect(await response.json()).toEqual({ error: { message: "insufficient privileges" } });
+        }
       }
     },
   );

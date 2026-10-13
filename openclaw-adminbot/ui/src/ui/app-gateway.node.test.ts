@@ -7,6 +7,19 @@ import { connectGateway, resolveControlUiClientVersion } from "./app-gateway.ts"
 import type { GatewayHelloOk } from "./gateway.ts";
 import type { ChatQueueItem } from "./ui-types.ts";
 
+const storedMemberSessionMock = vi.hoisted(() =>
+  vi.fn<() => { sessionToken: string; memberId: string; email: string } | null>(() => null),
+);
+const recoverDeviceTokenMock = vi.hoisted(() => vi.fn(async () => false));
+vi.mock("./adminbot/auth/session.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./adminbot/auth/session.ts")>()),
+  loadStoredMemberSession: storedMemberSessionMock,
+}));
+vi.mock("./adminbot/auth/flow.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./adminbot/auth/flow.ts")>()),
+  recoverFromRejectedDeviceToken: recoverDeviceTokenMock,
+}));
+
 const loadChatHistoryMock = vi.hoisted(() => vi.fn(async () => undefined));
 const loadChatComposerSnapshotMock = vi.hoisted(() =>
   vi.fn<(...args: unknown[]) => { draft: string; queue: ChatQueueItem[] } | null>(() => null),
@@ -262,6 +275,8 @@ function emitToolResultEvent(client: GatewayClientMock) {
 
 describe("connectGateway", () => {
   beforeEach(() => {
+    storedMemberSessionMock.mockReset().mockReturnValue(null);
+    recoverDeviceTokenMock.mockReset().mockResolvedValue(false);
     gatewayClientInstances.length = 0;
     loadChatHistoryMock.mockClear();
     loadChatComposerSnapshotMock.mockReset();
@@ -961,6 +976,29 @@ describe("connectGateway", () => {
     connectGateway(host);
     expect(host.execApprovalQueue).toHaveLength(1);
     expect(host.execApprovalQueue[0]?.id).toBe("approval-1");
+  });
+
+  it("re-mints a signed-in member's old device token after a scope upgrade, once", async () => {
+    storedMemberSessionMock.mockReturnValue({
+      sessionToken: "synthetic",
+      memberId: "ada",
+      email: "ada@example.test",
+    });
+    const { host, client } = connectHostGateway();
+    const info = {
+      code: 4008,
+      error: {
+        code: "INVALID_REQUEST",
+        message: "device token scope mismatch",
+        details: { code: ConnectErrorDetailCodes.AUTH_SCOPE_MISMATCH },
+      },
+    };
+    client.emitClose(info);
+    await Promise.resolve();
+    expect(recoverDeviceTokenMock).toHaveBeenCalledTimes(1);
+    client.emitClose(info);
+    expect(recoverDeviceTokenMock).toHaveBeenCalledTimes(1);
+    expect(host.deviceTokenRecoveryAttempted).toBe(true);
   });
 
   it("maps generic fetch-failed auth errors to actionable token mismatch message", () => {

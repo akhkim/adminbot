@@ -20,6 +20,7 @@ import {
 } from "../connectors/social-draft.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
+import { missingMandatoryProfileFields } from "../contracts/profile-completion.js";
 import { createLlmLoadRouter, parseLlmNodes } from "../kernel/llm-router.js";
 import { ReferenceScans } from "../kernel/reference-scans.js";
 import {
@@ -69,6 +70,7 @@ import {
   executorWithOnboardingGuide,
 } from "./onboarding-provisioning.js";
 import { createPdfReferenceCheckHandler } from "./pdf-reference-check.js";
+import { isBlockedByProfile } from "./profile-gate.js";
 import { isAnonymousRoute, createAnonymousRateLimiter } from "./routes/anonymous.js";
 import { handleAuthRoute } from "./routes/auth.js";
 import type {
@@ -667,6 +669,21 @@ async function handleAuthenticatedRoute(
   if (principal.kind === "anonymous" && !isAnonymousRoute(req.method, url.pathname)) {
     sendJson(res, 401, { error: { message: "authentication required" } });
     return;
+  }
+  if (principal.kind === "member") {
+    // Re-read the row on every request: a saved answer unlocks immediately, and clearing it
+    // locks again even when the member's session predates the change.
+    const member = ctx.store.getLabMember(principal.member.id);
+    if (!member || isBlockedByProfile(member, req.method, url.pathname)) {
+      sendJson(res, 403, {
+        error: {
+          code: "profile_incomplete",
+          message: "Complete the required fields in My Profile before using AdminBot.",
+          missing_fields: member ? missingMandatoryProfileFields(member) : [],
+        },
+      });
+      return;
+    }
   }
   if (await dispatchRoute(AUTHENTICATED_ROUTES, { req, res, url, ctx, principal })) {
     return;

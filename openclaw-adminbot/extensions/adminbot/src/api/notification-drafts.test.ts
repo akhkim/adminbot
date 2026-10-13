@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 const drive = vi.hoisted(() => vi.fn());
 const cleanup = vi.hoisted(() => vi.fn());
@@ -82,11 +83,15 @@ async function setup(databasePath?: string) {
   const url = base.replace(":0", ":" + address.port) + "/tools/notification-drafts";
   function headers(admin: boolean) {
     const id = admin ? "test-admin" : "test-member";
-    app.service.upsertLabMember({
-      id,
-      name: "Synthetic User",
-      privilege_level: admin ? "admin" : "member",
-    });
+    // A complete profile keeps the profile gate out of the way, so a member 403 proves the
+    // route's own admin check rather than profile_incomplete.
+    app.service.upsertLabMember(
+      withCompleteProfile({
+        id,
+        name: "Synthetic User",
+        privilege_level: admin ? "admin" : "member",
+      }),
+    );
     app.store.saveSession({
       member_id: id,
       token_hash: createHash("sha256").update(id).digest("hex"),
@@ -227,6 +232,14 @@ it("denies anonymous, member, service-token and foreign-origin requests", async 
       (await fetch(url, { method: "POST", headers: auth, body: JSON.stringify(input) })).status,
     ).toBe(status);
   }
+  // The member denial must come from the route's admin check, not the profile gate.
+  const member = await fetch(url, {
+    method: "POST",
+    headers: headers(false),
+    body: JSON.stringify(input),
+  });
+  expect(member.status).toBe(403);
+  expect(await member.json()).toEqual({ error: { message: "insufficient privileges" } });
 });
 it("handles malformed input, invalid dates, and empty results", async () => {
   const { url, headers } = await setup();

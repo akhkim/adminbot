@@ -555,7 +555,7 @@ describe("the flat view", () => {
     });
     const extras = container.querySelector('[data-testid="paper-legacy-extras-p1"]');
     expect(extras?.querySelector('[data-testid="paper-attendee-add-p1"]')).not.toBeNull();
-    expect(extras?.querySelector('[data-testid="paper-trip-intent-p1"]')).not.toBeNull();
+    expect(extras?.querySelector('[data-testid="paper-travel-p1"]')).not.toBeNull();
     expect(extras?.querySelector('[data-testid="paper-completion-p1"]')).not.toBeNull();
     // The step picker is already a flat-form row; a second copy of it stays off this page.
     expect(container.querySelector('[data-testid="my-work-step-p1"]')).toBeNull();
@@ -570,7 +570,7 @@ describe("the flat view", () => {
     });
     expect(container.querySelector('[data-testid="paper-cycle-p1"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="paper-attendee-add-p1"]')).toBeNull();
-    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
+    expect(container.querySelector('[data-testid="paper-travel-p1"]')).toBeNull();
   });
 
   it("offers the feedback request form, not raw feedback fields", () => {

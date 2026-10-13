@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "email-review-service-token";
@@ -47,7 +48,9 @@ async function startLab() {
       privilege_level: "member",
     },
   ]) {
-    const saved = mock.service.upsertLabMember(member as AdminBotLabMemberInput);
+    const saved = mock.service.upsertLabMember(
+      withCompleteProfile(member as AdminBotLabMemberInput),
+    );
     if (!saved.ok) {
       throw new Error(saved.error.message);
     }

@@ -9,7 +9,6 @@ import { loadStoredMemberSession } from "../auth/session.ts";
 import { loadAdminBot } from "../controllers/admin.ts";
 import { loadCollaboratorSchedules } from "../controllers/collaborator-schedules.ts";
 import { saveAdminBotOwnSchedule } from "../controllers/members.ts";
-import { EMPTY_TRIP_DRAFT } from "../views/time-availability.trips.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
@@ -22,12 +21,6 @@ export function renderTimeAvailabilitySurface(state: AppViewState, scope: AdminB
     scope;
   return state.tab === "adminbotTimeAvailability" && !rosterPendingForTab
     ? renderAdminBotTimeAvailability({
-        // The trips log's draft lives on the view state so a re-render underneath the
-        // typist -- the roster reloading, a save landing -- cannot wipe half-entered input.
-        tripDraft: state.adminBotTripDraft ?? EMPTY_TRIP_DRAFT,
-        onTripDraftChange: (draft) => {
-          state.adminBotTripDraft = draft;
-        },
         collaborators:
           state.adminBotCollaboratorSchedulesSession === loadStoredMemberSession()?.sessionToken
             ? state.adminBotCollaboratorSchedules

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { withCompleteProfile } from "../../../extensions/adminbot/src/contracts/profile-completion.test-helpers.js";
 import { clearStoredMemberSession, saveStoredMemberSession } from "./adminbot/auth/session.ts";
 import { renderApp } from "./app-render.ts";
 import type { AppViewState } from "./app-view-state.ts";
@@ -73,8 +74,17 @@ describe("Meeting Recordings entry", () => {
     app.connected = false;
     app.memberId = "synthetic-member";
     app.memberPrivilegeLevel = "member";
+    // The profile gate has already read this member's own row and found it complete; without it
+    // the page holds on that read instead of drawing Meetings.
+    app.adminBotData = {
+      ...app.adminBotData,
+      members: [withCompleteProfile({ id: "synthetic-member", privilege_level: "member" })],
+    } as typeof app.adminBotData;
     app.adminBotNotifications = [];
     app.adminBotBroadcast = null;
+    // The Travel opt-in is read once per session on any tab; already read here, so the only request
+    // this render makes is the one under test.
+    app.labTravelSharingCheckedFor = "synthetic-session";
     const container = document.createElement("div");
 
     render(renderApp(app as unknown as AppViewState), container);
@@ -112,6 +122,9 @@ describe("Meeting Recordings entry", () => {
     app.adminBotMeetingsLoading = true;
     app.adminBotNotifications = [];
     app.adminBotBroadcast = null;
+    // The Travel opt-in is read once per session on any tab; already read here, so the only request
+    // this render makes is the one under test.
+    app.labTravelSharingCheckedFor = "synthetic-session";
     const container = document.createElement("div");
 
     render(renderApp(app as unknown as AppViewState), container);
