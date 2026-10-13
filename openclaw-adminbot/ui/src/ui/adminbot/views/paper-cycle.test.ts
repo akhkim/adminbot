@@ -6,7 +6,7 @@ import type {
   PaperReimbursement,
   PaperSocialConsent,
   PaperSocialDraft,
-} from "../auth/session.ts";
+} from "../api/papers.ts";
 import { renderPaperCycle, type PaperCycleProps } from "./paper-cycle.ts";
 
 type Calls = {

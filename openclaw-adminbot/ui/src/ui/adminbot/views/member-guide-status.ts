@@ -1,10 +1,10 @@
 import { html, LitElement, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { loadSettings } from "../../storage.ts";
+import { queueMemberOnboardingGuide } from "../api/onboarding.ts";
 import {
   fetchMemberResource,
   loadStoredMemberSession,
-  queueMemberOnboardingGuide,
   resolveAdminBotBaseUrl,
 } from "../auth/session.ts";
 

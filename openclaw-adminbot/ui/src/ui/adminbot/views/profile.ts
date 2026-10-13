@@ -30,15 +30,15 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
+import type { BadgeDefinition } from "../api/badges.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
+import { checkDriveAccess } from "../api/profile.ts";
 import {
-  checkDriveAccess,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   type AssignedBadge,
-  type BadgeDefinition,
   type BadgeSuggestionInput,
   type LabMember,
-  type MemberProfileUpdate,
 } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
@@ -69,10 +69,10 @@ import {
   type ProfileFieldGroup,
 } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
+import { ownPapers } from "../projects/model.ts";
 import { renderMemberBadgeSymbols, badgeCountLabel } from "./badge-symbols.ts";
 import { renderCountrySelect } from "./country-select.ts";
 import { renderMemberSelect } from "./member-select.ts";
-import { ownPapers } from "./my-work.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 import { renderRecentEdits } from "./recent-edits.ts";
 

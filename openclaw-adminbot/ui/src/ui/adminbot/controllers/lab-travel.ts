@@ -6,12 +6,8 @@
 // hand-patched snapshot is how two of those come to disagree.
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
-import {
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
-  updateOwnSchedule,
-  type MemberTripRow,
-} from "../auth/session.ts";
+import { updateOwnSchedule, type MemberTripRow } from "../api/members.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
   fetchTravelOverview,
   fetchTravelSharing,

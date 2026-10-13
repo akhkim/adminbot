@@ -5,11 +5,10 @@ import {
   decideOpportunity,
   decideOpportunityDeadline,
   fetchOpportunities,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
   submitOpportunity,
   updateOpportunity,
-} from "../auth/session.ts";
+} from "../api/deadlines.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
   OPPORTUNITIES,
   OPPORTUNITY_CATEGORIES,

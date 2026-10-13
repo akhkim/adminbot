@@ -28,14 +28,10 @@ import {
 import { t } from "../../../i18n/index.ts";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
-import type {
-  AdminBotEmailReviewResolution,
-  ConferenceRoster,
-  MemberNudgeChannel,
-  MemberProfileUpdate,
-  PaperSlotOverviewRow,
-  PaperSlotRow,
-} from "../auth/session.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
+import type { ConferenceRoster, PaperSlotOverviewRow } from "../api/paper-admin.ts";
+import type { PaperSlotRow } from "../api/papers.ts";
+import type { AdminBotEmailReviewResolution, MemberNudgeChannel } from "../auth/session.ts";
 import {
   type BlockerRow,
   blockerAgeDays,
@@ -48,7 +44,6 @@ import type {
   AdminBotActionProposal,
   AdminBotDashboardData,
   AdminBotLabMember,
-  AdminBotLabMemberSaveInput,
   AdminBotMemberNudgeState,
   AdminBotPaperNudge,
   AdminBotPaperRecord,
@@ -57,15 +52,16 @@ import type {
   AdminBotSensitiveInfoRecord,
   AdminBotReimbursementState,
   AdminBotSettings,
-  AdminBotSettingsSaveInput,
   AdminBotStandingMeetingsState,
   AdminBotVenueSource,
 } from "../controllers/admin.ts";
+import type { AdminBotLabMemberSaveInput } from "../controllers/members.ts";
 import {
   EMPTY_RECENT_EDITS,
   recentEditsKey,
   type RecentEditsState,
 } from "../controllers/recent-edits.ts";
+import type { AdminBotSettingsSaveInput } from "../controllers/workspace.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
 import { renderDateControl } from "../date-control.ts";
@@ -116,6 +112,7 @@ import {
   type PaperGridState,
 } from "../paper-grid.ts";
 import { renderAdminBotEmailReview } from "./email-review.ts";
+import { renderPaperNudge, type PaperNudgeProps } from "./paper-nudge.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
   paperOverviewRows,
@@ -175,8 +172,10 @@ export type AdminBotProps = {
   /** Active Papers' own filter. Lives on app state so it survives a re-render, like the others. */
   paperFilter?: PaperOverviewFilter;
   onPaperFilter?: (filter: PaperOverviewFilter) => void;
-  /** Opens one paper's own card over the table. See renderPaperCardDialog. */
+  /** Opens one paper: its project page, or the head professor's review. */
   onOpenPaperCard?: (paperId: string) => void;
+  /** The lab-wide author nudge. Absent outside admin mode, which draws no nudge at all. */
+  paperNudge?: PaperNudgeProps;
   /** Redraw after local-only state changes, such as opening the bulk sheet. */
   onRerender?: () => void;
   /**
@@ -2612,6 +2611,11 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     ${board(t("paperOverview.details.blockers"), renderBlockers(props, papers))}
     ${board(t("paperOverview.details.nextSteps"), renderNextSteps(props, papers))}
     ${board(t("paperOverview.details.nudges"), renderNudges(props.data.nudges))}
+    ${props.paperNudge
+      ? board("Chase authors (whole lab)", renderPaperNudge(props.paperNudge), {
+          open: props.paperNudge.nudgeBatches !== null,
+        })
+      : nothing}
     ${board(t("paperOverview.details.add"), renderAddPaperCard(props, { governance: true }))}
   `;
 }

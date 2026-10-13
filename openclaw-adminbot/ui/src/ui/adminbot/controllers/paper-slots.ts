@@ -12,25 +12,26 @@ import { adminBotIsAlumniMember } from "../../../../../extensions/adminbot/src/c
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
-  circulatePaperSocialDraft,
   fetchPaperNudgeBatches,
   fetchPaperSlotOverview,
-  fetchPaperSlots,
   fetchPiReviewQueue,
   type PiReviewRow,
-  loadStoredMemberSession,
-  recordPaperSocialConsent,
-  resolveAdminBotBaseUrl,
   runPaperSlotReminder,
+  type PaperNudgeBatch,
+  type PaperSlotOverviewRow,
+} from "../api/paper-admin.ts";
+import {
+  circulatePaperSocialDraft,
+  fetchPaperSlots,
+  recordPaperSocialConsent,
   savePaperAttendee,
   savePaperReimbursementStatus,
   savePaperSlot,
   savePaperWeeklyUpdate,
   savePaperSocialDraft,
   type PaperCycle,
-  type PaperNudgeBatch,
-  type PaperSlotOverviewRow,
-} from "../auth/session.ts";
+} from "../api/papers.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 
 export type AdminBotPaperSlotsHost = {
   settings: UiSettings;

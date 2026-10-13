@@ -605,6 +605,7 @@ export const uk: TranslationMap = {
     adminbotReimbursements: "Reimbursements",
     adminbotSettings: "Settings",
     adminbotMembers: "Lab Members",
+    adminbotArrReviewers: "ARR Eligible Reviewers",
     adminbotProfileOverview: "Profile Completeness",
     adminbotTabUsage: "Tab Usage",
     adminbotProfessor: "My Desk",
@@ -649,6 +650,7 @@ export const uk: TranslationMap = {
     dreams: "Сни",
   },
   subtitles: {
+    adminbotArrReviewers: "Self-reported ARR reviewer qualification and capacity.",
     dashboard: "What needs you, and where the lab stands.",
     profile: "Your details, and anything still blank.",
     gettingStarted: "Your setup checklist — what is left, and what you have already done.",

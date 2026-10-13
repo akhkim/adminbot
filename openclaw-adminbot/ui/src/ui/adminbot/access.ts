@@ -59,6 +59,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Members. The roster is lab-internal but not a governance surface, and chat is how members talk
   // to AdminBot at all.
   adminbotMembers: "member",
+  adminbotArrReviewers: "member",
   // Every member has a schedule page, but it is only ever their own: holidays, courses, other jobs
   // and the note they wrote for the admins are planning data for the people who plan, so reading
   // someone else's is an admin act. The tab is member-level because your own schedule is yours; the

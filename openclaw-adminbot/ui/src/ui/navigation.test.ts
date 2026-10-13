@@ -72,6 +72,7 @@ describe("iconForTab", () => {
       adminbotSettings: "settings",
       adminbotMembers: "folder",
       adminbotProfileOverview: "check",
+      adminbotArrReviewers: "check",
       adminbotTabUsage: "barChart",
       adminbotGrantReport: "scrollText",
       adminbotMailingList: "send",
@@ -136,6 +137,7 @@ describe("titleForTab", () => {
       adminbotSettings: "Settings",
       adminbotMembers: "Lab Members",
       adminbotProfileOverview: "Profile Completeness",
+      adminbotArrReviewers: "ARR Eligible Reviewers",
       adminbotTabUsage: "Tab Usage",
       adminbotGrantReport: "Grant Report",
       adminbotMailingList: "Mailing List",
@@ -197,6 +199,7 @@ describe("subtitleForTab", () => {
       adminbotSettings: "Lab defaults and escalation policy.",
       adminbotMembers: "Privilege levels and access profiles.",
       adminbotProfileOverview: "Who has filled in their profile and planned their term.",
+      adminbotArrReviewers: "Self-reported ARR reviewer qualification and capacity.",
       adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
       adminbotGrantReport:
         "Every paper mapped to a safety area, and the track record behind each ask.",

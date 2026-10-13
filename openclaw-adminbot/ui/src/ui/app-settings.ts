@@ -2,11 +2,8 @@ import { ADMINBOT_PASSWORD_RESET_PATH } from "../../../extensions/adminbot/src/c
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
-import {
-  loadAdminBot,
-  loadAdminBotVenueSources,
-  type AdminBotHost,
-} from "./adminbot/controllers/admin.ts";
+import { loadAdminBot, type AdminBotHost } from "./adminbot/controllers/admin.ts";
+import { loadAdminBotVenueSources } from "./adminbot/controllers/conference-papers.ts";
 import {
   loadAdminBotRegistrations,
   type AdminBotRegistrationsHost,
@@ -66,6 +63,7 @@ import {
   inferBasePathFromPathname,
   normalizeBasePath,
   normalizePath,
+  isSubpathOfTab,
   pathForTab,
   pathIsRoot,
   tabFromPath,
@@ -496,6 +494,7 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "adminbot":
       case "adminbotSettings":
       case "adminbotMembers":
+      case "adminbotArrReviewers":
       case "adminbotPapers":
       case "adminbotAnnouncements":
       case "adminbotTimeAvailability":
@@ -728,6 +727,8 @@ export function onPopState(host: SettingsHost) {
   }
 
   setTabFromRoute(host, resolved);
+  // Back within one tab (My Projects' own pages) changes no tab, so nothing else would re-render.
+  host.requestUpdate?.();
 }
 
 export function setTabFromRoute(host: SettingsHost, next: Tab) {
@@ -811,7 +812,8 @@ export function syncUrlWithTab(host: SettingsHost, tab: Tab, replace: boolean) {
     url.searchParams.delete("session");
   }
 
-  if (currentPath !== targetPath) {
+  // Arriving on a deep link (a reload, Back) keeps it; choosing the tab itself goes to its top.
+  if (currentPath !== targetPath && !(replace && isSubpathOfTab(tab, currentPath, host.basePath))) {
     url.pathname = targetPath;
   }
 
