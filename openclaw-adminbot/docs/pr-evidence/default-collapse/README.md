@@ -10,4 +10,4 @@ Actual production `renderPaperLegacy` and `renderPaperFeedback` components with 
 
 Images are unaltered browser captures (context clips where appropriate). Saved images were inspected at native size. Legacy and feedback interactions were also checked in the other theme; the legacy collapsed heading was checked at 1280×720. No performance or live persistence claim.
 
-Remaining before overall PR readiness: actual styled checks for the other affected checklist, people, social settings, travel/reimbursements, weekly updates, admin board, and overview components; rendered destination verification of this evidence.
+These images are historical evidence from `11246dc2`, before integration with the current project pages and Travel tab. They passed saved-file and rendered-PR inspection at that revision. Current-head browser coverage and refreshed rendered evidence remain incomplete; do not treat these as verification of the integrated layout.

@@ -1,3 +1,4 @@
+import type { AdminBotLabMember } from "../../contracts/actions.js";
 /**
  * The lab's member spreadsheet against the lab's database: who is on one and not the other, and
  * whose Member Type has moved.
@@ -14,7 +15,7 @@
  * Pure: this decides, the service applies the record changes and proposes the access ones. Nothing
  * here reads Google, touches the store, or sends anything.
  */
-import type { AdminBotLabMember } from "../../contracts/actions.js";
+import { adminBotIsGmailAddress } from "../../contracts/member-outreach-email.js";
 
 /** The columns this sync reads. Titles as the sheet spells them, matched case-insensitively. */
 export const ROSTER_SHEET_MEMBER_TYPE_HEADER = "Member Type";
@@ -169,6 +170,8 @@ export type RosterAddition = {
   sheet_row: number;
   name: string;
   email?: string;
+  /** A Gmail anywhere on the row -- usually the Slack column -- kept as the Calendar email. */
+  calendar_email?: string;
   member_type: string;
 };
 
@@ -257,10 +260,12 @@ export function planRosterSync(params: {
       (row.member_id ? byId.get(row.member_id) : undefined) ??
       row.emails.map((email) => byAddress.get(email)).find(Boolean);
     if (!matched) {
+      const gmail = row.emails.find(adminBotIsGmailAddress);
       additions.push({
         sheet_row: row.sheet_row,
         name: row.name,
         ...(row.emails[0] ? { email: row.emails[0] } : {}),
+        ...(gmail ? { calendar_email: gmail } : {}),
         member_type: row.member_type,
       });
       continue;

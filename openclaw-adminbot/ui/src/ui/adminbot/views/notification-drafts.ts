@@ -1,5 +1,6 @@
 import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
+import { live } from "lit/directives/live.js";
 
 type DraftResult = {
   announcements: { venue: string; text: string; paper_count: number }[];
@@ -315,7 +316,7 @@ export class NotificationDrafts extends LitElement {
           >Notifications after<input
             aria-label="Notifications after"
             type="date"
-            .value=${this.date}
+            .value=${live(this.date)}
             ?disabled=${this.busy}
             @input=${(e: Event) => {
               this.date = (e.target as HTMLInputElement).value;

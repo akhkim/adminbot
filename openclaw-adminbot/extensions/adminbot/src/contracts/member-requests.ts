@@ -23,6 +23,8 @@ export type AdminBotMemberRequestStatus = (typeof adminBotMemberRequestStatuses)
 export const adminBotMemberRequestFields = [
   "name",
   "email",
+  // The Gmail / Google account the lab calendar is shared with; optional.
+  "calendar_email",
   "member_type",
   "affiliation",
   "research_topics",

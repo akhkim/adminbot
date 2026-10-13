@@ -20,12 +20,11 @@ import {
   draftCalendarEvent,
   fetchCalendarEvents,
   inviteToCalendarEvent,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
   updateCalendarEvent,
   type CalendarEvent,
   type CalendarEventDraft,
-} from "../auth/session.ts";
+} from "../api/calendar.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { dayKeyInZone, monthStartKey, monthWindow } from "../calendar-month.ts";
 import type { AdminBotHost } from "./admin.ts";
 

@@ -8,7 +8,7 @@
 // writes are returning the signed file and answering, and both belong to the lab.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
-import type { LogisticsRequest, LogisticsRequestStatus } from "../auth/session.ts";
+import type { LogisticsRequest, LogisticsRequestStatus } from "../api/logistics.ts";
 import {
   logisticsDeadlineText,
   selectLogisticsQueue,

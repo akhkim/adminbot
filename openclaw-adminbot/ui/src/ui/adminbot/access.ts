@@ -59,6 +59,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Members. The roster is lab-internal but not a governance surface, and chat is how members talk
   // to AdminBot at all.
   adminbotMembers: "member",
+  adminbotArrReviewers: "member",
   // Every member has a schedule page, but it is only ever their own: holidays, courses, other jobs
   // and the note they wrote for the admins are planning data for the people who plan, so reading
   // someone else's is an admin act. The tab is member-level because your own schedule is yours; the
@@ -91,6 +92,10 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Lab Sharing is the collaboration surface for every member -- ask for help, answer invites,
   // browse open projects. No data on it requires operator privilege.
   labSharing: "member",
+  // Conference RSVPs, the viewer's own trips, and opt-in location sharing between members. Full
+  // members only (see canAccessTab below): it shows who is going where, and the service refuses
+  // trial members and external collaborators on every /travel route regardless of this entry.
+  labTravel: "member",
 
   // Everything else is an operator or governance surface.
   // Active Papers is the lab-wide pipeline across every author, not the viewer's own work -- that
@@ -157,7 +162,7 @@ export function canAccessTab(
   privilegeLevel: string | null = role,
 ): boolean {
   // The broad UI member role also includes trial members and external collaborators.
-  if (tab === "adminbotReferenceChecker") {
+  if (tab === "adminbotReferenceChecker" || tab === "labTravel") {
     return role !== "anonymous" && (privilegeLevel === "member" || privilegeLevel === "admin");
   }
   return rank(role) >= rank(TAB_MINIMUM_ROLE[tab]);

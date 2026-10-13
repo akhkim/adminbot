@@ -6,6 +6,12 @@ import { promisify } from "node:util";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type { AdminBotActionExecutor } from "../kernel/service.js";
+import {
+  calendarMembershipReader,
+  removeFilteredCalendarAttendees,
+  calendarAccessReader,
+  revokeCalendarAccess,
+} from "./calendar-membership.js";
 import { renderEmailBodyHtml, renderEmailBodyText } from "./email-html.js";
 
 const execFile = promisify(execFileCallback);
@@ -303,6 +309,14 @@ function optionalAccount(env: NodeJS.ProcessEnv | undefined): string | undefined
   return (env ?? process.env).GOG_ACCOUNT?.trim() || undefined;
 }
 
+export function createGogCalendarAccessReader(env?: NodeJS.ProcessEnv) {
+  return calendarAccessReader(createGogCapture(env));
+}
+
+export function createGogCalendarMembershipReader(env?: NodeJS.ProcessEnv) {
+  return calendarMembershipReader(createGogCapture(env));
+}
+
 export function createGogAdminBotExecutor(
   options: GogAdminBotExecutorOptions = {},
 ): AdminBotActionExecutor {
@@ -339,8 +353,17 @@ export function createGogAdminBotExecutor(
         }
         return { handled: true };
       }
+      if (proposal.type === "calendar.revoke_lab_calendar") {
+        await revokeCalendarAccess(requirePayload(proposal), capture, run);
+        return { handled: true };
+      }
       if (proposal.type === "calendar.remove_attendees") {
-        await removeCalendarAttendees(proposal, run, capture);
+        const payload = requirePayload(proposal);
+        if (payload.membership_filter === true) {
+          await removeFilteredCalendarAttendees(payload, capture, run);
+        } else {
+          await removeCalendarAttendees(proposal, run, capture);
+        }
         return { handled: true };
       }
       if (

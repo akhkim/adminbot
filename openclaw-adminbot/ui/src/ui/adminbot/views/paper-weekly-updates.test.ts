@@ -1,7 +1,7 @@
 // The weekly log on a paper card: one box for your own week, and everyone else's underneath.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
-import type { PaperWeeklyUpdate } from "../auth/session.ts";
+import type { PaperWeeklyUpdate } from "../api/papers.ts";
 import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
 
 // A Sunday inside the week starting Monday 17 Aug 2026.

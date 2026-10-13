@@ -6,11 +6,11 @@ import MarkdownIt from "markdown-it";
 import { copyToClipboard } from "../../chat/clipboard.ts";
 import { icons } from "../../icons.ts";
 import { loadSettings } from "../../storage.ts";
+import { sendLocalChat } from "../api/assistant.ts";
 import {
   fetchMemberResource,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
-  sendLocalChat,
 } from "../auth/session.ts";
 
 type Message = { role: "user" | "assistant"; content: string };

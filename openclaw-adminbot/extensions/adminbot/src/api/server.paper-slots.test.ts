@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createAdminBotMessageExecutor } from "../connectors/message.js";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -135,14 +136,16 @@ async function call(
  */
 async function adminHeaders(baseUrl: string): Promise<Record<string, string>> {
   const mock = mockFor(baseUrl);
-  const seeded = mock.service.upsertLabMember({
-    receives_nudges: true,
-    id: "zhijing",
-    name: "Zhijing Jin",
-    email: "zhijing@cs.toronto.edu",
-    privilege_level: "admin",
-    slack_user_id: "U-ZJ",
-  } as AdminBotLabMemberInput);
+  const seeded = mock.service.upsertLabMember(
+    withCompleteProfile({
+      receives_nudges: true,
+      id: "zhijing",
+      name: "Zhijing Jin",
+      email: "zhijing@cs.toronto.edu",
+      privilege_level: "admin",
+      slack_user_id: "U-ZJ",
+    } as AdminBotLabMemberInput),
+  );
   if (!seeded.ok) {
     throw new Error(seeded.error.message);
   }
@@ -495,13 +498,15 @@ describe("the global nudge, end to end", () => {
 
   it("says up front that somebody cannot be reached", async () => {
     const { baseUrl } = await startLab();
-    mockFor(baseUrl).service.upsertLabMember({
-      receives_nudges: true,
-      id: "ada",
-      name: "Ada Lovelace",
-      privilege_level: "member",
-      slack_user_id: "",
-    } as never);
+    mockFor(baseUrl).service.upsertLabMember(
+      withCompleteProfile({
+        receives_nudges: true,
+        id: "ada",
+        name: "Ada Lovelace",
+        privilege_level: "member",
+        slack_user_id: "",
+      } as never),
+    );
     const preview = await call(baseUrl, "GET", "/papers/nudge-batches");
     // Reported before the send rather than afterwards in a list of failures.
     expect(preview.body.batches[0]).toMatchObject({ member_id: "ada", deliverable: false });
@@ -619,11 +624,13 @@ describe("conference travel export", () => {
     const result = await callAs(headers, baseUrl, "GET", route);
     expect(result.status).toBe(200);
     expect(result.body.rows).toEqual([]);
-    mockFor(baseUrl).service.upsertLabMember({
-      id: "zhijing",
-      name: "Zhijing Jin",
-      privilege_level: "member",
-    } as AdminBotLabMemberInput);
+    mockFor(baseUrl).service.upsertLabMember(
+      withCompleteProfile({
+        id: "zhijing",
+        name: "Zhijing Jin",
+        privilege_level: "member",
+      } as AdminBotLabMemberInput),
+    );
     expect((await callAs(headers, baseUrl, "GET", route)).status).toBe(403);
     expect(sent).toHaveLength(0);
   });

@@ -486,6 +486,15 @@ describe("actionablePaperSlots", () => {
     expect(isPaperDormant(old, NOW)).toBe(false);
     expect(actionablePaperSlots(old, [], NOW)).toHaveLength(1);
   });
+
+  it("honours human completion without treating a blank completion date as done", () => {
+    const completed = paper({ artifacts: { completed_at: "2026-08-20T12:00:00.000Z" } });
+    expect(isPaperClosed(completed)).toBe(true);
+    expect(actionablePaperSlots(completed, [], NOW)).toEqual([]);
+    for (const completed_at of ["", "   "]) {
+      expect(isPaperClosed(paper({ artifacts: { completed_at } }))).toBe(false);
+    }
+  });
 });
 
 describe("the nudge ledger rules", () => {

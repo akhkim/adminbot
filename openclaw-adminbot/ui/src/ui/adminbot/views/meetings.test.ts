@@ -2,7 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MeetingRecord } from "../auth/session.ts";
+import type { MeetingRecord } from "../api/meetings.ts";
 import { renderAdminBotMeetings, type AdminBotMeetingsProps } from "./meetings.ts";
 
 afterEach(() => {

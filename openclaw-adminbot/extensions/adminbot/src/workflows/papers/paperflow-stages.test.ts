@@ -206,6 +206,21 @@ describe("openPaperflowStage", () => {
     ).toBeUndefined();
   });
 
+  it("does not chase a completed paper whose older venue emails were never imported", () => {
+    expect(
+      openPaperflowStage({
+        paper: paper({
+          venue_decision: "accept",
+          current_step: "social_posts",
+          artifacts: { completed_at: "2026-08-20T12:00:00.000Z" },
+        }),
+        slots: submitted(),
+        evidence: [],
+        now,
+      }),
+    ).toBeUndefined();
+  });
+
   it("walks the accept path from camera ready to conference travel", () => {
     const open = openPaperflowStage({
       paper: paper({ venue_decision: "accept" }),

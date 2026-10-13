@@ -24,6 +24,7 @@
 
 import { html, nothing, type TemplateResult } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { live } from "lit/directives/live.js";
 import {
   adminBotPaperVenueDecisions,
   type AdminBotPaperStep,
@@ -39,7 +40,7 @@ import {
   type AdminBotPaperSlotBranch,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
-import type { PaperCycle, PaperSlotRow } from "../auth/session.ts";
+import type { PaperCycle, PaperSlotRow } from "../api/papers.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
 import { renderDateControl } from "../date-control.ts";
@@ -707,7 +708,7 @@ function renderControl(
     type=${field.control === "date" ? "date" : field.control === "number" ? "number" : "text"}
     placeholder=${ifDefined(field.example)}
     data-testid=${testId}
-    .value=${value}
+    .value=${live(value)}
     @input=${(event: Event) => onEdit((event.target as HTMLInputElement).value)}
   />`;
   return field.control === "date" ? renderDateControl(input, value) : input;

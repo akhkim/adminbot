@@ -19,7 +19,7 @@
 // second should cost nothing once you have read the first.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
-import type { PaperSlotOverviewRow } from "../auth/session.ts";
+import type { PaperSlotOverviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { matchesMemberTypeFilter, renderMemberTypeFilter } from "../member-type-filter.ts";
 

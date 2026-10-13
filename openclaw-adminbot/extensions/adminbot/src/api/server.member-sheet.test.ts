@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { AdminBotService } from "../kernel/service.js";
 import {
   describeMemberSheetReadFailure,
@@ -305,12 +306,14 @@ describe("onboarding from the roster", () => {
 
   it("mails an existing roster member without creating them again", async () => {
     const { service, pending } = realService();
-    service.upsertLabMember({
-      id: "yc",
-      name: "Yuen C.",
-      email: "yuenc2@illinois.edu",
-      member_type: "alumni",
-    } as never);
+    service.upsertLabMember(
+      withCompleteProfile({
+        id: "yc",
+        name: "Yuen C.",
+        email: "yuenc2@illinois.edu",
+        member_type: "alumni",
+      } as never),
+    );
     const result = await onboardRows(service, source(), { sheet_rows: [2] }, env);
     if ("error" in result) {
       throw new Error(result.error.message);

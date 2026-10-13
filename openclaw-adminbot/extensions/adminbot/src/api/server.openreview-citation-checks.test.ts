@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PdfReferenceChecker } from "../connectors/reference-check.js";
 import type { OpenReviewSubmissionReader } from "../contracts/openreview-citation-checks.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const token = "synthetic-service-token";
@@ -85,7 +86,9 @@ async function sessionFor(
   privilege: "admin" | "member",
 ): Promise<string> {
   const email = `${id}@example.test`;
-  const seeded = app.service.upsertLabMember({ id, name: id, email, privilege_level: privilege });
+  const seeded = app.service.upsertLabMember(
+    withCompleteProfile({ id, name: id, email, privilege_level: privilege }),
+  );
   if (!seeded.ok) {
     throw new Error(seeded.error.message);
   }

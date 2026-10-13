@@ -3,7 +3,7 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../../../../../extensions/adminbot/src/contracts/overleaf.js";
-import type { PaperflowStageRow, PaperSlotRow } from "../auth/session.ts";
+import type { PaperflowStageRow, PaperSlotRow } from "../api/papers.ts";
 import { renderPaperSlots, type PaperDetailsProps } from "./paper-slots.ts";
 
 type Saved = {

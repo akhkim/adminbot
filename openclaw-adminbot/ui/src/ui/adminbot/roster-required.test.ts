@@ -19,6 +19,8 @@ describe("direct tab entry roster loading", () => {
     expect(needsLabRoster("adminbot", "general", "papers")).toBe(true);
     expect(needsLabRoster("adminbotPapers", "admin", "papers")).toBe(true);
     expect(needsLabRoster("myWork", "general", null)).toBe(true);
+    expect(needsLabRoster("adminbotArrReviewers", "general", null)).toBe(true);
+    expect(needsLabRoster("adminbotArrReviewers", "admin", null)).toBe(true);
     expect(needsLabRoster("adminbotTimeAvailability", "admin", null)).toBe(true);
     for (const tab of ["adminbotMeetings", "adminbotBadges", "adminbotCalendar"]) {
       expect(needsLabRoster(tab, "admin", null)).toBe(true);

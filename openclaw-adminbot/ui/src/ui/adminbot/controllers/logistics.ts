@@ -11,8 +11,6 @@ import type { UiSettings } from "../../storage.ts";
 import {
   fetchLogisticsRequest,
   fetchLogisticsRequests,
-  loadStoredMemberSession,
-  resolveAdminBotBaseUrl,
   sendSignedLogisticsDocuments,
   setLogisticsRequestStatus,
   submitLogisticsRequest,
@@ -22,8 +20,9 @@ import {
   type LogisticsRequest,
   type LogisticsRequestInput,
   type LogisticsRequestStatus,
-} from "../auth/session.ts";
-import { submitSignatureFormRequest } from "../auth/session.ts";
+} from "../api/logistics.ts";
+import { submitSignatureFormRequest } from "../api/logistics.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
   clearLogisticsDraft,
   clearMeetingRequestDraft,

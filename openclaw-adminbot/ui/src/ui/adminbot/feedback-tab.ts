@@ -9,10 +9,10 @@ export type FeedbackConfig = {
   githubFile: string;
 };
 
-const REPO_BASE =
-  "https://github.com/akhkim/openclaw-adminbot-lab/blob/main/openclaw-adminbot/ui/src/ui/adminbot/views";
+const ADMINBOT_BASE =
+  "https://github.com/akhkim/openclaw-adminbot-lab/blob/main/openclaw-adminbot/ui/src/ui/adminbot";
 
-const file = (name: string): string => `${REPO_BASE}/${name}`;
+const file = (name: string): string => `${ADMINBOT_BASE}/views/${name}`;
 
 export const FEEDBACK_TABS: Partial<Record<Tab, FeedbackConfig>> = {
   dashboard: { featureId: "dashboard", githubFile: file("dashboard.ts") },
@@ -21,7 +21,8 @@ export const FEEDBACK_TABS: Partial<Record<Tab, FeedbackConfig>> = {
     featureId: "time-availability",
     githubFile: file("time-availability.ts"),
   },
-  myWork: { featureId: "my-work", githubFile: file("my-work.ts") },
+  // My Projects & Papers is drawn from projects/, not views/; view.ts is its entry point.
+  myWork: { featureId: "my-work", githubFile: `${ADMINBOT_BASE}/projects/view.ts` },
   labSharing: { featureId: "lab-sharing", githubFile: file("lab-sharing.ts") },
   adminbotMembers: { featureId: "members", githubFile: file("admin.ts") },
   adminbotReimbursements: { featureId: "reimbursements", githubFile: file("reimbursements.ts") },

@@ -2,7 +2,7 @@
 // group the lab's papers into.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
-import type { PaperSlotOverviewRow } from "../auth/session.ts";
+import type { PaperSlotOverviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
