@@ -217,7 +217,8 @@ describe("the weekly sheet sweep", () => {
 describe("approving a sweep joiner's enrollment", () => {
   it("sets the level their type implies and runs the same enrollment, approved by that admin", async () => {
     const { baseUrl, mock, executed, calendarShares } = await startService({
-      sheetRows: [["Ada Lovelace", "full", "ada@cs.toronto.edu", ""]],
+      // The Slack column's Gmail is the Google account the share has to name.
+      sheetRows: [["Ada Lovelace", "full", "ada@cs.toronto.edu", "ada@gmail.com"]],
     });
     await runSweep(baseUrl);
     const token = await adminToken(mock, baseUrl);
@@ -228,7 +229,7 @@ describe("approving a sweep joiner's enrollment", () => {
     expect(rosterEntry(mock, "ada-lovelace")).toMatchObject({ privilege_level: "member" });
     // Granted through the gate, approved by the admin who approved the enrollment, and recorded
     // where the calendar backfill looks.
-    expect(calendarShares).toEqual(["ada@cs.toronto.edu"]);
+    expect(calendarShares).toEqual(["ada@gmail.com"]);
     // The grant runs in-process rather than through the injected connector, so read it off the ledger.
     expect(executed.map((proposal) => proposal.type)).not.toContain("calendar.grant_lab_calendar");
     const [grant] = mock.store.listProposalsByType("calendar.grant_lab_calendar");
@@ -239,7 +240,7 @@ describe("approving a sweep joiner's enrollment", () => {
       .find((event) => event.type === "auth.calendar_invite_sent");
     expect(audit?.details).toMatchObject({
       member_id: "ada-lovelace",
-      email: "ada@cs.toronto.edu",
+      email: "ada@gmail.com",
     });
   });
 

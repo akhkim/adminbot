@@ -148,6 +148,7 @@ async function lab() {
 const ADA = {
   name: "Ada Lovelace",
   email: "ada@example.org",
+  calendar_email: "ada@gmail.com",
   member_type: "full",
   affiliation: "Analytical Engines",
   note: "Started with us this week.",
@@ -293,7 +294,7 @@ describe("member requests", () => {
     };
     const steps = approved.member.member_type_change?.steps ?? [];
     expect(steps.find((step) => step.step === "lab_calendar")?.status).toBe("done");
-    expect(calendarShares).toEqual(["ada@example.org"]);
+    expect(calendarShares).toEqual(["ada@gmail.com"]);
   });
 
   it("lets anyone signed in propose, and shows each requester only their own", async () => {

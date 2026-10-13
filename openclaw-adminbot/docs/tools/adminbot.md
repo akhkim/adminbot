@@ -1799,6 +1799,20 @@ refusing to remove a changed/owner ACL. Empty rosters or incomplete inventories 
 closed before any writes. Monday invitations and subscription grants enforce eligibility
 at execution; other event invitations are unrestricted by this membership rule.
 
+The same pass then **grants** missing access. Every eligible member is shared with one
+Google account, picked by a single rule: the profile's Calendar email if set, otherwise
+the first Gmail (`@gmail.com` / `@googlemail.com`) on the record. A departmental login is
+never used for a share: Google accepts it, but the member then sees "request access".
+Members with neither are listed as `needs_gmail` in the response instead of being guessed.
+The check reads the live ACL rather than the audit trail, so a member whose address
+changed, or whose share was removed by hand, is repaired on the next Sunday. Grants use the
+T3 `calendar.grant_lab_calendar` action approved by `system:lab-calendar-access-policy`.
+Changing the Calendar email on a profile triggers the same grant immediately.
+
+Event invites (themed meetings, local events) use the same Google account when there is
+one, and fall back to another address on file, since an invite still arrives by email. A
+member already on a guest list under any of their addresses is not invited twice.
+
 This requires `gog api call` support (verified against gog 0.43.0) and the configured
 Google account's Calendar read/write access. It uses Calendar `events.list/get/patch` and `acl.list/delete`
 through the existing gog credentials. Event updates remain silent (`sendUpdates=none`).
