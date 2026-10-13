@@ -749,6 +749,22 @@ describe("AdminBotService weekly updates", () => {
     expect(unwrap(await service.sendWeeklyUpdateNudges("cron", sunday)).created).toEqual([]);
   });
 
+  it("does not ask for weekly work on a paper explicitly marked presented", async () => {
+    const service = labWithPaper();
+    unwrap(
+      service.upsertPaper({
+        id: "paper",
+        title: "Causal agents",
+        authors: ["Ada Lovelace", "Rahul Shrestha"],
+        current_step: "social_posts",
+        venue_decision: "accept",
+        artifacts: { completed_at: "2026-08-20T12:00:00.000Z" },
+      }),
+    );
+    expect(unwrap(service.collectWeeklyUpdateGaps(sunday)).gaps).toEqual([]);
+    expect(unwrap(await service.sendWeeklyUpdateNudges("cron", sunday)).created).toEqual([]);
+  });
+
   it("never asks the head professor for a weekly line, on any paper", async () => {
     const service = labWithPaper();
     unwrap(
