@@ -1,9 +1,18 @@
 // @vitest-environment jsdom
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { withCompleteProfile } from "../../../extensions/adminbot/src/contracts/profile-completion.test-helpers.js";
-import { clearStoredMemberSession, saveStoredMemberSession } from "./adminbot/auth/session.ts";
+import {
+  COMPLETE_PROFILE,
+  withCompleteProfile,
+} from "../../../extensions/adminbot/src/contracts/profile-completion.test-helpers.js";
+import {
+  clearStoredMemberSession,
+  loadStoredMemberSession,
+  saveStoredMemberSession,
+} from "./adminbot/auth/session.ts";
+import { pendingAdminBotLoad } from "./adminbot/controllers/admin.ts";
 import { renderApp } from "./app-render.ts";
+import { setTab } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { OpenClawApp } from "./app.ts";
 
@@ -156,5 +165,182 @@ describe("Meeting Recordings entry", () => {
       expect.stringContaining("/lab/members?view=summary"),
       expect.stringContaining("/my/projects"),
     ]);
+  });
+});
+
+// Exercise the same member controls and read clients together, with no gateway socket.
+describe("View as followed by a first paper-page read", () => {
+  const ADMIN = "synthetic-view-as-admin";
+  const MEMBER = "synthetic-view-as-member";
+  const QUEUES = [
+    "/proposals/pending",
+    "/automation/email/review",
+    "/papers/nudges",
+    "/papers/conference-rosters",
+    "/settings",
+    "/sensitive-info",
+  ];
+  const admin = {
+    ...COMPLETE_PROFILE,
+    id: "root",
+    name: "Ada Admin",
+    privilege_level: "admin",
+    member_type: "adminbot-admin",
+  };
+  const member = {
+    ...COMPLETE_PROFILE,
+    id: "beta",
+    name: "Beta Example",
+    privilege_level: "member",
+    member_type: "full",
+  };
+
+  function fixture(refuse = false) {
+    const calls: string[] = [];
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const path = new URL(String(input)).pathname;
+      calls.push(path);
+      if (path === "/auth/impersonate") {
+        return refuse
+          ? json({ error: { message: "admin privileges required" } }, 403)
+          : json({
+              session_token: MEMBER,
+              expires_at: "2099-01-01",
+              member,
+              impersonated_by: { id: admin.id, name: admin.name },
+            });
+      }
+      if (path === "/auth/impersonate/stop") {
+        return json({ ended: true });
+      }
+      if (path === "/auth/device-token") {
+        return json({ token: "synthetic-device", scopes: ["operator.read"] });
+      }
+      if (path === "/auth/session") {
+        return json({ member: admin, expires_at: "2099-01-01" });
+      }
+      if (path === "/lab/members/self") {
+        return json({
+          member: loadStoredMemberSession()?.sessionToken === MEMBER ? member : admin,
+        });
+      }
+      if (path === "/papers") {
+        return json({ papers: [] });
+      }
+      if (QUEUES.includes(path)) {
+        return loadStoredMemberSession()?.sessionToken === MEMBER
+          ? json({ error: { message: "admin privileges required" } }, 403)
+          : json({});
+      }
+      return json({});
+    });
+    saveStoredMemberSession({ sessionToken: ADMIN, expiresAt: "2099-01-01" });
+    const app = new OpenClawApp();
+    app.settings = {
+      ...app.settings,
+      adminBotUrl: "http://fixture.example",
+      gatewayUrl: "ws://fixture.example",
+    };
+    app.connected = true;
+    app.client = { request: vi.fn(async () => ({ ok: true, output: {} })), stop: vi.fn() } as never;
+    app.connect = vi.fn();
+    app.memberId = admin.id;
+    app.memberPrivilegeLevel = "admin";
+    app.authGateVisible = false;
+    app.landedWithoutATab = false;
+    app.tab = "adminbotMembers";
+    app.adminBotData = {
+      ...app.adminBotData,
+      members: [admin, member] as never,
+      loadedAt: 1,
+      papersLoadedAt: 1,
+    };
+    app.adminBotMemberList = {
+      ...app.adminBotMemberList,
+      rows: [admin, member] as never,
+      loadedAt: 1,
+      total: 2,
+    };
+    app.adminBotRosterLoadedAt = 1;
+    app.setTab = (tab) => setTab(app, tab);
+    const container = document.createElement("div");
+    const draw = () => render(renderApp(app), container);
+    const button = (label: string) =>
+      [...container.querySelectorAll("button")].find(
+        (entry) => entry.textContent?.trim() === label,
+      );
+    draw();
+    return { app, calls, container, draw, button };
+  }
+
+  afterEach(() => {
+    clearStoredMemberSession();
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("uses member reads after the real View as control, then restores admin reads on return", async () => {
+    const f = fixture();
+    expect(f.button("View as")).toBeTruthy();
+    f.button("View as")!.click();
+    await vi.waitFor(() => expect(f.app.memberImpersonationBusy).toBe(false));
+    expect(f.app.memberId).toBe(member.id);
+    expect(f.app.adminBotData.members).toEqual([]);
+    expect(loadStoredMemberSession()?.impersonator?.sessionToken).toBe(ADMIN);
+    f.draw();
+    await pendingAdminBotLoad(f.app);
+    f.draw();
+    expect(
+      f.container.querySelector('[data-testid="impersonation-banner"]')?.textContent,
+    ).toContain("Beta Example");
+    expect(f.app.adminBotData.papersLoadedAt).toBeNull();
+    f.calls.length = 0;
+    f.app.setTab("adminbotPapers");
+    await pendingAdminBotLoad(f.app);
+    expect(f.calls).toContain("/papers");
+    expect(f.calls.filter((path) => QUEUES.includes(path))).toEqual([]);
+    expect(f.app.adminBotData.members.map((row) => row.id)).toEqual([member.id]);
+    f.draw();
+    f.button("Back to my account")!.click();
+    await vi.waitFor(() => expect(f.app.memberImpersonationBusy).toBe(false));
+    expect(f.app.memberPrivilegeLevel).toBe("admin");
+    expect(loadStoredMemberSession()?.impersonator).toBeUndefined();
+    f.calls.length = 0;
+    f.app.setTab("adminbotPapers");
+    await pendingAdminBotLoad(f.app);
+    expect(f.calls.filter((path) => QUEUES.includes(path))).toEqual(QUEUES);
+  });
+
+  it("keeps the admin session and reports refusal when View as is denied", async () => {
+    const f = fixture(true);
+    f.button("View as")!.click();
+    await vi.waitFor(() => expect(f.app.memberImpersonationBusy).toBe(false));
+    f.draw();
+    expect(f.app.memberImpersonationError).toBeTruthy();
+    expect(
+      f.container.querySelector('[data-testid="impersonation-error"][role="alert"]')?.textContent,
+    ).toContain("Only admins can view as another member");
+    expect(f.app.memberId).toBe(admin.id);
+    expect(loadStoredMemberSession()?.sessionToken).toBe(ADMIN);
+    expect(f.container.querySelector('[data-testid="impersonation-banner"]')).toBeNull();
+    expect(f.calls.filter((path) => QUEUES.includes(path))).toEqual([]);
+  });
+  it("shows an unreachable View as service without discarding the admin session", async () => {
+    const f = fixture();
+    vi.mocked(globalThis.fetch).mockRejectedValue(new TypeError("synthetic service offline"));
+    f.button("View as")!.click();
+    await vi.waitFor(() => expect(f.app.memberImpersonationBusy).toBe(false));
+    f.draw();
+    expect(
+      f.container.querySelector('[data-testid="impersonation-error"][role="alert"]')?.textContent,
+    ).toContain("AdminBot is unreachable");
+    expect(f.app.memberId).toBe(admin.id);
+    expect(loadStoredMemberSession()?.sessionToken).toBe(ADMIN);
   });
 });

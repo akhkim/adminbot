@@ -712,6 +712,13 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
  */
 function renderImpersonationBanner(state: AppViewState) {
   const impersonator = state.memberImpersonatedBy;
+  if (state.memberImpersonationError) {
+    return html`
+      <div class="adminbot-impersonation-banner" role="alert" data-testid="impersonation-error">
+        ${state.memberImpersonationError}
+      </div>
+    `;
+  }
   if (!impersonator) {
     return nothing;
   }
