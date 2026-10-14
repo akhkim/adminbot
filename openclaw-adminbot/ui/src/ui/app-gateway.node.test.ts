@@ -1280,67 +1280,17 @@ describe("connectGateway", () => {
     await vi.waitFor(() => expect(fetchRealtimeTalkCatalog).toHaveBeenCalledOnce());
   });
 
-  it("falls back from restored unconfigured agent sessions before refreshing chat", async () => {
-    const host = createHost();
-    host.tab = "chat";
-    host.sessionKey = "agent:local:main";
-    host.settings = {
-      ...host.settings,
-      sessionKey: "agent:local:main",
-      lastActiveSessionKey: "agent:local:main",
-    };
-
-    connectGateway(host);
-    const client = requireGatewayClient();
-    client.request.mockImplementation(async (method: string) => {
-      if (method === "agents.list") {
-        return {
-          defaultId: "main",
-          mainKey: "agent:main:main",
-          scope: "all",
-          agents: [{ id: "main", name: "Main" }],
-        };
-      }
-      if (method === "update.status") {
-        return { sentinel: null };
-      }
-      if (method === "models.authStatus") {
-        return { ts: 0, providers: [] };
-      }
-      return {};
-    });
-
-    client.emitHello({
-      type: "hello-ok",
-      protocol: 3,
-      auth: { role: "operator", scopes: [] },
-      snapshot: {
-        sessionDefaults: {
-          defaultAgentId: "main",
-          mainKey: "main",
-          mainSessionKey: "agent:main:main",
-        },
-      },
-    } as GatewayHelloOk);
-
-    await vi.waitFor(() => {
-      expect(loadChatHistoryMock).toHaveBeenCalledWith(host, { startup: false });
-    });
-    expect(host.sessionKey).toBe("agent:main:main");
-    expect(host.settings.sessionKey).toBe("agent:main:main");
-    expect(host.settings.lastActiveSessionKey).toBe("agent:main:main");
-  });
-
   it.each([
-    ["main", "agent:main:member-ada"],
-    ["agent:main:main", "agent:main:member-ada"],
-    ["agent:main:member-other", "agent:main:member-ada"],
-    ["agent:main:member-ada", "agent:main:member-ada"],
-    ["agent:main:dashboard:owned-chat", "agent:main:dashboard:owned-chat"],
-  ])("resolves the member selection %s to %s", async (savedKey, expectedKey) => {
+    ["agent:local:main", "agent:main:main", null],
+    ["main", "agent:main:member-ada", "ada"],
+    ["agent:main:main", "agent:main:member-ada", "ada"],
+    ["agent:main:member-other", "agent:main:member-ada", "ada"],
+    ["agent:main:member-ada", "agent:main:member-ada", "ada"],
+    ["agent:main:dashboard:owned-chat", "agent:main:dashboard:owned-chat", "ada"],
+  ] as const)("restores %s", async (savedKey, expectedKey, memberId) => {
     const host = createHost();
     host.tab = "chat";
-    host.memberId = "ada";
+    host.memberId = memberId;
     host.sessionKey = savedKey;
     host.settings = {
       ...host.settings,
@@ -1382,7 +1332,9 @@ describe("connectGateway", () => {
     } as GatewayHelloOk);
 
     await vi.waitFor(() => {
-      expect(loadChatHistoryMock).toHaveBeenCalledWith(host, { startup: savedKey === expectedKey });
+      expect(loadChatHistoryMock).toHaveBeenCalledWith(host, {
+        startup: savedKey === expectedKey,
+      });
     });
     expect(host.sessionKey).toBe(expectedKey);
     expect(host.settings.sessionKey).toBe(expectedKey);

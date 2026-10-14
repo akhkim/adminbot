@@ -1,8 +1,8 @@
+import { isProfileBlocked } from "./adminbot/views/profile-gate.ts";
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
 import { t } from "../i18n/index.ts";
 import { visibleTabsForMember, type AccessRole } from "./adminbot/access.ts";
-import { isProfileBlocked } from "./adminbot/views/profile-gate.ts";
 import {
   createChatSessionsLoadOverrides,
   flushChatQueueAfterIdleSessionReconciliation,

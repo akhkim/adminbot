@@ -182,33 +182,15 @@ describe("sessions.create ownership stamping", () => {
     });
   }
 
-  it("stamps the creating member's id as the new session's owner", async () => {
+  it.each([false, true])("stamps ownership (chat-only: %s)", async (chatOnly) => {
+    const client = createClient("mem-1");
+    if (chatOnly) client.connect.scopes = ["operator.read", "operator.chat"];
     const respond = await callSessions(
       "sessions.create",
       {},
-      { context: createCreateContext(), client: createClient("mem-1") },
+      { context: createCreateContext(), client },
     );
 
-    expect(respond).toHaveBeenCalledWith(
-      true,
-      expect.objectContaining({
-        entry: expect.objectContaining({ ownerMemberId: "mem-1" }),
-      }),
-      undefined,
-    );
-  });
-
-  it("allows chat-only members to create an owned session", async () => {
-    const client = createClient("mem-1");
-    client.connect.scopes = ["operator.read", "operator.chat"];
-    const respond = await callSessions(
-      "sessions.create",
-      { agentId: "main" },
-      {
-        context: createCreateContext(),
-        client,
-      },
-    );
     expect(respond).toHaveBeenCalledWith(
       true,
       expect.objectContaining({
