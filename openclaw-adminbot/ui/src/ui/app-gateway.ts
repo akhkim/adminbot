@@ -710,7 +710,15 @@ function chatSideResultAgentScopeMatches(host: GatewayHost, sideResult: ChatSide
 
 function fallbackUnconfiguredSessionSelection(host: GatewayHost): boolean {
   const parsed = parseAgentSessionKey(host.sessionKey);
-  if (!parsed) {
+  const defaults = (
+    host.hello?.snapshot as { sessionDefaults?: SessionDefaultsSnapshot } | undefined
+  )?.sessionDefaults;
+  const sharedMemberSession =
+    Boolean(host.memberId?.trim()) &&
+    (isUiGlobalSessionKey(host.sessionKey) ||
+      host.sessionKey === defaults?.mainSessionKey ||
+      parsed?.rest === (defaults?.mainKey || "main"));
+  if (!parsed && !sharedMemberSession) {
     return false;
   }
   // Someone else's member session. The selected key is persisted per gateway URL, not per member,
@@ -721,8 +729,10 @@ function fallbackUnconfiguredSessionSelection(host: GatewayHost): boolean {
     (host.agentsList?.agents ?? []).map((entry) => normalizeAgentId(entry.id)),
   );
   if (
+    !sharedMemberSession &&
     !foreignMemberSession &&
-    (configuredAgentIds.size === 0 || configuredAgentIds.has(normalizeAgentId(parsed.agentId)))
+    (configuredAgentIds.size === 0 ||
+      (parsed && configuredAgentIds.has(normalizeAgentId(parsed.agentId))))
   ) {
     return false;
   }

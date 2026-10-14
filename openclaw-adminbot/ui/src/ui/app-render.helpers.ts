@@ -1,8 +1,8 @@
-import { isProfileBlocked } from "./adminbot/views/profile-gate.ts";
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
 import { t } from "../i18n/index.ts";
 import { visibleTabsForMember, type AccessRole } from "./adminbot/access.ts";
+import { isProfileBlocked } from "./adminbot/views/profile-gate.ts";
 import {
   createChatSessionsLoadOverrides,
   flushChatQueueAfterIdleSessionReconciliation,
@@ -828,8 +828,12 @@ export async function createChatSession(
       agentId:
         scopedAgentParamsForSession(state, previousSessionKey).agentId ??
         resolveAgentIdFromSessionKey(previousSessionKey),
-      parentSessionKey,
-      emitCommandHooks: parentSessionKey !== undefined ? true : undefined,
+      ...(state.memberId && state.memberPrivilegeLevel !== "admin"
+        ? {}
+        : {
+            parentSessionKey,
+            emitCommandHooks: parentSessionKey !== undefined ? true : undefined,
+          }),
     },
     {
       ...createChatSessionsLoadOverrides(state),

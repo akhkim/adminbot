@@ -198,6 +198,57 @@ describe("sessions.create ownership stamping", () => {
     );
   });
 
+  it("allows chat-only members to create an owned session", async () => {
+    const client = createClient("mem-1");
+    client.connect.scopes = ["operator.read", "operator.chat"];
+    const respond = await callSessions(
+      "sessions.create",
+      { agentId: "main" },
+      {
+        context: createCreateContext(),
+        client,
+      },
+    );
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        entry: expect.objectContaining({ ownerMemberId: "mem-1" }),
+      }),
+      undefined,
+    );
+  });
+
+  it.each([
+    { key: "agent:main:member-other" },
+    { key: "agent:main:main" },
+    { parentSessionKey: "agent:main:member-other" },
+    { model: "other-model" },
+    { emitCommandHooks: true },
+    { message: "run a command" },
+    { task: "run a task" },
+  ])("rejects privileged session creation options for chat-only members: %j", async (params) => {
+    const client = createClient("mem-1");
+    client.connect.scopes = ["operator.chat"];
+    const respond = await callSessions("sessions.create", params, {
+      context: createCreateContext(),
+      client,
+    });
+    expect(respond).toHaveBeenCalledWith(false, undefined, expect.anything());
+    expect(createSessionEntryWithTranscriptMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects chat-only creation without a member identity", async () => {
+    const client = createClient();
+    client.connect.scopes = ["operator.chat"];
+    const respond = await callSessions(
+      "sessions.create",
+      {},
+      { context: createCreateContext(), client },
+    );
+    expect(respond).toHaveBeenCalledWith(false, undefined, expect.anything());
+    expect(createSessionEntryWithTranscriptMock).not.toHaveBeenCalled();
+  });
+
   // No longer refused. Machine callers (an agent's sessions-send-tool, cron, the CLI) have no
   // member to name and are not member chats; ownership now comes from the session key, so such a
   // session is simply owned by nobody rather than un-creatable.
