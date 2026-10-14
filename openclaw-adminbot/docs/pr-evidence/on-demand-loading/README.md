@@ -1,4 +1,4 @@
-# On-demand loading: gateway evidence slice
+# On-demand loading: browser evidence
 
 Captured 2026-10-13 using the actual production `loadAdminBot`, `renderAdminBot` and CSS, with a synthetic gateway client, one made-up member and one paper. No authenticated production session, gateway socket, backend/model call or external mutation. The fixture’s control card and request counter are test instrumentation; the loading indicator, roster and paper page are real production components.
 
@@ -16,4 +16,28 @@ Matched data/theme/viewport within each pair: iPhone14 390×844/light, desktop12
 
 [Admin gateway before](loading430-gateway-admin-desktop-before.jpg) · [Admin gateway after](loading430-gateway-admin-desktop-after.jpg)
 
-This is partial browser coverage for PR430. Signed-in REST queue overlap, actual View-as navigation and session-change/error browser scenarios still need their own evidence. Their focused regression tests passed, but these gateway captures do not verify them. No all-page load-time, authenticated persistence, production deployment or 10,000-user readiness claim.
+## Member-session REST slice, October 14
+
+Baseline: exact main `0fb5047f95abeee3ca8fa5ab67305d923ad3a56a` controller. After: integrated code `ec5565f7a6555887c6c3fe79412c71d678c3bf3c`. The newest main chat changes were merged normally without conflicts. Gateway controller/component/style sources used in the October 13 captures did not change, so those captures remain applicable.
+
+Actual production `loadAdminBot`, member-session storage/read APIs, `renderAdminBot` and CSS ran with synthetic Ada/Beta profiles on a dedicated loopback origin. All fetches were mocked GET responses; writes were rejected. No production authentication, backend, model or external mutation. The test control card and counters are instrumentation. The renderer stayed in admin mode; its inert controls do not establish member authorization or actual View-as navigation.
+
+With the required paper response held, baseline starts two reads (self and papers), zero admin queues. Integrated code starts eight reads, including all six independent admin queues. The self profile is present in both controllers. The roster still shows Loading AdminBot until the required paper read completes in both versions: this proves concurrency, not earlier REST roster rendering or measured production latency. Releasing papers completes the head roster with one member/one paper.
+
+![REST before, mobile/light](session/loading430-session-mobile-before.jpg)
+
+![REST after, mobile/light](session/loading430-session-mobile-after.jpg)
+
+[REST before, desktop/dark](session/loading430-session-desktop-before.jpg) · [REST after, desktop/dark](session/loading430-session-desktop-after.jpg)
+
+While Ada's paper response is pending, saving the synthetic Beta session and loading general mode requests only the new self profile. Releasing Ada's old response leaves Beta and zero papers intact. This exercises the real session-change guard, but is not the actual View-as control flow.
+
+[Session-change result, desktop/light](session/loading430-session-change-after.jpg)
+
+Explicit structured 503 errors on all six optional queues still finish the required member/paper data with loading false. A structured 503 self-profile error stops after one read, displays the existing `auth-failed` notice and Try again control, and makes no paper/queue requests. A preliminary unstructured 503 fixture used the intentional synthetic offline cache fallback; it was corrected to an explicit service error before accepting failure evidence.
+
+![Required self-profile error, mobile/light](session/loading430-session-required-error.jpg)
+
+Matched REST pair data/theme/viewport: iPhone14 390×844/light, desktop1280×720/dark. Unaltered native JPEG document-origin clips: mobile pairs390×640, desktop pairs920×450, session-change920×819, required-error390×710. The first error clip cut the retry control and was rejected/recaptured. All six final saved images were visually inspected at native size. Synthetic session was cleared with readback, viewport reset, temporary tab/server closed and fixture files removed.
+
+Validation on integrated main: 283 tests in six focused suites, plus complete backend/production UI build in 29.5s. No application source changes after this build; added screenshots and documentation only. Actual View-as navigation and its route behavior still need styled browser evidence before PR430 leaves draft. No all-page load-time, authenticated persistence, deployment or 10,000-user readiness claim.
