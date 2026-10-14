@@ -760,6 +760,18 @@ describe("handleChatManualRefresh", () => {
 });
 
 describe("createChatSession", () => {
+  it("creates a member conversation without parent access or command hooks", async () => {
+    const state = createChatSessionState({ memberId: "ada", memberPrivilegeLevel: "member" });
+    createSessionAndRefreshMock.mockResolvedValue("agent:ops:dashboard:owned-chat");
+    await createChatSession(state, { source: "user" });
+    expect(createSessionAndRefreshMock).toHaveBeenCalledWith(
+      state,
+      { agentId: "ops" },
+      expect.anything(),
+    );
+    expect(state.sessionKey).toBe("agent:ops:dashboard:owned-chat");
+  });
+
   it("does not create a session without explicit user intent", async () => {
     const state = createChatSessionState();
     createSessionAndRefreshMock.mockResolvedValue("agent:ops:dashboard:new-chat");

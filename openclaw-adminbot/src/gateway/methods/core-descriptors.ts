@@ -153,7 +153,7 @@ export const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "sessions.compaction.get", scope: "operator.read" },
   { name: "sessions.compaction.branch", scope: "operator.write" },
   { name: "sessions.compaction.restore", scope: "operator.admin" },
-  { name: "sessions.create", scope: "operator.write", startup: true },
+  { name: "sessions.create", scope: "operator.chat", startup: true },
   { name: "sessions.send", scope: "operator.write", startup: true },
   { name: "sessions.abort", scope: "operator.write", startup: true },
   { name: "sessions.patch", scope: "operator.admin" },

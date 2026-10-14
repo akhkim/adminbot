@@ -828,8 +828,12 @@ export async function createChatSession(
       agentId:
         scopedAgentParamsForSession(state, previousSessionKey).agentId ??
         resolveAgentIdFromSessionKey(previousSessionKey),
-      parentSessionKey,
-      emitCommandHooks: parentSessionKey !== undefined ? true : undefined,
+      ...(state.memberId && state.memberPrivilegeLevel !== "admin"
+        ? {}
+        : {
+            parentSessionKey,
+            emitCommandHooks: parentSessionKey !== undefined ? true : undefined,
+          }),
     },
     {
       ...createChatSessionsLoadOverrides(state),
