@@ -96,6 +96,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // members only (see canAccessTab below): it shows who is going where, and the service refuses
   // trial members and external collaborators on every /travel route regardless of this entry.
   labTravel: "member",
+  // Upcoming events, who is going and who is nearby: the same audience as Travel, for the same
+  // reason, and the service refuses everyone else on /events.
+  events: "member",
 
   // Everything else is an operator or governance surface.
   // Active Papers is the lab-wide pipeline across every author, not the viewer's own work -- that
@@ -162,7 +165,7 @@ export function canAccessTab(
   privilegeLevel: string | null = role,
 ): boolean {
   // The broad UI member role also includes trial members and external collaborators.
-  if (tab === "adminbotReferenceChecker" || tab === "labTravel") {
+  if (tab === "adminbotReferenceChecker" || tab === "labTravel" || tab === "events") {
     return role !== "anonymous" && (privilegeLevel === "member" || privilegeLevel === "admin");
   }
   return rank(role) >= rank(TAB_MINIMUM_ROLE[tab]);

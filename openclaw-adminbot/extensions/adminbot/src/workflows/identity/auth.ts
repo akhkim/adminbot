@@ -230,6 +230,9 @@ export type AdminBotAuthServiceOptions = {
     | { country?: string; continent?: string; city?: string; region?: string; timezone?: string }
     | undefined
   >;
+  // Fired (not awaited) after a sign-in stamped a city on the member: the meetup intros read it.
+  // Gets only the member id, never the address or the place.
+  afterLoginLocated?: (memberId: string) => void;
   gatewayUrl?: string;
   sessionTtlMs?: number;
   now?: () => Date;
@@ -313,6 +316,7 @@ export class AdminBotAuthService {
     | { country?: string; continent?: string; city?: string; region?: string; timezone?: string }
     | undefined
   >;
+  private readonly afterLoginLocated?: (memberId: string) => void;
   private readonly gatewayUrl?: string;
   private readonly sessionTtlMs: number;
   private readonly now: () => Date;
@@ -335,6 +339,7 @@ export class AdminBotAuthService {
     this.sendAccountApprovedEmail = options.sendAccountApprovedEmail;
     this.sendPasswordResetEmail = options.sendPasswordResetEmail;
     this.geolocateIp = options.geolocateIp;
+    this.afterLoginLocated = options.afterLoginLocated;
     this.gatewayUrl = options.gatewayUrl?.trim() || undefined;
     this.sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
     this.now = options.now ?? (() => new Date());
@@ -594,6 +599,13 @@ export class AdminBotAuthService {
         return;
       }
       await this.audit("auth.login_location_updated", memberId, { ...location });
+      if (location.city) {
+        try {
+          this.afterLoginLocated?.(memberId);
+        } catch {
+          // A meetup hook failing must not cost the location timeline below.
+        }
+      }
       // The stamp above is where they are *now* and overwrites itself; this is the timeline, which
       // is what makes "when did they move" answerable and what the drift prompt reads. Appended
       // only when the country changed, so a member signing in twice a day adds no rows.

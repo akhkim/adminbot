@@ -39,6 +39,7 @@ import {
   type SlackChannelCheck,
   type WorkshopNudgeReviewState,
 } from "../controllers/admin.ts";
+import { clearEvents, type EventsState } from "../controllers/events.ts";
 import { clearLabTravel, type LabTravelState } from "../controllers/lab-travel.ts";
 import { createEmptyAdminBotMemberRequests } from "../controllers/member-requests.ts";
 import { createEmptyAdminBotMemberNudgeState } from "../controllers/nudges.ts";
@@ -376,7 +377,8 @@ export type MemberAuthHost = {
   changePasswordNotice: string | null;
   applySettings: (next: UiSettings) => void;
   connect: () => void;
-} & LabTravelState;
+} & LabTravelState &
+  EventsState;
 
 function toMemberAuthFailure(
   kind: AuthErrorKind,
@@ -797,6 +799,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   // Stops this browser's location watch too: the next person to sign in here must not inherit it,
   // and the opt-in they hold is read fresh for their own session.
   clearLabTravel(host);
+  clearEvents(host);
 }
 
 async function applyMemberSession(host: MemberAuthHost, session: MemberSession) {

@@ -330,7 +330,6 @@ import {
 } from "../workflows/members/adoption.js";
 import { validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
-import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   localEventAudience,
   remainingAttendees,
@@ -343,6 +342,7 @@ import {
   observationFor,
   selfReportedChange,
 } from "../workflows/members/location-history.js";
+import type { MeetupPlace } from "../workflows/members/meetups.js";
 import {
   ADMINBOT_MAP_VISIBILITIES,
   memberMapMemo,
@@ -407,12 +407,6 @@ import {
   paperConferenceKey,
   type ConferenceAttendanceView,
 } from "../workflows/papers/conference-attendance.js";
-import {
-  buildConferenceIntroMessage,
-  CONFERENCE_INTRO_PARTNERS,
-  type IntroCandidate,
-  pickIntroPartners,
-} from "../workflows/papers/conference-intros.js";
 import {
   isProjectActive,
   summarizeProject,
@@ -509,6 +503,7 @@ import {
 import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
+import { type IntroRunResult, MeetupService } from "./service.meetups.js";
 import { piReviewSlotDenial } from "./service.pi-review.js";
 import { runSlackRosterSync, type SlackRosterSyncOptions } from "./service.slack-roster-sync.js";
 import {
@@ -7874,142 +7869,70 @@ export class AdminBotService {
    */
   async introduceConferenceAttendees(
     conferenceKey: string,
-  ): Promise<AdminBotServiceResponse<{ introduced: number; skipped: number; failed: number }>> {
-    // One run per conference at a time. Three people confirming within a second start three runs,
-    // and two that each read the history before the other's first delivery lands would propose
-    // the second and third person their own intro to the same trio.
-    const previous = this.conferenceIntroRuns.get(conferenceKey) ?? Promise.resolve();
-    const run = previous
-      .catch(() => {})
-      .then(() => this.introduceConferenceAttendeesNow(conferenceKey));
-    this.conferenceIntroRuns.set(conferenceKey, run);
-    try {
-      return await run;
-    } finally {
-      if (this.conferenceIntroRuns.get(conferenceKey) === run) {
-        this.conferenceIntroRuns.delete(conferenceKey);
-      }
+  ): Promise<AdminBotServiceResponse<IntroRunResult>> {
+    return this.serializeIntros(() => this.meetups().introduceEventNow(conferenceKey));
+  }
+
+  /** The city meetup intro for everyone opted in whose recent sign-in is near `place`. */
+  async introduceCityMeetups(place: MeetupPlace): Promise<AdminBotServiceResponse<IntroRunResult>> {
+    return this.serializeIntros(() => this.meetups().introduceCityNow(place));
+  }
+
+  /**
+   * A fresh sign-in location: start the intros it makes possible (an event running in that city,
+   * the city meetup). Fire-and-forget from the auth path; failures stay in the action log.
+   */
+  async onLoginLocated(memberId: string): Promise<void> {
+    const work = this.meetups().locatedWork(memberId);
+    for (const key of work.events) {
+      await this.introduceConferenceAttendees(key).catch(() => {});
+    }
+    if (work.city) {
+      await this.introduceCityMeetups(work.city).catch(() => {});
     }
   }
 
-  private conferenceIntroRuns = new Map<string, Promise<unknown>>();
+  /**
+   * Hourly: retries every intro that is due, which is how one deferred for somebody's night goes
+   * out at their 10:00. Idempotency keys and the pair history make a rerun a no-op otherwise.
+   */
+  async runMeetupSweep(): Promise<void> {
+    const work = this.meetups().sweepWork();
+    for (const key of work.events) {
+      await this.introduceConferenceAttendees(key).catch(() => {});
+    }
+    for (const place of work.cities) {
+      await this.introduceCityMeetups(place).catch(() => {});
+    }
+  }
 
-  private async introduceConferenceAttendeesNow(
-    conferenceKey: string,
-  ): Promise<AdminBotServiceResponse<{ introduced: number; skipped: number; failed: number }>> {
-    const roster = this.listConferenceRosters();
-    if (!roster.ok) return roster;
-    const conference = roster.payload.conferences.find((entry) => entry.key === conferenceKey);
-    if (!conference) return serviceError(404, "accepted conference not found");
-    const candidates: IntroCandidate[] = [];
-    for (const person of conference.people) {
-      const member = person.member_id ? this.store.getLabMember(person.member_id) : undefined;
-      if (
-        person.attending !== "yes" ||
-        !member?.slack_user_id ||
-        adminBotIsAlumniMember(member) ||
-        candidates.some((candidate) => candidate.member_id === member.id)
-      ) {
-        continue;
-      }
-      candidates.push({
-        member_id: member.id,
-        name: member.preferred_name?.trim() || member.name,
-        slack_user_id: member.slack_user_id,
-        themes: memberThemeIds(member),
-      });
-    }
-    let introduced = 0,
-      skipped = 0,
-      failed = 0;
-    if (candidates.length < CONFERENCE_INTRO_PARTNERS + 1) {
-      return {
-        ok: true,
-        status: 200,
-        payload: { introduced, skipped: candidates.length, failed },
-      };
-    }
-    const keyPrefix = `conference-intro:${conference.key}:`;
-    const history = this.store
-      .listProposalsByType("slack.conference_intro")
-      .filter((proposal) => proposal.idempotency_key?.startsWith(keyPrefix));
-    const covered = new Set<string>();
-    for (const proposal of history) {
-      if (proposal.status !== "executed") continue;
-      const ids = (proposal.proposed_payload as { member_ids?: unknown } | undefined)?.member_ids;
-      for (const id of Array.isArray(ids) ? ids : []) {
-        if (typeof id === "string") covered.add(id);
-      }
-    }
-    const today = (this.options.now?.() ?? new Date()).toISOString().slice(0, 10);
-    const sites = travelConferenceSites(this.deadlineReadModel(DEADLINE_VENUES), today).filter(
-      (site) => site.group_key === conference.key,
+  /** Say hi from the Events tab or Nearby now: serialized with the intros, sharing pair history. */
+  async sayHi(memberId: string, input: unknown) {
+    return this.serializeIntros(() => this.meetups().sayHiNow(memberId, input));
+  }
+
+  /** The member Events tab and the intros behind it. */
+  meetups() {
+    return new MeetupService(
+      this.store,
+      this,
+      () => this.deadlineReadModel(DEADLINE_VENUES),
+      () => this.options.now?.() ?? new Date(),
     );
-    const themeLabels = new Map(RESEARCH_THEMES.map((theme) => [theme.id, theme.label]));
-    for (const subject of candidates) {
-      const idempotencyKey = `${keyPrefix}${subject.member_id}`;
-      const latest = history
-        .filter((proposal) => proposal.idempotency_key === idempotencyKey)
-        .at(-1);
-      if (covered.has(subject.member_id) || latest?.status === "rejected") {
-        skipped++;
-        continue;
-      }
-      const partners = pickIntroPartners(subject, candidates, conference.key);
-      const payload = {
-        user_ids: [subject, ...partners].map((person) => person.slack_user_id),
-        member_ids: [subject, ...partners].map((person) => person.member_id),
-        message: buildConferenceIntroMessage({
-          conference_label: conference.label,
-          subject,
-          partners,
-          sites,
-          theme_labels: themeLabels,
-          today,
-        }),
-      };
-      let proposalId = latest?.id;
-      if (latest && JSON.stringify(latest.proposed_payload) !== JSON.stringify(payload)) {
-        this.removePending(latest.id, { note: "Conference intro recipients or text changed." });
-        proposalId = undefined;
-      }
-      if (!proposalId) {
-        const proposal = this.createProposal({
-          type: "slack.conference_intro",
-          summary: `Introduce ${subject.name} to ${partners.map((p) => p.name).join(" and ")} for ${conference.label}`,
-          target: {
-            service: "slack",
-            channel: "slack",
-            target: payload.user_ids.join(","),
-            recipientMemberId: subject.member_id,
-          },
-          proposed_payload: payload,
-          rationale: `All three confirmed going to ${conference.label} on an accepted paper.`,
-          undo_plan:
-            "A Slack message cannot be unsent by AdminBot; any participant can leave the DM.",
-          idempotency_key: idempotencyKey,
-        });
-        if (!proposal.ok) {
-          failed++;
-          continue;
-        }
-        proposalId = proposal.payload.id;
-      }
-      try {
-        const executed = await this.execute(proposalId, {
-          dry_run: false,
-          idempotency_key: idempotencyKey,
-        });
-        if (executed.ok && executed.payload.status === "executed") {
-          introduced++;
-          for (const id of payload.member_ids) covered.add(id);
-        } else failed++;
-      } catch {
-        failed++;
-      }
-    }
-    return { ok: true, status: 200, payload: { introduced, skipped, failed } };
   }
+
+  /**
+   * One intro run at a time, event and city alike. Three people confirming within a second start
+   * three runs, and two that each read the history before the other's first delivery lands would
+   * send the same people twice; a city run and an event run share the pair history the same way.
+   */
+  private serializeIntros<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.introRuns.catch(() => {}).then(task);
+    this.introRuns = run;
+    return run;
+  }
+
+  private introRuns: Promise<unknown> = Promise.resolve();
 
   /**
    * One paper's conference, as a trip key.
@@ -8085,6 +8008,11 @@ export class AdminBotService {
       actor: params.memberId,
       details: { conference_key: conferenceKey, intent: trip.intent, funding: trip.funding },
     });
+    if (trip.intent === "going") {
+      // Going is what makes somebody introducible; a third person saying so is what makes a trio.
+      const groupKey = this.meetups().groupKeyFor(conferenceKey);
+      void this.introduceConferenceAttendees(groupKey).catch(() => {});
+    }
     return { ok: true, status: 200, payload: { trip } };
   }
 
@@ -15245,6 +15173,8 @@ const SELF_PROFILE_PRIVILEGED_FIELDS = [
   // The nudge allowlist. Refused loudly rather than dropped quietly: a member who could add
   // themselves would make the list something other than what the lab put on it.
   "receives_nudges",
+  // An admin's "never message this person" for meetup intros; members turn intros off instead.
+  "do_not_contact",
   "collaborator_subgroup",
   "access_overrides",
   "status",
@@ -15675,6 +15605,9 @@ function validateLabMember(
   // according to the record and silent according to the sweeps.
   if (member.receives_nudges !== undefined && typeof member.receives_nudges !== "boolean") {
     return "member receives_nudges must be true or false";
+  }
+  if (member.do_not_contact !== undefined && typeof member.do_not_contact !== "boolean") {
+    return "member do_not_contact must be true or false";
   }
   if (
     member.intake_form_unavailable !== undefined &&

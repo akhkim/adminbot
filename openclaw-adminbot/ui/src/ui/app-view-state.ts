@@ -583,6 +583,13 @@ export type AppViewState = {
   labTravelSharing?: import("./adminbot/data/lab-travel.ts").TravelSharing | null;
   labTravelSharingCheckedFor?: string | null;
   labTravelDevice?: import("./adminbot/controllers/location-tracker.ts").LocationTrackerSnapshot;
+  // The Events tab; controllers/events.ts owns these.
+  events?: import("./adminbot/data/events.ts").EventsOverview;
+  eventsLoadedFor?: string | null;
+  eventsLoading?: boolean;
+  eventsError?: string | null;
+  eventsNotice?: import("./adminbot/controllers/events.ts").EventsNotice | null;
+  eventsBusy?: string | null;
   adminBotLocationDrift?: LocationDrift | null;
   adminBotLocationDrifts?: LocationDrift[];
   adminBotLocationSaving?: boolean;
