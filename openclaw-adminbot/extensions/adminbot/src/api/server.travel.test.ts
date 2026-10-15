@@ -286,3 +286,45 @@ describe("Travel routes", () => {
     expect(bad.status).toBe(400);
   });
 });
+
+describe("Events routes", () => {
+  it("are member-session only and serve the member's own view and settings", async () => {
+    const { mock, baseUrl } = await startLab();
+    expect((await fetch(`${baseUrl}/events`)).status).toBe(401);
+    expect(
+      (await fetch(`${baseUrl}/events`, { headers: { Authorization: `Bearer ${SERVICE_TOKEN}` } }))
+        .status,
+    ).toBe(403);
+    const ext = await memberSession(mock, baseUrl, "ext");
+    expect((await fetch(`${baseUrl}/events`, { headers: ext })).status).toBe(403);
+
+    const ada = await memberSession(mock, baseUrl, "ada");
+    const view = await (await fetch(`${baseUrl}/events`, { headers: ada })).json();
+    // Ada's profile says Paris: the Paris site sorts first and is marked near her.
+    expect(view.viewer_location).toEqual({ label: "Paris", source: "profile" });
+    expect(
+      view.events.map((card: { label: string; near_you: boolean }) => [card.label, card.near_you]),
+    ).toEqual([
+      ["SynthConf 2099 — Paris", true],
+      ["SynthConf 2099 — Sydney", false],
+    ]);
+    expect(view.preferences).toEqual({ events: true, city: false });
+    expect(view.also_nearby).toEqual({ locked: true });
+
+    const bad = await fetch(`${baseUrl}/events/preferences`, {
+      method: "PUT",
+      headers: ada,
+      body: JSON.stringify({ city: "please" }),
+    });
+    expect(bad.status).toBe(400);
+    const saved = await fetch(`${baseUrl}/events/preferences`, {
+      method: "PUT",
+      headers: ada,
+      body: JSON.stringify({ city: true }),
+    });
+    expect(await saved.json()).toEqual({ preferences: { events: true, city: true } });
+    // Opted in, but nobody else is: an empty list, not a locked one.
+    const after = await (await fetch(`${baseUrl}/events`, { headers: ada })).json();
+    expect(after.also_nearby).toEqual({ locked: false, place_label: "Paris", people: [] });
+  });
+});

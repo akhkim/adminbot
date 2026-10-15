@@ -236,6 +236,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       return result.payload;
     },
     afterMemberCreated: (member) => service.afterMemberCreated(member),
+    // A sign-in that resolved to a city may make an event or city intro possible. Serialized and
+    // idempotent inside the service, so a burst of sign-ins sends nothing twice.
+    afterLoginLocated: (memberId) => void service.onLoginLocated(memberId).catch(() => {}),
     // Warned about at startup rather than left to fail per approval. See adminbotLabCalendarWarning
     // below: the runner is still installed when unconfigured, because a failure that is audited is
     // better than a side effect that is silently skipped.
@@ -498,6 +501,16 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         }, slackChannelNamingSweepIntervalMs)
       : undefined;
   slackChannelNamingSweepTimer?.unref();
+  // Retries due meetup intros, which is how one held back for somebody's night goes out at their
+  // morning. Disabled when unset, like the naming sweep.
+  const meetupSweepIntervalMs = options.meetupSweepIntervalMs;
+  const meetupSweepTimer =
+    typeof meetupSweepIntervalMs === "number" && meetupSweepIntervalMs > 0
+      ? setInterval(() => {
+          void service.runMeetupSweep().catch(() => {});
+        }, meetupSweepIntervalMs)
+      : undefined;
+  meetupSweepTimer?.unref();
   const server = createServer(async (req, res) => {
     try {
       await routeRequest(req, res, ctx);
@@ -526,6 +539,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     close() {
       if (slackChannelNamingSweepTimer) {
         clearInterval(slackChannelNamingSweepTimer);
+      }
+      if (meetupSweepTimer) {
+        clearInterval(meetupSweepTimer);
       }
       closeDurable();
     },

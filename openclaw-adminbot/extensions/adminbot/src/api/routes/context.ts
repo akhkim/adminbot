@@ -359,6 +359,8 @@ export type AdminBotMockServiceOptions = {
   >;
   // Periodic sweep cadence for Slack channel naming enforcement. Disabled when unset.
   slackChannelNamingSweepIntervalMs?: number;
+  // Hourly in the host: retries meetup intros held for quiet hours. Disabled when unset.
+  meetupSweepIntervalMs?: number;
   reviewSlackProfilePhoto?: NonNullable<AdminBotServiceOptions["reviewSlackProfilePhoto"]>;
   polishSlackProfilePhoto?: NonNullable<AdminBotServiceOptions["polishSlackProfilePhoto"]>;
 };

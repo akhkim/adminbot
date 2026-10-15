@@ -23,6 +23,8 @@ export type IntroCandidate = {
   name: string;
   slack_user_id: string;
   themes: readonly ResearchThemeId[];
+  /** The member's current project titles, for a conversation starter. */
+  projects?: readonly string[];
 };
 
 /** A partner picked for the subject, and why. */
@@ -65,6 +67,15 @@ export function pickIntroPartners(
   candidates: readonly IntroCandidate[],
   seed: string,
 ): IntroPartner[] {
+  return rankIntroPartners(subject, candidates, seed).slice(0, CONFERENCE_INTRO_PARTNERS);
+}
+
+/** Every candidate in pickIntroPartners' order, for a caller that has to skip some (pair history). */
+export function rankIntroPartners(
+  subject: IntroCandidate,
+  candidates: readonly IntroCandidate[],
+  seed: string,
+): IntroPartner[] {
   const mine = new Set(subject.themes);
   return candidates
     .filter((candidate) => candidate.member_id !== subject.member_id)
@@ -79,7 +90,6 @@ export function pickIntroPartners(
         a.tiebreak - b.tiebreak ||
         a.member_id.localeCompare(b.member_id),
     )
-    .slice(0, CONFERENCE_INTRO_PARTNERS)
     .map(({ tiebreak: _tiebreak, ...partner }) => partner);
 }
 
@@ -119,12 +129,59 @@ function daysUntil(today: string, starts: string | undefined): number | undefine
   return Number.isFinite(ms) ? Math.round(ms / 86_400_000) : undefined;
 }
 
+/** One concrete thing to do, which is what turns "you should meet" into a meeting. */
+const EVENT_SUGGESTION = "Idea: grab a coffee between sessions, or walk the posters together.";
+const CITY_SUGGESTION = "Idea: lunch or a coffee somewhere central this week.";
+/** Every intro says how to stop them: the Events tab holds the switch and the snooze. */
+const OPT_OUT_LINE = "Not for you? Turn these intros off or snooze them in AdminBot > Events.";
+
+function partnerLines(
+  subject: IntroCandidate,
+  partners: readonly IntroPartner[],
+  themeLabels: ReadonlyMap<string, string>,
+  fallback: (partner: IntroPartner) => string,
+): string[] {
+  return partners.map((partner) => {
+    const shared = partner.shared_themes.map((id) => themeLabels.get(id) ?? id);
+    return shared.length > 0
+      ? `- ${subject.name} and ${partner.name} both work on ${shared.join(", ")}.`
+      : `- ${fallback(partner)}`;
+  });
+}
+
+/**
+ * One opener: the closest partner's current project when they have one, else the shared theme.
+ *
+ * A project title is something the partner wrote on their own profile for the lab to read, so
+ * quoting it back to two lab-mates discloses nothing new; it is also the question people actually
+ * ask each other at a poster.
+ */
+export function conversationStarter(
+  subject: IntroCandidate,
+  partners: readonly IntroPartner[],
+  themeLabels: ReadonlyMap<string, string>,
+): string {
+  for (const partner of partners) {
+    const project = partner.projects?.find((title) => title.trim())?.trim();
+    if (project) {
+      return `Opener: ${subject.name}, ask ${partner.name} how "${project.slice(0, 120)}" is going.`;
+    }
+  }
+  const theme = partners.flatMap((partner) => partner.shared_themes)[0];
+  return theme
+    ? `Opener: what is one recent ${themeLabels.get(theme) ?? theme} result you would point the others to?`
+    : "Opener: what are you each working on this term?";
+}
+
 /**
  * The intro text. Plain text: the executor posts with mrkdwn off so a name cannot inject markup.
  *
  * `sites` are the dataset's rows for this conference (more than one for a multi-site meeting such
  * as NeurIPS). None is a real case -- a venue the collector does not cover -- and the message says
  * so rather than inventing a date or a city.
+ *
+ * `in_town` names the place when somebody in the trio is there without having said Going (the
+ * sign-in placed them in the city during the event): "all going to" would then be untrue.
  */
 export function buildConferenceIntroMessage(params: {
   conference_label: string;
@@ -133,20 +190,22 @@ export function buildConferenceIntroMessage(params: {
   sites: readonly TravelConferenceSite[];
   theme_labels: ReadonlyMap<string, string>;
   today: string;
+  in_town?: string;
 }): string {
   const { subject, partners, sites } = params;
   const names = partners.map((partner) => partner.name);
   const lines = [
-    `Hi ${subject.name}, ${names.join(" and ")} -- you are all going to ${params.conference_label}, so AdminBot is introducing you.`,
+    params.in_town
+      ? `Hi ${subject.name}, ${names.join(" and ")} -- you are all around ${params.conference_label} in ${params.in_town} this week, so AdminBot is introducing you.`
+      : `Hi ${subject.name}, ${names.join(" and ")} -- you are all going to ${params.conference_label}, so AdminBot is introducing you.`,
+    ...partnerLines(
+      subject,
+      partners,
+      params.theme_labels,
+      (partner) =>
+        `${partner.name} is also ${params.in_town ? "there" : "going"} (picked at random from the lab's attendees).`,
+    ),
   ];
-  for (const partner of partners) {
-    const shared = partner.shared_themes.map((id) => params.theme_labels.get(id) ?? id);
-    lines.push(
-      shared.length > 0
-        ? `- ${subject.name} and ${partner.name} both work on ${shared.join(", ")}.`
-        : `- ${partner.name} is also going (picked at random from the lab's attendees).`,
-    );
-  }
   lines.push("");
   if (sites.length === 0) {
     lines.push(
@@ -166,6 +225,40 @@ export function buildConferenceIntroMessage(params: {
     if (where) lines.push(`Where: ${where} - ${conferenceMapUrl(where)}`);
     if (site.homepage_url) lines.push(`Event page: ${site.homepage_url}`);
   }
-  lines.push("", "Worth planning a coffee or a poster walk together.");
+  lines.push(
+    "",
+    EVENT_SUGGESTION,
+    conversationStarter(subject, partners, params.theme_labels),
+    OPT_OUT_LINE,
+  );
   return lines.join("\n");
+}
+
+/**
+ * The city meetup intro: the same shape, with the place as the reason and no event block.
+ *
+ * `place_label` is the metro ("San Francisco Bay Area"), never the city a sign-in resolved to;
+ * everybody in the DM opted in to city intros, and the metro is all they agreed to share.
+ */
+export function buildCityIntroMessage(params: {
+  place_label: string;
+  subject: IntroCandidate;
+  partners: readonly IntroPartner[];
+  theme_labels: ReadonlyMap<string, string>;
+}): string {
+  const { subject, partners } = params;
+  const names = partners.map((partner) => partner.name).join(" and ");
+  return [
+    `Hi ${subject.name} and ${names} -- you are ${partners.length === 1 ? "both" : "all"} around ${params.place_label} this week, so AdminBot is introducing you.`,
+    ...partnerLines(
+      subject,
+      partners,
+      params.theme_labels,
+      (partner) => `${partner.name} is nearby too (no shared theme on file, so a wildcard).`,
+    ),
+    "",
+    CITY_SUGGESTION,
+    conversationStarter(subject, partners, params.theme_labels),
+    `You get these because you turned on city intros. ${OPT_OUT_LINE}`,
+  ].join("\n");
 }

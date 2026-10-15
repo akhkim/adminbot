@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { TravelConferenceSite } from "../members/lab-travel.js";
 import {
+  buildCityIntroMessage,
   buildConferenceIntroMessage,
   conferenceMapUrl,
+  conversationStarter,
   type IntroCandidate,
   pickIntroPartners,
 } from "./conference-intros.js";
@@ -136,5 +138,60 @@ describe("buildConferenceIntroMessage", () => {
     expect(conferenceMapUrl("Hilton Union Square, San Francisco")).toBe(
       "https://www.google.com/maps/search/?api=1&query=Hilton%20Union%20Square%2C%20San%20Francisco",
     );
+  });
+});
+
+describe("intro text: reason, one idea, one opener, a way out", () => {
+  const ada = person("ada", ["multi_agent"]);
+  const [bob] = pickIntroPartners(
+    ada,
+    [{ ...person("bob", ["multi_agent"]), projects: ["  ", "Agents that negotiate"] }],
+    "k",
+  );
+
+  it("opens with the partner's own project title, else the shared theme, else a generic question", () => {
+    expect(conversationStarter(ada, [bob!], labels)).toBe(
+      'Opener: ADA, ask BOB how "Agents that negotiate" is going.',
+    );
+    const [plain] = pickIntroPartners(ada, [person("bob", ["multi_agent"])], "k");
+    expect(conversationStarter(ada, [plain!], labels)).toContain("recent Multi-agent result");
+    const [none] = pickIntroPartners(ada, [person("cy")], "k");
+    expect(conversationStarter(ada, [none!], labels)).toBe(
+      "Opener: what are you each working on this term?",
+    );
+  });
+
+  it("ends every event intro with a suggestion, the opener and the opt-out line", () => {
+    const text = buildConferenceIntroMessage({
+      conference_label: "EMNLP 2026",
+      subject: ada,
+      partners: [bob!],
+      sites: [site],
+      theme_labels: labels,
+      today: "2026-10-26",
+      in_town: "Budapest",
+    });
+    expect(text).toContain("you are all around EMNLP 2026 in Budapest this week");
+    expect(text).not.toContain("(in ");
+    expect(text.split("\n").slice(-3)).toEqual([
+      "Idea: grab a coffee between sessions, or walk the posters together.",
+      'Opener: ADA, ask BOB how "Agents that negotiate" is going.',
+      "Not for you? Turn these intros off or snooze them in AdminBot > Events.",
+    ]);
+  });
+
+  it("gives the city intro the metro as its reason and says why the member got it", () => {
+    const text = buildCityIntroMessage({
+      place_label: "San Francisco Bay Area",
+      subject: ada,
+      partners: [bob!],
+      theme_labels: labels,
+    });
+    expect(text).toContain(
+      "Hi ADA and BOB -- you are both around San Francisco Bay Area this week",
+    );
+    expect(text).toContain("ADA and BOB both work on Multi-agent.");
+    expect(text).toContain("Idea: lunch or a coffee somewhere central this week.");
+    expect(text).toContain("You get these because you turned on city intros.");
   });
 });

@@ -73,6 +73,7 @@ import {
   requestAdminBotCalendarDraft,
   saveAdminBotCalendarEvent,
 } from "./adminbot/controllers/calendar.ts";
+import type { EventsNotice } from "./adminbot/controllers/events.ts";
 import type { LabTravelNotice, LookupDraft, RsvpDraft } from "./adminbot/controllers/lab-travel.ts";
 import {
   answerAdminBotLocationPrompt,
@@ -116,6 +117,7 @@ import {
 } from "./adminbot/controllers/tab-visits.ts";
 import { EMPTY_TRAVEL, type TravelState } from "./adminbot/controllers/travel.ts";
 import type { BadgeLoadError } from "./adminbot/data/badges.ts";
+import type { EventsOverview } from "./adminbot/data/events.ts";
 import type { TravelLookup, TravelOverview, TravelSharing } from "./adminbot/data/lab-travel.ts";
 import {
   createFactRow,
@@ -406,6 +408,13 @@ export class OpenClawApp extends LitElement {
   @state() labTravelSharing: TravelSharing | null = null;
   @state() labTravelSharingCheckedFor: string | null = null;
   @state() labTravelDevice: LocationTrackerSnapshot = { status: "idle" };
+  // The Events tab (controllers/events.ts), state for the same reason.
+  @state() events?: EventsOverview;
+  @state() eventsLoadedFor: string | null = null;
+  @state() eventsLoading = false;
+  @state() eventsError: string | null = null;
+  @state() eventsNotice: EventsNotice | null = null;
+  @state() eventsBusy: string | null = null;
   @state() adminBotLocationDrift?: LocationDrift | null;
   @state() adminBotLocationDrifts?: LocationDrift[];
   @state() adminBotLocationSaving = false;

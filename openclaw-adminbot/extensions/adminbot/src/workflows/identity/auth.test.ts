@@ -44,6 +44,7 @@ function setup(
       expiresInMinutes: number;
     }) => Promise<void>;
     sendAccountApprovedEmail?: (params: { email: string; name?: string }) => Promise<void>;
+    afterLoginLocated?: (memberId: string) => void;
   } = {},
 ) {
   const store = new AdminBotMemoryStore();
@@ -61,6 +62,7 @@ function setup(
     ...(options.gatewayUrl === null ? {} : { gatewayUrl: options.gatewayUrl ?? GATEWAY_URL }),
     ...(options.now ? { now: options.now } : {}),
     ...(options.geolocateIp ? { geolocateIp: options.geolocateIp } : {}),
+    ...(options.afterLoginLocated ? { afterLoginLocated: options.afterLoginLocated } : {}),
     ...(options.sendPasswordResetEmail
       ? { sendPasswordResetEmail: options.sendPasswordResetEmail }
       : {}),
@@ -847,6 +849,27 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(updated?.last_login_country).toBe("Switzerland");
     expect(updated?.last_login_continent).toBe("Europe");
     expect(updated?.last_login_at).toBeTruthy();
+  });
+
+  it("tells the meetup hook who was located to a city, and nothing else", async () => {
+    // A mocked geolocator: no real IPinfo call.
+    const geolocateIp = vi.fn(async (ip: string) =>
+      ip === "8.8.8.8"
+        ? { country: "United States", city: "San Francisco", timezone: "America/Los_Angeles" }
+        : { country: "United States" },
+    );
+    const afterLoginLocated = vi.fn();
+    const { store, auth } = setup({ geolocateIp, afterLoginLocated });
+    await claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    await auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "8.8.4.4" });
+    await vi.waitFor(() => expect(store.getLabMember("ada")?.last_login_country).toBeTruthy());
+    // A country alone places nobody in a city: no meetup work.
+    expect(afterLoginLocated).not.toHaveBeenCalled();
+
+    await auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "8.8.8.8" });
+    await vi.waitFor(() => expect(afterLoginLocated).toHaveBeenCalledTimes(1));
+    expect(afterLoginLocated).toHaveBeenCalledWith("ada");
   });
 
   it("stamps the login observation's collection time in the zone the IP resolved to", async () => {

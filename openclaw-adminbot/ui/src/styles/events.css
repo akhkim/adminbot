@@ -1,0 +1,188 @@
+/* --- The Events tab ------------------------------------------------------------------------------
+   An intro card (where you are, who else is nearby), any in-town prompts, the event list with a
+   collapsible Past section, and the meetup-intro settings. Everything wraps, so a 390px phone gets
+   the same content in one column. Colours are theme tokens only, so light and dark both follow. */
+
+.events {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.events__intro,
+.events__settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.events__where,
+.events__nearby {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.events__prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.events__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.events__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+/* An event in the viewer's own metro is the one they can most easily walk to. */
+.events__card--near {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.events__card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.events__card-title {
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.events__badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.events__badge--near {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.events__status--going {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.events__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--muted-strong);
+  overflow-wrap: anywhere;
+}
+
+.events__countdown {
+  color: var(--text-strong);
+}
+
+.events__going,
+.events__people {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.events__going-label {
+  color: var(--muted);
+}
+
+.events__avatars {
+  display: inline-flex;
+  padding-left: 6px;
+}
+
+.events__avatar {
+  width: 28px;
+  height: 28px;
+  margin-left: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--card);
+  object-fit: cover;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--bg-muted);
+  color: var(--text-strong);
+}
+
+.events__avatar--more {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.events__names {
+  overflow-wrap: anywhere;
+}
+
+.events__toggle,
+.events__snooze {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.events__toggle-off--active {
+  border-color: var(--border-strong);
+  color: var(--text-strong);
+}
+
+.events__past {
+  margin-top: var(--space-3);
+}
+
+.events__past > summary {
+  cursor: pointer;
+  color: var(--muted-strong);
+  min-height: var(--control-h-sm, 32px);
+  display: list-item;
+}
+
+.events__past > .events__list {
+  margin-top: var(--space-2);
+  opacity: 0.85;
+}
+
+.events__check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.events__empty {
+  margin: 0;
+}

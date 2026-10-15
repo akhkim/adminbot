@@ -1440,6 +1440,13 @@ export type AdminBotLabMemberInput = {
    * the lab adds to, not a property of the record that some import can set.
    */
   receives_nudges?: boolean;
+  /**
+   * The member's own answer to "introduce me to lab members nearby / at events".
+   *
+   * Absent means the defaults in workflows/members/meetups.ts (events on, city off). Self-owned and
+   * set only from the Events tab; `snoozed_until` (YYYY-MM-DD) pauses both kinds through that day.
+   */
+  meetup_intros?: { events?: boolean; city?: boolean; snoozed_until?: string };
   // Governance-owned: the department directory address, required to be @cs.toronto.edu for
   // everyone except external_collaborator (see validateCsEmail in kernel/service.ts).
   email?: string;

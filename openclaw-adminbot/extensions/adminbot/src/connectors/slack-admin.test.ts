@@ -487,9 +487,9 @@ describe("conference intro delivery", () => {
   });
 
   it.each([
-    ["two people", ["UADA", "UBOB"]],
+    ["one person", ["UADA"]],
     ["four people", ["UADA", "UBOB", "UCY", "UDEE"]],
-    ["a duplicate that leaves two", ["UADA", "UBOB", "UBOB"]],
+    ["a duplicate that leaves one", ["UADA", "UADA"]],
     ["a channel id in place of a user", ["UADA", "UBOB", "C0GENERAL"]],
   ])("refuses an altered payload with %s", async (_label, userIds) => {
     const fetchImpl = vi.fn();
@@ -501,7 +501,7 @@ describe("conference intro delivery", () => {
       executor.execute(
         proposal("slack.conference_intro", { user_ids: userIds, message: "Intro text" }),
       ),
-    ).rejects.toThrow("three distinct");
+    ).rejects.toThrow("two or three distinct");
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

@@ -61,6 +61,8 @@ describe("TAB_GROUPS", () => {
       // Where you are going, beside when you are free: its trips are the schedule rows Time
       // Availability draws.
       "labTravel",
+      // Upcoming events and who is nearby, beside the trips that get you there.
+      "events",
       "myWork",
     ]);
     // One tab per request template, named for what it asks and who it asks.

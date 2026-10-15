@@ -118,6 +118,7 @@ import { needsLabRoster } from "./adminbot/roster-required.ts";
 import { renderAdminPanelsSurface } from "./adminbot/surfaces/admin-panels.ts";
 import { renderCollaborateSurface } from "./adminbot/surfaces/collaborate.ts";
 import { renderDashboardSurface } from "./adminbot/surfaces/dashboard.ts";
+import { renderEventsSurface, syncEvents } from "./adminbot/surfaces/events.ts";
 import { renderLabTravelSurface, syncLabTravel } from "./adminbot/surfaces/lab-travel.ts";
 import {
   adminBotLogisticsScope,
@@ -1627,6 +1628,7 @@ export function renderApp(state: AppViewState) {
   // for the profile like every other page.
   if (!profileBlocked) {
     syncLabTravel(state, requestHostUpdate);
+    syncEvents(state, requestHostUpdate);
   }
 
   // Opening the workshop tab reads the stored pass. It never starts one -- that is Refresh, and it
@@ -3362,6 +3364,7 @@ export function renderApp(state: AppViewState) {
           : nothing}
         ${renderCollaborateSurface(state, adminBotSurfaces)}
         ${renderLabTravelSurface(state, adminBotSurfaces)}
+        ${renderEventsSurface(state, adminBotSurfaces)}
         ${state.tab === "adminbotTabUsage"
           ? renderAdminBotTabUsage({
               report: state.adminBotTabUsage,

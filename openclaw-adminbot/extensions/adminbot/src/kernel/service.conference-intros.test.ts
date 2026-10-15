@@ -114,6 +114,7 @@ describe("conference intros", () => {
     expect(unwrap(await service.introduceConferenceAttendees(key))).toEqual({
       introduced: 0,
       skipped: 4,
+      deferred: 0,
       failed: 0,
     });
     expect(intros(deliveries)).toHaveLength(2);
@@ -188,6 +189,7 @@ describe("conference intros", () => {
     expect(unwrap(await service.introduceConferenceAttendees(key))).toEqual({
       introduced: 0,
       skipped: 3,
+      deferred: 0,
       failed: 0,
     });
     expect(attempts).toHaveLength(before);

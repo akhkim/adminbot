@@ -43,6 +43,9 @@ describe("General Tools", () => {
     expect(canAccessTab("labTravel", "admin", "admin")).toBe(true);
     expect(canAccessTab("labTravel", "member", "trial")).toBe(false);
     expect(canAccessTab("labTravel", "member", "external_collaborator")).toBe(false);
+    expect(canAccessTab("events", "member", "member")).toBe(true);
+    expect(canAccessTab("events", "member", "trial")).toBe(false);
+    expect(canAccessTab("events", "anonymous")).toBe(false);
     expect(canAccessTab("adminbotNotificationDrafts", "anonymous")).toBe(false);
   });
 });
@@ -132,6 +135,7 @@ describe("visibleTabsForRole", () => {
       "adminbotTimeAvailability",
       // Conference RSVPs, your trips and opt-in location sharing.
       "labTravel",
+      "events",
       "myWork",
       "labSharing",
       // Recordings of the lab's own meetings sit with Lab Sharing, above the roster.
