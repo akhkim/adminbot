@@ -109,8 +109,8 @@ describe("resolveAccessRole", () => {
 
 describe("visibleTabsForRole", () => {
   it("shows a visitor the shared tools, and nothing else", () => {
-    // The whole General Tools group and no more: the reachable set is the group, so a tool added
-    // to it is published and a tool added anywhere else is not.
+    // Only the anonymous-level tools of the General Tools group: the group also holds member- and
+    // admin-level tools, and the access table, not the group, decides who sees them.
     expect(visibleTabsForRole(ALL_TABS, "anonymous")).toEqual([
       "adminbotReimbursements",
       "adminbotDeadlines",
@@ -149,6 +149,9 @@ describe("visibleTabsForRole", () => {
       // nothing.
       "adminbotConferencePapers",
       "adminbotReferenceChecker",
+      // The ARR eligible-reviewer list is member-level: it reads the lab's own roster, like Lab
+      // Members, and changes nothing.
+      "adminbotArrReviewers",
     ]);
   });
 

@@ -77,7 +77,14 @@ describe("TAB_GROUPS", () => {
       // asks that members hear about Rising Star and fellowship deadlines, not that admins audit
       // a list of them.
       "adminbotOpportunities",
+      // Admin-only (access.ts): the OpenReview notification-to-post drafts live beside the other
+      // lab-facing tools, and the access table hides them from everyone else.
+      "adminbotNotificationDrafts",
       "adminbotConferencePapers",
+      // Member-only: checking a draft's references and the ARR reviewer eligibility list are
+      // signed-in tools, so a visitor's sidebar shows the group without them.
+      "adminbotReferenceChecker",
+      "adminbotArrReviewers",
     ]);
     // Chat is no longer a group of its own: asking AdminBot something is the second half of the
     // guidebook surface, which the sidebar footer renders.
@@ -148,6 +155,9 @@ describe("TAB_GROUPS", () => {
       // The mailing list sits beside the grant report: both answer "what has the lab published",
       // one for a funder and one for an address.
       "adminbotMailingList",
+      // Tab Usage is the other half of the completeness question -- what members came to look at
+      // rather than what they filled in -- so it rides on Lab Overview too.
+      "adminbotTabUsage",
     ]);
     // Neither is its own sidebar entry any more, which is the whole point of the move.
     const sidebarTabs = TAB_GROUPS.flatMap((group) => group.tabs as readonly string[]);

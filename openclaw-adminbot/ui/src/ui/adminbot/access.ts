@@ -43,7 +43,7 @@ export function resolveAccessRole(params: {
 // Minimum role each tab needs. Every tab is listed: a new tab has to state its audience here or
 // the type check fails, so adding a surface can never silently expose it to visitors.
 const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
-  // Open to visitors: the whole General Tools group. None of the four is about the lab's own
+  // Open to visitors: four of the General Tools group. None of the four is about the lab's own
   // people. The reimbursement assistant is self-scoped -- it only ever sees what the person in
   // front of it typed -- the deadline board and the opportunities board are bundled public
   // snapshots that need no gateway at all, and the conference-paper search ranks a published
