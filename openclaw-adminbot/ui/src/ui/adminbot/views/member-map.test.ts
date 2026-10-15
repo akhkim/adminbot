@@ -2,6 +2,7 @@ import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import { parseMemberMap, type MemberMap } from "../data/member-map.ts";
 import { WORLD_OUTLINE_VIEW } from "../data/world-outline.ts";
+import { boxesIntersect, labelBox, type LabelAnchor } from "./member-map-labels.ts";
 import { renderMemberMap } from "./member-map.ts";
 
 async function draw(map: MemberMap | null): Promise<HTMLElement> {
@@ -282,6 +283,174 @@ describe("renderMemberMap", () => {
     expect(container.querySelector(".member-map__body .member-map__expand-btn")).toBeNull();
   });
 
+  // A country-level place sits on a centroid; drawing it like a city would claim a precision the
+  // sign-in geolocation never had.
+  it("draws country-only places hollow and says why, and only when there are some", async () => {
+    const container = await draw(
+      parseMemberMap({
+        ...summary,
+        places: [
+          ...summary.places,
+          { key: "country:france", label: "France", country: "France", lat: 46, lon: 2, count: 1 },
+        ],
+      }),
+    );
+    const approximate = container.querySelectorAll(".member-map__place--approximate");
+    expect(approximate).toHaveLength(1);
+    expect(approximate[0]?.querySelector("title")?.textContent).toContain("France (country only)");
+    expect(container.querySelector('[data-testid="member-map-approximate"]')).not.toBeNull();
+
+    const cityOnly = await draw(parseMemberMap(summary));
+    expect(cityOnly.querySelector(".member-map__place--approximate")).toBeNull();
+    expect(cityOnly.querySelector('[data-testid="member-map-approximate"]')).toBeNull();
+  });
+
+  describe("labels", () => {
+    // Synthetic: four European cities within a dozen viewBox units of each other, where the
+    // unplaced labels used to print on top of each other at every font size.
+    const europe = parseMemberMap({
+      mode: "summary",
+      places: [
+        {
+          key: "london",
+          label: "London",
+          country: "United Kingdom",
+          lat: 51.51,
+          lon: -0.13,
+          count: 6,
+        },
+        { key: "berlin", label: "Berlin", country: "Germany", lat: 52.52, lon: 13.4, count: 5 },
+        { key: "zurich", label: "Zürich", country: "Switzerland", lat: 47.37, lon: 8.54, count: 4 },
+        { key: "paris", label: "Paris", country: "France", lat: 48.86, lon: 2.35, count: 3 },
+      ],
+      unplaced: [],
+      counts: { placed: 18, unplaced: 0, unknown: 0 },
+    });
+
+    function visibleLabelBoxes(plot: Element) {
+      return [...plot.querySelectorAll<SVGTextElement>(".member-map__label")]
+        .filter((text) => !text.classList.contains("member-map__label--hover"))
+        .map((text) => {
+          const fontSize = Number.parseFloat(text.style.fontSize);
+          const strokeWidth = Number.parseFloat(text.style.strokeWidth);
+          return {
+            text: text.textContent ?? "",
+            box: labelBox(
+              text.textContent ?? "",
+              Number(text.getAttribute("x")),
+              Number(text.getAttribute("y")),
+              text.getAttribute("text-anchor") as LabelAnchor,
+              fontSize,
+              strokeWidth,
+            ),
+          };
+        });
+    }
+
+    function expectNoOverlap(labels: ReturnType<typeof visibleLabelBoxes>) {
+      for (const [index, left] of labels.entries()) {
+        for (const right of labels.slice(index + 1)) {
+          expect(boxesIntersect(left.box, right.box), `${left.text} overlaps ${right.text}`).toBe(
+            false,
+          );
+        }
+      }
+    }
+
+    it("never draws two visible labels on top of each other", async () => {
+      const container = await draw(europe);
+      const labels = visibleLabelBoxes(container.querySelector(".member-map__plot")!);
+      // The busiest city is always named; the rest only where there is room.
+      expect(labels.map((label) => label.text)).toContain("London");
+      expect(labels.length).toBeGreaterThanOrEqual(2);
+      expectNoOverlap(labels);
+    });
+
+    it("keeps every city's name reachable on hover when it had no room", async () => {
+      const container = await draw(europe);
+      const plot = container.querySelector(".member-map__plot")!;
+      const named = [...plot.querySelectorAll(".member-map__label")].map(
+        (text) => text.textContent,
+      );
+      expect(named.toSorted()).toEqual(["Berlin", "London", "Paris", "Zürich"]);
+    });
+
+    it("fits more labels without overlap at full screen", async () => {
+      const container = await draw(europe);
+      (container.querySelector('[data-testid="member-map-toggle"]') as HTMLButtonElement).click();
+      const element = container.querySelector("adminbot-member-map") as unknown as {
+        updateComplete: Promise<unknown>;
+      };
+      await element.updateComplete;
+      const plot = container.querySelector(".member-map__dialog-plot .member-map__plot")!;
+      const cardCount = visibleLabelBoxes(
+        container.querySelector(".member-map__body .member-map__plot")!,
+      ).length;
+      const labels = visibleLabelBoxes(plot);
+      expect(labels.length).toBeGreaterThanOrEqual(cardCount);
+      expectNoOverlap(labels);
+    });
+  });
+
+  it("says how finely, and from what, each named member is placed", async () => {
+    const container = await draw(
+      parseMemberMap({
+        mode: "full",
+        places: [
+          {
+            key: "toronto",
+            label: "Toronto",
+            country: "Canada",
+            lat: 43.65,
+            lon: -79.38,
+            members: [
+              { member_id: "a", name: "Ada", source: "login", precision: "city" },
+              { member_id: "b", name: "Bo", source: "slack", precision: "timezone" },
+            ],
+          },
+          {
+            key: "country:germany",
+            label: "Germany",
+            country: "Germany",
+            lat: 51,
+            lon: 10,
+            members: [{ member_id: "c", name: "Cy", source: "login", precision: "country" }],
+          },
+        ],
+        unplaced: [],
+        counts: { placed: 3, unplaced: 0, unknown: 0 },
+      }),
+    );
+    const titles = [...container.querySelectorAll(".member-map__plot .member-map__dot title")].map(
+      (title) => title.textContent ?? "",
+    );
+    expect(titles.join("\n")).toContain("Ada (city · from last sign-in (approx.))");
+    expect(titles.join("\n")).toContain("Bo (city from time zone · from Slack)");
+    expect(titles.join("\n")).toContain("Cy (country only · from last sign-in (approx.))");
+  });
+
+  it("credits the IP geolocation provider when the service names one, and only over https", async () => {
+    const credited = await draw(
+      parseMemberMap({
+        ...summary,
+        attribution: { text: "IP geolocation by DB-IP", url: "https://db-ip.com" },
+      }),
+    );
+    const link = credited.querySelector<HTMLAnchorElement>(
+      '[data-testid="member-map-attribution"] a',
+    );
+    expect(link?.textContent?.trim()).toBe("IP geolocation by DB-IP");
+    expect(link?.getAttribute("href")).toBe("https://db-ip.com");
+    expect(link?.getAttribute("rel")).toContain("noopener");
+
+    const plain = await draw(parseMemberMap(summary));
+    expect(plain.querySelector('[data-testid="member-map-attribution"]')).toBeNull();
+    expect(
+      parseMemberMap({ ...summary, attribution: { text: "x", url: "javascript:alert(1)" } })
+        ?.attribution,
+    ).toBeUndefined();
+  });
+
   it("mentions members it could not place", async () => {
     const container = await draw(
       parseMemberMap({ ...summary, unplaced: [{ member_id: "c", name: "Cy" }] }),
@@ -368,9 +537,7 @@ describe("renderMemberMap", () => {
     await element.updateComplete;
     await element.updateComplete;
 
-    const dialog = container.querySelector<HTMLDialogElement>(
-      '[data-testid="member-map-dialog"]',
-    )!;
+    const dialog = container.querySelector<HTMLDialogElement>('[data-testid="member-map-dialog"]')!;
     // Escape closes the dialog natively and fires `close` without routing through our handler.
     // jsdom implements neither showModal nor close, so the component's fallback is what runs here —
     // which is the path this asserts.

@@ -559,6 +559,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
           | "last_login_country"
           | "last_login_continent"
           | "last_login_city"
+          | "last_login_region"
           | "last_login_timezone"
         >
       >,
@@ -10464,10 +10465,11 @@ export class AdminBotService {
     };
   }
 
-  // Where members are, Slack first and the roster location only where Slack has nothing.
-  // Reads stamped state: refreshing from Slack is refreshMemberMap's job, not a page
-  // load's, so opening the map never waits on 144 API calls.
-  memberMap(): AdminBotServiceResponse<AdminBotMemberMap> {
+  // Where members are: Slack first, then the roster location, then the last sign-in's
+  // geolocation. Reads stamped state: refreshing from Slack is refreshMemberMap's job, not a page
+  // load's, so opening the map never waits on 144 API calls. `loginCity` is the caller's
+  // entitlement to inferred cities; see BuildMemberMapOptions.
+  memberMap(options: { loginCity?: boolean } = {}): AdminBotServiceResponse<AdminBotMemberMap> {
     const members = this.store.listLabMembers();
     const slackLocations = new Map<string, string>();
     for (const member of members) {
@@ -10475,7 +10477,11 @@ export class AdminBotService {
         slackLocations.set(member.slack_user_id, member.slack_location);
       }
     }
-    return { ok: true, status: 200, payload: buildMemberMap(members, slackLocations) };
+    return {
+      ok: true,
+      status: 200,
+      payload: buildMemberMap(members, slackLocations, { loginCity: options.loginCity ?? false }),
+    };
   }
 
   // Re-reads every member's Slack profile and stamps what it finds. A member Slack has

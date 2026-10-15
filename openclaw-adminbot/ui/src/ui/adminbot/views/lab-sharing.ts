@@ -33,6 +33,7 @@ import {
   searchAdminBotLabSharingMembers,
 } from "../controllers/lab-sharing.ts";
 import { renderLabSharingResources } from "./lab-sharing-resources.ts";
+import { renderMemberMap } from "./member-map.ts";
 
 // ---------------------------------------------------------------------------
 // Types (shape guesses -- adjust once a real API contract exists)
@@ -1297,6 +1298,12 @@ export function renderLabSharing(state: AppViewState) {
       ${renderLoadNotices(state)} ${renderDirectorPanel(state)} ${renderInvitesPanel(state)}
       ${renderYourRequestsPanel(state)} ${renderSeekHelpPanel(state)}
       ${renderOpenProjectsPanel(state)} ${renderAnnouncementsPanel(state)}
+      ${
+        // The Dashboard's card, not a copy: same data, same privacy shape (names for an admin,
+        // headcounts otherwise). It sits here because "who could I work with" is partly "who is
+        // awake when I am"; app-render loads it for this tab as well as for the Dashboard.
+        renderMemberMap(state.adminBotMemberMap ?? null)
+      }
       <lab-sharing-how-to
         .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
         .sessionToken=${session?.sessionToken ?? ""}

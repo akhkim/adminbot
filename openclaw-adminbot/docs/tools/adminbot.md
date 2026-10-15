@@ -1287,46 +1287,45 @@ counts }` -- names included, plus each member's Slack avatar and last login
 regardless: publishing a headcount is one thing, triggering a real Slack API
 call on someone else's behalf is another.
 
-Location comes from three sources, tried in a fixed order, each one falling
-through to the next whenever it fails to resolve -- not only when it is empty.
+A member is placed by the most specific answer any source gives, and between answers equally
+specific, by the more trusted source. A country never outranks a city, whatever it came from.
 
-1. **Slack**, city-level. `POST /member-map/refresh` reads each member's Slack
-   profile (a workspace location field if one is configured, otherwise their
-   timezone, whose IANA name carries a city) and stamps it on the member as
-   `slack_location`. A member Slack no longer knows about has their stamp
-   cleared rather than left stale, so an old value cannot outrank a fresher
-   source forever. That clearing only happens when the pass runs, which is why
-   it is scheduled daily (`adminbot-member-map`, 06:10) rather than left to the
-   button: this is the one source of the three that cannot refresh itself, and
-   it is the one the other two defer to.
-2. **Last-login location**, country-level only. Stamped automatically on every
-   successful sign-in from the caller's IP (see "Login location" below) -- there
-   is nothing to manually refresh here, it is already as current as their most
-   recent login.
-3. **Roster `location`**, city-level -- what they typed once, at signup or when
-   an admin added them. Tried last on purpose: unlike the two sources above, it
-   never updates itself.
+1. **A stated city.** `current_city` (where they are right now), then the Slack profile's
+   location field, then the roster `location` -- what somebody wrote down.
+   `POST /member-map/refresh` reads each member's Slack profile and stamps it as `slack_location`;
+   a member Slack no longer knows about has the stamp cleared rather than left stale. That only
+   happens when the pass runs, which is why it is scheduled daily (`adminbot-member-map`, 06:10).
+2. **A fresh sign-in city**, admin map only. Stamped from the caller's IP on each sign-in (see
+   "Login location" below) and used for three days. Never on the summary anybody else gets: the
+   city is in the fields held to the member and the admins.
+3. **A time zone's city.** The Slack time zone, then the roster `timezone`. `Europe/Zurich` is also
+   what somebody in Basel reports, so this is labelled "city from time zone", not "city".
+4. **A country.** A country written in any of the text fields above, then the sign-in country.
+   Drawn as a hollow, dashed dot on the country's centroid.
 
-All three are free text (or, for last-login, a plain country name), so the
-resolver copes with what people actually write: institutions (`ETH` becomes
-Zürich), accents and spelling variants (`Tuebingen`/`Tübingen`), several places
-at once (`Zurich/Tuebingen/Toronto` takes the first), parentheticals, and
-leading hedges (`Mainly Montreal`). Anything none of the three sources can
-place is listed under **Not placed** with whatever the highest-priority source
-that had text wrote -- that is the signal to add a city (or country, for
-last-login) to the tables in `extensions/adminbot/src/member-map.ts`, not a
-reason to guess. A member placed by last-login only (no city, just a country)
-shows on the map as a dashed, lighter dot, distinct from a real city-level
-placement.
+The resolver copes with what people actually write: institutions (`ETH` becomes Zürich, `UWO`
+London, ON), accents and spelling variants (`Tuebingen`/`Tübingen`, `Calcutta`), several places at
+once (`Zurich/Tuebingen/Toronto` takes the first), "city, region, country"
+(`London, Ontario, Canada`), parentheticals, and leading hedges (`Mainly Montreal`). A sign-in city
+is only accepted inside the country the IP provider reported, so `London` + `CA` lands in London, ON
+and never in England. Anything no source can place is listed under **Not placed** with what the
+member wrote -- the signal to add the city to the gazetteer in
+`extensions/adminbot/src/workflows/members/member-map.ts`, not a reason to guess. Every pin sits on
+a city's (or country's) centroid from that table; no coordinates from an IP lookup are stored or
+drawn. Members whose name is a do-not-contact marker (`Null,do not contact`) or a placeholder are
+left off the map entirely.
 
 ### Login location
 
-On every successful login, if `IPINFO_TOKEN` is configured, AdminBot
-geolocates the caller's IP (via IPinfo's free "Lite" tier -- country and
-continent only, not city-level) and stamps `last_login_at` /
-`last_login_country` / `last_login_continent` on the member record. This is
-best-effort and fire-and-forget: it never blocks or fails the login itself,
-and with no token configured it is simply skipped. It is visible to the
+On every successful login AdminBot geolocates the caller's IP and stamps
+`last_login_at` / `last_login_country` / `last_login_continent`, and, when the
+provider answers with one, `last_login_city` / `last_login_region`. The
+provider is a local DB-IP City Lite database when `ADMINBOT_GEOIP_MMDB_PATH` is
+set (city-level, no network call per sign-in), otherwise IPinfo when
+`IPINFO_TOKEN` is set (country only on the free Lite tier), otherwise none; the
+service logs which at startup. Setup is in
+[IP geolocation](adminbot-geoip.md). This is best-effort and
+fire-and-forget: it never blocks or fails the login itself. It is visible to the
 member on their own profile ("Last login location", top of the Profile tab)
 and to admins in the Members table.
 

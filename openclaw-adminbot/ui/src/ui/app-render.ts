@@ -101,7 +101,7 @@ import {
   takeQueuedLetterSchools,
   withPrefilledSchool,
 } from "./adminbot/data/logistics-draft.ts";
-import { loadMemberMap, needsDashboardMemberMap } from "./adminbot/data/member-map.ts";
+import { loadMemberMap, needsMemberMap } from "./adminbot/data/member-map.ts";
 import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
@@ -2459,7 +2459,7 @@ export function renderApp(state: AppViewState) {
       .finally(() => requestHostUpdate?.());
   }
   if (
-    needsDashboardMemberMap(
+    needsMemberMap(
       state.tab,
       hasMemberSession,
       state.adminBotMemberMap,

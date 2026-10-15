@@ -1195,3 +1195,12 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* On a phone the map card sits inside the page's own gutter, and the two paddings together took
+   ~100px of a 390px screen from a plot whose whole point is width. The card keeps its border; it
+   just stops insetting the plot a second time. */
+@media (max-width: 480px) {
+  .member-map {
+    padding: var(--space-4);
+  }
+}

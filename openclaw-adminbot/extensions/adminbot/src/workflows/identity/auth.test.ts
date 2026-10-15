@@ -849,6 +849,26 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(updated?.last_login_at).toBeTruthy();
   });
 
+  // The merge patch keeps keys it is not given, so a country-only sign-in has to clear the city
+  // explicitly -- otherwise last week's city rides along with today's `last_login_at`.
+  it("stamps city and region together, and clears both when a sign-in locates only a country", async () => {
+    const geolocateIp = vi
+      .fn()
+      .mockResolvedValueOnce({ country: "CA", continent: "NA", city: "London", region: "Ontario" })
+      .mockResolvedValueOnce({ country: "GB", continent: "EU" });
+    const { store, auth } = setup({ geolocateIp });
+    await claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    await auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "8.8.8.8" });
+    await vi.waitFor(() => expect(store.getLabMember("ada")?.last_login_city).toBe("London"));
+    expect(store.getLabMember("ada")?.last_login_region).toBe("Ontario");
+
+    await auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "9.9.9.9" });
+    await vi.waitFor(() => expect(store.getLabMember("ada")?.last_login_country).toBe("GB"));
+    expect(store.getLabMember("ada")?.last_login_city ?? "").toBe("");
+    expect(store.getLabMember("ada")?.last_login_region ?? "").toBe("");
+  });
+
   it("stamps the login observation's collection time in the zone the IP resolved to", async () => {
     // The zone IPinfo returns is used only to render the collection instant in local wall-clock --
     // it must never land in the entry's `timezone`, which stays reserved for a stated zone.

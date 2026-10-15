@@ -2077,13 +2077,6 @@
   width: 100%;
 }
 
-/* Labels and dots are sized for the card; at full screen the same viewBox units are three times
-   the pixels, so they are scaled back to keep the map from looking like a diagram. */
-.member-map__dialog .member-map__label {
-  font-size: 3px;
-  stroke-width: 1;
-}
-
 .member-map__list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
@@ -2133,14 +2126,40 @@
   fill-opacity: 1;
 }
 
+/* Placed only to a country (written, or from a sign-in), so the dot sits on a centroid nobody lives at. Hollow and
+   dashed reads as "somewhere in here" rather than as a city, in either theme, without a legend
+   colour that would have to be tuned twice. */
+.member-map__place--approximate .member-map__dot {
+  fill: var(--panel);
+  fill-opacity: 1;
+  stroke: var(--accent, var(--text));
+  stroke-width: 1.2;
+  stroke-dasharray: 2 1.4;
+}
+
+/* Size and halo width are set inline by the view: its collision pass places labels by them, so
+   the two must not be able to disagree. */
 .member-map__label {
   fill: var(--text);
-  font-size: 5px;
   font-weight: 600;
   paint-order: stroke;
   stroke: var(--panel);
-  stroke-width: 1.6;
   stroke-linejoin: round;
+  pointer-events: none;
+}
+
+/* No room on the plot without overlapping a neighbour: shown while its dot is hovered, and
+   named in the list beside the plot either way. */
+.member-map__label--hover {
+  visibility: hidden;
+}
+
+.member-map__place:hover .member-map__label--hover {
+  visibility: visible;
+}
+
+.member-map__credit a {
+  color: inherit;
 }
 
 .member-map__list {

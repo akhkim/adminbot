@@ -114,6 +114,35 @@ function input(container: HTMLElement, selector: string, value: string): void {
 }
 
 describe("renderLabSharing", () => {
+  it("shows the Dashboard's member map card once the map has loaded, and nothing before", async () => {
+    const { container } = renderView({ adminBotMemberMap: undefined });
+    expect(container.querySelector("adminbot-member-map")).toBeNull();
+
+    const loaded = renderView({
+      adminBotMemberMap: {
+        mode: "summary",
+        places: [
+          {
+            key: "toronto",
+            label: "Toronto",
+            country: "Canada",
+            lat: 43.65,
+            lon: -79.38,
+            count: 3,
+          },
+        ],
+        unplaced: 0,
+        counts: { placed: 3, unplaced: 0, unknown: 0 },
+      },
+    });
+    const card = loaded.container.querySelector("adminbot-member-map") as
+      | (HTMLElement & { updateComplete?: Promise<unknown> })
+      | null;
+    await card?.updateComplete;
+    expect(loaded.container.querySelector('[data-testid="dashboard-member-map"]')).not.toBeNull();
+    expect(loaded.container.querySelectorAll(".member-map__dot")).toHaveLength(1);
+  });
+
   it("drops a previous member's unsent announcement on account switch", () => {
     const { container, draw } = renderView();
     click(container, '[data-testid="lab-sharing-announcement-add"]');

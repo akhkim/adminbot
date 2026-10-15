@@ -1,4 +1,7 @@
-// Where the lab is, as a dashboard card.
+// Where the lab is, as a card on the Dashboard and on Collaborate.
+//
+// Plain SVG in a viewBox, so it scales with its container by itself: unlike the Leaflet page there
+// is no tile layer to re-measure (no invalidateSize) after the card was in a hidden tab.
 //
 // An equirectangular plot: longitude maps linearly to x, latitude to y, over a real coastline.
 //
@@ -14,8 +17,9 @@
 // people actually are. Neither alone is the answer to "where is the lab".
 import { html, LitElement, nothing, svg } from "lit";
 import { t } from "../../../i18n/index.ts";
-import type { MemberMap, MemberMapPlace } from "../data/member-map.ts";
+import type { MemberMap, MemberMapMember, MemberMapPlace } from "../data/member-map.ts";
 import { WORLD_OUTLINE_PATH, WORLD_OUTLINE_VIEW } from "../data/world-outline.ts";
+import { layoutLabels, type LabelAnchor } from "./member-map-labels.ts";
 
 // Taken from the generated outline rather than declared twice: the path is baked into this exact
 // projection, so a mismatch here would slide every dot off the coastline it belongs on.
@@ -56,22 +60,82 @@ function radiusFor(count: number, busiest: number): number {
   return MIN_RADIUS + share * (MAX_RADIUS - MIN_RADIUS);
 }
 
+const PRECISION_KEYS = {
+  city: "dashboard.memberMap.precisionCity",
+  timezone: "dashboard.memberMap.precisionTimezone",
+  country: "dashboard.memberMap.precisionCountry",
+} as const;
+
+const SOURCE_KEYS = {
+  slack: "dashboard.memberMap.sourceSlack",
+  roster: "dashboard.memberMap.sourceRoster",
+  login: "dashboard.memberMap.sourceLogin",
+} as const;
+
+/**
+ * A name with how finely, and from what, the pin places them -- "Ada (city · from last sign-in
+ * (approx.))" -- so a dot on Zürich that only means "on Zürich time" does not read as an address.
+ * Admin-only by construction: only the full shape carries names, and this only decorates a name.
+ */
+export function memberDetail(member: MemberMapMember): string {
+  if (!member.precision || !member.source) {
+    return member.name;
+  }
+  return t("dashboard.memberMap.memberDetail", {
+    name: member.name,
+    precision: t(PRECISION_KEYS[member.precision]),
+    source: t(SOURCE_KEYS[member.source]),
+  });
+}
+
 function placeTitle(place: MemberMapPlace): string {
-  const where = place.country ? `${place.label}, ${place.country}` : place.label;
+  // A country-level place's label already is the country, so "France, France" would be noise.
+  const where = place.approximate
+    ? t("dashboard.memberMap.approximatePlace", { place: place.label })
+    : place.country
+      ? `${place.label}, ${place.country}`
+      : place.label;
   // An admin gets names; everyone else gets the headcount, which is all the service sent.
-  const names = place.members?.map((member) => member.name).join(", ");
+  const names = place.members?.map(memberDetail).join(", ");
   return names
     ? `${where} — ${names}`
     : t("dashboard.memberMap.placeCount", { place: where, count: String(place.count) });
 }
 
-// How many of the busiest cities are named on the plot itself. Enough to anchor the reader without
-// the labels colliding into a smear across Europe, which is where most of them land.
-const LABELLED_PLACES = 5;
+// Label sizes in viewBox units, set inline on each <text> so the collision pass and the drawing use
+// the same number (a stylesheet rule would win over a presentation attribute and could drift). The
+// full-screen plot is drawn about three times larger, so its labels can be smaller in viewBox units
+// and still read at the same size -- and then far more of them fit.
+const PLOT_LABELS = {
+  card: { fontSize: 5, strokeWidth: 1.6, budget: 6 },
+  dialog: { fontSize: 3, strokeWidth: 1, budget: 16 },
+} as const;
 
-function renderPlot(map: MemberMap) {
+// The spot a label shows at on hover when the collision pass found it no room: above its dot, kept
+// inside the plot at either edge.
+function hoverAnchor(x: number): LabelAnchor {
+  return x > VIEW_WIDTH - 40 ? "end" : x < 40 ? "start" : "middle";
+}
+
+function renderPlot(map: MemberMap, size: keyof typeof PLOT_LABELS = "card") {
   const busiest = Math.max(...map.places.map((place) => place.count), 1);
-  const labelled = new Set(map.places.slice(0, LABELLED_PLACES).map((place) => place.key));
+  const style = PLOT_LABELS[size];
+  const points = map.places.map((place) => ({
+    key: place.key,
+    label: place.label,
+    x: projectX(place.lon),
+    y: projectY(place.lat),
+    r: radiusFor(place.count, busiest),
+  }));
+  // `places` is sorted busiest first, so the biggest clusters get first pick of the room.
+  const labels = layoutLabels(points, {
+    fontSize: style.fontSize,
+    strokeWidth: style.strokeWidth,
+    width: VIEW_WIDTH,
+    height: VIEW_HEIGHT,
+    budget: style.budget,
+  });
+  const labelStyle = `font-size: ${style.fontSize}px; stroke-width: ${style.strokeWidth}px`;
   return svg`
     <svg
       class="member-map__plot"
@@ -110,25 +174,34 @@ function renderPlot(map: MemberMap) {
           ></line>
         `,
       )}
-      ${map.places.map((place) => {
-        const x = projectX(place.lon);
-        const y = projectY(place.lat);
-        const r = radiusFor(place.count, busiest);
+      ${map.places.map((place, index) => {
+        const { x, y, r } = points[index]!;
+        const label = labels.get(place.key);
         return svg`
-          <g class="member-map__place">
+          <g
+            class=${`member-map__place${place.approximate ? " member-map__place--approximate" : ""}`}
+            data-place=${place.key}
+          >
             <circle class="member-map__halo" cx=${x} cy=${y} r=${r + 2}></circle>
             <circle class="member-map__dot" cx=${x} cy=${y} r=${r}>
               <title>${placeTitle(place)}</title>
             </circle>
             ${
-              labelled.has(place.key)
+              label
                 ? svg`<text
                     class="member-map__label"
-                    x=${x}
-                    y=${y - r - 2.5}
-                    text-anchor=${x > VIEW_WIDTH - 40 ? "end" : x < 40 ? "start" : "middle"}
+                    style=${labelStyle}
+                    x=${label.x}
+                    y=${label.y}
+                    text-anchor=${label.anchor}
                   >${place.label}</text>`
-                : nothing
+                : svg`<text
+                    class="member-map__label member-map__label--hover"
+                    style=${labelStyle}
+                    x=${x}
+                    y=${y - r - 3.5}
+                    text-anchor=${hoverAnchor(x)}
+                  >${place.label}</text>`
             }
           </g>
         `;
@@ -209,7 +282,7 @@ function renderAvatars(place: MemberMapPlace) {
 function renderNameList(members: NonNullable<MemberMapPlace["members"]>) {
   return html`
     <ul class="member-map__name-list">
-      ${members.map((member) => html`<li>${member.name}</li>`)}
+      ${members.map((member) => html`<li>${memberDetail(member)}</li>`)}
     </ul>
   `;
 }
@@ -379,6 +452,21 @@ class AdminbotMemberMap extends LitElement {
           </button>
           ${renderList(map, false, this.expandedPlaces, (key) => this.toggleExpanded(key))}
         </div>
+        ${map.places.some((place) => place.approximate)
+          ? html`<p class="dashboard-summary__detail" data-testid="member-map-approximate">
+              ${t("dashboard.memberMap.approximateNote")}
+            </p>`
+          : nothing}
+        ${map.attribution
+          ? html`<p
+              class="dashboard-summary__detail member-map__credit"
+              data-testid="member-map-attribution"
+            >
+              <a href=${map.attribution.url} target="_blank" rel="noopener noreferrer"
+                >${map.attribution.text}</a
+              >
+            </p>`
+          : nothing}
         ${map.unplaced > 0
           ? html`<p class="dashboard-summary__detail" data-testid="member-map-unplaced">
               ${t("dashboard.memberMap.unplaced", { count: String(map.unplaced) })}
@@ -417,7 +505,7 @@ class AdminbotMemberMap extends LitElement {
                 ${t("dashboard.memberMap.collapse")}
               </button>
             </div>
-              <div class="member-map__dialog-plot">${renderPlot(map)}</div>
+              <div class="member-map__dialog-plot">${renderPlot(map, "dialog")}</div>
               ${renderList(map, true, this.expandedPlaces, (key) => this.toggleExpanded(key))}
             </div>`
             : nothing}

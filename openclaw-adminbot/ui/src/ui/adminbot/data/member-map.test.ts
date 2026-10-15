@@ -3,7 +3,8 @@ import type { UiSettings } from "../../storage.ts";
 import {
   invalidateMemberMap,
   loadMemberMap,
-  needsDashboardMemberMap,
+  needsMemberMap,
+  parseMemberMap,
   type MemberMapHost,
 } from "./member-map.ts";
 
@@ -21,13 +22,17 @@ function mapResponse(label: string): Response {
 }
 
 describe("Dashboard member map loading", () => {
-  it("requests the map only on a signed-in Dashboard that has not requested it", () => {
-    expect(needsDashboardMemberMap("dashboard", true, undefined, false)).toBe(true);
-    expect(needsDashboardMemberMap("profile", true, undefined, false)).toBe(false);
-    expect(needsDashboardMemberMap("myWork", true, undefined, false)).toBe(false);
-    expect(needsDashboardMemberMap("dashboard", false, undefined, false)).toBe(false);
-    expect(needsDashboardMemberMap("dashboard", true, undefined, true)).toBe(false);
-    expect(needsDashboardMemberMap("dashboard", true, null, false)).toBe(false);
+  it("requests the map only on a signed-in Dashboard or Collaborate that has not requested it", () => {
+    expect(needsMemberMap("dashboard", true, undefined, false)).toBe(true);
+    // Collaborate (tab id labSharing) shows the same card, so opening it directly -- without a
+    // Dashboard visit first -- has to start the load too.
+    expect(needsMemberMap("labSharing", true, undefined, false)).toBe(true);
+    expect(needsMemberMap("labSharing", false, undefined, false)).toBe(false);
+    expect(needsMemberMap("profile", true, undefined, false)).toBe(false);
+    expect(needsMemberMap("myWork", true, undefined, false)).toBe(false);
+    expect(needsMemberMap("dashboard", false, undefined, false)).toBe(false);
+    expect(needsMemberMap("dashboard", true, undefined, true)).toBe(false);
+    expect(needsMemberMap("dashboard", true, null, false)).toBe(false);
   });
 
   it.each(["old first", "new first"])(
@@ -67,4 +72,68 @@ describe("Dashboard member map loading", () => {
       expect(host.adminBotMemberMapLoading).toBe(false);
     },
   );
+});
+
+describe("parseMemberMap", () => {
+  it("marks country-level places as approximate and nothing else", () => {
+    const map = parseMemberMap({
+      mode: "summary",
+      places: [
+        { key: "toronto", label: "Toronto", country: "Canada", lat: 43.65, lon: -79.38, count: 2 },
+        { key: "country:france", label: "France", country: "France", lat: 46, lon: 2, count: 1 },
+      ],
+      counts: { placed: 3, unplaced: 0, unknown: 0 },
+    });
+    expect(map?.places.map((place) => [place.key, place.approximate])).toEqual([
+      ["toronto", false],
+      ["country:france", true],
+    ]);
+  });
+
+  it("keeps each member's source and precision, and drops values it does not know", () => {
+    const map = parseMemberMap({
+      mode: "full",
+      places: [
+        {
+          key: "toronto",
+          label: "Toronto",
+          country: "Canada",
+          lat: 43.65,
+          lon: -79.38,
+          members: [
+            { member_id: "a", name: "Ada", source: "login", precision: "city" },
+            { member_id: "b", name: "Bo", source: "gps", precision: "street" },
+          ],
+        },
+      ],
+    });
+    expect(map?.places[0]?.members).toEqual([
+      { member_id: "a", name: "Ada", source: "login", precision: "city" },
+      { member_id: "b", name: "Bo" },
+    ]);
+  });
+
+  it("never turns a null or blank member name into a printed name", () => {
+    const map = parseMemberMap({
+      mode: "full",
+      places: [
+        {
+          key: "toronto",
+          label: "Toronto",
+          country: "Canada",
+          lat: 43.65,
+          lon: -79.38,
+          count: 4,
+          members: [
+            { member_id: "a", name: "Ada" },
+            { member_id: "b", name: null },
+            { member_id: "c", name: "  " },
+            { member_id: "d", name: "Null" },
+          ],
+        },
+      ],
+      counts: { placed: 4, unplaced: 0, unknown: 0 },
+    });
+    expect(map?.places[0]?.members?.map((member) => member.name)).toEqual(["Ada"]);
+  });
 });

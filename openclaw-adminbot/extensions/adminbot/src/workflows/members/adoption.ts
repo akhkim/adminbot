@@ -94,6 +94,7 @@ const SKIP_FIELDS = new Set([
   "last_login_country",
   "last_login_continent",
   "last_login_city",
+  "last_login_region",
   "last_login_timezone",
   "slack_location",
   "slack_location_updated_at",

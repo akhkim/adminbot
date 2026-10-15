@@ -227,7 +227,8 @@ export type AdminBotAuthServiceOptions = {
   geolocateIp?: (
     ip: string,
   ) => Promise<
-    { country?: string; continent?: string; city?: string; timezone?: string } | undefined
+    | { country?: string; continent?: string; city?: string; region?: string; timezone?: string }
+    | undefined
   >;
   gatewayUrl?: string;
   sessionTtlMs?: number;
@@ -309,7 +310,8 @@ export class AdminBotAuthService {
   private readonly geolocateIp?: (
     ip: string,
   ) => Promise<
-    { country?: string; continent?: string; city?: string; timezone?: string } | undefined
+    | { country?: string; continent?: string; city?: string; region?: string; timezone?: string }
+    | undefined
   >;
   private readonly gatewayUrl?: string;
   private readonly sessionTtlMs: number;
@@ -576,7 +578,15 @@ export class AdminBotAuthService {
         ...(location.continent ? { last_login_continent: location.continent } : {}),
         // Written alongside the country and read only with `last_login_at`, which is what keeps a
         // stale city out of a scheduling decision. Still never touches `location`/`current_city`.
-        ...(location.city ? { last_login_city: location.city } : {}),
+        //
+        // City and region are written together, and cleared together when this sign-in located
+        // only a country: the merge patch keeps any key it is not given, so leaving them out would
+        // let last month's city ride along with today's `last_login_at` and look fresh.
+        ...(location.city
+          ? { last_login_city: location.city, last_login_region: location.region ?? "" }
+          : location.country
+            ? { last_login_city: "", last_login_region: "" }
+            : {}),
         ...(location.timezone ? { last_login_timezone: location.timezone } : {}),
         updated_at: this.now().toISOString(),
       });

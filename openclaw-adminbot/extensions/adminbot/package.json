@@ -7,6 +7,7 @@
   "dependencies": {
     "clawpdf": "0.3.0",
     "fast-xml-parser": "5.7.0",
+    "mmdb-lib": "3.0.3",
     "pg": "^8.23.0",
     "typebox": "1.1.39"
   },

@@ -1253,6 +1253,69 @@ describe("AdminBot mock service", () => {
     expect(body.unplaced.map((entry) => entry.name)).toContain("Zedunia");
   });
 
+  it("places a member by a fresh login city for an admin, and only by country for anyone else", async () => {
+    const { baseUrl } = await startService();
+    // Incomplete, so the fixture profile's roster location does not outrank the login.
+    await seedMember(baseUrl, "ada", { name: "Ada", privilege_level: "member" }, false);
+    // Synthetic geolocation written straight to the store, the way a sign-in would record it,
+    // so no test ever asks a real IP-lookup service where anybody is.
+    const now = new Date().toISOString();
+    await mockFor(baseUrl).store.patchLabMemberAuthFields("ada", {
+      last_login_city: "Lyon",
+      last_login_country: "FR",
+      last_login_at: now,
+      updated_at: now,
+    });
+
+    const admin = await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() });
+    const adminBody = (await admin.json()) as {
+      places: Array<{ key: string; label: string; members: Array<{ source: string }> }>;
+    };
+    expect(adminBody.places[0]).toMatchObject({ key: "lyon", label: "Lyon" });
+    expect(adminBody.places[0]?.members[0]?.source).toBe("login");
+
+    // The ISO code an IPinfo core lookup stores still places the member, at country level, and
+    // the city -- held to the member and admins -- never reaches the summary.
+    const anonymousText = await (await fetch(`${baseUrl}/member-map`)).text();
+    expect(anonymousText).not.toContain("Lyon");
+    const anonymousBody = JSON.parse(anonymousText) as {
+      places: Array<{ key: string; label: string; count: number }>;
+    };
+    expect(anonymousBody.places[0]).toMatchObject({
+      key: "country:france",
+      label: "France",
+      count: 1,
+    });
+  });
+
+  it("credits the local IP database on the map, in both shapes, only when one is configured", async () => {
+    // A path that does not exist: selecting the provider never opens the file, and nothing here
+    // signs in, so no lookup ever runs.
+    const { baseUrl } = await startService({
+      geoipMmdbPath: path.join(os.tmpdir(), "adminbot-test-missing", "dbip-city-lite.mmdb"),
+    });
+    await seedMember(baseUrl, "ada", {
+      name: "Ada",
+      privilege_level: "member",
+      location: "Toronto",
+    });
+    const credit = { text: "IP geolocation by DB-IP", url: "https://db-ip.com" };
+    const admin = (await (
+      await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() })
+    ).json()) as { attribution?: unknown };
+    expect(admin.attribution).toEqual(credit);
+    const anonymous = (await (await fetch(`${baseUrl}/member-map`)).json()) as {
+      attribution?: unknown;
+    };
+    expect(anonymous.attribution).toEqual(credit);
+
+    const { baseUrl: plainUrl } = await startService();
+    const plain = (await (await fetch(`${plainUrl}/member-map`)).json()) as {
+      attribution?: unknown;
+    };
+    expect(plain.attribution).toBeUndefined();
+  });
+
   it("reports a 503 for a map refresh when no slack lookup is configured", async () => {
     const { baseUrl } = await startService();
     const response = await fetch(`${baseUrl}/member-map/refresh`, {

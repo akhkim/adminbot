@@ -48,17 +48,28 @@ export const directoryRoutes: readonly Route[] = [
     // deliberately, not a side effect of building the view, so only an admin gets the version
     // with who is where. Everyone else -- anonymous or a signed-in non-admin member alike --
     // gets a headcount per city.
-    const result = service.memberMap();
+    //
+    // The login *city* follows the same line: it is in adminBotInferredLocationMemberFields, held to
+    // the member and the admins, so only the admin map may place anybody by it. A summary is built
+    // without it and falls back to the login country -- otherwise a headcount on "Lyon" would
+    // publish the city that field is withheld to protect.
+    const privileged = isPrivileged(principal);
+    const result = service.memberMap({ loginCity: privileged });
     if (!result.ok) {
       sendServiceResult(res, result);
       return;
     }
+    // The provider's licence wants its credit wherever the data shows, and a country pin on the
+    // summary can come from a sign-in as much as a city on the full map can.
+    const attribution = ctx.ipGeolocationAttribution
+      ? { attribution: ctx.ipGeolocationAttribution }
+      : {};
     sendJson(
       res,
       200,
-      isPrivileged(principal)
-        ? { mode: "full", ...result.payload }
-        : { mode: "summary", ...toPublicMemberMapSummary(result.payload) },
+      privileged
+        ? { mode: "full", ...result.payload, ...attribution }
+        : { mode: "summary", ...toPublicMemberMapSummary(result.payload), ...attribution },
     );
   }),
   post(
