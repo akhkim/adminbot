@@ -60,7 +60,7 @@ function createProps(overrides: Partial<QuickSettingsProps> = {}): QuickSettings
     onBrowserEnabledToggle: vi.fn(),
     onToolProfileChange: vi.fn(),
     theme: "claw",
-    themeMode: "system",
+    themeMode: "dark",
     hasCustomTheme: false,
     customThemeLabel: null,
     borderRadius: 50,

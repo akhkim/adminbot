@@ -12,7 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveTheme, type ThemeMode, type ThemeName } from "./theme.ts";
+import { parseThemeSelection, resolveTheme, type ThemeName } from "./theme.ts";
 
 const uiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const indexHtml = fs.readFileSync(path.join(uiRoot, "index.html"), "utf8");
@@ -64,27 +64,36 @@ afterEach(() => {
 });
 
 describe("the pre-paint bootstrap agrees with theme.ts", () => {
-  const cases: Array<{ theme: ThemeName; mode: ThemeMode; systemLight: boolean }> = [
-    { theme: "claw", mode: "dark", systemLight: false },
-    { theme: "claw", mode: "dark", systemLight: true },
-    { theme: "claw", mode: "light", systemLight: false },
-    { theme: "claw", mode: "light", systemLight: true },
-    { theme: "claw", mode: "system", systemLight: false },
-    { theme: "claw", mode: "system", systemLight: true },
-    { theme: "custom", mode: "light", systemLight: true },
-    { theme: "custom", mode: "system", systemLight: false },
+  // `stored` is the raw persisted mode, which can still be the removed "system" value.
+  const cases: Array<{ theme: ThemeName; stored: string; systemLight: boolean }> = [
+    { theme: "claw", stored: "dark", systemLight: false },
+    { theme: "claw", stored: "dark", systemLight: true },
+    { theme: "claw", stored: "light", systemLight: false },
+    { theme: "claw", stored: "light", systemLight: true },
+    { theme: "claw", stored: "system", systemLight: false },
+    { theme: "claw", stored: "system", systemLight: true },
+    { theme: "custom", stored: "light", systemLight: true },
+    { theme: "custom", stored: "system", systemLight: false },
   ];
 
-  for (const { theme, mode, systemLight } of cases) {
-    it(`${theme}/${mode} with system ${systemLight ? "light" : "dark"}`, () => {
-      expect(runBootstrap({ theme, themeMode: mode }, systemLight)).toBe(resolveTheme(theme, mode));
+  for (const { theme, stored, systemLight } of cases) {
+    it(`${theme}/${stored} with system ${systemLight ? "light" : "dark"}`, () => {
+      const { mode } = parseThemeSelection(theme, stored);
+      expect(runBootstrap({ theme, themeMode: stored }, systemLight)).toBe(
+        resolveTheme(theme, mode),
+      );
     });
   }
 
+  it("paints a stored system preference dark, even on a light machine", () => {
+    expect(runBootstrap({ theme: "claw", themeMode: "dark" }, true)).toBe("dark");
+    // Not rescued by a legacy light theme name either: "system" was the explicit choice.
+    expect(runBootstrap({ theme: "lightTheme", themeMode: "dark" }, true)).toBe("dark");
+  });
+
   it("matches the resolver for somebody who has never chosen anything", () => {
     expect(runBootstrap(undefined, false)).toBe("dark");
-    // No stored setting is not a stored preference for light, so a light machine still gets dark
-    // until somebody picks "System" -- the same answer resolveTheme gives for the default mode.
+    // No stored setting is not a stored preference for light, so a light machine still gets dark.
     expect(runBootstrap(undefined, true)).toBe(resolveTheme("claw", "dark"));
   });
 

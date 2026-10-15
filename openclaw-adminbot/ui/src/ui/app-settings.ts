@@ -121,7 +121,6 @@ type SettingsHost = ProfileGateState & {
   // Signed-out overlays, restored from the URL on popstate alongside the tab.
   authGateVisible?: boolean;
   guestReimbursements?: boolean;
-  systemThemeCleanup?: (() => void) | null;
   pendingGatewayToken?: string | null;
   passwordResetToken?: string;
   loginMode?: import("./adminbot/auth/flow.ts").LoginMode;
@@ -669,7 +668,7 @@ export function syncThemeWithSettings(host: SettingsHost) {
       ? "claw"
       : (host.settings.theme ?? "claw");
   host.theme = normalizedTheme;
-  host.themeMode = host.settings.themeMode ?? "system";
+  host.themeMode = host.settings.themeMode ?? "dark";
   if (normalizedTheme !== host.settings.theme) {
     host.settings = { ...host.settings, theme: normalizedTheme };
     saveSettings(host.settings);
@@ -677,12 +676,6 @@ export function syncThemeWithSettings(host: SettingsHost) {
   applyResolvedTheme(host, resolveTheme(host.theme, host.themeMode));
   applyBorderRadius(host.settings.borderRadius ?? 50);
   applyTextScale(host.settings.textScale);
-  syncSystemThemeListener(host);
-}
-
-export function detachThemeListener(host: SettingsHost) {
-  host.systemThemeCleanup?.();
-  host.systemThemeCleanup = null;
 }
 
 // Must stay in sync with the --radius-* tokens in ui/src/styles/base.css: this writes them
@@ -727,41 +720,6 @@ export function applyResolvedTheme(host: SettingsHost, resolved: ResolvedTheme) 
   const family = resolved === "light" ? "light" : "dark";
   root.dataset.themeMode = family;
   root.style.colorScheme = family;
-}
-
-function syncSystemThemeListener(host: SettingsHost) {
-  // Clean up existing listener if mode is not "system"
-  if (host.themeMode !== "system") {
-    host.systemThemeCleanup?.();
-    host.systemThemeCleanup = null;
-    return;
-  }
-
-  // Skip if listener already attached for this host
-  if (host.systemThemeCleanup) {
-    return;
-  }
-
-  if (typeof globalThis.matchMedia !== "function") {
-    return;
-  }
-
-  const mql = globalThis.matchMedia("(prefers-color-scheme: light)");
-  const onChange = () => {
-    if (host.themeMode !== "system") {
-      return;
-    }
-    applyResolvedTheme(host, resolveTheme(host.theme, "system"));
-  };
-  if (typeof mql.addEventListener === "function") {
-    mql.addEventListener("change", onChange);
-    host.systemThemeCleanup = () => mql.removeEventListener("change", onChange);
-    return;
-  }
-  if (typeof mql.addListener === "function") {
-    mql.addListener(onChange);
-    host.systemThemeCleanup = () => mql.removeListener(onChange);
-  }
 }
 
 export function syncTabWithLocation(host: SettingsHost, replace: boolean) {

@@ -264,7 +264,7 @@ describe("loadSettings default gateway URL derivation", () => {
       sessionKey: "main",
       lastActiveSessionKey: "main",
       theme: "claw",
-      themeMode: "system",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       chatAutoScroll: "near-bottom",
@@ -296,7 +296,7 @@ describe("loadSettings default gateway URL derivation", () => {
       sessionKey: "main",
       lastActiveSessionKey: "main",
       theme: "claw",
-      themeMode: "system",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       chatAutoScroll: "near-bottom",
@@ -313,7 +313,7 @@ describe("loadSettings default gateway URL derivation", () => {
       sessionKey: "main",
       lastActiveSessionKey: "main",
       theme: "claw",
-      themeMode: "system",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       chatAutoScroll: "near-bottom",
@@ -343,7 +343,7 @@ describe("loadSettings default gateway URL derivation", () => {
       sessionKey: "main",
       lastActiveSessionKey: "main",
       theme: "claw",
-      themeMode: "system",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       splitRatio: 0.6,
@@ -360,7 +360,7 @@ describe("loadSettings default gateway URL derivation", () => {
     expect(JSON.parse(localStorage.getItem(scopedKey) ?? "{}")).toEqual({
       gatewayUrl: gwUrl,
       theme: "claw",
-      themeMode: "system",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       chatAutoScroll: "near-bottom",
@@ -395,7 +395,7 @@ describe("loadSettings default gateway URL derivation", () => {
       sessionKey: "main",
       lastActiveSessionKey: "main",
       theme: "claw",
-      themeMode: "system",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       chatAutoScroll: "near-bottom",
@@ -416,7 +416,7 @@ describe("loadSettings default gateway URL derivation", () => {
       sessionKey: "main",
       lastActiveSessionKey: "main",
       theme: "claw",
-      themeMode: "system",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       chatAutoScroll: "near-bottom",
@@ -498,7 +498,7 @@ describe("loadSettings default gateway URL derivation", () => {
       sessionKey: "main",
       lastActiveSessionKey: "main",
       theme: "claw",
-      themeMode: "system",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       splitRatio: 0.6,
@@ -513,7 +513,7 @@ describe("loadSettings default gateway URL derivation", () => {
       sessionKey: "main",
       lastActiveSessionKey: "main",
       theme: "claw",
-      themeMode: "system",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       splitRatio: 0.6,
@@ -561,6 +561,27 @@ describe("loadSettings default gateway URL derivation", () => {
     expect(persisted.navWidth).toBe(320);
   });
 
+  it("defaults to dark and migrates a stored system preference to dark", () => {
+    setTestLocation({
+      protocol: "https:",
+      host: "gateway.example:8443",
+      pathname: "/",
+    });
+    expect(loadSettings().themeMode).toBe("dark");
+
+    localStorage.setItem(
+      "openclaw.control.settings.v1",
+      JSON.stringify({ theme: "claw", themeMode: "system" }),
+    );
+    expect(loadSettings().themeMode).toBe("dark");
+
+    localStorage.setItem(
+      "openclaw.control.settings.v1",
+      JSON.stringify({ theme: "claw", themeMode: "light" }),
+    );
+    expect(loadSettings().themeMode).toBe("light");
+  });
+
   it("persists the browser-local custom theme payload when present", () => {
     setTestLocation({
       protocol: "https:",
@@ -576,7 +597,7 @@ describe("loadSettings default gateway URL derivation", () => {
       sessionKey: "main",
       lastActiveSessionKey: "main",
       theme: "custom",
-      themeMode: "system",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       splitRatio: 0.6,
@@ -650,7 +671,7 @@ describe("loadSettings default gateway URL derivation", () => {
       sessionKey: "agent:test_old:main",
       lastActiveSessionKey: "agent:test_old:main",
       theme: "claw",
-      themeMode: "system",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       splitRatio: 0.6,
@@ -693,7 +714,7 @@ describe("loadSettings default gateway URL derivation", () => {
       sessionKey: "agent:current:main",
       lastActiveSessionKey: "agent:current:main",
       theme: "claw",
-      themeMode: "system",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       splitRatio: 0.6,
