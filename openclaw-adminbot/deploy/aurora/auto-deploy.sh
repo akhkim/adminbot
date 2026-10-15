@@ -226,6 +226,24 @@ fi
 [[ -f "$new_release/dist/entry.js" || -f "$new_release/dist/entry.mjs" ]] || die "build finished without dist/entry"
 ln -sfn -- "$STATE" "$new_release/state"
 
+# The deadline cron jobs (refresh-venues, refresh-matches) rewrite these inside the live release,
+# through `current`, while a release ships only the copy committed with it. Without carrying the
+# rewritten copy forward, every deploy puts the Deadlines board back on the committed snapshot until
+# the next daily refresh. A live copy still identical to what its commit shipped was never
+# rewritten, so the new commit's copy -- possibly a deliberately updated snapshot -- wins.
+DEADLINE_CONTENT="extensions/adminbot/content/deadlines"
+for collected in deadlines.json matches.json; do
+  live_copy="$live_release/$DEADLINE_CONTENT/$collected"
+  [[ -f "$live_copy" && ! -L "$live_copy" ]] || continue
+  if git -C "$SOURCE" show "${live_commit}:openclaw-adminbot/$DEADLINE_CONTENT/$collected" 2>/dev/null |
+    cmp -s - "$live_copy"; then
+    continue
+  fi
+  mkdir -p -- "$new_release/$DEADLINE_CONTENT"
+  cp -p -- "$live_copy" "$new_release/$DEADLINE_CONTENT/$collected"
+  printf 'Carried %s forward from %s\n' "$collected" "$live_name"
+done
+
 # ---------------------------------------------------------------------------------------------
 # Swap. A cancelled job must not leave the units half-rewritten, so interrupts are ignored from
 # here until the swap (or its rollback) is complete.

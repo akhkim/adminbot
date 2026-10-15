@@ -93,6 +93,12 @@ that name the release, restarts AdminBot and the Gateway (an outage of a few sec
 fail, it restores the previous release and units and fails the job. A rollback restores code, not
 the database.
 
+The deadline cron jobs rewrite `extensions/adminbot/content/deadlines/deadlines.json` (and
+`matches.json`) inside the live release, so the deploy copies those into the new release before the
+swap; otherwise every deploy would put the Deadlines board back on the committed snapshot until the
+next daily refresh. A live copy still identical to what its commit shipped was never refreshed, and
+the new commit's copy is used instead.
+
 It refuses, without touching the services, when:
 
 - the commit does not contain the live release's commit. Merge a `deploy/*` branch into `main`
