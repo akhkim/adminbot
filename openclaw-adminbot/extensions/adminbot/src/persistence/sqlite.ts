@@ -41,7 +41,6 @@ import type {
 } from "../contracts/badges.js";
 import type { AdminBotConferenceTripRecord } from "../contracts/conference-trips.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
-import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
 import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewResolution,
@@ -81,7 +80,6 @@ import type { ReferenceScan } from "../contracts/reference-scans.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import {
   AdminBotService,
-  type AdminBotActionExecutor,
   type AdminBotLabMemberSummary,
   type AdminBotListPage,
   type AdminBotMeetingArtifactRecord,
@@ -161,11 +159,13 @@ const PAPER_SEARCH = `(
     WHERE instr(adminbot_lower(author.value), ?) > 0)
 )`;
 
-export type AdminBotSqliteServiceOptions = {
+// Every service option, not a hand-picked subset. This used to list three of them, and
+// createAdminBotMockService -- the production path whenever it has a databasePath -- spreads its
+// whole option set in here, so whatever the list missed was dropped without a type error: the
+// runtime deadline dataset among them, which pinned /deadlines to the snapshot compiled into the
+// release while the daily collection rewrote deadlines.json underneath it.
+export type AdminBotSqliteServiceOptions = AdminBotServiceOptions & {
   databasePath: string;
-  auditRetentionDays?: number;
-  executor?: AdminBotActionExecutor;
-  driveProbe?: AdminBotDriveProbe;
 };
 
 export function createAdminBotSqliteService(options: AdminBotSqliteServiceOptions) {
@@ -178,22 +178,20 @@ export function createAdminBotSqliteService(options: AdminBotSqliteServiceOption
   };
 }
 
-function serviceOptions(options: AdminBotSqliteServiceOptions): AdminBotServiceOptions {
+function serviceOptions({
+  databasePath: _databasePath,
+  ...options
+}: AdminBotSqliteServiceOptions): AdminBotServiceOptions {
+  // Read here rather than in the kernel so the service stays free of process globals: both
+  // callers (the API server and the hourly email script) build the service through this factory
+  // and both already load ~/.openclaw/.env before they do. An explicit option still wins.
+  const botEmail = options.paperflowBotEmail ?? process.env.ADMINBOT_BOT_EMAIL?.trim();
+  const priorityMemberId =
+    options.paperflowPriorityMemberId ?? process.env.ADMINBOT_PAPERFLOW_PRIORITY_MEMBER_ID?.trim();
   return {
-    ...(typeof options.auditRetentionDays === "number"
-      ? { auditRetentionDays: options.auditRetentionDays }
-      : {}),
-    ...(options.executor ? { executor: options.executor } : {}),
-    ...(options.driveProbe ? { driveProbe: options.driveProbe } : {}),
-    // Read here rather than in the kernel so the service stays free of process globals: both
-    // callers (the API server and the hourly email script) build the service through this factory
-    // and both already load ~/.openclaw/.env before they do.
-    ...(process.env.ADMINBOT_BOT_EMAIL?.trim()
-      ? { paperflowBotEmail: process.env.ADMINBOT_BOT_EMAIL.trim() }
-      : {}),
-    ...(process.env.ADMINBOT_PAPERFLOW_PRIORITY_MEMBER_ID?.trim()
-      ? { paperflowPriorityMemberId: process.env.ADMINBOT_PAPERFLOW_PRIORITY_MEMBER_ID.trim() }
-      : {}),
+    ...options,
+    ...(botEmail ? { paperflowBotEmail: botEmail } : {}),
+    ...(priorityMemberId ? { paperflowPriorityMemberId: priorityMemberId } : {}),
   };
 }
 
