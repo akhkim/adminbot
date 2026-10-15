@@ -272,6 +272,45 @@ describe("Aurora auto-deploy", () => {
     expect(lockHeld(f)).toBe(true);
   });
 
+  describe("collected deadline data", () => {
+    const content = "extensions/adminbot/content/deadlines";
+    const read = (release: string, name: string) =>
+      fs.readFileSync(path.join(release, content, name), "utf8");
+
+    it("carries files the cron jobs rewrote in the live release into the new one", () => {
+      const f = fixture();
+      const committed = commit(f.repo, "snapshot", {
+        [`openclaw-adminbot/${content}/deadlines.json`]: '{"items":["committed"]}\n',
+      });
+      // The cron refreshed the live release in place; matches.json is not committed at all.
+      write(path.join(f.liveRelease, content, "deadlines.json"), '{"items":["refreshed"]}\n');
+      write(path.join(f.liveRelease, content, "matches.json"), '{"matches":["refreshed"]}\n');
+      const result = deploy(f, committed);
+      expect(result.status).toBe(0);
+      expect(read(current(f), "deadlines.json")).toBe('{"items":["refreshed"]}\n');
+      expect(read(current(f), "matches.json")).toBe('{"matches":["refreshed"]}\n');
+      expect(result.stdout).toContain("Carried deadlines.json forward");
+      // The previous release keeps its own copy for a rollback.
+      expect(read(f.liveRelease, "deadlines.json")).toBe('{"items":["refreshed"]}\n');
+    });
+
+    it("ships the new commit's snapshot when the live copy was never rewritten", () => {
+      const f = fixture();
+      const v1 = commit(f.repo, "snapshot v1", {
+        [`openclaw-adminbot/${content}/deadlines.json`]: '{"items":["v1"]}\n',
+      });
+      expect(deploy(f, v1).status).toBe(0);
+      expect(read(current(f), "deadlines.json")).toBe('{"items":["v1"]}\n');
+      const v2 = commit(f.repo, "snapshot v2", {
+        [`openclaw-adminbot/${content}/deadlines.json`]: '{"items":["v2"]}\n',
+      });
+      const result = deploy(f, v2);
+      expect(result.status).toBe(0);
+      expect(read(current(f), "deadlines.json")).toBe('{"items":["v2"]}\n');
+      expect(result.stdout).not.toContain("Carried");
+    });
+  });
+
   it("has no default deployment root", () => {
     const f = fixture();
     const result = deploy(f, f.next, { AURORA_DEPLOY_ROOT: "" });
