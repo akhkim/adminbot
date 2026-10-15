@@ -132,7 +132,7 @@
     {
       "name": "adminbot-deadline-calendar",
       "description": "Publish conference deadlines to the lab calendar, after the venue refresh they read",
-      "cron": "40 6 * * 1",
+      "cron": "50 7 * * 1",
       "argv": [
         "bash",
         "scripts/adminbot-deadline-cron.sh",
@@ -143,7 +143,7 @@
     {
       "name": "adminbot-roster-sync",
       "description": "Reconcile roster membership and Member Type against the lab spreadsheet, and propose the access removals a type change implies",
-      "cron": "10 6 * * *",
+      "cron": "0 6 * * *",
       "argv": [
         "bash",
         "scripts/adminbot-roster-sync-cron.sh"
@@ -184,7 +184,7 @@
     {
       "name": "adminbot-graduations",
       "description": "Confirm finishing months, chase alumni transitions, and arrange the ceremony",
-      "cron": "0 8 * * 1",
+      "cron": "15 8 * * 1",
       "argv": [
         "bash",
         "scripts/adminbot-graduations-cron.sh"
@@ -194,7 +194,7 @@
     {
       "name": "adminbot-city-channels",
       "description": "Add members to their city Slack channel once a city reaches four",
-      "cron": "0 7 * * 1,4",
+      "cron": "10 7 * * 1,4",
       "argv": [
         "bash",
         "scripts/adminbot-city-channels-cron.sh"
@@ -294,7 +294,7 @@
     {
       "name": "adminbot-meeting-invites",
       "description": "Put each #meeting-xxx and #proj-xxx channel's members on that meeting's calendar invite; proposes, never invites",
-      "cron": "50 10 * * 1-5",
+      "cron": "15 10 * * 1-5",
       "argv": [
         "bash",
         "scripts/adminbot-meeting-invites-cron.sh"
@@ -314,7 +314,7 @@
     {
       "name": "adminbot-rec-letter-channel",
       "description": "Add applicants to #help-rec-letters within three months of letter deadlines; propose expired removals",
-      "cron": "20 * * * *",
+      "cron": "22 * * * *",
       "argv": [
         "bash",
         "scripts/adminbot-rec-letter-channel-cron.sh"
@@ -394,7 +394,7 @@
     {
       "name": "adminbot-local-event-audience",
       "description": "Reconcile the Zurich lunch guest list with where members are",
-      "cron": "0 7 * * 1",
+      "cron": "40 7 * * 1",
       "argv": [
         "bash",
         "scripts/adminbot-local-event-audience-cron.sh"
@@ -425,7 +425,7 @@
     {
       "name": "adminbot-opportunity-refresh",
       "description": "Weekly re-read of each Opportunities page; files proposals, never publishes",
-      "cron": "40 6 * * 1",
+      "cron": "15 7 * * 1",
       "argv": [
         "bash",
         "scripts/adminbot-opportunity-cron.sh",
