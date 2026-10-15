@@ -50,6 +50,19 @@ async function startLab({ readers = true }: { readers?: boolean } = {}): Promise
             { channel: "jinesis-active", userIds: [] },
             { channel: "random-active", userIds: [] },
           ],
+          // A synthetic one-account workspace; the real Slack API is never called.
+          readSlackDirectory: async () => [
+            {
+              id: "USYNTH",
+              deleted: false,
+              is_bot: false,
+              is_app_user: false,
+              is_restricted: false,
+              is_ultra_restricted: false,
+              real_name: "Synthetic Person",
+              email: "synthetic@lab.test",
+            },
+          ],
         }
       : {}),
     sensitiveInfoPath,
@@ -133,7 +146,7 @@ async function startLab({ readers = true }: { readers?: boolean } = {}): Promise
 }
 
 describe("active-channel cleanup authorization", () => {
-  it.each(["active-channels", "calendar-membership"])(
+  it.each(["active-channels", "calendar-membership", "slack-roster"])(
     "allows service/admin and denies members/anonymous for %s",
     async (endpoint) => {
       const { baseUrl, tokens } = await startLab();
@@ -161,6 +174,7 @@ describe("active-channel cleanup authorization", () => {
   it.each([
     ["active-channels", "Slack active-channel reader is unavailable"],
     ["calendar-membership", "Calendar membership reader is unavailable"],
+    ["slack-roster", "Slack user directory reader is unavailable"],
   ])("fails closed with 503 when the %s reader is not wired", async (endpoint, message) => {
     const { baseUrl, tokens } = await startLab({ readers: false });
     for (const token of [SERVICE_TOKEN, tokens.zhijing]) {
@@ -175,7 +189,7 @@ describe("active-channel cleanup authorization", () => {
     }
   });
 
-  it.each(["active-channels", "calendar-membership"])(
+  it.each(["active-channels", "calendar-membership", "slack-roster"])(
     "refuses a member session for %s before reading anything",
     async (endpoint) => {
       const { baseUrl, tokens } = await startLab({ readers: false });
@@ -189,4 +203,20 @@ describe("active-channel cleanup authorization", () => {
       );
     },
   );
+
+  // The cron may run the guarded pass but not override the guard: force is an admin decision.
+  it("refuses force from the service token and accepts it from an admin session", async () => {
+    const { baseUrl, tokens } = await startLab();
+    for (const [token, expected] of [
+      [SERVICE_TOKEN, 403],
+      [tokens.zhijing, 200],
+    ] as const) {
+      const response = await fetch(`${baseUrl}/members/slack-roster/sync`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ force: true, dry_run: true }),
+      });
+      expect(response.status).toBe(expected);
+    }
+  });
 });

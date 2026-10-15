@@ -463,6 +463,11 @@ import {
   type ActiveChannelReader,
 } from "./service.active-channels.js";
 import {
+  runSlackRosterSync,
+  type SlackRosterSyncOptions,
+} from "./service.slack-roster-sync.js";
+import type { SlackDirectoryReader } from "../workflows/members/slack-roster-sync.js";
+import {
   calendarMembershipWriteError,
   grantLabCalendarAccess,
   ineligibleCalendarEmails,
@@ -1205,6 +1210,9 @@ const DEFAULT_ACTION_POLICIES = {
   // Raises a member's access level and grants what it brings, so an admin approves it; the
   // approving admin is also who approves each step it runs.
   "lab_member.enroll": approvalPolicy("T3", ["admin"]),
+  // A placeholder/test account the Slack roster sync wants gone. T3 so it can never ride the auto
+  // tier: the sync only proposes, and an admin approving it is the only way a record is deleted.
+  "lab_member.remove": approvalPolicy("T3", ["admin"]),
   // Auto (T1), on the same reasoning as `slack.invite_to_channel`: nothing about where this goes
   // came from a caller. The recipient is the funder's office address from settings, the
   // attachments are the forms the service just generated, and the send only happens once every
@@ -2873,6 +2881,38 @@ export class AdminBotService {
         evidence_recorded: String(applied.payload.evidence_recorded),
       };
       handled = true;
+    } else if (proposal.type === "lab_member.remove") {
+      // In-service for the same reason as the two arms above: deleting a roster record is a write
+      // to this store, and no connector could perform it.
+      const removal = labMemberRemovalPayload(proposal);
+      if (!removal) {
+        return this.executionFailure(proposal, 400, "member removal payload is invalid");
+      }
+      const removedBy = proposal.approvals.at(-1)?.approver_id;
+      if (!removedBy) {
+        return this.executionFailure(proposal, 409, "member removal has no named approver");
+      }
+      const member = this.store.getLabMember(removal.member_id);
+      if (!member) {
+        return this.executionFailure(proposal, 404, "member not found");
+      }
+      // The record may have been relinked or renamed while the approval sat. Removing whoever now
+      // holds the id would delete somebody the admin never looked at, so a drift fails instead.
+      if ((member.slack_user_id?.trim() ?? "") !== removal.slack_user_id) {
+        return this.executionFailure(
+          proposal,
+          409,
+          "member's Slack account changed since the removal was proposed",
+        );
+      }
+      // Never forced: a credentialed account, the head professor and the approver themselves are
+      // refused here exactly as on the Members tab.
+      const deleted = this.deleteLabMember({ memberId: member.id, actorId: removedBy });
+      if (!deleted.ok) {
+        return this.executionFailure(proposal, deleted.status, deleted.error.message);
+      }
+      artifacts = { deleted_id: deleted.payload.deleted_id };
+      handled = true;
     } else {
       if (!this.options.executor) {
         return this.executionFailure(proposal, 501, "no live connector is configured");
@@ -3344,6 +3384,31 @@ export class AdminBotService {
       });
     }
     return this.activeChannelCleanup;
+  }
+
+  private slackRosterSync: ReturnType<typeof runSlackRosterSync> | undefined;
+
+  /**
+   * The daily Slack roster sync (workflows/members/slack-roster-sync.ts). Overlapping cron and
+   * manual runs share one pass, so two of them cannot both create the same new member.
+   */
+  syncSlackRoster(read: SlackDirectoryReader, options: SlackRosterSyncOptions) {
+    if (!this.slackRosterSync) {
+      this.slackRosterSync = runSlackRosterSync(
+        {
+          listLabMembers: () => this.store.listLabMembers(),
+          listProposalsByType: (type) => this.store.listProposalsByType(type),
+          upsertLabMember: (member, origin) => this.upsertLabMember(member, origin),
+          createProposal: (proposal) => this.createProposal(proposal),
+          recordAudit: (event) => this.recordAudit(event),
+        },
+        read,
+        options,
+      ).finally(() => {
+        this.slackRosterSync = undefined;
+      });
+    }
+    return this.slackRosterSync;
   }
 
   /**
@@ -15067,6 +15132,15 @@ function clampReportDays(days: number | undefined, fallback = 30): number {
     return fallback;
   }
   return Math.min(365, Math.max(1, Math.floor(days)));
+}
+
+function labMemberRemovalPayload(
+  proposal: AdminBotStoredProposal,
+): { member_id: string; slack_user_id: string } | undefined {
+  const payload = proposal.proposed_payload as Record<string, unknown> | undefined;
+  const memberId = typeof payload?.member_id === "string" ? payload.member_id.trim() : "";
+  const slackUserId = typeof payload?.slack_user_id === "string" ? payload.slack_user_id.trim() : "";
+  return memberId ? { member_id: memberId, slack_user_id: slackUserId } : undefined;
 }
 
 function serviceError<T>(status: number, message: string): AdminBotServiceResponse<T> {

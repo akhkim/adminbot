@@ -17,6 +17,7 @@ import type { AdminBotCvScanDeps } from "../../cv-scan.js";
 import type { LlmLoadRouter } from "../../kernel/llm-router.js";
 import { ReferenceScans } from "../../kernel/reference-scans.js";
 import type { ActiveChannelReader } from "../../kernel/service.active-channels.js";
+import type { SlackDirectoryReader } from "../../workflows/members/slack-roster-sync.js";
 import { AdminBotService, type AdminBotServiceStore } from "../../kernel/service.js";
 import type { AdminBotActionExecutor, AdminBotServiceOptions } from "../../kernel/service.js";
 import type { FailedExternalRequestLedger } from "../../persistence/failed-requests.js";
@@ -86,6 +87,8 @@ export type AdminBotRouteContext = {
   readCalendarMembership?: CalendarMembershipReader;
   readCalendarAccess?: CalendarAccessReader;
   readActiveChannels?: ActiveChannelReader;
+  readSlackDirectory?: SlackDirectoryReader;
+  slackPlaceholderUserIds?: ReadonlySet<string>;
   fetchSlackChannelNames?: () => Promise<string[]>;
   readCalendarEvents?: import("../../workflows/calendar/events.js").CalendarEventsReader;
   draftCalendarEvent?: import("../../workflows/calendar/event-draft.js").EventDraftRunner;
@@ -341,6 +344,10 @@ export type AdminBotMockServiceOptions = {
   readCalendarAccess?: CalendarAccessReader;
   // Complete human membership of the two active channels; unavailable reads fail closed.
   readActiveChannels?: ActiveChannelReader;
+  // The whole Slack workspace (users.list) for the daily roster sync; unset answers 503.
+  readSlackDirectory?: SlackDirectoryReader;
+  // Slack user IDs an admin has marked as placeholder/test accounts (ADMINBOT_SLACK_PLACEHOLDER_USER_IDS).
+  slackPlaceholderUserIds?: ReadonlySet<string>;
   // Every open public channel name in the workspace, for the project form's "this channel already
   // exists" check. Injected like the Slack reads above: reaching Slack is a composition-layer
   // concern, and left unset the route answers 503 so the form can say the check is unavailable

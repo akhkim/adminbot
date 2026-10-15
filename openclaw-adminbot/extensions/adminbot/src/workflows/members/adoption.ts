@@ -99,6 +99,7 @@ const SKIP_FIELDS = new Set([
   "slack_location_updated_at",
   "slack_messages_7d",
   "slack_activity_checked_at",
+  "slack_deactivated_at",
   "profile_photo_review",
   "cv_snapshot",
 ]);

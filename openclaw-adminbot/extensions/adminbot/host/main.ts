@@ -31,6 +31,10 @@ import { createAdminBotOpenReviewExecutor } from "../src/connectors/openreview.j
 import { createAdminBotOverleafExecutor } from "../src/connectors/overleaf.js";
 import { createActiveChannelReader } from "../src/connectors/slack-active-channels.js";
 import {
+  createSlackUserDirectoryReader,
+  slackPlaceholderUserIds,
+} from "../src/connectors/slack-users.js";
+import {
   adminBotSlackBotToken,
   createAdminBotSlackAdminExecutor,
   listSlackChannelNames,
@@ -868,6 +872,8 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     readCalendarMembership: createGogCalendarMembershipReader(),
     readCalendarAccess: createGogCalendarAccessReader(),
     readActiveChannels: createActiveChannelReader(),
+    readSlackDirectory: createSlackUserDirectoryReader(),
+    slackPlaceholderUserIds: slackPlaceholderUserIds(),
     fetchSlackChannelNames: () =>
       listSlackChannelNames(
         adminBotSlackBotToken(process.env),

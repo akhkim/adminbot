@@ -448,6 +448,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       ? { readCalendarMembership: options.readCalendarMembership }
       : {}),
     ...(options.readActiveChannels ? { readActiveChannels: options.readActiveChannels } : {}),
+    ...(options.readSlackDirectory ? { readSlackDirectory: options.readSlackDirectory } : {}),
+    ...(options.slackPlaceholderUserIds
+      ? { slackPlaceholderUserIds: options.slackPlaceholderUserIds }
+      : {}),
     ...(options.fetchSlackChannelNames
       ? { fetchSlackChannelNames: options.fetchSlackChannelNames }
       : {}),

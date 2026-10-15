@@ -151,6 +151,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-slack-roster-sync",
+      "description": "Daily: reconcile the roster against the Slack workspace (users.list); flag deactivated accounts and propose placeholder removals for admin approval",
+      "cron": "25 6 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-slack-roster-sync-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-onboarding-sheet-sweep",
       "description": "Daily: create members for new contact-spreadsheet rows and report who is owed an onboarding mail",
       "cron": "40 6 * * *",
