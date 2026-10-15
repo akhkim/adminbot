@@ -767,7 +767,8 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
       ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
-          ${renderWorkSummary(state)} ${renderMemberMap(state.adminBotMemberMap ?? null)}
+          ${renderWorkSummary(state)}
+          ${renderMemberMap(state.adminBotMemberMap ?? null, { now: Date.now() })}
         </div>
       </section>
       ${renderNextDeadlines(state)}

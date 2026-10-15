@@ -12,16 +12,24 @@ describe("isDoNotContact", () => {
     "Jane (do not contact)",
     "DNC - old account",
     "old account [dnc]",
+    "Null",
+    " NULL ",
   ])("reads %j as an opt-out", (name) => {
     expect(isDoNotContactName(name)).toBe(true);
   });
 
-  it.each(["Ada Lovelace", "Dncan Smith", "Contact Me", "Donna Notley", "", undefined, null])(
-    "leaves %j alone",
-    (name) => {
-      expect(isDoNotContactName(name)).toBe(false);
-    },
-  );
+  it.each([
+    "Ada Lovelace",
+    "Dncan Smith",
+    "Contact Me",
+    "Donna Notley",
+    "Nullah",
+    "",
+    undefined,
+    null,
+  ])("leaves %j alone", (name) => {
+    expect(isDoNotContactName(name)).toBe(false);
+  });
 
   it("honours the request in preferred_name as well as name", () => {
     expect(isDoNotContact({ name: "Ada", preferred_name: "do not contact" })).toBe(true);

@@ -1287,21 +1287,36 @@ counts }` -- names included, plus each member's Slack avatar and last login
 regardless: publishing a headcount is one thing, triggering a real Slack API
 call on someone else's behalf is another.
 
-A member is placed by the most specific answer any source gives, and between answers equally
-specific, by the more trusted source. A country never outranks a city, whatever it came from.
+A member is placed by the first source that answers, and a country never outranks a city, whatever
+it came from:
 
-1. **A stated city.** `current_city` (where they are right now), then the Slack profile's
-   location field, then the roster `location` -- what somebody wrote down.
-   `POST /member-map/refresh` reads each member's Slack profile and stamps it as `slack_location`;
-   a member Slack no longer knows about has the stamp cleared rather than left stale. That only
-   happens when the pass runs, which is why it is scheduled daily (`adminbot-member-map`, 06:10).
-2. **A fresh sign-in city**, admin map only. Stamped from the caller's IP on each sign-in (see
-   "Login location" below) and used for three days. Never on the summary anybody else gets: the
-   city is in the fields held to the member and the admins.
+1. **A fresh sign-in city.** Stamped from the caller's IP on each sign-in (see "Login location"
+   below) and used for 14 days (`ADMINBOT_MAP_LOGIN_FRESH_DAYS`). It is where the person most
+   recently was, so it leads for everyone. It counts toward the map that signed-in members and
+   admins see. An anonymous visitor gets only what members stated, plus sign-in countries.
+2. **A stated city.** `current_city` (where they are right now), then the roster `location`, then
+   the Slack profile's location field. `POST /member-map/refresh` reads each member's Slack profile
+   and stamps it as `slack_location`. A member Slack no longer knows about has the stamp cleared
+   rather than left stale. That only happens when the pass runs, which is why it is scheduled daily
+   (`adminbot-member-map`, 06:10).
 3. **A time zone's city.** The Slack time zone, then the roster `timezone`. `Europe/Zurich` is also
-   what somebody in Basel reports, so this is labelled "city from time zone", not "city".
+   what somebody in Basel reports, so the UI says "from Slack time zone" or "from profile time
+   zone", not just the city.
 4. **A country.** A country written in any of the text fields above, then the sign-in country.
    Drawn as a hollow, dashed dot on the country's centroid.
+
+Each member chooses how they appear, under Profile, "Show me on the lab map as"
+(`map_visibility`, self-editable):
+
+- **Auto** (the default): the order above.
+- **My stated city only** (`stated`): skips the sign-in city and the sign-in country.
+- **Hidden** (`hidden`): left off the map entirely, including the counts.
+
+Only a city is ever shown. The map never carries an IP address, coordinates from a lookup, or a
+history of sign-ins. Each listed member says where their place came from, for example "San
+Francisco · from sign-in today" or "Toronto · from profile". The Collaborate and Dashboard tabs
+reload the map when they open and every five minutes while the page is visible, and the card says
+when it last updated.
 
 The resolver copes with what people actually write: institutions (`ETH` becomes Zürich, `UWO`
 London, ON), accents and spelling variants (`Tuebingen`/`Tübingen`, `Calcutta`), several places at

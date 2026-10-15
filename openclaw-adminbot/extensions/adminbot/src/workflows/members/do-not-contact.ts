@@ -10,10 +10,13 @@ import type { AdminBotLabMember } from "../../contracts/actions.js";
 // "do not contact", "do-not-contact", "Do_Not_Contact", "donotcontact", and the "DNC" shorthand
 // as a whole word, so a name that merely contains those letters (a "Dncan") is untouched.
 const DO_NOT_CONTACT = /do[\s_-]*not[\s_-]*contact|(^|[^a-z0-9])dnc([^a-z0-9]|$)/i;
+// A name that is only "null": the same member first blanked their name this way, so it reads as
+// the opt-out it was, never as a test row to clean up.
+const BARE_NULL = /^\s*null\s*$/i;
 
 /** Whether a display name carries a do-not-contact request. */
 export function isDoNotContactName(name: string | null | undefined): boolean {
-  return typeof name === "string" && DO_NOT_CONTACT.test(name);
+  return typeof name === "string" && (DO_NOT_CONTACT.test(name) || BARE_NULL.test(name));
 }
 
 /**

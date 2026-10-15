@@ -1,8 +1,8 @@
 # IP geolocation
 
 AdminBot geolocates the IP address of each successful sign-in and stamps the result on the member
-record. The country is shown to the member and to admins, and the city helps place the member on
-the admin member map for three days. Only the place names are stored: the city, the region, the
+record. The country is shown to the member and to admins, and the city places the member on the
+lab member map for 14 days, unless the member chose "My stated city only" or "Hidden" in Profile. Only the place names are stored: the city, the region, the
 country, the continent and the time zone. Coordinates are never stored or returned, and the map
 pins every member on the centroid of a city or country from its own gazetteer.
 
@@ -80,9 +80,10 @@ MaxMind for a GeoLite2 file and IPinfo for the IPinfo provider. Do not remove it
 ## What to expect
 
 - **Accuracy.** A city from an IP address is approximate. Mobile carriers, VPNs and university
-  networks often surface in a nearby or head-office city. The member map labels these pins "city ·
-  from last sign-in (approx.)", ranks them below any city the member stated, and uses them for three
-  days after the sign-in.
+  networks often surface in a nearby or head-office city. The member map labels these places "city ·
+  from sign-in today" (or yesterday, or N days ago) and uses them for 14 days after the sign-in.
+  After that the member falls back to the city they stated. A member who prefers their stated city
+  can choose "My stated city only" in Profile.
 - **No backfill.** Sign-in events store no IP address, so past sign-ins cannot be located again.
   Cities fill in as each member next signs in. If a sign-in locates only a country, the stored
   city and region are cleared, so a stale city cannot outlive a newer sign-in.

@@ -63,6 +63,8 @@ export type MemberMap = {
   /** Members whose written location the gazetteer could not place. A count only — see below. */
   unplaced: number;
   counts: { placed: number; unplaced: number; unknown: number };
+  /** When this copy arrived (ms since epoch), for "Updated N min ago". Set by loadMemberMap. */
+  loadedAt?: number;
 };
 
 export type MemberMapHost = {
@@ -71,7 +73,15 @@ export type MemberMapHost = {
   adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
   adminBotMemberMapRequestId?: number;
+  /** When the last read finished, either way, so a failing service is asked again on the timer. */
+  adminBotMemberMapCheckedAt?: number;
 };
+
+/**
+ * How often an open map asks again. Sign-in cities change as people sign in, and the card says
+ * "Updated N min ago", so a tab left open all afternoon should not quietly show the morning.
+ */
+export const MEMBER_MAP_REFRESH_MS = 5 * 60 * 1000;
 
 export function invalidateMemberMap(host: {
   adminBotMemberMap?: MemberMap | null;
@@ -88,13 +98,70 @@ export function invalidateMemberMap(host: {
 // through the Dashboard.
 const MEMBER_MAP_TABS: ReadonlySet<string> = new Set(["dashboard", "labSharing"]);
 
+export function isMemberMapTab(tab: string): boolean {
+  return MEMBER_MAP_TABS.has(tab);
+}
+
+/** What decides a refresh beyond the first load; without it only the first load is ever due. */
+export type MemberMapRefreshContext = {
+  /** The tab on the previous render: arriving on a map tab from anywhere else reads it again. */
+  previousTab?: string;
+  /** When the last read finished (MemberMapHost.adminBotMemberMapCheckedAt). */
+  checkedAt?: number;
+  now: number;
+  /** document.visibilityState === "visible": a background tab does not poll. */
+  visible: boolean;
+};
+
 export function needsMemberMap(
   tab: string,
   hasMemberSession: boolean,
   map: MemberMap | null | undefined,
   loading: boolean,
+  refresh?: MemberMapRefreshContext,
 ): boolean {
-  return MEMBER_MAP_TABS.has(tab) && hasMemberSession && map === undefined && !loading;
+  if (!MEMBER_MAP_TABS.has(tab) || !hasMemberSession || loading) {
+    return false;
+  }
+  if (map === undefined) {
+    return true;
+  }
+  if (!refresh) {
+    return false;
+  }
+  if (refresh.previousTab !== undefined && refresh.previousTab !== tab) {
+    return true;
+  }
+  return (
+    refresh.visible &&
+    refresh.checkedAt !== undefined &&
+    refresh.now - refresh.checkedAt >= MEMBER_MAP_REFRESH_MS
+  );
+}
+
+// One ticker for the whole app, so the "Updated N min ago" line moves and a due refresh is noticed
+// without anyone touching the page. It only asks for a render; needsMemberMap decides whether that
+// render reads the map again.
+let ticker: ReturnType<typeof setInterval> | undefined;
+let tickerTarget: { tab: () => string; update: () => void } | undefined;
+
+export function ensureMemberMapTicker(tab: () => string, update: () => void): void {
+  tickerTarget = { tab, update };
+  if (ticker !== undefined || typeof setInterval !== "function") {
+    return;
+  }
+  const tick = () => {
+    const target = tickerTarget;
+    const visible = typeof document === "undefined" || document.visibilityState === "visible";
+    if (target && visible && MEMBER_MAP_TABS.has(target.tab())) {
+      target.update();
+    }
+  };
+  ticker = setInterval(tick, 60_000);
+  // Coming back to a tab that sat in the background past its refresh catches up at once.
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", tick);
+  }
 }
 
 // A literal "null" is what a blank spreadsheet cell or a JSON null pushed through String() turns
@@ -255,13 +322,16 @@ export async function loadMemberMap(host: MemberMapHost): Promise<void> {
     }
     const parsed = parseMemberMap(await response.json());
     if (isCurrent()) {
-      host.adminBotMemberMap = parsed;
+      host.adminBotMemberMap = parsed ? { ...parsed, loadedAt: Date.now() } : parsed;
     }
   } catch {
-    // Unreachable service, offline, blocked request: leave the card empty.
+    // Unreachable service, offline, blocked request: leave the card as it was (empty on a first
+    // load, the last good copy -- with its own "Updated" time -- on a refresh).
   } finally {
     if (isCurrent()) {
-      // A failed optional card stays empty; do not retry on every dashboard render.
+      host.adminBotMemberMapCheckedAt = Date.now();
+      // A failed optional card stays empty; it is asked again on the next tab visit or refresh
+      // tick, never on every render.
       if (host.adminBotMemberMap === undefined) {
         host.adminBotMemberMap = null;
       }

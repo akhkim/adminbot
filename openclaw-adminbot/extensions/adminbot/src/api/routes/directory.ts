@@ -49,12 +49,13 @@ export const directoryRoutes: readonly Route[] = [
     // with who is where. Everyone else -- anonymous or a signed-in non-admin member alike --
     // gets a headcount per city.
     //
-    // The login *city* follows the same line: it is in adminBotInferredLocationMemberFields, held to
-    // the member and the admins, so only the admin map may place anybody by it. A summary is built
-    // without it and falls back to the login country -- otherwise a headcount on "Lyon" would
-    // publish the city that field is withheld to protect.
+    // Sign-in cities place people for anyone signed in to the lab -- members see a headcount per
+    // city, admins the names -- and each member's own "Show me on the lab map as" setting decides
+    // whether theirs is used at all. Never for an anonymous visitor: a public headcount on "Lyon"
+    // would tell the internet where a lab member signed in from, so that map uses only what members
+    // stated. Either way only a city leaves here, never an IP, its coordinates, or a history.
     const privileged = isPrivileged(principal);
-    const result = service.memberMap({ loginCity: privileged });
+    const result = service.memberMap({ loginCity: principal.kind !== "anonymous" });
     if (!result.ok) {
       sendServiceResult(res, result);
       return;

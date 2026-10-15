@@ -1253,10 +1253,17 @@ describe("AdminBot mock service", () => {
     expect(body.unplaced.map((entry) => entry.name)).toContain("Zedunia");
   });
 
-  it("places a member by a fresh login city for an admin, and only by country for anyone else", async () => {
+  it("places a member by a fresh login city for anyone signed in, and only by stated text for a visitor", async () => {
     const { baseUrl } = await startService();
-    // Incomplete, so the fixture profile's roster location does not outrank the login.
-    await seedMember(baseUrl, "ada", { name: "Ada", privilege_level: "member" }, false);
+    // A complete profile (so Ada may use AdminBot) with a stated city: the sign-in city outranks
+    // it for signed-in callers, and it is all an anonymous visitor's map may use.
+    seedMember(baseUrl, "ada", {
+      name: "Ada",
+      privilege_level: "member",
+      current_city: "Toronto",
+    });
+    await approveClaim(baseUrl, "ada", "ada@example.com");
+    const memberToken = await loginToken(baseUrl, "ada@example.com");
     // Synthetic geolocation written straight to the store, the way a sign-in would record it,
     // so no test ever asks a real IP-lookup service where anybody is.
     const now = new Date().toISOString();
@@ -1274,18 +1281,51 @@ describe("AdminBot mock service", () => {
     expect(adminBody.places[0]).toMatchObject({ key: "lyon", label: "Lyon" });
     expect(adminBody.places[0]?.members[0]?.source).toBe("login");
 
-    // The ISO code an IPinfo core lookup stores still places the member, at country level, and
-    // the city -- held to the member and admins -- never reaches the summary.
+    // A signed-in member gets the same placement as a headcount, without the name.
+    const memberText = await (
+      await fetch(`${baseUrl}/member-map`, { headers: { Authorization: `Bearer ${memberToken}` } })
+    ).text();
+    expect(memberText).not.toContain("Ada");
+    expect(JSON.parse(memberText).places[0]).toMatchObject({ key: "lyon", count: 1 });
+
+    // An anonymous visitor's map uses only what Ada stated, so the sign-in city never leaves.
     const anonymousText = await (await fetch(`${baseUrl}/member-map`)).text();
     expect(anonymousText).not.toContain("Lyon");
     const anonymousBody = JSON.parse(anonymousText) as {
       places: Array<{ key: string; label: string; count: number }>;
     };
-    expect(anonymousBody.places[0]).toMatchObject({
-      key: "country:france",
-      label: "France",
-      count: 1,
+    expect(anonymousBody.places[0]).toMatchObject({ key: "toronto", count: 1 });
+
+    // "My stated city only", set by Ada herself, holds for every caller, admins included.
+    const saved = await fetch(`${baseUrl}/lab/members/ada`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${memberToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ map_visibility: "stated" }),
     });
+    expect(saved.status).toBe(200);
+    const stated = (await (
+      await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() })
+    ).json()) as { places: Array<{ key: string; members: Array<{ source: string }> }> };
+    expect(stated.places[0]).toMatchObject({ key: "toronto" });
+    expect(stated.places[0]?.members[0]?.source).toBe("roster");
+
+    // "Hidden" takes her off the map entirely.
+    await fetch(`${baseUrl}/lab/members/ada`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${memberToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ map_visibility: "hidden" }),
+    });
+    const hidden = await (
+      await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() })
+    ).text();
+    expect(hidden).not.toContain("Ada");
+
+    const invalid = await fetch(`${baseUrl}/lab/members/ada`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${memberToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ map_visibility: "everywhere" }),
+    });
+    expect(invalid.status).toBe(400);
   });
 
   it("credits the local IP database on the map, in both shapes, only when one is configured", async () => {

@@ -1661,6 +1661,12 @@ export type AdminBotLabMemberInput = {
   last_login_region?: string;
   last_login_timezone?: string;
   /**
+   * How the member wants to appear on the lab map, set by them in Profile. "auto" (the default when
+   * absent) places them at the city of a recent sign-in, else what they stated; "stated" uses only
+   * what they wrote (`current_city`, `location`, Slack); "hidden" leaves them off the map.
+   */
+  map_visibility?: "auto" | "stated" | "hidden";
+  /**
    * When the member last answered the "you seem to have moved" question, either way.
    *
    * Stamped on a confirmation *and* on a dismissal, because both are answers: someone who signs in

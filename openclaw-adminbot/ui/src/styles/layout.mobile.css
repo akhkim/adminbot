@@ -1200,7 +1200,24 @@
    ~100px of a 390px screen from a plot whose whole point is width. The card keeps its border; it
    just stops insetting the plot a second time. */
 @media (max-width: 480px) {
-  .member-map {
+  .member-map--card,
+  .member-map__panel {
+    padding: var(--space-4);
+  }
+
+  /* The list wraps under the plot here and is the easier way to pick a city: pins on a 358px map
+     are smaller than a fingertip. */
+  .member-map__body {
+    gap: var(--space-4);
+  }
+
+  /* On a phone the popover would sit over the very list row that was tapped. The row already says
+     where and how many, and its "Show all" names everyone, so the tap only lifts the pin here. */
+  .member-map__popover {
+    display: none;
+  }
+
+  .member-map__dialog-panel {
     padding: var(--space-4);
   }
 }

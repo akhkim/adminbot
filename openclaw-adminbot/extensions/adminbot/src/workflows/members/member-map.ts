@@ -1,20 +1,21 @@
 // Where lab members are, for the member map.
 //
-// Every source a member has is resolved, and the most *specific* answer wins; trust breaks ties
-// within a level. Specificity first because a country-level guess must never move somebody away
-// from a city they, or their Slack client, already named. From best to worst:
+// Every source a member has is resolved in order and the first one that places them wins. A
+// country-level answer never beats a city, so countries come last whatever their source:
 //
-//   1. A stated city: `current_city` (where they are right now), then the Slack profile's location
-//      field, then the roster `location`. The member's own words.
-//   2. The city of a fresh sign-in, from IP geolocation. Inferred, so it ranks below anything
-//      stated; only for a caller entitled to read it (`BuildMemberMapOptions.loginCity`) and only
-//      while the sign-in is recent. Placed at the gazetteer's city centroid, never at the IP's
-//      coordinates, which nothing here ever receives.
+//   1. The city of a fresh sign-in (within ADMINBOT_MAP_LOGIN_FRESH_DAYS), from the local IP
+//      geolocation database. It is where the person actually was most recently, so it leads -- unless
+//      the member set `map_visibility` to "stated", which skips every sign-in source. Placed at the
+//      gazetteer's city centroid, never at the IP's coordinates, which nothing here ever receives.
+//   2. A stated city: `current_city` (where they say they are now), then the roster `location`,
+//      then the Slack profile's location field. The member's own words.
 //   3. The city an IANA timezone is named for: Slack's `tz`, then the roster `timezone`.
 //      "America/Toronto" says Toronto, but it says the same for Montréal, so it is a city-level
 //      answer that is less exact than either of the above.
 //   4. A country: any of the texts above that names only a country ("Germany"), then the country
 //      of the last sign-in. Drawn hollow by the UI so it does not pass for a city.
+//
+// A member whose `map_visibility` is "hidden" is not on the map at all.
 //
 // Text is read the way a person would read it: free text written by humans ("ETH", "Zürich,
 // Tübingen", "Mainly Montreal"), a timezone, or a city with its region and country from the IP
@@ -768,8 +769,9 @@ export type AdminBotMapMember = {
   name: string;
   source: AdminBotMapSource;
   precision: AdminBotMapPrecision;
-  // Both optional: not every member has a synced Slack avatar or a recorded login. Present so
-  // the lab-insider map can show recently-active faces per city without a second round trip.
+  // Both optional: not every member has a synced Slack avatar. `last_login_at` is only sent when a
+  // sign-in is what placed the member, so the UI can say "from sign-in today" and show the most
+  // recently active faces first; it is never a history, only the one moment behind the pin.
   avatar_url?: string;
   last_login_at?: string;
 };
@@ -847,15 +849,38 @@ type MemberPlaceResolution =
  */
 export const ADMINBOT_LOGIN_CITY_FRESH_DAYS = 3;
 
+/**
+ * How recent a sign-in has to be for the map to place somebody at its city. Longer than the clocks'
+ * three days because the map answers "where is the lab based", not "what time is it for them now":
+ * somebody who signed in from home last week still lives there. Past it the map falls back to what
+ * the member stated.
+ */
+export const ADMINBOT_MAP_LOGIN_FRESH_DAYS = 14;
+
+export type AdminBotMapVisibility = "auto" | "stated" | "hidden";
+
+export const ADMINBOT_MAP_VISIBILITIES: readonly AdminBotMapVisibility[] = [
+  "auto",
+  "stated",
+  "hidden",
+];
+
+/** The member's own choice from Profile; anything missing or unrecognised means "auto". */
+export function memberMapVisibility(
+  member: Pick<AdminBotLabMember, "map_visibility">,
+): AdminBotMapVisibility {
+  const value = member.map_visibility;
+  return value === "stated" || value === "hidden" ? value : "auto";
+}
+
 const DAY_MS = 86_400_000;
 
 export type BuildMemberMapOptions = {
   /**
-   * Whether a fresh login city may place a member. Only for a caller entitled to
-   * `adminBotInferredLocationMemberFields` -- in practice an admin, since a map has no single
-   * "self" to be. A city is the disclosure those fields are held back for, and a headcount per city
-   * still says "someone in the lab signed in from Lyon last night", so a summary-shaped map for a
-   * member or a visitor is built with this off and gets the country instead.
+   * Whether sign-in cities may place members at all. On for signed-in callers (members and
+   * admins); off for an anonymous visitor, who gets only what members stated. Each member's own
+   * `map_visibility` still applies on top. The map only ever carries the city -- never the IP, its
+   * coordinates, or a history of sign-ins.
    */
   loginCity?: boolean;
   now?: Date;
@@ -873,7 +898,7 @@ function freshLoginCity(member: AdminBotLabMember, now: Date): string | undefine
   }
   const age = now.getTime() - seen;
   // A little clock skew into the future is tolerated; a sign-in from next month is a bad record.
-  return age > ADMINBOT_LOGIN_CITY_FRESH_DAYS * DAY_MS || age < -DAY_MS ? undefined : city;
+  return age > ADMINBOT_MAP_LOGIN_FRESH_DAYS * DAY_MS || age < -DAY_MS ? undefined : city;
 }
 
 /**
@@ -945,8 +970,7 @@ const countryFrom = (raw: string | undefined) => () => {
 };
 
 /**
- * Resolves every source, most specific level first; within a level, in trust order. See the
- * comment at the top of this file for the levels.
+ * Resolves every source in the order the comment at the top of this file gives.
  *
  * The Slack value is either the profile's location field (free text) or Slack's `tz`, and which
  * one it is decides its level, so it is read as both and only one of the two ever resolves.
@@ -960,15 +984,16 @@ function resolveMemberPlace(
   const currentCity = member.current_city?.trim() || undefined;
   const rosterText = member.location?.trim() || undefined;
   const rosterZone = member.timezone?.trim() || undefined;
-  const loginCity = options.loginCity ? freshLoginCity(member, options.now) : undefined;
-  const loginCountry = member.last_login_country?.trim() || undefined;
+  // "My stated city only" skips every sign-in source. The country of a sign-in is coarse enough
+  // for any caller (it was on the public map before cities were); the city is not, so it needs
+  // `options.loginCity` as well.
+  const auto = memberMapVisibility(member) === "auto";
+  const loginCity = auto && options.loginCity ? freshLoginCity(member, options.now) : undefined;
+  const loginCountry = auto ? member.last_login_country?.trim() || undefined : undefined;
 
   const candidates: Candidate[] = [
-    // 1. Stated cities.
-    { raw: currentCity, source: "roster", resolve: cityFrom(currentCity) },
-    { raw: slackText, source: "slack", resolve: cityFrom(slackText) },
-    { raw: rosterText, source: "roster", resolve: cityFrom(rosterText) },
-    // 2. The city of a fresh sign-in.
+    // 1. The city of a fresh sign-in. Only a city: a sign-in that resolves no further than its
+    //    country waits until every stated city has had its turn.
     {
       raw: loginCity,
       source: "login",
@@ -977,13 +1002,17 @@ function resolveMemberPlace(
         return place ? { place, precision: "city" } : undefined;
       },
     },
+    // 2. Stated cities.
+    { raw: currentCity, source: "roster", resolve: cityFrom(currentCity) },
+    { raw: rosterText, source: "roster", resolve: cityFrom(rosterText) },
+    { raw: slackText, source: "slack", resolve: cityFrom(slackText) },
     // 3. Cities named by a timezone.
     { raw: slackText, source: "slack", resolve: zoneFrom(slackText) },
     { raw: rosterZone, source: "roster", resolve: zoneFrom(rosterZone) },
     // 4. Countries.
     { raw: currentCity, source: "roster", resolve: countryFrom(currentCity) },
-    { raw: slackText, source: "slack", resolve: countryFrom(slackText) },
     { raw: rosterText, source: "roster", resolve: countryFrom(rosterText) },
+    { raw: slackText, source: "slack", resolve: countryFrom(slackText) },
     {
       raw: loginCountry,
       source: "login",
@@ -1022,7 +1051,11 @@ export function buildMemberMap(
   let unknown = 0;
 
   for (const member of members) {
-    if (DEPARTED_STATUSES.has(member.status ?? "") || isHiddenFromMemberMap(member)) {
+    if (
+      DEPARTED_STATUSES.has(member.status ?? "") ||
+      isHiddenFromMemberMap(member) ||
+      memberMapVisibility(member) === "hidden"
+    ) {
       continue;
     }
     const slackRaw = member.slack_user_id ? slackLocations.get(member.slack_user_id) : undefined;
@@ -1048,7 +1081,10 @@ export function buildMemberMap(
       source: resolution.source,
       precision: resolution.precision,
       ...(member.avatar_url ? { avatar_url: member.avatar_url } : {}),
-      ...(member.last_login_at ? { last_login_at: member.last_login_at } : {}),
+      // Only the time of the sign-in that placed them, so the UI can say "from sign-in today".
+      ...(resolution.source === "login" && member.last_login_at
+        ? { last_login_at: member.last_login_at }
+        : {}),
     });
     groups.set(resolution.place.key, group);
   }

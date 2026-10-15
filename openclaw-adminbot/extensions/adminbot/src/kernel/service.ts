@@ -339,7 +339,11 @@ import {
   observationFor,
   selfReportedChange,
 } from "../workflows/members/location-history.js";
-import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
+import {
+  ADMINBOT_MAP_VISIBILITIES,
+  buildMemberMap,
+  type AdminBotMemberMap,
+} from "../workflows/members/member-map.js";
 import {
   dormantChaseDue,
   isChaseableMember,
@@ -14874,6 +14878,8 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "availability",
   "location",
   "current_city",
+  // "Show me on the lab map as": the member's own privacy choice, so theirs alone to make.
+  "map_visibility",
   "affiliation",
   "timezone",
   "personal_website",
@@ -15372,6 +15378,12 @@ function validateLabMember(
     typeof member.intake_form_unavailable !== "boolean"
   ) {
     return "application form unavailable must be true or false";
+  }
+  if (
+    member.map_visibility !== undefined &&
+    !(ADMINBOT_MAP_VISIBILITIES as readonly unknown[]).includes(member.map_visibility)
+  ) {
+    return `map visibility must be one of: ${ADMINBOT_MAP_VISIBILITIES.join(", ")}`;
   }
   if (
     member.arr_reviewer_qualified !== undefined &&

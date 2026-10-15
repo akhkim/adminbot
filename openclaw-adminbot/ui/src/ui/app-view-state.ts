@@ -507,6 +507,9 @@ export type AppViewState = {
   adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
   adminBotMemberMapRequestId: number;
+  adminBotMemberMapCheckedAt?: number;
+  /** The tab the last render was on, so opening a map tab can be told from staying on it. */
+  adminBotMemberMapTab?: string;
   adminBotCollaboratorSchedules: AdminBotLabMember[];
   adminBotCollaboratorSchedulesLoading: boolean;
   adminBotCollaboratorSchedulesError: string | null;

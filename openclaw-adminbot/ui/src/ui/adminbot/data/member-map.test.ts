@@ -3,6 +3,7 @@ import type { UiSettings } from "../../storage.ts";
 import {
   invalidateMemberMap,
   loadMemberMap,
+  MEMBER_MAP_REFRESH_MS,
   needsMemberMap,
   parseMemberMap,
   type MemberMapHost,
@@ -33,6 +34,52 @@ describe("Dashboard member map loading", () => {
     expect(needsMemberMap("dashboard", false, undefined, false)).toBe(false);
     expect(needsMemberMap("dashboard", true, undefined, true)).toBe(false);
     expect(needsMemberMap("dashboard", true, null, false)).toBe(false);
+  });
+
+  it("reads the map again when its tab is opened and every 5 minutes while it is visible", () => {
+    const map = parseMemberMap({
+      mode: "summary",
+      places: [{ key: "toronto", label: "Toronto", lat: 43, lon: -79, count: 1 }],
+      counts: { placed: 1, unplaced: 0, unknown: 0 },
+    });
+    const now = Date.parse("2026-10-15T12:00:00Z");
+    const fresh = { now, checkedAt: now - 60_000, visible: true };
+    // Already on the tab, read a minute ago: nothing to do.
+    expect(
+      needsMemberMap("dashboard", true, map, false, { ...fresh, previousTab: "dashboard" }),
+    ).toBe(false);
+    // Arriving from another tab reads it again, whichever map tab it is.
+    expect(
+      needsMemberMap("labSharing", true, map, false, { ...fresh, previousTab: "dashboard" }),
+    ).toBe(true);
+    expect(
+      needsMemberMap("dashboard", true, map, false, { ...fresh, previousTab: "profile" }),
+    ).toBe(true);
+    // Five minutes on, while the page is visible -- and not while it sits in a background tab.
+    const due = { now, checkedAt: now - MEMBER_MAP_REFRESH_MS, previousTab: "dashboard" };
+    expect(needsMemberMap("dashboard", true, map, false, { ...due, visible: true })).toBe(true);
+    expect(needsMemberMap("dashboard", true, map, false, { ...due, visible: false })).toBe(false);
+    // Never while a read is in flight, and never off the map tabs.
+    expect(needsMemberMap("dashboard", true, map, true, { ...due, visible: true })).toBe(false);
+    expect(needsMemberMap("profile", true, map, false, { ...due, visible: true })).toBe(false);
+  });
+
+  it("stamps when the map was read, and keeps the last good map when a refresh fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(mapResponse("toronto"));
+    const host: MemberMapHost = {
+      settings: { adminBotUrl: "http://127.0.0.1:8765" } as UiSettings,
+      adminBotMemberMap: undefined,
+      adminBotMemberMapLoading: false,
+    };
+    const before = Date.now();
+    await loadMemberMap(host);
+    expect(host.adminBotMemberMap?.loadedAt).toBeGreaterThanOrEqual(before);
+    expect(host.adminBotMemberMapCheckedAt).toBeGreaterThanOrEqual(before);
+
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("offline"));
+    await loadMemberMap(host);
+    expect(host.adminBotMemberMap?.places[0].label).toBe("toronto");
+    expect(host.adminBotMemberMapLoading).toBe(false);
   });
 
   it.each(["old first", "new first"])(

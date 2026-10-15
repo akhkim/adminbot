@@ -3,12 +3,12 @@ import { describe, expect, it } from "vitest";
 import { parseMemberMap, type MemberMap } from "../data/member-map.ts";
 import { WORLD_OUTLINE_VIEW } from "../data/world-outline.ts";
 import { boxesIntersect, labelBox, type LabelAnchor } from "./member-map-labels.ts";
-import { renderMemberMap } from "./member-map.ts";
+import { memberDetail, renderMemberMap, updatedAgo, type MemberMapOptions } from "./member-map.ts";
 
-async function draw(map: MemberMap | null): Promise<HTMLElement> {
+async function draw(map: MemberMap | null, options?: MemberMapOptions): Promise<HTMLElement> {
   const container = document.createElement("div");
   document.body.append(container);
-  render(renderMemberMap(map), container);
+  render(renderMemberMap(map, options), container);
   // The card is a custom element; its first render is scheduled asynchronously.
   await (
     container.querySelector("adminbot-member-map") as { updateComplete?: Promise<unknown> } | null
@@ -202,9 +202,7 @@ describe("renderMemberMap", () => {
     // Cy has no avatar_url, so their circle is the initials fallback, not an <img>.
     expect(avatars[1].tagName).toBe("SPAN");
     expect(avatars[1].textContent).toBe("C");
-    expect(
-      container.querySelector(".member-map__body .member-map__avatar-more"),
-    ).not.toBeNull();
+    expect(container.querySelector(".member-map__body .member-map__avatar-more")).not.toBeNull();
   });
 
   const FOUR_MEMBER_TORONTO = {
@@ -246,7 +244,7 @@ describe("renderMemberMap", () => {
     const expandedButton = expandedRow.querySelector<HTMLButtonElement>(".member-map__expand-btn")!;
     expect(expandedButton.getAttribute("aria-expanded")).toBe("true");
     expect(
-      [...expandedRow.querySelectorAll(".member-map__name-list li")].map(
+      [...expandedRow.querySelectorAll(".member-map__name-list .member-map__name")].map(
         (node) => node.textContent,
       ),
     ).toEqual(["Ada", "Bob", "Cy", "Di"]);
@@ -254,9 +252,7 @@ describe("renderMemberMap", () => {
     // Clicking again collapses it.
     expandedButton.click();
     await element.updateComplete;
-    expect(
-      container.querySelector(".member-map__body .member-map__name-list"),
-    ).toBeNull();
+    expect(container.querySelector(".member-map__body .member-map__name-list")).toBeNull();
   });
 
   it("omits the expand button for a city with 3 or fewer members", async () => {
@@ -392,7 +388,178 @@ describe("renderMemberMap", () => {
     });
   });
 
-  it("says how finely, and from what, each named member is placed", async () => {
+  describe("where each person's pin comes from", () => {
+    // Local noon, so "today" and "yesterday" are the same calendar days in any test time zone.
+    const now = new Date(2026, 9, 15, 12, 0, 0).getTime();
+    const hoursAgo = (hours: number) => new Date(now - hours * 3_600_000).toISOString();
+    const sf = { label: "San Francisco" };
+
+    it("dates a sign-in by the viewer's calendar and names a profile or Slack source", () => {
+      const login = (at?: string) => ({
+        member_id: "a",
+        name: "Ada",
+        source: "login" as const,
+        last_login_at: at,
+      });
+      expect(memberDetail(login(hoursAgo(2)), sf, now)).toBe("San Francisco · from sign-in today");
+      expect(memberDetail(login(hoursAgo(24)), sf, now)).toBe(
+        "San Francisco · from sign-in yesterday",
+      );
+      expect(memberDetail(login(hoursAgo(24 * 5)), sf, now)).toBe(
+        "San Francisco · from sign-in 5 days ago",
+      );
+      expect(memberDetail(login(), sf, now)).toBe("San Francisco · from sign-in");
+      const toronto = { label: "Toronto" };
+      expect(
+        memberDetail(
+          { member_id: "b", name: "Bo", source: "roster", precision: "city" },
+          toronto,
+          now,
+        ),
+      ).toBe("Toronto · from profile");
+      expect(
+        memberDetail(
+          { member_id: "b", name: "Bo", source: "roster", precision: "timezone" },
+          toronto,
+          now,
+        ),
+      ).toBe("Toronto · from profile time zone");
+      expect(
+        memberDetail(
+          { member_id: "c", name: "Cy", source: "slack", precision: "city" },
+          toronto,
+          now,
+        ),
+      ).toBe("Toronto · from Slack profile");
+      expect(
+        memberDetail(
+          { member_id: "c", name: "Cy", source: "slack", precision: "timezone" },
+          toronto,
+          now,
+        ),
+      ).toBe("Toronto · from Slack time zone");
+      // An older service that sends no source: the city alone, rather than a guess.
+      expect(memberDetail({ member_id: "d", name: "Di" }, toronto, now)).toBe("Toronto");
+    });
+
+    it("puts the line in each pin's title for an admin", async () => {
+      const container = await draw(
+        parseMemberMap({
+          mode: "full",
+          places: [
+            {
+              key: "san-francisco",
+              label: "San Francisco",
+              country: "United States",
+              lat: 37.77,
+              lon: -122.42,
+              members: [
+                {
+                  member_id: "a",
+                  name: "Ada",
+                  source: "login",
+                  precision: "city",
+                  last_login_at: hoursAgo(1),
+                },
+              ],
+            },
+            {
+              key: "toronto",
+              label: "Toronto",
+              country: "Canada",
+              lat: 43.65,
+              lon: -79.38,
+              members: [{ member_id: "b", name: "Bo", source: "roster", precision: "city" }],
+            },
+          ],
+          unplaced: [],
+          counts: { placed: 2, unplaced: 0, unknown: 0 },
+        }),
+        { now },
+      );
+      const titles = [...container.querySelectorAll(".member-map__plot .member-map__dot title")]
+        .map((title) => title.textContent ?? "")
+        .join("\n");
+      expect(titles).toContain("Ada (San Francisco · from sign-in today)");
+      expect(titles).toContain("Bo (Toronto · from profile)");
+    });
+  });
+
+  it("says how long ago the map was read", async () => {
+    const now = Date.parse("2026-10-15T12:00:00Z");
+    expect(updatedAgo(now - 20_000, now)).toBe("Updated just now");
+    expect(updatedAgo(now - 4 * 60_000, now)).toBe("Updated 4 min ago");
+    expect(updatedAgo(now - 130 * 60_000, now)).toBe("Updated 2 h ago");
+
+    const map = { ...parseMemberMap(summary)!, loadedAt: now - 3 * 60_000 };
+    const container = await draw(map, { now });
+    expect(container.querySelector('[data-testid="member-map-updated"]')?.textContent).toContain(
+      "Updated 3 min ago",
+    );
+    // A map with no read time (an older caller) just leaves the line out.
+    const undated = await draw(parseMemberMap(summary), { now });
+    expect(undated.querySelector('[data-testid="member-map-updated"]')).toBeNull();
+  });
+
+  it("lifts a city's pin, dims the rest and opens its popover from the list", async () => {
+    const container = await draw(parseMemberMap(summary));
+    const element = container.querySelector("adminbot-member-map") as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    const card = container.querySelector(".member-map__body")!;
+    const zurichRow = card.querySelector<HTMLElement>('.member-map__row[data-place="zurich"]')!;
+
+    zurichRow.dispatchEvent(new MouseEvent("mouseenter"));
+    await element.updateComplete;
+    expect(card.querySelector(".member-map__plot")?.classList).toContain("member-map__plot--focus");
+    expect(
+      [...card.querySelectorAll(".member-map__place--active")].map((node) =>
+        node.getAttribute("data-place"),
+      ),
+    ).toEqual(["zurich"]);
+    expect(zurichRow.classList).toContain("member-map__row--active");
+    expect(card.querySelector('[data-testid="member-map-popover"]')?.textContent).toContain(
+      "Zurich, Switzerland",
+    );
+
+    zurichRow.dispatchEvent(new MouseEvent("mouseleave"));
+    await element.updateComplete;
+    expect(card.querySelector(".member-map__place--active")).toBeNull();
+    expect(card.querySelector('[data-testid="member-map-popover"]')).toBeNull();
+
+    // A tap on a phone: pick, then tap again to let go. A real tap sends the emulated mouseenter and
+    // the focus before the click, each followed by a render, so the click must not undo them.
+    const button = zurichRow.querySelector<HTMLButtonElement>(".member-map__row-top")!;
+    const tap = async () => {
+      zurichRow.dispatchEvent(new MouseEvent("mouseenter"));
+      await element.updateComplete;
+      button.dispatchEvent(new FocusEvent("focus"));
+      await element.updateComplete;
+      button.click();
+      await element.updateComplete;
+    };
+    await tap();
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(card.querySelector(".member-map__place--active")?.getAttribute("data-place")).toBe(
+      "zurich",
+    );
+    expect(card.querySelector('[data-testid="member-map-popover"]')).not.toBeNull();
+    await tap();
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(card.querySelector(".member-map__place--active")).toBeNull();
+
+    // And the other way round: pointing at a pin lights its row.
+    card
+      .querySelector('.member-map__place[data-place="toronto"]')!
+      .dispatchEvent(new MouseEvent("mouseenter"));
+    await element.updateComplete;
+    expect(card.querySelector('.member-map__row[data-place="toronto"]')?.classList).toContain(
+      "member-map__row--active",
+    );
+  });
+
+  it("names who is at a pin, and how they were placed, only for an admin", async () => {
+    const now = new Date(2026, 9, 15, 12, 0, 0).getTime();
     const container = await draw(
       parseMemberMap({
         mode: "full",
@@ -403,30 +570,59 @@ describe("renderMemberMap", () => {
             country: "Canada",
             lat: 43.65,
             lon: -79.38,
-            members: [
-              { member_id: "a", name: "Ada", source: "login", precision: "city" },
-              { member_id: "b", name: "Bo", source: "slack", precision: "timezone" },
-            ],
-          },
-          {
-            key: "country:germany",
-            label: "Germany",
-            country: "Germany",
-            lat: 51,
-            lon: 10,
-            members: [{ member_id: "c", name: "Cy", source: "login", precision: "country" }],
+            members: [{ member_id: "b", name: "Bo", source: "roster", precision: "city" }],
           },
         ],
         unplaced: [],
-        counts: { placed: 3, unplaced: 0, unknown: 0 },
+        counts: { placed: 1, unplaced: 0, unknown: 0 },
       }),
+      { now },
     );
-    const titles = [...container.querySelectorAll(".member-map__plot .member-map__dot title")].map(
-      (title) => title.textContent ?? "",
+    const element = container.querySelector("adminbot-member-map") as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    container
+      .querySelector<HTMLElement>(".member-map__body .member-map__row")!
+      .dispatchEvent(new MouseEvent("mouseenter"));
+    await element.updateComplete;
+    const popover = container.querySelector('[data-testid="member-map-popover"]')!;
+    expect(popover.querySelector(".member-map__name")?.textContent).toBe("Bo");
+    expect(popover.querySelector(".member-map__name-detail")?.textContent).toBe(
+      "Toronto · from profile",
     );
-    expect(titles.join("\n")).toContain("Ada (city · from last sign-in (approx.))");
-    expect(titles.join("\n")).toContain("Bo (city from time zone · from Slack)");
-    expect(titles.join("\n")).toContain("Cy (country only · from last sign-in (approx.))");
+
+    const summaryCard = await draw(parseMemberMap(summary));
+    const summaryElement = summaryCard.querySelector("adminbot-member-map") as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    summaryCard
+      .querySelector<HTMLElement>(".member-map__body .member-map__row")!
+      .dispatchEvent(new MouseEvent("mouseenter"));
+    await summaryElement.updateComplete;
+    const summaryPopover = summaryCard.querySelector('[data-testid="member-map-popover"]')!;
+    expect(summaryPopover.querySelector(".member-map__people")).toBeNull();
+    expect(summaryPopover.querySelector(".member-map__popover-count")?.textContent).toBe("9");
+  });
+
+  it("wears a Collaborate section's header and panel there, with its own loading and empty states", async () => {
+    const section = await draw(parseMemberMap(summary), { variant: "section" });
+    const root = section.querySelector('[data-testid="dashboard-member-map"]')!;
+    expect(root.tagName).toBe("SECTION");
+    expect(root.querySelector("h2.member-map__title")?.textContent).toBe("Where the lab is");
+    expect(root.querySelector(".member-map__panel .member-map__dot")).not.toBeNull();
+    expect(root.querySelector(".member-map__legend")?.textContent).toContain("City");
+
+    const card = await draw(parseMemberMap(summary));
+    expect(card.querySelector('[data-testid="dashboard-member-map"]')?.tagName).toBe("ARTICLE");
+
+    const loading = await draw(null, { variant: "section", loading: true });
+    expect(loading.querySelector('[data-testid="member-map-loading"]')?.textContent).toContain(
+      "Loading the map",
+    );
+    const empty = await draw(parseMemberMap({ ...summary, places: [] }), { variant: "section" });
+    expect(empty.querySelector('[data-testid="member-map-empty"]')).not.toBeNull();
+    // A failed read is not "nobody is here": the section steps aside rather than say so.
+    expect((await draw(null, { variant: "section" })).querySelector(".member-map")).toBeNull();
   });
 
   it("credits the IP geolocation provider when the service names one, and only over https", async () => {

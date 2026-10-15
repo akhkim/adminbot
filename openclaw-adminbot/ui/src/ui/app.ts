@@ -730,6 +730,8 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMemberMap: MemberMap | null | undefined = undefined;
   @state() adminBotMemberMapLoading = false;
   adminBotMemberMapRequestId = 0;
+  adminBotMemberMapCheckedAt: number | undefined = undefined;
+  adminBotMemberMapTab: string | undefined = undefined;
   @state() adminBotCollaboratorSchedules: AdminBotLabMember[] = [];
   @state() adminBotCollaboratorSchedulesLoading = false;
   @state() adminBotCollaboratorSchedulesError: string | null = null;

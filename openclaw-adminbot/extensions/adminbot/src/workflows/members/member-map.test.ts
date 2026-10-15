@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import {
   buildMemberMap,
+  memberMapVisibility,
   isHiddenFromMemberMap,
   resolveCountry,
   resolveLoginCity,
@@ -288,7 +289,7 @@ describe("buildMemberMap", () => {
       expect(map.places[0]).toMatchObject({ key: "london-on", country: "Canada" });
     });
 
-    it("loses to a city-level Slack or roster answer even when the login is fresher", () => {
+    it("never lets a country-only sign-in beat a stated or timezone city", () => {
       const map = buildMemberMap(
         [
           member({ id: "s", name: "Sa", slack_user_id: "U1", last_login_country: "DE" }),
@@ -301,13 +302,69 @@ describe("buildMemberMap", () => {
       expect(map.places.some((place) => place.key === "country:germany")).toBe(false);
     });
 
-    it("never outranks a stated location", () => {
-      const map = buildMemberMap([traveller({ location: "Toronto" })], new Map(), {
+    it("outranks every stated city while it is fresh", () => {
+      const map = buildMemberMap(
+        [traveller({ location: "Toronto", current_city: "Berlin", slack_user_id: "U1" })],
+        new Map([["U1", "Paris"]]),
+        { loginCity: true, now },
+      );
+      expect(map.places[0]?.label).toBe("Lyon");
+      expect(map.places[0]?.members[0]).toMatchObject({
+        source: "login",
+        precision: "city",
+        last_login_at: "2026-10-14T08:00:00.000Z",
+      });
+    });
+
+    it("counts a sign-in as fresh for 14 days, then falls back to what the member stated", () => {
+      const at = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
+      const place = (last_login_at: string) =>
+        buildMemberMap([traveller({ current_city: "Toronto", last_login_at })], new Map(), {
+          loginCity: true,
+          now,
+        }).places[0];
+      expect(place(at(13.9))?.key).toBe("lyon");
+      const stale = place(at(14.1));
+      expect(stale?.key).toBe("toronto");
+      // The sign-in time is only sent when a sign-in placed the member.
+      expect(stale?.members[0]).toEqual({
+        member_id: "t",
+        name: "Tess",
+        source: "roster",
+        precision: "city",
+      });
+    });
+
+    it("respects the member's own map_visibility", () => {
+      const stated = buildMemberMap(
+        [traveller({ current_city: "Toronto", map_visibility: "stated" })],
+        new Map(),
+        { loginCity: true, now },
+      );
+      expect(stated.places[0]).toMatchObject({ key: "toronto" });
+      expect(JSON.stringify(stated)).not.toContain("Lyon");
+      // With nothing stated, "stated" does not quietly fall back to the sign-in country either.
+      const nothingStated = buildMemberMap([traveller({ map_visibility: "stated" })], new Map(), {
         loginCity: true,
         now,
       });
-      expect(map.places[0]?.label).toBe("Toronto");
-      expect(map.places[0]?.members[0]?.source).toBe("roster");
+      expect(nothingStated.places).toEqual([]);
+      expect(nothingStated.counts.unknown).toBe(1);
+
+      const hidden = buildMemberMap(
+        [traveller({ current_city: "Toronto", map_visibility: "hidden" })],
+        new Map(),
+        { loginCity: true, now },
+      );
+      expect(hidden).toEqual({
+        places: [],
+        unplaced: [],
+        counts: { placed: 0, unplaced: 0, unknown: 0 },
+      });
+
+      // Absent or unrecognised is "auto".
+      expect(memberMapVisibility({})).toBe("auto");
+      expect(memberMapVisibility({ map_visibility: "nonsense" as never })).toBe("auto");
     });
   });
 
@@ -319,10 +376,10 @@ describe("buildMemberMap", () => {
     expect(map.unplaced).toEqual([{ member_id: "a", name: "Ada", raw: "remote", source: "slack" }]);
   });
 
-  it("prefers a Slack profile city over the roster, and current_city over both", () => {
+  it("prefers current_city, then the roster location, then the Slack profile city", () => {
     const map = buildMemberMap(
       [
-        member({ id: "a", name: "Ada", slack_user_id: "U1", location: "Toronto" }),
+        member({ id: "a", name: "Ada", slack_user_id: "U1" }),
         member({ id: "b", name: "Bo", slack_user_id: "U2", location: "Toronto" }),
         member({ id: "c", name: "Cy", location: "Berlin", current_city: "Paris" }),
       ],
