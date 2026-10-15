@@ -16,8 +16,8 @@ import {
   resolveBlockerInput,
 } from "../blockers.ts";
 import type { AdminBotPaperRecord, AdminBotPaperStep } from "../controllers/admin.ts";
-import { paperSteps } from "../views/admin.ts";
-import { findOwnMember } from "../views/profile.ts";
+import { paperSteps } from "../data/paper-steps.ts";
+import { findOwnMember } from "../views/profile-fields.ts";
 import { stepLabel } from "./model.ts";
 import type { PaperWorkspaceProps } from "./workspace.ts";
 

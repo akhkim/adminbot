@@ -139,10 +139,9 @@ import type {
   ProjectDetailsDraft,
   ProjectVenueDraft,
 } from "./adminbot/projects/workspace.ts";
+import { resetViewSessions } from "./adminbot/view-session-reset.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
-import { resetAdminViewSessionState } from "./adminbot/views/admin.ts";
 import type { ConferencePapersTab } from "./adminbot/views/conference-papers.ts";
-import { resetLabSharingSessionState } from "./adminbot/views/lab-sharing.ts";
 import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/lab-travel.plans.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import {
@@ -154,14 +153,15 @@ import {
   EMPTY_PROFILE_OVERVIEW_FILTER,
   type ProfileOverviewFilter,
 } from "./adminbot/views/profile-overview.ts";
-import { resetProfileSessionState } from "./adminbot/views/profile.ts";
 import type { TimeChartWindow } from "./adminbot/views/time-allocation-chart.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
-  type MilestoneDraft,
-  type TimeAvailabilityDraft,
-  type TimeAvailabilityRange,
+} from "./adminbot/views/time-availability.drafts.ts";
+import type {
+  MilestoneDraft,
+  TimeAvailabilityDraft,
+  TimeAvailabilityRange,
 } from "./adminbot/views/time-availability.ts";
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
@@ -1370,9 +1370,8 @@ export class OpenClawApp extends LitElement {
 
   resetMemberViewSessionState() {
     resetProjectsSessionState();
-    resetProfileSessionState();
-    resetLabSharingSessionState();
-    resetAdminViewSessionState();
+    // Profile, Lab Sharing and the admin panels register their resets when they load.
+    resetViewSessions();
   }
 
   async beginViewAs(memberId: string) {

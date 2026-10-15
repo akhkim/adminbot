@@ -17,6 +17,16 @@ export type LazyView<T> = {
   pending: () => boolean;
 };
 
+let hostUpdate: (() => void) | undefined;
+
+// Views created outside app-render.ts (the AdminBot surfaces) repaint through the app shell's
+// update, which it registers here on every render.
+export function setLazyViewHost(update: (() => void) | undefined): void {
+  hostUpdate = update;
+}
+
+export const notifyLazyViewHost = (): void => hostUpdate?.();
+
 export function createLazyView<T>(loader: () => Promise<T>, onChange?: () => void): LazyView<T> {
   const state: LazyState<T> = { mod: null, promise: null, error: undefined, hasError: false };
 

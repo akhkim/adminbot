@@ -66,7 +66,6 @@ import type {
   AdminBotPasswordReset,
   AdminBotPaperRecordInput,
   AdminBotPaperStep,
-  AdminBotPaperTimeline,
   AdminBotProfilePhotoAssessment,
   AdminBotProfilePhotoPolishVariant,
   AdminBotRemovePendingRequest,
@@ -228,7 +227,6 @@ import {
   type AdminBotSocialDraftRecord,
   type AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
-import { parsePaperFeedback } from "../contracts/paper-feedback.js";
 import type { PaperAiTextCheckStore } from "../contracts/paper-integrity-checks.js";
 import {
   adminBotPaperSlotBranchPriority,
@@ -325,7 +323,7 @@ import {
   stampFieldProvenance,
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
-import { birthdayEventPayload, validateBirthday } from "../workflows/members/birthday.js";
+import { validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
   localEventAudience,
@@ -456,12 +454,16 @@ import {
   venueKey,
   selectPublications,
 } from "../workflows/papers/publication-list.js";
-import { readXThreadDraft } from "../workflows/papers/x-draft.js";
 import {
   enforceActiveChannels,
   isActiveChannelEligible,
   type ActiveChannelReader,
 } from "./service.active-channels.js";
+import {
+  birthdayProposalStillCurrent,
+  reconcileBirthdayEvent,
+  reconcileExecutedBirthday,
+} from "./service.birthday.js";
 import {
   calendarMembershipWriteError,
   grantLabCalendarAccess,
@@ -477,6 +479,9 @@ import {
 import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
+import { withPaperTimeline } from "./service.paper-timeline.js";
+import { piReviewSlotDenial } from "./service.pi-review.js";
+import { prepareSocialDraft, socialDraftSupersedes } from "./service.social-drafts.js";
 
 // Ordinary approvals require an administrator; a recommendation is approved by its verified author.
 type AdminBotApproverRole = Extract<AdminBotPrivilegeLevel, "admin"> | "recommender";
@@ -636,7 +641,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     indexedAt: string,
     model: string,
   ): void;
-  listVenuePapers(venueId: string): AdminBotVenuePaper[];
+  listVenuePapers(venueId: string): readonly AdminBotVenuePaper[];
   listVenueIndexStatuses(): Omit<AdminBotVenueIndexStatus, "label">[];
   savePaper(paper: AdminBotPaperRecord): void;
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
@@ -1560,11 +1565,9 @@ export class AdminBotService {
   }
 
   private refreshStoredDeadlineMilestones(): void {
+    const deadlines = this.deadlineReadModel(DEADLINE_VENUES);
     for (const member of this.store.listLabMembers()) {
-      const milestones = reconcileDeadlineMilestones(
-        member.milestones,
-        this.deadlineReadModel(DEADLINE_VENUES),
-      );
+      const milestones = reconcileDeadlineMilestones(member.milestones, deadlines);
       if (milestones === member.milestones) {
         continue;
       }
@@ -1655,63 +1658,13 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
-  /** Reconcile calendar proposals; external writes still require approval. */
-  private reconcileBirthdayEvent(member: AdminBotLabMember, removed = false): void {
-    const eligible = !removed && isThemeMeetingEligible(member) && Boolean(member.birthday?.trim());
-    let current = false;
-    for (const proposal of this.store.listProposalsByType("calendar.create_birthday")) {
-      if (proposal.target?.member_id !== member.id) {
-        continue;
-      }
-      const cancellations = this.store
-        .listProposalsByType("calendar.cancel")
-        .filter((cancel) => cancel.target?.birthday_action_id === proposal.id);
-      if (
-        eligible &&
-        proposal.target?.birthday === member.birthday?.trim() &&
-        proposal.status !== "rejected" &&
-        !cancellations.some((cancel) => cancel.status !== "rejected")
-      ) {
-        current = true;
-        continue;
-      }
-      if (proposal.status === "pending" || proposal.status === "approved") {
-        this.removePending(proposal.id, { note: "Birthday or membership changed." });
-      }
-      const execution = this.store.getExecutionResult(proposal.id);
-      const eventId = execution?.artifacts?.event_id;
-      if (execution?.status === "executed" && eventId && cancellations.length === 0) {
-        const payload = proposal.proposed_payload as Record<string, unknown>;
-        this.createProposal({
-          type: "calendar.cancel",
-          summary: `Remove ${member.name}'s previous birthday event`,
-          target: { member_id: member.id, birthday_action_id: proposal.id },
-          proposed_payload: {
-            calendar_id: payload.calendar_id,
-            event_id: eventId,
-            ...(payload.account ? { account: payload.account } : {}),
-          },
-          rationale: "The birthday changed, was cleared, or the member is no longer eligible.",
-          idempotency_key: `birthday-remove:${proposal.id}`,
-        });
-      }
-    }
-    if (!eligible || current) {
-      return;
-    }
-    const payload = birthdayEventPayload(member, resolveLabCalendar().id, new Date());
-    if (!payload) {
-      return;
-    }
-    const name = member.preferred_name?.trim() || member.name.trim();
-    this.createProposal({
-      type: "calendar.create_birthday",
-      summary: `Add ${name}'s birthday to the lab calendar`,
-      target: { member_id: member.id, birthday: member.birthday?.trim() ?? "" },
-      proposed_payload: payload,
-      rationale: "A full or major coauthor member supplied their optional birthday.",
-      undo_plan: "Delete the recurring event from the lab calendar.",
-    });
+  /** What service.birthday.ts needs to propose or withdraw a member's birthday event. */
+  private get birthdayDeps() {
+    return {
+      store: this.store,
+      removePending: (id: string, request: { note: string }) => this.removePending(id, request),
+      createProposal: (proposal: AdminBotActionProposal) => this.createProposal(proposal),
+    };
   }
 
   /**
@@ -2739,16 +2692,8 @@ export class AdminBotService {
     ) {
       return serviceError(409, "proposal does not have the required approvals");
     }
-    if (proposal.type === "calendar.create_birthday") {
-      const member = this.store.getLabMember(String(proposal.target?.member_id ?? ""));
-      if (
-        !member ||
-        !isThemeMeetingEligible(member) ||
-        !member.birthday?.trim() ||
-        member.birthday.trim() !== proposal.target?.birthday
-      ) {
-        return serviceError(409, "birthday proposal no longer matches an eligible member");
-      }
+    if (!birthdayProposalStillCurrent(this.store, proposal)) {
+      return serviceError(409, "birthday proposal no longer matches an eligible member");
     }
     const now = new Date().toISOString();
     const dryRun = request.dry_run !== false;
@@ -2926,21 +2871,7 @@ export class AdminBotService {
     proposal.updated_at = now;
     this.store.updateProposal(proposal);
     this.store.saveExecutionResult(result);
-    if (proposal.type === "calendar.create_birthday") {
-      const memberId = String(proposal.target?.member_id ?? "");
-      const member = this.store.getLabMember(memberId);
-      this.reconcileBirthdayEvent(
-        member ?? {
-          id: memberId,
-          name: memberId,
-          privilege_level: "external_collaborator",
-          access: [],
-          created_at: now,
-          updated_at: now,
-        },
-        !member,
-      );
-    }
+    reconcileExecutedBirthday(this.birthdayDeps, proposal, now);
     this.recordAudit({
       type: "execution.executed",
       action_id: actionId,
@@ -3476,7 +3407,7 @@ export class AdminBotService {
         ...(moved.timezone ? { timezone: moved.timezone } : {}),
       });
     }
-    this.reconcileBirthdayEvent(stored);
+    reconcileBirthdayEvent(this.birthdayDeps, stored);
     // The same hook again, for theme membership. This is what makes onboarding automatic: a new
     // member describing their research is a profile write, so the channels they belong in are
     // proposed the moment they say what they work on, rather than waiting for a sweep.
@@ -5101,6 +5032,13 @@ export class AdminBotService {
     week_start: string;
     gaps: AdminBotWeeklyUpdateGap[];
   }> {
+    return this.withRosterSnapshot(() => this.sweepCollectWeeklyUpdateGaps(nowIso));
+  }
+
+  private sweepCollectWeeklyUpdateGaps(nowIso?: string): AdminBotServiceResponse<{
+    week_start: string;
+    gaps: AdminBotWeeklyUpdateGap[];
+  }> {
     const now = nowIso ? new Date(nowIso) : new Date();
     const weekStart = adminBotWeekStart(now);
     // The head professor is not asked for a weekly line, on any paper. She supervises nearly
@@ -5526,9 +5464,9 @@ export class AdminBotService {
       id: survivor.id,
       updated_at: now,
     };
-    this.reconcileBirthdayEvent(duplicate, true);
+    reconcileBirthdayEvent(this.birthdayDeps, duplicate, true);
     this.store.saveLabMember(merged);
-    this.reconcileBirthdayEvent(merged);
+    reconcileBirthdayEvent(this.birthdayDeps, merged);
     const moved = this.store.reassignMemberReferences(params.duplicateId, params.survivorId);
     this.store.revokeSessionsForMember(params.duplicateId, now);
     this.store.deleteLabMember(params.duplicateId);
@@ -5594,7 +5532,7 @@ export class AdminBotService {
     // Sessions first and through the revoke path rather than the purge, so a signed-in browser
     // stops working by the route that records that it did -- same order as the merge.
     this.store.revokeSessionsForMember(member.id, now);
-    this.reconcileBirthdayEvent(member, true);
+    reconcileBirthdayEvent(this.birthdayDeps, member, true);
     const removed = this.store.purgeMemberReferences(member.id);
     this.store.deleteLabMember(member.id);
     this.recordAudit({
@@ -6398,20 +6336,14 @@ export class AdminBotService {
     if (!context.ok) {
       return context.error;
     }
-    if (
-      params.slot === "pi_approval" &&
-      params.memberId !== this.resolveSettings().head_professor_member_id?.trim()
-    ) {
-      return serviceError(403, "Only the head professor can approve publication.");
-    }
-    if (params.slot.startsWith("feedback_") && params.input.value_text) {
-      const feedback = parsePaperFeedback(params.input.value_text);
-      if (
-        (feedback?.reviewed || feedback?.review_note) &&
-        params.memberId !== this.resolveSettings().head_professor_member_id?.trim()
-      ) {
-        return serviceError(403, "Only the head professor can record paper feedback completion.");
-      }
+    const piDenial = piReviewSlotDenial({
+      slot: params.slot,
+      valueText: params.input.value_text,
+      memberId: params.memberId,
+      headProfessorMemberId: this.resolveSettings().head_professor_member_id,
+    });
+    if (piDenial) {
+      return serviceError(403, piDenial);
     }
     const result = applyPaperSlotWrite({
       existing: context.existing,
@@ -7330,46 +7262,13 @@ export class AdminBotService {
     if (!params.privileged && !this.memberOwnsPaperId(params.memberId, paper)) {
       return serviceError(403, "members can only edit papers they authored");
     }
-    if (params.platform !== "x" && params.platform !== "linkedin") {
-      return serviceError(400, "platform must be x or linkedin");
+    const prepared = prepareSocialDraft(params);
+    if (!prepared.ok) {
+      return serviceError(400, prepared.message);
     }
-    let xThread;
-    if (params.xThread !== undefined) {
-      if (params.platform !== "x") {
-        return serviceError(400, "Only X drafts support threads.");
-      }
-      try {
-        xThread = readXThreadDraft(params.xThread);
-      } catch (error) {
-        return serviceError(400, (error as Error).message);
-      }
-    }
-    const body = xThread ? xThread.posts.map((post) => post.text).join("\n\n") : params.body.trim();
-    if (!body) {
-      return serviceError(400, "a draft needs a body");
-    }
-    const now = new Date().toISOString();
-    const draft: AdminBotSocialDraftRecord = {
-      // Random suffix, not just the clock: two saves inside the same millisecond would otherwise
-      // share an id, and the second would upsert over the first instead of superseding it --
-      // losing the very version somebody may already have consented to.
-      id: `${params.paperId}-${params.platform}-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`,
-      paper_id: params.paperId,
-      platform: params.platform,
-      body,
-      ...(xThread ? { x_thread: xThread } : {}),
-      generated_at: now,
-      generated_by_member_id: params.memberId,
-      status: "draft",
-      ...(params.model ? { model: params.model } : {}),
-    };
+    const { draft } = prepared;
     for (const existing of this.store.listSocialDrafts(params.paperId)) {
-      if (
-        existing.platform !== params.platform ||
-        existing.status === "superseded" ||
-        (params.platform === "x" &&
-          (existing.x_thread?.stage ?? "arxiv") !== (xThread?.stage ?? "arxiv"))
-      ) {
+      if (!socialDraftSupersedes(existing, draft)) {
         continue;
       }
       this.store.saveSocialDraft({
@@ -8018,6 +7917,12 @@ export class AdminBotService {
   listPaperSlotOverview(nowIso?: string): AdminBotServiceResponse<{
     papers: AdminBotPaperSlotOverviewRow[];
   }> {
+    return this.withRosterSnapshot(() => this.sweepListPaperSlotOverview(nowIso));
+  }
+
+  private sweepListPaperSlotOverview(nowIso?: string): AdminBotServiceResponse<{
+    papers: AdminBotPaperSlotOverviewRow[];
+  }> {
     const now = nowIso ? new Date(nowIso) : new Date();
     const ledger = this.nudgeLedgerIndex();
     const papers = this.store.listPapers().map((paper) => {
@@ -8205,9 +8110,18 @@ export class AdminBotService {
     batches: AdminBotNudgeBatch[];
     papers_considered: number;
   }> {
+    return this.withRosterSnapshot(() => this.sweepCollectPaperNudgeBatches(nowIso));
+  }
+
+  private sweepCollectPaperNudgeBatches(nowIso?: string): AdminBotServiceResponse<{
+    batches: AdminBotNudgeBatch[];
+    papers_considered: number;
+  }> {
     const now = nowIso ? new Date(nowIso) : new Date();
     const gathered = this.gatherPaperNudges(now);
-    const roster = new Map(this.store.listLabMembers().map((member) => [member.id, member]));
+    const roster = new Map(
+      (this.rosterSnapshot ?? this.store.listLabMembers()).map((member) => [member.id, member]),
+    );
     const batches = [...gathered.byRecipient.entries()]
       .map(([memberId, groups]) => {
         const member = roster.get(memberId);
@@ -9072,6 +8986,26 @@ export class AdminBotService {
     };
   }
 
+  /** Set only while an all-paper sweep runs; see withRosterSnapshot. */
+  private rosterSnapshot: AdminBotLabMember[] | undefined;
+
+  /**
+   * Runs a synchronous, read-only sweep with one roster read shared by every per-paper owner
+   * lookup. A roster read parses every member's whole payload, so reading it per paper made the
+   * admin sweeps cost seconds and stall the synchronous store for everyone else meanwhile.
+   */
+  private withRosterSnapshot<T>(sweep: () => T): T {
+    if (this.rosterSnapshot) {
+      return sweep();
+    }
+    this.rosterSnapshot = this.store.listLabMembers();
+    try {
+      return sweep();
+    } finally {
+      this.rosterSnapshot = undefined;
+    }
+  }
+
   /**
    * Who a slot's owner role resolves to on this paper.
    *
@@ -9083,7 +9017,7 @@ export class AdminBotService {
     paper: AdminBotPaperRecord,
     owner: AdminBotPaperSlotOwner,
   ): string[] {
-    const roster = this.store.listLabMembers();
+    const roster = this.rosterSnapshot ?? this.store.listLabMembers();
     const byName = new Map(
       roster.map((member) => [member.name.trim().toLocaleLowerCase(), member]),
     );
@@ -16241,163 +16175,6 @@ function mergeAccessGrants(
   );
 }
 
-type PaperTimelinePlanItem = {
-  step: AdminBotPaperStep;
-  label: string;
-  dependency_group: AdminBotPaperTimeline["items"][number]["dependency_group"];
-  duration_business_days: number;
-  color: string;
-  /**
-   * Steps that must finish first. The paper flow is not a single line: slides branch off the
-   * submission and run alongside the arXiv/announcement chain, so this is a graph rather than the
-   * plan's array order. Scheduling walks these edges; the array order only defines step identity.
-   */
-  depends_on: readonly AdminBotPaperStep[];
-};
-
-const PAPER_TIMELINE_PLAN = [
-  {
-    step: "brainstorming_docs",
-    label: "Brainstorming docs",
-    dependency_group: "ideation",
-    duration_business_days: 2,
-    color: "#64748b",
-    depends_on: [],
-  },
-  {
-    step: "overleaf_writing",
-    label: "Overleaf writing",
-    dependency_group: "writing",
-    duration_business_days: 5,
-    color: "#2563eb",
-    depends_on: ["brainstorming_docs"],
-  },
-  {
-    step: "submission",
-    label: "Submission",
-    dependency_group: "submission",
-    duration_business_days: 1,
-    color: "#7c3aed",
-    depends_on: ["overleaf_writing"],
-  },
-  {
-    step: "google_drive_pdf",
-    label: "Drive PDF",
-    dependency_group: "release",
-    duration_business_days: 1,
-    color: "#0891b2",
-    depends_on: ["submission"],
-  },
-  {
-    step: "arxiv_polish",
-    label: "arXiv polish",
-    dependency_group: "release",
-    duration_business_days: 2,
-    color: "#0f766e",
-    depends_on: ["google_drive_pdf"],
-  },
-  {
-    step: "social_posts",
-    label: "Announcements",
-    dependency_group: "outreach",
-    duration_business_days: 1,
-    color: "#db2777",
-    depends_on: ["arxiv_polish"],
-  },
-  {
-    step: "slide_making",
-    label: "Slides",
-    dependency_group: "materials",
-    duration_business_days: 2,
-    color: "#d97706",
-    depends_on: ["submission"],
-  },
-  {
-    step: "poster_making",
-    label: "Poster",
-    dependency_group: "materials",
-    duration_business_days: 2,
-    color: "#16a34a",
-    depends_on: ["slide_making"],
-  },
-] as const satisfies readonly PaperTimelinePlanItem[];
-
-function withPaperTimeline(paper: AdminBotPaperRecord): AdminBotPaperRecord {
-  return {
-    ...paper,
-    timeline: buildPaperTimeline(paper),
-  };
-}
-
-function buildPaperTimeline(
-  paper: Pick<AdminBotPaperRecord, "current_step" | "reminder">,
-): AdminBotPaperTimeline {
-  const currentStepIndex = Math.max(
-    0,
-    PAPER_TIMELINE_PLAN.findIndex((item) => item.step === paper.current_step),
-  );
-  // Work in the plan, used for progress. This is the sum of every step's estimate and is not the
-  // same as the schedule length below: parallel branches take calendar time off the schedule
-  // without taking work off the paper.
-  const totalWorkBusinessDays = PAPER_TIMELINE_PLAN.reduce(
-    (total, item) => total + item.duration_business_days,
-    0,
-  );
-  const complete = paper.reminder?.status === "complete";
-  const blocked = paper.reminder?.status === "blocked";
-
-  // Earliest start per step = latest finish among its dependencies (longest path). The plan is
-  // ordered so every step appears after its dependencies, so one forward pass is enough.
-  const finishByStep = new Map<AdminBotPaperStep, number>();
-  const items = PAPER_TIMELINE_PLAN.map((item, index) => {
-    const start = item.depends_on.reduce(
-      (latest, dependency) => Math.max(latest, finishByStep.get(dependency) ?? 0),
-      0,
-    );
-    const end = start + item.duration_business_days;
-    finishByStep.set(item.step, end);
-    return {
-      step: item.step,
-      label: item.label,
-      dependency_group: item.dependency_group,
-      depends_on: [...item.depends_on],
-      status: timelineStatus(index, currentStepIndex, complete, blocked),
-      offset_start_business_day: start,
-      offset_end_business_day: end,
-      duration_business_days: item.duration_business_days,
-      color: item.color,
-    };
-  });
-  // Schedule length is the critical path, which is what a Gantt axis spans.
-  const scheduleBusinessDays = Math.max(1, ...items.map((item) => item.offset_end_business_day));
-  const completedWorkBusinessDays = complete
-    ? totalWorkBusinessDays
-    : PAPER_TIMELINE_PLAN.slice(0, currentStepIndex).reduce(
-        (total, item) => total + item.duration_business_days,
-        0,
-      );
-  return {
-    progress_percent: Math.round((completedWorkBusinessDays / totalWorkBusinessDays) * 100),
-    current_step_index: currentStepIndex,
-    total_estimated_business_days: scheduleBusinessDays,
-    items,
-  };
-}
-
-function timelineStatus(
-  index: number,
-  currentStepIndex: number,
-  complete: boolean,
-  blocked: boolean,
-): AdminBotPaperTimeline["items"][number]["status"] {
-  if (complete || index < currentStepIndex) {
-    return "complete";
-  }
-  if (index === currentStepIndex) {
-    return blocked ? "blocked" : "current";
-  }
-  return "upcoming";
-}
 function duePaperNudges(paper: AdminBotPaperRecord, nowIso: string): AdminBotPaperNudge[] {
   const reminder = paper.reminder;
   if (reminder?.status !== "waiting_on_authors") {

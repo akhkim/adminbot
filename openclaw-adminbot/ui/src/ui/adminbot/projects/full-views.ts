@@ -14,6 +14,7 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { mapImportColumns } from "../api/paper-admin.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
+import { paperSteps } from "../data/paper-steps.ts";
 import {
   clearHistory,
   clearSavedEdits,
@@ -26,7 +27,6 @@ import {
   unsentSlotEdits,
   type PaperGridState,
 } from "../paper-grid.ts";
-import { paperSteps } from "../views/admin.ts";
 import { renderPaperFeedback } from "../views/paper-feedback.ts";
 import {
   cancelPaperLegacyAutosave,
@@ -35,7 +35,7 @@ import {
   type PaperLegacyState,
 } from "../views/paper-legacy.ts";
 import { renderPaperTimeline } from "../views/paper-timeline.ts";
-import { findOwnMember } from "../views/profile.ts";
+import { findOwnMember } from "../views/profile-fields.ts";
 import { paperIdFromTitle } from "./add-form.ts";
 import {
   renderBlockerForm,

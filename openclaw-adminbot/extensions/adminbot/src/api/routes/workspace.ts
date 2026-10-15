@@ -13,7 +13,7 @@ import {
   sendServiceResult,
 } from "../server.http.js";
 import { adminSessionOnly, memberOnly, principalActor, privilegedOnly } from "./guards.js";
-import { asDays } from "./query-params.js";
+import { asDays, limitParam } from "./query-params.js";
 import { get, post, put, route, type Route } from "./router.js";
 
 export const workspaceRoutes: readonly Route[] = [
@@ -38,8 +38,7 @@ export const workspaceRoutes: readonly Route[] = [
     "/activity/updates",
     privilegedOnly(({ res, url, ctx }) => {
       const { service } = ctx;
-      const limit = Number(url.searchParams.get("limit") ?? "");
-      sendServiceResult(res, service.listRecentUpdates(Number.isFinite(limit) ? limit : undefined));
+      sendServiceResult(res, service.listRecentUpdates(limitParam(url)));
     }),
   ),
   post("/feedback", async ({ req, res, principal, ctx }) => {

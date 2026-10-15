@@ -9,6 +9,7 @@ import type {
   DeadlineProposalStore,
 } from "../data/deadline-proposals.ts";
 import { DEADLINE_VENUES, type DeadlineVenue } from "../data/deadlines.ts";
+import { milestoneEndInstant } from "../data/milestone-time.ts";
 import {
   archivalLabelOf,
   buildDeadlineBoardEntries,
@@ -21,7 +22,6 @@ import {
   headlineDeadlineEntry,
   mergeArrSubmissionDuplicates,
   milestoneDateLabel,
-  milestoneEndInstant,
   nextVenueStage,
   venueSchedule,
   workshopGroupLabel,

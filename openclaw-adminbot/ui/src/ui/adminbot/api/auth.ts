@@ -9,8 +9,8 @@ import {
   mapErrorResponse,
   type MemberGateway,
   type MemberImpersonator,
-  readJson,
 } from "../auth/session.ts";
+import { readApiJson } from "../data/api-json.ts";
 
 export type MemberSession = {
   session_token: string;
@@ -57,7 +57,7 @@ async function postJson(
   } catch {
     return { unreachable: true };
   }
-  return { response, body: await readJson(response) };
+  return { response, body: await readApiJson(response) };
 }
 
 // Approves the member's own pending gateway device pairing (POST /auth/pair-device). Called when a

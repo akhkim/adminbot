@@ -533,3 +533,60 @@ describe("the scheduled once-per-conference pass", () => {
     expect(response.status).toBe(401);
   });
 });
+
+// Pinned before the routes moved out of server.ts's route table, so the move can be shown to
+// change nothing a caller can see: the status, the gate each route sits behind, and that a wrong
+// method still falls through to the router rather than being claimed by the workshop handler.
+describe("workshop nudge route contract", () => {
+  const serviceHeaders = {
+    Authorization: `Bearer ${SERVICE_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+
+  it("lists conferences for an administrator and refuses the service principal", async () => {
+    const { baseUrl, mock } = await startService();
+    const headers = await adminHeaders(baseUrl, mock);
+    const ok = await fetch(`${baseUrl}/workshop-nudges/conferences`, { headers });
+    expect(ok.status).toBe(200);
+    expect(Array.isArray(((await ok.json()) as { conferences: unknown }).conferences)).toBe(true);
+
+    const refused = await fetch(`${baseUrl}/workshop-nudges/conferences`, {
+      headers: serviceHeaders,
+    });
+    expect(refused.status).toBe(403);
+  });
+
+  it("lets an administrator cancel when nothing is running", async () => {
+    const { baseUrl, mock } = await startService();
+    const headers = await adminHeaders(baseUrl, mock);
+    const response = await fetch(`${baseUrl}/workshop-nudges/cancel`, {
+      method: "POST",
+      headers,
+      body: "{}",
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects a send with no recipients before touching the stored pass", async () => {
+    const { baseUrl, mock } = await startService();
+    const headers = await adminHeaders(baseUrl, mock);
+    for (const body of ["{}", JSON.stringify({ recipient_member_ids: [" ", 7] })]) {
+      const response = await fetch(`${baseUrl}/workshop-nudges/send`, {
+        method: "POST",
+        headers,
+        body,
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: { message: "recipient_member_ids must not be empty" },
+      });
+    }
+  });
+
+  it("leaves a wrong method to the rest of the router", async () => {
+    const { baseUrl, mock } = await startService();
+    const headers = await adminHeaders(baseUrl, mock);
+    const response = await fetch(`${baseUrl}/workshop-nudges/preview`, { headers });
+    expect(response.status).toBe(404);
+  });
+});

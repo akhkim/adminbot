@@ -9,7 +9,7 @@ import { createEmptyAdminBotDashboardData } from "../controllers/admin.ts";
 import * as deadlineTime from "../data/deadline-time.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { renderDashboard } from "./dashboard.ts";
-import { findOwnMember } from "./profile.ts";
+import { findOwnMember } from "./profile-fields.ts";
 
 function createState(overrides: Partial<AppViewState> = {}): AppViewState {
   return {

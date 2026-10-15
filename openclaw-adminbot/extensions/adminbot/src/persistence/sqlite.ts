@@ -139,6 +139,14 @@ import {
   getReferenceScan,
   saveReferenceScan,
 } from "./reference-scans.js";
+import { SqliteAuditLog } from "./sqlite.audit.js";
+import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
+import {
+  listSqliteSocialDrafts,
+  migrateSocialDraftColumns,
+  saveSqliteSocialDraft,
+} from "./sqlite.social-drafts.js";
+import { SqliteVenuePaperIndex } from "./sqlite.venue-papers.js";
 
 const require = createRequire(import.meta.url);
 
@@ -170,7 +178,7 @@ export type AdminBotSqliteServiceOptions = AdminBotServiceOptions & {
 
 export function createAdminBotSqliteService(options: AdminBotSqliteServiceOptions) {
   const store = new AdminBotSqliteStore(options.databasePath);
-  const service = new AdminBotService(store, serviceOptions(options));
+  const service = new AdminBotService(store, sqliteServiceOptions(options));
   return {
     service,
     store,
@@ -178,7 +186,11 @@ export function createAdminBotSqliteService(options: AdminBotSqliteServiceOption
   };
 }
 
-function serviceOptions({
+/**
+ * The caller's options whole, plus env-sourced paperflow settings. An allowlist here once dropped
+ * the deadline dataset, arXiv/OpenReview probes and Slack photo reviewers in production only.
+ */
+export function sqliteServiceOptions({
   databasePath: _databasePath,
   ...options
 }: AdminBotSqliteServiceOptions): AdminBotServiceOptions {
@@ -202,11 +214,17 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   private readonly db: DatabaseSync;
   private readonly failedRequests: FailedExternalRequestLedger;
+  private readonly venueIndex: SqliteVenuePaperIndex;
+  private readonly members: SqliteLabMemberCache;
+  private readonly audit: SqliteAuditLog;
 
   constructor(readonly databasePath: string) {
     ensureDatabaseDirectory(databasePath);
     const sqlite = requireNodeSqlite();
     this.db = new sqlite.DatabaseSync(databasePath);
+    this.venueIndex = new SqliteVenuePaperIndex(this.db);
+    this.members = new SqliteLabMemberCache(this.db);
+    this.audit = new SqliteAuditLog(this.db);
     // SQLite's built-in lower() only handles ASCII; use the same fold as the in-memory store.
     this.db.function("adminbot_lower", { deterministic: true }, (value) =>
       String(value ?? "").toLowerCase(),
@@ -908,12 +926,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
     this.migratePaperSlotColumns();
-    const socialColumns = this.db
-      .prepare("PRAGMA table_info(adminbot_paper_social_drafts)")
-      .all() as Array<{ name: string }>;
-    if (!socialColumns.some((column) => column.name === "x_thread")) {
-      this.db.exec("ALTER TABLE adminbot_paper_social_drafts ADD COLUMN x_thread TEXT");
-    }
+    migrateSocialDraftColumns(this.db);
     this.failedRequests = createFailedRequestLedgerFromDatabase(this.db);
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
@@ -1388,42 +1401,44 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           payload_json = excluded.payload_json`,
       )
       .run(member.id, member.privilege_level, member.updated_at, JSON.stringify(member));
+    this.members.invalidate();
   }
 
   patchLabMemberAuthFields(
     memberId: string,
     patch: Parameters<AdminBotServiceStore["patchLabMemberAuthFields"]>[1],
   ): boolean {
-    return (
+    const changed =
       this.db
         .prepare(
           `UPDATE adminbot_lab_members
          SET updated_at = ?, payload_json = json_patch(payload_json, ?)
          WHERE id = ?`,
         )
-        .run(patch.updated_at, JSON.stringify(patch), memberId).changes > 0
-    );
+        .run(patch.updated_at, JSON.stringify(patch), memberId).changes > 0;
+    this.members.invalidate();
+    return changed;
   }
 
   getLabMember(memberId: string): AdminBotLabMember | undefined {
-    const row = this.db
-      .prepare("SELECT payload_json FROM adminbot_lab_members WHERE id = ?")
-      .get(memberId) as { payload_json?: string } | undefined;
-    return row?.payload_json ? parseJson<AdminBotLabMember>(row.payload_json) : undefined;
+    return this.members.get(memberId);
   }
 
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[] {
-    const q = page?.q?.toLowerCase();
+    if (!page) {
+      return [...this.members.list()];
+    }
+    const q = page.q?.toLowerCase();
     const where = q ? `WHERE ${LAB_MEMBER_SEARCH}` : "";
     // ponytail: NOCASE indexes the common paged read but folds ASCII only. Search still folds
     // Unicode; add a persisted Unicode sort key if locale-aware global ordering becomes necessary.
     const rows = this.db
       .prepare(
         `SELECT m.payload_json FROM adminbot_lab_members m ${where}
-          ORDER BY ${page ? "json_extract(m.payload_json, '$.name') COLLATE NOCASE, m.id" : "json_extract(m.payload_json, '$.name')"}
-          ${page ? "LIMIT ? OFFSET ?" : ""}`,
+          ORDER BY json_extract(m.payload_json, '$.name') COLLATE NOCASE, m.id
+          LIMIT ? OFFSET ?`,
       )
-      .all(...(q ? [q, q, q, q] : []), ...(page ? [page.limit, page.offset] : [])) as Array<{
+      .all(...(q ? [q, q, q, q] : []), page.limit, page.offset) as Array<{
       payload_json: string;
     }>;
     return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
@@ -1449,28 +1464,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   listLabMemberSummaries(): AdminBotLabMemberSummary[] {
-    const rows = this.db
-      .prepare(
-        `SELECT m.payload_json FROM adminbot_lab_members m
-         ORDER BY adminbot_lower(json_extract(m.payload_json, '$.name')), m.id`,
-      )
-      .all() as Array<{ payload_json: string }>;
-    return rows.map((row) => {
-      const summary = parseJson<AdminBotLabMember>(row.payload_json);
-      delete summary.field_provenance;
-      delete (summary as Partial<AdminBotLabMember>).access;
-      if (summary.onboarding && !Array.isArray(summary.onboarding)) {
-        return {
-          ...summary,
-          onboarding: {
-            steps: Array.isArray(summary.onboarding.steps)
-              ? summary.onboarding.steps.map(({ id, status }) => ({ id, status }))
-              : [],
-          },
-        };
-      }
-      return summary;
-    });
+    return [...this.members.summaries()];
   }
 
   countLabMembers(q?: string): number {
@@ -1930,6 +1924,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     const result = this.db
       .prepare("DELETE FROM adminbot_lab_members WHERE id = ?")
       .run(memberId) as { changes?: number };
+    this.members.invalidate();
     return (result.changes ?? 0) > 0;
   }
 
@@ -2215,59 +2210,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     indexedAt: string,
     model: string,
   ): void {
-    const remove = this.db.prepare("DELETE FROM adminbot_venue_papers WHERE venue_id = ?");
-    const insert = this.db.prepare(
-      `INSERT INTO adminbot_venue_papers (
-         venue_id, paper_id, indexed_at, embedding_model, payload_json
-       ) VALUES (?, ?, ?, ?, ?)`,
-    );
-    // Explicit BEGIN/COMMIT so a failed rebuild leaves the previous index intact: without it a
-    // crash mid-insert leaves the venue half-indexed and silently ranking against a partial
-    // corpus. Written out rather than via a helper because node:sqlite's DatabaseSync has no
-    // `transaction()` wrapper -- that is better-sqlite3, which this file does not use.
-    this.db.exec("BEGIN");
-    try {
-      remove.run(venueId);
-      for (const paper of papers) {
-        insert.run(venueId, paper.paper_id, indexedAt, model, JSON.stringify(paper));
-      }
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+    this.venueIndex.replace(venueId, papers, indexedAt, model);
   }
 
-  listVenuePapers(venueId: string): AdminBotVenuePaper[] {
-    const rows = this.db
-      .prepare("SELECT payload_json FROM adminbot_venue_papers WHERE venue_id = ?")
-      .all(venueId) as Array<{ payload_json: string }>;
-    return rows.map((row) => parseJson<AdminBotVenuePaper>(row.payload_json));
+  listVenuePapers(venueId: string): readonly AdminBotVenuePaper[] {
+    return this.venueIndex.list(venueId);
   }
 
   listVenueIndexStatuses(): Omit<AdminBotVenueIndexStatus, "label">[] {
-    const rows = this.db
-      .prepare(
-        `SELECT venue_id, COUNT(*) AS paper_count,
-                MAX(indexed_at) AS indexed_at,
-                MAX(embedding_model) AS embedding_model
-         FROM adminbot_venue_papers GROUP BY venue_id`,
-      )
-      .all() as Array<{
-      venue_id: string;
-      paper_count: number;
-      indexed_at: string | null;
-      embedding_model: string | null;
-    }>;
-    // Built without a conditional spread: MAX() over a grouped column is null only for an empty
-    // group, which cannot happen here, and `undefined` reads the same as an absent key to every
-    // caller. Matches how the route serialises the same record.
-    return rows.map((row) => ({
-      venue_id: row.venue_id,
-      paper_count: row.paper_count,
-      indexed_at: row.indexed_at ?? undefined,
-      embedding_model: row.embedding_model ?? undefined,
-    }));
+    return this.venueIndex.statuses();
   }
 
   saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void {
@@ -2530,58 +2481,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   saveSocialDraft(record: AdminBotSocialDraftRecord): void {
-    this.db
-      .prepare(
-        `INSERT INTO adminbot_paper_social_drafts
-          (id, paper_id, platform, body, model, generated_at, generated_by_member_id, status, superseded_by, x_thread)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           body = excluded.body,
-           model = excluded.model,
-           status = excluded.status,
-           superseded_by = excluded.superseded_by,
-           x_thread = excluded.x_thread`,
-      )
-      .run(
-        record.id,
-        record.paper_id,
-        record.platform,
-        record.body,
-        record.model ?? null,
-        record.generated_at,
-        record.generated_by_member_id ?? null,
-        record.status,
-        record.superseded_by ?? null,
-        record.x_thread ? JSON.stringify(record.x_thread) : null,
-      );
+    saveSqliteSocialDraft(this.db, record);
   }
 
   listSocialDrafts(paperId?: string, draftId?: string): AdminBotSocialDraftRecord[] {
-    const rows = (
-      draftId
-        ? this.db.prepare("SELECT * FROM adminbot_paper_social_drafts WHERE id = ?").all(draftId)
-        : paperId
-          ? this.db
-              .prepare(
-                "SELECT * FROM adminbot_paper_social_drafts WHERE paper_id = ? ORDER BY generated_at DESC",
-              )
-              .all(paperId)
-          : this.db
-              .prepare("SELECT * FROM adminbot_paper_social_drafts ORDER BY generated_at DESC")
-              .all()
-    ) as Array<Record<string, unknown>>;
-    return rows.map((row) => ({
-      id: String(row.id),
-      paper_id: String(row.paper_id),
-      platform: String(row.platform) as AdminBotSocialDraftRecord["platform"],
-      body: String(row.body),
-      generated_at: String(row.generated_at),
-      status: String(row.status) as AdminBotSocialDraftRecord["status"],
-      ...optionalText(row, "model"),
-      ...optionalText(row, "generated_by_member_id"),
-      ...optionalText(row, "superseded_by"),
-      ...(typeof row.x_thread === "string" ? { x_thread: JSON.parse(row.x_thread) } : {}),
-    }));
+    return listSqliteSocialDrafts(this.db, paperId, draftId);
   }
 
   saveSocialConsent(record: AdminBotSocialConsentRecord): void {
@@ -3580,39 +3484,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   recordAudit(event: AdminBotAuditEvent): void {
-    this.db
-      .prepare(
-        `INSERT INTO adminbot_audit_events (
-          id,
-          action_id,
-          event_type,
-          timestamp,
-          actor,
-          event_json
-        ) VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        event.id,
-        event.action_id ?? null,
-        event.type,
-        event.timestamp,
-        event.actor ?? null,
-        JSON.stringify(event),
-      );
+    this.audit.record(event);
   }
 
   listAuditEvents(): AdminBotAuditEvent[] {
-    const rows = this.db
-      .prepare("SELECT event_json FROM adminbot_audit_events ORDER BY timestamp ASC")
-      .all() as Array<{ event_json: string }>;
-    return rows.map((row) => parseJson<AdminBotAuditEvent>(row.event_json));
+    return this.audit.list();
   }
 
   pruneAuditEventsBefore(cutoffIso: string): number {
-    const result = this.db
-      .prepare("DELETE FROM adminbot_audit_events WHERE timestamp < ?")
-      .run(cutoffIso);
-    return Number(result.changes ?? 0);
+    return this.audit.pruneBefore(cutoffIso);
   }
 
   getCredentialByEmail(email: string): AdminBotMemberCredential | undefined {
@@ -3844,6 +3724,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         return "stale";
       }
       this.db.exec("COMMIT");
+      this.members.invalidate();
       return "changed";
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -4027,6 +3908,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         )
         .run(decidedBy, decidedAt, id);
       this.db.exec("COMMIT");
+      this.members.invalidate();
       return { ok: true, member_id: memberId };
     } catch (error) {
       this.db.exec("ROLLBACK");

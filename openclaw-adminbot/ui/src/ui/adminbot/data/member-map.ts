@@ -14,6 +14,7 @@
 
 import type { UiSettings } from "../../storage.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
+import { readApiJson } from "./api-json.ts";
 
 /** One city the gazetteer knows, with however much of its membership the caller may see. */
 export type MemberMapPlace = {
@@ -185,7 +186,7 @@ export async function loadMemberMap(host: MemberMapHost): Promise<void> {
     if (!response.ok || !isCurrent()) {
       return;
     }
-    const parsed = parseMemberMap(await response.json());
+    const parsed = parseMemberMap(await readApiJson(response));
     if (isCurrent()) {
       host.adminBotMemberMap = parsed;
     }

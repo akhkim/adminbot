@@ -731,7 +731,7 @@ describe("renderApp assistant avatar routing", () => {
 });
 
 describe("Time Availability roster loading", () => {
-  it("shows the signed-in schedule while the admin roster is still loading", () => {
+  it("shows the signed-in schedule while the admin roster is still loading", async () => {
     const container = document.createElement("div");
     const state = createState({
       tab: "adminbotTimeAvailability",
@@ -751,6 +751,9 @@ describe("Time Availability roster loading", () => {
       adminBotTimeAvailabilityRange: "month",
     });
 
+    render(renderApp(state), container);
+    // The page's view is loaded on first visit; paint again once it has arrived.
+    await vi.dynamicImportSettled();
     render(renderApp(state), container);
 
     expect(container.querySelector(".adminbot-time-availability")?.textContent).toContain("Self");

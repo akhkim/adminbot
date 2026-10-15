@@ -5,7 +5,7 @@
 // and the X-thread drafting on the Social tab.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
-import { paperSteps } from "../views/admin.ts";
+import { paperSteps } from "../data/paper-steps.ts";
 import { drawPage, emptyCycle, makeState, overviewRow, paper } from "./projects.test-helpers.ts";
 import { resetProjectsSessionState } from "./view.ts";
 

@@ -1,12 +1,31 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
-/** Read on each request: collection must not require rebuilding or restarting the service. */
+let cached: { file: string; version: string; items: readonly unknown[] } | undefined;
+
+/**
+ * Checked on each request: collection must not require rebuilding or restarting the service.
+ *
+ * Only a stat is paid per call. The parse and validation re-run when the file's inode, size or
+ * nanosecond mtime moves -- an atomic rename-replace always changes the inode -- and an invalid file
+ * is never cached, so it keeps throwing until it is fixed.
+ */
 export function readDeadlineDataset(
   file = process.env.ADMINBOT_DEADLINE_DATASET_PATH ??
     resolve("extensions/adminbot/content/deadlines/deadlines.json"),
 ): readonly unknown[] {
-  const document = JSON.parse(readFileSync(file, "utf8")) as { items?: unknown[] };
+  const stat = statSync(file, { bigint: true });
+  const version = `${stat.ino}:${stat.size}:${stat.mtimeNs}`;
+  if (cached?.file === file && cached.version === version) {
+    return cached.items;
+  }
+  const items = parseDeadlineDataset(readFileSync(file, "utf8"));
+  cached = { file, version, items };
+  return items;
+}
+
+function parseDeadlineDataset(text: string): readonly unknown[] {
+  const document = JSON.parse(text) as { items?: unknown[] };
   if (!Array.isArray(document.items) || !document.items.length) {
     throw new Error("Deadline dataset is empty or invalid");
   }

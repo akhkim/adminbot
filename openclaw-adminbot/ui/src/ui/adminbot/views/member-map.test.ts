@@ -2,7 +2,7 @@ import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import { parseMemberMap, type MemberMap } from "../data/member-map.ts";
 import { WORLD_OUTLINE_VIEW } from "../data/world-outline.ts";
-import { renderMemberMap } from "./member-map.ts";
+import { loadWorldOutline, renderMemberMap } from "./member-map.ts";
 
 async function draw(map: MemberMap | null): Promise<HTMLElement> {
   const container = document.createElement("div");
@@ -201,9 +201,7 @@ describe("renderMemberMap", () => {
     // Cy has no avatar_url, so their circle is the initials fallback, not an <img>.
     expect(avatars[1].tagName).toBe("SPAN");
     expect(avatars[1].textContent).toBe("C");
-    expect(
-      container.querySelector(".member-map__body .member-map__avatar-more"),
-    ).not.toBeNull();
+    expect(container.querySelector(".member-map__body .member-map__avatar-more")).not.toBeNull();
   });
 
   const FOUR_MEMBER_TORONTO = {
@@ -253,9 +251,7 @@ describe("renderMemberMap", () => {
     // Clicking again collapses it.
     expandedButton.click();
     await element.updateComplete;
-    expect(
-      container.querySelector(".member-map__body .member-map__name-list"),
-    ).toBeNull();
+    expect(container.querySelector(".member-map__body .member-map__name-list")).toBeNull();
   });
 
   it("omits the expand button for a city with 3 or fewer members", async () => {
@@ -293,6 +289,7 @@ describe("renderMemberMap", () => {
 
   // The coastline is what makes a dot identifiable; a graticule alone was unreadable.
   it("draws the world outline under the dots", async () => {
+    await loadWorldOutline();
     const container = await draw(parseMemberMap(summary));
     const land = container.querySelector(".member-map__land");
     expect(land).not.toBeNull();
@@ -368,9 +365,7 @@ describe("renderMemberMap", () => {
     await element.updateComplete;
     await element.updateComplete;
 
-    const dialog = container.querySelector<HTMLDialogElement>(
-      '[data-testid="member-map-dialog"]',
-    )!;
+    const dialog = container.querySelector<HTMLDialogElement>('[data-testid="member-map-dialog"]')!;
     // Escape closes the dialog natively and fires `close` without routing through our handler.
     // jsdom implements neither showModal nor close, so the component's fallback is what runs here —
     // which is the path this asserts.
