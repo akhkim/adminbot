@@ -20,6 +20,7 @@ import {
   sendJson,
   sendServiceResult,
 } from "../server.http.js";
+import { labRelevanceWire } from "../server.paper-lists.wire.js";
 import {
   cancelWorkshopNudgeRun,
   listWorkshopConferences,
@@ -28,6 +29,7 @@ import {
   sendWorkshopNudges,
   startWorkshopNudgeRun,
 } from "../server.workshop-nudges.js";
+import { workshopRunWire } from "../server.workshop-nudges.wire.js";
 import { adminSessionOnly, principalActor, privilegedOnly } from "./guards.js";
 import { get, post, type Route } from "./router.js";
 
@@ -161,7 +163,7 @@ export const conferencePapersRoutes: readonly Route[] = [
         query,
         embed: ctx.embedder,
       });
-      sendJson(res, 200, report);
+      sendJson(res, 200, labRelevanceWire(report));
     } catch (error) {
       // The embedding model being unreachable is the common failure and it is not the caller's
       // fault, so it reads as a gateway error rather than a bad request.
@@ -178,7 +180,7 @@ export const conferencePapersRoutes: readonly Route[] = [
       // calls, tens of minutes -- inside the request, so opening the page began a pass nobody could
       // wait for. The answer of the last pass is what the page wants; producing a new one is a
       // separate, deliberate act below.
-      sendJson(res, 200, readWorkshopNudgeRun(service));
+      sendJson(res, 200, workshopRunWire(readWorkshopNudgeRun(service)));
     }),
   ),
   post(
@@ -188,10 +190,12 @@ export const conferencePapersRoutes: readonly Route[] = [
       sendJson(
         res,
         200,
-        cancelWorkshopNudgeRun({
-          service,
-          ...(principal.kind === "member" ? { actor: principal.member.id } : {}),
-        }),
+        workshopRunWire(
+          cancelWorkshopNudgeRun({
+            service,
+            ...(principal.kind === "member" ? { actor: principal.member.id } : {}),
+          }),
+        ),
       );
     }),
   ),
@@ -216,16 +220,19 @@ export const conferencePapersRoutes: readonly Route[] = [
         sendJson(
           res,
           202,
-          startWorkshopNudgeRun({
-            service,
-            match: ctx.workshopMatcher,
-            now: ctx.workshopNudgeNow(),
-            ...(refreshBody.force === true ? { force: true } : {}),
-            ...(typeof refreshBody.conference_key === "string" && refreshBody.conference_key.trim()
-              ? { conferenceKey: refreshBody.conference_key.trim() }
-              : {}),
-            ...(principal.kind === "member" ? { startedBy: principal.member.id } : {}),
-          }),
+          workshopRunWire(
+            startWorkshopNudgeRun({
+              service,
+              match: ctx.workshopMatcher,
+              now: ctx.workshopNudgeNow(),
+              ...(refreshBody.force === true ? { force: true } : {}),
+              ...(typeof refreshBody.conference_key === "string" &&
+              refreshBody.conference_key.trim()
+                ? { conferenceKey: refreshBody.conference_key.trim() }
+                : {}),
+              ...(principal.kind === "member" ? { startedBy: principal.member.id } : {}),
+            }),
+          ),
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

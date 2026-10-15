@@ -12,8 +12,16 @@ import {
   type AdminBotPaperRecord,
   formatAdminBotToolError,
   invokeAdminBotTool,
-  loadAdminBot,
 } from "./admin.ts";
+
+// A delete changes one row; reloading the lab for it re-read every paper and the roster.
+function removeDeletedPaper(host: AdminBotHost, paperId: string): void {
+  host.adminBotData = {
+    ...host.adminBotData,
+    papers: host.adminBotData.papers.filter((entry) => entry.id !== paperId),
+    nudges: host.adminBotData.nudges.filter((nudge) => nudge.paper_id !== paperId),
+  };
+}
 
 export type MyProjectsHost = {
   settings: UiSettings;
@@ -91,7 +99,7 @@ export async function deleteAdminBotPaper(
         return;
       }
       host.adminBotNotice = { kind: "success", text: `Deleted paper ${paper.title}.` };
-      await loadAdminBot(host);
+      removeDeletedPaper(host, paper.id);
       return;
     }
     await invokeAdminBotTool(host, "adminbot_delete_paper", { paperId: paper.id });
@@ -99,7 +107,7 @@ export async function deleteAdminBotPaper(
       return;
     }
     host.adminBotNotice = { kind: "success", text: `Deleted paper ${paper.title}.` };
-    await loadAdminBot(host);
+    removeDeletedPaper(host, paper.id);
   } catch (err) {
     if (!stillCurrent()) {
       return;

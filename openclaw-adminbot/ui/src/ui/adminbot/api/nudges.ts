@@ -74,6 +74,7 @@ export async function fetchEscalatedNudges(
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   const body = result.body as {
+    total?: unknown;
     members?: Array<{
       member_id?: unknown;
       name?: unknown;
@@ -96,6 +97,7 @@ export async function fetchEscalatedNudges(
         items: (row.notifications ?? []).map((entry) => ({
           id: typeof entry.id === "string" ? entry.id : "",
           title: typeof entry.title === "string" ? entry.title : "",
+          // Not sent any more: the queue draws only titles. Kept so a stored row still type-checks.
           body: typeof entry.body === "string" ? entry.body : "",
           createdAt: typeof entry.created_at === "string" ? entry.created_at : "",
           ...(typeof entry.tab === "string" ? { tab: entry.tab } : {}),
@@ -103,5 +105,19 @@ export async function fetchEscalatedNudges(
       },
     ];
   });
+  // The service sends the oldest page of people and the size of the whole queue beside it.
+  if (typeof body?.total === "number" && Number.isFinite(body.total)) {
+    escalatedTotals.set(rows, Math.max(body.total, rows.length));
+  }
   return { ok: true, value: rows };
+}
+
+// Keyed by the list the read returned, which reaches the professor view untouched, so the count
+// rides with the rows without another field on the app state. A list from anywhere else -- an
+// older service, a test -- counts as its own length.
+const escalatedTotals = new WeakMap<EscalatedNudgeRow[], number>();
+
+/** How many people are waiting in the whole escalation queue, not only the page that was read. */
+export function escalatedNudgeTotal(rows: EscalatedNudgeRow[]): number {
+  return escalatedTotals.get(rows) ?? rows.length;
 }

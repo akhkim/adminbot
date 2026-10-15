@@ -110,6 +110,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-geoip-refresh",
+      "description": "Monthly: install the new DB-IP City Lite database sign-in geolocation reads; skips until ADMINBOT_GEOIP_MMDB_PATH is set",
+      "cron": "25 4 3 * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-geoip-refresh.sh"
+      ],
+      "timeoutSeconds": 1800
+    },
+    {
       "name": "adminbot-venue-index",
       "description": "Rebuild a conference's paper index on the day its accepted list changes; embeds nothing when nothing moved",
       "cron": "0 4 * * *",
@@ -147,6 +157,16 @@
       "argv": [
         "bash",
         "scripts/adminbot-roster-sync-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-slack-roster-sync",
+      "description": "Daily: reconcile the roster against the Slack workspace (users.list); flag deactivated accounts and propose placeholder removals for admin approval",
+      "cron": "25 6 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-slack-roster-sync-cron.sh"
       ],
       "timeoutSeconds": 900
     },
@@ -190,6 +210,16 @@
         "scripts/adminbot-graduations-cron.sh"
       ],
       "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-slides-working-groups",
+      "description": "Plan the working-groups slide's faces against the roster and propose any change for approval",
+      "cron": "20 7 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-slides-working-groups-cron.sh"
+      ],
+      "timeoutSeconds": 300
     },
     {
       "name": "adminbot-city-channels",

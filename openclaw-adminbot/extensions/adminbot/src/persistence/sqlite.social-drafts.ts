@@ -41,6 +41,13 @@ export function saveSqliteSocialDraft(db: DatabaseSync, record: AdminBotSocialDr
   );
 }
 
+/**
+ * Newest first, then what the paper read has always fallen back to on a tie: it walks the
+ * (paper_id, platform, generated_at) index, so equal times came out by platform, then by insertion.
+ * Spelled out so the all-papers read groups into exactly the per-paper order.
+ */
+const DRAFT_ORDER = "generated_at DESC, platform, rowid";
+
 export function listSqliteSocialDrafts(
   db: DatabaseSync,
   paperId?: string,
@@ -52,10 +59,10 @@ export function listSqliteSocialDrafts(
       : paperId
         ? db
             .prepare(
-              "SELECT * FROM adminbot_paper_social_drafts WHERE paper_id = ? ORDER BY generated_at DESC",
+              `SELECT * FROM adminbot_paper_social_drafts WHERE paper_id = ? ORDER BY ${DRAFT_ORDER}`,
             )
             .all(paperId)
-        : db.prepare("SELECT * FROM adminbot_paper_social_drafts ORDER BY generated_at DESC").all()
+        : db.prepare(`SELECT * FROM adminbot_paper_social_drafts ORDER BY ${DRAFT_ORDER}`).all()
   ) as Array<Record<string, unknown>>;
   return rows.map((row) => ({
     id: String(row.id),

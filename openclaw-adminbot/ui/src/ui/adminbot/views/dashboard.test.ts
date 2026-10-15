@@ -105,8 +105,6 @@ describe("renderDashboard", () => {
               required: true,
             },
           ],
-          completed: [],
-          remaining: [],
         },
         adminBotOnboardingAcknowledged: false,
       } as unknown as Partial<AppViewState>),
@@ -160,6 +158,21 @@ describe("renderDashboard", () => {
     expect(setTab).toHaveBeenCalledWith("adminbot");
 
     expect(attentionIds(renderPage(state, "member"))).not.toContain("email-reviews");
+  });
+
+  it("counts the admin queues from the dashboard's own count read", () => {
+    const container = renderPage(
+      createState({
+        adminBotData: {
+          proposals: [],
+          emailReviews: [],
+          queueCounts: { pendingProposals: 3, emailReviews: 2 },
+        },
+      }),
+      "admin",
+    );
+    expect(attentionIds(container)).toEqual(expect.arrayContaining(["proposals", "email-reviews"]));
+    expect(container.textContent).toContain("2 messages were held");
   });
 
   it("keeps the admin queues out of a member's view", () => {

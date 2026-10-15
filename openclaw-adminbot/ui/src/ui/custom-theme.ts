@@ -1,5 +1,4 @@
 // Control UI module implements custom theme behavior.
-import { z } from "zod";
 import { normalizeOptionalString } from "./string-coerce.ts";
 
 const TWEAKCN_HOSTS = new Set(["tweakcn.com", "www.tweakcn.com"]);
@@ -120,39 +119,112 @@ export type ImportedCustomTheme = {
   dark: ThemeTokenMap;
 };
 
-const cssTokenSchema = z.string().max(MAX_CSS_TOKEN_LENGTH);
+// Hand-checked shapes rather than zod: the stored theme is parsed on every load (storage.ts), and
+// zod was the only reason the entry pulled in its 57 KB runtime. The rules match the schemas they
+// replace -- plain objects, the listed keys required as strings of at most MAX_CSS_TOKEN_LENGTH,
+// optional fields absent or such a string, and any other keys dropped.
+type JsonObject = Record<string, unknown>;
 
-function createStringShape<const T extends readonly string[]>(keys: T) {
-  return Object.fromEntries(keys.map((key) => [key, cssTokenSchema])) as Record<
-    T[number],
-    typeof cssTokenSchema
-  >;
+function readObject(value: unknown): JsonObject | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as JsonObject)
+    : null;
 }
 
-const tweakcnThemeSchema = z.object({
-  name: z.string().max(80).optional(),
-  cssVars: z.object({
-    theme: z
-      .object({
-        "font-sans": cssTokenSchema.optional(),
-        "font-mono": cssTokenSchema.optional(),
-      })
-      .optional(),
-    light: z.object(createStringShape(REQUIRED_TWEAKCN_MODE_VARS)),
-    dark: z.object(createStringShape(REQUIRED_TWEAKCN_MODE_VARS)),
-  }),
-});
+function isCssToken(value: unknown): value is string {
+  return typeof value === "string" && value.length <= MAX_CSS_TOKEN_LENGTH;
+}
 
-const importedCustomThemeSchema = z.object({
-  sourceUrl: z.string(),
-  themeId: z.string(),
-  label: z.string(),
-  importedAt: z.string(),
-  light: z.object(createStringShape(MODE_TOKEN_ORDER)),
-  dark: z.object(createStringShape(MODE_TOKEN_ORDER)),
-});
+function readStringShape<const T extends readonly string[]>(
+  value: unknown,
+  keys: T,
+): Record<T[number], string> | null {
+  const source = readObject(value);
+  if (!source) {
+    return null;
+  }
+  const out: Record<string, string> = {};
+  for (const key of keys) {
+    const token = source[key];
+    if (!isCssToken(token)) {
+      return null;
+    }
+    out[key] = token;
+  }
+  return out as Record<T[number], string>;
+}
 
-type TweakcnThemePayload = z.infer<typeof tweakcnThemeSchema>;
+type TweakcnThemePayload = {
+  name?: string;
+  cssVars: {
+    theme?: { "font-sans"?: string; "font-mono"?: string };
+    light: Record<RequiredTweakcnModeVar, string>;
+    dark: Record<RequiredTweakcnModeVar, string>;
+  };
+};
+
+function parseTweakcnTheme(value: unknown): TweakcnThemePayload | null {
+  const root = readObject(value);
+  const cssVars = readObject(root?.cssVars);
+  if (!root || !cssVars) {
+    return null;
+  }
+  const name = root.name;
+  if (name !== undefined && !(typeof name === "string" && name.length <= 80)) {
+    return null;
+  }
+  let theme: TweakcnThemePayload["cssVars"]["theme"];
+  if (cssVars.theme !== undefined) {
+    const shared = readObject(cssVars.theme);
+    if (!shared) {
+      return null;
+    }
+    theme = {};
+    for (const key of ["font-sans", "font-mono"] as const) {
+      const token = shared[key];
+      if (token === undefined) {
+        continue;
+      }
+      if (!isCssToken(token)) {
+        return null;
+      }
+      theme[key] = token;
+    }
+  }
+  const light = readStringShape(cssVars.light, REQUIRED_TWEAKCN_MODE_VARS);
+  const dark = readStringShape(cssVars.dark, REQUIRED_TWEAKCN_MODE_VARS);
+  if (!light || !dark) {
+    return null;
+  }
+  return {
+    ...(name === undefined ? {} : { name }),
+    cssVars: { ...(theme === undefined ? {} : { theme }), light, dark },
+  };
+}
+
+type StoredCustomTheme = Omit<ImportedCustomTheme, "light" | "dark"> & {
+  light: Record<(typeof MODE_TOKEN_ORDER)[number], string>;
+  dark: Record<(typeof MODE_TOKEN_ORDER)[number], string>;
+};
+
+function parseStoredCustomTheme(value: unknown): StoredCustomTheme | null {
+  const root = readObject(value);
+  if (!root) {
+    return null;
+  }
+  const { sourceUrl, themeId, label, importedAt } = root;
+  if (
+    typeof sourceUrl !== "string" ||
+    typeof themeId !== "string" ||
+    typeof label !== "string" ||
+    typeof importedAt !== "string"
+  ) {
+    return null;
+  }
+  const light = readStringShape(root.light, MODE_TOKEN_ORDER);
+  const dark = readStringShape(root.dark, MODE_TOKEN_ORDER);
+  return light && dark ? { sourceUrl, themeId, label, importedAt, light, dark } : null;
+}
 
 type TweakcnThemeResolution = {
   sourceUrl: string;
@@ -452,22 +524,22 @@ export function normalizeTweakcnThemeUrl(input: string): TweakcnThemeResolution 
 }
 
 export function parseImportedCustomTheme(value: unknown): ImportedCustomTheme | null {
-  const parsed = importedCustomThemeSchema.safeParse(value);
-  if (!parsed.success) {
+  const data = parseStoredCustomTheme(value);
+  if (!data) {
     return null;
   }
   try {
-    requireThemeId(parsed.data.themeId);
-    const light = normalizeStoredTokenMap(parsed.data.light);
-    const dark = normalizeStoredTokenMap(parsed.data.dark);
+    requireThemeId(data.themeId);
+    const light = normalizeStoredTokenMap(data.light);
+    const dark = normalizeStoredTokenMap(data.dark);
     if (!light || !dark) {
       return null;
     }
     return {
-      sourceUrl: parsed.data.sourceUrl,
-      themeId: parsed.data.themeId,
-      label: describeThemeLabel(parsed.data.label),
-      importedAt: parsed.data.importedAt,
+      sourceUrl: data.sourceUrl,
+      themeId: data.themeId,
+      label: describeThemeLabel(data.label),
+      importedAt: data.importedAt,
       light,
       dark,
     };
@@ -480,11 +552,10 @@ export function normalizeImportedCustomTheme(
   payload: unknown,
   resolution: Pick<TweakcnThemeResolution, "sourceUrl" | "themeId">,
 ): ImportedCustomTheme {
-  const parsed = tweakcnThemeSchema.safeParse(payload);
-  if (!parsed.success) {
+  const data = parseTweakcnTheme(payload);
+  if (!data) {
     throw new Error("tweakcn returned an invalid theme payload.");
   }
-  const data: TweakcnThemePayload = parsed.data;
   const shared = data.cssVars.theme;
   return {
     sourceUrl: resolution.sourceUrl,

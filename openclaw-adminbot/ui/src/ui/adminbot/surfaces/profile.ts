@@ -16,6 +16,7 @@ import { loadAdminBotRecentEdits } from "../controllers/recent-edits.ts";
 import { submitOwnBadgeNomination, submitOwnBadgeSuggestion } from "../data/badges.ts";
 import { renderLocationPrompt } from "../views/location-prompt.ts";
 import { isProfileBlocked } from "../views/profile-gate.ts";
+import { renderMeetupToggleSurface } from "./events.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
 // The page's view loads on first visit rather than in the first bundle.
@@ -75,6 +76,7 @@ export function renderProfileSurface(state: AppViewState, scope: AdminBotSurface
             onNavigateToTab: (tab) => state.setTab(tab),
           }),
         )}
+        ${profileBlocked ? nothing : renderMeetupToggleSurface(state, scope)}
       `
     : nothing}`;
 }

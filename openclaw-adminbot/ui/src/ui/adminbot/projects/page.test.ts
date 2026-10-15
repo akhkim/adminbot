@@ -48,8 +48,8 @@ describe("the page itself", () => {
     ]);
   });
 
-  it("carries the deadline the service has for the paper", () => {
-    const { container } = drawPage({ overview: [overviewRow({ deadline: "2026-09-24" })] });
+  it("carries the deadline the paper record has", () => {
+    const { container } = drawPage({ papers: [paper({ deadline: "2026-09-24" })] });
     expect(container.querySelector('[data-testid="project-deadline"]')?.textContent).toBe(
       "2026-09-24",
     );

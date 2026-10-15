@@ -1,4 +1,4 @@
-// Where the lab is, for the dashboard card.
+// Where the lab is, for the map card on the Dashboard and on Collaborate.
 //
 // `GET /member-map` answers in two shapes and the service decides which (see the route in
 // api/server.ts): an admin gets `full`, with who is in each city; everyone else — signed-in member
@@ -16,6 +16,24 @@ import type { UiSettings } from "../../storage.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { readApiJson } from "./api-json.ts";
 
+/** Where a member's pin came from, as the service reports it. */
+export type MemberMapSource = "slack" | "roster" | "login";
+
+/**
+ * How finely the pin locates the member: a city somebody wrote down or signed in from, the city a
+ * time zone is named for (which also covers its neighbours), or only a country.
+ */
+export type MemberMapPrecision = "city" | "timezone" | "country";
+
+export type MemberMapMember = {
+  member_id: string;
+  name: string;
+  avatar_url?: string;
+  last_login_at?: string;
+  source?: MemberMapSource;
+  precision?: MemberMapPrecision;
+};
+
 /** One city the gazetteer knows, with however much of its membership the caller may see. */
 export type MemberMapPlace = {
   key: string;
@@ -23,32 +41,48 @@ export type MemberMapPlace = {
   country: string;
   lat: number;
   lon: number;
+  /**
+   * Placed only to a country, from a sign-in's IP geolocation, not to a city anyone wrote down.
+   * The service marks these with a `country:` key; the dot sits on the country's centroid, which
+   * is not where the person is, so the card draws it differently rather than implying a city.
+   */
+  approximate?: boolean;
   /** Present in both shapes. In `full` it equals `members.length`. */
   count: number;
   /** `full` only: who is there. Absent for a non-admin, which is not an error. */
-  members?: Array<{
-    member_id: string;
-    name: string;
-    avatar_url?: string;
-    last_login_at?: string;
-  }>;
+  members?: MemberMapMember[];
 };
 
 export type MemberMap = {
   mode: "full" | "summary";
   places: MemberMapPlace[];
+  /**
+   * The credit the service's IP geolocation provider requires wherever its data is shown (DB-IP
+   * Lite is CC BY 4.0). The service names it because only the service knows which provider runs.
+   */
+  attribution?: { text: string; url: string };
   /** Members whose written location the gazetteer could not place. A count only — see below. */
   unplaced: number;
   counts: { placed: number; unplaced: number; unknown: number };
+  /** When this copy arrived (ms since epoch), for "Updated N min ago". Set by loadMemberMap. */
+  loadedAt?: number;
 };
 
 export type MemberMapHost = {
   settings: UiSettings;
-  /** Undefined until the Dashboard first requests this optional card. */
+  /** Undefined until a tab that shows this optional card first requests it. */
   adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
   adminBotMemberMapRequestId?: number;
+  /** When the last read finished, either way, so a failing service is asked again on the timer. */
+  adminBotMemberMapCheckedAt?: number;
 };
+
+/**
+ * How often an open map asks again. Sign-in cities change as people sign in, and the card says
+ * "Updated N min ago", so a tab left open all afternoon should not quietly show the morning.
+ */
+export const MEMBER_MAP_REFRESH_MS = 5 * 60 * 1000;
 
 export function invalidateMemberMap(host: {
   adminBotMemberMap?: MemberMap | null;
@@ -60,13 +94,86 @@ export function invalidateMemberMap(host: {
   host.adminBotMemberMapLoading = false;
 }
 
-export function needsDashboardMemberMap(
+// The tabs that render the card. Collaborate shows it too, so a member who opens Collaborate
+// first -- or only -- still gets the map, instead of a card that only fills in after a detour
+// through the Dashboard.
+const MEMBER_MAP_TABS: ReadonlySet<string> = new Set(["dashboard", "labSharing"]);
+
+export function isMemberMapTab(tab: string): boolean {
+  return MEMBER_MAP_TABS.has(tab);
+}
+
+/** What decides a refresh beyond the first load; without it only the first load is ever due. */
+export type MemberMapRefreshContext = {
+  /** The tab on the previous render: arriving on a map tab from anywhere else reads it again. */
+  previousTab?: string;
+  /** When the last read finished (MemberMapHost.adminBotMemberMapCheckedAt). */
+  checkedAt?: number;
+  now: number;
+  /** document.visibilityState === "visible": a background tab does not poll. */
+  visible: boolean;
+};
+
+export function needsMemberMap(
   tab: string,
   hasMemberSession: boolean,
   map: MemberMap | null | undefined,
   loading: boolean,
+  refresh?: MemberMapRefreshContext,
 ): boolean {
-  return tab === "dashboard" && hasMemberSession && map === undefined && !loading;
+  if (!MEMBER_MAP_TABS.has(tab) || !hasMemberSession || loading) {
+    return false;
+  }
+  if (map === undefined) {
+    return true;
+  }
+  if (!refresh) {
+    return false;
+  }
+  if (refresh.previousTab !== undefined && refresh.previousTab !== tab) {
+    return true;
+  }
+  return (
+    refresh.visible &&
+    refresh.checkedAt !== undefined &&
+    refresh.now - refresh.checkedAt >= MEMBER_MAP_REFRESH_MS
+  );
+}
+
+// One ticker for the whole app, so the "Updated N min ago" line moves and a due refresh is noticed
+// without anyone touching the page. It only asks for a render; needsMemberMap decides whether that
+// render reads the map again.
+let ticker: ReturnType<typeof setInterval> | undefined;
+let tickerTarget: { tab: () => string; update: () => void } | undefined;
+
+export function ensureMemberMapTicker(tab: () => string, update: () => void): void {
+  tickerTarget = { tab, update };
+  if (ticker !== undefined || typeof setInterval !== "function") {
+    return;
+  }
+  const tick = () => {
+    const target = tickerTarget;
+    const visible = typeof document === "undefined" || document.visibilityState === "visible";
+    if (target && visible && MEMBER_MAP_TABS.has(target.tab())) {
+      target.update();
+    }
+  };
+  ticker = setInterval(tick, 60_000);
+  // Coming back to a tab that sat in the background past its refresh catches up at once.
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", tick);
+  }
+}
+
+// A literal "null" is what a blank spreadsheet cell or a JSON null pushed through String() turns
+// into. The service already drops these rows; this keeps the card from ever printing one if an
+// older service answers.
+function isRenderableName(name: unknown): name is string {
+  if (typeof name !== "string") {
+    return false;
+  }
+  const trimmed = name.trim().toLowerCase();
+  return trimmed !== "" && trimmed !== "null" && trimmed !== "undefined";
 }
 
 type RawPlace = {
@@ -78,6 +185,11 @@ type RawPlace = {
   count?: unknown;
   members?: unknown;
 };
+
+// Anything else -- an older service, a typo -- is dropped, and the card says nothing about how the
+// pin was placed rather than saying something wrong.
+const SOURCES: ReadonlySet<MemberMapSource> = new Set(["slack", "roster", "login"]);
+const PRECISIONS: ReadonlySet<MemberMapPrecision> = new Set(["city", "timezone", "country"]);
 
 function asNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : Number.NaN;
@@ -102,34 +214,54 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
           name?: unknown;
           avatar_url?: unknown;
           last_login_at?: unknown;
+          source?: unknown;
+          precision?: unknown;
         };
-        if (typeof record?.name !== "string") {
+        if (!isRenderableName(record?.name)) {
           return [];
         }
         const avatarUrl = typeof record.avatar_url === "string" ? record.avatar_url.trim() : "";
         const lastLoginAt =
           typeof record.last_login_at === "string" ? record.last_login_at.trim() : "";
-        return [
-          {
-            member_id: String(record.member_id ?? ""),
-            name: record.name,
-            ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
-            ...(lastLoginAt ? { last_login_at: lastLoginAt } : {}),
-          },
-        ];
+        const source = SOURCES.has(record.source as MemberMapSource)
+          ? (record.source as MemberMapSource)
+          : undefined;
+        const precision = PRECISIONS.has(record.precision as MemberMapPrecision)
+          ? (record.precision as MemberMapPrecision)
+          : undefined;
+        const member: MemberMapMember = {
+          member_id: String(record.member_id ?? ""),
+          name: record.name,
+          ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
+          ...(lastLoginAt ? { last_login_at: lastLoginAt } : {}),
+          ...(source ? { source } : {}),
+          ...(precision ? { precision } : {}),
+        };
+        return [member];
       })
     : undefined;
   const count = asNumber(raw.count);
+  const key = String(raw.key ?? raw.label ?? `${lat},${lon}`);
   return {
-    key: String(raw.key ?? raw.label ?? `${lat},${lon}`),
+    key,
     label: String(raw.label ?? ""),
     country: String(raw.country ?? ""),
     lat,
     lon,
+    approximate: key.startsWith("country:"),
     // The summary shape carries `count`; the full shape carries `members`. Either is enough.
     count: Number.isNaN(count) ? (members?.length ?? 0) : count,
     ...(members ? { members } : {}),
   };
+}
+
+// Only an https link: the text lands in an <a href>, and anything else (a javascript: URL from a
+// misconfigured or compromised service) is dropped along with its text.
+function toAttribution(raw: unknown): MemberMap["attribution"] {
+  const record = raw as { text?: unknown; url?: unknown } | null | undefined;
+  const text = typeof record?.text === "string" ? record.text.trim() : "";
+  const url = typeof record?.url === "string" ? record.url.trim() : "";
+  return text && url.startsWith("https://") ? { text, url } : undefined;
 }
 
 export function parseMemberMap(body: unknown): MemberMap | null {
@@ -137,7 +269,9 @@ export function parseMemberMap(body: unknown): MemberMap | null {
     mode?: unknown;
     places?: unknown;
     unplaced?: unknown;
+    unplaced_count?: unknown;
     counts?: unknown;
+    attribution?: unknown;
   } | null;
   if (!raw || !Array.isArray(raw.places)) {
     return null;
@@ -147,12 +281,14 @@ export function parseMemberMap(body: unknown): MemberMap | null {
     .map((place) => toPlace(place as RawPlace))
     .filter((place): place is MemberMapPlace => place !== null)
     .toSorted((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  const attribution = toAttribution(raw.attribution);
   return {
     mode: raw.mode === "full" ? "full" : "summary",
     places,
-    // Only ever a number here. The full response lists unplaced members by name, but the card has
-    // no use for that — it is a prompt to extend the gazetteer, not a roster.
-    unplaced: Array.isArray(raw.unplaced) ? raw.unplaced.length : 0,
+    ...(attribution ? { attribution } : {}),
+    // Only ever a number here: the card is a prompt to extend the gazetteer, not a roster. The full
+    // response sends `unplaced_count`; an older server sent the list itself.
+    unplaced: Array.isArray(raw.unplaced) ? raw.unplaced.length : asNumber(raw.unplaced_count) || 0,
     counts: {
       placed: asNumber(counts.placed) || 0,
       unplaced: asNumber(counts.unplaced) || 0,
@@ -188,13 +324,16 @@ export async function loadMemberMap(host: MemberMapHost): Promise<void> {
     }
     const parsed = parseMemberMap(await readApiJson(response));
     if (isCurrent()) {
-      host.adminBotMemberMap = parsed;
+      host.adminBotMemberMap = parsed ? { ...parsed, loadedAt: Date.now() } : parsed;
     }
   } catch {
-    // Unreachable service, offline, blocked request: leave the card empty.
+    // Unreachable service, offline, blocked request: leave the card as it was (empty on a first
+    // load, the last good copy -- with its own "Updated" time -- on a refresh).
   } finally {
     if (isCurrent()) {
-      // A failed optional card stays empty; do not retry on every dashboard render.
+      host.adminBotMemberMapCheckedAt = Date.now();
+      // A failed optional card stays empty; it is asked again on the next tab visit or refresh
+      // tick, never on every render.
       if (host.adminBotMemberMap === undefined) {
         host.adminBotMemberMap = null;
       }

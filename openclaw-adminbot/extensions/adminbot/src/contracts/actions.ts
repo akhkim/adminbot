@@ -1,3 +1,5 @@
+import { adminBotOwnerOnlyMemberFields } from "./member-owner-fields.js";
+
 export const adminBotRiskTiers = ["T0", "T1", "T2", "T3", "T4"] as const;
 
 export type AdminBotRiskTier = (typeof adminBotRiskTiers)[number];
@@ -52,6 +54,12 @@ export const adminBotActionTypes = [
   // them runs unattended, and a spreadsheet row is not an authorization: the member is created at
   // the least-privileged level and an admin approving this is what raises it.
   "lab_member.enroll",
+  // Removes one roster record that the Slack roster sync judged a placeholder or test account
+  // ("Test User", an @example address -- never a do-not-contact opt-out). Its own type so the sync
+  // never deletes anything itself: it files this, an admin approves it, and the delete runs through
+  // the same guarded path as the Members tab (no self-delete, no head professor, no credentialed
+  // account).
+  "lab_member.remove",
   // The finished reimbursement package, mailed to the funder's office with the forms attached.
   //
   // Its own type rather than `email.send` for two reasons. The recipient is resolved from settings
@@ -158,6 +166,11 @@ export const adminBotActionTypes = [
   // it cannot overwrite anything, and the approval card reads as "adds Ada" rather than as a range
   // the approver has to locate.
   "sheet.append_rows",
+  // Rearranging the member photos on the lab's "Scaling to 50-100 Technical Members" slide: adds,
+  // removes, and moves/resizes faces in the working-group boxes. Typed rather than a call out of a
+  // sweep because it writes to a deck other people present from, and the payload carries the exact
+  // Slides requests so the approval card is the change, not a description of one.
+  "slides.sync_working_groups",
 ] as const;
 
 export type AdminBotActionType = (typeof adminBotActionTypes)[number];
@@ -962,6 +975,7 @@ export const adminBotScheduleMemberFields = [
  */
 export const adminBotInferredLocationMemberFields = [
   "last_login_city",
+  "last_login_region",
   "last_login_timezone",
 ] as const;
 
@@ -983,7 +997,7 @@ export function redactConfidentialMemberFields<T extends { id?: string }>(
     return member;
   }
   const copy = { ...member } as Record<string, unknown>;
-  for (const field of adminBotConfidentialMemberFields) {
+  for (const field of [...adminBotConfidentialMemberFields, ...adminBotOwnerOnlyMemberFields]) {
     delete copy[field];
   }
   if (viewer.isMemberSession) {
@@ -1100,9 +1114,6 @@ export type AdminBotMemberOnboardingStep = {
 export type AdminBotOnboardingCycleReason = "registration" | "status_change" | "privilege_change";
 
 export type AdminBotMemberOnboarding = {
-  current_step?: AdminBotMemberOnboardingStep;
-  completed: AdminBotMemberOnboardingStep[];
-  remaining: AdminBotMemberOnboardingStep[];
   steps: AdminBotMemberOnboardingStep[];
   /**
    * When the current cycle opened: at registration, or when the member's standing last changed.
@@ -1440,6 +1451,19 @@ export type AdminBotLabMemberInput = {
    * the lab adds to, not a property of the record that some import can set.
    */
   receives_nudges?: boolean;
+  /**
+   * The member's own answer to "introduce me to lab members nearby / at events".
+   *
+   * Absent means the defaults in workflows/members/meetups.ts (both on: zero setup). Self-owned
+   * and set from the Events tab or the profile toggle; `snoozed_until` (YYYY-MM-DD) pauses both
+   * kinds through that day.
+   */
+  meetup_intros?: { events?: boolean; city?: boolean; snoozed_until?: string };
+  /**
+   * Admin-owned: never message, introduce or name this person in a meetup intro or a Say hi, and
+   * never list them as nearby. Not self-editable (a member turns intros off instead).
+   */
+  do_not_contact?: boolean;
   // Governance-owned: the department directory address, required to be @cs.toronto.edu for
   // everyone except external_collaborator (see validateCsEmail in kernel/service.ts).
   email?: string;
@@ -1471,6 +1495,11 @@ export type AdminBotLabMemberInput = {
   slack_messages_7d?: number;
   /** When that count was last measured. Absent means never, which reads as unknown, not zero. */
   slack_activity_checked_at?: string;
+  /**
+   * When the Slack roster sync first saw this member's Slack account deactivated. A flag, never a
+   * removal: leaving Slack is not leaving the lab record. Cleared ("") when the account comes back.
+   */
+  slack_deactivated_at?: string;
   privilege_level?: AdminBotPrivilegeLevel;
   // Which kind of external collaborator this person is, which decides the access items they get.
   // Only meaningful while `privilege_level` is "external_collaborator"; governance-owned like
@@ -1658,7 +1687,18 @@ export type AdminBotLabMemberInput = {
    * moment, and a month-old one says nothing about today. See ADMINBOT_LOGIN_CITY_FRESH_DAYS.
    */
   last_login_city?: string;
+  /**
+   * The subdivision `last_login_city` is in ("Ontario", "England"), only ever written with it, so
+   * "London, Ontario" and "London, England" place differently. Same audience as the city.
+   */
+  last_login_region?: string;
   last_login_timezone?: string;
+  /**
+   * How the member wants to appear on the lab map, set by them in Profile. "auto" (the default when
+   * absent) places them at the city of a recent sign-in, else what they stated; "stated" uses only
+   * what they wrote (`current_city`, `location`, Slack); "hidden" leaves them off the map.
+   */
+  map_visibility?: "auto" | "stated" | "hidden";
   /**
    * When the member last answered the "you seem to have moved" question, either way.
    *
@@ -1941,38 +1981,6 @@ export const adminBotPaperSteps = [
 
 export type AdminBotPaperStep = (typeof adminBotPaperSteps)[number];
 
-export const adminBotPaperTimelineDependencyGroups = [
-  "ideation",
-  "writing",
-  "submission",
-  "release",
-  "outreach",
-  "materials",
-] as const;
-
-export type AdminBotPaperTimelineDependencyGroup =
-  (typeof adminBotPaperTimelineDependencyGroups)[number];
-
-export type AdminBotPaperTimelineStatus = "complete" | "current" | "upcoming" | "blocked";
-
-export type AdminBotPaperTimelineItem = {
-  step: AdminBotPaperStep;
-  label: string;
-  dependency_group: AdminBotPaperTimelineDependencyGroup;
-  depends_on: AdminBotPaperStep[];
-  status: AdminBotPaperTimelineStatus;
-  offset_start_business_day: number;
-  offset_end_business_day: number;
-  duration_business_days: number;
-  color: string;
-};
-
-export type AdminBotPaperTimeline = {
-  progress_percent: number;
-  current_step_index: number;
-  total_estimated_business_days: number;
-  items: AdminBotPaperTimelineItem[];
-};
 export type AdminBotPaperArtifactLinks = {
   /** Human confirmation that the paper has been presented; blank reopens it. */
   completed_at?: string;
@@ -2000,15 +2008,6 @@ export type AdminBotPaperArtifactLinks = {
   linkedin_draft_url?: string;
   google_slides_url?: string;
   poster_url?: string;
-  /**
-   * arXiv's own per-paper password, which a coauthor needs to claim ownership of a submission.
-   *
-   * Stored beside the links because that is what it is used with, and with the same protection:
-   * none beyond the record's own access rules. Every coauthor of the paper can read it, as they
-   * can its Overleaf edit link. It lived as a disabled column in the bulk grid for a while,
-   * accepting text it then dropped, which is worse than either storing it or not offering it.
-   */
-  arxiv_paper_password?: string;
 };
 
 export type AdminBotPaperReminderState = {
@@ -2239,7 +2238,6 @@ export type AdminBotPaperRecordInput = {
 };
 
 export type AdminBotPaperRecord = AdminBotPaperRecordInput & {
-  timeline?: AdminBotPaperTimeline;
   created_at: string;
   updated_at: string;
 };
@@ -2252,7 +2250,6 @@ export type AdminBotPaperNudge = {
   recipients: string[];
   message: string;
   business_days_since_author_dm?: number;
-  timeline?: AdminBotPaperTimeline;
 };
 
 // Member nudge: an admin-composed message (paper-flow reminder or general announcement) sent to a
@@ -2466,6 +2463,10 @@ export type AdminBotAuditEvent = {
     // would turn the trail into the location history the opt-in promises not to keep.
     | "location_sharing.enabled"
     | "location_sharing.disabled"
+    // The working-groups slide sync ran and either proposed a change or found nothing to do. Its
+    // own pair so "why did the slide not update this week" has an answer that is not a log file.
+    | "slides.working_groups_planned"
+    | "slides.working_groups_failed"
     | "proposal.created"
     | "proposal.auto_approved"
     | "proposal.removed"
@@ -2544,6 +2545,8 @@ export type AdminBotAuditEvent = {
     | "roster_sync.member_type_changed"
     | "roster_sync.access_revocations_proposed"
     | "roster_sync.completed"
+    // One pass of the Slack users.list roster sync: counts, refusal reason, dry-run flag.
+    | "slack_roster_sync.completed"
     | "project_channels.swept"
     | "topic_channels.swept"
     | "themed_meeting_invites.swept"
@@ -2925,7 +2928,8 @@ export type AdminBotMeetingRecord = AdminBotMeetingRecordInput & {
   /**
    * How many people were present. Derived on read, never stored: a member is not shown the roster,
    * and a headcount is the part of it that is useful to whoever missed the meeting without naming
-   * anybody. Absent on the admin view, which has the roster itself.
+   * anybody. An admin's list row carries it in place of the roster; the admin roster read
+   * (GET /meetings/:id) leaves it out, having the roster itself.
    */
   attendee_count?: number;
 };

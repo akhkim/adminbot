@@ -204,7 +204,9 @@ describe("workshop nudge HTTP flow", () => {
           recipient_member_id: string;
           delivery_ready: boolean;
           draft: { text: string } | null;
+          recommendations: Array<Record<string, unknown>>;
         }>;
+        workshops: Record<string, Record<string, unknown>>;
         coverage: { members_without_usable_papers: Array<{ member_id: string }> };
       };
     };
@@ -222,6 +224,16 @@ describe("workshop nudge HTTP flow", () => {
       member_id: "admin-1",
       name: "Ada Admin",
     });
+    // Each workshop profile travels once, keyed by id; pairs name it rather than repeat it, and
+    // the draft carries only its text.
+    const [recommendation] = body.recipients[0]?.recommendations ?? [];
+    expect(recommendation).toBeDefined();
+    expect(recommendation).not.toHaveProperty("workshop");
+    expect(recommendation).not.toHaveProperty("pair_id");
+    const workshop = body.workshops[String(recommendation?.workshop_id)];
+    expect(workshop).toEqual(expect.objectContaining({ name: expect.any(String) }));
+    expect(workshop).not.toHaveProperty("topics");
+    expect(Object.keys(body.recipients[0]?.draft ?? {})).toEqual(["text"]);
   });
 
   // Send delivers the pass the administrator was looking at, not a fresh one. Recomputing here ran

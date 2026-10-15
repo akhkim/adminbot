@@ -4,6 +4,7 @@
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 import type { AdminBotSettingsInput } from "../../contracts/actions.js";
 import { readLlmGatewayStatus } from "../../kernel/llm-gateway-client.js";
+import { notificationFeed } from "../../workflows/members/notification-feed.js";
 import {
   asString,
   readJson,
@@ -110,7 +111,18 @@ export const workspaceRoutes: readonly Route[] = [
     memberOnly(({ req, res, principal, ctx }) => {
       const { service } = ctx;
       if (req.method === "GET") {
-        sendServiceResult(res, service.listMemberNotifications(principal.member.id));
+        const listed = service.listMemberNotifications(principal.member.id);
+        // Each kind's card and every unread one: the read siblings a card stands for are never
+        // drawn, so they stay on the server. See notificationFeed.
+        sendServiceResult(
+          res,
+          listed.ok
+            ? {
+                ...listed,
+                payload: { notifications: notificationFeed(listed.payload.notifications) },
+              }
+            : listed,
+        );
         return;
       }
       sendJson(res, 405, { error: { message: "method not allowed" } });

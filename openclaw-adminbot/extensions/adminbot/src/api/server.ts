@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
-import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
+import { selectIpGeolocator } from "../connectors/ip-geolocation.js";
 import {
   createOpenReviewForumProbe,
   createOpenReviewNotesReader,
@@ -194,6 +194,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   const gatewayUrl = trimmedEnv(options.gatewayUrl ?? process.env.ADMINBOT_GATEWAY_WS_URL);
   const serviceToken = trimmedEnv(options.serviceToken ?? process.env.ADMINBOT_SERVICE_TOKEN);
   const ipinfoToken = trimmedEnv(options.ipinfoToken ?? process.env.IPINFO_TOKEN);
+  const geoipMmdbPath = trimmedEnv(options.geoipMmdbPath ?? process.env.ADMINBOT_GEOIP_MMDB_PATH);
+  const ipGeolocation = selectIpGeolocator({ mmdbPath: geoipMmdbPath, ipinfoToken });
   // Built here rather than injected from the launcher, like the geolocator above: both are pure
   // functions of the environment, and the composition root has nothing to add to either.
   const venuePapersReader = options.venuePapersReader ?? createOpenReviewNotesReader();
@@ -227,6 +229,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       return result.payload;
     },
     afterMemberCreated: (member) => service.afterMemberCreated(member),
+    // A sign-in that resolved to a city may make an event or city intro possible. Serialized and
+    // idempotent inside the service, so a burst of sign-ins sends nothing twice.
+    afterLoginLocated: (memberId) => void service.onLoginLocated(memberId).catch(() => {}),
     // Warned about at startup rather than left to fail per approval. See adminbotLabCalendarWarning
     // below: the runner is still installed when unconfigured, because a failure that is audited is
     // better than a side effect that is silently skipped.
@@ -235,13 +240,13 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
     sendPasswordResetEmail: options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
     ...(gatewayUrl ? { gatewayUrl } : {}),
-    // An explicitly injected geolocator wins (tests and the host inject their own);
-    // otherwise build the IPinfo Lite one when a token is configured. With neither, the
-    // option stays unset and the login path simply skips the stamp.
+    // An explicitly injected geolocator wins (tests inject their own); otherwise the local city
+    // database when ADMINBOT_GEOIP_MMDB_PATH is set, then IPinfo when IPINFO_TOKEN is. With
+    // neither, the option stays unset and the login path simply skips the stamp.
     ...(options.geolocateIp
       ? { geolocateIp: options.geolocateIp }
-      : ipinfoToken
-        ? { geolocateIp: createIpinfoGeolocator(ipinfoToken) }
+      : ipGeolocation.geolocate
+        ? { geolocateIp: ipGeolocation.geolocate }
         : {}),
   });
   // The roster the Membership grid reads. Built from configuration rather than assumed: a
@@ -419,6 +424,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.deviceTokenIssuer ? { deviceTokenIssuer: options.deviceTokenIssuer } : {}),
     ...(openReviewWorkflow ? { openReviewWorkflow } : {}),
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
+    ...(ipGeolocation.attribution ? { ipGeolocationAttribution: ipGeolocation.attribution } : {}),
     ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
     ...(options.cvDigestPublisher ? { cvDigestPublisher: options.cvDigestPublisher } : {}),
     publicationMailingRunner: options.publicationMailingRunner ?? createPublicationMailingRunner(),
@@ -439,6 +445,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       ? { readCalendarMembership: options.readCalendarMembership }
       : {}),
     ...(options.readActiveChannels ? { readActiveChannels: options.readActiveChannels } : {}),
+    ...(options.readSlackDirectory ? { readSlackDirectory: options.readSlackDirectory } : {}),
+    ...(options.slackPlaceholderUserIds
+      ? { slackPlaceholderUserIds: options.slackPlaceholderUserIds }
+      : {}),
     ...(options.fetchSlackChannelNames
       ? { fetchSlackChannelNames: options.fetchSlackChannelNames }
       : {}),
@@ -489,6 +499,16 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         }, slackChannelNamingSweepIntervalMs)
       : undefined;
   slackChannelNamingSweepTimer?.unref();
+  // Retries due meetup intros, which is how one held back for somebody's night goes out at their
+  // morning. Disabled when unset, like the naming sweep.
+  const meetupSweepIntervalMs = options.meetupSweepIntervalMs;
+  const meetupSweepTimer =
+    typeof meetupSweepIntervalMs === "number" && meetupSweepIntervalMs > 0
+      ? setInterval(() => {
+          void service.runMeetupSweep().catch(() => {});
+        }, meetupSweepIntervalMs)
+      : undefined;
+  meetupSweepTimer?.unref();
   const server = createServer(async (req, res) => {
     try {
       await routeRequest(req, res, ctx);
@@ -518,6 +538,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       if (slackChannelNamingSweepTimer) {
         clearInterval(slackChannelNamingSweepTimer);
       }
+      if (meetupSweepTimer) {
+        clearInterval(meetupSweepTimer);
+      }
       closeDurable();
     },
   };
@@ -537,6 +560,7 @@ function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOpt
       ? { polishSlackProfilePhoto: options.polishSlackProfilePhoto }
       : {}),
     ...(options.driveProbe ? { driveProbe: options.driveProbe } : {}),
+    ...(options.slidesWorkingGroups ? { slidesWorkingGroups: options.slidesWorkingGroups } : {}),
     // Defaulted here rather than injected from the launcher, like `venuePapersReader` above:
     // both are credential-free reads of a public API, so the composition root has nothing to add
     // and a deployment gets them by existing. The Drive probe is the one that needs an account,

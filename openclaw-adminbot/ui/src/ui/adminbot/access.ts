@@ -69,7 +69,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Recordings of the lab's own meetings, for the lab's own members. The tab is member-level
   // because the recording and the summary are what someone who missed the meeting came for; the
   // attendance roster inside it is not, and the service hands a member only their own line and a
-  // headcount (listMeetingsForMember). Reading who else was there is an admin act.
+  // headcount (listMeetingsPageForMember). Reading who else was there is an admin act.
   adminbotMeetings: "member",
   // Each of the three request forms starts a request made in the viewer's own name, so each needs
   // an account behind it -- a visitor has no identity for AdminBot to route the signature, the
@@ -96,6 +96,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // members only (see canAccessTab below): it shows who is going where, and the service refuses
   // trial members and external collaborators on every /travel route regardless of this entry.
   labTravel: "member",
+  // Upcoming events, who is going and who is nearby: the same audience as Travel, for the same
+  // reason, and the service refuses everyone else on /events.
+  events: "member",
 
   // Everything else is an operator or governance surface.
   // Active Papers is the lab-wide pipeline across every author, not the viewer's own work -- that
@@ -162,7 +165,7 @@ export function canAccessTab(
   privilegeLevel: string | null = role,
 ): boolean {
   // The broad UI member role also includes trial members and external collaborators.
-  if (tab === "adminbotReferenceChecker" || tab === "labTravel") {
+  if (tab === "adminbotReferenceChecker" || tab === "labTravel" || tab === "events") {
     return role !== "anonymous" && (privilegeLevel === "member" || privilegeLevel === "admin");
   }
   return rank(role) >= rank(TAB_MINIMUM_ROLE[tab]);

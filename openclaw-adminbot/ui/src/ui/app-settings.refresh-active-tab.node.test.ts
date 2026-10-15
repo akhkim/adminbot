@@ -72,6 +72,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./adminbot/controllers/admin.ts", () => ({
   loadAdminBot: mocks.loadAdminBotMock,
+  loadAdminBotSensitiveInfo: vi.fn(async () => {}),
   pendingAdminBotLoad: mocks.pendingAdminBotLoadMock,
 }));
 vi.mock("./adminbot/controllers/conference-papers.ts", () => ({
@@ -392,6 +393,17 @@ describe("refreshActiveTab", () => {
       expect.any(Boolean),
       false,
     );
+  });
+
+  it("asks for the admin queues only when the viewer is an admin", async () => {
+    const host = createHost();
+    host.tab = "adminbotTimeAvailability";
+    const app = host as typeof host & { memberPrivilegeLevel: string };
+    app.memberPrivilegeLevel = "admin";
+
+    await refreshActiveTab(app as never);
+
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "admin", false, false);
   });
 
   it("does not request the paper list when Time Availability first opens", async () => {

@@ -1247,12 +1247,12 @@ function renderAdminBotRail(
   if (!adminBot) {
     return nothing;
   }
-  const proposals = adminBot.data.proposals.slice(0, 3);
-  const nudges = adminBot.data.nudges.slice(0, 3);
-  const papers = adminBot.data.papers.slice(0, 3);
-  const loadedAt = adminBot.data.loadedAt
-    ? formatAdminBotTime(adminBot.data.loadedAt)
-    : "not loaded";
+  const data = adminBot.data;
+  const proposals = data.proposals.slice(0, 3);
+  const nudges = data.nudges.slice(0, 3);
+  const papers = data.papers.slice(0, 3);
+  const loadedAt = data.loadedAt ? formatAdminBotTime(data.loadedAt) : "not loaded";
+  const pending = data.queuePages?.proposals?.total ?? data.proposals.length;
   return html`
     <aside class="chat-adminbot-rail" aria-label="AdminBot operations">
       <div class="chat-adminbot-rail__header">
@@ -1290,9 +1290,9 @@ function renderAdminBotRail(
         : nothing}
 
       <div class="chat-adminbot-rail__metrics">
-        <span><strong>${adminBot.data.proposals.length}</strong> pending</span>
+        <span><strong>${pending}</strong> pending</span>
         <span><strong>${adminBot.data.papers.length}</strong> papers</span>
-        <span><strong>${adminBot.data.nudges.length}</strong> nudges</span>
+        <span><strong>${data.queuePages?.nudges?.total ?? data.nudges.length}</strong> nudges</span>
       </div>
       <div class="chat-adminbot-rail__updated">Updated ${loadedAt}</div>
 

@@ -25,7 +25,14 @@ export const TAB_GROUPS = [
   // and the trips it logs are the same schedule rows that page's where-strip draws.
   {
     label: "myInfo",
-    tabs: ["gettingStarted", "profile", "adminbotTimeAvailability", "labTravel", "myWork"],
+    tabs: [
+      "gettingStarted",
+      "profile",
+      "adminbotTimeAvailability",
+      "labTravel",
+      "events",
+      "myWork",
+    ],
   },
   // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
   // which is what someone browsing the lab's shared surface came to look at.
@@ -208,6 +215,7 @@ export type Tab =
   | "myWork"
   | "labSharing"
   | "labTravel"
+  | "events"
   | "activity"
   | "adminbot"
   | "adminbotRegistrations"
@@ -302,6 +310,7 @@ const TAB_PATHS: Record<Tab, string> = {
   labSharing: "/lab-sharing",
   // Not `/travel`, which has been the head professor's travel history since before this tab.
   labTravel: "/lab-travel",
+  events: "/events",
   activity: "/activity",
   adminbot: "/pending-actions",
   adminbotRegistrations: "/registrations",
@@ -553,6 +562,8 @@ export function iconForTab(tab: Tab): IconName {
       return "link";
     case "labTravel":
       return "mapPin";
+    case "events":
+      return "users";
     case "chat":
       return "messageSquare";
     case "overview":

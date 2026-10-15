@@ -11,6 +11,8 @@ import { DEADLINE_VENUES } from "../../workflows/deadlines/generated/dataset.js"
 import { handleDeadlineExtraction } from "../server.deadline-extraction.js";
 import { handleDeadlineRecommendationRoute } from "../server.deadline-recommendations.js";
 import { asString, readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
+import { opportunityWire } from "../server.opportunities.wire.js";
+import { mapPayload } from "../server.paper-lists.wire.js";
 import {
   adminSessionOnly,
   approverIdentityFor,
@@ -135,15 +137,21 @@ export const deadlinesRoutes: readonly Route[] = [
   get("/opportunities", ({ res, principal, ctx }) => {
     const { service } = ctx;
     // Anonymous is a real case here, not a fallback: this tab renders for signed-out visitors.
+    const signedIn = principal.kind === "member";
     sendServiceResult(
       res,
-      service.listOpportunities(
-        principal.kind === "member"
-          ? {
-              memberId: principal.member.id,
-              isAdmin: principal.member.privilege_level === "admin",
-            }
-          : {},
+      mapPayload(
+        service.listOpportunities(
+          principal.kind === "member"
+            ? {
+                memberId: principal.member.id,
+                isAdmin: principal.member.privilege_level === "admin",
+              }
+            : {},
+        ),
+        ({ opportunities }) => ({
+          opportunities: opportunities.map((entry) => opportunityWire(entry, { signedIn })),
+        }),
       ),
     );
   }),

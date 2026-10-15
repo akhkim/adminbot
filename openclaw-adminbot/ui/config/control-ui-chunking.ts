@@ -34,8 +34,14 @@ export function controlUiManualChunk(id: string): string | undefined {
     return "markdown-runtime";
   }
 
-  if (moduleIdIncludesPackage(id, "zod") || moduleIdIncludesPackage(id, "json5")) {
+  // zod serves only the lazily loaded config form; json5 is also read by the config controller in
+  // the entry. Sharing one chunk made every first load fetch zod for json5's sake.
+  if (moduleIdIncludesPackage(id, "zod")) {
     return "config-runtime";
+  }
+
+  if (moduleIdIncludesPackage(id, "json5")) {
+    return "json5-runtime";
   }
 
   if (

@@ -66,6 +66,59 @@ describe("sendJson compression", () => {
   });
 });
 
+// GET reads carry a weak ETag over the exact bytes sent, so the console can revalidate a reload and
+// get an empty 304 back when nothing changed for this caller.
+describe("sendJson revalidation", () => {
+  async function serveBody(read: () => unknown, status = 200): Promise<number> {
+    return await serve((_req, res) => sendJson(res, status, read()));
+  }
+
+  it("answers a matching If-None-Match on a GET with an empty 304", async () => {
+    const port = await serveBody(() => large);
+    const first = await get(port, { "accept-encoding": "gzip" });
+    expect(first.status).toBe(200);
+    expect(first.headers["cache-control"]).toBe("no-store");
+    const etag = String(first.headers.etag);
+    expect(etag).toMatch(/^W\/"[A-Za-z0-9_-]+"$/);
+
+    const again = await get(port, { "if-none-match": etag, "accept-encoding": "gzip" });
+    expect(again.status).toBe(304);
+    expect(again.raw.length).toBe(0);
+    expect(again.headers.etag).toBe(etag);
+
+    // Weak comparison: a strong spelling of the same tag, or a list containing it, still matches.
+    const strong = await get(port, { "if-none-match": `"x", ${etag.slice(2)}` });
+    expect(strong.status).toBe(304);
+  });
+
+  it("sends the full body when the content changed under the tag", async () => {
+    let version = 1;
+    const port = await serveBody(() => ({ version }));
+    const first = await get(port);
+    version = 2;
+    const second = await get(port, { "if-none-match": String(first.headers.etag) });
+    expect(second.status).toBe(200);
+    expect(JSON.parse(second.raw.toString("utf8"))).toEqual({ version: 2 });
+    expect(second.headers.etag).not.toBe(first.headers.etag);
+  });
+
+  it("tags only successful GETs", async () => {
+    const refused = await get(await serveBody(() => ({ error: "nope" }), 403));
+    expect(refused.headers.etag).toBeUndefined();
+    server?.close();
+    const port = await serve((_req, res) => sendJson(res, 200, { ok: true }));
+    const posted = await new Promise<Raw>((resolve, reject) => {
+      const req = request({ port, host: "127.0.0.1", method: "POST" }, (res) => {
+        res.resume();
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, raw: Buffer.alloc(0) }));
+      });
+      req.on("error", reject);
+      req.end();
+    });
+    expect(posted.headers.etag).toBeUndefined();
+  });
+});
+
 // The console, venue picker and member map are fixed per build: rendered once, gzipped once, and
 // revalidated by ETag, so a reload costs a 304 rather than 150KB.
 describe("sendHtml", () => {

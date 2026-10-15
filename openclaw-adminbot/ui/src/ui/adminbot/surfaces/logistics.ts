@@ -8,7 +8,9 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
 import { isLogisticsTab } from "../../navigation.ts";
 import { resolveAdminBotBaseUrl } from "../auth/session.ts";
+import { rereadLogisticsQueue } from "../controllers/logistics-paging.ts";
 import {
+  loadMoreAdminBotLogisticsRequests,
   openAdminBotLogisticsRequest,
   sendAdminBotSignedDocuments,
   setAdminBotLogisticsRequestStatus,
@@ -43,6 +45,7 @@ import {
   type SignatureFormState,
   signatureRequestInput,
 } from "../data/logistics-requests.ts";
+import { remainingRows, type LoadMoreProps } from "../load-more.ts";
 import {
   downloadDraftCopies,
   draftScope,
@@ -57,279 +60,295 @@ import type { AdminBotSurfaceScope } from "./scope.ts";
 const lazyLogistics = createLazyView(() => import("../views/logistics.ts"), notifyLazyViewHost);
 
 export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfaceScope) {
+  if (!isLogisticsTab(state.tab)) {
+    return nothing;
+  }
   const { accessRole, logisticsScope, logisticsTemplate, requestHostUpdate } = scope;
-  return isLogisticsTab(state.tab)
-    ? renderLazyView(lazyLogistics, (m) =>
-        m.renderAdminBotLogistics({
-          role: accessRole,
-          mode: state.adminBotLogisticsMode,
-          onModeChange: (mode) => {
-            state.adminBotLogisticsMode = mode;
-            state.adminBotLogisticsOpenRequestId = null;
-            state.adminBotLogisticsOpenRequest = null;
-            // Clearing the stamp is what asks for a re-read; the effect above does the fetch,
-            // so entering the list has one path whether it was reached by this button or by a
-            // reload that landed on it. Re-read on every entry rather than once: an admin may
-            // have answered a request since the last look.
-            state.adminBotLogisticsRequestsLoadedAt = null;
+  // One page of whichever list is on screen -- the queue for an admin, their own for a member --
+  // asked with the same question the first page was.
+  const more: LoadMoreProps = {
+    remaining: remainingRows(
+      state.adminBotLogisticsPage.total,
+      state.adminBotLogisticsRequests.length,
+      state.adminBotLogisticsPage.nextCursor,
+    ),
+    loading: state.adminBotLogisticsPage.loadingMore,
+    onLoadMore: () => {
+      void loadMoreAdminBotLogisticsRequests(state).finally(() => requestHostUpdate?.());
+      requestHostUpdate?.();
+    },
+  };
+  return renderLazyView(lazyLogistics, (m) =>
+    m.renderAdminBotLogistics({
+      role: accessRole,
+      mode: state.adminBotLogisticsMode,
+      onModeChange: (mode) => {
+        state.adminBotLogisticsMode = mode;
+        state.adminBotLogisticsOpenRequestId = null;
+        state.adminBotLogisticsOpenRequest = null;
+        // Clearing the stamp is what asks for a re-read; the effect above does the fetch,
+        // so entering the list has one path whether it was reached by this button or by a
+        // reload that landed on it. Re-read on every entry rather than once: an admin may
+        // have answered a request since the last look.
+        state.adminBotLogisticsRequestsLoadedAt = null;
+      },
+      requests: {
+        requests: state.adminBotLogisticsRequests,
+        loading: state.adminBotLogisticsRequestsLoading,
+        error: state.adminBotLogisticsRequestsError,
+        more,
+        open: state.adminBotLogisticsOpenRequest,
+        openLoading: state.adminBotLogisticsOpenLoading,
+        viewerIsAdmin: accessRole === "admin",
+        viewerMemberId: state.memberId ?? null,
+        onOpenRequest: (requestId) => {
+          state.adminBotLogisticsStatusNote = "";
+          void openAdminBotLogisticsRequest(state, requestId).finally(() => requestHostUpdate?.());
+        },
+        onEdit: (requestId) => {
+          const request = state.adminBotLogisticsOpenRequest;
+          if (!request || request.id !== requestId) {
+            return;
+          }
+          // Loaded from the request that was read in full, so the documents come back with
+          // it rather than having to be picked off the member's disk again.
+          const form = requestToFormState(request);
+          if (form.signature) {
+            state.setTab("adminbotSignatures");
+            state.adminBotLogisticsSignatureFiles = form.signature.files;
+            state.adminBotLogisticsDescription = form.signature.description;
+            state.adminBotLogisticsAttachments = form.signature.attachments;
+          } else if (form.letters) {
+            state.setTab("adminbotRecLetters");
+            state.adminBotLettersSchools = [...form.letters.schools];
+            state.adminBotLettersFacts = [...form.letters.facts];
+            state.adminBotLettersCvOverleafUrl = form.letters.cvOverleafUrl;
+            state.adminBotLettersDriveFolderUrl = form.letters.driveFolderUrl;
+          } else if (form.meeting) {
+            state.setTab("adminbotMeetingRequests");
+            state.adminBotMeetingRows = [...form.meeting.rows];
+          }
+          state.adminBotLogisticsEditingId = requestId;
+          state.adminBotLogisticsSubmittedId = null;
+          state.adminBotLogisticsCallSheetNote = null;
+          state.adminBotLogisticsSubmitError = null;
+          state.adminBotLogisticsMode = "make";
+          state.adminBotLogisticsOpenRequest = null;
+          state.adminBotLogisticsOpenRequestId = null;
+        },
+        onWithdraw: (requestId) => {
+          void withdrawAdminBotLogisticsRequest(state, requestId).finally(() =>
+            requestHostUpdate?.(),
+          );
+        },
+        onSetStatus: (requestId, status, note) => {
+          void setAdminBotLogisticsRequestStatus(state, requestId, status, note).finally(() => {
+            state.adminBotLogisticsStatusNote = "";
+            requestHostUpdate?.();
+          });
+        },
+        statusNote: state.adminBotLogisticsStatusNote,
+        onStatusNoteChange: (note) => {
+          state.adminBotLogisticsStatusNote = note;
+        },
+      },
+      queue: {
+        options: state.adminBotLogisticsQueueOptions,
+        onOptionsChange: (patch) => {
+          state.adminBotLogisticsQueueOptions = {
+            ...state.adminBotLogisticsQueueOptions,
+            ...patch,
+          };
+          // The service cuts the page, so a new filter or sort is a new page 1. Typing waits
+          // for the search to settle; the rows held meanwhile are re-filtered in place.
+          rereadLogisticsQueue(state, requestHostUpdate, { debounce: "search" in patch });
+        },
+        requests: state.adminBotLogisticsRequests,
+        loading: state.adminBotLogisticsRequestsLoading,
+        error: state.adminBotLogisticsRequestsError,
+        more,
+        showSettled: state.adminBotLogisticsShowSettled,
+        onShowSettledChange: (showSettled) => {
+          state.adminBotLogisticsShowSettled = showSettled;
+          rereadLogisticsQueue(state, requestHostUpdate, { debounce: false });
+        },
+        signingId: state.adminBotLogisticsSigningId,
+        signedNote: state.adminBotLogisticsSignedNote,
+        onSignedNoteChange: (note) => {
+          state.adminBotLogisticsSignedNote = note;
+        },
+        onSendSigned: (requestId, files) => {
+          void (async () => {
+            const documents = await filesToAttachments(files);
+            const sent = await sendAdminBotSignedDocuments(
+              state,
+              requestId,
+              documents,
+              state.adminBotLogisticsSignedNote,
+            );
+            if (sent) {
+              // The note belonged to the request that just went out; leaving it in the box
+              // would attach it to whichever one is signed next.
+              state.adminBotLogisticsSignedNote = "";
+            }
+            requestHostUpdate?.();
+          })();
+        },
+        onOpenRequest: (requestId) => {
+          state.adminBotLogisticsStatusNote = "";
+          void openAdminBotLogisticsRequest(state, requestId).finally(() => requestHostUpdate?.());
+        },
+        onSetStatus: (requestId, status) => {
+          void setAdminBotLogisticsRequestStatus(state, requestId, status, "").finally(() =>
+            requestHostUpdate?.(),
+          );
+        },
+      },
+      template: logisticsTemplate,
+      signature: {
+        files: state.adminBotLogisticsSignatureFiles,
+        onFilesChange: (files) => {
+          state.adminBotLogisticsSignatureFiles = files;
+          void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(() =>
+            requestHostUpdate?.(),
+          );
+        },
+        description: state.adminBotLogisticsDescription,
+        onDescriptionChange: (description) => {
+          state.adminBotLogisticsDescription = description;
+          void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(() =>
+            requestHostUpdate?.(),
+          );
+        },
+        attachments: state.adminBotLogisticsAttachments,
+        onAttachmentsChange: (files) => {
+          state.adminBotLogisticsAttachments = files;
+          void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(() =>
+            requestHostUpdate?.(),
+          );
+        },
+        sync: {
+          ...draftSyncStatus(logisticsScope, "document-signature"),
+          onImportLegacy: () => {
+            void importLegacyDraft(logisticsScope, "document-signature");
           },
-          requests: {
-            requests: state.adminBotLogisticsRequests,
-            loading: state.adminBotLogisticsRequestsLoading,
-            error: state.adminBotLogisticsRequestsError,
-            open: state.adminBotLogisticsOpenRequest,
-            openLoading: state.adminBotLogisticsOpenLoading,
-            viewerIsAdmin: accessRole === "admin",
-            viewerMemberId: state.memberId ?? null,
-            onOpenRequest: (requestId) => {
-              state.adminBotLogisticsStatusNote = "";
-              void openAdminBotLogisticsRequest(state, requestId).finally(() =>
-                requestHostUpdate?.(),
-              );
-            },
-            onEdit: (requestId) => {
-              const request = state.adminBotLogisticsOpenRequest;
-              if (!request || request.id !== requestId) {
-                return;
-              }
-              // Loaded from the request that was read in full, so the documents come back with
-              // it rather than having to be picked off the member's disk again.
-              const form = requestToFormState(request);
-              if (form.signature) {
-                state.setTab("adminbotSignatures");
-                state.adminBotLogisticsSignatureFiles = form.signature.files;
-                state.adminBotLogisticsDescription = form.signature.description;
-                state.adminBotLogisticsAttachments = form.signature.attachments;
-              } else if (form.letters) {
-                state.setTab("adminbotRecLetters");
-                state.adminBotLettersSchools = [...form.letters.schools];
-                state.adminBotLettersFacts = [...form.letters.facts];
-                state.adminBotLettersCvOverleafUrl = form.letters.cvOverleafUrl;
-                state.adminBotLettersDriveFolderUrl = form.letters.driveFolderUrl;
-              } else if (form.meeting) {
-                state.setTab("adminbotMeetingRequests");
-                state.adminBotMeetingRows = [...form.meeting.rows];
-              }
-              state.adminBotLogisticsEditingId = requestId;
-              state.adminBotLogisticsSubmittedId = null;
-              state.adminBotLogisticsCallSheetNote = null;
-              state.adminBotLogisticsSubmitError = null;
-              state.adminBotLogisticsMode = "make";
-              state.adminBotLogisticsOpenRequest = null;
-              state.adminBotLogisticsOpenRequestId = null;
-            },
-            onWithdraw: (requestId) => {
-              void withdrawAdminBotLogisticsRequest(state, requestId).finally(() =>
-                requestHostUpdate?.(),
-              );
-            },
-            onSetStatus: (requestId, status, note) => {
-              void setAdminBotLogisticsRequestStatus(state, requestId, status, note).finally(() => {
-                state.adminBotLogisticsStatusNote = "";
-                requestHostUpdate?.();
-              });
-            },
-            statusNote: state.adminBotLogisticsStatusNote,
-            onStatusNoteChange: (note) => {
-              state.adminBotLogisticsStatusNote = note;
-            },
+          onDownload: () => {
+            void downloadDraftCopies(logisticsScope, "document-signature");
           },
-          queue: {
-            options: state.adminBotLogisticsQueueOptions,
-            onOptionsChange: (patch) => {
-              state.adminBotLogisticsQueueOptions = {
-                ...state.adminBotLogisticsQueueOptions,
-                ...patch,
-              };
-            },
-            requests: state.adminBotLogisticsRequests,
-            loading: state.adminBotLogisticsRequestsLoading,
-            error: state.adminBotLogisticsRequestsError,
-            showSettled: state.adminBotLogisticsShowSettled,
-            onShowSettledChange: (showSettled) => {
-              state.adminBotLogisticsShowSettled = showSettled;
-            },
-            signingId: state.adminBotLogisticsSigningId,
-            signedNote: state.adminBotLogisticsSignedNote,
-            onSignedNoteChange: (note) => {
-              state.adminBotLogisticsSignedNote = note;
-            },
-            onSendSigned: (requestId, files) => {
-              void (async () => {
-                const documents = await filesToAttachments(files);
-                const sent = await sendAdminBotSignedDocuments(
-                  state,
-                  requestId,
-                  documents,
-                  state.adminBotLogisticsSignedNote,
-                );
-                if (sent) {
-                  // The note belonged to the request that just went out; leaving it in the box
-                  // would attach it to whichever one is signed next.
-                  state.adminBotLogisticsSignedNote = "";
-                }
-                requestHostUpdate?.();
-              })();
-            },
-            onOpenRequest: (requestId) => {
-              state.adminBotLogisticsStatusNote = "";
-              void openAdminBotLogisticsRequest(state, requestId).finally(() =>
-                requestHostUpdate?.(),
-              );
-            },
-            onSetStatus: (requestId, status) => {
-              void setAdminBotLogisticsRequestStatus(state, requestId, status, "").finally(() =>
-                requestHostUpdate?.(),
-              );
-            },
+          onResolve: (choice: "mine" | "server") => {
+            void resolveDraftConflict(logisticsScope, "document-signature", choice).finally(() =>
+              requestHostUpdate?.(),
+            );
           },
-          template: logisticsTemplate,
-          signature: {
-            files: state.adminBotLogisticsSignatureFiles,
-            onFilesChange: (files) => {
-              state.adminBotLogisticsSignatureFiles = files;
-              void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                requestHostUpdate?.(),
-              );
-            },
-            description: state.adminBotLogisticsDescription,
-            onDescriptionChange: (description) => {
-              state.adminBotLogisticsDescription = description;
-              void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                requestHostUpdate?.(),
-              );
-            },
-            attachments: state.adminBotLogisticsAttachments,
-            onAttachmentsChange: (files) => {
-              state.adminBotLogisticsAttachments = files;
-              void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                requestHostUpdate?.(),
-              );
-            },
-            sync: {
-              ...draftSyncStatus(logisticsScope, "document-signature"),
-              onImportLegacy: () => {
-                void importLegacyDraft(logisticsScope, "document-signature");
-              },
-              onDownload: () => {
-                void downloadDraftCopies(logisticsScope, "document-signature");
-              },
-              onResolve: (choice: "mine" | "server") => {
-                void resolveDraftConflict(logisticsScope, "document-signature", choice).finally(
-                  () => requestHostUpdate?.(),
-                );
-              },
-            },
-            form: state.adminBotSignatureForm,
-            onForm: (patch) => {
-              state.adminBotSignatureForm = { ...state.adminBotSignatureForm, ...patch };
-              // Editing after a send re-arms the tab: "Sent" must not describe something older
-              // than what is on screen.
-              state.adminBotSignatureSubmitted = false;
-              state.adminBotSignatureError = null;
-              requestHostUpdate?.();
-            },
-            onSendForm: () =>
-              submitAdminBotSignatureForm(state).finally(() => requestHostUpdate?.()),
-            sendingForm: state.adminBotSignatureSubmitting,
-            formError: state.adminBotSignatureError,
-            formSent: state.adminBotSignatureSubmitted,
-            saving: state.adminBotLogisticsSaving,
-            savedAt: state.adminBotLogisticsSavedAt,
-            saveError: state.adminBotLogisticsSaveError,
-            onSave: () =>
-              void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                requestHostUpdate?.(),
-              ),
-            ...adminBotLogisticsSubmitProps(state, requestHostUpdate, "documentSignature"),
+        },
+        form: state.adminBotSignatureForm,
+        onForm: (patch) => {
+          state.adminBotSignatureForm = { ...state.adminBotSignatureForm, ...patch };
+          // Editing after a send re-arms the tab: "Sent" must not describe something older
+          // than what is on screen.
+          state.adminBotSignatureSubmitted = false;
+          state.adminBotSignatureError = null;
+          requestHostUpdate?.();
+        },
+        onSendForm: () => submitAdminBotSignatureForm(state).finally(() => requestHostUpdate?.()),
+        sendingForm: state.adminBotSignatureSubmitting,
+        formError: state.adminBotSignatureError,
+        formSent: state.adminBotSignatureSubmitted,
+        saving: state.adminBotLogisticsSaving,
+        savedAt: state.adminBotLogisticsSavedAt,
+        saveError: state.adminBotLogisticsSaveError,
+        onSave: () =>
+          void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(() =>
+            requestHostUpdate?.(),
+          ),
+        ...adminBotLogisticsSubmitProps(state, requestHostUpdate, "documentSignature"),
+      },
+      meeting: {
+        rows: state.adminBotMeetingRows,
+        onRowsChange: (rows) => {
+          state.adminBotMeetingRows = rows;
+          void saveAdminBotMeetingDraft(state, adminBotLogisticsScope(state)).finally(() =>
+            requestHostUpdate?.(),
+          );
+        },
+        sync: {
+          ...draftSyncStatus(logisticsScope, "book-meeting"),
+          onImportLegacy: () => {
+            void importLegacyDraft(logisticsScope, "book-meeting");
           },
-          meeting: {
-            rows: state.adminBotMeetingRows,
-            onRowsChange: (rows) => {
-              state.adminBotMeetingRows = rows;
-              void saveAdminBotMeetingDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                requestHostUpdate?.(),
-              );
-            },
-            sync: {
-              ...draftSyncStatus(logisticsScope, "book-meeting"),
-              onImportLegacy: () => {
-                void importLegacyDraft(logisticsScope, "book-meeting");
-              },
-              onDownload: () => {
-                void downloadDraftCopies(logisticsScope, "book-meeting");
-              },
-              onResolve: (choice: "mine" | "server") => {
-                void resolveDraftConflict(logisticsScope, "book-meeting", choice).finally(() =>
-                  requestHostUpdate?.(),
-                );
-              },
-            },
-            saving: state.adminBotMeetingSaving,
-            savedAt: state.adminBotMeetingSavedAt,
-            saveError: state.adminBotMeetingSaveError,
-            onSave: () =>
-              void saveAdminBotMeetingDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                requestHostUpdate?.(),
-              ),
-            ...adminBotLogisticsSubmitProps(state, requestHostUpdate, "bookMeeting"),
+          onDownload: () => {
+            void downloadDraftCopies(logisticsScope, "book-meeting");
           },
-          letters: {
-            schools: state.adminBotLettersSchools,
-            onSchoolsChange: (schools) => {
-              state.adminBotLettersSchools = schools;
-              void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                requestHostUpdate?.(),
-              );
-            },
-            facts: state.adminBotLettersFacts,
-            onFactsChange: (facts) => {
-              state.adminBotLettersFacts = facts;
-              void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                requestHostUpdate?.(),
-              );
-            },
-            onOpenMyProjects: () => state.setTab("myWork"),
-            cvOverleafUrl: state.adminBotLettersCvOverleafUrl,
-            onCvOverleafUrlChange: (url) => {
-              state.adminBotLettersCvOverleafUrl = url;
-              void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                requestHostUpdate?.(),
-              );
-            },
-            driveFolderUrl: state.adminBotLettersDriveFolderUrl,
-            onDriveFolderUrlChange: (url) => {
-              state.adminBotLettersDriveFolderUrl = url;
-              void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                requestHostUpdate?.(),
-              );
-            },
-            sync: {
-              ...draftSyncStatus(logisticsScope, "recommendation-letters"),
-              onImportLegacy: () => {
-                void importLegacyDraft(logisticsScope, "recommendation-letters");
-              },
-              onDownload: () => {
-                void downloadDraftCopies(logisticsScope, "recommendation-letters");
-              },
-              onResolve: (choice: "mine" | "server") => {
-                void resolveDraftConflict(logisticsScope, "recommendation-letters", choice).finally(
-                  () => requestHostUpdate?.(),
-                );
-              },
-            },
-            saving: state.adminBotLettersSaving,
-            savedAt: state.adminBotLettersSavedAt,
-            saveError: state.adminBotLettersSaveError,
-            onSave: () =>
-              void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
-                requestHostUpdate?.(),
-              ),
-            ...adminBotLogisticsSubmitProps(state, requestHostUpdate, "recommendationLetters"),
+          onResolve: (choice: "mine" | "server") => {
+            void resolveDraftConflict(logisticsScope, "book-meeting", choice).finally(() =>
+              requestHostUpdate?.(),
+            );
           },
-        }),
-      )
-    : nothing;
+        },
+        saving: state.adminBotMeetingSaving,
+        savedAt: state.adminBotMeetingSavedAt,
+        saveError: state.adminBotMeetingSaveError,
+        onSave: () =>
+          void saveAdminBotMeetingDraft(state, adminBotLogisticsScope(state)).finally(() =>
+            requestHostUpdate?.(),
+          ),
+        ...adminBotLogisticsSubmitProps(state, requestHostUpdate, "bookMeeting"),
+      },
+      letters: {
+        schools: state.adminBotLettersSchools,
+        onSchoolsChange: (schools) => {
+          state.adminBotLettersSchools = schools;
+          void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
+            requestHostUpdate?.(),
+          );
+        },
+        facts: state.adminBotLettersFacts,
+        onFactsChange: (facts) => {
+          state.adminBotLettersFacts = facts;
+          void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
+            requestHostUpdate?.(),
+          );
+        },
+        onOpenMyProjects: () => state.setTab("myWork"),
+        cvOverleafUrl: state.adminBotLettersCvOverleafUrl,
+        onCvOverleafUrlChange: (url) => {
+          state.adminBotLettersCvOverleafUrl = url;
+          void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
+            requestHostUpdate?.(),
+          );
+        },
+        driveFolderUrl: state.adminBotLettersDriveFolderUrl,
+        onDriveFolderUrlChange: (url) => {
+          state.adminBotLettersDriveFolderUrl = url;
+          void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
+            requestHostUpdate?.(),
+          );
+        },
+        sync: {
+          ...draftSyncStatus(logisticsScope, "recommendation-letters"),
+          onImportLegacy: () => {
+            void importLegacyDraft(logisticsScope, "recommendation-letters");
+          },
+          onDownload: () => {
+            void downloadDraftCopies(logisticsScope, "recommendation-letters");
+          },
+          onResolve: (choice: "mine" | "server") => {
+            void resolveDraftConflict(logisticsScope, "recommendation-letters", choice).finally(
+              () => requestHostUpdate?.(),
+            );
+          },
+        },
+        saving: state.adminBotLettersSaving,
+        savedAt: state.adminBotLettersSavedAt,
+        saveError: state.adminBotLettersSaveError,
+        onSave: () =>
+          void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
+            requestHostUpdate?.(),
+          ),
+        ...adminBotLogisticsSubmitProps(state, requestHostUpdate, "recommendationLetters"),
+      },
+    }),
+  );
 }
 
 export function adminBotLogisticsScope(state: AppViewState): string {

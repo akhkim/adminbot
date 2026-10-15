@@ -487,9 +487,9 @@ describe("conference intro delivery", () => {
   });
 
   it.each([
-    ["two people", ["UADA", "UBOB"]],
+    ["one person", ["UADA"]],
     ["four people", ["UADA", "UBOB", "UCY", "UDEE"]],
-    ["a duplicate that leaves two", ["UADA", "UBOB", "UBOB"]],
+    ["a duplicate that leaves one", ["UADA", "UADA"]],
     ["a channel id in place of a user", ["UADA", "UBOB", "C0GENERAL"]],
   ])("refuses an altered payload with %s", async (_label, userIds) => {
     const fetchImpl = vi.fn();
@@ -501,7 +501,52 @@ describe("conference intro delivery", () => {
       executor.execute(
         proposal("slack.conference_intro", { user_ids: userIds, message: "Intro text" }),
       ),
-    ).rejects.toThrow("three distinct");
+    ).rejects.toThrow("two or three distinct");
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("posts the intro's Block Kit with the text as fallback, and refuses any other block", async () => {
+    const ok = (body: string) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => body,
+    });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(ok('{"ok":true,"channel":{"id":"GEXAMPLE"}}'))
+      .mockResolvedValueOnce(ok('{"ok":true}'));
+    const executor = createAdminBotSlackAdminExecutor({
+      env: { SLACK_BOT_TOKEN: "test" },
+      fetchImpl,
+    });
+    const blocks = [
+      { type: "header", text: { type: "plain_text", text: "Hi" } },
+      { type: "context", elements: [{ type: "mrkdwn", text: "footer" }] },
+    ];
+    await executor.execute(
+      proposal("slack.conference_intro", {
+        user_ids: ["UADA", "UBOB"],
+        message: "Intro text",
+        blocks,
+      }),
+    );
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toMatchObject({
+      text: "Intro text",
+      blocks,
+    });
+
+    const refused = vi.fn();
+    await expect(
+      createAdminBotSlackAdminExecutor({ env: { SLACK_BOT_TOKEN: "test" }, fetchImpl: refused })
+        .execute(
+          proposal("slack.conference_intro", {
+            user_ids: ["UADA", "UBOB"],
+            message: "Intro text",
+            blocks: [{ type: "actions", elements: [] }],
+          }),
+        ),
+    ).rejects.toThrow("blocks must be");
+    expect(refused).not.toHaveBeenCalled();
   });
 });

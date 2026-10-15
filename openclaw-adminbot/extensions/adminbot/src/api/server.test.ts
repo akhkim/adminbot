@@ -488,8 +488,11 @@ describe("AdminBot mock service", () => {
     // Portal approval alone does not establish full/major membership.
     expect(invited).toEqual([]);
 
+    // Onboarding is owner-only, so the checklist is read as the admin, not the service principal.
     const members = (await (
-      await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() })
+      await fetch(`${baseUrl}/lab/members`, {
+        headers: { Authorization: `Bearer ${adminSession}` },
+      })
     ).json()) as {
       members: Array<{ id: string; onboarding?: { steps: Array<{ id: string; status: string }> } }>;
     };
@@ -1242,15 +1245,126 @@ describe("AdminBot mock service", () => {
     const body = (await response.json()) as {
       mode: string;
       places: Array<{ label: string; members: Array<{ name: string; source: string }> }>;
-      unplaced: Array<{ name: string }>;
+      unplaced?: unknown;
+      unplaced_count: number;
     };
     expect(body.mode).toBe("full");
     expect(body.places[0]?.label).toBe("Toronto");
     expect(body.places[0]?.members[0]).toMatchObject({ name: "Ada", source: "roster" });
+    // The dashboard card needs how many, not who: the names come only on request.
+    expect(body.unplaced).toBeUndefined();
+    expect(body.unplaced_count).toBeGreaterThan(0);
+    const listed = (await (
+      await fetch(`${baseUrl}/member-map?unplaced=list`, { headers: serviceHeaders() })
+    ).json()) as { unplaced: Array<{ name: string }>; unplaced_count: number };
     // The full path still surfaces the unplaced name -- proving the two summary checks above
     // are actually testing something the admin view does show, not a name that was never in
     // the data to begin with.
-    expect(body.unplaced.map((entry) => entry.name)).toContain("Zedunia");
+    expect(listed.unplaced.map((entry) => entry.name)).toContain("Zedunia");
+    expect(listed.unplaced).toHaveLength(body.unplaced_count);
+  });
+
+  it("places a member by a fresh login city for anyone signed in, and only by stated text for a visitor", async () => {
+    const { baseUrl } = await startService();
+    // A complete profile (so Ada may use AdminBot) with a stated city: the sign-in city outranks
+    // it for signed-in callers, and it is all an anonymous visitor's map may use.
+    seedMember(baseUrl, "ada", {
+      name: "Ada",
+      privilege_level: "member",
+      current_city: "Toronto",
+    });
+    await approveClaim(baseUrl, "ada", "ada@example.com");
+    const memberToken = await loginToken(baseUrl, "ada@example.com");
+    // Synthetic geolocation written straight to the store, the way a sign-in would record it,
+    // so no test ever asks a real IP-lookup service where anybody is.
+    const now = new Date().toISOString();
+    await mockFor(baseUrl).store.patchLabMemberAuthFields("ada", {
+      last_login_city: "Lyon",
+      last_login_country: "FR",
+      last_login_at: now,
+      updated_at: now,
+    });
+
+    const admin = await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() });
+    const adminBody = (await admin.json()) as {
+      places: Array<{ key: string; label: string; members: Array<{ source: string }> }>;
+    };
+    expect(adminBody.places[0]).toMatchObject({ key: "lyon", label: "Lyon" });
+    expect(adminBody.places[0]?.members[0]?.source).toBe("login");
+
+    // A signed-in member gets the same placement as a headcount, without the name.
+    const memberText = await (
+      await fetch(`${baseUrl}/member-map`, { headers: { Authorization: `Bearer ${memberToken}` } })
+    ).text();
+    expect(memberText).not.toContain("Ada");
+    expect(JSON.parse(memberText).places[0]).toMatchObject({ key: "lyon", count: 1 });
+
+    // An anonymous visitor's map uses only what Ada stated, so the sign-in city never leaves.
+    const anonymousText = await (await fetch(`${baseUrl}/member-map`)).text();
+    expect(anonymousText).not.toContain("Lyon");
+    const anonymousBody = JSON.parse(anonymousText) as {
+      places: Array<{ key: string; label: string; count: number }>;
+    };
+    expect(anonymousBody.places[0]).toMatchObject({ key: "toronto", count: 1 });
+
+    // "My stated city only", set by Ada herself, holds for every caller, admins included.
+    const saved = await fetch(`${baseUrl}/lab/members/ada`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${memberToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ map_visibility: "stated" }),
+    });
+    expect(saved.status).toBe(200);
+    const stated = (await (
+      await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() })
+    ).json()) as { places: Array<{ key: string; members: Array<{ source: string }> }> };
+    expect(stated.places[0]).toMatchObject({ key: "toronto" });
+    expect(stated.places[0]?.members[0]?.source).toBe("roster");
+
+    // "Hidden" takes her off the map entirely.
+    await fetch(`${baseUrl}/lab/members/ada`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${memberToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ map_visibility: "hidden" }),
+    });
+    const hidden = await (
+      await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() })
+    ).text();
+    expect(hidden).not.toContain("Ada");
+
+    const invalid = await fetch(`${baseUrl}/lab/members/ada`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${memberToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ map_visibility: "everywhere" }),
+    });
+    expect(invalid.status).toBe(400);
+  });
+
+  it("credits the local IP database on the map, in both shapes, only when one is configured", async () => {
+    // A path that does not exist: selecting the provider never opens the file, and nothing here
+    // signs in, so no lookup ever runs.
+    const { baseUrl } = await startService({
+      geoipMmdbPath: path.join(os.tmpdir(), "adminbot-test-missing", "dbip-city-lite.mmdb"),
+    });
+    await seedMember(baseUrl, "ada", {
+      name: "Ada",
+      privilege_level: "member",
+      location: "Toronto",
+    });
+    const credit = { text: "IP geolocation by DB-IP", url: "https://db-ip.com" };
+    const admin = (await (
+      await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() })
+    ).json()) as { attribution?: unknown };
+    expect(admin.attribution).toEqual(credit);
+    const anonymous = (await (await fetch(`${baseUrl}/member-map`)).json()) as {
+      attribution?: unknown;
+    };
+    expect(anonymous.attribution).toEqual(credit);
+
+    const { baseUrl: plainUrl } = await startService();
+    const plain = (await (await fetch(`${plainUrl}/member-map`)).json()) as {
+      attribution?: unknown;
+    };
+    expect(plain.attribution).toBeUndefined();
   });
 
   it("reports a 503 for a map refresh when no slack lookup is configured", async () => {
@@ -1680,6 +1794,93 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(adaToService.availability).toHaveLength(1);
   });
 
+  // Checklist progress, per-field provenance and resolved grants are bookkeeping for the member and
+  // the admins, and most of a record's bytes. A peer's roster read carries none of them.
+  it("keeps onboarding, provenance and access off a peer's roster read", async () => {
+    const { baseUrl } = await startService();
+    for (const [id, privilege] of [
+      ["ada", "member"],
+      ["peer", "member"],
+      ["boss", "admin"],
+    ] as const) {
+      seedMember(baseUrl, id, {
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: privilege,
+      });
+    }
+    const tokens = new Map<string, string>();
+    for (const id of ["peer", "boss"]) {
+      await approveClaim(baseUrl, id, `${id}@cs.toronto.edu`);
+      tokens.set(id, await loginToken(baseUrl, `${id}@cs.toronto.edu`));
+    }
+    const readAs = async (id: string, path: string) => {
+      const token = tokens.get(id)!;
+      const res = await fetch(`${baseUrl}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return (await res.json()) as {
+        members: Array<Record<string, unknown>>;
+        self?: Record<string, unknown>;
+      };
+    };
+    const owned = ["onboarding", "field_provenance", "access"];
+
+    for (const path of ["/lab/members", "/lab/members?view=summary", "/lab/members?limit=10"]) {
+      const asPeer = await readAs("peer", path);
+      const ada = asPeer.members.find((member) => member.id === "ada")!;
+      expect(ada.name, path).toBe("ada");
+      for (const field of owned) {
+        expect(field in ada, `${path} ${field}`).toBe(false);
+      }
+      if (!path.includes("limit=")) {
+        const own = asPeer.members.find((member) => member.id === "peer")!;
+        expect(own.access ?? asPeer.self?.access, path).toBeDefined();
+      }
+
+      const asAdmin = await readAs("boss", path);
+      const adaToAdmin = asAdmin.members.find((member) => member.id === "ada")!;
+      expect(adaToAdmin.onboarding, path).toBeDefined();
+    }
+  });
+
+  it("pages the roster as card summaries, not full records", async () => {
+    const { baseUrl } = await startService();
+    for (const [id, privilege] of [
+      ["ada", "member"],
+      ["boss", "admin"],
+    ] as const) {
+      seedMember(baseUrl, id, {
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: privilege,
+      });
+    }
+    await approveClaim(baseUrl, "boss", "boss@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "boss@cs.toronto.edu");
+    const res = await fetch(`${baseUrl}/lab/members?limit=10&offset=0`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      members: Array<Record<string, unknown> & { onboarding?: { steps: object[] } }>;
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    expect(body).toMatchObject({ total: 2, limit: 10, offset: 0 });
+    const ada = body.members.find((member) => member.id === "ada")!;
+    expect(ada.email).toBe("ada@cs.toronto.edu");
+    expect(ada).not.toHaveProperty("field_provenance");
+    expect(ada).not.toHaveProperty("access");
+    // Step states only: the admin panel checks `{ id, status }`, the copy stays in the catalog.
+    expect(ada.onboarding).toEqual({ steps: expect.any(Array) });
+    expect(ada.onboarding!.steps.length).toBeGreaterThan(0);
+    for (const step of ada.onboarding!.steps) {
+      expect(Object.keys(step).toSorted()).toEqual(["id", "status"]);
+    }
+  });
+
   it("lets a member write, and clear, the overall note on their own schedule", async () => {
     const { baseUrl } = await startService();
     seedMember(baseUrl, "ada", {
@@ -1725,6 +1926,26 @@ describe("AdminBot service-principal privilege scoping", () => {
     const body = (await res.json()) as { members: Array<{ id: string; missing_fields: string[] }> };
     expect(body.members.map((member) => member.id)).toEqual(["blank"]);
     expect(body.members[0]?.missing_fields).toContain("cv_url");
+  });
+
+  it("shows a member who is not an admin only their own incomplete fields", async () => {
+    const { baseUrl } = await startService();
+    seedMember(baseUrl, "blank", { name: "Blank" });
+    seedMember(baseUrl, "plain", {
+      name: "Plain",
+      email: "plain@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "plain", "plain@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "plain@cs.toronto.edu");
+    const res = await fetch(`${baseUrl}/members/mandatory-fields-incomplete`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { members: Array<{ id: string }> };
+    // The profile gate only lets a complete member this far, so their own row is gone too;
+    // what matters is that Blank's incomplete row is not shown to them.
+    expect(body.members.map((member) => member.id)).toEqual([]);
   });
 
   it("lets the service principal (unlike /nudges/send) run the daily mandatory-fields reminder, since it takes no caller-supplied content", async () => {
@@ -1884,7 +2105,9 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(own.status).toBe(200);
     await expect(own.json()).resolves.toMatchObject({
       onboarding: {
-        completed: expect.arrayContaining([expect.objectContaining({ id: "linkedin" })]),
+        steps: expect.arrayContaining([
+          expect.objectContaining({ id: "linkedin", status: "complete" }),
+        ]),
       },
     });
 
@@ -2015,6 +2238,9 @@ describe("AdminBot member-side restrictions", () => {
     const pending = await fetch(`${baseUrl}/proposals/pending`, { headers });
     expect(pending.status).toBe(403);
 
+    const counts = await fetch(`${baseUrl}/admin/queue-counts`, { headers });
+    expect(counts.status).toBe(403);
+
     const settings = await fetch(`${baseUrl}/settings`, { headers });
     expect(settings.status).toBe(403);
   });
@@ -2073,6 +2299,14 @@ describe("AdminBot member-side restrictions", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(pending.status).toBe(200);
+
+    // The dashboard's counts agree with the queues they summarize.
+    const counts = await fetch(`${baseUrl}/admin/queue-counts`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(counts.status).toBe(200);
+    const { proposals } = (await pending.json()) as { proposals: unknown[] };
+    expect(await counts.json()).toEqual({ pending_proposals: proposals.length, email_reviews: 0 });
   });
 
   it("keeps other people's papers and paper deletion out of a plain member's reach", async () => {
@@ -2139,21 +2373,22 @@ describe("onboarding acknowledgement", () => {
 
     const before = (await (
       await fetch(`${baseUrl}/auth/session`, { headers: { Authorization: `Bearer ${token}` } })
-    ).json()) as { member: { onboarding: { current_step?: { id: string } } } };
-    const firstStepId = before.member.onboarding.current_step!.id;
+    ).json()) as { member: { onboarding: { steps: Array<{ id: string; status: string }> } } };
+    const currentOf = (onboarding: { steps: Array<{ id: string; status: string }> }) =>
+      onboarding.steps.find((step) => step.status === "current")?.id;
+    const firstStepId = currentOf(before.member.onboarding)!;
 
     const res = await ack(baseUrl, token, firstStepId);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       onboarding: {
-        current_step?: { id: string };
         steps: Array<{ id: string; status: string; acknowledged_at?: string }>;
       };
     };
     const acknowledged = body.onboarding.steps.find((step) => step.id === firstStepId);
     expect(acknowledged?.status).toBe("complete");
     expect(acknowledged?.acknowledged_at).toBeTruthy();
-    expect(body.onboarding.current_step?.id).not.toBe(firstStepId);
+    expect(currentOf(body.onboarding)).not.toBe(firstStepId);
   });
 
   it("persists the acknowledgement on the member record", async () => {
@@ -2387,6 +2622,35 @@ describe("member-authored papers", () => {
       });
       expect(res.status).toBe(400);
     }
+  });
+
+  it("lists only the viewer's own papers for scope=mine", async () => {
+    const { baseUrl } = await startService();
+    const token = await tokenFor(baseUrl, "ada", "Ada Author");
+    const json = serviceHeaders({ "Content-Type": "application/json" });
+    await putPaper(baseUrl, "filed", memberHeaders(token), {
+      title: "Filed by Ada",
+      authors: ["Someone Else"],
+      current_step: "overleaf_writing",
+    });
+    await putPaper(baseUrl, "named", json, {
+      title: "Ada by name",
+      authors: ["Ada Author"],
+      current_step: "overleaf_writing",
+    });
+    await putPaper(baseUrl, "other", json, {
+      title: "Not Ada's",
+      authors: ["Someone Else"],
+      current_step: "overleaf_writing",
+    });
+
+    const mine = await fetch(`${baseUrl}/papers?scope=mine`, { headers: memberHeaders(token) });
+    expect(mine.status).toBe(200);
+    const body = (await mine.json()) as { papers: Array<{ id: string }> };
+    expect(body.papers.map((paper) => paper.id).toSorted()).toEqual(["filed", "named"]);
+
+    const service = await fetch(`${baseUrl}/papers?scope=mine`, { headers: serviceHeaders() });
+    expect(service.status).toBe(400);
   });
 });
 
@@ -2784,6 +3048,7 @@ describe("anonymous reimbursement access", () => {
       ["GET", "/settings"],
       ["GET", "/lab/members"],
       ["GET", "/proposals/pending"],
+      ["GET", "/admin/queue-counts"],
       ["POST", "/proposals"],
       ["POST", "/automation/email/run"],
     ] as const) {
@@ -2952,9 +3217,16 @@ describe("the calendar routes", () => {
       ).status,
     ).toBe(200);
 
-    await expect((await fetch(`${baseUrl}/opportunities`)).json()).resolves.toMatchObject({
+    const board = (await (await fetch(`${baseUrl}/opportunities`)).json()) as {
+      opportunities: Array<Record<string, unknown>>;
+    };
+    expect(board).toMatchObject({
       opportunities: [{ id: opportunity.id, status: "approved", submitted_by_name: "Plain" }],
     });
+    // The board names the submitter; the review trail stays on the service.
+    for (const field of ["submitted_by_member_id", "decided_by", "decided_at", "created_at"]) {
+      expect(board.opportunities[0]).not.toHaveProperty(field);
+    }
   });
 
   it("refuses an anonymous write and a non-admin decision", async () => {
@@ -3495,7 +3767,7 @@ describe("the meetings routes", () => {
     return result.payload;
   }
 
-  it("gives an admin the full roster", async () => {
+  it("gives an admin a headcount on the list and the full roster on the meeting read", async () => {
     const { baseUrl } = await startService();
     const token = await memberToken(baseUrl, "root", "Root Admin", "admin");
     await memberToken(baseUrl, "ada", "Ada Attendee");
@@ -3516,8 +3788,16 @@ describe("the meetings routes", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { meetings: Array<Record<string, unknown>> };
-    expect(body.meetings[0]?.attendees).toHaveLength(2);
-    expect(body.meetings[0]?.attendee_count).toBeUndefined();
+    expect(body.meetings[0]?.attendees).toBeUndefined();
+    expect(body.meetings[0]?.attendee_count).toBe(2);
+
+    const detail = await fetch(`${baseUrl}/meetings/zoom-812-2026-08-12`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(detail.status).toBe(200);
+    const meeting = (await detail.json()) as Record<string, unknown>;
+    expect(meeting.attendees).toHaveLength(2);
+    expect(meeting.attendee_count).toBeUndefined();
   });
 
   // Who sat in a lab meeting is personal data about everyone else in it. A member gets the
@@ -3624,13 +3904,18 @@ describe("the meetings routes", () => {
     const admin = await fetch(`${baseUrl}/meetings?limit=2`, {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
-    const adminPage = (await admin.json()) as { meetings: Array<{ attendees: unknown[] }> };
+    const adminPage = (await admin.json()) as {
+      meetings: Array<{ attendees?: unknown[]; attendee_count?: number }>;
+    };
+    // The roster is read per meeting (GET /meetings/:id); a row carries the headcount.
     expect(adminPage.meetings[0]?.attendees).toBeUndefined();
-    expect(adminPage.meetings[1]?.attendees).toHaveLength(2);
+    expect(adminPage.meetings[1]?.attendees).toBeUndefined();
+    expect(adminPage.meetings[1]?.attendee_count).toBe(2);
+    // No `limit` is the default page of ten, which holds all four here.
     const unpaged = await fetch(`${baseUrl}/meetings`, { headers });
-    const legacy = (await unpaged.json()) as { meetings: unknown[]; next_cursor?: unknown };
-    expect(legacy.meetings).toHaveLength(4);
-    expect(legacy.next_cursor).toBeUndefined();
+    const firstPage = (await unpaged.json()) as { meetings: unknown[]; next_cursor?: unknown };
+    expect(firstPage.meetings).toHaveLength(4);
+    expect(firstPage.next_cursor).toBeUndefined();
   });
 
   it("keeps historical recordings with invalid or blank dates reachable across pages", async () => {
@@ -4011,7 +4296,7 @@ describe("GET /nudges/escalated", () => {
 
     const privileged = await fetch(`${baseUrl}/nudges/escalated`, { headers: serviceHeaders() });
     expect(privileged.status).toBe(200);
-    await expect(privileged.json()).resolves.toEqual({ members: [] });
+    await expect(privileged.json()).resolves.toEqual({ members: [], total: 0 });
 
     // /notifications is still nobody else's business, service token or not: this route exists
     // because that one deliberately refuses, not as a way around it.
@@ -4245,11 +4530,22 @@ describe("publication mailing list", () => {
     });
     const body = (await preview.json()) as {
       publications: Array<{ id: string }>;
+      excluded: Array<{ id: string; reason: string }>;
+      out_of_range_count: number;
       undated_count: number;
       subject: string;
     };
     expect(body.publications.map((entry) => entry.id)).toEqual(["in-range"]);
     expect(body.undated_count).toBe(3);
+    // The undated papers are listed by name; the one outside the range is only counted, since the
+    // tab never lists those and they grow with every paper the lab has written.
+    expect(body.excluded.map((entry) => entry.id).toSorted()).toEqual([
+      "accepted",
+      "aimed",
+      "undated",
+    ]);
+    expect(body.excluded[0]).not.toHaveProperty("date");
+    expect(body.out_of_range_count).toBe(1);
     // Read-only: a preview must never be the thing that sends.
     expect(sent).toEqual([]);
 
