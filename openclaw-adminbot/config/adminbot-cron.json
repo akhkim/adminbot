@@ -110,6 +110,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-geoip-refresh",
+      "description": "Monthly: install the new DB-IP City Lite database sign-in geolocation reads; skips until ADMINBOT_GEOIP_MMDB_PATH is set",
+      "cron": "25 4 3 * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-geoip-refresh.sh"
+      ],
+      "timeoutSeconds": 1800
+    },
+    {
       "name": "adminbot-venue-index",
       "description": "Rebuild a conference's paper index on the day its accepted list changes; embeds nothing when nothing moved",
       "cron": "0 4 * * *",

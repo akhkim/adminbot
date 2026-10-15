@@ -68,6 +68,8 @@ export type AdminBotRouteContext = {
   fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
   cvScanDeps?: AdminBotCvScanDeps;
   cvDigestPublisher?: AdminBotCvDigestPublisher;
+  /** The IP geolocation provider's required credit, sent with the member map. Absent when off. */
+  ipGeolocationAttribution?: import("../../connectors/ip-geolocation.js").IpGeolocationAttribution;
   /** Sends the publication digest. Absent leaves /papers/mailing-list/send answering 503. */
   publicationMailingRunner?: PublicationMailingRunner;
   venuePapersReader?: import("../../connectors/openreview-notes.js").OpenReviewNotesReader;
@@ -204,6 +206,10 @@ export type AdminBotMockServiceOptions = {
   // record from the IP their most recent successful login came from. Falls back to
   // process.env.IPINFO_TOKEN; absent either way, login location just never gets recorded.
   ipinfoToken?: string;
+  // Path to a MaxMind-format city database (DB-IP City Lite or GeoLite2-City), preferred over
+  // IPinfo when set. Falls back to process.env.ADMINBOT_GEOIP_MMDB_PATH. See
+  // scripts/adminbot-geoip-refresh.sh and docs/tools/adminbot-geoip.md.
+  geoipMmdbPath?: string;
   // Trust X-Forwarded-For for the caller's IP (rate limiting, login-location) instead of the raw
   // socket address. Only safe when this process is only reachable through a proxy that sets that
   // header itself (Render, Fly, etc.) — falls back to process.env.ADMINBOT_TRUST_PROXY === "1".
@@ -367,7 +373,8 @@ export type AdminBotMockServiceOptions = {
   geolocateIp?: (
     ip: string,
   ) => Promise<
-    { country?: string; continent?: string; city?: string; timezone?: string } | undefined
+    | { country?: string; continent?: string; city?: string; region?: string; timezone?: string }
+    | undefined
   >;
   // Periodic sweep cadence for Slack channel naming enforcement. Disabled when unset.
   slackChannelNamingSweepIntervalMs?: number;

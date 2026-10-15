@@ -8,6 +8,7 @@ import {
   calendarFailure,
   type LabMember,
   mapErrorResponse,
+  type MemberMapVisibility,
   type MemberTypeChangeSummary,
   readRecentUpdates,
   type RecentUpdateRow,
@@ -29,6 +30,8 @@ export type MemberProfileUpdate = {
   // be a list" and the whole edit was lost.
   location?: string;
   current_city?: string;
+  // "Show me on the lab map as": the member's own choice; see MemberMapVisibility.
+  map_visibility?: MemberMapVisibility;
   affiliation?: string;
   timezone?: string;
   personal_website?: string;

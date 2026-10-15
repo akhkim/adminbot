@@ -101,7 +101,11 @@ import {
   takeQueuedLetterSchools,
   withPrefilledSchool,
 } from "./adminbot/data/logistics-draft.ts";
-import { loadMemberMap, needsDashboardMemberMap } from "./adminbot/data/member-map.ts";
+import {
+  ensureMemberMapTicker,
+  loadMemberMap,
+  needsMemberMap,
+} from "./adminbot/data/member-map.ts";
 import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
@@ -2459,12 +2463,25 @@ export function renderApp(state: AppViewState) {
       .then(() => applyViewerHome(state))
       .finally(() => requestHostUpdate?.());
   }
+  // Read on first sight, again whenever a map tab is opened, and every MEMBER_MAP_REFRESH_MS while
+  // one stays open and visible.
+  const previousMapTab = state.adminBotMemberMapTab;
+  state.adminBotMemberMapTab = state.tab;
+  if (requestHostUpdate) {
+    ensureMemberMapTicker(() => state.tab, requestHostUpdate);
+  }
   if (
-    needsDashboardMemberMap(
+    needsMemberMap(
       state.tab,
       hasMemberSession,
       state.adminBotMemberMap,
       state.adminBotMemberMapLoading,
+      {
+        previousTab: previousMapTab,
+        checkedAt: state.adminBotMemberMapCheckedAt,
+        now: Date.now(),
+        visible: typeof document === "undefined" || document.visibilityState === "visible",
+      },
     )
   ) {
     void loadMemberMap(state).finally(() => requestHostUpdate?.());

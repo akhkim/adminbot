@@ -170,6 +170,10 @@ export type MemberTypeChangeSummary = {
   }>;
 };
 
+export type MemberMapVisibility = "auto" | "stated" | "hidden";
+
+export const MEMBER_MAP_VISIBILITIES: readonly MemberMapVisibility[] = ["auto", "stated", "hidden"];
+
 export type LabMember = {
   id?: string;
   name?: string | null;
@@ -193,6 +197,9 @@ export type LabMember = {
   location?: string | null;
   // Where the member currently is, distinct from resident `location`. Informational only.
   current_city?: string | null;
+  // How the member appears on the lab map: "auto" (absent) is the city of a recent sign-in, else
+  // what they stated; "stated" is only what they stated; "hidden" is off the map.
+  map_visibility?: MemberMapVisibility | null;
   affiliation?: string | null;
   timezone?: string | null;
   personal_website?: string | null;

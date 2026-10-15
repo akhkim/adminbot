@@ -1385,6 +1385,24 @@ export const en: TranslationMap = {
       collapse: "Close",
       showAllMembers: "Show all {count}",
       showFewerMembers: "Show fewer",
+      approximatePlace: "{place} (country only)",
+      approximateNote: "Hollow dots are placed only to a country, not to a city.",
+      updatedJustNow: "Updated just now",
+      updatedMinutes: "Updated {count} min ago",
+      updatedHours: "Updated {count} h ago",
+      fromSignIn: "from sign-in",
+      fromSignInToday: "from sign-in today",
+      fromSignInYesterday: "from sign-in yesterday",
+      fromSignInDaysAgo: "from sign-in {count} days ago",
+      fromProfile: "from profile",
+      fromProfileTimezone: "from profile time zone",
+      fromSlack: "from Slack profile",
+      fromSlackTimezone: "from Slack time zone",
+      legendCity: "City",
+      legendCountry: "Country only",
+      legendSize: "Bigger dot, more people",
+      loading: "Loading the map…",
+      empty: "No one is on the map yet. Add your city in Profile to appear here.",
     },
     workSummary: {
       title: "My projects & papers",
@@ -2303,7 +2321,8 @@ export const en: TranslationMap = {
   profile: {
     gate: {
       title: "Complete your profile to continue",
-      description: "Fill in the required fields below to use AdminBot. Your progress saves automatically.",
+      description:
+        "Fill in the required fields below to use AdminBot. Your progress saves automatically.",
       retry: "Try again",
     },
     arrReviewer: {
@@ -2319,6 +2338,13 @@ export const en: TranslationMap = {
     onboardingChecklistDone: "Your setup checklist",
     visibility: {
       self: "Only you and the admins",
+    },
+    mapVisibility: {
+      label: "Show me on the lab map as",
+      auto: "Auto (last sign-in city)",
+      stated: "My stated city only",
+      hidden: "Hidden",
+      hint: "Only a city is ever shown, never an exact location or a history.",
     },
     basics: {
       title: "Basic info",

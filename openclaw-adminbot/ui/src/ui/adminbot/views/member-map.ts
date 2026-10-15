@@ -1,4 +1,7 @@
-// Where the lab is, as a dashboard card.
+// Where the lab is, as a card on the Dashboard and on Collaborate.
+//
+// Plain SVG in a viewBox, so it scales with its container by itself: unlike the Leaflet page there
+// is no tile layer to re-measure (no invalidateSize) after the card was in a hidden tab.
 //
 // An equirectangular plot: longitude maps linearly to x, latitude to y, over a real coastline.
 //
@@ -14,7 +17,8 @@
 // people actually are. Neither alone is the answer to "where is the lab".
 import { html, LitElement, nothing, svg } from "lit";
 import { t } from "../../../i18n/index.ts";
-import type { MemberMap, MemberMapPlace } from "../data/member-map.ts";
+import type { MemberMap, MemberMapMember, MemberMapPlace } from "../data/member-map.ts";
+import { layoutLabels, type LabelAnchor } from "./member-map-labels.ts";
 
 // The projection data/world-outline.ts was generated for. Declared here rather than imported so the
 // 43kB coastline stays out of the console's first load; member-map.test.ts asserts the two match,
@@ -73,38 +77,151 @@ function radiusFor(count: number, busiest: number): number {
   return MIN_RADIUS + share * (MAX_RADIUS - MIN_RADIUS);
 }
 
-function placeTitle(place: MemberMapPlace): string {
-  const where = place.country ? `${place.label}, ${place.country}` : place.label;
+const DAY_MS = 86_400_000;
+
+function startOfLocalDay(time: number): number {
+  const day = new Date(time);
+  day.setHours(0, 0, 0, 0);
+  return day.getTime();
+}
+
+/** "from sign-in today", "… yesterday", "… 5 days ago", by the viewer's own calendar. */
+function signInPhrase(at: string | undefined, now: number): string {
+  const seen = at ? Date.parse(at) : Number.NaN;
+  if (Number.isNaN(seen)) {
+    return t("dashboard.memberMap.fromSignIn");
+  }
+  const days = Math.max(0, Math.round((startOfLocalDay(now) - startOfLocalDay(seen)) / DAY_MS));
+  if (days === 0) {
+    return t("dashboard.memberMap.fromSignInToday");
+  }
+  return days === 1
+    ? t("dashboard.memberMap.fromSignInYesterday")
+    : t("dashboard.memberMap.fromSignInDaysAgo", { count: String(days) });
+}
+
+function sourcePhrase(member: MemberMapMember, now: number): string | undefined {
+  switch (member.source) {
+    case "login":
+      return signInPhrase(member.last_login_at, now);
+    case "roster":
+      return member.precision === "timezone"
+        ? t("dashboard.memberMap.fromProfileTimezone")
+        : t("dashboard.memberMap.fromProfile");
+    case "slack":
+      return member.precision === "timezone"
+        ? t("dashboard.memberMap.fromSlackTimezone")
+        : t("dashboard.memberMap.fromSlack");
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Where a named member is and what says so -- "San Francisco · from sign-in today", "Toronto ·
+ * from profile" -- so a pin from a sign-in an hour ago reads differently from a city typed into a
+ * profile last year. Only ever a city and one moment: the service sends no coordinates or history.
+ */
+export function memberDetail(
+  member: MemberMapMember,
+  place: Pick<MemberMapPlace, "label">,
+  now: number = Date.now(),
+): string {
+  const source = sourcePhrase(member, now);
+  return source ? `${place.label} · ${source}` : place.label;
+}
+
+/** "Updated just now" / "Updated 4 min ago" / "Updated 2 h ago". */
+export function updatedAgo(loadedAt: number, now: number): string {
+  const minutes = Math.max(0, Math.floor((now - loadedAt) / 60_000));
+  if (minutes < 1) {
+    return t("dashboard.memberMap.updatedJustNow");
+  }
+  return minutes < 60
+    ? t("dashboard.memberMap.updatedMinutes", { count: String(minutes) })
+    : t("dashboard.memberMap.updatedHours", { count: String(Math.floor(minutes / 60)) });
+}
+
+function placeWhere(place: MemberMapPlace): string {
+  // A country-level place's label already is the country, so "France, France" would be noise.
+  if (place.approximate) {
+    return t("dashboard.memberMap.approximatePlace", { place: place.label });
+  }
+  return place.country ? `${place.label}, ${place.country}` : place.label;
+}
+
+function placeTitle(place: MemberMapPlace, now: number): string {
+  const where = placeWhere(place);
   // An admin gets names; everyone else gets the headcount, which is all the service sent.
-  const names = place.members?.map((member) => member.name).join(", ");
+  const names = place.members
+    ?.map((member) => `${member.name} (${memberDetail(member, place, now)})`)
+    .join(", ");
   return names
     ? `${where} — ${names}`
     : t("dashboard.memberMap.placeCount", { place: where, count: String(place.count) });
 }
 
-// How many of the busiest cities are named on the plot itself. Enough to anchor the reader without
-// the labels colliding into a smear across Europe, which is where most of them land.
-const LABELLED_PLACES = 5;
+// Label sizes in viewBox units, set inline on each <text> so the collision pass and the drawing use
+// the same number (a stylesheet rule would win over a presentation attribute and could drift). The
+// full-screen plot is drawn about three times larger, so its labels can be smaller in viewBox units
+// and still read at the same size -- and then far more of them fit.
+const PLOT_LABELS = {
+  card: { fontSize: 5, strokeWidth: 1.6, budget: 6 },
+  dialog: { fontSize: 3, strokeWidth: 1, budget: 16 },
+} as const;
 
-function renderPlot(map: MemberMap) {
+// The spot a label shows at on hover when the collision pass found it no room: above its dot, kept
+// inside the plot at either edge.
+function hoverAnchor(x: number): LabelAnchor {
+  return x > VIEW_WIDTH - 40 ? "end" : x < 40 ? "start" : "middle";
+}
+
+/**
+ * Which place is picked out, and how to change it. The list and the pins share one highlight: point
+ * at "Toronto" in the list and its pin lifts while the rest dim, point at a pin and its row lights.
+ */
+interface PlaceFocus {
+  active?: string;
+  /** The place a click or tap picked, which stays lit after the pointer or focus moves on. */
+  picked?: string;
+  onFocus?: (key: string | undefined) => void;
+  onPick?: (key: string) => void;
+  now: number;
+}
+
+function renderPlot(map: MemberMap, size: keyof typeof PLOT_LABELS, focus: PlaceFocus) {
   const busiest = Math.max(...map.places.map((place) => place.count), 1);
-  const labelled = new Set(map.places.slice(0, LABELLED_PLACES).map((place) => place.key));
+  const style = PLOT_LABELS[size];
+  const points = map.places.map((place) => ({
+    key: place.key,
+    label: place.label,
+    x: projectX(place.lon),
+    y: projectY(place.lat),
+    r: radiusFor(place.count, busiest),
+  }));
+  // `places` is sorted busiest first, so the biggest clusters get first pick of the room.
+  const labels = layoutLabels(points, {
+    fontSize: style.fontSize,
+    strokeWidth: style.strokeWidth,
+    width: VIEW_WIDTH,
+    height: VIEW_HEIGHT,
+    budget: style.budget,
+  });
+  const labelStyle = `font-size: ${style.fontSize}px; stroke-width: ${style.strokeWidth}px`;
+  const aria = t("dashboard.memberMap.plotAria", {
+    cities: String(map.places.length),
+    count: String(map.counts.placed),
+  });
+  const active = focus.active && map.places.some((place) => place.key === focus.active);
   return svg`
     <svg
-      class="member-map__plot"
+      class=${`member-map__plot${active ? " member-map__plot--focus" : ""}`}
       viewBox="0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}"
       role="img"
-      aria-label=${t("dashboard.memberMap.plotAria", {
-        cities: String(map.places.length),
-        count: String(map.counts.placed),
-      })}
+      aria-label=${aria}
     >
-      <title>${t("dashboard.memberMap.plotAria", {
-        cities: String(map.places.length),
-        count: String(map.counts.placed),
-      })}</title>
+      <title>${aria}</title>
       <rect class="member-map__ocean" x="0" y="0" width=${VIEW_WIDTH} height=${VIEW_HEIGHT}></rect>
-      ${worldOutlinePath ? svg`<path class="member-map__land" d=${worldOutlinePath}></path>` : nothing}
       ${[-120, -60, 0, 60, 120].map(
         (lon) => svg`
           <line
@@ -119,7 +236,7 @@ function renderPlot(map: MemberMap) {
       ${[-40, 0, 40].map(
         (lat) => svg`
           <line
-            class=${`member-map__grid ${lat === 0 ? "member-map__grid--equator" : ""}`}
+            class="member-map__grid"
             x1="0"
             x2=${VIEW_WIDTH}
             y1=${projectY(lat)}
@@ -127,30 +244,105 @@ function renderPlot(map: MemberMap) {
           ></line>
         `,
       )}
-      ${map.places.map((place) => {
-        const x = projectX(place.lon);
-        const y = projectY(place.lat);
-        const r = radiusFor(place.count, busiest);
+      ${worldOutlinePath ? svg`<path class="member-map__land" d=${worldOutlinePath}></path>` : nothing}
+      ${map.places.map((place, index) => {
+        const { x, y, r } = points[index]!;
+        const label = labels.get(place.key);
+        const classes = [
+          "member-map__place",
+          place.approximate ? "member-map__place--approximate" : "",
+          place.key === focus.active ? "member-map__place--active" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
         return svg`
-          <g class="member-map__place">
-            <circle class="member-map__halo" cx=${x} cy=${y} r=${r + 2}></circle>
+          <g
+            class=${classes}
+            data-place=${place.key}
+            @mouseenter=${() => focus.onFocus?.(place.key)}
+            @mouseleave=${() => focus.onFocus?.(undefined)}
+          >
+            <circle class="member-map__halo" cx=${x} cy=${y} r=${r + 2.5}></circle>
             <circle class="member-map__dot" cx=${x} cy=${y} r=${r}>
-              <title>${placeTitle(place)}</title>
+              <title>${placeTitle(place, focus.now)}</title>
             </circle>
             ${
-              labelled.has(place.key)
+              label
                 ? svg`<text
                     class="member-map__label"
-                    x=${x}
-                    y=${y - r - 2.5}
-                    text-anchor=${x > VIEW_WIDTH - 40 ? "end" : x < 40 ? "start" : "middle"}
+                    style=${labelStyle}
+                    x=${label.x}
+                    y=${label.y}
+                    text-anchor=${label.anchor}
                   >${place.label}</text>`
-                : nothing
+                : svg`<text
+                    class="member-map__label member-map__label--hover"
+                    style=${labelStyle}
+                    x=${x}
+                    y=${y - r - 3.5}
+                    text-anchor=${hoverAnchor(x)}
+                  >${place.label}</text>`
             }
           </g>
         `;
       })}
     </svg>
+  `;
+}
+
+// How many people a pin's popover names before it says "+N more"; the list row has the rest.
+const POPOVER_NAMES = 4;
+
+function renderPersonLine(member: MemberMapMember, place: MemberMapPlace, now: number) {
+  return html`<li>
+    <span class="member-map__name">${member.name}</span>
+    <span class="member-map__name-detail">${memberDetail(member, place, now)}</span>
+  </li>`;
+}
+
+/**
+ * The small card over the picked pin: the city, its headcount and, for an admin, who is there and
+ * what put them there. It is decoration over the plot -- `pointer-events: none` -- so it never steals
+ * the hover from the pin underneath it, and everything in it is also in the list and the dot title.
+ */
+function renderPopover(map: MemberMap, key: string, now: number) {
+  const place = map.places.find((candidate) => candidate.key === key);
+  if (!place) {
+    return nothing;
+  }
+  const left = (projectX(place.lon) / VIEW_WIDTH) * 100;
+  const top = (projectY(place.lat) / VIEW_HEIGHT) * 100;
+  const members = place.members ?? [];
+  const shown = members.slice(0, POPOVER_NAMES);
+  const classes = [
+    "member-map__popover",
+    left > 70 ? "member-map__popover--start" : left < 30 ? "member-map__popover--end" : "",
+    top < 40 ? "member-map__popover--below" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return html`
+    <div
+      class=${classes}
+      style="left: ${left.toFixed(2)}%; top: ${top.toFixed(2)}%"
+      data-testid="member-map-popover"
+      aria-hidden="true"
+    >
+      <p class="member-map__popover-head">
+        <span class="member-map__popover-title">${placeWhere(place)}</span>
+        <span class="member-map__popover-count">${place.count}</span>
+      </p>
+      ${shown.length > 0
+        ? html`<ul class="member-map__people">
+            ${shown.map((member) => renderPersonLine(member, place, now))}
+          </ul>`
+        : nothing}
+      ${members.length > shown.length
+        ? html`<p class="member-map__popover-more">
+            ${t("dashboard.more", { count: String(members.length - shown.length) })}
+          </p>`
+        : nothing}
+    </div>
   `;
 }
 
@@ -185,10 +377,6 @@ function recentActiveMembers(place: MemberMapPlace, limit = AVATAR_LIMIT) {
 /**
  * Circular faces for a place's most recently active members, admin/full mode only (`members` is
  * absent in `summary` mode, so this renders nothing for anyone who cannot already see names).
- *
- * Names are deliberately not printed as text next to the row label — they live in each avatar's
- * `title`, surfaced on hover/focus, the same way `placeTitle` puts names in the dot's `<title>`
- * rather than spelling them out on the plot.
  */
 function renderAvatars(place: MemberMapPlace) {
   if (!place.members || place.members.length === 0) {
@@ -216,56 +404,70 @@ function renderAvatars(place: MemberMapPlace) {
   `;
 }
 
-/**
- * The readable list an expanded row shows below its avatars — actual names, not more circles
- * someone would have to hover one at a time to read off. Alphabetical, since `place.members` is
- * already sorted that way by the service, and this is for finding a name, not for recency.
- */
-function renderNameList(members: NonNullable<MemberMapPlace["members"]>) {
-  return html`
-    <ul class="member-map__name-list">
-      ${members.map((member) => html`<li>${member.name}</li>`)}
-    </ul>
-  `;
+interface ListOptions extends PlaceFocus {
+  expanded: boolean;
+  expandedPlaces: ReadonlySet<string>;
+  onToggleExpand: (key: string) => void;
 }
 
-function renderList(
-  map: MemberMap,
-  expanded: boolean,
-  expandedPlaces: ReadonlySet<string>,
-  onToggleExpand: (key: string) => void,
-) {
-  const shown = map.places.slice(0, expanded ? LIST_LIMIT_EXPANDED : LIST_LIMIT);
+/**
+ * The cities with their counts. Each row is a button: hovering, focusing or tapping it lifts that
+ * city's pin, so the list doubles as the map's index on a phone, where pins are too small to aim at.
+ */
+function renderList(map: MemberMap, options: ListOptions) {
+  const shown = map.places.slice(0, options.expanded ? LIST_LIMIT_EXPANDED : LIST_LIMIT);
   const rest = map.places.length - shown.length;
   return html`
     <ul class="member-map__list">
       ${shown.map((place) => {
         const memberCount = place.members?.length ?? 0;
         const canExpand = memberCount > AVATAR_LIMIT;
-        const isPlaceExpanded = canExpand && expandedPlaces.has(place.key);
+        const isPlaceExpanded = canExpand && options.expandedPlaces.has(place.key);
+        const isActive = options.active === place.key;
         return html`
-          <li class="member-map__row" title=${placeTitle(place)}>
-            <span class="member-map__row-top">
+          <li
+            class=${`member-map__row${isActive ? " member-map__row--active" : ""}`}
+            data-place=${place.key}
+            @mouseenter=${() => options.onFocus?.(place.key)}
+            @mouseleave=${() => options.onFocus?.(undefined)}
+          >
+            <button
+              type="button"
+              class="member-map__row-top"
+              aria-pressed=${options.picked === place.key ? "true" : "false"}
+              title=${placeTitle(place, options.now)}
+              @focus=${() => options.onFocus?.(place.key)}
+              @blur=${() => options.onFocus?.(undefined)}
+              @click=${() => options.onPick?.(place.key)}
+            >
               <span class="member-map__row-main">
+                <span
+                  class=${`member-map__swatch${place.approximate ? " member-map__swatch--country" : ""}`}
+                ></span>
                 <span class="member-map__row-label">${place.label}</span>
                 ${renderAvatars(place)}
               </span>
               <span class="member-map__row-count">${place.count}</span>
-            </span>
+            </button>
             ${canExpand
               ? html`
                   <button
                     type="button"
                     class="member-map__expand-btn"
                     aria-expanded=${isPlaceExpanded ? "true" : "false"}
-                    @click=${() => onToggleExpand(place.key)}
+                    @click=${() => options.onToggleExpand(place.key)}
                   >
-                    <span class="member-map__expand-caret">${isPlaceExpanded ? "▲" : "▼"}</span>
                     ${isPlaceExpanded
                       ? t("dashboard.memberMap.showFewerMembers")
                       : t("dashboard.memberMap.showAllMembers", { count: String(memberCount) })}
                   </button>
-                  ${isPlaceExpanded && place.members ? renderNameList(place.members) : nothing}
+                  ${isPlaceExpanded && place.members
+                    ? html`<ul class="member-map__people member-map__name-list">
+                        ${place.members.map((member) =>
+                          renderPersonLine(member, place, options.now),
+                        )}
+                      </ul>`
+                    : nothing}
                 `
               : nothing}
           </li>
@@ -280,6 +482,63 @@ function renderList(
   `;
 }
 
+/** Legend, then the small print: who could not be placed, and whose IP database placed the rest. */
+function renderFoot(map: MemberMap) {
+  return html`
+    <div class="member-map__foot">
+      <ul class="member-map__legend">
+        <li>
+          <span class="member-map__key member-map__key--city"></span>${t(
+            "dashboard.memberMap.legendCity",
+          )}
+        </li>
+        ${map.places.some((place) => place.approximate)
+          ? html`<li
+              data-testid="member-map-approximate"
+              title=${t("dashboard.memberMap.approximateNote")}
+            >
+              <span class="member-map__key member-map__key--country"></span>${t(
+                "dashboard.memberMap.legendCountry",
+              )}
+            </li>`
+          : nothing}
+        <li>
+          <span class="member-map__key member-map__key--size"></span>${t(
+            "dashboard.memberMap.legendSize",
+          )}
+        </li>
+      </ul>
+      ${map.unplaced > 0
+        ? html`<p class="member-map__note" data-testid="member-map-unplaced">
+            ${t("dashboard.memberMap.unplaced", { count: String(map.unplaced) })}
+          </p>`
+        : nothing}
+      ${map.attribution
+        ? html`<p class="member-map__note member-map__credit" data-testid="member-map-attribution">
+            <a href=${map.attribution.url} target="_blank" rel="noopener noreferrer"
+              >${map.attribution.text}</a
+            >
+          </p>`
+        : nothing}
+    </div>
+  `;
+}
+
+/**
+ * Where the map is drawn. "card" is a tile in the Dashboard's summary grid and wears that grid's
+ * card; "section" is a Collaborate section -- an h2 header like the sections around it, over a
+ * bordered panel -- so the same map reads as part of whichever page it is on.
+ */
+export type MemberMapVariant = "card" | "section";
+
+export interface MemberMapOptions {
+  variant?: MemberMapVariant;
+  /** The render's clock. Passing a fresh one on every app render keeps "Updated N min ago" true. */
+  now?: number;
+  /** Still fetching the first copy: the Collaborate section shows its loading panel. */
+  loading?: boolean;
+}
+
 /**
  * The card, plus the full-screen view behind it.
  *
@@ -287,25 +546,58 @@ function renderList(
  * the app can cover it, closes on Escape, and traps focus — all of which a hand-rolled overlay has
  * to reimplement and usually gets half right.
  *
- * A custom element because the open state has to survive the dashboard re-rendering underneath it,
- * which happens every time any other card's data lands. The deadline board is one for the same
- * reason.
+ * A custom element because the open state, the highlighted city and the expanded rows have to
+ * survive the page re-rendering underneath them, which happens every time any other data lands.
  */
 class AdminbotMemberMap extends LitElement {
-  static override properties = { map: { attribute: false }, opened: { state: true } };
+  static override properties = {
+    map: { attribute: false },
+    variant: { attribute: false },
+    now: { attribute: false },
+    opened: { state: true },
+    active: { state: true },
+    picked: { state: true },
+  };
 
   public map: MemberMap | null = null;
+  public variant: MemberMapVariant = "card";
+  public now: number | undefined = undefined;
 
   // The full-screen panel is only in the DOM while it is open. The coastline is a 44kB path
   // attribute, and rendering a second copy of it behind a closed dialog is the largest thing on
   // this page duplicated for nothing.
   private opened = false;
 
+  // The city picked out by hovering or focusing its row or pin. Transient: it follows the pointer.
+  private active: string | undefined = undefined;
+
+  // The city a click or tap picked. Kept apart from `active` because a tap on a phone sends an
+  // emulated mouseenter and a focus before its click: were the click a toggle of `active`, it would
+  // see the city already lit by those and switch it straight back off.
+  private picked: string | undefined = undefined;
+
   // Which places' rows are showing every member instead of the capped few. Plain (non-reactive)
   // field rather than a Lit `state` property: mutating a Set in place would not change its
   // identity, so the usual `properties`-driven update would silently miss it anyway -- toggling
   // calls requestUpdate() itself instead.
   private expandedPlaces = new Set<string>();
+
+  private readonly focusPlace = (key: string | undefined): void => {
+    if (this.active !== key) {
+      this.active = key;
+    }
+  };
+
+  // Picking the picked city again lets it go, and drops the hover highlight with it: on a phone
+  // nothing else would, since no mouseleave follows a tap.
+  private readonly pickPlace = (key: string): void => {
+    if (this.picked === key) {
+      this.picked = undefined;
+      this.active = undefined;
+    } else {
+      this.picked = key;
+    }
+  };
 
   private toggleExpanded(key: string): void {
     if (this.expandedPlaces.has(key)) {
@@ -361,32 +653,87 @@ class AdminbotMemberMap extends LitElement {
     this.opened = false;
   }
 
+  private renderDialog(map: MemberMap, headline: unknown, focus: PlaceFocus) {
+    return html`
+      <dialog
+        class="member-map__dialog"
+        data-testid="member-map-dialog"
+        aria-label=${t("dashboard.memberMap.title")}
+        @close=${() => {
+          // Fires for Escape too, which never routes through close().
+          this.opened = false;
+        }}
+        @click=${(event: Event) => {
+          // Clicking the backdrop closes. The panel below is a child, so a click inside it never
+          // reaches the dialog element itself.
+          if (event.target === event.currentTarget) {
+            this.close();
+          }
+        }}
+      >
+        ${this.opened
+          ? html`<div class="member-map__dialog-panel">
+              <div class="member-map__head">
+                <div class="member-map__heading">
+                  <h2 class="member-map__title">${t("dashboard.memberMap.title")}</h2>
+                  <p class="member-map__sub">${headline}</p>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn--sm"
+                  data-testid="member-map-close"
+                  @click=${() => this.close()}
+                >
+                  ${t("dashboard.memberMap.collapse")}
+                </button>
+              </div>
+              <div class="member-map__dialog-plot">${renderPlot(map, "dialog", focus)}</div>
+              ${renderList(map, {
+                ...focus,
+                expanded: true,
+                expandedPlaces: this.expandedPlaces,
+                onToggleExpand: (key) => this.toggleExpanded(key),
+              })}
+            </div>`
+          : nothing}
+      </dialog>
+    `;
+  }
+
   protected override render() {
     const map = this.map;
     if (!map || map.places.length === 0) {
       return nothing;
     }
-    const headline = t("dashboard.memberMap.headline", {
+    const now = this.now ?? Date.now();
+    const lit = this.active ?? this.picked;
+    const focus: PlaceFocus = {
+      active: lit,
+      picked: this.picked,
+      onFocus: this.focusPlace,
+      onPick: this.pickPlace,
+      now,
+    };
+    const updated = map.loadedAt === undefined ? undefined : updatedAgo(map.loadedAt, now);
+    const headline = html`${t("dashboard.memberMap.headline", {
       count: String(map.counts.placed),
       cities: String(map.places.length),
-    });
-    return html`
-      <article class="dashboard-summary member-map" data-testid="dashboard-member-map">
-        <div class="member-map__head">
-          <div>
-            <h3 class="dashboard-summary__title">${t("dashboard.memberMap.title")}</h3>
-            <p class="dashboard-summary__headline">${headline}</p>
-          </div>
-          <button
-            type="button"
-            class="btn btn--sm"
-            data-testid="member-map-toggle"
-            @click=${() => this.open()}
-          >
-            ${t("dashboard.memberMap.expand")}
-          </button>
-        </div>
-        <div class="member-map__body">
+    })}${updated
+      ? html`<span class="member-map__updated" data-testid="member-map-updated">
+          · ${updated}</span
+        >`
+      : nothing}`;
+    const toggle = html`<button
+      type="button"
+      class="btn btn--sm member-map__expand"
+      data-testid="member-map-toggle"
+      @click=${() => this.open()}
+    >
+      ${t("dashboard.memberMap.expand")}
+    </button>`;
+    const body = html`
+      <div class="member-map__body">
+        <div class="member-map__figure">
           <!-- The plot is the affordance as well as the picture: a map you cannot click to enlarge
                is a map people squint at. -->
           <button
@@ -397,53 +744,50 @@ class AdminbotMemberMap extends LitElement {
             aria-label=${t("dashboard.memberMap.expandAria")}
             @click=${() => this.open()}
           >
-            ${renderPlot(map)}
+            ${renderPlot(map, "card", focus)}
           </button>
-          ${renderList(map, false, this.expandedPlaces, (key) => this.toggleExpanded(key))}
+          ${lit ? renderPopover(map, lit, now) : nothing}
         </div>
-        ${map.unplaced > 0
-          ? html`<p class="dashboard-summary__detail" data-testid="member-map-unplaced">
-              ${t("dashboard.memberMap.unplaced", { count: String(map.unplaced) })}
-            </p>`
-          : nothing}
-
-        <dialog
-          class="member-map__dialog"
-          data-testid="member-map-dialog"
-          aria-label=${t("dashboard.memberMap.title")}
-          @close=${() => {
-            // Fires for Escape too, which never routes through close().
-            this.opened = false;
-          }}
-          @click=${(event: Event) => {
-            // Clicking the backdrop closes. The panel below is a child, so a click inside it never
-            // reaches the dialog element itself.
-            if (event.target === event.currentTarget) {
-              this.close();
-            }
-          }}
+        ${renderList(map, {
+          ...focus,
+          expanded: false,
+          expandedPlaces: this.expandedPlaces,
+          onToggleExpand: (key) => this.toggleExpanded(key),
+        })}
+      </div>
+      ${renderFoot(map)}
+    `;
+    if (this.variant === "section") {
+      return html`
+        <section
+          class="lab-sharing-map member-map member-map--section"
+          data-testid="dashboard-member-map"
         >
-          ${this.opened
-            ? html`<div class="member-map__dialog-panel">
-                <div class="member-map__head">
-                  <div>
-                    <h2 class="dashboard-summary__title">${t("dashboard.memberMap.title")}</h2>
-                    <p class="dashboard-summary__headline">${headline}</p>
-                  </div>
-                  <button
-                    type="button"
-                    class="btn btn--sm"
-                    data-testid="member-map-close"
-                    @click=${() => this.close()}
-                  >
-                    ${t("dashboard.memberMap.collapse")}
-                  </button>
-                </div>
-                <div class="member-map__dialog-plot">${renderPlot(map)}</div>
-                ${renderList(map, true, this.expandedPlaces, (key) => this.toggleExpanded(key))}
-              </div>`
-            : nothing}
-        </dialog>
+          <div class="member-map__head">
+            <div class="member-map__heading">
+              <h2 class="member-map__title">${t("dashboard.memberMap.title")}</h2>
+              <p class="member-map__sub">${headline}</p>
+            </div>
+            ${toggle}
+          </div>
+          <div class="member-map__panel">${body}</div>
+          ${this.renderDialog(map, headline, focus)}
+        </section>
+      `;
+    }
+    return html`
+      <article
+        class="dashboard-summary member-map member-map--card"
+        data-testid="dashboard-member-map"
+      >
+        <div class="member-map__head">
+          <div class="member-map__heading">
+            <h3 class="dashboard-summary__title">${t("dashboard.memberMap.title")}</h3>
+            <p class="dashboard-summary__headline member-map__sub">${headline}</p>
+          </div>
+          ${toggle}
+        </div>
+        ${body} ${this.renderDialog(map, headline, focus)}
       </article>
     `;
   }
@@ -453,9 +797,45 @@ if (!customElements.get("adminbot-member-map")) {
   customElements.define("adminbot-member-map", AdminbotMemberMap);
 }
 
-export function renderMemberMap(map: MemberMap | null) {
+/** The Collaborate section's own loading and empty panels, under the same header. */
+function renderSectionState(kind: "loading" | "empty") {
+  return html`
+    <section
+      class="lab-sharing-map member-map member-map--section"
+      data-testid=${`member-map-${kind}`}
+    >
+      <div class="member-map__head">
+        <div class="member-map__heading">
+          <h2 class="member-map__title">${t("dashboard.memberMap.title")}</h2>
+        </div>
+      </div>
+      <div class="member-map__panel member-map__panel--state" aria-busy=${kind === "loading"}>
+        ${kind === "loading" ? html`<span class="member-map__spinner"></span>` : nothing}
+        <p class="member-map__state">${t(`dashboard.memberMap.${kind}`)}</p>
+      </div>
+    </section>
+  `;
+}
+
+/**
+ * The map, or on the Dashboard nothing at all when there is nothing to draw: one card fewer beats
+ * an empty one in a grid whose other cards are waiting on the member. On Collaborate the section
+ * stays and says it is loading or that nobody is on the map yet, like the sections around it.
+ */
+export function renderMemberMap(map: MemberMap | null, options: MemberMapOptions = {}) {
+  const variant = options.variant ?? "card";
   if (!map || map.places.length === 0) {
-    return nothing;
+    if (variant !== "section") {
+      return nothing;
+    }
+    if (map) {
+      return renderSectionState("empty");
+    }
+    return options.loading ? renderSectionState("loading") : nothing;
   }
-  return html`<adminbot-member-map .map=${map}></adminbot-member-map>`;
+  return html`<adminbot-member-map
+    .map=${map}
+    .variant=${variant}
+    .now=${options.now ?? Date.now()}
+  ></adminbot-member-map>`;
 }

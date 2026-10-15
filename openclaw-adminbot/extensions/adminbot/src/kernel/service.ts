@@ -147,7 +147,6 @@ import {
 import { stageProposalConflict } from "../contracts/deadline-proposals.stage.js";
 import type { DeadlineRecommendationInput } from "../contracts/deadline-recommendations.js";
 import { adminBotDriveFileId, type AdminBotDriveProbe } from "../contracts/drive-links.js";
-import type { SlidesWorkingGroupsSource } from "../contracts/google-slides.js";
 import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewPaperflowCandidate,
@@ -163,6 +162,7 @@ import {
   type AdminBotFeedbackEntry,
   type AdminBotFeedbackSummary,
 } from "../contracts/feedback.js";
+import type { SlidesWorkingGroupsSource } from "../contracts/google-slides.js";
 import {
   adminBotDefaultGroupMeeting,
   adminBotGroupMeetingNudgeWindowHours,
@@ -339,7 +339,11 @@ import {
   observationFor,
   selfReportedChange,
 } from "../workflows/members/location-history.js";
-import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
+import {
+  ADMINBOT_MAP_VISIBILITIES,
+  buildMemberMap,
+  type AdminBotMemberMap,
+} from "../workflows/members/member-map.js";
 import {
   dormantChaseDue,
   isChaseableMember,
@@ -357,6 +361,7 @@ import {
   themeMeetings,
   type ThemeMatch,
 } from "../workflows/members/research-themes.js";
+import type { SlackDirectoryReader } from "../workflows/members/slack-roster-sync.js";
 import {
   type AdminBotThemedMeeting,
   matchMeetingsForChannel,
@@ -473,24 +478,12 @@ import {
   reconcileExecutedBirthday,
 } from "./service.birthday.js";
 import {
-  runSlackRosterSync,
-  type SlackRosterSyncOptions,
-} from "./service.slack-roster-sync.js";
-import type { SlackDirectoryReader } from "../workflows/members/slack-roster-sync.js";
-import {
   calendarMembershipWriteError,
   grantLabCalendarAccess,
   ineligibleCalendarEmails,
   isRestrictedCalendarEvent,
   syncCalendarMembership,
 } from "./service.calendar-membership.js";
-import {
-  affectsWorkingGroupsSlide,
-  planSlidesWorkingGroups,
-  proposeSlidesWorkingGroups,
-  type SlidesWorkingGroupsPreview,
-  type SlidesWorkingGroupsSyncResult,
-} from "./service.slides-working-groups.js";
 import {
   recommendationDirectory,
   previewRecommendation,
@@ -501,6 +494,14 @@ import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
 import { withPaperTimeline } from "./service.paper-timeline.js";
 import { piReviewSlotDenial } from "./service.pi-review.js";
+import { runSlackRosterSync, type SlackRosterSyncOptions } from "./service.slack-roster-sync.js";
+import {
+  affectsWorkingGroupsSlide,
+  planSlidesWorkingGroups,
+  proposeSlidesWorkingGroups,
+  type SlidesWorkingGroupsPreview,
+  type SlidesWorkingGroupsSyncResult,
+} from "./service.slides-working-groups.js";
 import { prepareSocialDraft, socialDraftSupersedes } from "./service.social-drafts.js";
 
 // Ordinary approvals require an administrator; a recommendation is approved by its verified author.
@@ -584,6 +585,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
           | "last_login_country"
           | "last_login_continent"
           | "last_login_city"
+          | "last_login_region"
           | "last_login_timezone"
         >
       >,
@@ -3314,7 +3316,9 @@ export class AdminBotService {
   }
 
   private slidesWorkingGroupsTimer: ReturnType<typeof setTimeout> | undefined;
-  private slidesWorkingGroupsRun: Promise<AdminBotServiceResponse<SlidesWorkingGroupsSyncResult>> | undefined;
+  private slidesWorkingGroupsRun:
+    | Promise<AdminBotServiceResponse<SlidesWorkingGroupsSyncResult>>
+    | undefined;
 
   /** The plan for the working-groups slide, without proposing anything: the admin preview. */
   async previewSlidesWorkingGroups(): Promise<AdminBotServiceResponse<SlidesWorkingGroupsPreview>> {
@@ -10734,10 +10738,11 @@ export class AdminBotService {
     };
   }
 
-  // Where members are, Slack first and the roster location only where Slack has nothing.
-  // Reads stamped state: refreshing from Slack is refreshMemberMap's job, not a page
-  // load's, so opening the map never waits on 144 API calls.
-  memberMap(): AdminBotServiceResponse<AdminBotMemberMap> {
+  // Where members are: Slack first, then the roster location, then the last sign-in's
+  // geolocation. Reads stamped state: refreshing from Slack is refreshMemberMap's job, not a page
+  // load's, so opening the map never waits on 144 API calls. `loginCity` is the caller's
+  // entitlement to inferred cities; see BuildMemberMapOptions.
+  memberMap(options: { loginCity?: boolean } = {}): AdminBotServiceResponse<AdminBotMemberMap> {
     const members = this.store.listLabMembers();
     const slackLocations = new Map<string, string>();
     for (const member of members) {
@@ -10745,7 +10750,11 @@ export class AdminBotService {
         slackLocations.set(member.slack_user_id, member.slack_location);
       }
     }
-    return { ok: true, status: 200, payload: buildMemberMap(members, slackLocations) };
+    return {
+      ok: true,
+      status: 200,
+      payload: buildMemberMap(members, slackLocations, { loginCity: options.loginCity ?? false }),
+    };
   }
 
   // Re-reads every member's Slack profile and stamps what it finds. A member Slack has
@@ -15138,6 +15147,8 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "availability",
   "location",
   "current_city",
+  // "Show me on the lab map as": the member's own privacy choice, so theirs alone to make.
+  "map_visibility",
   "affiliation",
   "timezone",
   "personal_website",
@@ -15344,7 +15355,8 @@ function labMemberRemovalPayload(
 ): { member_id: string; slack_user_id: string } | undefined {
   const payload = proposal.proposed_payload as Record<string, unknown> | undefined;
   const memberId = typeof payload?.member_id === "string" ? payload.member_id.trim() : "";
-  const slackUserId = typeof payload?.slack_user_id === "string" ? payload.slack_user_id.trim() : "";
+  const slackUserId =
+    typeof payload?.slack_user_id === "string" ? payload.slack_user_id.trim() : "";
   return memberId ? { member_id: memberId, slack_user_id: slackUserId } : undefined;
 }
 
@@ -15645,6 +15657,12 @@ function validateLabMember(
     typeof member.intake_form_unavailable !== "boolean"
   ) {
     return "application form unavailable must be true or false";
+  }
+  if (
+    member.map_visibility !== undefined &&
+    !(ADMINBOT_MAP_VISIBILITIES as readonly unknown[]).includes(member.map_visibility)
+  ) {
+    return `map visibility must be one of: ${ADMINBOT_MAP_VISIBILITIES.join(", ")}`;
   }
   if (
     member.arr_reviewer_qualified !== undefined &&

@@ -973,6 +973,7 @@ export const adminBotScheduleMemberFields = [
  */
 export const adminBotInferredLocationMemberFields = [
   "last_login_city",
+  "last_login_region",
   "last_login_timezone",
 ] as const;
 
@@ -1674,7 +1675,18 @@ export type AdminBotLabMemberInput = {
    * moment, and a month-old one says nothing about today. See ADMINBOT_LOGIN_CITY_FRESH_DAYS.
    */
   last_login_city?: string;
+  /**
+   * The subdivision `last_login_city` is in ("Ontario", "England"), only ever written with it, so
+   * "London, Ontario" and "London, England" place differently. Same audience as the city.
+   */
+  last_login_region?: string;
   last_login_timezone?: string;
+  /**
+   * How the member wants to appear on the lab map, set by them in Profile. "auto" (the default when
+   * absent) places them at the city of a recent sign-in, else what they stated; "stated" uses only
+   * what they wrote (`current_city`, `location`, Slack); "hidden" leaves them off the map.
+   */
+  map_visibility?: "auto" | "stated" | "hidden";
   /**
    * When the member last answered the "you seem to have moved" question, either way.
    *

@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
-import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
+import { selectIpGeolocator } from "../connectors/ip-geolocation.js";
 import {
   createOpenReviewForumProbe,
   createOpenReviewNotesReader,
@@ -194,6 +194,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   const gatewayUrl = trimmedEnv(options.gatewayUrl ?? process.env.ADMINBOT_GATEWAY_WS_URL);
   const serviceToken = trimmedEnv(options.serviceToken ?? process.env.ADMINBOT_SERVICE_TOKEN);
   const ipinfoToken = trimmedEnv(options.ipinfoToken ?? process.env.IPINFO_TOKEN);
+  const geoipMmdbPath = trimmedEnv(options.geoipMmdbPath ?? process.env.ADMINBOT_GEOIP_MMDB_PATH);
+  const ipGeolocation = selectIpGeolocator({ mmdbPath: geoipMmdbPath, ipinfoToken });
   // Built here rather than injected from the launcher, like the geolocator above: both are pure
   // functions of the environment, and the composition root has nothing to add to either.
   const venuePapersReader = options.venuePapersReader ?? createOpenReviewNotesReader();
@@ -235,13 +237,13 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
     sendPasswordResetEmail: options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
     ...(gatewayUrl ? { gatewayUrl } : {}),
-    // An explicitly injected geolocator wins (tests and the host inject their own);
-    // otherwise build the IPinfo Lite one when a token is configured. With neither, the
-    // option stays unset and the login path simply skips the stamp.
+    // An explicitly injected geolocator wins (tests inject their own); otherwise the local city
+    // database when ADMINBOT_GEOIP_MMDB_PATH is set, then IPinfo when IPINFO_TOKEN is. With
+    // neither, the option stays unset and the login path simply skips the stamp.
     ...(options.geolocateIp
       ? { geolocateIp: options.geolocateIp }
-      : ipinfoToken
-        ? { geolocateIp: createIpinfoGeolocator(ipinfoToken) }
+      : ipGeolocation.geolocate
+        ? { geolocateIp: ipGeolocation.geolocate }
         : {}),
   });
   // The roster the Membership grid reads. Built from configuration rather than assumed: a
@@ -419,6 +421,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.deviceTokenIssuer ? { deviceTokenIssuer: options.deviceTokenIssuer } : {}),
     ...(openReviewWorkflow ? { openReviewWorkflow } : {}),
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
+    ...(ipGeolocation.attribution ? { ipGeolocationAttribution: ipGeolocation.attribution } : {}),
     ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
     ...(options.cvDigestPublisher ? { cvDigestPublisher: options.cvDigestPublisher } : {}),
     publicationMailingRunner: options.publicationMailingRunner ?? createPublicationMailingRunner(),

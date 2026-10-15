@@ -39,6 +39,8 @@ import {
   type AssignedBadge,
   type BadgeSuggestionInput,
   type LabMember,
+  MEMBER_MAP_VISIBILITIES,
+  type MemberMapVisibility,
 } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
@@ -621,6 +623,10 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
     }
   }
   fields.intake_form_unavailable = !fields.intake_form_url && data.has("intake_form_unavailable");
+  const mapVisibility = data.get("map_visibility");
+  if ((MEMBER_MAP_VISIBILITIES as readonly unknown[]).includes(mapVisibility)) {
+    fields.map_visibility = mapVisibility as MemberMapVisibility;
+  }
   return fields;
 }
 
@@ -807,6 +813,29 @@ function renderProfileFormRow(state: AppViewState, member: LabMember, field: Edi
   return field.type === "multi_dropdown"
     ? html`<div class="profile__form-row">${body}</div>`
     : html`<label class="profile__form-row">${body}</label>`;
+}
+
+/**
+ * "Show me on the lab map as", next to the city it is about. Not one of EDITABLE_FIELDS: it is a
+ * privacy choice with a default, so it never counts towards completion or shows a required mark.
+ */
+function renderMapVisibilityRow(member: LabMember) {
+  const current: MemberMapVisibility = member.map_visibility ?? "auto";
+  return html`
+    <label class="profile__form-row" data-testid="profile-map-visibility">
+      <span class="profile__form-label">${t("profile.mapVisibility.label")}</span>
+      <select class="input" name="map_visibility">
+        ${MEMBER_MAP_VISIBILITIES.map(
+          (option) => html`
+            <option value=${option} ?selected=${option === current}>
+              ${t(`profile.mapVisibility.${option}`)}
+            </option>
+          `,
+        )}
+      </select>
+      <span class="profile__field-hint">${t("profile.mapVisibility.hint")}</span>
+    </label>
+  `;
 }
 
 function renderFieldInput(field: EditableField, currentValue: string) {
@@ -1095,6 +1124,7 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                           </div>
                         `
                       : renderProfileFormRow(state, member, field)}
+                    ${field.key === "current_city" ? renderMapVisibilityRow(member) : nothing}
                     <!-- A note and a checkbox about the field above, not a field of its own. It
                          used to be a profile__form-row wrapped in a label, which rendered the
                          explanation at label weight -- as loud as the questions around it -- and

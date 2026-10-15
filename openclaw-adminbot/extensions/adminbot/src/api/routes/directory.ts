@@ -48,17 +48,29 @@ export const directoryRoutes: readonly Route[] = [
     // deliberately, not a side effect of building the view, so only an admin gets the version
     // with who is where. Everyone else -- anonymous or a signed-in non-admin member alike --
     // gets a headcount per city.
-    const result = service.memberMap();
+    //
+    // Sign-in cities place people for anyone signed in to the lab -- members see a headcount per
+    // city, admins the names -- and each member's own "Show me on the lab map as" setting decides
+    // whether theirs is used at all. Never for an anonymous visitor: a public headcount on "Lyon"
+    // would tell the internet where a lab member signed in from, so that map uses only what members
+    // stated. Either way only a city leaves here, never an IP, its coordinates, or a history.
+    const privileged = isPrivileged(principal);
+    const result = service.memberMap({ loginCity: principal.kind !== "anonymous" });
     if (!result.ok) {
       sendServiceResult(res, result);
       return;
     }
+    // The provider's licence wants its credit wherever the data shows, and a country pin on the
+    // summary can come from a sign-in as much as a city on the full map can.
+    const attribution = ctx.ipGeolocationAttribution
+      ? { attribution: ctx.ipGeolocationAttribution }
+      : {};
     sendJson(
       res,
       200,
-      isPrivileged(principal)
-        ? { mode: "full", ...result.payload }
-        : { mode: "summary", ...toPublicMemberMapSummary(result.payload) },
+      privileged
+        ? { mode: "full", ...result.payload, ...attribution }
+        : { mode: "summary", ...toPublicMemberMapSummary(result.payload), ...attribution },
     );
   }),
   post(
