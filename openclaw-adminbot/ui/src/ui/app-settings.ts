@@ -162,6 +162,7 @@ type SettingsAppHost = SettingsHost &
   AdminBotHost &
   AdminBotRegistrationsHost &
   UsageState & {
+    memberPrivilegeLevel?: string | null;
     overviewLogCursor: number | null;
     overviewLogLines: string[];
     attentionItems: AttentionItem[];
@@ -537,7 +538,7 @@ async function refreshAccessibleTab(host: SettingsHost, opts?: TabRefreshOptions
       ? Promise.resolve()
       : loadAdminBot(
           app,
-          "admin",
+          app.memberPrivilegeLevel === "admin" ? "admin" : "general",
           needsPapers,
           Boolean(app.adminBotData?.loadedAt && needsPapers && !app.adminBotData.papersLoadedAt),
         );

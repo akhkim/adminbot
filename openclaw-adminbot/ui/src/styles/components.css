@@ -2521,6 +2521,12 @@
   box-shadow: var(--shadow-md);
 }
 
+.adminbot-impersonation-banner[role="alert"] {
+  border-color: var(--danger-muted);
+  background: var(--bg-elevated);
+  color: var(--danger);
+}
+
 .adminbot-member-sheet__edit {
   /* Lives under the name in the frozen first column rather than its own Actions column. */
   margin-top: var(--space-2);

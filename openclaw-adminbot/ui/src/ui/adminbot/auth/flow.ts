@@ -1041,9 +1041,7 @@ export async function beginViewAs(host: MemberAuthHost, memberId: string): Promi
     }
     if (!result.ok) {
       host.memberImpersonationError =
-        result.kind === "unreachable"
-          ? t("adminbot.impersonation.unreachable")
-          : t("adminbot.impersonation.refused");
+        result.kind === "unreachable" ? t("impersonation.unreachable") : t("impersonation.refused");
       return;
     }
     await applyMemberSession(host, result.value);

@@ -712,6 +712,13 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
  */
 function renderImpersonationBanner(state: AppViewState) {
   const impersonator = state.memberImpersonatedBy;
+  if (state.memberImpersonationError) {
+    return html`
+      <div class="adminbot-impersonation-banner" role="alert" data-testid="impersonation-error">
+        ${state.memberImpersonationError}
+      </div>
+    `;
+  }
   if (!impersonator) {
     return nothing;
   }
@@ -2441,10 +2448,7 @@ export function renderApp(state: AppViewState) {
   const wantsGatewayAdminBotLoad =
     ((isChat && isAdminBotChat) || adminBotPanel || wantsRosterOnly) && state.connected;
   const needsFirstPaperRead =
-    hasMemberSession &&
-    needsPapersForTab &&
-    Boolean(state.adminBotData.loadedAt) &&
-    !state.adminBotData.papersLoadedAt;
+    needsPapersForTab && Boolean(state.adminBotData.loadedAt) && !state.adminBotData.papersLoadedAt;
   if (
     state.tab !== "adminbotMeetings" &&
     (hasMemberSession || wantsGatewayAdminBotLoad) &&
