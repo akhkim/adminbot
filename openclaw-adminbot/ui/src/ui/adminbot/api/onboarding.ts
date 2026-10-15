@@ -18,6 +18,7 @@ export type MemberOnboardingGuideQueued = {
   proposal_id: string;
   template_id: string;
   email: string;
+  detail?: string;
 };
 
 // Puts one roster member through onboarding: the service composes nothing here, it files an
@@ -36,13 +37,17 @@ export async function queueMemberOnboardingGuide(
   sessionToken: string,
   baseUrl: string,
   slackChannels?: string[],
+  options: { resend?: boolean } = {},
 ): Promise<AuthResult<MemberOnboardingGuideQueued>> {
   const result = await authedJson(
     baseUrl,
     `/lab/members/${encodeURIComponent(memberId)}/onboarding/guide`,
     "POST",
     sessionToken,
-    slackChannels?.length ? { slack_project_channels: slackChannels } : {},
+    {
+      ...(slackChannels?.length ? { slack_project_channels: slackChannels } : {}),
+      ...(options.resend ? { resend: true } : {}),
+    },
   );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };

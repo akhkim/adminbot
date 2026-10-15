@@ -8,6 +8,7 @@ import {
   isAdminBotOpportunityCategory,
 } from "../../contracts/opportunities.js";
 import { DEADLINE_VENUES } from "../../workflows/deadlines/generated/dataset.js";
+import { handleDeadlineExtraction } from "../server.deadline-extraction.js";
 import { handleDeadlineRecommendationRoute } from "../server.deadline-recommendations.js";
 import { asString, readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
 import { opportunityWire } from "../server.opportunities.wire.js";
@@ -23,6 +24,15 @@ import {
 import { del, get, post, put, route, type Route, under } from "./router.js";
 
 export const deadlinesRoutes: readonly Route[] = [
+  // The service token only: the deadline-collection job queues schedule extraction through the
+  // local model here, and no member session -- an admin's included -- is that caller.
+  post("/internal/deadlines/extract-schedule", async ({ req, res, principal }) => {
+    if (principal.kind !== "service") {
+      sendJson(res, 403, { error: { message: "The collection service token is required." } });
+      return;
+    }
+    await handleDeadlineExtraction(req, res);
+  }),
   route("*", under("/deadline-recommendations"), async ({ req, res, url, ctx, principal }) => {
     const { service } = ctx;
     if (principal.kind !== "member" || principal.impersonator) {

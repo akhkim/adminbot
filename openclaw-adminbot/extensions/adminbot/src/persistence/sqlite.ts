@@ -51,6 +51,7 @@ import type { LabSharingDiscoveryQuery } from "../contracts/lab-sharing-discover
 import type { LabHelpInterest } from "../contracts/lab-sharing-interest.js";
 import type { LabDirectorStatus } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
+import type { AdminBotLocationShareRecord } from "../contracts/lab-travel.js";
 import type {
   AdminBotMemberRequest,
   AdminBotMemberRequestStatus,
@@ -114,6 +115,13 @@ import {
   readDirectorStatus,
 } from "./lab-sharing-status.js";
 import { ensureLabSharingSchema, saveHelpRequest, listHelpRequests } from "./lab-sharing.js";
+import {
+  deleteLocationShare,
+  ensureLocationShareSchema,
+  getLocationShare,
+  listLocationShares,
+  saveLocationShare,
+} from "./location-shares.js";
 import { createMemberDraftStore } from "./member-drafts.js";
 import {
   ensureOpenReviewCitationCheckSchema,
@@ -140,12 +148,12 @@ import {
   MEMBER_OWNED_COLUMNS,
   MEMBER_REFERENCE_COLUMNS,
 } from "./sqlite.member-columns.js";
+import { escalatedMemberNotificationsSql } from "./sqlite.member-notifications.js";
 import {
   REGISTRATION_COLUMNS,
   rowToRegistration,
   type AccountRegistrationRow,
 } from "./sqlite.registration-rows.js";
-import { escalatedMemberNotificationsSql } from "./sqlite.member-notifications.js";
 import {
   listSqliteSocialDrafts,
   migrateSocialDraftColumns,
@@ -188,6 +196,11 @@ function paperFilterSql(filter?: { q?: string; authorMemberId?: string }) {
   };
 }
 
+// Every service option, not a hand-picked subset. This used to list three of them, and
+// createAdminBotMockService -- the production path whenever it has a databasePath -- spreads its
+// whole option set in here, so whatever the list missed was dropped without a type error: the
+// runtime deadline dataset among them, which pinned /deadlines to the snapshot compiled into the
+// release while the daily collection rewrote deadlines.json underneath it.
 export type AdminBotSqliteServiceOptions = AdminBotServiceOptions & {
   databasePath: string;
 };
@@ -206,21 +219,20 @@ export function createAdminBotSqliteService(options: AdminBotSqliteServiceOption
  * The caller's options whole, plus env-sourced paperflow settings. An allowlist here once dropped
  * the deadline dataset, arXiv/OpenReview probes and Slack photo reviewers in production only.
  */
-export function sqliteServiceOptions(
-  options: AdminBotSqliteServiceOptions,
-): AdminBotServiceOptions {
-  const { databasePath: _databasePath, ...wired } = options;
+export function sqliteServiceOptions({
+  databasePath: _databasePath,
+  ...options
+}: AdminBotSqliteServiceOptions): AdminBotServiceOptions {
+  // Read here rather than in the kernel so the service stays free of process globals: both
+  // callers (the API server and the hourly email script) build the service through this factory
+  // and both already load ~/.openclaw/.env before they do. An explicit option still wins.
+  const botEmail = options.paperflowBotEmail ?? process.env.ADMINBOT_BOT_EMAIL?.trim();
+  const priorityMemberId =
+    options.paperflowPriorityMemberId ?? process.env.ADMINBOT_PAPERFLOW_PRIORITY_MEMBER_ID?.trim();
   return {
-    ...wired,
-    // Read here rather than in the kernel so the service stays free of process globals: both
-    // callers (the API server and the hourly email script) build the service through this factory
-    // and both already load ~/.openclaw/.env before they do.
-    ...(process.env.ADMINBOT_BOT_EMAIL?.trim()
-      ? { paperflowBotEmail: process.env.ADMINBOT_BOT_EMAIL.trim() }
-      : {}),
-    ...(process.env.ADMINBOT_PAPERFLOW_PRIORITY_MEMBER_ID?.trim()
-      ? { paperflowPriorityMemberId: process.env.ADMINBOT_PAPERFLOW_PRIORITY_MEMBER_ID.trim() }
-      : {}),
+    ...options,
+    ...(botEmail ? { paperflowBotEmail: botEmail } : {}),
+    ...(priorityMemberId ? { paperflowPriorityMemberId: priorityMemberId } : {}),
   };
 }
 
@@ -942,6 +954,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     `);
     ensureLabSharingSchema(this.db);
     ensureDirectorStatusSchema(this.db);
+    ensureLocationShareSchema(this.db);
     ensureReferenceScanSchema(this.db);
     ensureOpenReviewCitationCheckSchema(this.db);
     ensurePaperAiTextCheckSchema(this.db);
@@ -2752,6 +2765,18 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
   listDirectorStatusHistory(limit?: number): LabDirectorStatus[] {
     return listDirectorStatusHistory(this.db, limit);
+  }
+  saveLocationShare(record: AdminBotLocationShareRecord): void {
+    saveLocationShare(this.db, record);
+  }
+  getLocationShare(memberId: string): AdminBotLocationShareRecord | undefined {
+    return getLocationShare(this.db, memberId);
+  }
+  listLocationShares(): AdminBotLocationShareRecord[] {
+    return listLocationShares(this.db);
+  }
+  deleteLocationShare(memberId: string): boolean {
+    return deleteLocationShare(this.db, memberId);
   }
   saveHelpRequest(request: LabHelpRequest): void {
     saveHelpRequest(this.db, request);

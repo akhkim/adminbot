@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { chromium } from "playwright";
 import { expect, it } from "vitest";
+import { withCompleteProfile } from "../../../../../extensions/adminbot/src/contracts/profile-completion.test-helpers.js";
 
 // Production assets and real browser storage. The API uses synthetic responses; service-side
 // authentication and CAS are exercised independently in server.member-drafts.test.ts.
@@ -41,6 +42,11 @@ it("reopens the built website offline and syncs autosaved edits after reconnect"
     const context = await browser.newContext({ viewport: { width: 1365, height: 1000 } });
     let remotes = new Map<string, any>(),
       reachable = true;
+    const member = withCompleteProfile({
+      id: "offline-test-member",
+      name: "Test Member",
+      privilege_level: "member",
+    });
     await context.route("http://127.0.0.1:8765/**", async (route) => {
       if (!reachable) return route.abort("internetdisconnected");
       const req = route.request(),
@@ -49,9 +55,10 @@ it("reopens the built website offline and syncs autosaved edits after reconnect"
       if (path === "/auth/session")
         body = {
           expires_at: "2099-01-01T00:00:00Z",
-          member: { id: "offline-test-member", name: "Test Member", privilege_level: "member" },
+          member,
           gateway: { token: "" },
         };
+      else if (path === "/lab/members/self") body = { member };
       else if (path.startsWith("/member-drafts/")) {
         let remote = remotes.get(path) ?? null;
         if (req.method() === "PUT") {
@@ -68,7 +75,7 @@ it("reopens the built website offline and syncs autosaved edits after reconnect"
         body = { draft: remote };
       } else if (path === "/lab/members")
         body = {
-          members: [{ id: "offline-test-member", name: "Test Member", privilege_level: "member" }],
+          members: [member],
         };
       else if (path === "/auth/device-token" || path === "/auth/pair-device")
         return route.fulfill({ status: 503, json: { error: { message: "unavailable" } } });

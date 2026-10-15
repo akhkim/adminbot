@@ -55,9 +55,6 @@ def attach_abstract_requirements(items):
             abstracts.setdefault(route_key(item), []).append(item)
     for item in items:
         item.pop("abstract_deadline_id", None)
-        if item.get("abstract_requirement_evidence") == "The same submission track publishes a separate abstract deadline.":
-            for key in ABSTRACT_FIELDS:
-                item.pop(key, None)
         if is_abstract(item) or item.get("submission_type") == "commitment":
             continue
         if item.get("milestone") not in {"full_paper", "direct_submission", "demo", "", None}:

@@ -18,16 +18,21 @@ import { IclrIntegrityWatch } from "../../workflows/papers/iclr-integrity-watch.
 import { OpenReviewCitationWatch } from "../../workflows/papers/openreview-citation-watch.js";
 import { readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
 import type { AdminBotMockServiceOptions } from "./context.js";
-import { adminSessionOnly, principalActor, privilegedOnly } from "./guards.js";
+import { principalActor, privilegedOnly } from "./guards.js";
 import { get, post, route, type Route, startingWith } from "./router.js";
 
 export const reviewsRoutes: readonly Route[] = [
-  post(
-    "/reference-check/pdf",
-    adminSessionOnly(async ({ req, res, ctx, principal }) => {
-      await ctx.checkUploadedPdf(req, res, principalActor(principal));
-    }),
-  ),
+  post("/reference-check/pdf", async ({ req, res, ctx, principal }) => {
+    if (
+      principal.kind !== "member" ||
+      (principal.member.privilege_level !== "member" &&
+        principal.member.privilege_level !== "admin")
+    ) {
+      sendJson(res, 403, { error: { message: "Member or admin session required" } });
+      return;
+    }
+    await ctx.checkUploadedPdf(req, res, principalActor(principal));
+  }),
   get(
     "/openreview/citation-checks",
     privilegedOnly(({ res, ctx }) => {

@@ -19,6 +19,7 @@ import {
   readArxivPdfBase64,
 } from "../connectors/social-draft.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import { missingMandatoryProfileFields } from "../contracts/profile-completion.js";
 import { createLlmLoadRouter, parseLlmNodes } from "../kernel/llm-router.js";
 import { ReferenceScans } from "../kernel/reference-scans.js";
 import {
@@ -57,6 +58,7 @@ import { createAdminBotOpenReviewWorkflow } from "../workflows/papers/openreview
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
 import { defaultCallSheet } from "./call-sheet-config.js";
 import { memberSheetSource, resolveMemberSheetConfig } from "./member-sheet-config.js";
+import { createNotificationDraftHandler } from "./notification-drafts.js";
 import {
   warnIfLabCalendarUnconfigured,
   type SlackConnectOnboardingInviter,
@@ -64,6 +66,7 @@ import {
   executorWithOnboardingGuide,
 } from "./onboarding-provisioning.js";
 import { createPdfReferenceCheckHandler } from "./pdf-reference-check.js";
+import { isBlockedByProfile } from "./profile-gate.js";
 import { isAnonymousRoute, createAnonymousRateLimiter } from "./routes/anonymous.js";
 import { handleAuthRoute } from "./routes/auth.js";
 import type {
@@ -375,6 +378,16 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       })
     : undefined;
   const ctx: AdminBotRouteContext = {
+    notificationDrafts: createNotificationDraftHandler(
+      options.notificationDraftScriptPath,
+      () => store.listLabMembers(),
+      () =>
+        store.listPapers().map((paper) => ({
+          title: paper.title,
+          submission_url: paper.artifacts?.submission_url,
+          arxiv_url: paper.artifacts?.arxiv_url,
+        })),
+    ),
     reimbursementSigningKey: randomBytes(32),
     service,
     store,
@@ -421,6 +434,11 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.resolveSlackUserIdsByEmail
       ? { resolveSlackUserIdsByEmail: options.resolveSlackUserIdsByEmail }
       : {}),
+    ...(options.readCalendarAccess ? { readCalendarAccess: options.readCalendarAccess } : {}),
+    ...(options.readCalendarMembership
+      ? { readCalendarMembership: options.readCalendarMembership }
+      : {}),
+    ...(options.readActiveChannels ? { readActiveChannels: options.readActiveChannels } : {}),
     ...(options.fetchSlackChannelNames
       ? { fetchSlackChannelNames: options.fetchSlackChannelNames }
       : {}),
@@ -607,6 +625,21 @@ async function handleAuthenticatedRoute(
   if (principal.kind === "anonymous" && !isAnonymousRoute(req.method, url.pathname)) {
     sendJson(res, 401, { error: { message: "authentication required" } });
     return;
+  }
+  if (principal.kind === "member") {
+    // Re-read the row on every request: a saved answer unlocks immediately, and clearing it
+    // locks again even when the member's session predates the change.
+    const member = ctx.store.getLabMember(principal.member.id);
+    if (!member || isBlockedByProfile(member, req.method, url.pathname)) {
+      sendJson(res, 403, {
+        error: {
+          code: "profile_incomplete",
+          message: "Complete the required fields in My Profile before using AdminBot.",
+          missing_fields: member ? missingMandatoryProfileFields(member) : [],
+        },
+      });
+      return;
+    }
   }
   if (await dispatchRoute(AUTHENTICATED_ROUTES, { req, res, url, ctx, principal })) {
     return;

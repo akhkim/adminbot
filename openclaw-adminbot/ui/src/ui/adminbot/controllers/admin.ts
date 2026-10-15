@@ -1,4 +1,5 @@
 import { adminBotExternalCollaboratorSubgroups } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import { requiresProfileCompletion } from "../../../../../extensions/adminbot/src/contracts/profile-completion.js";
 import type {
   AdminBotReimbursementCheck,
   AdminBotReimbursementFunder,
@@ -74,6 +75,8 @@ export type AdminBotAccessGrant = {
 export type AdminBotMemberStatus = "active" | "part_time" | "on_leave" | "alumni" | "external";
 
 export type AdminBotLabMember = {
+  arr_reviewer_qualified?: boolean | null;
+  arr_review_capacity?: number | null;
   assigned_badges?: import("../auth/session.ts").AssignedBadge[];
   id: string;
   name: string;
@@ -1159,13 +1162,15 @@ async function loadAdminBotOverSession(
   try {
     // A page that draws only the viewer's own papers reads only those, unless this session already
     // holds the whole list -- then a reload keeps the whole list current for the pages that use it.
-    // The paper read does not depend on the profile, so both go out together; the profile still
-    // lands first on screen whenever it answers first.
     const paperScope = paperScopeForTab((host as { tab?: unknown }).tab, host.memberPrivilegeLevel);
     const ownOnly = paperScope === "own" && !host.adminBotData.papersLoadedAt;
-    const papersRead = includePapers
-      ? read(ownOnly ? "/papers?scope=mine" : "/papers")
-      : Promise.resolve(undefined);
+    const readPapers = () => read(ownOnly ? "/papers?scope=mine" : "/papers");
+    // The service refuses every read but the own profile while the profile is incomplete, so the
+    // paper read goes out beside the profile read only once this session has seen a complete
+    // profile; the first load after signing in waits for the profile to say so.
+    const knownSelf = host.adminBotData.members.find((member) => member.id === host.memberId);
+    const early = includePapers && knownSelf && !requiresProfileCompletion(knownSelf);
+    let papersRead: Promise<unknown> = early ? readPapers() : Promise.resolve(undefined);
     // If the profile read fails first, that error is the one reported; this keeps the paper
     // read's own failure from surfacing as an unhandled rejection.
     papersRead.catch(() => undefined);
@@ -1176,6 +1181,15 @@ async function loadAdminBotOverSession(
     const self = readRecord(readRecord(selfResponse).member) as AdminBotLabMember;
     if (!self.id) {
       throw new Error("Your member profile could not be loaded.");
+    }
+    // Profile completion is the only available workflow until these answers are saved.
+    // Decide from the freshly fetched row, including on the first load after signing in.
+    if (requiresProfileCompletion(self)) {
+      includePapers = false;
+      mode = "general";
+      papersRead = Promise.resolve(undefined);
+    } else if (includePapers && !early) {
+      papersRead = readPapers();
     }
     const memberRows = host.adminBotRosterLoadedAt
       ? [...host.adminBotData.members.filter((member) => member.id !== self.id), self]
@@ -1325,16 +1339,45 @@ export async function loadAdminBotRoster(host: AdminBotHost): Promise<void> {
   }
 }
 
+// Let profile access checks join an existing dashboard read instead of polling a loading flag.
+const pendingDashboardLoads = new WeakMap<
+  AdminBotHost,
+  { sessionToken: string | undefined; promise: Promise<void> }
+>();
+
+export function pendingAdminBotLoad(host: AdminBotHost): Promise<void> | undefined {
+  const pending = pendingDashboardLoads.get(host);
+  return pending?.sessionToken === loadStoredMemberSession()?.sessionToken
+    ? pending?.promise
+    : undefined;
+}
+
 // Defaults are for the reload after a write: the viewer's own mode (a plain member asked in admin
 // mode spends five reads on queues the service refuses), and the lab paper list only when this
 // session has already loaded it -- a write on a page without papers has nothing to refresh there.
-export async function loadAdminBot(
+export function loadAdminBot(
   host: AdminBotHost,
   mode: AdminBotLoadMode = loadStoredMemberSession() && host.memberPrivilegeLevel !== "admin"
     ? "general"
     : "admin",
   includePapers = Boolean(host.adminBotData.papersLoadedAt || host.adminBotData.ownPapersLoadedAt),
   preserveRoster = false,
+): Promise<void> {
+  const sessionToken = loadStoredMemberSession()?.sessionToken;
+  const pending = loadAdminBotData(host, mode, includePapers, preserveRoster);
+  pendingDashboardLoads.set(host, { sessionToken, promise: pending });
+  const clear = () => {
+    if (pendingDashboardLoads.get(host)?.promise === pending) pendingDashboardLoads.delete(host);
+  };
+  void pending.then(clear, clear);
+  return pending;
+}
+
+async function loadAdminBotData(
+  host: AdminBotHost,
+  mode: AdminBotLoadMode,
+  includePapers: boolean,
+  preserveRoster: boolean,
 ): Promise<void> {
   // A write may have changed a member row; the next roster-dependent tab reloads it on demand.
   // Opening a paper page after a non-paper page changes no member rows, so keep its loaded roster.
@@ -1875,6 +1918,7 @@ export async function saveAdminBotPaper(
       title: paper.title,
       authors: paper.authors,
       currentStep: paper.currentStep,
+      ...(paper.venue === undefined ? {} : { venue: paper.venue }),
       ...(paper.venueDecision ? { venueDecision: paper.venueDecision } : {}),
       ...(paper.acceptedVenue === undefined ? {} : { acceptedVenue: paper.acceptedVenue }),
       ...(paper.acceptedYear === undefined

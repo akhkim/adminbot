@@ -96,6 +96,10 @@
   cursor: pointer;
 }
 
+.paper-legacy__paper .profile__section-title {
+  min-width: 0;
+}
+
 .paper-legacy__paper--collapsed {
   cursor: pointer;
 }

@@ -179,6 +179,7 @@ type LabMemberParams = {
 };
 
 type PaperParams = {
+  venue?: string;
   id: string;
   title: string;
   authors: string[];
@@ -583,6 +584,7 @@ function paperRecord(params: PaperParams): AdminBotPaperRecordInput {
     title: params.title,
     authors: params.authors,
     current_step: params.currentStep,
+    ...(params.venue === undefined ? {} : { venue: params.venue }),
     ...(params.venueDecision ? { venue_decision: params.venueDecision } : {}),
     ...(params.acceptedVenue === undefined ? {} : { accepted_venue: params.acceptedVenue }),
     ...(params.acceptedYear === undefined ? {} : { accepted_year: params.acceptedYear }),

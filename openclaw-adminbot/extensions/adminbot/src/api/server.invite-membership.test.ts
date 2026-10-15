@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import type { AdminBotCalendarEvent } from "../workflows/calendar/events.js";
 import { createAdminBotMockService } from "./server.js";
 
@@ -63,7 +64,13 @@ async function startService(
   running.push({ mock, cleanupPaths: [sensitiveInfoPath] });
   const baseUrl = `http://127.0.0.1:${address.port}`;
   for (const row of [
-    { id: "full", privilege_level: "member", status: "active", email: "full@cs.toronto.edu" },
+    {
+      id: "full",
+      member_type: "full",
+      privilege_level: "member",
+      status: "active",
+      email: "full@cs.toronto.edu",
+    },
     { id: "trial", privilege_level: "trial", status: "active", email: "trial@cs.toronto.edu" },
     {
       id: "major",
@@ -73,7 +80,9 @@ async function startService(
       email: "major@other.test",
     },
   ]) {
-    const created = mock.service.upsertLabMember({ name: `Name ${row.id}`, ...row } as never);
+    const created = mock.service.upsertLabMember(
+      withCompleteProfile({ name: `Name ${row.id}`, ...row } as never),
+    );
     if (!created.ok) {
       throw new Error(created.error.message);
     }

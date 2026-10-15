@@ -710,7 +710,15 @@ function chatSideResultAgentScopeMatches(host: GatewayHost, sideResult: ChatSide
 
 function fallbackUnconfiguredSessionSelection(host: GatewayHost): boolean {
   const parsed = parseAgentSessionKey(host.sessionKey);
-  if (!parsed) {
+  const defaults = (
+    host.hello?.snapshot as { sessionDefaults?: SessionDefaultsSnapshot } | undefined
+  )?.sessionDefaults;
+  const sharedMemberSession =
+    Boolean(host.memberId?.trim()) &&
+    (isUiGlobalSessionKey(host.sessionKey) ||
+      host.sessionKey === defaults?.mainSessionKey ||
+      parsed?.rest === (defaults?.mainKey || "main"));
+  if (!parsed && !sharedMemberSession) {
     return false;
   }
   // Someone else's member session. The selected key is persisted per gateway URL, not per member,
@@ -721,8 +729,10 @@ function fallbackUnconfiguredSessionSelection(host: GatewayHost): boolean {
     (host.agentsList?.agents ?? []).map((entry) => normalizeAgentId(entry.id)),
   );
   if (
+    !sharedMemberSession &&
     !foreignMemberSession &&
-    (configuredAgentIds.size === 0 || configuredAgentIds.has(normalizeAgentId(parsed.agentId)))
+    (configuredAgentIds.size === 0 ||
+      (parsed && configuredAgentIds.has(normalizeAgentId(parsed.agentId))))
   ) {
     return false;
   }
@@ -923,10 +933,11 @@ function maybeAutoApproveDevicePairing(
 // AUTH_TOKEN_MISSING is the tokenless case: sign-in clears the shared token on the assumption a
 // device token was minted, so when minting failed the browser connects with no auth at all and the
 // gateway closes it as "gateway token missing". AUTH_DEVICE_TOKEN_MISMATCH is the token-we-hold-is-
-// rejected case. Both dead-end into an endless retry unless the credential itself is replaced.
+// rejected case. A scope upgrade also needs a replacement token. These dead-end into repeated retries otherwise.
 const MEMBER_DEVICE_TOKEN_RECOVERABLE_CODES = new Set<string>([
   ConnectErrorDetailCodes.AUTH_TOKEN_MISSING,
   ConnectErrorDetailCodes.AUTH_DEVICE_TOKEN_MISMATCH,
+  ConnectErrorDetailCodes.AUTH_SCOPE_MISMATCH,
 ]);
 
 // Handles a connect the gateway refused for want of an acceptable credential. Recovery re-mints the
@@ -1001,7 +1012,7 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
     mode: "webchat",
     instanceId: host.clientInstanceId,
     // Request only the operator scopes the signed-in member's privilege allows, so device pairing
-    // approves a read-only device for plain members (the gateway then denies them operator.write).
+    // approves read and chat scopes for plain members (the gateway then denies them operator.write).
     operatorScopes: resolveMemberOperatorScopes(host.memberPrivilegeLevel),
     onHello: (hello) => {
       if (host.client !== client) {

@@ -34,6 +34,7 @@ export const adminBotActionTypes = [
   // weekly sheet sweep -- can queue the grant for approval like every other step, instead of either
   // skipping it or granting access with nobody having said yes.
   "calendar.grant_lab_calendar",
+  "calendar.revoke_lab_calendar",
   "calendar.reschedule",
   "calendar.cancel",
   "email.draft",
@@ -1935,6 +1936,8 @@ export const adminBotPaperSteps = [
 export type AdminBotPaperStep = (typeof adminBotPaperSteps)[number];
 
 export type AdminBotPaperArtifactLinks = {
+  /** Human confirmation that the paper has been presented; blank reopens it. */
+  completed_at?: string;
   /** Publication track is independent of presentation_type; blank explicitly clears it. */
   publication_track?: string;
   conference?: string;
@@ -2410,6 +2413,10 @@ export type AdminBotAuditEvent = {
     | "lab_status.cleared"
     | "lab_interest.saved"
     | "lab_interest.withdrawn"
+    // The Travel tab's location opt-in switched on or off. Never a position: an audit line per fix
+    // would turn the trail into the location history the opt-in promises not to keep.
+    | "location_sharing.enabled"
+    | "location_sharing.disabled"
     | "proposal.created"
     | "proposal.auto_approved"
     | "proposal.removed"

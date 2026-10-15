@@ -4,6 +4,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotMeetingRecord } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "version-etag-service-token";
@@ -84,7 +85,9 @@ async function startLab() {
   ] as const) {
     const email = `${id}@cs.toronto.edu`;
     expect(
-      mock.service.upsertLabMember({ id, name: id, email, privilege_level: privilege }).ok,
+      mock.service.upsertLabMember(
+        withCompleteProfile({ id, name: id, email, privilege_level: privilege }),
+      ).ok,
     ).toBe(true);
     await fetch(`${baseUrl}/auth/claim`, {
       method: "POST",

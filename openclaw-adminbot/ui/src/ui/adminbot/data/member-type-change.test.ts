@@ -11,7 +11,7 @@ describe("describeMemberTypeChange", () => {
       steps: [
         { step: "sheet", target: "row 12", status: "done" },
         { step: "slack", target: "#jinesis-active", status: "done" },
-        { step: "alumni_mail", target: "cora@lab.test", status: "done" },
+        { step: "guide", target: "cora@lab.test", status: "done" },
         { step: "lab_calendar", status: "skipped", detail: "no address on file" },
       ],
     });
@@ -20,7 +20,9 @@ describe("describeMemberTypeChange", () => {
     expect(notice.text).toContain("member type coauthor-major → alumni");
     // Unchanged access level is not announced as a change.
     expect(notice.text).not.toContain("Access level");
-    expect(notice.text).toContain("Done: member sheet row 12; Slack #jinesis-active; alumni email");
+    expect(notice.text).toContain(
+      "Done: member sheet row 12; Slack #jinesis-active; onboarding email",
+    );
     expect(notice.text).toContain("Skipped: lab calendar (no address on file)");
   });
 

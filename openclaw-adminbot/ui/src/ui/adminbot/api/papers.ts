@@ -2,6 +2,7 @@
 //
 // Mirrors the service's api/routes/papers.ts. Cut from auth/session.ts, which keeps the session
 // lifecycle and the request plumbing every zone shares.
+import type { AdminBotMyProjectSummary } from "../../../../../extensions/adminbot/src/workflows/papers/my-projects.js";
 import {
   authedJson,
   type AuthResult,
@@ -180,7 +181,7 @@ export async function deleteOwnPaper(
   return { ok: true, value: result.body };
 }
 
-/** Not going is the absence of a row, never a value. Withdrawing deletes; see deleteConferenceTrip. */
+/** Not going is the absence of a row, never a value. Withdrawing deletes the row. */
 export type ConferenceTripIntent = "going" | "undecided";
 
 export type ConferenceFundingNeed = "none" | "fee_only" | "flight_only" | "full_travel";
@@ -200,126 +201,25 @@ export type ConferenceTrip = {
   updated_at: string;
 };
 
-/** One conference card. `roster` arrives only for an admin; see listConferenceOverview. */
-export type ConferenceSummary = {
-  key: string;
-  label: string;
-  family: string;
-  year?: number;
-  location?: string;
-  description: string;
-  homepage_url?: string;
-  next_deadline_aoe?: string;
-  next_deadline_label?: string;
-  workshop_count: number;
-  roster?: {
-    going: number;
-    undecided: number;
-    funding: Record<ConferenceFundingNeed, number>;
-    visa_letters: number;
-    lodging: {
-      guests: number;
-      first_night?: string;
-      last_night?: string;
-      members: Array<{
-        member_id: string;
-        name: string;
-        arrival_on?: string;
-        departure_on?: string;
-      }>;
-    };
-    trips: Array<ConferenceTrip & { member_name: string; paper_title?: string }>;
-  };
-};
-
-export type ConferenceOverview = {
-  conferences: ConferenceSummary[];
-  /** The viewer's own trips. Empty when signed out. */
-  mine: ConferenceTrip[];
-};
-
 /**
- * The conference overview.
+ * The signed-in member's active projects, each with its open work counted per lane.
  *
- * Readable signed out, like the deadline board it is derived from -- so this takes an optional
- * token rather than requiring one, and the service narrows the payload to whoever is asking.
+ * The service decides what "mine" and "active" mean, and takes the member from the session -- no
+ * id is sent, so this cannot be pointed at somebody else's list.
  */
-export async function fetchConferenceOverview(
-  sessionToken: string | null,
-  baseUrl: string,
-): Promise<AuthResult<ConferenceOverview>> {
-  // `authedJson` takes a null token, which is how the Opportunities board reads publicly too.
-  const result = await authedJson(baseUrl, "/conferences", "GET", sessionToken);
-  if ("unreachable" in result) {
-    return { ok: false, kind: "unreachable" };
-  }
-  if (result.response.status === 404) {
-    // The service predates this route: the Control UI ships on merge and the service is deployed
-    // separately, so a new tab can reach a host that has never heard of it.
-    return { ok: true, value: { conferences: [], mine: [] } };
-  }
-  if (!result.response.ok) {
-    return { ok: false, ...calendarFailure(result.response, result.body) };
-  }
-  const body = result.body as Partial<ConferenceOverview> | null;
-  return { ok: true, value: { conferences: body?.conferences ?? [], mine: body?.mine ?? [] } };
-}
-
-/** Sign the signed-in member up, or change what they said. Always their own row. */
-export async function saveConferenceTrip(
-  conferenceKey: string,
-  input: {
-    intent: ConferenceTripIntent;
-    funding: ConferenceFundingNeed;
-    needs_lodging: boolean;
-    needs_visa_letter: boolean;
-    arrival_on?: string;
-    departure_on?: string;
-    paper_id?: string;
-    notes?: string;
-  },
+export async function fetchMyProjects(
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<ConferenceTrip>> {
-  const result = await authedJson(
-    baseUrl,
-    `/conferences/${encodeURIComponent(conferenceKey)}/trip`,
-    "PUT",
-    sessionToken,
-    input,
-  );
+): Promise<AuthResult<AdminBotMyProjectSummary[]>> {
+  const result = await authedJson(baseUrl, "/my/projects", "GET", sessionToken);
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  return { ok: true, value: (result.body as { trip: ConferenceTrip }).trip };
-}
-
-/**
- * Withdraw from a conference: the member's row is removed and they are simply not going.
- *
- * Idempotent on the service side, so a double press is not an error.
- */
-export async function deleteConferenceTrip(
-  conferenceKey: string,
-  sessionToken: string,
-  baseUrl: string,
-): Promise<AuthResult<{ withdrawn: boolean }>> {
-  const result = await authedJson(
-    baseUrl,
-    `/conferences/${encodeURIComponent(conferenceKey)}/trip`,
-    "DELETE",
-    sessionToken,
-  );
-  if ("unreachable" in result) {
-    return { ok: false, kind: "unreachable" };
-  }
-  if (!result.response.ok) {
-    return { ok: false, ...calendarFailure(result.response, result.body) };
-  }
-  return { ok: true, value: result.body as { withdrawn: boolean } };
+  const body = result.body as { projects?: AdminBotMyProjectSummary[] } | null;
+  return { ok: true, value: body?.projects ?? [] };
 }
 
 /** The same, for one paper: its record and every evidence slot on it. */

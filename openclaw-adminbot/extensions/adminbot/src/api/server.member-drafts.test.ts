@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const cleanup: Array<() => Promise<void>> = [];
@@ -26,12 +27,14 @@ async function start(databasePath?: string) {
     await rm(dir, { recursive: true, force: true });
   });
   async function member(id: string) {
-    mock.service.upsertLabMember({
-      id,
-      name: id,
-      email: `${id}@cs.toronto.edu`,
-      privilege_level: "member",
-    });
+    mock.service.upsertLabMember(
+      withCompleteProfile({
+        id,
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: "member",
+      }),
+    );
     await fetch(`${base}/auth/claim`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

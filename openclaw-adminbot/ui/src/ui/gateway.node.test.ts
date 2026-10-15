@@ -396,11 +396,11 @@ describe("GatewayBrowserClient", () => {
     expect(connectFrame.params?.scopes).toEqual(["operator.read"]);
   });
 
-  it("resolveMemberOperatorScopes gives admins the full set and everyone else read only", () => {
+  it("resolveMemberOperatorScopes gives admins the full set and everyone else read and chat", () => {
     expect(resolveMemberOperatorScopes("admin")).toEqual([...CONTROL_UI_OPERATOR_SCOPES]);
-    expect(resolveMemberOperatorScopes("member")).toEqual(["operator.read"]);
-    expect(resolveMemberOperatorScopes("trial")).toEqual(["operator.read"]);
-    expect(resolveMemberOperatorScopes(null)).toEqual(["operator.read"]);
+    expect(resolveMemberOperatorScopes("member")).toEqual(["operator.read", "operator.chat"]);
+    expect(resolveMemberOperatorScopes("trial")).toEqual(["operator.read", "operator.chat"]);
+    expect(resolveMemberOperatorScopes(null)).toEqual(["operator.read", "operator.chat"]);
   });
 
   it("operatorScopesWidened detects a late privilege upgrade", () => {
@@ -989,6 +989,7 @@ describe("GatewayBrowserClient", () => {
       scopes: [
         "operator.admin",
         "operator.approvals",
+        "operator.chat",
         "operator.pairing",
         "operator.read",
         "operator.write",

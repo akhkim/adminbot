@@ -3,6 +3,10 @@
 //
 // Cut from server.ts. Types only, so any route module may import it without a cycle.
 
+import type {
+  CalendarMembershipReader,
+  CalendarAccessReader,
+} from "../../connectors/calendar-membership.js";
 import type { PdfReferenceChecker } from "../../connectors/reference-check.js";
 import type { AdminBotDriveProbe } from "../../contracts/drive-links.js";
 import type { OpenReviewSubmissionReader } from "../../contracts/openreview-citation-checks.js";
@@ -12,6 +16,7 @@ import type { ReferenceScanDependencies } from "../../contracts/reference-scans.
 import type { AdminBotCvScanDeps } from "../../cv-scan.js";
 import type { LlmLoadRouter } from "../../kernel/llm-router.js";
 import { ReferenceScans } from "../../kernel/reference-scans.js";
+import type { ActiveChannelReader } from "../../kernel/service.active-channels.js";
 import { AdminBotService, type AdminBotServiceStore } from "../../kernel/service.js";
 import type { AdminBotActionExecutor, AdminBotServiceOptions } from "../../kernel/service.js";
 import type { FailedExternalRequestLedger } from "../../persistence/failed-requests.js";
@@ -33,6 +38,7 @@ import { OpenReviewCitationWatch } from "../../workflows/papers/openreview-citat
 import type { AdminBotOpenReviewWorkflow } from "../../workflows/papers/openreview-workflow.js";
 import type { AdminBotReimbursementWorkflow } from "../../workflows/reimbursements/workflow.js";
 import type { CallSheetSource } from "../call-sheet-config.js";
+import type { createNotificationDraftHandler } from "../notification-drafts.js";
 import { createPdfReferenceCheckHandler } from "../pdf-reference-check.js";
 import type { MemberSheetSource } from "../server.member-sheet.js";
 import { createPublicDeadlineLimiter } from "../server.public-deadline-proposals.js";
@@ -43,6 +49,7 @@ export type AdminBotPrincipal =
   | AdminBotMemberPrincipal;
 
 export type AdminBotRouteContext = {
+  notificationDrafts: ReturnType<typeof createNotificationDraftHandler>;
   // A restart invalidates outstanding packages: regenerate and review against the current rules.
   reimbursementSigningKey: Buffer;
   memberDrafts: MemberDraftStore;
@@ -76,6 +83,9 @@ export type AdminBotRouteContext = {
     channelIds: string[],
   ) => Promise<ReadonlyMap<string, number>>;
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
+  readCalendarMembership?: CalendarMembershipReader;
+  readCalendarAccess?: CalendarAccessReader;
+  readActiveChannels?: ActiveChannelReader;
   fetchSlackChannelNames?: () => Promise<string[]>;
   readCalendarEvents?: import("../../workflows/calendar/events.js").CalendarEventsReader;
   draftCalendarEvent?: import("../../workflows/calendar/event-draft.js").EventDraftRunner;
@@ -308,6 +318,7 @@ export type AdminBotMockServiceOptions = {
   // Path to scripts/adminbot-openreview.py. Injected as a path rather than a built
   // workflow because the workflow needs the store this factory owns; absent in unit
   // setups, which leaves every /openreview route reporting 503 rather than half-working.
+  notificationDraftScriptPath?: string;
   openReviewScriptPath?: string;
   openReviewPythonCommand?: string;
   // Reads each member's location from their Slack profile. Injected from the repo-root
@@ -325,6 +336,11 @@ export type AdminBotMockServiceOptions = {
   // Backfills `slack_user_id` for members the roster has never linked to Slack, by matching
   // roster email against the workspace directory.
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
+  // Complete future event inventory for the Sunday membership policy.
+  readCalendarMembership?: CalendarMembershipReader;
+  readCalendarAccess?: CalendarAccessReader;
+  // Complete human membership of the two active channels; unavailable reads fail closed.
+  readActiveChannels?: ActiveChannelReader;
   // Every open public channel name in the workspace, for the project form's "this channel already
   // exists" check. Injected like the Slack reads above: reaching Slack is a composition-layer
   // concern, and left unset the route answers 503 so the form can say the check is unavailable

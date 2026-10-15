@@ -4,6 +4,7 @@
 // picked.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMemberInput, AdminBotStoredProposal } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import type { AdminBotOnboardingSender } from "../workflows/onboarding/guide-sender.js";
 import { createAdminBotMockService } from "./server.js";
 import { queueNewMemberGuide } from "./server.member-onboarding.js";
@@ -75,13 +76,15 @@ async function startService(options: { sheetRows?: string[][] } = {}) {
     throw new Error("missing mock service address");
   }
   running.push(mock);
-  const admin = mock.service.upsertLabMember({
-    id: "admin",
-    name: "Admin",
-    email: "admin@cs.toronto.edu",
-    privilege_level: "admin",
-    member_type: "full",
-  } as AdminBotLabMemberInput);
+  const admin = mock.service.upsertLabMember(
+    withCompleteProfile({
+      id: "admin",
+      name: "Admin",
+      email: "admin@cs.toronto.edu",
+      privilege_level: "admin",
+      member_type: "full",
+    } as AdminBotLabMemberInput),
+  );
   if (!admin.ok) {
     throw new Error(admin.error.message);
   }
@@ -217,7 +220,8 @@ describe("the weekly sheet sweep", () => {
 describe("approving a sweep joiner's enrollment", () => {
   it("sets the level their type implies and runs the same enrollment, approved by that admin", async () => {
     const { baseUrl, mock, executed, calendarShares } = await startService({
-      sheetRows: [["Ada Lovelace", "full", "ada@cs.toronto.edu", ""]],
+      // The Slack column's Gmail is the Google account the share has to name.
+      sheetRows: [["Ada Lovelace", "full", "ada@cs.toronto.edu", "ada@gmail.com"]],
     });
     await runSweep(baseUrl);
     const token = await adminToken(mock, baseUrl);
@@ -228,7 +232,7 @@ describe("approving a sweep joiner's enrollment", () => {
     expect(rosterEntry(mock, "ada-lovelace")).toMatchObject({ privilege_level: "member" });
     // Granted through the gate, approved by the admin who approved the enrollment, and recorded
     // where the calendar backfill looks.
-    expect(calendarShares).toEqual(["ada@cs.toronto.edu"]);
+    expect(calendarShares).toEqual(["ada@gmail.com"]);
     // The grant runs in-process rather than through the injected connector, so read it off the ledger.
     expect(executed.map((proposal) => proposal.type)).not.toContain("calendar.grant_lab_calendar");
     const [grant] = mock.store.listProposalsByType("calendar.grant_lab_calendar");
@@ -239,7 +243,7 @@ describe("approving a sweep joiner's enrollment", () => {
       .find((event) => event.type === "auth.calendar_invite_sent");
     expect(audit?.details).toMatchObject({
       member_id: "ada-lovelace",
-      email: "ada@cs.toronto.edu",
+      email: "ada@gmail.com",
     });
   });
 
@@ -305,12 +309,14 @@ describe("approving a sweep joiner's enrollment", () => {
 describe("the guide action", () => {
   it("leaves an unattended full-member import pending without an approving admin", async () => {
     const { mock, guides } = await startService();
-    mock.service.upsertLabMember({
-      id: "unreviewed",
-      name: "Unreviewed",
-      email: "unreviewed@lab.test",
-      member_type: "full",
-    } as AdminBotLabMemberInput);
+    mock.service.upsertLabMember(
+      withCompleteProfile({
+        id: "unreviewed",
+        name: "Unreviewed",
+        email: "unreviewed@lab.test",
+        member_type: "full",
+      } as AdminBotLabMemberInput),
+    );
     const result = await queueNewMemberGuide(
       { service: mock.service, actor: "sheet-sweep" },
       "unreviewed",
@@ -324,12 +330,14 @@ describe("the guide action", () => {
   it("sends a full-member guide immediately on the admin's click and refuses a second send", async () => {
     const { baseUrl, mock, guides } = await startService();
     const token = await adminToken(mock, baseUrl);
-    mock.service.upsertLabMember({
-      id: "full-joiner",
-      name: "Full Joiner",
-      email: "joiner@lab.test",
-      member_type: "full",
-    } as AdminBotLabMemberInput);
+    mock.service.upsertLabMember(
+      withCompleteProfile({
+        id: "full-joiner",
+        name: "Full Joiner",
+        email: "joiner@lab.test",
+        member_type: "full",
+      } as AdminBotLabMemberInput),
+    );
     const send = () =>
       fetch(`${baseUrl}/lab/members/full-joiner/onboarding/guide`, {
         method: "POST",
@@ -360,12 +368,14 @@ describe("the guide action", () => {
   it("sends an approved guide with the project channels the admin picked", async () => {
     const { baseUrl, mock, guides } = await startService();
     const token = await adminToken(mock, baseUrl);
-    const saved = mock.service.upsertLabMember({
-      id: "cora",
-      name: "Cora",
-      email: "cora@lab.test",
-      member_type: "coauthor-minor",
-    } as AdminBotLabMemberInput);
+    const saved = mock.service.upsertLabMember(
+      withCompleteProfile({
+        id: "cora",
+        name: "Cora",
+        email: "cora@lab.test",
+        member_type: "coauthor-minor",
+      } as AdminBotLabMemberInput),
+    );
     expect(saved.ok).toBe(true);
 
     const queued = await fetch(`${baseUrl}/lab/members/cora/onboarding/guide`, {

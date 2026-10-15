@@ -24,6 +24,7 @@
 //      members and must survive every sweep -- they are carried through untouched rather than
 //      being dropped for failing a test that was never about them.
 import type { AdminBotLabMember, AdminBotMemberLocationEntry } from "../../contracts/actions.js";
+import { adminBotCalendarEmail } from "../../contracts/member-outreach-email.js";
 import { dailyLocationRows, type LocationDayRow } from "./location-daily-log.js";
 
 /** One person's place in the diff, with the sentence that put them there. */
@@ -56,7 +57,7 @@ export type LocalEventAudience = {
 
 /** The address the invite uses for a member: the calendar one when they have set it. */
 export function inviteAddressFor(member: AdminBotLabMember): string {
-  return (member.calendar_email?.trim() || member.email?.trim() || "").toLowerCase();
+  return adminBotCalendarEmail(member).toLowerCase();
 }
 
 /**
@@ -132,12 +133,18 @@ export function localEventAudience(params: {
   };
 
   for (const member of params.members) {
-    const email = inviteAddressFor(member);
+    // Already on the invite under any address they hold counts as invited -- and keeps that
+    // address, so a removal names what is actually on the guest list.
+    const listed = [member.calendar_email, member.email, member.correspondence_email]
+      .flatMap((value) => (value ?? "").split(/[/,;\s]+/u))
+      .map((address) => address.trim().toLowerCase())
+      .find((address) => address && invited.has(address));
+    const email = listed ?? inviteAddressFor(member);
     if (!email) {
       // No address at all: not invitable, and not something this sweep can fix.
       continue;
     }
-    const onInvite = invited.has(email);
+    const onInvite = Boolean(listed);
     if (onInvite) {
       claimed.add(email);
     }

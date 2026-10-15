@@ -17,7 +17,7 @@ import {
   privilegedOnly,
 } from "./guards.js";
 import { readListPage, limitParam } from "./query-params.js";
-import { del, get, post, put, type Route } from "./router.js";
+import { del, get, post, put, type Route, type RouteHandler } from "./router.js";
 import { principalRole, sendNotModified, versionEtag } from "./version-etag.js";
 
 // 20 MB of PDF, plus base64's third and the JSON around it. Matches the Control UI's own check.
@@ -41,110 +41,23 @@ export const papersRoutes: readonly Route[] = [
       ),
     );
   }),
-  // Generate a LinkedIn announcement draft. Deliberately NOT a proposal and NOT persisted:
-  // the draft is a suggestion a human copies, edits and posts by hand, so storing it would
-  // create a stale second copy of something whose only real version ends up on LinkedIn.
-  // Nothing here writes -- the PDF is read, the post is returned, both are then forgotten.
-  post(/^\/papers\/(?:linkedin|x)-draft$/u, async ({ req, res, url, ctx, principal }) => {
-    const { service } = ctx;
-    const isX = url.pathname === "/papers/x-draft";
-    if (principal.kind === "anonymous") {
-      sendJson(res, 401, { error: { message: "authentication required" } });
-      return;
-    }
-    // A paper PDF can be attached here, so the default 1 MB JSON ceiling would refuse most real
-    // papers once base64 has added its third.
-    const body = readRecord(await readJson(req, LINKEDIN_DRAFT_BODY_LIMIT_BYTES));
-    let announcement;
-    let credits;
-    if (isX) {
-      try {
-        announcement = readXAnnouncement(body.announcement);
-        credits = readXCredits(body.credits);
-      } catch (error) {
-        sendJson(res, 400, { error: { message: (error as Error).message } });
-        return;
-      }
-    }
-    let pdfBase64 = typeof body.pdf_base64 === "string" ? body.pdf_base64 : "";
-    // An upload is no longer required. The author has usually already given the lab this exact
-    // file -- `drive_pdf_arxiv` is the Drive copy of the PDF they intend to post, and the card
-    // chases them for it -- so asking them to find it again was asking for their own homework.
-    // An uploaded file still wins: it is the one the person in front of the dialog chose.
-    if (!pdfBase64) {
-      const paperId = typeof body.paper_id === "string" ? body.paper_id : "";
-      if (!paperId) {
-        sendJson(res, 400, {
-          error: { message: "attach a PDF, or send paper_id so the Drive copy can be used" },
-        });
-        return;
-      }
-      const cycle = service.listPaperSlots(paperId);
-      if (!cycle.ok) {
-        sendServiceResult(res, cycle);
-        return;
-      }
-      const source = resolvePaperPdfSource(cycle.payload.slots, isX);
-      if (source.kind === "none") {
-        sendJson(res, 400, { error: { message: source.reason } });
-        return;
-      }
-      if (source.kind === "arxiv") {
-        try {
-          pdfBase64 = await ctx.readArxivPdfBase64(source.id);
-        } catch (error) {
-          sendJson(res, 502, { error: { message: (error as Error).message } });
-          return;
-        }
-        if (typeof body.url !== "string") {
-          body.url = source.url;
-        }
-      } else {
-        if (!ctx.readDrivePdfBase64) {
-          sendJson(res, 503, {
-            error: {
-              message: "this deployment cannot read Drive files; attach the PDF here instead",
-            },
-          });
-          return;
-        }
-        try {
-          pdfBase64 = await ctx.readDrivePdfBase64(source.fileId);
-        } catch (error) {
-          sendJson(res, 502, {
-            error: {
-              message: `could not read the Drive copy (${(error as Error).message}); attach the PDF here instead`,
-            },
-          });
-          return;
-        }
-        if (!pdfBase64) {
-          sendJson(res, 502, {
-            error: { message: "the Drive copy came back empty; attach the PDF here instead" },
-          });
-          return;
-        }
-      }
-    }
-    const membersResult = service.listLabMembers();
-    const members = membersResult.ok ? membersResult.payload.members : [];
-    try {
-      const draft = await (isX ? ctx.draftXPost : ctx.draftLinkedInPost)({
-        ...(announcement ? { announcement } : {}),
-        ...(credits ? { credits } : {}),
-        pdfBase64,
-        members,
-        ...(typeof body.url === "string" ? { url: body.url } : {}),
-        ...(typeof body.venue === "string" ? { venue: body.venue } : {}),
-        ...(typeof body.note === "string" ? { note: body.note } : {}),
-      });
-      sendJson(res, 200, draft);
-    } catch (error) {
-      // The message names the missing env var or the extraction failure, and it is the only
-      // thing the author can act on, so it is surfaced rather than swallowed into a 500.
-      sendJson(res, 502, { error: { message: (error as Error).message } });
-    }
-  }),
+  // Both announcement drafts share one handler, as they did when the old if-chain matched the
+  // two paths in a single branch; the X variant differs only in its extra fields, its arXiv-first
+  // PDF source and its runner.
+  post("/papers/linkedin-draft", draftAnnouncement),
+  post("/papers/x-draft", draftAnnouncement),
+  // A member's own active projects, for the sidebar and the project cards. The service token has
+  // no "own" papers, so it is refused rather than answered with somebody's; the member id comes
+  // from the session and never from the query, so `?member_id=` cannot widen it.
+  get(
+    "/my/projects",
+    memberOnly(
+      ({ res, principal, ctx }) => {
+        sendServiceResult(res, ctx.service.listMyProjects(principal.member.id));
+      },
+      { status: 403, message: "member session required" },
+    ),
+  ),
   get(
     "/papers/relevant",
     memberOnly(
@@ -484,3 +397,106 @@ export const papersRoutes: readonly Route[] = [
     sendServiceResult(res, service.deleteOwnPaper(principal.member.id, paperId));
   }),
 ];
+
+// Generate a LinkedIn or X announcement draft. Deliberately NOT a proposal and NOT persisted:
+// the draft is a suggestion a human copies, edits and posts by hand, so storing it would
+// create a stale second copy of something whose only real version ends up on LinkedIn.
+// Nothing here writes -- the PDF is read, the post is returned, both are then forgotten.
+async function draftAnnouncement({ req, res, url, ctx, principal }: Parameters<RouteHandler>[0]) {
+  const { service } = ctx;
+  const isX = url.pathname === "/papers/x-draft";
+  if (principal.kind === "anonymous") {
+    sendJson(res, 401, { error: { message: "authentication required" } });
+    return;
+  }
+  // A paper PDF can be attached here, so the default 1 MB JSON ceiling would refuse most real
+  // papers once base64 has added its third.
+  const body = readRecord(await readJson(req, LINKEDIN_DRAFT_BODY_LIMIT_BYTES));
+  let announcement;
+  let credits;
+  if (isX) {
+    try {
+      announcement = readXAnnouncement(body.announcement);
+      credits = readXCredits(body.credits);
+    } catch (error) {
+      sendJson(res, 400, { error: { message: (error as Error).message } });
+      return;
+    }
+  }
+  let pdfBase64 = typeof body.pdf_base64 === "string" ? body.pdf_base64 : "";
+  // An upload is no longer required. The author has usually already given the lab this exact
+  // file -- `drive_pdf_arxiv` is the Drive copy of the PDF they intend to post, and the card
+  // chases them for it -- so asking them to find it again was asking for their own homework.
+  // An uploaded file still wins: it is the one the person in front of the dialog chose.
+  if (!pdfBase64) {
+    const paperId = typeof body.paper_id === "string" ? body.paper_id : "";
+    if (!paperId) {
+      sendJson(res, 400, {
+        error: { message: "attach a PDF, or send paper_id so the Drive copy can be used" },
+      });
+      return;
+    }
+    const cycle = service.listPaperSlots(paperId);
+    if (!cycle.ok) {
+      sendServiceResult(res, cycle);
+      return;
+    }
+    const source = resolvePaperPdfSource(cycle.payload.slots, isX);
+    if (source.kind === "none") {
+      sendJson(res, 400, { error: { message: source.reason } });
+      return;
+    }
+    if (source.kind === "arxiv") {
+      try {
+        pdfBase64 = await ctx.readArxivPdfBase64(source.id);
+      } catch (error) {
+        sendJson(res, 502, { error: { message: (error as Error).message } });
+        return;
+      }
+      if (typeof body.url !== "string") body.url = source.url;
+    } else {
+      if (!ctx.readDrivePdfBase64) {
+        sendJson(res, 503, {
+          error: {
+            message: "this deployment cannot read Drive files; attach the PDF here instead",
+          },
+        });
+        return;
+      }
+      try {
+        pdfBase64 = await ctx.readDrivePdfBase64(source.fileId);
+      } catch (error) {
+        sendJson(res, 502, {
+          error: {
+            message: `could not read the Drive copy (${(error as Error).message}); attach the PDF here instead`,
+          },
+        });
+        return;
+      }
+      if (!pdfBase64) {
+        sendJson(res, 502, {
+          error: { message: "the Drive copy came back empty; attach the PDF here instead" },
+        });
+        return;
+      }
+    }
+  }
+  const membersResult = service.listLabMembers();
+  const members = membersResult.ok ? membersResult.payload.members : [];
+  try {
+    const draft = await (isX ? ctx.draftXPost : ctx.draftLinkedInPost)({
+      ...(announcement ? { announcement } : {}),
+      ...(credits ? { credits } : {}),
+      pdfBase64,
+      members,
+      ...(typeof body.url === "string" ? { url: body.url } : {}),
+      ...(typeof body.venue === "string" ? { venue: body.venue } : {}),
+      ...(typeof body.note === "string" ? { note: body.note } : {}),
+    });
+    sendJson(res, 200, draft);
+  } catch (error) {
+    // The message names the missing env var or the extraction failure, and it is the only
+    // thing the author can act on, so it is surfaced rather than swallowed into a 500.
+    sendJson(res, 502, { error: { message: (error as Error).message } });
+  }
+}

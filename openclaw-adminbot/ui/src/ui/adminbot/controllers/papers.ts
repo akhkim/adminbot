@@ -3,7 +3,9 @@
 // Controller for this zone: loads through api/papers.ts and writes the result onto the host state.
 // Cut from controllers/admin.ts, which keeps the host shape and the shared lab read.
 
-import { deleteOwnPaper } from "../api/papers.ts";
+import type { AdminBotMyProjectSummary } from "../../../../../extensions/adminbot/src/workflows/papers/my-projects.js";
+import type { UiSettings } from "../../storage.ts";
+import { deleteOwnPaper, fetchMyProjects } from "../api/papers.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
   type AdminBotHost,
@@ -19,6 +21,46 @@ function removeDeletedPaper(host: AdminBotHost, paperId: string): void {
     papers: host.adminBotData.papers.filter((entry) => entry.id !== paperId),
     nudges: host.adminBotData.nudges.filter((nudge) => nudge.paper_id !== paperId),
   };
+}
+
+export type MyProjectsHost = {
+  settings: UiSettings;
+  myProjects: AdminBotMyProjectSummary[] | null;
+  myProjectsLoading: boolean;
+  myProjectsError: string | null;
+  requestUpdate?: () => void;
+};
+
+/**
+ * Reads the viewer's active projects for the sidebar and the project cards.
+ *
+ * A project's full checklist is the per-paper cycle read, fetched when its page opens; this keeps
+ * only the summaries. Writes elsewhere clear `myProjects` to null, which is what asks for it again.
+ */
+export async function loadMyProjects(host: MyProjectsHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored || host.myProjectsLoading) {
+    return;
+  }
+  host.myProjectsLoading = true;
+  host.myProjectsError = null;
+  host.requestUpdate?.();
+  const result = await fetchMyProjects(stored.sessionToken, resolveAdminBotBaseUrl(host.settings));
+  // A session that changed while the read was in flight belongs to somebody else now.
+  if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
+    host.myProjectsLoading = false;
+    return;
+  }
+  if (result.ok) {
+    host.myProjects = result.value;
+  } else {
+    host.myProjectsError =
+      result.kind === "unreachable"
+        ? "AdminBot is not reachable."
+        : "Could not load your projects.";
+  }
+  host.myProjectsLoading = false;
+  host.requestUpdate?.();
 }
 
 /**

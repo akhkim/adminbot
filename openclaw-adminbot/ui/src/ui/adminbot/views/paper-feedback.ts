@@ -17,7 +17,7 @@ export function renderPaperFeedback(
       const label = t(`paperFeedback.${slot}`);
       const row = props.slots.find((entry) => entry.slot === slot);
       const request = row?.status === "provided" ? parsePaperFeedback(row.value_text ?? "") : null;
-      return html`<details open>
+      return html`<details>
         <summary>${label}</summary>
         ${request
           ? html`<p role="status">

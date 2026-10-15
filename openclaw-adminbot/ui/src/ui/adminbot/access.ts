@@ -51,13 +51,15 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // the test for whether a surface needs an account.
   adminbotReimbursements: "anonymous",
   adminbotDeadlines: "anonymous",
+  adminbotNotificationDrafts: "admin",
   adminbotOpportunities: "anonymous",
   adminbotConferencePapers: "anonymous",
-  adminbotReferenceChecker: "admin",
+  adminbotReferenceChecker: "member",
 
   // Members. The roster is lab-internal but not a governance surface, and chat is how members talk
   // to AdminBot at all.
   adminbotMembers: "member",
+  adminbotArrReviewers: "member",
   // Every member has a schedule page, but it is only ever their own: holidays, courses, other jobs
   // and the note they wrote for the admins are planning data for the people who plan, so reading
   // someone else's is an admin act. The tab is member-level because your own schedule is yours; the
@@ -90,6 +92,10 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Lab Sharing is the collaboration surface for every member -- ask for help, answer invites,
   // browse open projects. No data on it requires operator privilege.
   labSharing: "member",
+  // Conference RSVPs, the viewer's own trips, and opt-in location sharing between members. Full
+  // members only (see canAccessTab below): it shows who is going where, and the service refuses
+  // trial members and external collaborators on every /travel route regardless of this entry.
+  labTravel: "member",
 
   // Everything else is an operator or governance surface.
   // Active Papers is the lab-wide pipeline across every author, not the viewer's own work -- that
@@ -150,12 +156,24 @@ export function minimumRoleForTab(tab: Tab): AccessRole {
   return TAB_MINIMUM_ROLE[tab];
 }
 
-export function canAccessTab(tab: Tab, role: AccessRole): boolean {
+export function canAccessTab(
+  tab: Tab,
+  role: AccessRole,
+  privilegeLevel: string | null = role,
+): boolean {
+  // The broad UI member role also includes trial members and external collaborators.
+  if (tab === "adminbotReferenceChecker" || tab === "labTravel") {
+    return role !== "anonymous" && (privilegeLevel === "member" || privilegeLevel === "admin");
+  }
   return rank(role) >= rank(TAB_MINIMUM_ROLE[tab]);
 }
 
-export function visibleTabsForRole(tabs: readonly Tab[], role: AccessRole): Tab[] {
-  return tabs.filter((tab) => canAccessTab(tab, role));
+export function visibleTabsForRole(
+  tabs: readonly Tab[],
+  role: AccessRole,
+  privilegeLevel: string | null = role,
+): Tab[] {
+  return tabs.filter((tab) => canAccessTab(tab, role, privilegeLevel));
 }
 
 /**
@@ -187,9 +205,12 @@ export function visibleTabsForMember(
   tabs: readonly Tab[],
   role: AccessRole,
   onboardingSteps: readonly { status: string }[] | undefined | null,
+  privilegeLevel: string | null = role,
 ): Tab[] {
   const finished = isOnboardingComplete(onboardingSteps);
-  return visibleTabsForRole(tabs, role).filter((tab) => tab !== "gettingStarted" || !finished);
+  return visibleTabsForRole(tabs, role, privilegeLevel).filter(
+    (tab) => tab !== "gettingStarted" || !finished,
+  );
 }
 
 // Where a role lands when it has no tab of its own choosing — a fresh visit, or a tab that is no
@@ -200,8 +221,12 @@ export function defaultTabForRole(role: AccessRole): Tab {
 
 // The tab to actually render: the requested one when the role may see it, otherwise that role's
 // default. Signing out mid-session lands on a permitted surface rather than an empty panel.
-export function resolveAccessibleTab(tab: Tab, role: AccessRole): Tab {
-  return canAccessTab(tab, role) ? tab : defaultTabForRole(role);
+export function resolveAccessibleTab(
+  tab: Tab,
+  role: AccessRole,
+  privilegeLevel: string | null = role,
+): Tab {
+  return canAccessTab(tab, role, privilegeLevel) ? tab : defaultTabForRole(role);
 }
 
 /**

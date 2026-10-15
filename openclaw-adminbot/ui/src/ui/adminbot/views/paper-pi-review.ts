@@ -4,7 +4,7 @@ import {
   parsePaperFeedback,
 } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
-import type { MyWorkProps } from "./my-work.ts";
+import type { PaperWorkspaceProps } from "../projects/workspace.ts";
 
 function manuscriptLink(url: string | undefined, label: string) {
   if (!url) {
@@ -35,7 +35,10 @@ function formatDeadline(value: string) {
 }
 
 /** A PI decision, not the author's entire publication checklist. */
-export function renderPaperPiReview(paper: AdminBotPaperRecord, props: MyWorkProps) {
+export function renderPaperPiReview(
+  paper: Pick<AdminBotPaperRecord, "id" | "title" | "authors" | "artifacts">,
+  props: PaperWorkspaceProps,
+) {
   const cycle = props.slots[paper.id];
   if (!cycle) {
     return props.slotsError

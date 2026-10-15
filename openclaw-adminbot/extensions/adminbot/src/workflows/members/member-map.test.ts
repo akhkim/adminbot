@@ -58,7 +58,9 @@ describe("resolvePlace", () => {
   it("reads the city out of an IANA timezone", () => {
     expect(resolvePlace("America/Toronto")?.label).toBe("Toronto");
     expect(resolvePlace("Europe/Zurich")?.label).toBe("Zürich");
-    expect(resolvePlace("America/Argentina/Buenos_Aires")).toBeUndefined();
+    // A three-segment zone reads its last segment, and a city the gazetteer lacks stays unplaced.
+    expect(resolvePlace("America/Argentina/Buenos_Aires")?.label).toBe("Buenos Aires");
+    expect(resolvePlace("America/Argentina/Ushuaia")).toBeUndefined();
   });
 
   it("does not mistake two slash-separated cities for a timezone", () => {

@@ -6,6 +6,7 @@ import {
   type AdminBotLabMemberInput,
 } from "../contracts/actions.js";
 import { adminBotOwnerOnlyMemberFields } from "../contracts/member-owner-fields.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { memberSummaryRow } from "./routes/member-summary-row.js";
 import { createAdminBotMockService } from "./server.js";
 
@@ -70,7 +71,9 @@ async function startLab() {
       privilege_level: "member",
     },
   ]) {
-    const saved = mock.service.upsertLabMember(member as AdminBotLabMemberInput);
+    const saved = mock.service.upsertLabMember(
+      (member === PEER ? member : withCompleteProfile(member)) as AdminBotLabMemberInput,
+    );
     if (!saved.ok) {
       throw new Error(saved.error.message);
     }

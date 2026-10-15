@@ -90,10 +90,17 @@ export const onboardingRoutes: readonly Route[] = [
         sendJson(res, 400, { error: { message: "Use up to 20 Slack channel names or IDs." } });
         return;
       }
+      if (body.resend !== undefined && typeof body.resend !== "boolean") {
+        sendJson(res, 400, { error: { message: "resend must be true or false." } });
+        return;
+      }
       const guide = await queueNewMemberGuide(
         memberOnboardingDeps(ctx, principal, approverIdentityFor(principal)),
         decodeURIComponent(params[1]),
-        { slackChannels: body.slack_project_channels as string[] | undefined },
+        {
+          slackChannels: body.slack_project_channels as string[] | undefined,
+          resend: body.resend === true,
+        },
       );
       if (guide.status === "failed" || guide.status === "skipped") {
         sendJson(res, guide.status === "skipped" ? 422 : (guide.http_status ?? 502), {

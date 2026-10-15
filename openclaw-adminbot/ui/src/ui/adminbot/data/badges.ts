@@ -30,6 +30,7 @@ import {
   type AdminBotDashboardData,
   type AdminBotHost,
 } from "../controllers/admin.ts";
+import { isProfileBlocked, type ProfileGateState } from "../views/profile-gate.ts";
 
 export type BadgeLoadError =
   | "no-session"
@@ -45,7 +46,7 @@ export type BadgeLoadError =
 
 type BadgeNotice = { kind: "success" | "error"; text: string } | null;
 
-export type AdminBotBadgesHost = {
+export type AdminBotBadgesHost = ProfileGateState & {
   settings: UiSettings;
   adminBotData: AdminBotDashboardData;
   adminBotBadgeDefinitions: BadgeDefinition[];
@@ -74,6 +75,18 @@ export type AdminBotBadgesHost = {
   badgeSuggestionBusy: boolean;
   badgeSuggestionNotice: BadgeNotice;
 };
+
+/** Clear only gate-related permission failures while reads are deferred, so unlocking retries once. */
+export function resetBlockedProfileBadgeErrors(host: AdminBotBadgesHost): void {
+  if (!isProfileBlocked(host)) return;
+  for (const key of [
+    "adminBotBadgeDefinitionsError",
+    "profileBadgeNominationsError",
+    "adminBotBadgeSuggestionsError",
+  ] as const) {
+    if (host[key] === "forbidden") host[key] = null;
+  }
+}
 
 function loadErrorFor(kind: AuthErrorKind): BadgeLoadError {
   if (kind === "unreachable") {
@@ -115,6 +128,7 @@ function errorText(kind: AuthErrorKind, fallbackKey: string): string {
  */
 export function shouldLoadBadgeDefinitions(host: AdminBotBadgesHost): boolean {
   return (
+    !isProfileBlocked(host) &&
     !host.adminBotBadgeDefinitionsLoading &&
     !host.adminBotBadgeDefinitionsError &&
     host.adminBotBadgeDefinitionsLoadedAt === null
@@ -123,6 +137,7 @@ export function shouldLoadBadgeDefinitions(host: AdminBotBadgesHost): boolean {
 
 export function shouldLoadAdminBadgeNominations(host: AdminBotBadgesHost): boolean {
   return (
+    !isProfileBlocked(host) &&
     !host.adminBotBadgeNominationsLoading &&
     !host.adminBotBadgeNominationsError &&
     host.adminBotBadgeNominationsLoadedAt === null
@@ -131,6 +146,7 @@ export function shouldLoadAdminBadgeNominations(host: AdminBotBadgesHost): boole
 
 export function shouldLoadProfileBadgeNominations(host: AdminBotBadgesHost): boolean {
   return (
+    !isProfileBlocked(host) &&
     !host.profileBadgeNominationsLoading &&
     !host.profileBadgeNominationsError &&
     host.profileBadgeNominationsLoadedAt === null
@@ -139,6 +155,7 @@ export function shouldLoadProfileBadgeNominations(host: AdminBotBadgesHost): boo
 
 export function shouldLoadBadgeSuggestions(host: AdminBotBadgesHost): boolean {
   return (
+    !isProfileBlocked(host) &&
     !host.adminBotBadgeSuggestionsLoading &&
     !host.adminBotBadgeSuggestionsError &&
     host.adminBotBadgeSuggestionsLoadedAt === null

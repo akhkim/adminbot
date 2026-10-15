@@ -1,4 +1,3 @@
-// Adapted from References-Validation; see NOTICE.md and LICENSE.
 import { referenceFetch as fetch } from "../../connectors/reference-check.http.js";
 import {
   searchArxiv,
@@ -22,6 +21,8 @@ import {
   formatOpenAlexMLA,
   formatOpenAlexISO690,
 } from "./open-alex-service.js";
+// Adapted from References-Validation; see NOTICE.md and LICENSE.
+import { extractReferenceYears } from "./plain-text-parser.js";
 import {
   searchSemanticScholar,
   formatSemanticScholarAPA,
@@ -657,7 +658,7 @@ export const checkReference = async (
           }
         } else if (!expected?.title) {
           // Quick Check: check if year from query matches any date field
-          const yearsInQuery: string[] = Array.from(query.match(/\b(19|20)\d{2}\b/g) || []);
+          const yearsInQuery: string[] = extractReferenceYears(query);
           if (yearsInQuery.length > 0 && iYears.some((y) => yearsInQuery.includes(y))) {
             combinedScore += 30;
           }
@@ -1149,7 +1150,7 @@ export const checkReference = async (
 
         // ===== 4. YEAR from CrossRef — PREPRINT AWARE =====
         if (resultYear && resultYear.length === 4) {
-          const yearsInQuery: string[] = validationQuery.match(/\b(19|20)\d{2}\b/g) || [];
+          const yearsInQuery: string[] = extractReferenceYears(validationQuery);
 
           // Check if ANY date field matches the user's year
           if (
@@ -1560,9 +1561,7 @@ const checkWithFallbackInternal = async (
 
   // Extract expected year from query if not explicitly provided
   const extractSource = originalQuery || query;
-  const extractedYears = !expected?.year
-    ? Array.from(extractSource.match(/\b(19|20)\d{2}\b/g) || [])
-    : [];
+  const extractedYears = !expected?.year ? extractReferenceYears(extractSource) : [];
   const expectedYear =
     expected?.year || (extractedYears.length > 0 ? extractedYears[0] : undefined);
   const expectedJournal = expected?.journal;
