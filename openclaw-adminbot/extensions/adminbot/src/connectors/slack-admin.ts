@@ -110,6 +110,7 @@ export function createAdminBotSlackAdminExecutor(
           payload.message,
           fetchImpl,
           proposal.id,
+          readIntroBlocks(proposal),
         );
         return { handled: true };
       }
@@ -412,6 +413,35 @@ async function removeFromSlackChannel(
   }
 }
 
+/**
+ * The intro's Block Kit, when the payload carries it. `message` stays the plain-text fallback.
+ *
+ * Only the block kinds the intro builder makes (header, section, context, divider), at most a
+ * dozen: anything else is not the message that was approved. No buttons, so no interactivity
+ * endpoint or new scope is needed -- links in mrkdwn just open.
+ */
+function readIntroBlocks(proposal: AdminBotStoredProposal): unknown[] | undefined {
+  const blocks = (proposal.proposed_payload as { blocks?: unknown } | undefined)?.blocks;
+  if (blocks === undefined) {
+    return undefined;
+  }
+  const kinds = new Set(["header", "section", "context", "divider"]);
+  if (
+    !Array.isArray(blocks) ||
+    blocks.length === 0 ||
+    blocks.length > 12 ||
+    !blocks.every(
+      (block) =>
+        block &&
+        typeof block === "object" &&
+        kinds.has(String((block as { type?: unknown }).type)),
+    )
+  ) {
+    throw new Error("slack.conference_intro blocks must be header, section or context blocks");
+  }
+  return blocks;
+}
+
 function readGroupDmPayload(proposal: AdminBotStoredProposal): {
   user_ids: string[];
   message: string;
@@ -578,6 +608,7 @@ async function notifySlackOwner(
   message: string,
   fetchImpl: SlackAdminFetch,
   messageId?: string,
+  blocks?: readonly unknown[],
 ): Promise<void> {
   const openResponse = await fetchImpl("https://slack.com/api/conversations.open", {
     method: "POST",
@@ -601,6 +632,7 @@ async function notifySlackOwner(
     body: JSON.stringify({
       channel: openPayload.channel.id,
       text: message,
+      ...(blocks ? { blocks } : {}),
       ...(messageId
         ? {
             client_msg_id: messageId.replace(/^act_/u, ""),

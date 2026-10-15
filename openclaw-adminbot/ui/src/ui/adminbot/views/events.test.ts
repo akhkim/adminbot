@@ -3,7 +3,13 @@
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EventCard, EventsOverview } from "../data/events.ts";
-import { countdownLabel, renderEvents, type EventsProps } from "./events.ts";
+import {
+  countdownLabel,
+  renderEvents,
+  renderMeetupToggle,
+  renderNearbyNow,
+  type EventsProps,
+} from "./events.ts";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -29,6 +35,8 @@ const SYNTH: EventCard = {
   can_rsvp: true,
   near_you: true,
   in_town_prompt: "Looks like you're in San Francisco during SynthConf 2026. Are you attending?",
+  can_say_hi: true,
+  said_hi: false,
 };
 
 const FAR: EventCard = {
@@ -74,6 +82,7 @@ function draw(overrides: Partial<EventsProps> = {}) {
     onRetry: vi.fn(),
     onToggleGoing: vi.fn(),
     onPreferences: vi.fn(),
+    onSayHi: vi.fn(),
     ...overrides,
   };
   const container = document.createElement("div");
@@ -130,7 +139,7 @@ describe("renderEvents", () => {
   it("names nobody nearby until city intros are on", () => {
     draw();
     expect(document.querySelector('[data-testid="events-nearby"]')).toBeNull();
-    expect(document.body.textContent).toContain("Turn on city intros");
+    expect(document.body.textContent).toContain("City intros are off");
     draw({
       overview: {
         ...OVERVIEW,
@@ -139,12 +148,58 @@ describe("renderEvents", () => {
           locked: false,
           place_label: "San Francisco Bay Area",
           people: [{ member_id: "dee", name: "Dee Member" }],
+          can_say_hi: true,
         },
       },
     });
     const nearby = document.querySelector('[data-testid="events-nearby"]')?.textContent ?? "";
     expect(nearby).toContain("Also nearby in San Francisco Bay Area");
     expect(nearby).toContain("Dee Member");
+  });
+
+  it("says hi from an event card in one tap, then shows Hi sent", () => {
+    const props = draw();
+    const near = document.querySelector('[data-event="synthconf:2026"]');
+    const button = near?.querySelector<HTMLButtonElement>(".events__say-hi");
+    expect(button?.textContent).toContain("Say hi");
+    expect(button?.getAttribute("aria-label")).toBe("Say hi to lab-mates going to SynthConf 2026");
+    button!.click();
+    expect(props.onSayHi).toHaveBeenCalledWith({ event_key: "synthconf:2026" });
+    // Nobody reachable going: no button at all.
+    expect(document.querySelector('[data-event="farconf:2026"] .events__say-hi')).toBeNull();
+
+    draw({ overview: { ...OVERVIEW, events: [{ ...SYNTH, said_hi: true }, FAR] } });
+    const sent = document.querySelector('[data-event="synthconf:2026"]');
+    expect(sent?.querySelector(".events__say-hi")).toBeNull();
+    expect(sent?.querySelector(".events__said-hi")?.textContent).toContain("Hi sent");
+
+    draw({ busy: "hi:event:synthconf:2026" });
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-event="synthconf:2026"] .events__say-hi')
+        ?.disabled,
+    ).toBe(true);
+  });
+
+  it("says hi to one nearby face at a time", () => {
+    const props = draw({
+      overview: {
+        ...OVERVIEW,
+        also_nearby: {
+          locked: false,
+          place_label: "Boston",
+          people: [
+            { member_id: "dee", name: "Dee Member" },
+            { member_id: "eve", name: "Eve Member", said_hi: true },
+          ],
+          can_say_hi: true,
+        },
+      },
+    });
+    const faces = document.querySelectorAll('[data-testid="events-nearby"] .events__face');
+    expect(faces).toHaveLength(2);
+    faces[0]!.querySelector<HTMLButtonElement>(".events__say-hi")!.click();
+    expect(props.onSayHi).toHaveBeenCalledWith({ member_id: "dee" });
+    expect(faces[1]!.querySelector(".events__said-hi")).not.toBeNull();
   });
 
   it("has an empty state", () => {
@@ -174,5 +229,80 @@ describe("countdownLabel", () => {
     expect(countdownLabel({ ...FAR, days_until: 1 })).toBe("Tomorrow");
     expect(countdownLabel(FAR)).toBe("In 9 days");
     expect(countdownLabel({ ...FAR, status: "past" })).toBeNull();
+  });
+});
+
+describe("renderNearbyNow", () => {
+  const nearby = {
+    locked: false as const,
+    place_label: "Boston",
+    people: [{ member_id: "dee", name: "Dee Member" }],
+    can_say_hi: true,
+  };
+  const drawStrip = (props: Partial<Parameters<typeof renderNearbyNow>[0]> = {}) => {
+    const onSayHi = vi.fn();
+    const container = document.createElement("div");
+    document.body.replaceChildren(container);
+    render(renderNearbyNow({ nearby, busy: null, notice: null, onSayHi, ...props }), container);
+    return onSayHi;
+  };
+
+  it("draws the faces around the viewer with a Say hi each", () => {
+    const onSayHi = drawStrip();
+    const strip = document.querySelector('[data-testid="nearby-now"]');
+    expect(strip?.textContent).toContain("Nearby now");
+    expect(strip?.textContent).toContain("Lab-mates around Boston this week");
+    strip!.querySelector<HTMLButtonElement>(".events__say-hi")!.click();
+    expect(onSayHi).toHaveBeenCalledWith({ member_id: "dee" });
+  });
+
+  it("draws nothing when nobody is around, when locked, or with no Slack link to say hi from", () => {
+    drawStrip({ nearby: { ...nearby, people: [] } });
+    expect(document.querySelector('[data-testid="nearby-now"]')).toBeNull();
+    drawStrip({ nearby: { locked: true } });
+    expect(document.querySelector('[data-testid="nearby-now"]')).toBeNull();
+    drawStrip({ nearby: undefined });
+    expect(document.querySelector('[data-testid="nearby-now"]')).toBeNull();
+    drawStrip({ nearby: { ...nearby, can_say_hi: false } });
+    expect(document.querySelector('[data-testid="nearby-now"] .events__say-hi')).toBeNull();
+  });
+});
+
+describe("renderMeetupToggle", () => {
+  it("is one switch for both kinds of intro, with a way to the finer controls", () => {
+    const onToggle = vi.fn();
+    const onManage = vi.fn();
+    const container = document.createElement("div");
+    document.body.replaceChildren(container);
+    render(
+      renderMeetupToggle({
+        preferences: { events: true, city: true },
+        busy: false,
+        onToggle,
+        onManage,
+      }),
+      container,
+    );
+    const input = document.querySelector<HTMLInputElement>('[data-testid="meetup-toggle"] input');
+    expect(input?.checked).toBe(true);
+    expect(input?.getAttribute("role")).toBe("switch");
+    input!.checked = false;
+    input!.dispatchEvent(new Event("change"));
+    expect(onToggle).toHaveBeenCalledWith(false);
+    document.querySelector<HTMLButtonElement>(".events__manage")!.click();
+    expect(onManage).toHaveBeenCalled();
+
+    render(
+      renderMeetupToggle({
+        preferences: { events: true, city: false },
+        busy: false,
+        onToggle,
+        onManage,
+      }),
+      container,
+    );
+    expect(
+      document.querySelector<HTMLInputElement>('[data-testid="meetup-toggle"] input')?.checked,
+    ).toBe(false);
   });
 });

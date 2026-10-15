@@ -4,12 +4,15 @@
 // the card's avatars, its "you're going" state and possibly the in-town prompt at once.
 import type { UiSettings } from "../../storage.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
+import { t } from "../../../i18n/index.ts";
 import {
   fetchEventsOverview,
   saveMeetupPreferences,
+  sayHiTo,
   setEventGoing,
   type EventCard,
   type EventsOverview,
+  type SayHiTarget,
 } from "../data/events.ts";
 import { isTravelViewer } from "./lab-travel.ts";
 
@@ -24,7 +27,7 @@ export type EventsHost = {
   eventsLoading?: boolean;
   eventsError?: string | null;
   eventsNotice?: EventsNotice | null;
-  /** What is in flight: "prefs" or "rsvp:<key>". */
+  /** What is in flight: "prefs", "rsvp:<key>" or sayHiBusyKey(target). */
   eventsBusy?: string | null;
 };
 
@@ -97,6 +100,40 @@ export function updateMeetupPreferences(
   patch: Partial<{ events: boolean; city: boolean; snoozed_until: string | null }>,
 ) {
   return act(host, "prefs", (baseUrl) => saveMeetupPreferences(baseUrl, patch));
+}
+
+export function sayHiBusyKey(target: SayHiTarget): string {
+  return "event_key" in target ? `hi:event:${target.event_key}` : `hi:member:${target.member_id}`;
+}
+
+function nameList(names: readonly string[]): string {
+  return names.length <= 1
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} ${t("events.sayHi.and")} ${names.at(-1)}`;
+}
+
+/** The Say hi button: one Slack group DM, then a re-read so the button turns into "Hi sent". */
+export async function sayHi(host: EventsHost, target: SayHiTarget): Promise<void> {
+  host.eventsBusy = sayHiBusyKey(target);
+  host.eventsNotice = null;
+  try {
+    const result = await sayHiTo(resolveAdminBotBaseUrl(host.settings), target);
+    if (!result.ok) {
+      host.eventsNotice = { kind: "error", text: result.error };
+      return;
+    }
+    const names = nameList(result.value.with.map((person) => person.name));
+    host.eventsNotice = {
+      kind: "success",
+      text:
+        result.value.status === "sent"
+          ? t("events.sayHi.sent", { names })
+          : t("events.sayHi.already", { names }),
+    };
+    await loadEvents(host);
+  } finally {
+    host.eventsBusy = null;
+  }
 }
 
 /** Forget everything this tab holds. Signing out, or becoming somebody else. */

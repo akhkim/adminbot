@@ -7810,6 +7810,11 @@ export class AdminBotService {
     }
   }
 
+  /** Say hi from the Events tab or Nearby now: serialized with the intros, sharing pair history. */
+  async sayHi(memberId: string, input: unknown) {
+    return this.serializeIntros(() => this.meetups().sayHiNow(memberId, input));
+  }
+
   /** The member Events tab and the intros behind it. */
   meetups() {
     return new MeetupService(
@@ -15030,6 +15035,8 @@ const SELF_PROFILE_PRIVILEGED_FIELDS = [
   // The nudge allowlist. Refused loudly rather than dropped quietly: a member who could add
   // themselves would make the list something other than what the lab put on it.
   "receives_nudges",
+  // An admin's "never message this person" for meetup intros; members turn intros off instead.
+  "do_not_contact",
   "collaborator_subgroup",
   "access_overrides",
   "status",
@@ -15450,6 +15457,9 @@ function validateLabMember(
   // according to the record and silent according to the sweeps.
   if (member.receives_nudges !== undefined && typeof member.receives_nudges !== "boolean") {
     return "member receives_nudges must be true or false";
+  }
+  if (member.do_not_contact !== undefined && typeof member.do_not_contact !== "boolean") {
+    return "member do_not_contact must be true or false";
   }
   if (
     member.intake_form_unavailable !== undefined &&

@@ -98,10 +98,10 @@ describe("conference intros", () => {
     const message = (first.proposed_payload as { message: string }).message;
     expect(message).toContain("EMNLP 2026");
     expect(message).toContain("Where: Budapest, Hungary - https://www.google.com/maps/search/");
-    expect(message).toMatch(/When: Sat, Oct 24, 2026 - Thu, Oct 29, 2026 \(in 9 days\)/u);
+    expect(message).toMatch(/When: Sat, Oct 24 - Thu, Oct 29 \(in 9 days\)/u);
     expect(message).toMatch(/Event page: https:\/\/2026\.emnlp\.org/u);
 
-    // Dee shares no theme with anyone, so their two are the seeded sample, said as such.
+    // Dee shares no theme with anyone: one partner is the seeded wildcard, said as such.
     going("dee");
     await vi.waitFor(() => expect(intros(deliveries)).toHaveLength(2));
     const second = intros(deliveries)[1];
@@ -121,7 +121,7 @@ describe("conference intros", () => {
     expect((await service.introduceConferenceAttendees("missing:2026")).ok).toBe(false);
   });
 
-  it("picks the closest research overlap before anybody random", async () => {
+  it("picks the closest research overlap first, then a labelled wildcard", async () => {
     const deliveries: AdminBotStoredProposal[] = [];
     const { going } = lab(async (proposal) => {
       deliveries.push(proposal);
@@ -137,10 +137,12 @@ describe("conference intros", () => {
       member_ids: string[];
       message: string;
     };
-    // Ada shares multi-agent with Bob and causal with Cy; Dee shares nothing.
+    // Ada shares multi-agent with Bob and causal with Cy; Dee shares nothing. The best match is one
+    // of Bob or Cy, and the wildcard is drawn from whoever is left.
     expect(member_ids).toEqual(["ada", expect.any(String), expect.any(String)]);
-    expect(new Set(member_ids.slice(1))).toEqual(new Set(["bob", "cy"]));
-    expect(message).toContain("both work on Multi-agent");
+    expect(["bob", "cy"]).toContain(member_ids[1]);
+    expect(message).toMatch(/also works on (Multi-agent|Causal)/u);
+    expect(message).toContain("is this round's wildcard");
   });
 
   it("retries a failed delivery without a duplicate once Slack is back", async () => {

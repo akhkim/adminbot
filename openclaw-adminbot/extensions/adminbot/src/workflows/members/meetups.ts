@@ -237,12 +237,28 @@ export function viewerLocation(member: AdminBotLabMember, now: Date): ViewerLoca
     : undefined;
 }
 
+/**
+ * Whether `here` is the member's own stated home metro (profile city, else location, else Slack).
+ *
+ * Two people who both live in Toronto see each other at the lab; "you're both in Toronto this week"
+ * is noise. A city intro or a Nearby now face needs somebody away from home. No stated home reads
+ * as away, which is the generous answer for a member who never filled the field in.
+ */
+export function isAtHome(
+  member: Pick<AdminBotLabMember, "current_city" | "location" | "slack_location">,
+  here: MeetupPlace,
+): boolean {
+  const stated =
+    member.current_city?.trim() || member.location?.trim() || member.slack_location?.trim();
+  return Boolean(stated && nearEachOther({ city: stated }, here));
+}
+
 // --- opt-in ---------------------------------------------------------------------------------------
 
 export type MeetupPreferences = {
   /** Intros to lab members at an event you are going to (or are in town for). Default on. */
   events: boolean;
-  /** Intros to opted-in lab members who signed in from your city this week. Default off. */
+  /** Intros to lab members who signed in from your metro this week. Default on. */
   city: boolean;
   /** No intros of either kind through this day (YYYY-MM-DD, inclusive). */
   snoozed_until?: string;
@@ -251,10 +267,10 @@ export type MeetupPreferences = {
 /**
  * The member's choices, with the defaults filled in.
  *
- * Events on, cities off -- the split the event apps settle on. Saying Going to an event is already
- * a public "I will be there", so an intro to the people next to you on the roster tells nobody
- * anything new. "You are both in San Francisco" is a statement about where somebody is that they
- * never made, so it waits for a yes.
+ * Both on: zero setup. Nobody fills in a form to be introduced; the only controls are the footer
+ * link in every intro, the Events tab and the profile toggle. What keeps the city default honest is
+ * what it reveals: only "around <metro> this week", only to other members around the same metro,
+ * and never outside the lab's home metro (see LAB_HOME_METROS).
  */
 export function meetupPreferences(
   member: Pick<AdminBotLabMember, "meetup_intros">,
@@ -262,17 +278,23 @@ export function meetupPreferences(
   const stored = member.meetup_intros;
   return {
     events: stored?.events ?? true,
-    city: stored?.city ?? false,
+    city: stored?.city ?? true,
     ...(stored?.snoozed_until ? { snoozed_until: stored.snoozed_until } : {}),
   };
 }
 
-/** Whether this member may be named in an intro of this kind today. Every send path asks this. */
+/**
+ * Whether this member may be named in an intro of this kind today. Every send path asks this.
+ * An admin's do-not-contact wins over everything, including the member's own Say hi.
+ */
 export function meetupIntrosAllowed(
-  member: Pick<AdminBotLabMember, "meetup_intros">,
+  member: Pick<AdminBotLabMember, "meetup_intros" | "do_not_contact">,
   kind: "event" | "city",
   today: string,
 ): boolean {
+  if (member.do_not_contact) {
+    return false;
+  }
   const prefs = meetupPreferences(member);
   if (prefs.snoozed_until && today <= prefs.snoozed_until) {
     return false;

@@ -1745,7 +1745,7 @@ export const en: TranslationMap = {
     loading: "Loading events…",
     retry: "Try again",
     title: "Events",
-    hint: "Conferences from the lab's accepted papers and the deadlines list. Tap Going so lab members there can find you; AdminBot introduces people with shared interests.",
+    hint: "Conferences from the lab's accepted papers and the deadlines list. Tap Going so lab-mates there can find you, or Say hi to start a Slack chat with them.",
     location: {
       youAre: "You're in {place}",
       signIn: "based on your last sign-in location, visible only to you",
@@ -1756,14 +1756,24 @@ export const en: TranslationMap = {
     nearby: {
       label: "Also nearby in {place}:",
       nobody: "nobody else right now.",
-      locked: "Turn on city intros below to see which opted-in lab members are also nearby.",
+      locked: "City intros are off, so nearby lab-mates are hidden. Turn them back on below.",
+    },
+    nearbyNow: {
+      title: "Nearby now",
+      sub: "Lab-mates around {place} this week. Say hi and AdminBot starts a Slack chat.",
+    },
+    sayHi: {
+      sent: "Started a Slack chat with {names}. Have fun!",
+      already: "You already said hi to {names}. The Slack chat is waiting for you.",
+      and: "and",
     },
     prompt: {
       yes: "Yes, I'm going",
     },
     upcoming: {
       title: "Upcoming",
-      empty: "No upcoming events yet. They appear here once a lab paper is accepted or a conference is added to the deadlines list.",
+      empty:
+        "No upcoming events yet. They appear here once a lab paper is accepted or a conference is added to the deadlines list.",
     },
     past: {
       title: "Past events ({count})",
@@ -1785,17 +1795,27 @@ export const en: TranslationMap = {
       going: "Going",
       notGoing: "Not going",
       onRoster: "Going (paper roster)",
+      sayHi: "👋 Say hi",
+      saidHi: "Hi sent",
+      sayHiAt: "Say hi to lab-mates going to {event}",
+      sayHiTo: "Say hi to {name}",
     },
     settings: {
       title: "Meetup intros",
-      hint: "AdminBot pairs lab members by shared research interests and sends one Slack intro at about 10:00 local time. It never pairs the same people twice, and you can turn either kind off or pause them here.",
+      hint: "On for everyone, nothing to set up. AdminBot sends one short Slack intro at about 10:00 local time: your closest research match plus a wildcard. It never pairs the same people twice, and never introduces two people at home in their own city.",
       events: "Event intros",
       eventsHint: " — at events you said you are going to, or are in town for.",
       city: "City intros",
-      cityHint: " — when your sign-in city matches other opted-in members this week; at most once per city every 14 days.",
+      cityHint:
+        " — when lab-mates are around the same city this week and one of you is visiting; at most once per city every 14 days.",
       snooze: "Pause all intros for 2 weeks",
       snoozedUntil: "Intros paused through {day}.",
       resume: "Resume",
+    },
+    profile: {
+      toggle: "Meet lab-mates nearby",
+      hint: "A short Slack intro when you and lab-mates are at the same event or in the same city. Never the same people twice.",
+      manage: "Pause or fine-tune in Events",
     },
   },
   labTravel: {
@@ -2362,7 +2382,8 @@ export const en: TranslationMap = {
   profile: {
     gate: {
       title: "Complete your profile to continue",
-      description: "Fill in the required fields below to use AdminBot. Your progress saves automatically.",
+      description:
+        "Fill in the required fields below to use AdminBot. Your progress saves automatically.",
       retry: "Try again",
     },
     arrReviewer: {

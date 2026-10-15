@@ -186,3 +186,88 @@
 .events__empty {
   margin: 0;
 }
+
+/* --- Say hi, Nearby now and the profile switch ----------------------------------------------------
+   Say hi sits at the end of the Going row and wraps under it on a phone. Faces are small chips, one
+   per lab-mate, each with its own button; the same chips draw Collaborate's Nearby now strip. */
+
+.events__say-hi {
+  margin-left: auto;
+}
+
+.events__said-hi {
+  margin-left: auto;
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.events__faces {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.events__face {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.events__face > .events__avatar {
+  margin-left: 0;
+}
+
+.events__face-name {
+  overflow-wrap: anywhere;
+}
+
+.events__face > .events__say-hi,
+.events__face > .events__said-hi {
+  margin-left: 0;
+  border-radius: 999px;
+}
+
+.events__nearby-now {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-color: var(--accent);
+  background: linear-gradient(var(--accent-subtle), transparent 70%), var(--card);
+}
+
+.events__profile-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.events__switch {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  cursor: pointer;
+  flex: 1 1 18rem;
+}
+
+.events__switch > span {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.events__switch input {
+  margin-top: 0.2rem;
+  accent-color: var(--accent);
+}

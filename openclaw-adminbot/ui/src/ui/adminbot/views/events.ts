@@ -6,8 +6,14 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
-import type { EventsNotice } from "../controllers/events.ts";
-import type { EventCard, EventPerson, EventsOverview, MeetupPreferences } from "../data/events.ts";
+import { sayHiBusyKey, type EventsNotice } from "../controllers/events.ts";
+import type {
+  EventCard,
+  EventPerson,
+  EventsOverview,
+  MeetupPreferences,
+  SayHiTarget,
+} from "../data/events.ts";
 import { formatRange } from "./time-availability.trips.ts";
 
 export type EventsProps = {
@@ -22,7 +28,10 @@ export type EventsProps = {
   onPreferences: (
     patch: Partial<{ events: boolean; city: boolean; snoozed_until: string | null }>,
   ) => void;
+  onSayHi: (target: SayHiTarget) => void;
 };
+
+type Nearby = Extract<NonNullable<EventsOverview["also_nearby"]>, { locked: false }>;
 
 const AVATARS_SHOWN = 6;
 const SNOOZE_DAYS = 14;
@@ -73,6 +82,57 @@ export function renderPeople(people: EventPerson[], empty: string) {
     </span>
     <span class="events__names">${names}</span>
   </span>`;
+}
+
+/**
+ * Say hi, or "Hi sent" once it has been. The button is the whole interaction: AdminBot opens the
+ * Slack group DM straight away, so there is nothing to confirm and nothing to set up.
+ */
+function renderSayHi(
+  target: SayHiTarget,
+  state: { can: boolean; said: boolean },
+  busy: string | null,
+  onSayHi: (target: SayHiTarget) => void,
+  label: string,
+) {
+  if (state.said) {
+    return html`<span class="pill events__said-hi">${t("events.card.saidHi")}</span>`;
+  }
+  if (!state.can) {
+    return nothing;
+  }
+  return html`<button
+    type="button"
+    class="btn btn--sm events__say-hi"
+    aria-label=${label}
+    ?disabled=${busy === sayHiBusyKey(target)}
+    @click=${() => onSayHi(target)}
+  >
+    ${t("events.card.sayHi")}
+  </button>`;
+}
+
+/** Faces under "Also nearby" and Nearby now, each with its own Say hi. */
+function renderNearbyFaces(
+  nearby: Nearby,
+  busy: string | null,
+  onSayHi: (target: SayHiTarget) => void,
+) {
+  return html`<ul class="events__faces">
+    ${nearby.people.map(
+      (person) => html`<li class="events__face" data-member=${person.member_id}>
+        ${renderAvatar(person)}
+        <span class="events__face-name">${person.name}</span>
+        ${renderSayHi(
+          { member_id: person.member_id },
+          { can: nearby.can_say_hi, said: Boolean(person.said_hi) },
+          busy,
+          onSayHi,
+          t("events.card.sayHiTo", { name: person.name }),
+        )}
+      </li>`,
+    )}
+  </ul>`;
 }
 
 /** "Happening now", "Starts today", "Tomorrow", "In 12 days", or nothing for a past event. */
@@ -173,6 +233,13 @@ function renderCard(props: EventsProps, card: EventCard): TemplateResult {
     <div class="events__going">
       <span class="events__going-label">${t("events.card.whoGoing")}</span>
       ${renderPeople(card.going, t("events.card.nobody"))}
+      ${renderSayHi(
+        { event_key: card.group_key },
+        { can: Boolean(card.can_say_hi), said: Boolean(card.said_hi) },
+        props.busy,
+        props.onSayHi,
+        t("events.card.sayHiAt", { event: card.label }),
+      )}
     </div>
     ${renderGoingToggle(props, card)}
   </li>`;
@@ -186,7 +253,7 @@ function viewerSourceNote(source: "sign_in" | "profile" | "slack"): string {
       : t("events.location.slack");
 }
 
-function renderHeader(overview: EventsOverview) {
+function renderHeader(props: EventsProps, overview: EventsOverview) {
   const where = overview.viewer_location;
   const nearby = overview.also_nearby;
   return html`<section class="card adminbot-card adminbot-card--wide events__intro">
@@ -202,10 +269,12 @@ function renderHeader(overview: EventsOverview) {
       ? nothing
       : nearby.locked
         ? html`<p class="muted events__nearby">${t("events.nearby.locked")}</p>`
-        : html`<p class="events__nearby" data-testid="events-nearby">
+        : html`<div class="events__nearby" data-testid="events-nearby">
             <span>${t("events.nearby.label", { place: nearby.place_label })}</span>
-            ${renderPeople(nearby.people, t("events.nearby.nobody"))}
-          </p>`}
+            ${nearby.people.length === 0
+              ? html`<span class="muted">${t("events.nearby.nobody")}</span>`
+              : renderNearbyFaces(nearby, props.busy, props.onSayHi)}
+          </div>`}
   </section>`;
 }
 
@@ -310,7 +379,7 @@ export function renderEvents(props: EventsProps) {
           ? html`<div class="muted">${t("events.loading")}</div>`
           : nothing
         : html`
-            ${renderHeader(overview)} ${renderPrompts(props, overview.events)}
+            ${renderHeader(props, overview)} ${renderPrompts(props, overview.events)}
             <section class="card adminbot-card adminbot-card--wide">
               <div class="card-title">${t("events.upcoming.title")}</div>
               ${overview.events.length === 0
@@ -335,4 +404,71 @@ export function renderEvents(props: EventsProps) {
           `}
     </div>
   `;
+}
+
+export type NearbyNowProps = {
+  nearby: NonNullable<EventsOverview["also_nearby"]> | undefined;
+  busy: string | null;
+  notice: EventsNotice | null;
+  onSayHi: (target: SayHiTarget) => void;
+};
+
+/**
+ * Collaborate's Nearby now strip: the same faces as the Events header, where people already go to
+ * find collaborators. Draws nothing unless somebody is actually around.
+ */
+export function renderNearbyNow(props: NearbyNowProps) {
+  const nearby = props.nearby;
+  if (!nearby || nearby.locked || nearby.people.length === 0) {
+    return nothing;
+  }
+  return html`<section
+    class="card adminbot-card adminbot-card--wide events__nearby-now"
+    data-testid="nearby-now"
+  >
+    <div class="card-title">${t("events.nearbyNow.title")}</div>
+    <p class="card-sub">${t("events.nearbyNow.sub", { place: nearby.place_label })}</p>
+    ${props.notice
+      ? html`<div
+          class="callout ${props.notice.kind === "error" ? "danger" : "success"}"
+          role=${props.notice.kind === "error" ? "alert" : "status"}
+        >
+          ${props.notice.text}
+        </div>`
+      : nothing}
+    ${renderNearbyFaces(nearby, props.busy, props.onSayHi)}
+  </section>`;
+}
+
+export type MeetupToggleProps = {
+  preferences: MeetupPreferences;
+  busy: boolean;
+  onToggle: (on: boolean) => void;
+  onManage: () => void;
+};
+
+/** The profile's one-tap switch: both kinds of intro on or off. Events has the finer controls. */
+export function renderMeetupToggle(props: MeetupToggleProps) {
+  const on = props.preferences.events && props.preferences.city;
+  return html`<section
+    class="card adminbot-card adminbot-card--wide events__profile-toggle"
+    data-testid="meetup-toggle"
+  >
+    <label class="events__switch">
+      <input
+        type="checkbox"
+        role="switch"
+        .checked=${on}
+        ?disabled=${props.busy}
+        @change=${(event: Event) => props.onToggle((event.target as HTMLInputElement).checked)}
+      />
+      <span>
+        <strong>${t("events.profile.toggle")}</strong>
+        <small class="muted">${t("events.profile.hint")}</small>
+      </span>
+    </label>
+    <button type="button" class="btn btn--sm events__manage" @click=${props.onManage}>
+      ${t("events.profile.manage")}
+    </button>
+  </section>`;
 }

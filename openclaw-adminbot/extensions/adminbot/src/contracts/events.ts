@@ -9,6 +9,8 @@ export type AdminBotEventPerson = {
   member_id: string;
   name: string;
   avatar_url?: string;
+  /** Nearby now only: the viewer already said hi to this person. */
+  said_hi?: boolean;
 };
 
 export type AdminBotEventCard = {
@@ -37,6 +39,16 @@ export type AdminBotEventCard = {
   near_you: boolean;
   /** Set during the event when the viewer is in its city and not Going. */
   in_town_prompt?: string;
+  /** Say hi would reach somebody: the viewer has Slack linked and a Going lab-mate takes intros. */
+  can_say_hi?: boolean;
+  /** The viewer already said hi for this event (once per event). */
+  said_hi?: boolean;
+};
+
+/** POST /events/say-hi's answer. */
+export type AdminBotSayHiResult = {
+  status: "sent" | "already_said_hi";
+  with: AdminBotEventPerson[];
 };
 
 export type AdminBotMeetupPreferences = {
@@ -56,10 +68,16 @@ export type AdminBotEventsOverview = {
   events: AdminBotEventCard[];
   past: AdminBotEventCard[];
   /**
-   * Other opted-in members whose recent place is the viewer's metro. Absent unless the viewer has
-   * city intros on (`locked` says so, without naming anyone).
+   * Nearby now: other members with city intros on whose recent place is the viewer's metro, one of
+   * the two away from home. `locked` when the viewer turned city intros off, without naming anyone.
    */
   also_nearby?:
     | { locked: true }
-    | { locked: false; place_label: string; people: AdminBotEventPerson[] };
+    | {
+        locked: false;
+        place_label: string;
+        people: AdminBotEventPerson[];
+        /** The viewer has Slack linked, so Say hi can start a chat. */
+        can_say_hi: boolean;
+      };
 };

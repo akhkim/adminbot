@@ -2,14 +2,20 @@
 // three-person Slack group DM that turns "two lab members in the same city" into a coffee.
 //
 // The rules (docs/operations/conference-intros.md says them for humans):
-//   - Matching is by research interest (rankIntroPartners); place only decides that an intro is
-//     worth making this week. Nothing here follows anybody: a place is the city the last sign-in
+//   - Zero setup: both kinds are on for every active member with Slack linked. The controls are the
+//     footer link in every intro, the Events tab and the profile toggle; an admin's do_not_contact
+//     wins over all of them, and such a member is never asked, named or listed.
+//   - Each intro is the best research match plus one seeded wildcard (withWildcard). Matching is
+//     by research interest; place only decides that an intro is worth making this week. Nothing here follows anybody: a place is the city the last sign-in
 //     resolved to, or what the member wrote on their profile, compared as a metro.
 //   - Event intros (default on): people Going to the same event, plus people whose sign-in puts them
 //     in the event's city while it runs *and* who opted in to city intros. One per member per event,
 //     and never the same pair twice (any intro, event or city).
-//   - City intros (default off): 2+ opted-in members whose sign-in in the last 7 days is the same
-//     metro. One per member per place per 14 days, and never the same pair twice.
+//   - City intros (default on): 2+ members whose sign-in in the last 7 days is the same metro, at
+//     least one of them away from home (isAtHome). One per member per place per 14 days, and never
+//     the same pair twice.
+//   - Say hi is the member's own tap: the group DM goes at once (the sender picked the moment, so
+//     no quiet-hours wait), once per sender per event and once per pair for Nearby now.
 //   - Every intro waits for 10:00-20:00 in each recipient's own zone; the hourly sweep retries.
 //   - Snoozed or opted-out members are never named, as subject or partner.
 //   - Another member's inferred city is never shown or sent. The Events tab shows the viewer their
@@ -18,6 +24,7 @@
 // Every send is the existing `slack.conference_intro` action, through propose -> auto policy ->
 // execute, so it shows up in the action log like any other Slack effect.
 import { adminBotIsAlumniMember, type AdminBotLabMember } from "../contracts/actions.js";
+import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import type {
   AdminBotEventCard,
   AdminBotEventPerson,
@@ -32,6 +39,7 @@ import {
   CITY_MEETUP_WINDOW_DAYS,
   cityIntroKey,
   introPairs,
+  isAtHome,
   isIntroSendTime,
   meetupIntrosAllowed,
   meetupPreferences,
@@ -50,11 +58,14 @@ import { canonicalConferenceTrips } from "../workflows/papers/conference-attenda
 import {
   buildCityIntroMessage,
   buildConferenceIntroMessage,
+  buildSayHiMessage,
   CONFERENCE_INTRO_PARTNERS,
   conferenceMapUrl,
   type IntroCandidate,
+  type IntroMessage,
   type IntroPartner,
   rankIntroPartners,
+  withWildcard,
 } from "../workflows/papers/conference-intros.js";
 import type { AdminBotService, AdminBotServiceStore } from "./service.js";
 import { isTravelEntitled } from "./service.lab-travel.js";
@@ -101,10 +112,18 @@ function happening(site: TravelConferenceSite, today: string): boolean {
   return Boolean(site.starts && site.starts <= today && today <= (site.ends ?? site.starts));
 }
 
+/** Slack linked, still in the lab, and not on the admin's do-not-contact list. */
 function reachable(member: AdminBotLabMember | undefined): member is AdminBotLabMember & {
   slack_user_id: string;
 } {
-  return Boolean(member?.slack_user_id && !adminBotIsAlumniMember(member));
+  return Boolean(
+    member?.slack_user_id && !member.do_not_contact && !adminBotIsAlumniMember(member),
+  );
+}
+
+/** Where the footer's "Pause or turn off" link lands. The built-in default needs no config. */
+function eventsUrl(): string {
+  return `${resolveAdminBotControlUiUrl()}/events`;
 }
 
 function person(member: AdminBotLabMember): AdminBotEventPerson {
@@ -126,10 +145,10 @@ function candidate(member: AdminBotLabMember & { slack_user_id: string }): Intro
 }
 
 /**
- * Up to two partners for `subject`, best shared interests first, skipping anyone AdminBot has
- * already introduced to the subject. The intro is about the subject, so the two partners may
- * already know each other (at an event, the newcomer meets two people from an earlier trio).
- * Empty when nobody new is left.
+ * Up to two partners for `subject`: the best research match and one seeded wildcard, both from
+ * people AdminBot has not introduced to the subject yet. The intro is about the subject, so the
+ * two partners may already know each other (at an event, the newcomer meets two people from an
+ * earlier trio). Empty when nobody new is left.
  */
 function freshPartners(
   subject: IntroCandidate,
@@ -137,16 +156,10 @@ function freshPartners(
   pairs: ReadonlySet<string>,
   seed: string,
 ): IntroPartner[] {
-  const partners: IntroPartner[] = [];
-  for (const option of rankIntroPartners(subject, candidates, seed)) {
-    if (!pairs.has(pairKey(subject.member_id, option.member_id))) {
-      partners.push(option);
-    }
-    if (partners.length === CONFERENCE_INTRO_PARTNERS) {
-      break;
-    }
-  }
-  return partners;
+  const fresh = rankIntroPartners(subject, candidates, seed).filter(
+    (option) => !pairs.has(pairKey(subject.member_id, option.member_id)),
+  );
+  return withWildcard(subject, fresh, seed).slice(0, CONFERENCE_INTRO_PARTNERS);
 }
 
 function addPairs(pairs: Set<string>, group: readonly IntroCandidate[]): void {
@@ -315,6 +328,8 @@ export class MeetupService {
         theme_labels: themeLabels,
         today,
         ...(town && trio.some((p) => inTown.has(p.member_id)) ? { in_town: placeLabel(town) } : {}),
+        seed: idempotencyKey,
+        events_url: eventsUrl(),
       });
       const sent = await this.send({
         latest,
@@ -375,6 +390,9 @@ export class MeetupService {
       candidate(member as AdminBotLabMember & { slack_user_id: string }),
     );
     const zones = new Map(people.map((member) => [member.id, memberZone(member, now)]));
+    const home = new Set(
+      people.filter((member) => isAtHome(member, anchor)).map((member) => member.id),
+    );
     const themeLabels = this.themeLabels();
     for (const subject of candidates) {
       const idempotencyKey = cityIntroKey(place, subject.member_id, today);
@@ -383,9 +401,14 @@ export class MeetupService {
         result.skipped++;
         continue;
       }
+      // Two locals are not news; one of the group has to be visiting.
       const partners = freshPartners(
         subject,
-        candidates.filter((other) => !busy.has(other.member_id)),
+        candidates.filter(
+          (other) =>
+            !busy.has(other.member_id) &&
+            !(home.has(subject.member_id) && home.has(other.member_id)),
+        ),
         pairs,
         place,
       );
@@ -412,9 +435,11 @@ export class MeetupService {
           subject,
           partners,
           theme_labels: themeLabels,
+          seed: idempotencyKey,
+          events_url: eventsUrl(),
         }),
         summary: `Introduce ${subject.name} to ${partners.map((p) => p.name).join(" and ")} around ${label}`,
-        rationale: `All opted in to city intros and signed in around ${label} this week.`,
+        rationale: `All have city intros on and signed in around ${label} this week.`,
       });
       if (sent) {
         result.introduced++;
@@ -434,7 +459,7 @@ export class MeetupService {
     latest: ReturnType<AdminBotServiceStore["listProposalsByType"]>[number] | undefined;
     idempotencyKey: string;
     trio: readonly IntroCandidate[];
-    message: string;
+    message: IntroMessage;
     summary: string;
     rationale: string;
   }): Promise<boolean> {
@@ -442,7 +467,8 @@ export class MeetupService {
     const payload = {
       user_ids: params.trio.map((p) => p.slack_user_id),
       member_ids: params.trio.map((p) => p.member_id),
-      message: params.message,
+      message: params.message.text,
+      blocks: params.message.blocks,
     };
     let proposalId = params.latest?.id;
     if (
@@ -545,8 +571,171 @@ export class MeetupService {
     }
     return {
       events,
-      cities: [...cities.values()].filter((place) => this.nearbyOptedIn(place, today).length >= 2),
+      cities: [...cities.values()].filter((place) => {
+        const near = this.nearbyOptedIn(place, today);
+        return near.length >= 2 && near.some((member) => !isAtHome(member, place));
+      }),
     };
+  }
+
+  // --- say hi -----------------------------------------------------------------------------------
+
+  /**
+   * Who a Say hi on this event reaches: up to two Going lab-mates who take event intros, the best
+   * research match and a wildcard, preferring people the viewer has not been introduced to yet.
+   */
+  private sayHiPartners(
+    me: AdminBotLabMember & { slack_user_id: string },
+    groupKey: string,
+    pairs: ReadonlySet<string>,
+  ): IntroPartner[] {
+    const today = this.today();
+    const sites = this.allSites().filter((site) => site.group_key === groupKey);
+    const others: IntroCandidate[] = [];
+    for (const id of [...this.goingIds(groupKey, sites)].toSorted()) {
+      const member = this.store.getLabMember(id);
+      if (id !== me.id && reachable(member) && meetupIntrosAllowed(member, "event", today)) {
+        others.push(candidate(member));
+      }
+    }
+    const subject = candidate(me);
+    const ranked = rankIntroPartners(subject, others, groupKey);
+    const met = (p: IntroPartner) => pairs.has(pairKey(me.id, p.member_id));
+    const ordered = [...ranked.filter((p) => !met(p)), ...ranked.filter(met)];
+    return withWildcard(subject, ordered, `say-hi:${groupKey}`).slice(
+      0,
+      CONFERENCE_INTRO_PARTNERS,
+    );
+  }
+
+  /** Lab-mates the viewer sees under Nearby now: both have city intros on, one is visiting. */
+  private nearbyFor(me: AdminBotLabMember, here: MeetupPlace, today: string) {
+    const meHome = isAtHome(me, here);
+    return this.nearbyOptedIn(here, today).filter(
+      (member) => member.id !== me.id && !(meHome && isAtHome(member, here)),
+    );
+  }
+
+  private sentKeys(): Map<string, string> {
+    const status = new Map<string, string>();
+    for (const proposal of this.store.listProposalsByType("slack.conference_intro")) {
+      if (proposal.idempotency_key?.startsWith("say-hi:")) {
+        status.set(proposal.idempotency_key, proposal.status);
+      }
+    }
+    return status;
+  }
+
+  /**
+   * The Say hi button: a group DM from the viewer to lab-mates at an event (`event_key`) or one
+   * Nearby now face (`member_id`), right now. One per viewer per event and one per pair for
+   * Nearby now; a second tap answers "already said hi" instead of sending again. It counts in the
+   * pair history like any intro, so the automatic intros will not re-introduce the same people.
+   */
+  async sayHiNow(memberId: string, input: unknown) {
+    const viewer = this.viewer(memberId);
+    if (!viewer.ok) {
+      return viewer;
+    }
+    const me = viewer.member;
+    const body = (input ?? {}) as { event_key?: unknown; member_id?: unknown };
+    const eventKey = typeof body.event_key === "string" ? body.event_key : "";
+    const otherId = typeof body.member_id === "string" ? body.member_id : "";
+    if (!eventKey && !otherId) {
+      return fail(400, "Say hi needs an event_key or a member_id.");
+    }
+    if (!reachable(me)) {
+      return fail(409, "Link your Slack account in your profile to say hi.");
+    }
+    const today = this.today();
+    const history = this.store.listProposalsByType("slack.conference_intro");
+    const pairs = introPairs(history);
+    const themeLabels = this.themeLabels();
+    let partners: IntroPartner[];
+    let idempotencyKey: string;
+    let message: IntroMessage;
+    let summary: string;
+    if (eventKey) {
+      const site = this.allSites().find(
+        (entry) => entry.key === eventKey || entry.group_key === eventKey,
+      );
+      if (!site || (site.ends ?? site.starts ?? "9999") < today) {
+        return fail(404, "That event is not on the Events tab.");
+      }
+      const groupKey = site.group_key;
+      partners = this.sayHiPartners(me, groupKey, pairs);
+      idempotencyKey = `say-hi:event:${groupKey}:${me.id}`;
+      const sites = travelConferenceSites(this.dataset(), today).filter(
+        (entry) => entry.group_key === groupKey,
+      );
+      message = buildSayHiMessage({
+        sender: candidate(me),
+        partners,
+        theme_labels: themeLabels,
+        event: {
+          conference_label: site.conference_label,
+          sites,
+          today,
+          sender_going: this.goingIds(groupKey, sites).has(me.id),
+        },
+        seed: idempotencyKey,
+        events_url: eventsUrl(),
+      });
+      summary = `${candidate(me).name} said hi to lab-mates going to ${site.conference_label}`;
+    } else {
+      const here = viewerLocation(me, this.now())?.place;
+      const other =
+        here && meetupIntrosAllowed(me, "city", today)
+          ? this.nearbyFor(me, here, today).find((member) => member.id === otherId)
+          : undefined;
+      if (!here || !reachable(other)) {
+        return fail(404, "That lab-mate is not nearby right now.");
+      }
+      partners = rankIntroPartners(candidate(me), [candidate(other)], "say-hi");
+      idempotencyKey = `say-hi:city:${pairKey(me.id, other.id)}`;
+      message = buildSayHiMessage({
+        sender: candidate(me),
+        partners,
+        theme_labels: themeLabels,
+        place_label: placeLabel(here),
+        seed: idempotencyKey,
+        events_url: eventsUrl(),
+      });
+      summary = `${candidate(me).name} said hi to ${partners[0]!.name} around ${placeLabel(here)}`;
+    }
+    const latest = history.findLast((p) => p.idempotency_key === idempotencyKey);
+    if (latest?.status === "executed") {
+      const ids = (latest.proposed_payload as { member_ids?: string[] }).member_ids ?? [];
+      return ok({
+        status: "already_said_hi" as const,
+        with: ids
+          .filter((id) => id !== me.id)
+          .map((id) => this.store.getLabMember(id))
+          .filter((member): member is AdminBotLabMember => Boolean(member))
+          .map(person),
+      });
+    }
+    if (latest?.status === "rejected") {
+      return fail(409, "An admin held this message back.");
+    }
+    if (partners.length === 0) {
+      return fail(409, "Nobody going can be messaged right now.");
+    }
+    const sent = await this.send({
+      latest,
+      idempotencyKey,
+      trio: [candidate(me), ...partners],
+      message,
+      summary,
+      rationale: `${candidate(me).name} tapped Say hi in the Events tab.`,
+    });
+    if (!sent) {
+      return fail(502, "Slack did not take the message. Try again in a minute.");
+    }
+    return ok({
+      status: "sent" as const,
+      with: partners.map((p) => person(this.store.getLabMember(p.member_id)!)),
+    });
   }
 
   // --- the tab ----------------------------------------------------------------------------------
@@ -585,6 +774,18 @@ export class MeetupService {
     });
     const cards: AdminBotEventCard[] = [];
     const seenGroups = new Set<string>();
+    const sayHiSent = this.sentKeys();
+    const pairs = introPairs(this.store.listProposalsByType("slack.conference_intro"));
+    const canSayHi = new Map<string, boolean>();
+    const sayHiTo = (groupKey: string) => {
+      if (!canSayHi.has(groupKey)) {
+        canSayHi.set(
+          groupKey,
+          reachable(me) && this.sayHiPartners(me, groupKey, pairs).length > 0,
+        );
+      }
+      return canSayHi.get(groupKey)!;
+    };
     for (const site of sites) {
       seenGroups.add(site.group_key);
       const roster = rosterByKey.get(site.group_key);
@@ -644,6 +845,12 @@ export class MeetupService {
         i_am_going: iAmGoing,
         can_rsvp: status !== "past",
         near_you: near,
+        ...(status !== "past"
+          ? {
+              can_say_hi: sayHiTo(site.group_key),
+              said_hi: sayHiSent.get(`say-hi:event:${site.group_key}:${me.id}`) === "executed",
+            }
+          : {}),
         ...(status === "happening" && near && !iAmGoing && where
           ? {
               in_town_prompt: `Looks like you're in ${where.label} during ${site.conference_label}. Are you attending?`,
@@ -694,25 +901,42 @@ export class MeetupService {
   }
 
   /**
-   * "Also around <metro>": only for a viewer with city intros on, only naming members who have
-   * them on too, and only as the viewer's metro -- never anybody's own city.
+   * "Also around <metro>" (the Events header and Collaborate's Nearby now strip): only for a viewer
+   * with city intros on, only naming members who have them on too, at least one of the two away
+   * from home, and only as the viewer's metro -- never anybody's own city.
    */
   private alsoNearby(
     me: AdminBotLabMember,
     here: MeetupPlace | undefined,
     today: string,
   ): Pick<AdminBotEventsOverview, "also_nearby"> {
+    if (me.do_not_contact) {
+      return {};
+    }
     if (!meetupIntrosAllowed(me, "city", today)) {
       return { also_nearby: { locked: true } };
     }
     if (!here) {
       return {};
     }
-    const people = this.nearbyOptedIn(here, today)
-      .filter((member) => member.id !== me.id)
-      .map(person)
+    const sent = this.sentKeys();
+    const people = this.nearbyFor(me, here, today)
+      .map((member) => {
+        const face = person(member);
+        if (sent.get(`say-hi:city:${pairKey(me.id, member.id)}`) === "executed") {
+          face.said_hi = true;
+        }
+        return face;
+      })
       .toSorted((a, b) => a.name.localeCompare(b.name));
-    return { also_nearby: { locked: false, place_label: placeLabel(here), people } };
+    return {
+      also_nearby: {
+        locked: false,
+        place_label: placeLabel(here),
+        people,
+        can_say_hi: reachable(me),
+      },
+    };
   }
 
   setPreferences(memberId: string, input: unknown) {

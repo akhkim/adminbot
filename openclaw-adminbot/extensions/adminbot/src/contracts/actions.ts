@@ -1443,10 +1443,16 @@ export type AdminBotLabMemberInput = {
   /**
    * The member's own answer to "introduce me to lab members nearby / at events".
    *
-   * Absent means the defaults in workflows/members/meetups.ts (events on, city off). Self-owned and
-   * set only from the Events tab; `snoozed_until` (YYYY-MM-DD) pauses both kinds through that day.
+   * Absent means the defaults in workflows/members/meetups.ts (both on: zero setup). Self-owned
+   * and set from the Events tab or the profile toggle; `snoozed_until` (YYYY-MM-DD) pauses both
+   * kinds through that day.
    */
   meetup_intros?: { events?: boolean; city?: boolean; snoozed_until?: string };
+  /**
+   * Admin-owned: never message, introduce or name this person in a meetup intro or a Say hi, and
+   * never list them as nearby. Not self-editable (a member turns intros off instead).
+   */
+  do_not_contact?: boolean;
   // Governance-owned: the department directory address, required to be @cs.toronto.edu for
   // everyone except external_collaborator (see validateCsEmail in kernel/service.ts).
   email?: string;

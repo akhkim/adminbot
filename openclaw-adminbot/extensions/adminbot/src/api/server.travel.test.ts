@@ -308,8 +308,9 @@ describe("Events routes", () => {
       ["SynthConf 2099 — Paris", true],
       ["SynthConf 2099 — Sydney", false],
     ]);
-    expect(view.preferences).toEqual({ events: true, city: false });
-    expect(view.also_nearby).toEqual({ locked: true });
+    // Zero setup: both kinds of intro are on before anybody touches a setting.
+    expect(view.preferences).toEqual({ events: true, city: true });
+    expect(view.also_nearby).toMatchObject({ locked: false, place_label: "Paris", people: [] });
 
     const bad = await fetch(`${baseUrl}/events/preferences`, {
       method: "PUT",
@@ -320,11 +321,26 @@ describe("Events routes", () => {
     const saved = await fetch(`${baseUrl}/events/preferences`, {
       method: "PUT",
       headers: ada,
-      body: JSON.stringify({ city: true }),
+      body: JSON.stringify({ city: false }),
     });
-    expect(await saved.json()).toEqual({ preferences: { events: true, city: true } });
-    // Opted in, but nobody else is: an empty list, not a locked one.
+    expect(await saved.json()).toEqual({ preferences: { events: true, city: false } });
+    // Turned off: she sees only that the list exists.
     const after = await (await fetch(`${baseUrl}/events`, { headers: ada })).json();
-    expect(after.also_nearby).toEqual({ locked: false, place_label: "Paris", people: [] });
+    expect(after.also_nearby).toEqual({ locked: true });
+  });
+
+  it("takes Say hi only from a member session, with an event or a lab-mate", async () => {
+    const { mock, baseUrl } = await startLab();
+    const sayHi = (headers: Record<string, string> | undefined, body: string) =>
+      fetch(`${baseUrl}/events/say-hi`, { method: "POST", ...(headers ? { headers } : {}), body });
+    expect((await sayHi(undefined, "{}")).status).toBe(401);
+    expect((await sayHi(await memberSession(mock, baseUrl, "ext"), "{}")).status).toBe(403);
+    const ada = await memberSession(mock, baseUrl, "ada");
+    expect((await sayHi(ada, "not json")).status).toBe(400);
+    expect((await sayHi(ada, "{}")).status).toBe(400);
+    // Ada has no Slack link in this lab: a well-formed tap says how to fix that.
+    const unlinked = await sayHi(ada, JSON.stringify({ event_key: "synthconf:2099" }));
+    expect(unlinked.status).toBe(409);
+    expect(await unlinked.json()).toMatchObject({ error: { message: expect.stringContaining("Slack") } });
   });
 });

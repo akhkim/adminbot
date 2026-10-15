@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cityIntroKey,
   introPairs,
+  isAtHome,
   isIntroSendTime,
   localHour,
   meetupIntrosAllowed,
@@ -88,10 +89,16 @@ describe("where a member is", () => {
 });
 
 describe("opt-in", () => {
-  it("defaults event intros on and city intros off", () => {
-    expect(meetupPreferences({})).toEqual({ events: true, city: false });
+  it("defaults both kinds on: zero setup", () => {
+    expect(meetupPreferences({})).toEqual({ events: true, city: true });
     expect(meetupIntrosAllowed({}, "event", "2026-10-15")).toBe(true);
-    expect(meetupIntrosAllowed({}, "city", "2026-10-15")).toBe(false);
+    expect(meetupIntrosAllowed({}, "city", "2026-10-15")).toBe(true);
+  });
+
+  it("never allows an intro for a do-not-contact member, whatever they chose", () => {
+    const member = { do_not_contact: true, meetup_intros: { events: true, city: true } };
+    expect(meetupIntrosAllowed(member, "event", "2026-10-15")).toBe(false);
+    expect(meetupIntrosAllowed(member, "city", "2026-10-15")).toBe(false);
   });
 
   it("respects an opt-out and a snooze, through its last day", () => {
@@ -156,5 +163,20 @@ describe("history", () => {
     expect(onCityCooldown(history, "sf-bay-area", "bob", "2026-10-15")).toBe(false);
     expect(onCityCooldown(history, "new-york", "bob", "2026-10-05")).toBe(false);
     expect(onCityCooldown(history, "sf-bay-area", "cy", "2026-10-05")).toBe(false);
+  });
+});
+
+describe("isAtHome", () => {
+  const boston = { city: "Boston" };
+  it("reads the stated home: current city, else location, else Slack's", () => {
+    expect(isAtHome({ current_city: "Cambridge, MA" }, boston)).toBe(true);
+    expect(isAtHome({ location: "Somerville" }, boston)).toBe(true);
+    expect(isAtHome({ slack_location: "Boston, MA" }, boston)).toBe(true);
+    expect(isAtHome({ current_city: "Toronto", location: "Boston" }, boston)).toBe(false);
+  });
+
+  it("counts somebody with no stated home as visiting", () => {
+    expect(isAtHome({}, boston)).toBe(false);
+    expect(isAtHome({ current_city: "  " }, boston)).toBe(false);
   });
 });

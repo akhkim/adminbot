@@ -16,6 +16,7 @@ import { submitOwnBadgeNomination, submitOwnBadgeSuggestion } from "../data/badg
 import { renderLocationPrompt } from "../views/location-prompt.ts";
 import { isProfileBlocked } from "../views/profile-gate.ts";
 import { renderProfile } from "../views/profile.ts";
+import { renderMeetupToggleSurface } from "./events.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
 export function renderProfileSurface(state: AppViewState, scope: AdminBotSurfaceScope) {
@@ -69,6 +70,7 @@ export function renderProfileSurface(state: AppViewState, scope: AdminBotSurface
           },
           onNavigateToTab: (tab) => state.setTab(tab),
         })}
+        ${profileBlocked ? nothing : renderMeetupToggleSurface(state, scope)}
       `
     : nothing}`;
 }

@@ -7,8 +7,9 @@
 // the event page.
 //
 // Three and not the whole roster, because that is what the conference channel is for; a group DM
-// of everyone is a second channel without a name. Two partners rather than one, because a pair
-// whose single match is on a different schedule is no introduction at all.
+// of everyone is a second channel without a name. The two partners are one best research match
+// and one wildcard drawn at random, because the lab-mates you already share a theme with are the
+// ones you would have found anyway; the wildcard is the serendipity.
 //
 // Everything here is pure and deterministic. The partners and the text land in a proposal's
 // payload, and the payload hash is bound to approval and replay: a "random" pick that changed
@@ -31,6 +32,8 @@ export type IntroCandidate = {
 export type IntroPartner = IntroCandidate & {
   /** Themes shared with the subject; empty when the pick came from the seeded sample. */
   shared_themes: ResearchThemeId[];
+  /** Drawn at random from the rest rather than for shared research; the message says so. */
+  wildcard?: boolean;
 };
 
 export const CONFERENCE_INTRO_PARTNERS = 2;
@@ -41,7 +44,7 @@ export const CONFERENCE_INTRO_PARTNERS = 2;
  * Only a tiebreak, so the property that matters is stability across processes and Node versions,
  * not distribution quality.
  */
-function stableHash(value: string): number {
+export function stableHash(value: string): number {
   let hash = 0x811c9dc5;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);
@@ -51,23 +54,40 @@ function stableHash(value: string): number {
 }
 
 /**
- * The subject's two partners: most shared research themes first, then a seeded random sample.
+ * The subject's partners: the best research match, then one wildcard.
  *
- * Ranking by overlap count, with the seeded hash breaking ties, gives both halves of the rule in
- * one sort: when two or more co-attendees share themes they win on overlap, and when nobody does
- * every score is zero and the order is the sample. The seed is the conference and the subject, so
- * the same person at the same conference is always offered the same people, and two different
- * people with no overlap are not all handed the same pair.
+ * The match is the head of rankIntroPartners (most shared themes, seeded tiebreak). The wildcard is
+ * drawn from everyone else with a differently salted hash, so it is random across people and
+ * events but the same on every retry of one intro -- the payload hash is bound to approval, and a
+ * pick that changed between proposal and replay would read as tampering. Pass a list that already
+ * skips spent pairs and the wildcard never repeats a pair either.
  *
- * Returns fewer than two when there are not enough candidates; the caller decides whether that is
- * worth a message (it is not -- a pair is a DM, not an introduction).
+ * Returns fewer than two when there are not enough candidates.
  */
 export function pickIntroPartners(
   subject: IntroCandidate,
   candidates: readonly IntroCandidate[],
   seed: string,
 ): IntroPartner[] {
-  return rankIntroPartners(subject, candidates, seed).slice(0, CONFERENCE_INTRO_PARTNERS);
+  return withWildcard(subject, rankIntroPartners(subject, candidates, seed), seed);
+}
+
+/** The head of `ranked` plus one seeded wildcard from the rest. `ranked` is already filtered. */
+export function withWildcard(
+  subject: Pick<IntroCandidate, "member_id">,
+  ranked: readonly IntroPartner[],
+  seed: string,
+): IntroPartner[] {
+  const [best, ...rest] = ranked;
+  if (!best) {
+    return [];
+  }
+  const draw = (partner: IntroPartner) =>
+    stableHash(`${seed}:wildcard:${subject.member_id}:${partner.member_id}`);
+  const wildcard = rest.toSorted(
+    (a, b) => draw(a) - draw(b) || a.member_id.localeCompare(b.member_id),
+  )[0];
+  return wildcard ? [best, { ...wildcard, wildcard: true }] : [best];
 }
 
 /** Every candidate in pickIntroPartners' order, for a caller that has to skip some (pair history). */
@@ -106,7 +126,6 @@ function formatDay(day: string): string {
         weekday: "short",
         month: "short",
         day: "numeric",
-        year: "numeric",
         timeZone: "UTC",
       });
 }
@@ -129,58 +148,181 @@ function daysUntil(today: string, starts: string | undefined): number | undefine
   return Number.isFinite(ms) ? Math.round(ms / 86_400_000) : undefined;
 }
 
-/** One concrete thing to do, which is what turns "you should meet" into a meeting. */
-const EVENT_SUGGESTION = "Idea: grab a coffee between sessions, or walk the posters together.";
-const CITY_SUGGESTION = "Idea: lunch or a coffee somewhere central this week.";
-/** Every intro says how to stop them: the Events tab holds the switch and the snooze. */
-const OPT_OUT_LINE = "Not for you? Turn these intros off or snooze them in AdminBot > Events.";
+// --- the message ----------------------------------------------------------------------------------
+//
+// Short and warm: a header, who and why, one idea, one opener, and a quiet footer saying why you got
+// it and how to pause. Block Kit for Slack, with the same words as plain text for the notification
+// preview and any client that cannot draw blocks.
 
-function partnerLines(
-  subject: IntroCandidate,
-  partners: readonly IntroPartner[],
-  themeLabels: ReadonlyMap<string, string>,
-  fallback: (partner: IntroPartner) => string,
-): string[] {
-  return partners.map((partner) => {
-    const shared = partner.shared_themes.map((id) => themeLabels.get(id) ?? id);
-    return shared.length > 0
-      ? `- ${subject.name} and ${partner.name} both work on ${shared.join(", ")}.`
-      : `- ${fallback(partner)}`;
-  });
-}
+/** A Slack Block Kit block, as chat.postMessage takes it. */
+export type SlackBlock = Record<string, unknown>;
+
+/** What an intro posts. `text` is the notification and fallback; `blocks` is what people see. */
+export type IntroMessage = { text: string; blocks: SlackBlock[] };
+
+/** One concrete thing to do, which is what turns "you should meet" into a meeting. */
+export const EVENT_SUGGESTION = "Grab a coffee between sessions, or walk the posters together.";
+export const CITY_SUGGESTION = "Lunch or a coffee somewhere central this week?";
+export const CITY_COFFEE_SUGGESTION = "Grab a coffee. No agenda needed.";
 
 /**
- * One opener: the closest partner's current project when they have one, else the shared theme.
- *
- * A project title is something the partner wrote on their own profile for the lab to read, so
- * quoting it back to two lab-mates discloses nothing new; it is also the question people actually
- * ask each other at a poster.
+ * Openers, rotated by a seeded hash of the intro's own key so the same intro always carries the
+ * same question (the payload is hashed for replay) and different intros do not all ask the same.
  */
-export function conversationStarter(
-  subject: IntroCandidate,
-  partners: readonly IntroPartner[],
+const EVENT_OPENERS = [
+  "Which talk on the program would you skip for a good coffee?",
+  "What's the one poster you'd drag the others to see?",
+  "Gentle hot take: what's the most overrated idea at this conference?",
+  "What paper would you happily reread on the flight home?",
+] as const;
+const CITY_OPENERS = [
+  "What's the best thing you've eaten around here so far?",
+  "Best coffee within walking distance: who knows a spot?",
+] as const;
+const ANYWHERE_OPENERS = [
+  "If compute were free for a month, what would you train?",
+  "What's one result you believed for far too long?",
+  "What's the most underrated tool in your workflow?",
+  "What side project could you pitch in one sentence?",
+] as const;
+
+export function pickOpener(kind: "event" | "city", seed: string): string {
+  const pool = [...(kind === "event" ? EVENT_OPENERS : CITY_OPENERS), ...ANYWHERE_OPENERS];
+  return pool[stableHash(`${seed}:opener`) % pool.length]!;
+}
+
+/** Slack mrkdwn escaping, plus the formatting characters a name could use to restyle the text. */
+function md(value: string): string {
+  return value
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;")
+    .replace(/[*_~`]/gu, "");
+}
+
+/** `<url|label>` for an http(s) URL Slack can parse, else just the label. */
+function mdLink(url: string | undefined, label: string): string {
+  return url && /^https?:\/\/[^\s<>|]+$/u.test(url) ? `<${url}|${md(label)}>` : md(label);
+}
+
+function nameList(names: readonly string[]): string {
+  return names.length <= 1
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+/** Two strings for each line: plain for the fallback, mrkdwn for the block. */
+type Line = { plain: string; md: string };
+
+const bold = (name: string) => `*${md(name)}*`;
+
+function partnerLine(
+  partner: IntroPartner,
   themeLabels: ReadonlyMap<string, string>,
-): string {
-  for (const partner of partners) {
-    const project = partner.projects?.find((title) => title.trim())?.trim();
-    if (project) {
-      return `Opener: ${subject.name}, ask ${partner.name} how "${project.slice(0, 120)}" is going.`;
+  there: string,
+): Line {
+  const themes = nameList(partner.shared_themes.map((id) => themeLabels.get(id) ?? id));
+  if (partner.wildcard) {
+    const tail = themes
+      ? `picked at random, and it turns out you both like ${themes} too.`
+      : "picked at random, because the best lab chats are often off-topic.";
+    return {
+      plain: `${partner.name} is this round's wildcard: ${tail}`,
+      md: `${bold(partner.name)} is this round's wildcard: ${md(tail)}`,
+    };
+  }
+  const rest = themes ? `also works on ${themes}.` : `is ${there} too.`;
+  return { plain: `${partner.name} ${rest}`, md: `${bold(partner.name)} ${md(rest)}` };
+}
+
+function compose(params: {
+  header: string;
+  hello: Line;
+  partners: readonly IntroPartner[];
+  theme_labels: ReadonlyMap<string, string>;
+  there: string;
+  details?: Line[];
+  suggestion: string;
+  opener: string;
+  reason: string;
+  events_url: string;
+}): IntroMessage {
+  const who = [
+    params.hello,
+    ...params.partners.map((p) => partnerLine(p, params.theme_labels, params.there)),
+  ];
+  const footer: Line = {
+    plain: `You're getting this because ${params.reason}. Pause or turn off in AdminBot > Events: ${params.events_url}`,
+    md: `You're getting this because ${md(params.reason)} · ${mdLink(params.events_url, "Pause or turn off in AdminBot › Events")}`,
+  };
+  const text = [
+    params.header,
+    ...who.map((line) => line.plain),
+    ...(params.details?.length ? ["", ...params.details.map((line) => line.plain)] : []),
+    "",
+    `Idea: ${params.suggestion}`,
+    `Opener: ${params.opener}`,
+    footer.plain,
+  ].join("\n");
+  const section = (body: string): SlackBlock => ({
+    type: "section",
+    text: { type: "mrkdwn", text: body },
+  });
+  const blocks: SlackBlock[] = [
+    {
+      type: "header",
+      text: { type: "plain_text", text: params.header.slice(0, 150), emoji: true },
+    },
+    section(who.map((line) => line.md).join("\n")),
+    ...(params.details?.length ? [section(params.details.map((line) => line.md).join("\n"))] : []),
+    section(`*Idea:* ${md(params.suggestion)}\n*Opener:* _${md(params.opener)}_`),
+    { type: "context", elements: [{ type: "mrkdwn", text: footer.md }] },
+  ];
+  return { text, blocks };
+}
+
+function eventDetails(sites: readonly TravelConferenceSite[], today: string): Line[] {
+  if (sites.length === 0) {
+    const note = "No dates or location on file yet; check the event page.";
+    return [{ plain: note, md: `_${md(note)}_` }];
+  }
+  const lines: Line[] = [];
+  for (const site of sites) {
+    if (sites.length > 1) {
+      lines.push({ plain: `${site.label}:`, md: `*${md(site.label)}*` });
+    }
+    const when = siteWhen(site);
+    const until = daysUntil(today, site.starts);
+    if (when) {
+      const soon =
+        until !== undefined && until > 0 ? ` (in ${until} day${until === 1 ? "" : "s"})` : "";
+      lines.push({ plain: `When: ${when}${soon}`, md: `*When* ${md(when + soon)}` });
+    }
+    const where = siteWhere(site);
+    if (where) {
+      const map = conferenceMapUrl(where);
+      lines.push({ plain: `Where: ${where} - ${map}`, md: `*Where* ${mdLink(map, where)}` });
+    }
+    if (site.homepage_url) {
+      lines.push({
+        plain: `Event page: ${site.homepage_url}`,
+        md: mdLink(site.homepage_url, "Event page"),
+      });
     }
   }
-  const theme = partners.flatMap((partner) => partner.shared_themes)[0];
-  return theme
-    ? `Opener: what is one recent ${themeLabels.get(theme) ?? theme} result you would point the others to?`
-    : "Opener: what are you each working on this term?";
+  return lines;
 }
 
+const together = (count: number) => (count === 2 ? "both" : "all");
+
 /**
- * The intro text. Plain text: the executor posts with mrkdwn off so a name cannot inject markup.
+ * The event intro.
  *
  * `sites` are the dataset's rows for this conference (more than one for a multi-site meeting such
  * as NeurIPS). None is a real case -- a venue the collector does not cover -- and the message says
  * so rather than inventing a date or a city.
  *
- * `in_town` names the place when somebody in the trio is there without having said Going (the
+ * `in_town` names the place when somebody in the group is there without having said Going (the
  * sign-in placed them in the city during the event): "all going to" would then be untrue.
  */
 export function buildConferenceIntroMessage(params: {
@@ -191,74 +333,104 @@ export function buildConferenceIntroMessage(params: {
   theme_labels: ReadonlyMap<string, string>;
   today: string;
   in_town?: string;
-}): string {
-  const { subject, partners, sites } = params;
-  const names = partners.map((partner) => partner.name);
-  const lines = [
-    params.in_town
-      ? `Hi ${subject.name}, ${names.join(" and ")} -- you are all around ${params.conference_label} in ${params.in_town} this week, so AdminBot is introducing you.`
-      : `Hi ${subject.name}, ${names.join(" and ")} -- you are all going to ${params.conference_label}, so AdminBot is introducing you.`,
-    ...partnerLines(
-      subject,
-      partners,
-      params.theme_labels,
-      (partner) =>
-        `${partner.name} is also ${params.in_town ? "there" : "going"} (picked at random from the lab's attendees).`,
-    ),
-  ];
-  lines.push("");
-  if (sites.length === 0) {
-    lines.push(
-      "AdminBot has no dates or location on file for this conference yet; check the event page.",
-    );
-  }
-  for (const site of sites) {
-    if (sites.length > 1) lines.push(`${site.label}:`);
-    const when = siteWhen(site);
-    const until = daysUntil(params.today, site.starts);
-    if (when) {
-      lines.push(
-        `When: ${when}${until !== undefined && until > 0 ? ` (in ${until} day${until === 1 ? "" : "s"})` : ""}`,
-      );
-    }
-    const where = siteWhere(site);
-    if (where) lines.push(`Where: ${where} - ${conferenceMapUrl(where)}`);
-    if (site.homepage_url) lines.push(`Event page: ${site.homepage_url}`);
-  }
-  lines.push(
-    "",
-    EVENT_SUGGESTION,
-    conversationStarter(subject, partners, params.theme_labels),
-    OPT_OUT_LINE,
-  );
-  return lines.join("\n");
+  /** The intro's idempotency key: picks the opener. */
+  seed: string;
+  events_url: string;
+}): IntroMessage {
+  const { subject, partners } = params;
+  const all = together(partners.length + 1);
+  const why = params.in_town
+    ? `you're ${all} around ${params.conference_label} in ${params.in_town} this week`
+    : `you're ${all} going to ${params.conference_label}`;
+  const names = partners.map((p) => p.name);
+  return compose({
+    header: `☕ ${why.charAt(0).toUpperCase()}${why.slice(1)}`,
+    hello: {
+      plain: `${subject.name}, meet ${nameList(names)}.`,
+      md: `${bold(subject.name)}, meet ${nameList(names.map(bold))}.`,
+    },
+    partners,
+    theme_labels: params.theme_labels,
+    there: params.in_town ? "there" : "going",
+    details: eventDetails(params.sites, params.today),
+    suggestion: EVENT_SUGGESTION,
+    opener: pickOpener("event", params.seed),
+    reason: why,
+    events_url: params.events_url,
+  });
 }
 
 /**
- * The city meetup intro: the same shape, with the place as the reason and no event block.
+ * The city intro: the metro is the reason, and there is no event block.
  *
- * `place_label` is the metro ("San Francisco Bay Area"), never the city a sign-in resolved to;
- * everybody in the DM opted in to city intros, and the metro is all they agreed to share.
+ * `place_label` is the metro ("San Francisco Bay Area"), never the city a sign-in resolved to.
+ * When nobody shares research the intro is pure serendipity and says so: "you're both in Boston
+ * this week; grab a coffee".
  */
 export function buildCityIntroMessage(params: {
   place_label: string;
   subject: IntroCandidate;
   partners: readonly IntroPartner[];
   theme_labels: ReadonlyMap<string, string>;
-}): string {
+  seed: string;
+  events_url: string;
+}): IntroMessage {
   const { subject, partners } = params;
-  const names = partners.map((partner) => partner.name).join(" and ");
-  return [
-    `Hi ${subject.name} and ${names} -- you are ${partners.length === 1 ? "both" : "all"} around ${params.place_label} this week, so AdminBot is introducing you.`,
-    ...partnerLines(
-      subject,
-      partners,
-      params.theme_labels,
-      (partner) => `${partner.name} is nearby too (no shared theme on file, so a wildcard).`,
-    ),
-    "",
-    CITY_SUGGESTION,
-    conversationStarter(subject, partners, params.theme_labels),
-    `You get these because you turned on city intros. ${OPT_OUT_LINE}`,
-  ].join("\n");
+  const all = together(partners.length + 1);
+  const shared = partners.some((p) => p.shared_themes.length > 0);
+  const names = partners.map((p) => p.name);
+  return compose({
+    header: `☕ You're ${all} in ${params.place_label} this week`,
+    hello: {
+      plain: `${subject.name}, meet ${nameList(names)}.`,
+      md: `${bold(subject.name)}, meet ${nameList(names.map(bold))}.`,
+    },
+    partners,
+    theme_labels: params.theme_labels,
+    there: "in town",
+    suggestion: shared ? CITY_SUGGESTION : CITY_COFFEE_SUGGESTION,
+    opener: pickOpener("city", params.seed),
+    reason: `you're ${all} around ${params.place_label} this week`,
+    events_url: params.events_url,
+  });
+}
+
+/**
+ * Say hi: the member tapped the button, so the message is from them, not from AdminBot's matching.
+ * `event` for an event card, `place_label` for a Nearby now face.
+ */
+export function buildSayHiMessage(params: {
+  sender: IntroCandidate;
+  partners: readonly IntroPartner[];
+  theme_labels: ReadonlyMap<string, string>;
+  event?: {
+    conference_label: string;
+    sites: readonly TravelConferenceSite[];
+    today: string;
+    sender_going: boolean;
+  };
+  place_label?: string;
+  seed: string;
+  events_url: string;
+}): IntroMessage {
+  const { sender, partners, event } = params;
+  const others = partners.length === 1 ? "you're" : "you're all";
+  const spotted = event
+    ? `saw ${others} going to ${event.conference_label}${event.sender_going ? " too" : ""}`
+    : `saw ${others} around ${params.place_label ?? "town"} this week`;
+  return compose({
+    header: `👋 ${sender.name} says hi`,
+    hello: {
+      plain: `${sender.name} ${spotted} and started this chat.`,
+      md: `${bold(sender.name)} ${md(spotted)} and started this chat.`,
+    },
+    partners: partners.map(({ wildcard: _wildcard, ...p }) => p),
+    theme_labels: params.theme_labels,
+    there: event ? "going" : "in town",
+    ...(event ? { details: eventDetails(event.sites, event.today) } : {}),
+    suggestion: event ? EVENT_SUGGESTION : CITY_COFFEE_SUGGESTION,
+    opener: pickOpener(event ? "event" : "city", params.seed),
+    reason: `${sender.name} tapped Say hi in AdminBot`,
+    events_url: params.events_url,
+  });
 }

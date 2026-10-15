@@ -3,10 +3,13 @@ import type { TravelConferenceSite } from "../members/lab-travel.js";
 import {
   buildCityIntroMessage,
   buildConferenceIntroMessage,
+  buildSayHiMessage,
   conferenceMapUrl,
-  conversationStarter,
   type IntroCandidate,
+  type IntroMessage,
   pickIntroPartners,
+  pickOpener,
+  withWildcard,
 } from "./conference-intros.js";
 
 const person = (id: string, themes: IntroCandidate["themes"] = []): IntroCandidate => ({
@@ -35,8 +38,13 @@ const site: TravelConferenceSite = {
   homepage_url: "https://2026.emnlp.org/",
 };
 
+const EVENTS_URL = "https://adminbot.test/events";
+
+/** Every mrkdwn string in the blocks, for asserting on what people actually see. */
+const shown = (message: IntroMessage) => JSON.stringify(message.blocks);
+
 describe("pickIntroPartners", () => {
-  it("ranks by shared themes and never picks the subject", () => {
+  it("puts the closest research match first and never picks the subject", () => {
     const subject = person("ada", ["multi_agent", "causal_llm"]);
     const picked = pickIntroPartners(
       subject,
@@ -48,21 +56,33 @@ describe("pickIntroPartners", () => {
       ],
       "emnlp:2026",
     );
-    expect(picked.map((p) => p.member_id)).toEqual(["dee", "bob"]);
-    expect(picked[0].shared_themes).toEqual(["multi_agent", "causal_llm"]);
+    expect(picked[0]).toMatchObject({ member_id: "dee", shared_themes: ["multi_agent", "causal_llm"] });
+    expect(picked[0]?.wildcard).toBeUndefined();
+    expect(picked.map((p) => p.member_id)).not.toContain("ada");
   });
 
-  it("falls back to a seeded sample that is stable per seed and varies across subjects", () => {
-    const pool = ["a", "b", "c", "d", "e", "f", "g", "h"].map((id) => person(id));
-    const run = (subject: string, seed: string) =>
-      pickIntroPartners(person(subject), pool, seed).map((p) => p.member_id);
-    expect(run("a", "emnlp:2026")).toEqual(run("a", "emnlp:2026"));
-    expect(run("a", "emnlp:2026")).toHaveLength(2);
-    expect(run("a", "emnlp:2026")).not.toContain("a");
-    const distinctPairs = new Set(
-      ["a", "b", "c", "d", "e"].map((subject) => run(subject, "emnlp:2026").sort().join()),
+  it("adds one seeded wildcard from the rest: stable per seed, varied across seeds", () => {
+    const subject = person("a", ["multi_agent"]);
+    const pool = [person("best", ["multi_agent"]), ..."bcdefgh".split("").map((id) => person(id))];
+    const run = (seed: string) => pickIntroPartners(subject, pool, seed);
+    expect(run("emnlp:2026")).toEqual(run("emnlp:2026"));
+    const [best, wildcard] = run("emnlp:2026");
+    expect(best?.member_id).toBe("best");
+    expect(wildcard?.wildcard).toBe(true);
+    const wildcards = new Set(
+      ["s1", "s2", "s3", "s4", "s5", "s6"].map((seed) => run(seed)[1]?.member_id),
     );
-    expect(distinctPairs.size).toBeGreaterThan(1);
+    expect(wildcards.size).toBeGreaterThan(1);
+    expect(wildcards.has("best")).toBe(false);
+  });
+
+  it("draws the wildcard only from the list it is given, so a spent pair cannot come back", () => {
+    const ranked = ["b", "c", "d"].map((id) => Object.assign(person(id), { shared_themes: [] }));
+    for (const seed of ["x", "y", "z"]) {
+      const picked = withWildcard(person("a"), ranked, seed);
+      expect(picked.map((p) => p.member_id).every((id) => ["b", "c", "d"].includes(id))).toBe(true);
+    }
+    expect(withWildcard(person("a"), [], "x")).toEqual([]);
   });
 
   it("returns fewer than two when the roster is that small", () => {
@@ -70,68 +90,94 @@ describe("pickIntroPartners", () => {
   });
 });
 
-describe("buildConferenceIntroMessage", () => {
-  it("names everyone and carries when, where with a map link, and the event page", () => {
-    const subject = person("ada", ["multi_agent"]);
-    const [bob, cy] = pickIntroPartners(
-      subject,
-      [person("bob", ["multi_agent"]), person("cy", [])],
-      "emnlp:2026",
+describe("pickOpener", () => {
+  it("is a pure function of the seed, and rotates across intros", () => {
+    expect(pickOpener("event", "conference-intro:emnlp:ada")).toBe(
+      pickOpener("event", "conference-intro:emnlp:ada"),
     );
-    const text = buildConferenceIntroMessage({
+    const openers = new Set(
+      Array.from({ length: 24 }, (_, i) => pickOpener("event", `conference-intro:x:${i}`)),
+    );
+    expect(openers.size).toBeGreaterThan(2);
+    for (const opener of openers) {
+      expect(opener).toMatch(/\?$/u);
+    }
+  });
+});
+
+describe("buildConferenceIntroMessage", () => {
+  const event = (partners: IntroCandidate[], extra: Partial<Parameters<typeof buildConferenceIntroMessage>[0]> = {}) =>
+    buildConferenceIntroMessage({
       conference_label: "EMNLP 2026",
-      subject,
-      partners: [bob, cy],
+      subject: person("ada", ["multi_agent"]),
+      partners: pickIntroPartners(person("ada", ["multi_agent"]), partners, "emnlp:2026"),
       sites: [site],
       theme_labels: labels,
       today: "2026-10-15",
+      seed: "conference-intro:emnlp:2026:ada",
+      events_url: EVENTS_URL,
+      ...extra,
     });
-    expect(text).toContain("Hi ADA, BOB and CY -- you are all going to EMNLP 2026");
-    expect(text).toContain("ADA and BOB both work on Multi-agent.");
-    expect(text).toContain("CY is also going (picked at random");
-    expect(text).toContain("When: Sat, Oct 24, 2026 - Thu, Oct 29, 2026 (in 9 days)");
+
+  it("says who and why, with when, where (map link) and the event page", () => {
+    const { text } = event([person("bob", ["multi_agent"]), person("cy", [])]);
+    expect(text.split("\n")[0]).toBe("☕ You're all going to EMNLP 2026");
+    expect(text).toContain("ADA, meet BOB and CY.");
+    expect(text).toContain("BOB also works on Multi-agent.");
+    expect(text).toContain("CY is this round's wildcard: picked at random");
+    expect(text).toContain("When: Sat, Oct 24 - Thu, Oct 29 (in 9 days)");
     expect(text).toContain(`Where: Budapest, Hungary - ${conferenceMapUrl("Budapest, Hungary")}`);
     expect(text).toContain("Event page: https://2026.emnlp.org/");
   });
 
-  it("says so rather than inventing details for a conference the dataset does not cover", () => {
-    const text = buildConferenceIntroMessage({
-      conference_label: "COLM 2026",
-      subject: person("ada"),
-      partners: [
-        { ...person("bob"), shared_themes: [] },
-        { ...person("cy"), shared_themes: [] },
-      ],
-      sites: [],
-      theme_labels: labels,
-      today: "2026-09-01",
+  it("is a header, who, details, one idea and one opener, and a quiet footer", () => {
+    const message = event([person("bob", ["multi_agent"])]);
+    expect(message.blocks.map((block) => block.type)).toEqual([
+      "header",
+      "section",
+      "section",
+      "section",
+      "context",
+    ]);
+    expect(message.blocks[0]).toMatchObject({
+      text: { type: "plain_text", text: "☕ You're both going to EMNLP 2026" },
     });
-    expect(text).toContain("no dates or location on file");
+    const opener = pickOpener("event", "conference-intro:emnlp:2026:ada");
+    expect(message.text.split("\n").slice(-3)).toEqual([
+      "Idea: Grab a coffee between sessions, or walk the posters together.",
+      `Opener: ${opener}`,
+      `You're getting this because you're both going to EMNLP 2026. Pause or turn off in AdminBot > Events: ${EVENTS_URL}`,
+    ]);
+    expect(shown(message)).toContain(`<${EVENTS_URL}|Pause or turn off in AdminBot › Events>`);
+  });
+
+  it("says so rather than inventing details for a conference the dataset does not cover", () => {
+    const { text } = event([person("bob")], { conference_label: "COLM 2026", sites: [] });
+    expect(text).toContain("No dates or location on file yet");
     expect(text).not.toContain("When:");
   });
 
   it("labels each site of a multi-site conference", () => {
-    const text = buildConferenceIntroMessage({
-      conference_label: "NeurIPS 2026",
-      subject: person("ada"),
-      partners: [
-        { ...person("bob"), shared_themes: [] },
-        { ...person("cy"), shared_themes: [] },
-      ],
+    const { text } = event([person("bob")], {
       sites: [
-        {
-          ...site,
-          label: "NeurIPS 2026 (San Diego)",
-          location: "San Diego, USA",
-          multi_site: true,
-        },
+        { ...site, label: "NeurIPS 2026 (San Diego)", location: "San Diego, USA", multi_site: true },
         { ...site, label: "NeurIPS 2026 (Paris)", location: "Paris, France", multi_site: true },
       ],
-      theme_labels: labels,
-      today: "2026-10-15",
     });
     expect(text).toContain("NeurIPS 2026 (San Diego):");
     expect(text).toContain("Where: Paris, France");
+  });
+
+  it("says 'around X in P this week' for somebody who is there without having said Going", () => {
+    const { text } = event([person("bob")], { today: "2026-10-26", in_town: "Budapest" });
+    expect(text.split("\n")[0]).toBe("☕ You're both around EMNLP 2026 in Budapest this week");
+    expect(text).not.toContain("(in ");
+  });
+
+  it("cannot be restyled or linked by a name", () => {
+    const message = event([{ ...person("bob"), name: "*Bob* <!channel>" }]);
+    expect(shown(message)).not.toContain("<!channel>");
+    expect(shown(message)).toContain("&lt;!channel&gt;");
   });
 
   it("encodes the location into the map query", () => {
@@ -141,57 +187,62 @@ describe("buildConferenceIntroMessage", () => {
   });
 });
 
-describe("intro text: reason, one idea, one opener, a way out", () => {
-  const ada = person("ada", ["multi_agent"]);
-  const [bob] = pickIntroPartners(
-    ada,
-    [{ ...person("bob", ["multi_agent"]), projects: ["  ", "Agents that negotiate"] }],
-    "k",
-  );
+describe("buildCityIntroMessage", () => {
+  const city = (partners: IntroCandidate[]) =>
+    buildCityIntroMessage({
+      place_label: "Boston",
+      subject: person("ada", ["multi_agent"]),
+      partners: pickIntroPartners(person("ada", ["multi_agent"]), partners, "k"),
+      theme_labels: labels,
+      seed: "city-intro:boston:ada:2026-10-15",
+      events_url: EVENTS_URL,
+    });
 
-  it("opens with the partner's own project title, else the shared theme, else a generic question", () => {
-    expect(conversationStarter(ada, [bob!], labels)).toBe(
-      'Opener: ADA, ask BOB how "Agents that negotiate" is going.',
-    );
-    const [plain] = pickIntroPartners(ada, [person("bob", ["multi_agent"])], "k");
-    expect(conversationStarter(ada, [plain!], labels)).toContain("recent Multi-agent result");
-    const [none] = pickIntroPartners(ada, [person("cy")], "k");
-    expect(conversationStarter(ada, [none!], labels)).toBe(
-      "Opener: what are you each working on this term?",
-    );
+  it("gives the metro as the reason and suggests lunch when they share research", () => {
+    const { text, blocks } = city([person("bob", ["multi_agent"])]);
+    expect(text.split("\n")[0]).toBe("☕ You're both in Boston this week");
+    expect(text).toContain("BOB also works on Multi-agent.");
+    expect(text).toContain("Idea: Lunch or a coffee somewhere central this week?");
+    expect(text).toContain("You're getting this because you're both around Boston this week.");
+    expect(blocks.map((block) => block.type)).toEqual(["header", "section", "section", "context"]);
   });
 
-  it("ends every event intro with a suggestion, the opener and the opt-out line", () => {
-    const text = buildConferenceIntroMessage({
-      conference_label: "EMNLP 2026",
-      subject: ada,
-      partners: [bob!],
-      sites: [site],
+  it("is plain serendipity when nobody shares research: grab a coffee", () => {
+    const { text } = city([person("bob")]);
+    expect(text).toContain("BOB is in town too.");
+    expect(text).toContain("Idea: Grab a coffee. No agenda needed.");
+  });
+});
+
+describe("buildSayHiMessage", () => {
+  it("comes from the member who tapped, never labels a wildcard, and carries the event", () => {
+    const sender = person("ada", ["multi_agent"]);
+    const partners = pickIntroPartners(sender, [person("bob", ["multi_agent"]), person("cy")], "k");
+    expect(partners[1]?.wildcard).toBe(true);
+    const message = buildSayHiMessage({
+      sender,
+      partners,
       theme_labels: labels,
-      today: "2026-10-26",
-      in_town: "Budapest",
+      event: { conference_label: "EMNLP 2026", sites: [site], today: "2026-10-15", sender_going: true },
+      seed: "say-hi:event:emnlp:2026:ada",
+      events_url: EVENTS_URL,
     });
-    expect(text).toContain("you are all around EMNLP 2026 in Budapest this week");
-    expect(text).not.toContain("(in ");
-    expect(text.split("\n").slice(-3)).toEqual([
-      "Idea: grab a coffee between sessions, or walk the posters together.",
-      'Opener: ADA, ask BOB how "Agents that negotiate" is going.',
-      "Not for you? Turn these intros off or snooze them in AdminBot > Events.",
-    ]);
+    expect(message.text.split("\n")[0]).toBe("👋 ADA says hi");
+    expect(message.text).toContain("ADA saw you're all going to EMNLP 2026 too and started this chat.");
+    expect(message.text).not.toContain("wildcard");
+    expect(message.text).toContain("You're getting this because ADA tapped Say hi in AdminBot.");
   });
 
-  it("gives the city intro the metro as its reason and says why the member got it", () => {
-    const text = buildCityIntroMessage({
-      place_label: "San Francisco Bay Area",
-      subject: ada,
-      partners: [bob!],
+  it("names the place for a Nearby now hello", () => {
+    const { text } = buildSayHiMessage({
+      sender: person("ada"),
+      partners: [{ ...person("bob"), shared_themes: [] }],
       theme_labels: labels,
+      place_label: "Boston",
+      seed: "say-hi:city:ada:bob",
+      events_url: EVENTS_URL,
     });
-    expect(text).toContain(
-      "Hi ADA and BOB -- you are both around San Francisco Bay Area this week",
-    );
-    expect(text).toContain("ADA and BOB both work on Multi-agent.");
-    expect(text).toContain("Idea: lunch or a coffee somewhere central this week.");
-    expect(text).toContain("You get these because you turned on city intros.");
+    expect(text).toContain("ADA saw you're around Boston this week and started this chat.");
+    expect(text).toContain("Idea: Grab a coffee. No agenda needed.");
   });
 });

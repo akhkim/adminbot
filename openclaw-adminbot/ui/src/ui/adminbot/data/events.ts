@@ -10,6 +10,7 @@ import type {
   AdminBotEventCard,
   AdminBotEventsOverview,
   AdminBotMeetupPreferences,
+  AdminBotSayHiResult,
 } from "../../../../../extensions/adminbot/src/contracts/events.js";
 import { loadStoredMemberSession } from "../auth/session.ts";
 import { saveTravelRsvp, withdrawTravelRsvp, type TravelResult } from "./lab-travel.ts";
@@ -19,12 +20,13 @@ export type {
   AdminBotEventPerson as EventPerson,
   AdminBotEventsOverview as EventsOverview,
   AdminBotMeetupPreferences as MeetupPreferences,
+  AdminBotSayHiResult as SayHiResult,
 } from "../../../../../extensions/adminbot/src/contracts/events.js";
 
 async function call<T>(
   baseUrl: string,
   path: string,
-  init: { method?: "GET" | "PUT"; body?: unknown } = {},
+  init: { method?: "GET" | "PUT" | "POST"; body?: unknown } = {},
 ): Promise<TravelResult<T>> {
   const session = loadStoredMemberSession();
   if (!session) {
@@ -99,4 +101,12 @@ export function setEventGoing(baseUrl: string, card: AdminBotEventCard, going: b
     ...(mine?.departure_on ? { departure_on: mine.departure_on } : {}),
     ...(mine?.notes ? { notes: mine.notes } : {}),
   });
+}
+
+/** An event card (`event_key`) or one Nearby now face (`member_id`). */
+export type SayHiTarget = { event_key: string } | { member_id: string };
+
+/** Say hi: AdminBot opens a Slack group DM now. A second tap answers already_said_hi. */
+export function sayHiTo(baseUrl: string, target: SayHiTarget) {
+  return call<AdminBotSayHiResult>(baseUrl, "/events/say-hi", { method: "POST", body: target });
 }

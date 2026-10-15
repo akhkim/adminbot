@@ -22,3 +22,17 @@ both Bay Area events but not on Budapest; dates and countdown; Map and Event pag
 "+2" overflow; the Going / Not going toggle; the open Past section; and the intro settings.
 At 390 px the page has no horizontal overflow (scrollWidth equals the viewport width in all four captures),
 and no console errors were logged.
+
+## Zero setup, Say hi and the Slack messages
+
+Same harness and approach, with invented members and events only. Nothing was sent to Slack.
+
+| File                                 | What                                                                                                               |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `say-hi-desktop-{light,dark}.jpg`    | Events with Say hi on cards and nearby faces, "Hi sent", Collaborate's Nearby now strip, and the My Profile switch |
+| `say-hi-mobile-390-{light,dark}.jpg` | The same at 390 px (no horizontal overflow, no console errors)                                                     |
+| `slack-messages-{light,dark}.jpg`    | Every message type, built by the real `build*Message` functions and drawn as Block Kit                             |
+
+The six message types: event intro (best match plus wildcard), event intro when in town, city intro
+with shared research, city intro with nothing shared ("Grab a coffee. No agenda needed."), Say hi
+from an event card, and Say hi from Nearby now.

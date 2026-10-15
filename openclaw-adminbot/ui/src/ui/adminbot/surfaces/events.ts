@@ -7,15 +7,19 @@ import type { AppViewState } from "../../app-view-state.ts";
 import {
   loadEvents,
   needsEventsLoad,
+  sayHi,
   toggleGoing,
   updateMeetupPreferences,
 } from "../controllers/events.ts";
-import { renderEvents } from "../views/events.ts";
+import { renderEvents, renderMeetupToggle, renderNearbyNow } from "../views/events.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
-/** Opening the tab loads it; self-limiting because the read marks itself loading at once. */
+/** Tabs that draw part of the overview: Events, Collaborate's Nearby now, the profile toggle. */
+const EVENTS_TABS = new Set(["events", "labSharing", "profile"]);
+
+/** Opening one of those tabs loads it; self-limiting because the read marks itself loading at once. */
 export function syncEvents(state: AppViewState, requestHostUpdate: (() => void) | undefined) {
-  if (state.tab === "events" && needsEventsLoad(state)) {
+  if (EVENTS_TABS.has(state.tab) && needsEventsLoad(state)) {
     void loadEvents(state).finally(() => requestHostUpdate?.());
   }
 }
@@ -41,5 +45,39 @@ export function renderEventsSurface(state: AppViewState, scope: AdminBotSurfaceS
     },
     onToggleGoing: (card, going) => settle(toggleGoing(state, card, going)),
     onPreferences: (patch) => settle(updateMeetupPreferences(state, patch)),
+    onSayHi: (target) => settle(sayHi(state, target)),
+  });
+}
+
+function settler(scope: AdminBotSurfaceScope) {
+  const update = () => scope.requestHostUpdate?.();
+  return (work: Promise<unknown>) => {
+    update();
+    void work.finally(update);
+  };
+}
+
+/** Collaborate's Nearby now strip; nothing until somebody is around. */
+export function renderNearbyNowSurface(state: AppViewState, scope: AdminBotSurfaceScope) {
+  const settle = settler(scope);
+  return renderNearbyNow({
+    nearby: state.events?.also_nearby,
+    busy: state.eventsBusy ?? null,
+    notice: state.eventsNotice ?? null,
+    onSayHi: (target) => settle(sayHi(state, target)),
+  });
+}
+
+/** The profile's one-tap meetup switch, once the overview has loaded. */
+export function renderMeetupToggleSurface(state: AppViewState, scope: AdminBotSurfaceScope) {
+  if (!state.events) {
+    return nothing;
+  }
+  const settle = settler(scope);
+  return renderMeetupToggle({
+    preferences: state.events.preferences,
+    busy: state.eventsBusy === "prefs",
+    onToggle: (on) => settle(updateMeetupPreferences(state, { events: on, city: on })),
+    onManage: () => state.setTab("events"),
   });
 }
