@@ -506,14 +506,46 @@ describe("the decision banners above the list", () => {
 });
 
 describe("the flat view", () => {
-  function openFlat(options: Parameters<typeof drawOverview>[0] = {}) {
+  function openFlat(options: Parameters<typeof drawOverview>[0] = {}, expand = true) {
     const drawn = drawOverview(options);
     drawn.container
       .querySelector<HTMLButtonElement>('[data-testid="my-work-open-legacy"]')!
       .click();
     drawn.rerender();
+    // Field-edit cases open their controls; the default drawing is verified separately.
+    if (expand) {
+      for (const toggle of drawn.container.querySelectorAll<HTMLButtonElement>(
+        '[data-testid^="paper-legacy-collapse-"]',
+      )) {
+        toggle.click();
+        drawn.rerender();
+      }
+      for (const toggle of drawn.container.querySelectorAll<HTMLButtonElement>(
+        '[data-testid^="paper-legacy-group-toggle-"]',
+      )) {
+        toggle.click();
+        drawn.rerender();
+      }
+    }
     return drawn;
   }
+
+  it("starts flat papers and their groups collapsed, then preserves a reader's expansion", () => {
+    const drawn = openFlat({}, false);
+    const toggle = '[data-testid="paper-legacy-collapse-p1"]';
+    expect(drawn.container.querySelector(toggle)?.getAttribute("aria-expanded")).toBe("false");
+    drawn.container.querySelector<HTMLButtonElement>(toggle)!.click();
+    drawn.rerender();
+    expect(drawn.container.querySelector(toggle)?.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      drawn.container.querySelectorAll('[data-testid^="paper-legacy-group-toggle-"]'),
+    ).toHaveLength(7);
+    expect(
+      drawn.container.querySelectorAll(
+        '[data-testid^="paper-legacy-group-toggle-"][aria-expanded="true"]',
+      ),
+    ).toHaveLength(0);
+  });
 
   it("is offered on a single paper, unlike the sheet", () => {
     const { container } = drawOverview({ papers: [paper()] });

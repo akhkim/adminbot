@@ -403,7 +403,7 @@ function renderDraft(
       </div>
       ${generate
         ? html`
-            <details class="paper-cycle__draft-settings" ?open=${platform !== "x" || !draft}>
+            <details class="paper-cycle__draft-settings">
               <summary>
                 ${platform === "x" ? "Source, credits and announcement details" : "Draft settings"}
               </summary>
@@ -683,7 +683,7 @@ function renderDraft(
 
 function renderAttendees(props: PaperCycleProps) {
   return html`
-    <details class="paper-cycle__group" open>
+    <details class="paper-cycle__group">
       <summary class="paper-slots__group-head">
         <h4 class="paper-slots__group-title">
           <span class="paper-slots__group-icon" aria-hidden="true">${icons.user}</span>
@@ -808,7 +808,7 @@ function renderReimbursements(props: PaperCycleProps) {
   }
   const byMember = new Map(props.reimbursements.map((row) => [row.member_id, row]));
   return html`
-    <details class="paper-cycle__group" open>
+    <details class="paper-cycle__group">
       <summary class="paper-slots__group-head">
         <h4 class="paper-slots__group-title">
           <span class="paper-slots__group-icon" aria-hidden="true">${icons.wrench}</span>
@@ -850,7 +850,7 @@ function renderReimbursements(props: PaperCycleProps) {
 export function renderPaperCycle(props: PaperCycleProps) {
   return html`
     <div class="paper-cycle" data-testid=${`paper-cycle-${props.paperId}`}>
-      <details class="paper-cycle__group" id=${`paper-social-drafts-${props.paperId}`} open>
+      <details class="paper-cycle__group" id=${`paper-social-drafts-${props.paperId}`}>
         <summary class="paper-slots__group-head">
           <h4 class="paper-slots__group-title">
             <span class="paper-slots__group-icon" aria-hidden="true">${icons.globe}</span>
