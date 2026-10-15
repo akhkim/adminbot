@@ -1971,6 +1971,7 @@
 
 .adminbot-member-sheet__heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
@@ -2008,13 +2009,15 @@
 
 .adminbot-member-filters__search {
   display: flex;
+  flex-wrap: wrap;
   align-items: end;
   gap: var(--space-2);
   min-width: 0;
 }
 
 .adminbot-member-filters__search label {
-  flex: 1;
+  flex: 1 1 10rem;
+  min-width: 0;
 }
 
 .adminbot-member-sheet > nav.adminbot-form__actions {
@@ -3312,6 +3315,21 @@
 
 .pill:hover {
   border-color: var(--border-strong);
+}
+
+/* A pill that labels a heading may break onto a second line. These sit in rows that already wrap,
+   but a phrase like "Sample data — nothing here is saved" at a large minimum font size is wider
+   than a 320px window on its own; held to one line it ran out of the page and was cut off. */
+:is(
+    .lab-sharing-announcements__title,
+    .adminbot-reimbursement-summary__header,
+    .logistics-admin__heading,
+    .adminbot-time-availability__report-header,
+    .adminbot-member-sheet__heading
+  )
+  > .pill {
+  max-width: 100%;
+  white-space: normal;
 }
 
 .pill.ok {
@@ -9921,6 +9939,7 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-reimbursement-summary__header,
 .adminbot-calendar__chat-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
@@ -10211,6 +10230,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-time-availability__report-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
@@ -10436,6 +10456,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-calendar__panel-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
@@ -10479,8 +10500,12 @@ details[open] > .ov-expandable-toggle::after {
   overflow: hidden;
 }
 
+/* Seven columns share a phone's width, so the day names get no side padding of their own and may
+   break: at a 20-24px minimum font "Mon" alone is about as wide as a 390px window's column. */
 .adminbot-calendar__weekday {
-  padding: var(--space-2) var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) 0;
+  overflow-wrap: anywhere;
   background: var(--bg-accent);
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
@@ -10519,7 +10544,8 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-calendar__day-number {
   align-self: flex-start;
   min-width: 1.4em;
-  padding: 1px 5px;
+  max-width: 100%;
+  padding: 1px min(5px, 10%);
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-variant-numeric: tabular-nums;
@@ -11235,9 +11261,11 @@ details[open] > .ov-expandable-toggle::after {
    a member has entered, and a row that scrolls hides the later ones behind a clipped edge with
    nothing to say they are there. */
 /* 21rem, not 15: the widest thing a tile has to hold is a venue name beside a full AoE cutoff
-   ("23:59 Anywhere on Earth (UTC-12)"), and at 15rem that was clipped at the tile's own border. */
+   ("23:59 Anywhere on Earth (UTC-12)"), and at 15rem that was clipped at the tile's own border.
+   `min(..., 100%)` lets one tile take a narrower aside whole (a 320px window, or 400% zoom)
+   instead of holding 21rem and pushing the hint and buttons out of the page. */
 .adminbot-time-availability__deadlines .adminbot-time-availability__deadline-list {
-  grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(21rem, 100%), 1fr));
   gap: var(--space-2);
 }
 
@@ -11279,6 +11307,7 @@ details[open] > .ov-expandable-toggle::after {
    right. */
 .adminbot-time-availability__deadline-top {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-2);
   /* The countdown is the only thing here on a read-only panel, and it is uppercase 11px text; at
@@ -11954,7 +11983,7 @@ select.input:focus {
    the admin is comparing two records, not reading two paragraphs. */
 .adminbot-duplicate__sides {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
   gap: var(--space-3);
 }
 

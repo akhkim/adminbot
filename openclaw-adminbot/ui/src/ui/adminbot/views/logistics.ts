@@ -1354,7 +1354,7 @@ function renderLettersRequest(props: LettersProps) {
               data-testid="logistics-email-confirmation"
               style="flex-shrink:0;margin-top:5px"
             />
-            <span
+            <span style="min-width:0"
               >I confirm that I have sent all application-portal invitations for this request to
               <strong>zjin.admin@cs.toronto.edu</strong>, not Zhijing's main email.<span
                 class="cron-required-marker"
