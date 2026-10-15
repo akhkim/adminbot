@@ -627,7 +627,7 @@ the others, and it turns the notice red. The whole change is recorded as
 
 ### Roster sync
 
-`scripts/adminbot-roster-sync-cron.sh` calls `POST /members/roster-sync` at 06:10 daily. It reads
+`scripts/adminbot-roster-sync-cron.sh` calls `POST /members/roster-sync` at 06:00 daily. It reads
 the same tab as the grid above, through the same configuration, and reconciles exactly two things
 against the database: who is on the roster, and each member's **Member Type**. Profile fields are
 `adminbot-member-sheet-poller`'s job -- widening this would let a spreadsheet typo overwrite what a
@@ -1243,8 +1243,8 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | `adminbot-deadline-refresh-venues`  | `50 5 * * *`         | Refresh conference/workshop deadlines from official CFPs                     |
 | `adminbot-deadline-refresh-matches` | `20 6 * * *`         | Re-map papers onto the refreshed deadlines                                   |
 | `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                     |
-| `adminbot-graduations`              | `0 8 * * 1`          | Confirm finishing months, chase alumni transitions, and arrange the ceremony |
-| `adminbot-city-channels`            | `0 7 * * 1,4`        | Add members to their city Slack channel once a city reaches four             |
+| `adminbot-graduations`              | `15 8 * * 1`         | Confirm finishing months, chase alumni transitions, and arrange the ceremony |
+| `adminbot-city-channels`            | `10 7 * * 1,4`       | Add members to their city Slack channel once a city reaches four             |
 | `adminbot-email-templates`          | `30 8 * * 1`         | Check the email-template doc against the shipped copy                        |
 | `adminbot-paperflow-nudges`         | `0 9 * * 1`          | PaperFlow venue-stage nudges, once a week                                    |
 | `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                     |
