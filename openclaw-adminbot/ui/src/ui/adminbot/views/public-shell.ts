@@ -70,8 +70,11 @@ const GENERAL_TOOLS_TABS: readonly Tab[] =
  *
  * The theme controls live in Appearance and Settings, both admin-only, so a visitor had no way to
  * change the theme at all -- the one preference on this shell that is purely about how it looks to
- * the person looking at it. `system` is not offered as a third state: this is a toggle, and the
- * mode it starts from is whatever the viewer already resolved to.
+ * the person looking at it. Light and dark are the only two modes, so this is a plain toggle.
+ *
+ * The glyph is the theme a click switches to (a sun while dark), matching the label. No
+ * aria-pressed: the label already changes with the state, and a pressed toggle whose name also
+ * flips announces the state twice and contradicts itself.
  */
 function renderPublicThemeToggle(state: AppViewState) {
   const dark = state.themeResolved !== "light";
@@ -80,7 +83,7 @@ function renderPublicThemeToggle(state: AppViewState) {
       type="button"
       class="public-shell-theme"
       data-testid="public-shell-theme"
-      aria-pressed=${dark ? "true" : "false"}
+      data-mode=${dark ? "dark" : "light"}
       title=${t(dark ? "login.public.themeLight" : "login.public.themeDark")}
       aria-label=${t(dark ? "login.public.themeLight" : "login.public.themeDark")}
       @click=${() => {

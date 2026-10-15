@@ -120,7 +120,7 @@ function createHost() {
       sessionKey: "main",
       lastActiveSessionKey: "main",
       theme: "claw",
-      themeMode: "system",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       splitRatio: 0.6,

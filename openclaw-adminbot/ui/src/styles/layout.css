@@ -315,7 +315,8 @@
   border: 1px solid transparent;
   border-radius: var(--radius-full);
   background: transparent;
-  color: var(--muted);
+  /* --text, like the bell beside it. --muted read as disabled on the white topbar. */
+  color: var(--text);
   cursor: pointer;
   transition:
     color var(--duration-fast) var(--ease-out),
@@ -340,8 +341,8 @@
 }
 
 .topbar-theme-mode__btn svg {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.75px;
@@ -4478,6 +4479,50 @@
   transition:
     border-color 150ms ease,
     background-color 150ms ease;
+}
+
+/*
+ * The signed-out shell's light/dark toggle. It had no rules at all, so it rendered as a native
+ * grey button with a 0x0 svg -- no moon or sun in either theme. Sized and bordered like
+ * .public-shell-back so the two chrome buttons match; the icon strokes in currentColor.
+ */
+.public-shell-theme {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-strong);
+  cursor: pointer;
+}
+
+.public-shell-theme:hover {
+  border-color: var(--text-strong);
+  background: color-mix(in srgb, var(--text-strong) 8%, transparent);
+}
+
+.public-shell-theme:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.public-shell-theme span {
+  display: inline-flex;
+}
+
+.public-shell-theme svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.75px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .public-shell-back:hover,

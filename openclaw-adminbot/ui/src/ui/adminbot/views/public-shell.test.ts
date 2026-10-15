@@ -109,9 +109,7 @@ describe("renderPublicShell", () => {
 describe("public shell theme toggle", () => {
   function toggleIn(state: AppViewState): HTMLButtonElement {
     const container = renderShell(state);
-    const button = container.querySelector<HTMLButtonElement>(
-      '[data-testid="public-shell-theme"]',
-    );
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="public-shell-theme"]');
     expect(button).not.toBeNull();
     return button as HTMLButtonElement;
   }
@@ -123,7 +121,11 @@ describe("public shell theme toggle", () => {
       setThemeMode: (mode: string) => modes.push(mode),
     } as unknown as Partial<AppViewState>);
     const button = toggleIn(state);
-    expect(button.getAttribute("aria-pressed")).toBe("true");
+    // No aria-pressed: the label already flips with the state.
+    expect(button.hasAttribute("aria-pressed")).toBe(false);
+    expect(button.getAttribute("aria-label")).toBe("Switch to light mode");
+    expect(button.getAttribute("title")).toBe("Switch to light mode");
+    expect(button.querySelector("svg")).not.toBeNull();
     button.click();
     // Dark now, so the toggle offers light.
     expect(modes).toEqual(["light"]);
@@ -136,7 +138,9 @@ describe("public shell theme toggle", () => {
       setThemeMode: (mode: string) => modes.push(mode),
     } as unknown as Partial<AppViewState>);
     const button = toggleIn(state);
-    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(button.hasAttribute("aria-pressed")).toBe(false);
+    expect(button.getAttribute("aria-label")).toBe("Switch to dark mode");
+    expect(button.querySelector("svg")).not.toBeNull();
     button.click();
     expect(modes).toEqual(["dark"]);
   });

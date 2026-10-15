@@ -22,7 +22,6 @@ import {
 } from "./app-scroll.ts";
 import {
   applySettingsFromUrl,
-  detachThemeListener,
   inferBasePath,
   syncTabWithLocation,
   syncThemeWithSettings,
@@ -268,7 +267,6 @@ export function handleDisconnected(host: LifecycleHost) {
   host.client?.stop();
   host.client = null;
   host.connected = false;
-  detachThemeListener(host as unknown as Parameters<typeof detachThemeListener>[0]);
   host.topbarObserver?.disconnect();
   host.topbarObserver = null;
   host.controlUiResponsivenessObserver?.disconnect();

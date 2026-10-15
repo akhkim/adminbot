@@ -5,14 +5,17 @@
 // a terminal.
 //
 // `theme` is which palette family ("claw", or the tweakcn "custom" override), and `mode` is which
-// variant of it the viewer wants. They are separate because "follow my system" is an answer to the
-// second question and not to the first.
+// variant of it the viewer wants.
+//
+// There is no "follow my system" mode any more. It sat behind a monitor icon that people did not
+// read as a theme at all, and it made the first paint depend on an OS setting nobody had chosen
+// for this app. Dark is the default, as it was before light existed.
 export type ThemeName = "claw" | "custom";
-export type ThemeMode = "system" | "light" | "dark";
+export type ThemeMode = "light" | "dark";
 export type ResolvedTheme = "dark" | "light" | "custom";
 
 export const VALID_THEME_NAMES = new Set<ThemeName>(["claw", "custom"]);
-const VALID_THEME_MODES = new Set<ThemeMode>(["system", "light", "dark"]);
+const VALID_THEME_MODES = new Set<ThemeMode>(["light", "dark"]);
 
 type ThemeSelection = { theme: ThemeName; mode: ThemeMode };
 
@@ -33,24 +36,10 @@ const LEGACY_MAP: Record<string, ThemeSelection> = {
   openknot: { theme: "claw", mode: "dark" },
   fieldmanual: { theme: "claw", mode: "dark" },
   clawdash: { theme: "claw", mode: "dark" },
-  system: { theme: "claw", mode: "system" },
+  system: { theme: "claw", mode: "dark" },
   knot: { theme: "claw", mode: "dark" },
   dash: { theme: "claw", mode: "dark" },
 };
-
-/**
- * What the viewer's operating system is asking for.
- *
- * Dark when it cannot be asked. A server render, a test environment and an old browser all land
- * here, and dark is what this app looked like for everyone until now -- guessing light would change
- * the appearance of the app for people who never expressed a preference at all.
- */
-export function resolveSystemTheme(): ResolvedTheme {
-  if (typeof globalThis.matchMedia !== "function") {
-    return "dark";
-  }
-  return globalThis.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-}
 
 export function parseThemeSelection(
   themeRaw: unknown,
@@ -62,9 +51,13 @@ export function parseThemeSelection(
   const normalizedTheme = VALID_THEME_NAMES.has(theme as ThemeName)
     ? (theme as ThemeName)
     : (LEGACY_MAP[theme]?.theme ?? "claw");
+  // A stored "system" is the removed mode, not a missing one: it becomes dark outright rather than
+  // falling through to whatever a legacy `theme` value would have implied.
   const normalizedMode = VALID_THEME_MODES.has(mode as ThemeMode)
     ? (mode as ThemeMode)
-    : (LEGACY_MAP[theme]?.mode ?? "dark");
+    : mode === "system"
+      ? "dark"
+      : (LEGACY_MAP[theme]?.mode ?? "dark");
 
   return { theme: normalizedTheme, mode: normalizedMode };
 }
@@ -80,11 +73,5 @@ export function resolveTheme(theme: ThemeName, mode: ThemeMode): ResolvedTheme {
   if (theme === "custom") {
     return "custom";
   }
-  if (mode === "light") {
-    return "light";
-  }
-  if (mode === "dark") {
-    return "dark";
-  }
-  return resolveSystemTheme();
+  return mode === "light" ? "light" : "dark";
 }
