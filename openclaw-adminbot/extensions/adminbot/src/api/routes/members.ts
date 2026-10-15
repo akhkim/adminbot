@@ -504,6 +504,41 @@ export const membersRoutes: readonly Route[] = [
     }),
   ),
   post(
+    "/members/slack-roster/sync",
+    privilegedOnly(async ({ req, res, ctx, principal }) => {
+      const { service } = ctx;
+      if (!ctx.readSlackDirectory) {
+        sendJson(res, 503, { error: { message: "Slack user directory reader is unavailable" } });
+        return;
+      }
+      const body = readRecord(await readJsonOrEmpty(req));
+      const force = body.force === true;
+      // Same rule as the sheet sync: the cron's service token may run the guarded pass, but only
+      // an admin who has looked at the Slack read may override the size guard.
+      if (force && principal.kind === "service") {
+        sendJson(res, 403, { error: { message: "force requires an admin session" } });
+        return;
+      }
+      try {
+        sendServiceResult(
+          res,
+          await service.syncSlackRoster(ctx.readSlackDirectory, {
+            actor: principalActor(principal),
+            dryRun: body.dry_run === true,
+            force,
+            ...(ctx.slackPlaceholderUserIds
+              ? { placeholderIds: ctx.slackPlaceholderUserIds }
+              : {}),
+          }),
+        );
+      } catch (error) {
+        sendJson(res, 502, {
+          error: { message: error instanceof Error ? error.message : "Slack roster sync failed" },
+        });
+      }
+    }),
+  ),
+  post(
     "/members/city-channels/sync",
     privilegedOnly(async ({ res, principal, ctx }) => {
       const { service } = ctx;

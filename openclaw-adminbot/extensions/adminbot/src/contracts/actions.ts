@@ -52,6 +52,12 @@ export const adminBotActionTypes = [
   // them runs unattended, and a spreadsheet row is not an authorization: the member is created at
   // the least-privileged level and an admin approving this is what raises it.
   "lab_member.enroll",
+  // Removes one roster record that the Slack roster sync judged a placeholder or test account
+  // ("Test User", an @example address -- never a do-not-contact opt-out). Its own type so the sync
+  // never deletes anything itself: it files this, an admin approves it, and the delete runs through
+  // the same guarded path as the Members tab (no self-delete, no head professor, no credentialed
+  // account).
+  "lab_member.remove",
   // The finished reimbursement package, mailed to the funder's office with the forms attached.
   //
   // Its own type rather than `email.send` for two reasons. The recipient is resolved from settings
@@ -1471,6 +1477,11 @@ export type AdminBotLabMemberInput = {
   slack_messages_7d?: number;
   /** When that count was last measured. Absent means never, which reads as unknown, not zero. */
   slack_activity_checked_at?: string;
+  /**
+   * When the Slack roster sync first saw this member's Slack account deactivated. A flag, never a
+   * removal: leaving Slack is not leaving the lab record. Cleared ("") when the account comes back.
+   */
+  slack_deactivated_at?: string;
   privilege_level?: AdminBotPrivilegeLevel;
   // Which kind of external collaborator this person is, which decides the access items they get.
   // Only meaningful while `privilege_level` is "external_collaborator"; governance-owned like
@@ -2544,6 +2555,8 @@ export type AdminBotAuditEvent = {
     | "roster_sync.member_type_changed"
     | "roster_sync.access_revocations_proposed"
     | "roster_sync.completed"
+    // One pass of the Slack users.list roster sync: counts, refusal reason, dry-run flag.
+    | "slack_roster_sync.completed"
     | "project_channels.swept"
     | "topic_channels.swept"
     | "themed_meeting_invites.swept"
