@@ -44,7 +44,7 @@ describe("method scope resolution", () => {
     ["tasks.list", ["operator.read"]],
     ["tasks.get", ["operator.read"]],
     ["config.schema.lookup", ["operator.read"]],
-    ["sessions.create", ["operator.write"]],
+    ["sessions.create", ["operator.chat"]],
     ["sessions.send", ["operator.write"]],
     ["sessions.abort", ["operator.write"]],
     ["tasks.cancel", ["operator.write"]],
@@ -246,7 +246,7 @@ describe("operator scope authorization", () => {
   });
 
   it("allows chat-only devices to send and stop chat without privileged writes", () => {
-    for (const method of ["chat.send", "chat.abort"]) {
+    for (const method of ["chat.send", "chat.abort", "sessions.create"]) {
       expect(authorizeOperatorScopesForMethod(method, ["operator.read", "operator.chat"])).toEqual({
         allowed: true,
       });

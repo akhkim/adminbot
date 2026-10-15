@@ -144,7 +144,7 @@ export function renderProjectDetails(
     draft.alias !== stored.alias ||
     draft.startedOn !== stored.startedOn;
   return html`
-    <details class="my-work-details" open data-testid=${`my-work-details-${paper.id}`}>
+    <details class="my-work-details" data-testid=${`my-work-details-${paper.id}`}>
       <summary>Project details</summary>
       <form
         class="my-work-details__form"

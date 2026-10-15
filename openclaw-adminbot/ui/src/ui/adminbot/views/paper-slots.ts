@@ -673,7 +673,6 @@ export function renderPaperDetails(props: Pick<PaperSlotsProps, "paperId" | "det
   return html`
     <details
       class="paper-slots__group paper-slots__group--branch paper-slots__details-group"
-      open
       data-testid=${`paper-details-${props.paperId}`}
     >
       <summary class="paper-slots__group-head">
@@ -1060,7 +1059,6 @@ export function renderPaperSlots(props: PaperSlotsProps) {
           <details
             class=${`paper-slots__group ${branchNumber === null ? "paper-slots__group--trunk" : "paper-slots__group--branch"}`}
             data-testid=${`paper-slots-branch-${props.paperId}-${branch}`}
-            open
           >
             <summary class="paper-slots__group-head">
               <h4 class="paper-slots__group-title">

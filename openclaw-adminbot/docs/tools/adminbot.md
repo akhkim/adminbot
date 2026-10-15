@@ -1843,9 +1843,13 @@ which has no notification parameter. This does not repair invitations removed by
 ### Member chat permissions
 
 Ordinary members receive `operator.read` and `operator.chat` on their own paired device.
-Chat sending and stopping use the narrow chat permission; `operator.write` remains required
+Chat sending, stopping, and creating a fresh owned conversation use the narrow chat permission; `operator.write` remains required
 for privileged gateway tools. Member turns stay in their own session, cannot select another
 transcript or deliver to an external channel, and run without slash commands or model tools.
+Member session creation accepts only an agent ID and optional label; the server generates the key
+and stamps the authenticated owner. Parent sessions, explicit keys, model overrides, initial
+messages, and command hooks require broader privileges. The UI moves signed-in members away
+from shared default conversations into their private member session.
 ACP tool runtimes are unavailable to chat-only devices. Admin and existing write clients keep
 their prior chat access.
 

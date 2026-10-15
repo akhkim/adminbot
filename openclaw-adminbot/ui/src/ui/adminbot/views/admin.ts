@@ -2605,7 +2605,7 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     return html`${table} ${canAdd ? renderAddPaperCard(props, { governance: false }) : nothing}`;
   }
   return html`
-    ${board(`Active papers (${papers.length})`, table, { open: true })}
+    ${board(`Active papers (${papers.length})`, table)}
     ${board(t("paperOverview.details.preRegistration"), renderPreRegistrationBoard(papers, props))}
     ${board(t("paperOverview.details.travel"), renderTravelBoard(props))}
     ${board(t("paperOverview.details.blockers"), renderBlockers(props, papers))}
