@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import {
   classifySlackUser,
-  isDoNotContact,
   planSlackRosterSync,
   slackRosterSyncRefusal,
   type SlackDirectoryUser,
@@ -66,15 +65,6 @@ describe("classifySlackUser", () => {
 
   it("honours the explicit flag", () => {
     expect(classifySlackUser(slack("M1"), new Set(["M1"]))).toBe("placeholder");
-  });
-
-  it("recognizes do-not-contact spellings", () => {
-    for (const value of ["Null,do not contact", "NULL (Do Not Contact)", "do-not-contact", "x DNC"]) {
-      expect(isDoNotContact(value)).toBe(true);
-    }
-    for (const value of ["Nullah", "Dncan", "Contact me", undefined]) {
-      expect(isDoNotContact(value)).toBe(false);
-    }
   });
 });
 

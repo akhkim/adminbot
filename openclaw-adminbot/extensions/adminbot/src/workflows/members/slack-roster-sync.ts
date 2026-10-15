@@ -13,6 +13,7 @@
  * is the member's or an admin's, and a field either of them wrote is never overwritten here.
  */
 import type { AdminBotLabMember, AdminBotLabMemberInput } from "../../contracts/actions.js";
+import { isDoNotContactName } from "./do-not-contact.js";
 
 /** One Slack account, normalized from a `users.list` member by the connector. */
 export type SlackDirectoryUser = {
@@ -124,7 +125,7 @@ export type SlackRosterSyncPlan = {
 /**
  * Names that only a test or placeholder record ever has. Compared whole and case-insensitively,
  * never by substring. "null" is deliberately absent: in this lab's data a bare "Null" is how a real
- * member opted out (see isDoNotContact), so it must never read as a test row.
+ * member opted out (see do-not-contact.ts), so it must never read as a test row.
  */
 const PLACEHOLDER_NAMES = new Set([
   "undefined",
@@ -139,20 +140,8 @@ const PLACEHOLDER_NAMES = new Set([
 
 /** Reserved by RFC 2606 for documentation; no real person has a mailbox there. */
 const PLACEHOLDER_EMAIL = /@(?:[a-z0-9-]+\.)*example\.(?:com|org|net|edu)$/iu;
-const DO_NOT_CONTACT = /\bdo[\s-]*not[\s-]*contact\b|\bdnc\b/iu;
-const BARE_NULL = /^\s*null\s*$/iu;
-
-/**
- * Whether a name or title says not to contact this person: "do not contact" or "DNC" anywhere
- * (case-insensitive, so "Null,do not contact" and "Jane (DNC)" both count), or a bare "null".
- * An opt-out, which outranks every placeholder rule: a do-not-contact record is never deleted.
- */
-export function isDoNotContact(value: string | undefined): boolean {
-  return Boolean(value && (DO_NOT_CONTACT.test(value) || BARE_NULL.test(value)));
-}
-
 function doNotContactReason(fields: Array<[label: string, value: string | undefined]>) {
-  const hit = fields.find(([, value]) => isDoNotContact(value));
+  const hit = fields.find(([, value]) => isDoNotContactName(value));
   return hit ? `${hit[0]} "${hit[1]?.trim()}" asks not to be contacted` : undefined;
 }
 
