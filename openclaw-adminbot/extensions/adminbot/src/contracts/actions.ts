@@ -164,6 +164,11 @@ export const adminBotActionTypes = [
   // it cannot overwrite anything, and the approval card reads as "adds Ada" rather than as a range
   // the approver has to locate.
   "sheet.append_rows",
+  // Rearranging the member photos on the lab's "Scaling to 50-100 Technical Members" slide: adds,
+  // removes, and moves/resizes faces in the working-group boxes. Typed rather than a call out of a
+  // sweep because it writes to a deck other people present from, and the payload carries the exact
+  // Slides requests so the approval card is the change, not a description of one.
+  "slides.sync_working_groups",
 ] as const;
 
 export type AdminBotActionType = (typeof adminBotActionTypes)[number];
@@ -2477,6 +2482,10 @@ export type AdminBotAuditEvent = {
     // would turn the trail into the location history the opt-in promises not to keep.
     | "location_sharing.enabled"
     | "location_sharing.disabled"
+    // The working-groups slide sync ran and either proposed a change or found nothing to do. Its
+    // own pair so "why did the slide not update this week" has an answer that is not a log file.
+    | "slides.working_groups_planned"
+    | "slides.working_groups_failed"
     | "proposal.created"
     | "proposal.auto_approved"
     | "proposal.removed"

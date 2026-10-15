@@ -147,6 +147,7 @@ import {
 import { stageProposalConflict } from "../contracts/deadline-proposals.stage.js";
 import type { DeadlineRecommendationInput } from "../contracts/deadline-recommendations.js";
 import { adminBotDriveFileId, type AdminBotDriveProbe } from "../contracts/drive-links.js";
+import type { SlidesWorkingGroupsSource } from "../contracts/google-slides.js";
 import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewPaperflowCandidate,
@@ -483,6 +484,13 @@ import {
   isRestrictedCalendarEvent,
   syncCalendarMembership,
 } from "./service.calendar-membership.js";
+import {
+  affectsWorkingGroupsSlide,
+  planSlidesWorkingGroups,
+  proposeSlidesWorkingGroups,
+  type SlidesWorkingGroupsPreview,
+  type SlidesWorkingGroupsSyncResult,
+} from "./service.slides-working-groups.js";
 import {
   recommendationDirectory,
   previewRecommendation,
@@ -1177,6 +1185,11 @@ export type AdminBotServiceOptions = {
    */
   arxivProbe?: AdminBotArtifactProbe;
   openReviewProbe?: AdminBotArtifactProbe;
+  /**
+   * The deck holding the working-groups slide, and a way to read it. Unset means the deployment
+   * has not shared a deck with AdminBot: the routes answer 503 and profile saves schedule nothing.
+   */
+  slidesWorkingGroups?: SlidesWorkingGroupsSource;
 };
 
 const DEFAULT_ACTION_POLICIES = {
@@ -1335,6 +1348,10 @@ const DEFAULT_ACTION_POLICIES = {
   // Same tier as editing cells: the new row is read by the same sweeps. It cannot overwrite a row,
   // which is why it is not higher.
   "sheet.append_rows": approvalPolicy("T2", ["admin"]),
+  // Same tier as the roster sheet: a shared document several people present from, written in
+  // place. The weekly run and the profile-save trigger only ever propose; an admin signs the
+  // exact requests after looking at the before/after preview.
+  "slides.sync_working_groups": approvalPolicy("T2", ["admin"]),
 } as const satisfies Record<AdminBotActionType, AdminBotActionPolicy>;
 
 const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = {
@@ -3296,6 +3313,87 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
+  private slidesWorkingGroupsTimer: ReturnType<typeof setTimeout> | undefined;
+  private slidesWorkingGroupsRun: Promise<AdminBotServiceResponse<SlidesWorkingGroupsSyncResult>> | undefined;
+
+  /** The plan for the working-groups slide, without proposing anything: the admin preview. */
+  async previewSlidesWorkingGroups(): Promise<AdminBotServiceResponse<SlidesWorkingGroupsPreview>> {
+    const source = this.options.slidesWorkingGroups;
+    if (!source) {
+      return serviceError(503, "the working-groups slide is not configured");
+    }
+    try {
+      return { ok: true, status: 200, payload: await planSlidesWorkingGroups(this.store, source) };
+    } catch (error) {
+      return serviceError(502, error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
+   * Plans the working-groups slide and proposes the change for an admin to approve.
+   *
+   * Overlapping callers -- the weekly cron, the profile-save trigger, an admin pressing apply --
+   * share one run, so they cannot race each other into two proposals.
+   */
+  syncSlidesWorkingGroups(
+    actor: string | undefined,
+    trigger: "manual" | "schedule" | "member_change" = "manual",
+  ): Promise<AdminBotServiceResponse<SlidesWorkingGroupsSyncResult>> {
+    const source = this.options.slidesWorkingGroups;
+    if (!source) {
+      return Promise.resolve(serviceError(503, "the working-groups slide is not configured"));
+    }
+    if (!this.slidesWorkingGroupsRun) {
+      this.slidesWorkingGroupsRun = proposeSlidesWorkingGroups(this, this.store, source, actor)
+        .then((result): AdminBotServiceResponse<SlidesWorkingGroupsSyncResult> => {
+          this.recordAudit({
+            type: "slides.working_groups_planned",
+            ...(actor ? { actor } : {}),
+            ...(result.proposal ? { action_id: result.proposal.id } : {}),
+            details: {
+              trigger,
+              changed: result.changed,
+              reused: result.reused,
+              superseded: result.superseded.length,
+              groups: result.groups.map((group) => `${group.group}:${group.status}`).join(","),
+            },
+          });
+          return { ok: true, status: 200, payload: result };
+        })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          this.recordAudit({
+            type: "slides.working_groups_failed",
+            ...(actor ? { actor } : {}),
+            details: { trigger, error: message },
+          });
+          return serviceError<SlidesWorkingGroupsSyncResult>(502, message);
+        })
+        .finally(() => {
+          this.slidesWorkingGroupsRun = undefined;
+        });
+    }
+    return this.slidesWorkingGroupsRun;
+  }
+
+  private scheduleSlidesWorkingGroupsSync(): void {
+    const source = this.options.slidesWorkingGroups;
+    if (!source) {
+      return;
+    }
+    if (this.slidesWorkingGroupsTimer) {
+      clearTimeout(this.slidesWorkingGroupsTimer);
+    }
+    this.slidesWorkingGroupsTimer = setTimeout(() => {
+      this.slidesWorkingGroupsTimer = undefined;
+      // Failures are audited inside the run; nothing here can usefully rethrow to a save that
+      // finished a minute ago.
+      void this.syncSlidesWorkingGroups(undefined, "member_change");
+    }, source.debounceMs ?? 60_000);
+    // A pending slide sync must never keep a CLI or a test process alive.
+    this.slidesWorkingGroupsTimer.unref?.();
+  }
+
   private calendarMembershipCleanup: ReturnType<typeof syncCalendarMembership> | undefined;
 
   syncLabCalendarMembership(
@@ -3485,6 +3583,12 @@ export class AdminBotService {
       });
     }
     reconcileBirthdayEvent(this.birthdayDeps, stored);
+    // And for the working-groups slide: a new member, or one whose themes or photo changed, is a
+    // slide that no longer matches. Debounced and fire-and-forget -- a save must not wait on
+    // Google, and a roster import of 150 rows should become one plan, not 150.
+    if (affectsWorkingGroupsSlide(existing, stored)) {
+      this.scheduleSlidesWorkingGroupsSync();
+    }
     // The same hook again, for theme membership. This is what makes onboarding automatic: a new
     // member describing their research is a profile write, so the channels they belong in are
     // proposed the moment they say what they work on, rather than waiting for a sweep.

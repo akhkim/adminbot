@@ -1250,6 +1250,7 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | `adminbot-deadline-refresh-matches` | `20 6 * * *`         | Re-map papers onto the refreshed deadlines                                   |
 | `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                     |
 | `adminbot-graduations`              | `15 8 * * 1`         | Confirm finishing months, chase alumni transitions, and arrange the ceremony |
+| `adminbot-slides-working-groups`    | `20 7 * * 1`         | Propose the working-groups slide update ([details](../operations/slides-working-groups.md)) |
 | `adminbot-city-channels`            | `10 7 * * 1,4`       | Add members to their city Slack channel once a city reaches four             |
 | `adminbot-email-templates`          | `30 8 * * 1`         | Check the email-template doc against the shipped copy                        |
 | `adminbot-paperflow-nudges`         | `0 9 * * 1`          | PaperFlow venue-stage nudges, once a week                                    |

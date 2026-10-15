@@ -317,6 +317,9 @@ importers:
       pg:
         specifier: ^8.23.0
         version: 8.23.0
+      rastermill:
+        specifier: 0.3.1
+        version: 0.3.1
       typebox:
         specifier: 1.1.39
         version: 1.1.39
