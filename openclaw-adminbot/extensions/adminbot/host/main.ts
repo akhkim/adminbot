@@ -26,6 +26,7 @@ import {
   createGogAdminBotExecutor,
   writeGogDocMarkdown,
 } from "../src/connectors/gog.js";
+import { slidesWorkingGroupsFromEnv } from "../src/connectors/google-slides.js";
 import { createAdminBotMessageExecutor } from "../src/connectors/message.js";
 import { createAdminBotOpenReviewExecutor } from "../src/connectors/openreview.js";
 import { createAdminBotOverleafExecutor } from "../src/connectors/overleaf.js";
@@ -811,6 +812,9 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
   const { repoRoot } = deps;
   const profilePhotoUpdateExecutor = createSlackProfilePhotoUpdateExecutor();
   const cvDigestPublisher = createCvDigestPublisher();
+  // The working-groups slide (docs/operations/slides-working-groups.md). Absent unless a deck is
+  // named; ADMINBOT_SLIDES_WRITE=1 is the separate switch that lets approved plans reach it.
+  const slidesWorkingGroups = slidesWorkingGroupsFromEnv(process.env);
   return createAdminBotMockService({
     databasePath: path.join(repoRoot, "state/adminbot.sqlite"),
     auditRetentionDays: AUDIT_RETENTION_DAYS,
@@ -831,7 +835,9 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
         scriptPath: path.join(repoRoot, "scripts/adminbot-openreview.py"),
         send: process.env.ADMINBOT_OPENREVIEW_SEND === "1",
       }),
+      ...(slidesWorkingGroups ? [slidesWorkingGroups.executor] : []),
     ]),
+    ...(slidesWorkingGroups ? { slidesWorkingGroups: slidesWorkingGroups.source } : {}),
     // Lets a LinkedIn draft use the Drive copy the paper already names instead of demanding the
     // author upload the same PDF again. Same gog binary, same account, as every other Google read.
     readDrivePdfBase64: (fileId: string) => readDriveFileBase64(fileId),

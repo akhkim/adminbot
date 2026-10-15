@@ -546,6 +546,7 @@ function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOpt
       ? { polishSlackProfilePhoto: options.polishSlackProfilePhoto }
       : {}),
     ...(options.driveProbe ? { driveProbe: options.driveProbe } : {}),
+    ...(options.slidesWorkingGroups ? { slidesWorkingGroups: options.slidesWorkingGroups } : {}),
     // Defaulted here rather than injected from the launcher, like `venuePapersReader` above:
     // both are credential-free reads of a public API, so the composition root has nothing to add
     // and a deployment gets them by existing. The Drive probe is the one that needs an account,

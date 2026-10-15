@@ -192,6 +192,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-slides-working-groups",
+      "description": "Plan the working-groups slide's faces against the roster and propose any change for approval",
+      "cron": "15 7 * * 1",
+      "argv": [
+        "bash",
+        "scripts/adminbot-slides-working-groups-cron.sh"
+      ],
+      "timeoutSeconds": 300
+    },
+    {
       "name": "adminbot-city-channels",
       "description": "Add members to their city Slack channel once a city reaches four",
       "cron": "0 7 * * 1,4",

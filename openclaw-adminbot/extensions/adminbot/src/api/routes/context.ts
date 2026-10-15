@@ -273,6 +273,11 @@ export type AdminBotMockServiceOptions = {
    * confirms nothing rather than marking every link as broken.
    */
   driveProbe?: AdminBotDriveProbe;
+  /**
+   * The deck whose working-groups slide follows the roster. Unset means the preview and apply
+   * routes answer 503 and profile saves schedule nothing.
+   */
+  slidesWorkingGroups?: import("../../contracts/google-slides.js").SlidesWorkingGroupsSource;
   /** Asks arXiv and OpenReview about a paper's public record; unset means those slots go unchecked. */
   arxivProbe?: AdminBotArtifactProbe;
   openReviewProbe?: AdminBotArtifactProbe;

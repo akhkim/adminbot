@@ -1,0 +1,153 @@
+{
+  "presentation_id": "deck_synthetic",
+  "slide_object_id": "g_scaling_slide",
+  "request_counts": {
+    "deleteObject": 1,
+    "updatePageElementTransform": 27,
+    "createImage": 12
+  },
+  "groups": [
+    {
+      "group": "interp",
+      "title": "Interpretability",
+      "status": "update",
+      "added": [
+        "Jon Kowalski",
+        "Kim Reyes",
+        "Lea Brennan"
+      ],
+      "removed": [],
+      "moved": 9,
+      "face_size_in": 0.491
+    },
+    {
+      "group": "power",
+      "title": "Power Concentration",
+      "status": "untouched",
+      "added": [],
+      "removed": [],
+      "moved": 0,
+      "face_size_in": 0.55
+    },
+    {
+      "group": "adversarial",
+      "title": "Adversarial Defense",
+      "status": "update",
+      "added": [],
+      "removed": [
+        "Cai Hughes"
+      ],
+      "moved": 4,
+      "face_size_in": 0.55
+    },
+    {
+      "group": "multiagent",
+      "title": "Multi-Agent",
+      "status": "update",
+      "added": [
+        "Oli Okafor",
+        "Pia Lindqvist",
+        "Quin Moreau",
+        "Rae Tanaka",
+        "Sam Silva",
+        "Tia Novak",
+        "Uma Haddad",
+        "Vic Kowalski"
+      ],
+      "removed": [],
+      "moved": 14,
+      "face_size_in": 0.363
+    },
+    {
+      "group": "control",
+      "title": "Loss of Control",
+      "status": "unchanged",
+      "added": [],
+      "removed": [],
+      "moved": 0,
+      "face_size_in": 0.55
+    },
+    {
+      "group": "causality",
+      "title": "Causality",
+      "status": "update",
+      "added": [
+        "Dee Ramirez"
+      ],
+      "removed": [],
+      "moved": 0,
+      "face_size_in": 0.55
+    }
+  ],
+  "skipped_no_photo": {
+    "interp": [],
+    "power": [],
+    "adversarial": [],
+    "multiagent": [],
+    "control": [],
+    "causality": [
+      "Pat Quinn"
+    ]
+  },
+  "sample_requests": [
+    {
+      "deleteObject": {
+        "objectId": "g_photo_2_adversarial2"
+      }
+    },
+    {
+      "updatePageElementTransform": {
+        "objectId": "g_photo_0_interp0",
+        "applyMode": "ABSOLUTE",
+        "transform": {
+          "scaleX": 0.2452701224846894,
+          "scaleY": 0.2452701224846894,
+          "shearX": 0,
+          "shearY": 0,
+          "translateX": 603628,
+          "translateY": 1271016,
+          "unit": "EMU"
+        }
+      }
+    },
+    {
+      "createImage": {
+        "objectId": "adminbot_face_interp_b608a7a13f4f",
+        "url": "https://example.com/avatars/interp9.png",
+        "elementProperties": {
+          "pageObjectId": "g_scaling_slide",
+          "size": {
+            "width": {
+              "magnitude": 448550,
+              "unit": "EMU"
+            },
+            "height": {
+              "magnitude": 448550,
+              "unit": "EMU"
+            }
+          },
+          "transform": {
+            "scaleX": 1,
+            "scaleY": 1,
+            "shearX": 0,
+            "shearY": 0,
+            "translateX": 1133733,
+            "translateY": 2331226,
+            "unit": "EMU"
+          }
+        }
+      }
+    }
+  ],
+  "rerun_after_apply": {
+    "requests": 0,
+    "statuses": {
+      "interp": "unchanged",
+      "power": "untouched",
+      "adversarial": "unchanged",
+      "multiagent": "unchanged",
+      "control": "unchanged",
+      "causality": "unchanged"
+    }
+  }
+}
