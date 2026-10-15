@@ -401,7 +401,6 @@ function applyThemeTransition(
     context,
     currentTheme: host.themeResolved,
   });
-  syncSystemThemeListener(host);
 }
 
 export function setTheme(host: SettingsHost, next: ThemeName, context?: ThemeTransitionContext) {
