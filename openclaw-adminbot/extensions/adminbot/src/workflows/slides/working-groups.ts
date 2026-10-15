@@ -11,21 +11,29 @@ export type WorkingGroupBox = {
   key: string;
   /** The text in the box's heading on the slide, matched case- and dash-insensitively. */
   title: string;
-  /**
-   * The research theme whose members fill the box. Null leaves the box measured but untouched:
-   * there is no data to fill it from, and an empty guess would delete faces somebody placed.
-   */
+  /** The research theme whose members belong in the box, or null when no theme covers it. */
   theme: ResearchThemeId | null;
+  /**
+   * Whole phrases that also put a member in the box when one appears in their research topics or
+   * projects. Slides-only: the theme classifier and the #meeting channels never see them, so a box
+   * can be filled without inventing a meeting theme. A box with neither a theme nor keywords is
+   * measured but left as it is.
+   */
+  keywords?: readonly string[];
 };
 
 export const DEFAULT_WORKING_GROUPS_SLIDE_TITLE = "Scaling to 50-100 Technical Members";
 
 export const WORKING_GROUP_BOXES: readonly WorkingGroupBox[] = [
   { key: "interp", title: "Interpretability", theme: "mech_interp" },
-  // The roster has no Power Concentration theme: the classifier folds "power concentration" into
-  // loss_of_control (see research-themes.ts). Giving this box the same members as Loss of Control
-  // would be a claim nobody made, so it stays hand-maintained until a theme exists.
-  { key: "power", title: "Power Concentration", theme: null },
+  // The roster has no Power Concentration theme, and adding one would add a meeting channel.
+  // Phrases rather than a bare "power", which would match "ML powered causality".
+  {
+    key: "power",
+    title: "Power Concentration",
+    theme: null,
+    keywords: ["power concentration", "concentration of power", "ai governance", "ai and democracy"],
+  },
   { key: "adversarial", title: "Adversarial Defense", theme: "adversarial_defense" },
   { key: "multiagent", title: "Multi-Agent", theme: "multi_agent" },
   { key: "control", title: "Loss of Control", theme: "loss_of_control" },
@@ -66,9 +74,34 @@ export function memberIdsByFaceHash(members: readonly AdminBotLabMember[]): Map<
   return new Map(members.map((member) => [memberHash(member.id), member.id]));
 }
 
+/** Lower-case words separated by single spaces, so a phrase can only match whole words. */
+function phraseText(value: string): string {
+  return ` ${value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()} `;
+}
+
+/** Whether any of the phrases appears, as whole words, in the member's topics or projects. */
+export function matchesKeywords(member: AdminBotLabMember, keywords: readonly string[]): boolean {
+  const phrases = keywords.map(phraseText).filter((phrase) => phrase.trim());
+  if (!phrases.length) {
+    return false;
+  }
+  return [...(member.research_topics ?? []), ...(member.projects ?? [])]
+    .map(phraseText)
+    .some((text) => phrases.some((phrase) => text.includes(phrase)));
+}
+
+/** Whether the box has any rule that says who belongs in it. */
+export function hasMembershipRule(box: WorkingGroupBox): boolean {
+  return Boolean(box.theme) || Boolean(box.keywords?.length);
+}
+
 /**
- * Who belongs in a box: the same rule the theme meetings use, so the slide and the
- * #meeting-xxx channels never disagree about who is in a group.
+ * Who belongs in a box: the people the theme meetings are for, whose theme is the box's theme or
+ * whose topics name one of its phrases. The theme half is the rule the #meeting-xxx channels use,
+ * so the slide never claims somebody the meeting would not invite.
  *
  * Themes rather than meeting attendance. Attendance is only filed when an administrator uploads
  * a Zoom export, so it is sparse and lags by weeks; a member who said what they work on is in the
@@ -76,10 +109,13 @@ export function memberIdsByFaceHash(members: readonly AdminBotLabMember[]): Map<
  */
 export function workingGroupMembers(
   members: readonly AdminBotLabMember[],
-  theme: ResearchThemeId,
+  box: Pick<WorkingGroupBox, "theme" | "keywords">,
 ): AdminBotLabMember[] {
   return members.filter(
-    (member) => isThemeMeetingEligible(member) && memberThemeIds(member).includes(theme),
+    (member) =>
+      isThemeMeetingEligible(member) &&
+      ((box.theme !== null && memberThemeIds(member).includes(box.theme)) ||
+        matchesKeywords(member, box.keywords ?? [])),
   );
 }
 
@@ -94,4 +130,19 @@ export function normalizeSlideText(value: string): string {
     .replace(/\s*-\s*/gu, "-")
     .replace(/\s+/gu, " ")
     .trim();
+}
+
+/**
+ * Alt-text marker on every face this sync places. It is the only thing that makes an image ours:
+ * a face without it was placed by hand and is never moved or deleted, whoever it shows.
+ */
+export const FACE_OWNER_PREFIX = "adminbot:member:";
+
+export function faceOwnerTag(memberId: string): string {
+  return `${FACE_OWNER_PREFIX}${memberId}`;
+}
+
+export function parseFaceOwnerTag(description: string | undefined): string | null {
+  const value = description?.trim() ?? "";
+  return value.startsWith(FACE_OWNER_PREFIX) ? value.slice(FACE_OWNER_PREFIX.length).trim() || null : null;
 }

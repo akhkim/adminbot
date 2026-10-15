@@ -19,6 +19,15 @@ export type SlidesAffineTransform = {
   unit?: string;
 };
 
+export type SlidesRgbColor = { red?: number; green?: number; blue?: number };
+
+export type SlidesOutline = {
+  outlineFill?: { solidFill?: { color?: { rgbColor?: SlidesRgbColor }; alpha?: number } };
+  weight?: SlidesDimension;
+  dashStyle?: string;
+  propertyState?: string;
+};
+
 export type SlidesTextElement = { textRun?: { content?: string } };
 
 export type SlidesPageElement = {
@@ -35,7 +44,7 @@ export type SlidesPageElement = {
   image?: {
     contentUrl?: string;
     sourceUrl?: string;
-    imageProperties?: { cropProperties?: Record<string, number> };
+    imageProperties?: { cropProperties?: Record<string, number>; outline?: SlidesOutline };
   };
   elementGroup?: { children?: SlidesPageElement[] };
 };
@@ -49,8 +58,9 @@ export type SlidesPresentation = {
   slides?: SlidesPage[];
 };
 
-// The only three request kinds the sync ever sends. A union rather than `Record<string, unknown>`
-// so the executor can refuse anything else by construction, not by string matching.
+// The only request kinds the sync ever sends. A union rather than `Record<string, unknown>` so the
+// executor can refuse anything else by construction, not by string matching. There is no move:
+// the slide is curated by hand, and the sync only ever appends after the faces already there.
 export type SlidesCreateImageRequest = {
   createImage: {
     objectId: string;
@@ -63,37 +73,47 @@ export type SlidesCreateImageRequest = {
   };
 };
 
-export type SlidesUpdateTransformRequest = {
-  updatePageElementTransform: {
-    objectId: string;
-    applyMode: "ABSOLUTE";
-    transform: Required<Omit<SlidesAffineTransform, "unit">> & { unit: "EMU" };
-  };
+/** Labels a new face with its member, which is what marks it as one this sync may later touch. */
+export type SlidesAltTextRequest = {
+  updatePageElementAltText: { objectId: string; title: string; description: string };
 };
 
 export type SlidesDeleteObjectRequest = { deleteObject: { objectId: string } };
 
-export type SlidesFaceRequest =
-  | SlidesCreateImageRequest
-  | SlidesUpdateTransformRequest
-  | SlidesDeleteObjectRequest;
+export type SlidesFaceRequest = SlidesCreateImageRequest | SlidesAltTextRequest | SlidesDeleteObjectRequest;
+
+/** The ring around the existing faces, as a fraction of a face's width, so a new face matches. */
+export type FaceRing = { red: number; green: number; blue: number; width_ratio: number };
+
+/** One face to render: the executor turns the avatar into a round PNG before Slides fetches it. */
+export type SlidesFaceImage = {
+  object_id: string;
+  member_id: string;
+  avatar_url: string;
+  ring: FaceRing | null;
+};
 
 /** What the approver signs: the exact requests plus what the slide looked like when planned. */
 export type AdminBotSlidesWorkingGroupsPayload = {
   presentation_id: string;
   slide_object_id: string;
   requests: SlidesFaceRequest[];
-  // Where every moved or deleted face sat at planning time. The deck is edited by hand, so the
+  // Where every face being deleted sat at planning time. The deck is edited by hand, so the
   // executor re-reads it and refuses if any of these drifted, rather than pinning the whole
   // presentation revision and failing on every unrelated typo fix.
   expected: Array<{ object_id: string; translate_x: number; translate_y: number }>;
+  faces: SlidesFaceImage[];
   groups: Array<{
     group: string;
     title: string;
     status: string;
     added: string[];
     removed: string[];
-    moved: number;
+    /** Faces this sync placed for people no longer in the group: deleted only with the opt-in. */
+    would_remove: string[];
+    /** People who belong but do not fit in the box; nobody is added to a box that is full. */
+    no_room: string[];
+    skipped_no_photo: string[];
     face_size_in: number;
   }>;
 };
@@ -110,11 +130,10 @@ export type SlidesWorkingGroupsSource = {
   slideTitle: string;
   client: Pick<GoogleSlidesClient, "getPresentation">;
   /**
-   * Turns a member's avatar URL into the URL Slides should fetch. Identity by default; a
-   * deployment may route it through an image proxy that crops a circle, since the Slides API has
-   * no way to apply the round mask the hand-placed faces use.
+   * Delete faces this sync placed for people who have left the group. Off by default: the plan
+   * still lists them under "would remove", and nothing placed by hand is ever deleted either way.
    */
-  faceImageUrl?: (avatarUrl: string) => string;
+  allowRemovals?: boolean;
   /** How long a burst of profile saves is coalesced before one sync is proposed. */
   debounceMs?: number;
 };

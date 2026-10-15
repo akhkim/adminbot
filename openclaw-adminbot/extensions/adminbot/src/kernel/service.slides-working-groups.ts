@@ -5,11 +5,11 @@ import {
   type AdminBotSlidesWorkingGroupsPayload,
   type SlidesWorkingGroupsSource,
 } from "../contracts/google-slides.js";
-import { isThemeMeetingEligible, memberThemeIds } from "../workflows/members/research-themes.js";
+import { isThemeMeetingEligible } from "../workflows/members/research-themes.js";
 import { findSlideByTitle, measureWorkingGroupsSlide } from "../workflows/slides/face-layout-measure.js";
 import { planWorkingGroupsSlide, type WorkingGroupsPlan } from "../workflows/slides/face-layout-plan.js";
 import { buildFaceRequests } from "../workflows/slides/face-layout-requests.js";
-import { WORKING_GROUP_BOXES } from "../workflows/slides/working-groups.js";
+import { WORKING_GROUP_BOXES, workingGroupMembers } from "../workflows/slides/working-groups.js";
 import type { AdminBotService, AdminBotServiceStore } from "./service.js";
 
 export type SlidesWorkingGroupsPreview = {
@@ -47,7 +47,7 @@ export async function planSlidesWorkingGroups(
     slideObjectId: found.slide.objectId,
     measured: measureWorkingGroupsSlide(found.slide, WORKING_GROUP_BOXES),
     members: store.listLabMembers(),
-    ...(source.faceImageUrl ? { faceImageUrl: source.faceImageUrl } : {}),
+    ...(source.allowRemovals ? { allowRemovals: true } : {}),
   });
   const width = presentation.pageSize?.width?.magnitude ?? 10 * EMU_PER_INCH;
   const height = presentation.pageSize?.height?.magnitude ?? 5.625 * EMU_PER_INCH;
@@ -66,7 +66,7 @@ function summarize(payload: AdminBotSlidesWorkingGroupsPayload): string {
     const bits = [
       group.added.length ? `+${group.added.length}` : "",
       group.removed.length ? `-${group.removed.length}` : "",
-      group.moved ? `${group.moved} moved` : "",
+
     ].filter(Boolean);
     return `${group.title} (${bits.join(", ")})`;
   });
@@ -130,12 +130,14 @@ export async function proposeSlidesWorkingGroups(
     },
     proposed_payload: payload,
     rationale:
-      "Group membership comes from each member's research topics and projects (the same rule as " +
-      "the theme meetings); faces keep the slide's measured size and spacing, shrinking uniformly " +
-      "only when a box would overflow.",
+      "Group membership comes from each member's research topics and projects (the theme-meeting " +
+      "rule, plus each box's slides-only keyword phrases). New round faces are appended after the " +
+      "last face in each box at the measured size and spacing; no existing image is moved, and " +
+      "only faces AdminBot placed can be removed, and only when removals are switched on.",
     undo_plan:
       "Restore the slide from Google Slides version history (File > Version history). Faces " +
-      "AdminBot added have ids starting adminbot_face_ and can be deleted by hand.",
+      "AdminBot added have ids starting adminbot_face_ and alt text adminbot:member:<id>, and can " +
+      "be deleted by hand.",
     idempotency_key: key,
   });
   if (!created.ok) {
@@ -152,7 +154,7 @@ export async function proposeSlidesWorkingGroups(
 
 /**
  * Whether a profile write could change the slide: a new eligible member, or a change to someone's
- * eligibility, themes, name or photo. Anything else -- a phone number, a timezone -- is not worth
+ * eligibility, which boxes they belong in (themes or keyword phrases), name or photo. Anything else -- a phone number, a timezone -- is not worth
  * reading the deck for.
  */
 export function affectsWorkingGroupsSlide(
@@ -163,7 +165,7 @@ export function affectsWorkingGroupsSlide(
     member
       ? JSON.stringify([
           isThemeMeetingEligible(member),
-          isThemeMeetingEligible(member) ? memberThemeIds(member).toSorted() : [],
+          WORKING_GROUP_BOXES.filter((box) => workingGroupMembers([member], box).length).map((box) => box.key),
           member.avatar_url ?? "",
           member.name,
           member.preferred_name ?? "",

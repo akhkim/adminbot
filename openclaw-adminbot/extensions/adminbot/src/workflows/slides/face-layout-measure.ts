@@ -3,6 +3,7 @@ import {
   EMU_PER_POINT,
   type SlidesAffineTransform,
   type SlidesDimension,
+  type SlidesOutline,
   type SlidesPage,
   type SlidesPageElement,
   type SlidesPresentation,
@@ -163,7 +164,11 @@ export type MeasuredFace = {
   tag: { groupKey: string; hash: string } | null;
   movable: boolean;
   crop?: Record<string, number>;
+  ring?: MeasuredRing;
 };
+
+/** A visible outline around a face: colour in 0..1 and weight in EMU. */
+export type MeasuredRing = { red: number; green: number; blue: number; weight: number };
 
 export type FaceGridMetrics = {
   faceW: number;
@@ -177,6 +182,8 @@ export type FaceGridMetrics = {
   left: number;
   top: number;
   crop: Record<string, number> | null;
+  /** The outline most faces have, or null when most have none. */
+  ring: MeasuredRing | null;
   zOrder: "above_box" | "below_box" | "mixed" | "none";
   measured: boolean;
 };
@@ -244,6 +251,7 @@ function measureMetrics(faces: readonly MeasuredFace[], content: Rect, boxZ: num
       left: content.x,
       top: content.y,
       crop: null,
+      ring: null,
       zOrder: "none",
       measured: false,
     };
@@ -275,6 +283,12 @@ function measureMetrics(faces: readonly MeasuredFace[], content: Rect, boxZ: num
     crops.set(key, (crops.get(key) ?? 0) + 1);
   }
   const commonCrop = [...crops.entries()].toSorted((left, right) => right[1] - left[1])[0]![0];
+  const rings = new Map<string, number>();
+  for (const face of faces) {
+    const key = JSON.stringify(face.ring ?? null);
+    rings.set(key, (rings.get(key) ?? 0) + 1);
+  }
+  const commonRing = [...rings.entries()].toSorted((left, right) => right[1] - left[1])[0]![0];
   const above = faces.filter((face) => face.z > boxZ).length;
   return {
     faceW,
@@ -287,6 +301,7 @@ function measureMetrics(faces: readonly MeasuredFace[], content: Rect, boxZ: num
     left: Math.min(...faces.map((face) => face.rect.x)),
     top: Math.min(...faces.map((face) => face.rect.y)),
     crop: JSON.parse(commonCrop) as Record<string, number> | null,
+    ring: JSON.parse(commonRing) as MeasuredRing | null,
     zOrder: above === faces.length ? "above_box" : above === 0 ? "below_box" : "mixed",
     measured: true,
   };
@@ -403,6 +418,9 @@ export function measureWorkingGroupsSlide(
         ...(image.element.description ? { description: image.element.description } : {}),
         tag: parseFaceObjectId(image.element.objectId),
         movable: !image.grouped && !image.sheared && image.intrinsic.w > 0 && image.intrinsic.h > 0,
+        ...(readRing(image.element.image?.imageProperties?.outline)
+          ? { ring: readRing(image.element.image?.imageProperties?.outline)! }
+          : {}),
         ...(image.element.image?.imageProperties?.cropProperties
           ? { crop: image.element.image.imageProperties.cropProperties }
           : {}),
@@ -448,4 +466,18 @@ function medianFaceSize(images: readonly FlatElement[]): number {
   }
   const sizes = images.map((image) => Math.max(image.rect.w, image.rect.h)).toSorted((a, b) => a - b);
   return sizes[Math.floor(sizes.length / 2)]!;
+}
+
+/** The outline Slides draws around an image, or undefined when it draws none. */
+export function readRing(outline: SlidesOutline | undefined): MeasuredRing | undefined {
+  if (!outline || outline.propertyState === "NOT_RENDERED" || outline.propertyState === "INHERIT") {
+    return undefined;
+  }
+  const weight = toEmu(outline.weight);
+  const rgb = outline.outlineFill?.solidFill?.color?.rgbColor;
+  if (!(weight > 0) || !rgb) {
+    return undefined;
+  }
+  const round = (value: number | undefined) => Math.round((value ?? 0) * 1000) / 1000;
+  return { red: round(rgb.red), green: round(rgb.green), blue: round(rgb.blue), weight: Math.round(weight) };
 }

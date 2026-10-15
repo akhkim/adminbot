@@ -1,31 +1,23 @@
-import { createVerify, generateKeyPairSync } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import type {
   AdminBotSlidesWorkingGroupsPayload,
   GoogleSlidesClient,
+  SlidesFaceRequest,
   SlidesPresentation,
 } from "../contracts/google-slides.js";
 import { findSlideByTitle, measureWorkingGroupsSlide } from "../workflows/slides/face-layout-measure.js";
 import { planWorkingGroupsSlide } from "../workflows/slides/face-layout-plan.js";
 import { buildFaceRequests } from "../workflows/slides/face-layout-requests.js";
 import {
+  image,
   legacyFace,
   syntheticDeck,
   syntheticMember,
+  taggedFace,
 } from "../workflows/slides/face-layout.test-helpers.js";
-import { WORKING_GROUP_BOXES } from "../workflows/slides/working-groups.js";
-import {
-  createGoogleSlidesClient,
-  createGoogleSlidesExecutor,
-  googleSlidesTokenSourceFromEnv,
-  serviceAccountTokenSource,
-  slidesWorkingGroupsFromEnv,
-} from "./google-slides.js";
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-}
+import { faceOwnerTag, WORKING_GROUP_BOXES } from "../workflows/slides/working-groups.js";
+import { createGoogleSlidesExecutor, slidesWorkingGroupsFromEnv, type FacePipeline } from "./google-slides.js";
 
 function proposal(payload: unknown, type = "slides.sync_working_groups"): AdminBotStoredProposal {
   return {
@@ -43,14 +35,15 @@ function proposal(payload: unknown, type = "slides.sync_working_groups"): AdminB
   };
 }
 
-// One member leaves Causality and one joins: a payload with a delete, moves and a create.
+// Causality: five hand-placed faces, one face this sync placed for somebody who has since left,
+// and one new member. With removals on: a delete, a create and its alt-text tag.
 function scenario(): { deck: SlidesPresentation; payload: AdminBotSlidesWorkingGroupsPayload } {
   const members = Array.from({ length: 5 }, (_, index) => syntheticMember(`c${index}`, "causality"));
-  const deck = syntheticDeck({ causality: members.map((member, index) => legacyFace(member, index)) });
-  const roster = [
-    ...members.map((member, index) => (index === 0 ? { ...member, research_topics: [] } : member)),
-    syntheticMember("c9", "causality"),
-  ];
+  const leaver = syntheticMember("c8", "causality");
+  const deck = syntheticDeck({
+    causality: [...members.map((member, index) => legacyFace(member, index)), taggedFace("causality", leaver)],
+  });
+  const roster = [...members, { ...leaver, research_topics: [] }, syntheticMember("c9", "causality")];
   const found = findSlideByTitle(deck, "Scaling to 50-100 Technical Members");
   if (!found.ok) {
     throw new Error(found.reason);
@@ -59,92 +52,39 @@ function scenario(): { deck: SlidesPresentation; payload: AdminBotSlidesWorkingG
     slideObjectId: found.slide.objectId,
     measured: measureWorkingGroupsSlide(found.slide, WORKING_GROUP_BOXES),
     members: roster,
+    allowRemovals: true,
   });
   return { deck, payload: buildFaceRequests(plan, deck.presentationId) };
 }
 
-function fakeClient(deck: SlidesPresentation): GoogleSlidesClient & { batchUpdate: ReturnType<typeof vi.fn> } {
+function fakeClient(deck: SlidesPresentation) {
   return {
-    getPresentation: vi.fn(async () => deck),
-    batchUpdate: vi.fn(async () => ({})),
-  };
+    getPresentation: vi.fn(async (_id: string): Promise<SlidesPresentation> => deck),
+    batchUpdate: vi.fn(async (_id: string, _requests: readonly SlidesFaceRequest[]): Promise<unknown> => ({})),
+  } satisfies GoogleSlidesClient;
 }
 
-describe("createGoogleSlidesClient", () => {
-  it("reads only the fields the measurement needs and posts batch updates, with the bearer token", async () => {
-    const calls: Array<{ url: string; init?: RequestInit }> = [];
-    const client = createGoogleSlidesClient({
-      token: async () => "tok",
-      fetch: (async (url: string, init?: RequestInit) => {
-        calls.push({ url, init });
-        return jsonResponse({ presentationId: "p1", slides: [] });
-      }) as typeof fetch,
-    });
-    await client.getPresentation("p1");
-    await client.batchUpdate("p1", [{ deleteObject: { objectId: "adminbot_face_interp_0123456789ab" } }]);
-    expect(calls[0]!.url).toContain("/presentations/p1?fields=");
-    expect(calls[0]!.url).toContain(encodeURIComponent("slides(objectId,pageElements)"));
-    expect((calls[0]!.init!.headers as Record<string, string>).authorization).toBe("Bearer tok");
-    expect(calls[1]!.url).toMatch(/\/presentations\/p1:batchUpdate$/u);
-    expect(JSON.parse(String(calls[1]!.init!.body))).toEqual({
-      requests: [{ deleteObject: { objectId: "adminbot_face_interp_0123456789ab" } }],
-    });
-  });
-
-  it("surfaces Google's error message without the token", async () => {
-    const client = createGoogleSlidesClient({
-      token: async () => "secret-token",
-      fetch: (async () => jsonResponse({ error: { message: "The caller does not have permission" } }, 403)) as typeof fetch,
-    });
-    const error = await client.getPresentation("p1").catch((caught: Error) => caught);
-    expect(error.message).toContain("403");
-    expect(error.message).toContain("does not have permission");
-    expect(error.message).not.toContain("secret-token");
-  });
-});
-
-describe("serviceAccountTokenSource", () => {
-  it("signs an RS256 JWT for the presentations scope and caches the token", async () => {
-    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-    const bodies: string[] = [];
-    const token = serviceAccountTokenSource({
-      key: {
-        client_email: "slides-bot@example.iam.gserviceaccount.com",
-        private_key: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
-      },
-      now: () => 1_800_000_000_000,
-      fetch: (async (_url: string, init?: RequestInit) => {
-        bodies.push(String(init!.body));
-        return jsonResponse({ access_token: "ya29.test", expires_in: 3600 });
-      }) as typeof fetch,
-    });
-    expect(await token()).toBe("ya29.test");
-    expect(await token()).toBe("ya29.test");
-    expect(bodies).toHaveLength(1);
-    const assertion = new URLSearchParams(bodies[0]!).get("assertion")!;
-    const [header, claims, signature] = assertion.split(".");
-    expect(JSON.parse(Buffer.from(claims!, "base64url").toString())).toMatchObject({
-      iss: "slides-bot@example.iam.gserviceaccount.com",
-      scope: "https://www.googleapis.com/auth/presentations",
-      aud: "https://oauth2.googleapis.com/token",
-    });
-    const verified = createVerify("RSA-SHA256")
-      .update(`${header}.${claims}`)
-      .verify(publicKey, Buffer.from(signature!, "base64url"));
-    expect(verified).toBe(true);
-  });
-
-  it("is configured from a key file or a raw token, and absent otherwise", async () => {
-    expect(googleSlidesTokenSourceFromEnv({})).toBeUndefined();
-    expect(await googleSlidesTokenSourceFromEnv({ ADMINBOT_SLIDES_ACCESS_TOKEN: "abc" })!()).toBe("abc");
-    expect(() =>
-      googleSlidesTokenSourceFromEnv(
-        { ADMINBOT_SLIDES_SERVICE_ACCOUNT_FILE: "/keys/slides.json" },
-        { readFile: () => JSON.stringify({ type: "authorized_user" }) },
-      ),
-    ).toThrow(/not a service-account key/u);
-  });
-});
+function fakePipeline(options: { failFor?: string } = {}) {
+  const released: string[] = [];
+  const pipeline: FacePipeline = {
+    fetchAvatar: vi.fn(async (url: string) => {
+      if (options.failFor && url.includes(options.failFor)) {
+        throw new Error("avatar download failed (404)");
+      }
+      return new Uint8Array([1]);
+    }),
+    render: vi.fn(async () => Buffer.from("png")),
+    host: {
+      publish: vi.fn(async (_png: Buffer, name: string) => ({
+        url: `https://drive.example/${name}`,
+        release: async () => {
+          released.push(name);
+        },
+      })),
+    },
+  };
+  return { pipeline, released };
+}
 
 describe("createGoogleSlidesExecutor", () => {
   it("leaves other action types to other executors", async () => {
@@ -161,21 +101,52 @@ describe("createGoogleSlidesExecutor", () => {
     expect(client.batchUpdate).not.toHaveBeenCalled();
   });
 
-  it("re-reads the slide and sends the planned requests when nothing drifted", async () => {
+  it("renders each new face round, points Slides at the hosted copy, and unshares it afterwards", async () => {
     const { deck, payload } = scenario();
     expect(payload.requests.map((request) => Object.keys(request)[0])).toEqual([
       "deleteObject",
-      ...Array(payload.requests.length - 2).fill("updatePageElementTransform"),
       "createImage",
+      "updatePageElementAltText",
     ]);
     const client = fakeClient(deck);
-    const outcome = await createGoogleSlidesExecutor({ client, write: true }).execute(proposal(payload));
+    const { pipeline, released } = fakePipeline();
+    const outcome = await createGoogleSlidesExecutor({ client, write: true, faces: pipeline }).execute(
+      proposal(payload),
+    );
     expect(outcome).toMatchObject({ handled: true });
     expect(outcome.delivered).toBeUndefined();
-    expect(client.batchUpdate).toHaveBeenCalledWith(deck.presentationId, payload.requests);
+    const face = payload.faces[0]!;
+    expect(pipeline.fetchAvatar).toHaveBeenCalledWith(face.avatar_url);
+    expect(pipeline.render).toHaveBeenCalledWith(expect.any(Uint8Array), face.ring);
+    const sent = client.batchUpdate.mock.calls[0]![1] as SlidesFaceRequest[];
+    expect(sent[1]).toMatchObject({ createImage: { url: `https://drive.example/${face.object_id}.png` } });
+    expect(sent[2]).toEqual(payload.requests[2]);
+    expect(released).toEqual([`${face.object_id}.png`]);
   });
 
-  it("refuses when a face was moved by hand after the plan was approved", async () => {
+  it("still unshares the hosted faces when the batch update fails", async () => {
+    const { deck, payload } = scenario();
+    const client = fakeClient(deck);
+    client.batchUpdate.mockRejectedValueOnce(new Error("Google said no"));
+    const { pipeline, released } = fakePipeline();
+    await expect(
+      createGoogleSlidesExecutor({ client, write: true, faces: pipeline }).execute(proposal(payload)),
+    ).rejects.toThrow(/Google said no/u);
+    expect(released).toHaveLength(1);
+  });
+
+  it("drops a face whose photo cannot be used, and reports it", async () => {
+    const { deck, payload } = scenario();
+    const client = fakeClient(deck);
+    const { pipeline } = fakePipeline({ failFor: "c9" });
+    const outcome = await createGoogleSlidesExecutor({ client, write: true, faces: pipeline }).execute(
+      proposal(payload),
+    );
+    expect(client.batchUpdate.mock.calls[0]![1]).toEqual([payload.requests[0]]);
+    expect(outcome.artifacts?.faces_not_added).toContain("c9");
+  });
+
+  it("refuses when a face to delete was moved, or an image now sits where a face would go", async () => {
     const { deck, payload } = scenario();
     const moved = structuredClone(deck);
     const target = moved.slides![1]!.pageElements!.find(
@@ -183,59 +154,129 @@ describe("createGoogleSlidesExecutor", () => {
     )!;
     target.transform!.translateX! += 200_000;
     const client = fakeClient(moved);
-    const outcome = await createGoogleSlidesExecutor({ client, write: true }).execute(proposal(payload));
-    expect(outcome).toMatchObject({ handled: true, delivered: false });
-    expect(outcome.reason).toContain("has been moved");
+    const { pipeline } = fakePipeline();
+    const executor = createGoogleSlidesExecutor({ client, write: true, faces: pipeline });
+    expect((await executor.execute(proposal(payload))).reason).toContain("has been moved");
+
+    const crowded = structuredClone(deck);
+    const create = payload.requests.find((request) => "createImage" in request)!;
+    const at = "createImage" in create ? create.createImage.elementProperties.transform : null;
+    crowded.slides![1]!.pageElements!.push(image("g_new_by_hand", at!.translateX, at!.translateY, 502_920));
+    client.getPresentation.mockResolvedValueOnce(crowded);
+    expect((await executor.execute(proposal(payload))).reason).toContain("now sits where a new face would go");
     expect(client.batchUpdate).not.toHaveBeenCalled();
+    expect(pipeline.host.publish).not.toHaveBeenCalled();
   });
 
-  it("refuses requests outside the three it owns, or aimed at unplanned objects", async () => {
+  it("refuses to delete a face that no longer carries the AdminBot tag", async () => {
+    const members = [syntheticMember("c0", "causality")];
+    const leaver = syntheticMember("c8", "causality");
+    const deck = syntheticDeck({
+      causality: [legacyFace(members[0]!, 0), { objectId: "g_ours", description: faceOwnerTag(leaver.id) }],
+    });
+    const found = findSlideByTitle(deck, "Scaling to 50-100 Technical Members");
+    const plan = planWorkingGroupsSlide({
+      slideObjectId: found.ok ? found.slide.objectId : "",
+      measured: measureWorkingGroupsSlide(deck.slides![1]!, WORKING_GROUP_BOXES),
+      members,
+      allowRemovals: true,
+    });
+    const payload = buildFaceRequests(plan, deck.presentationId);
+    expect(payload.requests).toEqual([{ deleteObject: { objectId: "g_ours" } }]);
+    const retagged = structuredClone(deck);
+    retagged.slides![1]!.pageElements!.find((element) => element.objectId === "g_ours")!.description = "Someone";
+    const outcome = await createGoogleSlidesExecutor({ client: fakeClient(retagged), write: true }).execute(
+      proposal(payload),
+    );
+    expect(outcome.reason).toContain("no longer carries the AdminBot tag");
+  });
+
+  it("refuses moves, edits, untagged creates and labels it did not plan", async () => {
     const { deck, payload } = scenario();
     const executor = createGoogleSlidesExecutor({ client: fakeClient(deck), write: true });
+    const withRequests = (requests: unknown[]) => proposal({ ...payload, requests });
     await expect(
-      executor.execute(proposal({ ...payload, requests: [{ deleteText: { objectId: "g_slide_title" } }] })),
-    ).rejects.toThrow(/only createImage/u);
-    await expect(
-      executor.execute(proposal({ ...payload, requests: [{ deleteObject: { objectId: "g_box_interp" } }] })),
-    ).rejects.toThrow(/not planned/u);
+      executor.execute(withRequests([{ updatePageElementTransform: { objectId: "g_photo_0_c0" } }])),
+    ).rejects.toThrow(/only createImage, updatePageElementAltText and deleteObject/u);
+    await expect(executor.execute(withRequests([{ deleteText: { objectId: "g_slide_title" } }]))).rejects.toThrow(
+      /only createImage/u,
+    );
+    await expect(executor.execute(withRequests([{ deleteObject: { objectId: "g_box_interp" } }]))).rejects.toThrow(
+      /not planned/u,
+    );
     await expect(
       executor.execute(
-        proposal({
-          ...payload,
-          requests: [
-            {
-              createImage: {
-                objectId: "g_untagged",
-                url: "https://example.com/x.png",
-                elementProperties: { pageObjectId: payload.slide_object_id },
-              },
+        withRequests([
+          { updatePageElementAltText: { objectId: "g_photo_0_c0", title: "x", description: faceOwnerTag("c0") } },
+        ]),
+      ),
+    ).rejects.toThrow(/only faces created in this batch/u);
+    const create = payload.requests[1]!;
+    await expect(
+      executor.execute(
+        withRequests([
+          create,
+          {
+            updatePageElementAltText: {
+              objectId: "createImage" in create ? create.createImage.objectId : "",
+              title: "x",
+              description: faceOwnerTag("somebody-else"),
             },
-          ],
-        }),
+          },
+        ]),
+      ),
+    ).rejects.toThrow(/does not name the planned member/u);
+    await expect(
+      executor.execute(
+        withRequests([
+          {
+            createImage: {
+              objectId: "g_untagged",
+              url: "https://example.com/x.png",
+              elementProperties: { pageObjectId: payload.slide_object_id },
+            },
+          },
+        ]),
       ),
     ).rejects.toThrow(/not an AdminBot face id/u);
+  });
+
+  it("needs a face host before it can add faces", async () => {
+    const { deck, payload } = scenario();
+    await expect(
+      createGoogleSlidesExecutor({ client: fakeClient(deck), write: true }).execute(proposal(payload)),
+    ).rejects.toThrow(/ADMINBOT_SLIDES_FACE_FOLDER_ID/u);
   });
 });
 
 describe("slidesWorkingGroupsFromEnv", () => {
-  it("is absent without a deck, refuses a deck without credentials, and keeps writes off by default", async () => {
-    expect(slidesWorkingGroupsFromEnv({ ADMINBOT_SLIDES_ACCESS_TOKEN: "abc" })).toBeUndefined();
+  it("is absent without a deck, needs GOG_ACCOUNT, and keeps writes and removals off by default", async () => {
+    const capture = vi.fn(async () => "{}");
+    expect(slidesWorkingGroupsFromEnv({ GOG_ACCOUNT: "bot@example.com" }, { capture })).toBeUndefined();
     expect(() =>
-      slidesWorkingGroupsFromEnv({ ADMINBOT_SLIDES_WORKING_GROUPS_PRESENTATION_ID: "deck" }),
-    ).toThrow(/ADMINBOT_SLIDES_SERVICE_ACCOUNT_FILE/u);
-    const configured = slidesWorkingGroupsFromEnv({
-      ADMINBOT_SLIDES_WORKING_GROUPS_PRESENTATION_ID: "deck",
-      ADMINBOT_SLIDES_ACCESS_TOKEN: "abc",
-      ADMINBOT_SLIDES_FACE_URL_TEMPLATE: "https://images.example.com/?url={url}&mask=circle",
-    })!;
+      slidesWorkingGroupsFromEnv({ ADMINBOT_SLIDES_WORKING_GROUPS_PRESENTATION_ID: "deck" }, { capture }),
+    ).toThrow(/GOG_ACCOUNT/u);
+    const configured = slidesWorkingGroupsFromEnv(
+      { ADMINBOT_SLIDES_WORKING_GROUPS_PRESENTATION_ID: "deck", GOG_ACCOUNT: "bot@example.com" },
+      { capture },
+    )!;
     expect(configured.source).toMatchObject({
       presentationId: "deck",
       slideTitle: "Scaling to 50-100 Technical Members",
     });
-    expect(configured.source.faceImageUrl!("https://a.example/p.png?x=1")).toBe(
-      "https://images.example.com/?url=https%3A%2F%2Fa.example%2Fp.png%3Fx%3D1&mask=circle",
-    );
+    expect(configured.source.allowRemovals).toBeUndefined();
     const { payload } = scenario();
     expect(await configured.executor.execute(proposal(payload))).toMatchObject({ delivered: false });
+    expect(capture).not.toHaveBeenCalled();
+    expect(
+      slidesWorkingGroupsFromEnv(
+        {
+          ADMINBOT_SLIDES_WORKING_GROUPS_PRESENTATION_ID: "deck",
+          GOG_ACCOUNT: "bot@example.com",
+          ADMINBOT_SLIDES_ALLOW_REMOVALS: "1",
+        },
+        { capture },
+      )!.source.allowRemovals,
+    ).toBe(true);
   });
 });

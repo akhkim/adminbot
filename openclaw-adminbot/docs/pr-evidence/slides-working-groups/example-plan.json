@@ -1,43 +1,59 @@
 {
   "presentation_id": "deck_synthetic",
   "slide_object_id": "g_scaling_slide",
+  "faces_on_slide_before": {
+    "interp": 22,
+    "power": 12,
+    "adversarial": 5,
+    "multiagent": 12,
+    "control": 5,
+    "causality": 13
+  },
   "request_counts": {
-    "deleteObject": 1,
-    "updatePageElementTransform": 27,
-    "createImage": 12
+    "createImage": 6,
+    "updatePageElementAltText": 6
   },
   "groups": [
     {
       "group": "interp",
       "title": "Interpretability",
-      "status": "update",
-      "added": [
-        "Jon Kowalski",
-        "Kim Reyes",
-        "Lea Brennan"
-      ],
+      "status": "full",
+      "added": [],
       "removed": [],
-      "moved": 9,
-      "face_size_in": 0.491
+      "would_remove": [],
+      "no_room": [
+        "Bo Iyer",
+        "Cy Sato",
+        "Di Hughes"
+      ],
+      "skipped_no_photo": [],
+      "face_size_in": 0.55
     },
     {
       "group": "power",
       "title": "Power Concentration",
-      "status": "untouched",
-      "added": [],
+      "status": "update",
+      "added": [
+        "Ada Moreau",
+        "Ben Brennan"
+      ],
       "removed": [],
-      "moved": 0,
+      "would_remove": [],
+      "no_room": [],
+      "skipped_no_photo": [],
       "face_size_in": 0.55
     },
     {
       "group": "adversarial",
       "title": "Adversarial Defense",
       "status": "update",
-      "added": [],
-      "removed": [
-        "Cai Hughes"
+      "added": [
+        "Dee Petrov"
       ],
-      "moved": 4,
+      "removed": [],
+      "would_remove": [],
+      "no_room": [],
+      "skipped_no_photo": [],
       "face_size_in": 0.55
     },
     {
@@ -45,18 +61,13 @@
       "title": "Multi-Agent",
       "status": "update",
       "added": [
-        "Oli Okafor",
-        "Pia Lindqvist",
-        "Quin Moreau",
-        "Rae Tanaka",
-        "Sam Silva",
-        "Tia Novak",
-        "Uma Haddad",
-        "Vic Kowalski"
+        "Eli Okafor"
       ],
       "removed": [],
-      "moved": 14,
-      "face_size_in": 0.363
+      "would_remove": [],
+      "no_room": [],
+      "skipped_no_photo": [],
+      "face_size_in": 0.55
     },
     {
       "group": "control",
@@ -64,7 +75,9 @@
       "status": "unchanged",
       "added": [],
       "removed": [],
-      "moved": 0,
+      "would_remove": [],
+      "no_room": [],
+      "skipped_no_photo": [],
       "face_size_in": 0.55
     },
     {
@@ -72,57 +85,34 @@
       "title": "Causality",
       "status": "update",
       "added": [
-        "Dee Ramirez"
+        "Cai Ramirez",
+        "Fay Kowalski"
       ],
       "removed": [],
-      "moved": 0,
+      "would_remove": [
+        "Zoe Ali"
+      ],
+      "no_room": [],
+      "skipped_no_photo": [
+        "Gus Costa"
+      ],
       "face_size_in": 0.55
     }
   ],
-  "skipped_no_photo": {
-    "interp": [],
-    "power": [],
-    "adversarial": [],
-    "multiagent": [],
-    "control": [],
-    "causality": [
-      "Pat Quinn"
-    ]
-  },
   "sample_requests": [
     {
-      "deleteObject": {
-        "objectId": "g_photo_2_adversarial2"
-      }
-    },
-    {
-      "updatePageElementTransform": {
-        "objectId": "g_photo_0_interp0",
-        "applyMode": "ABSOLUTE",
-        "transform": {
-          "scaleX": 0.2452701224846894,
-          "scaleY": 0.2452701224846894,
-          "shearX": 0,
-          "shearY": 0,
-          "translateX": 603628,
-          "translateY": 1271016,
-          "unit": "EMU"
-        }
-      }
-    },
-    {
       "createImage": {
-        "objectId": "adminbot_face_interp_b608a7a13f4f",
-        "url": "https://example.com/avatars/interp9.png",
+        "objectId": "adminbot_face_power_3a02e811c8b8",
+        "url": "https://example.com/avatars/power0.png",
         "elementProperties": {
           "pageObjectId": "g_scaling_slide",
           "size": {
             "width": {
-              "magnitude": 448550,
+              "magnitude": 502920,
               "unit": "EMU"
             },
             "height": {
-              "magnitude": 448550,
+              "magnitude": 502920,
               "unit": "EMU"
             }
           },
@@ -131,23 +121,45 @@
             "scaleY": 1,
             "shearX": 0,
             "shearY": 0,
-            "translateX": 1133733,
-            "translateY": 2331226,
+            "translateX": 4343400,
+            "translateY": 2606040,
             "unit": "EMU"
           }
         }
       }
+    },
+    {
+      "updatePageElementAltText": {
+        "objectId": "adminbot_face_power_3a02e811c8b8",
+        "title": "Ada Moreau",
+        "description": "adminbot:member:power0"
+      }
     }
   ],
+  "existing_images_unchanged_after_apply": true,
   "rerun_after_apply": {
     "requests": 0,
     "statuses": {
-      "interp": "unchanged",
-      "power": "untouched",
+      "interp": "full",
+      "power": "unchanged",
       "adversarial": "unchanged",
       "multiagent": "unchanged",
       "control": "unchanged",
       "causality": "unchanged"
     }
+  },
+  "with_ADMINBOT_SLIDES_ALLOW_REMOVALS_1": {
+    "request_counts": {
+      "deleteObject": 1,
+      "createImage": 6,
+      "updatePageElementAltText": 6
+    },
+    "deletes": [
+      {
+        "deleteObject": {
+          "objectId": "adminbot_face_causality_b3c2215003da"
+        }
+      }
+    ]
   }
 }

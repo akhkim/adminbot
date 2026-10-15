@@ -1,27 +1,56 @@
 # Working-groups slide sync
 
-This evidence is entirely synthetic. It was produced without calling the Google API and without
-touching the real deck. A 10 × 5.625 in slide modelled on "Scaling to 50-100 Technical Members"
-(six rounded boxes, round faces of 0.55 in) was built in memory. It was run through the same
-measure → plan → request code the service uses, with a made-up roster. The rerun was done on the
-result of applying the requests to that in-memory slide.
+Everything in this folder is synthetic. It was produced without calling the Google API, without
+reading the real deck, and with a made-up roster and `example.com` photos.
 
-- **`before-after.svg`** draws the slide before and after the plan. Circles with initials stand in
-  for photos: grey is unchanged, blue has moved or been resized, green is new, and red has been
-  removed. The live route `GET /slides/working-groups/preview?format=svg` produces the
-  same drawing.
-- **`example-plan.json`** contains, for each group, the status, who was added and removed, how
-  many faces moved, and the resulting face size. It also has the request counts, a sample of each
-  request type, and the rerun result.
+## The synthetic slide
 
-| Box                 | Before                       | Roster change                        | Result                                   |
-| ------------------- | ---------------------------- | ------------------------------------ | ---------------------------------------- |
-| Interpretability    | 9 faces                      | 3 joiners                            | Overflows, so all faces shrink to 0.491 in, centred |
-| Power Concentration | 6 faces                      | (no theme)                           | Untouched                                |
-| Adversarial Defense | 7 faces                      | 1 member became alumni               | 1 face deleted, the rest close the gap at 0.55 in |
-| Multi-Agent         | 14 faces, already spilling   | 8 joiners                            | Spilled faces pulled back, all shrink to 0.363 in |
-| Loss of Control     | 5 faces                      | none                                 | Unchanged                                |
-| Causality           | 3 faces                      | 1 joiner, 1 joiner with no photo     | 1 face added at 0.55 in; the other is listed in `skipped_no_photo` |
+The slide is modelled on "Scaling to 50-100 Technical Members" and was built in memory:
 
-The plan sends 1 `deleteObject`, 27 `updatePageElementTransform` and 12 `createImage` requests.
-Re-planning after they are applied gives 0 requests, with every box `unchanged` or `untouched`.
+- six rounded boxes;
+- round faces 0.55 in across, 0.1 in apart, six to a row, with a thin white ring;
+- every face placed by hand, as on the live slide.
+
+The same measure → plan → request code the service uses was run over it.
+
+## Files
+
+- **`before-after.svg`** is what the preview route `GET /slides/working-groups/preview?format=svg`
+  draws. Every face is a circle with initials, never a photo:
+  - grey means already there;
+  - `?` means a hand-placed image tied to nobody;
+  - green means added;
+  - orange means would be removed, but removals are off.
+
+  A full box gets a red dashed outline and a `+N` badge, where N is the number of people who
+  belong but did not fit.
+- **`example-plan.json`** has:
+  - for each box: `added`, `no_room`, `would_remove` and `skipped_no_photo`;
+  - the request counts and a sample request pair;
+  - a check that every existing image is unchanged after the requests are applied;
+  - the rerun result;
+  - the same plan with `ADMINBOT_SLIDES_ALLOW_REMOVALS=1`.
+- **`round-face-sample.png`** is a synthetic gradient run through the production circle mask and
+  ring (`connectors/slides-face-image.ts`). The corners are transparent and the ring is white, as
+  on the slide.
+
+## Scenario
+
+| Box                 | On the slide                                        | Roster says                                                         | Plan                                                                    |
+| ------------------- | --------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Interpretability    | 22 faces, 3 of people the rule does not select      | 19 of them plus 3 joiners                                           | **full**: only 2 slots left, so nobody is added; `no_room` lists all 3 |
+| Power Concentration | 12 faces with no alt text                           | 2 members with "AI governance"; 1 with "ML powered causality"       | 2 added after the 12th face; the third goes to Causality, not here      |
+| Adversarial Defense | 5 faces                                             | 1 shown member became alumni; 1 joiner                              | 1 added; the alumna's hand-placed face stays                            |
+| Multi-Agent         | 12 faces                                            | 10 of them plus 1 joiner                                            | 1 added, wrapping onto a new row                                        |
+| Loss of Control     | 5 faces                                             | the same 5                                                          | unchanged                                                               |
+| Causality           | 11 hand-placed faces, 1 AdminBot face for a leaver, 1 stray face off the slide's right edge | the 11, the stray's person, 2 joiners, 1 joiner with no photo | 2 added; the stray's person is not added again; the leaver is under `would_remove`; the photo-less joiner is under `skipped_no_photo` |
+
+## Results
+
+- **Requests.** The plan sends 6 `createImage` and 6 `updatePageElementAltText` requests, and no
+  `deleteObject` or transform requests.
+- **Existing images.** After the requests are applied, every existing image has the same position
+  and size as before.
+- **Rerun.** Planning again gives 0 requests. Interpretability is still reported as `full`.
+- **With removals on.** `ADMINBOT_SLIDES_ALLOW_REMOVALS=1` adds a single `deleteObject`, for the
+  leaver's AdminBot-tagged face. Hand-placed faces are never candidates for removal.

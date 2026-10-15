@@ -1,6 +1,7 @@
-// A synthetic stand-in for the "Scaling to 50-100 Technical Members" slide: six rounded boxes,
-// a heading in each, and rows of square photos about 0.55 in across. Made-up members and
-// example.com photo URLs only -- nothing here is read from the real deck.
+// A synthetic stand-in for the "Scaling to 50-100 Technical Members" slide: six rounded boxes on
+// a widescreen page, a heading in each, and rows of round photos about 0.55 in across with a thin
+// white ring. Made-up members and example.com photo URLs only -- nothing here is read from the
+// real deck.
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import {
   EMU_PER_INCH,
@@ -10,8 +11,8 @@ import {
 } from "../../contracts/google-slides.js";
 import { faceObjectId, WORKING_GROUP_BOXES } from "./working-groups.js";
 
-export const SLIDE_W = 10 * EMU_PER_INCH;
-export const SLIDE_H = 5.625 * EMU_PER_INCH;
+export const SLIDE_W = Math.round(13.333 * EMU_PER_INCH);
+export const SLIDE_H = 7.5 * EMU_PER_INCH;
 export const SLIDE_ID = "g_scaling_slide";
 const inch = (value: number) => Math.round(value * EMU_PER_INCH);
 // The photos are inserted at 2 in and scaled down, the way a dragged-in image usually is, so a
@@ -48,7 +49,7 @@ export function syntheticMember(
 export function boxRect(index: number) {
   const col = index % 3;
   const row = Math.floor(index / 3);
-  return { x: inch(0.25 + col * 3.2), y: inch(1 + row * 2.2), w: inch(3.05), h: inch(2.1) };
+  return { x: inch(0.3 + col * 4.3), y: inch(1.1 + row * 3.2), w: inch(4.2), h: inch(3.05) };
 }
 
 function text(content: string) {
@@ -83,15 +84,22 @@ export function image(objectId: string, x: number, y: number, size: number, alt?
     ...(alt ? { description: alt } : {}),
     image: {
       contentUrl: `https://lh3.example.com/${objectId}`,
-      imageProperties: { cropProperties: { leftOffset: 0.05, rightOffset: 0.05 } },
+      imageProperties: {
+        cropProperties: { leftOffset: 0.05, rightOffset: 0.05 },
+        // The thin white ring the slide's round faces have, 1.5 pt.
+        outline: {
+          outlineFill: { solidFill: { color: { rgbColor: { red: 1, green: 1, blue: 1 } } } },
+          weight: { magnitude: 1.5, unit: "PT" },
+          propertyState: "RENDERED",
+        },
+      },
     },
   } satisfies SlidesPageElement;
 }
 
 /**
- * Lays the faces out the way the slide does today: 0.55 in photos, 0.1 in apart, rows centred
- * under the heading, four to a row -- and spilling out of the bottom of the box once there are
- * more than eight, which is the problem this sync exists to fix.
+ * Lays the faces out the way the slide does today: 0.55 in photos, 0.1 in apart, rows starting at
+ * the left under the heading, six to a row. Four rows fit, so a box holds 24 before it is full.
  */
 export function syntheticDeck(faces: Record<string, readonly FixtureFace[]>): SlidesPresentation {
   const elements: SlidesPageElement[] = [
@@ -121,12 +129,11 @@ export function syntheticDeck(faces: Record<string, readonly FixtureFace[]>): Sl
     const list = faces[box.key] ?? [];
     const size = inch(0.55);
     const gap = inch(0.1);
-    const columns = 4;
+    const columns = 6;
     const top = rect.y + inch(0.45);
+    const left = rect.x + inch(0.15);
     list.forEach((face, faceIndex) => {
       const row = Math.floor(faceIndex / columns);
-      const rowLength = Math.min(columns, list.length - row * columns);
-      const left = rect.x + (rect.w - (rowLength * size + (rowLength - 1) * gap)) / 2;
       const x = face.at?.x ?? Math.round(left + (faceIndex % columns) * (size + gap));
       const y = face.at?.y ?? Math.round(top + row * (size + gap));
       photos.push(image(face.objectId, x, y, face.at?.size ?? size, face.description));
@@ -158,12 +165,13 @@ export function applyRequests(
         slide.pageElements = (slide.pageElements ?? []).filter(
           (element) => element.objectId !== request.deleteObject.objectId,
         );
-      } else if ("updatePageElementTransform" in request) {
+      } else if ("updatePageElementAltText" in request) {
         const element = slide.pageElements?.find(
-          (candidate) => candidate.objectId === request.updatePageElementTransform.objectId,
+          (candidate) => candidate.objectId === request.updatePageElementAltText.objectId,
         );
         if (element) {
-          element.transform = { ...request.updatePageElementTransform.transform };
+          element.title = request.updatePageElementAltText.title;
+          element.description = request.updatePageElementAltText.description;
         }
       } else if (request.createImage.elementProperties.pageObjectId === slide.objectId) {
         const { size, transform } = request.createImage.elementProperties;

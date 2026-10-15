@@ -26,7 +26,17 @@ function lab(options: { debounceMs?: number } = {}) {
     }),
   };
   const service = new AdminBotService(undefined, {
-    executor: createGoogleSlidesExecutor({ client, write: true }),
+    executor: createGoogleSlidesExecutor({
+      client,
+      write: true,
+      faces: {
+        fetchAvatar: async () => new Uint8Array([1]),
+        render: async () => Buffer.from("png"),
+        host: {
+          publish: async (_png, name) => ({ url: `https://drive.example/${name}`, release: async () => {} }),
+        },
+      },
+    }),
     slidesWorkingGroups: {
       presentationId: "deck_synthetic",
       slideTitle: TITLE,
@@ -142,5 +152,7 @@ describe("affectsWorkingGroupsSlide", () => {
     expect(affectsWorkingGroupsSlide(member, { ...member, research_topics: ["Causal inference"] })).toBe(true);
     expect(affectsWorkingGroupsSlide(member, { ...member, avatar_url: "https://example.com/new.png" })).toBe(true);
     expect(affectsWorkingGroupsSlide(member, { ...member, status: "alumni" })).toBe(true);
+    // Power Concentration has no theme id; it is matched on keywords, so those count too.
+    expect(affectsWorkingGroupsSlide(member, { ...member, projects: ["AI and democracy"] } as never)).toBe(true);
   });
 });

@@ -7,7 +7,7 @@ import {
   measureWorkingGroupsSlide,
   type MeasuredBox,
 } from "./face-layout-measure.js";
-import { MIN_FACE_EMU, planWorkingGroupsSlide, type GroupPlan } from "./face-layout-plan.js";
+import { appendSlots, planWorkingGroupsSlide, type GroupPlan } from "./face-layout-plan.js";
 import { buildFaceRequests } from "./face-layout-requests.js";
 import { renderWorkingGroupsPlanSvg } from "./face-layout-svg.js";
 import {
@@ -22,9 +22,15 @@ import {
   taggedFace,
   type FixtureFace,
 } from "./face-layout.test-helpers.js";
-import { faceObjectId, WORKING_GROUP_BOXES } from "./working-groups.js";
+import {
+  faceObjectId,
+  faceOwnerTag,
+  WORKING_GROUP_BOXES,
+  workingGroupMembers,
+} from "./working-groups.js";
 
 const inch = (value: number) => Math.round(value * EMU_PER_INCH);
+const POWER = WORKING_GROUP_BOXES.find((box) => box.key === "power")!;
 
 function team(groupKey: string, count: number, from = 0): AdminBotLabMember[] {
   return Array.from({ length: count }, (_, index) =>
@@ -32,13 +38,13 @@ function team(groupKey: string, count: number, from = 0): AdminBotLabMember[] {
   );
 }
 
-function plan(deck: SlidesPresentation, members: readonly AdminBotLabMember[]) {
+function plan(deck: SlidesPresentation, members: readonly AdminBotLabMember[], allowRemovals = false) {
   const found = findSlideByTitle(deck, "Scaling to 50-100 Technical Members");
   if (!found.ok) {
     throw new Error(found.reason);
   }
   const measured = measureWorkingGroupsSlide(found.slide, WORKING_GROUP_BOXES);
-  const result = planWorkingGroupsSlide({ slideObjectId: found.slide.objectId, measured, members });
+  const result = planWorkingGroupsSlide({ slideObjectId: found.slide.objectId, measured, members, allowRemovals });
   return { measured, plan: result, payload: buildFaceRequests(result, deck.presentationId) };
 }
 
@@ -46,16 +52,27 @@ function group(result: { plan: { groups: GroupPlan[] } }, key: string): GroupPla
   return result.plan.groups.find((entry) => entry.key === key)!;
 }
 
-// A slide shaped like the real one: every theme box holding between five and thirty faces.
+function slideIds(deck: SlidesPresentation): Map<string, { x?: number; y?: number }> {
+  return new Map(
+    deck.slides![1]!.pageElements!.map((element) => [
+      element.objectId,
+      { x: element.transform?.translateX, y: element.transform?.translateY },
+    ]),
+  );
+}
+
+// Shaped like the real slide: every box holding between five and twenty-odd faces, all placed by
+// hand and labelled only by name in their alt text, and a Power Concentration box full of people
+// the roster can name only through the box's keywords.
+const COUNTS = { interp: 20, adversarial: 5, multiagent: 18, control: 5, causality: 12 } as const;
 function realisticDeck() {
-  const counts = { interp: 7, adversarial: 5, multiagent: 8, control: 6, causality: 5 };
-  const members = Object.entries(counts).flatMap(([key, count]) => team(key, count));
+  const members = Object.entries(COUNTS).flatMap(([key, count]) => team(key, count));
   const faces: Record<string, FixtureFace[]> = {};
-  for (const [key, count] of Object.entries(counts)) {
+  for (const [key, count] of Object.entries(COUNTS)) {
     faces[key] = team(key, count).map((member, index) => legacyFace(member, index));
   }
-  // Power Concentration is hand-maintained; its faces are nobody the roster can name.
-  faces.power = Array.from({ length: 6 }, (_, index) => ({ objectId: `g_power_${index}` }));
+  // Twelve hand-placed faces nobody can be tied to.
+  faces.power = Array.from({ length: 12 }, (_, index) => ({ objectId: `g_power_${index}` }));
   return { deck: syntheticDeck(faces), members };
 }
 
@@ -69,29 +86,27 @@ describe("measureWorkingGroupsSlide", () => {
     expect(findSlideByTitle(deck, "Some other slide")).toMatchObject({ ok: false });
   });
 
-  it("reads each box's face size, spacing, columns, alignment, crop and paint order", () => {
+  it("reads each box's face size, spacing, wrap, ring and paint order", () => {
     const { deck } = realisticDeck();
     const measured = measureWorkingGroupsSlide(deck.slides![1]!, WORKING_GROUP_BOXES);
     expect(measured.every((box) => box.found)).toBe(true);
     const interp = measured.find((box) => box.box.key === "interp") as MeasuredBox;
-    expect(interp.faces).toHaveLength(7);
+    expect(interp.faces).toHaveLength(20);
     expect(interp.metrics.faceW).toBeCloseTo(inch(0.55), -2);
     expect(interp.metrics.gapX).toBeCloseTo(inch(0.1), -2);
     expect(interp.metrics.gapY).toBeCloseTo(inch(0.1), -2);
     expect(interp.metrics).toMatchObject({
-      columns: 4,
-      rows: 2,
-      align: "center",
+      columns: 6,
+      rows: 4,
+      align: "left",
       zOrder: "above_box",
-      crop: { leftOffset: 0.05, rightOffset: 0.05 },
+      ring: { red: 1, green: 1, blue: 1, weight: 1.5 * 12_700 },
       measured: true,
     });
-    expect(interp.overflowing).toBe(false);
-    const power = measured.find((box) => box.box.key === "power") as MeasuredBox;
-    expect(power.faces).toHaveLength(6);
+    expect((measured.find((box) => box.box.key === "power") as MeasuredBox).faces).toHaveLength(12);
   });
 
-  it("composes group transforms, and marks grouped faces as not movable", () => {
+  it("composes group transforms", () => {
     const deck = syntheticDeck({});
     deck.slides![1]!.pageElements!.push({
       objectId: "g_group",
@@ -118,190 +133,230 @@ describe("measureWorkingGroupsSlide", () => {
   });
 });
 
+describe("working-group membership", () => {
+  it("puts people in Power Concentration by whole-phrase keywords", () => {
+    const yes = [
+      syntheticMember("p1", "none", { research_topics: ["Extreme Power Concentration"] }),
+      syntheticMember("p2", "none", { research_topics: ["AI governance"] }),
+      syntheticMember("p3", "none", { research_topics: [], projects: ["AI and Democracy"] } as Partial<AdminBotLabMember>),
+      syntheticMember("p4", "none", { research_topics: ["concentration-of-power risks"] }),
+    ];
+    const no = [
+      syntheticMember("n1", "none", { research_topics: ["ML powered causality"] }),
+      syntheticMember("n2", "none", { research_topics: ["Governance of open-source AI"] }),
+      syntheticMember("n3", "none", { research_topics: ["Power analysis"] }),
+    ];
+    expect(workingGroupMembers([...yes, ...no], POWER).map((member) => member.id)).toEqual([
+      "p1",
+      "p2",
+      "p3",
+      "p4",
+    ]);
+  });
+});
+
+describe("appendSlots", () => {
+  const metrics = {
+    faceW: 100,
+    faceH: 100,
+    gapX: 10,
+    gapY: 10,
+    columns: 3,
+  } as Parameters<typeof appendSlots>[2];
+  const content = { x: 0, y: 0, w: 1000, h: 330 };
+  const at = (x: number, y: number) => ({ x, y, w: 100, h: 100 });
+
+  it("continues after the last face and wraps where the rows wrap", () => {
+    const slots = appendSlots(3, content, metrics, [at(20, 0), at(130, 0), at(240, 0), at(20, 110)]);
+    expect(slots).toEqual([at(130, 110), at(240, 110), at(20, 220)]);
+  });
+
+  it("returns null rather than overflow the box", () => {
+    expect(appendSlots(6, content, metrics, [at(20, 0), at(130, 0), at(240, 0), at(20, 110)])).toBeNull();
+  });
+
+  it("does not let a face outside the box anchor the grid, and never covers an image", () => {
+    const stray = { x: 2000, y: 0, w: 100, h: 100 };
+    // Hangs into the box from above: not in any row, but a slot under it would hide part of it.
+    const overhang = { x: 250, y: -60, w: 100, h: 100 };
+    expect(appendSlots(1, content, metrics, [at(20, 0), at(130, 0), overhang])).toEqual([at(20, 110)]);
+  });
+});
+
 describe("planWorkingGroupsSlide", () => {
-  it("adds a new member into the next slot at the measured size", () => {
+  it("appends a new member after the last face, at the measured size and spacing", () => {
     const { deck, members } = realisticDeck();
     const result = plan(deck, [...members, syntheticMember("interp99", "interp", { name: "Zed New" })]);
-    expect(group(result, "interp")).toMatchObject({ status: "update", added: ["Zed New"] });
-    expect(group(result, "interp").target).toMatchObject({ shrunk: false, columns: 4 });
-    // Seven faces were 4 + 3 with the short row centred; the eighth fills that row, so its three
-    // faces slide sideways to stay centred -- same size, same row, nobody else moves.
-    const moves = group(result, "interp").faces.filter((face) => face.action === "move");
-    expect(moves).toHaveLength(3);
-    for (const face of moves) {
-      expect(face.rect.y).toBe(Math.round(face.from!.y));
-      expect(face.rect.w).toBe(inch(0.55));
-    }
-    expect(result.payload.requests).toHaveLength(4);
-    const create = result.payload.requests.at(-1)!;
-    expect(create).toMatchObject({
-      createImage: {
-        objectId: faceObjectId("interp", "interp99"),
-        url: "https://example.com/avatars/interp99.png",
-        elementProperties: {
-          pageObjectId: SLIDE_ID,
-          size: { width: { magnitude: inch(0.55) }, height: { magnitude: inch(0.55) } },
+    const interp = group(result, "interp");
+    expect(interp).toMatchObject({ status: "update", added: ["Zed New"], noRoom: [] });
+    // Twenty faces are rows of 6, 6, 6 and 2; the new one is the third in the last row.
+    const lastRow = interp.faces.filter((face) => face.action === "keep").slice(18);
+    const created = interp.faces.find((face) => face.action === "create")!;
+    expect(created.rect.y).toBe(Math.round(lastRow[0]!.rect.y));
+    expect(created.rect.x - (lastRow[1]!.rect.x + lastRow[1]!.rect.w)).toBeCloseTo(inch(0.1), -2);
+    expect(created.rect.w).toBeCloseTo(inch(0.55), -2);
+    expect(result.payload.requests).toEqual([
+      {
+        createImage: expect.objectContaining({
+          objectId: faceObjectId("interp", "interp99"),
+          url: "https://example.com/avatars/interp99.png",
+        }),
+      },
+      {
+        updatePageElementAltText: {
+          objectId: faceObjectId("interp", "interp99"),
+          title: "Zed New",
+          description: faceOwnerTag("interp99"),
         },
       },
-    });
+    ]);
+    expect(result.payload.faces).toEqual([
+      {
+        object_id: faceObjectId("interp", "interp99"),
+        member_id: "interp99",
+        avatar_url: "https://example.com/avatars/interp99.png",
+        ring: { red: 1, green: 1, blue: 1, width_ratio: expect.closeTo(1.5 / 72 / 0.55, 2) },
+      },
+    ]);
     for (const other of ["adversarial", "multiagent", "control", "causality"]) {
       expect(group(result, other).status).toBe("unchanged");
     }
   });
 
-  it("appends without moving anybody when the last row is full", () => {
-    const members = team("adversarial", 4);
-    const deck = syntheticDeck({
-      adversarial: members.map((member, index) => legacyFace(member, index)),
-    });
-    const result = plan(deck, [...members, ...team("adversarial", 1, 4)]);
-    expect(result.payload.requests).toHaveLength(1);
-    expect("createImage" in result.payload.requests[0]!).toBe(true);
+  it("wraps onto a new row when the last row is full", () => {
+    const members = team("adversarial", 6);
+    const deck = syntheticDeck({ adversarial: members.map((member, index) => legacyFace(member, index)) });
+    const result = plan(deck, [...members, ...team("adversarial", 1, 6)]);
+    const adversarial = group(result, "adversarial");
+    const first = adversarial.faces[0]!;
+    const created = adversarial.faces.find((face) => face.action === "create")!;
+    expect(created.rect.x).toBe(Math.round(first.rect.x));
+    expect(created.rect.y - (first.rect.y + first.rect.h)).toBeCloseTo(inch(0.1), -2);
   });
 
-  it("shrinks every face in an overflowing group uniformly and centres the grid", () => {
+  it("reports a full box and adds nobody to it instead of overflowing", () => {
     const { deck, members } = realisticDeck();
-    const result = plan(deck, [...members, ...team("interp", 23, 7)]);
+    // Twenty faces plus five more is past the box's twenty-four.
+    const joiners = team("interp", 5, 20);
+    const result = plan(deck, [...members, ...joiners]);
     const interp = group(result, "interp");
-    expect(interp.status).toBe("update");
-    expect(interp.target?.shrunk).toBe(true);
-    expect(interp.faces).toHaveLength(30);
-    const sizes = new Set(interp.faces.map((face) => `${face.rect.w}x${face.rect.h}`));
-    expect(sizes.size).toBe(1);
-    expect(interp.faces[0]!.rect.w).toBeLessThan(inch(0.55));
-    expect(interp.faces[0]!.rect.w).toBeGreaterThanOrEqual(MIN_FACE_EMU);
-    const content = interp.content!;
-    for (const face of interp.faces) {
-      expect(face.rect.x).toBeGreaterThanOrEqual(content.x);
-      expect(face.rect.y).toBeGreaterThanOrEqual(content.y);
-      expect(face.rect.x + face.rect.w).toBeLessThanOrEqual(content.x + content.w + 1);
-      expect(face.rect.y + face.rect.h).toBeLessThanOrEqual(content.y + content.h + 1);
-    }
-    // Centred: the first full row leaves the same margin on both sides, and the same gap between
-    // every pair of neighbours.
-    const firstRow = interp.faces.filter((face) => face.rect.y === interp.faces[0]!.rect.y);
-    const left = firstRow[0]!.rect.x - content.x;
-    const right = content.x + content.w - (firstRow.at(-1)!.rect.x + firstRow.at(-1)!.rect.w);
-    expect(Math.abs(left - right)).toBeLessThanOrEqual(2);
-    const gaps = firstRow.slice(1).map((face, index) => face.rect.x - firstRow[index]!.rect.x);
-    expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(1);
-    // The existing seven faces are resized in place, never recreated.
-    expect(interp.faces.filter((face) => face.action === "move")).toHaveLength(7);
-    expect(interp.faces.filter((face) => face.action === "create")).toHaveLength(23);
-    // Only this box shrank.
-    expect(group(result, "adversarial").status).toBe("unchanged");
-  });
-
-  it("pulls faces that already spilled out of their box back in, instead of adding them twice", () => {
-    // Fourteen faces at the slide's four-a-row: rows three and four hang below the Multi-Agent
-    // box, which is how the real slide looks once a group outgrows it.
-    const crew = team("multiagent", 14);
-    const deck = syntheticDeck({ multiagent: crew.map((member, index) => legacyFace(member, index)) });
-    // A face-sized logo in the title band must not be mistaken for anybody's spilled face.
-    deck.slides![1]!.pageElements!.push(image("g_logo", inch(9.2), inch(0.2), inch(0.55)));
-    const measured = measureWorkingGroupsSlide(deck.slides![1]!, WORKING_GROUP_BOXES);
-    const box = measured.find((entry) => entry.box.key === "multiagent") as MeasuredBox;
-    expect(box.faces).toHaveLength(14);
-    expect(box.overflowing).toBe(true);
-    expect(box.metrics.faceW).toBe(inch(0.55));
-    expect(measured.some((entry) => entry.found && entry.faces.some((face) => face.objectId === "g_logo"))).toBe(false);
-
-    const joiner = syntheticMember("multiagent14", "multiagent");
-    const result = plan(deck, [...crew, joiner]);
-    const multi = group(result, "multiagent");
-    expect(multi.status).toBe("update");
-    expect(multi.faces).toHaveLength(15);
-    expect(multi.faces.filter((face) => face.action === "create")).toHaveLength(1);
-    for (const face of multi.faces) {
-      expect(face.rect.y + face.rect.h).toBeLessThanOrEqual(multi.content!.y + multi.content!.h + 1);
-    }
-    const after = applyRequests(deck, result.payload.requests);
-    expect(plan(after, [...crew, joiner]).payload.requests).toEqual([]);
-  });
-
-  it("refuses to shrink faces into confetti", () => {
-    const { deck, members } = realisticDeck();
-    const result = plan(deck, [...members, ...team("interp", 200, 7)]);
-    expect(group(result, "interp")).toMatchObject({ status: "blocked" });
-    expect(group(result, "interp").reason).toMatch(/enlarge or split/u);
+    expect(interp.status).toBe("full");
+    expect(interp.added).toEqual([]);
+    expect(interp.noRoom).toEqual(joiners.map((member) => member.name));
+    expect(interp.reason).toMatch(/do not fit/u);
     expect(result.payload.requests).toEqual([]);
+    expect(result.payload.groups.find((entry) => entry.group === "interp")).toMatchObject({
+      status: "full",
+      no_room: joiners.map((member) => member.name),
+    });
+    // Four still fit.
+    expect(group(plan(deck, [...members, ...joiners.slice(0, 4)]), "interp").added).toHaveLength(4);
   });
 
-  it("removes members who left the group and closes the gap", () => {
+  it("never moves or deletes an existing image, even for people who left", () => {
     const { deck, members } = realisticDeck();
-    const leaver = members.find((member) => member.id === "interp00")!;
-    const alumni = members.find((member) => member.id === "interp03")!;
-    const roster = members.map((member) =>
-      member === leaver
-        ? { ...member, research_topics: ["Post-training"] }
-        : member === alumni
-          ? { ...member, status: "alumni" }
-          : member,
-    );
-    const result = plan(deck, roster);
-    const interp = group(result, "interp");
-    expect(interp.removed.map((face) => face.memberId).toSorted()).toEqual(["interp00", "interp03"]);
-    expect(interp.faces).toHaveLength(5);
-    const deletes = result.payload.requests.filter((request) => "deleteObject" in request);
-    expect(deletes).toHaveLength(2);
-    // Deletes go first, so a face leaving and one arriving never overlap mid-batch.
-    expect("deleteObject" in result.payload.requests[0]!).toBe(true);
-    expect(result.payload.expected.map((entry) => entry.object_id)).toEqual(
-      expect.arrayContaining(deletes.map((request) => ("deleteObject" in request ? request.deleteObject.objectId : ""))),
-    );
+    const roster = members
+      .filter((member) => member.id !== "control02")
+      .map((member): AdminBotLabMember => (member.id === "interp00" ? { ...member, status: "alumni" as AdminBotLabMember["status"] } : member));
+    const result = plan(deck, [...roster, syntheticMember("causality99", "causality")], true);
+    expect(result.payload.requests.filter((request) => !("createImage" in request) && !("updatePageElementAltText" in request))).toEqual([]);
+    for (const entry of result.plan.groups) {
+      expect(entry.removed).toEqual([]);
+    }
+    const before = slideIds(deck);
+    const after = slideIds(applyRequests(deck, result.payload.requests));
+    for (const [objectId, position] of before) {
+      expect(after.get(objectId)).toEqual(position);
+    }
   });
 
-  it("is idempotent: applying the plan and planning again changes nothing", () => {
-    const { deck, members } = realisticDeck();
-    const roster = [
-      ...members.filter((member) => member.id !== "control02"),
-      ...team("interp", 23, 7),
-      ...team("causality", 2, 5),
-    ];
-    const first = plan(deck, roster);
-    expect(first.payload.requests.length).toBeGreaterThan(0);
-    const after = applyRequests(deck, first.payload.requests);
-    const second = plan(after, roster);
-    expect(second.plan.changed).toBe(false);
-    expect(second.payload.requests).toEqual([]);
-    expect(group(second, "interp").faces).toHaveLength(30);
-    // And the unchanged slide plans no requests from the start.
-    expect(plan(deck, members).payload.requests).toEqual([]);
+  it("does not add somebody already shown by a hand-placed face, matched by name or email", () => {
+    const members = team("control", 2);
+    const emailed = syntheticMember("control09", "control", { email: "nine@example.com" });
+    const deck = syntheticDeck({
+      control: [
+        legacyFace(members[0]!, 0),
+        { objectId: "g_photo_x", description: "  MEMBER control01 " },
+        { objectId: "g_photo_y", description: "nine@example.com" },
+      ],
+    });
+    const result = plan(deck, [...members, emailed]);
+    expect(group(result, "control")).toMatchObject({ status: "unchanged", added: [], unidentified: [] });
   });
 
-  it("never touches an image it cannot tie to a member, and blocks its box instead", () => {
-    const { deck, members } = realisticDeck();
-    const slide = deck.slides![1]!;
-    const interpFace = slide.pageElements!.find((element) => element.objectId.includes("interp00"))!;
-    delete interpFace.description;
-    const result = plan(deck, [...members, syntheticMember("interp99", "interp")]);
-    expect(group(result, "interp")).toMatchObject({ status: "blocked" });
-    expect(group(result, "interp").reason).toMatch(/not tied to a member/u);
-    expect(group(result, "interp").unidentified).toEqual([interpFace.objectId]);
-    expect(JSON.stringify(result.payload.requests)).not.toContain(interpFace.objectId);
-    // The hand-maintained Power Concentration faces are measured and left alone.
-    expect(group(result, "power")).toMatchObject({ status: "untouched" });
-    expect(JSON.stringify(result.payload.requests)).not.toContain("g_power_");
+  it("only removes its own tagged faces, and only with removals switched on", () => {
+    const members = team("causality", 3);
+    const leaver = syntheticMember("causality07", "causality");
+    const deck = syntheticDeck({
+      causality: [
+        ...members.map((member) => taggedFace("causality", member)),
+        // Tagged through alt text, as a face this sync placed and somebody then copied.
+        { objectId: "g_copied", description: faceOwnerTag(leaver.id) },
+        // A hand-placed face of the same person: tied to them, but never ours to touch.
+        { objectId: "g_hand", description: leaver.name },
+      ],
+    });
+    const roster = [...members, { ...leaver, research_topics: ["Post-training"] }];
+    const off = plan(deck, roster);
+    expect(group(off, "causality")).toMatchObject({ status: "unchanged", removed: [] });
+    expect(group(off, "causality").wouldRemove.map((face) => face.objectId)).toEqual(["g_copied"]);
+    expect(off.payload.requests).toEqual([]);
+    expect(off.payload.groups.find((entry) => entry.group === "causality")?.would_remove).toEqual([leaver.name]);
+
+    const on = plan(deck, roster, true);
+    expect(on.payload.requests).toEqual([{ deleteObject: { objectId: "g_copied" } }]);
+    expect(on.payload.expected.map((entry) => entry.object_id)).toEqual(["g_copied"]);
+    expect(JSON.stringify(on.payload)).not.toContain("g_hand");
   });
 
-  it("re-checks identification in the request builder, not only in the planner", () => {
+  it("re-checks ownership in the request builder, not only in the planner", () => {
     const { deck, members } = realisticDeck();
-    const result = plan(
-      deck,
-      members.map((member) =>
-        member.id === "control00" ? { ...member, research_topics: ["Post-training"] } : member,
-      ),
-    );
-    expect(group(result, "control").status).toBe("update");
+    const result = plan(deck, members, true);
     const tampered = {
       ...result.plan,
       groups: result.plan.groups.map((entry) =>
-        entry.key === "control"
-          ? { ...entry, removed: [...entry.removed, { objectId: "g_power_0", memberId: null, name: "x", rect: entry.box! }] }
+        entry.key === "power"
+          ? {
+              ...entry,
+              status: "update" as const,
+              removed: [{ objectId: "g_power_0", memberId: null, name: "x", rect: entry.box! }],
+            }
           : entry,
       ),
     };
-    expect(() => buildFaceRequests(tampered, "deck")).toThrow(/not an identified member face/u);
+    expect(() => buildFaceRequests(tampered, "deck")).toThrow(/not a face this sync placed/u);
+  });
+
+  it("counts an unidentified image as taken room and never touches it", () => {
+    const { deck, members } = realisticDeck();
+    const power = team("power", 2).map((member) => ({ ...member, research_topics: ["AI governance"] }));
+    const result = plan(deck, [...members, ...power]);
+    const box = group(result, "power");
+    expect(box.status).toBe("update");
+    expect(box.unidentified).toHaveLength(12);
+    expect(box.added).toEqual(power.map((member) => member.name));
+    const created = box.faces.filter((face) => face.action === "create");
+    // Twelve faces are two full rows; the new ones open the third.
+    expect(created[0]!.rect.x).toBe(Math.round(box.faces[0]!.rect.x));
+    expect(JSON.stringify(result.payload.requests)).not.toContain("g_power_");
+  });
+
+  it("ignores a stray face off the slide when appending, but still dedupes against it", () => {
+    const members = team("causality", 12);
+    const late = syntheticMember("causality12", "causality", { name: "Late Joiner" });
+    const deck = syntheticDeck({
+      causality: [
+        ...members.map((member, index) => legacyFace(member, index)),
+        // Off the right edge of the slide, beside the box -- left over from a past edit.
+        { objectId: "g_stray", description: late.name, at: { x: SLIDE_W + inch(0.1), y: inch(4.6) } },
+      ],
+    });
+    const result = plan(deck, [...members, late, syntheticMember("causality13", "causality")]);
+    const causality = group(result, "causality");
+    expect(causality.added).toEqual(["Member causality13"]);
+    const created = causality.faces.find((face) => face.action === "create")!;
+    expect(created.rect.x).toBe(Math.round(causality.faces[0]!.rect.x));
+    expect(created.rect.x + created.rect.w).toBeLessThan(SLIDE_W);
   });
 
   it("skips members without a photo and lists them", () => {
@@ -310,64 +365,51 @@ describe("planWorkingGroupsSlide", () => {
       ...members,
       syntheticMember("adversarial77", "adversarial", { name: "No Photo", avatar_url: undefined }),
     ]);
-    expect(group(result, "adversarial")).toMatchObject({
-      status: "unchanged",
-      skippedNoPhoto: ["No Photo"],
-    });
+    expect(group(result, "adversarial")).toMatchObject({ status: "unchanged", skippedNoPhoto: ["No Photo"] });
     expect(result.payload.requests).toEqual([]);
   });
 
-  it("knows its own faces by id, removes those of people who left the roster, and keeps a duplicate out", () => {
-    const members = team("causality", 3);
-    const deck = syntheticDeck({
-      causality: [
-        ...members.map((member) => taggedFace("causality", member)),
-        taggedFace("causality", syntheticMember("ghost", "causality")),
-        legacyFace(members[0]!, 9),
-      ],
-    });
-    const result = plan(deck, members);
-    const causality = group(result, "causality");
-    expect(causality.removed.map((face) => face.name).toSorted()).toEqual([
-      "Member causality00",
-      "former member",
-    ]);
-    expect(causality.faces.map((face) => face.memberId)).toEqual(members.map((member) => member.id));
-  });
-
-  it("fills an empty box with default-size faces starting under its heading", () => {
-    const deck = syntheticDeck({});
-    const result = plan(deck, team("multiagent", 5));
+  it("starts an empty box under its heading", () => {
+    const result = plan(syntheticDeck({}), team("multiagent", 5));
     const multiagent = group(result, "multiagent");
     expect(multiagent.status).toBe("update");
     expect(multiagent.faces.every((face) => face.rect.w === inch(0.55))).toBe(true);
     expect(multiagent.faces[0]!.rect.y).toBe(multiagent.content!.y);
   });
 
-  it("does not move a grouped face; it explains why instead", () => {
-    const members = team("control", 2);
-    const deck = syntheticDeck({ control: [legacyFace(members[0]!, 0)] });
-    const slide = deck.slides![1]!;
-    const face = slide.pageElements!.find((element) => element.objectId.startsWith("g_photo_0"))!;
-    slide.pageElements = [
-      ...slide.pageElements!.filter((element) => element !== face),
-      { objectId: "g_wrap", elementGroup: { children: [face] } },
-    ];
-    // An overflow forces a reflow, which the grouped face cannot take part in.
-    const result = plan(deck, [...members, ...team("control", 40, 2)]);
-    expect(group(result, "control")).toMatchObject({ status: "blocked" });
-    expect(group(result, "control").reason).toMatch(/grouped or rotated/u);
+  it("is idempotent: applying the plan and planning again changes nothing", () => {
+    const { deck, members } = realisticDeck();
+    const roster = [...members, ...team("interp", 3, 20), ...team("causality", 2, 12)];
+    const first = plan(deck, roster);
+    expect(first.payload.requests).toHaveLength(10);
+    const after = applyRequests(deck, first.payload.requests);
+    const second = plan(after, roster);
+    expect(second.plan.changed).toBe(false);
+    expect(second.payload.requests).toEqual([]);
+    expect(plan(deck, members).payload.requests).toEqual([]);
   });
 });
 
 describe("renderWorkingGroupsPlanSvg", () => {
-  it("draws before and after without fetching anybody's photo", () => {
+  it("draws round faces before and after, and names who is added, without any photo URL", () => {
     const { deck, members } = realisticDeck();
-    const result = plan(deck, [...members, ...team("interp", 10, 7)]);
+    const result = plan(deck, [...members, syntheticMember("interp99", "interp", { name: "Zed New" })]);
     const svg = renderWorkingGroupsPlanSvg(result.plan, { width: SLIDE_W, height: SLIDE_H });
     expect(svg.startsWith("<svg")).toBe(true);
     expect(svg).toContain("Before");
     expect(svg).toContain("Interpretability");
+    expect(svg).toContain("<circle");
     expect(svg).not.toContain("example.com");
+    expect(svg).toContain("<title>Zed New</title>");
+  });
+
+  it("shows images nobody is tied to, and marks a full box with how many did not fit", () => {
+    const { deck, members } = realisticDeck();
+    const joiners = Array.from({ length: 5 }, (_, index) => syntheticMember(`interp9${index}`, "interp"));
+    const result = plan(deck, [...members, ...joiners]);
+    const svg = renderWorkingGroupsPlanSvg(result.plan, { width: SLIDE_W, height: SLIDE_H });
+    // The twelve untagged Power Concentration faces, in both panels.
+    expect(svg.match(/<title>\?<\/title>/gu)).toHaveLength(24);
+    expect(svg).toContain(">+5</text>");
   });
 });
