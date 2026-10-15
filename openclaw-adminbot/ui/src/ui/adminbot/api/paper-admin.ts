@@ -42,12 +42,17 @@ export type PublicationDigestPreview = {
   /** Every venue the records mention. Always returned, so one call fills the picker. */
   venues: PublicationDigestVenue[];
   publications: PublicationDigestEntry[];
+  /**
+   * The papers the preview lists as left out: undated ones, and in venue mode the undecided ones.
+   * Papers left out only for their date fall outside the range and arrive as a count instead; an
+   * older service still lists them here, and the view filters by reason either way.
+   */
   excluded: Array<{
     id: string;
     title: string;
     reason: "no_date" | "out_of_range" | "not_accepted";
-    date?: PublicationDigestEntry["date"];
   }>;
+  out_of_range_count?: number;
   undated_count: number;
   /** Venue mode: papers naming the venue with no decision recorded. */
   pending_count: number;
@@ -233,24 +238,20 @@ export async function fetchPiReviewQueue(
 // says what each slot is called and what shape it accepts is imported straight from the service's
 // contracts module (see views/paper-slots.ts), so this file only moves records, never rules.
 
+/**
+ * Only the counts. Title, venue, deadline and step come from the paper record the page already
+ * holds, so the service stopped repeating them on every row; an older service still sends them
+ * and the extra keys are simply ignored.
+ */
 export type PaperSlotOverviewRow = {
   paper_id: string;
-  title: string;
-  venue?: string;
-  deadline?: string;
-  current_step: string;
   provided_count: number;
   required_count: number;
   dormant: boolean;
   closed: boolean;
   missing_slots: string[];
-  missing_acceptance_details?: string[];
-  /** Who is travelling, counted by the service. Absent from a service older than this field. */
-  attendance?: { yes: number; no: number; unknown: number; going?: string[] };
   cycle_closed?: boolean;
   escalating: boolean;
-  first_author_member_id?: string;
-  last_nudged_at?: string;
 };
 
 /** Every paper's outstanding evidence, computed by the service on read. */
@@ -304,8 +305,51 @@ export async function fetchConferenceRosters(
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as { conferences?: ConferenceRoster[] } | null;
-  return { ok: true, value: body?.conferences ?? [] };
+  return { ok: true, value: readConferenceRosters(result.body) };
+}
+
+type ConferenceRosterWire = Omit<ConferenceRoster, "people" | "papers_awaiting"> & {
+  paper_titles?: Record<string, string>;
+  people: Array<
+    Omit<ConferenceRosterPerson, "papers"> & {
+      papers: Array<{ paper_id: string; title?: string; attending: "yes" | "no" | "unknown" }>;
+    }
+  >;
+  papers_awaiting: Array<{ paper_id: string; title?: string; unanswered: number }>;
+};
+
+/**
+ * The rosters as the views draw them, titles put back.
+ *
+ * The service names each paper's title once per conference in `paper_titles` and points at it by
+ * id from the people and the awaiting list. A service older than that sends the titles inline,
+ * which this reads as-is, so the page works against either while the two deploy at different times.
+ */
+export function readConferenceRosters(body: unknown): ConferenceRoster[] {
+  const conferences = (body as { conferences?: unknown } | null)?.conferences;
+  if (!Array.isArray(conferences)) {
+    return [];
+  }
+  return (conferences as ConferenceRosterWire[]).map(({ paper_titles, ...conference }) => {
+    const titleOf = (paper: { paper_id: string; title?: string }) =>
+      paper.title ?? paper_titles?.[paper.paper_id] ?? "";
+    return {
+      ...conference,
+      people: conference.people.map((person) => ({
+        ...person,
+        papers: person.papers.map((paper) => ({
+          paper_id: paper.paper_id,
+          title: titleOf(paper),
+          attending: paper.attending,
+        })),
+      })),
+      papers_awaiting: conference.papers_awaiting.map((paper) => ({
+        paper_id: paper.paper_id,
+        title: titleOf(paper),
+        unanswered: paper.unanswered,
+      })),
+    };
+  });
 }
 
 export type PaperNudgeBatch = {
@@ -314,7 +358,8 @@ export type PaperNudgeBatch = {
   /** False when there is no Slack id on file. The preview says so before anything is sent. */
   deliverable: boolean;
   item_count: number;
-  paper_titles: string[];
+  /** How many papers the batch spans. Read from `paper_titles` when an older service sends that. */
+  paper_count: number;
   /** The composed message, exactly as it would arrive. */
   message: string;
 };
@@ -336,8 +381,19 @@ export async function fetchPaperNudgeBatches(
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as { batches?: PaperNudgeBatch[] } | null;
-  return { ok: true, value: body?.batches ?? [] };
+  const body = result.body as {
+    batches?: Array<Omit<PaperNudgeBatch, "paper_count"> & {
+      paper_count?: number;
+      paper_titles?: string[];
+    }>;
+  } | null;
+  return {
+    ok: true,
+    value: (body?.batches ?? []).map(({ paper_titles, paper_count, ...batch }) => ({
+      ...batch,
+      paper_count: paper_count ?? paper_titles?.length ?? 0,
+    })),
+  };
 }
 
 /**

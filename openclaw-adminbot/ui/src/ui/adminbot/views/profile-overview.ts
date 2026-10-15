@@ -10,10 +10,15 @@
 // Read-only. The single button runs the reminder the daily cron already sends; it composes nothing
 // and picks nobody -- the service does both.
 import { html, nothing } from "lit";
+import { adminBotTimelineEntryTarget } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import {
-  adminBotTimelineEntryTarget,
-  isAdminBotFullMember,
-} from "../../../../../extensions/adminbot/src/contracts/actions.js";
+  filterOverviewRows,
+  remindScopeFor,
+  type ProfileOverviewActivity,
+  type ProfileOverviewFilter,
+  type ProfileOverviewGap,
+  type ProfileOverviewMembership,
+} from "../../../../../extensions/adminbot/src/workflows/members/profile-overview-filter.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
 import type {
@@ -21,7 +26,8 @@ import type {
   MemberAdoptionSummary,
   MemberProfileOverviewRow,
 } from "../api/members.ts";
-import { matchesMemberTypeFilter, renderMemberTypeFilter } from "../member-type-filter.ts";
+import { renderLoadMore, type LoadMoreProps } from "../load-more.ts";
+import { renderMemberTypeFilter } from "../member-type-filter.ts";
 
 /** Zero counts render as an em dash rather than "0", which reads as a measurement. */
 const countOrDash = (value: number) => (value > 0 ? String(value) : "—");
@@ -29,47 +35,18 @@ const countOrDash = (value: number) => (value > 0 ? String(value) : "—");
 /** What a row from a server that predates the activity counts renders as. */
 const NO_ACTIVITY: MemberActivityCounts = { logins: 0, profile_edits: 0, paper_updates: 0 };
 
-/**
- * Which gap the page is looking at.
- *
- * `any` is the working view -- somebody owes something. The two narrow values exist because the
- * two gaps are chased with different sentences and often on different days: a profile sweep before
- * a grant report, a timeline sweep before term planning. `all` turns the filter off.
- */
-export type ProfileOverviewGap = "any" | "profile" | "timeline" | "all";
-
-/** Who the page is looking at. See isAdminBotFullMember for why the distinction matters. */
-export type ProfileOverviewMembership = "everyone" | "full";
-
-/**
- * Whether they have ever been here.
- *
- * Its own filter rather than a column to squint at, because "never signed in" is a different
- * conversation from "signed in and has not finished": one is an account nobody has opened, the
- * other is a person who needs reminding. Chasing them with the same message wastes both.
- */
-export type ProfileOverviewActivity = "any" | "never" | "signedIn";
-
-export type ProfileOverviewFilter = {
-  gap: ProfileOverviewGap;
-  membership: ProfileOverviewMembership;
-  /** Matches on name. Blank shows everyone the other filters left. */
-  search: string;
-  activity: ProfileOverviewActivity;
-  /**
-   * Roster member types to show, as a union. Empty means every type -- see
-   * matchesMemberTypeFilter for why the unset state must not hide the table.
-   */
-  memberTypes: string[];
-};
-
-export const EMPTY_PROFILE_OVERVIEW_FILTER: ProfileOverviewFilter = {
-  gap: "any",
-  membership: "everyone",
-  search: "",
-  activity: "any",
-  memberTypes: [],
-};
+// The filter, the Remind scope and their query-string form live with the service, which runs them
+// before paging; re-exported so the page, its state and its tests keep importing them from here.
+export {
+  EMPTY_PROFILE_OVERVIEW_FILTER,
+  filterOverviewRows,
+  hasTimelineGap,
+  remindScopeFor,
+  type ProfileOverviewActivity,
+  type ProfileOverviewFilter,
+  type ProfileOverviewGap,
+  type ProfileOverviewMembership,
+} from "../../../../../extensions/adminbot/src/workflows/members/profile-overview-filter.js";
 
 export type AdminBotProfileOverviewProps = {
   members: MemberProfileOverviewRow[];
@@ -94,75 +71,14 @@ export type AdminBotProfileOverviewProps = {
   onOpenMember: (memberId: string) => void;
   filter: ProfileOverviewFilter;
   onFilterChange: (filter: ProfileOverviewFilter) => void;
+  /**
+   * How many people the Remind button would reach, counted by the service over the whole filtered
+   * roster. The rows held are one page of it, so counting them would stop at twenty.
+   */
+  remindCount?: number;
+  /** The Meetings-style button that asks for the next page. */
+  more?: LoadMoreProps;
 };
-
-/** Whether this row is short of the timeline target. Full members only -- see the contract. */
-export function hasTimelineGap(row: MemberProfileOverviewRow): boolean {
-  return (
-    isAdminBotFullMember({ privilege_level: row.privilege_level }) &&
-    row.timeline.total < adminBotTimelineEntryTarget
-  );
-}
-
-/** The rows a filter shows. Exported so the page and its tests agree on one definition. */
-export function filterOverviewRows(
-  members: MemberProfileOverviewRow[],
-  filter: ProfileOverviewFilter,
-): MemberProfileOverviewRow[] {
-  const search = filter.search.trim().toLocaleLowerCase();
-  return members.filter((row) => {
-    if (
-      filter.membership === "full" &&
-      !isAdminBotFullMember({ privilege_level: row.privilege_level })
-    ) {
-      return false;
-    }
-    if (search && !row.name.toLocaleLowerCase().includes(search)) {
-      return false;
-    }
-    if (!matchesMemberTypeFilter(row.member_type, filter.memberTypes)) {
-      return false;
-    }
-    if (filter.activity === "never" && row.last_login_at) {
-      return false;
-    }
-    if (filter.activity === "signedIn" && !row.last_login_at) {
-      return false;
-    }
-    switch (filter.gap) {
-      case "profile":
-        return row.missing_fields.length > 0;
-      case "timeline":
-        return hasTimelineGap(row);
-      case "any":
-        return row.missing_fields.length > 0 || hasTimelineGap(row);
-      default:
-        return true;
-    }
-  });
-}
-
-/** What the Remind button would send, given the filter. `all` chases both gaps, like `any`. */
-export function remindScopeFor(
-  members: MemberProfileOverviewRow[],
-  filter: ProfileOverviewFilter,
-): { include: "profile" | "timeline" | "both"; memberIds: string[] } {
-  const include =
-    filter.gap === "profile" ? "profile" : filter.gap === "timeline" ? "timeline" : "both";
-  const memberIds = filterOverviewRows(members, {
-    ...filter,
-    gap: filter.gap === "all" ? "any" : filter.gap,
-  })
-    .filter((row) =>
-      include === "profile"
-        ? row.missing_fields.length > 0
-        : include === "timeline"
-          ? hasTimelineGap(row)
-          : row.missing_fields.length > 0 || hasTimelineGap(row),
-    )
-    .map((row) => row.id);
-  return { include, memberIds };
-}
 
 /**
  * Whether the filter is narrowing to a subset rather than asking about the whole roster.
@@ -443,7 +359,7 @@ const ACTIVITY_OPTIONS: Array<{ value: ProfileOverviewActivity; labelKey: string
 export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProps) {
   const rows = filterOverviewRows(props.members, props.filter);
   const scope = remindScopeFor(props.members, props.filter);
-  const outstanding = scope.memberIds.length;
+  const outstanding = props.remindCount ?? scope.memberIds.length;
   return html`
     <section class="adminbot-shell profile-overview" data-testid="adminbot-profile-overview">
       <div class="card adminbot-card adminbot-card--wide">
@@ -583,7 +499,7 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
         ${props.error
           ? html`<p class="logistics-requests__error" role="alert">${props.error}</p>`
           : nothing}
-        ${props.loading
+        ${props.loading && !rows.length
           ? html`<p class="logistics-requests__empty">${t("profileOverview.loading")}</p>`
           : rows.length
             ? html`
@@ -619,6 +535,7 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
                     </tbody>
                   </table>
                 </div>
+                ${renderLoadMore(props.more, "profile-overview-more")}
               `
             : html`<p class="logistics-requests__empty">
                 ${narrowedBySearch(props.filter)

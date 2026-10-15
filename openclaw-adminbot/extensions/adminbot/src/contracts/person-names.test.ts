@@ -66,3 +66,22 @@ describe("a middle name on one side only", () => {
   });
 });
 
+
+describe("a number that is part of the name", () => {
+  it("keeps two numbered people apart", () => {
+    // Placeholder and anonymised rosters name people "Member 1", "Member 2". Folding dropped every
+    // digit, so both became "member" and each saw the other's papers as their own.
+    expect(isSamePerson("Member 1", "Member 2")).toBe(false);
+    expect(isSamePerson("Member 2", "Member 12")).toBe(false);
+    expect(isSamePerson("Member 1", "Member 1")).toBe(true);
+    expect(normalizePersonName("Member 1")).not.toBe(normalizePersonName("Member 2"));
+  });
+
+  it("still drops affiliation numbers written onto the name", () => {
+    // A pasted PDF author list turns superscripts into plain digits stuck to the surname.
+    expect(isSamePerson("Joeun Yook1", "Joeun Yook")).toBe(true);
+    expect(isSamePerson("Joeun Yook1,2", "Joeun Yook")).toBe(true);
+    expect(isSamePerson("Punya Syon Pandey¹²", "Punya Syon Pandey")).toBe(true);
+    expect(toFirstLast("Joeun Yook1,2")).toBe("Joeun Yook");
+  });
+});

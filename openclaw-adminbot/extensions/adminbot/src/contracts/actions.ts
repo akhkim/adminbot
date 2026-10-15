@@ -1,3 +1,5 @@
+import { adminBotOwnerOnlyMemberFields } from "./member-owner-fields.js";
+
 export const adminBotRiskTiers = ["T0", "T1", "T2", "T3", "T4"] as const;
 
 export type AdminBotRiskTier = (typeof adminBotRiskTiers)[number];
@@ -995,7 +997,7 @@ export function redactConfidentialMemberFields<T extends { id?: string }>(
     return member;
   }
   const copy = { ...member } as Record<string, unknown>;
-  for (const field of adminBotConfidentialMemberFields) {
+  for (const field of [...adminBotConfidentialMemberFields, ...adminBotOwnerOnlyMemberFields]) {
     delete copy[field];
   }
   if (viewer.isMemberSession) {
@@ -1112,9 +1114,6 @@ export type AdminBotMemberOnboardingStep = {
 export type AdminBotOnboardingCycleReason = "registration" | "status_change" | "privilege_change";
 
 export type AdminBotMemberOnboarding = {
-  current_step?: AdminBotMemberOnboardingStep;
-  completed: AdminBotMemberOnboardingStep[];
-  remaining: AdminBotMemberOnboardingStep[];
   steps: AdminBotMemberOnboardingStep[];
   /**
    * When the current cycle opened: at registration, or when the member's standing last changed.
@@ -1969,38 +1968,6 @@ export const adminBotPaperSteps = [
 
 export type AdminBotPaperStep = (typeof adminBotPaperSteps)[number];
 
-export const adminBotPaperTimelineDependencyGroups = [
-  "ideation",
-  "writing",
-  "submission",
-  "release",
-  "outreach",
-  "materials",
-] as const;
-
-export type AdminBotPaperTimelineDependencyGroup =
-  (typeof adminBotPaperTimelineDependencyGroups)[number];
-
-export type AdminBotPaperTimelineStatus = "complete" | "current" | "upcoming" | "blocked";
-
-export type AdminBotPaperTimelineItem = {
-  step: AdminBotPaperStep;
-  label: string;
-  dependency_group: AdminBotPaperTimelineDependencyGroup;
-  depends_on: AdminBotPaperStep[];
-  status: AdminBotPaperTimelineStatus;
-  offset_start_business_day: number;
-  offset_end_business_day: number;
-  duration_business_days: number;
-  color: string;
-};
-
-export type AdminBotPaperTimeline = {
-  progress_percent: number;
-  current_step_index: number;
-  total_estimated_business_days: number;
-  items: AdminBotPaperTimelineItem[];
-};
 export type AdminBotPaperArtifactLinks = {
   /** Human confirmation that the paper has been presented; blank reopens it. */
   completed_at?: string;
@@ -2028,15 +1995,6 @@ export type AdminBotPaperArtifactLinks = {
   linkedin_draft_url?: string;
   google_slides_url?: string;
   poster_url?: string;
-  /**
-   * arXiv's own per-paper password, which a coauthor needs to claim ownership of a submission.
-   *
-   * Stored beside the links because that is what it is used with, and with the same protection:
-   * none beyond the record's own access rules. Every coauthor of the paper can read it, as they
-   * can its Overleaf edit link. It lived as a disabled column in the bulk grid for a while,
-   * accepting text it then dropped, which is worse than either storing it or not offering it.
-   */
-  arxiv_paper_password?: string;
 };
 
 export type AdminBotPaperReminderState = {
@@ -2267,7 +2225,6 @@ export type AdminBotPaperRecordInput = {
 };
 
 export type AdminBotPaperRecord = AdminBotPaperRecordInput & {
-  timeline?: AdminBotPaperTimeline;
   created_at: string;
   updated_at: string;
 };
@@ -2280,7 +2237,6 @@ export type AdminBotPaperNudge = {
   recipients: string[];
   message: string;
   business_days_since_author_dm?: number;
-  timeline?: AdminBotPaperTimeline;
 };
 
 // Member nudge: an admin-composed message (paper-flow reminder or general announcement) sent to a
@@ -2959,7 +2915,8 @@ export type AdminBotMeetingRecord = AdminBotMeetingRecordInput & {
   /**
    * How many people were present. Derived on read, never stored: a member is not shown the roster,
    * and a headcount is the part of it that is useful to whoever missed the meeting without naming
-   * anybody. Absent on the admin view, which has the roster itself.
+   * anybody. An admin's list row carries it in place of the roster; the admin roster read
+   * (GET /meetings/:id) leaves it out, having the roster itself.
    */
   attendee_count?: number;
 };

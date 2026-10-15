@@ -7,12 +7,21 @@
  */
 export async function readApiJson(response: Response): Promise<unknown> {
   try {
-    return JSON.parse(await response.text(), (key, value: unknown) =>
+    return parseApiJson(await response.text(), response.url);
+  } catch {
+    return null;
+  }
+}
+
+/** The same parse over text already read -- a body kept for revalidation is re-parsed per use. */
+export function parseApiJson(text: string, responseUrl: string): unknown {
+  try {
+    return JSON.parse(text, (key, value: unknown) =>
       key === "avatar_url" &&
       typeof value === "string" &&
       value.startsWith("/avatars/") &&
-      response.url
-        ? new URL(value, response.url).href
+      responseUrl
+        ? new URL(value, responseUrl).href
         : value,
     );
   } catch {

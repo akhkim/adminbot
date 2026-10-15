@@ -17,11 +17,16 @@ import {
   type AdminBotSlackChannelNamingEvent,
 } from "../../kernel/service.js";
 import { renderCvDigestDocument } from "../../workflows/cv/digest-doc.js";
-import { toPublicMemberMapSummary } from "../../workflows/members/member-map.js";
+import {
+  memberMapHour,
+  toPrivilegedMemberMap,
+  toPublicMemberMapSummary,
+} from "../../workflows/members/member-map.js";
 import { asString, readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
 import type { AdminBotRouteContext } from "./context.js";
 import { isPrivileged, principalActor, privilegedOnly } from "./guards.js";
 import { get, post, type Route } from "./router.js";
+import { principalRole, sendNotModified, versionEtag } from "./version-etag.js";
 
 // The oldest timestamp any ledger row can carry, so "list everything" reuses the same
 // `detected_at >= ?` query the since-filter uses rather than needing a second statement.
@@ -41,7 +46,7 @@ export const SLACK_CHANNEL_CACHE_MS = 5 * 60 * 1000;
 export let slackChannelCache: { at: number; names: string[] } | undefined;
 
 export const directoryRoutes: readonly Route[] = [
-  get("/member-map", ({ res, principal, ctx }) => {
+  get("/member-map", ({ res, url, principal, ctx }) => {
     const { service } = ctx;
     // Public in shape (see GET /member-map in ANONYMOUS_ROUTES), but only ever public in a
     // counts-only shape: publishing 100+ people's names and locations is a decision to make
@@ -54,8 +59,29 @@ export const directoryRoutes: readonly Route[] = [
     // whether theirs is used at all. Never for an anonymous visitor: a public headcount on "Lyon"
     // would tell the internet where a lab member signed in from, so that map uses only what members
     // stated. Either way only a city leaves here, never an IP, its coordinates, or a history.
+    //
+    // Beyond the roster, the body depends only on that entitlement and the hour memberMapMemo
+    // rebuilds on, so those, the roster generation, the mode and the one parameter name it exactly,
+    // and a repeat poll is answered unbuilt.
     const privileged = isPrivileged(principal);
-    const result = service.memberMap({ loginCity: principal.kind !== "anonymous" });
+    const loginCity = principal.kind !== "anonymous";
+    const listUnplaced = privileged && url.searchParams.get("unplaced") === "list";
+    const version = ctx.store.labMemberVersion?.();
+    const etag =
+      version === undefined
+        ? undefined
+        : versionEtag("member-map", [
+            version,
+            principalRole(principal),
+            privileged,
+            listUnplaced,
+            loginCity,
+            memberMapHour(),
+          ]);
+    if (etag && sendNotModified(res, etag)) {
+      return;
+    }
+    const result = service.memberMap({ loginCity });
     if (!result.ok) {
       sendServiceResult(res, result);
       return;
@@ -69,8 +95,13 @@ export const directoryRoutes: readonly Route[] = [
       res,
       200,
       privileged
-        ? { mode: "full", ...result.payload, ...attribution }
+        ? {
+            mode: "full",
+            ...toPrivilegedMemberMap(result.payload, { listUnplaced }),
+            ...attribution,
+          }
         : { mode: "summary", ...toPublicMemberMapSummary(result.payload), ...attribution },
+      { etag },
     );
   }),
   post(

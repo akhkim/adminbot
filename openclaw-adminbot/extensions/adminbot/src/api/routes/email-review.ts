@@ -3,6 +3,8 @@
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 import { readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
+import { pageOf, readPageQuery } from "../server.paging.js";
+import { mapPayload } from "../server.paper-lists.wire.js";
 import { adminSessionOnly, principalActor, privilegedOnly } from "./guards.js";
 import { get, post, type Route } from "./router.js";
 
@@ -19,9 +21,19 @@ export const emailReviewRoutes: readonly Route[] = [
   ),
   get(
     "/automation/email/review",
-    adminSessionOnly(({ res, ctx }) => {
+    adminSessionOnly(({ res, url, ctx }) => {
       const { service } = ctx;
-      sendServiceResult(res, service.listEmailReviews());
+      // Newest first; the held messages are the page, `total` is the queue's size for the badge.
+      // The candidate papers stay whole -- they are one picker, not a list -- and the resolutions
+      // were already the last 20.
+      const page = readPageQuery(url, { defaultLimit: 25, maxLimit: 100 });
+      sendServiceResult(
+        res,
+        mapPayload(service.listEmailReviews(), ({ reviews, ...rest }) => {
+          const { items, ...paging } = pageOf(reviews, page);
+          return { reviews: items, ...paging, ...rest };
+        }),
+      );
     }),
   ),
   post(

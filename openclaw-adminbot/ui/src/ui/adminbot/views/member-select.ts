@@ -48,6 +48,7 @@ class AdminbotMemberSelect extends LitElement {
     disabled: { type: Boolean },
     onPick: { attribute: false },
     onOpen: { attribute: false },
+    onHighlight: { attribute: false },
     open: { state: true },
     query: { state: true },
     active: { state: true },
@@ -61,6 +62,8 @@ class AdminbotMemberSelect extends LitElement {
   declare disabled: boolean;
   declare onPick: (memberId: string) => void;
   declare onOpen: () => void;
+  /** A row under the pointer or the arrow keys: the caller may start reading that member. */
+  declare onHighlight: (memberId: string) => void;
   declare open: boolean;
   declare query: string;
   declare active: number;
@@ -74,6 +77,7 @@ class AdminbotMemberSelect extends LitElement {
     this.disabled = false;
     this.onPick = () => {};
     this.onOpen = () => {};
+    this.onHighlight = () => {};
     this.open = false;
     this.query = "";
     this.active = 0;
@@ -117,6 +121,10 @@ class AdminbotMemberSelect extends LitElement {
       this.open = true;
       const step = event.key === "ArrowDown" ? 1 : -1;
       this.active = (this.active + step + options.length) % Math.max(options.length, 1);
+      const highlighted = options[this.active];
+      if (highlighted) {
+        this.onHighlight(highlighted.id);
+      }
       return;
     }
     if (event.key === "Enter" && this.open) {
@@ -192,6 +200,7 @@ class AdminbotMemberSelect extends LitElement {
                       }}
                       @mouseenter=${() => {
                         this.active = index;
+                        this.onHighlight(option.id);
                       }}
                     >
                       <span class="country-select__name">${option.name}</span>
@@ -226,6 +235,7 @@ export function renderMemberSelect(params: {
   disabled: boolean;
   onPick: (memberId: string) => void;
   onOpen?: () => void;
+  onHighlight?: (memberId: string) => void;
 }) {
   return html`
     <adminbot-member-select
@@ -236,6 +246,7 @@ export function renderMemberSelect(params: {
       .disabled=${params.disabled}
       .onPick=${params.onPick}
       .onOpen=${params.onOpen ?? (() => {})}
+      .onHighlight=${params.onHighlight ?? (() => {})}
     ></adminbot-member-select>
   `;
 }

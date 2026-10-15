@@ -84,8 +84,7 @@ export function renderProjectPage(
   const own = ownPapers(state).some((candidate) => candidate.id === paper.id);
   const cycle = props.slots[paper.id];
   // The deadline is what decides how urgent the paper is, so it sits beside where it is aimed.
-  const deadline =
-    props.overview.find((row) => row.paper_id === paper.id)?.deadline ?? paper.deadline;
+  const deadline = paper.deadline;
   return html`<section class="project" data-testid=${`project-${paperId}`}>
     <a class="project__back" href="#" @click=${(event: Event) => back(event, state)}
       >‹ My projects</a

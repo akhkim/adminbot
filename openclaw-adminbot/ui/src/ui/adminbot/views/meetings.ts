@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import type {
@@ -6,7 +7,9 @@ import type {
   MeetingAttendanceNudgeResult,
   MeetingAttendee,
   MeetingRecord,
+  MeetingRosters,
 } from "../api/meetings.ts";
+import { MEETINGS_PAGE_SIZE } from "../api/meetings.ts";
 // Meeting Recordings: what was recorded, who was there, and what the local model made of it.
 //
 // The tab is a catch-up surface first. Someone who missed Tuesday opens it to watch the recording
@@ -38,6 +41,17 @@ export type AdminBotMeetingsProps = {
   viewerMemberId: string | null;
   /** The lab roster, for the admin attendance editor. Empty for a member, who never sees one. */
   members: MeetingsRosterMember[];
+  /**
+   * Admin only: the rosters read so far this session, by meeting id. An admin's list rows carry a
+   * headcount and no roster, so the editor draws its ticks from here.
+   */
+  rosters?: MeetingRosters;
+  /**
+   * Admin only: a meeting's attendance is about to be looked at (`opened` false -- pointer or focus
+   * on its summary) or has just been unfolded (`opened` true). Fired on intent so the roster read
+   * is usually back before the fold opens.
+   */
+  onRosterIntent?: (meetingId: string, opened: boolean) => void;
   onToggleAttendance: (meetingId: string, attendee: MeetingAttendee) => void;
   onFileMeeting: (draft: {
     topic: string;
@@ -209,12 +223,20 @@ function renderOwnAttendance(meeting: MeetingRecord) {
  * checking -- a transcript-sourced roster is a list of who talked, nothing more.
  */
 function renderRosterEditor(props: AdminBotMeetingsProps, meeting: MeetingRecord) {
+  // The roster comes from its own read; a row that still carries one (an older service) is used
+  // as is. Until one of them has it, the fold stays empty rather than drawing every member
+  // unticked: an unticked box there would read as "absent", and ticking it would save a roster
+  // built from nothing.
+  const attendees = props.rosters?.[meeting.id]?.attendees ?? meeting.attendees;
+  if (!attendees) {
+    return nothing;
+  }
   const byMember = new Map(
-    (meeting.attendees ?? [])
+    attendees
       .filter((attendee) => attendee.member_id)
       .map((attendee) => [attendee.member_id as string, attendee]),
   );
-  const guests = (meeting.attendees ?? []).filter((attendee) => !attendee.member_id);
+  const guests = attendees.filter((attendee) => !attendee.member_id);
   return html`
     <table class="meetings__roster">
       <tbody>
@@ -261,6 +283,13 @@ function renderRosterEditor(props: AdminBotMeetingsProps, meeting: MeetingRecord
   `;
 }
 
+/** The prefetch handler, or none: a member's fold has nothing to read, so it listens for nothing. */
+function intent(props: AdminBotMeetingsProps, meetingId: string, opened: boolean) {
+  return props.viewerIsAdmin && props.onRosterIntent
+    ? () => props.onRosterIntent?.(meetingId, opened)
+    : undefined;
+}
+
 function renderMeeting(props: AdminBotMeetingsProps, meeting: MeetingRecord) {
   const duration = formatDuration(meeting);
   return html`
@@ -270,7 +299,16 @@ function renderMeeting(props: AdminBotMeetingsProps, meeting: MeetingRecord) {
         ${formatStart(meeting.started_at)}${duration ? html` · ${duration}` : nothing}
       </p>
       ${renderRecordingLinks(meeting)} ${renderSummary(meeting)}
-      <details class="meetings__attendance">
+      <details
+        class="meetings__attendance"
+        @pointerenter=${intent(props, meeting.id, false)}
+        @focusin=${intent(props, meeting.id, false)}
+        @toggle=${(event: Event) => {
+          if ((event.currentTarget as HTMLDetailsElement).open) {
+            intent(props, meeting.id, true)?.();
+          }
+        }}
+      >
         <summary>${t("adminbotMeetings.attendance")}</summary>
         ${props.viewerIsAdmin ? renderRosterEditor(props, meeting) : renderOwnAttendance(meeting)}
       </details>
@@ -487,7 +525,11 @@ export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
       ${!props.loading && !props.error && props.meetings.length === 0
         ? html`<p class="muted">${t("adminbotMeetings.empty")}</p>`
         : nothing}
-      ${props.meetings.slice(0, visibleCount).map((meeting) => renderMeeting(props, meeting))}
+      ${repeat(
+        props.meetings.slice(0, visibleCount),
+        (meeting) => meeting.id,
+        (meeting) => renderMeeting(props, meeting),
+      )}
       ${visibleCount < props.meetings.length || props.hasMore
         ? html`<button
             class="btn meetings__more"
@@ -498,14 +540,19 @@ export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
             @click=${() =>
               props.onShowMore(
                 visibleCount < props.meetings.length
-                  ? Math.min(props.meetings.length, visibleCount + 12)
-                  : visibleCount + 12,
+                  ? Math.min(props.meetings.length, visibleCount + MEETINGS_PAGE_SIZE)
+                  : visibleCount + MEETINGS_PAGE_SIZE,
               )}
           >
             ${props.loadingMore
               ? t("adminbotMeetings.loading")
               : t("professor.showMore", {
-                  count: String(Math.min(12, props.meetings.length - visibleCount || 12)),
+                  count: String(
+                    Math.min(
+                      MEETINGS_PAGE_SIZE,
+                      props.meetings.length - visibleCount || MEETINGS_PAGE_SIZE,
+                    ),
+                  ),
                 })}
           </button>`
         : nothing}

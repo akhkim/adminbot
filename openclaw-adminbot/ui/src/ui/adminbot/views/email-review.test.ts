@@ -49,6 +49,28 @@ describe("email review queue", () => {
     );
   });
 
+  it("badges the whole held queue and reads the next page on request", () => {
+    const onMore = vi.fn();
+    const container = document.createElement("div");
+    render(
+      renderAdminBotEmailReview({
+        reviews: [review],
+        page: { total: 7, next: 1 },
+        onMore,
+        candidates,
+        recentResolutions: [],
+        busyActionId: null,
+        onResolve: vi.fn(),
+      }),
+      container,
+    );
+    expect(container.querySelector(".email-review-queue__count")?.textContent).toBe("7");
+    const more = container.querySelector<HTMLButtonElement>('[data-testid="queue-show-more"]');
+    expect(more?.textContent?.trim()).toBe("Show 6 more");
+    more?.click();
+    expect(onMore).toHaveBeenCalledOnce();
+  });
+
   it("requires an explicit selection before attaching evidence", () => {
     const onResolve = vi.fn();
     const container = document.createElement("div");

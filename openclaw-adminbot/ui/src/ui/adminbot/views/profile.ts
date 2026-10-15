@@ -481,7 +481,8 @@ function consumePendingFieldFocus(): void {
 export function badgesFor(state: AppViewState, member: LabMember): string[] {
   const badges: string[] = [];
   const onboarding = state.adminBotOnboarding;
-  if (onboarding && !(onboarding.remaining ?? []).length && (onboarding.steps ?? []).length) {
+  const steps = onboarding?.steps ?? [];
+  if (steps.length && steps.every((step) => step.status === "complete")) {
     badges.push(t("profile.badges.onboarded"));
   }
   if (!blankFields(member).length) {
@@ -2037,7 +2038,8 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
       ${renderPhotoCompliance(state, member, props)}
       ${props.badgesDisabled
         ? nothing
-        : html`${renderBadgeSelfNomination(state, member, props)} ${renderBadgeSuggestion(state, props)}`}
+        : html`${renderBadgeSelfNomination(state, member, props)}
+          ${renderBadgeSuggestion(state, props)}`}
       ${renderOnboardingPointer(state, props)}
       <!-- Who has been in this record. Last, and shut: it is history about the fields above, and
            the answer to a question somebody asks occasionally rather than on every visit. Since

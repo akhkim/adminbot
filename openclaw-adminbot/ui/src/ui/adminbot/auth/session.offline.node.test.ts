@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readCachedAdminBotGet } from "../offline/outbox.ts";
+import { readOfflineRead } from "../offline/read-store.ts";
 import { cacheOfflineMemberSession, fetchMemberSession } from "./session.ts";
 
 afterEach(() => vi.restoreAllMocks());
@@ -26,7 +26,7 @@ describe("offline session restoration", () => {
       .join("");
     expect(
       JSON.stringify(
-        await readCachedAdminBotGet({ baseUrl: base, principalKey }, "/offline-identity"),
+        (await readOfflineRead({ baseUrl: base, principalKey }, "/offline-identity"))?.text,
       ),
     ).not.toContain("synthetic-gateway-secret");
     expect(await fetchMemberSession(token, "https://another.test")).toMatchObject({ ok: false });

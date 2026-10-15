@@ -17,6 +17,10 @@ import {
 } from "../../workflows/calendar/standing-meetings.js";
 import { groupMeetingInviteEmails } from "../../workflows/meetings/attendance-nudge.js";
 import {
+  meetingListRow,
+  meetingListRowWithoutRoster,
+} from "../../workflows/meetings/meeting-list-row.js";
+import {
   asString,
   readJson,
   readJsonOrEmpty,
@@ -24,6 +28,7 @@ import {
   sendJson,
   sendServiceResult,
 } from "../server.http.js";
+import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import type { AdminBotRouteContext } from "./context.js";
 import {
   adminSessionOnly,
@@ -33,6 +38,41 @@ import {
   requirePrivileged,
 } from "./guards.js";
 import { del, get, post, put, route, type Route } from "./router.js";
+import { principalRole, sendNotModified, versionEtag } from "./version-etag.js";
+
+/**
+ * The version tag for GET /meetings, or undefined to fall back to the body hash.
+ *
+ * The body is the stored meetings filtered by the duration floor (a setting), redacted to the
+ * viewer's own line unless they are an admin, and paged by the query. A member the store does not
+ * know gets a 404 from the service, so no tag is made for them.
+ */
+function meetingsEtag(
+  ctx: AdminBotRouteContext,
+  principal: AdminBotMemberPrincipal,
+  url: URL,
+): string | undefined {
+  const version = ctx.store.meetingVersion?.();
+  const isAdmin = principal.member.privilege_level === "admin";
+  if (version === undefined || (!isAdmin && !ctx.store.getLabMember(principal.member.id))) {
+    return undefined;
+  }
+  const settings = ctx.store.getSettings();
+  return versionEtag("meetings", [
+    version,
+    principalRole(principal),
+    isAdmin ? null : principal.member.id,
+    settings ? (settings.meeting_minimum_minutes ?? "unset") : "default",
+    url.searchParams.get("limit") ?? String(MEETINGS_PAGE_DEFAULT),
+    url.searchParams.get("before_started_at"),
+    url.searchParams.get("before_id"),
+  ]);
+}
+
+/** GET /meetings without `limit`: the first page the Meetings tab paints. */
+export const MEETINGS_PAGE_DEFAULT = 10;
+/** The most one GET /meetings page may hold, whatever `limit` asks for. */
+export const MEETINGS_PAGE_MAX = 50;
 
 export const meetingsRoutes: readonly Route[] = [
   get("/lab/meetings", async ({ res, ctx, principal }) => {
@@ -47,31 +87,30 @@ export const meetingsRoutes: readonly Route[] = [
       sendJson(res, standing.error.status, { error: { message: standing.error.message } });
       return;
     }
-    sendJson(res, 200, { meetings: standing.meetings });
+    // The form ticks a box per meeting and reads who is on it; how a meeting was classified and
+    // which calendar events it was folded from are the calendar sync's business.
+    sendJson(res, 200, {
+      meetings: standing.meetings.map(({ id, title, attendees }) => ({ id, title, attendees })),
+    });
   }),
   get(
     "/meetings",
     memberOnly(({ res, url, principal, ctx }) => {
       const { service } = ctx;
       const isAdmin = principal.member.privilege_level === "admin";
-      const limitText = url.searchParams.get("limit");
-      if (limitText === null) {
-        if (url.searchParams.has("before_started_at") || url.searchParams.has("before_id")) {
-          sendJson(res, 400, { error: { message: "invalid meetings page" } });
-          return;
-        }
-        sendServiceResult(
-          res,
-          isAdmin ? service.listMeetings() : service.listMeetingsForMember(principal.member.id),
-        );
-        return;
-      }
+      // An admin's rows leave the roster for GET /meetings/:id; a member's row already carries
+      // only their own line, which their closed card does render.
+      const row = isAdmin ? meetingListRowWithoutRoster : meetingListRow;
+      // Always a page. Without `limit` it is the most recent MEETINGS_PAGE_DEFAULT -- what the tab
+      // paints first -- and no request can ask for more than MEETINGS_PAGE_MAX, so a lab with
+      // years of meetings is never one response; `next_cursor` walks the rest.
+      const limitText = url.searchParams.get("limit") ?? String(MEETINGS_PAGE_DEFAULT);
       const beforeStartedAt = url.searchParams.get("before_started_at");
       const beforeId = url.searchParams.get("before_id");
       const limit = Number(limitText);
       if (
         !/^[1-9]\d*$/u.test(limitText) ||
-        limit > 50 ||
+        limit > MEETINGS_PAGE_MAX ||
         (beforeStartedAt === null) !== (beforeId === null) ||
         (beforeStartedAt !== null &&
           (beforeStartedAt.length > 100 || !beforeId?.trim() || beforeId.length > 512))
@@ -85,11 +124,22 @@ export const meetingsRoutes: readonly Route[] = [
           ? { before: { started_at: beforeStartedAt, id: beforeId } }
           : {}),
       };
+      const etag = meetingsEtag(ctx, principal, url);
+      if (etag && sendNotModified(res, etag)) {
+        return;
+      }
+      const listed = isAdmin
+        ? service.listMeetingsPage(page)
+        : service.listMeetingsPageForMember(principal.member.id, page);
       sendServiceResult(
         res,
-        isAdmin
-          ? service.listMeetingsPage(page)
-          : service.listMeetingsPageForMember(principal.member.id, page),
+        listed.ok
+          ? {
+              ...listed,
+              payload: { ...listed.payload, meetings: listed.payload.meetings.map(row) },
+            }
+          : listed,
+        { etag },
       );
     }),
   ),
@@ -109,13 +159,15 @@ export const meetingsRoutes: readonly Route[] = [
       const attendees = Array.isArray(body.attendees)
         ? (body.attendees as AdminBotMeetingAttendee[])
         : [];
+      const saved = service.setMeetingAttendance(
+        decodeURIComponent(params[1]),
+        attendees,
+        principal.kind === "member" ? principal.member.id : "service",
+      );
+      // The reply replaces the row on the tab, so it has the list's shape.
       sendServiceResult(
         res,
-        service.setMeetingAttendance(
-          decodeURIComponent(params[1]),
-          attendees,
-          principal.kind === "member" ? principal.member.id : "service",
-        ),
+        saved.ok ? { ...saved, payload: meetingListRow(saved.payload) } : saved,
       );
     }),
   ),
@@ -135,7 +187,23 @@ export const meetingsRoutes: readonly Route[] = [
     }
     const inviteEmails = await readGroupMeetingInvite(ctx, service.groupMeetingSchedule());
     if (req.method === "GET") {
-      sendServiceResult(res, service.collectMeetingAttendanceNudges({ inviteEmails }));
+      const preview = service.collectMeetingAttendanceNudges({ inviteEmails });
+      // Each row's missed meetings are the streak itself -- a row exists only when every one of
+      // `meetings` was missed -- so the preview names them once instead of once per person.
+      sendServiceResult(
+        res,
+        preview.ok
+          ? {
+              ...preview,
+              payload: {
+                ...preview.payload,
+                absent: preview.payload.absent.map(
+                  ({ missed_meeting_ids: _ids, missed_topics: _topics, ...row }) => row,
+                ),
+              },
+            }
+          : preview,
+      );
       return;
     }
     sendServiceResult(
@@ -143,6 +211,21 @@ export const meetingsRoutes: readonly Route[] = [
       await service.sendMeetingAttendanceNudges(principalActor(principal), { inviteEmails }),
     );
   }),
+  get(
+    // After /meetings/attendance-nudges, which this pattern would otherwise swallow.
+    /^\/meetings\/([^/]+)$/u,
+    memberOnly(({ res, principal, ctx, params }) => {
+      // One meeting with its roster: what an admin's card reads when its attendance is opened.
+      // The service applies the list's own projection -- the whole roster for an admin, a member's
+      // own line and a headcount for anyone else -- so this read cannot show more than the list.
+      const meetingId = decodeURIComponent(params[1]);
+      const read =
+        principal.member.privilege_level === "admin"
+          ? ctx.service.getListedMeeting(meetingId)
+          : ctx.service.getListedMeeting(meetingId, principal.member.id);
+      sendServiceResult(res, read.ok ? { ...read, payload: meetingListRow(read.payload) } : read);
+    }),
+  ),
   del(
     /^\/meetings\/([^/]+)$/u,
     adminSessionOnly(({ res, principal, params, ctx }) => {

@@ -5,9 +5,14 @@ import type {
   AdminBotEmailReviewResolution,
   AdminBotResolvedEmailReviewItem,
 } from "../auth/session.ts";
+import type { AdminQueuePage } from "../controllers/admin-queues.ts";
+import { renderQueueMore } from "./queue-more.ts";
 
 export type EmailReviewProps = {
   reviews: AdminBotEmailReviewItem[];
+  /** Where the held-mail queue stands when it is paged: its full size and the next page. */
+  page?: AdminQueuePage;
+  onMore?: () => void;
   candidates: AdminBotEmailReviewPaperflowCandidate[];
   recentResolutions: AdminBotResolvedEmailReviewItem[];
   busyActionId: string | null;
@@ -181,13 +186,16 @@ export function renderAdminBotEmailReview(props: EmailReviewProps) {
           </p>
         </div>
         ${props.reviews.length
-          ? html`<span class="email-review-queue__count">${props.reviews.length}</span>`
+          ? html`<span class="email-review-queue__count"
+              >${props.page?.total ?? props.reviews.length}</span
+            >`
           : nothing}
       </div>
       ${props.reviews.length
         ? html`<div class="email-review-list">
-            ${props.reviews.map((review) => renderReview(props, review))}
-          </div>`
+              ${props.reviews.map((review) => renderReview(props, review))}
+            </div>
+            ${renderQueueMore(props.page, props.reviews.length, props.onMore)}`
         : html`<div class="adminbot-empty">
             <div>
               <strong>No emails need review</strong>

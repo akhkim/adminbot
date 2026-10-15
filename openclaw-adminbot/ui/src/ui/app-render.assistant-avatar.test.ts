@@ -1,9 +1,11 @@
 /* @vitest-environment jsdom */
 
 import { html, render } from "lit";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "../i18n/index.ts";
 import { createEmptyAdminBotDashboardData } from "./adminbot/controllers/admin.ts";
+import { EMPTY_PROFILE_OVERVIEW_PAGE } from "./adminbot/controllers/profile-overview.ts";
+import { EMPTY_PAGED_LIST } from "./adminbot/load-more.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import type { ChatProps } from "./views/chat.ts";
 import type { QuickSettingsProps } from "./views/config-quick.ts";
@@ -224,9 +226,20 @@ function createState(overrides: Partial<AppViewState> = {}): AppViewState {
     loadOverview: vi.fn(),
     loadAssistantIdentity: vi.fn(),
     loadCron: vi.fn(),
+    // The paged lists' state, as the app starts it.
+    adminBotLogisticsPage: EMPTY_PAGED_LIST,
+    adminBotDeskLetters: { requests: [], loading: false, loadedAt: null },
+    adminBotProfileOverviewPage: EMPTY_PROFILE_OVERVIEW_PAGE,
     ...overrides,
   } as unknown as AppViewState;
 }
+
+// Chat and Quick Settings are lazy pages: load them once so every test below renders them in place.
+beforeAll(async () => {
+  renderApp(createState());
+  renderApp(createState({ tab: "chat" }));
+  await vi.dynamicImportSettled();
+});
 
 beforeEach(async () => {
   await i18n.setLocale("en");

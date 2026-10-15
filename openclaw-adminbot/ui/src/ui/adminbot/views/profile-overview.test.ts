@@ -2,6 +2,7 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import type { MemberAdoptionSummary, MemberProfileOverviewRow } from "../api/members.ts";
+import type { LoadMoreProps } from "../load-more.ts";
 import {
   EMPTY_PROFILE_OVERVIEW_FILTER,
   filterOverviewRows,
@@ -18,6 +19,8 @@ type DrawOptions = {
   reminding?: boolean;
   filter?: Partial<ProfileOverviewFilter>;
   adoption?: MemberAdoptionSummary | null;
+  remindCount?: number;
+  more?: LoadMoreProps;
 };
 
 function draw(options: DrawOptions = {}) {
@@ -37,6 +40,8 @@ function draw(options: DrawOptions = {}) {
       notice: options.notice ?? null,
       reminding: options.reminding ?? false,
       filter: { ...EMPTY_PROFILE_OVERVIEW_FILTER, gap: "all", ...options.filter },
+      remindCount: options.remindCount,
+      more: options.more,
       onFilterChange: (next) => filters.push(next),
       onRemind: (scope) => reminds.push(scope),
       onSeedNudgeList: () => seeds.push(true),
@@ -523,5 +528,38 @@ describe("nudge list seeding", () => {
       container.querySelector<HTMLButtonElement>('[data-testid="profile-overview-seed-nudge-list"]')
         ?.disabled,
     ).toBe(true);
+  });
+
+  it("counts the Remind button over the whole filtered roster the service reported", () => {
+    // Twenty rows are on screen; the service says 45 people match. The button promises 45.
+    const { container } = draw({
+      members: [member({ id: "a", missing_fields: ["office"] })],
+      remindCount: 45,
+    });
+    expect(
+      container.querySelector('[data-testid="profile-overview-remind"]')?.textContent,
+    ).toContain("45");
+  });
+
+  it("offers the next page under the table and asks for it on click", () => {
+    let asked = 0;
+    const { container } = draw({
+      members: [member({ id: "a", missing_fields: ["office"] })],
+      more: { remaining: 980, loading: false, onLoadMore: () => (asked += 1) },
+    });
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-testid="profile-overview-more"]',
+    );
+    expect(button?.textContent).toContain("20");
+    button?.click();
+    expect(asked).toBe(1);
+  });
+
+  it("shows no load-more button once the last page is in", () => {
+    const { container } = draw({
+      members: [member({ id: "a", missing_fields: ["office"] })],
+      more: { remaining: 0, loading: false, onLoadMore: () => {} },
+    });
+    expect(container.querySelector('[data-testid="profile-overview-more"]')).toBeNull();
   });
 });

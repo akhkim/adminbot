@@ -91,7 +91,7 @@ export async function sendAdminBotMemberNudge(host: AdminBotHost): Promise<void>
       text: `Sent ${created.length} nudge${created.length === 1 ? "" : "s"}.${skippedNote}`,
     };
     host.adminBotMemberNudge = createEmptyAdminBotMemberNudgeState();
-    await loadAdminBot(host);
+    await loadAdminBot(host, undefined, undefined, true);
   } finally {
     if (loadStoredMemberSession()?.sessionToken === stored.sessionToken) {
       host.adminBotMemberNudge = { ...host.adminBotMemberNudge, busy: false };

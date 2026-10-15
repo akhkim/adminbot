@@ -98,7 +98,7 @@ export function renderNudgePreview(props: PaperNudgeProps) {
                 <span class="nudge-preview__count">
                   ${t("paperSlots.nudgeItems", {
                     items: String(batch.item_count),
-                    papers: String(batch.paper_titles.length),
+                    papers: String(batch.paper_count),
                   })}
                 </span>
                 ${batch.deliverable

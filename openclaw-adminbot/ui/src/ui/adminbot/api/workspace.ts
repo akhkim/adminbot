@@ -62,7 +62,8 @@ export async function submitFeedback(
 
 export type MemberNotification = {
   id: string;
-  member_id: string;
+  /** Not sent: every notification on this read is the caller's own. Kept for older services. */
+  member_id?: string;
   /** Open, not a closed union: a service newer than this page can name a sender it does not know. */
   kind: string;
   title: string;
@@ -159,10 +160,24 @@ export async function recordTabVisit(
   tab: string,
 ): Promise<void> {
   try {
+    // The page's own reads go first. Posted at once, the log write competed with them for a
+    // connection, and as a write it also cut them off from the in-flight read sharing
+    // (authedJson forgets in-flight reads on every non-GET).
+    await whenIdle();
     await authedJson(baseUrl, "/ui/tab-visits", "POST", sessionToken, { tab });
   } catch {
     // Same reasoning as the unreachable branch: a usage log is never worth a visible failure.
   }
+}
+
+function whenIdle(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof globalThis.requestIdleCallback === "function") {
+      globalThis.requestIdleCallback(() => resolve(), { timeout: 2000 });
+    } else {
+      globalThis.setTimeout(resolve, 0);
+    }
+  });
 }
 
 export async function fetchTabVisitReport(

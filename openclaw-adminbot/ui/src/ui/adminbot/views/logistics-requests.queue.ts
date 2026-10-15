@@ -15,6 +15,7 @@ import {
   type LogisticsQueueOptions,
 } from "../data/logistics-queue.ts";
 import { isSettledRequest } from "../data/logistics-requests.ts";
+import { renderLoadMore, type LoadMoreProps } from "../load-more.ts";
 import { logisticsStatusLabel } from "./logistics-status.ts";
 
 export type AdminBotLogisticsQueueProps = {
@@ -23,6 +24,8 @@ export type AdminBotLogisticsQueueProps = {
   onOptionsChange: (patch: Partial<LogisticsQueueOptions>) => void;
   loading: boolean;
   error: string | null;
+  /** The next page of the same filter and sort, cut on the service. */
+  more?: LoadMoreProps;
   /** Outstanding only, or everything the lab has ever been sent. */
   showSettled: boolean;
   onShowSettledChange: (showSettled: boolean) => void;
@@ -262,7 +265,7 @@ export function renderAdminBotLogisticsQueue(props: AdminBotLogisticsQueueProps)
       ${props.error
         ? html`<p class="logistics-requests__error" role="alert">${props.error}</p>`
         : nothing}
-      ${props.loading
+      ${props.loading && !rows.length
         ? html`<p class="logistics-requests__empty">${t("logistics.requests.loading")}</p>`
         : rows.length
           ? html`
@@ -315,6 +318,7 @@ export function renderAdminBotLogisticsQueue(props: AdminBotLogisticsQueueProps)
                   </tbody>
                 </table>
               </div>
+              ${renderLoadMore(props.more, "logistics-queue-more")}
             `
           : html`<p class="logistics-requests__empty">
               ${filtered

@@ -1108,6 +1108,86 @@ export function buildMemberMap(
   };
 }
 
+/** The map for a roster read, with each member's synced Slack location as their first choice. */
+export function memberMapFromRoster(
+  members: readonly AdminBotLabMember[],
+  options: BuildMemberMapOptions = {},
+): AdminBotMemberMap {
+  const slackLocations = new Map<string, string>();
+  for (const member of members) {
+    if (member.slack_user_id && member.slack_location) {
+      slackLocations.set(member.slack_user_id, member.slack_location);
+    }
+  }
+  return buildMemberMap(members, slackLocations, options);
+}
+
+/**
+ * The clock bucket memberMapMemo rebuilds on. A route that versions the map's ETag puts it in the
+ * tag for the same reason the memo keys on it.
+ */
+export function memberMapHour(now: Date = new Date()): number {
+  return Math.floor(now.getTime() / 3_600_000);
+}
+
+/**
+ * Remembers the last map built for each sign-in-city entitlement, keyed on the store's roster
+ * version and the hour.
+ *
+ * The dashboard asks for the map on every load; at 1000+ members rebuilding it means a gazetteer
+ * pass over everyone each time. Apart from the roster it depends on two things: whether the caller
+ * may see sign-in cities (so the anonymous map and the signed-in one are never the same entry), and
+ * the clock, since a sign-in city ages out after ADMINBOT_MAP_LOGIN_FRESH_DAYS with no roster write.
+ * Keying on the hour bounds how long an aged-out city can linger. A store with no version (the
+ * in-memory one) is rebuilt every call.
+ */
+export function memberMapMemo(): (
+  store: {
+    labMemberVersion?(): number;
+    listLabMembers(): readonly AdminBotLabMember[];
+  },
+  options?: { loginCity?: boolean; now?: Date },
+) => AdminBotMemberMap {
+  const last = new Map<boolean, { version: number; hour: number; map: AdminBotMemberMap }>();
+  return (store, options = {}) => {
+    const loginCity = options.loginCity ?? false;
+    const now = options.now ?? new Date();
+    const build = () => memberMapFromRoster(store.listLabMembers(), { loginCity, now });
+    const version = store.labMemberVersion?.();
+    if (version === undefined) {
+      return build();
+    }
+    const hour = memberMapHour(now);
+    const cached = last.get(loginCity);
+    if (cached?.version === version && cached.hour === hour) {
+      return cached.map;
+    }
+    const map = build();
+    last.set(loginCity, { version, hour, map });
+    return map;
+  };
+}
+
+/**
+ * The privileged map as sent: who is where, and how many are unplaced. The names of the unplaced
+ * go only to a caller that asks for them (the standalone map page lists them to fix the
+ * gazetteer); the dashboard card shows a count, and a lab of 1000 can have hundreds unplaced.
+ */
+export function toPrivilegedMemberMap(
+  map: AdminBotMemberMap,
+  options: { listUnplaced: boolean },
+): Omit<AdminBotMemberMap, "unplaced"> &
+  Partial<Pick<AdminBotMemberMap, "unplaced">> & {
+    unplaced_count: number;
+  } {
+  const { unplaced, ...rest } = map;
+  return {
+    ...rest,
+    unplaced_count: unplaced.length,
+    ...(options.listUnplaced ? { unplaced } : {}),
+  };
+}
+
 export type AdminBotMapPlaceSummary = AdminBotMapPlace & { count: number };
 
 export type AdminBotMemberMapSummary = {
