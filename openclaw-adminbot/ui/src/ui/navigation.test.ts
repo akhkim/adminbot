@@ -59,6 +59,8 @@ describe("iconForTab", () => {
       gettingStarted: "check",
       myWork: "book",
       labSharing: "link",
+      labTravel: "mapPin",
+      adminbotNotificationDrafts: "send",
       adminbotOpportunities: "zap",
       chat: "messageSquare",
       overview: "barChart",
@@ -70,6 +72,7 @@ describe("iconForTab", () => {
       adminbotSettings: "settings",
       adminbotMembers: "folder",
       adminbotProfileOverview: "check",
+      adminbotArrReviewers: "check",
       adminbotTabUsage: "barChart",
       adminbotGrantReport: "scrollText",
       adminbotMailingList: "send",
@@ -122,6 +125,8 @@ describe("titleForTab", () => {
       gettingStarted: "Getting Started",
       myWork: "My Projects & Papers",
       labSharing: "Collaborate",
+      labTravel: "Travel",
+      adminbotNotificationDrafts: "OpenReview To Tweet",
       adminbotOpportunities: "Opportunities",
       chat: "Chat",
       overview: "Overview",
@@ -132,11 +137,12 @@ describe("titleForTab", () => {
       adminbotSettings: "Settings",
       adminbotMembers: "Lab Members",
       adminbotProfileOverview: "Profile Completeness",
+      adminbotArrReviewers: "ARR Eligible Reviewers",
       adminbotTabUsage: "Tab Usage",
       adminbotGrantReport: "Grant Report",
       adminbotMailingList: "Mailing List",
       adminbotProfessor: "My Desk",
-      adminbotTravel: "Travel",
+      adminbotTravel: "Travel History",
       adminbotMeetings: "Meeting Recordings",
       adminbotTimeAvailability: "Time Availability",
       adminbotSignatures: "Signatures for You",
@@ -181,6 +187,8 @@ describe("subtitleForTab", () => {
       // Corrected to the shipped string: the tab has said "Coming soon" for a while and this
       // expectation had not followed, leaving the suite red for a reason unrelated to it.
       labSharing: "Coming soon — share resources, ideas, and collaborate.",
+      labTravel: "Conferences to RSVP for, your other trips, and lab members near you.",
+      adminbotNotificationDrafts: "Create tweet drafts and images from notification exports.",
       adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
       chat: "Gateway chat for quick interventions.",
       overview: "Status, entry points, health.",
@@ -191,6 +199,7 @@ describe("subtitleForTab", () => {
       adminbotSettings: "Lab defaults and escalation policy.",
       adminbotMembers: "Privilege levels and access profiles.",
       adminbotProfileOverview: "Who has filled in their profile and planned their term.",
+      adminbotArrReviewers: "Self-reported ARR reviewer qualification and capacity.",
       adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
       adminbotGrantReport:
         "Every paper mapped to a safety area, and the track record behind each ask.",
@@ -372,6 +381,9 @@ describe("tabFromPath", () => {
 
   it("routes the Lab Sharing placeholder", () => {
     expect(tabFromPath("/lab-sharing")).toBe("labSharing");
+    // The member Travel tab, kept apart from the head professor's `/travel` history.
+    expect(tabFromPath("/lab-travel")).toBe("labTravel");
+    expect(tabFromPath("/travel")).toBe("adminbotTravel");
   });
 
   it("handles base paths", () => {

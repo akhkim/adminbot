@@ -1,3 +1,4 @@
+import { COMPLETE_PROFILE } from "../../../../../extensions/adminbot/src/contracts/profile-completion.test-helpers.js";
 // Control UI AdminBot controller tests cover explicit data-loading modes.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
@@ -9,6 +10,7 @@ import {
   createEmptyAdminBotMemberList,
   createEmptyAdminBotReimbursementState,
   loadAdminBot,
+  pendingAdminBotLoad,
   loadAdminBotMemberList,
   loadAdminBotRoster,
   saveAdminBotPaper,
@@ -281,7 +283,9 @@ describe("loadAdminBot over the member session", () => {
         : Promise.resolve(json({ papers: [] })),
     );
     const pending = loadAdminBot(host, "general");
+    expect(pendingAdminBotLoad(host)).toBe(pending);
     clearStoredMemberSession();
+    expect(pendingAdminBotLoad(host)).toBeUndefined();
     host.adminBotData = createEmptyAdminBotDashboardData();
     resolveMembers(json({ member: { id: "old-private" } }));
     await pending;
@@ -302,11 +306,29 @@ describe("loadAdminBot over the member session", () => {
     });
   });
 
+  it("only reads the own profile while incomplete, then loads papers after completion", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    let complete = false;
+    const fetchMock = routedFetch({
+      "/lab/members/self": () => json({ member: complete ? COMPLETE_PROFILE : { id: "ada", privilege_level: "member" } }),
+      "/papers": () => json({ papers: [{ id: "paper-1" }] }),
+    });
+    await loadAdminBot(host, "admin", true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(host.adminBotError).toBeNull();
+    expect(host.adminBotData.papersLoadedAt).toBeNull();
+    complete = true;
+    await loadAdminBot(host, "general", true);
+    expect(host.adminBotData.papers).toHaveLength(1);
+    expect(host.adminBotError).toBeNull();
+  });
+
   it("reads members and papers over HTTP instead of the gateway tool", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host, calls } = createHost({});
     const fetchMock = routedFetch({
-      "/lab/members/self": () => json({ member: { id: "pat" } }),
+      "/lab/members/self": () => json({ member: { ...COMPLETE_PROFILE, id: "pat" } }),
       "/papers": () => json({ papers: [{ id: "paper-1" }] }),
     });
 
@@ -333,7 +355,7 @@ describe("loadAdminBot over the member session", () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});
     const fetchMock = routedFetch({
-      "/lab/members/self": () => json({ member: { id: "pat" } }),
+      "/lab/members/self": () => json({ member: { ...COMPLETE_PROFILE, id: "pat" } }),
       "/papers": () => json({ papers: [{ id: "paper-1" }] }),
     });
 
@@ -366,7 +388,7 @@ describe("loadAdminBot over the member session", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
       const url = String(input);
       if (url.includes("/lab/members/self")) {
-        return Promise.resolve(json({ member: { id: "pat", name: "Pat" } }));
+        return Promise.resolve(json({ member: { ...COMPLETE_PROFILE, id: "pat", name: "Pat" } }));
       }
       if (url.includes("/papers")) {
         return new Promise<Response>((resolve) => {
@@ -396,7 +418,7 @@ describe("loadAdminBot over the member session", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
       const url = String(input);
       if (url.includes("/lab/members/self")) {
-        return Promise.resolve(json({ member: { id: "pat", name: "Pat" } }));
+        return Promise.resolve(json({ member: { ...COMPLETE_PROFILE, id: "pat", name: "Pat" } }));
       }
       if (url.includes("/lab/members?view=summary")) {
         return Promise.resolve(
@@ -451,7 +473,7 @@ describe("loadAdminBot over the member session", () => {
     const { host } = createHost({});
     routedFetch({
       "/lab/members/self": () =>
-        json({ member: { id: "pat", name: "Pat", milestones: [{ id: "deadline-1" }] } }),
+        json({ member: { ...COMPLETE_PROFILE, id: "pat", name: "Pat", milestones: [{ id: "deadline-1" }] } }),
       "/lab/members?view=summary": () =>
         json({
           members: [
@@ -506,7 +528,7 @@ describe("loadAdminBot over the member session", () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});
     routedFetch({
-      "/lab/members/self": () => json({ member: { id: "pat" } }),
+      "/lab/members/self": () => json({ member: { ...COMPLETE_PROFILE, id: "pat" } }),
       "/papers/nudges": () => json({ error: { message: "nope" } }, 403),
       "/papers": () => json({ papers: [{ id: "paper-1" }] }),
       "/proposals/pending": () => json({ error: { message: "nope" } }, 403),
@@ -1409,6 +1431,7 @@ describe("saveAdminBotPaper", () => {
 
     await saveAdminBotPaper(host, {
       ...baseInput,
+      venue: "ICML 2026",
       venueDecision: "reject",
       acceptedVenue: "ACL 2026",
       acceptedYear: "2026",
@@ -1418,6 +1441,7 @@ describe("saveAdminBotPaper", () => {
 
     expect(toolInvocations).toContain("adminbot_upsert_paper");
     expect(toolArgs).toMatchObject({
+      venue: "ICML 2026",
       venueDecision: "reject",
       acceptedVenue: "ACL 2026",
       acceptedYear: 2026,

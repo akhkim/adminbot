@@ -182,11 +182,13 @@ describe("sessions.create ownership stamping", () => {
     });
   }
 
-  it("stamps the creating member's id as the new session's owner", async () => {
+  it.each([false, true])("stamps ownership (chat-only: %s)", async (chatOnly) => {
+    const client = createClient("mem-1");
+    if (chatOnly) client.connect.scopes = ["operator.read", "operator.chat"];
     const respond = await callSessions(
       "sessions.create",
       {},
-      { context: createCreateContext(), client: createClient("mem-1") },
+      { context: createCreateContext(), client },
     );
 
     expect(respond).toHaveBeenCalledWith(
@@ -196,6 +198,37 @@ describe("sessions.create ownership stamping", () => {
       }),
       undefined,
     );
+  });
+
+  it.each([
+    { key: "agent:main:member-other" },
+    { key: "agent:main:main" },
+    { parentSessionKey: "agent:main:member-other" },
+    { model: "other-model" },
+    { emitCommandHooks: true },
+    { message: "run a command" },
+    { task: "run a task" },
+  ])("rejects privileged session creation options for chat-only members: %j", async (params) => {
+    const client = createClient("mem-1");
+    client.connect.scopes = ["operator.chat"];
+    const respond = await callSessions("sessions.create", params, {
+      context: createCreateContext(),
+      client,
+    });
+    expect(respond).toHaveBeenCalledWith(false, undefined, expect.anything());
+    expect(createSessionEntryWithTranscriptMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects chat-only creation without a member identity", async () => {
+    const client = createClient();
+    client.connect.scopes = ["operator.chat"];
+    const respond = await callSessions(
+      "sessions.create",
+      {},
+      { context: createCreateContext(), client },
+    );
+    expect(respond).toHaveBeenCalledWith(false, undefined, expect.anything());
+    expect(createSessionEntryWithTranscriptMock).not.toHaveBeenCalled();
   });
 
   // No longer refused. Machine callers (an agent's sessions-send-tool, cron, the CLI) have no

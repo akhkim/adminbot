@@ -14,7 +14,6 @@ import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
 } from "../views/time-availability.drafts.ts";
-import { EMPTY_TRIP_DRAFT } from "../views/time-availability.trips.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
 // The page's view loads on first visit rather than in the first bundle.
@@ -29,12 +28,6 @@ export function renderTimeAvailabilitySurface(state: AppViewState, scope: AdminB
   return state.tab === "adminbotTimeAvailability" && !rosterPendingForTab
     ? renderLazyView(lazyTimeAvailability, (m) =>
         m.renderAdminBotTimeAvailability({
-          // The trips log's draft lives on the view state so a re-render underneath the
-          // typist -- the roster reloading, a save landing -- cannot wipe half-entered input.
-          tripDraft: state.adminBotTripDraft ?? EMPTY_TRIP_DRAFT,
-          onTripDraftChange: (draft) => {
-            state.adminBotTripDraft = draft;
-          },
           collaborators:
             state.adminBotCollaboratorSchedulesSession === loadStoredMemberSession()?.sessionToken
               ? state.adminBotCollaboratorSchedules

@@ -32,6 +32,10 @@ ARR routes can therefore resolve to one venue without substring matching.
 projection used by ordinary consumers. A source that disappears marks the item
 `stale`, but never deletes the item or its history.
 
+### Date-only planning cutoffs
+
+Keep a date-only announcement as its published calendar date and source timezone. Compute its planning cutoff at the start of that day in the source timezone; when the source timezone is unknown, use UTC+14. Named zones use the offset in effect on that date. Do not store a second planning timestamp that can disagree with the source date. The planning cutoff is not evidence that submissions have closed.
+
 ### Independent venue classifications
 
 Every row stores three separate facts:

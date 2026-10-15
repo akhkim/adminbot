@@ -589,7 +589,11 @@ describe("renderProfile autosave", () => {
         expect.stringContaining("/drive/check-edit-access"),
         expect.objectContaining({ method: "POST", credentials: "omit" }),
       );
-      expect(state.profileAccountChecks.one_on_one_folder_url).toMatchObject({ status: "warning" });
+      await vi.waitFor(() => {
+        expect(state.profileAccountChecks.one_on_one_folder_url).toMatchObject({
+          status: "warning",
+        });
+      });
       render(renderProfile(state, { onSave: vi.fn() }), container);
       await vi.advanceTimersByTimeAsync(0);
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -1924,4 +1928,15 @@ it("requires social/website links and accepts either intake response answer for 
     expect(row.querySelector(".profile__mandatory")).not.toBeNull();
     expect(row.querySelector(".profile__optional")).toBeNull();
   }
+});
+
+it("hides badge nomination and suggestion controls until profile access is unlocked", () => {
+  const state = createState(createMember());
+  const container = document.createElement("div");
+  render(renderProfile(state, { onSave: vi.fn(), badgesDisabled: true }), container);
+  expect(container.querySelector('[name="location"]')).not.toBeNull();
+  expect(container.querySelector('[data-testid="profile-badge-suggestions"]')).toBeNull();
+  expect(container.querySelector(".profile-badge-form")).toBeNull();
+  render(renderProfile(state, { onSave: vi.fn(), badgesDisabled: false }), container);
+  expect(container.querySelector('[data-testid="profile-badge-suggestions"]')).not.toBeNull();
 });

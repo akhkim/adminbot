@@ -9,6 +9,7 @@ import type {
   DeadlineProposalStore,
 } from "../data/deadline-proposals.ts";
 import { DEADLINE_VENUES, type DeadlineVenue } from "../data/deadlines.ts";
+import { milestoneEndInstant } from "../data/milestone-time.ts";
 import {
   archivalLabelOf,
   buildDeadlineBoardEntries,
@@ -2072,7 +2073,6 @@ it("shows the source date and a plain conservative countdown in cards", async ()
       deadline_date: "2026-08-30",
       deadline_time_precision: "date_only",
       deadline_timezone: "",
-      deadline_planning_at: "2026-08-29T10:00:00Z",
       revisions: [],
       schedule: [],
     },
@@ -2545,7 +2545,6 @@ it("keeps undated workshops in their usual upcoming groups without countdowns", 
     venue_group: "Example 2035 Workshops",
     deadline_aoe: "",
     deadline_at: "",
-    deadline_planning_at: "",
     deadline_date: "",
     deadline_time_precision: "",
     notification_aoe: "",
@@ -2610,6 +2609,45 @@ it("keeps source links after member-only correction actions", async () => {
   expect(
     container.querySelector(`[id="${policy.getAttribute("popovertarget")}"]`)?.getAttribute("role"),
   ).toBe("note");
+});
+
+it("uses the supported cutoff for a response period instead of assuming end-of-day AoE", () => {
+  expect(
+    milestoneEndInstant({
+      milestone: "author_response",
+      label: "Initial response",
+      kind: "period",
+      starts: "2035-09-14",
+      ends: "2035-09-19",
+      planning_at: "2035-09-18T10:00:00Z",
+    }),
+  ).toBe(Date.parse("2035-09-18T10:00:00Z"));
+});
+
+it("shows unresolved schedule details without claiming the schedule is complete", async () => {
+  const store = new TestProposalStore();
+  store.listPublished = async () => [
+    {
+      ...DEADLINE_VENUES[0],
+      id: "schedule-example",
+      deadline_id: "schedule-example",
+      name: "Example conference",
+      deadline_at: "2026-09-26T11:59:00Z",
+      deadline_aoe: "2026-09-25 23:59:00",
+      schedule: [],
+      schedule_status: "needs_review",
+      schedule_issues: ["Third-phase dates are not published."],
+    },
+  ];
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(renderDeadlines({ proposalStore: store }), container);
+  await settle(container);
+  buttonNamed(container, "Cards").click();
+  await settle(container);
+  const note = container.querySelector('[data-testid="deadline-schedule-status"]');
+  expect(note?.textContent).toContain("Schedule has unresolved details.");
+  expect(note?.textContent).toContain("Third-phase dates are not published.");
 });
 
 it("keeps only actions passed within 14 days, deduplicates shared stages and respects stage filters", () => {

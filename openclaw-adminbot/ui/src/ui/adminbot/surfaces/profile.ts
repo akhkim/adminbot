@@ -15,6 +15,7 @@ import {
 import { loadAdminBotRecentEdits } from "../controllers/recent-edits.ts";
 import { submitOwnBadgeNomination, submitOwnBadgeSuggestion } from "../data/badges.ts";
 import { renderLocationPrompt } from "../views/location-prompt.ts";
+import { isProfileBlocked } from "../views/profile-gate.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
 // The page's view loads on first visit rather than in the first bundle.
@@ -22,7 +23,10 @@ const lazyProfile = createLazyView(() => import("../views/profile.ts"), notifyLa
 
 export function renderProfileSurface(state: AppViewState, scope: AdminBotSurfaceScope) {
   const { requestHostUpdate } = scope;
-  return html`${state.tab === "profile"
+  // While required profile fields are missing the page is the only one open: no location prompt
+  // over it, and no badge actions that would call routes the service refuses until it is done.
+  const profileBlocked = isProfileBlocked(state);
+  return html`${state.tab === "profile" && !profileBlocked
     ? renderLocationPrompt({
         drift: state.adminBotLocationDrift ?? null,
         saving: state.adminBotLocationSaving ?? false,
@@ -38,6 +42,7 @@ export function renderProfileSurface(state: AppViewState, scope: AdminBotSurface
     ? html`
         ${renderLazyView(lazyProfile, (m) =>
           m.renderProfile(state, {
+            badgesDisabled: profileBlocked,
             onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
             onLoadRecentEdits: (subject, id) => {
               void loadAdminBotRecentEdits(state, subject, id).finally(() => requestHostUpdate?.());

@@ -1,4 +1,5 @@
 import { html, nothing, LitElement, type TemplateResult } from "lit";
+import { live } from "lit/directives/live.js";
 // Shared rendering for public and signed-in deadline surfaces.
 // Stays in the app document flow so the page owns one vertical scroll.
 import { t } from "../../../i18n/index.ts";
@@ -244,6 +245,9 @@ const MILESTONE_ORDER = [
   "submission",
   "reviews",
   "rebuttal",
+  "author_response",
+  "discussion",
+  "review_issue",
   "notification",
   "notification_by",
   "cycle_end",
@@ -1816,7 +1820,7 @@ class AdminbotDeadlinesView extends LitElement {
                   ?autofocus=${Boolean(target)}
                   type="date"
                   required
-                  .value=${value?.deadlineDate ?? ""}
+                  .value=${live(value?.deadlineDate ?? "")}
                   aria-invalid=${String(Boolean(this.proposalErrors.deadlineDate))}
                 />`,
                 value?.deadlineDate ?? "",
@@ -1828,7 +1832,7 @@ class AdminbotDeadlinesView extends LitElement {
               <input
                 name="deadlineTime"
                 type="time"
-                .value=${value?.deadlineTime ?? ""}
+                .value=${live(value?.deadlineTime ?? "")}
                 aria-invalid=${String(Boolean(this.proposalErrors.deadlineTime))}
               />
               ${this.renderProposalFieldError("deadlineTime")}
@@ -2592,8 +2596,23 @@ class AdminbotDeadlinesView extends LitElement {
             : status === "administrator_approved"
               ? "Date corrected after administrator review."
               : "";
+    const scheduleNote = ["source_unavailable", "extraction_unavailable"].includes(
+      venue.schedule_status ?? "",
+    )
+      ? "Schedule check failed; previous dates retained."
+      : venue.schedule_status === "needs_review"
+        ? "Schedule has unresolved details."
+        : venue.schedule_status === "unverified"
+          ? "Schedule has not been verified."
+          : "";
     return html`${renderWorkshopNotificationNotes(venue)}${note
       ? html`<p class="deadline-card__note">${note}</p>`
+      : nothing}
+    ${scheduleNote
+      ? html`<p class="deadline-card__note" data-testid="deadline-schedule-status">
+          ${scheduleNote}
+          ${(venue.schedule_issues ?? []).map((issue) => html`<span> ${issue}</span>`)}
+        </p>`
       : nothing}`;
   }
 
@@ -2688,7 +2707,6 @@ class AdminbotDeadlinesView extends LitElement {
       deadline_label: stage.label,
       deadline_aoe: aoe,
       deadline_at: new Date(stage.instant).toISOString(),
-      deadline_planning_at: new Date(stage.instant).toISOString(),
       deadline_time_precision: "exact",
     };
   }
@@ -3305,7 +3323,9 @@ class AdminbotDeadlinesView extends LitElement {
                 ? html`<p class="deadline-group__shared-policy">
                     Organizers must notify authors by
                     ${milestoneDateLabel(notificationPolicy, this.displayZone)}
-                    ${notificationPolicy.status === "source_unavailable"
+                    ${["source_unavailable", "extraction_unavailable"].includes(
+                      notificationPolicy.status ?? "",
+                    )
                       ? html`<span>Latest source check failed</span>`
                       : notificationPolicy.status === "unverified" || !notificationPolicy.evidence
                         ? html`<span>Source not verified</span>`

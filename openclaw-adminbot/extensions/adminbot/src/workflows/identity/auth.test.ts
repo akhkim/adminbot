@@ -1835,7 +1835,9 @@ describe("lab calendar invite backfill", () => {
   ) {
     store.saveLabMember({
       ...member(id, `${id}@cs.toronto.edu`),
+      correspondence_email: `${id}@gmail.com`,
       privilege_level: "member",
+      member_type: "full",
       ...overrides,
     });
   }
@@ -1863,7 +1865,7 @@ describe("lab calendar invite backfill", () => {
     if (!result.ok) {
       throw new Error(result.error.message);
     }
-    expect(invites).toEqual(["ada@cs.toronto.edu"]);
+    expect(invites).toEqual(["ada@gmail.com"]);
     expect(result.payload.granted).toHaveLength(1);
     const sent = store
       .listAuditEvents()
@@ -1885,14 +1887,14 @@ describe("lab calendar invite backfill", () => {
       timestamp: "2026-08-01T00:00:00.000Z",
       type: "auth.calendar_invite_sent",
       actor: "root",
-      details: { member_id: "ada" },
+      details: { member_id: "ada", email: "ada@gmail.com" },
     });
     const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
     if (!result.ok) {
       throw new Error(result.error.message);
     }
     // The ACL write is idempotent; the mail Google sends on it is not.
-    expect(invites).toEqual(["grace@cs.toronto.edu"]);
+    expect(invites).toEqual(["grace@gmail.com"]);
     expect(result.payload.already_invited).toBe(1);
   });
 
@@ -1900,15 +1902,15 @@ describe("lab calendar invite backfill", () => {
     const invites: string[] = [];
     const { store, auth } = labWith(invites);
     seed(store, "ada");
-    seed(store, "ext", { privilege_level: "external_collaborator" });
-    seed(store, "gone", { status: "alumni" });
+    seed(store, "ext", { privilege_level: "external_collaborator", member_type: "coauthor-minor" });
+    seed(store, "gone", { status: "alumni", member_type: "alumni" });
     const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
     if (!result.ok) {
       throw new Error(result.error.message);
     }
     // Same predicate the standing-invite sweep uses, so "who is on the lab calendar" keeps one
     // answer rather than gaining a second one here.
-    expect(invites).toEqual(["ada@cs.toronto.edu"]);
+    expect(invites).toEqual(["ada@gmail.com"]);
   });
 
   it("prefers the Google address over the departmental one", async () => {
@@ -1921,6 +1923,34 @@ describe("lab calendar invite backfill", () => {
     expect(invites).toEqual(["ada.personal@gmail.com"]);
   });
 
+  it("re-invites a member whose earlier share went to a different address", async () => {
+    const invites: string[] = [];
+    const { store, auth } = labWith(invites);
+    seed(store, "ada");
+    // The share that never worked: a departmental login is not a Google account.
+    store.recordAudit({
+      id: "aud_old",
+      timestamp: "2026-08-01T00:00:00.000Z",
+      type: "auth.calendar_invite_sent",
+      actor: "root",
+      details: { member_id: "ada", email: "ada@cs.toronto.edu" },
+    });
+    await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
+    expect(invites).toEqual(["ada@gmail.com"]);
+  });
+
+  it("never shares with a departmental login; reports the member as needing a Gmail", async () => {
+    const invites: string[] = [];
+    const { store, auth } = labWith(invites);
+    seed(store, "dept", { correspondence_email: "dept@utoronto.ca" });
+    const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(invites).toEqual([]);
+    expect(result.payload.no_address.map((entry) => entry.id)).toEqual(["dept"]);
+  });
+
   it("reports members with no address instead of inventing one", async () => {
     const invites: string[] = [];
     const { store, auth } = labWith(invites);
@@ -1928,6 +1958,7 @@ describe("lab calendar invite backfill", () => {
     store.saveLabMember({
       ...member("noaddr", ""),
       privilege_level: "member",
+      member_type: "full",
       email: undefined as unknown as string,
     });
     const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
@@ -1935,7 +1966,7 @@ describe("lab calendar invite backfill", () => {
       throw new Error(result.error.message);
     }
     expect(result.payload.no_address.map((entry) => entry.id)).toEqual(["noaddr"]);
-    expect(invites).toEqual(["ada@cs.toronto.edu"]);
+    expect(invites).toEqual(["ada@gmail.com"]);
   });
 
   it("stops after the first failure rather than burning the batch on one broken variable", async () => {

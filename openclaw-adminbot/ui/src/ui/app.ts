@@ -73,11 +73,13 @@ import {
   requestAdminBotCalendarDraft,
   saveAdminBotCalendarEvent,
 } from "./adminbot/controllers/calendar.ts";
+import type { LabTravelNotice, LookupDraft, RsvpDraft } from "./adminbot/controllers/lab-travel.ts";
 import {
   answerAdminBotLocationPrompt,
   loadAdminBotLocationDrifts,
   loadAdminBotLocationPrompt,
 } from "./adminbot/controllers/location-prompt.ts";
+import type { LocationTrackerSnapshot } from "./adminbot/controllers/location-tracker.ts";
 import { defaultMailingListRange } from "./adminbot/controllers/mailing-list.ts";
 import {
   fileAdminBotMeeting,
@@ -114,6 +116,7 @@ import {
 } from "./adminbot/controllers/tab-visits.ts";
 import { EMPTY_TRAVEL, type TravelState } from "./adminbot/controllers/travel.ts";
 import type { BadgeLoadError } from "./adminbot/data/badges.ts";
+import type { TravelLookup, TravelOverview, TravelSharing } from "./adminbot/data/lab-travel.ts";
 import {
   createFactRow,
   createSchoolRow,
@@ -129,13 +132,18 @@ import {
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
+import type { ProjectSummary } from "./adminbot/projects/model.ts";
+import { resetProjectsSessionState } from "./adminbot/projects/view.ts";
+import type {
+  BlockerDraft,
+  ProjectDetailsDraft,
+  ProjectVenueDraft,
+} from "./adminbot/projects/workspace.ts";
 import { resetViewSessions } from "./adminbot/view-session-reset.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
 import type { ConferencePapersTab } from "./adminbot/views/conference-papers.ts";
+import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/lab-travel.plans.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
-import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
-import { resetMyWorkSessionState } from "./adminbot/views/my-work.ts";
-import type { PaperTripDraft } from "./adminbot/views/paper-cycle.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
   type PaperOverviewFilter,
@@ -150,7 +158,6 @@ import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
 } from "./adminbot/views/time-availability.drafts.ts";
-import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import type {
   MilestoneDraft,
   TimeAvailabilityDraft,
@@ -381,7 +388,24 @@ export class OpenClawApp extends LitElement {
   // not re-render. The view tests could not catch it because they render with a plain object.
   // Declared here for the same reason as the calendar block above: a controller writing a plain
   // class field would change nothing on screen.
-  @state() adminBotTripDraft: TripDraft = EMPTY_TRIP_DRAFT;
+  // The Travel tab (controllers/lab-travel.ts). Declared as state for the same reason: its
+  // controller writes after awaits, and a plain field would change nothing on screen.
+  @state() labTravel?: TravelOverview;
+  @state() labTravelLoadedFor: string | null = null;
+  @state() labTravelLoading = false;
+  @state() labTravelError: string | null = null;
+  @state() labTravelNotice: LabTravelNotice | null = null;
+  @state() labTravelBusy: string | null = null;
+  @state() labTravelRsvpOpen: string | null = null;
+  @state() labTravelRsvpDrafts: Record<string, RsvpDraft> = {};
+  @state() labTravelPlanDraft: TripDraft = EMPTY_TRIP_DRAFT;
+  @state() labTravelLookupDraft: LookupDraft = { place: "", from: "", to: "" };
+  @state() labTravelLookup: TravelLookup | null = null;
+  @state() labTravelLookupError: string | null = null;
+  @state() labTravelCityDraft = "";
+  @state() labTravelSharing: TravelSharing | null = null;
+  @state() labTravelSharingCheckedFor: string | null = null;
+  @state() labTravelDevice: LocationTrackerSnapshot = { status: "idle" };
   @state() adminBotLocationDrift?: LocationDrift | null;
   @state() adminBotLocationDrifts?: LocationDrift[];
   @state() adminBotLocationSaving = false;
@@ -765,9 +789,9 @@ export class OpenClawApp extends LitElement {
   @state() adminBotProfileOverviewLoadedAt: number | null = null;
   @state() adminBotProfileOverviewReminding = false;
   @state() adminBotProfileOverviewNotice: string | null = null;
-  // Defaults to the people with something outstanding, which is what a sweep is looking for.
   @state() myWorkCoauthorDraft: Record<string, { email: string; name: string; twitter: string }> =
     {};
+  // Defaults to the people with something outstanding, which is what a sweep is looking for.
   @state() adminBotProfileOverviewFilter: ProfileOverviewFilter = {
     ...EMPTY_PROFILE_OVERVIEW_FILTER,
   };
@@ -781,8 +805,6 @@ export class OpenClawApp extends LitElement {
     state: "attention",
   };
   @state() adminBotPaperSlotOverview: PaperSlotOverviewRow[] = [];
-  @state() adminBotTripDrafts: Record<string, PaperTripDraft> = {};
-  @state() adminBotTripSavingKey: string | null = null;
   @state() adminBotPaperSlots: Record<string, PaperCycle> = {};
   // Nothing expanded on arrival: the page opens as a scannable list of papers, and the form is
   // what you go into rather than what you land in.
@@ -864,17 +886,17 @@ export class OpenClawApp extends LitElement {
   @state() adminBotWorkshopNudges: WorkshopNudgeReviewState = createEmptyWorkshopNudgeReviewState();
   @state() adminBotVenueIndexJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() adminBotChannelNamingJob: AdminBotCvDigestJobState = { status: "idle" };
+  @state() myProjects: ProjectSummary[] | null = null;
+  @state() myProjectsLoading = false;
+  @state() myProjectsError: string | null = null;
+  @state() myProjectsChoosing = false;
   @state() myWorkBlockerDraft: BlockerDraft | null = null;
-  @state() myWorkBlockers: Blocker[] = [];
   @state() myWorkProjectDraft: string | null = null;
   @state() myWorkProjectAlias = "";
   @state() myWorkProjectError: string | null = null;
-  @state() myWorkProjectEdits: Record<
-    string,
-    { title: string; alias: string; startedOn: string; error: string | null }
-  > = {};
+  @state() myWorkProjectEdits: Record<string, ProjectDetailsDraft> = {};
+  @state() myWorkProjectVenues: ProjectVenueDraft[] = [];
   @state() myWorkChannelCheck: SlackChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
-  @state() myWorkProjectVenues: Array<{ venueId: string; year: number; confidence: number }> = [];
   @state() profileEditingSection: "basics" | null = null;
   @state() profileAccountChecks: Record<string, ProfileAccountCheck> = {};
   @state() registrations: MemberRegistration[] = [];
@@ -1347,7 +1369,8 @@ export class OpenClawApp extends LitElement {
   }
 
   resetMemberViewSessionState() {
-    resetMyWorkSessionState();
+    resetProjectsSessionState();
+    // Profile, Lab Sharing and the admin panels register their resets when they load.
     resetViewSessions();
   }
 

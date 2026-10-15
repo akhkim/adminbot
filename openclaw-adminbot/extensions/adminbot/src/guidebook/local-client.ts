@@ -143,6 +143,11 @@ export async function completeLocally(params: {
   /** Output ceiling. Unset leaves it to the server, which for a reasoning model means "a lot". */
   maxTokens?: number;
   /**
+   * Fail closed unless generation stopped on its own. A structured-output caller would otherwise
+   * receive JSON cut off at the token ceiling, which may still parse as a smaller valid result.
+   */
+  requireComplete?: boolean;
+  /**
    * Further request fields, spread over the payload last.
    *
    * vLLM takes `chat_template_kwargs: { enable_thinking: false }` and a `response_format` JSON
@@ -166,9 +171,15 @@ export async function completeLocally(params: {
     },
     params.purposeLabel ?? "guidebook answer",
     params.signal,
-  )) as { model?: string; choices?: Array<{ message?: { content?: unknown } }> };
+  )) as {
+    model?: string;
+    choices?: Array<{ finish_reason?: string; message?: { content?: unknown } }>;
+  };
   if (params.verifyModel && parsed.model !== params.model) {
     throw new Error("local model response did not match the configured model");
+  }
+  if (params.requireComplete && parsed.choices?.[0]?.finish_reason !== "stop") {
+    throw new Error(`${params.purposeLabel ?? "guidebook answer"} model response incomplete`);
   }
   const content = parsed.choices?.[0]?.message?.content;
   if (typeof content !== "string" || !content.trim()) {

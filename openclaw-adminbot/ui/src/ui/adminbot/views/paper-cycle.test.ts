@@ -430,111 +430,60 @@ describe("the closing line", () => {
   });
 });
 
-describe("what you need for this trip", () => {
-  /** The card with the trip block wired: conference open, and the handlers present. */
-  function withTrip(overrides: Partial<PaperCycleProps> = {}) {
-    const edits: Array<Partial<import("./paper-cycle.ts").PaperTripDraft>> = [];
-    const saves: number[] = [];
-    const withdrawals: number[] = [];
-    const drawn = draw({
+describe("the way to the Travel tab", () => {
+  // The trip form itself moved to the Travel tab, which lists every conference by site. The card
+  // keeps the reader's answer, read back, and a button to go and give or change it.
+  it("is absent on a paper whose conference is not settled", () => {
+    const { container } = draw({ conferenceOpen: false, onOpenTravel: () => {} });
+    expect(container.querySelector('[data-testid="paper-travel-p1"]')).toBeNull();
+  });
+
+  it("is absent on a surface that wired no way there, like somebody else's card", () => {
+    const { container } = draw({ conferenceOpen: true });
+    expect(container.querySelector('[data-testid="paper-travel-p1"]')).toBeNull();
+    // And the old form is gone everywhere.
+    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
+  });
+
+  it("asks for an RSVP when there is none, and opens Travel", () => {
+    const opened: number[] = [];
+    const { container } = draw({
       conferenceOpen: true,
       myTrip: null,
-      onEditTrip: (patch) => edits.push(patch),
-      onSaveTrip: () => saves.push(1),
-      onWithdrawTrip: () => withdrawals.push(1),
-      ...overrides,
+      onOpenTravel: () => opened.push(1),
     });
-    return { ...drawn, edits, saves, withdrawals };
-  }
-
-  it("is absent on a paper whose conference is not settled", () => {
-    const { container } = draw({ conferenceOpen: false });
-    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
+    expect(container.textContent).toContain("RSVP on the Travel tab");
+    container.querySelector<HTMLButtonElement>('[data-testid="paper-travel-open-p1"]')?.click();
+    expect(opened).toEqual([1]);
   });
 
-  it("is absent on a surface that wired no trip handlers, like somebody else's card", () => {
-    const { container } = draw({ conferenceOpen: true });
-    expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
-  });
-
-  it("opens on undecided and asks nothing further until they say they are going", () => {
-    const { container } = withTrip();
-    const intent = container.querySelector<HTMLSelectElement>(
-      '[data-testid="paper-trip-intent-p1"]',
-    );
-    expect(intent?.value).toBe("undecided");
-    expect(container.querySelector('[data-testid="paper-trip-funding-p1"]')).toBeNull();
-  });
-
-  it("asks the money, bed and visa questions once they are going", () => {
-    const { container } = withTrip({
-      tripDraft: {
-        intent: "going",
-        funding: "none",
-        needs_lodging: false,
-        needs_visa_letter: false,
-        arrival_on: "",
-        departure_on: "",
-        notes: "",
-      },
-    });
-    const funding = container.querySelector('[data-testid="paper-trip-funding-p1"]');
-    expect(funding?.textContent).toContain("No financial aid needed");
-    expect(funding?.textContent).toContain("Conference fee only");
-    expect(funding?.textContent).toContain("Flight only");
-    expect(funding?.textContent).toContain("Full travel");
-    expect(container.querySelector('[data-testid="paper-trip-lodging-p1"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="paper-trip-visa-p1"]')).not.toBeNull();
-    // Dates only once a bed is wanted: a headcount alone books the wrong thing.
-    expect(container.querySelector('[data-testid="paper-trip-arrival-p1"]')).toBeNull();
-  });
-
-  it("asks for nights once a bed is wanted", () => {
-    const { container } = withTrip({
-      tripDraft: {
-        intent: "going",
-        funding: "full_travel",
-        needs_lodging: true,
-        needs_visa_letter: false,
-        arrival_on: "",
-        departure_on: "",
-        notes: "",
-      },
-    });
-    expect(container.querySelector('[data-testid="paper-trip-arrival-p1"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="paper-trip-departure-p1"]')).not.toBeNull();
-  });
-
-  it("offers withdrawal only once something is recorded", () => {
-    const empty = withTrip();
-    expect(empty.container.querySelector('[data-testid="paper-trip-withdraw-p1"]')).toBeNull();
-    const filled = withTrip({
+  it("reads back an answer already given", () => {
+    const { container } = draw({
+      conferenceOpen: true,
+      onOpenTravel: () => {},
       myTrip: {
         conference_key: "emnlp:2026",
         member_id: "ada",
         intent: "going",
         funding: "fee_only",
-        needs_lodging: false,
+        needs_lodging: true,
         needs_visa_letter: false,
       },
     });
-    filled.container
-      .querySelector<HTMLButtonElement>('[data-testid="paper-trip-withdraw-p1"]')
-      ?.click();
-    expect(filled.withdrawals).toEqual([1]);
-  });
-
-  it("reports an edit and a save", () => {
-    const { container, edits, saves } = withTrip();
-    const intent = container.querySelector<HTMLSelectElement>(
-      '[data-testid="paper-trip-intent-p1"]',
+    expect(container.textContent).toContain("staying in the lab Airbnb");
+    expect(container.querySelector('[data-testid="paper-travel-open-p1"]')?.textContent).toContain(
+      "Change on Travel",
     );
-    if (intent) {
-      intent.value = "going";
-      intent.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-    expect(edits).toEqual([{ intent: "going" }]);
-    container.querySelector<HTMLButtonElement>('[data-testid="paper-trip-save-p1"]')?.click();
-    expect(saves).toEqual([1]);
   });
+});
+
+it("starts paper sections collapsed and preserves a reader's expansion on rerender", () => {
+  const { container, props } = draw({ conferenceOpen: true });
+  const sections = [...container.querySelectorAll<HTMLDetailsElement>("details.paper-cycle__group")];
+  expect(sections.length).toBeGreaterThan(1);
+  expect(sections.every((section) => !section.open)).toBe(true);
+  expect(sections.every((section) => section.querySelector("summary")?.textContent?.trim())).toBe(true);
+  sections[0]!.open = true;
+  render(renderPaperCycle(props), container);
+  expect(sections[0]!.open).toBe(true);
 });

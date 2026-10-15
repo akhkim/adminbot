@@ -7,8 +7,8 @@ import { nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
 import { loadStoredMemberSession } from "../auth/session.ts";
-import { loadAdminBotPaperSlots } from "../controllers/paper-slots.ts";
 import { loadAdminBotProfileOverview } from "../controllers/profile-overview.ts";
+import { openPaperForViewer } from "../projects/open-paper.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
 // The page's view loads on first visit rather than in the first bundle.
@@ -32,11 +32,8 @@ export function renderProfessorSurface(state: AppViewState, scope: AdminBotSurfa
             void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
           },
           onOpen: (tab) => state.setTab(tab),
-          onOpenPaper: (paperId) => {
-            state.adminBotPaperCardId = paperId;
-            void loadAdminBotPaperSlots(state, paperId).finally(() => requestHostUpdate?.());
-            requestHostUpdate?.();
-          },
+          // The head professor reviews in place; anybody else goes to the project page.
+          onOpenPaper: (paperId) => openPaperForViewer(state, paperId, requestHostUpdate),
           expanded: state.professorExpandedLists,
           onToggleExpand: (id) => {
             const next = new Set(state.professorExpandedLists);

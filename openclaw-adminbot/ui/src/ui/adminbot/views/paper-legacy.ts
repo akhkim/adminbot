@@ -24,6 +24,7 @@
 
 import { html, nothing, type TemplateResult } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { live } from "lit/directives/live.js";
 import {
   adminBotPaperVenueDecisions,
   type AdminBotPaperStep,
@@ -317,23 +318,9 @@ export type PaperLegacyState = {
   edits: Map<string, Map<string, string>>;
   /** Papers whose evidence has been asked for, so the fetch happens once each. */
   slotsRequested: Set<string>;
-  /**
-   * Papers the reader has folded shut, by id.
-   *
-   * Held beside the edits and for the same reason -- a re-render mid-visit must not reopen a card
-   * somebody just put away -- and empty to start, because the promise of this view is every field
-   * on one page. Which cards are open is a viewing preference for this sitting, not a fact about
-   * the paper, so it is no more persisted than the edits buffer is.
-   */
+  /** Closed cards and groups; initialized once per paper, then controlled by the reader. */
   collapsed: Set<string>;
-  /**
-   * Field groups the reader has folded shut, keyed `<paper id>::<group id>`.
-   *
-   * Per paper rather than per group name, so folding Social away on one paper leaves it open on
-   * the nine below it: a click should change the thing that was clicked and nothing else. Held
-   * beside `collapsed` and emptied the same way -- open is what this view promises, and both sets
-   * record only the reader's departures from it.
-   */
+  initializedPapers: Set<string>;
   collapsedGroups: Set<string>;
   notice: string | null;
 };
@@ -343,6 +330,7 @@ export function emptyPaperLegacyState(): PaperLegacyState {
     edits: new Map(),
     slotsRequested: new Set(),
     collapsed: new Set(),
+    initializedPapers: new Set(),
     collapsedGroups: new Set(),
     notice: null,
   };
@@ -720,7 +708,7 @@ function renderControl(
     type=${field.control === "date" ? "date" : field.control === "number" ? "number" : "text"}
     placeholder=${ifDefined(field.example)}
     data-testid=${testId}
-    .value=${value}
+    .value=${live(value)}
     @input=${(event: Event) => onEdit((event.target as HTMLInputElement).value)}
   />`;
   return field.control === "date" ? renderDateControl(input, value) : input;
@@ -778,6 +766,13 @@ function filledCount(
 }
 
 function renderPaper(props: PaperLegacyProps, paper: AdminBotPaperRecord): TemplateResult {
+  if (!props.state.initializedPapers.has(paper.id)) {
+    props.state.initializedPapers.add(paper.id);
+    props.state.collapsed.add(paper.id);
+    for (const group of legacyGroups()) {
+      props.state.collapsedGroups.add(groupKey(paper.id, group.id));
+    }
+  }
   const loading = Boolean(props.onLoadSlots) && !props.slots?.[paper.id];
   const commit = commitPaper(props, paper);
   const timerKey = paper.id;
@@ -985,9 +980,8 @@ export function renderPaperLegacy(props: PaperLegacyProps): TemplateResult {
     <div class="paper-legacy" data-testid="paper-legacy">
       <div class="paper-legacy__head">
         <p class="paper-legacy__lead">
-          Every field on every paper, laid out like your profile. Click a paper's heading to
-          minimize it, or a section's to fold that section away. The card view groups the same
-          answers by what each one unblocks.
+          Click a paper's heading to open it, then open the section you need. The card view groups
+          the same answers by what each one unblocks.
         </p>
         <button
           type="button"

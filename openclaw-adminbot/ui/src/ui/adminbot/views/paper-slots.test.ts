@@ -784,3 +784,11 @@ describe("paper feedback requests", () => {
     expect(saved).toEqual([{ slot: "feedback_arxiv", input: { value_text: "" } }]);
   });
 });
+
+it("starts checklist branches collapsed without hiding their headings", async () => {
+  const { container } = await draw([row({ slot: "overleaf_edit", status: "missing" })]);
+  const branches = [...container.querySelectorAll<HTMLDetailsElement>("details.paper-slots__group")];
+  expect(branches.length).toBeGreaterThan(0);
+  expect(branches.every((branch) => !branch.open)).toBe(true);
+  expect(branches.every((branch) => branch.querySelector("summary")?.textContent?.trim())).toBe(true);
+});

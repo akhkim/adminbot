@@ -187,6 +187,12 @@ describe("createSlackDirectoryEmailResolver", () => {
 
     expect(result.get("wanted@cs.toronto.edu")).toBe("U1");
     expect(result.has("unwanted@cs.toronto.edu")).toBe(false);
+    expect(execFileMock.mock.calls[0]?.[1]).toEqual([
+      "--import",
+      "tsx",
+      "/repo/scripts/adminbot-slack-email-lookup.ts",
+      '["wanted@cs.toronto.edu"]',
+    ]);
   });
 
   it("returns an empty map without shelling out when no emails are requested", async () => {
@@ -196,11 +202,11 @@ describe("createSlackDirectoryEmailResolver", () => {
     expect(execFileMock).not.toHaveBeenCalled();
   });
 
-  it("returns an empty map rather than throwing when the CLI call fails", async () => {
+  it("reports a lookup failure instead of claiming a successful empty sync", async () => {
     mockExecFileFailure(new Error("directory unreachable"));
 
-    const result = await createSlackDirectoryEmailResolver("/repo")(["a@cs.toronto.edu"]);
-
-    expect(result.size).toBe(0);
+    await expect(createSlackDirectoryEmailResolver("/repo")(["a@cs.toronto.edu"])).rejects.toThrow(
+      "Slack directory lookup failed",
+    );
   });
 });

@@ -13,6 +13,7 @@ import { labSharingRoutes } from "./lab-sharing.js";
 import { logisticsRoutes } from "./logistics.js";
 import { meetingsRoutes } from "./meetings.js";
 import { membersRoutes } from "./members.js";
+import { notificationDraftsRoutes } from "./notification-drafts.js";
 import { nudgesRoutes } from "./nudges.js";
 import { onboardingRoutes } from "./onboarding.js";
 import { paperAdminRoutes } from "./paper-admin.js";
@@ -21,10 +22,12 @@ import { profileRoutes } from "./profile.js";
 import { reimbursementsRoutes } from "./reimbursements.js";
 import { reviewsRoutes } from "./reviews.js";
 import type { Route } from "./router.js";
+import { travelRoutes } from "./travel.js";
 import { workspaceRoutes } from "./workspace.js";
 
 export const AUTHENTICATED_ROUTES: readonly Route[] = [
   ...profileRoutes,
+  ...notificationDraftsRoutes,
   ...reviewsRoutes,
   ...deadlinesRoutes,
   ...emailReviewRoutes,
@@ -38,6 +41,7 @@ export const AUTHENTICATED_ROUTES: readonly Route[] = [
   ...badgesRoutes,
   ...paperAdminRoutes,
   ...labSharingRoutes,
+  ...travelRoutes,
   ...membersRoutes,
   ...meetingsRoutes,
   ...papersRoutes,

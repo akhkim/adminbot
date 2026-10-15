@@ -18,6 +18,7 @@
 // the page it used to live on is the one members read, where an editor only she could see was three
 // controls of dead weight for everybody else.
 import { html, nothing } from "lit";
+import { live } from "lit/directives/live.js";
 import "./local-chat.ts";
 import {
   adminBotIsAlumniMember,
@@ -628,25 +629,28 @@ const AVAILABILITY_CHOICES = ["away", "busy", "available", "unknown"] as const;
  * -- is the kind of friction that gets routed around by not using the feature.
  */
 function broadcastBox(props: ProfessorViewProps) {
-  const live = props.broadcast;
-  const draft = props.broadcastDraft ?? live?.message ?? "";
+  const liveBroadcast = props.broadcast;
+  const draft = props.broadcastDraft ?? liveBroadcast?.message ?? "";
   const expiresOn =
-    props.broadcastExpiry ?? (live ? live.expires_at.slice(0, 10) : defaultExpiryDate());
-  const availability = props.broadcastAvailability ?? live?.availability ?? "away";
-  const timezone = props.broadcastTimezone ?? live?.timezone ?? "";
+    props.broadcastExpiry ??
+    (liveBroadcast ? liveBroadcast.expires_at.slice(0, 10) : defaultExpiryDate());
+  const availability = props.broadcastAvailability ?? liveBroadcast?.availability ?? "away";
+  const timezone = props.broadcastTimezone ?? liveBroadcast?.timezone ?? "";
   const busy = Boolean(props.broadcastBusy);
   const dirty =
-    draft.trim() !== (live?.message ?? "").trim() ||
-    availability !== live?.availability ||
-    timezone.trim() !== (live?.timezone ?? "");
+    draft.trim() !== (liveBroadcast?.message ?? "").trim() ||
+    availability !== liveBroadcast?.availability ||
+    timezone.trim() !== (liveBroadcast?.timezone ?? "");
 
   return html`
     <section class="professor__section professor__broadcast" data-testid="professor-broadcast">
       <div class="professor__head">
         <div class="card-title">${t("professor.broadcast.title")}</div>
-        ${live
+        ${liveBroadcast
           ? html`<span class="professor__when" data-testid="professor-broadcast-until"
-              >${t("professor.broadcast.until", { date: live.expires_at.slice(0, 10) })}</span
+              >${t("professor.broadcast.until", {
+                date: liveBroadcast.expires_at.slice(0, 10),
+              })}</span
             >`
           : html`<span class="professor__when muted">${t("professor.broadcast.none")}</span>`}
       </div>
@@ -672,7 +676,7 @@ function broadcastBox(props: ProfessorViewProps) {
             html`<input
               type="date"
               data-testid="professor-broadcast-expiry"
-              .value=${expiresOn}
+              .value=${live(expiresOn)}
               ?disabled=${busy}
               @input=${(event: Event) =>
                 props.onBroadcastExpiryChange((event.target as HTMLInputElement).value)}
@@ -715,7 +719,7 @@ function broadcastBox(props: ProfessorViewProps) {
             data-testid="professor-broadcast-post"
             ?disabled=${busy ||
             !draft.trim() ||
-            (!dirty && !!live && expiresOn === live.expires_at.slice(0, 10))}
+            (!dirty && !!liveBroadcast && expiresOn === liveBroadcast.expires_at.slice(0, 10))}
             @click=${() =>
               props.onBroadcastPublish({
                 message: draft,
@@ -724,9 +728,9 @@ function broadcastBox(props: ProfessorViewProps) {
                 ...(timezone.trim() ? { timezone: timezone.trim() } : {}),
               })}
           >
-            ${live ? t("professor.broadcast.update") : t("professor.broadcast.post")}
+            ${liveBroadcast ? t("professor.broadcast.update") : t("professor.broadcast.post")}
           </button>
-          ${live
+          ${liveBroadcast
             ? html`<button
                 class="btn btn--sm"
                 type="button"

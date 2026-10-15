@@ -1,3 +1,4 @@
+import { requiresProfileCompletion } from "../../../../../extensions/adminbot/src/contracts/profile-completion.js";
 import { adminBotExternalCollaboratorSubgroups } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type {
   AdminBotReimbursementCheck,
@@ -71,6 +72,8 @@ export type AdminBotAccessGrant = {
 export type AdminBotMemberStatus = "active" | "part_time" | "on_leave" | "alumni" | "external";
 
 export type AdminBotLabMember = {
+  arr_reviewer_qualified?: boolean | null;
+  arr_review_capacity?: number | null;
   assigned_badges?: import("../auth/session.ts").AssignedBadge[];
   id: string;
   name: string;
@@ -1188,6 +1191,12 @@ async function loadAdminBotOverSession(
     if (!self.id) {
       throw new Error("Your member profile could not be loaded.");
     }
+    // Profile completion is the only available workflow until these answers are saved.
+    // Decide from the freshly fetched row, including on the first load after signing in.
+    if (requiresProfileCompletion(self)) {
+      includePapers = false;
+      mode = "general";
+    }
     const memberRows = host.adminBotRosterLoadedAt
       ? [...host.adminBotData.members.filter((member) => member.id !== self.id), self]
       : [self];
@@ -1316,7 +1325,36 @@ export async function loadAdminBotRoster(host: AdminBotHost): Promise<void> {
   }
 }
 
-export async function loadAdminBot(
+// Let profile access checks join an existing dashboard read instead of polling a loading flag.
+const pendingDashboardLoads = new WeakMap<
+  AdminBotHost,
+  { sessionToken: string | undefined; promise: Promise<void> }
+>();
+
+export function pendingAdminBotLoad(host: AdminBotHost): Promise<void> | undefined {
+  const pending = pendingDashboardLoads.get(host);
+  return pending?.sessionToken === loadStoredMemberSession()?.sessionToken
+    ? pending?.promise
+    : undefined;
+}
+
+export function loadAdminBot(
+  host: AdminBotHost,
+  mode: AdminBotLoadMode = "admin",
+  includePapers = true,
+  preserveRoster = false,
+): Promise<void> {
+  const sessionToken = loadStoredMemberSession()?.sessionToken;
+  const pending = loadAdminBotData(host, mode, includePapers, preserveRoster);
+  pendingDashboardLoads.set(host, { sessionToken, promise: pending });
+  const clear = () => {
+    if (pendingDashboardLoads.get(host)?.promise === pending) pendingDashboardLoads.delete(host);
+  };
+  void pending.then(clear, clear);
+  return pending;
+}
+
+async function loadAdminBotData(
   host: AdminBotHost,
   mode: AdminBotLoadMode = "admin",
   includePapers = true,
@@ -1863,6 +1901,7 @@ export async function saveAdminBotPaper(
       title: paper.title,
       authors: paper.authors,
       currentStep: paper.currentStep,
+      ...(paper.venue === undefined ? {} : { venue: paper.venue }),
       ...(paper.venueDecision ? { venueDecision: paper.venueDecision } : {}),
       ...(paper.acceptedVenue === undefined ? {} : { acceptedVenue: paper.acceptedVenue }),
       ...(paper.acceptedYear === undefined

@@ -26,8 +26,8 @@ import type { LogisticsQueueOptions } from "./adminbot/data/logistics-queue.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
+import type { TripDraft } from "./adminbot/views/lab-travel.plans.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
-import type { TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import type {
   MilestoneDraft,
   TimeAvailabilityDraft,
@@ -283,6 +283,8 @@ export type AppViewState = {
   lastErrorCode: string | null;
   chatError: string | null;
   eventLog: EventLogEntry[];
+  eventLogBuffer: EventLogEntry[];
+  chatHasAutoScrolled: boolean;
   assistantName: string;
   assistantAvatar: string | null;
   assistantAvatarSource?: string | null;
@@ -554,7 +556,24 @@ export type AppViewState = {
     } | null,
   ) => Promise<void>;
   adminBotNotificationsError?: string | null;
-  adminBotTripDraft?: TripDraft;
+  // The Travel tab: what the service said, what is being typed, and this browser's side of
+  // location sharing. See controllers/lab-travel.ts, which owns every one of these.
+  labTravel?: import("./adminbot/data/lab-travel.ts").TravelOverview;
+  labTravelLoadedFor?: string | null;
+  labTravelLoading?: boolean;
+  labTravelError?: string | null;
+  labTravelNotice?: import("./adminbot/controllers/lab-travel.ts").LabTravelNotice | null;
+  labTravelBusy?: string | null;
+  labTravelRsvpOpen?: string | null;
+  labTravelRsvpDrafts?: Record<string, import("./adminbot/controllers/lab-travel.ts").RsvpDraft>;
+  labTravelPlanDraft?: TripDraft;
+  labTravelLookupDraft?: import("./adminbot/controllers/lab-travel.ts").LookupDraft;
+  labTravelLookup?: import("./adminbot/data/lab-travel.ts").TravelLookup | null;
+  labTravelLookupError?: string | null;
+  labTravelCityDraft?: string;
+  labTravelSharing?: import("./adminbot/data/lab-travel.ts").TravelSharing | null;
+  labTravelSharingCheckedFor?: string | null;
+  labTravelDevice?: import("./adminbot/controllers/location-tracker.ts").LocationTrackerSnapshot;
   adminBotLocationDrift?: LocationDrift | null;
   adminBotLocationDrifts?: LocationDrift[];
   adminBotLocationSaving?: boolean;
@@ -649,8 +668,6 @@ export type AppViewState = {
   // My Projects & Papers: what each paper still owes, and the slots of whichever cards are open.
   // `loadedAt` is the same "ask for it" sentinel the overview above uses.
   adminBotPaperSlotOverview: import("./adminbot/api/paper-admin.ts").PaperSlotOverviewRow[];
-  adminBotTripDrafts: Record<string, import("./adminbot/views/paper-cycle.ts").PaperTripDraft>;
-  adminBotTripSavingKey: string | null;
   adminBotPaperSlots: Record<string, import("./adminbot/api/papers.ts").PaperCycle>;
   adminBotPaperSlotsOpen: string[];
   adminBotPaperSlotsLoading: boolean;
@@ -721,36 +738,30 @@ export type AppViewState = {
   // Last press of the Slack channel naming sweep, same shape again. What it "did" is file
   // proposals, so the detail line points at Pending Actions rather than reporting a change.
   adminBotChannelNamingJob: import("./adminbot/controllers/admin.ts").AdminBotCvDigestJobState;
-  // Prototype-only: blockers a member raises from My Projects & Papers. Held in the browser
-  // because the AdminBot service has no blocker route yet -- see views/my-work.ts.
-  myWorkBlockerDraft: import("./adminbot/views/my-work.ts").BlockerDraft | null;
-  myWorkBlockers: import("./adminbot/views/my-work.ts").Blocker[];
-  // Non-null while the "add a project" field is open; holds what has been typed.
+  /** The viewer's active projects (GET /my/projects); null until read, and after a write. */
+  myProjects: import("./adminbot/projects/model.ts").ProjectSummary[] | null;
+  myProjectsLoading: boolean;
+  myProjectsError: string | null;
+  /** The sidebar list is showing its hide/show checkboxes. */
+  myProjectsChoosing: boolean;
+  /** A blocker report being written or edited on one paper, filed onto the paper record. */
+  myWorkBlockerDraft: import("./adminbot/projects/workspace.ts").BlockerDraft | null;
+  // Non-null while the "add a project" form is open; holds what has been typed.
   myWorkProjectDraft: string | null;
   myWorkProjectAlias: string;
   /**
-   * Why the add-project form refused, or null.
-   *
-   * The form used to `return` out of submit on every one of these, which files nothing and says
-   * nothing: the member is left looking at a filled-in form and an unchanged page. Most often it
-   * was the alias -- an apostrophe or a colon carried over from the title cannot be a Slack
-   * channel name, so `adminBotNormalizePaperAlias` returns null and the submit gives up silently.
+   * Why the add-project form refused, or null. Every refusal says why: a bare return files nothing
+   * and says nothing, and the alias -- which becomes a Slack channel -- is the one that bites.
    */
   myWorkProjectError: string | null;
-  /**
-   * Per-paper drafts for the card's own "project details" editor, keyed by paper id.
-   *
-   * A title changes over a project's life -- that is the normal case, not an exception -- and until
-   * now the three answers the create form insists on could never be revised afterwards. Held per
-   * paper because several cards can be open at once.
-   */
+  /** Per-paper drafts for a project's own details editor, keyed by paper id. */
   myWorkProjectEdits: Record<
     string,
-    { title: string; alias: string; startedOn: string; error: string | null }
+    import("./adminbot/projects/workspace.ts").ProjectDetailsDraft
   >;
-  myWorkChannelCheck: import("./adminbot/controllers/admin.ts").SlackChannelCheck;
   /** Venue rows on the add-project form: a paper can be aimed at several, each with its own odds. */
-  myWorkProjectVenues: Array<{ venueId: string; year: number; confidence: number }>;
+  myWorkProjectVenues: import("./adminbot/projects/workspace.ts").ProjectVenueDraft[];
+  myWorkChannelCheck: import("./adminbot/controllers/admin.ts").SlackChannelCheck;
   // Which profile section is in edit mode, if any.
   profileEditingSection: "basics" | null;
   profileAccountChecks: Record<

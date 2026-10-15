@@ -7,6 +7,7 @@ import type {
   DeadlineProposalInput,
   DeadlineProposalView,
 } from "../contracts/deadline-proposals.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 function input(): DeadlineProposalInput {
@@ -57,12 +58,14 @@ async function createSession(
   privilegeLevel: AdminBotPrivilegeLevel,
 ): Promise<string> {
   const email = `${id}@cs.toronto.edu`;
-  const member = mock.service.upsertLabMember({
-    id,
-    name: id,
-    email,
-    privilege_level: privilegeLevel,
-  });
+  const member = mock.service.upsertLabMember(
+    withCompleteProfile({
+      id,
+      name: id,
+      email,
+      privilege_level: privilegeLevel,
+    }),
+  );
   if (!member.ok) {
     throw new Error(member.error.message);
   }

@@ -288,7 +288,10 @@ describe("memberPrivilegeLevel wiring", () => {
       adminBotTravel: { history: [{ id: "old-trip" }] } as never,
       adminBotPaperSlots: { "old-paper": { paperId: "old-paper" } } as never,
       adminBotPaperSlotsLoadedAt: 1,
-      adminBotTripDrafts: { "old-conference": { notes: "private" } } as never,
+      labTravel: { matches: [{ people: [{ member_id: "old-peer" }] }] } as never,
+      labTravelLookup: { people: [{ member_id: "old-peer" }] } as never,
+      labTravelSharing: { enabled: true } as never,
+      labTravelRsvpDrafts: { "emnlp:2026": { notes: "private" } } as never,
       adminBotTabUsage: { visits: 7 } as never,
       adminBotTabUsageLoadedAt: 1,
     });
@@ -319,7 +322,10 @@ describe("memberPrivilegeLevel wiring", () => {
     expect(host.adminBotTravel?.history).toBeNull();
     expect(host.adminBotPaperSlots).toEqual({});
     expect(host.adminBotPaperSlotsLoadedAt).toBeNull();
-    expect(host.adminBotTripDrafts).toEqual({});
+    expect(host.labTravel).toBeUndefined();
+    expect(host.labTravelLookup).toBeNull();
+    expect(host.labTravelSharing).toBeNull();
+    expect(host.labTravelRsvpDrafts).toEqual({});
     expect(host.adminBotTabUsage).toBeNull();
     expect(host.adminBotTabUsageLoadedAt).toBeNull();
     resolveLogout(jsonResponse(200, {}));
@@ -364,10 +370,14 @@ describe("memberPrivilegeLevel wiring", () => {
       adminBotTimeAvailabilityDraft: { note: "A's private time" } as never,
       adminBotTimeAwayDraft: { note: "A's holiday" } as never,
       adminBotMilestoneDraft: { label: "A's deadline" } as never,
-      adminBotTripDraft: { note: "A's trip" } as never,
+      labTravelPlanDraft: { note: "A's trip" } as never,
+      labTravelCityDraft: "A's city",
       myWorkProjectDraft: "A's project",
       myWorkProjectAlias: "a-private",
       myWorkProjectEdits: { a: { title: "A's title", alias: "x", startedOn: "", error: null } },
+      myWorkBlockerDraft: { paperId: "a", text: "", title: "A's blocker" },
+      myProjects: [{ paper_id: "a", title: "A's project" }] as never,
+      myProjectsChoosing: true,
       adminBotVenueFilter: "A's venue",
       adminBotPreregMissingEdit: true,
       profileBadgeNomineeId: "a-peer",
@@ -425,10 +435,14 @@ describe("memberPrivilegeLevel wiring", () => {
     expect(host.adminBotTimeAvailabilityDraft?.note).toBe("");
     expect(host.adminBotTimeAwayDraft?.note).toBe("");
     expect(host.adminBotMilestoneDraft?.label).toBe("");
-    expect(host.adminBotTripDraft?.note).toBe("");
+    expect(host.labTravelPlanDraft?.note).toBe("");
+    expect(host.labTravelCityDraft).toBe("");
     expect(host.myWorkProjectDraft).toBeNull();
     expect(host.myWorkProjectAlias).toBe("");
     expect(host.myWorkProjectEdits).toEqual({});
+    expect(host.myWorkBlockerDraft).toBeNull();
+    expect(host.myProjects).toBeNull();
+    expect(host.myProjectsChoosing).toBe(false);
     expect(host.adminBotVenueFilter).toBe("");
     expect(host.adminBotPreregMissingEdit).toBe(false);
     expect(host.profileBadgeNomineeId).toBe("");
