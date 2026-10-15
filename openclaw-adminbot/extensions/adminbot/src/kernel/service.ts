@@ -325,6 +325,7 @@ import {
 } from "../workflows/members/adoption.js";
 import { validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
+import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   localEventAudience,
   remainingAttendees,
@@ -395,6 +396,12 @@ import {
   paperConferenceKey,
   type ConferenceAttendanceView,
 } from "../workflows/papers/conference-attendance.js";
+import {
+  buildConferenceIntroMessage,
+  CONFERENCE_INTRO_PARTNERS,
+  type IntroCandidate,
+  pickIntroPartners,
+} from "../workflows/papers/conference-intros.js";
 import {
   isProjectActive,
   summarizeProject,
@@ -1273,6 +1280,11 @@ const DEFAULT_ACTION_POLICIES = {
   // already been superseded. The recipients are the operator-configured Slack ids, never a caller's
   // input, and the text is composed from stored scores. T1 for the same mechanical reason.
   "paper_integrity.report": autoPolicy("T1"),
+  // Auto-approved: an introduction that waited on an admin would land after the conference. Nothing
+  // comes from a caller -- the three recipients are Going attendees on the roster and the text is
+  // composed from their stored themes and the deadline dataset -- and each member is introduced at
+  // most once per conference. T1 for the mechanical reason: resolvePolicy only honors auto below T2.
+  "slack.conference_intro": autoPolicy("T1"),
   // Auto-approved on the same reasoning, and narrower than sheet.update_cells (T2): the connector
   // refuses anything but single cells in the one score column, so it can fill that column and
   // nothing else. The sheet id comes from the environment and the values from stored scores.
@@ -7578,6 +7590,8 @@ export class AdminBotService {
     // Persist the approved proposal before yielding. Slack outages must not fail a paper save;
     // the existing action audit retains failures for retry, and execution deduplicates saves.
     void this.inviteConferenceAttendees(key).catch(() => {});
+    // Separately caught: an intro is worth sending even when the channel invite failed.
+    void this.introduceConferenceAttendees(key).catch(() => {});
   }
 
   /** Uses the existing Slack proposal/approval/execution gate. */
@@ -7645,6 +7659,159 @@ export class AdminBotService {
       }
     }
     return { ok: true, status: 200, payload: { channel, invited, skipped, failed } };
+  }
+
+  /**
+   * The three-person intro for each Going lab member who has not been introduced at this
+   * conference yet: them and the two co-attendees closest to their research (workflows/papers/
+   * conference-intros.ts says how the two are picked), with the dates, place and event page.
+   *
+   * Nothing goes out until three Going members can be reached on Slack -- a pair is a DM, not an
+   * introduction -- and then the first intro covers all three of them. Everyone named in an
+   * executed intro counts as introduced, so the second and third person of the first trio are not
+   * sent the same people again; only somebody who confirms later gets a new group DM.
+   *
+   * Same gate as the channel invite: proposal, auto policy, execute. An unexecuted earlier attempt
+   * whose recipients or text are now stale (a partner withdrew, the days-to-go moved on) is removed
+   * and proposed again; one an admin rejected stays rejected.
+   */
+  async introduceConferenceAttendees(
+    conferenceKey: string,
+  ): Promise<AdminBotServiceResponse<{ introduced: number; skipped: number; failed: number }>> {
+    // One run per conference at a time. Three people confirming within a second start three runs,
+    // and two that each read the history before the other's first delivery lands would propose
+    // the second and third person their own intro to the same trio.
+    const previous = this.conferenceIntroRuns.get(conferenceKey) ?? Promise.resolve();
+    const run = previous
+      .catch(() => {})
+      .then(() => this.introduceConferenceAttendeesNow(conferenceKey));
+    this.conferenceIntroRuns.set(conferenceKey, run);
+    try {
+      return await run;
+    } finally {
+      if (this.conferenceIntroRuns.get(conferenceKey) === run) {
+        this.conferenceIntroRuns.delete(conferenceKey);
+      }
+    }
+  }
+
+  private conferenceIntroRuns = new Map<string, Promise<unknown>>();
+
+  private async introduceConferenceAttendeesNow(
+    conferenceKey: string,
+  ): Promise<AdminBotServiceResponse<{ introduced: number; skipped: number; failed: number }>> {
+    const roster = this.listConferenceRosters();
+    if (!roster.ok) return roster;
+    const conference = roster.payload.conferences.find((entry) => entry.key === conferenceKey);
+    if (!conference) return serviceError(404, "accepted conference not found");
+    const candidates: IntroCandidate[] = [];
+    for (const person of conference.people) {
+      const member = person.member_id ? this.store.getLabMember(person.member_id) : undefined;
+      if (
+        person.attending !== "yes" ||
+        !member?.slack_user_id ||
+        adminBotIsAlumniMember(member) ||
+        candidates.some((candidate) => candidate.member_id === member.id)
+      ) {
+        continue;
+      }
+      candidates.push({
+        member_id: member.id,
+        name: member.preferred_name?.trim() || member.name,
+        slack_user_id: member.slack_user_id,
+        themes: memberThemeIds(member),
+      });
+    }
+    let introduced = 0,
+      skipped = 0,
+      failed = 0;
+    if (candidates.length < CONFERENCE_INTRO_PARTNERS + 1) {
+      return {
+        ok: true,
+        status: 200,
+        payload: { introduced, skipped: candidates.length, failed },
+      };
+    }
+    const keyPrefix = `conference-intro:${conference.key}:`;
+    const history = this.store
+      .listProposalsByType("slack.conference_intro")
+      .filter((proposal) => proposal.idempotency_key?.startsWith(keyPrefix));
+    const covered = new Set<string>();
+    for (const proposal of history) {
+      if (proposal.status !== "executed") continue;
+      const ids = (proposal.proposed_payload as { member_ids?: unknown } | undefined)?.member_ids;
+      for (const id of Array.isArray(ids) ? ids : []) {
+        if (typeof id === "string") covered.add(id);
+      }
+    }
+    const today = (this.options.now?.() ?? new Date()).toISOString().slice(0, 10);
+    const sites = travelConferenceSites(this.deadlineReadModel(DEADLINE_VENUES), today).filter(
+      (site) => site.group_key === conference.key,
+    );
+    const themeLabels = new Map(RESEARCH_THEMES.map((theme) => [theme.id, theme.label]));
+    for (const subject of candidates) {
+      const idempotencyKey = `${keyPrefix}${subject.member_id}`;
+      const latest = history
+        .filter((proposal) => proposal.idempotency_key === idempotencyKey)
+        .at(-1);
+      if (covered.has(subject.member_id) || latest?.status === "rejected") {
+        skipped++;
+        continue;
+      }
+      const partners = pickIntroPartners(subject, candidates, conference.key);
+      const payload = {
+        user_ids: [subject, ...partners].map((person) => person.slack_user_id),
+        member_ids: [subject, ...partners].map((person) => person.member_id),
+        message: buildConferenceIntroMessage({
+          conference_label: conference.label,
+          subject,
+          partners,
+          sites,
+          theme_labels: themeLabels,
+          today,
+        }),
+      };
+      let proposalId = latest?.id;
+      if (latest && JSON.stringify(latest.proposed_payload) !== JSON.stringify(payload)) {
+        this.removePending(latest.id, { note: "Conference intro recipients or text changed." });
+        proposalId = undefined;
+      }
+      if (!proposalId) {
+        const proposal = this.createProposal({
+          type: "slack.conference_intro",
+          summary: `Introduce ${subject.name} to ${partners.map((p) => p.name).join(" and ")} for ${conference.label}`,
+          target: {
+            service: "slack",
+            channel: "slack",
+            target: payload.user_ids.join(","),
+            recipientMemberId: subject.member_id,
+          },
+          proposed_payload: payload,
+          rationale: `All three confirmed going to ${conference.label} on an accepted paper.`,
+          undo_plan:
+            "A Slack message cannot be unsent by AdminBot; any participant can leave the DM.",
+          idempotency_key: idempotencyKey,
+        });
+        if (!proposal.ok) {
+          failed++;
+          continue;
+        }
+        proposalId = proposal.payload.id;
+      }
+      try {
+        const executed = await this.execute(proposalId, {
+          dry_run: false,
+          idempotency_key: idempotencyKey,
+        });
+        if (executed.ok && executed.payload.status === "executed") {
+          introduced++;
+          for (const id of payload.member_ids) covered.add(id);
+        } else failed++;
+      } catch {
+        failed++;
+      }
+    }
+    return { ok: true, status: 200, payload: { introduced, skipped, failed } };
   }
 
   /**

@@ -208,6 +208,16 @@ export const paperAdminRoutes: readonly Route[] = [
       );
     }),
   ),
+  post(
+    /^\/papers\/conference-rosters\/([^/]+)\/intros$/u,
+    adminSessionOnly(async ({ res, params, ctx }) => {
+      const { service } = ctx;
+      sendServiceResult(
+        res,
+        await service.introduceConferenceAttendees(decodeURIComponent(params[1])),
+      );
+    }),
+  ),
   get(
     "/papers/conference-travel-export",
     privilegedOnly(({ res, ctx }) => {

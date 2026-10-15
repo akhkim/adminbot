@@ -647,3 +647,16 @@ describe("conference channel invites", () => {
     );
   });
 });
+
+describe("conference intros", () => {
+  it("requires a real admin session before sending a group DM and rejects unknown conferences", async () => {
+    const { baseUrl, sent } = await startLab();
+    const route = "/papers/conference-rosters/emnlp%3A2026/intros";
+    expect((await fetch(`${baseUrl}${route}`, { method: "POST" })).status).toBe(401);
+    expect((await call(baseUrl, "POST", route, {})).status).toBe(403);
+    expect((await callAs(await adminHeaders(baseUrl), baseUrl, "POST", route, {})).status).toBe(
+      404,
+    );
+    expect(sent).toHaveLength(0);
+  });
+});
