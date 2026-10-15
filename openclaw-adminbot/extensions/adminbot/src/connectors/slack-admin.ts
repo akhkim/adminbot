@@ -92,6 +92,26 @@ export function createAdminBotSlackAdminExecutor(
         );
         return { handled: true };
       }
+      // Exactly three people, like deadline.recommend's exactly two: a conference intro that reached
+      // one person or the whole roster is a different message from the one that was approved.
+      if (proposal.type === "slack.conference_intro") {
+        const payload = readGroupDmPayload(proposal);
+        if (
+          payload.user_ids.length !== 3 ||
+          !payload.user_ids.every((id) => /^[UW][A-Z0-9]+$/u.test(id))
+        ) {
+          throw new Error("slack.conference_intro requires three distinct Slack users");
+        }
+        const token = resolveSlackBotToken(env);
+        await notifySlackOwner(
+          token,
+          payload.user_ids.join(","),
+          payload.message,
+          fetchImpl,
+          proposal.id,
+        );
+        return { handled: true };
+      }
       // The hourly digest can instead live in a channel as one message, edited each hour.
       if (proposal.type === "paper_integrity.report" && readChannelTarget(proposal)) {
         const target = readChannelTarget(proposal)!;
