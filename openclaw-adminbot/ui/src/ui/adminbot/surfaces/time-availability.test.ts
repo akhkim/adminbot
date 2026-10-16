@@ -17,6 +17,9 @@ function renderLikeLit(held: Record<string, unknown>) {
     tab: "adminbotTimeAvailability",
     memberId: "grace",
     adminBotTimeAvailabilityMemberId: "ada",
+    // The app always starts on "month" (app.ts); without it the real view crashes once its lazy
+    // module has loaded, which depends on suite timing.
+    adminBotTimeAvailabilityRange: "month",
     adminBotMemberDetails: { ada: held },
     adminBotData: { members: [] },
     settings: { adminBotUrl: "https://admin.safe.eu" },
