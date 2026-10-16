@@ -21,6 +21,7 @@ import { icons } from "../../icons.ts";
 import { iconForTab, isKnownTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
 import type { MemberNotification } from "../api/workspace.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { openEntries } from "../blockers.ts";
 import {
   deadlineDateTimeLabel,
@@ -33,6 +34,7 @@ import { nextStepFor } from "../next-step.ts";
 import { ownPapers, paperProgress, stepLabel } from "../projects/model.ts";
 import { renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderMemberMap } from "./member-map.ts";
+import "./nudge-campaign.ts";
 import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile-fields.ts";
 
 // One thing waiting on the viewer. `detail` is optional supporting text -- the queue items say
@@ -776,9 +778,23 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
           ${renderMemberMap(state.adminBotMemberMap ?? null, { now: Date.now() })}
         </div>
       </section>
-      ${renderNextDeadlines(state)}
+      ${renderNextDeadlines(state)} ${renderNudgeCampaigns(state, role)}
     </div>
   `;
+}
+
+// Admins only: the server refuses everyone else, and a list that could only ever say "forbidden" is
+// noise on a member's dashboard. Which nudge campaigns exist, how many members each has reached and
+// when it last sent.
+function renderNudgeCampaigns(state: AppViewState, role: AccessRole) {
+  const session = loadStoredMemberSession();
+  if (role !== "admin" || !session?.sessionToken) {
+    return nothing;
+  }
+  return html`<adminbot-nudge-campaigns
+    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+    .sessionToken=${session.sessionToken}
+  ></adminbot-nudge-campaigns>`;
 }
 
 function renderOfflineBanner(state: AppViewState) {
