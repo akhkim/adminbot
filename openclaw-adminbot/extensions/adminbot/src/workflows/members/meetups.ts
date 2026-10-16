@@ -16,6 +16,7 @@ import {
   isWithinDays,
   liveIpCountry,
   liveIpObservedAt,
+  introIpPlace,
   liveIpPlace,
 } from "./member-map.js";
 
@@ -203,16 +204,18 @@ const DAY_MS = 86_400_000;
 export const IP_CORROBORATION_DAYS = 30;
 
 /**
- * The meetup view of the live IP place: `liveIpPlace` from the map, so a member is introduced in
- * exactly the city the map shows them in -- the latest request's reading, never the sign-in, and
- * never a likely VPN exit.
+ * The meetup view of the live IP place: `liveIpPlace` from the map, so a member is shown in exactly
+ * the city the map shows them in -- the latest request's reading, never the sign-in, and never a
+ * likely VPN exit. `forIntro` uses `introIpPlace` instead, which also drops a reading that had no
+ * reference zone (device or Slack) to check it against.
  */
 function ipMeetupPlace(
   member: Pick<AdminBotLabMember, AdminBotLiveIpFields>,
   now: Date,
   days: number,
+  forIntro: boolean,
 ): MeetupPlace | undefined {
-  const live = liveIpPlace(member, now, days);
+  const live = (forIntro ? introIpPlace : liveIpPlace)(member, now, days);
   return live ? { city: live.city, ...(live.country ? { country: live.country } : {}) } : undefined;
 }
 
@@ -248,7 +251,7 @@ export function meetupPlace(
   if (device) {
     return { city: device.city, ...(device.country ? { country: device.country } : {}) };
   }
-  const ip = ipMeetupPlace(member, now, days);
+  const ip = ipMeetupPlace(member, now, days, true);
   return ip && ipCorroborated(member, ip, now) ? ip : undefined;
 }
 
@@ -293,7 +296,7 @@ export function viewerLocation(member: AdminBotLabMember, now: Date): ViewerLoca
     const place = { city: device.city, ...(device.country ? { country: device.country } : {}) };
     return { label: travelPlace(device.city).label, source: "device", place };
   }
-  const ip = ipMeetupPlace(member, now, LOGIN_CITY_FRESH_DAYS);
+  const ip = ipMeetupPlace(member, now, LOGIN_CITY_FRESH_DAYS, false);
   if (ip) {
     return { label: travelPlace(ip.city).label, source: "ip", place: ip };
   }

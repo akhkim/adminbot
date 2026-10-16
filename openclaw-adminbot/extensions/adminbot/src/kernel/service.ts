@@ -385,6 +385,18 @@ import {
   buildTravelHistory,
   type AdminBotTravelHistory,
 } from "../workflows/members/travel-history.js";
+import {
+  type AdminBotNudgeCampaign,
+  type AdminBotNudgeCampaignInfo,
+  type AdminBotNudgeCampaignMode,
+  type AdminBotNudgeCampaignRefusal,
+  type AdminBotNudgeCampaignResult,
+  campaignSubjectId,
+  isCampaignRefusal,
+  runNudgeCampaign,
+} from "../workflows/nudges/campaign.js";
+import { ADMINBOT_NUDGE_CAMPAIGNS } from "../workflows/nudges/campaigns.js";
+import { profilePhotoCampaign } from "../workflows/nudges/profile-photo-nudge.js";
 import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
 import {
   planOnboardingSweep,
@@ -601,27 +613,28 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveLabMember(member: AdminBotLabMember): void;
   patchLabMemberAuthFields(
     memberId: string,
-    patch: Pick<AdminBotLabMember, "updated_at"> &
-      Partial<
-        Pick<
-          AdminBotLabMember,
-          | "last_login_at"
-          | "last_login_country"
-          | "last_login_continent"
-          | "last_login_city"
-          | "last_login_region"
-          | "last_login_timezone"
-          | "last_ip_observed_at"
-          | "last_ip_suspected_vpn"
-          | "last_device_tz"
-          | "last_device_tz_at"
-          | "device_city"
-          | "device_region"
-          | "device_country"
-          | "device_located_at"
-          | "last_seen_at"
-        >
-      >,
+    // `updated_at` is optional: a stamp that is not an edit (a visit, a device zone) leaves it alone.
+    patch: Partial<
+      Pick<
+        AdminBotLabMember,
+        | "updated_at"
+        | "last_login_at"
+        | "last_login_country"
+        | "last_login_continent"
+        | "last_login_city"
+        | "last_login_region"
+        | "last_login_timezone"
+        | "last_ip_observed_at"
+        | "last_ip_suspected_vpn"
+        | "last_device_tz"
+        | "last_device_tz_at"
+        | "device_city"
+        | "device_region"
+        | "device_country"
+        | "device_located_at"
+        | "last_seen_at"
+      >
+    >,
   ): boolean;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[];
@@ -1209,6 +1222,11 @@ export type AdminBotServiceOptions = {
    * a nudge whose whole payload is "bcc us at" is worse than silence without an address to name.
    */
   paperflowBotEmail?: string;
+  /**
+   * The pause between two DMs of a nudge campaign (workflows/nudges/campaign.ts). Defaults to
+   * ADMINBOT_NUDGE_CAMPAIGN_PACE_MS; tests set 0.
+   */
+  nudgeCampaignPaceMs?: number;
   /**
    * A roster member who takes the venue cycle ahead of author order when they are on the paper.
    * Configuration rather than a name in a conditional, so the day it stops being true it is one
@@ -10943,6 +10961,92 @@ export class AdminBotService {
     };
   }
 
+  /**
+   * Runs one nudge campaign (workflows/nudges/campaign.ts) against the roster: the module filters,
+   * previews and guards; this supplies the send (sendMemberNudge, one member at a time), the ledger
+   * stamp and the audit row.
+   */
+  private async runNudgeCampaign(
+    campaign: AdminBotNudgeCampaign,
+    mode: AdminBotNudgeCampaignMode,
+    actor: string,
+    members: readonly AdminBotLabMember[] = this.store.listLabMembers(),
+  ): Promise<AdminBotNudgeCampaignResult | AdminBotNudgeCampaignRefusal> {
+    const now = this.options.now?.() ?? new Date();
+    return runNudgeCampaign(campaign, mode, {
+      members,
+      ledger: this.store.listNudgeLedger(campaign.key),
+      headProfessorMemberId: this.resolveSettings().head_professor_member_id,
+      now,
+      paceMs: this.options.nudgeCampaignPaceMs,
+      send: async ({ member, message }) => {
+        const result = await this.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: [member.id],
+            message,
+            kind: campaign.notification.kind,
+            title: campaign.notification.title,
+            ...(campaign.notification.tab ? { tab: campaign.notification.tab } : {}),
+            ...(campaign.notification.important ? { important: true } : {}),
+          },
+          actor,
+          { appendPortalLink: campaign.appendPortalLink !== false },
+        );
+        if (!result.ok) {
+          return { delivered: false, reason: result.error.message };
+        }
+        const skip = result.payload.skipped[0];
+        return skip ? { delivered: false, reason: skip.reason } : { delivered: true };
+      },
+      stamp: (memberId, nowIso) => {
+        const subjectId = campaignSubjectId(campaign.key);
+        const existing = this.store
+          .listNudgeLedger(campaign.key)
+          .find((entry) => entry.subject_id === subjectId && entry.member_id === memberId);
+        this.store.saveNudgeLedgerEntry({
+          domain: campaign.key,
+          subject_id: subjectId,
+          member_id: memberId,
+          last_nudged_at: nowIso,
+          nudge_count: (existing?.nudge_count ?? 0) + 1,
+          ...(existing?.snoozed_until ? { snoozed_until: existing.snoozed_until } : {}),
+        });
+      },
+      audit: (memberId) =>
+        this.recordAudit({
+          type: "nudge_campaign.sent",
+          actor,
+          details: { campaign: campaign.key, member_id: memberId, dry_run: false },
+        }),
+    });
+  }
+
+  /** Every nudge campaign, with how many members it has reached and when it last sent. */
+  listNudgeCampaigns(): AdminBotServiceResponse<{
+    campaigns: Array<
+      AdminBotNudgeCampaignInfo & { members_reached: number; last_sent_at?: string }
+    >;
+  }> {
+    const campaigns = ADMINBOT_NUDGE_CAMPAIGNS.map((info) => {
+      const rows = this.store
+        .listNudgeLedger(info.key)
+        .filter(
+          (entry) => entry.subject_id === campaignSubjectId(info.key) && entry.last_nudged_at,
+        );
+      const lastSent = rows
+        .map((entry) => entry.last_nudged_at as string)
+        .toSorted()
+        .at(-1);
+      return {
+        ...info,
+        members_reached: rows.length,
+        ...(lastSent ? { last_sent_at: lastSent } : {}),
+      };
+    });
+    return { ok: true, status: 200, payload: { campaigns } };
+  }
+
   // Re-reads every member's Slack profile and stamps what it finds. A member Slack has
   // nothing for is cleared rather than left stale: keeping an old value would quietly
   // outrank their roster location forever.
@@ -12097,13 +12201,23 @@ export class AdminBotService {
   // Reviews Slack profile photos for active lab members and nudges non-compliant members with the
   // fixed guideline copy. Assessment can come from an injected AI reviewer or a deterministic
   // fallback when no reviewer is configured.
-  async runProfilePhotoReviewAndReminders(actor: string): Promise<
-    AdminBotServiceResponse<{
-      reviewed: number;
-      non_compliant: number;
-      nudges_created: number;
-      nudges_skipped: number;
-    }>
+  //
+  // `mode` is the campaign's `{dry_run, confirm}` (campaignModeFromBody), a dry run unless the
+  // caller says otherwise: the review itself always runs and stores each assessment, but a dry run
+  // only previews who would be messaged, and a real run needs `confirm` equal to that count, like
+  // every other campaign. The payload is the campaign result, plus the review's own counts.
+  async runProfilePhotoReviewAndReminders(
+    actor: string,
+    mode: AdminBotNudgeCampaignMode = { dry_run: true },
+  ): Promise<
+    AdminBotServiceResponse<
+      AdminBotNudgeCampaignResult & {
+        reviewed: number;
+        non_compliant: number;
+        nudges_created: number;
+        nudges_skipped: number;
+      }
+    >
   > {
     const members = this.store
       .listLabMembers()
@@ -12132,66 +12246,71 @@ export class AdminBotService {
         nonCompliantMemberIds.push(member.id);
       }
     }
-    const nudge = nonCompliantMemberIds.length
-      ? await this.sendMemberNudge(
-          {
-            channel: "slack",
-            recipient_member_ids: nonCompliantMemberIds,
-            message: buildProfilePhotoGuidelineMessage(),
-            kind: "profile_photo",
-            title: "Your profile photo needs replacing",
-            tab: "profile",
-            // Not important: nothing downstream is blocked on it, and a group DM about somebody's
-            // headshot is the escalation that would make every other one easy to ignore.
-          },
-          actor,
-        )
-      : ({ ok: true, status: 200, payload: { created: [], skipped: [] } } as const);
-    if (!nudge.ok) {
-      return nudge;
-    }
-    const nudgeSet = new Set(nonCompliantMemberIds);
-    for (const member of members) {
-      if (!nudgeSet.has(member.id)) {
-        continue;
-      }
-      const latest = this.store.getLabMember(member.id);
-      if (!latest) {
-        continue;
-      }
-      this.store.saveLabMember({
-        ...latest,
-        profile_photo_review: {
-          ...(latest.profile_photo_review ?? {}),
-          last_guideline_dm_at: now,
-        },
-        updated_at: now,
-      });
-    }
+    // Through the campaign module (workflows/nudges/campaign.ts): no cooldown, and members without
+    // a Slack ID still passed to the send so they get the portal notification.
+    const nudge = await this.runNudgeCampaign(
+      profilePhotoCampaign({
+        nonCompliantMemberIds: new Set(nonCompliantMemberIds),
+        message: buildProfilePhotoGuidelineMessage(),
+      }),
+      { dry_run: mode.dry_run, ...(mode.confirm !== undefined ? { confirm: mode.confirm } : {}) },
+      actor,
+      members,
+    );
     this.recordAudit({
       type: "profile_photo.reviewed",
       actor,
-      details: { reviewed, non_compliant: nonCompliantMemberIds.length },
+      details: { reviewed, non_compliant: nonCompliantMemberIds.length, dry_run: mode.dry_run },
     });
-    if (nonCompliantMemberIds.length > 0) {
-      this.recordAudit({
-        type: "profile_photo.guideline_nudged",
-        actor,
-        details: {
-          targeted: nonCompliantMemberIds.length,
-          created: nudge.payload.created.length,
-          skipped: nudge.payload.skipped.length,
-        },
-      });
+    if (isCampaignRefusal(nudge)) {
+      return { ok: false, status: 409, error: { message: nudge.message } };
+    }
+    const nudgesCreated = nudge.sent ?? 0;
+    const nudgesSkipped = nudge.dry_run
+      ? 0
+      : Object.values(nudge.skipped).reduce((sum, n) => sum + n, 0) -
+        (nudge.skipped.compliant ?? 0) +
+        (nudge.failed?.length ?? 0);
+    if (!nudge.dry_run) {
+      const nudgeSet = new Set(nonCompliantMemberIds);
+      for (const member of members) {
+        if (!nudgeSet.has(member.id)) {
+          continue;
+        }
+        const latest = this.store.getLabMember(member.id);
+        if (!latest) {
+          continue;
+        }
+        this.store.saveLabMember({
+          ...latest,
+          profile_photo_review: {
+            ...(latest.profile_photo_review ?? {}),
+            last_guideline_dm_at: now,
+          },
+          updated_at: now,
+        });
+      }
+      if (nonCompliantMemberIds.length > 0) {
+        this.recordAudit({
+          type: "profile_photo.guideline_nudged",
+          actor,
+          details: {
+            targeted: nonCompliantMemberIds.length,
+            created: nudgesCreated,
+            skipped: nudgesSkipped,
+          },
+        });
+      }
     }
     return {
       ok: true,
       status: 200,
       payload: {
+        ...nudge,
         reviewed,
         non_compliant: nonCompliantMemberIds.length,
-        nudges_created: nudge.payload.created.length,
-        nudges_skipped: nudge.payload.skipped.length,
+        nudges_created: nudgesCreated,
+        nudges_skipped: nudgesSkipped,
       },
     };
   }
@@ -12359,6 +12478,10 @@ export class AdminBotService {
   async sendMemberNudge(
     request: AdminBotMemberNudgeRequest,
     actor: string,
+    options: {
+      /** `false` when the message already carries its own link (a nudge campaign's deep link). */
+      appendPortalLink?: boolean;
+    } = {},
   ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult>> {
     const message = request.message.trim();
     if (!message) {
@@ -12383,7 +12506,8 @@ export class AdminBotService {
     // On the outbound copy only. The stored notification is read *inside* the portal, where a link
     // telling the reader where they already are is noise.
     const portalUrl = resolveAdminBotControlUiUrl();
-    const outboundMessage = `${message}\n\n${portalUrl}`;
+    const outboundMessage =
+      options.appendPortalLink === false ? message : `${message}\n\n${portalUrl}`;
     for (const memberId of request.recipient_member_ids) {
       const member = this.store.getLabMember(memberId);
       if (!member) {

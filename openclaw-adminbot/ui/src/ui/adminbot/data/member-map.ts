@@ -13,6 +13,7 @@
 // an embedded document rather than a card. The dashboard renders the JSON itself.
 
 import type { UiSettings } from "../../storage.ts";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { readApiJson } from "./api-json.ts";
 
@@ -391,10 +392,8 @@ export async function loadMemberMap(host: MemberMapHost): Promise<void> {
   host.adminBotMemberMapLoading = true;
   try {
     const response = await fetch(`${resolveAdminBotBaseUrl(host.settings)}/member-map`, {
-      // Capitalised to match every other authed call in the Control UI (see session.ts).
-      // Header names are case-insensitive on the wire, but a lone lowercase one reads as a
-      // different code path to anyone grepping, and to a test asserting over all calls.
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      // The shared bearer-plus-clock headers every authed AdminBot call sends (device-clock.ts).
+      headers: memberAuthHeaders(token),
     });
     if (!response.ok || !isCurrent()) {
       return;

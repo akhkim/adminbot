@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import { AdminBotMemoryStore, AdminBotService } from "../../kernel/service.js";
-import { buildMemberMap, liveIpPlace } from "../members/member-map.js";
+import { buildMemberMap, introIpPlace, liveIpPlace } from "../members/member-map.js";
 import { AdminBotAuthService, type AdminBotMemberPrincipal } from "./auth.js";
 
 type Located = { country?: string; continent?: string; city?: string; region?: string };
@@ -351,5 +351,160 @@ describe("the live IP, not the sign-in IP", () => {
     });
     expect(liveIpPlace(after, new Date("2026-07-15T14:00:00.000Z"))?.city).toBe("Toronto");
     expect(hook).not.toHaveBeenCalled();
+  });
+});
+
+describe("privacy browsers that report UTC", () => {
+  it("does not flag a Toronto reading from a browser that sends UTC with offset 0", async () => {
+    const geolocateIp = vi.fn(async () => TORONTO);
+    const { auth, principal, store, ipRows } = setup({ geolocateIp });
+    auth.noteAccountUse(principal(), "198.51.100.7", { tz: "UTC", offsetMinutes: 0 });
+    await vi.waitFor(() => expect(ipRows()).toHaveLength(1));
+    expect(ipRows()[0]?.suspected_vpn).toBeFalsy();
+    expect(store.getLabMember("m_daily")).toMatchObject({
+      last_login_city: "Toronto",
+      last_ip_suspected_vpn: false,
+    });
+  });
+
+  it("checks a UTC browser against the stored device zone instead", async () => {
+    const geolocateIp = vi.fn(async () => ZURICH);
+    const { auth, principal, store, ipRows } = setup({
+      geolocateIp,
+      member: { last_device_tz: "America/Toronto", last_device_tz_at: "2026-07-15T06:00:00.000Z" },
+    });
+    auth.noteAccountUse(principal(), "192.0.2.10", { tz: "Etc/UTC", offsetMinutes: 0 });
+    await vi.waitFor(() => expect(ipRows()).toHaveLength(1));
+    expect(ipRows()[0]?.suspected_vpn).toBe(true);
+    expect(store.getLabMember("m_daily")?.last_login_city).toBeUndefined();
+  });
+});
+
+describe("the throttle on requests with and without device headers", () => {
+  it("writes nothing after the first request, whichever headers and addresses follow", async () => {
+    const geolocateIp = vi.fn(async () => TORONTO);
+    const { auth, principal, store, ipRows } = setup({ geolocateIp });
+    const patch = vi.spyOn(store, "patchLabMemberAuthFields");
+    const append = vi.spyOn(store, "appendMemberLocation");
+    const clock = { tz: "America/Toronto", offsetMinutes: -240 };
+
+    auth.noteAccountUse(principal(), "198.51.100.7", clock);
+    await vi.waitFor(() => expect(ipRows()).toHaveLength(1));
+    await settle();
+    const writes = { patch: patch.mock.calls.length, append: append.mock.calls.length };
+    expect(writes.patch).toBeGreaterThan(0);
+
+    // Most UI fetches send no device headers, and a dual-stack client alternates addresses.
+    for (let i = 0; i < 12; i += 1) {
+      const ip = i % 3 === 0 ? "2001:db8::7" : "198.51.100.7";
+      auth.noteAccountUse(principal(), ip, i % 2 === 0 ? undefined : clock);
+      await settle();
+    }
+    await settle();
+    expect(patch.mock.calls.length).toBe(writes.patch);
+    expect(append.mock.calls.length).toBe(writes.append);
+    // One lookup per address per day.
+    expect(geolocateIp).toHaveBeenCalledTimes(2);
+  });
+
+  it("restamps an unchanged device zone only after a day, and never touches updated_at", async () => {
+    const geolocateIp = vi.fn(async () => TORONTO);
+    const first = setup({ geolocateIp });
+    const clock = { tz: "America/Toronto" };
+    first.auth.noteAccountUse(first.principal(), "198.51.100.7", clock);
+    await vi.waitFor(() =>
+      expect(first.store.getLabMember("m_daily")?.last_device_tz).toBe("America/Toronto"),
+    );
+    await settle();
+    const before = first.store.getLabMember("m_daily")!;
+
+    // A restart forgets the throttle, so the request is checked again: same zone, same day, so
+    // the device zone is not rewritten.
+    const restarted = setup({ geolocateIp, store: first.store });
+    const patch = vi.spyOn(first.store, "patchLabMemberAuthFields");
+    restarted.setNow("2026-07-15T15:00:00.000Z");
+    restarted.auth.noteAccountUse(restarted.principal(), "198.51.100.7", clock);
+    await vi.waitFor(() => expect(geolocateIp).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(patch).not.toHaveBeenCalled();
+    expect(first.store.getLabMember("m_daily")).toEqual(before);
+
+    // A day on, the zone is stamped again so it stays fresh, and that patch carries no updated_at
+    // (the day's IP reading is a separate write).
+    restarted.setNow("2026-07-16T10:00:00.000Z");
+    restarted.auth.noteAccountUse(restarted.principal(), "198.51.100.7", clock);
+    await vi.waitFor(() =>
+      expect(first.store.getLabMember("m_daily")?.last_device_tz_at).toBe(
+        "2026-07-16T10:00:00.000Z",
+      ),
+    );
+    const zonePatches = patch.mock.calls
+      .map(([, fields]) => fields)
+      .filter((fields) => "last_device_tz" in fields);
+    expect(zonePatches).toEqual([
+      { last_device_tz: "America/Toronto", last_device_tz_at: "2026-07-16T10:00:00.000Z" },
+    ]);
+  });
+
+  it("never moves updated_at when stamping last_seen_at from a stale session copy", async () => {
+    const geolocateIp = vi.fn(async () => TORONTO);
+    const { auth, principal, store } = setup({
+      geolocateIp,
+      member: { updated_at: "2026-07-01T00:00:00.000Z", map_visibility: "hidden" },
+    });
+    // The session loaded the member before a later edit.
+    const stale = principal();
+    stale.member = { ...stale.member, updated_at: "2026-06-01T00:00:00.000Z" };
+    auth.noteAccountUse(stale, "198.51.100.7");
+    await vi.waitFor(() =>
+      expect(store.getLabMember("m_daily")?.last_seen_at).toBe("2026-07-15T09:00:00.000Z"),
+    );
+    expect(store.getLabMember("m_daily")?.updated_at).toBe("2026-07-01T00:00:00.000Z");
+  });
+});
+
+describe("requests that send no device headers", () => {
+  it("checks a header-less reading against the stored device zone: no move, no intros", async () => {
+    const hook = vi.fn();
+    const { auth, principal, store, setNow, ipRows } = setup({
+      geolocateIp: vi.fn(async () => ZURICH),
+      member: {
+        last_login_city: "Toronto",
+        last_login_region: "Ontario",
+        last_login_country: "CA",
+        last_ip_observed_at: "2026-07-15T06:00:00.000Z",
+        last_ip_suspected_vpn: false,
+        last_device_tz: "America/Toronto",
+        last_device_tz_at: "2026-07-15T06:00:00.000Z",
+      },
+      afterLoginLocated: hook,
+    });
+    setNow("2026-07-15T14:00:00.000Z");
+    // A Zürich VPN exit, and this fetch sent no clock.
+    auth.noteAccountUse(principal(), "192.0.2.10");
+    await vi.waitFor(() => expect(ipRows().some((row) => row.suspected_vpn)).toBe(true));
+    await settle();
+    expect(store.getLabMember("m_daily")).toMatchObject({
+      last_login_city: "Toronto",
+      last_ip_observed_at: "2026-07-15T06:00:00.000Z",
+    });
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  it("starts no intros from a reading with no zone at all to check it against", async () => {
+    const hook = vi.fn();
+    const { auth, principal, store } = setup({
+      geolocateIp: vi.fn(async () => TORONTO),
+      afterLoginLocated: hook,
+    });
+    auth.noteAccountUse(principal(), "198.51.100.7");
+    await vi.waitFor(() => expect(store.getLabMember("m_daily")?.last_login_city).toBe("Toronto"));
+    await settle();
+    expect(hook).not.toHaveBeenCalled();
+    // The map may show it; the intros never read it.
+    const member = store.getLabMember("m_daily")!;
+    const at = new Date("2026-07-15T09:00:00.000Z");
+    expect(liveIpPlace(member, at)?.city).toBe("Toronto");
+    expect(introIpPlace(member, at)).toBeUndefined();
   });
 });

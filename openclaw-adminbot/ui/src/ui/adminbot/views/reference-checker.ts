@@ -1,5 +1,6 @@
 import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 
 type ScanResult = {
   citation_count?: number;
@@ -211,7 +212,7 @@ export class ReferenceChecker extends LitElement {
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${this.sessionToken}`,
+            ...memberAuthHeaders(this.sessionToken),
             "Content-Type": "application/pdf",
             Accept: "application/x-ndjson",
           },

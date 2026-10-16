@@ -5319,11 +5319,35 @@ describe("AdminBotService", () => {
         }),
       );
 
-      const result = unwrap(await service.runProfilePhotoReviewAndReminders("cron"));
+      // Default is a preview: it reviews and counts, but sends nothing.
+      const preview = unwrap(await service.runProfilePhotoReviewAndReminders("cron"));
+      expect(preview.dry_run).toBe(true);
+      expect(preview.count).toBe(1);
+      expect(preview.reviewed).toBe(2);
+      expect(preview.non_compliant).toBe(1);
+      expect(preview.nudges_created).toBe(0);
+      expect(executor.execute).not.toHaveBeenCalled();
+
+      // A confirm that does not match the previewed count is refused.
+      const mismatch = await service.runProfilePhotoReviewAndReminders("cron", {
+        dry_run: false,
+        confirm: 2,
+      });
+      expect(mismatch.ok).toBe(false);
+      expect(mismatch.status).toBe(409);
+      expect(executor.execute).not.toHaveBeenCalled();
+
+      const result = unwrap(
+        await service.runProfilePhotoReviewAndReminders("cron", {
+          dry_run: false,
+          confirm: preview.count,
+        }),
+      );
+      expect(result.dry_run).toBe(false);
       expect(result.reviewed).toBe(2);
       expect(result.non_compliant).toBe(1);
       expect(result.nudges_created).toBe(1);
-      expect(reviewSlackProfilePhoto).toHaveBeenCalledTimes(2);
+      expect(reviewSlackProfilePhoto).toHaveBeenCalledTimes(6);
       const reviewedMember = unwrap(service.listLabMembers()).members.find(
         (member) => member.id === "bad",
       );

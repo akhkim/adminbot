@@ -2164,6 +2164,43 @@
   margin-top: var(--space-2);
 }
 
+/* On the dashboard card the map takes the card's full width and the list goes under it, in as many
+   columns as fit. Side by side, the 2.4:1 plot was left with whatever the list did not use: about
+   380x160 in a 650px card, beside a list three times its height. The plot only shares the row once
+   the card is wide enough for it to be about as tall as the list (~1100px). Measured on the body,
+   not the viewport, since the card's width depends on the page around it. Child combinators keep
+   this off the full-screen list, which renders inside the card too. */
+.member-map--card > .member-map__body {
+  container: member-map-card / inline-size;
+}
+
+.member-map--card > .member-map__body > .member-map__figure {
+  flex: 1 1 100%;
+}
+
+.member-map--card > .member-map__body > .member-map__list {
+  display: grid;
+  flex: 1 1 100%;
+  grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr));
+  gap: 2px var(--space-4);
+  align-content: start;
+}
+
+.member-map--card > .member-map__body > .member-map__list > .member-map__row--more {
+  grid-column: 1 / -1;
+}
+
+@container member-map-card (min-width: 1100px) {
+  .member-map--card > .member-map__body > .member-map__figure {
+    flex: 1 1 0;
+  }
+
+  .member-map--card > .member-map__body > .member-map__list {
+    display: flex;
+    flex: 0 0 clamp(16rem, 26%, 22rem);
+  }
+}
+
 .member-map__figure {
   position: relative;
   flex: 1 1 26rem;

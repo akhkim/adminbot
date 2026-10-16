@@ -67,11 +67,12 @@ it("uploads a dropped PDF only on Submit, renders findings, and permits repeat s
     "http://localhost:8765/reference-check/pdf?checker=references-validation&consent=query-reference-databases",
     expect.objectContaining({
       body: pdf,
-      headers: {
+      headers: expect.objectContaining({
         Authorization: "Bearer synthetic-admin",
+        "X-AdminBot-Device-TZ-Offset": expect.any(String),
         "Content-Type": "application/pdf",
         Accept: "application/x-ndjson",
-      },
+      }),
     }),
   ]);
   el.sessionToken = "";

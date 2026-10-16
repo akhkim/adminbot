@@ -35,6 +35,7 @@ import { ownPapers, paperProgress, stepLabel } from "../projects/model.ts";
 import { renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderMemberMap } from "./member-map.ts";
 import "./map-coverage.ts";
+import "./nudge-campaign.ts";
 import { renderOwnPreciseLocation } from "./precise-location.ts";
 import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile-fields.ts";
 
@@ -783,7 +784,7 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
           ${renderMapCoverage(state, role)}
         </div>
       </section>
-      ${renderNextDeadlines(state)}
+      ${renderNextDeadlines(state)} ${renderNudgeCampaigns(state, role)}
     </div>
   `;
 }
@@ -799,6 +800,20 @@ function renderMapCoverage(state: AppViewState, role: AccessRole) {
     .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
     .sessionToken=${session.sessionToken}
   ></adminbot-map-coverage>`;
+}
+
+// Admins only: the server refuses everyone else, and a list that could only ever say "forbidden" is
+// noise on a member's dashboard. Which nudge campaigns exist, how many members each has reached and
+// when it last sent.
+function renderNudgeCampaigns(state: AppViewState, role: AccessRole) {
+  const session = loadStoredMemberSession();
+  if (role !== "admin" || !session?.sessionToken) {
+    return nothing;
+  }
+  return html`<adminbot-nudge-campaigns
+    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+    .sessionToken=${session.sessionToken}
+  ></adminbot-nudge-campaigns>`;
 }
 
 function renderOfflineBanner(state: AppViewState) {

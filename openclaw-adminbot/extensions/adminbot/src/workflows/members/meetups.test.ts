@@ -128,18 +128,22 @@ describe("where a member is", () => {
     });
     // IP alone: no place, so no intro.
     expect(meetupPlace(rome, NOW, 7)).toBeUndefined();
-    // A Slack location naming the same metro, updated within 30 days.
+    // A Slack location naming the same metro, updated within 30 days, on a reading the device
+    // zone could check.
+    const witnessed = {
+      ...rome,
+      slack_location: "Rome, Italy",
+      slack_location_updated_at: "2026-09-20T00:00:00Z",
+    };
     expect(
       meetupPlace(
-        {
-          ...rome,
-          slack_location: "Rome, Italy",
-          slack_location_updated_at: "2026-09-20T00:00:00Z",
-        },
+        { ...witnessed, last_device_tz: "Europe/Rome", last_device_tz_at: NOW.toISOString() },
         NOW,
         7,
       ),
     ).toEqual({ city: "Rome", country: "Italy" });
+    // The same witness on a reading with no reference zone to check it: no intro.
+    expect(meetupPlace(witnessed, NOW, 7)).toBeUndefined();
     // The same witness two months old, or naming somewhere else, does not count.
     expect(
       meetupPlace(

@@ -34,10 +34,14 @@ authenticated member request therefore goes through `noteAccountUse` in
 in the local database:
 
 - **Every request is looked up, few are written.** An in-memory throttle per member skips the
-  lookup while the UTC day, the address and the browser's time zone are all unchanged. A lookup
+  lookup while the UTC day is the same, the address is one of the member's last four that day (so a
+  dual-stack client or a NAT pool does not defeat it), and the browser's time zone is unchanged. A
+  request with no zone header, or an unusable one such as `UTC`, counts as unchanged. A lookup
   writes to the member record only when the resolved city or country differs from the latest
-  reading, or once per UTC day as a "still here" stamp. After a restart the first request looks
-  again but writes nothing if the city is unchanged and today's reading is already stored.
+  reading, or once per UTC day as a "still here" stamp. The device zone is rewritten only when it
+  changes or the stored stamp is over a day old, and neither it nor `last_seen_at` touches
+  `updated_at`. After a restart the first request looks again but writes nothing if the city and
+  zone are unchanged and today's reading is already stored.
 - **The live IP, not the sign-in IP.** A member who signed in from Toronto and then uses AdminBot
   from Zürich is placed in Zürich on their first request from there, the same day. Everything that
   places a member by IP -- the map, the event page's "near you" line and city and event meetup
@@ -45,7 +49,8 @@ in the local database:
   `last_ip_observed_at`. `last_login_at` is never used to place anybody.
 - **City changes start intro work.** A trusted reading in a new city calls the same
   `onLoginLocated` hook as a sign-in, which is serialized per member and respects quiet hours. A
-  reading in the same city does not.
+  reading in the same city does not, and neither does a reading that had no zone to be checked
+  against (see below).
 - **Same pipeline as sign-in.** The same geolocator, the same `remoteIp()` and trusted-proxy rules,
   and the same append-only location history with `source: "login_ip"`. The history is
   country-level: it gets one row per day, or per change of country or VPN verdict. A city change
@@ -71,14 +76,20 @@ network address.
 An IP city is the location of the network exit, which for a VPN user is the VPN's city. The
 Control UI therefore sends the browser's own clock with every AdminBot request:
 `X-AdminBot-Device-TZ` (the IANA zone name from `Intl.DateTimeFormat().resolvedOptions().timeZone`)
-and `X-AdminBot-Device-TZ-Offset` (minutes east of UTC). Only the zone name: no coordinates, and no
-browser prompt. It is stored as `last_device_tz` / `last_device_tz_at` and appended to the location
-history as `source: "device_timezone"` when it changes. `UTC` and `Etc/*` zones are ignored,
-because privacy-hardened browsers report them whatever the real clock is.
+and `X-AdminBot-Device-TZ-Offset` (minutes east of UTC). Every authenticated call builds its
+headers through one helper, `memberAuthHeaders` in `ui/src/ui/adminbot/api/device-clock.ts`, so no
+call sends the token without the clock. Only the zone name: no coordinates, and no browser prompt.
+It is stored as `last_device_tz` / `last_device_tz_at` and appended to the location history as
+`source: "device_timezone"` when it changes. `UTC`, `Etc/*` and `GMT` zones are ignored, and so is
+the offset sent with them (it is the same fiction, 0), because privacy-hardened browsers (Firefox
+`resistFingerprinting`, Tor, Brave) report them whatever the real clock is. Such a request counts as
+one that sent no clock.
 
-Each reading compares the UTC offset of the IP city's zone with the device zone from the same
-request (else the member's Slack zone), at that instant, through `Intl`, so daylight saving is
-handled. If they are more than two hours apart, the reading is marked `suspected_vpn`:
+Each reading compares the UTC offset of the IP city's zone with a reference clock at that instant,
+through `Intl`, so daylight saving is handled. The reference is the device zone from the same
+request, else the offset it sent with no zone name, else the member's stored device zone while it
+is fresh (so a request that sent no headers is still checked), else the member's Slack zone. If
+they are more than two hours apart, the reading is marked `suspected_vpn`:
 
 - it is still logged in the history, with `suspected_vpn: true`, and audited as
   `auth.login_location_suspected_vpn`;
@@ -91,15 +102,19 @@ handled. If they are more than two hours apart, the reading is marked `suspected
   ignored (VPN?)" to that member's row. Nobody is asked where they are.
 
 A reading taken before this check existed carries no flag. The map applies the same comparison to
-it at render time, against the device zone, else the Slack zone. An unknown is not a conflict: with
-neither zone available, the reading is trusted.
+it at render time, against the device zone, else the Slack zone. A city the gazetteer does not list
+is compared by the zone the IP database returned with it. An unknown is not a conflict for the map:
+with neither zone available, the reading is trusted and shown.
 
-City and event meetup intros use the same rule (`ipReadingSetAside`, applied by `liveIpPlace` in
-`member-map.ts`). A reading the map sets aside never puts anybody in a city for an intro, whether
-the intro comes from the sign-in hook, a live reading or the hourly sweep, so a VPN exit in
-Toronto cannot produce "you're both in Toronto". Intros go further than the map: an IP city alone
-never introduces anybody. `meetupPlace` in `meetups.ts` uses the member's fresh device city first,
-and an IP city only when the device city, a check-in answer or the Slack location named the same
+City and event meetup intros use the same rule (`ipReadingSetAside`), and go further: they read
+`introIpPlace` in `member-map.ts`, which uses a live IP city only when the member has a fresh
+reference zone (device or Slack) to check it against. A reading the map sets aside, or one nothing
+could check, never puts anybody in a city for an intro, whether the intro comes from the sign-in
+hook, a live reading or the hourly sweep, so a VPN exit in Toronto cannot produce "you're both in
+Toronto".
+Intros go further than the map in one more way: an IP city alone never introduces anybody.
+`meetupPlace` in `meetups.ts` uses the member's fresh device city first, and an IP city (from
+`introIpPlace`) only when the device city, a check-in answer or the Slack location named the same
 city within the last 30 days.
 
 An ASN check (DB-IP ASN Lite, to recognise hosting and VPN providers by network) was considered and

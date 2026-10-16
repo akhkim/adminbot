@@ -197,6 +197,8 @@ export type DevicePairingApprover = (params: {
 export type AnonymousRateLimiter = { check(ip: string | undefined): boolean };
 
 export type AdminBotMockServiceOptions = {
+  /** Pause between nudge campaign DMs (AdminBotServiceOptions.nudgeCampaignPaceMs); tests set 0. */
+  nudgeCampaignPaceMs?: number;
   databasePath?: string;
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;

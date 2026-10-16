@@ -2680,6 +2680,8 @@ export type AdminBotAuditEvent = {
     | "auth.location_updated"
     | "auth.location_update_failed"
     | "member_nudge.sent"
+    // One recipient of a nudge campaign (workflows/nudges/campaign.ts), on top of member_nudge.sent.
+    | "nudge_campaign.sent"
     | "member_nudge.escalated"
     | "mandatory_fields.reminded"
     | "onboarding.step_updated"

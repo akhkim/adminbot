@@ -23,3 +23,15 @@ export function deviceClockHeaders(now: Date = new Date()): Record<string, strin
   }
   return headers;
 }
+
+/**
+ * Every authenticated AdminBot call's headers: the member session's bearer token and this
+ * browser's clock. One helper so no call forgets the clock -- a call without it reads to the
+ * server as "no zone", which the daily IP check then has to fall back from. Empty without a token.
+ */
+export function memberAuthHeaders(
+  token: string | null | undefined,
+  now: Date = new Date(),
+): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}`, ...deviceClockHeaders(now) } : {};
+}

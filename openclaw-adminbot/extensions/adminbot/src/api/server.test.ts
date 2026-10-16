@@ -2009,16 +2009,39 @@ describe("AdminBot service-principal privilege scoping", () => {
     });
     seedMember(baseUrl, "bad", { name: "Bad", slack_user_id: "U-BAD", status: "active" });
     seedMember(baseUrl, "good", { name: "Good", slack_user_id: "U-GOOD", status: "active" });
-    const res = await fetch(`${baseUrl}/profile-photo/review/run`, {
-      method: "POST",
-      headers: serviceHeaders(),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
+    type PhotoRun = {
+      dry_run: boolean;
+      count: number;
       reviewed: number;
       non_compliant: number;
       nudges_created: number;
     };
+    // A body-less POST is a preview: nothing is sent.
+    const preview = await fetch(`${baseUrl}/profile-photo/review/run`, {
+      method: "POST",
+      headers: serviceHeaders(),
+    });
+    expect(preview.status).toBe(200);
+    const previewBody = (await preview.json()) as PhotoRun;
+    expect(previewBody.dry_run).toBe(true);
+    expect(previewBody.count).toBe(1);
+    expect(previewBody.nudges_created).toBe(0);
+
+    const mismatch = await fetch(`${baseUrl}/profile-photo/review/run`, {
+      method: "POST",
+      headers: { ...serviceHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ dry_run: false, confirm: 5 }),
+    });
+    expect(mismatch.status).toBe(409);
+
+    const res = await fetch(`${baseUrl}/profile-photo/review/run`, {
+      method: "POST",
+      headers: { ...serviceHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ dry_run: false, confirm: previewBody.count }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PhotoRun;
+    expect(body.dry_run).toBe(false);
     expect(body.reviewed).toBe(2);
     expect(body.non_compliant).toBe(1);
     expect(body.nudges_created).toBe(1);

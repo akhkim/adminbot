@@ -139,9 +139,9 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
   ): Promise<boolean> {
     const result = await this.pool.query(
       `UPDATE ${this.table("adminbot_lab_members")}
-       SET updated_at = $1, payload_json = (payload_json::jsonb || $2::jsonb)::text
+       SET updated_at = COALESCE($1, updated_at), payload_json = (payload_json::jsonb || $2::jsonb)::text
        WHERE id = $3`,
-      [patch.updated_at, JSON.stringify(patch), memberId],
+      [patch.updated_at ?? null, JSON.stringify(patch), memberId],
     );
     return (result.rowCount ?? 0) > 0;
   }

@@ -55,6 +55,19 @@ describe("deviceClock", () => {
     expect(deviceClock(req({ "x-adminbot-device-tz-offset": "9999" }))).toBeUndefined();
     expect(deviceClock(req({}))).toBeUndefined();
   });
+
+  it("drops the offset with an unusable zone, which privacy browsers send whatever the clock", () => {
+    // Firefox resistFingerprinting, Tor and Brave report UTC and 0. Neither is a clock.
+    for (const tz of ["UTC", "Etc/UTC", "GMT", "Etc/GMT+5"]) {
+      expect(
+        deviceClock(req({ "x-adminbot-device-tz": tz, "x-adminbot-device-tz-offset": "0" })),
+      ).toBeUndefined();
+    }
+    // An offset sent with no zone name at all is still read.
+    expect(deviceClock(req({ "x-adminbot-device-tz-offset": "-240" }))).toEqual({
+      offsetMinutes: -240,
+    });
+  });
 });
 
 describe("GET /member-map/coverage", () => {

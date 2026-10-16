@@ -563,6 +563,9 @@ function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOpt
       ? { auditRetentionDays: options.auditRetentionDays }
       : {}),
     ...(options.executor ? { executor: options.executor } : {}),
+    ...(typeof options.nudgeCampaignPaceMs === "number"
+      ? { nudgeCampaignPaceMs: options.nudgeCampaignPaceMs }
+      : {}),
     ...(options.reviewSlackProfilePhoto
       ? { reviewSlackProfilePhoto: options.reviewSlackProfilePhoto }
       : {}),
