@@ -934,6 +934,31 @@
      rule could not reach it. `none` rather than `contain`: contain only stops the scroll chaining
      to a parent, and still leaves the pane its own bounce, which is the thing being seen. */
   overscroll-behavior-y: none;
+  /* An unbroken token (an email address, a URL) breaks rather than running out of the page: with
+     `overflow-x: hidden` above, anything wider than the pane is simply cut off. `break-word`, not
+     `anywhere`, so it never changes how wide a table column or flex item asks to be. */
+  overflow-wrap: break-word;
+}
+
+/* Titles and short labels sit in flex/grid rows, where `break-word` still lets one unbroken token
+   (a pasted URL, a long venue name) set the item's minimum width and push it past the pane.
+   `anywhere` lets them shrink. None of these sit in table cells, so column sizing is unchanged. */
+.content
+  :where(
+    h1,
+    h2,
+    h3,
+    .card-title,
+    .card-sub,
+    .profile__name,
+    .profile-badge-picker__title,
+    .deadline-action__venue,
+    .lab-travel__conference-title,
+    .onboarding-step-card__label,
+    .adminbot-form__field > span,
+    .opp-body > div
+  ) {
+  overflow-wrap: anywhere;
 }
 
 .content > * + * {
@@ -1460,11 +1485,15 @@
   list-style: none;
 }
 
+/* A wrapping row rather than a fixed `5.5rem` grid track: a browser minimum font size makes the
+   text larger without making `rem` larger, so "69 days left" outgrew its track and was painted
+   over the venue name. Here each piece is sized by its own text, and the date drops to the next
+   line when the three no longer fit side by side. */
 .dashboard__next-deadline {
-  display: grid;
-  grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-1) var(--space-3);
   padding: var(--space-2) var(--space-3);
 }
 
@@ -1473,6 +1502,8 @@
 }
 
 .dashboard__next-deadline-countdown {
+  flex: 0 0 auto;
+  min-width: 5.5rem;
   color: var(--deadline-urgency);
   font-family: var(--mono);
   font-size: var(--control-ui-text-xs);
@@ -1482,6 +1513,7 @@
 
 .dashboard__next-deadline-name {
   display: flex;
+  flex: 1 1 10rem;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
@@ -1503,10 +1535,22 @@
   font-weight: 500;
 }
 
+/* The date and its "23:59 AoE" cutoff stay unbroken each, but may sit on two lines: on one line
+   at a large minimum font the pair is wider than a phone's list. A wrapping flex row rather than
+   inline text because the "·" between them removes itself (and its spaces) once the two are on
+   different lines, which would leave inline text no place to break. */
 .dashboard__next-deadline-date {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  column-gap: 0.5ch;
+  margin-left: auto;
   font-family: var(--mono);
   font-size: var(--control-ui-text-xs);
   font-variant-numeric: tabular-nums;
+}
+
+.dashboard__next-deadline-date > :is(.deadline-date, .deadline-time) {
   white-space: nowrap;
 }
 
@@ -1716,6 +1760,7 @@
 
 .onboarding-step-card__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
@@ -1740,9 +1785,13 @@
   line-height: 1.3;
 }
 
+/* Never wider than the row, so on a narrow window the badges wrap among themselves instead of
+   pushing "Start here" past the card's rounded clip. */
 .onboarding-step-card__badges {
   flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   gap: var(--space-2);
 }
@@ -1750,7 +1799,7 @@
 .onboarding-step-card__badge {
   display: inline-flex;
   align-items: center;
-  height: 26px;
+  min-height: 26px;
   padding: 0 var(--space-3);
   border-radius: var(--radius-full);
   font-size: var(--control-ui-text-sm);
@@ -1938,7 +1987,7 @@
 
 .dashboard__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
   gap: var(--space-3);
 }
 
@@ -2597,7 +2646,7 @@
 .member-map__dialog .member-map__list {
   display: grid;
   flex: 0 0 auto;
-  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(12rem, 100%), 1fr));
   gap: 2px var(--space-4);
   width: 100%;
   max-height: 34dvh;
@@ -3922,6 +3971,7 @@
    the button is optional, and reading it beside the button is the only place that pairing lands. */
 .profile__form-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-3);
@@ -5639,8 +5689,10 @@ adminbot-deadline-timezone {
   gap: var(--space-1);
 }
 
+/* No `overflow: hidden` here: `overflow-wrap: anywhere` already keeps a long name inside the row,
+   and the clip only ever cut the bottom off the line once a minimum font size made it taller. */
 .deadline-group__heading strong {
-  overflow: hidden;
+  min-width: 0;
   color: var(--text-strong);
   font-size: var(--control-ui-text-lg);
   font-weight: 600;
@@ -5713,9 +5765,11 @@ adminbot-deadline-timezone {
   font-weight: 500;
 }
 
+/* The countdown track grows with its text (`max-content`) above its usual 7.75rem: rem does not
+   follow a browser minimum font size, so a fixed track let "108d 19:11:54" spill onto the venue. */
 .deadline-group__row {
   display: grid;
-  grid-template-columns: 7.75rem minmax(0, 1fr) 15rem 14rem;
+  grid-template-columns: minmax(7.75rem, max-content) minmax(0, 1fr) 15rem 14rem;
   grid-template-areas: "countdown main date source";
   align-items: center;
   gap: var(--space-3);
@@ -5885,8 +5939,12 @@ adminbot-deadline-timezone {
   gap: var(--space-2);
 }
 
+/* Each badge stays on one line, but the type and the archival badge may stack: side by side they
+   were wider than a card at a large minimum font size, and the card's rounded clip cut off the ⓘ. */
 .deadline-classification {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: var(--space-2);
   white-space: nowrap;
 }
@@ -5951,6 +6009,14 @@ adminbot-deadline-timezone {
   gap: var(--space-1);
   background: transparent;
   color: var(--muted-strong);
+}
+
+/* The policy label ("Non-archival ...") is longer than a narrow card once a minimum font size
+   applies; let it wrap inside the button rather than push the ⓘ past the card's clipped edge. */
+.deadline-classification > .deadline-archival {
+  max-width: 100%;
+  white-space: normal;
+  text-align: start;
 }
 
 .deadline-card__urgency {
@@ -6711,24 +6777,47 @@ adminbot-deadline-timezone {
 }
 
 @container deadline-board (max-width: 34em) {
+  /* A browser minimum font size grows the text but not this query's em, so the narrow-phone rule
+     below can miss a window it was written for, and a two-column grid then has to squeeze either
+     "Add to my timeline" or the countdown's digits. Flex-wrap decides from the real text widths
+     instead: the countdown and the actions share a line while both fit, and the actions drop
+     under the countdown once they do not. */
   .deadline-group__row {
-    grid-template-columns: max-content minmax(0, 1fr);
-    grid-template-areas:
-      "main main"
-      "date date"
-      "countdown source";
+    display: flex;
+    flex-wrap: wrap;
   }
 
-  .deadline-group__row--milestone {
-    grid-template-areas: "main main" "date date";
+  .deadline-group__row > .deadline-group__row-main {
+    order: 1;
+    flex: 1 0 100%;
+  }
+
+  .deadline-group__row > .deadline-group__row-date-wrap {
+    order: 2;
+    flex: 1 0 100%;
+  }
+
+  .deadline-group__row > .deadline-group__row-countdown {
+    order: 3;
+    flex: 0 1 auto;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  /* The actions: a bare link group, or the recommendation wrapper for signed-in members. */
+  .deadline-group__row
+    > :not(.deadline-group__row-main, .deadline-group__row-date-wrap, .deadline-group__row-countdown) {
+    order: 4;
+    flex: 1 1 0;
+    min-width: min-content;
   }
 }
 
 /* Keep personal actions clear of the countdown on narrow phones. */
 @container deadline-board (max-width: 21em) {
-  .deadline-group__row:has(.deadline-card__personal-actions) {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "main" "date" "countdown" "source";
+  .deadline-group__row:has(.deadline-card__personal-actions)
+    > :not(.deadline-group__row-main, .deadline-group__row-date-wrap, .deadline-group__row-countdown) {
+    flex-basis: 100%;
   }
 }
 
@@ -7994,7 +8083,7 @@ lab-sharing-how-to {
    to read than the answer is worth. */
 .pstats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
   gap: var(--space-3);
 }
 
@@ -8334,7 +8423,7 @@ lab-sharing-how-to {
    squeezed into a 9rem grid cell is unreadable, and the grid would jump as one tile grew. */
 .pstats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
   gap: var(--space-3);
   align-items: start;
 }
@@ -9259,7 +9348,7 @@ lab-sharing-how-to {
 
 .paper-slots__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
   gap: var(--space-3);
   align-items: start;
 }
@@ -11967,6 +12056,23 @@ html[data-theme="light"] .deadline-board [data-urgency] {
 .deadline-group__date-line {
   white-space: nowrap;
 }
+
+/* The date track is a fixed rem width, which a minimum font size does not grow: let the time drop
+   under the date instead of running beneath the actions column. Same as the dashboard date: a
+   wrapping flex row, because the "·" separator removes itself (and its spaces) once wrapped. */
+.deadline-group__row-date-wrap .deadline-group__date-line {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.deadline-group__row-date-wrap .deadline-group__row-date {
+  display: inline-flex;
+  flex-wrap: wrap;
+  column-gap: 0.5ch;
+  min-width: 0;
+}
+.deadline-group__row-date > :is(.deadline-date, .deadline-time) {
+  white-space: nowrap;
+}
 .deadline-group__date-stage {
   margin-inline-start: var(--space-2);
 }
@@ -12253,6 +12359,14 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
   color: var(--primary-foreground);
+}
+/* The label wraps inside the button instead of running out of it. Unbroken, "Add to my timeline"
+   at a large minimum font size was wider than a phone's row: it spilled past both edges of the
+   button, onto the countdown beside it, and was cut off by the group's rounded box. */
+.deadline-board .deadline-card__timeline-button {
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
 }
 
 .adminbot-member-badge-symbols {

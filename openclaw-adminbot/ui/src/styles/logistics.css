@@ -498,6 +498,7 @@
 
 .logistics-admin__heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
 }
@@ -1426,6 +1427,7 @@
 
 .professor__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
@@ -1550,7 +1552,6 @@
   margin-left: auto;
   color: var(--muted-strong);
   font-size: var(--control-ui-text-xs);
-  white-space: nowrap;
 }
 
 .professor__empty {
@@ -1622,7 +1623,7 @@
    one links out to. */
 .professor__columns {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
   gap: var(--space-4);
   margin-top: var(--space-3);
 }
