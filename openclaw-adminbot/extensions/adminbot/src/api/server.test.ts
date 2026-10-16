@@ -1307,7 +1307,7 @@ describe("AdminBot mock service", () => {
     await mockFor(baseUrl).store.patchLabMemberAuthFields("ada", {
       last_login_city: "Lyon",
       last_login_country: "FR",
-      last_login_at: now,
+      last_ip_observed_at: now,
       updated_at: now,
     });
 
@@ -2009,16 +2009,39 @@ describe("AdminBot service-principal privilege scoping", () => {
     });
     seedMember(baseUrl, "bad", { name: "Bad", slack_user_id: "U-BAD", status: "active" });
     seedMember(baseUrl, "good", { name: "Good", slack_user_id: "U-GOOD", status: "active" });
-    const res = await fetch(`${baseUrl}/profile-photo/review/run`, {
-      method: "POST",
-      headers: serviceHeaders(),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
+    type PhotoRun = {
+      dry_run: boolean;
+      count: number;
       reviewed: number;
       non_compliant: number;
       nudges_created: number;
     };
+    // A body-less POST is a preview: nothing is sent.
+    const preview = await fetch(`${baseUrl}/profile-photo/review/run`, {
+      method: "POST",
+      headers: serviceHeaders(),
+    });
+    expect(preview.status).toBe(200);
+    const previewBody = (await preview.json()) as PhotoRun;
+    expect(previewBody.dry_run).toBe(true);
+    expect(previewBody.count).toBe(1);
+    expect(previewBody.nudges_created).toBe(0);
+
+    const mismatch = await fetch(`${baseUrl}/profile-photo/review/run`, {
+      method: "POST",
+      headers: { ...serviceHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ dry_run: false, confirm: 5 }),
+    });
+    expect(mismatch.status).toBe(409);
+
+    const res = await fetch(`${baseUrl}/profile-photo/review/run`, {
+      method: "POST",
+      headers: { ...serviceHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ dry_run: false, confirm: previewBody.count }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PhotoRun;
+    expect(body.dry_run).toBe(false);
     expect(body.reviewed).toBe(2);
     expect(body.non_compliant).toBe(1);
     expect(body.nudges_created).toBe(1);
@@ -4287,168 +4310,24 @@ describe("the member location timeline", () => {
     await expect(after.json()).resolves.toMatchObject({ drift: null });
   });
 
-  // The explicit check-in rides on the same endpoint: GET says whether to ask and what to offer for
-  // one tap; POST with an `action` answers, snoozes or declines, and every response is logged.
-  describe("location check-in", () => {
-    const post = (baseUrl: string, token: string, body: unknown) =>
-      fetch(`${baseUrl}/profile/location-prompt`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-    const prompt = async (baseUrl: string, token: string) =>
-      (await (
-        await fetch(`${baseUrl}/profile/location-prompt`, {
+  // Location is fully automatic: there is no check-in question to fetch, answer, snooze or decline,
+  // and no picker list for one.
+  it("never asks a member where they are", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member");
+    const res = await fetch(`${baseUrl}/profile/location-prompt`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toEqual({ drift: null });
+    expect(
+      (
+        await fetch(`${baseUrl}/profile/location-places`, {
           headers: { Authorization: `Bearer ${token}` },
         })
-      ).json()) as { drift: unknown; checkin: Record<string, unknown> };
-    const timeline = async (baseUrl: string, token: string, id = "ada") =>
-      (
-        (await (
-          await fetch(`${baseUrl}/lab/members/${id}/locations`, {
-            headers: { Authorization: `Bearer ${token}` },
-          })
-        ).json()) as { locations: Array<Record<string, unknown>> }
-      ).locations;
-    const auditTypes = (baseUrl: string) =>
-      mockFor(baseUrl)
-        .store.listAuditEvents()
-        .map((event) => event.type);
-
-    it("offers the stored city for one tap, and a confirm logs a self_reported row", async () => {
-      const { baseUrl } = await startService();
-      const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member", {
-        location: "Toronto",
-      });
-      expect((await prompt(baseUrl, token)).checkin).toMatchObject({
-        due: true,
-        suggestion: { city: "Toronto", source: "stored" },
-      });
-
-      const confirmed = await post(baseUrl, token, {
-        action: "answer",
-        city: "Toronto",
-        via: "picker",
-      });
-      expect(confirmed.status).toBe(200);
-      const body = (await confirmed.json()) as {
-        member: { current_city?: string; location_checkin_city?: string };
-        checkin: { due: boolean; reason: string };
-      };
-      expect(body.member).toMatchObject({
-        current_city: "Toronto",
-        location_checkin_city: "Toronto",
-      });
-      expect(body.checkin).toMatchObject({ due: false, reason: "answered" });
-
-      const answers = (await timeline(baseUrl, token)).filter((row) => row.checkin === "answered");
-      expect(answers).toHaveLength(1);
-      expect(answers[0]).toMatchObject({
-        source: "self_reported",
-        raw: "Toronto",
-        place_label: "Toronto",
-        checkin_via: "picker",
-      });
-      expect(auditTypes(baseUrl)).toContain("member.location_checkin_answered");
-      // Answered: not asked again inside the window.
-      expect((await prompt(baseUrl, token)).checkin).toMatchObject({
-        due: false,
-        reason: "answered",
-      });
-    });
-
-    it("keeps free text the gazetteer cannot place, and rejects an empty answer", async () => {
-      const { baseUrl } = await startService();
-      const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member");
-      expect((await post(baseUrl, token, { action: "answer", city: "  " })).status).toBe(400);
-      const typed = await post(baseUrl, token, {
-        action: "answer",
-        city: "Smalltown",
-        via: "text",
-      });
-      expect(typed.status).toBe(200);
-      const latest = (await timeline(baseUrl, token)).find((row) => row.checkin === "answered");
-      expect(latest).toMatchObject({ raw: "Smalltown", checkin_via: "text" });
-      expect(latest?.place_key).toBeUndefined();
-    });
-
-    it("snoozes for a week, logged, without touching where the member says they are", async () => {
-      const { baseUrl } = await startService();
-      const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member", {
-        location: "Toronto",
-      });
-      const snoozed = await post(baseUrl, token, { action: "snooze" });
-      expect(snoozed.status).toBe(200);
-      const body = (await snoozed.json()) as {
-        member: {
-          location?: string;
-          current_city?: string;
-          location_checkin_snoozed_until?: string;
-        };
-        checkin: { due: boolean; reason: string };
-      };
-      expect(body.member.location).toBe("Toronto");
-      expect(body.member.current_city).toBeUndefined();
-      const days =
-        (Date.parse(body.member.location_checkin_snoozed_until ?? "") - Date.now()) / 86_400_000;
-      expect(days).toBeGreaterThan(6.9);
-      expect(days).toBeLessThanOrEqual(7);
-      expect(body.checkin).toMatchObject({ due: false, reason: "snoozed" });
-      expect((await timeline(baseUrl, token)).some((row) => row.checkin === "snoozed")).toBe(true);
-      expect(auditTypes(baseUrl)).toContain("member.location_checkin_snoozed");
-    });
-
-    it("'Prefer not to say' hides the member from the map, is logged, and stops asking", async () => {
-      const { baseUrl } = await startService();
-      const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member", {
-        location: "Toronto",
-      });
-      const declined = await post(baseUrl, token, { action: "decline" });
-      expect(declined.status).toBe(200);
-      const body = (await declined.json()) as {
-        member: { map_visibility?: string };
-        checkin: { due: boolean; reason: string };
-      };
-      expect(body.member.map_visibility).toBe("hidden");
-      expect(body.checkin).toMatchObject({ due: false, reason: "declined" });
-      expect((await timeline(baseUrl, token)).some((row) => row.checkin === "declined")).toBe(true);
-      expect(auditTypes(baseUrl)).toContain("member.location_checkin_declined");
-
-      const map = (await (
-        await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() })
-      ).json()) as { places: Array<{ members: Array<{ member_id: string }> }> };
-      expect(map.places.flatMap((place) => place.members).map((m) => m.member_id)).not.toContain(
-        "ada",
-      );
-    });
-
-    it("lists the picker's cities for a signed-in member only", async () => {
-      const { baseUrl } = await startService();
-      const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member");
-      expect((await fetch(`${baseUrl}/profile/location-places`)).status).toBe(401);
-      const res = await fetch(`${baseUrl}/profile/location-places`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      expect(res.status).toBe(200);
-      const { places } = (await res.json()) as {
-        places: Array<{ key: string; label: string; country: string; lat: number; lon: number }>;
-      };
-      expect(places.length).toBeGreaterThan(100);
-      expect(places.find((place) => place.key === "toronto")).toMatchObject({
-        label: "Toronto",
-        country: "Canada",
-      });
-    });
-
-    it("rejects an unknown action, and the drift answer without one still works", async () => {
-      const { baseUrl } = await startService();
-      const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member");
-      expect((await post(baseUrl, token, { action: "teleport" })).status).toBe(400);
-      expect((await post(baseUrl, "", { action: "snooze" })).status).toBe(401);
-      const legacy = await post(baseUrl, token, { current_city: "Berlin" });
-      expect(legacy.status).toBe(200);
-      await expect(legacy.json()).resolves.toMatchObject({ current_city: "Berlin" });
-    });
+      ).status,
+    ).toBe(404);
   });
 
   it("lists everyone worth re-checking for an admin, and refuses a member", async () => {

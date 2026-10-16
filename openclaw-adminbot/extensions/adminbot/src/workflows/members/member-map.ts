@@ -3,29 +3,42 @@
 // Every source a member has is resolved in order and the first one that places them wins. A
 // country-level answer never beats a city, so countries come last whatever their source:
 //
-//   1. The city of a fresh sign-in (within ADMINBOT_MAP_LOGIN_FRESH_DAYS = 14), from the IP
-//      geolocation database. It is where the person actually was most recently, so it leads --
-//      unless the member set `map_visibility` to "stated", which skips every sign-in source. Placed
-//      at the gazetteer's city centroid, never at the IP's coordinates, which nothing here receives.
-//   2. The member's answer to the "Where are you based right now?" check-in
-//      (location-checkin.ts), while it is recent (ADMINBOT_LOCATION_CHECKIN_DAYS) and still what
-//      `current_city` says. The explicit answer, dated, so the map can say "stated 3d ago".
+//   1. The city of a fresh IP reading (within ADMINBOT_MAP_LOGIN_FRESH_DAYS = 7), from the IP
+//      geolocation database. Read on every authenticated request (auth.ts `noteAccountUse`) and
+//      rewritten whenever the city changes, else once a UTC day -- the live IP, never the address
+//      somebody signed in from weeks ago (`liveIpPlace`, which the meetup intros read too). It is
+//      where the person actually was most recently, and it leads -- unless the member set
+//      `map_visibility` to "stated", which skips every IP source, or the reading is not trusted:
+//      flagged `last_ip_suspected_vpn` when it was taken, or its city keeps a clock more than two
+//      hours from the member's device zone (else their Slack zone). A VPN exit city is the IP
+//      telling the truth about the wrong machine. Placed at the gazetteer's city centroid, never
+//      at the IP's coordinates, which nothing here receives.
+//   2. An answer the member gave the retired "Where are you based right now?" check-in, while
+//      it is recent (ADMINBOT_LOCATION_CHECKIN_DAYS) and still what `current_city` says. The
+//      explicit answer, dated, so the map can say "stated 3d ago".
 //   3. Other stated cities: `current_city`, then the roster `location`, then the Slack profile's
 //      location field. The member's own words, undated.
-//   4. The city an IANA timezone is named for: the Slack `tz` the directory sync recorded
-//      (`slack_tz`, while fresh -- SLACK_TZ_FRESH_DAYS), then a zone in the Slack location field,
-//      then the roster `timezone`. "America/Toronto" says Toronto, but it says the same for
-//      Montréal, so it is a city-level answer that is less exact than any of the above.
+//   4. The city an IANA timezone is named for: the zone the member's browser reported
+//      (`last_device_tz`, while fresh -- ADMINBOT_DEVICE_TZ_FRESH_DAYS), then the Slack `tz` the
+//      directory sync recorded (`slack_tz`, while fresh -- SLACK_TZ_FRESH_DAYS), then a zone in the
+//      Slack location field, then the roster `timezone`. "America/Toronto" says Toronto, but it
+//      says the same for Montréal, so it is a city-level answer that is less exact than any of the
+//      above.
 //   5. A country: any of the texts above that names only a country ("Germany"), then the country
-//      of the last sign-in. Drawn hollow by the UI so it does not pass for a city.
+//      of the last IP reading unless that reading was ignored. Drawn hollow by the UI so it does
+//      not pass for a city.
+//
+// A member whose IP reading was ignored carries `ip_ignored: "suspected_vpn"`, so the admin map can
+// say "IP ignored (VPN?)" next to whatever placed them instead.
 //
 // A member whose `map_visibility` is "hidden" is not on the map at all; a check-in "Prefer not to
 // say" sets exactly that.
 //
 // The Slack zone is also a cross-check (place-timezone.ts): when a city or timezone places a
 // member and their fresh `slack_tz` keeps a clock more than two hours away from that city's, the
-// map member carries `tz_mismatch` and the admin map flags it. It never moves the pin -- a Slack
-// zone is a laptop setting, and in particular it never overrides a fresh sign-in city.
+// map member carries `tz_mismatch` and the admin map flags it. It never moves a stated pin -- a
+// Slack zone is a laptop setting. The one thing it can veto is an IP city (rule 1 above), and only
+// when the device zone, which is the better witness, is absent.
 //
 // Text is read the way a person would read it: free text written by humans ("ETH", "Zürich,
 // Tübingen", "Mainly Montreal"), a timezone, or a city with its region and country from the IP
@@ -34,7 +47,13 @@
 
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import { isDoNotContact } from "./do-not-contact.js";
-import { timezoneMismatch, type AdminBotTimezoneMismatch } from "./place-timezone.js";
+import {
+  ADMINBOT_TZ_MISMATCH_HOURS,
+  placeTimezone,
+  timezoneMismatch,
+  zoneOffsetMinutes,
+  type AdminBotTimezoneMismatch,
+} from "./place-timezone.js";
 
 export type AdminBotMapPlace = {
   key: string;
@@ -768,7 +787,7 @@ export function resolvePlace(raw: string | undefined): AdminBotMapPlace | undefi
  * What placed a member. `checkin` is their answer to the explicit check-in; `roster` is any other
  * stated field; `slack` is Slack's location field or zone; `login` a sign-in.
  */
-export type AdminBotMapSource = "slack" | "login" | "roster" | "checkin";
+export type AdminBotMapSource = "slack" | "login" | "roster" | "checkin" | "device";
 
 /**
  * How exact a member's pin is, which the map's popup says out loud.
@@ -784,13 +803,27 @@ export type AdminBotMapMember = {
   name: string;
   source: AdminBotMapSource;
   precision: AdminBotMapPrecision;
-  // Both optional: not every member has a synced Slack avatar. `last_login_at` is only sent when a
-  // sign-in is what placed the member, so the UI can say "from sign-in today" and show the most
-  // recently active faces first; it is never a history, only the one moment behind the pin.
+  // Both optional: not every member has a synced Slack avatar. `last_login_at` is only sent when an
+  // IP reading is what placed the member, and it is the time of that reading (the latest live
+  // observation on a request, `last_ip_observed_at`), so the UI can say "IP today" and show the
+  // most recently active faces first; it is never a history, only the one moment behind the pin.
   avatar_url?: string;
   last_login_at?: string;
+  /** Same instant as `last_login_at`, under the name that says what it is. IP-placed members only. */
+  ip_observed_at?: string;
   /**
-   * When the source that placed them said so, for the admin map's "sign-in 2d ago" / "stated 3d
+   * Set when a fresh IP reading existed but was not used: its city disagrees with the device or
+   * Slack zone by more than two hours, most likely a VPN. The pin comes from the next source.
+   */
+  ip_ignored?: "suspected_vpn";
+  /**
+   * The admin map's words for what placed them and how old it is, by UTC day: "IP today", "IP 2d
+   * ago", "stated yesterday", "profile", "device time zone", with " · IP ignored (VPN?)" appended
+   * when the IP was set aside. A convenience; the structured fields above say the same.
+   */
+  source_label?: string;
+  /**
+   * When the source that placed them said so, for the admin map's "IP 2d ago" / "stated 3d
    * ago". Absent for an undated source (a roster field typed at some point).
    */
   located_at?: string;
@@ -873,12 +906,23 @@ type MemberPlaceResolution =
 export const ADMINBOT_LOGIN_CITY_FRESH_DAYS = 3;
 
 /**
- * How recent a sign-in has to be for the map to place somebody at its city. Longer than the clocks'
- * three days because the map answers "where is the lab based", not "what time is it for them now":
- * somebody who signed in from home last week still lives there. Past it the map falls back to what
- * the member stated.
+ * How recent an IP reading has to be for the map to place somebody at its city.
+ *
+ * Seven days. Readings now arrive daily for anyone who uses AdminBot (the daily observation in
+ * auth.ts), so an active member's reading is never more than a day old and the window only decides
+ * how long somebody who stopped visiting keeps their last IP city. A week covers a weekend, a
+ * conference trip or a few days off without the pin flickering back to a stale profile city, and
+ * past it the member falls back gracefully to their check-in answer, then what they stated, then
+ * their device or Slack zone. It was 14 when a reading only came from signing in, which for most
+ * members happened weeks ago.
  */
-export const ADMINBOT_MAP_LOGIN_FRESH_DAYS = 14;
+export const ADMINBOT_MAP_LOGIN_FRESH_DAYS = 7;
+
+/**
+ * How long the browser zone a member's requests reported stays usable. Matches the Slack zone's
+ * window: a zone is a setting, and one unseen for a month says nothing about this month.
+ */
+export const ADMINBOT_DEVICE_TZ_FRESH_DAYS = 30;
 
 export type AdminBotMapVisibility = "auto" | "stated" | "hidden";
 
@@ -929,7 +973,10 @@ export function isWithinDays(at: string | undefined, days: number, now: Date): b
 }
 
 /** The member's Slack zone, when the directory sync saw it recently enough to use. */
-export function freshSlackTz(member: AdminBotLabMember, now: Date): string | undefined {
+export function freshSlackTz(
+  member: Pick<AdminBotLabMember, "slack_tz" | "slack_tz_observed_at">,
+  now: Date,
+): string | undefined {
   const zone = member.slack_tz?.trim();
   return zone && isWithinDays(member.slack_tz_observed_at, SLACK_TZ_FRESH_DAYS, now)
     ? zone
@@ -949,6 +996,274 @@ export function recentCheckinCity(member: AdminBotLabMember, now: Date): string 
   return !current || normalize(current) === normalize(city) ? city : undefined;
 }
 
+/**
+ * A browser-reported zone worth comparing against, or undefined.
+ *
+ * Must be an IANA zone Intl knows, with a region ("Europe/Zurich"). UTC and the `Etc/` zones are
+ * refused: privacy-hardened browsers report UTC whatever the clock says, and treating that as a
+ * statement would flag every Toronto member as a VPN user.
+ */
+export function usableDeviceZone(raw: string | undefined): string | undefined {
+  const zone = raw?.trim();
+  if (!zone || zone.length > 64 || !zone.includes("/") || /^(etc|utc|gmt)\b/iu.test(zone)) {
+    return undefined;
+  }
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone: zone }).resolvedOptions().timeZone;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The member's browser zone, when their requests reported it recently enough to use. */
+export function freshDeviceTz(
+  member: Pick<AdminBotLabMember, "last_device_tz" | "last_device_tz_at">,
+  now: Date,
+): string | undefined {
+  const zone = usableDeviceZone(member.last_device_tz);
+  return zone && isWithinDays(member.last_device_tz_at, ADMINBOT_DEVICE_TZ_FRESH_DAYS, now)
+    ? zone
+    : undefined;
+}
+
+/**
+ * The zone an IP city is checked against: the device's if it reported one, else Slack's. The
+ * device wins because it is the machine actually making the requests; Slack's zone is whatever
+ * that account's last device said, possibly days ago.
+ */
+export function referenceZone(
+  member: Pick<
+    AdminBotLabMember,
+    "last_device_tz" | "last_device_tz_at" | "slack_tz" | "slack_tz_observed_at"
+  >,
+  now: Date,
+): string | undefined {
+  return freshDeviceTz(member, now) ?? freshSlackTz(member, now);
+}
+
+/**
+ * When the member's latest live IP reading was taken. Never the sign-in time: a session outlives
+ * the login that opened it by weeks, and the sign-in address says where somebody was then, not now.
+ * A member with no live reading yet has no IP place until their next request takes one.
+ */
+export function ipReadingAt(
+  member: Pick<AdminBotLabMember, "last_ip_observed_at">,
+): string | undefined {
+  return member.last_ip_observed_at?.trim() || undefined;
+}
+
+export type AdminBotIpCityState =
+  | { trusted: { city: string; at: string; place?: AdminBotMapPlace }; ignored?: undefined }
+  | { trusted?: undefined; ignored: "suspected_vpn" }
+  | { trusted?: undefined; ignored?: undefined };
+
+/**
+ * Whether the member's fresh IP city may say where they are. Ignores `map_visibility`; callers
+ * apply it.
+ *
+ * Ignored when the reading was flagged as a likely VPN when it was taken, or -- for a reading taken
+ * before that check existed, or when the zones arrived later -- when its city keeps a clock more
+ * than ADMINBOT_TZ_MISMATCH_HOURS from the reference zone now.
+ */
+export function ipCityState(member: AdminBotLabMember, now: Date): AdminBotIpCityState {
+  const at = ipReadingAt(member);
+  if (!at || !isWithinDays(at, ADMINBOT_MAP_LOGIN_FRESH_DAYS, now)) {
+    return {};
+  }
+  if (ipReadingSetAside(member, now)) {
+    return { ignored: "suspected_vpn" };
+  }
+  const city = member.last_login_city?.trim();
+  if (!city) {
+    return {};
+  }
+  const place = resolveLoginCity(city, member.last_login_region, member.last_login_country);
+  return { trusted: { city, at, ...(place ? { place } : {}) } };
+}
+
+/** What `ipReadingSetAside` reads: the reading, its flag, and the zones it is checked against. */
+export type AdminBotIpReadingCheckFields =
+  | "last_login_city"
+  | "last_login_region"
+  | "last_login_country"
+  | "last_login_timezone"
+  | "last_ip_suspected_vpn"
+  | "last_device_tz"
+  | "last_device_tz_at"
+  | "slack_tz"
+  | "slack_tz_observed_at";
+
+/**
+ * Whether the member's latest IP reading must not say where they are: flagged as a likely VPN when
+ * it was taken, or its city keeps a clock more than ADMINBOT_TZ_MISMATCH_HOURS from the device (else
+ * Slack) zone now. The one rule for every reader of the IP city -- the map and the meetup intros --
+ * so a VPN exit can never place somebody in one and introduce them in the other.
+ */
+export function ipReadingSetAside(
+  member: Pick<AdminBotLabMember, AdminBotIpReadingCheckFields>,
+  now: Date,
+): boolean {
+  if (member.last_ip_suspected_vpn) {
+    return true;
+  }
+  const city = member.last_login_city?.trim();
+  if (!city) {
+    return false;
+  }
+  const reference = referenceZone(member, now);
+  const place = resolveLoginCity(city, member.last_login_region, member.last_login_country);
+  if (place) {
+    return Boolean(timezoneMismatch(place, reference, now));
+  }
+  // A city the gazetteer does not know still came with the zone the IP database gave it, and that
+  // zone is checked instead (else the country's, as the verdict at sign-in does): otherwise an
+  // unlisted city is the one reading no clock can set aside.
+  const countryPlace = resolveCountry(member.last_login_country);
+  const ipZone =
+    usableDeviceZone(member.last_login_timezone) ??
+    (countryPlace ? placeTimezone(countryPlace) : undefined);
+  const ipOffset = ipZone ? zoneOffsetMinutes(ipZone, now) : undefined;
+  const referenceOffset = reference ? zoneOffsetMinutes(reference, now) : undefined;
+  return (
+    ipOffset !== undefined &&
+    referenceOffset !== undefined &&
+    Math.abs(ipOffset - referenceOffset) / 60 > ADMINBOT_TZ_MISMATCH_HOURS
+  );
+}
+
+/**
+ * The live IP place a meetup intro may use: `liveIpPlace`, and only when the member has a clock to
+ * check it against. With no fresh device or Slack zone there is no way to tell a VPN exit from a
+ * trip, so the reading can still place a pin on the map but never introduces anybody.
+ */
+export function introIpPlace(
+  member: Pick<AdminBotLabMember, AdminBotLiveIpFields>,
+  now: Date,
+  days = ADMINBOT_MAP_LOGIN_FRESH_DAYS,
+): AdminBotLiveIpPlace | undefined {
+  return referenceZone(member, now) ? liveIpPlace(member, now, days) : undefined;
+}
+
+/** What `liveIpPlace` reads. */
+export type AdminBotLiveIpFields = "last_ip_observed_at" | AdminBotIpReadingCheckFields;
+
+/** Where the member's latest trusted live IP reading puts them. Never coordinates. */
+export type AdminBotLiveIpPlace = {
+  city: string;
+  region?: string;
+  country?: string;
+  /** When the reading was taken (`last_ip_observed_at`). */
+  observed_at: string;
+};
+
+/**
+ * The one answer to "where does the live IP put this member", for the map and the meetup intros
+ * alike: the latest reading taken on a request (`last_ip_observed_at`, never `last_login_at` or the
+ * sign-in row), within `days`, and not set aside as a likely VPN exit (`ipReadingSetAside`).
+ * Undefined when there is no such reading or it located only a country -- see `liveIpCountry`.
+ */
+export function liveIpPlace(
+  member: Pick<AdminBotLabMember, AdminBotLiveIpFields>,
+  now: Date,
+  days = ADMINBOT_MAP_LOGIN_FRESH_DAYS,
+): AdminBotLiveIpPlace | undefined {
+  const at = liveIpObservedAt(member, now, days);
+  const city = member.last_login_city?.trim();
+  if (!at || !city) {
+    return undefined;
+  }
+  const region = member.last_login_region?.trim();
+  const country = member.last_login_country?.trim();
+  return {
+    city,
+    ...(region ? { region } : {}),
+    ...(country ? { country } : {}),
+    observed_at: at,
+  };
+}
+
+/** The country of the latest trusted live IP reading, by the same rule as `liveIpPlace`. */
+export function liveIpCountry(
+  member: Pick<AdminBotLabMember, AdminBotLiveIpFields>,
+  now: Date,
+  days = ADMINBOT_MAP_LOGIN_FRESH_DAYS,
+): string | undefined {
+  return liveIpObservedAt(member, now, days)
+    ? member.last_login_country?.trim() || undefined
+    : undefined;
+}
+
+/** When the latest live IP reading was taken, if it is within `days` and trusted; else undefined. */
+export function liveIpObservedAt(
+  member: Pick<AdminBotLabMember, AdminBotLiveIpFields>,
+  now: Date,
+  days = ADMINBOT_MAP_LOGIN_FRESH_DAYS,
+): string | undefined {
+  const at = ipReadingAt(member);
+  if (!at || !isWithinDays(at, days, now) || ipReadingSetAside(member, now)) {
+    return undefined;
+  }
+  return at;
+}
+
+/**
+ * The verdict for one IP reading as it is taken: does its city keep roughly the same clock as the
+ * zone the request's device reported (else the member's Slack zone)?
+ *
+ * The IP's zone is the one the provider returned with the city, else the zone the gazetteer city
+ * keeps, else the country's. Offsets are compared at `at` through Intl, so daylight saving is
+ * whatever it was at that instant. The reference is the zone this request's browser sent, else the
+ * offset it sent with no zone, else the member's stored device zone while fresh (so a request that
+ * sent no headers is still checked), else Slack's. With nothing to compare against there is no
+ * evidence of a VPN and the reading is not suspected, but `against` is then absent, and callers
+ * must not let an unchecked reading start intros.
+ */
+export function ipReadingVerdict(params: {
+  location: { city?: string; region?: string; country?: string; timezone?: string };
+  deviceTz?: string;
+  /** Minutes east of UTC the device reported, used only when no usable zone name came with it. */
+  deviceOffsetMinutes?: number;
+  /** The member's stored device zone (`freshDeviceTz`), for a request that sent none. */
+  storedDeviceTz?: string;
+  slackTz?: string;
+  at: Date;
+}): { suspected_vpn: boolean; hours?: number; against?: "device" | "slack" } {
+  const { location, at } = params;
+  const cityPlace = resolveLoginCity(location.city, location.region, location.country);
+  const countryPlace = resolveCountry(location.country);
+  const ipZone =
+    usableDeviceZone(location.timezone) ??
+    (cityPlace ? placeTimezone(cityPlace) : undefined) ??
+    (countryPlace ? placeTimezone(countryPlace) : undefined);
+  const ipOffset = ipZone ? zoneOffsetMinutes(ipZone, at) : undefined;
+  if (ipOffset === undefined) {
+    return { suspected_vpn: false };
+  }
+  const deviceZone = usableDeviceZone(params.deviceTz);
+  const storedZone = usableDeviceZone(params.storedDeviceTz);
+  const deviceOffset = deviceZone
+    ? zoneOffsetMinutes(deviceZone, at)
+    : Number.isFinite(params.deviceOffsetMinutes) &&
+        Math.abs(params.deviceOffsetMinutes ?? 0) <= 14 * 60
+      ? params.deviceOffsetMinutes
+      : storedZone
+        ? zoneOffsetMinutes(storedZone, at)
+        : undefined;
+  const slackZone = params.slackTz?.trim();
+  const slackOffset = slackZone ? zoneOffsetMinutes(slackZone, at) : undefined;
+  const reference =
+    deviceOffset !== undefined
+      ? { offset: deviceOffset, against: "device" as const }
+      : slackOffset !== undefined
+        ? { offset: slackOffset, against: "slack" as const }
+        : undefined;
+  if (!reference) {
+    return { suspected_vpn: false };
+  }
+  const hours = Math.abs(ipOffset - reference.offset) / 60;
+  return { suspected_vpn: hours > ADMINBOT_TZ_MISMATCH_HOURS, hours, against: reference.against };
+}
+
 export type BuildMemberMapOptions = {
   /**
    * Whether sign-in cities may place members at all. On for signed-in callers (members and
@@ -960,26 +1275,15 @@ export type BuildMemberMapOptions = {
   now?: Date;
 };
 
-function freshLoginCity(member: AdminBotLabMember, now: Date): string | undefined {
-  const city = member.last_login_city?.trim();
-  // A little clock skew into the future is tolerated; a sign-in from next month is a bad record.
-  return city && isWithinDays(member.last_login_at?.trim(), ADMINBOT_MAP_LOGIN_FRESH_DAYS, now)
-    ? city
-    : undefined;
-}
-
 /**
- * The gazetteer city of a fresh sign-in, or undefined. Ignores `map_visibility`: callers that
- * place the member on a map apply it themselves.
+ * The gazetteer city of a fresh, trusted IP reading, or undefined. Ignores `map_visibility`:
+ * callers that place the member on a map apply it themselves.
  */
 export function freshLoginPlace(
   member: AdminBotLabMember,
   now: Date,
 ): AdminBotMapPlace | undefined {
-  const city = freshLoginCity(member, now);
-  return city
-    ? resolveLoginCity(city, member.last_login_region, member.last_login_country)
-    : undefined;
+  return ipCityState(member, now).trusted?.place;
 }
 
 /**
@@ -1068,20 +1372,27 @@ function resolveMemberPlace(
   const rosterZone = member.timezone?.trim() || undefined;
   const checkinCity = recentCheckinCity(member, options.now);
   const slackZone = freshSlackTz(member, options.now);
+  const deviceZone = freshDeviceTz(member, options.now);
   // "My stated city only" skips every sign-in source. The country of a sign-in is coarse enough
   // for any caller (it was on the public map before cities were); the city is not, so it needs
   // `options.loginCity` as well.
   const auto = memberMapVisibility(member) === "auto";
-  const loginCity = auto && options.loginCity ? freshLoginCity(member, options.now) : undefined;
-  const loginCountry = auto ? member.last_login_country?.trim() || undefined : undefined;
+  const ip = auto ? ipCityState(member, options.now) : {};
+  // The same helper the meetup intros read, so the map and the intros can never disagree.
+  const live = auto && options.loginCity ? liveIpPlace(member, options.now) : undefined;
+  const loginCity = live?.city;
+  // A reading set aside as a likely VPN takes its country with it: the exit node's country is no
+  // truer than its city.
+  const loginCountry =
+    auto && !ip.ignored ? member.last_login_country?.trim() || undefined : undefined;
 
   const candidates: Candidate[] = [
-    // 1. The city of a fresh sign-in. Only a city: a sign-in that resolves no further than its
-    //    country waits until every stated city has had its turn.
+    // 1. The city of a fresh, trusted IP reading. Only a city: a reading that resolves no further
+    //    than its country waits until every stated city has had its turn.
     {
       raw: loginCity,
       source: "login",
-      located_at: member.last_login_at,
+      located_at: live?.observed_at,
       resolve: () => {
         const place = resolveLoginCity(loginCity, member.last_login_region, loginCountry);
         return place ? { place, precision: "city" } : undefined;
@@ -1103,7 +1414,15 @@ function resolveMemberPlace(
       located_at: member.slack_location_updated_at,
       resolve: cityFrom(slackText),
     },
-    // 4. Cities named by a timezone: the synced Slack zone first, while fresh.
+    // 4. Cities named by a timezone: the browser's zone first, then the synced Slack zone, while
+    //    fresh. Device and Slack zones are both the member's own devices; the browser's is the one
+    //    in front of them today.
+    {
+      raw: deviceZone,
+      source: "device",
+      located_at: member.last_device_tz_at,
+      resolve: zoneFrom(deviceZone),
+    },
     {
       raw: slackZone,
       source: "slack",
@@ -1124,7 +1443,7 @@ function resolveMemberPlace(
     {
       raw: loginCountry,
       source: "login",
-      located_at: member.last_login_at,
+      located_at: ipReadingAt(member),
       resolve: () => {
         const place = resolveCountry(loginCountry);
         return place ? { place, precision: "country" } : undefined;
@@ -1153,6 +1472,7 @@ function resolveMemberPlace(
       candidate.raw &&
       candidate.raw !== rosterZone &&
       candidate.raw !== slackZone &&
+      candidate.raw !== deviceZone &&
       candidate.raw !== loginCity,
   );
   return written?.raw ? { raw: written.raw, source: written.source } : {};
@@ -1178,6 +1498,12 @@ export function buildMemberMap(
     }
     const slackRaw = member.slack_user_id ? slackLocations.get(member.slack_user_id) : undefined;
     const resolution = resolveMemberPlace(member, slackRaw, resolveOptions);
+    // Only said where the caller may see IP cities at all, and only for "auto" members: a member
+    // who chose "stated" never had their IP considered, so there is nothing to have ignored.
+    const ipIgnored =
+      resolveOptions.loginCity && memberMapVisibility(member) === "auto"
+        ? ipCityState(member, resolveOptions.now).ignored
+        : undefined;
     if (!resolution.place) {
       if (!resolution.raw || !resolution.source) {
         unknown += 1;
@@ -1199,11 +1525,13 @@ export function buildMemberMap(
       source: resolution.source,
       precision: resolution.precision,
       ...(member.avatar_url ? { avatar_url: member.avatar_url } : {}),
-      // Only the time of the sign-in that placed them, so the UI can say "from sign-in today".
-      ...(resolution.source === "login" && member.last_login_at
-        ? { last_login_at: member.last_login_at }
+      // Only the time of the IP reading that placed them, so the UI can say "IP today".
+      ...(resolution.source === "login" && resolution.located_at
+        ? { last_login_at: resolution.located_at, ip_observed_at: resolution.located_at }
         : {}),
       ...(resolution.located_at ? { located_at: resolution.located_at } : {}),
+      ...(ipIgnored ? { ip_ignored: ipIgnored } : {}),
+      source_label: sourceLabel(resolution, ipIgnored, resolveOptions.now),
       ...mismatchFor(member, resolution, resolveOptions.now),
     });
     groups.set(resolution.place.key, group);
@@ -1226,6 +1554,52 @@ export function buildMemberMap(
       unknown,
     },
   };
+}
+
+/** Whole UTC days from `at` to `now`, never negative; undefined for an unparseable stamp. */
+function utcDaysAgo(at: string | undefined, now: Date): number | undefined {
+  const ms = at ? Date.parse(at) : Number.NaN;
+  if (Number.isNaN(ms)) {
+    return undefined;
+  }
+  const day = (time: number) => Math.floor(time / DAY_MS);
+  return Math.max(0, day(now.getTime()) - day(ms));
+}
+
+function agoPhrase(prefix: string, at: string | undefined, now: Date): string {
+  const days = utcDaysAgo(at, now);
+  if (days === undefined) {
+    return prefix;
+  }
+  return days === 0
+    ? `${prefix} today`
+    : days === 1
+      ? `${prefix} yesterday`
+      : `${prefix} ${days}d ago`;
+}
+
+/** See `AdminBotMapMember.source_label`. */
+function sourceLabel(
+  resolution: { source: AdminBotMapSource; precision: AdminBotMapPrecision; located_at?: string },
+  ipIgnored: "suspected_vpn" | undefined,
+  now: Date,
+): string {
+  const zone = resolution.precision === "timezone";
+  const base =
+    resolution.source === "login"
+      ? agoPhrase("IP", resolution.located_at, now)
+      : resolution.source === "checkin"
+        ? agoPhrase("stated", resolution.located_at, now)
+        : resolution.source === "device"
+          ? "device time zone"
+          : resolution.source === "slack"
+            ? zone
+              ? "Slack time zone"
+              : "Slack"
+            : zone
+              ? "profile time zone"
+              : "profile";
+  return ipIgnored ? `${base} · IP ignored (VPN?)` : base;
 }
 
 /**

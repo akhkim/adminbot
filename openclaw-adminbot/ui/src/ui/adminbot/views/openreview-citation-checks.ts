@@ -1,5 +1,6 @@
 import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 
 type Finding = { citation: string; status: string; explanation: string };
 
@@ -118,7 +119,7 @@ export class OpenReviewCitationChecks extends LitElement {
     try {
       const response = await fetch(
         `${this.baseUrl.replace(/\/$/u, "")}/openreview/citation-checks`,
-        { headers: { Authorization: `Bearer ${this.sessionToken}` } },
+        { headers: memberAuthHeaders(this.sessionToken) },
       );
       if (generation !== this.generation) {
         return;

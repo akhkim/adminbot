@@ -65,7 +65,7 @@ const FAR: EventCard = {
 
 const OVERVIEW: EventsOverview = {
   today: "2026-10-15",
-  viewer_location: { label: "San Francisco", source: "sign_in" },
+  viewer_location: { label: "San Francisco", source: "ip" },
   preferences: { events: true, city: false },
   events: [SYNTH, FAR],
   past: [{ ...FAR, key: "oldconf:2025", label: "OldConf 2025", status: "past", can_rsvp: false }],
@@ -96,7 +96,7 @@ describe("renderEvents", () => {
     draw();
     const where = document.querySelector('[data-testid="events-where"]')?.textContent ?? "";
     expect(where).toContain("You're in San Francisco");
-    expect(where).toContain("based on your last sign-in location");
+    expect(where).toContain("based on your current IP address");
   });
 
   it("marks the nearby event, prompts in town, and answers the prompt with Going", () => {

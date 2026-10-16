@@ -14,9 +14,9 @@ import {
   pairKey,
   placeKey,
   placeLabel,
-  signInPlace,
   viewerLocation,
 } from "./meetups.js";
+import { liveIpPlace } from "./member-map.js";
 
 const NOW = new Date("2026-10-15T18:00:00Z");
 
@@ -51,22 +51,36 @@ describe("near", () => {
 
 describe("where a member is", () => {
   const member = {
-    last_login_at: "2026-10-14T09:00:00Z",
+    last_ip_observed_at: "2026-10-14T09:00:00Z",
     last_login_city: "Mountain View",
     last_login_country: "United States",
   };
 
-  it("trusts a sign-in city for three days, a meetup window for seven", () => {
-    expect(signInPlace(member, NOW)).toEqual({ city: "Mountain View", country: "United States" });
+  it("trusts a live IP city for three days, a meetup window for seven", () => {
+    expect(liveIpPlace(member, NOW, 3)).toEqual({
+      city: "Mountain View",
+      country: "United States",
+      observed_at: "2026-10-14T09:00:00Z",
+    });
     const later = new Date("2026-10-19T18:00:00Z");
-    expect(signInPlace(member, later)).toBeUndefined();
-    expect(signInPlace(member, later, 7)).toBeDefined();
+    expect(liveIpPlace(member, later, 3)).toBeUndefined();
+    expect(liveIpPlace(member, later, 7)).toBeDefined();
+  });
+
+  it("never places anybody by the sign-in time alone", () => {
+    const signedInOnly = {
+      last_login_at: "2026-10-15T09:00:00Z",
+      last_login_city: "Toronto",
+      last_login_country: "Canada",
+    };
+    expect(liveIpPlace(signedInOnly, NOW)).toBeUndefined();
+    expect(viewerLocation({ id: "a", name: "A", ...signedInOnly } as never, NOW)).toBeUndefined();
   });
 
   it("shows the viewer their own city, then their stated one, then their country", () => {
     expect(viewerLocation({ id: "a", name: "A", ...member } as never, NOW)).toMatchObject({
       label: "Mountain View",
-      source: "sign_in",
+      source: "ip",
     });
     expect(
       viewerLocation({ id: "a", name: "A", current_city: "Toronto" } as never, NOW),
@@ -79,12 +93,12 @@ describe("where a member is", () => {
         {
           id: "a",
           name: "A",
-          last_login_at: member.last_login_at,
+          last_ip_observed_at: member.last_ip_observed_at,
           last_login_country: "Canada",
         } as never,
         NOW,
       ),
-    ).toEqual({ label: "Canada", source: "sign_in" });
+    ).toEqual({ label: "Canada", source: "ip" });
   });
 });
 
@@ -127,11 +141,11 @@ describe("quiet hours", () => {
     expect(isIntroSendTime(["America/Los_Angeles"], new Date("2026-10-16T03:00:00Z"))).toBe(false);
   });
 
-  it("uses a fresh sign-in zone over the stated one", () => {
+  it("uses a fresh live IP zone over the stated one", () => {
     const traveller = {
       timezone: "America/Toronto",
       last_login_timezone: "Europe/Budapest",
-      last_login_at: "2026-10-15T08:00:00Z",
+      last_ip_observed_at: "2026-10-15T08:00:00Z",
     };
     expect(memberZone(traveller, NOW)).toBe("Europe/Budapest");
     expect(memberZone(traveller, new Date("2026-10-30T00:00:00Z"))).toBe("America/Toronto");

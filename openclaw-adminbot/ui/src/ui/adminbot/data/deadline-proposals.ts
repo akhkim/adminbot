@@ -6,6 +6,7 @@ import {
   type DeadlineProposalView,
 } from "../../../../../extensions/adminbot/src/contracts/deadline-proposals.js";
 import type { UiSettings } from "../../storage.ts";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { DeadlineVenue } from "./deadlines.ts";
 
@@ -140,7 +141,7 @@ export class AdminBotDeadlineProposalStore implements DeadlineProposalStore {
       headers: {
         Accept: "application/json",
         ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...memberAuthHeaders(token),
         ...options.headers,
       },
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),

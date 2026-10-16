@@ -34,6 +34,7 @@ import { nextStepFor } from "../next-step.ts";
 import { ownPapers, paperProgress, stepLabel } from "../projects/model.ts";
 import { renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderMemberMap } from "./member-map.ts";
+import "./map-coverage.ts";
 import "./nudge-campaign.ts";
 import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile-fields.ts";
 
@@ -776,11 +777,25 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
         <div class="dashboard__grid">
           ${renderWorkSummary(state)}
           ${renderMemberMap(state.adminBotMemberMap ?? null, { now: Date.now() })}
+          ${renderMapCoverage(state, role)}
         </div>
       </section>
       ${renderNextDeadlines(state)} ${renderNudgeCampaigns(state, role)}
     </div>
   `;
+}
+
+// Admins only: the server refuses everyone else, and a panel that could only ever say "forbidden"
+// is noise on a member's dashboard.
+function renderMapCoverage(state: AppViewState, role: AccessRole) {
+  const session = loadStoredMemberSession();
+  if (role !== "admin" || !session?.sessionToken) {
+    return nothing;
+  }
+  return html`<adminbot-map-coverage
+    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+    .sessionToken=${session.sessionToken}
+  ></adminbot-map-coverage>`;
 }
 
 // Admins only: the server refuses everyone else, and a list that could only ever say "forbidden" is

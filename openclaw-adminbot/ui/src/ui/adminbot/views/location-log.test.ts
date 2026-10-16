@@ -70,7 +70,7 @@ describe("location log", () => {
         outcome: "Asked; chose ask me later",
       },
       // 23:30 in Toronto is the 8th there, though it is the 9th in UTC.
-      { id: "loc_2", day: "2026-07-08", source: "Sign-in", what: "Toronto, Canada" },
+      { id: "loc_2", day: "2026-07-08", source: "IP", what: "Toronto, Canada" },
       { id: "loc_1", day: "2026-07-01", source: "Slack time zone", what: "America/Toronto" },
     ]);
   });

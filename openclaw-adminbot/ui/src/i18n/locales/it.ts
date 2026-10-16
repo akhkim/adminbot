@@ -1865,7 +1865,7 @@ export const it: TranslationMap = {
     hint: "Conferenze dagli articoli accettati del lab e dall'elenco delle scadenze. Tocca Ci vado così i colleghi del lab presenti possono trovarti, oppure Saluta per avviare una chat Slack con loro.",
     location: {
       youAre: "Sei a {place}",
-      signIn: "in base alla posizione del tuo ultimo accesso, visibile solo a te",
+      ip: "in base al tuo indirizzo IP attuale, visibile solo a te",
       profile: "dal tuo profilo, visibile solo a te",
       slack: "dal tuo profilo Slack, visibile solo a te",
       unknown: "AdminBot non sa dove ti trovi, quindi nulla è segnato come vicino a te.",
@@ -2392,7 +2392,7 @@ export const it: TranslationMap = {
     },
     mapVisibility: {
       label: "Show me on the lab map as",
-      auto: "Auto (last sign-in city)",
+      auto: "Auto (current IP city)",
       stated: "My stated city only",
       hidden: "Hidden",
       hint: "Only a city is ever shown, never an exact location or a history.",

@@ -21,7 +21,7 @@ import {
   approverIdentityFor,
 } from "./guards.js";
 import { memberOnboardingDeps } from "./onboarding.js";
-import { remoteIp } from "./origin.js";
+import { deviceClock, remoteIp } from "./origin.js";
 import {
   sendAuthResult,
   requestIsSecure,
@@ -77,6 +77,7 @@ export async function handleAuthRoute(
       email: asString(body.email),
       password: asString(body.password),
       ...(ip ? { remoteIp: ip } : {}),
+      ...(deviceClock(req) ? { device: deviceClock(req) } : {}),
     });
     if (!result.ok && result.code === "pending_approval") {
       // Distinct body so the client can route the applicant to a "waiting for approval" state.

@@ -8,7 +8,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AdminBotAuthResponse } from "../../workflows/identity/auth.js";
 import { sendJson } from "../server.http.js";
 import type { AdminBotRouteContext, AdminBotPrincipal } from "./context.js";
-import { remoteIp } from "./origin.js";
+import { deviceClock, remoteIp } from "./origin.js";
 
 export const SESSION_COOKIE = "adminbot_session";
 
@@ -95,10 +95,11 @@ export async function resolvePrincipal(
     }
     const member = await ctx.auth.resolveSession(bearer);
     if (member) {
-      // Every authenticated request lands here, which is what makes it the place to notice an
-      // account being used from somewhere new. noteAccountUse is a no-op unless the address
-      // actually changed, so this costs a map lookup on the hot path.
-      ctx.auth.noteAccountUse(member, remoteIp(req, ctx.trustProxyHeaders));
+      // Every authenticated member request lands here, which is what makes it the place for the
+      // daily IP reading. noteAccountUse is a no-op unless the member has not been read today (or
+      // the address or browser zone changed), so this costs a map lookup on the hot path. The
+      // service token returned above and never gets here.
+      ctx.auth.noteAccountUse(member, remoteIp(req, ctx.trustProxyHeaders), deviceClock(req));
       return member;
     }
   }
@@ -106,7 +107,7 @@ export async function resolvePrincipal(
   if (cookie) {
     const member = await ctx.auth.resolveSession(cookie);
     if (member) {
-      ctx.auth.noteAccountUse(member, remoteIp(req, ctx.trustProxyHeaders));
+      ctx.auth.noteAccountUse(member, remoteIp(req, ctx.trustProxyHeaders), deviceClock(req));
       return member;
     }
   }

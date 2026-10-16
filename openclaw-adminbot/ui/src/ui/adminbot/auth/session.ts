@@ -7,6 +7,7 @@
 import { getSafeLocalStorage } from "../../../local-storage.ts";
 import type { UiSettings } from "../../storage.ts";
 import { normalizeOptionalString } from "../../string-coerce.ts";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 import { parseApiJson, readApiJson } from "../data/api-json.ts";
 import type { AvailabilityRow, TimeOffRow } from "../data/availability.js";
 import { configureDraftSync } from "../offline/draft-sync.ts";
@@ -476,8 +477,9 @@ async function authedJsonOnce(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(previous ? { "If-None-Match": previous.etag } : {}),
+        // Zone name and offset only; the server's daily IP check compares its city against them.
+        ...memberAuthHeaders(token),
       },
       // GET and DELETE carry no body; every other member-session call sends JSON. A DELETE with
       // a JSON body is legal but pointless here, and some proxies drop it.
@@ -987,7 +989,10 @@ export async function fetchMemberSession(
       method: "GET",
       signal: AbortSignal.timeout(5000),
       credentials: "omit",
-      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        Accept: "application/json",
+        ...memberAuthHeaders(token),
+      },
     });
   } catch {
     const scope = await resolveOfflineScope(baseUrl, token);
@@ -1029,7 +1034,7 @@ export async function stopImpersonation(token: string, baseUrl: string): Promise
     await fetch(`${baseUrl}/auth/impersonate/stop`, {
       method: "POST",
       credentials: "omit",
-      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      headers: { Accept: "application/json", ...memberAuthHeaders(token) },
     });
   } catch {
     // Best-effort; the session expires on its own within the half hour regardless.
@@ -1041,7 +1046,7 @@ export async function logoutMember(token: string, baseUrl: string): Promise<void
     await fetch(`${baseUrl}/auth/logout`, {
       method: "POST",
       credentials: "omit",
-      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      headers: { Accept: "application/json", ...memberAuthHeaders(token) },
     });
   } catch {
     // Best-effort: local session is cleared regardless of server reachability.

@@ -10,6 +10,7 @@
 // Nothing is sent without that second, explicit press.
 import { html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 
 export type NudgeCampaignSample = { member_id: string; name: string; message: string };
 
@@ -138,7 +139,7 @@ export class AdminBotNudgeCampaign extends LitElement {
       const response = await fetch(`${trimBase(this.baseUrl)}${this.route}`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${this.sessionToken}`,
+          ...memberAuthHeaders(this.sessionToken),
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
@@ -313,7 +314,7 @@ export class AdminBotNudgeCampaigns extends LitElement {
     const generation = ++this.generation;
     try {
       const response = await fetch(`${trimBase(this.baseUrl)}/nudges/campaigns`, {
-        headers: { Authorization: `Bearer ${this.sessionToken}` },
+        headers: memberAuthHeaders(this.sessionToken),
       });
       const parsed = response.ok ? parseNudgeCampaignListing(await response.json()) : null;
       if (generation !== this.generation) {
