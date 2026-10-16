@@ -2,9 +2,11 @@
 // city they are in, and the silent refresh that keeps it current afterwards.
 //
 // The rules, each with a test in precise-location.test.ts:
-//   - Nothing here ever prompts on its own. The browser's permission prompt only follows the
-//     member pressing the button; the silent refresh runs only where the permission is already
-//     "granted", and on "prompt" or "denied" it does nothing at all.
+//   - The browser's own permission prompt is raised automatically on sign-in (each app load with a
+//     session), on each arrival at the dashboard and each return to the tab, whenever location is
+//     not currently granted.
+//     "granted" is read silently instead; "denied" (blocked for the site) is never asked -- the
+//     browser would refuse anyway, and Chrome also mutes a prompt dismissed repeatedly.
 //   - The silent refresh is silent: no toast, no banner, no error. A failure is swallowed here and
 //     logged server-side only, by the service (and there only without the position).
 //   - At most one silent reading per device per hour, on a visit or when the tab comes back into
@@ -112,23 +114,40 @@ export async function sharePreciseLocation(
 }
 
 /**
- * The silent refresh. Reads the device only where the permission is already granted, at most once
- * an hour per device, and never for a hidden or stated member. Resolves with the city when one was
- * named, otherwise undefined; never throws and never shows anything.
+ * The automatic refresh. Where the permission is granted it reads silently, at most once an hour per
+ * device. Where it is not ("prompt", or no Permissions API to tell) and `ask` is set -- sign-in and
+ * arriving at the dashboard -- it raises the browser's prompt; without `ask` (the tab coming back
+ * into view) it leaves it alone. Never for a hidden or stated member, never on "denied". Resolves
+ * with the city when one was named, otherwise undefined; never throws and shows nothing of its own.
  */
 export async function refreshPreciseLocationSilently(
   deps: PreciseLocationDeps,
   visibility: MemberMapVisibility | null | undefined,
+  options: { ask?: boolean } = {},
 ): Promise<PreciseLocationPlace | undefined> {
   try {
     if (!preciseLocationAllowed(visibility)) {
       return undefined;
     }
-    // No Permissions API means no way to know the answer without asking, so do not ask.
-    if (!deps.isSecureContext || !deps.geolocation || !deps.permissions) {
+    if (!deps.isSecureContext || !deps.geolocation) {
       return undefined;
     }
     const now = deps.now?.() ?? Date.now();
+    // No Permissions API (older Safari) means the answer is unknown until asked: treat it as "prompt".
+    const permission = deps.permissions
+      ? (await deps.permissions.query({ name: "geolocation" })).state
+      : "prompt";
+    if (permission === "denied") {
+      return undefined;
+    }
+    if (permission !== "granted") {
+      if (!options.ask) {
+        return undefined;
+      }
+      // Asking is not throttled: the member is shown the prompt each time they sign in or open the
+      // dashboard until they answer it. Only an actual reading stamps the hourly throttle below.
+      return placeOf(await deps.report(await readPosition(deps.geolocation)));
+    }
     let last = Number.NaN;
     try {
       last = Number(deps.storage?.getItem(SILENT_REFRESH_KEY) ?? Number.NaN);
@@ -136,10 +155,6 @@ export async function refreshPreciseLocationSilently(
       // Storage blocked: fall through and read anyway; the service still writes at most daily.
     }
     if (Number.isFinite(last) && now - last >= 0 && now - last < SILENT_REFRESH_EVERY_MS) {
-      return undefined;
-    }
-    const permission = await deps.permissions.query({ name: "geolocation" });
-    if (permission.state !== "granted") {
       return undefined;
     }
     try {
@@ -221,11 +236,14 @@ export async function useAdminBotPreciseLocation(
   requestUpdate();
 }
 
-let refreshing: { token: string; detach: () => void } | null = null;
+let refreshing: { token: string; ask: () => void; detach: () => void } | null = null;
+/** One reading at a time, so a sign-in and a dashboard arrival never stack two prompts. */
+let reading = false;
 
 /**
- * Starts the silent refresh for this session: once now, and again whenever the tab comes back into
- * view (each throttled to one reading an hour). Idempotent per session; a new session replaces it.
+ * Starts the refresh for this session: once now (sign-in), and again whenever the tab comes back into
+ * view. Each pass asks the browser for location if it is not granted, and reads silently (at most
+ * hourly) if it is. Idempotent per session; a new session replaces it.
  */
 export function startAdminBotPreciseLocationRefresh(
   host: PreciseLocationHost,
@@ -237,22 +255,24 @@ export function startAdminBotPreciseLocationRefresh(
   }
   refreshing?.detach();
   const token = stored.sessionToken;
-  const run = () => {
-    if (loadStoredMemberSession()?.sessionToken !== token) {
+  const run = (ask: boolean) => {
+    if (loadStoredMemberSession()?.sessionToken !== token || reading) {
       return;
     }
-    void refreshPreciseLocationSilently(browserDeps(host, token), ownVisibility(host)).then(
-      (place) => {
-        if (place && loadStoredMemberSession()?.sessionToken === token) {
-          host.adminBotPreciseLocation = { ...host.adminBotPreciseLocation, place };
-          requestUpdate();
-        }
-      },
-    );
+    reading = true;
+    void refreshPreciseLocationSilently(browserDeps(host, token), ownVisibility(host), {
+      ask,
+    }).then((place) => {
+      if (place && loadStoredMemberSession()?.sessionToken === token) {
+        host.adminBotPreciseLocation = { ...host.adminBotPreciseLocation, place };
+        requestUpdate();
+      }
+      reading = false;
+    });
   };
   const onVisible = () => {
     if (typeof document !== "undefined" && document.visibilityState === "visible") {
-      run();
+      run(true);
     }
   };
   if (typeof document !== "undefined") {
@@ -260,13 +280,31 @@ export function startAdminBotPreciseLocationRefresh(
   }
   refreshing = {
     token,
+    ask: () => run(true),
     detach: () => {
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisible);
       }
     },
   };
-  run();
+  // Sign-in, or opening AdminBot with a session: ask if location is not granted.
+  run(true);
+}
+
+let lastTab: string | undefined;
+
+/**
+ * Called on every render with the current tab: arriving at the dashboard (from another tab, or on
+ * load) asks again if location is not granted. Staying on the dashboard does not re-ask.
+ */
+export function noteAdminBotTabForPreciseLocation(tab: string): void {
+  const arrived = tab === "dashboard" && lastTab !== "dashboard";
+  const firstRender = lastTab === undefined;
+  lastTab = tab;
+  // The first render is the sign-in itself, which startAdminBotPreciseLocationRefresh already asks.
+  if (arrived && !firstRender) {
+    refreshing?.ask();
+  }
 }
 
 /** Sign-out: stop listening. Safe when nothing is running. */

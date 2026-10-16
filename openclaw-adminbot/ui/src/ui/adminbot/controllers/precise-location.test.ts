@@ -52,17 +52,28 @@ function deps(
 }
 
 describe("silent refresh", () => {
-  it("never prompts: no reading unless the permission is already granted", async () => {
-    for (const permission of ["prompt", "denied"]) {
-      const d = deps({ permission });
+  it("asks every time it is told to while location is not allowed, and never once refused", async () => {
+    for (const permissions of [
+      { query: async () => ({ state: "prompt" }) },
+      undefined, // No Permissions API: unknown until asked, so treated as "prompt".
+    ]) {
+      const d = deps({ permissions });
+      expect(await refreshPreciseLocationSilently(d, "auto", { ask: true })).toEqual({
+        city: "Reggio Emilia",
+        region: "Emilia-Romagna",
+        country: "IT",
+      });
+      // Dismissed: the next sign-in or dashboard visit, even a minute later, asks again.
+      await refreshPreciseLocationSilently(d, "auto", { ask: true });
+      await refreshPreciseLocationSilently(d, "auto", { ask: true });
+      expect(d.getCurrentPosition).toHaveBeenCalledTimes(3);
+      // Without `ask`, an unanswered permission is left alone.
       expect(await refreshPreciseLocationSilently(d, "auto")).toBeUndefined();
-      expect(d.getCurrentPosition).not.toHaveBeenCalled();
-      expect(d.report).not.toHaveBeenCalled();
+      expect(d.getCurrentPosition).toHaveBeenCalledTimes(3);
     }
-    // No Permissions API: the state is unknowable without asking, so nothing is read.
-    const bare = deps({ permissions: undefined });
-    expect(await refreshPreciseLocationSilently(bare, "auto")).toBeUndefined();
-    expect(bare.getCurrentPosition).not.toHaveBeenCalled();
+    const denied = deps({ permission: "denied" });
+    expect(await refreshPreciseLocationSilently(denied, "auto", { ask: true })).toBeUndefined();
+    expect(denied.getCurrentPosition).not.toHaveBeenCalled();
   });
 
   it("reads city-level when granted and sends only the two numbers", async () => {
@@ -96,8 +107,8 @@ describe("silent refresh", () => {
 
   it("never asks or reads a member who is hidden or shown by their stated city", async () => {
     for (const visibility of ["hidden", "stated", null] as const) {
-      const d = deps();
-      expect(await refreshPreciseLocationSilently(d, visibility)).toBeUndefined();
+      const d = deps({ permission: "prompt" });
+      expect(await refreshPreciseLocationSilently(d, visibility, { ask: true })).toBeUndefined();
       expect(d.getCurrentPosition).not.toHaveBeenCalled();
     }
   });
@@ -150,7 +161,7 @@ describe("silent refresh", () => {
 });
 
 describe("the button", () => {
-  it("is the only path that reads without a granted permission", async () => {
+  it("reads on a press, whatever the permission says", async () => {
     const d = deps({ permission: "prompt" });
     expect(await sharePreciseLocation(d)).toEqual({
       place: { city: "Reggio Emilia", region: "Emilia-Romagna", country: "IT" },
