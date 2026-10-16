@@ -2141,6 +2141,75 @@ export const en: TranslationMap = {
       notePlaceholder: "Signed all three pages.",
       signedFailed: "Could not send the signed document.",
     },
+    eligibility: {
+      title: "Letter eligibility",
+      advisory: "Advisory only — this never blocks a request.",
+      asOf: "As of {date}",
+      loading: "Checking letter eligibility…",
+      unavailable: "Eligibility unavailable right now.",
+      unavailableOffline: "Eligibility unavailable offline.",
+      status: {
+        eligible: "Eligible",
+        frozen: "Frozen",
+        not_yet: "Not yet",
+        insufficient_data: "Not enough data",
+      },
+      badgeFrozenUntil: "Frozen until {date}",
+      frozenUntil: "Frozen until {date}.",
+      frozenExplain:
+        "A paper was desk-rejected for hallucinated citations. Letter requests are frozen for one year from the latest incident.",
+      criterion: {
+        met: "Met",
+        not_met: "Not met",
+        insufficient_data: "Not enough data",
+      },
+      hoursTitle: "Committed hours",
+      hoursSummary:
+        "{count} of {required} months averaging at least {hours} committed hours a week.",
+      hoursNoData: "No committed hours are on record.",
+      hoursMonths: "Qualifying months: {months}",
+      attendanceTitle: "Meeting attendance",
+      attendanceSummary:
+        "Best {months}-month window, {start} to {end}: Mondays {monday}, Wednesday weeks {wednesday}. Needs {rate} for both.",
+      attendanceNoWindow:
+        "No {months}-month window has enough meeting rosters on record to judge (at least {coverage} of meetings need a roster).",
+      attendanceCounts:
+        "{mondaysPresent} of {mondays} rostered Mondays; {weeksPresent} of {weeks} rostered Wednesday weeks.",
+      memberNote:
+        "The lab looks at three things before writing a letter: no hallucinated-citation desk rejection in the past year, at least {months} months averaging {hours}+ committed hours a week, and a {window}-month stretch with {rate} attendance at Monday and Wednesday meetings. This is a guide, not a gate — you can still submit.",
+      memberNotYet: "Still to reach: {items}.",
+      memberInsufficient:
+        "There is not enough attendance or hours data on record to say yet. Ask an admin if this looks wrong.",
+      gap: {
+        hours_no_data: "committed hours on record",
+        hours_short: "{count} of {required} months of committed hours",
+        attendance_no_window: "enough meeting rosters to judge attendance",
+        attendance_below_threshold: "a {window}-month stretch at {rate} attendance",
+      },
+      alumni: "Alumni: hours and attendance are counted up to graduation.",
+      error: {
+        forbidden: "Your session cannot read letter eligibility.",
+        failed: "Could not read letter eligibility.",
+      },
+      incidents: {
+        title: "Letter freezes",
+        sub: "Record a desk rejection for hallucinated citations. It freezes that member's letter eligibility for one year from the date it happened; a later incident restarts the year. Notes are visible to admins only.",
+        member: "Member",
+        memberPlaceholder: "Choose a member",
+        occurredOn: "Date of the desk rejection",
+        paperId: "Paper (optional)",
+        note: "Admin note (optional)",
+        record: "Record freeze",
+        recording: "Recording…",
+        delete: "Delete",
+        deleting: "Deleting…",
+        deleteFor: "Delete the freeze recorded for {member} on {date}",
+        empty: "No freezes recorded.",
+        until: "until {date}",
+        missingFields: "Choose a member and the date of the desk rejection.",
+        loading: "Loading freezes…",
+      },
+    },
     templates: {
       documentSignature: "Document Signature",
       recommendationLetters: "Recommendation Letters",

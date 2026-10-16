@@ -17,6 +17,10 @@ import {
   type LogisticsTemplate,
   type SubmitBlock,
 } from "./logistics.ts";
+import type {
+  RecLetterAdvisoryProps,
+  RecLetterDetailPanelProps,
+} from "./rec-letter-eligibility.ts";
 
 type DrawOptions = {
   /** Re-render into an existing container, the way the app redraws the form after each save. */
@@ -65,6 +69,8 @@ type DrawOptions = {
   lettersSaving?: boolean;
   lettersSavedAt?: number | null;
   lettersSaveError?: string | null;
+  lettersEligibility?: RecLetterAdvisoryProps;
+  eligibilityPanel?: RecLetterDetailPanelProps;
 };
 
 type Drawn = {
@@ -198,6 +204,7 @@ function draw(options: DrawOptions = {}): Drawn {
         onSetStatus: (id, status, note) => answers.push({ id, status, note }),
         statusNote: options.statusNote ?? "",
         onStatusNoteChange: (next) => noteChanges.push(next),
+        ...(options.eligibilityPanel ? { eligibilityPanel: options.eligibilityPanel } : {}),
       },
       template: options.template ?? "documentSignature",
       signature: {
@@ -259,6 +266,7 @@ function draw(options: DrawOptions = {}): Drawn {
         onCvOverleafUrlChange: (next) => cvOverleafChanges.push(next),
         driveFolderUrl: options.driveFolderUrl ?? "",
         onDriveFolderUrlChange: (next) => driveFolderChanges.push(next),
+        ...(options.lettersEligibility ? { eligibility: options.lettersEligibility } : {}),
         saving: options.lettersSaving ?? false,
         savedAt: options.lettersSavedAt ?? null,
         saveError: options.lettersSaveError ?? null,
@@ -1842,4 +1850,64 @@ it("provides visible phone labels for every editable request cell", () => {
       ).toBeTruthy();
     }
   }
+});
+
+// The requests page is drawn whatever the eligibility read brought back. Offline, or against a
+// service that answers with less than a whole result, the page still renders and the eligibility
+// parts say "unavailable" instead of throwing.
+describe("letter eligibility with no or partial data", () => {
+  const letterRequest: LogisticsRequest = {
+    id: "logreq_partial",
+    kind: "recommendation_letters",
+    member_id: "m-alpha",
+    member_name: "Member Alpha",
+    status: "submitted",
+    submitted_at: "2026-08-01T09:30:00.000Z",
+    updated_at: "2026-08-01T09:30:00.000Z",
+  };
+  const partials: unknown[] = [
+    null,
+    {},
+    { items: [], requests: [] },
+    { member_id: "m-alpha", status: "eligible" },
+    { member_id: "m-alpha", status: "not_yet", as_of: "2026-10-16", hours: {}, missing: [] },
+  ];
+
+  it.each(partials)("draws the letters form for %j", (value) => {
+    const { container } = drawLetters({
+      lettersEligibility: {
+        value: value as RecLetterAdvisoryProps["value"],
+        loading: false,
+        error: null,
+      },
+    });
+    expect(container.querySelector("[data-testid='logistics-cv-overleaf']")).not.toBeNull();
+    expect(
+      container.querySelector("[data-testid='rec-eligibility-unavailable']")?.textContent,
+    ).toContain("unavailable");
+  });
+
+  it.each(partials)("draws an admin's open letter request for %j", (eligibility) => {
+    const { container } = draw({
+      role: "admin",
+      mode: "view",
+      requests: [letterRequest],
+      openRequest: letterRequest,
+      eligibilityPanel: {
+        value:
+          eligibility === null
+            ? null
+            : ({
+                member: { id: "m-alpha", name: "Member Alpha" },
+                eligibility,
+                incidents: [],
+              } as RecLetterDetailPanelProps["value"]),
+        loading: false,
+        error: null,
+      },
+    });
+    const panel = container.querySelector<HTMLElement>("[data-testid='rec-eligibility-panel']");
+    expect(panel?.dataset.status).toBe("unavailable");
+    expect(panel?.textContent).toContain("unavailable");
+  });
 });

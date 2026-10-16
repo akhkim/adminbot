@@ -16,7 +16,7 @@
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "extensions/adminbot/src/persistence/sqlite.ts": {
-      "max": 4178,
+      "max": 4130,
       "reason": "AdminBot monolith; split by route or feature group behind characterization tests (see docs/refactor-baseline.md)."
     },
     "extensions/adminbot/src/workflows/deadlines/generated/dataset.ts": {

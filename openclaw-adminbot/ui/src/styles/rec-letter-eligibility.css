@@ -1,0 +1,210 @@
+/* Recommendation-letter eligibility: the queue badge, the request-detail panel, the note on the
+   member's letters form and the admin's freeze records.
+
+   Advisory everywhere, so nothing here is louder than the request statuses beside it: the colors
+   are the same token set as .logistics-status, and only a freeze gets the danger tone, because it
+   is the one verdict that is a rule rather than a count still running. */
+
+.rec-eligibility__pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 2px var(--space-2);
+  background: var(--bg-muted);
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.rec-eligibility__pill--eligible {
+  border-color: var(--ok-muted);
+  background: var(--ok-subtle);
+  color: var(--ok);
+}
+
+.rec-eligibility__pill--frozen {
+  border-color: var(--danger-muted);
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+.rec-eligibility__pill--not_yet {
+  border-color: var(--warn-muted);
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
+/* Not enough rosters to judge: no color, because it says nothing about the member. */
+.rec-eligibility__pill--insufficient_data {
+  color: var(--muted);
+}
+
+/* On a queue row the badge sits after the name and wraps under it on a narrow screen rather than
+   pushing the row wider. */
+.rec-eligibility__badge {
+  margin-left: var(--space-2);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.rec-eligibility {
+  margin: var(--space-3) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-muted);
+}
+
+.rec-eligibility p {
+  margin: var(--space-2) 0 0;
+  font-size: var(--control-ui-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.rec-eligibility__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+.rec-eligibility__head h3,
+.rec-eligibility__head h4 {
+  margin: 0;
+}
+
+/* The note on the member's form: a side remark, set off by a rule rather than a box, so it does not
+   read as a field the form is waiting on. */
+.rec-eligibility--advisory {
+  border-width: 0 0 0 2px;
+  border-color: var(--accent-muted);
+  border-radius: 0;
+  background: transparent;
+  padding: var(--space-1) 0 var(--space-1) var(--space-3);
+}
+
+.rec-eligibility__frozen {
+  border-left: 2px solid var(--danger-muted);
+  padding-left: var(--space-2);
+  color: var(--text);
+}
+
+.rec-eligibility__criteria {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.rec-eligibility__criterion {
+  min-width: 0;
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+}
+
+.rec-eligibility__criterion-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.rec-eligibility__criterion-head h4 {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+}
+
+.rec-eligibility__criterion-status {
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rec-eligibility__criterion--met {
+  color: var(--ok);
+}
+
+.rec-eligibility__criterion--not_met {
+  color: var(--warn);
+}
+
+.rec-eligibility__criterion--insufficient_data {
+  color: var(--muted);
+}
+
+/* The admin's freeze records. */
+
+.rec-eligibility-admin__form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.rec-eligibility-admin__note {
+  grid-column: 1 / -1;
+}
+
+.rec-eligibility-admin__note textarea {
+  resize: vertical;
+}
+
+.rec-eligibility-admin__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.rec-eligibility-admin__list {
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rec-eligibility-admin__item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-top: 1px solid var(--border);
+  padding: var(--space-3) 0;
+}
+
+.rec-eligibility-admin__item-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--control-ui-text-sm);
+}
+
+.rec-eligibility-admin__item-note {
+  color: var(--muted-strong);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 600px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
+  .rec-eligibility {
+    padding: var(--space-3);
+  }
+
+  .rec-eligibility__criteria,
+  .rec-eligibility-admin__form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* A full-width button is the easier target on a phone, and the form's last row is empty anyway. */
+  .rec-eligibility-admin__actions .btn {
+    width: 100%;
+  }
+
+  .rec-eligibility-admin__item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

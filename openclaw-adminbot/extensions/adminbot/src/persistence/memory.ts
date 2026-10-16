@@ -77,6 +77,7 @@ import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
 import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
+import type { AdminBotRecLetterFreezeIncident } from "../contracts/rec-letter-freezes.js";
 import type { ReferenceScan } from "../contracts/reference-scans.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import type {
@@ -262,6 +263,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   // Keyed by member + entry, matching the SQLite primary key, so both stores dedupe identically.
   private readonly cvChanges = new Map<string, AdminBotCvChangeEvent>();
   private readonly logisticsRequests = new Map<string, AdminBotLogisticsRequest>();
+  private readonly recLetterFreezeIncidents = new Map<string, AdminBotRecLetterFreezeIncident>();
   // Append-only, in insertion order. The sqlite store sorts on read; this one relies on the array
   // order being the insertion order, which is the same thing for a store that never updates a row.
   private readonly memberLocations: AdminBotMemberLocationEntry[] = [];
@@ -1409,6 +1411,25 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   deleteLogisticsRequest(requestId: string): boolean {
     return this.logisticsRequests.delete(requestId);
+  }
+
+  saveRecLetterFreezeIncident(incident: AdminBotRecLetterFreezeIncident): void {
+    this.recLetterFreezeIncidents.set(incident.id, incident);
+  }
+
+  /** Newest incident first, ties by entry time, matching the sqlite store's ORDER BY. */
+  listRecLetterFreezeIncidents(memberId?: string): AdminBotRecLetterFreezeIncident[] {
+    return [...this.recLetterFreezeIncidents.values()]
+      .filter((incident) => !memberId || incident.member_id === memberId)
+      .toSorted(
+        (left, right) =>
+          right.occurred_on.localeCompare(left.occurred_on) ||
+          right.created_at.localeCompare(left.created_at),
+      );
+  }
+
+  deleteRecLetterFreezeIncident(incidentId: string): boolean {
+    return this.recLetterFreezeIncidents.delete(incidentId);
   }
 
   getSettings(): AdminBotSettings | undefined {

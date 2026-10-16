@@ -655,6 +655,9 @@ export type AppViewState = {
   // The request whose signed document is being uploaded right now, so its row can say so and no
   // second upload can start against the same one.
   adminBotLogisticsSigningId: string | null;
+  // Recommendation-letter eligibility: the member's own read, the queue's badges, the open
+  // request's panel and the admin's freeze records. Advisory only.
+  adminBotRecLetter: import("./adminbot/controllers/rec-letter-eligibility.ts").RecLetterEligibilityState;
   // "<requestId>:<fileName>" while that one document is being fetched for download.
   adminBotLogisticsDownloadingId: string | null;
   // What an admin has typed to go with the signed document they are about to send.

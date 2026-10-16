@@ -14,13 +14,14 @@ AdminBot itself. Start with the repo [README](../README.md) for the architecture
 
 ## Tools
 
-| Page                                                                   | What it covers                                                           |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [tools/adminbot.md](tools/adminbot.md)                                 | The service endpoint contract, the 33 action types, and the privacy gate |
-| [tools/adminbot-deadlines.md](tools/adminbot-deadlines.md)             | The venue/CFP dataset, the countdown board, and the reminder ladder      |
-| [tools/adminbot-meetings.md](tools/adminbot-meetings.md)               | Recorded meetings: the forwarded Zoom notice, the drop folder, summaries |
-| [tools/adminbot-openreview.md](tools/adminbot-openreview.md)           | Reviewing-cycle reminders and emergency-reviewer suggestion              |
-| [tools/adminbot-reference-check.md](tools/adminbot-reference-check.md) | Citation verification for papers                                         |
+| Page                                                                                 | What it covers                                                           |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| [tools/adminbot.md](tools/adminbot.md)                                               | The service endpoint contract, the 33 action types, and the privacy gate |
+| [tools/adminbot-deadlines.md](tools/adminbot-deadlines.md)                           | The venue/CFP dataset, the countdown board, and the reminder ladder      |
+| [tools/adminbot-meetings.md](tools/adminbot-meetings.md)                             | Recorded meetings: the forwarded Zoom notice, the drop folder, summaries |
+| [tools/adminbot-rec-letter-eligibility.md](tools/adminbot-rec-letter-eligibility.md) | Advisory letter eligibility: freezes, committed hours, attendance        |
+| [tools/adminbot-openreview.md](tools/adminbot-openreview.md)                         | Reviewing-cycle reminders and emergency-reviewer suggestion              |
+| [tools/adminbot-reference-check.md](tools/adminbot-reference-check.md)               | Citation verification for papers                                         |
 
 ## Deploying
 
