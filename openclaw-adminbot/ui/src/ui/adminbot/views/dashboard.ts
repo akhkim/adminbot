@@ -781,8 +781,8 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
             now: Date.now(),
             ownLocation: renderOwnPreciseLocation(state),
           })}
-          ${renderMapCoverage(state, role)}
         </div>
+        ${renderMapCoverage(state, role)}
       </section>
       ${renderNextDeadlines(state)} ${renderNudgeCampaigns(state, role)}
     </div>
