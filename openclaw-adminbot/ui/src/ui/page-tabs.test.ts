@@ -8,6 +8,7 @@ import type { Tab } from "./navigation.ts";
 
 afterEach(() => {
   document.body.innerHTML = "";
+  window.history.replaceState({}, "", "/");
 });
 
 function createState(tab: Tab, setTab = vi.fn()) {
@@ -27,6 +28,17 @@ function draw(node: unknown) {
 }
 
 describe("renderPageTabs", () => {
+  it("returns from a paper to the projects overview and requests a render", () => {
+    window.history.replaceState({}, "", "/my-work/synthetic-paper/writing");
+    const state = createState("myWork");
+    const requestUpdate = vi.fn();
+    Object.assign(state, { requestUpdate });
+    const container = draw(renderTab(state, "myWork"));
+    container.querySelector<HTMLAnchorElement>("a")!.click();
+    expect(window.location.pathname).toBe("/my-work");
+    expect(requestUpdate).toHaveBeenCalledOnce();
+  });
+
   it("draws the sibling tabs of a page and marks the open one", () => {
     const container = draw(renderPageTabs(createState("adminbotWorkshopNudges"), "admin"));
     const tabs = [...container.querySelectorAll<HTMLAnchorElement>('[role="tab"]')];

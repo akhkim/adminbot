@@ -63,6 +63,10 @@
 
 /* ---- sidebar ---- */
 
+.projects-nav-disclosure > summary {
+  margin-left: 38px;
+}
+
 .projects-nav {
   display: grid;
   gap: 1px;

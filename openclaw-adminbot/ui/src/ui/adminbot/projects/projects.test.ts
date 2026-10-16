@@ -109,16 +109,81 @@ describe("sidebar project list", () => {
     );
   });
 
+  it("keeps the paper disclosure open across list updates and choosing papers", () => {
+    const host = state();
+    render(renderProjectsNav(host), container);
+    const disclosure = container.querySelector("details")!;
+    expect(disclosure.open).toBe(false);
+    container.querySelector("summary")!.click();
+    expect(disclosure.open).toBe(true);
+    host.myProjectsChoosing = true;
+    render(renderProjectsNav(host), container);
+    expect(container.querySelector("details")).toBe(disclosure);
+    expect(disclosure.open).toBe(true);
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+    container.querySelector("summary")!.click();
+    expect(disclosure.open).toBe(false);
+  });
+
   it("hides an unticked paper from the list", () => {
     const choosing = state({ myProjectsChoosing: true });
     render(renderProjectsNav(choosing), container);
     const boxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
     expect(boxes).toHaveLength(2);
-    boxes[0]?.dispatchEvent(new Event("change"));
+    const paperChoice = [...container.querySelectorAll(".projects-nav__choice")].find((choice) =>
+      choice.textContent?.includes("Synthetic Paper"),
+    );
+    paperChoice?.querySelector("input")?.dispatchEvent(new Event("change"));
     render(renderProjectsNav(state()), container);
     expect(container.querySelector('[data-testid="projects-nav-p1"]')).toBeNull();
     expect(container.querySelector('[data-testid="projects-nav-p2"]')).not.toBeNull();
   });
+
+  it.each([false, true])(
+    "sorts by start date, acceptance, then displayed name (choosing: %s)",
+    (choosing) => {
+      const projects = [
+        summary({ paper_id: "undated", title: "Undated" }),
+        summary({
+          paper_id: "accepted",
+          title: "Accepted",
+          started_on: "2026-10-01",
+          venue_decision: "accept",
+        }),
+        summary({ paper_id: "zebra", title: "Zebra", started_on: "2026-10-01" }),
+        summary({
+          paper_id: "newest",
+          title: "Newest",
+          started_on: "2026-10-02",
+          venue_decision: "accept",
+        }),
+        summary({
+          paper_id: "alias",
+          title: "Last title",
+          alias: "alpha",
+          started_on: "2026-10-01",
+        }),
+        summary({ paper_id: "older", title: "Older", started_on: "2026-09-30" }),
+      ];
+      const originalOrder = projects.map((p) => p.paper_id);
+      render(
+        renderProjectsNav(state({ myProjects: projects, myProjectsChoosing: choosing })),
+        container,
+      );
+      const labels = container.querySelectorAll(
+        choosing ? ".projects-nav__choice span" : ".projects-nav__name",
+      );
+      expect([...labels].map((el) => el.textContent?.trim())).toEqual([
+        "Newest",
+        "alpha",
+        "Zebra",
+        "Accepted",
+        "Older",
+        "Undated",
+      ]);
+      expect(projects.map((p) => p.paper_id)).toEqual(originalOrder);
+    },
+  );
 });
 describe("ownPapers — whose paper is it", () => {
   function stateWith(authors: string[], memberName: string) {
