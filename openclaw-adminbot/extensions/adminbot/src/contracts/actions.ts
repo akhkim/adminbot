@@ -2653,6 +2653,8 @@ export type AdminBotAuditEvent = {
     | "logistics_request.files_cleared"
     | "rec_letter_freeze.recorded"
     | "rec_letter_freeze.deleted"
+    | "rec_letter_attestation.recorded"
+    | "rec_letter_attestation.deleted"
     | "openreview.cycle_run"
     | "openreview.milestone_sent"
     | "openreview.milestone_blocked"

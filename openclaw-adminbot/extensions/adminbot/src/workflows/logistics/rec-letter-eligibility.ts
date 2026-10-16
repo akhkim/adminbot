@@ -14,7 +14,12 @@
 //
 // Two of the inputs are weaker than their names suggest, and the result is worded around that.
 // Hours are *committed* hours -- what the member planned on the availability page -- not time
-// anybody logged. Attendance is only as complete as the Zoom participant CSVs somebody exported,
+// anybody logged, and a month no row covers is unknown rather than zero: the page is newer than
+// most members' time in the lab. Members can backfill past months as dated rows, and an admin can
+// confirm a criterion outright (an attestation), which counts it as met and labels it as such.
+//
+// Attendance is not counted yet (`adminBotRecLetterAttendanceEnabled`): it is still worked out and
+// shown to admins, but it never moves the headline until rosters are reliable. Attendance is only as complete as the Zoom participant CSVs somebody exported,
 // so a meeting with no roster says nothing about anybody: it is left out of the rate, and a window
 // in which too few meetings have a roster is not judged at all rather than judged as a miss.
 //
@@ -26,6 +31,12 @@ import {
   type AdminBotLabMember,
   type AdminBotMeetingRecord,
 } from "../../contracts/actions.js";
+import {
+  adminBotRecLetterAttestationCriteria,
+  type AdminBotRecLetterAttestation,
+  type AdminBotRecLetterAttestationCriterion,
+  type AdminBotRecLetterAttestationInput,
+} from "../../contracts/rec-letter-attestations.js";
 import {
   adminBotRecLetterFreezeIncidentKinds,
   type AdminBotRecLetterFreezeIncident,
@@ -60,6 +71,15 @@ export const adminBotRecLetterMinAttendanceRate = 0.8;
  */
 export const adminBotRecLetterMinRosterCoverage = 0.7;
 
+/**
+ * Whether attendance counts toward the verdict.
+ *
+ * Off until meeting attendance is tracked reliably. While off, attendance is still worked out for
+ * the admin's reading, but it adds nothing to `missing` and never makes the headline "not yet" or
+ * "not enough data". Turning it on is this one line.
+ */
+export const adminBotRecLetterAttendanceEnabled = false;
+
 /** How many members one badge read may ask about: a page of the queue, with room to spare. */
 export const adminBotRecLetterSummaryLimit = 100;
 
@@ -77,21 +97,39 @@ export type RecLetterFreezeResult = {
   incident_count?: number;
 };
 
+/** An admin's confirmation that a criterion is met, as the result carries it. */
+export type RecLetterAttested = {
+  attestation_id: string;
+  /** When it was recorded. */
+  at: string;
+  /** Who recorded it. Admin detail; the member's view drops it. */
+  by?: string;
+  /** Why. Admin detail; the member's view drops it. */
+  note?: string;
+};
+
 export type RecLetterHoursMonth = {
   /** YYYY-MM. */
   month: string;
-  /** Average committed hours per week across the month, rounded to one decimal. */
-  average_weekly_hours: number;
+  /** False when no availability row covers any day of the month: unknown, not zero hours. */
+  has_data: boolean;
+  /** Average committed hours per week across the month, one decimal. Null without data. */
+  average_weekly_hours: number | null;
   qualifies: boolean;
 };
 
 export type RecLetterHoursResult = {
+  /** "met" when attested, whatever the rows say. */
   status: RecLetterCriterionStatus;
   qualifying_months: number;
   required_months: number;
   min_weekly_hours: number;
+  /** Months in the range that some row covers, and the YYYY-MM of those none does. */
+  months_with_data: number;
+  months_without_data: string[];
   /** Every completed month in the member's range, oldest first. */
   months: RecLetterHoursMonth[];
+  attested?: RecLetterAttested;
 };
 
 export type RecLetterAttendanceWindow = {
@@ -117,7 +155,11 @@ export type RecLetterAttendanceWindow = {
 };
 
 export type RecLetterAttendanceResult = {
+  /** "met" when attested, whatever the rosters say. */
   status: RecLetterCriterionStatus;
+  /** Whether this criterion counts toward the verdict: `adminBotRecLetterAttendanceEnabled`. */
+  counted: boolean;
+  attested?: RecLetterAttested;
   min_rate: number;
   min_roster_coverage: number;
   window_months: number;
@@ -130,7 +172,13 @@ export type RecLetterAttendanceResult = {
 /** What stands between the member and "eligible", one entry per gap. Codes are for the UI. */
 export type RecLetterEligibilityGap =
   | { code: "frozen"; frozen_until: string }
-  | { code: "hours_no_data" }
+  | {
+      code: "hours_not_enough_history";
+      qualifying_months: number;
+      required_months: number;
+      /** YYYY-MM months that no availability row covers; backfilling them may settle it. */
+      months_without_data: string[];
+    }
   | { code: "hours_short"; qualifying_months: number; required_months: number }
   | { code: "attendance_no_window" }
   | { code: "attendance_below_threshold" };
@@ -153,6 +201,8 @@ export type RecLetterEligibilityInput = {
   /** May hold other members' incidents; only this member's are read. */
   incidents: readonly AdminBotRecLetterFreezeIncident[];
   meetings: readonly AdminBotMeetingRecord[];
+  /** May hold other members' attestations; only this member's are read. */
+  attestations?: readonly AdminBotRecLetterAttestation[];
   now: Date;
 };
 
@@ -343,29 +393,60 @@ function hourMonths(
   return first <= last ? monthsBetween(first, last) : [];
 }
 
+/**
+ * True when some row covers at least one day of the month. A month nobody wrote anything for is
+ * unknown, not a month at zero hours: the availability page is newer than most members' time in
+ * the lab, and counting the months before it as zero is what made long-standing members look short.
+ */
+function monthHasData(rows: readonly AdminBotAvailabilityRow[], month: string): boolean {
+  const first = `${month}-01`;
+  const last = `${month}-${String(daysInMonth(month)).padStart(2, "0")}`;
+  return rows.some((row) => row.start <= last && row.end >= first);
+}
+
+/**
+ * The hours criterion.
+ *
+ * "Met" with enough qualifying months. "Not met" only when the record could not get there: at
+ * least the required number of months have data, and even counting every unknown month as a
+ * qualifying one the member would still fall short. Anything else is "not enough data" -- too
+ * little history to say no, or gaps that backfilling could fill.
+ */
 export function recLetterHours(member: AdminBotLabMember, today: string): RecLetterHoursResult {
   const rows = usableRows(member.availability);
   const base = {
     required_months: adminBotRecLetterRequiredHourMonths,
     min_weekly_hours: adminBotRecLetterMinWeeklyHours,
   };
-  if (!rows.length) {
-    return { ...base, status: "insufficient_data", qualifying_months: 0, months: [] };
-  }
-  const months = hourMonths(member, rows, today.slice(0, 7)).map((month) => {
+  const months: RecLetterHoursMonth[] = hourMonths(member, rows, today.slice(0, 7)).map((month) => {
+    if (!monthHasData(rows, month)) {
+      return { month, has_data: false, average_weekly_hours: null, qualifies: false };
+    }
     const average = averageWeeklyCommittedHours(rows, month);
     return {
       month,
+      has_data: true,
       average_weekly_hours: round(average, 1),
       // Judged on the unrounded figure, so 19.96 does not round its way over the line.
       qualifies: average >= adminBotRecLetterMinWeeklyHours,
     };
   });
   const qualifying = months.filter((month) => month.qualifies).length;
+  const withData = months.filter((month) => month.has_data).length;
+  const withoutData = months.filter((month) => !month.has_data).map((month) => month.month);
+  const required = adminBotRecLetterRequiredHourMonths;
+  const status: RecLetterCriterionStatus =
+    qualifying >= required
+      ? "met"
+      : withData >= required && qualifying + withoutData.length < required
+        ? "not_met"
+        : "insufficient_data";
   return {
     ...base,
-    status: qualifying >= adminBotRecLetterRequiredHourMonths ? "met" : "not_met",
+    status,
     qualifying_months: qualifying,
+    months_with_data: withData,
+    months_without_data: withoutData,
     months,
   };
 }
@@ -528,6 +609,7 @@ export function recLetterAttendance(
     );
   return {
     status: passing.length ? "met" : assessed.length ? "not_met" : "insufficient_data",
+    counted: adminBotRecLetterAttendanceEnabled,
     min_rate: adminBotRecLetterMinAttendanceRate,
     min_roster_coverage: adminBotRecLetterMinRosterCoverage,
     window_months: adminBotRecLetterAttendanceWindowMonths,
@@ -541,26 +623,86 @@ export function recLetterAttendance(
 // 3. Overall
 // ---------------------------------------------------------------------------
 
+/** The member's latest attestation for a criterion, as the result carries it. */
+function attestedFor(
+  memberId: string,
+  criterion: AdminBotRecLetterAttestationCriterion,
+  attestations: readonly AdminBotRecLetterAttestation[],
+): RecLetterAttested | undefined {
+  const latest = attestations
+    .filter((entry) => entry.member_id === memberId && entry.criterion === criterion)
+    .reduce<AdminBotRecLetterAttestation | undefined>(
+      (best, entry) => (!best || entry.created_at > best.created_at ? entry : best),
+      undefined,
+    );
+  if (!latest) {
+    return undefined;
+  }
+  return {
+    attestation_id: latest.id,
+    at: latest.created_at,
+    by: latest.created_by,
+    ...(latest.note ? { note: latest.note } : {}),
+  };
+}
+
+/** An attested criterion is met, whatever the data says; the data stays for the admin to read. */
+function withAttestation<T extends { status: RecLetterCriterionStatus }>(
+  result: T,
+  attested: RecLetterAttested | undefined,
+): T & { attested?: RecLetterAttested } {
+  return attested ? { ...result, status: "met", attested } : result;
+}
+
 /**
- * The advisory result for one member.
+ * The headline, from the criteria that count: the freeze and hours, and attendance only once
+ * `adminBotRecLetterAttendanceEnabled` is on.
  *
- * Precedence: frozen, then eligible when both criteria are met, then "not yet" when either is
- * known to fall short, and only then "not enough data". A member with a short hours record and no
- * attendance rosters is told about the hours, which they can do something about.
+ * Precedence: frozen, then eligible when every counted criterion is met, then "not yet" when one
+ * is known to fall short, and only then "not enough data". Unknown never reads as "not yet".
  */
+export function recLetterHeadline(
+  freeze: RecLetterFreezeResult,
+  counted: readonly RecLetterCriterionStatus[],
+): RecLetterEligibilityStatus {
+  if (freeze.frozen) {
+    return "frozen";
+  }
+  if (counted.every((status) => status === "met")) {
+    return "eligible";
+  }
+  if (counted.includes("not_met")) {
+    return "not_yet";
+  }
+  return "insufficient_data";
+}
+
+/** The advisory result for one member. */
 export function recLetterEligibility(input: RecLetterEligibilityInput): RecLetterEligibility {
   const { member, now } = input;
+  const attestations = input.attestations ?? [];
   const today = recLetterMeetingDay(now)?.date ?? now.toISOString().slice(0, 10);
   const freeze = recLetterFreeze(member.id, input.incidents, today);
-  const hours = recLetterHours(member, today);
-  const attendance = recLetterAttendance(member, input.meetings, today);
+  const hours = withAttestation(
+    recLetterHours(member, today),
+    attestedFor(member.id, "hours", attestations),
+  );
+  const attendance = withAttestation(
+    recLetterAttendance(member, input.meetings, today),
+    attestedFor(member.id, "attendance", attestations),
+  );
 
   const missing: RecLetterEligibilityGap[] = [];
   if (freeze.frozen && freeze.frozen_until) {
     missing.push({ code: "frozen", frozen_until: freeze.frozen_until });
   }
   if (hours.status === "insufficient_data") {
-    missing.push({ code: "hours_no_data" });
+    missing.push({
+      code: "hours_not_enough_history",
+      qualifying_months: hours.qualifying_months,
+      required_months: hours.required_months,
+      months_without_data: hours.months_without_data,
+    });
   } else if (hours.status === "not_met") {
     missing.push({
       code: "hours_short",
@@ -568,23 +710,18 @@ export function recLetterEligibility(input: RecLetterEligibilityInput): RecLette
       required_months: hours.required_months,
     });
   }
-  if (attendance.status === "insufficient_data") {
-    missing.push({ code: "attendance_no_window" });
-  } else if (attendance.status === "not_met") {
-    missing.push({ code: "attendance_below_threshold" });
+  if (attendance.counted) {
+    if (attendance.status === "insufficient_data") {
+      missing.push({ code: "attendance_no_window" });
+    } else if (attendance.status === "not_met") {
+      missing.push({ code: "attendance_below_threshold" });
+    }
   }
 
-  const status: RecLetterEligibilityStatus = freeze.frozen
-    ? "frozen"
-    : hours.status === "met" && attendance.status === "met"
-      ? "eligible"
-      : hours.status === "not_met" || attendance.status === "not_met"
-        ? "not_yet"
-        : "insufficient_data";
-
+  const counted = attendance.counted ? [hours.status, attendance.status] : [hours.status];
   return {
     member_id: member.id,
-    status,
+    status: recLetterHeadline(freeze, counted),
     as_of: today,
     advisory: true,
     is_alumni: adminBotIsAlumniMember(member),
@@ -595,11 +732,17 @@ export function recLetterEligibility(input: RecLetterEligibilityInput): RecLette
   };
 }
 
+/** Who confirmed it and why are the lab's notes; the member keeps that, and when, it was. */
+function redactAttested(attested: RecLetterAttested | undefined) {
+  return attested ? { attested: { attestation_id: attested.attestation_id, at: attested.at } } : {};
+}
+
 /**
  * The member's own copy: the same verdict without the admin's bookkeeping.
  *
  * Which incident, how many, and an expired freeze's end date are the lab's records, not the
- * member's reading. What the member keeps is whether they are frozen and until when.
+ * member's reading. What the member keeps is whether they are frozen and until when, and whether a
+ * criterion was confirmed by an admin -- not by whom or with what note.
  */
 export function redactRecLetterEligibilityForMember(
   result: RecLetterEligibility,
@@ -607,7 +750,14 @@ export function redactRecLetterEligibilityForMember(
   const freeze: RecLetterFreezeResult = result.freeze.frozen
     ? { frozen: true, frozen_until: result.freeze.frozen_until }
     : { frozen: false };
-  return { ...result, freeze };
+  const { attested: hoursAttested, ...hours } = result.hours;
+  const { attested: attendanceAttested, ...attendance } = result.attendance;
+  return {
+    ...result,
+    freeze,
+    hours: { ...hours, ...redactAttested(hoursAttested) },
+    attendance: { ...attendance, ...redactAttested(attendanceAttested) },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -669,6 +819,47 @@ export function parseRecLetterFreezeIncidentInput(
       occurred_on: occurredOn,
       ...(paperId.value ? { paper_id: paperId.value } : {}),
       ...(note.value ? { note: note.value } : {}),
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Attestation input
+// ---------------------------------------------------------------------------
+
+/** Checks an admin's attestation. The service adds the id, the author and the stamp. */
+export function parseRecLetterAttestationInput(
+  input: unknown,
+): { ok: true; value: AdminBotRecLetterAttestationInput } | { ok: false; error: string } {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, error: "expected a JSON object" };
+  }
+  const body = input as Record<string, unknown>;
+  const memberId = typeof body.member_id === "string" ? body.member_id.trim() : "";
+  if (!memberId) {
+    return { ok: false, error: "member_id is required" };
+  }
+  const criterion = body.criterion;
+  if (
+    typeof criterion !== "string" ||
+    !(adminBotRecLetterAttestationCriteria as readonly string[]).includes(criterion)
+  ) {
+    return {
+      ok: false,
+      error: `criterion must be one of ${adminBotRecLetterAttestationCriteria.join(", ")}`,
+    };
+  }
+  const note = body.note;
+  if (note !== undefined && note !== null && (typeof note !== "string" || note.length > NOTE_MAX)) {
+    return { ok: false, error: `note must be text of at most ${NOTE_MAX} characters` };
+  }
+  const trimmed = typeof note === "string" ? note.trim() : "";
+  return {
+    ok: true,
+    value: {
+      member_id: memberId,
+      criterion: criterion as AdminBotRecLetterAttestationCriterion,
+      ...(trimmed ? { note: trimmed } : {}),
     },
   };
 }

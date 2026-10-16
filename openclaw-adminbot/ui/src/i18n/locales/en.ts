@@ -2213,7 +2213,7 @@ export const en: TranslationMap = {
         eligible: "Eligible",
         frozen: "Frozen",
         not_yet: "Not yet",
-        insufficient_data: "Not enough data",
+        insufficient_data: "Not enough data yet",
       },
       badgeFrozenUntil: "Frozen until {date}",
       frozenUntil: "Frozen until {date}.",
@@ -2222,13 +2222,18 @@ export const en: TranslationMap = {
       criterion: {
         met: "Met",
         not_met: "Not met",
-        insufficient_data: "Not enough data",
+        insufficient_data: "Not enough data yet",
+        attested: "Confirmed by admin",
+        notCounted: "Not counted yet",
       },
       hoursTitle: "Committed hours",
       hoursSummary:
         "{count} of {required} months averaging at least {hours} committed hours a week.",
       hoursNoData: "No committed hours are on record.",
       hoursMonths: "Qualifying months: {months}",
+      hoursUnknownMonths:
+        "No availability on record for: {months}. These count as unknown, not as 0 hours.",
+      monthRun: "{first} to {last}",
       attendanceTitle: "Meeting attendance",
       attendanceSummary:
         "Best {months}-month window, {start} to {end}: Mondays {monday}, Wednesday weeks {wednesday}. Needs {rate} for both.",
@@ -2236,16 +2241,38 @@ export const en: TranslationMap = {
         "No {months}-month window has enough meeting rosters on record to judge (at least {coverage} of meetings need a roster).",
       attendanceCounts:
         "{mondaysPresent} of {mondays} rostered Mondays; {weeksPresent} of {weeks} rostered Wednesday weeks.",
+      attendanceNotCounted:
+        "Attendance isn't counted toward eligibility yet. The figures below are for reference only.",
+      attendanceNotTracked: "Meeting attendance isn't tracked yet and isn't counted.",
       memberNote:
-        "The lab looks at three things before writing a letter: no hallucinated-citation desk rejection in the past year, at least {months} months averaging {hours}+ committed hours a week, and a {window}-month stretch with {rate} attendance at Monday and Wednesday meetings. This is a guide, not a gate — you can still submit.",
+        "The lab looks for no hallucinated-citation desk rejection in the past year and at least {months} months averaging {hours}+ committed hours a week. This is a guide, not a gate — you can still submit.",
+      memberNoteAttendance:
+        "It also looks for a {window}-month stretch with {rate} attendance at Monday and Wednesday meetings.",
       memberNotYet: "Still to reach: {items}.",
       memberInsufficient:
-        "There is not enough attendance or hours data on record to say yet. Ask an admin if this looks wrong.",
+        "Not enough history yet: some months have no committed hours on record, so the lab can't tell either way. You can add past months on the Time Availability page, or ask an admin to confirm your hours.",
+      memberUnknownMonths: "Months with no hours on record: {months}.",
       gap: {
-        hours_no_data: "committed hours on record",
         hours_short: "{count} of {required} months of committed hours",
+        hours_not_enough_history:
+          "{count} of {required} months of committed hours (some months have no data yet)",
         attendance_no_window: "enough meeting rosters to judge attendance",
         attendance_below_threshold: "a {window}-month stretch at {rate} attendance",
+      },
+      attested: {
+        hours: "Hours confirmed by admin",
+        attendance: "Attendance confirmed by admin",
+        on: "on {date}",
+        by: "by {admin}",
+      },
+      attest: {
+        title: "Confirm a criterion",
+        sub: "If you know this member met a criterion the records can't show, confirm it here. It counts as met, is labelled as confirmed by an admin, and is written to the audit log. Notes are visible to admins only.",
+        note: "Admin note (optional)",
+        hours: "Confirm hours",
+        attendance: "Confirm attendance",
+        saving: "Saving…",
+        remove: "Remove",
       },
       alumni: "Alumni: hours and attendance are counted up to graduation.",
       error: {

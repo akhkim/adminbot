@@ -21,8 +21,11 @@ import {
 } from "../controllers/logistics.ts";
 import {
   readRecLetterEligibility,
+  recordRecLetterAttestation,
   recordRecLetterFreezeIncident,
+  removeRecLetterAttestation,
   removeRecLetterFreezeIncident,
+  setRecLetterAttestationNote,
   setRecLetterFreezeForm,
 } from "../controllers/rec-letter-eligibility.ts";
 import {
@@ -181,7 +184,28 @@ export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfa
         // Only the answer for the request on screen: a panel left over from the last one opened
         // would put one member's standing on another's letter.
         eligibilityPanel:
-          isAdmin && open && recLetter.detail.requestId === open.id ? recLetter.detail : undefined,
+          isAdmin && open && recLetter.detail.requestId === open.id
+            ? {
+                ...recLetter.detail,
+                attest: {
+                  ...recLetter.attest,
+                  onNoteChange: (note) => {
+                    setRecLetterAttestationNote(state, note);
+                    requestHostUpdate?.();
+                  },
+                  onAttest: (criterion) => {
+                    void recordRecLetterAttestation(state, criterion).finally(() =>
+                      requestHostUpdate?.(),
+                    );
+                  },
+                  onRemove: (attestationId) => {
+                    void removeRecLetterAttestation(state, attestationId).finally(() =>
+                      requestHostUpdate?.(),
+                    );
+                  },
+                },
+              }
+            : undefined,
       },
       queue: {
         options: state.adminBotLogisticsQueueOptions,

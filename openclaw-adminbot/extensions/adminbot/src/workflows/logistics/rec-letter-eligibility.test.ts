@@ -5,13 +5,17 @@ import type {
   AdminBotLabMember,
   AdminBotMeetingRecord,
 } from "../../contracts/actions.js";
+import type { AdminBotRecLetterAttestation } from "../../contracts/rec-letter-attestations.js";
 import type { AdminBotRecLetterFreezeIncident } from "../../contracts/rec-letter-freezes.js";
 import {
+  adminBotRecLetterAttendanceEnabled,
   adminBotRecLetterMinRosterCoverage,
   averageWeeklyCommittedHours,
+  parseRecLetterAttestationInput,
   recLetterAttendance,
   recLetterEligibility,
   recLetterFreeze,
+  recLetterHeadline,
   recLetterHours,
   recLetterMeetingDay,
   redactRecLetterEligibilityForMember,
@@ -44,6 +48,22 @@ function incident(
     occurred_on: occurredOn,
     created_by: "m-admin",
     created_at: `${occurredOn}T12:00:00.000Z`,
+  };
+}
+
+function attestation(
+  id: string,
+  criterion: AdminBotRecLetterAttestation["criterion"],
+  createdAt: string,
+  memberId = "m-alpha",
+): AdminBotRecLetterAttestation {
+  return {
+    id,
+    member_id: memberId,
+    criterion,
+    note: "Confirmed from the term plan on file.",
+    created_by: "m-admin",
+    created_at: createdAt,
   };
 }
 
@@ -187,15 +207,82 @@ describe("averageWeeklyCommittedHours", () => {
 describe("recLetterHours", () => {
   it("has nothing to judge without availability rows", () => {
     const result = recLetterHours(member({ id: "m-alpha", joined_month: "2025-01" }), TODAY);
-    expect(result).toMatchObject({ status: "insufficient_data", qualifying_months: 0, months: [] });
+    expect(result).toMatchObject({
+      status: "insufficient_data",
+      qualifying_months: 0,
+      months_with_data: 0,
+    });
+    // Every month since joining is listed as unknown, none as zero hours.
+    expect(result.months_without_data).toHaveLength(21);
+    expect(result.months.every((month) => month.average_weekly_hours === null)).toBe(true);
+  });
+
+  it("treats months before the first row as unknown, not as zero hours", () => {
+    // In the lab since January 2025, on the availability page only since July 2026.
+    const result = recLetterHours(
+      member({
+        id: "m-alpha",
+        joined_month: "2025-01",
+        availability: [row("2026-07-01", "2026-12-31", 25)],
+      }),
+      TODAY,
+    );
+    expect(result).toMatchObject({
+      status: "insufficient_data",
+      qualifying_months: 3,
+      months_with_data: 3,
+    });
+    expect(result.months_without_data[0]).toBe("2025-01");
+    expect(result.months_without_data.at(-1)).toBe("2026-06");
+    expect(result.months_without_data).toHaveLength(18);
+    expect(result.months[0]).toEqual({
+      month: "2025-01",
+      has_data: false,
+      average_weekly_hours: null,
+      qualifies: false,
+    });
+  });
+
+  it("counts backfilled rows for past months", () => {
+    const recent = row("2026-07-01", "2026-12-31", 25);
+    const backfilled = row("2025-09-01", "2025-10-31", 22, "Backfilled term");
+    const result = recLetterHours(
+      member({ id: "m-alpha", joined_month: "2025-01", availability: [backfilled, recent] }),
+      TODAY,
+    );
+    expect(result).toMatchObject({ status: "met", qualifying_months: 5, months_with_data: 5 });
+  });
+
+  it("says not met only when the unknown months could not close the gap", () => {
+    const short = (rows: AdminBotAvailabilityRow[]) =>
+      recLetterHours(member({ id: "m-alpha", joined_month: "2026-01", availability: rows }), TODAY);
+    // Seven months on record, one qualifying, two unknown: 1 + 2 can never make 5.
+    const known = short([row("2026-01-01", "2026-06-30", 10), row("2026-07-01", "2026-07-31", 25)]);
+    expect(known).toMatchObject({ status: "not_met", months_with_data: 7 });
+    expect(known.months_without_data).toEqual(["2026-08", "2026-09"]);
+    // Five months on record, one qualifying, four unknown: backfilling could still get there.
+    const open = short([row("2026-01-01", "2026-04-30", 10), row("2026-05-01", "2026-05-31", 25)]);
+    expect(open).toMatchObject({ status: "insufficient_data", months_with_data: 5 });
+    // Too little history to say no, even with every month on record.
+    const young = recLetterHours(
+      member({
+        id: "m-alpha",
+        joined_month: "2026-06",
+        availability: [row("2026-06-01", "2026-09-30", 5)],
+      }),
+      TODAY,
+    );
+    expect(young).toMatchObject({ status: "insufficient_data", months_with_data: 4 });
   });
 
   it("counts five qualifying months, consecutive or not", () => {
+    // Every month on record; the ones between the qualifying ones are light.
     const rows = [
-      row("2026-01-01", "2026-01-31", 25),
-      row("2026-03-01", "2026-03-31", 25),
-      row("2026-05-01", "2026-05-31", 25),
-      row("2026-07-01", "2026-07-31", 25),
+      row("2026-01-01", "2026-09-30", 10),
+      row("2026-01-01", "2026-01-31", 15),
+      row("2026-03-01", "2026-03-31", 15),
+      row("2026-05-01", "2026-05-31", 15),
+      row("2026-07-01", "2026-07-31", 15),
     ];
     const four = recLetterHours(
       member({ id: "m-alpha", joined_month: "2026-01", availability: rows }),
@@ -206,7 +293,7 @@ describe("recLetterHours", () => {
       member({
         id: "m-alpha",
         joined_month: "2026-01",
-        availability: [...rows, row("2026-09-01", "2026-09-30", 25)],
+        availability: [...rows, row("2026-09-01", "2026-09-30", 15)],
       }),
       TODAY,
     );
@@ -228,7 +315,8 @@ describe("recLetterHours", () => {
       "2026-08",
       "2026-09",
     ]);
-    expect(result.status).toBe("not_met");
+    // October is planned at 30 but not over; four months are too few to judge either way.
+    expect(result).toMatchObject({ status: "insufficient_data", qualifying_months: 4 });
   });
 
   it("does not count a half month for somebody who joined mid-month", () => {
@@ -242,6 +330,7 @@ describe("recLetterHours", () => {
     );
     expect(result.months[0]).toEqual({
       month: "2026-03",
+      has_data: true,
       average_weekly_hours: 12.9,
       qualifies: false,
     });
@@ -530,33 +619,116 @@ describe("recLetterEligibility", () => {
     expect(result.missing).toEqual([{ code: "frozen", frozen_until: "2027-05-01" }]);
   });
 
-  it("says not yet when a criterion is known to fall short", () => {
+  it("says not yet when the hours are known to fall short", () => {
     const result = recLetterEligibility({
       member: member({
         id: "m-alpha",
         joined_month: "2026-01",
-        availability: [row("2026-01-01", "2026-02-28", 25)],
+        availability: [row("2026-01-01", "2026-02-28", 25), row("2026-03-01", "2026-09-30", 10)],
       }),
       incidents: [],
       meetings: [],
       now: NOW,
     });
     expect(result.status).toBe("not_yet");
+    // Attendance is not counted, so it is not on the list of what is still to reach.
     expect(result.missing).toEqual([
       { code: "hours_short", qualifying_months: 2, required_months: 5 },
-      { code: "attendance_no_window" },
     ]);
   });
 
-  it("says not enough data when nothing falls short but something is unknown", () => {
+  it("says not enough data yet, never not yet, when months before a recent date have no rows", () => {
     const result = recLetterEligibility({
-      member: member({ id: "m-alpha", joined_month: "2026-01", availability: steady }),
+      member: member({
+        id: "m-alpha",
+        joined_month: "2025-01",
+        availability: [row("2026-07-01", "2026-12-31", 25)],
+      }),
       incidents: [],
       meetings: [],
       now: NOW,
     });
     expect(result.status).toBe("insufficient_data");
-    expect(result.missing).toEqual([{ code: "attendance_no_window" }]);
+    expect(result.missing).toHaveLength(1);
+    expect(result.missing[0]).toMatchObject({
+      code: "hours_not_enough_history",
+      qualifying_months: 3,
+      required_months: 5,
+    });
+  });
+
+  it("is eligible once the member backfills the past months", () => {
+    const result = recLetterEligibility({
+      member: member({
+        id: "m-alpha",
+        joined_month: "2025-01",
+        availability: [row("2025-03-01", "2025-04-30", 24), row("2026-07-01", "2026-12-31", 25)],
+      }),
+      incidents: [],
+      meetings: [],
+      now: NOW,
+    });
+    expect(result).toMatchObject({ status: "eligible", missing: [] });
+  });
+
+  it("counts an attested criterion as met and says so", () => {
+    const result = recLetterEligibility({
+      member: member({ id: "m-alpha", joined_month: "2025-01" }),
+      incidents: [],
+      meetings: [],
+      attestations: [
+        attestation("a-other", "hours", "2026-09-01T12:00:00.000Z", "m-other"),
+        attestation("a-old", "hours", "2026-08-01T12:00:00.000Z"),
+        attestation("a-new", "hours", "2026-10-01T12:00:00.000Z"),
+      ],
+      now: NOW,
+    });
+    expect(result).toMatchObject({ status: "eligible", missing: [] });
+    expect(result.hours.status).toBe("met");
+    expect(result.hours.attested).toMatchObject({
+      attestation_id: "a-new",
+      by: "m-admin",
+      at: "2026-10-01T12:00:00.000Z",
+    });
+    // The data underneath stays for the admin to read.
+    expect(result.hours.qualifying_months).toBe(0);
+    expect(result.hours.months_without_data).toHaveLength(21);
+  });
+
+  it("does not let an attestation lift a freeze", () => {
+    const result = recLetterEligibility({
+      member: member({ id: "m-alpha", joined_month: "2026-01", availability: steady }),
+      incidents: [incident("i1", "2026-05-01")],
+      meetings: [],
+      attestations: [attestation("a1", "hours", "2026-10-01T12:00:00.000Z")],
+      now: NOW,
+    });
+    expect(result.status).toBe("frozen");
+  });
+
+  it("leaves attendance out of the headline while it is not counted", () => {
+    expect(adminBotRecLetterAttendanceEnabled).toBe(false);
+    const allDates = [
+      ...datesOn(1, JUL_SEP.from, JUL_SEP.to),
+      ...datesOn(3, JUL_SEP.from, JUL_SEP.to),
+    ];
+    const absentThroughout = recLetterEligibility({
+      member: member({ id: "m-alpha", joined_month: "2026-01", availability: steady }),
+      incidents: [],
+      meetings: series("m-alpha", JUL_SEP.from, JUL_SEP.to, allDates),
+      now: NOW,
+    });
+    // Rosters say the member missed every meeting; with attendance off that changes nothing.
+    expect(absentThroughout.attendance).toMatchObject({ status: "not_met", counted: false });
+    expect(absentThroughout).toMatchObject({ status: "eligible", missing: [] });
+    const noRosters = recLetterEligibility({
+      member: member({ id: "m-alpha", joined_month: "2026-01", availability: steady }),
+      incidents: [],
+      meetings: [],
+      now: NOW,
+    });
+    expect(noRosters.attendance).toMatchObject({ status: "insufficient_data", counted: false });
+    expect(noRosters).toMatchObject({ status: "eligible", missing: [] });
   });
 
   it("flags an alumnus without treating them differently", () => {
@@ -573,6 +745,48 @@ describe("recLetterEligibility", () => {
       now: NOW,
     });
     expect(result).toMatchObject({ status: "eligible", is_alumni: true });
+  });
+});
+
+describe("recLetterHeadline", () => {
+  const thawed = { frozen: false };
+
+  it("puts a freeze first", () => {
+    expect(recLetterHeadline({ frozen: true, frozen_until: "2027-01-01" }, ["met"])).toBe("frozen");
+  });
+
+  it("is eligible only when every counted criterion is met", () => {
+    expect(recLetterHeadline(thawed, ["met"])).toBe("eligible");
+    expect(recLetterHeadline(thawed, ["met", "met"])).toBe("eligible");
+  });
+
+  it("says not yet when one is known to fall short, even beside an unknown one", () => {
+    expect(recLetterHeadline(thawed, ["not_met"])).toBe("not_yet");
+    expect(recLetterHeadline(thawed, ["insufficient_data", "not_met"])).toBe("not_yet");
+  });
+
+  it("says not enough data when something is unknown and nothing falls short", () => {
+    expect(recLetterHeadline(thawed, ["insufficient_data"])).toBe("insufficient_data");
+    expect(recLetterHeadline(thawed, ["met", "insufficient_data"])).toBe("insufficient_data");
+  });
+});
+
+describe("parseRecLetterAttestationInput", () => {
+  it("accepts a criterion with a trimmed note", () => {
+    expect(
+      parseRecLetterAttestationInput({ member_id: " m-alpha ", criterion: "hours", note: " ok " }),
+    ).toEqual({ ok: true, value: { member_id: "m-alpha", criterion: "hours", note: "ok" } });
+  });
+
+  it("rejects an unknown criterion, a missing member and a non-text note", () => {
+    expect(
+      parseRecLetterAttestationInput({ member_id: "m-alpha", criterion: "freeze" }),
+    ).toMatchObject({ ok: false });
+    expect(parseRecLetterAttestationInput({ criterion: "hours" })).toMatchObject({ ok: false });
+    expect(
+      parseRecLetterAttestationInput({ member_id: "m-alpha", criterion: "hours", note: 4 }),
+    ).toMatchObject({ ok: false });
+    expect(parseRecLetterAttestationInput([])).toMatchObject({ ok: false });
   });
 });
 
@@ -599,5 +813,21 @@ describe("redactRecLetterEligibilityForMember", () => {
       recLetterEligibility({ ...base, incidents: [incident("i1", "2024-01-10")] }),
     );
     expect(result.freeze).toEqual({ frozen: false });
+  });
+
+  it("keeps that a criterion was confirmed and drops who confirmed it and the note", () => {
+    const result = redactRecLetterEligibilityForMember(
+      recLetterEligibility({
+        ...base,
+        incidents: [],
+        attestations: [attestation("a1", "hours", "2026-10-01T12:00:00.000Z")],
+      }),
+    );
+    expect(result.hours.attested).toEqual({
+      attestation_id: "a1",
+      at: "2026-10-01T12:00:00.000Z",
+    });
+    expect(JSON.stringify(result)).not.toContain("term plan");
+    expect(JSON.stringify(result)).not.toContain("m-admin");
   });
 });

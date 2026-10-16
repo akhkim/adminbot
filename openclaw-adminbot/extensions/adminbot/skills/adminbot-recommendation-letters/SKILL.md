@@ -38,9 +38,10 @@ address by hand; see "Recommendation letter deadlines" in
 ## Eligibility is advisory
 
 The request detail shows an eligibility result (`eligible`, `frozen`, `not_yet` or
-`insufficient_data`): a freeze after a desk rejection for hallucinated citations, five months of
-20+ committed hours a week, and a three-month window of 80% group-meeting attendance. It never
-blocks a request, and it is not grounds to refuse to draft a letter. Do not quote another member's
-result or any freeze note, and remember its limits: hours are committed rather than logged, and
-attendance only covers meetings whose Zoom roster was exported. See
+`insufficient_data`, shown as "Not enough data yet"): a freeze after a desk rejection for
+hallucinated citations, and five months of 20+ committed hours a week. Attendance is not counted
+yet. A month with no availability row is unknown, not a fail, and an admin may confirm a criterion
+("Hours confirmed by admin"). It never blocks a request, and it is not grounds to refuse to draft a
+letter. Do not quote another member's result, any freeze note or any attestation note, and remember
+its limits: hours are committed rather than logged. See
 `docs/tools/adminbot-rec-letter-eligibility.md`.
