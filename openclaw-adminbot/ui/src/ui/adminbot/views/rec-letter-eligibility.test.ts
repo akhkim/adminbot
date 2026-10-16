@@ -261,3 +261,66 @@ describe("admin freeze records", () => {
     expect(root.textContent).toContain("No freezes");
   });
 });
+
+// A 200 is not proof of shape: an older service, a proxy's catch-all, or a body written before a
+// field existed can answer with less than a whole result. None of them may crash the requests page.
+describe("partial or missing eligibility data", () => {
+  const partials: Array<[string, unknown]> = [
+    ["an unrelated body", { items: [], requests: [] }],
+    ["status only", { member_id: "m-alpha", status: "eligible" }],
+    ["no attendance", { ...result(), attendance: undefined }],
+    ["no hours", { ...result(), hours: undefined }],
+    ["no freeze", { ...result(), freeze: undefined }],
+    ["no missing list", { ...result(), missing: undefined }],
+  ];
+
+  it.each(partials)("the advisory states the policy and says unavailable for %s", (_, value) => {
+    const root = draw(
+      renderRecLetterAdvisory({
+        value: value as RecLetterEligibility,
+        loading: false,
+        error: null,
+      }),
+    );
+    const note = byTestId(root, "rec-eligibility-advisory");
+    expect(note?.dataset.status).toBe("unknown");
+    expect(note?.textContent).toContain("20");
+    expect(byTestId(root, "rec-eligibility-unavailable")?.textContent).toContain("unavailable");
+  });
+
+  it.each(partials)("the detail panel draws a neutral state for %s", (_, eligibility) => {
+    const root = draw(
+      renderRecLetterDetailPanel({
+        value: {
+          member: { id: "m-alpha", name: "Member Alpha" },
+          eligibility,
+          incidents: [],
+        } as RecLetterAdminEligibility,
+        loading: false,
+        error: null,
+      }),
+    );
+    const panel = byTestId(root, "rec-eligibility-panel");
+    expect(panel?.dataset.status).toBe("unavailable");
+    expect(panel?.textContent).toContain("unavailable");
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("says checking while the read is in flight, and unavailable offline once it is not", () => {
+    const checking = draw(renderRecLetterAdvisory({ value: null, loading: true, error: null }));
+    expect(byTestId(checking, "rec-eligibility-advisory")?.textContent).toContain("Checking");
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    try {
+      const offline = draw(renderRecLetterAdvisory({ value: null, loading: false, error: null }));
+      expect(byTestId(offline, "rec-eligibility-unavailable")?.textContent).toContain(
+        "unavailable offline",
+      );
+      const panel = draw(renderRecLetterDetailPanel({ value: null, loading: false, error: null }));
+      expect(byTestId(panel, "rec-eligibility-panel")?.textContent).toContain(
+        "unavailable offline",
+      );
+    } finally {
+      onLine.mockRestore();
+    }
+  });
+});

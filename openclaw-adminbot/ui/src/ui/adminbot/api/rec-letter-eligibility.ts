@@ -71,6 +71,48 @@ export type RecLetterEligibility = {
   missing: RecLetterEligibilityGap[];
 };
 
+const STATUSES: ReadonlySet<string> = new Set([
+  "eligible",
+  "frozen",
+  "not_yet",
+  "insufficient_data",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Whether a body is a whole eligibility result, every part the views read present.
+ *
+ * A 200 is not proof of shape: a service older than these routes, a proxy's catch-all, or a body
+ * written before a field existed can all answer one. Anything short of the whole result is treated
+ * as no result, so the views draw "unavailable" rather than read a field that is not there.
+ */
+export function isRecLetterEligibility(value: unknown): value is RecLetterEligibility {
+  if (!isRecord(value) || typeof value.status !== "string" || !STATUSES.has(value.status)) {
+    return false;
+  }
+  const { freeze, hours, attendance, missing } = value;
+  return (
+    typeof value.as_of === "string" &&
+    isRecord(freeze) &&
+    typeof freeze.frozen === "boolean" &&
+    isRecord(hours) &&
+    typeof hours.status === "string" &&
+    typeof hours.required_months === "number" &&
+    typeof hours.min_weekly_hours === "number" &&
+    Array.isArray(hours.months) &&
+    isRecord(attendance) &&
+    typeof attendance.status === "string" &&
+    typeof attendance.window_months === "number" &&
+    typeof attendance.min_rate === "number" &&
+    typeof attendance.min_roster_coverage === "number" &&
+    (attendance.best_window === null || isRecord(attendance.best_window)) &&
+    Array.isArray(missing)
+  );
+}
+
 export type RecLetterFreezeIncident = {
   id: string;
   member_id: string;
@@ -119,26 +161,49 @@ async function call<T>(
 }
 
 /** The caller's own result. The session decides whose; there is no parameter to get it wrong. */
-export function fetchOwnRecLetterEligibility(sessionToken: string, baseUrl: string) {
-  return call<RecLetterEligibility>(baseUrl, "/logistics/eligibility/me", "GET", sessionToken);
+export async function fetchOwnRecLetterEligibility(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<RecLetterEligibility | null>> {
+  const result = await call<unknown>(baseUrl, "/logistics/eligibility/me", "GET", sessionToken);
+  return result.ok
+    ? { ok: true, value: isRecLetterEligibility(result.value) ? result.value : null }
+    : result;
 }
 
 /** Admin-only: the full result for one member, found by member or by one of their requests. */
-export function fetchRecLetterEligibility(
+export async function fetchRecLetterEligibility(
   target: { memberId: string } | { requestId: string },
   sessionToken: string,
   baseUrl: string,
-) {
+): Promise<AuthResult<RecLetterAdminEligibility | null>> {
   const query =
     "memberId" in target
       ? `member_id=${encodeURIComponent(target.memberId)}`
       : `request_id=${encodeURIComponent(target.requestId)}`;
-  return call<RecLetterAdminEligibility>(
+  const result = await call<unknown>(
     baseUrl,
     `/logistics/eligibility?${query}`,
     "GET",
     sessionToken,
   );
+  if (!result.ok) {
+    return result;
+  }
+  const body = result.value;
+  return {
+    ok: true,
+    value:
+      isRecord(body) && isRecord(body.member) && isRecLetterEligibility(body.eligibility)
+        ? {
+            member: body.member as RecLetterAdminEligibility["member"],
+            eligibility: body.eligibility,
+            incidents: Array.isArray(body.incidents)
+              ? (body.incidents as RecLetterFreezeIncident[])
+              : [],
+          }
+        : null,
+  };
 }
 
 /** Admin-only: one status per member, for the queue's badges. The service caps the batch. */
@@ -147,26 +212,44 @@ export async function fetchRecLetterEligibilitySummaries(
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<RecLetterEligibilitySummary[]>> {
-  const result = await call<{ summaries?: RecLetterEligibilitySummary[] }>(
+  const result = await call<unknown>(
     baseUrl,
     `/logistics/eligibility/summary?member_ids=${memberIds.map(encodeURIComponent).join(",")}`,
     "GET",
     sessionToken,
   );
-  return result.ok ? { ok: true, value: result.value.summaries ?? [] } : result;
+  if (!result.ok) {
+    return result;
+  }
+  const summaries = isRecord(result.value) ? result.value.summaries : undefined;
+  return {
+    ok: true,
+    value: Array.isArray(summaries)
+      ? summaries.filter(
+          (entry): entry is RecLetterEligibilitySummary =>
+            isRecord(entry) &&
+            typeof entry.member_id === "string" &&
+            typeof entry.status === "string" &&
+            STATUSES.has(entry.status),
+        )
+      : [],
+  };
 }
 
 export async function fetchRecLetterFreezeIncidents(
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<RecLetterFreezeIncident[]>> {
-  const result = await call<{ incidents?: RecLetterFreezeIncident[] }>(
-    baseUrl,
-    "/logistics/freeze-incidents",
-    "GET",
-    sessionToken,
-  );
-  return result.ok ? { ok: true, value: result.value.incidents ?? [] } : result;
+  const result = await call<unknown>(baseUrl, "/logistics/freeze-incidents", "GET", sessionToken);
+  return result.ok
+    ? {
+        ok: true,
+        value:
+          isRecord(result.value) && Array.isArray(result.value.incidents)
+            ? (result.value.incidents as RecLetterFreezeIncident[])
+            : [],
+      }
+    : result;
 }
 
 export function createRecLetterFreezeIncident(

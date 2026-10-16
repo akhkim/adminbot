@@ -108,6 +108,17 @@ function failureText(result: { kind: string; message?: string }): string {
   return result.message ?? t("logistics.eligibility.error.failed");
 }
 
+/**
+ * The error a read leaves behind, if any.
+ *
+ * An unreachable service (offline, or down) and a body that is not a whole result are not errors
+ * the reader can act on: both leave the value empty and no error, and the views draw a neutral
+ * "unavailable" in place of the result rather than a red alert.
+ */
+function readError(result: { ok: true } | { ok: false; kind: string; message?: string }) {
+  return result.ok || result.kind === "unreachable" ? null : failureText(result);
+}
+
 // Each writer replaces the sub-object rather than mutating it: Lit compares by reference, and a
 // panel handed the same object would not redraw.
 function patch<K extends keyof RecLetterEligibilityState>(
@@ -135,13 +146,11 @@ export async function loadOwnRecLetterEligibility(host: RecLetterEligibilityHost
   if (!stillSignedInAs(session.token)) {
     return;
   }
-  patch(
-    host,
-    "own",
-    result.ok
-      ? { value: result.value, loading: false }
-      : { value: null, loading: false, error: failureText(result) },
-  );
+  patch(host, "own", {
+    value: result.ok ? result.value : null,
+    loading: false,
+    error: readError(result),
+  });
 }
 
 /** Badges for the letter requests on screen, asking only about members not asked about yet. */
@@ -197,13 +206,11 @@ export async function loadRecLetterDetail(
   if (!stillSignedInAs(session.token) || host.adminBotRecLetter.detail.requestId !== requestId) {
     return;
   }
-  patch(
-    host,
-    "detail",
-    result.ok
-      ? { value: result.value, loading: false }
-      : { loading: false, error: failureText(result) },
-  );
+  patch(host, "detail", {
+    value: result.ok ? result.value : null,
+    loading: false,
+    error: readError(result),
+  });
 }
 
 export async function loadRecLetterFreezeIncidents(host: RecLetterEligibilityHost): Promise<void> {

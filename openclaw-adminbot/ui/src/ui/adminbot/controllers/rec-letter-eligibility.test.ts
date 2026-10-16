@@ -33,6 +33,32 @@ const json = (body: unknown, status = 200) =>
     headers: { "Content-Type": "application/json" },
   });
 
+const wholeResult = {
+  member_id: "m-alpha",
+  status: "eligible",
+  as_of: "2026-10-16",
+  advisory: true,
+  is_alumni: false,
+  freeze: { frozen: false },
+  hours: {
+    status: "met",
+    qualifying_months: 5,
+    required_months: 5,
+    min_weekly_hours: 20,
+    months: [],
+  },
+  attendance: {
+    status: "met",
+    min_rate: 0.8,
+    min_roster_coverage: 0.7,
+    window_months: 3,
+    best_window: null,
+    windows_assessed: 1,
+    windows_considered: 1,
+  },
+  missing: [],
+};
+
 function letter(id: string, memberId: string): LogisticsRequest {
   return {
     id,
@@ -79,7 +105,7 @@ describe("rec-letter eligibility controller", () => {
     const urls: string[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       urls.push(urlOf(input));
-      return json({ member_id: "m-alpha", status: "eligible", missing: [] });
+      return json(wholeResult);
     });
     const redraw = vi.fn();
     readRecLetterEligibility(
@@ -98,6 +124,38 @@ describe("rec-letter eligibility controller", () => {
     expect(urls).toHaveLength(1);
     expect(urls[0]).toContain("/logistics/eligibility/me");
     expect(host.adminBotRecLetter.own.value?.status).toBe("eligible");
+  });
+
+  it("keeps a partial or unreachable read as no result and no error", async () => {
+    saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });
+    const view = {
+      hasMemberSession: true,
+      isAdmin: false,
+      lettersFormShowing: true,
+      queueShowing: false,
+      queue: [],
+      open: null,
+    };
+    for (const answer of [
+      async () => json({ items: [], requests: [] }),
+      async () => json({ member_id: "m-alpha", status: "eligible" }),
+      async () => json({ ...wholeResult, attendance: undefined }),
+      async (): Promise<Response> => {
+        throw new TypeError("Failed to fetch");
+      },
+    ]) {
+      const host = createHost();
+      vi.spyOn(globalThis, "fetch").mockImplementation(answer);
+      const redraw = vi.fn();
+      readRecLetterEligibility(host, view, redraw);
+      await vi.waitFor(() => expect(redraw).toHaveBeenCalled());
+      expect(host.adminBotRecLetter.own).toMatchObject({
+        value: null,
+        error: null,
+        loading: false,
+      });
+      vi.restoreAllMocks();
+    }
   });
 
   it("asks for each queue badge once, even across renders", async () => {

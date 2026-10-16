@@ -2146,6 +2146,8 @@ export const en: TranslationMap = {
       advisory: "Advisory only — this never blocks a request.",
       asOf: "As of {date}",
       loading: "Checking letter eligibility…",
+      unavailable: "Eligibility unavailable right now.",
+      unavailableOffline: "Eligibility unavailable offline.",
       status: {
         eligible: "Eligible",
         frozen: "Frozen",

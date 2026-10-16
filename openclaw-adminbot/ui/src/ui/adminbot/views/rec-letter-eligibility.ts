@@ -8,13 +8,14 @@
 import { html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { t } from "../../../i18n/index.ts";
-import type {
-  RecLetterAdminEligibility,
-  RecLetterEligibility,
-  RecLetterEligibilityGap,
-  RecLetterEligibilityStatus,
-  RecLetterEligibilitySummary,
-  RecLetterFreezeIncident,
+import {
+  isRecLetterEligibility,
+  type RecLetterAdminEligibility,
+  type RecLetterEligibility,
+  type RecLetterEligibilityGap,
+  type RecLetterEligibilityStatus,
+  type RecLetterEligibilitySummary,
+  type RecLetterFreezeIncident,
 } from "../api/rec-letter-eligibility.ts";
 import type { RecLetterFreezeForm } from "../controllers/rec-letter-eligibility.ts";
 
@@ -37,6 +38,13 @@ function percent(rate: number | null): string {
 
 function statusLabel(status: RecLetterEligibilityStatus): string {
   return t(`logistics.eligibility.status.${status}`);
+}
+
+/** Offline, or a service that answered with less than a whole result: neither is the member's fault. */
+function unavailableText(): string {
+  return typeof navigator !== "undefined" && !navigator.onLine
+    ? t("logistics.eligibility.unavailableOffline")
+    : t("logistics.eligibility.unavailable");
 }
 
 function renderStatusPill(status: RecLetterEligibilityStatus, label = statusLabel(status)) {
@@ -174,8 +182,14 @@ export function renderRecLetterDetailPanel(props: RecLetterDetailPanelProps) {
     </section>`;
   }
   const result = props.value?.eligibility;
-  if (!result) {
-    return nothing;
+  if (!isRecLetterEligibility(result)) {
+    return html`<section
+      class="rec-eligibility"
+      data-testid="rec-eligibility-panel"
+      data-status="unavailable"
+    >
+      <p class="muted">${unavailableText()}</p>
+    </section>`;
   }
   return html`
     <section
@@ -222,10 +236,11 @@ export type RecLetterAdvisoryProps = {
  * The note on the member's own letters form.
  *
  * It states the policy whatever the read returned, so a member whose read failed still learns what
- * the lab looks at. A failure is otherwise silent: the form is the member's to submit either way.
+ * the lab looks at. A failure, or a result missing its parts, gets one muted line and nothing
+ * more: the form is the member's to submit either way.
  */
 export function renderRecLetterAdvisory(props: RecLetterAdvisoryProps) {
-  const result = props.value;
+  const result = isRecLetterEligibility(props.value) ? props.value : null;
   const window = result?.attendance.window_months ?? 3;
   const remaining = result ? result.missing.filter((gap) => gap.code !== "frozen") : [];
   return html`
@@ -247,9 +262,13 @@ export function renderRecLetterAdvisory(props: RecLetterAdvisoryProps) {
           rate: percent(result?.attendance.min_rate ?? 0.8),
         })}
       </p>
-      ${props.loading && !result
-        ? html`<p class="muted">${t("logistics.eligibility.loading")}</p>`
-        : nothing}
+      ${result
+        ? nothing
+        : props.loading
+          ? html`<p class="muted">${t("logistics.eligibility.loading")}</p>`
+          : html`<p class="muted" data-testid="rec-eligibility-unavailable">
+              ${unavailableText()}
+            </p>`}
       ${result?.freeze.frozen && result.freeze.frozen_until
         ? html`<p class="rec-eligibility__frozen" data-testid="rec-eligibility-frozen">
             <strong
