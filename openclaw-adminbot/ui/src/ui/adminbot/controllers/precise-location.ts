@@ -2,9 +2,9 @@
 // city they are in, and the silent refresh that keeps it current afterwards.
 //
 // The rules, each with a test in precise-location.test.ts:
-//   - Nothing here ever prompts on its own. The browser's permission prompt only follows the
-//     member pressing the button; the silent refresh runs only where the permission is already
-//     "granted", and on "prompt" or "denied" it does nothing at all.
+//   - The browser's own permission prompt is raised automatically at most once per device, the
+//     first time a signed-in member opens AdminBot there. After that it follows only the member
+//     pressing the button: "granted" is read silently, "denied" is never asked again.
 //   - The silent refresh is silent: no toast, no banner, no error. A failure is swallowed here and
 //     logged server-side only, by the service (and there only without the position).
 //   - At most one silent reading per device per hour, on a visit or when the tab comes back into
@@ -34,6 +34,9 @@ export const SILENT_REFRESH_EVERY_MS = 60 * 60_000;
 
 /** Per-device throttle stamp. A time, never a position. */
 export const SILENT_REFRESH_KEY = "adminbot.preciseLocation.lastRefreshAt";
+
+/** When this device was asked automatically, so it is asked once and never again. A time only. */
+export const AUTO_ASK_KEY = "adminbot.preciseLocation.autoAskedAt";
 
 export type PreciseLocationPlace = { city: string; region?: string; country?: string };
 
@@ -112,9 +115,12 @@ export async function sharePreciseLocation(
 }
 
 /**
- * The silent refresh. Reads the device only where the permission is already granted, at most once
- * an hour per device, and never for a hidden or stated member. Resolves with the city when one was
- * named, otherwise undefined; never throws and never shows anything.
+ * The automatic refresh. Where the permission is granted it reads silently, at most once an hour per
+ * device. Where the browser has not been asked yet ("prompt", or no Permissions API to tell) it
+ * raises the browser's prompt once per device, recorded under AUTO_ASK_KEY; a device that cannot
+ * remember having asked (storage blocked) is not asked, so nobody is prompted on every visit.
+ * Never for a hidden or stated member, never after "denied". Resolves with the city when one was
+ * named, otherwise undefined; never throws and shows nothing of its own.
  */
 export async function refreshPreciseLocationSilently(
   deps: PreciseLocationDeps,
@@ -124,8 +130,7 @@ export async function refreshPreciseLocationSilently(
     if (!preciseLocationAllowed(visibility)) {
       return undefined;
     }
-    // No Permissions API means no way to know the answer without asking, so do not ask.
-    if (!deps.isSecureContext || !deps.geolocation || !deps.permissions) {
+    if (!deps.isSecureContext || !deps.geolocation) {
       return undefined;
     }
     const now = deps.now?.() ?? Date.now();
@@ -138,9 +143,22 @@ export async function refreshPreciseLocationSilently(
     if (Number.isFinite(last) && now - last >= 0 && now - last < SILENT_REFRESH_EVERY_MS) {
       return undefined;
     }
-    const permission = await deps.permissions.query({ name: "geolocation" });
-    if (permission.state !== "granted") {
+    // No Permissions API (older Safari) means the answer is unknown until asked: treat it as "prompt".
+    const permission = deps.permissions
+      ? (await deps.permissions.query({ name: "geolocation" })).state
+      : "prompt";
+    if (permission === "denied") {
       return undefined;
+    }
+    if (permission !== "granted") {
+      try {
+        if (!deps.storage || deps.storage.getItem(AUTO_ASK_KEY) !== null) {
+          return undefined;
+        }
+        deps.storage.setItem(AUTO_ASK_KEY, String(now));
+      } catch {
+        return undefined;
+      }
     }
     try {
       deps.storage?.setItem(SILENT_REFRESH_KEY, String(now));

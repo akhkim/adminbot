@@ -2,6 +2,7 @@
 // The burden rules for "Use my precise location", one test each. Synthetic positions only.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  AUTO_ASK_KEY,
   PRECISE_LOCATION_OPTIONS,
   type PreciseLocationDeps,
   refreshPreciseLocationSilently,
@@ -52,17 +53,33 @@ function deps(
 }
 
 describe("silent refresh", () => {
-  it("never prompts: no reading unless the permission is already granted", async () => {
-    for (const permission of ["prompt", "denied"]) {
-      const d = deps({ permission });
-      expect(await refreshPreciseLocationSilently(d, "auto")).toBeUndefined();
-      expect(d.getCurrentPosition).not.toHaveBeenCalled();
-      expect(d.report).not.toHaveBeenCalled();
+  it("asks automatically once per device, and never after the browser was told no", async () => {
+    for (const permissions of [
+      { query: async () => ({ state: "prompt" }) },
+      undefined, // No Permissions API: unknown until asked, so treated as "prompt".
+    ]) {
+      const storage = memoryStorage();
+      let now = Date.parse("2026-10-16T12:00:00Z");
+      const d = deps({ permissions, storage, now: () => now });
+      expect(await refreshPreciseLocationSilently(d, "auto")).toEqual({
+        city: "Reggio Emilia",
+        region: "Emilia-Romagna",
+        country: "IT",
+      });
+      expect(d.getCurrentPosition).toHaveBeenCalledTimes(1);
+      expect(storage.data.has(AUTO_ASK_KEY)).toBe(true);
+      // Dismissed or ignored: the next visit, an hour or a month later, does not ask again.
+      now += 30 * 24 * 60 * 60_000;
+      await refreshPreciseLocationSilently(d, "auto");
+      expect(d.getCurrentPosition).toHaveBeenCalledTimes(1);
     }
-    // No Permissions API: the state is unknowable without asking, so nothing is read.
-    const bare = deps({ permissions: undefined });
-    expect(await refreshPreciseLocationSilently(bare, "auto")).toBeUndefined();
-    expect(bare.getCurrentPosition).not.toHaveBeenCalled();
+    const denied = deps({ permission: "denied" });
+    expect(await refreshPreciseLocationSilently(denied, "auto")).toBeUndefined();
+    expect(denied.getCurrentPosition).not.toHaveBeenCalled();
+    // A device that cannot remember asking is not asked, or it would be asked on every visit.
+    const forgetful = deps({ permission: "prompt", storage: undefined });
+    expect(await refreshPreciseLocationSilently(forgetful, "auto")).toBeUndefined();
+    expect(forgetful.getCurrentPosition).not.toHaveBeenCalled();
   });
 
   it("reads city-level when granted and sends only the two numbers", async () => {
@@ -150,7 +167,7 @@ describe("silent refresh", () => {
 });
 
 describe("the button", () => {
-  it("is the only path that reads without a granted permission", async () => {
+  it("reads on a press, whatever the permission says", async () => {
     const d = deps({ permission: "prompt" });
     expect(await sharePreciseLocation(d)).toEqual({
       place: { city: "Reggio Emilia", region: "Emilia-Romagna", country: "IT" },

@@ -2568,9 +2568,9 @@ export function renderApp(state: AppViewState) {
   ) {
     void state.loadLocationPrompt?.().finally(() => requestHostUpdate?.());
   }
-  // The silent device refresh: once per session, after the member's own record is in (it carries
-  // their map visibility). It never prompts -- it reads only where the browser already granted
-  // location -- shows nothing, and the controller holds it to one reading an hour per device.
+  // The automatic device refresh: once per session, after the member's own record is in (it carries
+  // their map visibility). The browser's location prompt is raised at most once per device; after
+  // that it reads only where location was granted, shows nothing, one reading an hour per device.
   if (hasMemberSession && findOwnMember(state)) {
     startAdminBotPreciseLocationRefresh(state, () => requestHostUpdate?.());
   }
