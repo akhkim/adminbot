@@ -971,7 +971,10 @@ export function isWithinDays(at: string | undefined, days: number, now: Date): b
 }
 
 /** The member's Slack zone, when the directory sync saw it recently enough to use. */
-export function freshSlackTz(member: AdminBotLabMember, now: Date): string | undefined {
+export function freshSlackTz(
+  member: Pick<AdminBotLabMember, "slack_tz" | "slack_tz_observed_at">,
+  now: Date,
+): string | undefined {
   const zone = member.slack_tz?.trim();
   return zone && isWithinDays(member.slack_tz_observed_at, SLACK_TZ_FRESH_DAYS, now)
     ? zone
@@ -1011,7 +1014,10 @@ export function usableDeviceZone(raw: string | undefined): string | undefined {
 }
 
 /** The member's browser zone, when their requests reported it recently enough to use. */
-export function freshDeviceTz(member: AdminBotLabMember, now: Date): string | undefined {
+export function freshDeviceTz(
+  member: Pick<AdminBotLabMember, "last_device_tz" | "last_device_tz_at">,
+  now: Date,
+): string | undefined {
   const zone = usableDeviceZone(member.last_device_tz);
   return zone && isWithinDays(member.last_device_tz_at, ADMINBOT_DEVICE_TZ_FRESH_DAYS, now)
     ? zone
@@ -1023,7 +1029,13 @@ export function freshDeviceTz(member: AdminBotLabMember, now: Date): string | un
  * device wins because it is the machine actually making the requests; Slack's zone is whatever
  * that account's last device said, possibly days ago.
  */
-export function referenceZone(member: AdminBotLabMember, now: Date): string | undefined {
+export function referenceZone(
+  member: Pick<
+    AdminBotLabMember,
+    "last_device_tz" | "last_device_tz_at" | "slack_tz" | "slack_tz_observed_at"
+  >,
+  now: Date,
+): string | undefined {
   return freshDeviceTz(member, now) ?? freshSlackTz(member, now);
 }
 
@@ -1050,7 +1062,7 @@ export function ipCityState(member: AdminBotLabMember, now: Date): AdminBotIpCit
   if (!at || !isWithinDays(at, ADMINBOT_MAP_LOGIN_FRESH_DAYS, now)) {
     return {};
   }
-  if (member.last_ip_suspected_vpn) {
+  if (ipReadingSetAside(member, now)) {
     return { ignored: "suspected_vpn" };
   }
   const city = member.last_login_city?.trim();
@@ -1058,10 +1070,39 @@ export function ipCityState(member: AdminBotLabMember, now: Date): AdminBotIpCit
     return {};
   }
   const place = resolveLoginCity(city, member.last_login_region, member.last_login_country);
-  if (place && timezoneMismatch(place, referenceZone(member, now), now)) {
-    return { ignored: "suspected_vpn" };
-  }
   return { trusted: { city, at, ...(place ? { place } : {}) } };
+}
+
+/** What `ipReadingSetAside` reads: the reading, its flag, and the zones it is checked against. */
+export type AdminBotIpReadingCheckFields =
+  | "last_login_city"
+  | "last_login_region"
+  | "last_login_country"
+  | "last_ip_suspected_vpn"
+  | "last_device_tz"
+  | "last_device_tz_at"
+  | "slack_tz"
+  | "slack_tz_observed_at";
+
+/**
+ * Whether the member's latest IP reading must not say where they are: flagged as a likely VPN when
+ * it was taken, or its city keeps a clock more than ADMINBOT_TZ_MISMATCH_HOURS from the device (else
+ * Slack) zone now. The one rule for every reader of the IP city -- the map and the meetup intros --
+ * so a VPN exit can never place somebody in one and introduce them in the other.
+ */
+export function ipReadingSetAside(
+  member: Pick<AdminBotLabMember, AdminBotIpReadingCheckFields>,
+  now: Date,
+): boolean {
+  if (member.last_ip_suspected_vpn) {
+    return true;
+  }
+  const city = member.last_login_city?.trim();
+  if (!city) {
+    return false;
+  }
+  const place = resolveLoginCity(city, member.last_login_region, member.last_login_country);
+  return Boolean(place && timezoneMismatch(place, referenceZone(member, now), now));
 }
 
 /**

@@ -83,6 +83,11 @@ A reading taken before this check existed carries no flag. The map applies the s
 it at render time, against the device zone, else the Slack zone. An unknown is not a conflict: with
 neither zone available, the reading is trusted.
 
+City and event meetup intros use the same rule (`ipReadingSetAside` in `member-map.ts`, read by
+`signInPlace` in `meetups.ts`). A reading the map sets aside never puts anybody in a city for an
+intro, whether the intro comes from the sign-in hook, the daily reading or the hourly sweep, so a
+VPN exit in Toronto cannot produce "you're both in Toronto".
+
 An ASN check (DB-IP ASN Lite, to recognise hosting and VPN providers by network) was considered and
 left out. It would need a second database, its own refresh job and a maintained list of VPN ASNs,
 and the clock comparison already catches the case that matters: a member whose IP city is in a

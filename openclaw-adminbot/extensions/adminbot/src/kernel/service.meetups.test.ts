@@ -635,3 +635,55 @@ describe("zero setup, serendipity and Say hi", () => {
     expect(unwrap(service.meetups().overview("ada")).events[0]).toMatchObject({ said_hi: true });
   });
 });
+
+describe("intros never trust a likely VPN exit", () => {
+  // 15:00Z is 11:00 in Toronto in October. Both members' IP readings say Toronto; the question is
+  // whether a reading the map would set aside can still say "you're both in Toronto".
+  const TORONTO = { city: "Toronto", country: "Canada", zone: "America/Toronto" };
+  const AT = "2026-10-15T15:00:00Z";
+
+  it("introduces two members whose Toronto readings are trusted", async () => {
+    const { service, add, intros } = lab(AT);
+    add({ id: "ada", topics: ["Causal inference"], ...TORONTO });
+    add({ id: "bob", topics: ["Sparse autoencoders"], ...TORONTO });
+    expect(unwrap(await service.introduceCityMeetups({ city: "Toronto" })).introduced).toBe(1);
+    expect(intros()).toHaveLength(1);
+  });
+
+  it("sends no city intro when one reading was flagged suspected_vpn, from the hook or the sweep", async () => {
+    const { service, store, add, intros } = lab(AT);
+    add({ id: "ada", topics: ["Causal inference"], ...TORONTO });
+    add({ id: "bob", topics: ["Sparse autoencoders"], ...TORONTO });
+    // A VPN exit in Toronto: the flag is what recordLoginLocation writes for such a reading.
+    store.saveLabMember({ ...store.getLabMember("bob")!, last_ip_suspected_vpn: true });
+    await service.onLoginLocated("bob");
+    await service.onLoginLocated("ada");
+    await service.runMeetupSweep();
+    expect(unwrap(await service.introduceCityMeetups({ city: "Toronto" })).introduced).toBe(0);
+    expect(intros()).toHaveLength(0);
+  });
+
+  it("sends no city intro when an unflagged reading disagrees with the device or Slack zone", async () => {
+    const { service, store, add, intros } = lab(AT);
+    add({ id: "ada", topics: ["Causal inference"], ...TORONTO });
+    add({ id: "bob", topics: ["Sparse autoencoders"], ...TORONTO });
+    add({ id: "cy", topics: ["Program synthesis"], ...TORONTO });
+    // Taken before the zone was known, so never flagged; the browser now reports Zurich.
+    store.saveLabMember({
+      ...store.getLabMember("bob")!,
+      last_device_tz: "Europe/Zurich",
+      last_device_tz_at: AT,
+    });
+    // No browser zone, but Slack says Tokyo.
+    store.saveLabMember({
+      ...store.getLabMember("cy")!,
+      slack_tz: "Asia/Tokyo",
+      slack_tz_observed_at: AT,
+    });
+    await service.onLoginLocated("bob");
+    await service.onLoginLocated("cy");
+    await service.runMeetupSweep();
+    expect(unwrap(await service.introduceCityMeetups({ city: "Toronto" })).introduced).toBe(0);
+    expect(intros()).toHaveLength(0);
+  });
+});

@@ -9,6 +9,7 @@
 // Pure and deterministic, so the service can hold the I/O and these can be tested on their own.
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import { isoDay, samePlace, travelPlace } from "./lab-travel.js";
+import { type AdminBotIpReadingCheckFields, ipReadingSetAside } from "./member-map.js";
 
 // --- near ---------------------------------------------------------------------------------------
 
@@ -191,11 +192,12 @@ function within(at: string | undefined, now: Date, days: number): boolean {
   return Number.isFinite(ms) && now.getTime() - ms <= days * DAY_MS && ms <= now.getTime() + DAY_MS;
 }
 
-type IpReadingFields = "last_login_at" | "last_ip_observed_at" | "last_ip_suspected_vpn";
+type IpReadingFields = "last_login_at" | "last_ip_observed_at" | AdminBotIpReadingCheckFields;
 
 /**
- * Whether the member's latest IP reading is recent enough and was not set aside as a likely VPN.
- * Its time is the daily check's when there is one, else the sign-in's.
+ * Whether the member's latest IP reading is recent enough and is not a likely VPN exit, by the same
+ * rule the map uses (`ipReadingSetAside`): flagged when taken, or its city's clock disagrees with
+ * the device or Slack zone. Its time is the daily check's when there is one, else the sign-in's.
  */
 function freshTrustedIp(
   member: Pick<AdminBotLabMember, IpReadingFields>,
@@ -203,7 +205,7 @@ function freshTrustedIp(
   days: number,
 ): boolean {
   return (
-    !member.last_ip_suspected_vpn &&
+    !ipReadingSetAside(member, now) &&
     within(member.last_ip_observed_at || member.last_login_at, now, days)
   );
 }

@@ -17,6 +17,7 @@ function setup(options: {
   geolocateIp: (ip: string) => Promise<Located | undefined>;
   store?: AdminBotMemoryStore;
   member?: Partial<AdminBotLabMember>;
+  afterLoginLocated?: (memberId: string) => void;
 }) {
   let clock = new Date("2026-07-15T09:00:00.000Z");
   const store = options.store ?? new AdminBotMemoryStore();
@@ -32,6 +33,7 @@ function setup(options: {
       return result.payload;
     },
     geolocateIp: options.geolocateIp,
+    ...(options.afterLoginLocated ? { afterLoginLocated: options.afterLoginLocated } : {}),
     warn,
     now: () => clock,
   });
@@ -215,6 +217,24 @@ describe("VPN check on the daily reading", () => {
     expect(deviceRows).toHaveLength(1);
     expect(deviceRows[0]).toMatchObject({ raw: "Europe/Zurich" });
     expect(deviceRows[0]?.place_key).toBeUndefined();
+  });
+
+  it("wakes the meetup hook for a trusted reading and never for a likely VPN exit", async () => {
+    const trustedHook = vi.fn();
+    const trusted = setup({
+      geolocateIp: vi.fn(async () => TORONTO),
+      afterLoginLocated: trustedHook,
+    });
+    trusted.auth.noteAccountUse(trusted.principal(), "198.51.100.7", { tz: "America/Toronto" });
+    await vi.waitFor(() => expect(trustedHook).toHaveBeenCalledWith("m_daily"));
+
+    const vpnHook = vi.fn();
+    const vpn = setup({ geolocateIp: vi.fn(async () => TORONTO), afterLoginLocated: vpnHook });
+    vpn.auth.noteAccountUse(vpn.principal(), "198.51.100.7", { tz: "Europe/Zurich" });
+    await vi.waitFor(() => expect(vpn.ipRows()).toHaveLength(1));
+    await settle();
+    expect(vpn.store.getLabMember("m_daily")?.last_ip_suspected_vpn).toBe(true);
+    expect(vpnHook).not.toHaveBeenCalled();
   });
 
   it("uses a reading whose city agrees with the device zone", async () => {
