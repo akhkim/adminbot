@@ -4422,6 +4422,24 @@ describe("the member location timeline", () => {
       );
     });
 
+    it("lists the picker's cities for a signed-in member only", async () => {
+      const { baseUrl } = await startService();
+      const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member");
+      expect((await fetch(`${baseUrl}/profile/location-places`)).status).toBe(401);
+      const res = await fetch(`${baseUrl}/profile/location-places`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(200);
+      const { places } = (await res.json()) as {
+        places: Array<{ key: string; label: string; country: string; lat: number; lon: number }>;
+      };
+      expect(places.length).toBeGreaterThan(100);
+      expect(places.find((place) => place.key === "toronto")).toMatchObject({
+        label: "Toronto",
+        country: "Canada",
+      });
+    });
+
     it("rejects an unknown action, and the drift answer without one still works", async () => {
       const { baseUrl } = await startService();
       const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member");

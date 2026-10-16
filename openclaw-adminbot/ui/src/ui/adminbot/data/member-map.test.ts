@@ -160,6 +160,43 @@ describe("parseMemberMap", () => {
     ]);
   });
 
+  it("keeps a check-in source, its date, and a well-formed time zone mismatch", () => {
+    const map = parseMemberMap({
+      mode: "full",
+      places: [
+        {
+          key: "toronto",
+          label: "Toronto",
+          country: "Canada",
+          lat: 43.65,
+          lon: -79.38,
+          members: [
+            {
+              member_id: "a",
+              name: "Ada",
+              source: "checkin",
+              precision: "city",
+              located_at: "2026-07-12T10:00:00.000Z",
+              tz_mismatch: { slack_tz: "Europe/Berlin", place_tz: "America/Toronto", hours: 6 },
+            },
+            { member_id: "b", name: "Bo", located_at: "not a date", tz_mismatch: { hours: "x" } },
+          ],
+        },
+      ],
+    });
+    expect(map?.places[0]?.members).toEqual([
+      {
+        member_id: "a",
+        name: "Ada",
+        source: "checkin",
+        precision: "city",
+        located_at: "2026-07-12T10:00:00.000Z",
+        tz_mismatch: { slack_tz: "Europe/Berlin", place_tz: "America/Toronto", hours: 6 },
+      },
+      { member_id: "b", name: "Bo" },
+    ]);
+  });
+
   it("never turns a null or blank member name into a printed name", () => {
     const map = parseMemberMap({
       mode: "full",

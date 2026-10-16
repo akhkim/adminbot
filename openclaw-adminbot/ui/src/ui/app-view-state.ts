@@ -594,6 +594,7 @@ export type AppViewState = {
   adminBotLocationDrifts?: LocationDrift[];
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
+  adminBotLocationCheckin?: import("./adminbot/data/location-checkin.ts").CheckinBanner | null;
   loadLocationPrompt?: () => Promise<void>;
   loadLocationDrifts?: () => Promise<void>;
   answerLocationPrompt?: (answer: { current_city?: string; timezone?: string }) => Promise<void>;

@@ -3,6 +3,7 @@
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 import { redactConfidentialMemberFields } from "../../contracts/actions.js";
+import { gazetteerPlaces } from "../../workflows/members/member-map.js";
 import { asString, readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
 import { handleMemberDraft } from "../server.member-drafts.js";
 import { memberOnly, principalActor, privilegedOnly } from "./guards.js";
@@ -122,6 +123,23 @@ export const profileRoutes: readonly Route[] = [
       }
       sendJson(res, 400, {
         error: { message: 'action must be "answer", "snooze" or "decline"' },
+      });
+    }),
+  ),
+  // The cities the check-in picker offers, and what "Use this device's location" snaps to. Public
+  // facts about cities, not about anyone: the device's own position is matched to the nearest one
+  // in the browser and never sent.
+  get(
+    "/profile/location-places",
+    memberOnly(({ res }) => {
+      sendJson(res, 200, {
+        places: gazetteerPlaces().map(({ key, label, country, lat, lon }) => ({
+          key,
+          label,
+          country,
+          lat,
+          lon,
+        })),
       });
     }),
   ),

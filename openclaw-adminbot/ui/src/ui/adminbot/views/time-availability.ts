@@ -60,6 +60,7 @@ import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
 // `hours_per_week` as a denominator, so a member who had not set one got no chart at all; hours are
 // the number they typed in, and capacity becomes a reference line when it is known.
 import { renderDateControl } from "../date-control.ts";
+import { renderLocationLog } from "./location-log.ts";
 import { renderMemberSelect } from "./member-select.ts";
 import { renderWhereStrip } from "./time-availability.trips.ts";
 import {
@@ -261,6 +262,11 @@ export type AdminBotTimeAvailabilityProps = {
   viewerMemberId: string | null;
   /** Admins see the roster; members see self and separately authorized collaborator snapshots. */
   viewerIsAdmin: boolean;
+  /**
+   * The service, for an admin's location log under the schedule. Absent for a member, and the
+   * panel with it: the route behind it answers admins (and the member themself) only.
+   */
+  locationLogBaseUrl?: string;
   /** The Jinesis-commitment form's draft. Its category is always "jinesis". */
   draft: TimeAvailabilityDraft;
   onDraftChange: (draft: TimeAvailabilityDraft) => void;
@@ -2142,6 +2148,9 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                   ? renderOtherTable(visibleTimeOff, props, editable)
                   : nothing}
                 ${renderOverallNotes(props, storedNotes, editable)}
+                ${props.viewerIsAdmin && props.locationLogBaseUrl
+                  ? renderLocationLog(selectedMember.id, props.locationLogBaseUrl)
+                  : nothing}
                 ${!hasAnything && !editable
                   ? html`<div class="adminbot-time-availability__empty">
                       ${t("adminbotTimeAvailability.noAllocations")}

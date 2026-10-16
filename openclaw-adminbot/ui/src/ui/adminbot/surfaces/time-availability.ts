@@ -6,7 +6,7 @@
 import { nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
-import { loadStoredMemberSession } from "../auth/session.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { loadAdminBot } from "../controllers/admin.ts";
 import { loadCollaboratorSchedules } from "../controllers/collaborator-schedules.ts";
 import { loadAdminBotMemberDetail, withMemberDetails } from "../controllers/member-detail.ts";
@@ -87,6 +87,9 @@ export function renderTimeAvailabilitySurface(state: AppViewState, scope: AdminB
           },
           viewerMemberId: state.memberId ?? null,
           viewerIsAdmin: accessRole === "admin",
+          ...(accessRole === "admin"
+            ? { locationLogBaseUrl: resolveAdminBotBaseUrl(state.settings) }
+            : {}),
           draft: state.adminBotTimeAvailabilityDraft,
           onDraftChange: (draft) => {
             state.adminBotTimeAvailabilityDraft = draft;

@@ -97,10 +97,56 @@ export type LocationDrift = {
   observation_count: number;
 };
 
+/**
+ * "Where are you based right now?" -- whether to ask, and the one-tap guess. Mirrors
+ * AdminBotLocationCheckin in extensions/adminbot/src/contracts/actions.ts.
+ */
+export type LocationCheckin = {
+  due: boolean;
+  reason:
+    | "no_guess"
+    | "timezone_mismatch"
+    | "signals_agree"
+    | "answered"
+    | "snoozed"
+    | "declined"
+    | "hidden";
+  suggestion?: { city: string; source: "login" | "slack_tz" | "stored" };
+  last_answered_at?: string;
+  last_answered_city?: string;
+  snoozed_until?: string;
+  note?: string;
+};
+
+export type LocationPromptState = { drift: LocationDrift | null; checkin: LocationCheckin | null };
+
+function toCheckin(raw: unknown): LocationCheckin | null {
+  const record = raw as Partial<LocationCheckin> | null | undefined;
+  if (!record || typeof record.due !== "boolean" || typeof record.reason !== "string") {
+    return null;
+  }
+  const city = typeof record.suggestion?.city === "string" ? record.suggestion.city.trim() : "";
+  return {
+    due: record.due,
+    reason: record.reason,
+    ...(city && record.suggestion
+      ? { suggestion: { city, source: record.suggestion.source } }
+      : {}),
+    ...(typeof record.last_answered_at === "string"
+      ? { last_answered_at: record.last_answered_at }
+      : {}),
+    ...(typeof record.last_answered_city === "string"
+      ? { last_answered_city: record.last_answered_city }
+      : {}),
+    ...(typeof record.snoozed_until === "string" ? { snoozed_until: record.snoozed_until } : {}),
+    ...(typeof record.note === "string" ? { note: record.note } : {}),
+  };
+}
+
 export async function fetchLocationPrompt(
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<LocationDrift | null>> {
+): Promise<AuthResult<LocationPromptState>> {
   const result = await authedJson(baseUrl, "/profile/location-prompt", "GET", sessionToken);
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -108,8 +154,87 @@ export async function fetchLocationPrompt(
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as { drift?: LocationDrift | null } | null;
-  return { ok: true, value: body?.drift ?? null };
+  // An older service sends only `drift`; no check-in then, rather than a guessed one.
+  const body = result.body as { drift?: LocationDrift | null; checkin?: unknown } | null;
+  return { ok: true, value: { drift: body?.drift ?? null, checkin: toCheckin(body?.checkin) } };
+}
+
+export type LocationCheckinResponse =
+  | { action: "answer"; city: string; via: "picker" | "text" | "device" }
+  | { action: "snooze" }
+  | { action: "decline" };
+
+/** Answer, "Ask me later" or "Prefer not to say". The service logs each, and returns the new state. */
+export async function respondToLocationCheckin(
+  response: LocationCheckinResponse,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LocationCheckin | null>> {
+  const result = await authedJson(
+    baseUrl,
+    "/profile/location-prompt",
+    "POST",
+    sessionToken,
+    response,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { checkin?: unknown } | null;
+  return { ok: true, value: toCheckin(body?.checkin) };
+}
+
+/** A gazetteer city: what the picker lists, and what a device position snaps to in the browser. */
+export type LocationPlace = {
+  key: string;
+  label: string;
+  country: string;
+  lat: number;
+  lon: number;
+};
+
+export async function fetchLocationPlaces(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LocationPlace[]>> {
+  const result = await authedJson(baseUrl, "/profile/location-places", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { places?: unknown } | null;
+  const places = Array.isArray(body?.places) ? body.places : [];
+  return {
+    ok: true,
+    value: places.flatMap((raw) => {
+      const place = raw as {
+        key?: unknown;
+        label?: unknown;
+        country?: unknown;
+        lat?: unknown;
+        lon?: unknown;
+      } | null;
+      return place &&
+        typeof place.label === "string" &&
+        typeof place.lat === "number" &&
+        typeof place.lon === "number"
+        ? [
+            {
+              key: typeof place.key === "string" ? place.key : place.label,
+              label: place.label,
+              country: typeof place.country === "string" ? place.country : "",
+              lat: place.lat,
+              lon: place.lon,
+            },
+          ]
+        : [];
+    }),
+  };
 }
 
 /** An empty answer is a dismissal: it settles the question without touching the profile. */

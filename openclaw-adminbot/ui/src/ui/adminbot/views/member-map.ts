@@ -85,25 +85,41 @@ function startOfLocalDay(time: number): number {
   return day.getTime();
 }
 
-/** "from sign-in today", "… yesterday", "… 5 days ago", by the viewer's own calendar. */
-function signInPhrase(at: string | undefined, now: number): string {
+type AgeKeys = { undated: string; today: string; yesterday: string; daysAgo: string };
+
+const SIGN_IN_AGE: AgeKeys = {
+  undated: "dashboard.memberMap.fromSignIn",
+  today: "dashboard.memberMap.fromSignInToday",
+  yesterday: "dashboard.memberMap.fromSignInYesterday",
+  daysAgo: "dashboard.memberMap.fromSignInDaysAgo",
+};
+
+const CHECKIN_AGE: AgeKeys = {
+  undated: "dashboard.memberMap.fromCheckin",
+  today: "dashboard.memberMap.fromCheckinToday",
+  yesterday: "dashboard.memberMap.fromCheckinYesterday",
+  daysAgo: "dashboard.memberMap.fromCheckinDaysAgo",
+};
+
+/** "from sign-in today", "stated yesterday", "… 5 days ago", by the viewer's own calendar. */
+function agePhrase(at: string | undefined, now: number, keys: AgeKeys): string {
   const seen = at ? Date.parse(at) : Number.NaN;
   if (Number.isNaN(seen)) {
-    return t("dashboard.memberMap.fromSignIn");
+    return t(keys.undated);
   }
   const days = Math.max(0, Math.round((startOfLocalDay(now) - startOfLocalDay(seen)) / DAY_MS));
   if (days === 0) {
-    return t("dashboard.memberMap.fromSignInToday");
+    return t(keys.today);
   }
-  return days === 1
-    ? t("dashboard.memberMap.fromSignInYesterday")
-    : t("dashboard.memberMap.fromSignInDaysAgo", { count: String(days) });
+  return days === 1 ? t(keys.yesterday) : t(keys.daysAgo, { count: String(days) });
 }
 
 function sourcePhrase(member: MemberMapMember, now: number): string | undefined {
   switch (member.source) {
     case "login":
-      return signInPhrase(member.last_login_at, now);
+      return agePhrase(member.located_at ?? member.last_login_at, now, SIGN_IN_AGE);
+    case "checkin":
+      return agePhrase(member.located_at, now, CHECKIN_AGE);
     case "roster":
       return member.precision === "timezone"
         ? t("dashboard.memberMap.fromProfileTimezone")
@@ -127,8 +143,18 @@ export function memberDetail(
   place: Pick<MemberMapPlace, "label">,
   now: number = Date.now(),
 ): string {
-  const source = sourcePhrase(member, now);
-  return source ? `${place.label} · ${source}` : place.label;
+  const parts = [place.label, sourcePhrase(member, now), mismatchPhrase(member)];
+  return parts.filter(Boolean).join(" · ");
+}
+
+/** "Slack time zone Europe/Berlin is 6 h off": the pin stays put, but an admin sees the doubt. */
+function mismatchPhrase(member: MemberMapMember): string | undefined {
+  const mismatch = member.tz_mismatch;
+  if (!mismatch) {
+    return undefined;
+  }
+  const hours = String(Math.round(mismatch.hours * 2) / 2);
+  return t("dashboard.memberMap.tzMismatch", { zone: mismatch.slack_tz, hours });
 }
 
 /** "Updated just now" / "Updated 4 min ago" / "Updated 2 h ago". */
@@ -511,6 +537,13 @@ function renderFoot(map: MemberMap) {
       ${map.unplaced > 0
         ? html`<p class="member-map__note" data-testid="member-map-unplaced">
             ${t("dashboard.memberMap.unplaced", { count: String(map.unplaced) })}
+          </p>`
+        : nothing}
+      ${map.ipGeolocation
+        ? html`<p class="member-map__note" data-testid="member-map-ip-geolocation">
+            ${map.ipGeolocation.active
+              ? t("dashboard.memberMap.ipGeoActive", { provider: map.ipGeolocation.provider })
+              : t("dashboard.memberMap.ipGeoInactive")}
           </p>`
         : nothing}
       ${map.attribution
