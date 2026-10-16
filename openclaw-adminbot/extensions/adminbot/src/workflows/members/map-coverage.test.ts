@@ -48,6 +48,13 @@ const roster = [
   }),
   // Chose to be left off the map.
   member("g", { map_visibility: "hidden", current_city: "Zurich" }),
+  // The city their own browser reported yesterday; no coordinates are ever stored.
+  member("i", {
+    device_city: "Vancouver",
+    device_region: "British Columbia",
+    device_country: "CA",
+    device_located_at: ago(1),
+  }),
   // Departed: not counted at all.
   member("h", { status: "alumni", current_city: "Zurich" }),
 ];
@@ -56,8 +63,9 @@ describe("buildMapCoverage", () => {
   const coverage = buildMapCoverage(roster, { now });
 
   it("puts every active member in exactly one bucket", () => {
-    expect(coverage.active).toBe(7);
+    expect(coverage.active).toBe(8);
     expect(coverage.counts).toEqual({
+      device: 1,
       ip: 1,
       checkin: 1,
       stored_city: 2,
@@ -66,8 +74,10 @@ describe("buildMapCoverage", () => {
       unplaced: 1,
       hidden: 1,
       suspected_vpn: 1,
+      // Placed by the IP (a) or a time zone's city (d): somewhere near, never exact.
+      approximate_only: 2,
     });
-    const { suspected_vpn: _overlay, ...buckets } = coverage.counts;
+    const { suspected_vpn: _overlay, approximate_only: _subset, ...buckets } = coverage.counts;
     expect(Object.values(buckets).reduce((sum, n) => sum + n, 0)).toBe(coverage.active);
   });
 

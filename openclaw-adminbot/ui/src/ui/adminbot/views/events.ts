@@ -245,12 +245,14 @@ function renderCard(props: EventsProps, card: EventCard): TemplateResult {
   </li>`;
 }
 
-function viewerSourceNote(source: "ip" | "profile" | "slack"): string {
-  return source === "ip"
-    ? t("events.location.ip")
-    : source === "profile"
-      ? t("events.location.profile")
-      : t("events.location.slack");
+function viewerSourceNote(source: "device" | "ip" | "profile" | "slack"): string {
+  return source === "device"
+    ? t("events.location.device")
+    : source === "ip"
+      ? t("events.location.ip")
+      : source === "profile"
+        ? t("events.location.profile")
+        : t("events.location.slack");
 }
 
 function renderHeader(props: EventsProps, overview: EventsOverview) {

@@ -5,6 +5,7 @@
 // the panel can never disagree with the map about why someone is where they are.
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import {
+  type AdminBotCityCentroidResolver,
   type AdminBotMemberMap,
   isHiddenFromMemberMap,
   memberMapFromRoster,
@@ -14,6 +15,7 @@ import {
 /**
  * What placed an active member, strongest first. Exactly one per member:
  *
+ * - `device`: the city their own browser reported (≤ ADMINBOT_DEVICE_LOCATION_FRESH_DAYS);
  * - `ip`: a fresh IP reading (≤ ADMINBOT_MAP_LOGIN_FRESH_DAYS) that agrees with their clock;
  * - `checkin`: their answer to "Where are you based right now?" (≤ ADMINBOT_LOCATION_CHECKIN_DAYS);
  * - `stored_city`: a city written somewhere (profile, Slack profile field), with no fresher signal;
@@ -23,6 +25,7 @@ import {
  * - `hidden`: the member chose to be left off the map (or the roster hides them).
  */
 export type AdminBotMapCoverageBucket =
+  | "device"
   | "ip"
   | "checkin"
   | "stored_city"
@@ -34,7 +37,7 @@ export type AdminBotMapCoverageBucket =
 export type AdminBotMapCoverageEntry = {
   member_id: string;
   name: string;
-  placed_by: Exclude<AdminBotMapCoverageBucket, "ip" | "checkin" | "hidden">;
+  placed_by: Exclude<AdminBotMapCoverageBucket, "device" | "ip" | "checkin" | "hidden">;
   /** Where the map put them, when it put them anywhere. */
   place_label?: string;
   /** Their fresh IP reading was set aside as a likely VPN. */
@@ -52,10 +55,17 @@ export type AdminBotMapCoverage = {
      * above, not instead of them: such a member is still placed by whatever came next.
      */
     suspected_vpn: number;
+    /**
+     * Members placed only approximately: by an IP city (the network's exit), a time zone's city or
+     * a country. Counted on top of the buckets above (it is `ip + timezone + country`), so the
+     * panel can say how much of the map is a guess.
+     */
+    approximate_only: number;
   };
   /**
-   * Everyone placed by a stored city, a zone, a country or nothing, i.e. without a fresh IP or a
-   * recent check-in: the people a check-in nudge would ask. Never-seen first, then oldest seen.
+   * Everyone placed by a stored city, a zone, a country or nothing, i.e. without a fresh device
+   * city, IP reading or recent check-in: the people no automatic source currently places. Read by
+   * admins only; nothing messages them. Never-seen first, then oldest seen.
    */
   stale: AdminBotMapCoverageEntry[];
 };
@@ -82,13 +92,21 @@ export function buildMapCoverage(
     now?: Date;
     /** A map already built with `loginCity: true` from the same roster, to save building it twice. */
     map?: AdminBotMemberMap;
+    resolveCity?: AdminBotCityCentroidResolver;
   } = {},
 ): AdminBotMapCoverage {
   const now = options.now ?? new Date();
   const active = members.filter((member) => !DEPARTED.has(member.status ?? ""));
-  const map = options.map ?? memberMapFromRoster(active, { loginCity: true, now });
+  const map =
+    options.map ??
+    memberMapFromRoster(active, {
+      loginCity: true,
+      now,
+      ...(options.resolveCity ? { resolveCity: options.resolveCity } : {}),
+    });
 
   const counts: AdminBotMapCoverage["counts"] = {
+    device: 0,
     ip: 0,
     checkin: 0,
     stored_city: 0,
@@ -97,6 +115,7 @@ export function buildMapCoverage(
     unplaced: 0,
     hidden: 0,
     suspected_vpn: 0,
+    approximate_only: 0,
   };
   const byId = new Map(active.map((member) => [member.id, member]));
   const stale: AdminBotMapCoverageEntry[] = [];
@@ -118,8 +137,11 @@ export function buildMapCoverage(
       }
       // A login source at country precision is the IP country standing in after the city went
       // stale (or never came), so it counts as a country, not a fresh IP.
+      // A device source at timezone precision is the browser's zone, not its position.
       const bucket: AdminBotMapCoverageBucket =
-        placed.source === "login" && placed.precision === "city"
+        placed.source === "device" && placed.precision === "city"
+          ? "device"
+          : placed.source === "login" && placed.precision === "city"
           ? "ip"
           : placed.source === "checkin"
             ? "checkin"
@@ -129,7 +151,10 @@ export function buildMapCoverage(
                 ? "country"
                 : "stored_city";
       counts[bucket] += 1;
-      if (bucket === "ip" || bucket === "checkin") {
+      if (bucket === "ip" || bucket === "timezone" || bucket === "country") {
+        counts.approximate_only += 1;
+      }
+      if (bucket === "device" || bucket === "ip" || bucket === "checkin") {
         continue;
       }
       stale.push(

@@ -35,6 +35,21 @@ export const profileRoutes: readonly Route[] = [
       { status: 403, message: "Member session required" },
     ),
   ),
+  // The passive "Use my precise location" control and its silent refresh. The body's coordinates
+  // go straight to the service, which reduces them to a city and drops them; nothing on this path
+  // logs a body. Never on an admin "view as": the position would be the admin's, stamped on
+  // somebody else.
+  post(
+    "/profile/device-location",
+    memberOnly(async ({ req, res, ctx, principal }) => {
+      if (principal.impersonator) {
+        sendJson(res, 403, { error: { message: "not while viewing as another member" } });
+        return;
+      }
+      const body = readRecord(await readJson(req));
+      sendServiceResult(res, await ctx.service.recordDeviceLocation(principal.member.id, body));
+    }),
+  ),
   post(
     "/drive/check-edit-access",
     memberOnly(async ({ req, res, ctx }) => {

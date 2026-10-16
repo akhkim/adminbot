@@ -43,6 +43,7 @@ import { clearEvents, type EventsState } from "../controllers/events.ts";
 import { clearLabTravel, type LabTravelState } from "../controllers/lab-travel.ts";
 import { createEmptyAdminBotMemberRequests } from "../controllers/member-requests.ts";
 import { createEmptyAdminBotMemberNudgeState } from "../controllers/nudges.ts";
+import { stopAdminBotPreciseLocationRefresh } from "../controllers/precise-location.ts";
 import { EMPTY_PROFILE_OVERVIEW_PAGE } from "../controllers/profile-overview.ts";
 import { createRecLetterEligibilityState } from "../controllers/rec-letter-eligibility.ts";
 import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
@@ -253,6 +254,7 @@ export type MemberAuthHost = {
   adminBotTravel?: TravelState;
   adminBotLocationDrift?: import("../api/profile.ts").LocationDrift | null;
   adminBotLocationDrifts?: import("../api/profile.ts").LocationDrift[];
+  adminBotPreciseLocation?: import("../controllers/precise-location.ts").PreciseLocationState;
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
   adminBotMeetings?: import("../api/meetings.ts").MeetingRecord[];
@@ -692,6 +694,8 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotTravel = { ...EMPTY_TRAVEL };
   host.adminBotLocationDrift = undefined;
   host.adminBotLocationDrifts = undefined;
+  host.adminBotPreciseLocation = undefined;
+  stopAdminBotPreciseLocationRefresh();
   host.adminBotLocationSaving = false;
   host.adminBotLocationError = null;
   host.adminBotMeetings = undefined;

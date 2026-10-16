@@ -36,6 +36,7 @@ import { renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderMemberMap } from "./member-map.ts";
 import "./map-coverage.ts";
 import "./nudge-campaign.ts";
+import { renderOwnPreciseLocation } from "./precise-location.ts";
 import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile-fields.ts";
 
 // One thing waiting on the viewer. `detail` is optional supporting text -- the queue items say
@@ -776,7 +777,10 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
           ${renderWorkSummary(state)}
-          ${renderMemberMap(state.adminBotMemberMap ?? null, { now: Date.now() })}
+          ${renderMemberMap(state.adminBotMemberMap ?? null, {
+            now: Date.now(),
+            ownLocation: renderOwnPreciseLocation(state),
+          })}
           ${renderMapCoverage(state, role)}
         </div>
       </section>

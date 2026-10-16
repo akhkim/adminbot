@@ -3,6 +3,12 @@
 // Every source a member has is resolved in order and the first one that places them wins. A
 // country-level answer never beats a city, so countries come last whatever their source:
 //
+//   0. The member's own device or own words, newest first: the city their browser last put them in
+//      (`device_city`, within ADMINBOT_DEVICE_LOCATION_FRESH_DAYS = 7, from the passive "Use my
+//      precise location" control or its silent refresh) and a recent check-in answer (rule 2). A
+//      device reading is a position the member's own machine reported, reduced to the nearest city
+//      on the server; it beats the IP, which only says where the network exits. Whichever of the
+//      two is newer wins. Like the IP, skipped for "stated" members and anonymous callers.
 //   1. The city of a fresh IP reading (within ADMINBOT_MAP_LOGIN_FRESH_DAYS = 7), from the IP
 //      geolocation database. Read on every authenticated request (auth.ts `noteAccountUse`) and
 //      rewritten whenever the city changes, else once a UTC day -- the live IP, never the address
@@ -15,7 +21,8 @@
 //      at the IP's coordinates, which nothing here receives.
 //   2. An answer the member gave the retired "Where are you based right now?" check-in, while
 //      it is recent (ADMINBOT_LOCATION_CHECKIN_DAYS) and still what `current_city` says. The
-//      explicit answer, dated, so the map can say "stated 3d ago".
+//      explicit answer, dated, so the map can say "stated 3d ago". Ranked with the device reading
+//      (rule 0) by date, so it leads the IP too.
 //   3. Other stated cities: `current_city`, then the roster `location`, then the Slack profile's
 //      location field. The member's own words, undated.
 //   4. The city an IANA timezone is named for: the zone the member's browser reported
@@ -29,7 +36,9 @@
 //      not pass for a city.
 //
 // A member whose IP reading was ignored carries `ip_ignored: "suspected_vpn"`, so the admin map can
-// say "IP ignored (VPN?)" next to whatever placed them instead.
+// say "IP ignored (VPN?)" next to whatever placed them instead. A member an IP city placed carries
+// `approximate: true` and " · approx." in the admin's source label: an IP city is the network's
+// exit, which for a campus or a mobile carrier can be a neighbouring city.
 //
 // A member whose `map_visibility` is "hidden" is not on the map at all; a check-in "Prefer not to
 // say" sets exactly that.
@@ -785,7 +794,8 @@ export function resolvePlace(raw: string | undefined): AdminBotMapPlace | undefi
 
 /**
  * What placed a member. `checkin` is their answer to the explicit check-in; `roster` is any other
- * stated field; `slack` is Slack's location field or zone; `login` a sign-in.
+ * stated field; `slack` is Slack's location field or zone; `login` an IP reading; `device` their
+ * own browser -- the city its position reduced to (precision "city"), else its time zone.
  */
 export type AdminBotMapSource = "slack" | "login" | "roster" | "checkin" | "device";
 
@@ -816,6 +826,8 @@ export type AdminBotMapMember = {
    * Slack zone by more than two hours, most likely a VPN. The pin comes from the next source.
    */
   ip_ignored?: "suspected_vpn";
+  /** Placed by an IP reading, which is the network's exit and so only approximately the person. */
+  approximate?: true;
   /**
    * The admin map's words for what placed them and how old it is, by UTC day: "IP today", "IP 2d
    * ago", "stated yesterday", "profile", "device time zone", with " · IP ignored (VPN?)" appended
@@ -923,6 +935,89 @@ export const ADMINBOT_MAP_LOGIN_FRESH_DAYS = 7;
  * window: a zone is a setting, and one unseen for a month says nothing about this month.
  */
 export const ADMINBOT_DEVICE_TZ_FRESH_DAYS = 30;
+
+/**
+ * How long the city a member's own device reported keeps placing them: the same week an IP city
+ * gets. The silent refresh rewrites it at most daily while the member keeps visiting with the
+ * permission granted, so an active member's reading is never more than a day old.
+ */
+export const ADMINBOT_DEVICE_LOCATION_FRESH_DAYS = 7;
+
+/** The device-reported city fields, as `freshDeviceCity` reads them. */
+export type AdminBotDeviceCityFields =
+  | "device_city"
+  | "device_region"
+  | "device_country"
+  | "device_located_at";
+
+/** Where the member's own device last put them, when recent enough. Never coordinates. */
+export type AdminBotDeviceCity = {
+  city: string;
+  region?: string;
+  /** ISO alpha-2. */
+  country?: string;
+  located_at: string;
+};
+
+/** The device-reported city within `days`, or undefined. Ignores `map_visibility`. */
+export function freshDeviceCity(
+  member: Pick<AdminBotLabMember, AdminBotDeviceCityFields>,
+  now: Date,
+  days = ADMINBOT_DEVICE_LOCATION_FRESH_DAYS,
+): AdminBotDeviceCity | undefined {
+  const city = member.device_city?.trim();
+  const at = member.device_located_at?.trim();
+  if (!city || !at || !isWithinDays(at, days, now)) {
+    return undefined;
+  }
+  const region = member.device_region?.trim();
+  const country = member.device_country?.trim();
+  return {
+    city,
+    ...(region ? { region } : {}),
+    ...(country ? { country } : {}),
+    located_at: at,
+  };
+}
+
+/**
+ * The centroid of a city the gazetteer does not know, from the GeoNames table
+ * (connectors/reverse-geocode.ts). Injected so this module stays pure and a test can stand in a
+ * fixture. `country` is ISO alpha-2.
+ */
+export type AdminBotCityCentroidResolver = (
+  city: string,
+  region: string | undefined,
+  country: string | undefined,
+) => { label: string; country: string; lat: number; lon: number } | undefined;
+
+/**
+ * Places a device-reported city: the gazetteer first, so a device in Toronto lands on the same
+ * pin as everybody else's Toronto, then the GeoNames centroid for anywhere the gazetteer does not
+ * list ("Reggio Emilia"). The centroid is the city's, never the member's position.
+ */
+export function resolveDevicePlace(
+  device: Pick<AdminBotDeviceCity, "city" | "region" | "country">,
+  resolveCity?: AdminBotCityCentroidResolver,
+): AdminBotMapPlace | undefined {
+  const known = resolveLoginCity(device.city, device.region, device.country);
+  if (known) {
+    return known;
+  }
+  const centroid = resolveCity?.(device.city, device.region, device.country);
+  if (!centroid) {
+    return undefined;
+  }
+  const countryName = resolveCountry(centroid.country)?.country ?? centroid.country;
+  const slug = normalize(centroid.label).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return {
+    key: `${slug}-${centroid.country.toLowerCase()}`,
+    label: centroid.label,
+    country: countryName,
+    lat: centroid.lat,
+    lon: centroid.lon,
+  };
+}
 
 export type AdminBotMapVisibility = "auto" | "stated" | "hidden";
 
@@ -1273,6 +1368,8 @@ export type BuildMemberMapOptions = {
    */
   loginCity?: boolean;
   now?: Date;
+  /** Centroids for device cities the gazetteer does not know. Absent: gazetteer only. */
+  resolveCity?: AdminBotCityCentroidResolver;
 };
 
 /**
@@ -1334,6 +1431,12 @@ type Candidate = {
   resolve: () => { place: AdminBotMapPlace; precision: AdminBotMapPrecision } | undefined;
 };
 
+/** An ISO stamp as epoch ms, with a missing or unparseable one sorting last. */
+function stampMs(at: string | undefined): number {
+  const ms = at ? Date.parse(at) : Number.NaN;
+  return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
+}
+
 const cityFrom = (raw: string | undefined) => () => {
   const place = raw && !fragmentFromTimezone(raw) ? resolvePlace(raw) : undefined;
   return place ? { place, precision: "city" as const } : undefined;
@@ -1364,7 +1467,7 @@ const countryFrom = (raw: string | undefined) => () => {
 function resolveMemberPlace(
   member: AdminBotLabMember,
   slackRaw: string | undefined,
-  options: { loginCity: boolean; now: Date },
+  options: { loginCity: boolean; now: Date; resolveCity?: AdminBotCityCentroidResolver },
 ): MemberPlaceResolution {
   const slackText = slackRaw?.trim() || undefined;
   const currentCity = member.current_city?.trim() || undefined;
@@ -1385,8 +1488,35 @@ function resolveMemberPlace(
   // truer than its city.
   const loginCountry =
     auto && !ip.ignored ? member.last_login_country?.trim() || undefined : undefined;
+  // The member's own device, under the same two gates as an IP city: inferred, so never for a
+  // "stated" member or an anonymous caller.
+  const device = auto && options.loginCity ? freshDeviceCity(member, options.now) : undefined;
+
+  // 0. The device city and the check-in answer, newest first. Both are the member's own: one their
+  //    machine reported, one they typed. Whichever came later says where they are now.
+  const ownSources: Candidate[] = [
+    {
+      raw: device?.city,
+      source: "device",
+      located_at: device?.located_at,
+      resolve: () => {
+        const place = device ? resolveDevicePlace(device, options.resolveCity) : undefined;
+        return place ? { place, precision: "city" } : undefined;
+      },
+    },
+    {
+      raw: checkinCity,
+      source: "checkin",
+      located_at: member.location_checkin_at,
+      resolve: cityFrom(checkinCity),
+    },
+  ];
+  const personal = ownSources.toSorted(
+    (left, right) => stampMs(right.located_at) - stampMs(left.located_at),
+  );
 
   const candidates: Candidate[] = [
+    ...personal,
     // 1. The city of a fresh, trusted IP reading. Only a city: a reading that resolves no further
     //    than its country waits until every stated city has had its turn.
     {
@@ -1398,14 +1528,7 @@ function resolveMemberPlace(
         return place ? { place, precision: "city" } : undefined;
       },
     },
-    // 2. The explicit check-in answer, while recent.
-    {
-      raw: checkinCity,
-      source: "checkin",
-      located_at: member.location_checkin_at,
-      resolve: cityFrom(checkinCity),
-    },
-    // 3. Other stated cities.
+    // 3. Other stated cities. (2, the check-in answer, is ranked with the device city above.)
     { raw: currentCity, source: "roster", resolve: cityFrom(currentCity) },
     { raw: rosterText, source: "roster", resolve: cityFrom(rosterText) },
     {
@@ -1436,7 +1559,17 @@ function resolveMemberPlace(
       resolve: zoneFrom(slackText),
     },
     { raw: rosterZone, source: "roster", resolve: zoneFrom(rosterZone) },
-    // 5. Countries.
+    // 5. Countries: the device's first, since it is the member's own machine, then what they wrote,
+    //    then the IP's.
+    {
+      raw: device?.country,
+      source: "device",
+      located_at: device?.located_at,
+      resolve: () => {
+        const place = resolveCountry(device?.country);
+        return place ? { place, precision: "country" } : undefined;
+      },
+    },
     { raw: currentCity, source: "roster", resolve: countryFrom(currentCity) },
     { raw: rosterText, source: "roster", resolve: countryFrom(rosterText) },
     { raw: slackText, source: "slack", resolve: countryFrom(slackText) },
@@ -1473,7 +1606,9 @@ function resolveMemberPlace(
       candidate.raw !== rosterZone &&
       candidate.raw !== slackZone &&
       candidate.raw !== deviceZone &&
-      candidate.raw !== loginCity,
+      candidate.raw !== loginCity &&
+      candidate.raw !== device?.city &&
+      candidate.raw !== device?.country,
   );
   return written?.raw ? { raw: written.raw, source: written.source } : {};
 }
@@ -1483,7 +1618,11 @@ export function buildMemberMap(
   slackLocations: ReadonlyMap<string, string> = new Map(),
   options: BuildMemberMapOptions = {},
 ): AdminBotMemberMap {
-  const resolveOptions = { loginCity: options.loginCity ?? false, now: options.now ?? new Date() };
+  const resolveOptions = {
+    loginCity: options.loginCity ?? false,
+    now: options.now ?? new Date(),
+    ...(options.resolveCity ? { resolveCity: options.resolveCity } : {}),
+  };
   const groups = new Map<string, AdminBotMapPlaceGroup>();
   const unplaced: AdminBotMemberMap["unplaced"] = [];
   let unknown = 0;
@@ -1531,6 +1670,7 @@ export function buildMemberMap(
         : {}),
       ...(resolution.located_at ? { located_at: resolution.located_at } : {}),
       ...(ipIgnored ? { ip_ignored: ipIgnored } : {}),
+      ...(resolution.source === "login" ? { approximate: true as const } : {}),
       source_label: sourceLabel(resolution, ipIgnored, resolveOptions.now),
       ...mismatchFor(member, resolution, resolveOptions.now),
     });
@@ -1587,11 +1727,13 @@ function sourceLabel(
   const zone = resolution.precision === "timezone";
   const base =
     resolution.source === "login"
-      ? agoPhrase("IP", resolution.located_at, now)
+      ? `${agoPhrase("IP", resolution.located_at, now)} · approx.`
       : resolution.source === "checkin"
         ? agoPhrase("stated", resolution.located_at, now)
         : resolution.source === "device"
-          ? "device time zone"
+          ? zone
+            ? "device time zone"
+            : agoPhrase("device", resolution.located_at, now)
           : resolution.source === "slack"
             ? zone
               ? "Slack time zone"
@@ -1656,24 +1798,39 @@ export function memberMapMemo(): (
     labMemberVersion?(): number;
     listLabMembers(): readonly AdminBotLabMember[];
   },
-  options?: { loginCity?: boolean; now?: Date },
+  options?: {
+    loginCity?: boolean;
+    now?: Date;
+    resolveCity?: AdminBotCityCentroidResolver;
+    /** Changes when the centroid table does (a GeoNames refresh), so the cache rebuilds. */
+    placesVersion?: number;
+  },
 ) => AdminBotMemberMap {
-  const last = new Map<boolean, { version: number; hour: number; map: AdminBotMemberMap }>();
+  const last = new Map<
+    boolean,
+    { version: number; hour: number; places: number; map: AdminBotMemberMap }
+  >();
   return (store, options = {}) => {
     const loginCity = options.loginCity ?? false;
     const now = options.now ?? new Date();
-    const build = () => memberMapFromRoster(store.listLabMembers(), { loginCity, now });
+    const places = options.placesVersion ?? 0;
+    const build = () =>
+      memberMapFromRoster(store.listLabMembers(), {
+        loginCity,
+        now,
+        ...(options.resolveCity ? { resolveCity: options.resolveCity } : {}),
+      });
     const version = store.labMemberVersion?.();
     if (version === undefined) {
       return build();
     }
     const hour = memberMapHour(now);
     const cached = last.get(loginCity);
-    if (cached?.version === version && cached.hour === hour) {
+    if (cached?.version === version && cached.hour === hour && cached.places === places) {
       return cached.map;
     }
     const map = build();
-    last.set(loginCity, { version, hour, map });
+    last.set(loginCity, { version, hour, places, map });
     return map;
   };
 }

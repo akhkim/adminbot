@@ -1,7 +1,7 @@
-import { rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
 import { COMPLETE_PROFILE } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
@@ -4748,5 +4748,160 @@ describe("publication mailing list", () => {
     // very different statement from "we have no record of that venue".
     expect(missing.status).toBe(404);
     expect(sent).toEqual([]);
+  });
+});
+
+describe("POST /profile/device-location", () => {
+  // A two-row GeoNames extract (tab-separated, the columns the reader uses), written to a temp
+  // directory so the server's own loader reads it. Synthetic; nothing is downloaded.
+  const geonamesRow = (name: string, lat: number, lon: number, admin1: string, pop: number) => {
+    const cols = Array.from({ length: 19 }, () => "");
+    Object.assign(cols, { 1: name, 2: name, 4: String(lat), 5: String(lon), 6: "P", 7: "PPL" });
+    Object.assign(cols, { 8: "IT", 10: admin1, 14: String(pop) });
+    return cols.join("\t");
+  };
+  const dirs: string[] = [];
+  afterEach(async () => {
+    for (const dir of dirs.splice(0)) {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  async function start(): Promise<string> {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "adminbot-geonames-"));
+    dirs.push(dir);
+    await writeFile(
+      path.join(dir, "cities1000.txt"),
+      [
+        geonamesRow("Reggio Emilia", 44.698, 10.631, "05", 140_000),
+        geonamesRow("Rome", 41.892, 12.511, "07", 2_300_000),
+      ].join("\n"),
+    );
+    await writeFile(
+      path.join(dir, "admin1CodesASCII.txt"),
+      "IT.05\tEmilia-Romagna\tEmilia-Romagna\t1\nIT.07\tLazio\tLazio\t2\n",
+    );
+    const { baseUrl } = await startService({ geonamesDir: dir });
+    return baseUrl;
+  }
+
+  async function signedIn(baseUrl: string, id: string, profile: Record<string, unknown> = {}) {
+    seedMember(baseUrl, id, { name: `${id} Example`, email: `${id}@cs.toronto.edu`, ...profile });
+    await approveClaim(baseUrl, id, `${id}@cs.toronto.edu`);
+    return await loginToken(baseUrl, `${id}@cs.toronto.edu`);
+  }
+
+  const share = (baseUrl: string, token: string, body: unknown) =>
+    fetch(`${baseUrl}/profile/device-location`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify(body),
+    });
+
+  it("keeps the city, region and country, and never stores, logs or returns the position", async () => {
+    const baseUrl = await start();
+    const token = await signedIn(baseUrl, "ada");
+    const logs = [
+      vi.spyOn(console, "log"),
+      vi.spyOn(console, "info"),
+      vi.spyOn(console, "warn"),
+      vi.spyOn(console, "error"),
+    ];
+    try {
+      const res = await share(baseUrl, token, { lat: 44.70123, lon: 10.62987 });
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(JSON.parse(text)).toMatchObject({
+        recorded: true,
+        city: "Reggio Emilia",
+        region: "Emilia-Romagna",
+        country: "IT",
+      });
+      expect(text).not.toMatch(/44\.70|10\.62/u);
+      const member = mockFor(baseUrl).store.getLabMember("ada")!;
+      expect(member).toMatchObject({
+        device_city: "Reggio Emilia",
+        device_region: "Emilia-Romagna",
+        device_country: "IT",
+      });
+      expect(JSON.stringify(member)).not.toMatch(/44\.70|10\.62/u);
+      expect(Object.keys(member).filter((key) => /lat|lon|coord/u.test(key))).toEqual([]);
+      // Logged in the location history too, at the same grain: the city and no position.
+      const history = mockFor(baseUrl).store.listMemberLocations("ada");
+      expect(history.filter((entry) => entry.source === "device")).toMatchObject([
+        { place_label: "Reggio Emilia", raw: "Reggio Emilia, Emilia-Romagna, Italy" },
+      ]);
+      expect(JSON.stringify(history)).not.toMatch(/44\.70|10\.62/u);
+      for (const spy of logs) {
+        expect(JSON.stringify(spy.mock.calls)).not.toMatch(/44\.70|10\.62/u);
+      }
+    } finally {
+      for (const spy of logs) {
+        spy.mockRestore();
+      }
+    }
+  });
+
+  it("writes once a day for the same city, and at once when the city changes", async () => {
+    const baseUrl = await start();
+    const token = await signedIn(baseUrl, "ada");
+    const first = (await (await share(baseUrl, token, { lat: 44.7, lon: 10.63 })).json()) as {
+      located_at: string;
+    };
+    const again = await (await share(baseUrl, token, { lat: 44.69, lon: 10.64 })).json();
+    expect(again).toMatchObject({ recorded: false, city: "Reggio Emilia" });
+    expect((again as { located_at: string }).located_at).toBe(first.located_at);
+    const moved = await (await share(baseUrl, token, { lat: 41.9, lon: 12.5 })).json();
+    expect(moved).toMatchObject({ recorded: true, city: "Rome", region: "Lazio" });
+  });
+
+  it("discards the position of a member who chose to stay off the map or typed their city", async () => {
+    const baseUrl = await start();
+    for (const visibility of ["hidden", "stated"] as const) {
+      const token = await signedIn(baseUrl, `m${visibility}`);
+      const store = mockFor(baseUrl).store;
+      store.saveLabMember({
+        ...store.getLabMember(`m${visibility}`)!,
+        map_visibility: visibility,
+      });
+      const res = await share(baseUrl, token, { lat: 44.7, lon: 10.63 });
+      await expect(res.json()).resolves.toEqual({ recorded: false, skipped: "visibility" });
+      expect(store.getLabMember(`m${visibility}`)?.device_city).toBeUndefined();
+    }
+  });
+
+  it("refuses bad input, the service token, nobody, and an admin viewing as the member", async () => {
+    const baseUrl = await start();
+    const token = await signedIn(baseUrl, "ada");
+    expect((await share(baseUrl, token, { lat: "44.7", lon: 10.63 })).status).toBe(400);
+    expect((await share(baseUrl, token, { lat: 91, lon: 10.63 })).status).toBe(400);
+    const anonymous = await fetch(`${baseUrl}/profile/device-location`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ lat: 44.7, lon: 10.63 }),
+    });
+    expect(anonymous.status).toBe(401);
+    const service = await fetch(`${baseUrl}/profile/device-location`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ lat: 44.7, lon: 10.63 }),
+    });
+    expect([401, 403]).toContain(service.status);
+    const adminToken = await signedIn(baseUrl, "root", { privilege_level: "admin" });
+    const viewing = await fetch(`${baseUrl}/auth/impersonate`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({ member_id: "ada" }),
+    });
+    const viewToken = ((await viewing.json()) as { session_token: string }).session_token;
+    expect((await share(baseUrl, viewToken, { lat: 44.7, lon: 10.63 })).status).toBe(403);
+    expect(mockFor(baseUrl).store.getLabMember("ada")?.device_city).toBeUndefined();
+  });
+
+  it("says nothing was placed when the GeoNames files are not installed", async () => {
+    const { baseUrl } = await startService();
+    const token = await signedIn(baseUrl, "ada");
+    const res = await share(baseUrl, token, { lat: 44.7, lon: 10.63 });
+    await expect(res.json()).resolves.toEqual({ recorded: false, skipped: "unavailable" });
   });
 });

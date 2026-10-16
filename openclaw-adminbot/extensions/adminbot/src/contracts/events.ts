@@ -62,7 +62,7 @@ export type AdminBotEventsOverview = {
   /** The viewer's own place, for their eyes only. */
   viewer_location?: {
     label: string;
-    source: "ip" | "profile" | "slack";
+    source: "device" | "ip" | "profile" | "slack";
   };
   preferences: AdminBotMeetupPreferences;
   events: AdminBotEventCard[];

@@ -778,6 +778,7 @@ export type AdminBotHost = {
   adminBotLocationDrift?: LocationDrift | null;
   // The admin-side list, keyed by member on the calendar's invite panel.
   adminBotLocationDrifts?: LocationDrift[];
+  adminBotPreciseLocation?: import("./precise-location.ts").PreciseLocationState;
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
   adminBotMeetingsLoading: boolean;

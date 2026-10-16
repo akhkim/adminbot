@@ -2879,6 +2879,34 @@
   color: var(--muted);
 }
 
+.member-map__own {
+  margin-top: 4px;
+}
+
+/* The passive "Use my precise location" line: inline, quiet, never a banner. */
+.precise-location {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.precise-location__change {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.precise-location__why summary {
+  cursor: pointer;
+}
+
 .member-map__credit a {
   color: inherit;
 }

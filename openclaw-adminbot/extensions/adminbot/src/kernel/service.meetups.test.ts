@@ -59,10 +59,18 @@ function lab(start: string, extraEvents: readonly unknown[] = []) {
       signIn(person.id, person.city, person.country, person.zone);
     }
   };
-  // What the live IP check would write (see auth.ts recordLoginLocation), at the current clock. The
-  // zone is also the device's, as a request carrying the device headers would record it: an IP
-  // reading with no reference zone to check it against never starts an intro.
-  const signIn = (id: string, city: string, country?: string, zone?: string) =>
+  // What the live IP check would write (see auth.ts recordLoginLocation), at the current clock,
+  // plus a same-day check-in answer naming the same city: an IP city alone never starts an intro
+  // (meetupPlace), so these fixtures carry the corroboration a real member would have. `ipOnly`
+  // leaves it out. The zone is also the device's, as a request carrying the device headers would
+  // record it: an IP reading with no reference zone to check it against never starts an intro.
+  const signIn = (
+    id: string,
+    city: string,
+    country?: string,
+    zone?: string,
+    { ipOnly = false }: { ipOnly?: boolean } = {},
+  ) =>
     store.saveLabMember({
       ...store.getLabMember(id)!,
       last_ip_observed_at: now.toISOString(),
@@ -71,6 +79,7 @@ function lab(start: string, extraEvents: readonly unknown[] = []) {
       ...(zone
         ? { last_login_timezone: zone, last_device_tz: zone, last_device_tz_at: now.toISOString() }
         : {}),
+      ...(ipOnly ? {} : { location_checkin_city: city, location_checkin_at: now.toISOString() }),
     });
   const intros = () => sent.filter((proposal) => proposal.type === "slack.conference_intro");
   const members = (proposal: AdminBotStoredProposal) =>
@@ -665,6 +674,57 @@ describe("intros never trust a likely VPN exit", () => {
     add({ id: "bob", topics: ["Sparse autoencoders"], ...TORONTO });
     expect(unwrap(await service.introduceCityMeetups({ city: "Toronto" })).introduced).toBe(1);
     expect(intros()).toHaveLength(1);
+  });
+
+  it("never starts an intro from IP-only placements: the IP needs a witness within 30 days", async () => {
+    const { service, store, signIn, add, intros } = lab(AT);
+    add({ id: "ada", topics: ["Causal inference"], zone: TORONTO.zone });
+    add({ id: "bob", topics: ["Sparse autoencoders"], zone: TORONTO.zone });
+    signIn("ada", TORONTO.city, TORONTO.country, TORONTO.zone, { ipOnly: true });
+    signIn("bob", TORONTO.city, TORONTO.country, TORONTO.zone, { ipOnly: true });
+    await service.onLoginLocated("ada");
+    await service.onLoginLocated("bob");
+    await service.runMeetupSweep();
+    expect(unwrap(await service.introduceCityMeetups({ city: "Toronto" })).introduced).toBe(0);
+    // A witness older than 30 days does not count either.
+    for (const id of ["ada", "bob"]) {
+      store.saveLabMember({
+        ...store.getLabMember(id)!,
+        location_checkin_city: "Toronto",
+        location_checkin_at: "2026-09-01T00:00:00Z",
+      });
+    }
+    expect(unwrap(await service.introduceCityMeetups({ city: "Toronto" })).introduced).toBe(0);
+    expect(intros()).toHaveLength(0);
+    // A fresh device city is a witness of its own: one intro.
+    for (const id of ["ada", "bob"]) {
+      store.saveLabMember({
+        ...store.getLabMember(id)!,
+        device_city: "Toronto",
+        device_region: "Ontario",
+        device_country: "CA",
+        device_located_at: AT,
+      });
+    }
+    expect(unwrap(await service.introduceCityMeetups({ city: "Toronto" })).introduced).toBe(1);
+  });
+
+  it("places an intro by the device city when the IP says another city", async () => {
+    const { service, store, signIn, add, intros, members } = lab("2026-10-15T09:00:00Z");
+    add({ id: "ada", topics: ["Causal inference"], zone: "Europe/Rome" });
+    add({ id: "bob", topics: ["Sparse autoencoders"], zone: "Europe/Rome" });
+    // Both connect through a Rome exit; ada's browser says Reggio Emilia.
+    signIn("ada", "Rome", "Italy", "Europe/Rome", { ipOnly: true });
+    signIn("bob", "Rome", "Italy", "Europe/Rome");
+    store.saveLabMember({
+      ...store.getLabMember("ada")!,
+      device_city: "Reggio Emilia",
+      device_region: "Emilia-Romagna",
+      device_country: "IT",
+      device_located_at: "2026-10-15T08:00:00Z",
+    });
+    expect(unwrap(await service.introduceCityMeetups({ city: "Rome" })).introduced).toBe(0);
+    expect(intros().flatMap(members)).not.toContain("ada");
   });
 
   it("sends no city intro when one reading was flagged suspected_vpn, from the hook or the sweep", async () => {

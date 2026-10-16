@@ -58,17 +58,18 @@ describe("the IP city on the map", () => {
       ip_observed_at: ago(0),
       last_login_at: ago(0),
       located_at: ago(0),
-      source_label: "IP today",
+      source_label: "IP today · approx.",
+      approximate: true,
     });
   });
 
   it("labels the reading's age by UTC day", () => {
     expect(
       placeOf({ ...ipFrom("Toronto", "Ontario", "CA"), last_ip_observed_at: ago(1) })?.source_label,
-    ).toBe("IP yesterday");
+    ).toBe("IP yesterday · approx.");
     expect(
       placeOf({ ...ipFrom("Toronto", "Ontario", "CA"), last_ip_observed_at: ago(2) })?.source_label,
-    ).toBe("IP 2d ago");
+    ).toBe("IP 2d ago · approx.");
   });
 
   it("uses an IP city that agrees with the device zone", () => {
@@ -283,6 +284,81 @@ describe("usableDeviceZone", () => {
     expect(usableDeviceZone("Etc/GMT+5")).toBeUndefined();
     expect(usableDeviceZone("Not/AZone")).toBeUndefined();
     expect(usableDeviceZone(undefined)).toBeUndefined();
+  });
+});
+
+describe("the device city on the map", () => {
+  // Stands in for the GeoNames table: Reggio Emilia is not in the built-in gazetteer.
+  const resolveCity = (city: string, _region: string | undefined, country: string | undefined) =>
+    city === "Reggio Emilia" && country === "IT"
+      ? { label: "Reggio Emilia", country: "IT", lat: 44.698, lon: 10.631 }
+      : undefined;
+  const deviceIn = (at: string) => ({
+    device_city: "Reggio Emilia",
+    device_region: "Emilia-Romagna",
+    device_country: "IT",
+    device_located_at: at,
+  });
+  const placeWith = (overrides: Partial<AdminBotLabMember>, loginCity = true) => {
+    const map = buildMemberMap([member(overrides)], new Map(), { loginCity, now, resolveCity });
+    const place = map.places[0];
+    return place ? { label: place.label, ...place.members[0] } : undefined;
+  };
+
+  it("puts the member in Reggio Emilia (device) rather than Rome (IP), and not approx.", () => {
+    const placed = placeWith({
+      ...ipFrom("Rome", "Lazio", "IT"),
+      last_ip_observed_at: ago(0),
+      ...deviceIn(ago(1)),
+    });
+    expect(placed).toMatchObject({
+      label: "Reggio Emilia",
+      source: "device",
+      precision: "city",
+      located_at: ago(1),
+      source_label: "device yesterday",
+    });
+    expect(placed).not.toHaveProperty("approximate");
+  });
+
+  it("lets a device reading lapse after seven days, back to the IP city", () => {
+    const placed = placeWith({
+      ...ipFrom("Rome", "Lazio", "IT"),
+      last_ip_observed_at: ago(0),
+      ...deviceIn(ago(8)),
+    });
+    expect(placed).toMatchObject({ label: "Rome", source: "login", approximate: true });
+  });
+
+  it("lets a newer check-in answer beat an older device reading, and the reverse", () => {
+    expect(
+      placeWith({
+        ...deviceIn(ago(3)),
+        current_city: "Toronto",
+        location_checkin_city: "Toronto",
+        location_checkin_at: ago(1),
+      }),
+    ).toMatchObject({ label: "Toronto", source: "checkin" });
+    expect(
+      placeWith({
+        ...deviceIn(ago(1)),
+        current_city: "Toronto",
+        location_checkin_city: "Toronto",
+        location_checkin_at: ago(3),
+      }),
+    ).toMatchObject({ label: "Reggio Emilia", source: "device" });
+  });
+
+  it("never places by the device city on the anonymous map", () => {
+    expect(placeWith({ ...deviceIn(ago(0)), current_city: "Zurich" }, false)).toMatchObject({
+      label: "Zürich",
+      source: "roster",
+    });
+  });
+
+  it("carries no coordinates on the member row", () => {
+    const placed = placeWith({ ...deviceIn(ago(0)) });
+    expect(JSON.stringify(placed)).not.toMatch(/44\.69|10\.63/u);
   });
 });
 

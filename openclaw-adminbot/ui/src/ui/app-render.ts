@@ -62,6 +62,7 @@ import { loadAdminBotMemberRequests } from "./adminbot/controllers/member-reques
 import { saveAdminBotOwnSchedule } from "./adminbot/controllers/members.ts";
 import { loadAdminBotPaperSlotOverview } from "./adminbot/controllers/paper-slots.ts";
 import { loadMyProjects } from "./adminbot/controllers/papers.ts";
+import { startAdminBotPreciseLocationRefresh } from "./adminbot/controllers/precise-location.ts";
 import { readAdminBotProfileOverview } from "./adminbot/controllers/profile-overview-paging.ts";
 import { exportAdminBotTabUsage, loadAdminBotTabUsage } from "./adminbot/controllers/tab-usage.ts";
 import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
@@ -101,8 +102,8 @@ import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
-import "./components/feedback-widget.ts";
 import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
+import "./components/feedback-widget.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import { configureDraftSync, retryDraftSync } from "./adminbot/offline/draft-sync.ts";
 import { needsLabPapers, papersMissingFor } from "./adminbot/papers-required.ts";
@@ -135,6 +136,7 @@ import {
 import { renderGettingStarted } from "./adminbot/views/getting-started.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate, renderSessionRestorePending } from "./adminbot/views/login-gate.ts";
+import { findOwnMember } from "./adminbot/views/profile-fields.ts";
 import { isProfileBlocked, profileAccessState } from "./adminbot/views/profile-gate.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
 import {
@@ -2565,6 +2567,12 @@ export function renderApp(state: AppViewState) {
     prepareProfileLocationPrompt(state, profileBlocked)
   ) {
     void state.loadLocationPrompt?.().finally(() => requestHostUpdate?.());
+  }
+  // The silent device refresh: once per session, after the member's own record is in (it carries
+  // their map visibility). It never prompts -- it reads only where the browser already granted
+  // location -- shows nothing, and the controller holds it to one reading an hour per device.
+  if (hasMemberSession && findOwnMember(state)) {
+    startAdminBotPreciseLocationRefresh(state, () => requestHostUpdate?.());
   }
   // The three badge reads share one rule, in shouldLoad*: a failed load must not be retried from
   // the render pass. Each of these used to test only "not loading and never loaded", which a

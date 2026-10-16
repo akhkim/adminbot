@@ -75,6 +75,8 @@ export type AdminBotRouteContext = {
    * context built without one (tests), which the map reports as unknown rather than off.
    */
   ipGeolocationProvider?: "mmdb" | "ipinfo" | "off";
+  /** GeoNames' credit, sent with the member map when the reverse geocoder is configured. */
+  placeAttribution?: { text: string; url: string };
   /** Sends the publication digest. Absent leaves /papers/mailing-list/send answering 503. */
   publicationMailingRunner?: PublicationMailingRunner;
   venuePapersReader?: import("../../connectors/openreview-notes.js").OpenReviewNotesReader;
@@ -217,6 +219,10 @@ export type AdminBotMockServiceOptions = {
   // IPinfo when set. Falls back to process.env.ADMINBOT_GEOIP_MMDB_PATH. See
   // scripts/adminbot-geoip-refresh.sh and docs/tools/adminbot-geoip.md.
   geoipMmdbPath?: string;
+  // Directory holding GeoNames cities1000.txt and admin1CodesASCII.txt, for the "Use my precise
+  // location" control and the map's device cities. Falls back to process.env.ADMINBOT_GEONAMES_DIR.
+  // See deploy/aurora/install-geonames.sh.
+  geonamesDir?: string;
   // Trust X-Forwarded-For for the caller's IP (rate limiting, login-location) instead of the raw
   // socket address. Only safe when this process is only reachable through a proxy that sets that
   // header itself (Render, Fly, etc.) — falls back to process.env.ADMINBOT_TRUST_PROXY === "1".

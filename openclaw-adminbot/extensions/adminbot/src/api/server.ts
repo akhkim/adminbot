@@ -4,6 +4,7 @@ import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
 import { selectIpGeolocator } from "../connectors/ip-geolocation.js";
+import { createGeoNamesGeocoder, GEONAMES_ATTRIBUTION } from "../connectors/reverse-geocode.js";
 import {
   createOpenReviewForumProbe,
   createOpenReviewNotesReader,
@@ -132,7 +133,14 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       () => onboardingArms.slackConnect,
       () => onboardingArms.enroll,
     );
-  const baseOptions = serviceOptions(options);
+  // GeoNames for the "Use my precise location" control. Built before the service, which owns the
+  // only code that sees a position; the route context gets its credit for the map.
+  const geonamesDir = trimmedEnv(options.geonamesDir ?? process.env.ADMINBOT_GEONAMES_DIR);
+  const reverseGeocoder = geonamesDir ? createGeoNamesGeocoder(geonamesDir) : undefined;
+  const baseOptions: AdminBotServiceOptions = {
+    ...serviceOptions(options),
+    ...(reverseGeocoder ? { reverseGeocoder } : {}),
+  };
   const wiredOptions: AdminBotServiceOptions = {
     ...baseOptions,
     // The arm is installed whether or not a connector was injected: `onboarding.send_guide` is
@@ -426,6 +434,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
     ...(ipGeolocation.attribution ? { ipGeolocationAttribution: ipGeolocation.attribution } : {}),
     ipGeolocationProvider: ipGeolocation.provider,
+    ...(reverseGeocoder ? { placeAttribution: GEONAMES_ATTRIBUTION } : {}),
     ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
     ...(options.cvDigestPublisher ? { cvDigestPublisher: options.cvDigestPublisher } : {}),
     publicationMailingRunner: options.publicationMailingRunner ?? createPublicationMailingRunner(),

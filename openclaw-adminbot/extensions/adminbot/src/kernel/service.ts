@@ -3,6 +3,7 @@ import type {
   CalendarMembershipReader,
   CalendarAccessReader,
 } from "../connectors/calendar-membership.js";
+import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
@@ -339,6 +340,7 @@ import {
 } from "../workflows/members/local-event-audience.js";
 import {
   detectLocationDrift,
+  deviceObservationFor,
   isNewObservation,
   latestBySource,
   observationFor,
@@ -349,6 +351,8 @@ import type { MeetupPlace } from "../workflows/members/meetups.js";
 import {
   ADMINBOT_MAP_VISIBILITIES,
   memberMapMemo,
+  memberMapVisibility,
+  type AdminBotCityCentroidResolver,
   type AdminBotMemberMap,
 } from "../workflows/members/member-map.js";
 import { summarizeLabMember } from "../workflows/members/member-summary.js";
@@ -624,6 +628,10 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
         | "last_ip_suspected_vpn"
         | "last_device_tz"
         | "last_device_tz_at"
+        | "device_city"
+        | "device_region"
+        | "device_country"
+        | "device_located_at"
         | "last_seen_at"
       >
     >,
@@ -1188,6 +1196,12 @@ export type AdminBotServiceOptions = {
    * is fresh. Injected so a test can stand on a fixed day; production omits it.
    */
   now?: () => Date;
+  /**
+   * GeoNames, for turning a member's browser position into a city (POST /profile/device-location)
+   * and for drawing device cities the map's gazetteer does not know. Absent: the device control
+   * records nothing and the map uses its gazetteer alone.
+   */
+  reverseGeocoder?: ReverseGeocoder;
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
   reviewSlackProfilePhoto?: (params: { slackUserId: string }) => Promise<{
@@ -10800,12 +10814,138 @@ export class AdminBotService {
   // entitlement to inferred cities; see BuildMemberMapOptions.
   private readonly memberMapCache = memberMapMemo();
 
+  /** Centroids for device cities beyond the gazetteer, from GeoNames when it is configured. */
+  private readonly resolveMapCity: AdminBotCityCentroidResolver = (city, region, country) =>
+    this.options.reverseGeocoder?.centroid(city, region, country);
+
+  /** Changes when the GeoNames table does, so a map ETag and the memo both turn over. */
+  memberMapPlacesVersion(): number {
+    return this.options.reverseGeocoder?.version() ?? 0;
+  }
+
+  private memberMapPlaces() {
+    return {
+      resolveCity: this.resolveMapCity,
+      placesVersion: this.memberMapPlacesVersion(),
+    };
+  }
+
   memberMap(options: { loginCity?: boolean } = {}): AdminBotServiceResponse<AdminBotMemberMap> {
     return {
       ok: true,
       status: 200,
-      payload: this.memberMapCache(this.store, { loginCity: options.loginCity ?? false }),
+      payload: this.memberMapCache(this.store, {
+        loginCity: options.loginCity ?? false,
+        ...this.memberMapPlaces(),
+      }),
     };
+  }
+
+  /**
+   * The passive "Use my precise location" control and its silent refresh: reduce a position the
+   * member's own browser reported to the nearest GeoNames city, and stamp only that.
+   *
+   * The coordinates are read here, handed to the geocoder and dropped. They are never written to
+   * the member, the location history, an audit row or a log line, and they are never echoed back:
+   * the response carries the city, region and country alone. A failure is logged server-side in
+   * words that name no position, and the member sees nothing.
+   *
+   * Only for "auto" members: "stated" chose to be placed by their own words alone and "hidden" to
+   * be off the map, so for both the position is discarded unread. Writes when the city changes,
+   * else at most once per UTC day, like the IP reading. A new city may make an intro possible, so it
+   * starts the same work a new IP city does (onLoginLocated).
+   */
+  async recordDeviceLocation(
+    memberId: string,
+    input: unknown,
+  ): Promise<
+    AdminBotServiceResponse<{
+      recorded: boolean;
+      skipped?: "visibility" | "unavailable" | "unplaced";
+      city?: string;
+      region?: string;
+      country?: string;
+      located_at?: string;
+    }>
+  > {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return { ok: false, status: 404, error: { message: "member not found" } };
+    }
+    if (memberMapVisibility(member) !== "auto") {
+      return { ok: true, status: 200, payload: { recorded: false, skipped: "visibility" } };
+    }
+    const body = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+    const lat = typeof body.lat === "number" ? body.lat : Number.NaN;
+    const lon = typeof body.lon === "number" ? body.lon : Number.NaN;
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon) ||
+      Math.abs(lat) > 90 ||
+      Math.abs(lon) > 180
+    ) {
+      return serviceError(400, "lat and lon must be numbers in range");
+    }
+    const geocoder = this.options.reverseGeocoder;
+    if (!geocoder) {
+      return { ok: true, status: 200, payload: { recorded: false, skipped: "unavailable" } };
+    }
+    let place: Awaited<ReturnType<ReverseGeocoder["nearest"]>>;
+    try {
+      place = await geocoder.nearest(lat, lon);
+    } catch {
+      console.warn("AdminBot device location: reverse geocoding failed");
+      return { ok: true, status: 200, payload: { recorded: false, skipped: "unavailable" } };
+    }
+    if (!place) {
+      return { ok: true, status: 200, payload: { recorded: false, skipped: "unplaced" } };
+    }
+    const now = this.options.now?.() ?? new Date();
+    const at = now.toISOString();
+    const sameCity =
+      member.device_city?.trim() === place.city &&
+      (member.device_country?.trim() ?? "") === place.country;
+    const sameDay = member.device_located_at?.slice(0, 10) === at.slice(0, 10);
+    const answer = {
+      city: place.city,
+      ...(place.region ? { region: place.region } : {}),
+      country: place.country,
+    };
+    if (sameCity && sameDay) {
+      return {
+        ok: true,
+        status: 200,
+        payload: { recorded: false, ...answer, located_at: member.device_located_at! },
+      };
+    }
+    this.store.patchLabMemberAuthFields(memberId, {
+      device_city: place.city,
+      // Written as "" rather than left out, so a city with no region clears the previous one's.
+      device_region: place.region ?? "",
+      device_country: place.country,
+      device_located_at: at,
+      updated_at: at,
+    });
+    // The timeline row, under the same rule as the stamp above: a new city, or the first reading of
+    // the UTC day ("still here"). City, region and country only -- the coordinates stop at the
+    // geocoder and are not passed on.
+    const entry = deviceObservationFor({
+      memberId,
+      city: place.city,
+      ...(place.region ? { region: place.region } : {}),
+      country: place.country,
+      observedAt: at,
+      ...(member.last_device_tz ? { zone: member.last_device_tz } : {}),
+    });
+    if (entry) {
+      this.store.appendMemberLocation(entry);
+    }
+    if (!sameCity) {
+      void this.onLoginLocated(memberId).catch(() => {
+        console.warn("AdminBot device location: follow-up intros failed");
+      });
+    }
+    return { ok: true, status: 200, payload: { recorded: true, ...answer, located_at: at } };
   }
 
   // The admin coverage panel: which signal places each active member, and who is placed only by
@@ -10816,7 +10956,7 @@ export class AdminBotService {
       status: 200,
       payload: buildMapCoverage(this.store.listLabMembers(), {
         now,
-        map: this.memberMapCache(this.store, { loginCity: true, now }),
+        map: this.memberMapCache(this.store, { loginCity: true, now, ...this.memberMapPlaces() }),
       }),
     };
   }

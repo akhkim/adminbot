@@ -1364,14 +1364,19 @@ call on someone else's behalf is another.
 A member is placed by the first source that answers, and a country never outranks a city, whatever
 it came from:
 
-1. **A fresh, trusted IP city.** Read from the caller's current IP on every authenticated request,
+1. **The member's own device, or a recent check-in answer, whichever is newer.** The device city is
+   the one the member's browser named through "Use my precise location" (see "Precise location"
+   below), used for 7 days (`device_city`, `device_located_at`). The check-in answer is one the
+   member gave the retired "Are you in <city>?" check-in (see "Location check-in" below), while it
+   is younger than `ADMINBOT_LOCATION_CHECKIN_DAYS` (60). Both say where the member is; the IP only
+   says where their network exits.
+2. **A fresh, trusted IP city.** Read from the caller's current IP on every authenticated request,
    never only at sign-in (see "Login location" below), and used for 7 days after the latest
-   reading (`ADMINBOT_MAP_LOGIN_FRESH_DAYS`). It is where the person most recently was, so it leads
-   for everyone, unless the reading was set aside as a likely VPN: its city keeps a clock more than
-   two hours from the browser's time zone, else the Slack zone. It counts toward the map that
-   signed-in members and admins see. An anonymous visitor gets only what members stated, plus sign-in countries.
-2. **A recent check-in answer.** An answer a member gave the retired "Are you in <city>?" check-in
-   (see "Location check-in" below), while it is younger than `ADMINBOT_LOCATION_CHECKIN_DAYS` (60).
+   reading (`ADMINBOT_MAP_LOGIN_FRESH_DAYS`), unless the reading was set aside as a likely VPN: its
+   city keeps a clock more than two hours from the browser's time zone, else the Slack zone. It
+   counts toward the map that signed-in members and admins see, and the admin's row for it says
+   "IP today · approx.": an IP city is approximate. An anonymous visitor gets only what members
+   stated, plus sign-in countries; the device city is never shown to them either.
 3. **A stated city.** `current_city` (where they are right now), then the roster `location`, then
    the Slack profile's location field. `POST /member-map/refresh` reads each member's Slack profile
    and stamps it as `slack_location`. A member Slack no longer knows about has the stamp cleared
@@ -1386,12 +1391,37 @@ it came from:
    that reading was set aside as a likely VPN.
    Drawn as a hollow, dashed dot on the country's centroid.
 
+#### Precise location
+
+A single passive control, "Use my precise location", sits under the map-visibility row in Profile
+and on the dashboard map card's own-location line. Nothing else asks for it: no banner, no
+reminder, no message. Pressing it asks the browser for a city-level position
+(`enableHighAccuracy: false`, 10 s timeout) and posts it to `POST /profile/device-location`, which
+reduces it to the nearest place in the offline GeoNames `cities1000` table (see
+[IP geolocation](adminbot-geoip.md#device-location)) and keeps only the city, region and country.
+The position itself is never stored, logged, audited or returned. The line then reads
+"📍 City · Change", and "Change" takes a new reading.
+
+Once the browser has granted the permission, the page refreshes the reading silently on each visit
+and whenever the tab comes back into view, at most once an hour per device; the service writes only
+when the city changed or once a day. The refresh checks the permission first and never reads when
+it is "prompt" or "denied", so it can never raise the browser's prompt. A failure shows nothing.
+Members whose visibility is "stated" or "hidden" are never asked, and the service discards a
+position posted for them. Each write also adds a row to the location history with
+`source: "device"`, holding the city, region and country and never the position, so a new city
+or the day's first reading in the same city ("still here") is logged like an IP reading. The admin
+location log labels these rows "Device".
+
+City intros never fire from an IP city alone. An IP city places a member in a city for an intro
+only when the device city, a check-in answer or the Slack location agrees with it within 30 days;
+a fresh device city counts on its own.
+
 Each member chooses how they appear, under Profile, "Show me on the lab map as"
 (`map_visibility`, self-editable):
 
 - **Auto** (the default): the order above.
-- **My stated city only** (`stated`): skips every IP source -- the IP city and the IP country.
-  Everything else (stated cities, time zones) applies as usual.
+- **My stated city only** (`stated`): skips every IP source -- the IP city and the IP country --
+  and the device city. Everything else (stated cities, time zones) applies as usual.
 - **Hidden** (`hidden`): left off the map entirely, including the counts.
 
 Only a city is ever shown. The map never carries an IP address, coordinates from a lookup, or a
