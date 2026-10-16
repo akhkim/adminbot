@@ -1116,8 +1116,12 @@ export function ipReadingSetAside(
     return Boolean(timezoneMismatch(place, reference, now));
   }
   // A city the gazetteer does not know still came with the zone the IP database gave it, and that
-  // zone is checked instead: otherwise an unlisted city is the one reading no clock can set aside.
-  const ipZone = usableDeviceZone(member.last_login_timezone);
+  // zone is checked instead (else the country's, as the verdict at sign-in does): otherwise an
+  // unlisted city is the one reading no clock can set aside.
+  const countryPlace = resolveCountry(member.last_login_country);
+  const ipZone =
+    usableDeviceZone(member.last_login_timezone) ??
+    (countryPlace ? placeTimezone(countryPlace) : undefined);
   const ipOffset = ipZone ? zoneOffsetMinutes(ipZone, now) : undefined;
   const referenceOffset = reference ? zoneOffsetMinutes(reference, now) : undefined;
   return (
