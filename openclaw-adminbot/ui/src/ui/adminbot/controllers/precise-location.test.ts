@@ -2,7 +2,6 @@
 // The burden rules for "Use my precise location", one test each. Synthetic positions only.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  AUTO_ASK_KEY,
   PRECISE_LOCATION_OPTIONS,
   type PreciseLocationDeps,
   refreshPreciseLocationSilently,
@@ -53,33 +52,28 @@ function deps(
 }
 
 describe("silent refresh", () => {
-  it("asks automatically once per device, and never after the browser was told no", async () => {
+  it("asks every time it is told to while location is not allowed, and never once refused", async () => {
     for (const permissions of [
       { query: async () => ({ state: "prompt" }) },
       undefined, // No Permissions API: unknown until asked, so treated as "prompt".
     ]) {
-      const storage = memoryStorage();
-      let now = Date.parse("2026-10-16T12:00:00Z");
-      const d = deps({ permissions, storage, now: () => now });
-      expect(await refreshPreciseLocationSilently(d, "auto")).toEqual({
+      const d = deps({ permissions });
+      expect(await refreshPreciseLocationSilently(d, "auto", { ask: true })).toEqual({
         city: "Reggio Emilia",
         region: "Emilia-Romagna",
         country: "IT",
       });
-      expect(d.getCurrentPosition).toHaveBeenCalledTimes(1);
-      expect(storage.data.has(AUTO_ASK_KEY)).toBe(true);
-      // Dismissed or ignored: the next visit, an hour or a month later, does not ask again.
-      now += 30 * 24 * 60 * 60_000;
-      await refreshPreciseLocationSilently(d, "auto");
-      expect(d.getCurrentPosition).toHaveBeenCalledTimes(1);
+      // Dismissed: the next sign-in or dashboard visit, even a minute later, asks again.
+      await refreshPreciseLocationSilently(d, "auto", { ask: true });
+      await refreshPreciseLocationSilently(d, "auto", { ask: true });
+      expect(d.getCurrentPosition).toHaveBeenCalledTimes(3);
+      // Without `ask`, an unanswered permission is left alone.
+      expect(await refreshPreciseLocationSilently(d, "auto")).toBeUndefined();
+      expect(d.getCurrentPosition).toHaveBeenCalledTimes(3);
     }
     const denied = deps({ permission: "denied" });
-    expect(await refreshPreciseLocationSilently(denied, "auto")).toBeUndefined();
+    expect(await refreshPreciseLocationSilently(denied, "auto", { ask: true })).toBeUndefined();
     expect(denied.getCurrentPosition).not.toHaveBeenCalled();
-    // A device that cannot remember asking is not asked, or it would be asked on every visit.
-    const forgetful = deps({ permission: "prompt", storage: undefined });
-    expect(await refreshPreciseLocationSilently(forgetful, "auto")).toBeUndefined();
-    expect(forgetful.getCurrentPosition).not.toHaveBeenCalled();
   });
 
   it("reads city-level when granted and sends only the two numbers", async () => {
@@ -113,8 +107,8 @@ describe("silent refresh", () => {
 
   it("never asks or reads a member who is hidden or shown by their stated city", async () => {
     for (const visibility of ["hidden", "stated", null] as const) {
-      const d = deps();
-      expect(await refreshPreciseLocationSilently(d, visibility)).toBeUndefined();
+      const d = deps({ permission: "prompt" });
+      expect(await refreshPreciseLocationSilently(d, visibility, { ask: true })).toBeUndefined();
       expect(d.getCurrentPosition).not.toHaveBeenCalled();
     }
   });

@@ -1393,12 +1393,12 @@ it came from:
 
 #### Precise location
 
-The first time a signed-in member opens AdminBot on a device, the page raises the browser's own
-location prompt once (recorded per device under `adminbot.preciseLocation.autoAskedAt`, a time
-only). That is the only automatic ask: no banner, no reminder, no message, and a dismissed or
-refused prompt is never repeated on that device. A device that cannot keep the record (storage
-blocked) is not asked, so nobody is prompted on every visit. After that a single control, "Use my
-precise location", sits under the map-visibility row in Profile and on the dashboard map card's
+Until a member allows location, the page raises the browser's own location prompt every time they
+sign in or open AdminBot with a session, every time they arrive at the dashboard, and every time
+the tab comes back into view. One prompt is in flight at a time. Dismissing it does not stop the
+next one; only "Block" does, because the browser then refuses the page and the page stops asking.
+Chrome may also quiet a prompt dismissed several times in a row. There is no banner, reminder or
+message. A single control, "Use my precise location", sits under the map-visibility row in Profile and on the dashboard map card's
 own-location line. Pressing it asks the browser for a city-level position
 (`enableHighAccuracy: false`, 10 s timeout) and posts it to `POST /profile/device-location`, which
 reduces it to the nearest place in the offline GeoNames `cities1000` table (see
@@ -1408,9 +1408,8 @@ The position itself is never stored, logged, audited or returned. The line then 
 
 Once the browser has granted the permission, the page refreshes the reading silently on each visit
 and whenever the tab comes back into view, at most once an hour per device; the service writes only
-when the city changed or once a day. The refresh checks the permission first: on "denied" it never
-reads, and on "prompt" (or a browser without the Permissions API) it asks only if this device has
-never been asked automatically. A failure shows nothing.
+when the city changed or once a day. The refresh checks the permission first: on "denied" it never reads, and on "prompt" (or a
+browser without the Permissions API) it asks, unthrottled, as described above. A failure shows nothing.
 Members whose visibility is "stated" or "hidden" are never asked, and the service discards a
 position posted for them. Each write also adds a row to the location history with
 `source: "device"`, holding the city, region and country and never the position, so a new city
