@@ -265,6 +265,13 @@ export const directoryRoutes: readonly Route[] = [
       }
     }),
   ),
+  get(
+    "/member-map/coverage",
+    // Admin-only: names, and when each person was last here. Never IP addresses or coordinates.
+    privilegedOnly(({ res, ctx }) => {
+      sendServiceResult(res, ctx.service.memberMapCoverage());
+    }),
+  ),
   post(
     "/members/directory/refresh-slack",
     privilegedOnly(async ({ res, ctx, principal }) => {

@@ -354,6 +354,8 @@ export class AdminBotAuthService {
   // `last_ip_observed_at` stands in for the day (see noteAccountUse), which is a better trade than
   // keeping a table of everybody's current IP on disk.
   private readonly lastCheckByMember = new Map<string, { day: string; ip: string; tz: string }>();
+  // The UTC day `last_seen_at` was last written for each member, so a busy day costs one write.
+  private readonly lastSeenDayByMember = new Map<string, string>();
 
   constructor(options: AdminBotAuthServiceOptions) {
     this.store = options.store;
@@ -542,11 +544,15 @@ export class AdminBotAuthService {
     if (
       !(await this.store.patchLabMemberAuthFields(memberId, {
         last_login_at: now,
+        // Signing in is being here; stamping it in the same write means the requests that follow
+        // today need none of their own (see noteSeenToday).
+        last_seen_at: now,
         updated_at: now,
       }))
     ) {
       return undefined;
     }
+    this.lastSeenDayByMember.set(memberId, utcDay(now));
     // The field above is overwritten by the next sign-in and by any bulk write that touches the
     // member; this row is not. It is the difference between "is this person alive" and "how often
     // do they actually come back", and only the second one can be read after an importer has run.
@@ -821,7 +827,11 @@ export class AdminBotAuthService {
   ): void {
     try {
       const { member } = principal;
-      if (!this.geolocateIp || !remoteIp || principal.impersonator) {
+      if (principal.impersonator) {
+        return;
+      }
+      this.noteSeenToday(member);
+      if (!this.geolocateIp || !remoteIp) {
         return;
       }
       if (memberMapVisibility(member) !== "auto") {
@@ -851,6 +861,31 @@ export class AdminBotAuthService {
     } catch (error) {
       this.warn(`adminbot: daily IP check failed: ${errorText(error)}`);
     }
+  }
+
+  // Stamps `last_seen_at` once per member per UTC day, for every member whatever their map
+  // visibility: it says when someone was last here, not where. Fire-and-forget like the IP check.
+  private noteSeenToday(member: AdminBotLabMember): void {
+    const now = this.now().toISOString();
+    const day = utcDay(now);
+    const remembered = this.lastSeenDayByMember.get(member.id);
+    if (remembered === day || (!remembered && utcDay(member.last_seen_at) === day)) {
+      this.lastSeenDayByMember.set(member.id, day);
+      return;
+    }
+    this.lastSeenDayByMember.set(member.id, day);
+    // `updated_at` is carried over unchanged: a visit is not an edit of the record.
+    const updatedAt = member.updated_at;
+    void Promise.resolve()
+      .then(() =>
+        this.store.patchLabMemberAuthFields(member.id, {
+          updated_at: updatedAt,
+          last_seen_at: now,
+        }),
+      )
+      .catch((error: unknown) => {
+        this.warn(`adminbot: last-seen stamp failed: ${errorText(error)}`);
+      });
   }
 
   /**

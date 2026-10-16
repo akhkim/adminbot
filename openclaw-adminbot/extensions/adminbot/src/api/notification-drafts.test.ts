@@ -218,7 +218,11 @@ class OpenReviewClient:
   );
   expect(result.announcements[0].text).not.toContain("2601.99999");
   expect(result.warnings).toEqual([]);
-  expect(app.store.listLabMembers()).toEqual(before);
+  // The route writes nothing to the roster. The only change a request may make is the daily
+  // visit stamp (auth.ts noteSeenToday), which is not this route's doing.
+  const withoutVisit = (members: ReturnType<typeof app.store.listLabMembers>) =>
+    members.map(({ last_seen_at: _visit, ...member }) => member);
+  expect(withoutVisit(app.store.listLabMembers())).toEqual(withoutVisit(before));
 });
 it("denies anonymous, member, service-token and foreign-origin requests", async () => {
   const { url, headers } = await setup();

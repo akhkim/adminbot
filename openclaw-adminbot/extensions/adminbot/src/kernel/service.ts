@@ -352,6 +352,7 @@ import {
   observationFor,
   selfReportedChange,
 } from "../workflows/members/location-history.js";
+import { type AdminBotMapCoverage, buildMapCoverage } from "../workflows/members/map-coverage.js";
 import type { MeetupPlace } from "../workflows/members/meetups.js";
 import {
   ADMINBOT_MAP_VISIBILITIES,
@@ -618,6 +619,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
           | "last_ip_suspected_vpn"
           | "last_device_tz"
           | "last_device_tz_at"
+          | "last_seen_at"
         >
       >,
   ): boolean;
@@ -10883,6 +10885,19 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: this.memberMapCache(this.store, { loginCity: options.loginCity ?? false }),
+    };
+  }
+
+  // The admin coverage panel: which signal places each active member, and who is placed only by
+  // something weak. Reads the same memoised admin map the Map tab gets, so the two always agree.
+  memberMapCoverage(now: Date = new Date()): AdminBotServiceResponse<AdminBotMapCoverage> {
+    return {
+      ok: true,
+      status: 200,
+      payload: buildMapCoverage(this.store.listLabMembers(), {
+        now,
+        map: this.memberMapCache(this.store, { loginCity: true, now }),
+      }),
     };
   }
 

@@ -1755,6 +1755,12 @@ export type AdminBotLabMemberInput = {
    */
   last_device_tz?: string;
   last_device_tz_at?: string;
+  /**
+   * The last UTC day this member used AdminBot with their own session (any authenticated request;
+   * never an admin "view as"). Stamped at most once a day by auth.ts `noteAccountUse`, whatever the
+   * member's map visibility, so the admin coverage panel can say when a stale entry was last here.
+   */
+  last_seen_at?: string;
   availability?: AdminBotAvailabilityRow[];
   time_off?: AdminBotTimeOffRow[];
   // Dated milestones the member is planning back from. Self-editable like the two lists above.

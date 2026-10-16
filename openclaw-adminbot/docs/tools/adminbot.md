@@ -699,6 +699,25 @@ separate fields, which is easy to misread from their names -- the ID/timezone
 sync does not touch `slack_location`, and before the map pass was scheduled a
 stale Slack stamp could outrank a fresher roster location indefinitely.
 
+The ID/timezone sync reads Slack's `tz` for **every** linked active member, not only those who
+use AdminBot, and stamps it as `slack_tz` (read-only: it calls Slack's user lookup and never
+posts). For a member who never signs in it is the only signal that keeps arriving, so it is what
+places them on the map ("Slack time zone") and what the VPN check compares their IP against when
+their browser has not reported a zone.
+
+#### Map coverage (admins)
+
+`GET /member-map/coverage` (admin-only) says how well the map covers the lab. Each active member
+is counted in exactly one bucket, by what placed them: `ip` (a fresh IP reading that agrees with
+their clock), `checkin` (a check-in answer under 60 days old), `stored_city`, `timezone`,
+`country`, `unplaced`, or `hidden`. `suspected_vpn` is counted on top of these: members whose
+fresh IP reading was set aside, who are still placed by something else. `stale` lists everyone
+without a fresh IP or a recent check-in, with what placed them and `last_seen_at`, the last day
+they used AdminBot themselves (stamped once a day on any authenticated request, whatever their map
+visibility, and never by an admin's "view as"). Never-seen members come first. The dashboard shows
+it to admins as the "Map coverage" card beside the map. It is built from the same memoised map as
+`GET /member-map`, so the two never disagree.
+
 Both are also reachable without a person: `scripts/adminbot-member-directory-cron.sh`
 calls `POST /members/directory/refresh-slack` once a day as an OpenClaw cron job,
 so timezones stay current for the calendar without an admin remembering to press

@@ -21,6 +21,7 @@ import { icons } from "../../icons.ts";
 import { iconForTab, isKnownTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
 import type { MemberNotification } from "../api/workspace.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { openEntries } from "../blockers.ts";
 import {
   deadlineDateTimeLabel,
@@ -33,6 +34,7 @@ import { nextStepFor } from "../next-step.ts";
 import { ownPapers, paperProgress, stepLabel } from "../projects/model.ts";
 import { renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderMemberMap } from "./member-map.ts";
+import "./map-coverage.ts";
 import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile-fields.ts";
 
 // One thing waiting on the viewer. `detail` is optional supporting text -- the queue items say
@@ -774,11 +776,25 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
         <div class="dashboard__grid">
           ${renderWorkSummary(state)}
           ${renderMemberMap(state.adminBotMemberMap ?? null, { now: Date.now() })}
+          ${renderMapCoverage(state, role)}
         </div>
       </section>
       ${renderNextDeadlines(state)}
     </div>
   `;
+}
+
+// Admins only: the server refuses everyone else, and a panel that could only ever say "forbidden"
+// is noise on a member's dashboard.
+function renderMapCoverage(state: AppViewState, role: AccessRole) {
+  const session = loadStoredMemberSession();
+  if (role !== "admin" || !session?.sessionToken) {
+    return nothing;
+  }
+  return html`<adminbot-map-coverage
+    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+    .sessionToken=${session.sessionToken}
+  ></adminbot-map-coverage>`;
 }
 
 function renderOfflineBanner(state: AppViewState) {

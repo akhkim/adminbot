@@ -158,12 +158,36 @@ describe("daily IP observation", () => {
     expect(store.listMemberLocations("m_daily", 10)).toHaveLength(0);
   });
 
+  it("stamps last_seen_at once a day for every member, stated and hidden included", async () => {
+    const geolocateIp = vi.fn(async () => TORONTO);
+    const { auth, principal, store, setNow } = setup({
+      geolocateIp,
+      member: { map_visibility: "hidden" },
+    });
+    auth.noteAccountUse(principal(), "198.51.100.7");
+    await vi.waitFor(() =>
+      expect(store.getLabMember("m_daily")?.last_seen_at).toBe("2026-07-15T09:00:00.000Z"),
+    );
+    setNow("2026-07-15T18:00:00.000Z");
+    auth.noteAccountUse(principal(), "198.51.100.7");
+    await settle();
+    expect(store.getLabMember("m_daily")?.last_seen_at).toBe("2026-07-15T09:00:00.000Z");
+    setNow("2026-07-16T08:00:00.000Z");
+    auth.noteAccountUse(principal(), undefined);
+    await vi.waitFor(() =>
+      expect(store.getLabMember("m_daily")?.last_seen_at).toBe("2026-07-16T08:00:00.000Z"),
+    );
+    // Hidden: still no IP lookup.
+    expect(geolocateIp).not.toHaveBeenCalled();
+  });
+
   it("skips an impersonated session", async () => {
     const geolocateIp = vi.fn(async () => TORONTO);
-    const { auth, principal } = setup({ geolocateIp });
+    const { auth, principal, store } = setup({ geolocateIp });
     auth.noteAccountUse({ ...principal(), impersonator: principal().member }, "198.51.100.7");
     await settle();
     expect(geolocateIp).not.toHaveBeenCalled();
+    expect(store.getLabMember("m_daily")?.last_seen_at).toBeUndefined();
   });
 });
 

@@ -56,3 +56,22 @@ describe("deviceClock", () => {
     expect(deviceClock(req({}))).toBeUndefined();
   });
 });
+
+describe("GET /member-map/coverage", () => {
+  it("answers an admin caller and refuses an anonymous one", async () => {
+    const mock = createAdminBotMockService({ serviceToken: SERVICE_TOKEN });
+    running.push(mock);
+    await new Promise<void>((resolve) => {
+      mock.server.listen(0, "127.0.0.1", resolve);
+    });
+    const { port } = mock.server.address() as { port: number };
+    const url = `http://127.0.0.1:${port}/member-map/coverage`;
+    const anonymous = await fetch(url);
+    expect([401, 403]).toContain(anonymous.status);
+    const admin = await fetch(url, { headers: { Authorization: `Bearer ${SERVICE_TOKEN}` } });
+    expect(admin.status).toBe(200);
+    const body = (await admin.json()) as { counts: Record<string, number>; stale: unknown[] };
+    expect(body.counts).toMatchObject({ ip: 0, unplaced: expect.any(Number), suspected_vpn: 0 });
+    expect(Array.isArray(body.stale)).toBe(true);
+  });
+});
