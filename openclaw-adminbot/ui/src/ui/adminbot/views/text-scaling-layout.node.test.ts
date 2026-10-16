@@ -17,6 +17,7 @@ import {
   startControlUiE2eServer,
   type ControlUiE2eServer,
 } from "../../../test-helpers/control-ui-e2e.ts";
+import { memberMapFixture } from "../../../test-helpers/member-map-fixture.ts";
 import { collectTextLayoutProblems } from "../../../test-helpers/text-layout-problems.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
 
@@ -242,4 +243,156 @@ describeLayout("text scaling layout", () => {
       }
     }, 180_000);
   }
+});
+
+// The dashboard's member map card at the sizes it was reported at. With a 14px default font the
+// old side-by-side layout gave the plot ~370x156 of a 630px card and left the rest empty under it;
+// at 16px the same card wrapped. Either way the plot should now take the card's width, keep the
+// projection's 1000:422 shape, be drawn and clustered for that size, and sit above the list.
+type MapCase = { name: string; width: number; height: number; defaultFontSize: number };
+const mapCases: MapCase[] = [
+  { name: "1568x768, 14px default font", width: 1568, height: 768, defaultFontSize: 14 },
+  { name: "1568x768, 16px default font", width: 1568, height: 768, defaultFontSize: 16 },
+  { name: "390 mobile", width: 390, height: 844, defaultFontSize: 16 },
+];
+
+describeLayout("member map card layout", () => {
+  let server: ControlUiE2eServer;
+  const profiles: string[] = [];
+
+  beforeAll(async () => {
+    server = await startControlUiE2eServer();
+  }, 60_000);
+
+  afterAll(async () => {
+    await server?.close();
+    for (const dir of profiles) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  async function open(target: MapCase): Promise<{ context: BrowserContext; page: Page }> {
+    const dir = mkdtempSync(path.join(tmpdir(), "adminbot-member-map-"));
+    profiles.push(dir);
+    mkdirSync(path.join(dir, "Default"));
+    writeFileSync(
+      path.join(dir, "Default", "Preferences"),
+      JSON.stringify({ webkit: { webprefs: { default_font_size: target.defaultFontSize } } }),
+    );
+    const context = await chromium.launchPersistentContext(dir, {
+      executablePath,
+      headless: true,
+    });
+    const page = await context.newPage();
+    await page.setViewportSize({ width: target.width, height: target.height });
+    await page.clock.setFixedTime(NOW);
+    await installMockGateway(page);
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        "openclaw.adminbot.session.v1",
+        JSON.stringify({ sessionToken: "layout-fixture", expiresAt: "2099-01-01T00:00:00Z" }),
+      );
+    });
+    const base = new URL(server.baseUrl);
+    const map = memberMapFixture({ mode: "full" });
+    await page.route(
+      (url) => url.origin !== base.origin,
+      (route) =>
+        new URL(route.request().url()).pathname === "/member-map"
+          ? route.fulfill({ json: map })
+          : answerService(route),
+    );
+    return { context, page };
+  }
+
+  for (const target of mapCases) {
+    it(`fills the card with the map: ${target.name}`, async () => {
+      const { context, page } = await open(target);
+      try {
+        await page.goto(`${server.baseUrl}dashboard`);
+        const card = page.locator('[data-testid="dashboard-member-map"]').first();
+        // Markers are drawn only once the box has been measured.
+        await card
+          .locator(".member-map__body .member-map__marker")
+          .first()
+          .waitFor({ state: "attached", timeout: 15_000 });
+        const box = await card.evaluate((el) => {
+          const rect = (node: Element | null) => node!.getBoundingClientRect();
+          const body = el.querySelector(".member-map__body");
+          const stage = el.querySelector(".member-map__body .member-map__stage");
+          const list = el.querySelector(".member-map__body > .member-map__list");
+          const plot = stage!.querySelector("svg.member-map__plot");
+          return {
+            body: rect(body).width,
+            stage: {
+              width: rect(stage).width,
+              height: rect(stage).height,
+              bottom: rect(stage).bottom,
+              innerWidth: stage!.clientWidth,
+              innerHeight: stage!.clientHeight,
+            },
+            listTop: rect(list).top,
+            plot: {
+              width: Number(plot!.getAttribute("width")),
+              height: Number(plot!.getAttribute("height")),
+            },
+            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          };
+        });
+        expect(box.stage.width, "plot spans the card").toBeGreaterThan(box.body - 2);
+        expect(box.stage.height / box.stage.width).toBeCloseTo(422 / 1000, 2);
+        expect(box.listTop, "list sits under the plot").toBeGreaterThanOrEqual(box.stage.bottom);
+        // Drawn, and so clustered, for the measured box rather than a stale or fallback size.
+        expect(Math.abs(box.plot.width - box.stage.innerWidth)).toBeLessThanOrEqual(1);
+        expect(Math.abs(box.plot.height - box.stage.innerHeight)).toBeLessThanOrEqual(1);
+        expect(box.overflow, "no sideways scroll").toBeLessThanOrEqual(1);
+      } finally {
+        await context.close();
+      }
+    }, 120_000);
+  }
+
+  // A card wide enough for the plot to be about as tall as the list puts them side by side again.
+  it("puts the list beside the map once the card is wide enough", async () => {
+    const { context, page } = await open({
+      name: "wide",
+      width: 1568,
+      height: 768,
+      defaultFontSize: 16,
+    });
+    try {
+      await page.goto(`${server.baseUrl}dashboard`);
+      const card = page.locator('[data-testid="dashboard-member-map"]').first();
+      await card.waitFor({ timeout: 15_000 });
+      await card.evaluate((el) => {
+        (el as HTMLElement).style.width = "1300px";
+      });
+      await card
+        .locator(".member-map__body .member-map__marker")
+        .first()
+        .waitFor({ state: "attached" });
+      // Let the resize observer report the new box before measuring.
+      await page.waitForTimeout(300);
+      const box = await card.evaluate((el) => {
+        const stage = el
+          .querySelector(".member-map__body .member-map__stage")!
+          .getBoundingClientRect();
+        const list = el
+          .querySelector(".member-map__body > .member-map__list")!
+          .getBoundingClientRect();
+        return {
+          stageRight: stage.right,
+          stageWidth: stage.width,
+          listLeft: list.left,
+          listTop: list.top,
+          stageTop: stage.top,
+        };
+      });
+      expect(box.listLeft).toBeGreaterThan(box.stageRight);
+      expect(Math.abs(box.listTop - box.stageTop)).toBeLessThan(4);
+      expect(box.stageWidth).toBeGreaterThan(800);
+    } finally {
+      await context.close();
+    }
+  }, 120_000);
 });
