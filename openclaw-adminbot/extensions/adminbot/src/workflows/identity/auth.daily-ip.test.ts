@@ -2,9 +2,17 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import { AdminBotMemoryStore, AdminBotService } from "../../kernel/service.js";
+import { buildMemberMap, liveIpPlace } from "../members/member-map.js";
 import { AdminBotAuthService, type AdminBotMemberPrincipal } from "./auth.js";
 
 type Located = { country?: string; continent?: string; city?: string; region?: string };
+
+const ZURICH: Located = {
+  country: "CH",
+  continent: "Europe",
+  city: "Zürich",
+  region: "Zurich",
+};
 
 const TORONTO: Located = {
   country: "CA",
@@ -115,18 +123,21 @@ describe("daily IP observation", () => {
     expect(geolocateIp).toHaveBeenCalledTimes(2);
   });
 
-  it("does not look again after a restart when today's reading is already stored", async () => {
+  it("after a restart looks once more but writes nothing when the city is unchanged", async () => {
     const geolocateIp = vi.fn(async () => TORONTO);
     const first = setup({ geolocateIp });
     first.auth.noteAccountUse(first.principal(), "198.51.100.7");
-    await vi.waitFor(() =>
-      expect(first.store.getLabMember("m_daily")?.last_ip_observed_at).toBeDefined(),
-    );
+    await vi.waitFor(() => expect(first.ipRows()).toHaveLength(1));
+    const before = first.store.getLabMember("m_daily");
 
     const restarted = setup({ geolocateIp, store: first.store });
+    restarted.setNow("2026-07-15T15:00:00.000Z");
     restarted.auth.noteAccountUse(restarted.principal(), "198.51.100.7");
+    await vi.waitFor(() => expect(geolocateIp).toHaveBeenCalledTimes(2));
     await settle();
-    expect(geolocateIp).toHaveBeenCalledTimes(1);
+    // Same city, same UTC day: no write, no new timeline row.
+    expect(first.store.getLabMember("m_daily")).toEqual(before);
+    expect(first.ipRows()).toHaveLength(1);
   });
 
   it("never lets a geolocator failure reach the request, and logs it", async () => {
@@ -262,5 +273,83 @@ describe("VPN check on the daily reading", () => {
     auth.noteAccountUse(principal(), "198.51.100.7", { tz: "UTC" });
     await vi.waitFor(() => expect(store.getLabMember("m_daily")?.last_login_city).toBe("Toronto"));
     expect(store.getLabMember("m_daily")?.last_device_tz).toBeUndefined();
+  });
+});
+
+describe("the live IP, not the sign-in IP", () => {
+  // What the sign-in stamp writes for somebody who signed in in Toronto this morning.
+  const signedInToronto: Partial<AdminBotLabMember> = {
+    last_login_at: "2026-07-15T06:00:00.000Z",
+    last_login_city: "Toronto",
+    last_login_region: "Ontario",
+    last_login_country: "CA",
+    last_ip_observed_at: "2026-07-15T06:00:00.000Z",
+    last_ip_suspected_vpn: false,
+  };
+  const zurichIps = new Set(["192.0.2.10", "192.0.2.11", "192.0.2.12"]);
+  const geolocateIp = (ip: string) => Promise.resolve(zurichIps.has(ip) ? ZURICH : TORONTO);
+
+  it("places somebody who signed in in Toronto in Zürich on their first request from there", async () => {
+    const hook = vi.fn();
+    const { auth, principal, store, setNow } = setup({
+      geolocateIp: vi.fn(geolocateIp),
+      member: signedInToronto,
+      afterLoginLocated: hook,
+    });
+    setNow("2026-07-15T14:00:00.000Z");
+    auth.noteAccountUse(principal(), "192.0.2.10", { tz: "Europe/Zurich" });
+    await vi.waitFor(() => expect(store.getLabMember("m_daily")?.last_login_city).toBe("Zürich"));
+    const member = store.getLabMember("m_daily")!;
+    expect(member).toMatchObject({
+      last_login_country: "CH",
+      last_ip_observed_at: "2026-07-15T14:00:00.000Z",
+      last_ip_suspected_vpn: false,
+      // The sign-in itself is untouched: it is a fact about signing in, not about where.
+      last_login_at: "2026-07-15T06:00:00.000Z",
+    });
+    // The map and the intros read the same helper, and it says Zürich the same day.
+    expect(liveIpPlace(member, new Date("2026-07-15T14:00:00.000Z"))).toMatchObject({
+      city: "Zürich",
+      country: "CH",
+    });
+    const map = buildMemberMap([member], new Map(), {
+      loginCity: true,
+      now: new Date("2026-07-15T14:00:00.000Z"),
+    });
+    expect(map.places[0]).toMatchObject({ label: "Zürich", members: [{ source: "login" }] });
+    // The city changed, so the intro work wakes -- once. More requests from Zürich, even from
+    // other addresses there, are the same city and wake nothing.
+    expect(hook).toHaveBeenCalledTimes(1);
+    setNow("2026-07-15T16:00:00.000Z");
+    auth.noteAccountUse(principal(), "192.0.2.11", { tz: "Europe/Zurich" });
+    auth.noteAccountUse(principal(), "192.0.2.12", { tz: "Europe/Zurich" });
+    await settle();
+    await settle();
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(store.getLabMember("m_daily")?.last_ip_observed_at).toBe("2026-07-15T14:00:00.000Z");
+  });
+
+  it("never moves them or wakes intros for a VPN-flagged reading", async () => {
+    const hook = vi.fn();
+    const { auth, principal, store, setNow, ipRows } = setup({
+      geolocateIp: vi.fn(geolocateIp),
+      member: { ...signedInToronto, last_device_tz: "America/Toronto" },
+      afterLoginLocated: hook,
+    });
+    const before = store.getLabMember("m_daily")!;
+    setNow("2026-07-15T14:00:00.000Z");
+    // A Zürich exit while the browser keeps Toronto's clock: a VPN.
+    auth.noteAccountUse(principal(), "192.0.2.10", { tz: "America/Toronto" });
+    await vi.waitFor(() => expect(ipRows().some((row) => row.suspected_vpn)).toBe(true));
+    await settle();
+    const after = store.getLabMember("m_daily")!;
+    expect(after).toMatchObject({
+      last_login_city: "Toronto",
+      last_login_country: "CA",
+      last_ip_observed_at: before.last_ip_observed_at,
+      last_ip_suspected_vpn: false,
+    });
+    expect(liveIpPlace(after, new Date("2026-07-15T14:00:00.000Z"))?.city).toBe("Toronto");
+    expect(hook).not.toHaveBeenCalled();
   });
 });

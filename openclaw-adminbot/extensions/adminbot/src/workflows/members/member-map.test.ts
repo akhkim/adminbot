@@ -129,7 +129,7 @@ describe("buildMemberMap", () => {
         name: "Ada",
         last_login_country: "Switzerland",
         avatar_url: "https://example.com/ada.png",
-        last_login_at: "2026-01-05T00:00:00.000Z",
+        last_ip_observed_at: "2026-01-05T00:00:00.000Z",
       }),
       member({ id: "b", name: "Bo", last_login_country: "Switzerland" }),
     ]);
@@ -142,7 +142,7 @@ describe("buildMemberMap", () => {
         avatar_url: "https://example.com/ada.png",
         last_login_at: "2026-01-05T00:00:00.000Z",
         ip_observed_at: "2026-01-05T00:00:00.000Z",
-        // The map row is dated by the observation that placed it: here, the sign-in.
+        // The map row is dated by the observation that placed it: here, the live IP reading.
         located_at: "2026-01-05T00:00:00.000Z",
         source_label: expect.stringMatching(/^IP \d+d ago$/u),
       },
@@ -216,7 +216,7 @@ describe("buildMemberMap", () => {
         name: "Tess",
         last_login_country: "FR",
         last_login_city: "Lyon",
-        last_login_at: "2026-10-14T08:00:00.000Z",
+        last_ip_observed_at: "2026-10-14T08:00:00.000Z",
         ...overrides,
       });
 
@@ -236,8 +236,8 @@ describe("buildMemberMap", () => {
     });
 
     it("drops a stale or undated city back to the country", () => {
-      for (const last_login_at of ["2026-10-01T08:00:00.000Z", "not a date", undefined]) {
-        const map = buildMemberMap([traveller({ last_login_at })], new Map(), {
+      for (const last_ip_observed_at of ["2026-10-01T08:00:00.000Z", "not a date", undefined]) {
+        const map = buildMemberMap([traveller({ last_ip_observed_at })], new Map(), {
           loginCity: true,
           now,
         });
@@ -324,8 +324,8 @@ describe("buildMemberMap", () => {
 
     it("counts an IP reading as fresh for 7 days, then falls back to what the member stated", () => {
       const at = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
-      const place = (last_login_at: string) =>
-        buildMemberMap([traveller({ current_city: "Toronto", last_login_at })], new Map(), {
+      const place = (last_ip_observed_at: string) =>
+        buildMemberMap([traveller({ current_city: "Toronto", last_ip_observed_at })], new Map(), {
           loginCity: true,
           now,
         }).places[0];
@@ -460,7 +460,7 @@ describe("buildMemberMap", () => {
     const login = {
       last_login_country: "CA",
       last_login_city: "Toronto",
-      last_login_at: "2026-10-14T08:00:00.000Z",
+      last_ip_observed_at: "2026-10-14T08:00:00.000Z",
     };
     const map = buildMemberMap(
       [
@@ -603,7 +603,7 @@ describe("memberMapMemo", () => {
           location: "Toronto",
           last_login_city: "Zurich",
           last_login_country: "CH",
-          last_login_at: fresh,
+          last_ip_observed_at: fresh,
         }),
       ],
     };
@@ -666,7 +666,7 @@ describe("member map precedence with the check-in and the Slack zone", () => {
     const placed = placeOf({
       last_login_city: "Berlin",
       last_login_country: "DE",
-      last_login_at: ago(2),
+      last_ip_observed_at: ago(2),
       current_city: "Toronto",
       location_checkin_city: "Toronto",
       location_checkin_at: ago(1),
@@ -681,7 +681,7 @@ describe("member map precedence with the check-in and the Slack zone", () => {
       location_checkin_city: "Toronto",
       location_checkin_at: ago(3),
       last_login_city: "Berlin",
-      last_login_at: ago(30),
+      last_ip_observed_at: ago(30),
     });
     expect(placed).toMatchObject({ label: "Toronto", source: "checkin", located_at: ago(3) });
   });
@@ -736,7 +736,7 @@ describe("member map precedence with the check-in and the Slack zone", () => {
       last_login_city: "Toronto",
       last_login_region: "Ontario",
       last_login_country: "CA",
-      last_login_at: ago(1),
+      last_ip_observed_at: ago(1),
       slack_tz: "Europe/Berlin",
       slack_tz_observed_at: ago(1),
     });

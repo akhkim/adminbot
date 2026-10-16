@@ -780,9 +780,6 @@ export type AdminBotHost = {
   adminBotLocationDrifts?: LocationDrift[];
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
-  // The app-wide "Are you in Toronto?" check-in. Undefined is "not read yet", null is "nothing to
-  // show this session" (not due, already shown, or answered).
-  adminBotLocationCheckin?: import("../data/location-checkin.ts").CheckinBanner | null;
   adminBotMeetingsLoading: boolean;
   adminBotMeetingsRequestVersion?: number;
   adminBotMeetingsLoadingMore: boolean;

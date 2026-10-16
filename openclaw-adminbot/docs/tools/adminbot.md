@@ -709,10 +709,10 @@ their browser has not reported a zone.
 
 `GET /member-map/coverage` (admin-only) says how well the map covers the lab. Each active member
 is counted in exactly one bucket, by what placed them: `ip` (a fresh IP reading that agrees with
-their clock), `checkin` (a check-in answer under 60 days old), `stored_city`, `timezone`,
+their clock), `checkin` (an answer to the retired check-in, under 60 days old), `stored_city`, `timezone`,
 `country`, `unplaced`, or `hidden`. `suspected_vpn` is counted on top of these: members whose
 fresh IP reading was set aside, who are still placed by something else. `stale` lists everyone
-without a fresh IP or a recent check-in, with what placed them and `last_seen_at`, the last day
+without a fresh IP or a recent check-in answer, with what placed them and `last_seen_at`, the last day
 they used AdminBot themselves (stamped once a day on any authenticated request, whatever their map
 visibility, and never by an admin's "view as"). Never-seen members come first. The dashboard shows
 it to admins as the "Map coverage" card beside the map. It is built from the same memoised map as
@@ -1361,14 +1361,14 @@ call on someone else's behalf is another.
 A member is placed by the first source that answers, and a country never outranks a city, whatever
 it came from:
 
-1. **A fresh, trusted IP city.** Read from the caller's IP at sign-in and once a day on any
-   authenticated request (see "Login location" below), and used for 7 days after the latest
+1. **A fresh, trusted IP city.** Read from the caller's current IP on every authenticated request,
+   never only at sign-in (see "Login location" below), and used for 7 days after the latest
    reading (`ADMINBOT_MAP_LOGIN_FRESH_DAYS`). It is where the person most recently was, so it leads
    for everyone, unless the reading was set aside as a likely VPN: its city keeps a clock more than
-   two hours from the browser's time zone, else the Slack zone. It counts toward the map that signed-in members and
-   admins see. An anonymous visitor gets only what members stated, plus sign-in countries.
-2. **A recent check-in.** The member's own answer to "Are you in <city>?" (see "Location check-in"
-   below), while it is younger than `ADMINBOT_LOCATION_CHECKIN_DAYS` (60).
+   two hours from the browser's time zone, else the Slack zone. It counts toward the map that
+   signed-in members and admins see. An anonymous visitor gets only what members stated, plus sign-in countries.
+2. **A recent check-in answer.** An answer a member gave the retired "Are you in <city>?" check-in
+   (see "Location check-in" below), while it is younger than `ADMINBOT_LOCATION_CHECKIN_DAYS` (60).
 3. **A stated city.** `current_city` (where they are right now), then the roster `location`, then
    the Slack profile's location field. `POST /member-map/refresh` reads each member's Slack profile
    and stamps it as `slack_location`. A member Slack no longer knows about has the stamp cleared
@@ -1387,11 +1387,9 @@ Each member chooses how they appear, under Profile, "Show me on the lab map as"
 (`map_visibility`, self-editable):
 
 - **Auto** (the default): the order above.
-- **My stated city only** (`stated`): skips every IP source -- the sign-in city and the sign-in
-  country -- and the check-in does not offer the sign-in city as its guess either. Everything else
-  (check-in, stated cities, time zones) applies as usual.
-- **Hidden** (`hidden`): left off the map entirely, including the counts. Answering the check-in
-  with "Prefer not to say" sets this.
+- **My stated city only** (`stated`): skips every IP source -- the IP city and the IP country.
+  Everything else (stated cities, time zones) applies as usual.
+- **Hidden** (`hidden`): left off the map entirely, including the counts.
 
 Only a city is ever shown. The map never carries an IP address, coordinates from a lookup, or a
 history of sign-ins. Each listed member says where their place came from, for example "San
@@ -1411,54 +1409,15 @@ a city's (or country's) centroid from that table; no coordinates from an IP look
 drawn. Members whose name is a do-not-contact marker (`Null,do not contact`) or a placeholder are
 left off the map entirely.
 
-### Location check-in
+### Location check-in (retired)
 
-Every other location signal is inferred (a sign-in IP, a Slack zone) or undated (a profile field
-typed at some point). The check-in is the member saying where they are, with a date. It is meant
-to cost one tap.
-
-**What the member sees.** After sign-in, a strip in the page flow -- never a modal or an overlay,
-so it covers nothing and can be ignored -- reads **"Are you in Toronto?"** with a **Yes** button
-and a small **No, change** link. Yes is the whole interaction when the guess is right. Only "No,
-change" opens the picker: a city field with the gazetteer as suggestions, free text accepted, and
-**Use this device's location**. A small **Prefer not to say** link and a close button sit at the
-end. On phones every control is at least 40px tall and the question takes its own line.
-
-The guess is a fresh, trusted IP city, then the city the browser's zone is named for, then the
-city the fresh Slack zone is named for, then the stored `current_city` / `location`. With no guess
-the strip opens on the picker.
-
-**When it asks.** At most once per browser session, and never when the member already settled it:
-
-- answered within `ADMINBOT_LOCATION_CHECKIN_DAYS` (60);
-- snoozed: closing the strip counts as "Ask me later", for 7 days;
-- declined: "Prefer not to say" sets `map_visibility: "hidden"` and is not asked again;
-- hidden from the map, alumni or on leave;
-- **the signals agree**: a fresh sign-in city that the member's Slack zone does not contradict
-  already says where they are, so there is nothing to ask.
-
-Otherwise it asks: because nothing places the member (`no_guess`), because their fresh IP reading
-was set aside as a likely VPN (`ip_suspected_vpn`, guessing from the browser's or Slack's zone), or
-because the signals disagree (`timezone_mismatch`; the reason is on the question's tooltip). An answer within the 60
-days wins even over a later disagreement, so a member is asked at most once per window.
-
-**Device location.** The browser is asked for its position only when the member clicks the button.
-The position is matched in the browser to the nearest gazetteer city within 150 km
-(`GET /profile/location-places` supplies the cities), and only that city's name is sent, as an
-ordinary answer with `via: "device"`. Coordinates never leave the browser and are never stored.
-Farther than 150 km from every listed city, the member is asked to type it.
-
-**What is logged.** Every response is a row in the location history (below), with `source:
-"self_reported"` and `checkin: "answered" | "snoozed" | "declined"`. An answer also carries
-`checkin_via` (`picker`, `text` or `device`) and the resolved place, and sets `current_city`
-through the ordinary profile path. Re-confirming the same city still writes a row, because "still
-Toronto, as of today" is the fact being logged. Snoozes and declines place nothing and are skipped
-by anything that asks "where is this member". Each response is also audited as
-`member.location_checkin_answered`, `_snoozed` or `_declined`.
-
-Routes: `GET /profile/location-prompt` returns `{ drift, checkin }` in one request. `POST
-/profile/location-prompt` with `{ action: "answer", city, via }`, `{ action: "snooze" }` or `{
-action: "decline" }`; a body with no `action` is the drift question's answer, as before.
+AdminBot no longer asks members where they are. Location comes only from automatic sources: the
+live IP reading with its VPN and time-zone check, the Slack time zone and profile sync, and the
+member's own Profile fields. There is no check-in strip, no `?checkin=location` link and no Slack
+message. `GET /profile/location-prompt` returns only `{ drift }`, and
+`GET /profile/location-places` is gone. Answers members already gave are still read, as source 2
+above, until they are 60 days old; rows already in the location history keep their `checkin`
+outcome.
 
 ### Slack time zone
 
@@ -1476,20 +1435,20 @@ A Slack zone is a laptop setting, so it is a weak signal and is used in only thr
   handled: Reykjavík and Helsinki are two hours apart in winter (no flag) and three in summer
   (flag), and in the weeks North America and Europe change clocks on different dates the gap is
   measured as it actually is.
-- **An early check-in.** The same disagreement makes the check-in due before its 60 days are up.
 
 It never moves a stated pin. It can set aside an IP city as a likely VPN, but only when the
 browser did not report its own zone, which is the better witness.
 
 ### Login location
 
-On every successful login, and once a day on any authenticated member request,
+On every successful login and every authenticated member request,
 AdminBot geolocates the caller's IP and stamps `last_login_country` /
 `last_login_continent`, and, when the provider answers with one,
 `last_login_city` / `last_login_region`, with the reading's time in
 `last_ip_observed_at` (`last_login_at` is the sign-in itself). A reading whose
 city disagrees with the browser's time zone is logged but not stamped; see
-[IP geolocation](adminbot-geoip.md#daily-reading). The
+[IP geolocation](adminbot-geoip.md#live-reading). A request writes only when the
+city or country changed, else once a UTC day. The
 provider is a local DB-IP City Lite database when `ADMINBOT_GEOIP_MMDB_PATH` is
 set (city-level, no network call per sign-in), otherwise IPinfo when
 `IPINFO_TOKEN` is set (country only on the free Lite tier), otherwise none; the
@@ -1829,18 +1788,19 @@ months in Berlin and keeps being invited to a 10am Toronto meeting.
 
 | Source           | Written by                                                                             |
 | ---------------- | -------------------------------------------------------------------------------------- |
-| `self_reported`  | any profile edit that changes `location` / `current_city`, and every check-in response |
+| `self_reported`  | any profile edit that changes `location` / `current_city`, and past check-in responses |
 | `login_ip`       | a successful sign-in: the city when the provider names one, else the country           |
 | `slack_profile`  | the member-map Slack sweep                                                             |
 | `slack_timezone` | the daily directory sync, when the member's Slack `tz` changes                         |
 | `admin`          | an admin editing the member's location                                                 |
 
 An observation is appended only when it **differs** from the last one from the same source, so a
-member who signs in twice a day adds no rows and the timeline stays a change log. Check-in rows are
-the exception: every response is written, because each one is the member saying so on that day.
+member who signs in twice a day adds no rows and the timeline stays a change log. Past check-in rows
+were the exception: every response was written, because each one was the member saying so on that
+day.
 
 Admins see the newest 30 rows for a member under **Time Availability** (the member's own view), as
-**Location log**: the day, the source ("Check-in", "Sign-in", "Slack time zone", ...), the place,
+**Location log**: the day, the source ("Check-in", "IP", "Slack time zone", ...), the place,
 and for check-ins whether it was snoozed, declined or given from the device.
 
 **Inference never writes a profile.** When recent sign-ins disagree with the profile for long

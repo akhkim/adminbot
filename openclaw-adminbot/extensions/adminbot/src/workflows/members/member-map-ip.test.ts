@@ -137,7 +137,7 @@ describe("the IP city on the map", () => {
       ipCityState(
         member({
           ...ipFrom("Toronto", "Ontario", "CA"),
-          last_login_at: ago(1),
+          last_ip_observed_at: ago(1),
           last_device_tz: "Europe/Zurich",
           last_device_tz_at: ago(0),
         }),

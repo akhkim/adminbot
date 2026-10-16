@@ -51,8 +51,6 @@ import type {
   AdminBotMemberNudgeResult,
   AdminBotMemberNudgeSkip,
   AdminBotMemberOnboarding,
-  AdminBotLocationCheckin,
-  AdminBotLocationCheckinVia,
   AdminBotLocationDrift,
   AdminBotLocationSource,
   AdminBotMemberLocationEntry,
@@ -340,13 +338,6 @@ import {
   type LocalEventAudience,
 } from "../workflows/members/local-event-audience.js";
 import {
-  answeredFields,
-  checkinAnswerEntry,
-  checkinNonAnswerEntry,
-  locationCheckin,
-  snoozedUntil,
-} from "../workflows/members/location-checkin.js";
-import {
   detectLocationDrift,
   isNewObservation,
   latestBySource,
@@ -358,7 +349,6 @@ import type { MeetupPlace } from "../workflows/members/meetups.js";
 import {
   ADMINBOT_MAP_VISIBILITIES,
   memberMapMemo,
-  resolvePlace,
   type AdminBotMemberMap,
 } from "../workflows/members/member-map.js";
 import { summarizeLabMember } from "../workflows/members/member-summary.js";
@@ -9870,108 +9860,18 @@ export class AdminBotService {
   }
 
   /**
-   * Both location questions for one member: the drift question ("you seem to have moved") and the
-   * explicit check-in ("Where are you based right now?"). The UI shows the drift question when
-   * there is one, and the check-in otherwise.
+   * The drift question for one member ("you seem to have moved"). There is no check-in question
+   * any more: where members are comes only from automatic sources (the live IP, Slack, and a
+   * device reading the member chose to share), so nothing here ever asks.
    */
   memberLocationPrompt(memberId: string): AdminBotServiceResponse<{
     drift: AdminBotLocationDrift | null;
-    checkin: AdminBotLocationCheckin;
   }> {
     const drift = this.memberLocationDrift(memberId);
     if (!drift.ok) {
       return drift;
     }
-    const member = this.store.getLabMember(memberId);
-    if (!member) {
-      return serviceError(404, `unknown member ${memberId}`);
-    }
-    return {
-      ok: true,
-      status: 200,
-      payload: { drift: drift.payload.drift, checkin: locationCheckin(member, new Date()) },
-    };
-  }
-
-  /**
-   * The member's response to the check-in. Every response is logged to the location history and
-   * audited:
-   * - `answer`: a `self_reported` row (always, even when it repeats the last answer -- the
-   *   confirmation is the fact), `current_city` set through the member's own profile path, and the
-   *   answer stamped so the map can date it and the question is not asked again for
-   *   ADMINBOT_LOCATION_CHECKIN_DAYS. Clears an earlier decline or snooze.
-   * - `snooze` ("Ask me later", or dismissing the banner): not asked again for 7 days.
-   * - `decline` ("Prefer not to say"): `map_visibility` set to "hidden", and not asked again.
-   */
-  respondToLocationCheckin(
-    memberId: string,
-    response:
-      | { action: "answer"; text: string; via: AdminBotLocationCheckinVia }
-      | { action: "snooze" | "decline" },
-  ): AdminBotServiceResponse<{ member: AdminBotLabMember; checkin: AdminBotLocationCheckin }> {
-    if (!this.store.getLabMember(memberId)) {
-      return serviceError(404, "member not found");
-    }
-    const now = new Date();
-    const at = now.toISOString();
-    if (response.action === "answer") {
-      const entry = checkinAnswerEntry(memberId, response, at);
-      if (!entry) {
-        return serviceError(400, "Say where you are based, or choose Ask me later.");
-      }
-      // Logged before the profile write, so the self-report the profile hook would record for the
-      // same city finds this row as the latest and is not written twice.
-      this.store.appendMemberLocation(entry);
-      const updated = this.updateOwnProfile(memberId, { current_city: entry.raw });
-      if (!updated.ok) {
-        return updated;
-      }
-    } else if (response.action === "decline") {
-      this.store.appendMemberLocation(checkinNonAnswerEntry(memberId, "declined", at));
-      const updated = this.updateOwnProfile(memberId, { map_visibility: "hidden" });
-      if (!updated.ok) {
-        return updated;
-      }
-    } else {
-      this.store.appendMemberLocation(checkinNonAnswerEntry(memberId, "snoozed", at));
-    }
-    // Re-read: the profile write above stored a newer record.
-    const current = this.store.getLabMember(memberId);
-    if (!current) {
-      return serviceError(404, "member not found");
-    }
-    const stamped: AdminBotLabMember = { ...current, updated_at: at };
-    if (response.action === "answer") {
-      Object.assign(stamped, answeredFields(response, at));
-      delete stamped.location_checkin_snoozed_until;
-      delete stamped.location_checkin_declined_at;
-    } else if (response.action === "decline") {
-      stamped.location_checkin_declined_at = at;
-      delete stamped.location_checkin_snoozed_until;
-    } else {
-      stamped.location_checkin_snoozed_until = snoozedUntil(now);
-    }
-    this.store.saveLabMember(stamped);
-    this.recordAudit({
-      type:
-        response.action === "answer"
-          ? "member.location_checkin_answered"
-          : response.action === "decline"
-            ? "member.location_checkin_declined"
-            : "member.location_checkin_snoozed",
-      actor: memberId,
-      details:
-        response.action === "answer"
-          ? { via: response.via, place: resolvePlace(response.text)?.label ?? null }
-          : response.action === "snooze"
-            ? { until: stamped.location_checkin_snoozed_until }
-            : {},
-    });
-    return {
-      ok: true,
-      status: 200,
-      payload: { member: stamped, checkin: locationCheckin(stamped, now) },
-    };
+    return { ok: true, status: 200, payload: { drift: drift.payload.drift } };
   }
 
   /**

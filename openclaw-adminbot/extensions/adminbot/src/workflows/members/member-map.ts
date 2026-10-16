@@ -4,16 +4,18 @@
 // country-level answer never beats a city, so countries come last whatever their source:
 //
 //   1. The city of a fresh IP reading (within ADMINBOT_MAP_LOGIN_FRESH_DAYS = 7), from the IP
-//      geolocation database. Read at sign-in and again once a day on any authenticated request
-//      (auth.ts `noteAccountUse`), so it is where the person actually was most recently, and it
-//      leads -- unless the member set `map_visibility` to "stated", which skips every IP source, or
-//      the reading is not trusted: flagged `last_ip_suspected_vpn` when it was taken, or its city
-//      keeps a clock more than two hours from the member's device zone (else their Slack zone).
-//      A VPN exit city is the IP telling the truth about the wrong machine. Placed at the
-//      gazetteer's city centroid, never at the IP's coordinates, which nothing here receives.
-//   2. The member's answer to the "Where are you based right now?" check-in
-//      (location-checkin.ts), while it is recent (ADMINBOT_LOCATION_CHECKIN_DAYS) and still what
-//      `current_city` says. The explicit answer, dated, so the map can say "stated 3d ago".
+//      geolocation database. Read on every authenticated request (auth.ts `noteAccountUse`) and
+//      rewritten whenever the city changes, else once a UTC day -- the live IP, never the address
+//      somebody signed in from weeks ago (`liveIpPlace`, which the meetup intros read too). It is
+//      where the person actually was most recently, and it leads -- unless the member set
+//      `map_visibility` to "stated", which skips every IP source, or the reading is not trusted:
+//      flagged `last_ip_suspected_vpn` when it was taken, or its city keeps a clock more than two
+//      hours from the member's device zone (else their Slack zone). A VPN exit city is the IP
+//      telling the truth about the wrong machine. Placed at the gazetteer's city centroid, never
+//      at the IP's coordinates, which nothing here receives.
+//   2. An answer the member gave the retired "Where are you based right now?" check-in, while
+//      it is recent (ADMINBOT_LOCATION_CHECKIN_DAYS) and still what `current_city` says. The
+//      explicit answer, dated, so the map can say "stated 3d ago".
 //   3. Other stated cities: `current_city`, then the roster `location`, then the Slack profile's
 //      location field. The member's own words, undated.
 //   4. The city an IANA timezone is named for: the zone the member's browser reported
@@ -802,9 +804,9 @@ export type AdminBotMapMember = {
   source: AdminBotMapSource;
   precision: AdminBotMapPrecision;
   // Both optional: not every member has a synced Slack avatar. `last_login_at` is only sent when an
-  // IP reading is what placed the member, and it is the time of that reading (the daily check or
-  // the sign-in, whichever was later), so the UI can say "IP today" and show the most recently
-  // active faces first; it is never a history, only the one moment behind the pin.
+  // IP reading is what placed the member, and it is the time of that reading (the latest live
+  // observation on a request, `last_ip_observed_at`), so the UI can say "IP today" and show the
+  // most recently active faces first; it is never a history, only the one moment behind the pin.
   avatar_url?: string;
   last_login_at?: string;
   /** Same instant as `last_login_at`, under the name that says what it is. IP-placed members only. */
@@ -821,7 +823,7 @@ export type AdminBotMapMember = {
    */
   source_label?: string;
   /**
-   * When the source that placed them said so, for the admin map's "sign-in 2d ago" / "stated 3d
+   * When the source that placed them said so, for the admin map's "IP 2d ago" / "stated 3d
    * ago". Absent for an undated source (a roster field typed at some point).
    */
   located_at?: string;
@@ -1039,9 +1041,15 @@ export function referenceZone(
   return freshDeviceTz(member, now) ?? freshSlackTz(member, now);
 }
 
-/** When the member's latest IP reading was taken: the daily check, else the sign-in. */
-export function ipReadingAt(member: AdminBotLabMember): string | undefined {
-  return member.last_ip_observed_at?.trim() || member.last_login_at?.trim() || undefined;
+/**
+ * When the member's latest live IP reading was taken. Never the sign-in time: a session outlives
+ * the login that opened it by weeks, and the sign-in address says where somebody was then, not now.
+ * A member with no live reading yet has no IP place until their next request takes one.
+ */
+export function ipReadingAt(
+  member: Pick<AdminBotLabMember, "last_ip_observed_at">,
+): string | undefined {
+  return member.last_ip_observed_at?.trim() || undefined;
 }
 
 export type AdminBotIpCityState =
@@ -1103,6 +1111,68 @@ export function ipReadingSetAside(
   }
   const place = resolveLoginCity(city, member.last_login_region, member.last_login_country);
   return Boolean(place && timezoneMismatch(place, referenceZone(member, now), now));
+}
+
+/** What `liveIpPlace` reads. */
+export type AdminBotLiveIpFields = "last_ip_observed_at" | AdminBotIpReadingCheckFields;
+
+/** Where the member's latest trusted live IP reading puts them. Never coordinates. */
+export type AdminBotLiveIpPlace = {
+  city: string;
+  region?: string;
+  country?: string;
+  /** When the reading was taken (`last_ip_observed_at`). */
+  observed_at: string;
+};
+
+/**
+ * The one answer to "where does the live IP put this member", for the map and the meetup intros
+ * alike: the latest reading taken on a request (`last_ip_observed_at`, never `last_login_at` or the
+ * sign-in row), within `days`, and not set aside as a likely VPN exit (`ipReadingSetAside`).
+ * Undefined when there is no such reading or it located only a country -- see `liveIpCountry`.
+ */
+export function liveIpPlace(
+  member: Pick<AdminBotLabMember, AdminBotLiveIpFields>,
+  now: Date,
+  days = ADMINBOT_MAP_LOGIN_FRESH_DAYS,
+): AdminBotLiveIpPlace | undefined {
+  const at = liveIpObservedAt(member, now, days);
+  const city = member.last_login_city?.trim();
+  if (!at || !city) {
+    return undefined;
+  }
+  const region = member.last_login_region?.trim();
+  const country = member.last_login_country?.trim();
+  return {
+    city,
+    ...(region ? { region } : {}),
+    ...(country ? { country } : {}),
+    observed_at: at,
+  };
+}
+
+/** The country of the latest trusted live IP reading, by the same rule as `liveIpPlace`. */
+export function liveIpCountry(
+  member: Pick<AdminBotLabMember, AdminBotLiveIpFields>,
+  now: Date,
+  days = ADMINBOT_MAP_LOGIN_FRESH_DAYS,
+): string | undefined {
+  return liveIpObservedAt(member, now, days)
+    ? member.last_login_country?.trim() || undefined
+    : undefined;
+}
+
+/** When the latest live IP reading was taken, if it is within `days` and trusted; else undefined. */
+export function liveIpObservedAt(
+  member: Pick<AdminBotLabMember, AdminBotLiveIpFields>,
+  now: Date,
+  days = ADMINBOT_MAP_LOGIN_FRESH_DAYS,
+): string | undefined {
+  const at = ipReadingAt(member);
+  if (!at || !isWithinDays(at, days, now) || ipReadingSetAside(member, now)) {
+    return undefined;
+  }
+  return at;
 }
 
 /**
@@ -1269,7 +1339,9 @@ function resolveMemberPlace(
   // `options.loginCity` as well.
   const auto = memberMapVisibility(member) === "auto";
   const ip = auto ? ipCityState(member, options.now) : {};
-  const loginCity = options.loginCity ? ip.trusted?.city : undefined;
+  // The same helper the meetup intros read, so the map and the intros can never disagree.
+  const live = auto && options.loginCity ? liveIpPlace(member, options.now) : undefined;
+  const loginCity = live?.city;
   // A reading set aside as a likely VPN takes its country with it: the exit node's country is no
   // truer than its city.
   const loginCountry =
@@ -1281,7 +1353,7 @@ function resolveMemberPlace(
     {
       raw: loginCity,
       source: "login",
-      located_at: ip.trusted?.at,
+      located_at: live?.observed_at,
       resolve: () => {
         const place = resolveLoginCity(loginCity, member.last_login_region, loginCountry);
         return place ? { place, precision: "city" } : undefined;
@@ -1332,7 +1404,7 @@ function resolveMemberPlace(
     {
       raw: loginCountry,
       source: "login",
-      located_at: member.last_login_at,
+      located_at: ipReadingAt(member),
       resolve: () => {
         const place = resolveCountry(loginCountry);
         return place ? { place, precision: "country" } : undefined;

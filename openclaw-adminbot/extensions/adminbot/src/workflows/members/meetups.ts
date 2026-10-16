@@ -9,7 +9,12 @@
 // Pure and deterministic, so the service can hold the I/O and these can be tested on their own.
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import { isoDay, samePlace, travelPlace } from "./lab-travel.js";
-import { type AdminBotIpReadingCheckFields, ipReadingSetAside } from "./member-map.js";
+import {
+  type AdminBotLiveIpFields,
+  liveIpCountry,
+  liveIpObservedAt,
+  liveIpPlace,
+} from "./member-map.js";
 
 // --- near ---------------------------------------------------------------------------------------
 
@@ -179,66 +184,44 @@ export function placeKey(place: MeetupPlace): string {
 
 // --- where a member is ----------------------------------------------------------------------------
 
-/** How long a sign-in city says anything about where somebody is. Mirrors the UI's ladder. */
+/** How long a live IP city says anything about where somebody is. Mirrors the UI's ladder. */
 export const LOGIN_CITY_FRESH_DAYS = 3;
 
-/** How far back a sign-in still counts for a city meetup: "both in San Francisco this week". */
+/** How far back a live IP reading still counts for a city meetup: "both in San Francisco this week". */
 export const CITY_MEETUP_WINDOW_DAYS = 7;
 
 const DAY_MS = 86_400_000;
 
-function within(at: string | undefined, now: Date, days: number): boolean {
-  const ms = at ? Date.parse(at) : Number.NaN;
-  return Number.isFinite(ms) && now.getTime() - ms <= days * DAY_MS && ms <= now.getTime() + DAY_MS;
-}
-
-type IpReadingFields = "last_login_at" | "last_ip_observed_at" | AdminBotIpReadingCheckFields;
-
 /**
- * Whether the member's latest IP reading is recent enough and is not a likely VPN exit, by the same
- * rule the map uses (`ipReadingSetAside`): flagged when taken, or its city's clock disagrees with
- * the device or Slack zone. Its time is the daily check's when there is one, else the sign-in's.
+ * The meetup view of the live IP place: `liveIpPlace` from the map, so a member is introduced in
+ * exactly the city the map shows them in -- the latest request's reading, never the sign-in, and
+ * never a likely VPN exit.
  */
-function freshTrustedIp(
-  member: Pick<AdminBotLabMember, IpReadingFields>,
+function ipMeetupPlace(
+  member: Pick<AdminBotLabMember, AdminBotLiveIpFields>,
   now: Date,
   days: number,
-): boolean {
-  return (
-    !ipReadingSetAside(member, now) &&
-    within(member.last_ip_observed_at || member.last_login_at, now, days)
-  );
-}
-
-/** The IP reading's city, if it is recent enough to say where the member is and not a VPN exit. */
-export function signInPlace(
-  member: Pick<AdminBotLabMember, "last_login_city" | "last_login_country" | IpReadingFields>,
-  now: Date,
-  days = LOGIN_CITY_FRESH_DAYS,
 ): MeetupPlace | undefined {
-  const city = member.last_login_city?.trim();
-  if (!city || !freshTrustedIp(member, now, days)) {
-    return undefined;
-  }
-  return { city, ...(member.last_login_country ? { country: member.last_login_country } : {}) };
+  const live = liveIpPlace(member, now, days);
+  return live ? { city: live.city, ...(live.country ? { country: live.country } : {}) } : undefined;
 }
 
 export type ViewerLocation = {
   label: string;
-  /** sign_in: inferred from the last sign-in; profile/slack: what the member wrote. */
-  source: "sign_in" | "profile" | "slack";
+  /** ip: inferred from the live IP; profile/slack: what the member wrote. */
+  source: "ip" | "profile" | "slack";
   place?: MeetupPlace;
 };
 
 /**
- * Where the viewer is, for their own eyes: the fresh sign-in city first, then what they stated
- * (current city, home, Slack), then the sign-in country alone. Never coordinates.
+ * Where the viewer is, for their own eyes: the fresh live IP city first, then what they stated
+ * (current city, home, Slack), then the live IP country alone. Never coordinates.
  */
 export function viewerLocation(member: AdminBotLabMember, now: Date): ViewerLocation | undefined {
   // The viewer's own city, not the metro: this label is only ever shown to the member it is about.
-  const signIn = signInPlace(member, now);
-  if (signIn) {
-    return { label: travelPlace(signIn.city).label, source: "sign_in", place: signIn };
+  const ip = ipMeetupPlace(member, now, LOGIN_CITY_FRESH_DAYS);
+  if (ip) {
+    return { label: travelPlace(ip.city).label, source: "ip", place: ip };
   }
   const stated = member.current_city?.trim() || member.location?.trim();
   if (stated) {
@@ -250,10 +233,8 @@ export function viewerLocation(member: AdminBotLabMember, now: Date): ViewerLoca
     const place = { city: slack };
     return { label: travelPlace(slack).label, source: "slack", place };
   }
-  const country = member.last_login_country?.trim();
-  return country && freshTrustedIp(member, now, LOGIN_CITY_FRESH_DAYS)
-    ? { label: country, source: "sign_in" }
-    : undefined;
+  const country = liveIpCountry(member, now, LOGIN_CITY_FRESH_DAYS);
+  return country ? { label: country, source: "ip" } : undefined;
 }
 
 /**
@@ -342,12 +323,12 @@ export function localHour(zone: string, now: Date): number | undefined {
   }
 }
 
-/** The member's clock: a fresh sign-in zone (they travelled), else the zone they set. */
+/** The member's clock: a fresh live IP zone (they travelled), else the zone they set. */
 export function memberZone(
-  member: Pick<AdminBotLabMember, "last_login_timezone" | "timezone" | IpReadingFields>,
+  member: Pick<AdminBotLabMember, "last_login_timezone" | "timezone" | AdminBotLiveIpFields>,
   now: Date,
 ): string | undefined {
-  const fresh = freshTrustedIp(member, now, LOGIN_CITY_FRESH_DAYS)
+  const fresh = liveIpObservedAt(member, now, LOGIN_CITY_FRESH_DAYS)
     ? member.last_login_timezone?.trim()
     : undefined;
   for (const zone of [fresh, member.timezone?.trim()]) {

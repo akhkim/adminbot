@@ -1714,13 +1714,14 @@ export type AdminBotLabMemberInput = {
   /** The country the member was asked about when they last answered, so a new country re-asks. */
   location_prompt_answered_country?: string;
   /**
-   * The explicit "Where are you based right now?" check-in (workflows/members/location-checkin.ts).
+   * Answers to the retired "Where are you based right now?" check-in. Nothing asks it any more --
+   * location is automatic -- but answers already given stay readable until they age out.
    *
    * `location_checkin_at` is when the member last *answered* it, and `location_checkin_city` the
    * answer as they gave it (also written to `current_city`). The map reads the pair as its second
    * source, behind only a fresh sign-in city. A snooze and a decline are stamped separately so each
    * keeps its own clock: a snooze ends, a decline stands until the member changes their mind.
-   * Never self-editable -- only the check-in route writes them.
+   * Never self-editable, and nothing writes them now.
    */
   location_checkin_at?: string;
   location_checkin_city?: string;
@@ -2899,43 +2900,6 @@ export type AdminBotMemberLocationEntry = {
 
 export type AdminBotLocationCheckinOutcome = "answered" | "snoozed" | "declined";
 export type AdminBotLocationCheckinVia = "picker" | "text" | "device";
-
-/** Whether to ask a member "Where are you based right now?", and why. */
-export type AdminBotLocationCheckin = {
-  due: boolean;
-  /**
-   * Due:
-   * - `no_guess`: nothing places the member well enough to skip asking (no fresh sign-in city that
-   *   their Slack zone agrees with), and they have not answered in ADMINBOT_LOCATION_CHECKIN_DAYS.
-   * - `timezone_mismatch`: the signals disagree -- the city that places them is more than two hours
-   *   off the zone their Slack reports -- so the member is asked early.
-   * - `ip_suspected_vpn`: the latest IP reading was ignored because its city disagrees with the
-   *   device or Slack zone (probably a VPN), and no recent check-in says where they are.
-   * Not due:
-   * - `signals_agree`: a fresh sign-in city and the Slack zone agree, so there is nothing to ask.
-   * - `answered` / `snoozed` / `declined` / `hidden`: the member already settled it.
-   */
-  reason:
-    | "no_guess"
-    | "timezone_mismatch"
-    | "ip_suspected_vpn"
-    | "signals_agree"
-    | "answered"
-    | "snoozed"
-    | "declined"
-    | "hidden";
-  /**
-   * The best guess to confirm with one tap ("Are you in Toronto?"): a fresh sign-in city, then the
-   * city the device zone is named for, then the Slack zone's, then the stored city. Absent when
-   * nothing places the member, in which case the prompt opens straight on the picker.
-   */
-  suggestion?: { city: string; source: "login" | "device_tz" | "slack_tz" | "stored" };
-  last_answered_at?: string;
-  last_answered_city?: string;
-  snoozed_until?: string;
-  /** Shown with an early ask: what the disagreement is, in words. */
-  note?: string;
-};
 
 /** What the member is being asked to confirm, and the evidence for asking. */
 export type AdminBotLocationDrift = {

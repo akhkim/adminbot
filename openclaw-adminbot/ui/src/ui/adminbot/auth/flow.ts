@@ -255,7 +255,6 @@ export type MemberAuthHost = {
   adminBotLocationDrifts?: import("../api/profile.ts").LocationDrift[];
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
-  adminBotLocationCheckin?: import("../data/location-checkin.ts").CheckinBanner | null;
   adminBotMeetings?: import("../api/meetings.ts").MeetingRecord[];
   adminBotMeetingsRequestVersion?: number;
   adminBotMeetingsNextCursor?: import("../api/meetings.ts").MeetingCursor | null;
@@ -695,7 +694,6 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotLocationDrifts = undefined;
   host.adminBotLocationSaving = false;
   host.adminBotLocationError = null;
-  host.adminBotLocationCheckin = undefined;
   host.adminBotMeetings = undefined;
   host.adminBotMeetingsRequestVersion = (host.adminBotMeetingsRequestVersion ?? 0) + 1;
   host.adminBotMeetingsNextCursor = null;

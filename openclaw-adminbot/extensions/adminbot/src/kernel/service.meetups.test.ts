@@ -59,11 +59,11 @@ function lab(start: string, extraEvents: readonly unknown[] = []) {
       signIn(person.id, person.city, person.country, person.zone);
     }
   };
-  // What the login stamp would write (see auth.ts recordLoginLocation), at the current clock.
+  // What the live IP check would write (see auth.ts recordLoginLocation), at the current clock.
   const signIn = (id: string, city: string, country?: string, zone?: string) =>
     store.saveLabMember({
       ...store.getLabMember(id)!,
-      last_login_at: now.toISOString(),
+      last_ip_observed_at: now.toISOString(),
       last_login_city: city,
       ...(country ? { last_login_country: country } : {}),
       ...(zone ? { last_login_timezone: zone } : {}),
@@ -345,7 +345,7 @@ describe("the Events tab", () => {
     );
 
     const view = unwrap(service.meetups().overview("ada"));
-    expect(view.viewer_location).toEqual({ label: "Budapest", source: "sign_in" });
+    expect(view.viewer_location).toEqual({ label: "Budapest", source: "ip" });
     const [first] = view.events;
     expect(first).toMatchObject({
       key: "emnlp:2026",
@@ -383,7 +383,7 @@ describe("the Events tab", () => {
     add({ id: "bob", topics: [], ...SF, city: "Palo Alto" });
     add({ id: "cy", topics: [], ...SF, city: "Berkeley", prefs: { city: false } });
     const view = unwrap(service.meetups().overview("ada"));
-    expect(view.viewer_location).toEqual({ label: "San Francisco", source: "sign_in" });
+    expect(view.viewer_location).toEqual({ label: "San Francisco", source: "ip" });
     expect(view.also_nearby).toEqual({
       locked: false,
       place_label: "San Francisco Bay Area",

@@ -245,9 +245,9 @@ function renderCard(props: EventsProps, card: EventCard): TemplateResult {
   </li>`;
 }
 
-function viewerSourceNote(source: "sign_in" | "profile" | "slack"): string {
-  return source === "sign_in"
-    ? t("events.location.signIn")
+function viewerSourceNote(source: "ip" | "profile" | "slack"): string {
+  return source === "ip"
+    ? t("events.location.ip")
     : source === "profile"
       ? t("events.location.profile")
       : t("events.location.slack");

@@ -1,10 +1,10 @@
 # IP geolocation
 
-AdminBot geolocates the IP address of each successful sign-in, and again once a day on any
-authenticated request, and stamps the result on the member record. The country is shown to the
-member and to admins, and the city places the member on the lab member map for 7 days after the
-latest reading, unless the member chose "My stated city only" or "Hidden" in Profile, or the
-reading looks like a VPN (see "Daily reading" and "VPN check" below).
+AdminBot geolocates the IP address of each successful sign-in and of every authenticated request,
+and stamps the result on the member record. The country is shown to the member and to admins, and
+the city places the member on the lab member map for 7 days after the latest reading, unless the
+member chose "My stated city only" or "Hidden" in Profile, or the reading looks like a VPN (see
+"Live reading" and "VPN check" below).
 Only the place names are stored: the city, the region, the country, the continent and the time
 zone. Coordinates are never stored or returned, and the map pins every member on the centroid of a
 city or country from its own gazetteer.
@@ -26,18 +26,30 @@ leaves the host, nothing is rate-limited, and nothing is charged. The service re
 MaxMind GeoLite2-City, because both use the same format. Private, loopback, link-local and CGNAT
 (100.64.0.0/10) addresses are never looked up.
 
-## Daily reading
+## Live reading
 
-A session lasts weeks, so a city read only at sign-in is weeks old for most members, and most
-of the map ends up placed "from profile". Every authenticated member request therefore goes through `noteAccountUse` in
-`extensions/adminbot/src/workflows/identity/auth.ts`, which takes a new reading:
+A session lasts weeks, so a city read only at sign-in is weeks old for most members. Every
+authenticated member request therefore goes through `noteAccountUse` in
+`extensions/adminbot/src/workflows/identity/auth.ts`, which looks the caller's current address up
+in the local database:
 
-- **Once per member per UTC day**, plus once more whenever the address or the browser's time zone
-  changes during the day. The day is kept in memory and, after a restart, read back from the
-  member's `last_ip_observed_at`, so a restart does not cost a second lookup.
+- **Every request is looked up, few are written.** An in-memory throttle per member skips the
+  lookup while the UTC day, the address and the browser's time zone are all unchanged. A lookup
+  writes to the member record only when the resolved city or country differs from the latest
+  reading, or once per UTC day as a "still here" stamp. After a restart the first request looks
+  again but writes nothing if the city is unchanged and today's reading is already stored.
+- **The live IP, not the sign-in IP.** A member who signed in from Toronto and then uses AdminBot
+  from Zürich is placed in Zürich on their first request from there, the same day. Everything that
+  places a member by IP -- the map, the event page's "near you" line and city and event meetup
+  intros -- reads one helper, `liveIpPlace` in `member-map.ts`, which is keyed on
+  `last_ip_observed_at`. `last_login_at` is never used to place anybody.
+- **City changes start intro work.** A trusted reading in a new city calls the same
+  `onLoginLocated` hook as a sign-in, which is serialized per member and respects quiet hours. A
+  reading in the same city does not.
 - **Same pipeline as sign-in.** The same geolocator, the same `remoteIp()` and trusted-proxy rules,
-  and the same append-only location history with `source: "login_ip"`. The history gets one row
-  per day (or per change of country or VPN verdict), so it shows the member was still there.
+  and the same append-only location history with `source: "login_ip"`. The history is
+  country-level: it gets one row per day, or per change of country or VPN verdict. A city change
+  inside a country shows on the member record, not as a new row.
 - **Fire-and-forget.** The request never waits on it. Any error, including a geolocator that
   throws, is caught and logged (`adminbot: daily IP check failed: ...`, never with the address),
   and never reaches the request.
@@ -51,8 +63,7 @@ ago".
 **Why 7 days** (`ADMINBOT_MAP_LOGIN_FRESH_DAYS`, previously 14). With daily readings an active
 member's city is never more than a day old, so the window only decides how long a member who
 stopped using AdminBot keeps their last IP city. A week covers a weekend, a conference trip or a
-few days off without the pin flickering. Past that the member falls back to their check-in answer,
-their stated city, then their device or Slack time zone, which says more than a two-week-old
+few days off without the pin flickering. Past that the member falls back to their stated city, then their device or Slack time zone, which says more than a two-week-old
 network address.
 
 ## VPN check
@@ -73,20 +84,20 @@ handled. If they are more than two hours apart, the reading is marked `suspected
   `auth.login_location_suspected_vpn`;
 - it does **not** replace the member's stored city, is not attached to the sign-in event, and does
   not trigger meetup intros;
-- the member record gets `last_ip_suspected_vpn: true`, and the map places them by the next source
-  (check-in, stated city, device-zone city, Slack-zone city, country). The admin map adds "IP
-  ignored (VPN?)" to that member's row;
-- with no recent check-in answer, the one-tap check-in is shown with reason `ip_suspected_vpn` and
-  a guess from the device zone, then the Slack zone ("Are you in Zürich?").
+- when the member already has a fresh, trusted reading, that reading stands: the VPN reading does
+  not move them, and the flag is not set;
+- otherwise the member record gets `last_ip_suspected_vpn: true`, and the map places them by the
+  next source (stated city, device-zone city, Slack-zone city, country). The admin map adds "IP
+  ignored (VPN?)" to that member's row. Nobody is asked where they are.
 
 A reading taken before this check existed carries no flag. The map applies the same comparison to
 it at render time, against the device zone, else the Slack zone. An unknown is not a conflict: with
 neither zone available, the reading is trusted.
 
-City and event meetup intros use the same rule (`ipReadingSetAside` in `member-map.ts`, read by
-`signInPlace` in `meetups.ts`). A reading the map sets aside never puts anybody in a city for an
-intro, whether the intro comes from the sign-in hook, the daily reading or the hourly sweep, so a
-VPN exit in Toronto cannot produce "you're both in Toronto".
+City and event meetup intros use the same rule (`ipReadingSetAside`, applied by `liveIpPlace` in
+`member-map.ts`). A reading the map sets aside never puts anybody in a city for an intro, whether
+the intro comes from the sign-in hook, a live reading or the hourly sweep, so a VPN exit in
+Toronto cannot produce "you're both in Toronto".
 
 An ASN check (DB-IP ASN Lite, to recognise hosting and VPN providers by network) was considered and
 left out. It would need a second database, its own refresh job and a maintained list of VPN ASNs,
@@ -194,8 +205,9 @@ MaxMind for a GeoLite2 file and IPinfo for the IPinfo provider. Do not remove it
   latest reading. After that the member falls back to the city they stated. A member who prefers
   their stated city can choose "My stated city only" in Profile.
 - **No backfill.** Sign-in events store no IP address, so past sign-ins cannot be located again.
-  Cities fill in as each member next uses AdminBot. If a sign-in locates only a country, the stored
-  city and region are cleared, so a stale city cannot outlive a newer sign-in.
+  Cities fill in as each member next uses AdminBot. A member stamped before live readings carried
+  only `last_login_at` and is placed by IP again on their next request. If a reading locates only a
+  country, the stored city and region are cleared, so a stale city cannot outlive a newer reading.
 - **Unknown cities.** The provider can name a city the gazetteer does not have. The member is then
   placed at the country, never at a guessed city. Add the city to `GAZETTEER` in
   `extensions/adminbot/src/workflows/members/member-map.ts` to place it.
@@ -204,6 +216,6 @@ MaxMind for a GeoLite2 file and IPinfo for the IPinfo provider. Do not remove it
   overwrites any value a client sent), otherwise the right-most `X-Forwarded-For` entry, which is the
   one the nearest proxy appended. The left-most entry is never used, because a client can write it.
   See "Login location" in [AdminBot](adminbot.md).
-- **Not the only signal.** A sign-in city is one of several. Members also confirm where they are in
-  a one-tap check-in, and their Slack time zone is a cross-check. See "Member map" in
+- **Not the only signal.** An IP city is one of several automatic sources, with the Slack time
+  zone and profile sync. Nobody is asked where they are; a stated city in Profile still wins. See "Member map" in
   [AdminBot](adminbot.md).

@@ -2382,7 +2382,7 @@ export const ko: TranslationMap = {
     },
     mapVisibility: {
       label: "Show me on the lab map as",
-      auto: "Auto (last sign-in city)",
+      auto: "Auto (current IP city)",
       stated: "My stated city only",
       hidden: "Hidden",
       hint: "Only a city is ever shown, never an exact location or a history.",

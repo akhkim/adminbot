@@ -31,6 +31,8 @@ import {
 import {
   freshSlackTz,
   ipReadingVerdict,
+  liveIpObservedAt,
+  liveIpPlace,
   memberMapVisibility,
   usableDeviceZone,
 } from "../members/member-map.js";
@@ -297,6 +299,13 @@ const SIGNUP_PROFILE_FIELDS = [
 // A signup may name several roles, comma-joined. All of them have to match, because a half-matched
 // answer stored as one role would silently drop the other half -- the unmatched string goes to
 // notes instead, where an admin can see what the person actually wrote.
+/** Same place name, ignoring case and spacing; two blanks are the same nothing. */
+function sameWords(a: string | undefined, b: string | undefined): boolean {
+  const norm = (value: string | undefined) =>
+    (value ?? "").trim().toLowerCase().replace(/\s+/gu, " ");
+  return norm(a) === norm(b);
+}
+
 function normalizeMemberRole(value: string): string | undefined {
   const submitted = parseAdminBotMemberRoles(value);
   if (!submitted.length) {
@@ -350,9 +359,9 @@ export class AdminBotAuthService {
   private readonly registrationDecisionsInFlight = new Set<string>();
   // What noteAccountUse last looked up for each member: the UTC day, the address and the device
   // zone. A request matching all three is skipped, so it is one lookup per member per day plus one
-  // per change of network or clock. In memory on purpose: after a restart the member record's own
-  // `last_ip_observed_at` stands in for the day (see noteAccountUse), which is a better trade than
-  // keeping a table of everybody's current IP on disk.
+  // per change of network or clock. In memory on purpose: after a restart each member costs one
+  // local lookup and, unless the city changed, no write (see recordLoginLocation's `live`), which
+  // is a better trade than keeping a table of everybody's current IP on disk.
   private readonly lastCheckByMember = new Map<string, { day: string; ip: string; tz: string }>();
   // The UTC day `last_seen_at` was last written for each member, so a busy day costs one write.
   private readonly lastSeenDayByMember = new Map<string, string>();
@@ -586,9 +595,10 @@ export class AdminBotAuthService {
   private async recordLoginLocation(
     memberId: string,
     remoteIp: string,
-    context: { loginEventId?: string; device?: AdminBotDeviceClock } = {},
+    context: { loginEventId?: string; device?: AdminBotDeviceClock; live?: boolean } = {},
   ): Promise<void> {
     const { loginEventId } = context;
+    const live = context.live === true;
     try {
       const now = this.now();
       const nowIso = now.toISOString();
@@ -616,7 +626,22 @@ export class AdminBotAuthService {
         ...(freshSlackTz(member, now) ? { slackTz: freshSlackTz(member, now) } : {}),
         at: now,
       });
+      // Where the live IP put them before this reading: the one helper the map and the intros read.
+      const previous = liveIpPlace(member, now);
       if (verdict.suspected_vpn) {
+        if (liveIpObservedAt(member, now)) {
+          // A trusted reading inside the map's window stands. A VPN exit never moves anybody: not
+          // their pin, not their intros, not even into "IP ignored" -- it is logged and that is all.
+          await this.audit("auth.login_location_suspected_vpn", memberId, {
+            ...(location.country ? { country: location.country } : {}),
+            ...(location.city ? { city: location.city } : {}),
+            hours: verdict.hours,
+            against: verdict.against,
+            kept: "previous_reading",
+          });
+          await this.appendIpObservation(memberId, location, nowIso, true);
+          return;
+        }
         // The time and the flag only: the member's place stays whatever the last trusted reading
         // said, and the map knows today's reading was set aside rather than missing.
         const patched = await this.store.patchLabMemberAuthFields(memberId, {
@@ -634,6 +659,20 @@ export class AdminBotAuthService {
           against: verdict.against,
         });
         await this.appendIpObservation(memberId, location, nowIso, true);
+        return;
+      }
+      const cityChanged =
+        !previous ||
+        !sameWords(previous.city, location.city) ||
+        !sameWords(previous.country, location.country);
+      if (
+        live &&
+        !cityChanged &&
+        !member.last_ip_suspected_vpn &&
+        utcDay(member.last_ip_observed_at) === utcDay(nowIso)
+      ) {
+        // The live check on a request: same city as the reading already taken today, so nothing
+        // to write. A new city writes at once; the same city writes once per UTC day.
         return;
       }
       // The sign-in row first, before the member row: it is the only one of the two that is a
@@ -689,7 +728,9 @@ export class AdminBotAuthService {
         return;
       }
       await this.audit("auth.login_location_updated", memberId, { ...location });
-      if (location.city) {
+      // Intros wake on a sign-in that located a city, and on a live reading only when the city
+      // changed -- somebody browsing all day from the same café is not news ten times over.
+      if (location.city && (!live || cityChanged)) {
         try {
           this.afterLoginLocated?.(memberId);
         } catch (error) {
@@ -800,7 +841,7 @@ export class AdminBotAuthService {
   }
 
   /**
-   * Sample where an account is being used from, on any authenticated request, once a day.
+   * Sample where an account is being used from, on any authenticated request: the live IP.
    *
    * A session outlives the login that opened it -- weeks, for somebody who never signs out -- so
    * `login()` on its own samples a member's location roughly never, which is why the map placed 80
@@ -809,9 +850,12 @@ export class AdminBotAuthService {
    * before any session is looked at), so this is the one place that can notice the account still
    * in use, and from where.
    *
-   * One lookup per member per UTC day, plus one whenever the address or the browser's zone
-   * changes mid-day. The day is remembered in memory and, after a restart, read from the member's
-   * own `last_ip_observed_at`, so a restart does not cost a second lookup the same day.
+   * The lookup is the local database (no network), and it runs once per member per UTC day plus
+   * whenever the address or the browser's zone changes -- the last address is remembered in memory
+   * per member. The member record is rewritten only when the resolved city or country differs from
+   * the latest trusted reading, else at most once per UTC day as a "still here" stamp; a restart
+   * costs one lookup per member and no write. So somebody who signed in in Toronto and then works
+   * from Zürich is placed in Zürich on their first request from there, not at their next sign-in.
    *
    * Fire-and-forget: the request never waits on it and never sees its failure, which is logged.
    *
@@ -840,24 +884,19 @@ export class AdminBotAuthService {
       const day = utcDay(this.now().toISOString());
       const tz = device?.tz?.trim() ?? "";
       const last = this.lastCheckByMember.get(member.id);
-      if (last) {
-        if (last.day === day && last.ip === remoteIp && last.tz === tz) {
-          return;
-        }
-      } else if (utcDay(member.last_ip_observed_at) === day) {
-        // First request since a restart, and the record says today's reading is already taken.
-        // Remember it, and look again only if the address or zone changes from here.
-        this.lastCheckByMember.set(member.id, { day, ip: remoteIp, tz });
+      if (last && last.day === day && last.ip === remoteIp && last.tz === tz) {
         return;
       }
       this.lastCheckByMember.set(member.id, { day, ip: remoteIp, tz });
       // Same fire-and-forget contract as the login path. recordLoginLocation catches its own
-      // errors; the catch here is for anything that throws before it returns its promise.
-      void this.recordLoginLocation(member.id, remoteIp, device ? { device } : {}).catch(
-        (error: unknown) => {
-          this.warn(`adminbot: daily IP check failed: ${errorText(error)}`);
-        },
-      );
+      // errors; the catch here is for anything that throws before it returns its promise. `live`
+      // makes it write only when the city changed or today's reading is not yet taken.
+      void this.recordLoginLocation(member.id, remoteIp, {
+        ...(device ? { device } : {}),
+        live: true,
+      }).catch((error: unknown) => {
+        this.warn(`adminbot: daily IP check failed: ${errorText(error)}`);
+      });
     } catch (error) {
       this.warn(`adminbot: daily IP check failed: ${errorText(error)}`);
     }
