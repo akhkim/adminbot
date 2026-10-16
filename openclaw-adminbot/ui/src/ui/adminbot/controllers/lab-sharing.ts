@@ -31,6 +31,8 @@ export type AdminBotLabSharingHost = {
   labSharingMembersTruncated?: boolean;
   labSharingBusy?: boolean;
   labSharingNotice?: string | null;
+  /** Whether `labSharingNotice` reports a success or a failure, so the two do not look alike. */
+  labSharingNoticeTone?: "success" | "error" | null;
 };
 
 function baseUrlOf(host: AdminBotLabSharingHost): string {
@@ -62,14 +64,17 @@ async function act(
 ): Promise<boolean> {
   host.labSharingBusy = true;
   host.labSharingNotice = null;
+  host.labSharingNoticeTone = null;
   try {
     const result = await run(baseUrlOf(host));
     if (!result.ok) {
       host.labSharingNotice = result.error ?? "That did not go through.";
+      host.labSharingNoticeTone = "error";
       return false;
     }
     await loadAdminBotLabSharing(host);
     host.labSharingNotice = done;
+    host.labSharingNoticeTone = "success";
     return true;
   } finally {
     host.labSharingBusy = false;
@@ -135,5 +140,6 @@ export async function searchAdminBotLabSharingMembers(
   host.labSharingMembersTruncated = result.truncated;
   if (result.error) {
     host.labSharingNotice = result.error;
+    host.labSharingNoticeTone = "error";
   }
 }

@@ -501,6 +501,7 @@ export type AppViewState = {
   labSharingMembersTruncated?: boolean;
   labSharingBusy?: boolean;
   labSharingNotice?: string | null;
+  labSharingNoticeTone?: "success" | "error" | null;
   loadLabSharing?: () => Promise<void>;
   // Time Availability tab: whose schedule is on screen, which unit its hours are quoted in, and
   // the unsaved "add a commitment" draft. Draft lives here rather than in the view so a re-render
