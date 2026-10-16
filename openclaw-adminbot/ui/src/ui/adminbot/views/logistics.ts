@@ -49,6 +49,12 @@ import {
   renderAdminBotLogisticsRequests,
   type AdminBotLogisticsRequestsProps,
 } from "./logistics-requests.ts";
+import {
+  renderRecLetterAdvisory,
+  renderRecLetterFreezeAdmin,
+  type RecLetterAdvisoryProps,
+  type RecLetterFreezeAdminProps,
+} from "./rec-letter-eligibility.ts";
 
 /** What `describeSubmitBlock` found, as the view needs it: a reason and, for a file, which one. */
 export type SubmitBlock = {
@@ -127,6 +133,8 @@ export type AdminBotLogisticsProps = {
    * only decides which shape it is read in.
    */
   queue: AdminBotLogisticsQueueProps;
+  /** The admin's freeze records, drawn under the queue. Never passed for anyone else. */
+  freezeAdmin?: RecLetterFreezeAdminProps;
   template: LogisticsTemplate;
   signature: RequestSaveProps & {
     files: File[];
@@ -166,6 +174,8 @@ export type AdminBotLogisticsProps = {
     onCvOverleafUrlChange: (url: string) => void;
     driveFolderUrl: string;
     onDriveFolderUrlChange: (url: string) => void;
+    /** The member's own letter eligibility, shown as a note. It never disables Submit. */
+    eligibility?: RecLetterAdvisoryProps;
   };
 };
 
@@ -1371,6 +1381,7 @@ function renderLettersRequest(props: LettersProps) {
             ${t("logistics.lettersGuide.portalLink")}
           </a>
         </p>
+        ${props.eligibility ? renderRecLetterAdvisory(props.eligibility) : nothing}
       </section>
       ${renderSchoolsSection(props)} ${renderFactsSection(props)} ${renderCvOverleafSection(props)}
       ${renderDriveFolderSection(props)} ${renderRequestActions(props)}
@@ -1508,7 +1519,8 @@ export function renderAdminBotLogistics(props: AdminBotLogisticsProps) {
         : // An open request is a card either way: the queue is for working across rows, and reading
           // one request in full is the same job for an admin as for anybody else.
           props.role === "admin" && !props.requests.open && !props.requests.openLoading
-          ? renderAdminBotLogisticsQueue(props.queue)
+          ? html`${renderAdminBotLogisticsQueue(props.queue)}
+            ${props.freezeAdmin ? renderRecLetterFreezeAdmin(props.freezeAdmin) : nothing}`
           : renderAdminBotLogisticsRequests(props.requests)}
     </section>
   `;

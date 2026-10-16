@@ -20,6 +20,12 @@ import {
   withdrawAdminBotLogisticsRequest,
 } from "../controllers/logistics.ts";
 import {
+  readRecLetterEligibility,
+  recordRecLetterFreezeIncident,
+  removeRecLetterFreezeIncident,
+  setRecLetterFreezeForm,
+} from "../controllers/rec-letter-eligibility.ts";
+import {
   clearLogisticsDraft,
   clearMeetingRequestDraft,
   clearRecommendationLettersDraft,
@@ -78,6 +84,22 @@ export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfa
       requestHostUpdate?.();
     },
   };
+  const isAdmin = accessRole === "admin";
+  const open = state.adminBotLogisticsOpenRequest;
+  const recLetter = state.adminBotRecLetter;
+  readRecLetterEligibility(
+    state,
+    {
+      hasMemberSession: scope.hasMemberSession,
+      isAdmin,
+      lettersFormShowing:
+        state.adminBotLogisticsMode === "make" && logisticsTemplate === "recommendationLetters",
+      queueShowing: state.adminBotLogisticsMode === "view" && isAdmin && !open,
+      queue: state.adminBotLogisticsRequests,
+      open,
+    },
+    requestHostUpdate,
+  );
   return renderLazyView(lazyLogistics, (m) =>
     m.renderAdminBotLogistics({
       role: accessRole,
@@ -91,6 +113,11 @@ export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfa
         // reload that landed on it. Re-read on every entry rather than once: an admin may
         // have answered a request since the last look.
         state.adminBotLogisticsRequestsLoadedAt = null;
+        // Same reasoning for the freeze records: another admin may have added one meanwhile.
+        state.adminBotRecLetter = {
+          ...state.adminBotRecLetter,
+          incidents: { ...state.adminBotRecLetter.incidents, loadedAt: null },
+        };
       },
       requests: {
         requests: state.adminBotLogisticsRequests,
@@ -151,6 +178,10 @@ export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfa
         onStatusNoteChange: (note) => {
           state.adminBotLogisticsStatusNote = note;
         },
+        // Only the answer for the request on screen: a panel left over from the last one opened
+        // would put one member's standing on another's letter.
+        eligibilityPanel:
+          isAdmin && open && recLetter.detail.requestId === open.id ? recLetter.detail : undefined,
       },
       queue: {
         options: state.adminBotLogisticsQueueOptions,
@@ -203,7 +234,36 @@ export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfa
             requestHostUpdate?.(),
           );
         },
+        eligibility: recLetter.summaries,
       },
+      freezeAdmin: isAdmin
+        ? {
+            incidents: recLetter.incidents.list,
+            members: state.adminBotData.members.map((member) => ({
+              id: member.id,
+              name: member.name,
+            })),
+            loading: recLetter.incidents.loading,
+            error: recLetter.incidents.error,
+            saving: recLetter.incidents.saving,
+            deletingId: recLetter.incidents.deletingId,
+            form: recLetter.incidents.form,
+            onFormChange: (change) => {
+              setRecLetterFreezeForm(state, change);
+              requestHostUpdate?.();
+            },
+            onRecord: () => {
+              void recordRecLetterFreezeIncident(state).finally(() => requestHostUpdate?.());
+              requestHostUpdate?.();
+            },
+            onDelete: (incidentId) => {
+              void removeRecLetterFreezeIncident(state, incidentId).finally(() =>
+                requestHostUpdate?.(),
+              );
+              requestHostUpdate?.();
+            },
+          }
+        : undefined,
       template: logisticsTemplate,
       signature: {
         files: state.adminBotLogisticsSignatureFiles,
@@ -346,6 +406,13 @@ export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfa
             requestHostUpdate?.(),
           ),
         ...adminBotLogisticsSubmitProps(state, requestHostUpdate, "recommendationLetters"),
+        eligibility: scope.hasMemberSession
+          ? {
+              value: recLetter.own.value,
+              loading: recLetter.own.loading,
+              error: recLetter.own.error,
+            }
+          : undefined,
       },
     }),
   );

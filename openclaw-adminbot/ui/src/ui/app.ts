@@ -111,6 +111,7 @@ import {
 } from "./adminbot/controllers/notifications.ts";
 import { createEmptyAdminBotMemberNudgeState } from "./adminbot/controllers/nudges.ts";
 import { EMPTY_PROFILE_OVERVIEW_PAGE } from "./adminbot/controllers/profile-overview.ts";
+import { createRecLetterEligibilityState } from "./adminbot/controllers/rec-letter-eligibility.ts";
 import type { RecentEditsState } from "./adminbot/controllers/recent-edits.ts";
 import {
   recordAdminBotTabVisit,
@@ -782,6 +783,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotSignatureSubmitted = false;
   @state() adminBotLogisticsEditingId: string | null = null;
   @state() adminBotLogisticsSigningId: string | null = null;
+  @state() adminBotRecLetter = createRecLetterEligibilityState();
   @state() adminBotLogisticsDownloadingId: string | null = null;
   @state() adminBotLogisticsSignedNote = "";
   @state() adminBotLogisticsShowSettled = false;

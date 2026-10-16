@@ -2,7 +2,6 @@
 @import "./styles/layout.css";
 @import "./styles/layout.mobile.css";
 @import "./styles/deadline-recommendations.css";
-@import "./styles/lab-sharing-directory.css";
 @import "./styles/components.css";
 @import "./styles/activity.css";
 @import "./styles/chat.css";
@@ -11,6 +10,7 @@
 @import "./styles/config-quick.css";
 @import "./styles/cron-quick-create.css";
 @import "./styles/logistics.css";
+@import "./styles/rec-letter-eligibility.css";
 @import "./styles/locations.css";
 @import "./styles/events.css";
 @import "./styles/meetings.css";

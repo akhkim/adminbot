@@ -1009,6 +1009,27 @@ when something was due rather than guessing at an inbox -- and stays quiet on a 
 was. A send that fails is not stamped, so it is retried the next morning while the letter is still
 worth writing.
 
+## Recommendation letter eligibility
+
+Each letter request shows whether the member currently meets the lab's bar for a letter: a badge
+in the admin queue, a panel in the request detail, and a note on the member's letters form. It is
+**advisory**: nothing blocks or delays a request.
+
+The result is `eligible`, `frozen`, `not_yet` or `insufficient_data`, with the detail behind each
+criterion:
+
+- **Freeze.** A desk rejection for hallucinated citations, recorded by an admin, freezes the member
+  for one year from the latest incident. Frozen overrides the rest.
+- **Committed hours.** At least five months, not necessarily consecutive, averaging 20 or more
+  committed hours a week on the availability page. Committed, not logged.
+- **Attendance.** Some three consecutive months with at least 80% of Monday meetings, and a
+  Wednesday meeting in at least 80% of the weeks that had one, read in America/Toronto. Only
+  meetings with a roster count, and a window is judged only when at least 70% of its meetings have
+  one.
+
+Members see only their own result and, while frozen, the date it ends; incident records and notes
+are admin-only. See [Recommendation-letter eligibility](/tools/adminbot-rec-letter-eligibility).
+
 ## City channels
 
 A city gets a Slack channel at **four members** -- `#group-toronto`, `#group-zurich`,

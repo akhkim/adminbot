@@ -2629,6 +2629,8 @@ export type AdminBotAuditEvent = {
     // once it has.
     | "logistics_request.signed_document_sent"
     | "logistics_request.files_cleared"
+    | "rec_letter_freeze.recorded"
+    | "rec_letter_freeze.deleted"
     | "openreview.cycle_run"
     | "openreview.milestone_sent"
     | "openreview.milestone_blocked"

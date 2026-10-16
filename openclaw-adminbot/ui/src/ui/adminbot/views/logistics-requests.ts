@@ -25,6 +25,10 @@ import { attachmentDataUrl, formatFileSize } from "../data/logistics-requests.ts
 import { renderLoadMore, type LoadMoreProps } from "../load-more.ts";
 import { SCHOOL_FIELDS, TEMPLATE_FOLDER_URL, type SchoolField } from "./logistics-fields.ts";
 import { logisticsStatusLabel } from "./logistics-status.ts";
+import {
+  renderRecLetterDetailPanel,
+  type RecLetterDetailPanelProps,
+} from "./rec-letter-eligibility.ts";
 
 export type AdminBotLogisticsRequestsProps = {
   requests: LogisticsRequest[];
@@ -47,6 +51,11 @@ export type AdminBotLogisticsRequestsProps = {
   /** The note an admin is typing on the open request, held on app state so a re-render cannot eat it. */
   statusNote: string;
   onStatusNoteChange: (note: string) => void;
+  /**
+   * The letter-eligibility panel for an open letter request. Admin only, and advisory: it sits
+   * above the answer controls and changes none of them.
+   */
+  eligibilityPanel?: RecLetterDetailPanelProps;
 };
 
 const KIND_LABEL_KEY: Record<LogisticsRequest["kind"], string> = {
@@ -524,6 +533,9 @@ function renderRequestDetail(props: AdminBotLogisticsRequestsProps, request: Log
         : nothing}
       ${props.error
         ? html`<p class="logistics-requests__error" role="alert">${props.error}</p>`
+        : nothing}
+      ${props.viewerIsAdmin && request.kind === "recommendation_letters" && props.eligibilityPanel
+        ? renderRecLetterDetailPanel(props.eligibilityPanel)
         : nothing}
       ${renderDetailBody(request)}
       ${canWithdraw || canEdit

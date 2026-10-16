@@ -7396,82 +7396,130 @@ adminbot-deadline-timezone {
   line-height: 1.5;
 }
 
-/* ====================================}
-
-   Lab Sharing
+/* ===========================================
+   Lab Sharing (Collaborate)
    =========================================== */
 
-/* A quiet secondary accent for this surface: the lab-collab tab gets a muted teal instead of the
-   app-wide blue, so the section reads as its own place without shouting. Stays low-key for dark
-   mode -- this is a work surface, not a highlight reel. */
-/* The two strips that came from the other implementation sit inside this container now rather than
-   beside it. They carry their own section shell, so the page's padding and column gap belong to the
-   container alone -- nested, they were paying for both. */
-.lab-sharing .lab-sharing {
-  max-width: none;
-  padding: 0;
-}
-
+/* The tab is built from the app's own pieces -- card / card-title / card-sub sections, the
+   adminbot-form controls, btn, chip, pill and callout -- so it inherits the app accent, focus ring,
+   dark mode and phone sizing. What is left here is layout, plus the few pieces those do not cover:
+   the deck, the dialogs, and the director strip. */
 .lab-sharing {
-  --ls-accent: #715fb3;
-  --ls-accent-hover: #8375b8;
-  --ls-accent-subtle: rgba(127, 184, 168, 0.14);
-  /* Brighter tint used for tag chips -- the base accent reads too dim against the dark surface. */
-  --ls-accent-bright: #a89fdc;
+  /* Kept as aliases so styles keyed to the old violet accent (the member map's pin) follow the app
+     accent instead of a colour this page no longer uses. */
+  --ls-accent: var(--accent);
+  --ls-accent-hover: var(--accent-hover, var(--accent));
+  --ls-accent-bright: var(--accent);
+  --ls-accent-subtle: var(--accent-subtle);
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
-  max-width: 62rem;
-  padding: var(--space-6) clamp(var(--space-6), 4vw, var(--space-10));
+  gap: var(--space-4);
+  min-width: 0;
 }
 
-.lab-sharing .btn.primary {
-  border-color: var(--ls-accent);
-  background: var(--ls-accent);
-  color: #2a1736;
+.lab-sharing > * {
+  min-width: 0;
 }
 
-.lab-sharing .btn.primary:hover,
-.lab-sharing .btn.primary:focus-visible {
-  background: var(--ls-accent-hover);
-  border-color: var(--ls-accent-hover);
+lab-sharing-how-to {
+  display: block;
 }
-/* --- Director status strip --- */
+
+.lab-sharing :is(p, h2, h3, h4) {
+  margin: 0;
+}
+
+.lab-sharing__notices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* `.callout__dismiss svg` sizes the icon but leaves painting to the icon set; this one is a bare
+   path, so it needs a stroke to show. */
+.lab-sharing .callout__dismiss svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2px;
+  stroke-linecap: round;
+}
+
+.lab-sharing__load-error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.lab-sharing__load-error .callout__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.lab-sharing__loading {
+  padding: var(--space-2) 0;
+}
+
+/* Section head: title and subtitle on the left, a small control (pager, add button) on the right.
+   Wraps under the title when the row runs out of room rather than squeezing either side. */
+.lab-sharing-section__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+
+.lab-sharing-section__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+/* Same scale as `.adminbot-card--wide > .card-title`, which these headings miss only because they
+   share a row with the section's control. */
+.lab-sharing-section__heading > .card-title {
+  font-size: var(--control-ui-text-xl);
+  letter-spacing: var(--tracking-tight);
+}
+
+.lab-sharing-section__heading > .card-sub {
+  flex-basis: 100%;
+}
+
+.lab-sharing-section__heading .pill {
+  white-space: normal;
+}
+
+.lab-sharing-section__head:only-child,
+.lab-sharing-section__head:last-child {
+  margin-bottom: 0;
+}
+
+/* --- Director strip ------------------------------------------------------------------------ */
 
 .lab-sharing-director {
   display: flex;
   align-items: center;
-  gap: var(--space-6);
-  padding: var(--space-5) var(--space-6);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, var(--bg-elevated), var(--bg));
-}
-
-.lab-sharing-director__identity {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  flex: 1;
-  min-width: 0;
-}
-
-.lab-sharing-director__name-row {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  min-width: 0;
+  gap: var(--space-3);
 }
 
 .lab-sharing-director__dot {
+  flex: 0 0 auto;
   width: 10px;
   height: 10px;
   border-radius: var(--radius-full);
-  flex-shrink: 0;
+  background: var(--muted);
 }
 
 .lab-sharing-director__dot[data-availability="available"] {
-  background: var(--ok, #32d45b);
+  background: var(--ok);
 }
 
 .lab-sharing-director__dot[data-availability="busy"] {
@@ -7479,165 +7527,114 @@ adminbot-deadline-timezone {
 }
 
 .lab-sharing-director__dot[data-availability="away"] {
-  background: var(--muted);
+  background: var(--warn);
+}
+
+.lab-sharing-director__identity {
+  min-width: 0;
+}
+
+.lab-sharing-director__eyebrow,
+.lab-sharing-director__meta {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
 }
 
 .lab-sharing-director__name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  white-space: normal;
+  color: var(--text-strong);
   font-size: var(--control-ui-text-md);
   font-weight: 600;
-  color: var(--text-strong);
+  overflow-wrap: anywhere;
 }
 
-.lab-sharing-director__meta {
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
-}
+/* --- Rows (invites, requests, announcements) ------------------------------------------------ */
 
-.lab-sharing-director__progress {
-  flex: 1;
-  min-width: 0;
-}
-
-.lab-sharing-director__progress-label {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: var(--space-2);
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted-strong);
-}
-
-.lab-sharing-director__progress-track {
-  height: 6px;
-  border-radius: var(--radius-full);
-  background: var(--border);
-  overflow: hidden;
-}
-
-.lab-sharing-director__progress-fill {
-  height: 100%;
-  border-radius: var(--radius-full);
-  background: var(--ls-accent);
-}
-
-.lab-sharing-director__blocker {
-  flex-shrink: 0;
-  height: var(--control-h-lg);
-  padding: 0 var(--space-5);
-  font-size: var(--control-ui-text-sm);
-  font-weight: 600;
-}
-
-/* --- Seek help --- */
-
-.lab-sharing-seek {
+.lab-sharing-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
 }
 
-.lab-sharing-seek__header {
+.lab-sharing-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border);
+}
+
+.lab-sharing-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.lab-sharing-row:last-child {
+  padding-bottom: 0;
+}
+
+.lab-sharing-row__main {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  min-width: 0;
+  flex: 1 1 18rem;
 }
 
-.lab-sharing-seek__title {
-  margin: 0;
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
+.lab-sharing-row__title {
   color: var(--text-strong);
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
-.lab-sharing-seek__sub {
-  margin: 0;
-  font-size: var(--control-ui-text-sm);
+.lab-sharing-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
   color: var(--muted);
+  font-size: var(--control-ui-text-sm);
 }
 
-/* Ask form fields â€” roomier than the generic inputs, with a hand-drawn select arrow so the
-   chevron sits clear of the edge instead of hugging the border. */
-
-.lab-sharing-ask {
+.lab-sharing-row__aside {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-}
-
-.lab-sharing-ask__field {
-  display: flex;
-  flex-direction: column;
+  align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
-.lab-sharing-ask__label {
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  color: var(--muted);
+.lab-sharing-row__aside .pill {
+  white-space: normal;
 }
 
-.lab-sharing-ask__select,
-.lab-sharing-ask__textarea,
-.lab-sharing-ask__input {
-  width: 100%;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg);
+.lab-sharing-request__note,
+.lab-sharing-announcement__body {
   color: var(--text);
-  font-size: var(--control-ui-text-md);
-  transition: border-color var(--duration-fast) var(--ease-out);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-.lab-sharing-ask__select:hover,
-.lab-sharing-ask__textarea:hover,
-.lab-sharing-ask__input:hover {
-  border-color: var(--border-hover);
+.lab-sharing-request__needs {
+  margin-top: var(--space-1);
 }
 
-.lab-sharing-ask__select:focus,
-.lab-sharing-ask__textarea:focus,
-.lab-sharing-ask__input:focus {
-  outline: none;
-  border-color: var(--ls-accent);
+.lab-sharing-announcement__author {
+  color: var(--text-strong);
+  font-weight: 600;
 }
 
-.lab-sharing-ask__select {
-  height: var(--control-h-lg);
-  padding: 0 var(--space-8) 0 var(--space-4);
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2.5 3.5L5 6.5L7.5 3.5' fill='none' stroke='%236b6b73' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right var(--space-3) center;
-}
-
-.lab-sharing-ask__textarea {
-  height: auto;
-  padding: var(--space-3) var(--space-4);
-  resize: vertical;
-  font-family: inherit;
-  line-height: 1.5;
-}
-
-.lab-sharing-ask__input {
-  height: var(--control-h-lg);
-  padding: 0 var(--space-4);
-}
+/* --- Seek help -------------------------------------------------------------------------------- */
 
 .lab-sharing-ask__row {
-  display: flex;
-  gap: var(--space-4);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
 }
 
-.lab-sharing-ask__field--narrow {
-  max-width: 10rem;
+.lab-sharing-ask__none {
+  font-size: var(--control-ui-text-sm);
 }
 
 .lab-sharing-tags {
@@ -7646,412 +7643,214 @@ adminbot-deadline-timezone {
   gap: var(--space-2);
 }
 
+/* Tags are toggles. `.chip` gives the shape; the pressed state borrows the app accent, the same
+   way `.btn.active` does. */
 .lab-sharing-tag {
-  height: 30px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--muted-strong);
-  font-size: var(--control-ui-text-sm);
   cursor: pointer;
-  transition:
-    border-color 150ms ease,
-    background-color 150ms ease,
-    color 150ms ease;
-}
-
-.lab-sharing-tag:hover {
-  border-color: var(--text-strong);
+  font-family: inherit;
 }
 
 .lab-sharing-tag--active {
-  border-color: var(--ls-accent-bright);
-  background: var(--ls-accent-subtle);
-  color: var(--ls-accent-bright);
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--accent);
 }
 
 .lab-sharing-tag--add {
   border-style: dashed;
   color: var(--muted);
+  background: transparent;
 }
 
-.lab-sharing-tag--add:hover,
-.lab-sharing-tag--add:focus-visible {
-  border-color: var(--ls-accent-bright);
-  color: var(--ls-accent-bright);
+.lab-sharing-tag:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus);
 }
 
-.lab-sharing-tag--input {
+/* The free-text tag field sits in the chip row, so it is chip-sized rather than a full control. */
+.adminbot-form input.lab-sharing-tag--input {
   width: 12rem;
-  height: 26px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-full);
-  background: var(--bg-elevated);
-  color: var(--text);
-  font-size: var(--control-ui-text-xs);
-  font-family: inherit;
-  outline: none;
-}
-
-.lab-sharing-tag--input:focus {
-  border-color: var(--ls-accent);
-}
-
-.lab-sharing-seek__divider {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.lab-sharing-seek__divider::before,
-.lab-sharing-seek__divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
-.lab-sharing-seek__divider span {
-  min-width: 0;
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  color: var(--muted);
-  text-align: center;
-}
-
-.lab-sharing-seek__search-row {
-  display: flex;
-  gap: var(--space-3);
-}
-
-.lab-sharing-seek__search {
-  flex: 1;
-  height: var(--control-h-lg);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-full);
-  background: var(--bg-elevated);
-  color: var(--text);
-  font-size: var(--control-ui-text-md);
-  transition: border-color var(--duration-fast) var(--ease-out);
-}
-
-.lab-sharing-seek__search:hover {
-  border-color: var(--border-hover);
-}
-
-.lab-sharing-seek__search:focus {
-  outline: none;
-  border-color: var(--ls-accent);
-}
-
-.lab-sharing-seek__call {
-  flex-shrink: 0;
-  width: 100%;
-  min-height: calc(var(--control-h-lg) * 1.6);
+  max-width: 100%;
   height: auto;
-  padding: var(--space-3) var(--space-8);
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
+  padding: var(--space-1) 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--control-ui-text-xs);
+}
+
+.lab-sharing-seek__route {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.lab-sharing-seek__route-title {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+}
+
+.lab-sharing-seek__route--call {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lab-sharing-seek__call-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1 1 18rem;
+}
+
+.lab-sharing-seek__call-copy .muted,
+.lab-sharing-seek__hint,
+.lab-sharing-seek__empty {
+  font-size: var(--control-ui-text-sm);
 }
 
 .lab-sharing-seek__results {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
+  gap: var(--space-3);
 }
 
-.lab-sharing-seek__empty,
-.lab-sharing-seek__hint {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--control-ui-text-md);
+.lab-sharing-seek__results > p {
+  grid-column: 1 / -1;
 }
 
 .lab-sharing-member {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-4);
+  min-width: 0;
+  padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  background: var(--bg);
 }
 
 .lab-sharing-member__header {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
 }
 
 .lab-sharing-member__name {
-  font-size: var(--control-ui-text-md);
-  font-weight: 600;
   color: var(--text-strong);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
-.lab-sharing-member__role {
-  font-size: var(--control-ui-text-xs);
-  color: var(--muted);
-}
-
+.lab-sharing-member__role,
 .lab-sharing-member__line {
-  margin: 0;
+  color: var(--muted);
   font-size: var(--control-ui-text-sm);
-  color: var(--muted-strong);
+  overflow-wrap: anywhere;
 }
 
 .lab-sharing-member__line-label {
-  margin-right: var(--space-1);
-  color: var(--muted);
-}
-
-.lab-sharing-member__message {
-  align-self: flex-start;
-  margin-top: var(--space-2);
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-4);
-  font-size: var(--control-ui-text-sm);
+  color: var(--muted-strong);
+  font-weight: 500;
 }
 
 .lab-sharing-member__invite {
   align-self: flex-start;
-  margin-top: var(--space-2);
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-4);
-  font-size: var(--control-ui-text-sm);
+  margin-top: auto;
 }
 
-.lab-sharing-seek__or {
+/* --- Open projects deck ----------------------------------------------------------------------- */
+
+.lab-sharing-projects__pager {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-1);
 }
 
-.lab-sharing-seek__or-line {
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
-.lab-sharing-seek__or-label {
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
+.lab-sharing-projects__count {
+  min-width: 3.5em;
   color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
-/* --- Your invites --- */
-
-.lab-sharing-invites {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.lab-sharing-invites__title {
-  margin: 0;
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.lab-sharing-invites__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.lab-sharing-invite {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-5);
-  border-left: 3px solid var(--ls-accent);
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg-elevated);
-}
-
-.lab-sharing-invite__header {
-  display: flex;
-  justify-content: space-between;
+.lab-sharing-projects__empty {
   font-size: var(--control-ui-text-sm);
 }
 
-.lab-sharing-invite__from {
+.lab-sharing-project {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.lab-sharing-project__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.lab-sharing-project__title {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-lg);
   font-weight: 600;
-  color: var(--text-strong);
+  overflow-wrap: anywhere;
 }
 
-.lab-sharing-invite__time {
+.lab-sharing-project__owner,
+.lab-sharing-project__stats {
   color: var(--muted);
-}
-
-.lab-sharing-invite__project {
-  margin: 0;
-  font-size: var(--control-ui-text-md);
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.lab-sharing-invite__note {
-  margin: 0;
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted-strong);
-}
-
-.lab-sharing-invite__actions {
-  display: flex;
-  gap: var(--space-3);
-  margin-top: var(--space-2);
-}
-
-.lab-sharing-invite__respond {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-5);
   font-size: var(--control-ui-text-sm);
 }
 
-.lab-sharing-invite__view {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-5);
+.lab-sharing-project__summary {
   font-size: var(--control-ui-text-sm);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
-/* --- Your requests --- */
-
-.lab-sharing-requests {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.lab-sharing-requests__title {
-  margin: 0;
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.lab-sharing-requests__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.lab-sharing-requests__empty {
-  margin: 0;
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
-}
-
-.lab-sharing-request {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-5);
-  border-left: 3px solid var(--ls-accent);
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg-elevated);
-}
-
-.lab-sharing-request__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-3);
-}
-
-.lab-sharing-request__project {
-  font-size: var(--control-ui-text-md);
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.lab-sharing-request__time {
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
-}
-
-.lab-sharing-request__note {
-  margin: 0;
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted-strong);
-}
-
-.lab-sharing-request__meta {
+.lab-sharing-project__footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
 }
 
-.lab-sharing-request__stats {
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
+/* --- Announcements ---------------------------------------------------------------------------- */
+
+.lab-sharing-compose {
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
 }
 
-.lab-sharing-request__needs {
+.lab-sharing-compose__actions,
+.lab-sharing-howto__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.lab-sharing-request__need {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-full);
-  background: var(--ls-accent-subtle);
-  color: var(--ls-accent-bright);
-  font-size: var(--control-ui-text-xs);
-  font-weight: 600;
-}
-
-.lab-sharing-request__actions {
-  display: flex;
   justify-content: flex-end;
-  margin-top: var(--space-2);
+  gap: var(--space-2);
 }
 
-.lab-sharing-request__delete {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-5);
-  font-size: var(--control-ui-text-sm);
-  border-color: var(--danger-muted);
-  color: var(--danger);
-}
-
-.lab-sharing-request__cancel {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-5);
+.lab-sharing-announcements__empty,
+.lab-sharing-invites__empty,
+.lab-sharing-requests__empty {
   font-size: var(--control-ui-text-sm);
 }
 
-.lab-sharing-request__delete:hover:not(:disabled),
-.lab-sharing-request__delete:focus-visible:not(:disabled) {
-  border-color: var(--danger);
-  background: var(--danger-subtle);
-}
-
-.lab-sharing-request__delete--confirm {
-  border-color: var(--danger);
-  background: var(--danger);
-  color: #fff;
-}
-
-.lab-sharing-request__delete--confirm:hover:not(:disabled),
-.lab-sharing-request__delete--confirm:focus-visible:not(:disabled) {
-  background: var(--danger);
-}
-
-/* --- Invite details dialog --- */
+/* --- Dialogs (invite details, ask a member, general call) ------------------------------------- */
 
 .lab-sharing-invite-dialog {
   position: fixed;
@@ -8060,22 +7859,24 @@ adminbot-deadline-timezone {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-6);
-  background: rgb(0 0 0 / 55%);
+  padding: var(--space-4);
+  background: rgb(0 0 0 / 50%);
 }
 
 .lab-sharing-invite-dialog__panel {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  width: min(30rem, 100%);
+  gap: var(--space-4);
+  width: min(32rem, 100%);
   max-height: 85dvh;
-  overflow: auto;
-  padding: var(--space-8) var(--space-6);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
+  overflow-y: auto;
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   background: var(--bg-elevated);
-  box-shadow: var(--shadow-xl);
+  box-shadow: var(--shadow-xl, 0 20px 40px rgb(0 0 0 / 25%));
+  color: var(--text);
 }
 
 .lab-sharing-invite-dialog__head {
@@ -8084,382 +7885,191 @@ adminbot-deadline-timezone {
   gap: var(--space-1);
 }
 
-.lab-sharing-invite-dialog__title {
-  margin: 0;
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
-  color: var(--text-strong);
+.lab-sharing-invite-dialog__from {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
 }
 
-.lab-sharing-invite-dialog__from {
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
+.lab-sharing-invite-dialog__title {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .lab-sharing-invite-dialog__summary {
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.lab-sharing-invite-dialog__details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  gap: var(--space-3);
   margin: 0;
-  font-size: var(--control-ui-text-md);
-  line-height: 1.6;
-  color: var(--muted-strong);
 }
 
 .lab-sharing-invite-dialog__detail {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border);
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .lab-sharing-invite-dialog__label {
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
   color: var(--muted);
-}
-
-.lab-sharing-invite-dialog__value {
-  font-size: var(--control-ui-text-md);
-  color: var(--text-strong);
-}
-
-.lab-sharing-invite-dialog__needs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.lab-sharing-invite-dialog__need {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-full);
-  background: var(--ls-accent-subtle);
-  color: var(--ls-accent-bright);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
 }
 
-.lab-sharing-invite-dialog__note {
+.lab-sharing-invite-dialog__value {
   margin: 0;
+  color: var(--text-strong);
   font-size: var(--control-ui-text-sm);
-  color: var(--muted-strong);
+  overflow-wrap: anywhere;
+}
+
+.lab-sharing-invite-dialog__value .pill {
+  white-space: normal;
 }
 
 .lab-sharing-invite-dialog__actions {
   display: flex;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-}
-
-.lab-sharing-invite-dialog__close,
-.lab-sharing-invite-dialog__respond {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-5);
-  font-size: var(--control-ui-text-sm);
-  font-weight: 600;
-}
-
-.lab-sharing-invite-dialog__field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.lab-sharing-invite-dialog__input {
-  width: 100%;
-  padding: var(--space-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg);
-  color: var(--text);
-  font-family: inherit;
-  font-size: var(--control-ui-text-md);
-  resize: vertical;
-  outline: none;
-}
-
-.lab-sharing-invite-dialog__input:focus {
-  border-color: var(--ls-accent-bright);
-}
-
-/* --- Open projects deck --- */
-
-.lab-sharing-projects {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-}
-
-.lab-sharing-projects__header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.lab-sharing-projects__title {
-  margin: 0;
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.lab-sharing-projects__count {
-  font-size: var(--control-ui-text-sm);
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-.lab-sharing-projects__deck {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.lab-sharing-projects__nav {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--text-strong);
-  cursor: pointer;
-  transition:
-    border-color 150ms ease,
-    background-color 150ms ease;
-}
-
-.lab-sharing-projects__chevron {
-  display: block;
-}
-
-.lab-sharing-projects__nav:hover:not(:disabled),
-.lab-sharing-projects__nav:focus-visible:not(:disabled) {
-  border-color: var(--ls-accent);
-  background: var(--ls-accent-subtle);
-  color: var(--ls-accent);
-}
-
-.lab-sharing-projects__nav:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-/* The active project gets its own card so the deck reads as one focused panel at a time. */
-.lab-sharing-project {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-}
-
-.lab-sharing-project__header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.lab-sharing-project__title {
-  margin: 0;
-  font-size: var(--control-ui-text-lg);
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.lab-sharing-project__owner {
-  flex-shrink: 0;
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
-}
-
-.lab-sharing-project__summary {
-  margin: 0;
-  font-size: var(--control-ui-text-md);
-  line-height: 1.6;
-  color: var(--muted-strong);
-}
-
-.lab-sharing-project__needs {
-  display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
 }
 
-.lab-sharing-project__need {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-full);
-  background: var(--ls-accent-subtle);
-  color: var(--ls-accent-bright);
+/* --- Guidebook and resources strips ----------------------------------------------------------- */
+
+.lab-sharing-howto .card-sub {
+  margin-bottom: var(--space-4);
+}
+
+.lab-sharing-howto__status,
+.lab-sharing-howto__error,
+.lab-sharing-howto__answer {
+  margin-top: var(--space-3);
+}
+
+.lab-sharing-howto__status {
+  font-size: var(--control-ui-text-sm);
+}
+
+.lab-sharing-howto__answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.lab-sharing-howto__answer-title {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+}
+
+.lab-sharing-howto__answer-body {
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.lab-sharing-howto__sources-title {
+  color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
 }
 
-.lab-sharing-project__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: var(--space-2);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-}
-
-.lab-sharing-project__stats {
+.lab-sharing-howto__sources {
+  margin: 0;
+  padding-left: var(--space-5);
   font-size: var(--control-ui-text-sm);
-  color: var(--muted);
 }
 
-.lab-sharing-project__offer {
-  height: var(--control-h-lg);
-  padding: 0 var(--space-6);
-  font-size: var(--control-ui-text-md);
-  font-weight: 700;
+.lab-sharing-resources .card-sub {
+  margin-bottom: var(--space-4);
 }
 
-/* --- Announcements --- */
-
-.lab-sharing-announcements {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.lab-sharing-announcements__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.lab-sharing-resources__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
   gap: var(--space-3);
-}
-
-.lab-sharing-announcements__title {
   margin: 0;
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
-  color: var(--text-strong);
+  padding: 0;
+  list-style: none;
 }
 
-.lab-sharing-announcements__add {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-4);
-  font-size: var(--control-ui-text-sm);
-  font-weight: 600;
-  border-color: var(--ls-accent);
-  color: var(--ls-accent);
-}
-
-.lab-sharing-announcements__add:hover,
-.lab-sharing-announcements__add:focus-visible {
-  border-color: var(--ls-accent-hover);
-  background: var(--ls-accent-subtle);
-  color: var(--ls-accent);
-}
-
-.lab-sharing-announcements__list {
+.lab-sharing-resources__link {
   display: flex;
   flex-direction: column;
-  gap: 0;
-}
-
-/* No boxes here either: a hairline between items, plenty of breathing room. */
-.lab-sharing-announcement {
-  padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.lab-sharing-announcement:last-child {
-  border-bottom: 0;
-}
-
-.lab-sharing-announcement__header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: var(--space-1);
-  font-size: var(--control-ui-text-sm);
-}
-
-.lab-sharing-announcement__author {
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.lab-sharing-announcement__time {
-  color: var(--muted);
-}
-
-.lab-sharing-announcement__body {
-  margin: 0;
-  font-size: var(--control-ui-text-md);
-  line-height: 1.6;
-  color: var(--muted-strong);
-}
-
-/* --- Announcement compose dialog --- */
-
-.lab-sharing-compose {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-5);
-  border: 1px solid var(--ls-accent);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-  box-shadow: 0 12px 40px rgb(0 0 0 / 30%);
-}
-
-.lab-sharing-compose__title {
-  margin: 0;
-  font-size: var(--control-ui-text-lg);
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.lab-sharing-compose__input {
-  width: 100%;
+  gap: var(--space-1);
+  height: 100%;
+  box-sizing: border-box;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--bg);
-  color: var(--text);
-  font-size: var(--control-ui-text-md);
-  font-family: inherit;
-  line-height: 1.5;
-  resize: vertical;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
-.lab-sharing-compose__input:focus {
+.lab-sharing-resources__link:hover {
+  border-color: var(--border-strong);
+}
+
+.lab-sharing-resources__link:focus-visible {
   outline: none;
-  border-color: var(--ls-accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
 }
 
-.lab-sharing-compose__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-3);
-}
-
-.lab-sharing-compose__cancel,
-.lab-sharing-compose__send {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-4);
-  font-size: var(--control-ui-text-sm);
+.lab-sharing-resources__title {
+  color: var(--accent);
   font-weight: 600;
+}
+
+.lab-sharing-resources__desc {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* --- Phones ----------------------------------------------------------------------------------- */
+
+@media (max-width: 600px) {
+  .lab-sharing-ask__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lab-sharing-seek__call,
+  .lab-sharing-project__offer {
+    width: 100%;
+  }
+
+  .lab-sharing .callout__dismiss {
+    width: 44px;
+    height: 44px;
+  }
+
+  .lab-sharing-invite-dialog {
+    align-items: flex-end;
+    padding: var(--space-3);
+  }
+
+  .lab-sharing-invite-dialog__panel {
+    padding: var(--space-4);
+  }
+
+  .lab-sharing-invite-dialog__actions .btn {
+    flex: 1 1 auto;
+  }
 }
 
 /* A sidebar slot for a tool that does not exist yet: visibly present, visibly not ready. Rendered
@@ -11609,38 +11219,6 @@ adminbot-paper-visibility {
   .my-work .my-work__section-actions {
     justify-content: flex-start;
   }
-}
-
-/* "Zhijing's updates": the archive under the current broadcast. A plain list rather than cards --
-   these are things that were said and are no longer being said, so they should read as a record
-   somebody scans, not as a stack of live notices competing with the one above them. */
-.lab-sharing-status__history {
-  margin-top: var(--space-5);
-}
-
-.lab-sharing-status__history-list {
-  list-style: none;
-  margin: var(--space-3) 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.lab-sharing-status__history-item {
-  border-inline-start: 2px solid var(--border, currentColor);
-  padding-inline-start: var(--space-3);
-}
-
-/* The author's own line breaks, same as the banner. */
-.lab-sharing-status__history-body {
-  margin: 0;
-  white-space: pre-wrap;
-  line-height: 1.5;
-}
-
-.lab-sharing-status__retracted {
-  font-style: italic;
 }
 
 @container deadline-board (max-width: 34em) {
