@@ -2026,7 +2026,9 @@
   --mm-land-edge: #2f2f38;
   --mm-grid: rgb(255 255 255 / 4%);
   --mm-pin: var(--accent);
-  --mm-pin-soft: color-mix(in srgb, var(--mm-pin) 16%, transparent);
+  --mm-pin-soft: color-mix(in srgb, var(--mm-pin) 22%, transparent);
+  --mm-pin-ink: var(--accent-foreground);
+  --mm-dot-edge: color-mix(in srgb, var(--mm-ocean) 85%, transparent);
   grid-column: 1 / -1;
 }
 
@@ -2034,12 +2036,15 @@
   --mm-ocean: #f3f5f9;
   --mm-land: #e2e6ed;
   --mm-land-edge: #d3d8e1;
-  --mm-grid: rgb(9 9 11 / 5%);
+  --mm-grid: rgb(9 9 11 / 6%);
+  --mm-pin-soft: color-mix(in srgb, var(--mm-pin) 18%, transparent);
+  --mm-dot-edge: rgb(255 255 255 / 90%);
 }
 
 /* On Collaborate the pin wears the page's own violet, like every other accent there. */
 .lab-sharing .member-map {
   --mm-pin: var(--ls-accent-bright);
+  --mm-pin-ink: #fff;
 }
 
 :root[data-theme="light"] .lab-sharing .member-map {
@@ -2165,153 +2170,319 @@
   min-width: 0;
 }
 
-/* The plot doubles as the button that opens the full-screen view, so it carries no button chrome --
-   the map is the affordance. */
-.member-map__plot-button {
+/* The box the map is drawn in. Land is SVG under a transform; markers and labels are HTML laid out
+   in this box's pixels by the view, which measures it, so nothing here may give it padding. */
+.member-map__stage {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--mm-ocean);
+  contain: layout paint;
+}
+
+/* The projection's own ratio, so the map fills the card's width and takes the height that implies
+   rather than floating in a letterbox. */
+.member-map__stage--card {
+  aspect-ratio: 1000 / 422;
+}
+
+.member-map__plot {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
+  height: 100%;
+}
+
+/* Land is a shade off the ocean rather than an outline: at 1:110m the coastline is the only cue
+   telling you which dot is which, and a hairline alone disappears at card size. The edge stays one
+   hairline at any zoom (non-scaling-stroke). */
+.member-map__land {
+  fill: var(--mm-land);
+  stroke: var(--mm-land-edge);
+  stroke-width: 0.75;
+  stroke-linejoin: round;
+}
+
+.member-map__grid {
+  fill: none;
+  stroke: var(--mm-grid);
+  stroke-width: 1;
+}
+
+/* On the card the map is also the way into full screen. It sits under the markers, so a marker
+   gets its own click and the open water around them opens the map. */
+.member-map__plot-button {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-md);
+  border-radius: inherit;
   background: none;
   cursor: zoom-in;
 }
 
 .member-map__plot-button:focus-visible {
   outline: 2px solid var(--mm-pin);
-  outline-offset: 2px;
+  outline-offset: -3px;
 }
 
-/* 2:1, the projection's own ratio, so the plot fills its width and takes the height that implies
-   rather than being squashed into a box that distorts every position on it. */
-.member-map__plot {
-  display: block;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 2 / 1;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--mm-ocean);
+.member-map__markers,
+.member-map__labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
-.member-map__ocean {
-  fill: var(--mm-ocean);
+/* A zero-size button at the place, so its transform is the place and the dot, the hit area and
+   the focus ring are all centred on it whatever their size. */
+.member-map__marker {
+  --hit: max(calc(var(--r) + 3px), 12px);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  transform: translate(var(--x), var(--y));
+  cursor: pointer;
+  pointer-events: auto;
+  transition: opacity 150ms ease;
 }
 
-.member-map__land {
-  fill: var(--mm-land);
-  stroke: var(--mm-land-edge);
-  stroke-width: 0.4;
-  stroke-linejoin: round;
+/* The tap target, wider than the dot so a city of one is still easy to hit. On a touch screen the
+   view keeps markers 40px apart, so a 40px target never overlaps a neighbour's. */
+.member-map__marker::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--hit) * -1);
+  border-radius: var(--radius-full);
 }
 
-/* Under the land, so it reads as a reference over the ocean rather than as borders between
-   countries. */
-.member-map__grid {
-  stroke: var(--mm-grid);
-  stroke-width: 0.4;
+@media (pointer: coarse) {
+  .member-map__marker {
+    --hit: max(var(--r), 20px);
+  }
 }
 
-/* A ring of the ocean colour behind each dot, so a city sitting on a coast is still a disc rather
-   than a shape bleeding into the landmass under it. */
-.member-map__halo {
-  fill: var(--mm-ocean);
-  fill-opacity: 0.9;
+.member-map__marker:focus {
+  outline: none;
 }
 
 .member-map__dot {
-  fill: var(--mm-pin);
-  fill-opacity: 0.85;
-  transition: fill-opacity 120ms ease;
-}
-
-.member-map__place {
-  transition: opacity 120ms ease;
-}
-
-.member-map__place:hover .member-map__dot,
-.member-map__place--active .member-map__dot {
-  fill-opacity: 1;
-}
-
-/* Picking a city in the list or on the map lifts its pin and lets the rest recede. */
-.member-map__plot--focus .member-map__place:not(.member-map__place--active) {
-  opacity: 0.3;
-}
-
-.member-map__place--active .member-map__halo {
-  fill: var(--mm-pin-soft);
-  fill-opacity: 1;
-  stroke: var(--mm-pin);
-  stroke-width: 0.8;
-}
-
-/* Placed only to a country, so the dot sits on a centroid nobody lives at. Hollow and dashed reads
-   as "somewhere in here" rather than as a city, and the legend says so. */
-.member-map__place--approximate .member-map__dot {
-  fill: var(--mm-ocean);
-  fill-opacity: 1;
-  stroke: var(--mm-pin);
-  stroke-width: 1.2;
-  stroke-dasharray: 2 1.4;
-}
-
-/* Size and halo width are set inline by the view: its collision pass places labels by them, so
-   the two must not be able to disagree. */
-.member-map__label {
-  fill: var(--text-strong);
-  font-weight: 600;
-  paint-order: stroke;
-  stroke: var(--mm-ocean);
-  stroke-linejoin: round;
-  pointer-events: none;
-}
-
-/* No room on the plot without overlapping a neighbour: shown while its dot is picked, and named in
-   the list beside the plot either way. */
-.member-map__label--hover {
-  visibility: hidden;
-}
-
-.member-map__place:hover .member-map__label--hover,
-.member-map__place--active .member-map__label--hover {
-  visibility: visible;
-}
-
-/* The picked city's card, over the plot beside its pin. Never takes the pointer, so it cannot steal
-   the hover from the pin it describes. */
-.member-map__popover {
-  --pop-x: -50%;
-  --pop-y: calc(-100% - 14px);
   position: absolute;
-  z-index: 1;
-  min-width: 9rem;
-  max-width: 17rem;
+  top: calc(var(--r) * -1);
+  left: calc(var(--r) * -1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: calc(var(--r) * 2);
+  height: calc(var(--r) * 2);
+  border-radius: var(--radius-full);
+  background: var(--mm-pin);
+  /* A thin edge of the ocean colour keeps a coastal dot a disc against the land under it; the soft
+     halo is what makes a dot read as a place rather than a speck. */
+  box-shadow:
+    0 0 0 1px var(--mm-dot-edge),
+    0 0 0 4px var(--mm-pin-soft);
+  color: var(--mm-pin-ink);
+  font-size: var(--fs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  animation: member-map-pop 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  transition:
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+/* Several cities drawn as one: a ring outside the edge says "more than one place in here". */
+.member-map__marker--cluster .member-map__dot {
+  box-shadow:
+    0 0 0 1.5px var(--mm-dot-edge),
+    0 0 0 3px color-mix(in srgb, var(--mm-pin) 55%, transparent),
+    0 0 0 7px var(--mm-pin-soft);
+}
+
+/* Placed only to a country: hollow and dashed reads as "somewhere in here", not a city. */
+.member-map__marker--approximate .member-map__dot {
+  border: 1.5px dashed var(--mm-pin);
+  background: var(--mm-ocean);
+  box-shadow: 0 0 0 3px var(--mm-pin-soft);
+  color: var(--mm-pin);
+}
+
+.member-map__marker:hover .member-map__dot,
+.member-map__marker--active .member-map__dot {
+  transform: scale(1.08);
+  box-shadow:
+    0 0 0 1.5px var(--mm-dot-edge),
+    0 0 0 3.5px var(--mm-pin),
+    0 0 0 8px var(--mm-pin-soft);
+}
+
+.member-map__marker:focus-visible .member-map__dot {
+  outline: 2px solid var(--text-strong);
+  outline-offset: 5px;
+}
+
+.member-map__marker--active {
+  z-index: 2;
+}
+
+/* Picking a city in the list or on the map lifts its marker and lets the rest recede. */
+.member-map__stage--focus .member-map__marker:not(.member-map__marker--active),
+.member-map__stage--focus .member-map__label:not(.member-map__label--active) {
+  opacity: 0.35;
+}
+
+@keyframes member-map-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+/* Placed by the view's collision pass from an estimate of this font's width, so the size is set
+   inline from the same number. A halo of the ocean colour keeps it legible over land. */
+.member-map__label {
+  position: absolute;
+  color: var(--text-strong);
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  text-shadow:
+    0 0 2px var(--mm-ocean),
+    0 0 2px var(--mm-ocean),
+    0 0 4px var(--mm-ocean),
+    0 0 6px var(--mm-ocean);
+  transition: opacity 150ms ease;
+}
+
+/* Full screen pans and zooms by drag, pinch and wheel, so the browser must not scroll the page
+   under the same gesture. */
+.member-map__stage--dialog {
+  flex: 1 1 auto;
+  min-height: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.member-map__stage--dialog:active {
+  cursor: grabbing;
+}
+
+.member-map__controls {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.member-map__control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.member-map__control + .member-map__control {
+  border-top: 1px solid var(--border);
+}
+
+.member-map__control svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.member-map__control:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-strong);
+}
+
+.member-map__control:disabled {
+  color: var(--muted);
+  opacity: 0.45;
+  cursor: default;
+}
+
+.member-map__control:focus-visible {
+  outline: 2px solid var(--mm-pin);
+  outline-offset: -2px;
+}
+
+@media (pointer: coarse) {
+  .member-map__control {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* --- Tooltip --- */
+
+/* Over the map beside its marker, positioned by the view inside the box. Never takes the pointer,
+   so it cannot steal the hover from the marker it describes. */
+.member-map__popover {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
   box-shadow: var(--shadow-md);
-  transform: translate(var(--pop-x), var(--pop-y));
   pointer-events: none;
+  animation: member-map-fade 140ms ease-out both;
 }
 
-.member-map__popover--below {
-  --pop-y: 14px;
+@keyframes member-map-fade {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
 }
 
-.member-map__popover--start {
-  --pop-x: calc(-100% + 18px);
+.member-map__popover--above {
+  animation-name: member-map-fade-up;
 }
 
-.member-map__popover--end {
-  --pop-x: -18px;
+@keyframes member-map-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
 }
 
 .member-map__popover-head {
   display: flex;
   gap: var(--space-3);
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   margin: 0;
   font-size: var(--control-ui-text-sm);
@@ -2319,28 +2490,68 @@
   color: var(--text-strong);
 }
 
-.member-map__popover-count {
+.member-map__popover-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The headcount as a chip, the same everywhere a count sits beside a place. */
+.member-map__count,
+.member-map__row-count {
+  flex-shrink: 0;
+  min-width: 1.75rem;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--mm-pin-soft);
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.member-map__popover .member-map__people,
+.member-map__popover-places {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) 0 0;
+  border-top: 1px solid var(--border);
+}
+
+.member-map__popover-places {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  font-size: var(--control-ui-text-sm);
+  color: var(--text);
+}
+
+.member-map__popover-places li {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.member-map__count-plain {
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
 
-.member-map__popover .member-map__people {
-  margin-top: var(--space-2);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border);
-}
-
-.member-map__popover-more {
+.member-map__popover-more,
+.member-map__popover-hint {
   margin: var(--space-1) 0 0;
   font-size: var(--control-ui-text-xs);
   color: var(--muted);
 }
 
-/* One person per line: their name, then where and what says so ("Toronto · from profile"). */
+/* One person per line: a face and a name, and only for an admin who asked, where the pin came from. */
 .member-map__people {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2348,19 +2559,43 @@
 
 .member-map__people li {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 2px var(--space-2);
+  align-items: center;
   min-width: 0;
 }
 
+.member-map__person-text {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.member-map__people--faces .member-map__avatar {
+  margin-left: 0;
+}
+
 .member-map__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--control-ui-text-sm);
   font-weight: 500;
   color: var(--text);
 }
 
-.member-map__name-detail {
-  font-size: var(--control-ui-text-xs);
+/* The service's own phrase for how and when a member was placed ("IP today"), admin-only. */
+.member-map__source {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
   color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 /* --- City list --- */
@@ -2389,7 +2624,7 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  min-height: 2rem;
+  min-height: 2.25rem;
   padding: var(--space-1) var(--space-2);
   border: 0;
   border-radius: var(--radius-md);
@@ -2402,6 +2637,12 @@
   transition: background-color 120ms ease;
 }
 
+@media (pointer: coarse) {
+  .member-map__row-top {
+    min-height: 2.75rem;
+  }
+}
+
 .member-map__row-top:hover {
   background: var(--bg-hover);
 }
@@ -2411,16 +2652,26 @@
   color: var(--text-strong);
 }
 
+.member-map__row--active .member-map__row-count {
+  background: var(--mm-pin);
+  color: var(--mm-pin-ink);
+}
+
 .member-map__row-top:focus-visible {
   outline: 2px solid var(--mm-pin);
   outline-offset: -2px;
 }
 
-.member-map__row-main {
+.member-map__row-main,
+.member-map__row-side {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
+}
+
+.member-map__row-side {
+  flex-shrink: 0;
 }
 
 .member-map__swatch {
@@ -2443,12 +2694,6 @@
   white-space: nowrap;
 }
 
-.member-map__row-count {
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
 .member-map__row--more {
   padding: var(--space-1) var(--space-2);
   font-size: var(--control-ui-text-xs);
@@ -2469,17 +2714,18 @@
 
 .member-map__avatar {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   margin-left: -6px;
   border-radius: var(--radius-full);
   outline: 1.5px solid var(--bg-elevated);
   object-fit: cover;
   background: linear-gradient(160deg, var(--mm-pin-soft), var(--bg-muted));
   color: var(--text-strong);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
 }
 
@@ -2522,10 +2768,12 @@
   border-top: 1px solid var(--border);
 }
 
-.member-map__legend {
+.member-map__legend,
+.member-map__notes {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-4);
+  align-items: center;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2542,17 +2790,24 @@
 .member-map__key {
   display: inline-block;
   flex-shrink: 0;
-  width: 8px;
-  height: 8px;
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
   border-radius: var(--radius-full);
-}
-
-.member-map__key--city {
-  background: var(--mm-pin);
 }
 
 .member-map__key--country {
   border: 1.5px dashed var(--mm-pin);
+}
+
+.member-map__key--cluster {
+  width: 10px;
+  height: 10px;
+  background: var(--mm-pin);
+  box-shadow:
+    0 0 0 1.5px var(--bg-elevated),
+    0 0 0 3px color-mix(in srgb, var(--mm-pin) 55%, transparent);
+  margin: 0 3px;
 }
 
 /* Two dots, small then large: "size is headcount" without a word of it in the key itself. */
@@ -2569,7 +2824,6 @@
   content: "";
   border-radius: var(--radius-full);
   background: var(--mm-pin);
-  opacity: 0.85;
 }
 
 .member-map__key--size::before {
@@ -2578,8 +2832,8 @@
 }
 
 .member-map__key--size::after {
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
 }
 
 .member-map__note {
@@ -2590,6 +2844,37 @@
 
 .member-map__credit a {
   color: inherit;
+}
+
+/* The admin's "How we placed people" switch: quiet until pressed. */
+.member-map__how {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--control-ui-text-xs);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.member-map__how:hover,
+.member-map__how[aria-pressed="true"] {
+  color: var(--text-strong);
+}
+
+.member-map__how:focus-visible {
+  outline: 2px solid var(--mm-pin);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.member-map__how-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
 }
 
 /* --- Full screen --- */
@@ -2615,6 +2900,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
   padding: var(--space-5) var(--space-6);
@@ -2626,21 +2912,13 @@
   color: var(--muted);
 }
 
-/* The plot takes every pixel the header and list leave it. min-height:0 is what lets a flex child
+/* The map takes every pixel the header and list leave it. min-height:0 is what lets a flex child
    actually shrink to its container instead of overflowing at its intrinsic size. */
-.member-map__dialog-plot {
+.member-map__figure--dialog {
   display: flex;
   flex: 1 1 auto;
-  align-items: center;
-  justify-content: center;
-  min-height: 0;
-}
-
-.member-map__dialog-plot .member-map__plot {
-  width: auto;
-  max-width: 100%;
-  height: auto;
-  max-height: 100%;
+  flex-direction: column;
+  min-height: 14rem;
 }
 
 .member-map__dialog .member-map__list {
@@ -2649,8 +2927,21 @@
   grid-template-columns: repeat(auto-fill, minmax(min(12rem, 100%), 1fr));
   gap: 2px var(--space-4);
   width: 100%;
-  max-height: 34dvh;
+  max-height: 30dvh;
   overflow-y: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .member-map__dot,
+  .member-map__popover {
+    animation: none;
+  }
+
+  .member-map__dot,
+  .member-map__marker,
+  .member-map__label {
+    transition: none;
+  }
 }
 
 .dashboard-summary__title {
@@ -6806,7 +7097,11 @@ adminbot-deadline-timezone {
 
   /* The actions: a bare link group, or the recommendation wrapper for signed-in members. */
   .deadline-group__row
-    > :not(.deadline-group__row-main, .deadline-group__row-date-wrap, .deadline-group__row-countdown) {
+    > :not(
+      .deadline-group__row-main,
+      .deadline-group__row-date-wrap,
+      .deadline-group__row-countdown
+    ) {
     order: 4;
     flex: 1 1 0;
     min-width: min-content;
@@ -6816,7 +7111,11 @@ adminbot-deadline-timezone {
 /* Keep personal actions clear of the countdown on narrow phones. */
 @container deadline-board (max-width: 21em) {
   .deadline-group__row:has(.deadline-card__personal-actions)
-    > :not(.deadline-group__row-main, .deadline-group__row-date-wrap, .deadline-group__row-countdown) {
+    > :not(
+      .deadline-group__row-main,
+      .deadline-group__row-date-wrap,
+      .deadline-group__row-countdown
+    ) {
     flex-basis: 100%;
   }
 }

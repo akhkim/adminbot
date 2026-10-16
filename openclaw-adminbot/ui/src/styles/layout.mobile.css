@@ -1211,13 +1211,39 @@
     gap: var(--space-4);
   }
 
-  /* On a phone the popover would sit over the very list row that was tapped. The row already says
-     where and how many, and its "Show all" names everyone, so the tap only lifts the pin here. */
-  .member-map__popover {
-    display: none;
+  /* Full screen scrolls as one page here: a map tall enough to pan with a thumb, then the list
+     under it, rather than both squeezed into one screen. */
+  .member-map__dialog-panel {
+    height: auto;
+    min-height: 100%;
+    padding: var(--space-4);
   }
 
-  .member-map__dialog-panel {
-    padding: var(--space-4);
+  .member-map__figure--dialog {
+    flex: 0 0 auto;
+  }
+
+  /* Close to the map's own 2.4:1 shape, so a portrait screen is not mostly empty ocean; a little
+     taller than that so there is room to pinch, and the list follows right under it. */
+  .member-map__stage--dialog {
+    flex: 0 0 auto;
+    height: max(13rem, calc((100vw - 2 * var(--space-4)) * 0.5));
+  }
+
+  /* A row along the bottom edge, not a column eating a third of a short map. */
+  .member-map__controls {
+    right: var(--space-2);
+    bottom: var(--space-2);
+    flex-direction: row;
+  }
+
+  .member-map__control + .member-map__control {
+    border-top: 0;
+    border-left: 1px solid var(--border);
+  }
+
+  .member-map__dialog .member-map__list {
+    max-height: none;
+    overflow: visible;
   }
 }
