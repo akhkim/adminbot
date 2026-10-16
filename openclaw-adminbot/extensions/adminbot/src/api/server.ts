@@ -425,6 +425,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(openReviewWorkflow ? { openReviewWorkflow } : {}),
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
     ...(ipGeolocation.attribution ? { ipGeolocationAttribution: ipGeolocation.attribution } : {}),
+    ipGeolocationProvider: ipGeolocation.provider,
     ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
     ...(options.cvDigestPublisher ? { cvDigestPublisher: options.cvDigestPublisher } : {}),
     publicationMailingRunner: options.publicationMailingRunner ?? createPublicationMailingRunner(),

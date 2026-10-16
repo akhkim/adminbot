@@ -17,7 +17,6 @@ import type { AdminBotCvScanDeps } from "../../cv-scan.js";
 import type { LlmLoadRouter } from "../../kernel/llm-router.js";
 import { ReferenceScans } from "../../kernel/reference-scans.js";
 import type { ActiveChannelReader } from "../../kernel/service.active-channels.js";
-import type { SlackDirectoryReader } from "../../workflows/members/slack-roster-sync.js";
 import { AdminBotService, type AdminBotServiceStore } from "../../kernel/service.js";
 import type { AdminBotActionExecutor, AdminBotServiceOptions } from "../../kernel/service.js";
 import type { FailedExternalRequestLedger } from "../../persistence/failed-requests.js";
@@ -29,6 +28,7 @@ import {
   AdminBotAuthService,
   type AdminBotMemberPrincipal,
 } from "../../workflows/identity/auth.js";
+import type { SlackDirectoryReader } from "../../workflows/members/slack-roster-sync.js";
 import type { CalendarInviteRunner } from "../../workflows/onboarding/calendar-invite.js";
 import type { AdminBotOnboardingSender } from "../../workflows/onboarding/guide-sender.js";
 import type { AdminBotOnboardingSenderOptions } from "../../workflows/onboarding/guide-sender.js";
@@ -70,6 +70,11 @@ export type AdminBotRouteContext = {
   cvDigestPublisher?: AdminBotCvDigestPublisher;
   /** The IP geolocation provider's required credit, sent with the member map. Absent when off. */
   ipGeolocationAttribution?: import("../../connectors/ip-geolocation.js").IpGeolocationAttribution;
+  /**
+   * Which IP geolocation provider is configured, for the admin map's status line. Absent in a
+   * context built without one (tests), which the map reports as unknown rather than off.
+   */
+  ipGeolocationProvider?: "mmdb" | "ipinfo" | "off";
   /** Sends the publication digest. Absent leaves /papers/mailing-list/send answering 503. */
   publicationMailingRunner?: PublicationMailingRunner;
   venuePapersReader?: import("../../connectors/openreview-notes.js").OpenReviewNotesReader;

@@ -99,6 +99,17 @@ export const directoryRoutes: readonly Route[] = [
             mode: "full",
             ...toPrivilegedMemberMap(result.payload, { listUnplaced }),
             ...attribution,
+            // For the admin status line: is sign-in geolocation on, and through what. Never the
+            // database path or a token -- only the provider kind and whether the proxy is trusted.
+            ...(ctx.ipGeolocationProvider
+              ? {
+                  ip_geolocation: {
+                    active: ctx.ipGeolocationProvider !== "off",
+                    provider: ctx.ipGeolocationProvider,
+                    trust_proxy: ctx.trustProxyHeaders,
+                  },
+                }
+              : {}),
           }
         : { mode: "summary", ...toPublicMemberMapSummary(result.payload), ...attribution },
       { etag },

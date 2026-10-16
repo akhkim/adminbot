@@ -168,12 +168,17 @@ function normalize(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/gu, " ");
 }
 
-/** The most recent entry per source, which is what "where do we think they are" reads from. */
+/** The most recent entry per source, which is what "where do we think they are" reads from. Check-in non-answers are skipped. */
 export function latestBySource(
   history: readonly AdminBotMemberLocationEntry[],
 ): Map<AdminBotLocationSource, AdminBotMemberLocationEntry> {
   const latest = new Map<AdminBotLocationSource, AdminBotMemberLocationEntry>();
   for (const entry of history) {
+    // A check-in snooze or decline is logged as `self_reported` but states no place, so it is never
+    // "the latest thing this source said about where they are".
+    if (entry.checkin === "snoozed" || entry.checkin === "declined") {
+      continue;
+    }
     const held = latest.get(entry.source);
     if (!held || held.observed_at < entry.observed_at) {
       latest.set(entry.source, entry);
@@ -287,5 +292,7 @@ export function selfReportedChange(
 
 /** What the record says the member's location is on a day, as text, for quoting back to them. */
 function claimedLocation(member: AdminBotLabMember, dayIso: string): string | undefined {
-  return tripOn(member, dayIso)?.city.trim() || member.current_city?.trim() || member.location?.trim();
+  return (
+    tripOn(member, dayIso)?.city.trim() || member.current_city?.trim() || member.location?.trim()
+  );
 }

@@ -1709,6 +1709,28 @@ export type AdminBotLabMemberInput = {
   location_prompt_answered_at?: string;
   /** The country the member was asked about when they last answered, so a new country re-asks. */
   location_prompt_answered_country?: string;
+  /**
+   * The explicit "Where are you based right now?" check-in (workflows/members/location-checkin.ts).
+   *
+   * `location_checkin_at` is when the member last *answered* it, and `location_checkin_city` the
+   * answer as they gave it (also written to `current_city`). The map reads the pair as its second
+   * source, behind only a fresh sign-in city. A snooze and a decline are stamped separately so each
+   * keeps its own clock: a snooze ends, a decline stands until the member changes their mind.
+   * Never self-editable -- only the check-in route writes them.
+   */
+  location_checkin_at?: string;
+  location_checkin_city?: string;
+  location_checkin_snoozed_until?: string;
+  location_checkin_declined_at?: string;
+  /**
+   * The IANA zone Slack reports for the member (`users.info` `tz`), and when the sync last saw it.
+   *
+   * Kept apart from `timezone` even though the Slack sync also writes that one: `timezone` can be
+   * typed by the member, and the timezone cross-check needs the zone the member's *device* reports,
+   * dated, to compare a placed city against. Written by the Slack directory sync only.
+   */
+  slack_tz?: string;
+  slack_tz_observed_at?: string;
   availability?: AdminBotAvailabilityRow[];
   time_off?: AdminBotTimeOffRow[];
   // Dated milestones the member is planning back from. Self-editable like the two lists above.
@@ -2649,6 +2671,9 @@ export type AdminBotAuditEvent = {
     // the prompt is the only thing that turns one into a profile change, so both are recorded.
     | "member.location_observed"
     | "member.location_prompt_answered"
+    | "member.location_checkin_answered"
+    | "member.location_checkin_snoozed"
+    | "member.location_checkin_declined"
     // Recorded meetings. Filing one is not an external effect, but attendance is personal data
     // and a summary is machine-written, so who filed or corrected what stays answerable.
     | "meeting.recorded"
@@ -2816,6 +2841,52 @@ export type AdminBotMemberLocationEntry = {
    * be the exact guess the `timezone` note above refuses.
    */
   observed_at_local?: string;
+  /**
+   * Set only on rows written by the explicit check-in. "answered" rows are ordinary
+   * `self_reported` observations; "snoozed" and "declined" rows place nothing (no place, no
+   * country) and exist so the log shows every time the member was asked and what they did.
+   * Readers that want "where is this member" skip the two non-answers (see `latestBySource`).
+   */
+  checkin?: AdminBotLocationCheckinOutcome;
+  /** How an answer was given: picked from the city list, typed, or resolved from this device. */
+  checkin_via?: AdminBotLocationCheckinVia;
+};
+
+export type AdminBotLocationCheckinOutcome = "answered" | "snoozed" | "declined";
+export type AdminBotLocationCheckinVia = "picker" | "text" | "device";
+
+/** Whether to ask a member "Where are you based right now?", and why. */
+export type AdminBotLocationCheckin = {
+  due: boolean;
+  /**
+   * Due:
+   * - `no_guess`: nothing places the member well enough to skip asking (no fresh sign-in city that
+   *   their Slack zone agrees with), and they have not answered in ADMINBOT_LOCATION_CHECKIN_DAYS.
+   * - `timezone_mismatch`: the signals disagree -- the city that places them is more than two hours
+   *   off the zone their Slack reports -- so the member is asked early.
+   * Not due:
+   * - `signals_agree`: a fresh sign-in city and the Slack zone agree, so there is nothing to ask.
+   * - `answered` / `snoozed` / `declined` / `hidden`: the member already settled it.
+   */
+  reason:
+    | "no_guess"
+    | "timezone_mismatch"
+    | "signals_agree"
+    | "answered"
+    | "snoozed"
+    | "declined"
+    | "hidden";
+  /**
+   * The best guess to confirm with one tap ("Are you in Toronto?"): a fresh sign-in city, then the
+   * city the Slack zone is named for, then the stored city. Absent when nothing places the member,
+   * in which case the prompt opens straight on the picker.
+   */
+  suggestion?: { city: string; source: "login" | "slack_tz" | "stored" };
+  last_answered_at?: string;
+  last_answered_city?: string;
+  snoozed_until?: string;
+  /** Shown with an early ask: what the disagreement is, in words. */
+  note?: string;
 };
 
 /** What the member is being asked to confirm, and the evidence for asking. */
