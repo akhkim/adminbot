@@ -1086,6 +1086,7 @@ export type AdminBotIpReadingCheckFields =
   | "last_login_city"
   | "last_login_region"
   | "last_login_country"
+  | "last_login_timezone"
   | "last_ip_suspected_vpn"
   | "last_device_tz"
   | "last_device_tz_at"
@@ -1109,8 +1110,34 @@ export function ipReadingSetAside(
   if (!city) {
     return false;
   }
+  const reference = referenceZone(member, now);
   const place = resolveLoginCity(city, member.last_login_region, member.last_login_country);
-  return Boolean(place && timezoneMismatch(place, referenceZone(member, now), now));
+  if (place) {
+    return Boolean(timezoneMismatch(place, reference, now));
+  }
+  // A city the gazetteer does not know still came with the zone the IP database gave it, and that
+  // zone is checked instead: otherwise an unlisted city is the one reading no clock can set aside.
+  const ipZone = usableDeviceZone(member.last_login_timezone);
+  const ipOffset = ipZone ? zoneOffsetMinutes(ipZone, now) : undefined;
+  const referenceOffset = reference ? zoneOffsetMinutes(reference, now) : undefined;
+  return (
+    ipOffset !== undefined &&
+    referenceOffset !== undefined &&
+    Math.abs(ipOffset - referenceOffset) / 60 > ADMINBOT_TZ_MISMATCH_HOURS
+  );
+}
+
+/**
+ * The live IP place a meetup intro may use: `liveIpPlace`, and only when the member has a clock to
+ * check it against. With no fresh device or Slack zone there is no way to tell a VPN exit from a
+ * trip, so the reading can still place a pin on the map but never introduces anybody.
+ */
+export function introIpPlace(
+  member: Pick<AdminBotLabMember, AdminBotLiveIpFields>,
+  now: Date,
+  days = ADMINBOT_MAP_LOGIN_FRESH_DAYS,
+): AdminBotLiveIpPlace | undefined {
+  return referenceZone(member, now) ? liveIpPlace(member, now, days) : undefined;
 }
 
 /** What `liveIpPlace` reads. */
@@ -1181,14 +1208,19 @@ export function liveIpObservedAt(
  *
  * The IP's zone is the one the provider returned with the city, else the zone the gazetteer city
  * keeps, else the country's. Offsets are compared at `at` through Intl, so daylight saving is
- * whatever it was at that instant. With nothing to compare against there is no evidence of a VPN,
- * and the reading is trusted -- an unknown is not a conflict.
+ * whatever it was at that instant. The reference is the zone this request's browser sent, else the
+ * offset it sent with no zone, else the member's stored device zone while fresh (so a request that
+ * sent no headers is still checked), else Slack's. With nothing to compare against there is no
+ * evidence of a VPN and the reading is not suspected, but `against` is then absent, and callers
+ * must not let an unchecked reading start intros.
  */
 export function ipReadingVerdict(params: {
   location: { city?: string; region?: string; country?: string; timezone?: string };
   deviceTz?: string;
   /** Minutes east of UTC the device reported, used only when no usable zone name came with it. */
   deviceOffsetMinutes?: number;
+  /** The member's stored device zone (`freshDeviceTz`), for a request that sent none. */
+  storedDeviceTz?: string;
   slackTz?: string;
   at: Date;
 }): { suspected_vpn: boolean; hours?: number; against?: "device" | "slack" } {
@@ -1204,12 +1236,15 @@ export function ipReadingVerdict(params: {
     return { suspected_vpn: false };
   }
   const deviceZone = usableDeviceZone(params.deviceTz);
+  const storedZone = usableDeviceZone(params.storedDeviceTz);
   const deviceOffset = deviceZone
     ? zoneOffsetMinutes(deviceZone, at)
     : Number.isFinite(params.deviceOffsetMinutes) &&
         Math.abs(params.deviceOffsetMinutes ?? 0) <= 14 * 60
       ? params.deviceOffsetMinutes
-      : undefined;
+      : storedZone
+        ? zoneOffsetMinutes(storedZone, at)
+        : undefined;
   const slackZone = params.slackTz?.trim();
   const slackOffset = slackZone ? zoneOffsetMinutes(slackZone, at) : undefined;
   const reference =

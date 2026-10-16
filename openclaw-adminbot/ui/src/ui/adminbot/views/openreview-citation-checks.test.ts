@@ -59,7 +59,11 @@ it("shows each submission's latest version and its flagged references", async ()
     }),
   });
   expect(fetcher).toHaveBeenCalledWith("http://localhost:8765/openreview/citation-checks", {
-    headers: { Authorization: "Bearer synthetic-admin" },
+    // The token and the browser's clock, through the shared helper.
+    headers: expect.objectContaining({
+      Authorization: "Bearer synthetic-admin",
+      "X-AdminBot-Device-TZ-Offset": expect.any(String),
+    }),
   });
   const articles = [...el.shadowRoot!.querySelectorAll("article")];
   expect(articles.map((article) => article.dataset.state)).toEqual(["flagged", "clean"]);

@@ -59,14 +59,18 @@ function lab(start: string, extraEvents: readonly unknown[] = []) {
       signIn(person.id, person.city, person.country, person.zone);
     }
   };
-  // What the live IP check would write (see auth.ts recordLoginLocation), at the current clock.
+  // What the live IP check would write (see auth.ts recordLoginLocation), at the current clock. The
+  // zone is also the device's, as a request carrying the device headers would record it: an IP
+  // reading with no reference zone to check it against never starts an intro.
   const signIn = (id: string, city: string, country?: string, zone?: string) =>
     store.saveLabMember({
       ...store.getLabMember(id)!,
       last_ip_observed_at: now.toISOString(),
       last_login_city: city,
       ...(country ? { last_login_country: country } : {}),
-      ...(zone ? { last_login_timezone: zone } : {}),
+      ...(zone
+        ? { last_login_timezone: zone, last_device_tz: zone, last_device_tz_at: now.toISOString() }
+        : {}),
     });
   const intros = () => sent.filter((proposal) => proposal.type === "slack.conference_intro");
   const members = (proposal: AdminBotStoredProposal) =>
@@ -447,7 +451,9 @@ describe("the Events tab", () => {
 const NY = "America/New_York";
 const BOSTON = { city: "Boston", country: "United States", zone: NY };
 const going = (service: AdminBotService, id: string, conferenceKey = "emnlp:2026") =>
-  unwrap(service.setConferenceTrip({ conferenceKey, memberId: id, intent: "going", funding: "none" }));
+  unwrap(
+    service.setConferenceTrip({ conferenceKey, memberId: id, intent: "going", funding: "none" }),
+  );
 
 /** A made-up conference in San Francisco, Oct 14-16 2026: the bundled dataset has none there. */
 const SYNTHCONF = {
@@ -540,7 +546,9 @@ describe("zero setup, serendipity and Say hi", () => {
     expect(members(intros()[0]!)[0]).toBe("ada");
     const text = message(intros()[0]!);
     expect(text.split("\n")[0]).toBe("👋 Ada Example says hi");
-    expect(text).toContain("Ada Example saw you're all going to EMNLP 2026 too and started this chat.");
+    expect(text).toContain(
+      "Ada Example saw you're all going to EMNLP 2026 too and started this chat.",
+    );
     expect(text).not.toContain("wildcard");
 
     // A second tap answers instead of sending again, and the card says so.
@@ -575,7 +583,9 @@ describe("zero setup, serendipity and Say hi", () => {
       people: [{ member_id: "bob", said_hi: true }],
     });
     // The pair has met: no automatic city intro for them either.
-    expect(unwrap(await service.introduceCityMeetups({ city: "San Francisco" })).introduced).toBe(0);
+    expect(unwrap(await service.introduceCityMeetups({ city: "San Francisco" })).introduced).toBe(
+      0,
+    );
     expect(intros()).toHaveLength(1);
     expect((await service.sayHi("ada", {})).ok).toBe(false);
   });
@@ -593,13 +603,19 @@ describe("zero setup, serendipity and Say hi", () => {
     expect(JSON.stringify(unwrap(service.meetups().overview("ada")).also_nearby)).not.toContain(
       "dee",
     );
-    expect(await service.sayHi("ada", { member_id: "dee" })).toMatchObject({ ok: false, status: 404 });
+    expect(await service.sayHi("ada", { member_id: "dee" })).toMatchObject({
+      ok: false,
+      status: 404,
+    });
     expect(unwrap(service.meetups().overview("dee")).also_nearby).toBeUndefined();
-    expect(await service.sayHi("dee", { member_id: "ada" })).toMatchObject({ ok: false, status: 409 });
+    expect(await service.sayHi("dee", { member_id: "ada" })).toMatchObject({
+      ok: false,
+      status: 409,
+    });
     expect(service.updateOwnProfile("dee", { do_not_contact: false }).ok).toBe(false);
-    expect(service.upsertLabMember({ ...store.getLabMember("ada")!, do_not_contact: "yes" } as never).ok).toBe(
-      false,
-    );
+    expect(
+      service.upsertLabMember({ ...store.getLabMember("ada")!, do_not_contact: "yes" } as never).ok,
+    ).toBe(false);
   });
 
   it("an SF viewer during an SF event: Near you, the in-town question, and Say hi", async () => {
@@ -623,7 +639,8 @@ describe("zero setup, serendipity and Say hi", () => {
       i_am_going: false,
       can_say_hi: true,
       said_hi: false,
-      in_town_prompt: "Looks like you're in San Francisco during SynthConf 2026. Are you attending?",
+      in_town_prompt:
+        "Looks like you're in San Francisco during SynthConf 2026. Are you attending?",
     });
     expect(card.going.map((p) => p.member_id)).toEqual(["bob"]);
 
@@ -677,6 +694,8 @@ describe("intros never trust a likely VPN exit", () => {
     // No browser zone, but Slack says Tokyo.
     store.saveLabMember({
       ...store.getLabMember("cy")!,
+      last_device_tz: undefined,
+      last_device_tz_at: undefined,
       slack_tz: "Asia/Tokyo",
       slack_tz_observed_at: AT,
     });

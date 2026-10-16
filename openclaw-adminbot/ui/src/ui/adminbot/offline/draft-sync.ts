@@ -1,5 +1,7 @@
 // Each tab retains its own working copy. Concurrent edits meet at the server's revision check,
 // so a background tab cannot overwrite either an offline edit or another device's newer draft.
+import { memberAuthHeaders } from "../api/device-clock.ts";
+
 export type DraftKey = "document-signature" | "recommendation-letters" | "book-meeting";
 type RemoteDraft = { revision: number; mutationId: string; data: unknown };
 type LocalDraft = {
@@ -368,7 +370,7 @@ export async function syncWorkingDraft(scope: string, key: DraftKey): Promise<vo
       credentials: "omit",
       cache: "no-store",
       signal: AbortSignal.timeout(10000),
-      headers: { Authorization: `Bearer ${connection.token}`, "Content-Type": "application/json" },
+      headers: { ...memberAuthHeaders(connection.token), "Content-Type": "application/json" },
       ...(snapshot.dirty
         ? {
             body: JSON.stringify({

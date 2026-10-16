@@ -28,6 +28,7 @@ export type {
   AdminBotTravelPlan as TravelPlan,
   AdminBotTravelSharing as TravelSharing,
 } from "../../../../../extensions/adminbot/src/contracts/lab-travel.js";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 
 export type TravelRsvp = AdminBotConferenceTripRecord;
 export type TravelRsvpIntent = AdminBotConferenceTripIntent;
@@ -59,7 +60,7 @@ async function call<T>(
       cache: "no-store",
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${session.sessionToken}`,
+        ...memberAuthHeaders(session.sessionToken),
         ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),

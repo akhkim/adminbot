@@ -597,23 +597,24 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveLabMember(member: AdminBotLabMember): void;
   patchLabMemberAuthFields(
     memberId: string,
-    patch: Pick<AdminBotLabMember, "updated_at"> &
-      Partial<
-        Pick<
-          AdminBotLabMember,
-          | "last_login_at"
-          | "last_login_country"
-          | "last_login_continent"
-          | "last_login_city"
-          | "last_login_region"
-          | "last_login_timezone"
-          | "last_ip_observed_at"
-          | "last_ip_suspected_vpn"
-          | "last_device_tz"
-          | "last_device_tz_at"
-          | "last_seen_at"
-        >
-      >,
+    // `updated_at` is optional: a stamp that is not an edit (a visit, a device zone) leaves it alone.
+    patch: Partial<
+      Pick<
+        AdminBotLabMember,
+        | "updated_at"
+        | "last_login_at"
+        | "last_login_country"
+        | "last_login_continent"
+        | "last_login_city"
+        | "last_login_region"
+        | "last_login_timezone"
+        | "last_ip_observed_at"
+        | "last_ip_suspected_vpn"
+        | "last_device_tz"
+        | "last_device_tz_at"
+        | "last_seen_at"
+      >
+    >,
   ): boolean;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[];

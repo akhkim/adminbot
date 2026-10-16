@@ -3,6 +3,7 @@
 // Cut from server.ts. Origin checks run before anything else in routeRequest, so they own no route.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { usableDeviceZone } from "../../workflows/members/member-map.js";
 
 export const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:5173",
@@ -109,6 +110,10 @@ export function parseOrigins(value: string | undefined): string[] | undefined {
  * The clock the member's browser reported: `X-AdminBot-Device-TZ` (an IANA zone name) and
  * `X-AdminBot-Device-TZ-Offset` (minutes east of UTC). Both optional and both untrusted -- the zone
  * is validated where it is used, and a malformed offset is dropped here.
+ *
+ * A zone that was sent but is unusable (UTC, Etc/*, GMT: what Firefox resistFingerprinting, Tor and
+ * Brave report whatever the real clock) is dropped together with its offset, which is the same
+ * fiction -- 0 -- and would otherwise be compared against the IP city as if it were a clock.
  */
 export function deviceClock(
   req: IncomingMessage,
@@ -116,6 +121,9 @@ export function deviceClock(
   const tz = firstHeaderValue(req.headers["x-adminbot-device-tz"])?.trim().slice(0, 64);
   const rawOffset = firstHeaderValue(req.headers["x-adminbot-device-tz-offset"])?.trim();
   const offset = rawOffset && /^[+-]?\d{1,4}$/u.test(rawOffset) ? Number(rawOffset) : undefined;
+  if (tz && !usableDeviceZone(tz)) {
+    return undefined;
+  }
   const offsetMinutes = offset !== undefined && Math.abs(offset) <= 14 * 60 ? offset : undefined;
   if (!tz && offsetMinutes === undefined) {
     return undefined;

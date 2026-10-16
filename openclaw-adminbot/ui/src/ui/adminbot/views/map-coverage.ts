@@ -4,7 +4,7 @@
 // own view and data modules.
 import { html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
-import { deviceClockHeaders } from "../api/device-clock.ts";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 
 export type MapCoverageBucket =
   | "ip"
@@ -132,7 +132,7 @@ export class AdminBotMapCoverage extends LitElement {
     this.busy = true;
     try {
       const response = await fetch(`${this.baseUrl.replace(/\/$/u, "")}/member-map/coverage`, {
-        headers: { Authorization: `Bearer ${this.sessionToken}`, ...deviceClockHeaders() },
+        headers: memberAuthHeaders(this.sessionToken),
       });
       const parsed = response.ok ? parseMapCoverage(await response.json()) : null;
       if (generation !== this.generation) {

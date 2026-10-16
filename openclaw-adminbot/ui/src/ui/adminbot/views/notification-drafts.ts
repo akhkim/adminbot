@@ -1,6 +1,7 @@
 import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 
 type DraftResult = {
   announcements: { venue: string; text: string; paper_count: number }[];
@@ -226,7 +227,7 @@ export class NotificationDrafts extends LitElement {
         method: "POST",
         signal: this.controller.signal,
         headers: {
-          Authorization: `Bearer ${this.sessionToken}`,
+          ...memberAuthHeaders(this.sessionToken),
           "Content-Type": "application/json",
         },
         body: JSON.stringify({

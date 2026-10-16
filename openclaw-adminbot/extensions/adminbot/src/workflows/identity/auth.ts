@@ -29,6 +29,7 @@ import {
   utcDay,
 } from "../members/location-history.js";
 import {
+  freshDeviceTz,
   freshSlackTz,
   ipReadingVerdict,
   liveIpObservedAt,
@@ -43,6 +44,10 @@ import type { CalendarInviteRunner } from "../onboarding/calendar-invite.js";
 // scrypt cost parameters. Serialized alongside every hash so a future cost bump can be
 // detected per-credential without a migration; verify re-derives with the stored params.
 const SCRYPT_N = 16384;
+// How many of a member's addresses today the live IP check remembers (see lastCheckByMember).
+const RECENT_IPS_PER_MEMBER = 4;
+// An unchanged device zone is re-stamped at most this often, so `last_device_tz_at` stays fresh.
+const DEVICE_TZ_RESTAMP_MS = 86_400_000;
 const SCRYPT_R = 8;
 const SCRYPT_P = 1;
 const SCRYPT_KEYLEN = 64;
@@ -357,12 +362,15 @@ export class AdminBotAuthService {
   private readonly failuresByKey = new Map<string, number[]>();
   private readonly inFlightByKey = new Map<string, number>();
   private readonly registrationDecisionsInFlight = new Set<string>();
-  // What noteAccountUse last looked up for each member: the UTC day, the address and the device
-  // zone. A request matching all three is skipped, so it is one lookup per member per day plus one
-  // per change of network or clock. In memory on purpose: after a restart each member costs one
+  // What noteAccountUse last looked up for each member: the UTC day, the addresses seen today and
+  // the device zone. A request from a remembered address with the same (or no) zone is skipped, so
+  // it is one lookup per member per day plus one per new network or clock. In memory on purpose: after a restart each member costs one
   // local lookup and, unless the city changed, no write (see recordLoginLocation's `live`), which
   // is a better trade than keeping a table of everybody's current IP on disk.
-  private readonly lastCheckByMember = new Map<string, { day: string; ip: string; tz: string }>();
+  private readonly lastCheckByMember = new Map<
+    string,
+    { day: string; ips: string[]; tz: string }
+  >();
   // The UTC day `last_seen_at` was last written for each member, so a busy day costs one write.
   private readonly lastSeenDayByMember = new Map<string, string>();
 
@@ -522,8 +530,8 @@ export class AdminBotAuthService {
         });
         this.lastCheckByMember.set(member.id, {
           day: utcDay(this.now().toISOString()),
-          ip: request.remoteIp,
-          tz: request.device?.tz ?? "",
+          ips: [request.remoteIp],
+          tz: request.device?.tz?.trim() ?? "",
         });
       }
       return { ok: true, status: 200, payload, sessionToken: payload.session_token };
@@ -602,8 +610,12 @@ export class AdminBotAuthService {
     try {
       const now = this.now();
       const nowIso = now.toISOString();
-      const deviceTz = usableDeviceZone(context.device?.tz);
-      const offset = context.device?.offsetMinutes;
+      const sentTz = context.device?.tz?.trim();
+      const deviceTz = usableDeviceZone(sentTz);
+      // A zone that was sent but is unusable (UTC, Etc/*, GMT: Firefox resistFingerprinting, Tor,
+      // Brave) takes its offset with it. That offset is the same lie as the zone -- 0 whatever the
+      // real clock says -- and would flag every member outside UTC as a VPN user.
+      const offset = sentTz && !deviceTz ? undefined : context.device?.offsetMinutes;
       const deviceOffset =
         typeof offset === "number" && Number.isInteger(offset) && Math.abs(offset) <= 14 * 60
           ? offset
@@ -623,6 +635,9 @@ export class AdminBotAuthService {
         location,
         ...(deviceTz ? { deviceTz } : {}),
         ...(deviceOffset !== undefined ? { deviceOffsetMinutes: deviceOffset } : {}),
+        // A request without device headers is still checked, against the zone the member's
+        // browser reported most recently; otherwise one header-less request could plant a VPN exit.
+        ...(freshDeviceTz(member, now) ? { storedDeviceTz: freshDeviceTz(member, now) } : {}),
         ...(freshSlackTz(member, now) ? { slackTz: freshSlackTz(member, now) } : {}),
         at: now,
       });
@@ -729,8 +744,9 @@ export class AdminBotAuthService {
       }
       await this.audit("auth.login_location_updated", memberId, { ...location });
       // Intros wake on a sign-in that located a city, and on a live reading only when the city
-      // changed -- somebody browsing all day from the same café is not news ten times over.
-      if (location.city && (!live || cityChanged)) {
+      // changed -- somebody browsing all day from the same café is not news ten times over. A
+      // reading no clock could check (`against` absent) wakes nothing: it may be a VPN exit.
+      if (location.city && verdict.against && (!live || cityChanged)) {
         try {
           this.afterLoginLocated?.(memberId);
         } catch (error) {
@@ -782,12 +798,25 @@ export class AdminBotAuthService {
   }
 
   // The browser's zone: stamped on the member (the map's device-zone fallback and the VPN check's
-  // witness) and appended to the timeline as its own source when it changed. Name only.
+  // witness) and appended to the timeline as its own source when it changed. Name only. Written
+  // only when the zone changed or the stamp is over a day old, and never bumps `updated_at`: a
+  // clock reading is not an edit, and each member write invalidates the cached roster.
   private async recordDeviceTimezone(memberId: string, zone: string, at: string): Promise<void> {
+    const member = await this.store.getLabMember(memberId);
+    if (!member) {
+      return;
+    }
+    const stampedAt = Date.parse(member.last_device_tz_at ?? "");
+    if (
+      member.last_device_tz === zone &&
+      Number.isFinite(stampedAt) &&
+      Date.parse(at) - stampedAt < DEVICE_TZ_RESTAMP_MS
+    ) {
+      return;
+    }
     await this.store.patchLabMemberAuthFields(memberId, {
       last_device_tz: zone,
       last_device_tz_at: at,
-      updated_at: at,
     });
     const entry = observationFor({
       memberId,
@@ -851,8 +880,9 @@ export class AdminBotAuthService {
    * in use, and from where.
    *
    * The lookup is the local database (no network), and it runs once per member per UTC day plus
-   * whenever the address or the browser's zone changes -- the last address is remembered in memory
-   * per member. The member record is rewritten only when the resolved city or country differs from
+   * whenever a new address or a different browser zone shows up -- the day, a few recent addresses
+   * and the last zone are remembered in memory per member, and a request with no zone header
+   * counts as the same zone. The member record is rewritten only when the resolved city or country differs from
    * the latest trusted reading, else at most once per UTC day as a "still here" stamp; a restart
    * costs one lookup per member and no write. So somebody who signed in in Toronto and then works
    * from Zürich is placed in Zürich on their first request from there, not at their next sign-in.
@@ -882,12 +912,22 @@ export class AdminBotAuthService {
         return;
       }
       const day = utcDay(this.now().toISOString());
-      const tz = device?.tz?.trim() ?? "";
+      // Many requests carry no device headers. An empty (or unusable, e.g. UTC) zone says nothing,
+      // so it counts as "unchanged" rather than as a change from the zone the last request sent.
+      const sentTz = usableDeviceZone(device?.tz) ?? "";
       const last = this.lastCheckByMember.get(member.id);
-      if (last && last.day === day && last.ip === remoteIp && last.tz === tz) {
+      const sameDay = last?.day === day;
+      const tz = sentTz || (sameDay ? last.tz : "");
+      if (sameDay && last.ips.includes(remoteIp) && tz === last.tz) {
         return;
       }
-      this.lastCheckByMember.set(member.id, { day, ip: remoteIp, tz });
+      // A few recent addresses rather than one, so a dual-stack client or a NAT pool that
+      // alternates between two exits costs one lookup per address per day, not one per request.
+      const ips = [remoteIp, ...(sameDay ? last.ips.filter((ip) => ip !== remoteIp) : [])].slice(
+        0,
+        RECENT_IPS_PER_MEMBER,
+      );
+      this.lastCheckByMember.set(member.id, { day, ips, tz });
       // Same fire-and-forget contract as the login path. recordLoginLocation catches its own
       // errors; the catch here is for anything that throws before it returns its promise. `live`
       // makes it write only when the city changed or today's reading is not yet taken.
@@ -913,15 +953,10 @@ export class AdminBotAuthService {
       return;
     }
     this.lastSeenDayByMember.set(member.id, day);
-    // `updated_at` is carried over unchanged: a visit is not an edit of the record.
-    const updatedAt = member.updated_at;
+    // Only `last_seen_at`: a visit is not an edit, so `updated_at` is left as the store has it.
+    // (Patching it from this session's copy of the member could move it backwards.)
     void Promise.resolve()
-      .then(() =>
-        this.store.patchLabMemberAuthFields(member.id, {
-          updated_at: updatedAt,
-          last_seen_at: now,
-        }),
-      )
+      .then(() => this.store.patchLabMemberAuthFields(member.id, { last_seen_at: now }))
       .catch((error: unknown) => {
         this.warn(`adminbot: last-seen stamp failed: ${errorText(error)}`);
       });

@@ -53,7 +53,7 @@ import {
   placeLabel,
   viewerLocation,
 } from "../workflows/members/meetups.js";
-import { liveIpPlace } from "../workflows/members/member-map.js";
+import { introIpPlace } from "../workflows/members/member-map.js";
 import { memberThemeIds, RESEARCH_THEMES } from "../workflows/members/research-themes.js";
 import { canonicalConferenceTrips } from "../workflows/papers/conference-attendance.js";
 import {
@@ -256,7 +256,7 @@ export class MeetupService {
       if (!meetupIntrosAllowed(member, "city", today)) {
         continue;
       }
-      const here = liveIpPlace(member, now, LOGIN_CITY_FRESH_DAYS);
+      const here = introIpPlace(member, now, LOGIN_CITY_FRESH_DAYS);
       const at =
         here && live.find((site) => sitePlace(site) && nearEachOther(here, sitePlace(site)!));
       if (at) {
@@ -365,7 +365,7 @@ export class MeetupService {
       if (!meetupIntrosAllowed(member, "city", today)) {
         return false;
       }
-      const here = liveIpPlace(member, now, CITY_MEETUP_WINDOW_DAYS);
+      const here = introIpPlace(member, now, CITY_MEETUP_WINDOW_DAYS);
       return Boolean(here && nearEachOther(here, anchor));
     });
   }
@@ -523,7 +523,7 @@ export class MeetupService {
     const today = this.today();
     const here =
       member && isTravelEntitled(member)
-        ? liveIpPlace(member, this.now(), LOGIN_CITY_FRESH_DAYS)
+        ? introIpPlace(member, this.now(), LOGIN_CITY_FRESH_DAYS)
         : undefined;
     if (!member || !here) {
       return { events: [] };
@@ -568,7 +568,7 @@ export class MeetupService {
       if (!reachable(member) || !meetupIntrosAllowed(member, "city", today)) {
         continue;
       }
-      const here = liveIpPlace(member, now, CITY_MEETUP_WINDOW_DAYS);
+      const here = introIpPlace(member, now, CITY_MEETUP_WINDOW_DAYS);
       if (here && !cities.has(placeKey(here))) {
         cities.set(placeKey(here), here);
       }

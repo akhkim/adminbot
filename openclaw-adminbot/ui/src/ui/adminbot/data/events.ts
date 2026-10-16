@@ -22,6 +22,7 @@ export type {
   AdminBotMeetupPreferences as MeetupPreferences,
   AdminBotSayHiResult as SayHiResult,
 } from "../../../../../extensions/adminbot/src/contracts/events.js";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 
 async function call<T>(
   baseUrl: string,
@@ -39,7 +40,7 @@ async function call<T>(
       cache: "no-store",
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${session.sessionToken}`,
+        ...memberAuthHeaders(session.sessionToken),
         ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),

@@ -887,7 +887,20 @@ describe("AdminBotAuthService claim/login flow", () => {
     // A country alone places nobody in a city: no meetup work.
     expect(afterLoginLocated).not.toHaveBeenCalled();
 
+    // A city with no clock to check it against starts nothing either.
     await auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "8.8.8.8" });
+    await vi.waitFor(() =>
+      expect(store.getLabMember("ada")?.last_login_city).toBe("San Francisco"),
+    );
+    expect(afterLoginLocated).not.toHaveBeenCalled();
+
+    // The same city, with a device clock that agrees with it.
+    await auth.login({
+      email: "ada@example.com",
+      password: "correcthorse",
+      remoteIp: "8.8.8.8",
+      device: { tz: "America/Los_Angeles", offsetMinutes: -420 },
+    });
     await vi.waitFor(() => expect(afterLoginLocated).toHaveBeenCalledTimes(1));
     expect(afterLoginLocated).toHaveBeenCalledWith("ada");
   });

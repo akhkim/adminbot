@@ -1377,10 +1377,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       this.db
         .prepare(
           `UPDATE adminbot_lab_members
-         SET updated_at = ?, payload_json = json_patch(payload_json, ?)
+         SET updated_at = COALESCE(?, updated_at), payload_json = json_patch(payload_json, ?)
          WHERE id = ?`,
         )
-        .run(patch.updated_at, JSON.stringify(patch), memberId).changes > 0;
+        .run(patch.updated_at ?? null, JSON.stringify(patch), memberId).changes > 0;
     this.members.invalidate();
     return changed;
   }

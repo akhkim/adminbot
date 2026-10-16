@@ -5,6 +5,7 @@ import {
   ADMINBOT_MAP_LOGIN_FRESH_DAYS,
   buildMemberMap,
   ipCityState,
+  ipReadingSetAside,
   ipReadingVerdict,
   usableDeviceZone,
 } from "./member-map.js";
@@ -218,6 +219,26 @@ describe("ipReadingVerdict", () => {
     ).toMatchObject({ suspected_vpn: false });
   });
 
+  it("falls back to the stored device zone before Slack when the request sent no clock", () => {
+    expect(
+      ipReadingVerdict({
+        location: toronto,
+        storedDeviceTz: "Europe/Zurich",
+        slackTz: "America/Toronto",
+        at: now,
+      }),
+    ).toMatchObject({ suspected_vpn: true, against: "device" });
+    // The request's own clock still wins over the stored one.
+    expect(
+      ipReadingVerdict({
+        location: toronto,
+        deviceTz: "America/Toronto",
+        storedDeviceTz: "Europe/Zurich",
+        at: now,
+      }),
+    ).toMatchObject({ suspected_vpn: false, against: "device" });
+  });
+
   it("finds no evidence with nothing to compare against", () => {
     expect(ipReadingVerdict({ location: toronto, at: now })).toEqual({ suspected_vpn: false });
     expect(ipReadingVerdict({ location: {}, deviceTz: "Europe/Zurich", at: now })).toEqual({
@@ -262,5 +283,35 @@ describe("usableDeviceZone", () => {
     expect(usableDeviceZone("Etc/GMT+5")).toBeUndefined();
     expect(usableDeviceZone("Not/AZone")).toBeUndefined();
     expect(usableDeviceZone(undefined)).toBeUndefined();
+  });
+});
+
+describe("ipReadingSetAside", () => {
+  // A town the gazetteer does not list, with the zone the IP database gave it.
+  const unlisted = {
+    last_login_city: "Smallbrook Junction",
+    last_login_region: "Ontario",
+    last_login_country: "CA",
+    last_login_timezone: "America/Toronto",
+    last_ip_observed_at: ago(0),
+  };
+
+  it("checks an unlisted city by the zone the IP database gave it", () => {
+    expect(
+      ipReadingSetAside(
+        member({ ...unlisted, last_device_tz: "Europe/Zurich", last_device_tz_at: ago(0) }),
+        now,
+      ),
+    ).toBe(true);
+    expect(
+      ipReadingSetAside(
+        member({ ...unlisted, last_device_tz: "America/Toronto", last_device_tz_at: ago(0) }),
+        now,
+      ),
+    ).toBe(false);
+  });
+
+  it("does not set an unlisted city aside with no zone to check it against", () => {
+    expect(ipReadingSetAside(member(unlisted), now)).toBe(false);
   });
 });

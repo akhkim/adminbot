@@ -1,5 +1,6 @@
 import { html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 
 export class LabSharingHowTo extends LitElement {
   @property() baseUrl = "";
@@ -45,7 +46,7 @@ export class LabSharingHowTo extends LitElement {
       const response = await fetch(`${this.baseUrl.replace(/\/$/u, "")}/lab-sharing/ask`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${this.sessionToken}`,
+          ...memberAuthHeaders(this.sessionToken),
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ question: this.question.trim() }),
@@ -118,7 +119,9 @@ export class LabSharingHowTo extends LitElement {
           </p>`
         : nothing}
       ${this.error
-        ? html`<div class="callout danger lab-sharing-howto__error" role="alert">${this.error}</div>`
+        ? html`<div class="callout danger lab-sharing-howto__error" role="alert">
+            ${this.error}
+          </div>`
         : nothing}
       ${this.answer
         ? html`<article class="lab-sharing-howto__answer">

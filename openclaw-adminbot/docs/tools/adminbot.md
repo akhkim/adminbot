@@ -1446,7 +1446,9 @@ AdminBot geolocates the caller's IP and stamps `last_login_country` /
 `last_login_continent`, and, when the provider answers with one,
 `last_login_city` / `last_login_region`, with the reading's time in
 `last_ip_observed_at` (`last_login_at` is the sign-in itself). A reading whose
-city disagrees with the browser's time zone is logged but not stamped; see
+city disagrees with the browser's time zone (else the member's stored device
+zone, else Slack's) is logged but not stamped, and a reading with no zone to
+check it against never starts meetup intros; see
 [IP geolocation](adminbot-geoip.md#live-reading). A request writes only when the
 city or country changed, else once a UTC day. The
 provider is a local DB-IP City Lite database when `ADMINBOT_GEOIP_MMDB_PATH` is

@@ -4,6 +4,7 @@ import type {
   DeadlineRecommendationInput,
   DeadlineRecommendationPreview,
 } from "../../../../../extensions/adminbot/src/contracts/deadline-recommendations.js";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { readApiJson } from "./api-json.ts";
 export type {
@@ -52,7 +53,7 @@ export class AdminBotDeadlineRecommendationStore implements DeadlineRecommendati
       method: body === undefined ? "GET" : "POST",
       cache: "no-store",
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...memberAuthHeaders(token),
         Accept: "application/json",
         "Content-Type": "application/json",
       },
