@@ -10,7 +10,10 @@
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import { isoDay, samePlace, travelPlace } from "./lab-travel.js";
 import {
+  type AdminBotDeviceCityFields,
   type AdminBotLiveIpFields,
+  freshDeviceCity,
+  isWithinDays,
   liveIpCountry,
   liveIpObservedAt,
   liveIpPlace,
@@ -193,6 +196,13 @@ export const CITY_MEETUP_WINDOW_DAYS = 7;
 const DAY_MS = 86_400_000;
 
 /**
+ * How recently something other than the IP must have named the IP's metro for the IP to start an
+ * intro on its own: a device city, a check-in answer or a Slack profile location dated within this
+ * many days.
+ */
+export const IP_CORROBORATION_DAYS = 30;
+
+/**
  * The meetup view of the live IP place: `liveIpPlace` from the map, so a member is introduced in
  * exactly the city the map shows them in -- the latest request's reading, never the sign-in, and
  * never a likely VPN exit.
@@ -206,19 +216,83 @@ function ipMeetupPlace(
   return live ? { city: live.city, ...(live.country ? { country: live.country } : {}) } : undefined;
 }
 
+/** What `meetupPlace` reads. */
+export type AdminBotMeetupPlaceFields =
+  | AdminBotLiveIpFields
+  | AdminBotDeviceCityFields
+  | "location_checkin_city"
+  | "location_checkin_at"
+  | "slack_location"
+  | "slack_location_updated_at";
+
+/**
+ * Where an intro may say a member is, for every intro path (event in-town, city intro, the sweep,
+ * the trigger on a new location):
+ *
+ * 1. The city the member's own device reported, within `days`. Their machine's position, not the
+ *    network's exit.
+ * 2. Else the live IP city, within `days` -- but only when something other than the IP named the
+ *    same metro in the last IP_CORROBORATION_DAYS: a device city, a check-in answer or the Slack
+ *    profile location, each dated. An IP city alone is approximate (a campus or carrier exit can be
+ *    a neighbouring city), and an intro tells two people they are near each other, so an IP-only
+ *    placement never starts one.
+ *
+ * Never coordinates; a city and a country only.
+ */
+export function meetupPlace(
+  member: Pick<AdminBotLabMember, AdminBotMeetupPlaceFields>,
+  now: Date,
+  days: number,
+): MeetupPlace | undefined {
+  const device = freshDeviceCity(member, now, days);
+  if (device) {
+    return { city: device.city, ...(device.country ? { country: device.country } : {}) };
+  }
+  const ip = ipMeetupPlace(member, now, days);
+  return ip && ipCorroborated(member, ip, now) ? ip : undefined;
+}
+
+/** Whether a dated non-IP source put the member near `ip` in the last IP_CORROBORATION_DAYS. */
+function ipCorroborated(
+  member: Pick<AdminBotLabMember, AdminBotMeetupPlaceFields>,
+  ip: MeetupPlace,
+  now: Date,
+): boolean {
+  const witnesses: MeetupPlace[] = [];
+  const device = freshDeviceCity(member, now, IP_CORROBORATION_DAYS);
+  if (device) {
+    witnesses.push({ city: device.city, ...(device.country ? { country: device.country } : {}) });
+  }
+  const checkin = member.location_checkin_city?.trim();
+  if (checkin && isWithinDays(member.location_checkin_at, IP_CORROBORATION_DAYS, now)) {
+    witnesses.push({ city: checkin });
+  }
+  const slack = member.slack_location?.trim();
+  if (slack && isWithinDays(member.slack_location_updated_at, IP_CORROBORATION_DAYS, now)) {
+    witnesses.push({ city: slack });
+  }
+  return witnesses.some((witness) => nearEachOther(witness, ip));
+}
+
 export type ViewerLocation = {
   label: string;
-  /** ip: inferred from the live IP; profile/slack: what the member wrote. */
-  source: "ip" | "profile" | "slack";
+  /** device: the member's own browser; ip: the live IP; profile/slack: what the member wrote. */
+  source: "device" | "ip" | "profile" | "slack";
   place?: MeetupPlace;
 };
 
 /**
- * Where the viewer is, for their own eyes: the fresh live IP city first, then what they stated
- * (current city, home, Slack), then the live IP country alone. Never coordinates.
+ * Where the viewer is, for their own eyes: the city their device reported, then the fresh live IP
+ * city, then what they stated (current city, home, Slack), then the live IP country alone. Never
+ * coordinates. Not gated on corroboration: this is the member's own view of their own place.
  */
 export function viewerLocation(member: AdminBotLabMember, now: Date): ViewerLocation | undefined {
   // The viewer's own city, not the metro: this label is only ever shown to the member it is about.
+  const device = freshDeviceCity(member, now, LOGIN_CITY_FRESH_DAYS);
+  if (device) {
+    const place = { city: device.city, ...(device.country ? { country: device.country } : {}) };
+    return { label: travelPlace(device.city).label, source: "device", place };
+  }
   const ip = ipMeetupPlace(member, now, LOGIN_CITY_FRESH_DAYS);
   if (ip) {
     return { label: travelPlace(ip.city).label, source: "ip", place: ip };

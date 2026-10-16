@@ -1788,6 +1788,7 @@ export const en: TranslationMap = {
     hint: "Conferences from the lab's accepted papers and the deadlines list. Tap Going so lab-mates there can find you, or Say hi to start a Slack chat with them.",
     location: {
       youAre: "You're in {place}",
+      device: "from your device's location, visible only to you",
       ip: "based on your current IP address, visible only to you",
       profile: "from your profile, visible only to you",
       slack: "from your Slack profile, visible only to you",
@@ -2555,6 +2556,18 @@ export const en: TranslationMap = {
       authorFallback: "You",
     },
   },
+  preciseLocation: {
+    use: "Use my precise location",
+    busy: "Locating…",
+    change: "Change",
+    why: "Why?",
+    whyBody:
+      "Places you on the lab map by city, more accurately than your sign-in. Only the city is kept; your exact position is never stored.",
+    note: {
+      denied: "Location is off for this site in your browser.",
+      unavailable: "Couldn't find a city just now.",
+    },
+  },
   profile: {
     gate: {
       title: "Complete your profile to continue",
@@ -2578,7 +2591,7 @@ export const en: TranslationMap = {
     },
     mapVisibility: {
       label: "Show me on the lab map as",
-      auto: "Auto (current IP city)",
+      auto: "Auto (device or sign-in city)",
       stated: "My stated city only",
       hidden: "Hidden",
       hint: "Only a city is ever shown, never an exact location or a history.",

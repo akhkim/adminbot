@@ -1,4 +1,4 @@
-import { render } from "lit";
+import { html, render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { memberMapFixture } from "../../../test-helpers/member-map-fixture.ts";
 import { parseMemberMap, type MemberMap } from "../data/member-map.ts";
@@ -922,6 +922,33 @@ describe("renderMemberMap", () => {
     expect(
       parseMemberMap({ ...summary, attribution: { text: "x", url: "javascript:alert(1)" } })
         ?.attribution,
+    ).toBeUndefined();
+  });
+
+  it("credits GeoNames beside DB-IP, and shows the viewer's own-location line when given", async () => {
+    const both = await draw(
+      parseMemberMap({
+        ...summary,
+        attribution: { text: "IP geolocation by DB-IP", url: "https://db-ip.com" },
+        place_attribution: { text: "Places by GeoNames", url: "https://www.geonames.org" },
+      }),
+      { ownLocation: html`<span data-testid="synthetic-own">📍 Synthville · Change</span>` },
+    );
+    const links = [
+      ...both.querySelectorAll<HTMLAnchorElement>('[data-testid="member-map-attribution"] a'),
+    ];
+    expect(links.map((link) => link.textContent?.trim())).toEqual([
+      "IP geolocation by DB-IP",
+      "Places by GeoNames",
+    ]);
+    expect(
+      both.querySelector('[data-testid="member-map-own-location"] [data-testid="synthetic-own"]'),
+    ).not.toBeNull();
+    const without = await draw(parseMemberMap(summary));
+    expect(without.querySelector('[data-testid="member-map-own-location"]')).toBeNull();
+    expect(
+      parseMemberMap({ ...summary, place_attribution: { text: "x", url: "http://geonames.test" } })
+        ?.placeAttribution,
     ).toBeUndefined();
   });
 

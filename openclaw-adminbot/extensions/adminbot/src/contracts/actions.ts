@@ -981,6 +981,10 @@ export const adminBotInferredLocationMemberFields = [
   "last_ip_suspected_vpn",
   "last_device_tz",
   "last_device_tz_at",
+  "device_city",
+  "device_region",
+  "device_country",
+  "device_located_at",
 ] as const;
 
 /**
@@ -1756,6 +1760,18 @@ export type AdminBotLabMemberInput = {
    */
   last_device_tz?: string;
   last_device_tz_at?: string;
+  /**
+   * The city the member's own browser last put them in, from the passive "Use my precise location"
+   * control or its silent refresh (which runs only where that permission is already granted). The
+   * position is reduced to the nearest GeoNames city on the server and discarded there: no
+   * coordinate is ever stored, logged or audited. `device_country` is ISO alpha-2. Written by
+   * `POST /profile/device-location` only, never self-editable, and only for members whose map
+   * visibility is "auto".
+   */
+  device_city?: string;
+  device_region?: string;
+  device_country?: string;
+  device_located_at?: string;
   /**
    * The last UTC day this member used AdminBot with their own session (any authenticated request;
    * never an admin "view as"). Stamped at most once a day by auth.ts `noteAccountUse`, whatever the

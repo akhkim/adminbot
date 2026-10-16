@@ -6,6 +6,7 @@ import {
   isIntroSendTime,
   localHour,
   meetupIntrosAllowed,
+  meetupPlace,
   meetupPreferences,
   memberZone,
   metroFor,
@@ -99,6 +100,65 @@ describe("where a member is", () => {
         NOW,
       ),
     ).toEqual({ label: "Canada", source: "ip" });
+  });
+
+  const device = {
+    device_city: "Reggio Emilia",
+    device_region: "Emilia-Romagna",
+    device_country: "IT",
+    device_located_at: "2026-10-15T08:00:00Z",
+  };
+  const rome = {
+    last_ip_observed_at: "2026-10-15T09:00:00Z",
+    last_login_city: "Rome",
+    last_login_country: "Italy",
+  };
+
+  it("shows the viewer the city their device reported before the IP city", () => {
+    expect(viewerLocation({ id: "a", name: "A", ...rome, ...device } as never, NOW)).toMatchObject({
+      label: "Reggio Emilia",
+      source: "device",
+    });
+  });
+
+  it("intros: a device city first, an IP city only with a witness from the last 30 days", () => {
+    expect(meetupPlace({ ...rome, ...device }, NOW, 7)).toEqual({
+      city: "Reggio Emilia",
+      country: "IT",
+    });
+    // IP alone: no place, so no intro.
+    expect(meetupPlace(rome, NOW, 7)).toBeUndefined();
+    // A Slack location naming the same metro, updated within 30 days.
+    expect(
+      meetupPlace(
+        {
+          ...rome,
+          slack_location: "Rome, Italy",
+          slack_location_updated_at: "2026-09-20T00:00:00Z",
+        },
+        NOW,
+        7,
+      ),
+    ).toEqual({ city: "Rome", country: "Italy" });
+    // The same witness two months old, or naming somewhere else, does not count.
+    expect(
+      meetupPlace(
+        {
+          ...rome,
+          slack_location: "Rome, Italy",
+          slack_location_updated_at: "2026-08-01T00:00:00Z",
+        },
+        NOW,
+        7,
+      ),
+    ).toBeUndefined();
+    expect(
+      meetupPlace(
+        { ...rome, location_checkin_city: "Milan", location_checkin_at: "2026-10-10T00:00:00Z" },
+        NOW,
+        7,
+      ),
+    ).toBeUndefined();
   });
 });
 

@@ -256,6 +256,15 @@ else
   echo "geoip: this release has no deploy/aurora/install-geoip.sh; skipped"
 fi
 
+# "Use my precise location": the offline GeoNames city table the service turns a browser position
+# into a city with. Same contract as the database above: never fails the deploy, warns instead.
+if [[ -f "$new_release/deploy/aurora/install-geonames.sh" ]]; then
+  bash "$new_release/deploy/aurora/install-geonames.sh" --root "$ROOT" --release "$new_release" ||
+    printf '::warning title=Device location::install-geonames.sh exited %s; precise location may be off\n' "$?"
+else
+  echo "geonames: this release has no deploy/aurora/install-geonames.sh; skipped"
+fi
+
 # ---------------------------------------------------------------------------------------------
 # Swap. A cancelled job must not leave the units half-rewritten, so interrupts are ignored from
 # here until the swap (or its rollback) is complete.

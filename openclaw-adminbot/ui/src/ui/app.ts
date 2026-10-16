@@ -110,6 +110,7 @@ import {
   resetNotificationPopups,
 } from "./adminbot/controllers/notifications.ts";
 import { createEmptyAdminBotMemberNudgeState } from "./adminbot/controllers/nudges.ts";
+import type { PreciseLocationState } from "./adminbot/controllers/precise-location.ts";
 import { EMPTY_PROFILE_OVERVIEW_PAGE } from "./adminbot/controllers/profile-overview.ts";
 import { createRecLetterEligibilityState } from "./adminbot/controllers/rec-letter-eligibility.ts";
 import type { RecentEditsState } from "./adminbot/controllers/recent-edits.ts";
@@ -419,6 +420,7 @@ export class OpenClawApp extends LitElement {
   @state() eventsBusy: string | null = null;
   @state() adminBotLocationDrift?: LocationDrift | null;
   @state() adminBotLocationDrifts?: LocationDrift[];
+  @state() adminBotPreciseLocation?: PreciseLocationState;
   @state() adminBotLocationSaving = false;
   @state() adminBotLocationError: string | null = null;
   @state() adminBotMeetings?: MeetingRecord[];

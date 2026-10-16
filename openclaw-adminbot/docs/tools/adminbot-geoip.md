@@ -97,7 +97,10 @@ neither zone available, the reading is trusted.
 City and event meetup intros use the same rule (`ipReadingSetAside`, applied by `liveIpPlace` in
 `member-map.ts`). A reading the map sets aside never puts anybody in a city for an intro, whether
 the intro comes from the sign-in hook, a live reading or the hourly sweep, so a VPN exit in
-Toronto cannot produce "you're both in Toronto".
+Toronto cannot produce "you're both in Toronto". Intros go further than the map: an IP city alone
+never introduces anybody. `meetupPlace` in `meetups.ts` uses the member's fresh device city first,
+and an IP city only when the device city, a check-in answer or the Slack location named the same
+city within the last 30 days.
 
 An ASN check (DB-IP ASN Lite, to recognise hosting and VPN providers by network) was considered and
 left out. It would need a second database, its own refresh job and a maintained list of VPN ASNs,
@@ -190,12 +193,38 @@ it. The refresh script above only fetches DB-IP. Point `ADMINBOT_GEOIP_MMDB_PATH
 `GeoLite2-City.mmdb`. The map then credits MaxMind instead of DB-IP, because the credit is chosen
 by the file name.
 
+## Device location
+
+"Use my precise location" (see "Precise location" in [AdminBot](adminbot.md)) turns a browser
+position into a city on this host, from the GeoNames
+[`cities1000`](https://download.geonames.org/export/dump/) extract (CC BY 4.0): the nearest place
+of 1000 people or more within 30 km, preferring a town within 15 km over a nearer village, and never
+a neighbourhood. Nothing is sent to a geocoding service, and the position is discarded once the
+city is known.
+
+The table is installed like the IP database. `deploy/aurora/install-geonames.sh` runs on every
+Aurora deploy, keeps a table under 90 days old (`GEONAMES_MAX_AGE_DAYS`), otherwise runs
+`scripts/adminbot-geonames-refresh.sh <root>/geonames`, and appends `ADMINBOT_GEONAMES_DIR` to the
+env file when it is missing. The refresh downloads `cities1000.zip` and `admin1CodesASCII.txt`,
+checks the row count and shape, and renames both into place only then; the service reloads on the
+changed file without a restart. A failure never fails the deploy: it is a `::warning::`, and
+without the table the control answers "Couldn't find a city just now." By hand:
+
+```bash
+bash scripts/adminbot-geonames-refresh.sh /path/to/geonames
+# then set ADMINBOT_GEONAMES_DIR=/path/to/geonames in the AdminBot env file
+```
+
 ## Attribution
 
 DB-IP Lite is licensed CC BY 4.0, and the credit has to appear wherever its data is shown. The
 service sends the credit with `GET /member-map` whenever a provider is configured, and the map
 card shows it as a link: "IP geolocation by DB-IP" pointing to https://db-ip.com. The credit names
 MaxMind for a GeoLite2 file and IPinfo for the IPinfo provider. Do not remove it.
+
+GeoNames is credited the same way, beside DB-IP: when `ADMINBOT_GEONAMES_DIR` is set, the service
+sends `place_attribution` with the map, and the card links "Places by GeoNames" to
+https://www.geonames.org.
 
 ## What to expect
 
@@ -217,5 +246,6 @@ MaxMind for a GeoLite2 file and IPinfo for the IPinfo provider. Do not remove it
   one the nearest proxy appended. The left-most entry is never used, because a client can write it.
   See "Login location" in [AdminBot](adminbot.md).
 - **Not the only signal.** An IP city is one of several automatic sources, with the Slack time
-  zone and profile sync. Nobody is asked where they are; a stated city in Profile still wins. See "Member map" in
-  [AdminBot](adminbot.md).
+  zone and profile sync. Nobody is asked where they are. A device city from "Use my precise
+  location" and a recent check-in answer outrank it, and the admin map marks IP places
+  "· approx.". See "Member map" in [AdminBot](adminbot.md).

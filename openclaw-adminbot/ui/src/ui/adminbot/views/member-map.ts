@@ -653,14 +653,22 @@ function renderFoot(map: MemberMap, sources: boolean, onToggleSources: () => voi
               ${t("dashboard.memberMap.unplaced", { count: String(map.unplaced) })}
             </p>`
           : nothing}
-        ${map.attribution
+        ${map.attribution || map.placeAttribution
           ? html`<p
               class="member-map__note member-map__credit"
               data-testid="member-map-attribution"
             >
-              <a href=${map.attribution.url} target="_blank" rel="noopener noreferrer"
-                >${map.attribution.text}</a
-              >
+              ${[map.attribution, map.placeAttribution]
+                .filter((credit) => credit !== undefined)
+                .map(
+                  (credit, index) =>
+                    html`${index > 0 ? " · " : nothing}<a
+                        href=${credit.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        >${credit.text}</a
+                      >`,
+                )}
             </p>`
           : nothing}
         ${canExplain
@@ -704,6 +712,11 @@ export interface MemberMapOptions {
   now?: number;
   /** Still fetching the first copy: the Collaborate section shows its loading panel. */
   loading?: boolean;
+  /**
+   * The viewer's own-location line under the headline: the passive "Use my precise location"
+   * control, or "📍 City · Change" once their device has named a city. Omitted, no line.
+   */
+  ownLocation?: unknown;
 }
 
 type PointerState = { x: number; y: number };
@@ -743,6 +756,7 @@ class AdminbotMemberMap extends LitElement {
     map: { attribute: false },
     variant: { attribute: false },
     now: { attribute: false },
+    ownLocation: { attribute: false },
     opened: { state: true },
     active: { state: true },
     picked: { state: true },
@@ -755,6 +769,7 @@ class AdminbotMemberMap extends LitElement {
   public map: MemberMap | null = null;
   public variant: MemberMapVariant = "card";
   public now: number | undefined = undefined;
+  public ownLocation: unknown = nothing;
 
   // The full-screen panel is only in the DOM while it is open: no second copy of the coastline
   // behind a closed dialog.
@@ -1539,6 +1554,11 @@ class AdminbotMemberMap extends LitElement {
           <div class="member-map__heading">
             <h3 class="dashboard-summary__title">${t("dashboard.memberMap.title")}</h3>
             <p class="dashboard-summary__headline member-map__sub">${headline}</p>
+            ${this.ownLocation === nothing || this.ownLocation === undefined
+              ? nothing
+              : html`<div class="member-map__own" data-testid="member-map-own-location">
+                  ${this.ownLocation}
+                </div>`}
           </div>
           ${toggle}
         </div>
@@ -1592,5 +1612,6 @@ export function renderMemberMap(map: MemberMap | null, options: MemberMapOptions
     .map=${map}
     .variant=${variant}
     .now=${options.now ?? Date.now()}
+    .ownLocation=${options.ownLocation ?? nothing}
   ></adminbot-member-map>`;
 }

@@ -103,6 +103,11 @@ export type ProfileProps = {
   onSubmitBadgeSuggestion?: (input: BadgeSuggestionInput) => void;
   onToggleBadgeSuggestForm?: (open: boolean) => void;
   onNavigateToTab?: (tab: Tab) => void;
+  /**
+   * The passive "Use my precise location" line, rendered under the map-visibility row. Built by the
+   * surface (views/precise-location.ts) so this view stays free of the geolocation controller.
+   */
+  preciseLocation?: unknown;
 };
 
 // Rendered as a row of links under the name rather than as rows in the field table -- they are
@@ -1125,7 +1130,17 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                           </div>
                         `
                       : renderProfileFormRow(state, member, field)}
-                    ${field.key === "current_city" ? renderMapVisibilityRow(member) : nothing}
+                    ${field.key === "current_city"
+                      ? html`${renderMapVisibilityRow(member)}${props.preciseLocation ===
+                          undefined || props.preciseLocation === nothing
+                          ? nothing
+                          : html`<div
+                              class="profile__form-row"
+                              data-testid="profile-precise-location"
+                            >
+                              ${props.preciseLocation}
+                            </div>`}`
+                      : nothing}
                     <!-- A note and a checkbox about the field above, not a field of its own. It
                          used to be a profile__form-row wrapped in a label, which rendered the
                          explanation at label weight -- as loud as the questions around it -- and

@@ -177,3 +177,36 @@ export async function checkDriveAccess(
     value: result.body as { status: "accessible" | "inaccessible" | "unverified"; message: string },
   };
 }
+
+/** What POST /profile/device-location answers. Never coordinates: the city they reduced to. */
+export type DeviceLocationResult = {
+  recorded: boolean;
+  skipped?: "visibility" | "unavailable" | "unplaced";
+  city?: string;
+  region?: string;
+  /** ISO alpha-2. */
+  country?: string;
+  located_at?: string;
+};
+
+/**
+ * Sends one browser position for the service to reduce to a city. The position goes in the body
+ * only -- never a URL -- and the service discards it once the city is named.
+ */
+export async function postDeviceLocation(
+  fix: { lat: number; lon: number },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<DeviceLocationResult>> {
+  const result = await authedJson(baseUrl, "/profile/device-location", "POST", sessionToken, {
+    lat: fix.lat,
+    lon: fix.lon,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: (result.body ?? { recorded: false }) as DeviceLocationResult };
+}

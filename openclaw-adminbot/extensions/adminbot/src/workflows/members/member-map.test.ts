@@ -118,7 +118,14 @@ describe("buildMemberMap", () => {
     ]);
     expect(map.places[0]?.label).toBe("Switzerland");
     expect(map.places[0]?.members).toEqual([
-      { member_id: "a", name: "Ada", source: "login", precision: "country", source_label: "IP" },
+      {
+        member_id: "a",
+        name: "Ada",
+        source: "login",
+        precision: "country",
+        source_label: "IP · approx.",
+        approximate: true,
+      },
     ]);
   });
 
@@ -144,9 +151,17 @@ describe("buildMemberMap", () => {
         ip_observed_at: "2026-01-05T00:00:00.000Z",
         // The map row is dated by the observation that placed it: here, the live IP reading.
         located_at: "2026-01-05T00:00:00.000Z",
-        source_label: expect.stringMatching(/^IP \d+d ago$/u),
+        source_label: expect.stringMatching(/^IP \d+d ago · approx\.$/u),
+        approximate: true,
       },
-      { member_id: "b", name: "Bo", source: "login", precision: "country", source_label: "IP" },
+      {
+        member_id: "b",
+        name: "Bo",
+        source: "login",
+        precision: "country",
+        source_label: "IP · approx.",
+        approximate: true,
+      },
     ]);
   });
 
@@ -204,7 +219,14 @@ describe("buildMemberMap", () => {
     expect(map.places[0]?.label).toBe("Canada");
     expect(map.places[0]?.key).toBe("country:canada");
     expect(map.places[0]?.members).toEqual([
-      { member_id: "a", name: "Ada", source: "login", precision: "country", source_label: "IP" },
+      {
+        member_id: "a",
+        name: "Ada",
+        source: "login",
+        precision: "country",
+        source_label: "IP · approx.",
+        approximate: true,
+      },
     ]);
   });
 
@@ -662,16 +684,16 @@ describe("member map precedence with the check-in and the Slack zone", () => {
     return place ? { label: place.label, ...place.members[0] } : undefined;
   };
 
-  it("1. a fresh sign-in city beats a recent check-in answer", () => {
+  it("1. a recent check-in answer beats a fresher IP city", () => {
     const placed = placeOf({
       last_login_city: "Berlin",
       last_login_country: "DE",
-      last_ip_observed_at: ago(2),
+      last_ip_observed_at: ago(0),
       current_city: "Toronto",
       location_checkin_city: "Toronto",
       location_checkin_at: ago(1),
     });
-    expect(placed).toMatchObject({ label: "Berlin", source: "login", located_at: ago(2) });
+    expect(placed).toMatchObject({ label: "Toronto", source: "checkin", located_at: ago(1) });
   });
 
   it("2. a recent check-in answer beats the roster and Slack, and is dated", () => {

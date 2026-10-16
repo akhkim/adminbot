@@ -593,6 +593,8 @@ export type AppViewState = {
   eventsBusy?: string | null;
   adminBotLocationDrift?: LocationDrift | null;
   adminBotLocationDrifts?: LocationDrift[];
+  // "Use my precise location": the city the device named this session, and the button's state.
+  adminBotPreciseLocation?: import("./adminbot/controllers/precise-location.ts").PreciseLocationState;
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
   loadLocationPrompt?: () => Promise<void>;

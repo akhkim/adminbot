@@ -77,6 +77,7 @@ export const directoryRoutes: readonly Route[] = [
             listUnplaced,
             loginCity,
             memberMapHour(),
+            ctx.service.memberMapPlacesVersion(),
           ]);
     if (etag && sendNotModified(res, etag)) {
       return;
@@ -88,9 +89,12 @@ export const directoryRoutes: readonly Route[] = [
     }
     // The provider's licence wants its credit wherever the data shows, and a country pin on the
     // summary can come from a sign-in as much as a city on the full map can.
-    const attribution = ctx.ipGeolocationAttribution
-      ? { attribution: ctx.ipGeolocationAttribution }
-      : {};
+    const attribution = {
+      ...(ctx.ipGeolocationAttribution ? { attribution: ctx.ipGeolocationAttribution } : {}),
+      // GeoNames (CC BY 4.0) names the cities device positions reduce to and draws the ones the
+      // gazetteer lacks, so its credit sits beside the IP provider's.
+      ...(ctx.placeAttribution ? { place_attribution: ctx.placeAttribution } : {}),
+    };
     sendJson(
       res,
       200,

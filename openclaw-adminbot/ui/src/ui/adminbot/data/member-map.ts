@@ -81,6 +81,8 @@ export type MemberMap = {
    * Lite is CC BY 4.0). The service names it because only the service knows which provider runs.
    */
   attribution?: { text: string; url: string };
+  /** GeoNames' credit (CC BY 4.0), when the service names cities from device positions with it. */
+  placeAttribution?: { text: string; url: string };
   /** Members whose written location the gazetteer could not place. A count only — see below. */
   unplaced: number;
   counts: { placed: number; unplaced: number; unknown: number };
@@ -340,6 +342,7 @@ export function parseMemberMap(body: unknown): MemberMap | null {
     unplaced_count?: unknown;
     counts?: unknown;
     attribution?: unknown;
+    place_attribution?: unknown;
     ip_geolocation?: unknown;
   } | null;
   if (!raw || !Array.isArray(raw.places)) {
@@ -351,12 +354,14 @@ export function parseMemberMap(body: unknown): MemberMap | null {
     .filter((place): place is MemberMapPlace => place !== null)
     .toSorted((left, right) => right.count - left.count || left.label.localeCompare(right.label));
   const attribution = toAttribution(raw.attribution);
+  const placeAttribution = toAttribution(raw.place_attribution);
   // Only the full (admin) shape may carry it; a summary that somehow did is ignored.
   const ipGeolocation = raw.mode === "full" ? toIpGeolocation(raw.ip_geolocation) : undefined;
   return {
     mode: raw.mode === "full" ? "full" : "summary",
     places,
     ...(attribution ? { attribution } : {}),
+    ...(placeAttribution ? { placeAttribution } : {}),
     ...(ipGeolocation ? { ipGeolocation } : {}),
     // Only ever a number here: the card is a prompt to extend the gazetteer, not a roster. The full
     // response sends `unplaced_count`; an older server sent the list itself.
