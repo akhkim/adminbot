@@ -12061,13 +12061,23 @@ export class AdminBotService {
   // Reviews Slack profile photos for active lab members and nudges non-compliant members with the
   // fixed guideline copy. Assessment can come from an injected AI reviewer or a deterministic
   // fallback when no reviewer is configured.
-  async runProfilePhotoReviewAndReminders(actor: string): Promise<
-    AdminBotServiceResponse<{
-      reviewed: number;
-      non_compliant: number;
-      nudges_created: number;
-      nudges_skipped: number;
-    }>
+  //
+  // `mode` is the campaign's `{dry_run, confirm}` (campaignModeFromBody), a dry run unless the
+  // caller says otherwise: the review itself always runs and stores each assessment, but a dry run
+  // only previews who would be messaged, and a real run needs `confirm` equal to that count, like
+  // every other campaign. The payload is the campaign result, plus the review's own counts.
+  async runProfilePhotoReviewAndReminders(
+    actor: string,
+    mode: AdminBotNudgeCampaignMode = { dry_run: true },
+  ): Promise<
+    AdminBotServiceResponse<
+      AdminBotNudgeCampaignResult & {
+        reviewed: number;
+        non_compliant: number;
+        nudges_created: number;
+        nudges_skipped: number;
+      }
+    >
   > {
     const members = this.store
       .listLabMembers()
@@ -12096,65 +12106,67 @@ export class AdminBotService {
         nonCompliantMemberIds.push(member.id);
       }
     }
-    // Through the campaign module (workflows/nudges/campaign.ts), with the original behaviour: no
-    // confirm guard (the route is run by an admin or a cron), no cooldown, and members without a
-    // Slack ID still passed to the send so they get the portal notification.
-    const nudge = nonCompliantMemberIds.length
-      ? await this.runNudgeCampaign(
-          profilePhotoCampaign({
-            nonCompliantMemberIds: new Set(nonCompliantMemberIds),
-            message: buildProfilePhotoGuidelineMessage(),
-          }),
-          { dry_run: false, scheduled: true },
-          actor,
-          members,
-        )
-      : undefined;
-    const nudgesCreated = nudge && !isCampaignRefusal(nudge) ? (nudge.sent ?? 0) : 0;
-    const nudgesSkipped =
-      nudge && !isCampaignRefusal(nudge)
-        ? Object.values(nudge.skipped).reduce((sum, n) => sum + n, 0) -
-          (nudge.skipped.compliant ?? 0) +
-          (nudge.failed?.length ?? 0)
-        : 0;
-    const nudgeSet = new Set(nonCompliantMemberIds);
-    for (const member of members) {
-      if (!nudgeSet.has(member.id)) {
-        continue;
-      }
-      const latest = this.store.getLabMember(member.id);
-      if (!latest) {
-        continue;
-      }
-      this.store.saveLabMember({
-        ...latest,
-        profile_photo_review: {
-          ...(latest.profile_photo_review ?? {}),
-          last_guideline_dm_at: now,
-        },
-        updated_at: now,
-      });
-    }
+    // Through the campaign module (workflows/nudges/campaign.ts): no cooldown, and members without
+    // a Slack ID still passed to the send so they get the portal notification.
+    const nudge = await this.runNudgeCampaign(
+      profilePhotoCampaign({
+        nonCompliantMemberIds: new Set(nonCompliantMemberIds),
+        message: buildProfilePhotoGuidelineMessage(),
+      }),
+      { dry_run: mode.dry_run, ...(mode.confirm !== undefined ? { confirm: mode.confirm } : {}) },
+      actor,
+      members,
+    );
     this.recordAudit({
       type: "profile_photo.reviewed",
       actor,
-      details: { reviewed, non_compliant: nonCompliantMemberIds.length },
+      details: { reviewed, non_compliant: nonCompliantMemberIds.length, dry_run: mode.dry_run },
     });
-    if (nonCompliantMemberIds.length > 0) {
-      this.recordAudit({
-        type: "profile_photo.guideline_nudged",
-        actor,
-        details: {
-          targeted: nonCompliantMemberIds.length,
-          created: nudgesCreated,
-          skipped: nudgesSkipped,
-        },
-      });
+    if (isCampaignRefusal(nudge)) {
+      return { ok: false, status: 409, error: { message: nudge.message } };
+    }
+    const nudgesCreated = nudge.sent ?? 0;
+    const nudgesSkipped = nudge.dry_run
+      ? 0
+      : Object.values(nudge.skipped).reduce((sum, n) => sum + n, 0) -
+        (nudge.skipped.compliant ?? 0) +
+        (nudge.failed?.length ?? 0);
+    if (!nudge.dry_run) {
+      const nudgeSet = new Set(nonCompliantMemberIds);
+      for (const member of members) {
+        if (!nudgeSet.has(member.id)) {
+          continue;
+        }
+        const latest = this.store.getLabMember(member.id);
+        if (!latest) {
+          continue;
+        }
+        this.store.saveLabMember({
+          ...latest,
+          profile_photo_review: {
+            ...(latest.profile_photo_review ?? {}),
+            last_guideline_dm_at: now,
+          },
+          updated_at: now,
+        });
+      }
+      if (nonCompliantMemberIds.length > 0) {
+        this.recordAudit({
+          type: "profile_photo.guideline_nudged",
+          actor,
+          details: {
+            targeted: nonCompliantMemberIds.length,
+            created: nudgesCreated,
+            skipped: nudgesSkipped,
+          },
+        });
+      }
     }
     return {
       ok: true,
       status: 200,
       payload: {
+        ...nudge,
         reviewed,
         non_compliant: nonCompliantMemberIds.length,
         nudges_created: nudgesCreated,

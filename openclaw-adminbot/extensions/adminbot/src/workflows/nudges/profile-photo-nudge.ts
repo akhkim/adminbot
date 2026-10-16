@@ -1,6 +1,7 @@
-// The profile-photo guideline DM as a nudge campaign. Behaviour is the original's: every member the
-// review marks non-compliant is messaged on every run (no cooldown), members without a Slack ID
-// still get the portal notification, and the message has the portal link appended.
+// The profile-photo guideline DM as a nudge campaign. Every member the review marks non-compliant is
+// messaged on every confirmed run (no cooldown), members without a Slack ID still get the portal
+// notification, and the message has the portal link appended. Like every campaign it previews by
+// default and sends only with `confirm` equal to the previewed count; no cron runs it.
 import type { AdminBotNudgeCampaign, AdminBotNudgeCampaignInfo } from "./campaign.js";
 
 export const PROFILE_PHOTO_NUDGE: AdminBotNudgeCampaignInfo = {
@@ -10,7 +11,7 @@ export const PROFILE_PHOTO_NUDGE: AdminBotNudgeCampaignInfo = {
     "Reviews active members' Slack profile photos and DMs the photo guidelines to everyone whose photo does not meet them.",
   route: "/profile-photo/review/run",
   cooldown_days: 0,
-  scheduled: true,
+  scheduled: false,
 };
 
 export function profilePhotoCampaign(params: {

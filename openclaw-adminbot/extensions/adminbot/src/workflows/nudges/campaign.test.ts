@@ -12,6 +12,8 @@ import {
   isCampaignRefusal,
   runNudgeCampaign,
 } from "./campaign.js";
+import { ADMINBOT_NUDGE_CAMPAIGNS } from "./campaigns.js";
+import { PROFILE_PHOTO_NUDGE } from "./profile-photo-nudge.js";
 
 const now = new Date("2026-07-15T12:00:00.000Z");
 const ago = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
@@ -220,5 +222,12 @@ describe("firstName", () => {
     expect(firstName("  Robin  ")).toBe("Robin");
     expect(firstName("")).toBe("there");
     expect(firstName(undefined)).toBe("there");
+  });
+});
+
+describe("registered campaigns", () => {
+  it("runs the profile-photo campaign only by hand, never on a schedule", () => {
+    expect(PROFILE_PHOTO_NUDGE.scheduled).toBe(false);
+    expect(ADMINBOT_NUDGE_CAMPAIGNS.filter((c) => c.scheduled)).toEqual([]);
   });
 });

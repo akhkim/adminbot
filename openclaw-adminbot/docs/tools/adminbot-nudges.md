@@ -57,9 +57,9 @@ Postgres migration script copies the table as it is.
 `GET /nudges/campaigns` (admin or service token) lists each campaign with `members_reached` and
 `last_sent_at`, read from the ledger. The admin dashboard shows this listing.
 
-| Campaign                 | Key             | Route                            | Cooldown | Runs      |
-| ------------------------ | --------------- | -------------------------------- | -------- | --------- |
-| Profile photo guidelines | `profile_photo` | `POST /profile-photo/review/run` | none     | scheduled |
+| Campaign                 | Key             | Route                            | Cooldown | Runs              |
+| ------------------------ | --------------- | -------------------------------- | -------- | ----------------- |
+| Profile photo guidelines | `profile_photo` | `POST /profile-photo/review/run` | none     | manual, confirmed |
 
 There is no location nudge. AdminBot never asks members where they are; the member map is filled
 from automatic sources only.
@@ -73,10 +73,13 @@ mounts it yet; the attendance and paper-slot migrations below are its first user
 
 ### Profile photo guidelines
 
-`POST /profile-photo/review/run` reviews photos, then runs this campaign as a scheduled run. Its
-behaviour is unchanged:
+`POST /profile-photo/review/run` reviews photos, then runs this campaign. Like every other
+campaign it takes `{dry_run, confirm}`: a body-less POST is a preview (`dry_run` defaults to true)
+and nothing is sent until a second POST carries `dry_run: false` and `confirm` equal to the
+previewed `count`; a mismatch is a 409. The info has `scheduled: false`, and no cron calls the
+route. The review itself still runs, and saves each assessment, on a preview. Otherwise:
 
-- every non-compliant member is messaged on every run (no cooldown);
+- every non-compliant member is messaged on every confirmed run (no cooldown);
 - members without a Slack ID still get the portal notification;
 - the guideline text gets the portal link appended;
 - the response still reports `nudges_created` and `nudges_skipped`.
@@ -108,7 +111,8 @@ escalation behaviour that a straight port could change:
   gets a 403.
   Migrating it should make the route accept a scheduled run;
 - **photo review with no reviewer.** With no reviewer configured, the deterministic fallback can
-  mark every member non-compliant, and with no cooldown each run would DM all of them. A dry run
-  for the photo route, plus a cooldown or a "reviewer unavailable" refusal, would close this;
+  mark every member non-compliant. The preview now shows that count before anything is sent, but a
+  confirmed run would still DM all of them; a cooldown or a "reviewer unavailable" refusal would
+  close this;
 - `profile_photo_review.last_guideline_dm_at` is written but never read. The campaign ledger now
   holds the same fact.

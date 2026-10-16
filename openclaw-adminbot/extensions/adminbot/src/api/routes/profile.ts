@@ -3,7 +3,15 @@
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 import { redactConfidentialMemberFields } from "../../contracts/actions.js";
-import { asString, readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
+import { campaignModeFromBody } from "../../workflows/nudges/campaign.js";
+import {
+  asString,
+  readJson,
+  readJsonOrEmpty,
+  readRecord,
+  sendJson,
+  sendServiceResult,
+} from "../server.http.js";
 import { handleMemberDraft } from "../server.member-drafts.js";
 import { memberOnly, principalActor, privilegedOnly } from "./guards.js";
 import { memberViewEtag } from "./members-etag.js";
@@ -110,11 +118,16 @@ export const profileRoutes: readonly Route[] = [
   ),
   post(
     "/profile-photo/review/run",
-    privilegedOnly(async ({ res, principal, ctx }) => {
+    privilegedOnly(async ({ req, res, principal, ctx }) => {
       const { service } = ctx;
+      // `{dry_run, confirm}` like every campaign route: a body-less POST previews, never sends.
+      const body = readRecord(await readJsonOrEmpty(req));
       sendServiceResult(
         res,
-        await service.runProfilePhotoReviewAndReminders(principalActor(principal)),
+        await service.runProfilePhotoReviewAndReminders(
+          principalActor(principal),
+          campaignModeFromBody(body),
+        ),
       );
     }),
   ),
