@@ -11,6 +11,7 @@ afterEach(() => {
 const body = {
   active: 4,
   counts: {
+    device: 2,
     ip: 1,
     checkin: 1,
     stored_city: 1,
@@ -91,6 +92,7 @@ describe("<adminbot-map-coverage>", () => {
       }),
     );
     expect(el.querySelector('[data-bucket="suspected_vpn"] dd')?.textContent).toBe("1");
+    expect(el.querySelector('[data-bucket="device"] dd')?.textContent).toBe("2");
     const row = el.querySelector('[data-member="m2"]')?.textContent?.replace(/\s+/g, " ");
     expect(row).toContain("stored city · Zürich · IP ignored (VPN?)");
   });

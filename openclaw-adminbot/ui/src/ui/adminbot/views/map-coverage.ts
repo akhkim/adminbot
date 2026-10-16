@@ -7,6 +7,7 @@ import { property, state } from "lit/decorators.js";
 import { memberAuthHeaders } from "../api/device-clock.ts";
 
 export type MapCoverageBucket =
+  | "device"
   | "ip"
   | "checkin"
   | "stored_city"
@@ -31,6 +32,7 @@ export type MapCoverage = {
 };
 
 const BUCKETS: ReadonlyArray<{ key: MapCoverageBucket | "suspected_vpn"; label: string }> = [
+  { key: "device", label: "Precise location" },
   { key: "ip", label: "Fresh IP" },
   { key: "checkin", label: "Recent check-in" },
   { key: "stored_city", label: "Stored city only" },
@@ -194,10 +196,13 @@ export class AdminBotMapCoverage extends LitElement {
                   )}
                 </dl>
                 ${coverage.stale.length === 0
-                  ? html`<p class="muted">Everyone has a fresh IP or a recent check-in.</p>`
+                  ? html`<p class="muted">
+                      Everyone has a precise location, a fresh IP or a recent check-in.
+                    </p>`
                   : html`<details class="map-coverage__stale">
                       <summary>
-                        ${coverage.stale.length} without a fresh IP or recent check-in
+                        ${coverage.stale.length} without a precise location, fresh IP or recent
+                        check-in
                       </summary>
                       <table>
                         <thead>
