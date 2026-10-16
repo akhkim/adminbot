@@ -1404,7 +1404,10 @@ and whenever the tab comes back into view, at most once an hour per device; the 
 when the city changed or once a day. The refresh checks the permission first and never reads when
 it is "prompt" or "denied", so it can never raise the browser's prompt. A failure shows nothing.
 Members whose visibility is "stated" or "hidden" are never asked, and the service discards a
-position posted for them. Device readings do not enter the location history.
+position posted for them. Each write also adds a row to the location history with
+`source: "device"`, holding the city, region and country and never the position, so a new city
+or the day's first reading in the same city ("still here") is logged like an IP reading. The admin
+location log labels these rows "Device".
 
 City intros never fire from an IP city alone. An IP city places a member in a city for an intro
 only when the device city, a check-in answer or the Slack location agrees with it within 30 days;

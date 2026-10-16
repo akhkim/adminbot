@@ -106,6 +106,46 @@ export function observationFor(params: {
 }
 
 /**
+ * A device reading as a timeline entry: city, region and country, and nothing finer.
+ *
+ * Its own constructor rather than `observationFor`, so the signature itself is the guarantee --
+ * there is no parameter a latitude could be passed through. `country` arrives as the ISO code
+ * GeoNames uses and is stored as the country name every other entry carries. The gazetteer key is
+ * attached only when the city resolves to a place in the same country; the label is always the
+ * city GeoNames named, since that is what the device said.
+ */
+export function deviceObservationFor(params: {
+  memberId: string;
+  city: string;
+  region?: string;
+  country: string;
+  observedAt: string;
+  /** The member's device zone, used only to render `observed_at_local`. */
+  zone?: string;
+}): AdminBotMemberLocationEntry | undefined {
+  const city = params.city.trim();
+  if (!city) {
+    return undefined;
+  }
+  const code = params.country.trim();
+  const country = resolveCountry(code)?.country ?? code;
+  const region = params.region?.trim();
+  const place = country ? resolvePlace(`${city}, ${country}`) : undefined;
+  const observedAtLocal = params.zone ? renderInZone(params.observedAt, params.zone) : undefined;
+  return {
+    id: `loc_${randomUUID()}`,
+    member_id: params.memberId,
+    observed_at: params.observedAt,
+    source: "device",
+    raw: [city, region, country].filter(Boolean).join(", "),
+    ...(place && place.country === country ? { place_key: place.key } : {}),
+    place_label: city,
+    ...(country ? { country } : {}),
+    ...(observedAtLocal ? { observed_at_local: observedAtLocal } : {}),
+  };
+}
+
+/**
  * A UTC instant told in `zone`, as an offset-bearing ISO string, or undefined if either is bad.
  *
  * The offset is read from the zone at that instant rather than assumed, so a summer sign-in in

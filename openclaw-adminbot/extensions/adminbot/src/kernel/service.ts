@@ -3,6 +3,7 @@ import type {
   CalendarMembershipReader,
   CalendarAccessReader,
 } from "../connectors/calendar-membership.js";
+import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
@@ -339,6 +340,7 @@ import {
 } from "../workflows/members/local-event-audience.js";
 import {
   detectLocationDrift,
+  deviceObservationFor,
   isNewObservation,
   latestBySource,
   observationFor,
@@ -353,7 +355,6 @@ import {
   type AdminBotCityCentroidResolver,
   type AdminBotMemberMap,
 } from "../workflows/members/member-map.js";
-import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import { summarizeLabMember } from "../workflows/members/member-summary.js";
 import {
   dormantChaseDue,
@@ -10859,7 +10860,12 @@ export class AdminBotService {
     const body = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
     const lat = typeof body.lat === "number" ? body.lat : Number.NaN;
     const lon = typeof body.lon === "number" ? body.lon : Number.NaN;
-    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon) ||
+      Math.abs(lat) > 90 ||
+      Math.abs(lon) > 180
+    ) {
       return serviceError(400, "lat and lon must be numbers in range");
     }
     const geocoder = this.options.reverseGeocoder;
@@ -10902,6 +10908,20 @@ export class AdminBotService {
       device_located_at: at,
       updated_at: at,
     });
+    // The timeline row, under the same rule as the stamp above: a new city, or the first reading of
+    // the UTC day ("still here"). City, region and country only -- the coordinates stop at the
+    // geocoder and are not passed on.
+    const entry = deviceObservationFor({
+      memberId,
+      city: place.city,
+      ...(place.region ? { region: place.region } : {}),
+      country: place.country,
+      observedAt: at,
+      ...(member.last_device_tz ? { zone: member.last_device_tz } : {}),
+    });
+    if (entry) {
+      this.store.appendMemberLocation(entry);
+    }
     if (!sameCity) {
       void this.onLoginLocated(memberId).catch(() => {
         console.warn("AdminBot device location: follow-up intros failed");

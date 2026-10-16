@@ -1,10 +1,10 @@
 // An admin's view of one member's location log: every observation the service kept, newest first.
 //
 // The member map shows one pin and the one moment behind it. This is the rest: each sign-in city,
-// Slack profile and Slack zone change, and every answer to the check-in -- including "Ask me later"
-// and "Prefer not to say", which place nothing but show that the member was asked and what they
-// did. Admin only, like the route it reads (GET /lab/members/:id/locations): a colleague's movement
-// history is not roster data.
+// device city, Slack profile and Slack zone change, and every answer to the check-in -- including
+// "Ask me later" and "Prefer not to say", which place nothing but show that the member was asked
+// and what they did. Admin only, like the route it reads (GET /lab/members/:id/locations): a
+// colleague's movement history is not roster data.
 //
 // A small element that reads for itself, so the Time Availability view that hosts it needs no new
 // state on the app: give it a member and a base URL and it fetches when either changes.
@@ -42,6 +42,7 @@ const SOURCE_KEYS: Record<string, string> = {
   login_ip: "locationLog.source.loginIp",
   slack_profile: "locationLog.source.slackProfile",
   slack_timezone: "locationLog.source.slackTimezone",
+  device: "locationLog.source.device",
   admin: "locationLog.source.admin",
 };
 

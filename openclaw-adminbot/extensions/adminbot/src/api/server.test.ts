@@ -4803,6 +4803,12 @@ describe("POST /profile/device-location", () => {
       });
       expect(JSON.stringify(member)).not.toMatch(/44\.70|10\.62/u);
       expect(Object.keys(member).filter((key) => /lat|lon|coord/u.test(key))).toEqual([]);
+      // Logged in the location history too, at the same grain: the city and no position.
+      const history = mockFor(baseUrl).store.listMemberLocations("ada");
+      expect(history.filter((entry) => entry.source === "device")).toMatchObject([
+        { place_label: "Reggio Emilia", raw: "Reggio Emilia, Emilia-Romagna, Italy" },
+      ]);
+      expect(JSON.stringify(history)).not.toMatch(/44\.70|10\.62/u);
       for (const spy of logs) {
         expect(JSON.stringify(spy.mock.calls)).not.toMatch(/44\.70|10\.62/u);
       }

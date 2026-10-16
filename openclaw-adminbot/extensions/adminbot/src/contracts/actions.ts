@@ -2860,6 +2860,10 @@ export const adminBotLocationSources = [
   // zone their device sets, kept apart because it arrives on a different schedule (each day they
   // use AdminBot) and is the signal the VPN check compares an IP city against.
   "device_timezone",
+  // The city the member's browser reported (Auto visibility, reverse-geocoded on the server). The
+  // coordinates never reach this table: only the city, region and country GeoNames answered with.
+  // Logged on a change of city and otherwise once per UTC day, like `login_ip`.
+  "device",
   "admin",
 ] as const;
 

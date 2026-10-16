@@ -1870,6 +1870,7 @@ export const en: TranslationMap = {
       loginIp: "IP",
       slackProfile: "Slack profile",
       slackTimezone: "Slack time zone",
+      device: "Device",
       admin: "Admin",
     },
     outcome: {

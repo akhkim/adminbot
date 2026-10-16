@@ -8,6 +8,15 @@ import { locationLogRows, parseLocationLog, renderLocationLogRows } from "./loca
 const BODY = {
   locations: [
     {
+      id: "loc_5",
+      member_id: "m_synthetic",
+      observed_at: "2026-07-16T10:00:00.000Z",
+      source: "device",
+      raw: "Reggio Emilia, Emilia-Romagna, Italy",
+      place_label: "Reggio Emilia",
+      country: "Italy",
+    },
+    {
       id: "loc_4",
       member_id: "m_synthetic",
       observed_at: "2026-07-15T12:00:00.000Z",
@@ -51,6 +60,7 @@ const BODY = {
 describe("location log", () => {
   it("drops malformed rows and keeps the service's order", () => {
     expect(parseLocationLog(BODY).map((entry) => entry.id)).toEqual([
+      "loc_5",
       "loc_4",
       "loc_3",
       "loc_2",
@@ -61,6 +71,7 @@ describe("location log", () => {
 
   it("names each source, dates rows by their local day, and shows what a check-in was answered", () => {
     expect(locationLogRows(parseLocationLog(BODY))).toEqual([
+      { id: "loc_5", day: "2026-07-16", source: "Device", what: "Reggio Emilia, Italy" },
       { id: "loc_4", day: "2026-07-15", source: "Check-in", what: "Toronto, Canada" },
       {
         id: "loc_3",
@@ -78,7 +89,7 @@ describe("location log", () => {
   it("renders a list, or says there is nothing yet", () => {
     const container = document.createElement("div");
     render(renderLocationLogRows(locationLogRows(parseLocationLog(BODY))), container);
-    expect(container.querySelectorAll("li")).toHaveLength(4);
+    expect(container.querySelectorAll("li")).toHaveLength(5);
     expect(container.textContent).toContain("ask me later");
     render(renderLocationLogRows([]), container);
     expect(container.textContent).toContain("Nothing logged yet.");

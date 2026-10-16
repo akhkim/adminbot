@@ -202,6 +202,10 @@ of 1000 people or more within 30 km, preferring a town within 15 km over a neare
 a neighbourhood. Nothing is sent to a geocoding service, and the position is discarded once the
 city is known.
 
+Device readings are logged in the location history with `source: "device"`, on the same rule as
+the IP history: one row per change of city, otherwise one per UTC day. A row holds the city, region
+and country (stored as the country name) and never the coordinates.
+
 The table is installed like the IP database. `deploy/aurora/install-geonames.sh` runs on every
 Aurora deploy, keeps a table under 90 days old (`GEONAMES_MAX_AGE_DAYS`), otherwise runs
 `scripts/adminbot-geonames-refresh.sh <root>/geonames`, and appends `ADMINBOT_GEONAMES_DIR` to the
