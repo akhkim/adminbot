@@ -245,6 +245,18 @@ for collected in deadlines.json matches.json; do
 done
 
 # ---------------------------------------------------------------------------------------------
+# Sign-in geolocation: install the DB-IP City Lite database beside the releases and make sure the
+# env file names it, before the restart below reads that file. Never fails the deploy -- a missing
+# database leaves the service as it was -- but every failure is a ::warning:: on the run. A release
+# from before this script existed simply has nothing to run.
+if [[ -f "$new_release/deploy/aurora/install-geoip.sh" ]]; then
+  bash "$new_release/deploy/aurora/install-geoip.sh" --root "$ROOT" --release "$new_release" ||
+    printf '::warning title=IP geolocation::install-geoip.sh exited %s; sign-in geolocation may be off\n' "$?"
+else
+  echo "geoip: this release has no deploy/aurora/install-geoip.sh; skipped"
+fi
+
+# ---------------------------------------------------------------------------------------------
 # Swap. A cancelled job must not leave the units half-rewritten, so interrupts are ignored from
 # here until the swap (or its rollback) is complete.
 trap '' INT TERM HUP
