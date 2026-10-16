@@ -1,36 +1,52 @@
-// Where the lab is, as a card on the Dashboard and on Collaborate.
+// Where the lab is, as a card on the Dashboard and on Collaborate, and full screen behind it.
 //
-// Plain SVG in a viewBox, so it scales with its container by itself: unlike the Leaflet page there
-// is no tile layer to re-measure (no invalidateSize) after the card was in a hidden tab.
+// Two layers over one box. The land is SVG: the Natural Earth coastline, pre-projected to Equal
+// Earth by scripts/generate-world-outline.mjs and drawn under a transform, so zooming and panning
+// only rewrite one attribute and the strokes stay a hairline at any scale. The markers, their
+// labels and the tooltip are HTML positioned in CSS pixels over it -- buttons, so every city and
+// cluster is reachable by keyboard and screen reader, and sized in pixels, so a city of one is a
+// small dot at every zoom instead of a blob that grows with the map.
 //
-// An equirectangular plot: longitude maps linearly to x, latitude to y, over a real coastline.
+// What is drawn is recomputed for the box's pixel size and the current zoom (member-map-layout.ts):
+// cities that would touch merge into a cluster showing the total, labels go to the busiest places
+// first and only where they fit. At world scale Zürich and Tübingen are one marker; zoomed into
+// Europe they separate.
 //
-// The coastline is Natural Earth 1:110m, pre-projected into this viewBox by
-// scripts/generate-world-outline.mjs and committed as a 44kB path. Bundling it rather than pulling
-// tiles keeps the card free of the network dependency the standalone Leaflet page carries, and
-// pre-projecting keeps the browser from doing the arithmetic on every render. A graticule alone was
-// the first attempt and it was unreadable: without continents nobody can tell which dot is which,
-// and the card is meant to be glanceable.
+// The list is not a fallback for the map; the two answer different questions. The plot shows
+// spread, the list shows rank. Neither alone is the answer to "where is the lab".
 //
-// The list is not a fallback for the map; the two answer different questions. The plot shows spread
-// — how far apart the lab is, and which timezones it straddles. The list shows rank — where most
-// people actually are. Neither alone is the answer to "where is the lab".
+// Where a pin came from ("IP today", "stated 3d ago") is an admin's question, not a reader's, so
+// the default view shows a name and a city and nothing else. An admin turns on "How we placed
+// people" to see the service's own phrase beside each name.
 import { html, LitElement, nothing, svg } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
 import type { MemberMap, MemberMapMember, MemberMapPlace } from "../data/member-map.ts";
-import { layoutLabels, type LabelAnchor } from "./member-map-labels.ts";
+import {
+  clusterPoints,
+  layoutLabels,
+  type Cluster,
+  type PlacedLabel,
+  type RadiusScale,
+} from "./member-map-layout.ts";
+import {
+  clampViewport,
+  fitViewport,
+  lerpViewport,
+  MAX_ZOOM,
+  NORTH,
+  project,
+  SOUTH,
+  VIEW_HEIGHT,
+  VIEW_WIDTH,
+  viewportForBounds,
+  zoomAt,
+  type Size,
+  type Viewport,
+} from "./member-map-projection.ts";
 
-// The projection data/world-outline.ts was generated for. Declared here rather than imported so the
-// 43kB coastline stays out of the console's first load; member-map.test.ts asserts the two match,
-// since a mismatch would slide every dot off the coastline it belongs on.
-const VIEW_WIDTH = 360;
-const VIEW_HEIGHT = 180;
-// Latitude is clipped well short of the poles: nobody in the gazetteer lives past these, and the
-// full ±90 range wastes a third of the height on empty ice.
-const LAT_LIMIT = 72;
-
-// The coastline arrives on its own: dots, grid and list draw at once and the land fills in under
-// them when the chunk lands. A failed fetch is forgotten so the next element to connect retries.
+// The coastline arrives on its own: markers and list draw at once and the land fills in under them
+// when the chunk lands. A failed fetch is forgotten so the next element to connect retries.
 let worldOutlinePath: string | null = null;
 let worldOutlineLoad: Promise<void> | undefined;
 
@@ -46,105 +62,104 @@ export function loadWorldOutline(): Promise<void> {
   return worldOutlineLoad;
 }
 
-const MIN_RADIUS = 3;
-const MAX_RADIUS = 10;
+// A faint graticule in map units: meridians curve under Equal Earth, parallels stay straight.
+function graticulePath(): string {
+  const parts: string[] = [];
+  for (let lon = -150; lon <= 150; lon += 30) {
+    const points: string[] = [];
+    for (let lat = SOUTH; lat <= NORTH; lat += 5) {
+      const { x, y } = project(lon, Math.min(lat, NORTH));
+      points.push(`${x.toFixed(1)} ${y.toFixed(1)}`);
+    }
+    parts.push(`M${points.join("L")}`);
+  }
+  for (const lat of [-30, 0, 30, 60]) {
+    const west = project(-180, lat);
+    const east = project(180, lat);
+    parts.push(
+      `M${west.x.toFixed(1)} ${west.y.toFixed(1)}L${east.x.toFixed(1)} ${east.y.toFixed(1)}`,
+    );
+  }
+  return parts.join("");
+}
+
+const GRATICULE = graticulePath();
 
 // How many cities the list names. Collapsed it is a summary; expanded there is room for the roster
 // of places, which is most of what the gazetteer holds.
 const LIST_LIMIT = 6;
-const LIST_LIMIT_EXPANDED = 24;
+const LIST_LIMIT_EXPANDED = 60;
 
-function projectX(lon: number): number {
-  return ((lon + 180) / 360) * VIEW_WIDTH;
-}
-
-function projectY(lat: number): number {
-  const clamped = Math.max(-LAT_LIMIT, Math.min(LAT_LIMIT, lat));
-  return ((LAT_LIMIT - clamped) / (LAT_LIMIT * 2)) * VIEW_HEIGHT;
-}
-
-/**
- * Dot radius by headcount, on a square-root scale.
- *
- * Area is what the eye compares, so scaling the radius linearly would make a city of ten look a
- * hundred times the size of a city of one. Square root keeps area proportional to headcount.
- */
-function radiusFor(count: number, busiest: number): number {
-  if (busiest <= 1) {
-    return MIN_RADIUS;
-  }
-  const share = Math.sqrt(Math.max(count, 1)) / Math.sqrt(busiest);
-  return MIN_RADIUS + share * (MAX_RADIUS - MIN_RADIUS);
-}
+// Faces per city row and people per tooltip before "+N more".
+const AVATAR_LIMIT = 3;
+const TOOLTIP_PEOPLE = 4;
+const TOOLTIP_PLACES = 5;
+// Names an aria-label reads out before "+N more": enough to be useful, short enough to listen to.
+const ARIA_NAMES = 8;
 
 const DAY_MS = 86_400_000;
 
-function startOfLocalDay(time: number): number {
+function startOfUtcDay(time: number): number {
   const day = new Date(time);
-  day.setHours(0, 0, 0, 0);
-  return day.getTime();
+  return Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate());
 }
 
 type AgeKeys = { undated: string; today: string; yesterday: string; daysAgo: string };
 
-const SIGN_IN_AGE: AgeKeys = {
-  undated: "dashboard.memberMap.fromSignIn",
-  today: "dashboard.memberMap.fromSignInToday",
-  yesterday: "dashboard.memberMap.fromSignInYesterday",
-  daysAgo: "dashboard.memberMap.fromSignInDaysAgo",
+const IP_AGE: AgeKeys = {
+  undated: "dashboard.memberMap.sourceIp",
+  today: "dashboard.memberMap.sourceIpToday",
+  yesterday: "dashboard.memberMap.sourceIpYesterday",
+  daysAgo: "dashboard.memberMap.sourceIpDaysAgo",
 };
 
-const CHECKIN_AGE: AgeKeys = {
-  undated: "dashboard.memberMap.fromCheckin",
-  today: "dashboard.memberMap.fromCheckinToday",
-  yesterday: "dashboard.memberMap.fromCheckinYesterday",
-  daysAgo: "dashboard.memberMap.fromCheckinDaysAgo",
+const STATED_AGE: AgeKeys = {
+  undated: "dashboard.memberMap.sourceStated",
+  today: "dashboard.memberMap.sourceStatedToday",
+  yesterday: "dashboard.memberMap.sourceStatedYesterday",
+  daysAgo: "dashboard.memberMap.sourceStatedDaysAgo",
 };
 
-/** "from sign-in today", "stated yesterday", "… 5 days ago", by the viewer's own calendar. */
+// UTC days, as the service counts them, so the fallback agrees with the service's own phrase.
 function agePhrase(at: string | undefined, now: number, keys: AgeKeys): string {
   const seen = at ? Date.parse(at) : Number.NaN;
   if (Number.isNaN(seen)) {
     return t(keys.undated);
   }
-  const days = Math.max(0, Math.round((startOfLocalDay(now) - startOfLocalDay(seen)) / DAY_MS));
+  const days = Math.max(0, Math.round((startOfUtcDay(now) - startOfUtcDay(seen)) / DAY_MS));
   if (days === 0) {
     return t(keys.today);
   }
   return days === 1 ? t(keys.yesterday) : t(keys.daysAgo, { count: String(days) });
 }
 
-function sourcePhrase(member: MemberMapMember, now: number): string | undefined {
+// For a service too old to send `source_label`: the same vocabulary, worked out from the fields.
+function derivedSource(member: MemberMapMember, now: number): string | undefined {
+  const timezone = member.precision === "timezone";
   switch (member.source) {
     case "login":
-      return agePhrase(member.located_at ?? member.last_login_at, now, SIGN_IN_AGE);
+      return agePhrase(
+        member.ip_observed_at ?? member.located_at ?? member.last_login_at,
+        now,
+        IP_AGE,
+      );
     case "checkin":
-      return agePhrase(member.located_at, now, CHECKIN_AGE);
+      return agePhrase(member.located_at, now, STATED_AGE);
     case "roster":
-      return member.precision === "timezone"
-        ? t("dashboard.memberMap.fromProfileTimezone")
-        : t("dashboard.memberMap.fromProfile");
+      return t(
+        timezone
+          ? "dashboard.memberMap.sourceProfileTimezone"
+          : "dashboard.memberMap.sourceProfile",
+      );
     case "slack":
-      return member.precision === "timezone"
-        ? t("dashboard.memberMap.fromSlackTimezone")
-        : t("dashboard.memberMap.fromSlack");
+      return t(
+        timezone ? "dashboard.memberMap.sourceSlackTimezone" : "dashboard.memberMap.sourceSlack",
+      );
+    case "device":
+      return t("dashboard.memberMap.sourceDevice");
     default:
       return undefined;
   }
-}
-
-/**
- * Where a named member is and what says so -- "San Francisco · from sign-in today", "Toronto ·
- * from profile" -- so a pin from a sign-in an hour ago reads differently from a city typed into a
- * profile last year. Only ever a city and one moment: the service sends no coordinates or history.
- */
-export function memberDetail(
-  member: MemberMapMember,
-  place: Pick<MemberMapPlace, "label">,
-  now: number = Date.now(),
-): string {
-  const parts = [place.label, sourcePhrase(member, now), mismatchPhrase(member)];
-  return parts.filter(Boolean).join(" · ");
 }
 
 /** "Slack time zone Europe/Berlin is 6 h off": the pin stays put, but an admin sees the doubt. */
@@ -155,6 +170,27 @@ function mismatchPhrase(member: MemberMapMember): string | undefined {
   }
   const hours = String(Math.round(mismatch.hours * 2) / 2);
   return t("dashboard.memberMap.tzMismatch", { zone: mismatch.slack_tz, hours });
+}
+
+/**
+ * How a member was placed and how fresh it is, for the admin-only detail. The service's own
+ * `source_label` wins verbatim; only an older service that sends none gets a phrase worked out
+ * here. Never shown unless an admin asks for it.
+ */
+export function memberSource(
+  member: MemberMapMember,
+  now: number = Date.now(),
+): string | undefined {
+  const base =
+    member.source_label ??
+    [
+      derivedSource(member, now),
+      member.ip_ignored === "suspected_vpn" ? t("dashboard.memberMap.sourceIpIgnored") : undefined,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  const parts = [base, mismatchPhrase(member)].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
 /** "Updated just now" / "Updated 4 min ago" / "Updated 2 h ago". */
@@ -176,269 +212,326 @@ function placeWhere(place: MemberMapPlace): string {
   return place.country ? `${place.label}, ${place.country}` : place.label;
 }
 
-function placeTitle(place: MemberMapPlace, now: number): string {
-  const where = placeWhere(place);
-  // An admin gets names; everyone else gets the headcount, which is all the service sent.
-  const names = place.members
-    ?.map((member) => `${member.name} (${memberDetail(member, place, now)})`)
-    .join(", ");
-  return names
-    ? `${where} — ${names}`
-    : t("dashboard.memberMap.placeCount", { place: where, count: String(place.count) });
-}
-
-// Label sizes in viewBox units, set inline on each <text> so the collision pass and the drawing use
-// the same number (a stylesheet rule would win over a presentation attribute and could drift). The
-// full-screen plot is drawn about three times larger, so its labels can be smaller in viewBox units
-// and still read at the same size -- and then far more of them fit.
-const PLOT_LABELS = {
-  card: { fontSize: 5, strokeWidth: 1.6, budget: 6 },
-  dialog: { fontSize: 3, strokeWidth: 1, budget: 16 },
-} as const;
-
-// The spot a label shows at on hover when the collision pass found it no room: above its dot, kept
-// inside the plot at either edge.
-function hoverAnchor(x: number): LabelAnchor {
-  return x > VIEW_WIDTH - 40 ? "end" : x < 40 ? "start" : "middle";
+function seenAt(member: MemberMapMember): string | undefined {
+  return member.ip_observed_at ?? member.last_login_at;
 }
 
 /**
- * Which place is picked out, and how to change it. The list and the pins share one highlight: point
- * at "Toronto" in the list and its pin lifts while the rest dim, point at a pin and its row lights.
- */
-interface PlaceFocus {
-  active?: string;
-  /** The place a click or tap picked, which stays lit after the pointer or focus moves on. */
-  picked?: string;
-  onFocus?: (key: string | undefined) => void;
-  onPick?: (key: string) => void;
-  now: number;
-}
-
-function renderPlot(map: MemberMap, size: keyof typeof PLOT_LABELS, focus: PlaceFocus) {
-  const busiest = Math.max(...map.places.map((place) => place.count), 1);
-  const style = PLOT_LABELS[size];
-  const points = map.places.map((place) => ({
-    key: place.key,
-    label: place.label,
-    x: projectX(place.lon),
-    y: projectY(place.lat),
-    r: radiusFor(place.count, busiest),
-  }));
-  // `places` is sorted busiest first, so the biggest clusters get first pick of the room.
-  const labels = layoutLabels(points, {
-    fontSize: style.fontSize,
-    strokeWidth: style.strokeWidth,
-    width: VIEW_WIDTH,
-    height: VIEW_HEIGHT,
-    budget: style.budget,
-  });
-  const labelStyle = `font-size: ${style.fontSize}px; stroke-width: ${style.strokeWidth}px`;
-  const aria = t("dashboard.memberMap.plotAria", {
-    cities: String(map.places.length),
-    count: String(map.counts.placed),
-  });
-  const active = focus.active && map.places.some((place) => place.key === focus.active);
-  return svg`
-    <svg
-      class=${`member-map__plot${active ? " member-map__plot--focus" : ""}`}
-      viewBox="0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}"
-      role="img"
-      aria-label=${aria}
-    >
-      <title>${aria}</title>
-      <rect class="member-map__ocean" x="0" y="0" width=${VIEW_WIDTH} height=${VIEW_HEIGHT}></rect>
-      ${[-120, -60, 0, 60, 120].map(
-        (lon) => svg`
-          <line
-            class="member-map__grid"
-            x1=${projectX(lon)}
-            x2=${projectX(lon)}
-            y1="0"
-            y2=${VIEW_HEIGHT}
-          ></line>
-        `,
-      )}
-      ${[-40, 0, 40].map(
-        (lat) => svg`
-          <line
-            class="member-map__grid"
-            x1="0"
-            x2=${VIEW_WIDTH}
-            y1=${projectY(lat)}
-            y2=${projectY(lat)}
-          ></line>
-        `,
-      )}
-      ${worldOutlinePath ? svg`<path class="member-map__land" d=${worldOutlinePath}></path>` : nothing}
-      ${map.places.map((place, index) => {
-        const { x, y, r } = points[index]!;
-        const label = labels.get(place.key);
-        const classes = [
-          "member-map__place",
-          place.approximate ? "member-map__place--approximate" : "",
-          place.key === focus.active ? "member-map__place--active" : "",
-        ]
-          .filter(Boolean)
-          .join(" ");
-        return svg`
-          <g
-            class=${classes}
-            data-place=${place.key}
-            @mouseenter=${() => focus.onFocus?.(place.key)}
-            @mouseleave=${() => focus.onFocus?.(undefined)}
-          >
-            <circle class="member-map__halo" cx=${x} cy=${y} r=${r + 2.5}></circle>
-            <circle class="member-map__dot" cx=${x} cy=${y} r=${r}>
-              <title>${placeTitle(place, focus.now)}</title>
-            </circle>
-            ${
-              label
-                ? svg`<text
-                    class="member-map__label"
-                    style=${labelStyle}
-                    x=${label.x}
-                    y=${label.y}
-                    text-anchor=${label.anchor}
-                  >${place.label}</text>`
-                : svg`<text
-                    class="member-map__label member-map__label--hover"
-                    style=${labelStyle}
-                    x=${x}
-                    y=${y - r - 3.5}
-                    text-anchor=${hoverAnchor(x)}
-                  >${place.label}</text>`
-            }
-          </g>
-        `;
-      })}
-    </svg>
-  `;
-}
-
-// How many people a pin's popover names before it says "+N more"; the list row has the rest.
-const POPOVER_NAMES = 4;
-
-function renderPersonLine(member: MemberMapMember, place: MemberMapPlace, now: number) {
-  return html`<li>
-    <span class="member-map__name">${member.name}</span>
-    <span class="member-map__name-detail">${memberDetail(member, place, now)}</span>
-  </li>`;
-}
-
-/**
- * The small card over the picked pin: the city, its headcount and, for an admin, who is there and
- * what put them there. It is decoration over the plot -- `pointer-events: none` -- so it never steals
- * the hover from the pin underneath it, and everything in it is also in the list and the dot title.
- */
-function renderPopover(map: MemberMap, key: string, now: number) {
-  const place = map.places.find((candidate) => candidate.key === key);
-  if (!place) {
-    return nothing;
-  }
-  const left = (projectX(place.lon) / VIEW_WIDTH) * 100;
-  const top = (projectY(place.lat) / VIEW_HEIGHT) * 100;
-  const members = place.members ?? [];
-  const shown = members.slice(0, POPOVER_NAMES);
-  const classes = [
-    "member-map__popover",
-    left > 70 ? "member-map__popover--start" : left < 30 ? "member-map__popover--end" : "",
-    top < 40 ? "member-map__popover--below" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return html`
-    <div
-      class=${classes}
-      style="left: ${left.toFixed(2)}%; top: ${top.toFixed(2)}%"
-      data-testid="member-map-popover"
-      aria-hidden="true"
-    >
-      <p class="member-map__popover-head">
-        <span class="member-map__popover-title">${placeWhere(place)}</span>
-        <span class="member-map__popover-count">${place.count}</span>
-      </p>
-      ${shown.length > 0
-        ? html`<ul class="member-map__people">
-            ${shown.map((member) => renderPersonLine(member, place, now))}
-          </ul>`
-        : nothing}
-      ${members.length > shown.length
-        ? html`<p class="member-map__popover-more">
-            ${t("dashboard.more", { count: String(members.length - shown.length) })}
-          </p>`
-        : nothing}
-    </div>
-  `;
-}
-
-// How many faces a city row shows before folding the rest into "…".
-const AVATAR_LIMIT = 3;
-
-/**
- * The `AVATAR_LIMIT` most recently logged-in members of a place, most recent first.
+ * A place's members, most recently seen first, for the faces and the first names shown.
  *
- * Display-only ordering: it never touches `place.members` itself, which stays alphabetical for
- * `placeTitle`'s tooltip and for whatever the backend originally sorted it by. A member with no
- * `last_login_at` sorts after everyone who has one, rather than colliding at some fake epoch.
+ * Display-only ordering: `place.members` itself is untouched. Someone never seen sorts after
+ * everyone who has been, rather than colliding at some fake epoch.
  */
-function recentActiveMembers(place: MemberMapPlace, limit = AVATAR_LIMIT) {
-  const members = place.members ?? [];
-  return members
+function recentActiveMembers(place: MemberMapPlace, limit = AVATAR_LIMIT): MemberMapMember[] {
+  return (place.members ?? [])
     .toSorted((left, right) => {
-      if (!left.last_login_at && !right.last_login_at) {
-        return 0;
+      const a = seenAt(left);
+      const b = seenAt(right);
+      if (!a || !b) {
+        return a ? -1 : b ? 1 : 0;
       }
-      if (!left.last_login_at) {
-        return 1;
-      }
-      if (!right.last_login_at) {
-        return -1;
-      }
-      return right.last_login_at.localeCompare(left.last_login_at);
+      return b.localeCompare(a);
     })
     .slice(0, limit);
 }
 
+function namesPhrase(names: string[], total: number): string {
+  const shown = names.slice(0, ARIA_NAMES).join(", ");
+  return total > ARIA_NAMES
+    ? `${shown} ${t("dashboard.more", { count: String(total - ARIA_NAMES) })}`
+    : shown;
+}
+
+// --- Scene: what one box draws at its size and zoom ---
+
+type StageKind = "card" | "dialog";
+
+type Marker = Cluster & { places: MemberMapPlace[] };
+
+type Scene = {
+  kind: StageKind;
+  size: Size;
+  view: Viewport;
+  markers: Marker[];
+  labels: Map<string, PlacedLabel>;
+  fontSize: number;
+};
+
+// Without a ResizeObserver (the test DOM) the box cannot be measured; these stand in.
+const FALLBACK_SIZE: Record<StageKind, Size> = {
+  card: { width: 720, height: Math.round((720 * VIEW_HEIGHT) / VIEW_WIDTH) },
+  dialog: { width: 1200, height: Math.round((1200 * VIEW_HEIGHT) / VIEW_WIDTH) },
+};
+
+const LABEL_FONT: Record<StageKind, number> = { card: 11, dialog: 12 };
+const LABEL_BUDGET: Record<StageKind, number> = { card: 8, dialog: 40 };
+
+// Markers merge closer than this on a touch screen or a phone-sized box, so no two share a
+// fingertip and each keeps its 40px tap target to itself.
+const TOUCH_SEPARATION = 40;
+
+const projectedCache = new WeakMap<MemberMap, Map<string, { x: number; y: number }>>();
+
+function projected(map: MemberMap): Map<string, { x: number; y: number }> {
+  let cached = projectedCache.get(map);
+  if (!cached) {
+    cached = new Map(map.places.map((place) => [place.key, project(place.lon, place.lat)]));
+    projectedCache.set(map, cached);
+  }
+  return cached;
+}
+
+function coarsePointer(): boolean {
+  return typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 /**
- * Circular faces for a place's most recently active members, admin/full mode only (`members` is
- * absent in `summary` mode, so this renders nothing for anyone who cannot already see names).
+ * Marker sizes for a box this wide: the busiest single city gets `max`, a city of one `min`, area
+ * proportional between. A wider box gets bigger markers, up to a cap, so the card and the full
+ * screen look like the same map rather than one of them shouting.
+ */
+export function radiusScale(width: number, reference: number): RadiusScale {
+  const max = Math.min(18, Math.max(9, width / 52));
+  return { min: Math.max(3, max * 0.26), max, reference, clusterMin: Math.min(max, 9) };
+}
+
+function markerLabel(marker: Marker): string {
+  const lead = marker.places[0]!;
+  return marker.places.length === 1
+    ? lead.label
+    : t("dashboard.memberMap.clusterLabel", {
+        place: lead.label,
+        count: String(marker.places.length - 1),
+      });
+}
+
+function buildScene(map: MemberMap, kind: StageKind, size: Size, view: Viewport): Scene {
+  const positions = projected(map);
+  const byKey = new Map(map.places.map((place) => [place.key, place]));
+  const points = map.places.map((place) => {
+    const at = positions.get(place.key)!;
+    return {
+      key: place.key,
+      label: place.label,
+      count: place.count,
+      x: at.x * view.k + view.x,
+      y: at.y * view.k + view.y,
+    };
+  });
+  const reference = Math.max(...map.places.map((place) => place.count), 1);
+  const scale = radiusScale(size.width, reference);
+  const touch = coarsePointer() || size.width < 480;
+  const clusters = clusterPoints(points, {
+    scale,
+    gap: 3,
+    minSeparation: touch ? TOUCH_SEPARATION : 0,
+  });
+  const markers = clusters
+    // Off the box entirely once zoomed in: not drawn, and not a tab stop nobody can see.
+    .filter(
+      (cluster) =>
+        cluster.x >= -cluster.r &&
+        cluster.y >= -cluster.r &&
+        cluster.x <= size.width + cluster.r &&
+        cluster.y <= size.height + cluster.r,
+    )
+    .map((cluster) => ({ ...cluster, places: cluster.keys.map((key) => byKey.get(key)!) }));
+  const fontSize = LABEL_FONT[kind];
+  const labels = layoutLabels(
+    markers.map((marker) => ({
+      key: marker.key,
+      text: markerLabel(marker),
+      x: marker.x,
+      y: marker.y,
+      r: marker.r,
+    })),
+    { fontSize, width: size.width, height: size.height, budget: LABEL_BUDGET[kind] },
+  );
+  return { kind, size, view, markers, labels, fontSize };
+}
+
+function markerAria(marker: Marker): string {
+  const lead = marker.places[0]!;
+  if (marker.places.length > 1) {
+    return t("dashboard.memberMap.clusterAria", {
+      count: String(marker.count),
+      place: lead.label,
+      more: String(marker.places.length - 1),
+    });
+  }
+  const members = lead.members ?? [];
+  if (members.length === 0) {
+    return t("dashboard.memberMap.placeCount", {
+      place: placeWhere(lead),
+      count: String(lead.count),
+    });
+  }
+  return t("dashboard.memberMap.placeAria", {
+    place: placeWhere(lead),
+    count: String(lead.count),
+    names: namesPhrase(
+      members.map((member) => member.name),
+      members.length,
+    ),
+  });
+}
+
+// --- Pieces shared by the stage and the list ---
+
+function renderAvatar(member: MemberMapMember) {
+  return member.avatar_url
+    ? html`<img class="member-map__avatar" src=${member.avatar_url} alt="" title=${member.name} />`
+    : html`<span class="member-map__avatar member-map__avatar--fallback" title=${member.name}
+        >${member.name.slice(0, 1).toUpperCase()}</span
+      >`;
+}
+
+/**
+ * Faces for a place's most recently active members, admin/full mode only (`members` is absent in
+ * `summary` mode, so this renders nothing for anyone who cannot already see names).
  */
 function renderAvatars(place: MemberMapPlace) {
   if (!place.members || place.members.length === 0) {
     return nothing;
   }
-  const recent = recentActiveMembers(place);
   return html`
     <span class="member-map__avatars">
-      ${recent.map((member) =>
-        member.avatar_url
-          ? html`<img
-              class="member-map__avatar"
-              src=${member.avatar_url}
-              alt=""
-              title=${member.name}
-            />`
-          : html`<span class="member-map__avatar member-map__avatar--fallback" title=${member.name}
-              >${member.name.slice(0, 1).toUpperCase()}</span
-            >`,
-      )}
+      ${recentActiveMembers(place).map(renderAvatar)}
       ${place.members.length > AVATAR_LIMIT
-        ? html`<span class="member-map__avatar-more">…</span>`
+        ? html`<span class="member-map__avatar-more">+${place.members.length - AVATAR_LIMIT}</span>`
         : nothing}
     </span>
   `;
 }
 
-interface ListOptions extends PlaceFocus {
-  expanded: boolean;
-  expandedPlaces: ReadonlySet<string>;
-  onToggleExpand: (key: string) => void;
+function renderPersonLine(member: MemberMapMember, sources: boolean, now: number) {
+  const source = sources ? memberSource(member, now) : undefined;
+  return html`<li>
+    <span class="member-map__name">${member.name}</span>
+    ${source
+      ? html`<span class="member-map__source" data-testid="member-map-source">${source}</span>`
+      : nothing}
+  </li>`;
 }
 
 /**
- * The cities with their counts. Each row is a button: hovering, focusing or tapping it lifts that
- * city's pin, so the list doubles as the map's index on a phone, where pins are too small to aim at.
+ * Which place is picked out, and how to change it. The list and the markers share one highlight:
+ * point at "Toronto" in the list and its marker lifts while the rest dim, and the reverse.
+ */
+interface PlaceFocus {
+  /** The place lit by hovering or focusing its row: transient. */
+  active?: string;
+  /** The place a click or tap picked, which stays lit after the pointer or focus moves on. */
+  picked?: string;
+  sources: boolean;
+  now: number;
+}
+
+/**
+ * The card over a marker: the city (or the cluster's places), its headcount and, for an admin, the
+ * first few faces and names. Decoration only -- `pointer-events: none`, `aria-hidden` -- since the
+ * marker's own label already says all of it to a screen reader, and the list says it to everyone.
+ */
+/**
+ * `only` narrows a merged marker's tooltip to one of its places: pointing at Tübingen in the list
+ * lights the cluster it sits in, but the question asked was about Tübingen.
+ */
+function renderTooltip(
+  marker: Marker,
+  scene: Scene,
+  focus: PlaceFocus,
+  only?: Marker["places"][number],
+) {
+  const { width, height } = scene.size;
+  const boxWidth = Math.min(248, width - 16);
+  const left = Math.min(Math.max(marker.x - boxWidth / 2, 8), width - boxWidth - 8);
+  const above = marker.y > height * 0.45;
+  const offset = marker.r + 10;
+  const position = above
+    ? `bottom: ${(height - marker.y + offset).toFixed(1)}px`
+    : `top: ${(marker.y + offset).toFixed(1)}px`;
+  const lead = only ?? marker.places[0]!;
+  const cluster = !only && marker.places.length > 1;
+  const count = only ? only.count : marker.count;
+  const people = cluster ? [] : recentActiveMembers(lead, TOOLTIP_PEOPLE);
+  const total = lead.members?.length ?? 0;
+  return html`
+    <div
+      class=${`member-map__popover${above ? " member-map__popover--above" : ""}`}
+      style="left: ${left.toFixed(1)}px; width: ${boxWidth}px; ${position}"
+      data-testid="member-map-popover"
+      aria-hidden="true"
+    >
+      <p class="member-map__popover-head">
+        <span class="member-map__popover-title"
+          >${cluster
+            ? t("dashboard.memberMap.clusterTitle", {
+                place: lead.label,
+                count: String(marker.places.length - 1),
+              })
+            : placeWhere(lead)}</span
+        >
+        <span class="member-map__count">${count}</span>
+      </p>
+      ${cluster
+        ? html`<ul class="member-map__popover-places">
+              ${marker.places
+                .slice(0, TOOLTIP_PLACES)
+                .map(
+                  (place) =>
+                    html`<li>
+                      <span>${place.label}</span
+                      ><span class="member-map__count-plain">${place.count}</span>
+                    </li>`,
+                )}
+            </ul>
+            ${marker.places.length > TOOLTIP_PLACES
+              ? html`<p class="member-map__popover-more">
+                  ${t("dashboard.more", { count: String(marker.places.length - TOOLTIP_PLACES) })}
+                </p>`
+              : nothing}
+            <p class="member-map__popover-hint">${t("dashboard.memberMap.clusterHint")}</p>`
+        : people.length > 0
+          ? html`<ul class="member-map__people member-map__people--faces">
+                ${people.map(
+                  (member) => html`<li class="member-map__person">
+                    ${renderAvatar(member)}
+                    <span class="member-map__person-text">
+                      <span class="member-map__name">${member.name}</span>
+                      ${focus.sources && memberSource(member, focus.now)
+                        ? html`<span class="member-map__source" data-testid="member-map-source"
+                            >${memberSource(member, focus.now)}</span
+                          >`
+                        : nothing}
+                    </span>
+                  </li>`,
+                )}
+              </ul>
+              ${total > people.length
+                ? html`<p class="member-map__popover-more">
+                    ${t("dashboard.more", { count: String(total - people.length) })}
+                  </p>`
+                : nothing}`
+          : nothing}
+    </div>
+  `;
+}
+
+type ListOptions = PlaceFocus & {
+  expanded: boolean;
+  expandedPlaces: ReadonlySet<string>;
+  onToggleExpand: (key: string) => void;
+  onFocus: (key: string | undefined) => void;
+  onPick: (key: string) => void;
+};
+
+/**
+ * The cities with their counts. Each row is a button: hovering or focusing it lifts that city's
+ * marker, and picking it keeps it lit -- and, full screen, flies the map to it.
  */
 function renderList(map: MemberMap, options: ListOptions) {
   const shown = map.places.slice(0, options.expanded ? LIST_LIMIT_EXPANDED : LIST_LIMIT);
@@ -449,31 +542,32 @@ function renderList(map: MemberMap, options: ListOptions) {
         const memberCount = place.members?.length ?? 0;
         const canExpand = memberCount > AVATAR_LIMIT;
         const isPlaceExpanded = canExpand && options.expandedPlaces.has(place.key);
-        const isActive = options.active === place.key;
+        const isActive = (options.active ?? options.picked) === place.key;
         return html`
           <li
             class=${`member-map__row${isActive ? " member-map__row--active" : ""}`}
             data-place=${place.key}
-            @mouseenter=${() => options.onFocus?.(place.key)}
-            @mouseleave=${() => options.onFocus?.(undefined)}
+            @mouseenter=${() => options.onFocus(place.key)}
+            @mouseleave=${() => options.onFocus(undefined)}
           >
             <button
               type="button"
               class="member-map__row-top"
               aria-pressed=${options.picked === place.key ? "true" : "false"}
-              title=${placeTitle(place, options.now)}
-              @focus=${() => options.onFocus?.(place.key)}
-              @blur=${() => options.onFocus?.(undefined)}
-              @click=${() => options.onPick?.(place.key)}
+              @focus=${() => options.onFocus(place.key)}
+              @blur=${() => options.onFocus(undefined)}
+              @click=${() => options.onPick(place.key)}
             >
               <span class="member-map__row-main">
                 <span
                   class=${`member-map__swatch${place.approximate ? " member-map__swatch--country" : ""}`}
                 ></span>
                 <span class="member-map__row-label">${place.label}</span>
-                ${renderAvatars(place)}
               </span>
-              <span class="member-map__row-count">${place.count}</span>
+              <span class="member-map__row-side">
+                ${renderAvatars(place)}
+                <span class="member-map__row-count">${place.count}</span>
+              </span>
             </button>
             ${canExpand
               ? html`
@@ -490,7 +584,7 @@ function renderList(map: MemberMap, options: ListOptions) {
                   ${isPlaceExpanded && place.members
                     ? html`<ul class="member-map__people member-map__name-list">
                         ${place.members.map((member) =>
-                          renderPersonLine(member, place, options.now),
+                          renderPersonLine(member, options.sources, options.now),
                         )}
                       </ul>`
                     : nothing}
@@ -508,14 +602,38 @@ function renderList(map: MemberMap, options: ListOptions) {
   `;
 }
 
-/** Legend, then the small print: who could not be placed, and whose IP database placed the rest. */
-function renderFoot(map: MemberMap) {
+function hasSourceDetail(map: MemberMap): boolean {
+  return (
+    map.mode === "full" &&
+    map.places.some((place) =>
+      (place.members ?? []).some(
+        (member) =>
+          member.source_label !== undefined ||
+          member.source !== undefined ||
+          member.ip_ignored !== undefined ||
+          member.tz_mismatch !== undefined,
+      ),
+    )
+  );
+}
+
+/**
+ * Legend, then the small print: who could not be placed, the provider credit, and for an admin the
+ * "How we placed people" switch with what sits behind it.
+ */
+function renderFoot(map: MemberMap, sources: boolean, onToggleSources: () => void) {
+  const canExplain = hasSourceDetail(map) || map.ipGeolocation !== undefined;
   return html`
     <div class="member-map__foot">
       <ul class="member-map__legend">
         <li>
-          <span class="member-map__key member-map__key--city"></span>${t(
-            "dashboard.memberMap.legendCity",
+          <span class="member-map__key member-map__key--size"></span>${t(
+            "dashboard.memberMap.legendSize",
+          )}
+        </li>
+        <li>
+          <span class="member-map__key member-map__key--cluster"></span>${t(
+            "dashboard.memberMap.legendCluster",
           )}
         </li>
         ${map.places.some((place) => place.approximate)
@@ -528,30 +646,46 @@ function renderFoot(map: MemberMap) {
               )}
             </li>`
           : nothing}
-        <li>
-          <span class="member-map__key member-map__key--size"></span>${t(
-            "dashboard.memberMap.legendSize",
-          )}
-        </li>
       </ul>
-      ${map.unplaced > 0
-        ? html`<p class="member-map__note" data-testid="member-map-unplaced">
-            ${t("dashboard.memberMap.unplaced", { count: String(map.unplaced) })}
-          </p>`
-        : nothing}
-      ${map.ipGeolocation
-        ? html`<p class="member-map__note" data-testid="member-map-ip-geolocation">
-            ${map.ipGeolocation.active
-              ? t("dashboard.memberMap.ipGeoActive", { provider: map.ipGeolocation.provider })
-              : t("dashboard.memberMap.ipGeoInactive")}
-          </p>`
-        : nothing}
-      ${map.attribution
-        ? html`<p class="member-map__note member-map__credit" data-testid="member-map-attribution">
-            <a href=${map.attribution.url} target="_blank" rel="noopener noreferrer"
-              >${map.attribution.text}</a
+      <div class="member-map__notes">
+        ${map.unplaced > 0
+          ? html`<p class="member-map__note" data-testid="member-map-unplaced">
+              ${t("dashboard.memberMap.unplaced", { count: String(map.unplaced) })}
+            </p>`
+          : nothing}
+        ${map.attribution
+          ? html`<p
+              class="member-map__note member-map__credit"
+              data-testid="member-map-attribution"
             >
-          </p>`
+              <a href=${map.attribution.url} target="_blank" rel="noopener noreferrer"
+                >${map.attribution.text}</a
+              >
+            </p>`
+          : nothing}
+        ${canExplain
+          ? html`<button
+              type="button"
+              class="member-map__how"
+              data-testid="member-map-how"
+              aria-pressed=${sources ? "true" : "false"}
+              @click=${onToggleSources}
+            >
+              ${t("dashboard.memberMap.howPlaced")}
+            </button>`
+          : nothing}
+      </div>
+      ${sources && canExplain
+        ? html`<div class="member-map__how-detail" data-testid="member-map-how-detail">
+            <p class="member-map__note">${t("dashboard.memberMap.howPlacedNote")}</p>
+            ${map.ipGeolocation
+              ? html`<p class="member-map__note" data-testid="member-map-ip-geolocation">
+                  ${map.ipGeolocation.active
+                    ? t("dashboard.memberMap.ipGeoActive", { provider: map.ipGeolocation.provider })
+                    : t("dashboard.memberMap.ipGeoInactive")}
+                </p>`
+              : nothing}
+          </div>`
         : nothing}
     </div>
   `;
@@ -572,15 +706,37 @@ export interface MemberMapOptions {
   loading?: boolean;
 }
 
+type PointerState = { x: number; y: number };
+
+type Gesture = {
+  view: Viewport;
+  pointers: Map<number, PointerState>;
+  moved: boolean;
+};
+
+const ZOOM_STEP = 1.8;
+const ZOOM_DURATION_MS = 420;
+
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function centroid(points: Iterable<PointerState>): PointerState & { spread: number } {
+  const list = [...points];
+  const x = list.reduce((sum, point) => sum + point.x, 0) / list.length;
+  const y = list.reduce((sum, point) => sum + point.y, 0) / list.length;
+  const spread = list.length < 2 ? 0 : Math.hypot(list[0]!.x - list[1]!.x, list[0]!.y - list[1]!.y);
+  return { x, y, spread };
+}
+
 /**
  * The card, plus the full-screen view behind it.
  *
  * A native <dialog> rather than a positioned overlay: it renders in the top layer so no z-index in
- * the app can cover it, closes on Escape, and traps focus — all of which a hand-rolled overlay has
- * to reimplement and usually gets half right.
+ * the app can cover it, closes on Escape, and traps focus.
  *
- * A custom element because the open state, the highlighted city and the expanded rows have to
- * survive the page re-rendering underneath them, which happens every time any other data lands.
+ * A custom element because the open state, the zoom, the highlighted city and the expanded rows
+ * have to survive the page re-rendering underneath them, which happens whenever other data lands.
  */
 class AdminbotMemberMap extends LitElement {
   static override properties = {
@@ -590,18 +746,21 @@ class AdminbotMemberMap extends LitElement {
     opened: { state: true },
     active: { state: true },
     picked: { state: true },
+    hover: { state: true },
+    pinned: { state: true },
+    sources: { state: true },
+    dialogView: { state: true },
   };
 
   public map: MemberMap | null = null;
   public variant: MemberMapVariant = "card";
   public now: number | undefined = undefined;
 
-  // The full-screen panel is only in the DOM while it is open. The coastline is a 44kB path
-  // attribute, and rendering a second copy of it behind a closed dialog is the largest thing on
-  // this page duplicated for nothing.
+  // The full-screen panel is only in the DOM while it is open: no second copy of the coastline
+  // behind a closed dialog.
   private opened = false;
 
-  // The city picked out by hovering or focusing its row or pin. Transient: it follows the pointer.
+  // The city lit by hovering or focusing its row. Transient: it follows the pointer.
   private active: string | undefined = undefined;
 
   // The city a click or tap picked. Kept apart from `active` because a tap on a phone sends an
@@ -609,11 +768,32 @@ class AdminbotMemberMap extends LitElement {
   // see the city already lit by those and switch it straight back off.
   private picked: string | undefined = undefined;
 
-  // Which places' rows are showing every member instead of the capped few. Plain (non-reactive)
-  // field rather than a Lit `state` property: mutating a Set in place would not change its
-  // identity, so the usual `properties`-driven update would silently miss it anyway -- toggling
-  // calls requestUpdate() itself instead.
+  // The marker under the pointer or keyboard focus, per box: its tooltip shows.
+  private hover: { kind: StageKind; key: string } | undefined = undefined;
+
+  // A cluster that cannot zoom apart any further (same coordinates, or at maximum zoom): its
+  // places are listed in a tooltip that stays until the view moves. Keyed by its biggest place.
+  private pinned: string | undefined = undefined;
+
+  // The admin's "How we placed people" switch.
+  private sources = false;
+
+  // Full screen's zoom and pan. Null is the whole map, fitted to whatever size the box is.
+  private dialogView: Viewport | null = null;
+
+  // Which places' rows show every member. Mutated in place, so toggling calls requestUpdate().
   private expandedPlaces = new Set<string>();
+
+  private sizes: Partial<Record<StageKind, Size>> = {};
+  private observer: ResizeObserver | undefined;
+  private observed = new WeakSet<Element>();
+  private animation = 0;
+  private gesture: Gesture | undefined;
+  private suppressClick = false;
+  // Map-unit bounds to fly to once the full-screen box has a size: a cluster tapped on the card.
+  private pendingBounds: { x0: number; y0: number; x1: number; y1: number } | undefined;
+  // After a cluster opens, keyboard focus moves to its biggest place's marker.
+  private focusAfterZoom: string | undefined;
 
   private readonly focusPlace = (key: string | undefined): void => {
     if (this.active !== key) {
@@ -624,12 +804,33 @@ class AdminbotMemberMap extends LitElement {
   // Picking the picked city again lets it go, and drops the hover highlight with it: on a phone
   // nothing else would, since no mouseleave follows a tap.
   private readonly pickPlace = (key: string): void => {
+    this.pinned = undefined;
     if (this.picked === key) {
       this.picked = undefined;
       this.active = undefined;
     } else {
       this.picked = key;
     }
+  };
+
+  // A row picked full screen also brings its city into view, close enough to stand on its own.
+  private readonly pickFromList = (key: string): void => {
+    const wasPicked = this.picked === key;
+    this.pickPlace(key);
+    const size = this.stageSize("dialog");
+    if (!this.opened || wasPicked || !size || !this.map) {
+      return;
+    }
+    const at = projected(this.map).get(key);
+    if (!at) {
+      return;
+    }
+    const current = this.dialogView ?? fitViewport(size);
+    const base = fitViewport(size);
+    const k = Math.max(current.k, base.k * 4);
+    this.animateTo(
+      clampViewport({ k, x: size.width / 2 - at.x * k, y: size.height / 2 - at.y * k }, size),
+    );
   };
 
   private toggleExpanded(key: string): void {
@@ -652,12 +853,322 @@ class AdminbotMemberMap extends LitElement {
     }
   }
 
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.observer?.disconnect();
+    this.observer = undefined;
+    this.observed = new WeakSet();
+    this.stopAnimation();
+  }
+
+  protected override updated(): void {
+    if (typeof ResizeObserver === "undefined") {
+      this.flushPendingZoom();
+      return;
+    }
+    this.observer ??= new ResizeObserver((entries) => this.onResize(entries));
+    for (const stage of this.querySelectorAll(".member-map__stage")) {
+      if (!this.observed.has(stage)) {
+        this.observed.add(stage);
+        this.observer.observe(stage);
+      }
+    }
+    if (this.focusAfterZoom && this.animation === 0) {
+      const key = this.focusAfterZoom;
+      this.focusAfterZoom = undefined;
+      this.querySelector<HTMLElement>(
+        `.member-map__stage--dialog .member-map__marker[data-place="${CSS.escape(key)}"]`,
+      )?.focus();
+    }
+  }
+
+  private onResize(entries: ResizeObserverEntry[]): void {
+    let changed = false;
+    for (const entry of entries) {
+      const kind = (entry.target as HTMLElement).dataset.stage as StageKind | undefined;
+      const width = Math.round(entry.contentRect.width);
+      const height = Math.round(entry.contentRect.height);
+      // A box in a hidden tab measures 0: keep the last real size rather than collapse to nothing.
+      if (!kind || width < 1 || height < 1) {
+        continue;
+      }
+      const previous = this.sizes[kind];
+      if (previous?.width === width && previous.height === height) {
+        continue;
+      }
+      const size = { width, height };
+      if (kind === "dialog" && this.dialogView && previous) {
+        // Keep the same zoom relative to the fit, and the same map point at the centre.
+        const ratio = this.dialogView.k / fitViewport(previous).k;
+        const cx = (previous.width / 2 - this.dialogView.x) / this.dialogView.k;
+        const cy = (previous.height / 2 - this.dialogView.y) / this.dialogView.k;
+        const k = fitViewport(size).k * ratio;
+        this.dialogView = clampViewport({ k, x: width / 2 - cx * k, y: height / 2 - cy * k }, size);
+      }
+      this.sizes[kind] = size;
+      changed = true;
+    }
+    if (changed) {
+      this.requestUpdate();
+    }
+    this.flushPendingZoom();
+  }
+
+  private stageSize(kind: StageKind): Size | undefined {
+    return (
+      this.sizes[kind] ?? (typeof ResizeObserver === "undefined" ? FALLBACK_SIZE[kind] : undefined)
+    );
+  }
+
+  private flushPendingZoom(): void {
+    const bounds = this.pendingBounds;
+    const size = this.stageSize("dialog");
+    if (!bounds || !size || !this.opened) {
+      return;
+    }
+    this.pendingBounds = undefined;
+    this.animateTo(this.boundsView(bounds, size));
+  }
+
+  private boundsView(bounds: { x0: number; y0: number; x1: number; y1: number }, size: Size) {
+    return viewportForBounds(bounds, size, Math.max(56, Math.min(size.width, size.height) * 0.18));
+  }
+
+  private stopAnimation(): void {
+    if (this.animation !== 0 && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(this.animation);
+    }
+    this.animation = 0;
+  }
+
+  /** Flies full screen to `target`, or jumps there for anyone who asked for less motion. */
+  private animateTo(target: Viewport): void {
+    const size = this.stageSize("dialog");
+    if (!size) {
+      return;
+    }
+    this.stopAnimation();
+    const from = this.dialogView ?? fitViewport(size);
+    if (prefersReducedMotion() || typeof requestAnimationFrame !== "function") {
+      this.dialogView = target;
+      return;
+    }
+    const start = performance.now();
+    const step = (time: number) => {
+      const progress = Math.min(1, (time - start) / ZOOM_DURATION_MS);
+      this.dialogView =
+        progress < 1 ? lerpViewport(from, target, easeInOutCubic(progress), size) : target;
+      this.animation = progress < 1 ? requestAnimationFrame(step) : 0;
+      if (progress >= 1) {
+        // One more render after the last frame, so focusAfterZoom runs with animation === 0.
+        this.requestUpdate();
+      }
+    };
+    this.animation = requestAnimationFrame(step);
+  }
+
+  private zoomBy(factor: number): void {
+    const size = this.stageSize("dialog");
+    if (!size) {
+      return;
+    }
+    this.pinned = undefined;
+    const view = this.dialogView ?? fitViewport(size);
+    this.animateTo(zoomAt(view, factor, size.width / 2, size.height / 2, size));
+  }
+
+  private resetZoom(): void {
+    const size = this.stageSize("dialog");
+    this.pinned = undefined;
+    if (size) {
+      this.animateTo(fitViewport(size));
+    }
+  }
+
+  private clusterBounds(marker: Marker) {
+    const positions = projected(this.map!);
+    const points = marker.keys.map((key) => positions.get(key)!);
+    return {
+      x0: Math.min(...points.map((point) => point.x)),
+      y0: Math.min(...points.map((point) => point.y)),
+      x1: Math.max(...points.map((point) => point.x)),
+      y1: Math.max(...points.map((point) => point.y)),
+    };
+  }
+
+  private onMarkerClick(kind: StageKind, marker: Marker): void {
+    if (marker.places.length === 1) {
+      this.pickPlace(marker.key);
+      return;
+    }
+    const bounds = this.clusterBounds(marker);
+    if (kind === "card") {
+      // The card does not zoom; full screen opens on the cluster instead.
+      this.open(bounds);
+      return;
+    }
+    const size = this.stageSize("dialog");
+    if (!size) {
+      return;
+    }
+    const current = this.dialogView ?? fitViewport(size);
+    const target = this.boundsView(bounds, size);
+    // No more room to separate them (same coordinates, or zoomed all the way in): list them.
+    if (target.k <= current.k * 1.15) {
+      this.pinned = this.pinned === marker.lead ? undefined : marker.lead;
+      return;
+    }
+    this.pinned = undefined;
+    this.focusAfterZoom = marker.lead;
+    this.animateTo(target);
+  }
+
+  // --- Pointer: drag to pan, pinch or wheel to zoom (full screen only) ---
+
+  private localPoint(event: PointerEvent | WheelEvent | MouseEvent): PointerState {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }
+
+  private readonly onPointerDown = (event: PointerEvent): void => {
+    if (event.pointerType === "mouse" && event.button !== 0) {
+      return;
+    }
+    const size = this.stageSize("dialog");
+    if (!size) {
+      return;
+    }
+    this.stopAnimation();
+    const pointers = new Map(this.gesture?.pointers ?? []);
+    pointers.set(event.pointerId, this.localPoint(event));
+    this.gesture = {
+      view: this.dialogView ?? fitViewport(size),
+      pointers,
+      moved: this.gesture?.moved ?? false,
+    };
+  };
+
+  private readonly onPointerMove = (event: PointerEvent): void => {
+    const gesture = this.gesture;
+    const size = this.stageSize("dialog");
+    if (!gesture || !size || !gesture.pointers.has(event.pointerId)) {
+      return;
+    }
+    const current = new Map(gesture.pointers);
+    current.set(event.pointerId, this.localPoint(event));
+    const before = centroid(gesture.pointers.values());
+    const after = centroid(current.values());
+    if (
+      !gesture.moved &&
+      Math.hypot(after.x - before.x, after.y - before.y) < 4 &&
+      current.size < 2
+    ) {
+      return;
+    }
+    if (!gesture.moved) {
+      gesture.moved = true;
+      (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+    }
+    const factor = before.spread > 0 && after.spread > 0 ? after.spread / before.spread : 1;
+    const zoomed = zoomAt(gesture.view, factor, before.x, before.y, size);
+    this.pinned = undefined;
+    this.dialogView = clampViewport(
+      { k: zoomed.k, x: zoomed.x + after.x - before.x, y: zoomed.y + after.y - before.y },
+      size,
+    );
+  };
+
+  private readonly onPointerEnd = (event: PointerEvent): void => {
+    const gesture = this.gesture;
+    if (!gesture || !gesture.pointers.has(event.pointerId)) {
+      return;
+    }
+    if (gesture.moved) {
+      this.suppressClick = true;
+    }
+    gesture.pointers.delete(event.pointerId);
+    const size = this.stageSize("dialog");
+    if (gesture.pointers.size === 0 || !size) {
+      this.gesture = undefined;
+      return;
+    }
+    // One finger lifted from a pinch: carry on panning from where the view is now.
+    this.gesture = {
+      view: this.dialogView ?? fitViewport(size),
+      pointers: gesture.pointers,
+      moved: true,
+    };
+  };
+
+  // A drag that ends over a marker must not also click it.
+  private readonly onClickCapture = {
+    handleEvent: (event: Event) => {
+      if (this.suppressClick) {
+        this.suppressClick = false;
+        event.stopPropagation();
+        event.preventDefault();
+      }
+    },
+    capture: true,
+  };
+
+  private readonly onWheel = {
+    handleEvent: (event: WheelEvent) => {
+      const size = this.stageSize("dialog");
+      if (!size) {
+        return;
+      }
+      event.preventDefault();
+      this.stopAnimation();
+      this.pinned = undefined;
+      const lines = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? size.height : 1;
+      const factor = Math.exp(-event.deltaY * lines * 0.0018);
+      const point = this.localPoint(event);
+      this.dialogView = zoomAt(
+        this.dialogView ?? fitViewport(size),
+        factor,
+        point.x,
+        point.y,
+        size,
+      );
+    },
+    passive: false,
+  };
+
+  private readonly onStageKey = (event: KeyboardEvent): void => {
+    const size = this.stageSize("dialog");
+    if (!size || event.altKey || event.ctrlKey || event.metaKey) {
+      return;
+    }
+    const view = this.dialogView ?? fitViewport(size);
+    const pan = (dx: number, dy: number) =>
+      clampViewport({ k: view.k, x: view.x + dx, y: view.y + dy }, size);
+    const actions: Record<string, () => void> = {
+      "+": () => this.zoomBy(ZOOM_STEP),
+      "=": () => this.zoomBy(ZOOM_STEP),
+      "-": () => this.zoomBy(1 / ZOOM_STEP),
+      "0": () => this.resetZoom(),
+      ArrowLeft: () => (this.dialogView = pan(80, 0)),
+      ArrowRight: () => (this.dialogView = pan(-80, 0)),
+      ArrowUp: () => (this.dialogView = pan(0, 80)),
+      ArrowDown: () => (this.dialogView = pan(0, -80)),
+    };
+    const action = actions[event.key];
+    if (action) {
+      event.preventDefault();
+      action();
+    }
+  };
+
   private dialog(): HTMLDialogElement | null {
     return this.querySelector("dialog");
   }
 
-  private open(): void {
+  private open(bounds?: { x0: number; y0: number; x1: number; y1: number }): void {
     this.opened = true;
+    this.dialogView = null;
+    this.pinned = undefined;
+    this.pendingBounds = bounds;
     // The panel renders on the next update, so the dialog is only shown once its contents exist.
     void this.updateComplete.then(() => {
       const dialog = this.dialog();
@@ -671,6 +1182,7 @@ class AdminbotMemberMap extends LitElement {
       } else {
         dialog.open = true;
       }
+      this.flushPendingZoom();
     });
   }
 
@@ -683,7 +1195,227 @@ class AdminbotMemberMap extends LitElement {
         dialog.open = false;
       }
     }
+    this.closed();
+  }
+
+  private closed(): void {
     this.opened = false;
+    this.stopAnimation();
+    this.gesture = undefined;
+    this.pendingBounds = undefined;
+    this.dialogView = null;
+    this.pinned = undefined;
+    if (this.hover?.kind === "dialog") {
+      this.hover = undefined;
+    }
+    // A new dialog box will be measured afresh when it opens.
+    delete this.sizes.dialog;
+  }
+
+  private renderStage(map: MemberMap, kind: StageKind, focus: PlaceFocus) {
+    const size = this.stageSize(kind);
+    const dialog = kind === "dialog";
+    const base = size ? fitViewport(size) : undefined;
+    const view = size ? (dialog && this.dialogView ? this.dialogView : base!) : undefined;
+    const scene = size && view ? buildScene(map, kind, size, view) : undefined;
+    const lit = focus.active ?? focus.picked;
+    const hovered = this.hover?.kind === kind ? this.hover.key : undefined;
+    const isLit = (marker: Marker) =>
+      marker.key === hovered || (lit !== undefined && marker.keys.includes(lit));
+    const anyLit = scene?.markers.some((marker) => lit !== undefined && marker.keys.includes(lit));
+    const hoveredMarker = scene?.markers.find((marker) => marker.key === hovered);
+    const tooltipFor =
+      hoveredMarker ??
+      (dialog && this.pinned
+        ? scene?.markers.find((marker) => marker.keys.includes(this.pinned!))
+        : undefined) ??
+      (lit ? scene?.markers.find((marker) => marker.keys.includes(lit)) : undefined);
+    // Lit from the list (not pointed at, not a pinned cluster): describe the one place asked about.
+    const tooltipOnly =
+      !hoveredMarker &&
+      !(dialog && this.pinned) &&
+      lit &&
+      tooltipFor &&
+      tooltipFor.places.length > 1
+        ? tooltipFor.places.find((place) => place.key === lit)
+        : undefined;
+    const zoom = base && view ? view.k / base.k : 1;
+    const aria = t("dashboard.memberMap.plotAria", {
+      cities: String(map.places.length),
+      count: String(map.counts.placed),
+    });
+    return html`
+      <div class=${`member-map__figure member-map__figure--${kind}`}>
+        <div
+          class=${[
+            "member-map__stage",
+            `member-map__stage--${kind}`,
+            anyLit ? "member-map__stage--focus" : "",
+            zoom > 1.01 ? "member-map__stage--zoomed" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          data-stage=${kind}
+          data-testid=${`member-map-stage-${kind}`}
+          @pointerdown=${dialog ? this.onPointerDown : nothing}
+          @pointermove=${dialog ? this.onPointerMove : nothing}
+          @pointerup=${dialog ? this.onPointerEnd : nothing}
+          @pointercancel=${dialog ? this.onPointerEnd : nothing}
+          @wheel=${dialog ? this.onWheel : nothing}
+          @click=${dialog ? this.onClickCapture : nothing}
+          @keydown=${dialog ? this.onStageKey : nothing}
+        >
+          ${scene && view
+            ? svg`
+              <svg
+                class="member-map__plot"
+                width=${scene.size.width}
+                height=${scene.size.height}
+                viewBox="0 0 ${scene.size.width} ${scene.size.height}"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <g transform="translate(${view.x.toFixed(2)} ${view.y.toFixed(2)}) scale(${view.k.toFixed(5)})">
+                  <path class="member-map__grid" d=${GRATICULE} vector-effect="non-scaling-stroke"></path>
+                  ${
+                    worldOutlinePath
+                      ? svg`<path class="member-map__land" d=${worldOutlinePath} vector-effect="non-scaling-stroke"></path>`
+                      : nothing
+                  }
+                </g>
+              </svg>`
+            : nothing}
+          ${kind === "card"
+            ? html`<button
+                type="button"
+                class="member-map__plot-button"
+                data-testid="member-map-plot-button"
+                title=${t("dashboard.memberMap.expand")}
+                aria-label=${t("dashboard.memberMap.expandAria")}
+                @click=${() => this.open()}
+              ></button>`
+            : nothing}
+          <div class="member-map__markers" role="group" aria-label=${aria}>
+            ${scene
+              ? repeat(
+                  scene.markers,
+                  (marker) => marker.key,
+                  (marker) => {
+                    const cluster = marker.places.length > 1;
+                    const approximate = !cluster && marker.places[0]!.approximate;
+                    const countInside = marker.r >= 8.5 && marker.count > 1;
+                    return html`<button
+                      type="button"
+                      class=${[
+                        "member-map__marker",
+                        cluster ? "member-map__marker--cluster" : "",
+                        approximate ? "member-map__marker--approximate" : "",
+                        isLit(marker) ? "member-map__marker--active" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      style="--x: ${marker.x.toFixed(1)}px; --y: ${marker.y.toFixed(
+                        1,
+                      )}px; --r: ${marker.r.toFixed(1)}px; --fs: ${Math.min(
+                        12,
+                        Math.max(9, marker.r * 0.8),
+                      ).toFixed(1)}px"
+                      data-place=${cluster ? nothing : marker.key}
+                      data-cluster=${cluster ? marker.keys.join(" ") : nothing}
+                      data-count=${marker.count}
+                      aria-label=${markerAria(marker)}
+                      aria-pressed=${cluster
+                        ? nothing
+                        : focus.picked === marker.key
+                          ? "true"
+                          : "false"}
+                      @mouseenter=${() => (this.hover = { kind, key: marker.key })}
+                      @mouseleave=${() => {
+                        if (this.hover?.key === marker.key) {
+                          this.hover = undefined;
+                        }
+                      }}
+                      @focus=${() => (this.hover = { kind, key: marker.key })}
+                      @blur=${() => {
+                        if (this.hover?.key === marker.key) {
+                          this.hover = undefined;
+                        }
+                      }}
+                      @click=${() => this.onMarkerClick(kind, marker)}
+                    >
+                      <span class="member-map__dot">${countInside ? marker.count : nothing}</span>
+                    </button>`;
+                  },
+                )
+              : nothing}
+          </div>
+          <div class="member-map__labels" aria-hidden="true">
+            ${scene
+              ? scene.markers.map((marker) => {
+                  const label = scene.labels.get(marker.key);
+                  if (!label) {
+                    return nothing;
+                  }
+                  const shift =
+                    label.anchor === "start" ? "0" : label.anchor === "middle" ? "-50%" : "-100%";
+                  return html`<span
+                    class=${`member-map__label${isLit(marker) ? " member-map__label--active" : ""}`}
+                    data-label=${marker.key}
+                    style="left: ${label.x.toFixed(1)}px; top: ${label.y.toFixed(
+                      1,
+                    )}px; font-size: ${scene.fontSize}px; transform: translate(${shift}, -50%)"
+                    >${markerLabel(marker)}</span
+                  >`;
+                })
+              : nothing}
+          </div>
+          ${dialog && base && view
+            ? html`<div
+                class="member-map__controls"
+                role="group"
+                aria-label=${t("dashboard.memberMap.zoomControls")}
+              >
+                <button
+                  type="button"
+                  class="member-map__control"
+                  data-testid="member-map-zoom-in"
+                  aria-label=${t("dashboard.memberMap.zoomIn")}
+                  title=${t("dashboard.memberMap.zoomIn")}
+                  ?disabled=${zoom >= MAX_ZOOM - 0.01}
+                  @click=${() => this.zoomBy(ZOOM_STEP)}
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"></path></svg>
+                </button>
+                <button
+                  type="button"
+                  class="member-map__control"
+                  data-testid="member-map-zoom-out"
+                  aria-label=${t("dashboard.memberMap.zoomOut")}
+                  title=${t("dashboard.memberMap.zoomOut")}
+                  ?disabled=${zoom <= 1.01}
+                  @click=${() => this.zoomBy(1 / ZOOM_STEP)}
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"></path></svg>
+                </button>
+                <button
+                  type="button"
+                  class="member-map__control"
+                  data-testid="member-map-zoom-reset"
+                  aria-label=${t("dashboard.memberMap.zoomReset")}
+                  title=${t("dashboard.memberMap.zoomReset")}
+                  ?disabled=${zoom <= 1.01}
+                  @click=${() => this.resetZoom()}
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M2.5 6V2.5H6M13.5 10v3.5H10M10 2.5h3.5V6M6 13.5H2.5V10"></path>
+                  </svg>
+                </button>
+              </div>`
+            : nothing}
+        </div>
+        ${scene && tooltipFor ? renderTooltip(tooltipFor, scene, focus, tooltipOnly) : nothing}
+      </div>
+    `;
   }
 
   private renderDialog(map: MemberMap, headline: unknown, focus: PlaceFocus) {
@@ -694,7 +1426,7 @@ class AdminbotMemberMap extends LitElement {
         aria-label=${t("dashboard.memberMap.title")}
         @close=${() => {
           // Fires for Escape too, which never routes through close().
-          this.opened = false;
+          this.closed();
         }}
         @click=${(event: Event) => {
           // Clicking the backdrop closes. The panel below is a child, so a click inside it never
@@ -720,13 +1452,16 @@ class AdminbotMemberMap extends LitElement {
                   ${t("dashboard.memberMap.collapse")}
                 </button>
               </div>
-              <div class="member-map__dialog-plot">${renderPlot(map, "dialog", focus)}</div>
+              ${this.renderStage(map, "dialog", focus)}
               ${renderList(map, {
                 ...focus,
                 expanded: true,
                 expandedPlaces: this.expandedPlaces,
                 onToggleExpand: (key) => this.toggleExpanded(key),
+                onFocus: this.focusPlace,
+                onPick: this.pickFromList,
               })}
+              ${renderFoot(map, this.sources, () => (this.sources = !this.sources))}
             </div>`
           : nothing}
       </dialog>
@@ -739,12 +1474,11 @@ class AdminbotMemberMap extends LitElement {
       return nothing;
     }
     const now = this.now ?? Date.now();
-    const lit = this.active ?? this.picked;
     const focus: PlaceFocus = {
-      active: lit,
+      // Pointing at a city's marker lights its row too, the same as the other way round.
+      active: this.active ?? this.hover?.key,
       picked: this.picked,
-      onFocus: this.focusPlace,
-      onPick: this.pickPlace,
+      sources: this.sources,
       now,
     };
     const updated = map.loadedAt === undefined ? undefined : updatedAgo(map.loadedAt, now);
@@ -766,29 +1500,17 @@ class AdminbotMemberMap extends LitElement {
     </button>`;
     const body = html`
       <div class="member-map__body">
-        <div class="member-map__figure">
-          <!-- The plot is the affordance as well as the picture: a map you cannot click to enlarge
-               is a map people squint at. -->
-          <button
-            type="button"
-            class="member-map__plot-button"
-            data-testid="member-map-plot-button"
-            title=${t("dashboard.memberMap.expand")}
-            aria-label=${t("dashboard.memberMap.expandAria")}
-            @click=${() => this.open()}
-          >
-            ${renderPlot(map, "card", focus)}
-          </button>
-          ${lit ? renderPopover(map, lit, now) : nothing}
-        </div>
+        ${this.renderStage(map, "card", focus)}
         ${renderList(map, {
           ...focus,
           expanded: false,
           expandedPlaces: this.expandedPlaces,
           onToggleExpand: (key) => this.toggleExpanded(key),
+          onFocus: this.focusPlace,
+          onPick: this.pickPlace,
         })}
       </div>
-      ${renderFoot(map)}
+      ${renderFoot(map, this.sources, () => (this.sources = !this.sources))}
     `;
     if (this.variant === "section") {
       return html`

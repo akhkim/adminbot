@@ -220,4 +220,49 @@ describe("parseMemberMap", () => {
     });
     expect(map?.places[0]?.members?.map((member) => member.name)).toEqual(["Ada"]);
   });
+
+  it("keeps the service's own phrase for where a pin came from, and the daily IP reading", () => {
+    const place = (members: unknown[]) =>
+      parseMemberMap({
+        mode: "full",
+        places: [
+          { key: "toronto", label: "Toronto", country: "Canada", lat: 43, lon: -79, members },
+        ],
+        counts: { placed: members.length, unplaced: 0, unknown: 0 },
+      })?.places[0]?.members;
+    const [device, vpn, junk] = place([
+      {
+        member_id: "a",
+        name: "Ada",
+        source: "device",
+        precision: "timezone",
+        source_label: "  device time zone  ",
+      },
+      {
+        member_id: "b",
+        name: "Bo",
+        source: "roster",
+        source_label: "profile · IP ignored (VPN?)",
+        ip_ignored: "suspected_vpn",
+        ip_observed_at: "2026-10-15T08:00:00.000Z",
+      },
+      {
+        member_id: "c",
+        name: "Cy",
+        source_label: "x".repeat(200),
+        ip_ignored: "maybe",
+        ip_observed_at: "yesterday",
+      },
+    ])!;
+    expect(device).toMatchObject({ source: "device", source_label: "device time zone" });
+    expect(vpn).toMatchObject({
+      source_label: "profile · IP ignored (VPN?)",
+      ip_ignored: "suspected_vpn",
+      ip_observed_at: "2026-10-15T08:00:00.000Z",
+    });
+    // Bounded, and nothing it does not understand.
+    expect(junk?.source_label).toHaveLength(80);
+    expect(junk).not.toHaveProperty("ip_ignored");
+    expect(junk).not.toHaveProperty("ip_observed_at");
+  });
 });
