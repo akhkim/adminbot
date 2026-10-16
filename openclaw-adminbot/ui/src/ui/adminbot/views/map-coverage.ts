@@ -1,7 +1,7 @@
 // Admin-only "Map coverage" panel: how many active members each signal places, and who is placed
 // only by a stored city, a zone, a country or nothing, with the day each was last in AdminBot.
 // Self-contained (it fetches GET /member-map/coverage itself) so it stays out of the member map's
-// own view and data modules.
+// own view and data modules. Collapsed by default, and fetched only once an admin opens it.
 import { html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
 import { memberAuthHeaders } from "../api/device-clock.ts";
@@ -105,6 +105,7 @@ export class AdminBotMapCoverage extends LitElement {
   @state() private coverage: MapCoverage | null = null;
   @state() private error = "";
   @state() private busy = false;
+  @state() private open = false;
   private generation = 0;
 
   protected override createRenderRoot() {
@@ -115,6 +116,15 @@ export class AdminBotMapCoverage extends LitElement {
     if (changed.has("sessionToken") || changed.has("baseUrl")) {
       this.coverage = null;
       this.error = "";
+      if (this.open) {
+        void this.load();
+      }
+    }
+  }
+
+  private onToggle(event: Event) {
+    this.open = (event.currentTarget as HTMLDetailsElement).open;
+    if (this.open && !this.coverage && !this.busy) {
       void this.load();
     }
   }
@@ -160,55 +170,62 @@ export class AdminBotMapCoverage extends LitElement {
     }
     const coverage = this.coverage;
     const now = Date.now();
-    return html`<section class="card map-coverage" data-testid="map-coverage">
-      <div class="card-title">Map coverage</div>
-      ${this.error
-        ? html`<p class="muted" role="alert">${this.error}</p>`
-        : !coverage
-          ? html`<p class="muted" role="status">${this.busy ? "Loading…" : ""}</p>`
-          : html`<p class="muted">${coverage.active} active members, placed by:</p>
-              <dl class="map-coverage__counts">
-                ${BUCKETS.map(
-                  ({ key, label }) =>
-                    html`<div data-bucket=${key}>
-                      <dt>${label}</dt>
-                      <dd>${coverage.counts[key]}</dd>
-                    </div>`,
-                )}
-              </dl>
-              ${coverage.stale.length === 0
-                ? html`<p class="muted">Everyone has a fresh IP or a recent check-in.</p>`
-                : html`<details class="map-coverage__stale">
-                    <summary>
-                      ${coverage.stale.length} without a fresh IP or recent check-in
-                    </summary>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Member</th>
-                          <th>Placed by</th>
-                          <th>Last seen in AdminBot</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${coverage.stale.map(
-                          (entry) =>
-                            html`<tr data-member=${entry.member_id}>
-                              <td>${entry.name}</td>
-                              <td>
-                                ${PLACED_BY[entry.placed_by]}${entry.place_label
-                                  ? html` · ${entry.place_label}`
-                                  : nothing}${entry.suspected_vpn
-                                  ? html` · IP ignored (VPN?)`
-                                  : nothing}
-                              </td>
-                              <td>${lastSeenText(entry.last_seen_at, now)}</td>
-                            </tr>`,
-                        )}
-                      </tbody>
-                    </table>
-                  </details>`}`}
-    </section>`;
+    return html`<details
+      class="card map-coverage"
+      data-testid="map-coverage"
+      ?open=${this.open}
+      @toggle=${this.onToggle}
+    >
+      <summary class="card-title">Map coverage</summary>
+      ${!this.open
+        ? nothing
+        : this.error
+          ? html`<p class="muted" role="alert">${this.error}</p>`
+          : !coverage
+            ? html`<p class="muted" role="status">${this.busy ? "Loading…" : ""}</p>`
+            : html`<p class="muted">${coverage.active} active members, placed by:</p>
+                <dl class="map-coverage__counts">
+                  ${BUCKETS.map(
+                    ({ key, label }) =>
+                      html`<div data-bucket=${key}>
+                        <dt>${label}</dt>
+                        <dd>${coverage.counts[key]}</dd>
+                      </div>`,
+                  )}
+                </dl>
+                ${coverage.stale.length === 0
+                  ? html`<p class="muted">Everyone has a fresh IP or a recent check-in.</p>`
+                  : html`<details class="map-coverage__stale">
+                      <summary>
+                        ${coverage.stale.length} without a fresh IP or recent check-in
+                      </summary>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Member</th>
+                            <th>Placed by</th>
+                            <th>Last seen in AdminBot</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${coverage.stale.map(
+                            (entry) =>
+                              html`<tr data-member=${entry.member_id}>
+                                <td>${entry.name}</td>
+                                <td>
+                                  ${PLACED_BY[entry.placed_by]}${entry.place_label
+                                    ? html` · ${entry.place_label}`
+                                    : nothing}${entry.suspected_vpn
+                                    ? html` · IP ignored (VPN?)`
+                                    : nothing}
+                                </td>
+                                <td>${lastSeenText(entry.last_seen_at, now)}</td>
+                              </tr>`,
+                          )}
+                        </tbody>
+                      </table>
+                    </details>`}`}
+    </details>`;
   }
 }
 
