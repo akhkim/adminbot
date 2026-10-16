@@ -458,6 +458,40 @@ describe("renderMemberMap", () => {
       expect(memberDetail({ member_id: "d", name: "Di" }, toronto, now)).toBe("Toronto");
     });
 
+    it("dates a check-in answer as 'stated', and flags a Slack zone that disagrees", () => {
+      const toronto = { label: "Toronto" };
+      const stated = (at?: string) => ({
+        member_id: "e",
+        name: "Ed",
+        source: "checkin" as const,
+        precision: "city" as const,
+        ...(at ? { located_at: at } : {}),
+      });
+      expect(memberDetail(stated(hoursAgo(2)), toronto, now)).toBe("Toronto · stated today");
+      expect(memberDetail(stated(hoursAgo(24 * 3)), toronto, now)).toBe(
+        "Toronto · stated 3 days ago",
+      );
+      expect(memberDetail(stated(), toronto, now)).toBe("Toronto · stated");
+      // located_at, when sent, dates a sign-in the same way last_login_at does.
+      expect(
+        memberDetail(
+          { member_id: "a", name: "Ada", source: "login", located_at: hoursAgo(48) },
+          toronto,
+          now,
+        ),
+      ).toBe("Toronto · from sign-in 2 days ago");
+      expect(
+        memberDetail(
+          {
+            ...stated(hoursAgo(2)),
+            tz_mismatch: { slack_tz: "Europe/Berlin", place_tz: "America/Toronto", hours: 6 },
+          },
+          toronto,
+          now,
+        ),
+      ).toBe("Toronto · stated today · Slack time zone Europe/Berlin is 6 h off");
+    });
+
     it("puts the line in each pin's title for an admin", async () => {
       const container = await draw(
         parseMemberMap({
@@ -661,6 +695,27 @@ describe("renderMemberMap", () => {
       parseMemberMap({ ...summary, attribution: { text: "x", url: "javascript:alert(1)" } })
         ?.attribution,
     ).toBeUndefined();
+  });
+
+  it("tells an admin whether sign-in geolocation is on, and by what", async () => {
+    const base = { places: summary.places, unplaced: 0 };
+    const on = await draw(
+      parseMemberMap({ ...base, mode: "full", ip_geolocation: { active: true, provider: "mmdb" } }),
+    );
+    expect(on.querySelector('[data-testid="member-map-ip-geolocation"]')?.textContent).toContain(
+      "on (mmdb)",
+    );
+    const off = await draw(
+      parseMemberMap({ ...base, mode: "full", ip_geolocation: { active: false, provider: "off" } }),
+    );
+    expect(off.querySelector('[data-testid="member-map-ip-geolocation"]')?.textContent).toContain(
+      "off",
+    );
+    // A summary never shows it, even if a service sent one.
+    const anon = await draw(
+      parseMemberMap({ ...summary, ip_geolocation: { active: true, provider: "mmdb" } }),
+    );
+    expect(anon.querySelector('[data-testid="member-map-ip-geolocation"]')).toBeNull();
   });
 
   it("mentions members it could not place", async () => {

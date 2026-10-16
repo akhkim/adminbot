@@ -52,7 +52,15 @@ import {
   executeAdminBotAction,
   removePendingAdminBotAction,
 } from "./adminbot/controllers/governance.ts";
-import { prepareProfileLocationPrompt } from "./adminbot/controllers/location-prompt.ts";
+import {
+  answerLocationCheckin,
+  declineLocationCheckin,
+  needsLocationCheckinLoad,
+  openLocationCheckinPicker,
+  prepareProfileLocationPrompt,
+  snoozeLocationCheckin,
+  useDeviceForLocationCheckin,
+} from "./adminbot/controllers/location-prompt.ts";
 import { readAdminBotLogisticsLists } from "./adminbot/controllers/logistics-paging.ts";
 import {
   loadAdminBotMailingList,
@@ -134,6 +142,7 @@ import {
 } from "./adminbot/views/change-password.ts";
 import { renderGettingStarted } from "./adminbot/views/getting-started.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
+import { renderLocationCheckin } from "./adminbot/views/location-checkin.ts";
 import { renderLoginGate, renderSessionRestorePending } from "./adminbot/views/login-gate.ts";
 import { isProfileBlocked, profileAccessState } from "./adminbot/views/profile-gate.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
@@ -2556,6 +2565,12 @@ export function renderApp(state: AppViewState) {
   ) {
     void state.loadLocationDrifts?.().finally(() => requestHostUpdate?.());
   }
+  // "Are you in Toronto?" -- read once per app load on whatever page the member lands on after
+  // signing in, and shown at most once per browser session. The same GET also carries the drift
+  // question, so the profile tab below finds it already answered and does not ask again.
+  if (hasMemberSession && needsLocationCheckinLoad(state, profileBlocked)) {
+    void state.loadLocationPrompt?.().finally(() => requestHostUpdate?.());
+  }
   // Asked once, when the member opens their own profile -- which is where the banner renders and
   // the only place its answer makes sense. Undefined is "not asked yet"; null is a real "nothing
   // to ask" and must not re-trigger.
@@ -3284,6 +3299,34 @@ export function renderApp(state: AppViewState) {
                 : "Loading lab members…"}
             </div>`
           : nothing}
+        <!-- In the page flow under the tabs, never fixed: it covers no navigation, on a phone or
+             anywhere else. Hidden while the drift question is on screen, so the profile never
+             asks where the member is twice at once. -->
+        ${profileBlocked || (state.tab === "profile" && state.adminBotLocationDrift)
+          ? nothing
+          : renderLocationCheckin({
+              banner: state.adminBotLocationCheckin,
+              onAnswer: (city, via) => {
+                void answerLocationCheckin(state, city, via).finally(() => requestHostUpdate?.());
+                requestHostUpdate?.();
+              },
+              onChange: () => {
+                void openLocationCheckinPicker(state).finally(() => requestHostUpdate?.());
+                requestHostUpdate?.();
+              },
+              onDevice: () => {
+                void useDeviceForLocationCheckin(state).finally(() => requestHostUpdate?.());
+                requestHostUpdate?.();
+              },
+              onSnooze: () => {
+                void snoozeLocationCheckin(state).finally(() => requestHostUpdate?.());
+                requestHostUpdate?.();
+              },
+              onDecline: () => {
+                void declineLocationCheckin(state).finally(() => requestHostUpdate?.());
+                requestHostUpdate?.();
+              },
+            })}
         ${renderDashboardSurface(state, adminBotSurfaces)}
         ${renderProfileSurface(state, adminBotSurfaces)}
         ${state.tab === "gettingStarted" ? renderGettingStarted(state) : nothing}

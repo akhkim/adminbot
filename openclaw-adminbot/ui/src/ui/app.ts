@@ -421,6 +421,9 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLocationDrifts?: LocationDrift[];
   @state() adminBotLocationSaving = false;
   @state() adminBotLocationError: string | null = null;
+  @state() adminBotLocationCheckin?:
+    | import("./adminbot/data/location-checkin.ts").CheckinBanner
+    | null;
   @state() adminBotMeetings?: MeetingRecord[];
   // Attendance nudge, admin-only. Null rather than undefined once read, so "opened the panel and
   // nobody qualified" is distinguishable from "never opened it".

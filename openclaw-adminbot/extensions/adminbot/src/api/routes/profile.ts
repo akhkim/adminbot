@@ -3,6 +3,7 @@
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 import { redactConfidentialMemberFields } from "../../contracts/actions.js";
+import { gazetteerPlaces } from "../../workflows/members/member-map.js";
 import { asString, readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
 import { handleMemberDraft } from "../server.member-drafts.js";
 import { memberOnly, principalActor, privilegedOnly } from "./guards.js";
@@ -78,11 +79,13 @@ export const profileRoutes: readonly Route[] = [
       sendServiceResult(res, service.acknowledgeOwnOnboardingStep(principal.member.id, stepId));
     }),
   ),
+  // Both location questions: the drift question, and the explicit "Where are you based right
+  // now?" check-in. One route so the banner makes one request on sign-in.
   get(
     "/profile/location-prompt",
     memberOnly(({ res, principal, ctx }) => {
       const { service } = ctx;
-      sendServiceResult(res, service.memberLocationDrift(principal.member.id));
+      sendServiceResult(res, service.memberLocationPrompt(principal.member.id));
     }),
   ),
   post(
@@ -90,13 +93,54 @@ export const profileRoutes: readonly Route[] = [
     memberOnly(async ({ req, res, principal, ctx }) => {
       const { service } = ctx;
       const body = readRecord(await readJson(req));
-      sendServiceResult(
-        res,
-        service.answerLocationPrompt(principal.member.id, {
-          ...(asString(body.current_city) ? { current_city: asString(body.current_city) } : {}),
-          ...(asString(body.timezone) ? { timezone: asString(body.timezone) } : {}),
-        }),
-      );
+      const action = asString(body.action);
+      // A body with no `action` is the drift question's answer, exactly as before.
+      if (!action) {
+        sendServiceResult(
+          res,
+          service.answerLocationPrompt(principal.member.id, {
+            ...(asString(body.current_city) ? { current_city: asString(body.current_city) } : {}),
+            ...(asString(body.timezone) ? { timezone: asString(body.timezone) } : {}),
+          }),
+        );
+        return;
+      }
+      if (action === "snooze" || action === "decline") {
+        sendServiceResult(res, service.respondToLocationCheckin(principal.member.id, { action }));
+        return;
+      }
+      if (action === "answer") {
+        const via = asString(body.via);
+        sendServiceResult(
+          res,
+          service.respondToLocationCheckin(principal.member.id, {
+            action,
+            text: asString(body.city),
+            via: via === "device" || via === "text" ? via : "picker",
+          }),
+        );
+        return;
+      }
+      sendJson(res, 400, {
+        error: { message: 'action must be "answer", "snooze" or "decline"' },
+      });
+    }),
+  ),
+  // The cities the check-in picker offers, and what "Use this device's location" snaps to. Public
+  // facts about cities, not about anyone: the device's own position is matched to the nearest one
+  // in the browser and never sent.
+  get(
+    "/profile/location-places",
+    memberOnly(({ res }) => {
+      sendJson(res, 200, {
+        places: gazetteerPlaces().map(({ key, label, country, lat, lon }) => ({
+          key,
+          label,
+          country,
+          lat,
+          lon,
+        })),
+      });
     }),
   ),
   get(

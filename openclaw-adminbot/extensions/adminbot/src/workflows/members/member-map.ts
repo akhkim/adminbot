@@ -3,19 +3,29 @@
 // Every source a member has is resolved in order and the first one that places them wins. A
 // country-level answer never beats a city, so countries come last whatever their source:
 //
-//   1. The city of a fresh sign-in (within ADMINBOT_MAP_LOGIN_FRESH_DAYS), from the local IP
-//      geolocation database. It is where the person actually was most recently, so it leads -- unless
-//      the member set `map_visibility` to "stated", which skips every sign-in source. Placed at the
-//      gazetteer's city centroid, never at the IP's coordinates, which nothing here ever receives.
-//   2. A stated city: `current_city` (where they say they are now), then the roster `location`,
-//      then the Slack profile's location field. The member's own words.
-//   3. The city an IANA timezone is named for: Slack's `tz`, then the roster `timezone`.
-//      "America/Toronto" says Toronto, but it says the same for Montréal, so it is a city-level
-//      answer that is less exact than either of the above.
-//   4. A country: any of the texts above that names only a country ("Germany"), then the country
+//   1. The city of a fresh sign-in (within ADMINBOT_MAP_LOGIN_FRESH_DAYS = 14), from the IP
+//      geolocation database. It is where the person actually was most recently, so it leads --
+//      unless the member set `map_visibility` to "stated", which skips every sign-in source. Placed
+//      at the gazetteer's city centroid, never at the IP's coordinates, which nothing here receives.
+//   2. The member's answer to the "Where are you based right now?" check-in
+//      (location-checkin.ts), while it is recent (ADMINBOT_LOCATION_CHECKIN_DAYS) and still what
+//      `current_city` says. The explicit answer, dated, so the map can say "stated 3d ago".
+//   3. Other stated cities: `current_city`, then the roster `location`, then the Slack profile's
+//      location field. The member's own words, undated.
+//   4. The city an IANA timezone is named for: the Slack `tz` the directory sync recorded
+//      (`slack_tz`, while fresh -- SLACK_TZ_FRESH_DAYS), then a zone in the Slack location field,
+//      then the roster `timezone`. "America/Toronto" says Toronto, but it says the same for
+//      Montréal, so it is a city-level answer that is less exact than any of the above.
+//   5. A country: any of the texts above that names only a country ("Germany"), then the country
 //      of the last sign-in. Drawn hollow by the UI so it does not pass for a city.
 //
-// A member whose `map_visibility` is "hidden" is not on the map at all.
+// A member whose `map_visibility` is "hidden" is not on the map at all; a check-in "Prefer not to
+// say" sets exactly that.
+//
+// The Slack zone is also a cross-check (place-timezone.ts): when a city or timezone places a
+// member and their fresh `slack_tz` keeps a clock more than two hours away from that city's, the
+// map member carries `tz_mismatch` and the admin map flags it. It never moves the pin -- a Slack
+// zone is a laptop setting, and in particular it never overrides a fresh sign-in city.
 //
 // Text is read the way a person would read it: free text written by humans ("ETH", "Zürich,
 // Tübingen", "Mainly Montreal"), a timezone, or a city with its region and country from the IP
@@ -24,6 +34,7 @@
 
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import { isDoNotContact } from "./do-not-contact.js";
+import { timezoneMismatch, type AdminBotTimezoneMismatch } from "./place-timezone.js";
 
 export type AdminBotMapPlace = {
   key: string;
@@ -753,7 +764,11 @@ export function resolvePlace(raw: string | undefined): AdminBotMapPlace | undefi
   return undefined;
 }
 
-export type AdminBotMapSource = "slack" | "login" | "roster";
+/**
+ * What placed a member. `checkin` is their answer to the explicit check-in; `roster` is any other
+ * stated field; `slack` is Slack's location field or zone; `login` a sign-in.
+ */
+export type AdminBotMapSource = "slack" | "login" | "roster" | "checkin";
 
 /**
  * How exact a member's pin is, which the map's popup says out loud.
@@ -774,6 +789,13 @@ export type AdminBotMapMember = {
   // recently active faces first; it is never a history, only the one moment behind the pin.
   avatar_url?: string;
   last_login_at?: string;
+  /**
+   * When the source that placed them said so, for the admin map's "sign-in 2d ago" / "stated 3d
+   * ago". Absent for an undated source (a roster field typed at some point).
+   */
+  located_at?: string;
+  /** Set when the member's fresh Slack zone keeps a clock over two hours from where they are placed. */
+  tz_mismatch?: AdminBotTimezoneMismatch;
 };
 
 export type AdminBotMapPlaceGroup = AdminBotMapPlace & {
@@ -836,6 +858,7 @@ type MemberPlaceResolution =
       source: AdminBotMapSource;
       precision: AdminBotMapPrecision;
       raw: string;
+      located_at?: string;
     }
   | { place?: undefined; raw?: string; source?: AdminBotMapSource };
 
@@ -875,6 +898,57 @@ export function memberMapVisibility(
 
 const DAY_MS = 86_400_000;
 
+/**
+ * How long the "Where are you based right now?" answer counts as recent, and so how often a
+ * member can be asked it. Read once from ADMINBOT_LOCATION_CHECKIN_DAYS; 60 when unset or invalid.
+ */
+export const ADMINBOT_LOCATION_CHECKIN_DAYS = positiveDays(
+  process.env.ADMINBOT_LOCATION_CHECKIN_DAYS,
+  60,
+);
+
+/**
+ * How long a Slack `tz` from the directory sync stays usable. The sync runs daily and re-stamps a
+ * zone it has not seen for a week, so a zone older than this means the sync stopped seeing it.
+ */
+export const SLACK_TZ_FRESH_DAYS = 30;
+
+function positiveDays(raw: string | undefined, fallback: number): number {
+  const value = Number(raw?.trim());
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/** Whether an ISO stamp is within `days` of `now` (a day of future skew tolerated). */
+export function isWithinDays(at: string | undefined, days: number, now: Date): boolean {
+  const seen = at ? Date.parse(at) : Number.NaN;
+  if (Number.isNaN(seen)) {
+    return false;
+  }
+  const age = now.getTime() - seen;
+  return age <= days * DAY_MS && age >= -DAY_MS;
+}
+
+/** The member's Slack zone, when the directory sync saw it recently enough to use. */
+export function freshSlackTz(member: AdminBotLabMember, now: Date): string | undefined {
+  const zone = member.slack_tz?.trim();
+  return zone && isWithinDays(member.slack_tz_observed_at, SLACK_TZ_FRESH_DAYS, now)
+    ? zone
+    : undefined;
+}
+
+/**
+ * The check-in answer the map may use: recent, and still what `current_city` says. A later profile
+ * edit to a different city is newer than the check-in, so the answer stops speaking for them.
+ */
+export function recentCheckinCity(member: AdminBotLabMember, now: Date): string | undefined {
+  const city = member.location_checkin_city?.trim();
+  if (!city || !isWithinDays(member.location_checkin_at, ADMINBOT_LOCATION_CHECKIN_DAYS, now)) {
+    return undefined;
+  }
+  const current = member.current_city?.trim();
+  return !current || normalize(current) === normalize(city) ? city : undefined;
+}
+
 export type BuildMemberMapOptions = {
   /**
    * Whether sign-in cities may place members at all. On for signed-in callers (members and
@@ -888,17 +962,24 @@ export type BuildMemberMapOptions = {
 
 function freshLoginCity(member: AdminBotLabMember, now: Date): string | undefined {
   const city = member.last_login_city?.trim();
-  const at = member.last_login_at?.trim();
-  if (!city || !at) {
-    return undefined;
-  }
-  const seen = Date.parse(at);
-  if (Number.isNaN(seen)) {
-    return undefined;
-  }
-  const age = now.getTime() - seen;
   // A little clock skew into the future is tolerated; a sign-in from next month is a bad record.
-  return age > ADMINBOT_MAP_LOGIN_FRESH_DAYS * DAY_MS || age < -DAY_MS ? undefined : city;
+  return city && isWithinDays(member.last_login_at?.trim(), ADMINBOT_MAP_LOGIN_FRESH_DAYS, now)
+    ? city
+    : undefined;
+}
+
+/**
+ * The gazetteer city of a fresh sign-in, or undefined. Ignores `map_visibility`: callers that
+ * place the member on a map apply it themselves.
+ */
+export function freshLoginPlace(
+  member: AdminBotLabMember,
+  now: Date,
+): AdminBotMapPlace | undefined {
+  const city = freshLoginCity(member, now);
+  return city
+    ? resolveLoginCity(city, member.last_login_region, member.last_login_country)
+    : undefined;
 }
 
 /**
@@ -945,6 +1026,7 @@ export function resolveLoginCity(
 type Candidate = {
   raw: string | undefined;
   source: AdminBotMapSource;
+  located_at?: string;
   resolve: () => { place: AdminBotMapPlace; precision: AdminBotMapPrecision } | undefined;
 };
 
@@ -984,6 +1066,8 @@ function resolveMemberPlace(
   const currentCity = member.current_city?.trim() || undefined;
   const rosterText = member.location?.trim() || undefined;
   const rosterZone = member.timezone?.trim() || undefined;
+  const checkinCity = recentCheckinCity(member, options.now);
+  const slackZone = freshSlackTz(member, options.now);
   // "My stated city only" skips every sign-in source. The country of a sign-in is coarse enough
   // for any caller (it was on the public map before cities were); the city is not, so it needs
   // `options.loginCity` as well.
@@ -997,25 +1081,50 @@ function resolveMemberPlace(
     {
       raw: loginCity,
       source: "login",
+      located_at: member.last_login_at,
       resolve: () => {
         const place = resolveLoginCity(loginCity, member.last_login_region, loginCountry);
         return place ? { place, precision: "city" } : undefined;
       },
     },
-    // 2. Stated cities.
+    // 2. The explicit check-in answer, while recent.
+    {
+      raw: checkinCity,
+      source: "checkin",
+      located_at: member.location_checkin_at,
+      resolve: cityFrom(checkinCity),
+    },
+    // 3. Other stated cities.
     { raw: currentCity, source: "roster", resolve: cityFrom(currentCity) },
     { raw: rosterText, source: "roster", resolve: cityFrom(rosterText) },
-    { raw: slackText, source: "slack", resolve: cityFrom(slackText) },
-    // 3. Cities named by a timezone.
-    { raw: slackText, source: "slack", resolve: zoneFrom(slackText) },
+    {
+      raw: slackText,
+      source: "slack",
+      located_at: member.slack_location_updated_at,
+      resolve: cityFrom(slackText),
+    },
+    // 4. Cities named by a timezone: the synced Slack zone first, while fresh.
+    {
+      raw: slackZone,
+      source: "slack",
+      located_at: member.slack_tz_observed_at,
+      resolve: zoneFrom(slackZone),
+    },
+    {
+      raw: slackText,
+      source: "slack",
+      located_at: member.slack_location_updated_at,
+      resolve: zoneFrom(slackText),
+    },
     { raw: rosterZone, source: "roster", resolve: zoneFrom(rosterZone) },
-    // 4. Countries.
+    // 5. Countries.
     { raw: currentCity, source: "roster", resolve: countryFrom(currentCity) },
     { raw: rosterText, source: "roster", resolve: countryFrom(rosterText) },
     { raw: slackText, source: "slack", resolve: countryFrom(slackText) },
     {
       raw: loginCountry,
       source: "login",
+      located_at: member.last_login_at,
       resolve: () => {
         const place = resolveCountry(loginCountry);
         return place ? { place, precision: "country" } : undefined;
@@ -1028,14 +1137,23 @@ function resolveMemberPlace(
     }
     const resolved = candidate.resolve();
     if (resolved) {
-      return { ...resolved, source: candidate.source, raw: candidate.raw };
+      return {
+        ...resolved,
+        source: candidate.source,
+        raw: candidate.raw,
+        ...(candidate.located_at ? { located_at: candidate.located_at } : {}),
+      };
     }
   }
   // Nothing resolved: report the most trusted text that was written, so an unplaced entry always
   // points at the thing worth fixing (usually a city the gazetteer should learn). The roster
   // timezone is left out: an unplaceable zone is a typo, not a city to add.
   const written = candidates.find(
-    (candidate) => candidate.raw && candidate.raw !== rosterZone && candidate.raw !== loginCity,
+    (candidate) =>
+      candidate.raw &&
+      candidate.raw !== rosterZone &&
+      candidate.raw !== slackZone &&
+      candidate.raw !== loginCity,
   );
   return written?.raw ? { raw: written.raw, source: written.source } : {};
 }
@@ -1085,6 +1203,8 @@ export function buildMemberMap(
       ...(resolution.source === "login" && member.last_login_at
         ? { last_login_at: member.last_login_at }
         : {}),
+      ...(resolution.located_at ? { located_at: resolution.located_at } : {}),
+      ...mismatchFor(member, resolution, resolveOptions.now),
     });
     groups.set(resolution.place.key, group);
   }
@@ -1106,6 +1226,22 @@ export function buildMemberMap(
       unknown,
     },
   };
+}
+
+/**
+ * The Slack-zone cross-check for one placed member. Only a city or a timezone city is compared --
+ * a country centroid keeps no single clock -- and the pin never moves because of it.
+ */
+function mismatchFor(
+  member: AdminBotLabMember,
+  resolution: { place: AdminBotMapPlace; precision: AdminBotMapPrecision },
+  now: Date,
+): { tz_mismatch?: AdminBotTimezoneMismatch } {
+  if (resolution.precision === "country") {
+    return {};
+  }
+  const mismatch = timezoneMismatch(resolution.place, freshSlackTz(member, now), now);
+  return mismatch ? { tz_mismatch: mismatch } : {};
 }
 
 /** The map for a roster read, with each member's synced Slack location as their first choice. */

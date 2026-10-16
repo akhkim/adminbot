@@ -141,6 +141,8 @@ describe("buildMemberMap", () => {
         precision: "country",
         avatar_url: "https://example.com/ada.png",
         last_login_at: "2026-01-05T00:00:00.000Z",
+        // The map row is dated by the observation that placed it: here, the sign-in.
+        located_at: "2026-01-05T00:00:00.000Z",
       },
       { member_id: "b", name: "Bo", source: "login", precision: "country" },
     ]);
@@ -645,5 +647,103 @@ describe("toPrivilegedMemberMap", () => {
     expect(counted.places).toBe(map.places);
     const listed = toPrivilegedMemberMap(map, { listUnplaced: true });
     expect(listed.unplaced?.map((entry) => entry.name)).toEqual(["Yan", "Zed"]);
+  });
+});
+
+describe("member map precedence with the check-in and the Slack zone", () => {
+  const now = new Date("2026-07-15T12:00:00.000Z");
+  const ago = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
+  const placeOf = (overrides: Partial<AdminBotLabMember>) => {
+    const map = buildMemberMap([member(overrides)], new Map(), { loginCity: true, now });
+    const place = map.places[0];
+    return place ? { label: place.label, ...place.members[0] } : undefined;
+  };
+
+  it("1. a fresh sign-in city beats a recent check-in answer", () => {
+    const placed = placeOf({
+      last_login_city: "Berlin",
+      last_login_country: "DE",
+      last_login_at: ago(2),
+      current_city: "Toronto",
+      location_checkin_city: "Toronto",
+      location_checkin_at: ago(1),
+    });
+    expect(placed).toMatchObject({ label: "Berlin", source: "login", located_at: ago(2) });
+  });
+
+  it("2. a recent check-in answer beats the roster and Slack, and is dated", () => {
+    const placed = placeOf({
+      current_city: "Toronto",
+      location: "Zurich",
+      location_checkin_city: "Toronto",
+      location_checkin_at: ago(3),
+      last_login_city: "Berlin",
+      last_login_at: ago(30),
+    });
+    expect(placed).toMatchObject({ label: "Toronto", source: "checkin", located_at: ago(3) });
+  });
+
+  it("a check-in answer stops counting once it lapses or the profile says somewhere else", () => {
+    expect(
+      placeOf({
+        current_city: "Toronto",
+        location_checkin_city: "Toronto",
+        location_checkin_at: ago(90),
+      })?.source,
+    ).toBe("roster");
+    expect(
+      placeOf({
+        current_city: "Zurich",
+        location_checkin_city: "Toronto",
+        location_checkin_at: ago(3),
+      }),
+    ).toMatchObject({ label: "Zürich", source: "roster" });
+  });
+
+  it("4. a fresh Slack zone beats the roster timezone, and a stale one does not", () => {
+    expect(
+      placeOf({
+        timezone: "America/Toronto",
+        slack_tz: "America/Vancouver",
+        slack_tz_observed_at: ago(2),
+      }),
+    ).toMatchObject({ label: "Vancouver", source: "slack", precision: "timezone" });
+    expect(
+      placeOf({
+        timezone: "America/Toronto",
+        slack_tz: "America/Vancouver",
+        slack_tz_observed_at: ago(60),
+      }),
+    ).toMatchObject({ label: "Toronto", source: "roster" });
+  });
+
+  it("flags a Slack zone over two hours off, and never moves a fresh sign-in city for it", () => {
+    const placed = placeOf({
+      last_login_city: "Toronto",
+      last_login_region: "Ontario",
+      last_login_country: "CA",
+      last_login_at: ago(1),
+      slack_tz: "Europe/Berlin",
+      slack_tz_observed_at: ago(1),
+    });
+    expect(placed?.label).toBe("Toronto");
+    expect(placed?.tz_mismatch).toMatchObject({ slack_tz: "Europe/Berlin", hours: 6 });
+  });
+
+  it("does not flag a neighbouring zone or a country-level pin", () => {
+    expect(
+      placeOf({
+        current_city: "Montreal",
+        slack_tz: "America/Toronto",
+        slack_tz_observed_at: ago(1),
+      })?.tz_mismatch,
+    ).toBeUndefined();
+    expect(
+      placeOf({
+        current_city: "Germany",
+        slack_tz: "America/Toronto",
+        slack_tz_observed_at: ago(1),
+      })?.tz_mismatch,
+    ).toBeUndefined();
   });
 });

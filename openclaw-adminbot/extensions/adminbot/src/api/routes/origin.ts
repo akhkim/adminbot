@@ -96,12 +96,29 @@ export function parseOrigins(value: string | undefined): string[] | undefined {
     .filter((origin) => origin.length > 0);
 }
 
+// The client address for rate limits and sign-in geolocation.
+//
+// Behind a proxy (ADMINBOT_TRUST_PROXY=1) the socket peer is the proxy, so the address comes from a
+// header -- but only one the proxy itself wrote. A client can send its own X-Forwarded-For, and
+// proxies *append* to it, so its first entry is whatever the client chose. In order:
+//   1. CF-Connecting-IP: Cloudflare sets it at the edge and overwrites any copy the client sent.
+//      Production reaches the service through a Cloudflare tunnel.
+//   2. The right-most X-Forwarded-For entry: the address the nearest proxy saw connect to it.
+// Without trusted proxy headers, both are ignored and the socket peer is used.
 export function remoteIp(req: IncomingMessage, trustProxyHeaders: boolean): string | undefined {
   if (trustProxyHeaders) {
+    const cloudflare = firstHeaderValue(req.headers["cf-connecting-ip"])?.trim();
+    if (cloudflare) {
+      return cloudflare;
+    }
     const header = req.headers["x-forwarded-for"];
-    const first = (Array.isArray(header) ? header[0] : header)?.split(",")[0]?.trim();
-    if (first) {
-      return first;
+    const entries = (Array.isArray(header) ? header.join(",") : (header ?? ""))
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    const nearest = entries.at(-1);
+    if (nearest) {
+      return nearest;
     }
   }
   return req.socket.remoteAddress ?? undefined;

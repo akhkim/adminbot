@@ -2,9 +2,10 @@
 
 AdminBot geolocates the IP address of each successful sign-in and stamps the result on the member
 record. The country is shown to the member and to admins, and the city places the member on the
-lab member map for 14 days, unless the member chose "My stated city only" or "Hidden" in Profile. Only the place names are stored: the city, the region, the
-country, the continent and the time zone. Coordinates are never stored or returned, and the map
-pins every member on the centroid of a city or country from its own gazetteer.
+lab member map for 14 days, unless the member chose "My stated city only" or "Hidden" in Profile.
+Only the place names are stored: the city, the region, the country, the continent and the time
+zone. Coordinates are never stored or returned, and the map pins every member on the centroid of a
+city or country from its own gazetteer.
 
 ## Providers
 
@@ -25,24 +26,60 @@ MaxMind GeoLite2-City, because both use the same format. Private, loopback, link
 
 ## Production setup
 
-1. Install the database once, from the deployed `openclaw-adminbot` directory. Put it on a volume
-   with room. The file is roughly 130 MB, and while it refreshes the compressed download sits
-   beside it. Do not put it on `/w/406`, which is a 2.1 GB volume that has filled before (see
-   [the Aurora deploy notes](../deploy/aurora-adminbot.md)). It is read-only data, so the network
+### Installed by every Aurora deploy
+
+Each Aurora deploy turns sign-in geolocation on by itself. `deploy/aurora/auto-deploy.sh` runs
+`deploy/aurora/install-geoip.sh` after the new release has built and before the swap, so the restart
+that follows picks up anything it changed. The script:
+
+1. Finds the env file the `jinesis-adminbot` unit actually reads by asking systemd, instead of
+   assuming a path.
+2. Appends `ADMINBOT_TRUST_PROXY=1` if the file does not set it. The service listens only on
+   loopback behind the Cloudflare tunnel, so without this every sign-in would come from
+   `127.0.0.1`, which is never looked up.
+3. Installs the database at `<deployment root>/geoip/dbip-city-lite.mmdb`, beside the releases, so
+   every release reads the same file. It uses `scripts/adminbot-geoip-refresh.sh` (see below). A
+   file younger than 32 days (`GEOIP_MAX_AGE_DAYS`) is kept, because the monthly cron job keeps it
+   current.
+4. Appends `ADMINBOT_GEOIP_MMDB_PATH` once the file exists, again only if the key is missing.
+
+It only ever appends a key that is missing, under a dated `# Added by deploy/aurora/install-geoip.sh`
+comment. An operator's own value is never rewritten, including an explicit
+`ADMINBOT_TRUST_PROXY=0` or a different database path.
+
+**A failure never blocks the deploy, but it is loud.** A failed download leaves the service exactly
+as it was. Every failure is printed as a GitHub Actions `::warning title=IP geolocation::`
+annotation, which appears on the run summary. The workflow's next step, "Check IP geolocation" in
+`.github/workflows/deploy-aurora.yaml`, reads the service's own `AdminBot IP geolocation:` startup
+line from the journal and warns again if it says `off`. When you see that warning, run the refresh
+by hand (step 1 below) and restart.
+
+Admins can also see the state without the logs. The admin member map ends with a status line,
+"Sign-in geolocation is on (mmdb)." or "Sign-in geolocation is off: members are placed by what they
+state and their time zone." It comes from the `ip_geolocation: { active, provider, trust_proxy }`
+field of the admin `GET /member-map` response, where `provider` is `mmdb`, `ipinfo` or `off`. The
+field never carries the database path or a token, and the public summary never carries it at all.
+
+### By hand (other hosts, or to repair a failed install)
+
+1. Install the database from the deployed `openclaw-adminbot` directory. Put it on a volume with
+   room. The file is roughly 130 MB, and while it refreshes the compressed download sits beside it.
+   Do not put it on `/w/406`, which is a 2.1 GB volume that has filled before (see
+   [the Aurora deploy notes](../deploy/aurora-adminbot.md)). It is read-only data, so a network
    mount is fine for it, unlike SQLite:
 
    ```bash
-   bash scripts/adminbot-geoip-refresh.sh /mfs1/u/<cs-user>/jinesis-adminbot/geoip/dbip-city-lite.mmdb
+   bash scripts/adminbot-geoip-refresh.sh <deployment root>/geoip/dbip-city-lite.mmdb
    ```
 
    The script downloads this month's file, or last month's when this month's is not published yet.
    It checks that the file gunzips and opens as a city database, then renames it into place. A
    failed run leaves the existing file untouched.
 
-2. Set the path in the AdminBot env file, `/w/406/adminbot/secrets/adminbot.env`:
+2. Set the path in the AdminBot env file (on Aurora, `/w/406/adminbot/secrets/adminbot.env`):
 
    ```bash
-   ADMINBOT_GEOIP_MMDB_PATH=/mfs1/u/<cs-user>/jinesis-adminbot/geoip/dbip-city-lite.mmdb
+   ADMINBOT_GEOIP_MMDB_PATH=<deployment root>/geoip/dbip-city-lite.mmdb
    ```
 
    The cron wrappers read `~/.config/jinesis-adminbot/adminbot.env` first. If that is not the same
@@ -54,7 +91,7 @@ MaxMind GeoLite2-City, because both use the same format. Private, loopback, link
    ```bash
    scripts/aurora-adminbot-host.sh --user <cs-user> restart
    scripts/aurora-adminbot-host.sh --user <cs-user> logs adminbot | grep "IP geolocation"
-   # AdminBot IP geolocation: local city database at /mfs1/.../dbip-city-lite.mmdb (city-level)
+   # AdminBot IP geolocation: local city database at /.../dbip-city-lite.mmdb (city-level)
    ```
 
 4. Keep it current. `adminbot-geoip-refresh` is in `config/adminbot-cron.json` and runs at 04:25
@@ -91,4 +128,10 @@ MaxMind for a GeoLite2 file and IPinfo for the IPinfo provider. Do not remove it
   placed at the country, never at a guessed city. Add the city to `GAZETTEER` in
   `extensions/adminbot/src/workflows/members/member-map.ts` to place it.
 - **Behind a proxy.** The service sees the proxy's address unless `ADMINBOT_TRUST_PROXY=1` is set.
+  With it set, the client address is `CF-Connecting-IP` when present (Cloudflare writes it and
+  overwrites any value a client sent), otherwise the right-most `X-Forwarded-For` entry, which is the
+  one the nearest proxy appended. The left-most entry is never used, because a client can write it.
   See "Login location" in [AdminBot](adminbot.md).
+- **Not the only signal.** A sign-in city is one of several. Members also confirm where they are in
+  a one-tap check-in, and their Slack time zone is a cross-check. See "Member map" in
+  [AdminBot](adminbot.md).

@@ -16,8 +16,14 @@ import type { UiSettings } from "../../storage.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { readApiJson } from "./api-json.ts";
 
-/** Where a member's pin came from, as the service reports it. */
-export type MemberMapSource = "slack" | "roster" | "login";
+/**
+ * Where a member's pin came from, as the service reports it. `checkin` is the member's own answer
+ * to "Are you in ...?"; `roster` is any other stated field.
+ */
+export type MemberMapSource = "slack" | "roster" | "login" | "checkin";
+
+/** The member's Slack zone keeps a clock this far from the city they are placed in (admin only). */
+export type MemberMapTimezoneMismatch = { slack_tz: string; place_tz: string; hours: number };
 
 /**
  * How finely the pin locates the member: a city somebody wrote down or signed in from, the city a
@@ -32,6 +38,9 @@ export type MemberMapMember = {
   last_login_at?: string;
   source?: MemberMapSource;
   precision?: MemberMapPrecision;
+  /** When the source that placed them said so: "stated 3 days ago", "sign-in 2 days ago". */
+  located_at?: string;
+  tz_mismatch?: MemberMapTimezoneMismatch;
 };
 
 /** One city the gazetteer knows, with however much of its membership the caller may see. */
@@ -64,6 +73,11 @@ export type MemberMap = {
   /** Members whose written location the gazetteer could not place. A count only — see below. */
   unplaced: number;
   counts: { placed: number; unplaced: number; unknown: number };
+  /**
+   * Admin only: whether sign-ins are geolocated at all, and by what. Lets an admin tell "nobody
+   * signed in from anywhere" from "the GeoIP database never got installed".
+   */
+  ipGeolocation?: { active: boolean; provider: string };
   /** When this copy arrived (ms since epoch), for "Updated N min ago". Set by loadMemberMap. */
   loadedAt?: number;
 };
@@ -188,11 +202,28 @@ type RawPlace = {
 
 // Anything else -- an older service, a typo -- is dropped, and the card says nothing about how the
 // pin was placed rather than saying something wrong.
-const SOURCES: ReadonlySet<MemberMapSource> = new Set(["slack", "roster", "login"]);
+const SOURCES: ReadonlySet<MemberMapSource> = new Set(["slack", "roster", "login", "checkin"]);
 const PRECISIONS: ReadonlySet<MemberMapPrecision> = new Set(["city", "timezone", "country"]);
 
 function asNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : Number.NaN;
+}
+
+function toMismatch(raw: unknown): MemberMapTimezoneMismatch | undefined {
+  const record = raw as { slack_tz?: unknown; place_tz?: unknown; hours?: unknown } | null;
+  const hours = asNumber(record?.hours);
+  return typeof record?.slack_tz === "string" &&
+    typeof record.place_tz === "string" &&
+    !Number.isNaN(hours)
+    ? { slack_tz: record.slack_tz, place_tz: record.place_tz, hours }
+    : undefined;
+}
+
+function toIpGeolocation(raw: unknown): MemberMap["ipGeolocation"] {
+  const record = raw as { active?: unknown; provider?: unknown } | null | undefined;
+  return typeof record?.active === "boolean" && typeof record.provider === "string"
+    ? { active: record.active, provider: record.provider }
+    : undefined;
 }
 
 /**
@@ -216,6 +247,8 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
           last_login_at?: unknown;
           source?: unknown;
           precision?: unknown;
+          located_at?: unknown;
+          tz_mismatch?: unknown;
         };
         if (!isRenderableName(record?.name)) {
           return [];
@@ -229,6 +262,8 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
         const precision = PRECISIONS.has(record.precision as MemberMapPrecision)
           ? (record.precision as MemberMapPrecision)
           : undefined;
+        const locatedAt = typeof record.located_at === "string" ? record.located_at.trim() : "";
+        const mismatch = toMismatch(record.tz_mismatch);
         const member: MemberMapMember = {
           member_id: String(record.member_id ?? ""),
           name: record.name,
@@ -236,6 +271,8 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
           ...(lastLoginAt ? { last_login_at: lastLoginAt } : {}),
           ...(source ? { source } : {}),
           ...(precision ? { precision } : {}),
+          ...(locatedAt && !Number.isNaN(Date.parse(locatedAt)) ? { located_at: locatedAt } : {}),
+          ...(mismatch ? { tz_mismatch: mismatch } : {}),
         };
         return [member];
       })
@@ -272,6 +309,7 @@ export function parseMemberMap(body: unknown): MemberMap | null {
     unplaced_count?: unknown;
     counts?: unknown;
     attribution?: unknown;
+    ip_geolocation?: unknown;
   } | null;
   if (!raw || !Array.isArray(raw.places)) {
     return null;
@@ -282,10 +320,13 @@ export function parseMemberMap(body: unknown): MemberMap | null {
     .filter((place): place is MemberMapPlace => place !== null)
     .toSorted((left, right) => right.count - left.count || left.label.localeCompare(right.label));
   const attribution = toAttribution(raw.attribution);
+  // Only the full (admin) shape may carry it; a summary that somehow did is ignored.
+  const ipGeolocation = raw.mode === "full" ? toIpGeolocation(raw.ip_geolocation) : undefined;
   return {
     mode: raw.mode === "full" ? "full" : "summary",
     places,
     ...(attribution ? { attribution } : {}),
+    ...(ipGeolocation ? { ipGeolocation } : {}),
     // Only ever a number here: the card is a prompt to extend the gazetteer, not a roster. The full
     // response sends `unplaced_count`; an older server sent the list itself.
     unplaced: Array.isArray(raw.unplaced) ? raw.unplaced.length : asNumber(raw.unplaced_count) || 0,

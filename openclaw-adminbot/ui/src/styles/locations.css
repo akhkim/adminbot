@@ -29,6 +29,103 @@
   font-size: 0.85em;
 }
 
+/* The check-in strip: "Are you in Toronto?  [Yes]  No, change · Prefer not to say  ×". It sits in
+   the page flow under the tabs -- never fixed, never an overlay -- so it covers no navigation and
+   scrolls away with the page. Every control is at least 40px tall so it is a comfortable tap. */
+.location-checkin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated, var(--bg));
+}
+
+.location-checkin__question {
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.location-checkin__actions,
+.location-checkin__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.location-checkin__form {
+  flex: 1 1 auto;
+}
+
+.location-checkin .btn,
+.location-checkin__link,
+.location-checkin__close,
+.location-checkin__input {
+  min-height: 40px;
+}
+
+.location-checkin__input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+/* Text-styled buttons: "No, change" reads as the alternative, "Prefer not to say" quieter still. */
+.location-checkin__link {
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--accent, inherit);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.location-checkin__link--quiet {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.location-checkin__close {
+  min-width: 40px;
+  margin-left: auto;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font-size: 1.25em;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.location-checkin__link:disabled,
+.location-checkin__close:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.location-checkin__error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.85em;
+}
+
+/* On a phone the question takes its own line and the answers wrap under it. */
+@media (max-width: 600px) {
+  .location-checkin__question {
+    flex-basis: calc(100% - 48px);
+  }
+
+  .location-checkin__form .location-checkin__input {
+    flex-basis: 100%;
+  }
+}
+
 /* An attendee's local time in the calendar's invite list. The odd-hour variant is a weight change
    rather than a color, so it still reads as a flag with color vision differences or in print. */
 .adminbot-calendar__match-local {
@@ -436,4 +533,44 @@
 
 .lab-travel__form .lab-travel__form-actions {
   grid-column: 1 / -1;
+}
+
+/* An admin's location log for one member, under their schedule: a dated list, newest first. */
+.adminbot-location-log {
+  margin-top: var(--space-4);
+}
+
+.adminbot-location-log__title {
+  margin: 0 0 var(--space-2);
+}
+
+.adminbot-location-log__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 0.9em;
+}
+
+.adminbot-location-log__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.adminbot-location-log__day {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.adminbot-location-log__source {
+  min-width: 7.5em;
+  font-weight: 500;
+}
+
+.adminbot-location-log__outcome {
+  color: var(--muted);
 }
