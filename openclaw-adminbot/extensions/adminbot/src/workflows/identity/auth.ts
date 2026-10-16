@@ -734,7 +734,11 @@ export class AdminBotAuthService {
           : location.country
             ? { last_login_city: "", last_login_region: "" }
             : {}),
-        ...(location.timezone ? { last_login_timezone: location.timezone } : {}),
+        // The zone belongs to this reading too: one that came without a zone clears the last one,
+        // or an unlisted city would be checked against the clock of wherever the member was before.
+        ...(location.timezone || location.country
+          ? { last_login_timezone: location.timezone ?? "" }
+          : {}),
         last_ip_observed_at: nowIso,
         last_ip_suspected_vpn: false,
         updated_at: nowIso,

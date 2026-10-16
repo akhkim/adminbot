@@ -387,6 +387,22 @@ describe("ipReadingSetAside", () => {
     ).toBe(false);
   });
 
+  it("falls back to the country's zone when the reading came without one", () => {
+    const noZone = { ...unlisted, last_login_country: "DE", last_login_region: "Bavaria", last_login_timezone: "" };
+    expect(
+      ipReadingSetAside(
+        member({ ...noZone, last_device_tz: "Europe/Berlin", last_device_tz_at: ago(0) }),
+        now,
+      ),
+    ).toBe(false);
+    expect(
+      ipReadingSetAside(
+        member({ ...noZone, last_device_tz: "America/Toronto", last_device_tz_at: ago(0) }),
+        now,
+      ),
+    ).toBe(true);
+  });
+
   it("does not set an unlisted city aside with no zone to check it against", () => {
     expect(ipReadingSetAside(member(unlisted), now)).toBe(false);
   });
