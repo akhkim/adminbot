@@ -1184,6 +1184,9 @@ whether somebody was ever told.
 | Workshop matches               | admin presses Nudge | Slack          | no        |
 | Ad-hoc admin nudge             | admin types it      | Slack or email | no        |
 
+The profile photo nudge runs through the shared campaign module (filter, dry run, confirm guard,
+ledger, pacing, audit). See [Nudge campaigns](/tools/adminbot-nudges).
+
 ### The onboarding follow-up ladder
 
 The onboarding email itself is queued by a person -- from **Add member**, from the Onboarding

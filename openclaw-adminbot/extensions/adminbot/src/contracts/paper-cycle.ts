@@ -186,6 +186,11 @@ export const adminBotNudgeDomains = [
   // the time the pass last touched it, so a message the pass re-examines and holds again asks
   // again, while one sitting untouched stays asked exactly once.
   "email_review",
+  // Nudge campaigns (workflows/nudges/campaign.ts): one domain per campaign, so "have we asked this
+  // person already" is a ledger lookup and the campaigns listing can count sends per campaign.
+  // `profile_photo` keeps its original no-cooldown behaviour and stamps only so the listing can
+  // show when it last went out.
+  "profile_photo",
 ] as const;
 
 /**
