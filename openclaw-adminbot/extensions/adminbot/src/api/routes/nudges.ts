@@ -10,6 +10,11 @@ import { adminSessionOnly, memberOnly, principalActor, privilegedOnly } from "./
 import { get, post, type Route } from "./router.js";
 
 export const nudgesRoutes: readonly Route[] = [
+  // The nudge campaigns (workflows/nudges/campaign.ts), with how many members each has reached.
+  get(
+    "/nudges/campaigns",
+    privilegedOnly(({ res, ctx }) => sendServiceResult(res, ctx.service.listNudgeCampaigns())),
+  ),
   get(
     "/nudges/escalated",
     privilegedOnly(({ res, url, ctx }) => {

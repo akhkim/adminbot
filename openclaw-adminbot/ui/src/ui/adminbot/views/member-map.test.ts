@@ -1020,6 +1020,49 @@ describe("renderMemberMap", () => {
     ).toBeNull();
   });
 
+  // The card's plot is as wide as the card now, not what a side-by-side list leaves it, so the
+  // scene has to be laid out for the box it measures: same projection, bigger box, fewer merges.
+  it("redraws and re-clusters the card for whatever size its box measures", async () => {
+    let report: ResizeObserverCallback | undefined;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          report = callback;
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const container = await draw(parseMemberMap(memberMapFixture({ mode: "summary" })));
+    const element = mapElement(container);
+    const stage = container.querySelector<HTMLElement>('[data-stage="card"]')!;
+    const resize = async (width: number, height: number) => {
+      report!(
+        [{ target: stage, contentRect: { width, height } } as unknown as ResizeObserverEntry],
+        {} as ResizeObserver,
+      );
+      await element.updateComplete;
+      const plot = stage.querySelector("svg.member-map__plot")!;
+      return {
+        width: Number(plot.getAttribute("width")),
+        height: Number(plot.getAttribute("height")),
+        markers: stage.querySelectorAll(".member-map__marker").length,
+      };
+    };
+    // What the card used to give the plot beside the list, then the card's full width.
+    const narrow = await resize(371, 156);
+    const full = await resize(579, 244);
+    expect(narrow).toMatchObject({ width: 371, height: 156 });
+    expect(full).toMatchObject({ width: 579, height: 244 });
+    expect(full.markers).toBeGreaterThan(narrow.markers);
+    // Fills the box: the box is the projection's own shape, so the fit leaves no letterbox.
+    const fit = fitViewport({ width: 579, height: 244 });
+    expect(579 - VIEW_WIDTH * fit.k).toBeLessThan(2);
+    expect(244 - VIEW_HEIGHT * fit.k).toBeLessThan(2);
+  });
+
   // One card fewer beats an empty map on a dashboard whose other cards are waiting on the member.
   it("renders nothing at all when there is nothing to draw", async () => {
     expect((await draw(null)).querySelector('[data-testid="dashboard-member-map"]')).toBeNull();

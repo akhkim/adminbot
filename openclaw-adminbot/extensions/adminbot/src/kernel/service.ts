@@ -381,6 +381,18 @@ import {
   buildTravelHistory,
   type AdminBotTravelHistory,
 } from "../workflows/members/travel-history.js";
+import {
+  type AdminBotNudgeCampaign,
+  type AdminBotNudgeCampaignInfo,
+  type AdminBotNudgeCampaignMode,
+  type AdminBotNudgeCampaignRefusal,
+  type AdminBotNudgeCampaignResult,
+  campaignSubjectId,
+  isCampaignRefusal,
+  runNudgeCampaign,
+} from "../workflows/nudges/campaign.js";
+import { ADMINBOT_NUDGE_CAMPAIGNS } from "../workflows/nudges/campaigns.js";
+import { profilePhotoCampaign } from "../workflows/nudges/profile-photo-nudge.js";
 import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
 import {
   planOnboardingSweep,
@@ -1196,6 +1208,11 @@ export type AdminBotServiceOptions = {
    * a nudge whose whole payload is "bcc us at" is worse than silence without an address to name.
    */
   paperflowBotEmail?: string;
+  /**
+   * The pause between two DMs of a nudge campaign (workflows/nudges/campaign.ts). Defaults to
+   * ADMINBOT_NUDGE_CAMPAIGN_PACE_MS; tests set 0.
+   */
+  nudgeCampaignPaceMs?: number;
   /**
    * A roster member who takes the venue cycle ahead of author order when they are on the paper.
    * Configuration rather than a name in a conditional, so the day it stops being true it is one
@@ -10804,6 +10821,92 @@ export class AdminBotService {
     };
   }
 
+  /**
+   * Runs one nudge campaign (workflows/nudges/campaign.ts) against the roster: the module filters,
+   * previews and guards; this supplies the send (sendMemberNudge, one member at a time), the ledger
+   * stamp and the audit row.
+   */
+  private async runNudgeCampaign(
+    campaign: AdminBotNudgeCampaign,
+    mode: AdminBotNudgeCampaignMode,
+    actor: string,
+    members: readonly AdminBotLabMember[] = this.store.listLabMembers(),
+  ): Promise<AdminBotNudgeCampaignResult | AdminBotNudgeCampaignRefusal> {
+    const now = this.options.now?.() ?? new Date();
+    return runNudgeCampaign(campaign, mode, {
+      members,
+      ledger: this.store.listNudgeLedger(campaign.key),
+      headProfessorMemberId: this.resolveSettings().head_professor_member_id,
+      now,
+      paceMs: this.options.nudgeCampaignPaceMs,
+      send: async ({ member, message }) => {
+        const result = await this.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: [member.id],
+            message,
+            kind: campaign.notification.kind,
+            title: campaign.notification.title,
+            ...(campaign.notification.tab ? { tab: campaign.notification.tab } : {}),
+            ...(campaign.notification.important ? { important: true } : {}),
+          },
+          actor,
+          { appendPortalLink: campaign.appendPortalLink !== false },
+        );
+        if (!result.ok) {
+          return { delivered: false, reason: result.error.message };
+        }
+        const skip = result.payload.skipped[0];
+        return skip ? { delivered: false, reason: skip.reason } : { delivered: true };
+      },
+      stamp: (memberId, nowIso) => {
+        const subjectId = campaignSubjectId(campaign.key);
+        const existing = this.store
+          .listNudgeLedger(campaign.key)
+          .find((entry) => entry.subject_id === subjectId && entry.member_id === memberId);
+        this.store.saveNudgeLedgerEntry({
+          domain: campaign.key,
+          subject_id: subjectId,
+          member_id: memberId,
+          last_nudged_at: nowIso,
+          nudge_count: (existing?.nudge_count ?? 0) + 1,
+          ...(existing?.snoozed_until ? { snoozed_until: existing.snoozed_until } : {}),
+        });
+      },
+      audit: (memberId) =>
+        this.recordAudit({
+          type: "nudge_campaign.sent",
+          actor,
+          details: { campaign: campaign.key, member_id: memberId, dry_run: false },
+        }),
+    });
+  }
+
+  /** Every nudge campaign, with how many members it has reached and when it last sent. */
+  listNudgeCampaigns(): AdminBotServiceResponse<{
+    campaigns: Array<
+      AdminBotNudgeCampaignInfo & { members_reached: number; last_sent_at?: string }
+    >;
+  }> {
+    const campaigns = ADMINBOT_NUDGE_CAMPAIGNS.map((info) => {
+      const rows = this.store
+        .listNudgeLedger(info.key)
+        .filter(
+          (entry) => entry.subject_id === campaignSubjectId(info.key) && entry.last_nudged_at,
+        );
+      const lastSent = rows
+        .map((entry) => entry.last_nudged_at as string)
+        .toSorted()
+        .at(-1);
+      return {
+        ...info,
+        members_reached: rows.length,
+        ...(lastSent ? { last_sent_at: lastSent } : {}),
+      };
+    });
+    return { ok: true, status: 200, payload: { campaigns } };
+  }
+
   // Re-reads every member's Slack profile and stamps what it finds. A member Slack has
   // nothing for is cleared rather than left stale: keeping an old value would quietly
   // outrank their roster location forever.
@@ -11993,24 +12096,27 @@ export class AdminBotService {
         nonCompliantMemberIds.push(member.id);
       }
     }
+    // Through the campaign module (workflows/nudges/campaign.ts), with the original behaviour: no
+    // confirm guard (the route is run by an admin or a cron), no cooldown, and members without a
+    // Slack ID still passed to the send so they get the portal notification.
     const nudge = nonCompliantMemberIds.length
-      ? await this.sendMemberNudge(
-          {
-            channel: "slack",
-            recipient_member_ids: nonCompliantMemberIds,
+      ? await this.runNudgeCampaign(
+          profilePhotoCampaign({
+            nonCompliantMemberIds: new Set(nonCompliantMemberIds),
             message: buildProfilePhotoGuidelineMessage(),
-            kind: "profile_photo",
-            title: "Your profile photo needs replacing",
-            tab: "profile",
-            // Not important: nothing downstream is blocked on it, and a group DM about somebody's
-            // headshot is the escalation that would make every other one easy to ignore.
-          },
+          }),
+          { dry_run: false, scheduled: true },
           actor,
+          members,
         )
-      : ({ ok: true, status: 200, payload: { created: [], skipped: [] } } as const);
-    if (!nudge.ok) {
-      return nudge;
-    }
+      : undefined;
+    const nudgesCreated = nudge && !isCampaignRefusal(nudge) ? (nudge.sent ?? 0) : 0;
+    const nudgesSkipped =
+      nudge && !isCampaignRefusal(nudge)
+        ? Object.values(nudge.skipped).reduce((sum, n) => sum + n, 0) -
+          (nudge.skipped.compliant ?? 0) +
+          (nudge.failed?.length ?? 0)
+        : 0;
     const nudgeSet = new Set(nonCompliantMemberIds);
     for (const member of members) {
       if (!nudgeSet.has(member.id)) {
@@ -12040,8 +12146,8 @@ export class AdminBotService {
         actor,
         details: {
           targeted: nonCompliantMemberIds.length,
-          created: nudge.payload.created.length,
-          skipped: nudge.payload.skipped.length,
+          created: nudgesCreated,
+          skipped: nudgesSkipped,
         },
       });
     }
@@ -12051,8 +12157,8 @@ export class AdminBotService {
       payload: {
         reviewed,
         non_compliant: nonCompliantMemberIds.length,
-        nudges_created: nudge.payload.created.length,
-        nudges_skipped: nudge.payload.skipped.length,
+        nudges_created: nudgesCreated,
+        nudges_skipped: nudgesSkipped,
       },
     };
   }
@@ -12220,6 +12326,10 @@ export class AdminBotService {
   async sendMemberNudge(
     request: AdminBotMemberNudgeRequest,
     actor: string,
+    options: {
+      /** `false` when the message already carries its own link (a nudge campaign's deep link). */
+      appendPortalLink?: boolean;
+    } = {},
   ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult>> {
     const message = request.message.trim();
     if (!message) {
@@ -12244,7 +12354,8 @@ export class AdminBotService {
     // On the outbound copy only. The stored notification is read *inside* the portal, where a link
     // telling the reader where they already are is noise.
     const portalUrl = resolveAdminBotControlUiUrl();
-    const outboundMessage = `${message}\n\n${portalUrl}`;
+    const outboundMessage =
+      options.appendPortalLink === false ? message : `${message}\n\n${portalUrl}`;
     for (const memberId of request.recipient_member_ids) {
       const member = this.store.getLabMember(memberId);
       if (!member) {
