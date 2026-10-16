@@ -56,7 +56,7 @@ export function streakMeetings(
 }
 
 /** Whether the roster records this member as present, by member id or by name. */
-function wasPresent(meeting: AdminBotMeetingRecord, member: AdminBotLabMember): boolean {
+export function wasPresent(meeting: AdminBotMeetingRecord, member: AdminBotLabMember): boolean {
   const name = normalizeName(member.name);
   return (meeting.attendees ?? []).some((attendee) => {
     if (!attendee.present) {
@@ -79,7 +79,10 @@ function wasPresent(meeting: AdminBotMeetingRecord, member: AdminBotLabMember): 
  * same month as the meeting is given the benefit of the doubt rather than counted absent from a
  * meeting that may have happened before their first day.
  */
-function couldHaveAttended(meeting: AdminBotMeetingRecord, member: AdminBotLabMember): boolean {
+export function couldHaveAttended(
+  meeting: AdminBotMeetingRecord,
+  member: AdminBotLabMember,
+): boolean {
   const joined = member.joined_month?.trim();
   if (!joined) {
     return true;

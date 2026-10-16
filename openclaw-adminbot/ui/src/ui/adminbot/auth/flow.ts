@@ -44,6 +44,7 @@ import { clearLabTravel, type LabTravelState } from "../controllers/lab-travel.t
 import { createEmptyAdminBotMemberRequests } from "../controllers/member-requests.ts";
 import { createEmptyAdminBotMemberNudgeState } from "../controllers/nudges.ts";
 import { EMPTY_PROFILE_OVERVIEW_PAGE } from "../controllers/profile-overview.ts";
+import { createRecLetterEligibilityState } from "../controllers/rec-letter-eligibility.ts";
 import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
 import { invalidateMemberMap } from "../data/member-map.ts";
 import { localTimezone } from "../data/timezones.ts";
@@ -311,6 +312,7 @@ export type MemberAuthHost = {
   adminBotLogisticsRequestsLoadedAt?: number | null;
   adminBotLogisticsPage?: import("../load-more.ts").PagedListState;
   adminBotDeskLetters?: import("../controllers/logistics.ts").DeskLettersState;
+  adminBotRecLetter?: import("../controllers/rec-letter-eligibility.ts").RecLetterEligibilityState;
   adminBotLogisticsOpenRequestId?: string | null;
   adminBotLogisticsOpenRequest?: import("../api/logistics.ts").LogisticsRequest | null;
   adminBotLogisticsOpenLoading?: boolean;
@@ -753,6 +755,10 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotLogisticsRequestsLoadedAt = null;
   host.adminBotLogisticsPage = EMPTY_PAGED_LIST;
   host.adminBotDeskLetters = { requests: [], loading: false, loadedAt: null };
+  // Another member's eligibility, or an admin's freeze notes, must not outlive the session.
+  if (host.adminBotRecLetter) {
+    host.adminBotRecLetter = createRecLetterEligibilityState();
+  }
   host.adminBotLogisticsOpenRequestId = null;
   host.adminBotLogisticsOpenRequest = null;
   host.adminBotLogisticsOpenLoading = false;

@@ -34,3 +34,13 @@ days -- one message however many are due, said once per request per deadline. It
 is server-computed from the request log, so there is nothing here to trigger or
 address by hand; see "Recommendation letter deadlines" in
 `docs/tools/adminbot.md`.
+
+## Eligibility is advisory
+
+The request detail shows an eligibility result (`eligible`, `frozen`, `not_yet` or
+`insufficient_data`): a freeze after a desk rejection for hallucinated citations, five months of
+20+ committed hours a week, and a three-month window of 80% group-meeting attendance. It never
+blocks a request, and it is not grounds to refuse to draft a letter. Do not quote another member's
+result or any freeze note, and remember its limits: hours are committed rather than logged, and
+attendance only covers meetings whose Zoom roster was exported. See
+`docs/tools/adminbot-rec-letter-eligibility.md`.

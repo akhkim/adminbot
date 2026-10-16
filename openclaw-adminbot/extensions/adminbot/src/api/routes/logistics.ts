@@ -12,7 +12,7 @@ import { readJsonOrEmpty, sendJson, sendServiceResult } from "../server.http.js"
 import { handleLogisticsRoute } from "../server.logistics.js";
 import type { AdminBotRouteContext } from "./context.js";
 import { adminSessionOnly, memberOnly, principalActor, privilegedOnly } from "./guards.js";
-import { post, route, type Route, under } from "./router.js";
+import { del, get, post, route, type Route, under } from "./router.js";
 import { principalRole, sendNotModified, versionEtag } from "./version-etag.js";
 
 /**
@@ -98,6 +98,67 @@ export const logisticsRoutes: readonly Route[] = [
         return;
       }
       sendJson(res, 200, callResult);
+    }),
+  ),
+  // Recommendation-letter eligibility. Advisory: nothing here gates a request. The member's own
+  // read is its own path so no query parameter can turn it into a read of somebody else.
+  get(
+    "/logistics/eligibility/me",
+    memberOnly(({ res, ctx, principal }) => {
+      sendServiceResult(res, ctx.service.recLetterEligibility().own(principal.member.id));
+    }),
+  ),
+  get(
+    "/logistics/eligibility/summary",
+    adminSessionOnly(({ res, url, ctx }) => {
+      const memberIds = (url.searchParams.get("member_ids") ?? "").split(",");
+      sendServiceResult(res, ctx.service.recLetterEligibility().summaries(memberIds));
+    }),
+  ),
+  get(
+    "/logistics/eligibility",
+    adminSessionOnly(({ res, url, ctx }) => {
+      sendServiceResult(
+        res,
+        ctx.service.recLetterEligibility().forAdmin({
+          member_id: url.searchParams.get("member_id") ?? undefined,
+          request_id: url.searchParams.get("request_id") ?? undefined,
+        }),
+      );
+    }),
+  ),
+  // The freezes themselves: an admin's record, notes included, so admin sessions only -- the
+  // service token has no person behind it to own an entry that withholds somebody's letter.
+  route(
+    ["GET", "POST"],
+    "/logistics/freeze-incidents",
+    adminSessionOnly(async ({ req, res, url, ctx, principal }) => {
+      if (req.method === "GET") {
+        sendServiceResult(
+          res,
+          ctx.service
+            .recLetterEligibility()
+            .listIncidents(url.searchParams.get("member_id") ?? undefined),
+        );
+        return;
+      }
+      sendServiceResult(
+        res,
+        ctx.service
+          .recLetterEligibility()
+          .createIncident(await readJsonOrEmpty(req), principalActor(principal)),
+      );
+    }),
+  ),
+  del(
+    /^\/logistics\/freeze-incidents\/([^/]+)$/,
+    adminSessionOnly(({ res, ctx, principal, params }) => {
+      sendServiceResult(
+        res,
+        ctx.service
+          .recLetterEligibility()
+          .deleteIncident(decodeURIComponent(params[1] ?? ""), principalActor(principal)),
+      );
     }),
   ),
   post(

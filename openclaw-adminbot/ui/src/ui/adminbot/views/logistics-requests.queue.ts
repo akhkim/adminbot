@@ -9,6 +9,7 @@
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { LogisticsRequest, LogisticsRequestStatus } from "../api/logistics.ts";
+import type { RecLetterEligibilitySummary } from "../api/rec-letter-eligibility.ts";
 import {
   logisticsDeadlineText,
   selectLogisticsQueue,
@@ -17,6 +18,7 @@ import {
 import { isSettledRequest } from "../data/logistics-requests.ts";
 import { renderLoadMore, type LoadMoreProps } from "../load-more.ts";
 import { logisticsStatusLabel } from "./logistics-status.ts";
+import { renderRecLetterBadge } from "./rec-letter-eligibility.ts";
 
 export type AdminBotLogisticsQueueProps = {
   requests: LogisticsRequest[];
@@ -36,6 +38,8 @@ export type AdminBotLogisticsQueueProps = {
   onSignedNoteChange: (note: string) => void;
   onOpenRequest: (requestId: string) => void;
   onSetStatus: (requestId: string, status: LogisticsRequestStatus) => void;
+  /** Letter-eligibility badges by member id; advisory, and absent until each one has been read. */
+  eligibility?: Record<string, RecLetterEligibilitySummary>;
 };
 
 function formatInstant(instant: string | undefined): string {
@@ -141,6 +145,9 @@ function renderRow(props: AdminBotLogisticsQueueProps, request: LogisticsRequest
         >
           ${request.member_name}
         </button>
+        ${request.kind === "recommendation_letters"
+          ? renderRecLetterBadge(props.eligibility?.[request.member_id])
+          : nothing}
       </td>
       <td class="logistics-queue__cell ab-num">
         ${deadline

@@ -264,6 +264,7 @@ import {
   type AdminBotPaperMentorRunInput,
 } from "../contracts/papermentor.js";
 import { missingMandatoryProfileFields } from "../contracts/profile-completion.js";
+import type { RecLetterFreezeIncidentStore } from "../contracts/rec-letter-freezes.js";
 import type { ReferenceScanStore } from "../contracts/reference-scans.js";
 import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
@@ -505,6 +506,7 @@ import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
 import { type IntroRunResult, MeetupService } from "./service.meetups.js";
 import { piReviewSlotDenial } from "./service.pi-review.js";
+import { RecLetterEligibilityService } from "./service.rec-letter-eligibility.js";
 import { runSlackRosterSync, type SlackRosterSyncOptions } from "./service.slack-roster-sync.js";
 import {
   affectsWorkingGroupsSlide,
@@ -532,10 +534,12 @@ export type AdminBotServiceResponse<T> =
 
 export type AdminBotMeetingCursor = Pick<AdminBotMeetingRecord, "started_at" | "id">;
 
-// The paper citation checkers' tables, kept in their own contracts so the store below stays one list.
+// Tables kept in their own contracts (the citation checkers', the letter freezes') so the store
+// below stays one list.
 type AdminBotCitationCheckStores = ReferenceScanStore &
   OpenReviewCitationCheckStore &
-  PaperAiTextCheckStore;
+  PaperAiTextCheckStore &
+  RecLetterFreezeIncidentStore;
 
 export type AdminBotMeetingArtifactRecord = {
   file_id: string;
@@ -10389,6 +10393,15 @@ export class AdminBotService {
       return serviceError(404, `unknown logistics request ${requestId}`);
     }
     return { ok: true, status: 200, payload: withCurrentLogisticsDeadline(request) };
+  }
+
+  /** Recommendation-letter eligibility and the freeze incidents behind it. Advisory only. */
+  recLetterEligibility() {
+    return new RecLetterEligibilityService(
+      this.store,
+      (event) => this.recordAudit(event),
+      this.options.now,
+    );
   }
 
   /**
