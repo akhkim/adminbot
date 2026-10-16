@@ -1,15 +1,15 @@
+import { paperInvolvesMember } from "../../../../../extensions/adminbot/src/contracts/paper-involvement.js";
 // My Projects & Papers: the lanes a project moves along, where each project lives in the URL, and
 // which papers count as the viewer's own.
 //
 // A project is one paper record. Its work splits into five lanes, which are the service's slot
 // branches (contracts/paper-slots.ts) under the names authors use for them.
 import type { AdminBotPaperSlotBranch } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
-import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
 import type { AdminBotMyProjectSummary } from "../../../../../extensions/adminbot/src/workflows/papers/my-projects.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
-import { paperSteps, stepLabels } from "../views/admin.ts";
-import { findOwnMember } from "../views/profile.ts";
+import { paperSteps, stepLabels } from "../data/paper-steps.ts";
+import { findOwnMember } from "../views/profile-fields.ts";
 
 export type { AdminBotMyProjectSummary as ProjectSummary };
 
@@ -141,17 +141,11 @@ export function venuePosition(summary: AdminBotMyProjectSummary): string {
  */
 export function ownPapers(state: AppViewState): AdminBotPaperRecord[] {
   const member = findOwnMember(state);
-  const memberId = state.memberId;
-  const name = member?.name ?? "";
-  return (state.adminBotData?.papers ?? []).filter(
-    (paper) =>
-      (memberId && paper.submitted_by_member_id === memberId) ||
-      (memberId && paper.first_author_member_id === memberId) ||
-      (memberId && paper.mentor_member_id === memberId) ||
-      (memberId && (paper.author_links ?? []).some((link) => link.member_id === memberId)) ||
-      // Author entries carry marks about authorship, not identity ("Joeun Yook*" for equal
-      // contribution), which a raw comparison would read as somebody else.
-      (name.length > 0 && (paper.authors ?? []).some((author) => isSamePerson(author, name))),
+  // The same rule GET /papers?scope=mine applies, so a page that read only the viewer's papers
+  // shows the rows it used to pick out of the full list. Names compare as people (isSamePerson):
+  // a raw lowercase comparison once hid a co-first author's paper behind the "*" marking it.
+  return (state.adminBotData?.papers ?? []).filter((paper) =>
+    paperInvolvesMember(paper, state.memberId, member?.name),
   );
 }
 

@@ -1,20 +1,29 @@
 // Where lab members are, for the member map.
 //
-// Three sources, tried in a fixed order, each one falling through to the next whenever it
-// doesn't resolve to a place (not just when it's empty):
-//   1. Slack's IANA timezone (or workspace location field) — a specific city, and the most
-//      likely to be current, since people's Slack clients keep it in sync automatically.
-//   2. The country/continent stamped on their most recent login, from IP geolocation — coarser
-//      (country-level, no city), but still self-updating and current as of their last sign-in.
-//   3. The roster `location` — self-typed once, at signup or when an admin adds them. Kept
-//      last on purpose: it is whatever they wrote once and never updates itself.
+// Every source a member has is resolved in order and the first one that places them wins. A
+// country-level answer never beats a city, so countries come last whatever their source:
 //
-// All three are resolved the same way a person would read them: free text written by humans
-// ("ETH", "Zürich, Tübingen", "Mainly Montreal") for the first and third, a plain country name
-// ("Switzerland") for the second. Anything none of the three can place is reported rather than
-// guessed at or dropped.
+//   1. The city of a fresh sign-in (within ADMINBOT_MAP_LOGIN_FRESH_DAYS), from the local IP
+//      geolocation database. It is where the person actually was most recently, so it leads -- unless
+//      the member set `map_visibility` to "stated", which skips every sign-in source. Placed at the
+//      gazetteer's city centroid, never at the IP's coordinates, which nothing here ever receives.
+//   2. A stated city: `current_city` (where they say they are now), then the roster `location`,
+//      then the Slack profile's location field. The member's own words.
+//   3. The city an IANA timezone is named for: Slack's `tz`, then the roster `timezone`.
+//      "America/Toronto" says Toronto, but it says the same for Montréal, so it is a city-level
+//      answer that is less exact than either of the above.
+//   4. A country: any of the texts above that names only a country ("Germany"), then the country
+//      of the last sign-in. Drawn hollow by the UI so it does not pass for a city.
+//
+// A member whose `map_visibility` is "hidden" is not on the map at all.
+//
+// Text is read the way a person would read it: free text written by humans ("ETH", "Zürich,
+// Tübingen", "Mainly Montreal"), a timezone, or a city with its region and country from the IP
+// provider ("London", "Ontario", "CA"). Anything none of the sources can place is reported under
+// `unplaced` with what was written, rather than guessed at or dropped.
 
 import type { AdminBotLabMember } from "../../contracts/actions.js";
+import { isDoNotContact } from "./do-not-contact.js";
 
 export type AdminBotMapPlace = {
   key: string;
@@ -191,6 +200,137 @@ const GAZETTEER: AdminBotMapPlace[] = [
     lat: -34.6037,
     lon: -58.3816,
   },
+  // Cities IANA timezones are named for, and university towns the lab's people move between, so a
+  // Slack `tz` or a login city places someone instead of reporting them unplaced.
+  { key: "london-on", label: "London, ON", country: "Canada", lat: 42.9849, lon: -81.2453 },
+  { key: "kingston-on", label: "Kingston, ON", country: "Canada", lat: 44.2312, lon: -76.486 },
+  { key: "hamilton-on", label: "Hamilton, ON", country: "Canada", lat: 43.2557, lon: -79.8711 },
+  { key: "edmonton", label: "Edmonton", country: "Canada", lat: 53.5461, lon: -113.4938 },
+  { key: "calgary", label: "Calgary", country: "Canada", lat: 51.0447, lon: -114.0719 },
+  { key: "winnipeg", label: "Winnipeg", country: "Canada", lat: 49.8951, lon: -97.1384 },
+  { key: "regina", label: "Regina", country: "Canada", lat: 50.4452, lon: -104.6189 },
+  { key: "halifax", label: "Halifax", country: "Canada", lat: 44.6488, lon: -63.5752 },
+  { key: "quebec-city", label: "Québec City", country: "Canada", lat: 46.8139, lon: -71.208 },
+  {
+    key: "washington-dc",
+    label: "Washington, DC",
+    country: "United States",
+    lat: 38.9072,
+    lon: -77.0369,
+  },
+  { key: "baltimore", label: "Baltimore", country: "United States", lat: 39.2904, lon: -76.6122 },
+  { key: "princeton", label: "Princeton", country: "United States", lat: 40.3573, lon: -74.6672 },
+  { key: "new-haven", label: "New Haven", country: "United States", lat: 41.3083, lon: -72.9279 },
+  { key: "providence", label: "Providence", country: "United States", lat: 41.824, lon: -71.4128 },
+  { key: "ithaca", label: "Ithaca", country: "United States", lat: 42.444, lon: -76.5019 },
+  { key: "durham-nc", label: "Durham, NC", country: "United States", lat: 35.994, lon: -78.8986 },
+  { key: "detroit", label: "Detroit", country: "United States", lat: 42.3314, lon: -83.0458 },
+  {
+    key: "indianapolis",
+    label: "Indianapolis",
+    country: "United States",
+    lat: 39.7684,
+    lon: -86.1581,
+  },
+  { key: "columbus", label: "Columbus", country: "United States", lat: 39.9612, lon: -82.9988 },
+  { key: "madison", label: "Madison", country: "United States", lat: 43.0731, lon: -89.4012 },
+  {
+    key: "minneapolis",
+    label: "Minneapolis",
+    country: "United States",
+    lat: 44.9778,
+    lon: -93.265,
+  },
+  { key: "houston", label: "Houston", country: "United States", lat: 29.7604, lon: -95.3698 },
+  { key: "miami", label: "Miami", country: "United States", lat: 25.7617, lon: -80.1918 },
+  { key: "phoenix", label: "Phoenix", country: "United States", lat: 33.4484, lon: -112.074 },
+  {
+    key: "salt-lake-city",
+    label: "Salt Lake City",
+    country: "United States",
+    lat: 40.7608,
+    lon: -111.891,
+  },
+  { key: "portland", label: "Portland", country: "United States", lat: 45.5152, lon: -122.6784 },
+  { key: "palo-alto", label: "Palo Alto", country: "United States", lat: 37.4419, lon: -122.143 },
+  { key: "san-jose", label: "San Jose", country: "United States", lat: 37.3382, lon: -121.8863 },
+  { key: "irvine", label: "Irvine", country: "United States", lat: 33.6846, lon: -117.8265 },
+  { key: "anchorage", label: "Anchorage", country: "United States", lat: 61.2181, lon: -149.9003 },
+  { key: "manchester", label: "Manchester", country: "United Kingdom", lat: 53.4808, lon: -2.2426 },
+  { key: "bristol", label: "Bristol", country: "United Kingdom", lat: 51.4545, lon: -2.5879 },
+  { key: "glasgow", label: "Glasgow", country: "United Kingdom", lat: 55.8642, lon: -4.2518 },
+  { key: "cologne", label: "Cologne", country: "Germany", lat: 50.9375, lon: 6.9603 },
+  { key: "stuttgart", label: "Stuttgart", country: "Germany", lat: 48.7758, lon: 9.1829 },
+  { key: "heidelberg", label: "Heidelberg", country: "Germany", lat: 49.3988, lon: 8.6724 },
+  { key: "darmstadt", label: "Darmstadt", country: "Germany", lat: 49.8728, lon: 8.6512 },
+  { key: "dresden", label: "Dresden", country: "Germany", lat: 51.0504, lon: 13.7373 },
+  { key: "basel", label: "Basel", country: "Switzerland", lat: 47.5596, lon: 7.5886 },
+  { key: "bern", label: "Bern", country: "Switzerland", lat: 46.948, lon: 7.4474 },
+  { key: "delft", label: "Delft", country: "Netherlands", lat: 52.0116, lon: 4.3571 },
+  { key: "utrecht", label: "Utrecht", country: "Netherlands", lat: 52.0907, lon: 5.1214 },
+  { key: "eindhoven", label: "Eindhoven", country: "Netherlands", lat: 51.4416, lon: 5.4697 },
+  { key: "leuven", label: "Leuven", country: "Belgium", lat: 50.8798, lon: 4.7005 },
+  { key: "aarhus", label: "Aarhus", country: "Denmark", lat: 56.1629, lon: 10.2039 },
+  { key: "gothenburg", label: "Gothenburg", country: "Sweden", lat: 57.7089, lon: 11.9746 },
+  { key: "grenoble", label: "Grenoble", country: "France", lat: 45.1885, lon: 5.7245 },
+  { key: "turin", label: "Turin", country: "Italy", lat: 45.0703, lon: 7.6869 },
+  { key: "reykjavik", label: "Reykjavík", country: "Iceland", lat: 64.1466, lon: -21.9426 },
+  { key: "tallinn", label: "Tallinn", country: "Estonia", lat: 59.437, lon: 24.7536 },
+  { key: "riga", label: "Riga", country: "Latvia", lat: 56.9496, lon: 24.1052 },
+  { key: "vilnius", label: "Vilnius", country: "Lithuania", lat: 54.6872, lon: 25.2797 },
+  { key: "bratislava", label: "Bratislava", country: "Slovakia", lat: 48.1486, lon: 17.1077 },
+  { key: "ljubljana", label: "Ljubljana", country: "Slovenia", lat: 46.0569, lon: 14.5058 },
+  { key: "zagreb", label: "Zagreb", country: "Croatia", lat: 45.815, lon: 15.9819 },
+  { key: "belgrade", label: "Belgrade", country: "Serbia", lat: 44.7866, lon: 20.4489 },
+  { key: "bucharest", label: "Bucharest", country: "Romania", lat: 44.4268, lon: 26.1025 },
+  { key: "sofia", label: "Sofia", country: "Bulgaria", lat: 42.6977, lon: 23.3219 },
+  { key: "kyiv", label: "Kyiv", country: "Ukraine", lat: 50.4501, lon: 30.5234 },
+  { key: "moscow", label: "Moscow", country: "Russia", lat: 55.7558, lon: 37.6173 },
+  { key: "jerusalem", label: "Jerusalem", country: "Israel", lat: 31.7683, lon: 35.2137 },
+  { key: "haifa", label: "Haifa", country: "Israel", lat: 32.794, lon: 34.9896 },
+  { key: "tehran", label: "Tehran", country: "Iran", lat: 35.6892, lon: 51.389 },
+  { key: "riyadh", label: "Riyadh", country: "Saudi Arabia", lat: 24.7136, lon: 46.6753 },
+  { key: "karachi", label: "Karachi", country: "Pakistan", lat: 24.8607, lon: 67.0011 },
+  { key: "kolkata", label: "Kolkata", country: "India", lat: 22.5726, lon: 88.3639 },
+  { key: "chennai", label: "Chennai", country: "India", lat: 13.0827, lon: 80.2707 },
+  { key: "kanpur", label: "Kanpur", country: "India", lat: 26.4499, lon: 80.3319 },
+  { key: "dhaka", label: "Dhaka", country: "Bangladesh", lat: 23.8103, lon: 90.4125 },
+  { key: "kathmandu", label: "Kathmandu", country: "Nepal", lat: 27.7172, lon: 85.324 },
+  { key: "colombo", label: "Colombo", country: "Sri Lanka", lat: 6.9271, lon: 79.8612 },
+  { key: "jakarta", label: "Jakarta", country: "Indonesia", lat: -6.2088, lon: 106.8456 },
+  {
+    key: "ho-chi-minh-city",
+    label: "Ho Chi Minh City",
+    country: "Vietnam",
+    lat: 10.8231,
+    lon: 106.6297,
+  },
+  { key: "hanoi", label: "Hanoi", country: "Vietnam", lat: 21.0278, lon: 105.8342 },
+  { key: "manila", label: "Manila", country: "Philippines", lat: 14.5995, lon: 120.9842 },
+  { key: "guangzhou", label: "Guangzhou", country: "China", lat: 23.1291, lon: 113.2644 },
+  { key: "nanjing", label: "Nanjing", country: "China", lat: 32.0603, lon: 118.7969 },
+  { key: "wuhan", label: "Wuhan", country: "China", lat: 30.5928, lon: 114.3055 },
+  { key: "chengdu", label: "Chengdu", country: "China", lat: 30.5728, lon: 104.0668 },
+  { key: "daejeon", label: "Daejeon", country: "South Korea", lat: 36.3504, lon: 127.3845 },
+  { key: "nagoya", label: "Nagoya", country: "Japan", lat: 35.1815, lon: 136.9066 },
+  { key: "casablanca", label: "Casablanca", country: "Morocco", lat: 33.5731, lon: -7.5898 },
+  { key: "accra", label: "Accra", country: "Ghana", lat: 5.6037, lon: -0.187 },
+  { key: "addis-ababa", label: "Addis Ababa", country: "Ethiopia", lat: 9.03, lon: 38.74 },
+  {
+    key: "johannesburg",
+    label: "Johannesburg",
+    country: "South Africa",
+    lat: -26.2041,
+    lon: 28.0473,
+  },
+  { key: "perth", label: "Perth", country: "Australia", lat: -31.9505, lon: 115.8605 },
+  { key: "adelaide", label: "Adelaide", country: "Australia", lat: -34.9285, lon: 138.6007 },
+  { key: "canberra", label: "Canberra", country: "Australia", lat: -35.2809, lon: 149.13 },
+  { key: "wellington", label: "Wellington", country: "New Zealand", lat: -41.2865, lon: 174.7762 },
+  { key: "bogota", label: "Bogotá", country: "Colombia", lat: 4.711, lon: -74.0721 },
+  { key: "lima", label: "Lima", country: "Peru", lat: -12.0464, lon: -77.0428 },
+  { key: "santiago", label: "Santiago", country: "Chile", lat: -33.4489, lon: -70.6693 },
+  { key: "montevideo", label: "Montevideo", country: "Uruguay", lat: -34.9011, lon: -56.1645 },
 ];
 
 const PLACES_BY_KEY = new Map(GAZETTEER.map((place) => [place.key, place]));
@@ -223,7 +363,6 @@ const COUNTRY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
   portugal: { lat: 39.3999, lon: -8.2245 },
   italy: { lat: 41.8719, lon: 12.5674 },
   poland: { lat: 51.9194, lon: 19.1451 },
-  "czech republic": { lat: 49.8175, lon: 15.473 },
   czechia: { lat: 49.8175, lon: 15.473 },
   slovakia: { lat: 48.669, lon: 19.699 },
   hungary: { lat: 47.1625, lon: 19.5033 },
@@ -302,18 +441,142 @@ const COUNTRY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
   panama: { lat: 8.538, lon: -80.7821 },
 };
 
+// ISO 3166-1 alpha-2 codes for every country above. IPinfo's core endpoint (the one that also
+// returns a city) answers `country` with the code -- "CH", not "Switzerland" -- and that is what
+// lands in `last_login_country` whenever the core lookup succeeds. Without this table every such
+// login fell through as unplaceable text, so login geolocation silently placed nobody once the
+// core endpoint went in. Lite answers with the name, which the table above already covers.
+const COUNTRY_CODES: Record<string, string> = {
+  us: "united states",
+  ca: "canada",
+  mx: "mexico",
+  gb: "united kingdom",
+  ie: "ireland",
+  fr: "france",
+  de: "germany",
+  ch: "switzerland",
+  at: "austria",
+  nl: "netherlands",
+  be: "belgium",
+  lu: "luxembourg",
+  es: "spain",
+  pt: "portugal",
+  it: "italy",
+  pl: "poland",
+  cz: "czechia",
+  sk: "slovakia",
+  hu: "hungary",
+  ro: "romania",
+  bg: "bulgaria",
+  gr: "greece",
+  hr: "croatia",
+  si: "slovenia",
+  rs: "serbia",
+  dk: "denmark",
+  se: "sweden",
+  no: "norway",
+  fi: "finland",
+  is: "iceland",
+  ee: "estonia",
+  lv: "latvia",
+  lt: "lithuania",
+  cy: "cyprus",
+  mt: "malta",
+  ua: "ukraine",
+  ru: "russia",
+  tr: "turkey",
+  in: "india",
+  pk: "pakistan",
+  bd: "bangladesh",
+  lk: "sri lanka",
+  np: "nepal",
+  cn: "china",
+  hk: "hong kong",
+  tw: "taiwan",
+  jp: "japan",
+  kr: "south korea",
+  sg: "singapore",
+  my: "malaysia",
+  id: "indonesia",
+  th: "thailand",
+  vn: "vietnam",
+  ph: "philippines",
+  il: "israel",
+  ae: "united arab emirates",
+  sa: "saudi arabia",
+  qa: "qatar",
+  ir: "iran",
+  iq: "iraq",
+  eg: "egypt",
+  ma: "morocco",
+  tn: "tunisia",
+  dz: "algeria",
+  ng: "nigeria",
+  gh: "ghana",
+  ke: "kenya",
+  rw: "rwanda",
+  tz: "tanzania",
+  ug: "uganda",
+  et: "ethiopia",
+  za: "south africa",
+  ci: "ivory coast",
+  sn: "senegal",
+  cm: "cameroon",
+  zw: "zimbabwe",
+  au: "australia",
+  nz: "new zealand",
+  br: "brazil",
+  ar: "argentina",
+  cl: "chile",
+  co: "colombia",
+  pe: "peru",
+  ec: "ecuador",
+  ve: "venezuela",
+  uy: "uruguay",
+  py: "paraguay",
+  bo: "bolivia",
+  cu: "cuba",
+  jm: "jamaica",
+  cr: "costa rica",
+  pa: "panama",
+};
+
+// Spellings of the same country that would otherwise become two dots in one place.
+const COUNTRY_ALIASES: Record<string, string> = {
+  "czech republic": "czechia",
+  turkiye: "turkey",
+  "cote d ivoire": "ivory coast",
+  "viet nam": "vietnam",
+  "korea republic of": "south korea",
+  "republic of korea": "south korea",
+  uk: "united kingdom",
+  usa: "united states",
+  "united states of america": "united states",
+};
+
+function titleCase(value: string): string {
+  return value.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
 // Same normalize/candidate-fragment approach as resolvePlace, minus the timezone/gazetteer
-// machinery a plain country name has no use for.
+// machinery a plain country name has no use for. Accepts a name or an alpha-2 code, and labels
+// the place with the canonical name either way, so "CH" and "Switzerland" share one dot reading
+// "Switzerland" rather than two dots, one of them captioned "CH".
 export function resolveCountry(raw: string | undefined): AdminBotMapPlace | undefined {
   if (!raw?.trim()) {
     return undefined;
   }
-  const key = normalize(raw);
+  const normalized = normalize(raw);
+  const key =
+    (normalized.length === 2 ? COUNTRY_CODES[normalized] : undefined) ??
+    COUNTRY_ALIASES[normalized] ??
+    normalized;
   const coords = COUNTRY_CENTROIDS[key];
   if (!coords) {
     return undefined;
   }
-  return { key: `country:${key}`, label: raw.trim(), country: raw.trim(), ...coords };
+  const label = titleCase(key);
+  return { key: `country:${key}`, label, country: label, ...coords };
 }
 
 // What people write instead of a city name. Institutions dominate: "ETH" is where
@@ -343,7 +606,59 @@ const ALIASES: Record<string, string> = {
   sf: "san-francisco",
   bangalore: "bengaluru",
   bombay: "mumbai",
-  "washington dc": "new-york",
+  "washington dc": "washington-dc",
+  "washington, dc": "washington-dc",
+  "washington d c": "washington-dc",
+  dc: "washington-dc",
+  // IANA zone names and older spellings that differ from the city's label.
+  calcutta: "kolkata",
+  madras: "chennai",
+  kiev: "kyiv",
+  saigon: "ho-chi-minh-city",
+  "ho chi minh": "ho-chi-minh-city",
+  katmandu: "kathmandu",
+  koln: "cologne",
+  koeln: "cologne",
+  goteborg: "gothenburg",
+  quebec: "quebec-city",
+  "quebec city": "quebec-city",
+  // London, Ontario is the only shared city name the lab actually has both halves of.
+  "london, ontario": "london-on",
+  "london, on": "london-on",
+  "london ontario": "london-on",
+  "kingston, ontario": "kingston-on",
+  "kingston, on": "kingston-on",
+  "hamilton, ontario": "hamilton-on",
+  "hamilton, on": "hamilton-on",
+  "durham, nc": "durham-nc",
+  "durham, north carolina": "durham-nc",
+  uwo: "london-on",
+  "western university": "london-on",
+  "queens university": "kingston-on",
+  mcmaster: "hamilton-on",
+  uwaterloo: "waterloo",
+  ubc: "vancouver",
+  mcgill: "montreal",
+  yale: "new-haven",
+  brown: "providence",
+  cornell: "ithaca",
+  duke: "durham-nc",
+  jhu: "baltimore",
+  "johns hopkins": "baltimore",
+  "uw madison": "madison",
+  "ut austin": "austin",
+  ucsd: "san-diego",
+  ucla: "los-angeles",
+  uci: "irvine",
+  "tu delft": "delft",
+  "ku leuven": "leuven",
+  "tu darmstadt": "darmstadt",
+  kaist: "daejeon",
+  "iit kanpur": "kanpur",
+  "iit madras": "chennai",
+  "iit delhi": "delhi",
+  "iit bombay": "mumbai",
+  technion: "haifa",
   uk: "london",
   england: "london",
   // AACL-IJCNLP 2026 meets in Hengqin, which is a district of Zhuhai.
@@ -413,7 +728,14 @@ export function resolvePlace(raw: string | undefined): AdminBotMapPlace | undefi
   }
   // "Toronto, Canada" and "Pittsburgh, US" put the city first; try the whole fragment
   // before its head so "cambridge, ma" does not resolve as plain "cambridge".
-  const candidates = [fragment, ...fragment.split(",").map((part) => part.trim())].filter(Boolean);
+  // "London, ON, Canada": the city with its region is tried before the city alone, so the region
+  // can pick between two places that share a name.
+  const parts = fragment.split(",").map((part) => part.trim());
+  const candidates = [
+    fragment,
+    ...(parts.length > 2 ? [`${parts[0]}, ${parts[1]}`] : []),
+    ...parts,
+  ].filter(Boolean);
   for (const candidate of candidates) {
     const aliased = ALIASES[candidate];
     if (aliased && PLACES_BY_KEY.has(aliased)) {
@@ -433,12 +755,23 @@ export function resolvePlace(raw: string | undefined): AdminBotMapPlace | undefi
 
 export type AdminBotMapSource = "slack" | "login" | "roster";
 
+/**
+ * How exact a member's pin is, which the map's popup says out loud.
+ * - `city`: a city somebody named, or the city of a fresh sign-in.
+ * - `timezone`: the city an IANA zone is named for ("America/Toronto"), which also covers its
+ *   neighbours -- right region, not necessarily the right city.
+ * - `country`: only a country is known; the pin is on its centroid.
+ */
+export type AdminBotMapPrecision = "city" | "timezone" | "country";
+
 export type AdminBotMapMember = {
   member_id: string;
   name: string;
   source: AdminBotMapSource;
-  // Both optional: not every member has a synced Slack avatar or a recorded login. Present so
-  // the lab-insider map can show recently-active faces per city without a second round trip.
+  precision: AdminBotMapPrecision;
+  // Both optional: not every member has a synced Slack avatar. `last_login_at` is only sent when a
+  // sign-in is what placed the member, so the UI can say "from sign-in today" and show the most
+  // recently active faces first; it is never a history, only the one moment behind the pin.
   avatar_url?: string;
   last_login_at?: string;
 };
@@ -459,65 +792,274 @@ export type AdminBotMemberMap = {
 // spread out than it is.
 const DEPARTED_STATUSES = new Set(["alumni"]);
 
+// Names a roster row gets when the name cell holds no name at all: a blank exported as "null", a
+// stub typed while testing an import. Matched whole and case-insensitively, so a real "Nullah" or
+// "Testa" is untouched.
+const PLACEHOLDER_NAMES = new Set([
+  "null",
+  "undefined",
+  "none",
+  "n/a",
+  "na",
+  "nan",
+  "test",
+  "test user",
+  "test member",
+  "placeholder",
+]);
+
+/**
+ * Whether a roster row should stay off the map entirely -- out of `places` and `unplaced` both, so
+ * no shape of `GET /member-map` returns it.
+ *
+ * Two reasons, kept deliberately narrow because a false positive hides a real member from the
+ * lab's own map:
+ * - the member opted out (isDoNotContact). These are real people; a map is exactly the
+ *   advertising they asked to be left out of.
+ * - the row has no usable name, so there is nobody to show and the card would print "Null".
+ * It does not read `test_onboard_batch` (that marks a real person onboarding in a batch) or email
+ * domains (fixtures across the suite use @example.com for real-shaped members).
+ */
+export function isHiddenFromMemberMap(
+  member: Pick<AdminBotLabMember, "name" | "preferred_name">,
+): boolean {
+  if (isDoNotContact(member)) {
+    return true;
+  }
+  const name = typeof member.name === "string" ? member.name.trim() : "";
+  return !name || PLACEHOLDER_NAMES.has(name.toLowerCase().replace(/\s+/g, " "));
+}
+
 type MemberPlaceResolution =
-  | { place: AdminBotMapPlace; source: AdminBotMapSource; raw: string }
+  | {
+      place: AdminBotMapPlace;
+      source: AdminBotMapSource;
+      precision: AdminBotMapPrecision;
+      raw: string;
+    }
   | { place?: undefined; raw?: string; source?: AdminBotMapSource };
 
-// Tries Slack, then last-login, then roster, in that order — each one skipped in favor of the
-// next whenever it fails to resolve, not just when it is empty, so one person's unresolvable
-// Slack text does not hide a perfectly good roster location underneath it.
+/**
+ * How recent a sign-in has to be for the city it came from to say where somebody is.
+ *
+ * The same three days the Control UI's attendee clocks use (LOGIN_CITY_FRESH_DAYS in
+ * ui/src/ui/adminbot/data/attendee-time.ts), and the window contracts/actions.ts names for
+ * `last_login_city`: a city is a statement about one moment, and a month-old one says nothing about
+ * today. Past it the member still gets their login country, which carries no such rule.
+ */
+export const ADMINBOT_LOGIN_CITY_FRESH_DAYS = 3;
+
+/**
+ * How recent a sign-in has to be for the map to place somebody at its city. Longer than the clocks'
+ * three days because the map answers "where is the lab based", not "what time is it for them now":
+ * somebody who signed in from home last week still lives there. Past it the map falls back to what
+ * the member stated.
+ */
+export const ADMINBOT_MAP_LOGIN_FRESH_DAYS = 14;
+
+export type AdminBotMapVisibility = "auto" | "stated" | "hidden";
+
+export const ADMINBOT_MAP_VISIBILITIES: readonly AdminBotMapVisibility[] = [
+  "auto",
+  "stated",
+  "hidden",
+];
+
+/** The member's own choice from Profile; anything missing or unrecognised means "auto". */
+export function memberMapVisibility(
+  member: Pick<AdminBotLabMember, "map_visibility">,
+): AdminBotMapVisibility {
+  const value = member.map_visibility;
+  return value === "stated" || value === "hidden" ? value : "auto";
+}
+
+const DAY_MS = 86_400_000;
+
+export type BuildMemberMapOptions = {
+  /**
+   * Whether sign-in cities may place members at all. On for signed-in callers (members and
+   * admins); off for an anonymous visitor, who gets only what members stated. Each member's own
+   * `map_visibility` still applies on top. The map only ever carries the city -- never the IP, its
+   * coordinates, or a history of sign-ins.
+   */
+  loginCity?: boolean;
+  now?: Date;
+};
+
+function freshLoginCity(member: AdminBotLabMember, now: Date): string | undefined {
+  const city = member.last_login_city?.trim();
+  const at = member.last_login_at?.trim();
+  if (!city || !at) {
+    return undefined;
+  }
+  const seen = Date.parse(at);
+  if (Number.isNaN(seen)) {
+    return undefined;
+  }
+  const age = now.getTime() - seen;
+  // A little clock skew into the future is tolerated; a sign-in from next month is a bad record.
+  return age > ADMINBOT_MAP_LOGIN_FRESH_DAYS * DAY_MS || age < -DAY_MS ? undefined : city;
+}
+
+/**
+ * Places a login city given the region and country the IP provider reported with it.
+ *
+ * Tried as "city, region" first, so "London" + "Ontario" lands in London, ON; then the city alone.
+ * Either way the place has to be in the reported country: "London" with country "CA" and no region
+ * is not London, England, and a city the gazetteer only knows in another country is no answer at
+ * all -- the caller falls back to the country, which is still true.
+ */
+export function resolveLoginCity(
+  city: string | undefined,
+  region: string | undefined,
+  country: string | undefined,
+): AdminBotMapPlace | undefined {
+  const name = city?.trim();
+  if (!name) {
+    return undefined;
+  }
+  const inCountry = resolveCountry(country);
+  const accept = (place: AdminBotMapPlace | undefined) =>
+    place && (!inCountry || place.country === inCountry.country) ? place : undefined;
+  const withRegion = region?.trim() ? accept(resolvePlace(`${name}, ${region.trim()}`)) : undefined;
+  if (withRegion) {
+    return withRegion;
+  }
+  const alone = accept(resolvePlace(name));
+  if (alone) {
+    return alone;
+  }
+  // The gazetteer's first match for the name was in another country; look for a namesake in the
+  // right one ("London" in CA is London, ON).
+  if (!inCountry) {
+    return undefined;
+  }
+  const wanted = normalize(name);
+  return GAZETTEER.find(
+    (place) =>
+      place.country === inCountry.country &&
+      normalize(place.label).split(",")[0]?.trim() === wanted,
+  );
+}
+
+type Candidate = {
+  raw: string | undefined;
+  source: AdminBotMapSource;
+  resolve: () => { place: AdminBotMapPlace; precision: AdminBotMapPrecision } | undefined;
+};
+
+const cityFrom = (raw: string | undefined) => () => {
+  const place = raw && !fragmentFromTimezone(raw) ? resolvePlace(raw) : undefined;
+  return place ? { place, precision: "city" as const } : undefined;
+};
+
+const zoneFrom = (raw: string | undefined) => () => {
+  const place = raw && fragmentFromTimezone(raw) ? resolvePlace(raw) : undefined;
+  return place ? { place, precision: "timezone" as const } : undefined;
+};
+
+const countryFrom = (raw: string | undefined) => () => {
+  // Only the text's primary fragment and its last comma part: "Germany" and "Somewhere, Germany"
+  // name a country, "Berlin" does not, and a timezone never does.
+  if (!raw || fragmentFromTimezone(raw)) {
+    return undefined;
+  }
+  const fragment = primaryFragment(raw);
+  const place = resolveCountry(fragment) ?? resolveCountry(fragment.split(",").at(-1));
+  return place ? { place, precision: "country" as const } : undefined;
+};
+
+/**
+ * Resolves every source in the order the comment at the top of this file gives.
+ *
+ * The Slack value is either the profile's location field (free text) or Slack's `tz`, and which
+ * one it is decides its level, so it is read as both and only one of the two ever resolves.
+ */
 function resolveMemberPlace(
   member: AdminBotLabMember,
   slackRaw: string | undefined,
+  options: { loginCity: boolean; now: Date },
 ): MemberPlaceResolution {
-  const slackText = slackRaw?.trim();
-  if (slackText) {
-    const place = resolvePlace(slackText);
-    if (place) {
-      return { place, source: "slack", raw: slackText };
+  const slackText = slackRaw?.trim() || undefined;
+  const currentCity = member.current_city?.trim() || undefined;
+  const rosterText = member.location?.trim() || undefined;
+  const rosterZone = member.timezone?.trim() || undefined;
+  // "My stated city only" skips every sign-in source. The country of a sign-in is coarse enough
+  // for any caller (it was on the public map before cities were); the city is not, so it needs
+  // `options.loginCity` as well.
+  const auto = memberMapVisibility(member) === "auto";
+  const loginCity = auto && options.loginCity ? freshLoginCity(member, options.now) : undefined;
+  const loginCountry = auto ? member.last_login_country?.trim() || undefined : undefined;
+
+  const candidates: Candidate[] = [
+    // 1. The city of a fresh sign-in. Only a city: a sign-in that resolves no further than its
+    //    country waits until every stated city has had its turn.
+    {
+      raw: loginCity,
+      source: "login",
+      resolve: () => {
+        const place = resolveLoginCity(loginCity, member.last_login_region, loginCountry);
+        return place ? { place, precision: "city" } : undefined;
+      },
+    },
+    // 2. Stated cities.
+    { raw: currentCity, source: "roster", resolve: cityFrom(currentCity) },
+    { raw: rosterText, source: "roster", resolve: cityFrom(rosterText) },
+    { raw: slackText, source: "slack", resolve: cityFrom(slackText) },
+    // 3. Cities named by a timezone.
+    { raw: slackText, source: "slack", resolve: zoneFrom(slackText) },
+    { raw: rosterZone, source: "roster", resolve: zoneFrom(rosterZone) },
+    // 4. Countries.
+    { raw: currentCity, source: "roster", resolve: countryFrom(currentCity) },
+    { raw: rosterText, source: "roster", resolve: countryFrom(rosterText) },
+    { raw: slackText, source: "slack", resolve: countryFrom(slackText) },
+    {
+      raw: loginCountry,
+      source: "login",
+      resolve: () => {
+        const place = resolveCountry(loginCountry);
+        return place ? { place, precision: "country" } : undefined;
+      },
+    },
+  ];
+  for (const candidate of candidates) {
+    if (!candidate.raw) {
+      continue;
+    }
+    const resolved = candidate.resolve();
+    if (resolved) {
+      return { ...resolved, source: candidate.source, raw: candidate.raw };
     }
   }
-  const loginText = member.last_login_country?.trim();
-  if (loginText) {
-    const place = resolveCountry(loginText);
-    if (place) {
-      return { place, source: "login", raw: loginText };
-    }
-  }
-  const rosterText = member.location?.trim();
-  if (rosterText) {
-    const place = resolvePlace(rosterText);
-    if (place) {
-      return { place, source: "roster", raw: rosterText };
-    }
-  }
-  // Nothing resolved: still report whatever the highest-priority source with any text wrote,
-  // so an unplaced entry always points at the thing worth fixing.
-  const raw = slackText || loginText || rosterText;
-  const source: AdminBotMapSource | undefined = slackText
-    ? "slack"
-    : loginText
-      ? "login"
-      : rosterText
-        ? "roster"
-        : undefined;
-  return raw && source ? { raw, source } : {};
+  // Nothing resolved: report the most trusted text that was written, so an unplaced entry always
+  // points at the thing worth fixing (usually a city the gazetteer should learn). The roster
+  // timezone is left out: an unplaceable zone is a typo, not a city to add.
+  const written = candidates.find(
+    (candidate) => candidate.raw && candidate.raw !== rosterZone && candidate.raw !== loginCity,
+  );
+  return written?.raw ? { raw: written.raw, source: written.source } : {};
 }
 
 export function buildMemberMap(
   members: readonly AdminBotLabMember[],
   slackLocations: ReadonlyMap<string, string> = new Map(),
+  options: BuildMemberMapOptions = {},
 ): AdminBotMemberMap {
+  const resolveOptions = { loginCity: options.loginCity ?? false, now: options.now ?? new Date() };
   const groups = new Map<string, AdminBotMapPlaceGroup>();
   const unplaced: AdminBotMemberMap["unplaced"] = [];
   let unknown = 0;
 
   for (const member of members) {
-    if (DEPARTED_STATUSES.has(member.status ?? "")) {
+    if (
+      DEPARTED_STATUSES.has(member.status ?? "") ||
+      isHiddenFromMemberMap(member) ||
+      memberMapVisibility(member) === "hidden"
+    ) {
       continue;
     }
     const slackRaw = member.slack_user_id ? slackLocations.get(member.slack_user_id) : undefined;
-    const resolution = resolveMemberPlace(member, slackRaw);
+    const resolution = resolveMemberPlace(member, slackRaw, resolveOptions);
     if (!resolution.place) {
       if (!resolution.raw || !resolution.source) {
         unknown += 1;
@@ -537,8 +1079,12 @@ export function buildMemberMap(
       member_id: member.id,
       name: member.name,
       source: resolution.source,
+      precision: resolution.precision,
       ...(member.avatar_url ? { avatar_url: member.avatar_url } : {}),
-      ...(member.last_login_at ? { last_login_at: member.last_login_at } : {}),
+      // Only the time of the sign-in that placed them, so the UI can say "from sign-in today".
+      ...(resolution.source === "login" && member.last_login_at
+        ? { last_login_at: member.last_login_at }
+        : {}),
     });
     groups.set(resolution.place.key, group);
   }
@@ -559,6 +1105,86 @@ export function buildMemberMap(
       unplaced: unplaced.length - unknown,
       unknown,
     },
+  };
+}
+
+/** The map for a roster read, with each member's synced Slack location as their first choice. */
+export function memberMapFromRoster(
+  members: readonly AdminBotLabMember[],
+  options: BuildMemberMapOptions = {},
+): AdminBotMemberMap {
+  const slackLocations = new Map<string, string>();
+  for (const member of members) {
+    if (member.slack_user_id && member.slack_location) {
+      slackLocations.set(member.slack_user_id, member.slack_location);
+    }
+  }
+  return buildMemberMap(members, slackLocations, options);
+}
+
+/**
+ * The clock bucket memberMapMemo rebuilds on. A route that versions the map's ETag puts it in the
+ * tag for the same reason the memo keys on it.
+ */
+export function memberMapHour(now: Date = new Date()): number {
+  return Math.floor(now.getTime() / 3_600_000);
+}
+
+/**
+ * Remembers the last map built for each sign-in-city entitlement, keyed on the store's roster
+ * version and the hour.
+ *
+ * The dashboard asks for the map on every load; at 1000+ members rebuilding it means a gazetteer
+ * pass over everyone each time. Apart from the roster it depends on two things: whether the caller
+ * may see sign-in cities (so the anonymous map and the signed-in one are never the same entry), and
+ * the clock, since a sign-in city ages out after ADMINBOT_MAP_LOGIN_FRESH_DAYS with no roster write.
+ * Keying on the hour bounds how long an aged-out city can linger. A store with no version (the
+ * in-memory one) is rebuilt every call.
+ */
+export function memberMapMemo(): (
+  store: {
+    labMemberVersion?(): number;
+    listLabMembers(): readonly AdminBotLabMember[];
+  },
+  options?: { loginCity?: boolean; now?: Date },
+) => AdminBotMemberMap {
+  const last = new Map<boolean, { version: number; hour: number; map: AdminBotMemberMap }>();
+  return (store, options = {}) => {
+    const loginCity = options.loginCity ?? false;
+    const now = options.now ?? new Date();
+    const build = () => memberMapFromRoster(store.listLabMembers(), { loginCity, now });
+    const version = store.labMemberVersion?.();
+    if (version === undefined) {
+      return build();
+    }
+    const hour = memberMapHour(now);
+    const cached = last.get(loginCity);
+    if (cached?.version === version && cached.hour === hour) {
+      return cached.map;
+    }
+    const map = build();
+    last.set(loginCity, { version, hour, map });
+    return map;
+  };
+}
+
+/**
+ * The privileged map as sent: who is where, and how many are unplaced. The names of the unplaced
+ * go only to a caller that asks for them (the standalone map page lists them to fix the
+ * gazetteer); the dashboard card shows a count, and a lab of 1000 can have hundreds unplaced.
+ */
+export function toPrivilegedMemberMap(
+  map: AdminBotMemberMap,
+  options: { listUnplaced: boolean },
+): Omit<AdminBotMemberMap, "unplaced"> &
+  Partial<Pick<AdminBotMemberMap, "unplaced">> & {
+    unplaced_count: number;
+  } {
+  const { unplaced, ...rest } = map;
+  return {
+    ...rest,
+    unplaced_count: unplaced.length,
+    ...(options.listUnplaced ? { unplaced } : {}),
   };
 }
 

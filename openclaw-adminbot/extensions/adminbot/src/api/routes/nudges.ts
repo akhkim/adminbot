@@ -4,15 +4,39 @@
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 import type { AdminBotMemberNudgeRequest } from "../../contracts/actions.js";
 import { readJson, readRecord, sendServiceResult } from "../server.http.js";
+import { pageOf, readPageQuery } from "../server.paging.js";
+import { mapPayload } from "../server.paper-lists.wire.js";
 import { adminSessionOnly, memberOnly, principalActor, privilegedOnly } from "./guards.js";
 import { get, post, type Route } from "./router.js";
 
 export const nudgesRoutes: readonly Route[] = [
   get(
     "/nudges/escalated",
-    privilegedOnly(({ res, ctx }) => {
+    privilegedOnly(({ res, url, ctx }) => {
       const { service } = ctx;
-      sendServiceResult(res, service.listEscalatedNudges());
+      // The professor page opens this list to 20 people at most and links to Announcements for the
+      // rest, so 20 is the page and `total` is the count on its header. Each person's line shows
+      // one title or "N items", so a notification goes out as its title and stamps; the body,
+      // read state and routing flags are the member's own page's business.
+      const page = readPageQuery(url, { defaultLimit: 20, maxLimit: 100 });
+      sendServiceResult(
+        res,
+        mapPayload(service.listEscalatedNudges(), ({ members }) => {
+          const { items, ...paging } = pageOf(members, page);
+          return {
+            members: items.map((member) => ({
+              ...member,
+              notifications: member.notifications.map((entry) => ({
+                id: entry.id,
+                title: entry.title,
+                created_at: entry.created_at,
+                ...(entry.tab ? { tab: entry.tab } : {}),
+              })),
+            })),
+            ...paging,
+          };
+        }),
+      );
     }),
   ),
   post(

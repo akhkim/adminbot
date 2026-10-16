@@ -39,6 +39,8 @@ import {
   type AssignedBadge,
   type BadgeSuggestionInput,
   type LabMember,
+  MEMBER_MAP_VISIBILITIES,
+  type MemberMapVisibility,
 } from "../auth/session.ts";
 import { flushAutosave, focusLeftForm, scheduleAutosave } from "../autosave.ts";
 import { EMPTY_RECENT_EDITS, recentEditsKey } from "../controllers/recent-edits.ts";
@@ -64,16 +66,26 @@ import { renderDateControl } from "../date-control.ts";
 import {
   isOptionalMemberField,
   PROFILE_FIELD_GROUPS,
-  PROFILE_FIELDS,
   type ProfileField,
   type ProfileFieldGroup,
 } from "../member-fields.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
 import { ownPapers } from "../projects/model.ts";
+import { onViewSessionReset } from "../view-session-reset.ts";
 import { renderMemberBadgeSymbols, badgeCountLabel } from "./badge-symbols.ts";
 import { renderCountrySelect } from "./country-select.ts";
 import { renderMemberSelect } from "./member-select.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
+import {
+  blankFields,
+  EDITABLE_FIELDS,
+  fieldLabel,
+  findOwnMember,
+  isMemberAnswerable,
+  requiredFieldCount,
+  takePendingFieldFocus,
+  valueOf,
+} from "./profile-fields.ts";
 import { renderRecentEdits } from "./recent-edits.ts";
 
 export type ProfileProps = {
@@ -92,25 +104,6 @@ export type ProfileProps = {
   onToggleBadgeSuggestForm?: (open: boolean) => void;
   onNavigateToTab?: (tab: Tab) => void;
 };
-
-const EDITABLE_FIELDS: ProfileField[] = [
-  ...PROFILE_FIELDS,
-  {
-    key: "arr_reviewer_qualified",
-    labelKey: "profile.arrReviewer.label",
-    example: "",
-    type: "dropdown",
-    group: "work",
-  },
-  {
-    key: "arr_review_capacity",
-    labelKey: "profile.arrReviewer.capacity",
-    example: "",
-    type: "numeric",
-    min: 0,
-    group: "work",
-  },
-];
 
 // Rendered as a row of links under the name rather than as rows in the field table -- they are
 // somewhere to go, not facts to read.
@@ -282,41 +275,6 @@ function renderAccountCheckStatus(state: AppViewState, field: EditableField) {
           : check.message}
     </span>
   `;
-}
-
-// There is no read-only "Account" group any more. It held one row -- the directory email -- which
-// the hero already prints under the member's name, so the group was a second copy of a fact three
-// lines above it, under a heading whose only content was that copy. Status and privilege level had
-// already gone the same way: governance bookkeeping a member has no action to take on.
-const FIELD_LABEL_KEYS: Record<string, string> = {
-  email: "profile.fields.email",
-  ...Object.fromEntries(PROFILE_FIELDS.map((field) => [field.key, field.labelKey])),
-};
-
-function labelFor(key: string): string {
-  return t(FIELD_LABEL_KEYS[key] ?? key);
-}
-
-/** The on-screen name of a field, for surfaces outside this page that list fields by key. */
-export function fieldLabel(key: string): string {
-  return labelFor(key);
-}
-
-export function findOwnMember(state: AppViewState): LabMember | null {
-  const memberId = state.memberId;
-  if (!memberId) {
-    return null;
-  }
-  const member = (state.adminBotData?.members ?? []).find((entry) => entry.id === memberId);
-  return (member as unknown as LabMember | undefined) ?? null;
-}
-
-function valueOf(member: LabMember, field: EditableField): string {
-  const raw = member[field.key];
-  if (field.type === "list") {
-    return Array.isArray(raw) ? raw.filter(Boolean).join(", ") : "";
-  }
-  return raw === null || raw === undefined ? "" : String(raw);
 }
 
 // What the control shows, which is the stored value except when there is a prefill to offer.
@@ -503,42 +461,8 @@ function renderPrefillHint(member: LabMember, field: EditableField) {
   `;
 }
 
-// What the lab is still waiting on *from this member*. Admin-owned fields are required of the
-// record but not answerable here, so they stay out of the blanks list, the dashboard card that
-// chases it, and the denominator below -- otherwise the ledger could never reach complete and the
-// card would name a field whose control is disabled.
-function isMemberAnswerable(field: EditableField): boolean {
-  return !isOptionalMemberField(field) && !field.adminOnly;
-}
-
-export function blankFields(member: LabMember): EditableField[] {
-  return EDITABLE_FIELDS.filter(
-    (field) =>
-      isMemberAnswerable(field) &&
-      !(field.key === "arr_review_capacity" && member.arr_reviewer_qualified !== true) &&
-      !(field.key === "intake_form_url" && member.intake_form_unavailable === true) &&
-      !valueOf(member, field).trim(),
-  );
-}
-
-// Everything a member may set, blank or not -- what the full editor offers.
-export function requiredFieldCount(): number {
-  return EDITABLE_FIELDS.filter(isMemberAnswerable).length;
-}
-
-// A one-shot hand-off from the dashboard: it names the field a member clicked, and the profile
-// page focuses that control on its next render. Kept as module state rather than on AppViewState
-// because it is consumed immediately and never re-read -- it must not survive into a later render
-// and steal focus from whatever the member is typing in by then.
-let pendingFocusFieldKey: string | null = null;
-
-export function focusProfileField(key: string): void {
-  pendingFocusFieldKey = key;
-}
-
 function consumePendingFieldFocus(): void {
-  const key = pendingFocusFieldKey;
-  pendingFocusFieldKey = null;
+  const key = takePendingFieldFocus();
   if (!key || typeof document === "undefined") {
     return;
   }
@@ -557,7 +481,8 @@ function consumePendingFieldFocus(): void {
 export function badgesFor(state: AppViewState, member: LabMember): string[] {
   const badges: string[] = [];
   const onboarding = state.adminBotOnboarding;
-  if (onboarding && !(onboarding.remaining ?? []).length && (onboarding.steps ?? []).length) {
+  const steps = onboarding?.steps ?? [];
+  if (steps.length && steps.every((step) => step.status === "complete")) {
     badges.push(t("profile.badges.onboarded"));
   }
   if (!blankFields(member).length) {
@@ -699,6 +624,10 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
     }
   }
   fields.intake_form_unavailable = !fields.intake_form_url && data.has("intake_form_unavailable");
+  const mapVisibility = data.get("map_visibility");
+  if ((MEMBER_MAP_VISIBILITIES as readonly unknown[]).includes(mapVisibility)) {
+    fields.map_visibility = mapVisibility as MemberMapVisibility;
+  }
   return fields;
 }
 
@@ -867,7 +796,7 @@ function renderProfileFormRow(state: AppViewState, member: LabMember, field: Edi
 
   const body = html`
     <span class="profile__form-label">
-      ${labelFor(field.key)}${renderMandatoryMark(
+      ${fieldLabel(field.key)}${renderMandatoryMark(
         field,
         displayValue(member, field),
       )}${renderFieldHelp(field)}
@@ -885,6 +814,29 @@ function renderProfileFormRow(state: AppViewState, member: LabMember, field: Edi
   return field.type === "multi_dropdown"
     ? html`<div class="profile__form-row">${body}</div>`
     : html`<label class="profile__form-row">${body}</label>`;
+}
+
+/**
+ * "Show me on the lab map as", next to the city it is about. Not one of EDITABLE_FIELDS: it is a
+ * privacy choice with a default, so it never counts towards completion or shows a required mark.
+ */
+function renderMapVisibilityRow(member: LabMember) {
+  const current: MemberMapVisibility = member.map_visibility ?? "auto";
+  return html`
+    <label class="profile__form-row" data-testid="profile-map-visibility">
+      <span class="profile__form-label">${t("profile.mapVisibility.label")}</span>
+      <select class="input" name="map_visibility">
+        ${MEMBER_MAP_VISIBILITIES.map(
+          (option) => html`
+            <option value=${option} ?selected=${option === current}>
+              ${t(`profile.mapVisibility.${option}`)}
+            </option>
+          `,
+        )}
+      </select>
+      <span class="profile__field-hint">${t("profile.mapVisibility.hint")}</span>
+    </label>
+  `;
 }
 
 function renderFieldInput(field: EditableField, currentValue: string) {
@@ -1164,7 +1116,7 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                       ? html`
                           <div class="profile__form-row">
                             <span class="profile__form-label">
-                              ${labelFor(field.key)}${renderMandatoryMark(
+                              ${fieldLabel(field.key)}${renderMandatoryMark(
                                 field,
                                 displayValue(member, field),
                               )}${renderFieldHelp(field)}
@@ -1173,6 +1125,7 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                           </div>
                         `
                       : renderProfileFormRow(state, member, field)}
+                    ${field.key === "current_city" ? renderMapVisibilityRow(member) : nothing}
                     <!-- A note and a checkbox about the field above, not a field of its own. It
                          used to be a profile__form-row wrapped in a label, which rendered the
                          explanation at label weight -- as loud as the questions around it -- and
@@ -1290,7 +1243,7 @@ function renderCompletionLedger(member: LabMember, state?: AppViewState) {
                   class=${`profile__tick ${
                     blanks.has(field.key) ? "profile__tick--blank" : "profile__tick--filled"
                   }`}
-                  title=${labelFor(field.key)}
+                  title=${fieldLabel(field.key)}
                 ></span>`,
               )}
             </span>
@@ -2007,13 +1960,14 @@ export function resetProfileSessionState(): void {
   }
   accountCheckAborts.clear();
   accountCheckedValues.clear();
-  pendingFocusFieldKey = null;
+  takePendingFieldFocus();
   if (toastDismissTimer) {
     clearTimeout(toastDismissTimer);
     toastDismissTimer = undefined;
   }
   toastNoticeText = null;
 }
+onViewSessionReset(resetProfileSessionState);
 
 function renderSaveToast(state: AppViewState) {
   const notice = state.adminBotNotice;
@@ -2084,7 +2038,8 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
       ${renderPhotoCompliance(state, member, props)}
       ${props.badgesDisabled
         ? nothing
-        : html`${renderBadgeSelfNomination(state, member, props)} ${renderBadgeSuggestion(state, props)}`}
+        : html`${renderBadgeSelfNomination(state, member, props)}
+          ${renderBadgeSuggestion(state, props)}`}
       ${renderOnboardingPointer(state, props)}
       <!-- Who has been in this record. Last, and shut: it is history about the fields above, and
            the answer to a question somebody asks occasionally rather than on every visit. Since

@@ -54,6 +54,36 @@ describe("member-owned location and meeting caches", () => {
     expect(app.adminBotLocationDrifts).toBeUndefined();
   });
 
+  // The render pass asks again on every render while the answer is undefined, and re-renders when
+  // the ask settles. A repeat ask that settled at once would re-render, ask again, and settle at
+  // once again -- a microtask loop that never lets the response it is waiting for arrive.
+  it("makes a repeat location ask wait for the request already in flight", async () => {
+    const finish: Record<string, (response: Response) => void> = {};
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const key = String(input).includes("location-drifts") ? "drifts" : "prompt";
+      return new Promise<Response>((resolve) => {
+        finish[key] = resolve;
+      });
+    });
+    const app = host();
+    const first = [loadAdminBotLocationPrompt(app), loadAdminBotLocationDrifts(app)];
+    let repeatsSettled = false;
+    const repeats = Promise.all([
+      loadAdminBotLocationPrompt(app),
+      loadAdminBotLocationDrifts(app),
+    ]).then(() => {
+      repeatsSettled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(repeatsSettled).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    finish.prompt?.(json({ drift: null }));
+    finish.drifts?.(json({ drifts: [] }));
+    await Promise.all([...first, repeats]);
+    expect(repeatsSettled).toBe(true);
+    expect(app.adminBotLocationDrifts).toEqual([]);
+  });
+
   it("does not show A's meetings or clear B's loading state after a late response", async () => {
     let finish: ((response: Response) => void) | undefined;
     vi.spyOn(globalThis, "fetch").mockImplementation(
@@ -88,7 +118,7 @@ describe("member-owned location and meeting caches", () => {
     });
     const app = host();
     await loadAdminBotMeetings(app);
-    expect(requests[0]).toContain("/meetings?limit=12");
+    expect(requests[0]).toContain("/meetings?limit=10");
     await loadMoreAdminBotMeetings(app);
     expect(requests[1]).toContain("before_id=newest");
     expect(app.adminBotMeetings?.map((meeting) => meeting.id)).toEqual(["newest", "older"]);

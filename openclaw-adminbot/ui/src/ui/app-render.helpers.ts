@@ -890,50 +890,37 @@ function countHiddenCronSessions(state: AppViewState, sessions: SessionsListResu
 }
 
 /**
- * One button in the chrome that cycles System → Light → Dark.
+ * One button in the chrome that flips between light and dark.
  *
- * A cycle rather than three buttons, because this sits in a top bar that already carries search,
- * the notification bell and the connection status, and a three-way segmented control there would
- * cost more room than the choice is worth. The three-option version lives in Quick Settings, where
- * somebody who wants to see all the options at once is already looking.
+ * There used to be a third "System" step behind a monitor icon. People did not read the monitor as
+ * a theme at all, so the mode is now just light or dark, and dark is the default.
  *
- * It shows the mode that is *set*, not the palette being painted: a viewer on "System" whose
- * machine is dark needs the button to say System, or pressing it appears to do nothing.
+ * The glyph is the theme the button switches *to*, and the label says so: a sun on the dark theme
+ * ("Switch to light mode"), a moon on the light one. That is the convention the signed-out shell's
+ * toggle already used, so the two buttons cannot disagree about what the same icon means.
  *
  * Hidden entirely while a custom theme is active. That palette is pasted in and dark-only, so the
  * button would change a stored setting and repaint nothing -- which reads as broken.
  */
-const THEME_MODE_CYCLE: Record<ThemeMode, ThemeMode> = {
-  system: "light",
-  light: "dark",
-  dark: "system",
-};
-
-const THEME_MODE_ICON: Record<ThemeMode, keyof typeof icons> = {
-  system: "monitor",
-  light: "sun",
-  dark: "moon",
-};
-
 export function renderTopbarThemeModeToggle(state: AppViewState) {
   if (state.theme === "custom") {
     return nothing;
   }
-  const mode = state.themeMode ?? "dark";
-  const next = THEME_MODE_CYCLE[mode] ?? "system";
-  const label = t(`settings.appearance.${mode}`);
+  const mode: ThemeMode = state.themeMode === "light" ? "light" : "dark";
+  const next: ThemeMode = mode === "light" ? "dark" : "light";
+  const label = t(next === "light" ? "login.public.themeLight" : "login.public.themeDark");
   return html`
     <button
       class="topbar-theme-mode__btn"
       type="button"
       data-testid="topbar-theme-mode"
       data-mode=${mode}
-      title=${t("settings.appearance.toggle", { mode: label })}
-      aria-label=${t("settings.appearance.toggle", { mode: label })}
+      title=${label}
+      aria-label=${label}
       @click=${(event: Event) =>
         state.setThemeMode?.(next, { element: (event.currentTarget as HTMLElement) ?? undefined })}
     >
-      <span aria-hidden="true">${icons[THEME_MODE_ICON[mode] ?? "monitor"]}</span>
+      <span aria-hidden="true">${next === "light" ? icons.sun : icons.moon}</span>
     </button>
   `;
 }

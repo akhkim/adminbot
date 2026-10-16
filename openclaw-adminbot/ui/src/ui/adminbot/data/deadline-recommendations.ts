@@ -5,6 +5,7 @@ import type {
   DeadlineRecommendationPreview,
 } from "../../../../../extensions/adminbot/src/contracts/deadline-recommendations.js";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
+import { readApiJson } from "./api-json.ts";
 export type {
   DeadlineRecommendationDirectory,
   DeadlineRecommendationQuery,
@@ -60,8 +61,8 @@ export class AdminBotDeadlineRecommendationStore implements DeadlineRecommendati
     if (response.status === 404 && body === undefined) {
       throw new Error("Deadline recommendations are unavailable. Please try again later.");
     }
-    const result = await response.json();
-    if (!response.ok) {
+    const result = (await readApiJson(response)) as { error?: { message?: string } } | null;
+    if (!response.ok || !result) {
       throw new Error(result?.error?.message ?? "Could not load recommendations.");
     }
     return result as T;

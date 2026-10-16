@@ -13,8 +13,10 @@ import { authedJson, type AuthResult, calendarFailure, mapErrorResponse } from "
 export type StandingMeeting = {
   id: string;
   title: string;
-  kind: "group" | "theme" | "project";
-  event_ids: string[];
+  /** Not sent: the Meetings checkboxes need only the id, the title and who is on it. */
+  kind?: "group" | "theme" | "project";
+  /** Not sent, for the same reason. */
+  event_ids?: string[];
   /** Lowercased addresses. */
   attendees: string[];
 };
@@ -49,8 +51,6 @@ export async function fetchStandingMeetings(
 export type MeetingAttendee = {
   member_id?: string;
   display_name: string;
-  email?: string;
-  joined_at?: string;
   minutes?: number;
   source: "participant_report" | "transcript" | "manual";
   present: boolean;
@@ -58,7 +58,6 @@ export type MeetingAttendee = {
 
 export type MeetingActionItem = {
   text: string;
-  owner_member_id?: string;
   owner_name?: string;
 };
 
@@ -70,7 +69,8 @@ export type MeetingRecord = {
   /** Recording length to the second, as the Zoom notice stated it. Exact where minutes round. */
   duration_seconds?: number;
   recording: { share_url?: string; passcode?: string; drive_url?: string };
-  transcript?: { processed_at: string; speaker_names: string[]; duration_seconds?: number };
+  /** Whether a transcript was processed and how long it ran; who spoke stays on the server. */
+  transcript?: { processed_at: string; duration_seconds?: number };
   summary?: {
     overview: string;
     decisions: string[];
@@ -78,14 +78,40 @@ export type MeetingRecord = {
     generated_at: string;
     model: string;
   };
+  /**
+   * A member's row: their own line. An admin's list row leaves the roster out -- it is read per
+   * meeting with `fetchMeeting` when its attendance is opened -- and the PUT reply and
+   * `fetchMeeting` carry the whole of it.
+   */
   attendees?: MeetingAttendee[];
-  /** Present only on the member view; the admin view carries the roster itself. */
+  /** Who was present, counted: on a member's row and an admin's list row, not the roster read. */
   attendee_count?: number;
   source: "zoom_email" | "manual";
   notes?: string;
 };
 
+/**
+ * The rosters an admin has opened this session, by meeting id. An entry with no `attendees` is a
+ * read in flight; a meeting with no entry has not been asked for (or its read failed, so the next
+ * intent asks again).
+ */
+export type MeetingRosters = Record<
+  string,
+  {
+    attendees?: MeetingAttendee[];
+    loading?: boolean;
+    /** Say so if this read fails. */ report?: boolean;
+  }
+>;
+
 export type MeetingCursor = Pick<MeetingRecord, "started_at" | "id">;
+
+/**
+ * How many meetings the tab reads at a time: the first page it paints and every "show more".
+ * Small on purpose -- the tab is opened to catch up on the last few meetings, and anything older
+ * is one click away. The service pages GET /meetings by the same default when no `limit` is sent.
+ */
+export const MEETINGS_PAGE_SIZE = 10;
 
 export type MeetingPage = { meetings: MeetingRecord[]; next_cursor?: MeetingCursor };
 
@@ -122,6 +148,31 @@ export async function fetchMeetings(
       ...(body?.next_cursor ? { next_cursor: body.next_cursor } : {}),
     },
   };
+}
+
+/**
+ * One meeting with its roster (GET /meetings/:id): what an admin's card reads when its attendance
+ * is opened. A plain GET through authedJson, so two cards' worth of intent for the same meeting
+ * share one request and a re-read revalidates by ETag.
+ */
+export async function fetchMeeting(
+  meetingId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MeetingRecord>> {
+  const result = await authedJson(
+    baseUrl,
+    `/meetings/${encodeURIComponent(meetingId)}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as MeetingRecord };
 }
 
 export async function saveMeetingAttendance(
@@ -178,7 +229,8 @@ export async function createMeeting(
 export type MeetingAbsence = {
   member_id: string;
   name: string;
-  missed_meeting_ids: string[];
+  /** The streak's meetings. The preview sends them once, on `meetings`; filled in from there. */
+  missed_meeting_ids?: string[];
   missed_topics: string[];
   reason: "invite" | "full_member";
 };
@@ -211,7 +263,25 @@ export async function fetchMeetingAttendanceNudges(
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  return { ok: true, value: result.body as MeetingAttendanceNudgePreview };
+  if (!result.body) {
+    return { ok: true, value: result.body as MeetingAttendanceNudgePreview };
+  }
+  const preview = result.body as Omit<MeetingAttendanceNudgePreview, "absent"> & {
+    absent: Array<Omit<MeetingAbsence, "missed_topics"> & { missed_topics?: string[] }>;
+  };
+  // A row is only ever a member who missed every meeting in the streak, so its missed topics are
+  // the streak's own. An older service still sends them per row, and those are kept.
+  const streakTopics = (preview.meetings ?? []).map((meeting) => meeting.topic);
+  return {
+    ok: true,
+    value: {
+      ...preview,
+      absent: (preview.absent ?? []).map((row) => ({
+        ...row,
+        missed_topics: row.missed_topics ?? streakTopics,
+      })),
+    },
+  };
 }
 
 export async function sendMeetingAttendanceNudges(

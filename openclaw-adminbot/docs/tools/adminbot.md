@@ -48,11 +48,13 @@ You need a local AdminBot service listening on loopback, for example
 | `POST /proposals`                     | Create one typed action proposal.                                  |
 | `POST /privacy/tasks`                 | Route reasoning through the VM-local privacy gate.                 |
 | `GET /proposals/pending`              | Return pending approval items.                                     |
+| `GET /admin/queue-counts`             | Return how many proposals and held emails await an administrator.  |
 | `GET /settings`                       | Return service defaults such as member privilege and escalation.   |
 | `PUT /settings`                       | Update AdminBot service defaults.                                  |
 | `GET /lab/members`                    | Return lab members and computed access profiles.                   |
 | `PUT /lab/members/{member_id}`        | Create or update one lab member.                                   |
 | `GET /papers`                         | Return paper pipeline records with computed timeline estimates.    |
+| `GET /papers?scope=mine`              | Return only the papers the signed-in member is involved in.        |
 | `PUT /papers/{paper_id}`              | Create or update one paper pipeline record.                        |
 | `GET /my/projects`                    | Return the signed-in member's active projects, open work per lane. |
 | `GET /papers/nudges`                  | Return due paper reminders and PI escalations.                     |
@@ -92,6 +94,12 @@ that name the release, restarts AdminBot and the Gateway (an outage of a few sec
 `/adminbot`, `/deadlines` (200), `/lab/members` (401) and the Gateway's `/healthz`. If the probes
 fail, it restores the previous release and units and fails the job. A rollback restores code, not
 the database.
+
+The deadline cron jobs rewrite `extensions/adminbot/content/deadlines/deadlines.json` (and
+`matches.json`) inside the live release, so the deploy copies those into the new release before the
+swap; otherwise every deploy would put the Deadlines board back on the committed snapshot until the
+next daily refresh. A live copy still identical to what its commit shipped was never refreshed, and
+the new commit's copy is used instead.
 
 It refuses, without touching the services, when:
 
@@ -627,7 +635,7 @@ the others, and it turns the notice red. The whole change is recorded as
 
 ### Roster sync
 
-`scripts/adminbot-roster-sync-cron.sh` calls `POST /members/roster-sync` at 06:10 daily. It reads
+`scripts/adminbot-roster-sync-cron.sh` calls `POST /members/roster-sync` at 06:00 daily. It reads
 the same tab as the grid above, through the same configuration, and reconciles exactly two things
 against the database: who is on the roster, and each member's **Member Type**. Profile fields are
 `adminbot-member-sheet-poller`'s job -- widening this would let a spreadsheet typo overwrite what a
@@ -1243,8 +1251,9 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | `adminbot-deadline-refresh-venues`  | `50 5 * * *`         | Refresh conference/workshop deadlines from official CFPs                     |
 | `adminbot-deadline-refresh-matches` | `20 6 * * *`         | Re-map papers onto the refreshed deadlines                                   |
 | `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                     |
-| `adminbot-graduations`              | `0 8 * * 1`          | Confirm finishing months, chase alumni transitions, and arrange the ceremony |
-| `adminbot-city-channels`            | `0 7 * * 1,4`        | Add members to their city Slack channel once a city reaches four             |
+| `adminbot-graduations`              | `15 8 * * 1`         | Confirm finishing months, chase alumni transitions, and arrange the ceremony |
+| `adminbot-slides-working-groups`    | `20 7 * * 1`         | Propose the working-groups slide update ([details](../operations/slides-working-groups.md)) |
+| `adminbot-city-channels`            | `10 7 * * 1,4`       | Add members to their city Slack channel once a city reaches four             |
 | `adminbot-email-templates`          | `30 8 * * 1`         | Check the email-template doc against the shipped copy                        |
 | `adminbot-paperflow-nudges`         | `0 9 * * 1`          | PaperFlow venue-stage nudges, once a week                                    |
 | `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                     |
@@ -1287,46 +1296,60 @@ counts }` -- names included, plus each member's Slack avatar and last login
 regardless: publishing a headcount is one thing, triggering a real Slack API
 call on someone else's behalf is another.
 
-Location comes from three sources, tried in a fixed order, each one falling
-through to the next whenever it fails to resolve -- not only when it is empty.
+A member is placed by the first source that answers, and a country never outranks a city, whatever
+it came from:
 
-1. **Slack**, city-level. `POST /member-map/refresh` reads each member's Slack
-   profile (a workspace location field if one is configured, otherwise their
-   timezone, whose IANA name carries a city) and stamps it on the member as
-   `slack_location`. A member Slack no longer knows about has their stamp
-   cleared rather than left stale, so an old value cannot outrank a fresher
-   source forever. That clearing only happens when the pass runs, which is why
-   it is scheduled daily (`adminbot-member-map`, 06:10) rather than left to the
-   button: this is the one source of the three that cannot refresh itself, and
-   it is the one the other two defer to.
-2. **Last-login location**, country-level only. Stamped automatically on every
-   successful sign-in from the caller's IP (see "Login location" below) -- there
-   is nothing to manually refresh here, it is already as current as their most
-   recent login.
-3. **Roster `location`**, city-level -- what they typed once, at signup or when
-   an admin added them. Tried last on purpose: unlike the two sources above, it
-   never updates itself.
+1. **A fresh sign-in city.** Stamped from the caller's IP on each sign-in (see "Login location"
+   below) and used for 14 days (`ADMINBOT_MAP_LOGIN_FRESH_DAYS`). It is where the person most
+   recently was, so it leads for everyone. It counts toward the map that signed-in members and
+   admins see. An anonymous visitor gets only what members stated, plus sign-in countries.
+2. **A stated city.** `current_city` (where they are right now), then the roster `location`, then
+   the Slack profile's location field. `POST /member-map/refresh` reads each member's Slack profile
+   and stamps it as `slack_location`. A member Slack no longer knows about has the stamp cleared
+   rather than left stale. That only happens when the pass runs, which is why it is scheduled daily
+   (`adminbot-member-map`, 06:10).
+3. **A time zone's city.** The Slack time zone, then the roster `timezone`. `Europe/Zurich` is also
+   what somebody in Basel reports, so the UI says "from Slack time zone" or "from profile time
+   zone", not just the city.
+4. **A country.** A country written in any of the text fields above, then the sign-in country.
+   Drawn as a hollow, dashed dot on the country's centroid.
 
-All three are free text (or, for last-login, a plain country name), so the
-resolver copes with what people actually write: institutions (`ETH` becomes
-Zürich), accents and spelling variants (`Tuebingen`/`Tübingen`), several places
-at once (`Zurich/Tuebingen/Toronto` takes the first), parentheticals, and
-leading hedges (`Mainly Montreal`). Anything none of the three sources can
-place is listed under **Not placed** with whatever the highest-priority source
-that had text wrote -- that is the signal to add a city (or country, for
-last-login) to the tables in `extensions/adminbot/src/member-map.ts`, not a
-reason to guess. A member placed by last-login only (no city, just a country)
-shows on the map as a dashed, lighter dot, distinct from a real city-level
-placement.
+Each member chooses how they appear, under Profile, "Show me on the lab map as"
+(`map_visibility`, self-editable):
+
+- **Auto** (the default): the order above.
+- **My stated city only** (`stated`): skips the sign-in city and the sign-in country.
+- **Hidden** (`hidden`): left off the map entirely, including the counts.
+
+Only a city is ever shown. The map never carries an IP address, coordinates from a lookup, or a
+history of sign-ins. Each listed member says where their place came from, for example "San
+Francisco · from sign-in today" or "Toronto · from profile". The Collaborate and Dashboard tabs
+reload the map when they open and every five minutes while the page is visible, and the card says
+when it last updated.
+
+The resolver copes with what people actually write: institutions (`ETH` becomes Zürich, `UWO`
+London, ON), accents and spelling variants (`Tuebingen`/`Tübingen`, `Calcutta`), several places at
+once (`Zurich/Tuebingen/Toronto` takes the first), "city, region, country"
+(`London, Ontario, Canada`), parentheticals, and leading hedges (`Mainly Montreal`). A sign-in city
+is only accepted inside the country the IP provider reported, so `London` + `CA` lands in London, ON
+and never in England. Anything no source can place is listed under **Not placed** with what the
+member wrote -- the signal to add the city to the gazetteer in
+`extensions/adminbot/src/workflows/members/member-map.ts`, not a reason to guess. Every pin sits on
+a city's (or country's) centroid from that table; no coordinates from an IP lookup are stored or
+drawn. Members whose name is a do-not-contact marker (`Null,do not contact`) or a placeholder are
+left off the map entirely.
 
 ### Login location
 
-On every successful login, if `IPINFO_TOKEN` is configured, AdminBot
-geolocates the caller's IP (via IPinfo's free "Lite" tier -- country and
-continent only, not city-level) and stamps `last_login_at` /
-`last_login_country` / `last_login_continent` on the member record. This is
-best-effort and fire-and-forget: it never blocks or fails the login itself,
-and with no token configured it is simply skipped. It is visible to the
+On every successful login AdminBot geolocates the caller's IP and stamps
+`last_login_at` / `last_login_country` / `last_login_continent`, and, when the
+provider answers with one, `last_login_city` / `last_login_region`. The
+provider is a local DB-IP City Lite database when `ADMINBOT_GEOIP_MMDB_PATH` is
+set (city-level, no network call per sign-in), otherwise IPinfo when
+`IPINFO_TOKEN` is set (country only on the free Lite tier), otherwise none; the
+service logs which at startup. Setup is in
+[IP geolocation](adminbot-geoip.md). This is best-effort and
+fire-and-forget: it never blocks or fails the login itself. It is visible to the
 member on their own profile ("Last login location", top of the Profile tab)
 and to admins in the Members table.
 

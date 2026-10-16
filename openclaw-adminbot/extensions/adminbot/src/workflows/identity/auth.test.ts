@@ -44,6 +44,7 @@ function setup(
       expiresInMinutes: number;
     }) => Promise<void>;
     sendAccountApprovedEmail?: (params: { email: string; name?: string }) => Promise<void>;
+    afterLoginLocated?: (memberId: string) => void;
   } = {},
 ) {
   const store = new AdminBotMemoryStore();
@@ -61,6 +62,7 @@ function setup(
     ...(options.gatewayUrl === null ? {} : { gatewayUrl: options.gatewayUrl ?? GATEWAY_URL }),
     ...(options.now ? { now: options.now } : {}),
     ...(options.geolocateIp ? { geolocateIp: options.geolocateIp } : {}),
+    ...(options.afterLoginLocated ? { afterLoginLocated: options.afterLoginLocated } : {}),
     ...(options.sendPasswordResetEmail
       ? { sendPasswordResetEmail: options.sendPasswordResetEmail }
       : {}),
@@ -847,6 +849,47 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(updated?.last_login_country).toBe("Switzerland");
     expect(updated?.last_login_continent).toBe("Europe");
     expect(updated?.last_login_at).toBeTruthy();
+  });
+
+  // The merge patch keeps keys it is not given, so a country-only sign-in has to clear the city
+  // explicitly -- otherwise last week's city rides along with today's `last_login_at`.
+  it("stamps city and region together, and clears both when a sign-in locates only a country", async () => {
+    const geolocateIp = vi
+      .fn()
+      .mockResolvedValueOnce({ country: "CA", continent: "NA", city: "London", region: "Ontario" })
+      .mockResolvedValueOnce({ country: "GB", continent: "EU" });
+    const { store, auth } = setup({ geolocateIp });
+    await claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    await auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "8.8.8.8" });
+    await vi.waitFor(() => expect(store.getLabMember("ada")?.last_login_city).toBe("London"));
+    expect(store.getLabMember("ada")?.last_login_region).toBe("Ontario");
+
+    await auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "9.9.9.9" });
+    await vi.waitFor(() => expect(store.getLabMember("ada")?.last_login_country).toBe("GB"));
+    expect(store.getLabMember("ada")?.last_login_city ?? "").toBe("");
+    expect(store.getLabMember("ada")?.last_login_region ?? "").toBe("");
+  });
+
+  it("tells the meetup hook who was located to a city, and nothing else", async () => {
+    // A mocked geolocator: no real IPinfo call.
+    const geolocateIp = vi.fn(async (ip: string) =>
+      ip === "8.8.8.8"
+        ? { country: "United States", city: "San Francisco", timezone: "America/Los_Angeles" }
+        : { country: "United States" },
+    );
+    const afterLoginLocated = vi.fn();
+    const { store, auth } = setup({ geolocateIp, afterLoginLocated });
+    await claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    await auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "8.8.4.4" });
+    await vi.waitFor(() => expect(store.getLabMember("ada")?.last_login_country).toBeTruthy());
+    // A country alone places nobody in a city: no meetup work.
+    expect(afterLoginLocated).not.toHaveBeenCalled();
+
+    await auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "8.8.8.8" });
+    await vi.waitFor(() => expect(afterLoginLocated).toHaveBeenCalledTimes(1));
+    expect(afterLoginLocated).toHaveBeenCalledWith("ada");
   });
 
   it("stamps the login observation's collection time in the zone the IP resolved to", async () => {

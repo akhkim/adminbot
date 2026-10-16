@@ -4,6 +4,7 @@
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 import type { AdminBotSettingsInput } from "../../contracts/actions.js";
 import { readLlmGatewayStatus } from "../../kernel/llm-gateway-client.js";
+import { notificationFeed } from "../../workflows/members/notification-feed.js";
 import {
   asString,
   readJson,
@@ -13,7 +14,7 @@ import {
   sendServiceResult,
 } from "../server.http.js";
 import { adminSessionOnly, memberOnly, principalActor, privilegedOnly } from "./guards.js";
-import { asDays } from "./query-params.js";
+import { asDays, limitParam } from "./query-params.js";
 import { get, post, put, route, type Route } from "./router.js";
 
 export const workspaceRoutes: readonly Route[] = [
@@ -38,8 +39,7 @@ export const workspaceRoutes: readonly Route[] = [
     "/activity/updates",
     privilegedOnly(({ res, url, ctx }) => {
       const { service } = ctx;
-      const limit = Number(url.searchParams.get("limit") ?? "");
-      sendServiceResult(res, service.listRecentUpdates(Number.isFinite(limit) ? limit : undefined));
+      sendServiceResult(res, service.listRecentUpdates(limitParam(url)));
     }),
   ),
   post("/feedback", async ({ req, res, principal, ctx }) => {
@@ -111,7 +111,18 @@ export const workspaceRoutes: readonly Route[] = [
     memberOnly(({ req, res, principal, ctx }) => {
       const { service } = ctx;
       if (req.method === "GET") {
-        sendServiceResult(res, service.listMemberNotifications(principal.member.id));
+        const listed = service.listMemberNotifications(principal.member.id);
+        // Each kind's card and every unread one: the read siblings a card stands for are never
+        // drawn, so they stay on the server. See notificationFeed.
+        sendServiceResult(
+          res,
+          listed.ok
+            ? {
+                ...listed,
+                payload: { notifications: notificationFeed(listed.payload.notifications) },
+              }
+            : listed,
+        );
         return;
       }
       sendJson(res, 405, { error: { message: "method not allowed" } });

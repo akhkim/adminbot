@@ -11,7 +11,10 @@ describe("runtime deadline dataset", () => {
     const row = { id: "example", name: "Example", deadline_aoe: "2026-09-14 23:59:00" };
     try {
       writeFileSync(file, JSON.stringify({ items: [row] }));
-      expect(readDeadlineDataset(file)).toEqual([row]);
+      const first = readDeadlineDataset(file);
+      expect(first).toEqual([row]);
+      // Unchanged file: served from memory, not re-read and re-validated on every page load.
+      expect(readDeadlineDataset(file)).toBe(first);
       row.deadline_aoe = "2026-09-21 23:59:00";
       writeFileSync(file + ".next", JSON.stringify({ items: [row] }));
       renameSync(file + ".next", file);

@@ -6,7 +6,9 @@ import { redactConfidentialMemberFields } from "../../contracts/actions.js";
 import { asString, readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
 import { handleMemberDraft } from "../server.member-drafts.js";
 import { memberOnly, principalActor, privilegedOnly } from "./guards.js";
+import { memberViewEtag } from "./members-etag.js";
 import { get, post, route, type Route, startingWith } from "./router.js";
+import { sendNotModified } from "./version-etag.js";
 
 export const profileRoutes: readonly Route[] = [
   route(
@@ -38,6 +40,10 @@ export const profileRoutes: readonly Route[] = [
     memberOnly(
       ({ res, principal, ctx }) => {
         const { service } = ctx;
+        const etag = memberViewEtag(ctx.store, principal, "lab-members.self");
+        if (etag && sendNotModified(res, etag)) {
+          return;
+        }
         const result = service.getLabMemberView(principal.member.id);
         sendServiceResult(
           res,
@@ -53,6 +59,7 @@ export const profileRoutes: readonly Route[] = [
                 },
               }
             : result,
+          { etag },
         );
       },
       { status: 403, message: "member session required" },

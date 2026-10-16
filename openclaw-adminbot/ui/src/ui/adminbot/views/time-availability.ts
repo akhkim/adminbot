@@ -24,7 +24,7 @@ import {
   upcomingMajorDeadlines,
   urgencyOf,
 } from "../data/deadline-time.ts";
-import { AOE_TIMEZONE, localTimezone, timezoneOptions } from "../data/timezones.ts";
+import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
 // A member's committed time: an hours-per-week chart over a timeline, the commitments behind it,
 // and the dated milestones they are planning back from.
 //
@@ -61,6 +61,7 @@ import { AOE_TIMEZONE, localTimezone, timezoneOptions } from "../data/timezones.
 // the number they typed in, and capacity becomes a reference line when it is known.
 import { renderDateControl } from "../date-control.ts";
 import { renderMemberSelect } from "./member-select.ts";
+import { renderWhereStrip } from "./time-availability.trips.ts";
 import {
   CHART_COLORS,
   CHART_NEUTRAL_COLOR,
@@ -69,8 +70,7 @@ import {
   type TimeAllocationInterval,
   type TimeAllocationTask as ChartTask,
   type TimeChartWindow,
-} from "./time-allocation-chart.ts";
-import { renderWhereStrip } from "./time-availability.trips.ts";
+} from "./time-chart.ts";
 
 type TimeAllocationTask = {
   key: string;
@@ -190,19 +190,6 @@ export type TimeAvailabilityDraft = {
   editingIndex: number | null;
 };
 
-export const EMPTY_TIME_AVAILABILITY_DRAFT: TimeAvailabilityDraft = {
-  category: "jinesis",
-  customLabel: "",
-  project: "",
-  start: "",
-  end: "",
-  hoursPerWeek: "",
-  wholeDay: true,
-  note: "",
-  link: "",
-  editingIndex: null,
-};
-
 export type MilestoneDraft = {
   date: string;
   label: string;
@@ -221,16 +208,12 @@ export type MilestoneDraft = {
   timezone: string;
 };
 
-export const EMPTY_MILESTONE_DRAFT: MilestoneDraft = {
-  date: "",
-  label: "",
-  link: "",
-  time: "",
-  // Prefilled with the browser's own zone rather than blank. Someone who types a time almost
-  // always means their own clock, and a zone they have to go and find first is how a field ends up
-  // answered wrong or left empty.
-  timezone: localTimezone(),
-};
+import { EMPTY_TIME_AVAILABILITY_DRAFT } from "./time-availability.drafts.ts";
+
+export {
+  EMPTY_MILESTONE_DRAFT,
+  EMPTY_TIME_AVAILABILITY_DRAFT,
+} from "./time-availability.drafts.ts";
 
 /** Everything the editor may rewrite. An omitted list is left as it is. */
 export type SchedulePatch = {
@@ -263,6 +246,7 @@ export type AdminBotTimeAvailabilityProps = {
   onRefresh?: () => void;
   selectedMemberId: string;
   onMemberChange: (memberId: string) => void;
+  onMemberHighlight?: (memberId: string) => void; // admin picker: read before the pick lands
   range: TimeAvailabilityRange;
   onRangeChange: (range: TimeAvailabilityRange) => void;
   /**
@@ -1986,8 +1970,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const emptyOptionLabel = props.loading
     ? t("adminbotTimeAvailability.loadingUsers")
     : t("adminbotTimeAvailability.selectUser");
-  // Whose schedules this viewer may read. An admin plans for the lab, so they get everyone; anyone
-  // else gets self plus the narrow authorized collaborator snapshots.
+  // Readable schedules: an admin plans for the lab; others get self plus authorized snapshots.
   const readableMembers = props.viewerIsAdmin
     ? props.members
     : [
@@ -2006,8 +1989,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const dismissedDeadlines = (selectedMember?.dismissed_deadlines ?? []).filter(
     (name): name is string => typeof name === "string",
   );
-  // Built from the same bins the bars use, so "where you are" and "what you are committed to" are
-  // divided into the same periods and cannot drift apart when the range switch changes.
+  // The bars' own bins, so "where you are" and "what you are committed to" can never drift apart.
   const whereStrip = whereBins(
     rangeBins(props.range, Date.now()),
     storedTrips,
@@ -2079,6 +2061,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                 label: t("adminbotTimeAvailability.selectUser"),
                 disabled: props.loading || readableMembers.length === 0,
                 onPick: (memberId: string) => props.onMemberChange(memberId),
+                onHighlight: props.onMemberHighlight,
               })}
             </label>`
           : html`<p

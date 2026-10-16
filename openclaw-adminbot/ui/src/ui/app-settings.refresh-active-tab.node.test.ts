@@ -72,6 +72,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./adminbot/controllers/admin.ts", () => ({
   loadAdminBot: mocks.loadAdminBotMock,
+  loadAdminBotSensitiveInfo: vi.fn(async () => {}),
   pendingAdminBotLoad: mocks.pendingAdminBotLoadMock,
 }));
 vi.mock("./adminbot/controllers/conference-papers.ts", () => ({
@@ -166,6 +167,7 @@ import { loadChannelsTab, refreshActiveTab, setTab } from "./app-settings.ts";
 function createHost() {
   return {
     tab: "agents",
+    memberPrivilegeLevel: "admin",
     connected: true,
     client: {},
     agentsPanel: "overview",
@@ -369,6 +371,39 @@ describe("refreshActiveTab", () => {
     await refreshActiveTab(app as never);
 
     expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "adminbot",
+    "adminbotSettings",
+    "adminbotMembers",
+    "adminbotPapers",
+    "adminbotAnnouncements",
+    "adminbotTimeAvailability",
+    "adminbotConferencePapers",
+    "adminbotCalendar",
+  ])("uses member loading on %s while viewing as a member", async (tab) => {
+    const host = createHost();
+    host.tab = tab as typeof host.tab;
+    host.memberPrivilegeLevel = "member";
+    await refreshActiveTab(host as never);
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(
+      host,
+      "general",
+      expect.any(Boolean),
+      false,
+    );
+  });
+
+  it("asks for the admin queues only when the viewer is an admin", async () => {
+    const host = createHost();
+    host.tab = "adminbotTimeAvailability";
+    const app = host as typeof host & { memberPrivilegeLevel: string };
+    app.memberPrivilegeLevel = "admin";
+
+    await refreshActiveTab(app as never);
+
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "admin", false, false);
   });
 
   it("does not request the paper list when Time Availability first opens", async () => {

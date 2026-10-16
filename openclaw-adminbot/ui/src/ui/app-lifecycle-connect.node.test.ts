@@ -26,7 +26,6 @@ vi.mock("./chat/composer-persistence.ts", () => ({
 vi.mock("./app-settings.ts", () => ({
   applySettingsFromUrl: applySettingsFromUrlMock,
   attachThemeListener: vi.fn(),
-  detachThemeListener: vi.fn(),
   inferBasePath: vi.fn(() => "/"),
   syncTabWithLocation: vi.fn(),
   syncThemeWithSettings: vi.fn(),

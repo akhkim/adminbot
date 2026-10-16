@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "./date-format.ts";
 import { aoeInstantMs, deadlineDateTimeLabel } from "./deadline-time.ts";
 import type { DeadlineVenue } from "./deadlines.ts";
 import { AOE_TIMEZONE, localTimezone } from "./timezones.ts";
@@ -13,9 +14,7 @@ export function validDisplayTimezone(value: string): boolean {
     return true;
   }
   try {
-    return Boolean(
-      value && new Intl.DateTimeFormat("en", { timeZone: value }).resolvedOptions().timeZone,
-    );
+    return Boolean(value && dateTimeFormat("en", { timeZone: value }).resolvedOptions().timeZone);
   } catch {
     return false;
   }
@@ -58,7 +57,7 @@ export function timezoneName(zone: string): string {
   if (zone.includes("/") && !zone.startsWith("Etc/")) {
     return zone;
   }
-  return new Intl.DateTimeFormat("en", { timeZone: zone, timeZoneName: "shortOffset" })
+  return dateTimeFormat("en", { timeZone: zone, timeZoneName: "shortOffset" })
     .formatToParts(0)
     .find((part) => part.type === "timeZoneName")!
     .value.replace("GMT", "UTC")
@@ -69,7 +68,7 @@ export function zonedDeadlineLabel(instant: number, zone: string, includeOffset 
   if (!Number.isFinite(instant)) {
     return "Date unknown";
   }
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = dateTimeFormat("en-US", {
     timeZone: zone,
     year: "numeric",
     month: "short",

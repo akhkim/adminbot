@@ -5,6 +5,7 @@
 
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
+import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
 import { loadAdminBotRoster } from "../controllers/admin.ts";
 import { saveAdminBotOwnProfile } from "../controllers/members.ts";
 import {
@@ -15,8 +16,11 @@ import { loadAdminBotRecentEdits } from "../controllers/recent-edits.ts";
 import { submitOwnBadgeNomination, submitOwnBadgeSuggestion } from "../data/badges.ts";
 import { renderLocationPrompt } from "../views/location-prompt.ts";
 import { isProfileBlocked } from "../views/profile-gate.ts";
-import { renderProfile } from "../views/profile.ts";
+import { renderMeetupToggleSurface } from "./events.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
+
+// The page's view loads on first visit rather than in the first bundle.
+const lazyProfile = createLazyView(() => import("../views/profile.ts"), notifyLazyViewHost);
 
 export function renderProfileSurface(state: AppViewState, scope: AdminBotSurfaceScope) {
   const { requestHostUpdate } = scope;
@@ -37,38 +41,42 @@ export function renderProfileSurface(state: AppViewState, scope: AdminBotSurface
       })
     : nothing}${state.tab === "profile"
     ? html`
-        ${renderProfile(state, {
-          badgesDisabled: profileBlocked,
-          onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
-          onLoadRecentEdits: (subject, id) => {
-            void loadAdminBotRecentEdits(state, subject, id).finally(() => requestHostUpdate?.());
-          },
-          onPolishPhoto: () => void polishAdminBotOwnProfilePhoto(state),
-          onApplyPolishedPhoto: (variantId) => void applyAdminBotOwnProfilePhoto(state, variantId),
-          onSubmitBadgeNomination: (badgeId, evidence, memberId) =>
-            void submitOwnBadgeNomination(state, badgeId, evidence, memberId),
-          onPickBadgeNominee: (memberId) => {
-            state.profileBadgeNomineeId = memberId;
-            requestHostUpdate?.();
-          },
-          onOpenBadgeNominee: () => {
-            // ponytail: At 10k members this fetches the full summary roster (~9 MB). A
-            // paged server-search picker can replace this when needed.
-            void loadAdminBotRoster(state).finally(() => requestHostUpdate?.());
-          },
-          onSubmitBadgeSuggestion: (input) =>
-            void submitOwnBadgeSuggestion(state, input).finally(() => requestHostUpdate?.()),
-          onToggleBadgeSuggestForm: (open) => {
-            state.profileBadgeSuggestOpen = open;
-            // Shutting the form drops the last result with it: a success banner left over a
-            // collapsed form reads as applying to whatever is opened next.
-            if (!open) {
-              state.badgeSuggestionNotice = null;
-            }
-            requestHostUpdate?.();
-          },
-          onNavigateToTab: (tab) => state.setTab(tab),
-        })}
+        ${renderLazyView(lazyProfile, (m) =>
+          m.renderProfile(state, {
+            badgesDisabled: profileBlocked,
+            onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
+            onLoadRecentEdits: (subject, id) => {
+              void loadAdminBotRecentEdits(state, subject, id).finally(() => requestHostUpdate?.());
+            },
+            onPolishPhoto: () => void polishAdminBotOwnProfilePhoto(state),
+            onApplyPolishedPhoto: (variantId) =>
+              void applyAdminBotOwnProfilePhoto(state, variantId),
+            onSubmitBadgeNomination: (badgeId, evidence, memberId) =>
+              void submitOwnBadgeNomination(state, badgeId, evidence, memberId),
+            onPickBadgeNominee: (memberId) => {
+              state.profileBadgeNomineeId = memberId;
+              requestHostUpdate?.();
+            },
+            onOpenBadgeNominee: () => {
+              // ponytail: At 10k members this fetches the full summary roster (~9 MB). A
+              // paged server-search picker can replace this when needed.
+              void loadAdminBotRoster(state).finally(() => requestHostUpdate?.());
+            },
+            onSubmitBadgeSuggestion: (input) =>
+              void submitOwnBadgeSuggestion(state, input).finally(() => requestHostUpdate?.()),
+            onToggleBadgeSuggestForm: (open) => {
+              state.profileBadgeSuggestOpen = open;
+              // Shutting the form drops the last result with it: a success banner left over a
+              // collapsed form reads as applying to whatever is opened next.
+              if (!open) {
+                state.badgeSuggestionNotice = null;
+              }
+              requestHostUpdate?.();
+            },
+            onNavigateToTab: (tab) => state.setTab(tab),
+          }),
+        )}
+        ${profileBlocked ? nothing : renderMeetupToggleSurface(state, scope)}
       `
     : nothing}`;
 }

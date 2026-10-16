@@ -32,8 +32,6 @@ export function paper(overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPap
 export function overviewRow(overrides: Partial<PaperSlotOverviewRow> = {}): PaperSlotOverviewRow {
   return {
     paper_id: "p1",
-    title: "Causal abstraction",
-    current_step: "overleaf_writing",
     provided_count: 3,
     required_count: 21,
     dormant: false,

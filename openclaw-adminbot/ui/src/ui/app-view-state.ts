@@ -5,6 +5,7 @@ import type {
   MeetingAttendanceNudgeResult,
   MeetingAttendee,
   MeetingRecord,
+  MeetingRosters,
   MeetingCursor,
 } from "./adminbot/api/meetings.ts";
 import type { LocationDrift } from "./adminbot/api/profile.ts";
@@ -17,6 +18,7 @@ import type {
   AdminBotMemberNudgeState,
   AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
+import type { DeskLettersState } from "./adminbot/controllers/logistics.ts";
 import type {
   LetterFact,
   MeetingRequestRow,
@@ -25,6 +27,7 @@ import type {
 import type { LogisticsQueueOptions } from "./adminbot/data/logistics-queue.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
+import type { PagedListState } from "./adminbot/load-more.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
 import type { TripDraft } from "./adminbot/views/lab-travel.plans.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
@@ -507,6 +510,9 @@ export type AppViewState = {
   adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
   adminBotMemberMapRequestId: number;
+  adminBotMemberMapCheckedAt?: number;
+  /** The tab the last render was on, so opening a map tab can be told from staying on it. */
+  adminBotMemberMapTab?: string;
   adminBotCollaboratorSchedules: AdminBotLabMember[];
   adminBotCollaboratorSchedulesLoading: boolean;
   adminBotCollaboratorSchedulesError: string | null;
@@ -525,6 +531,9 @@ export type AppViewState = {
   adminBotMeetingNudgeResult?: MeetingAttendanceNudgeResult | null;
   adminBotMeetingNudgeBusy?: boolean;
   adminBotMeetingNudgeError?: string | null;
+  adminBotMeetingRosters?: MeetingRosters;
+  adminBotMemberDetails?: import("./adminbot/controllers/member-detail.ts").AdminBotMemberDetails;
+  adminBotDuplicatePairs?: import("./adminbot/controllers/member-detail.ts").AdminBotDuplicatePairs;
   // What the lab has told this member. Undefined is "not read yet"; [] is a real "nothing".
   adminBotNotifications?: MemberNotification[];
   /** The live lab-wide broadcast, or null for none. `undefined` means "not loaded yet". */
@@ -574,6 +583,13 @@ export type AppViewState = {
   labTravelSharing?: import("./adminbot/data/lab-travel.ts").TravelSharing | null;
   labTravelSharingCheckedFor?: string | null;
   labTravelDevice?: import("./adminbot/controllers/location-tracker.ts").LocationTrackerSnapshot;
+  // The Events tab; controllers/events.ts owns these.
+  events?: import("./adminbot/data/events.ts").EventsOverview;
+  eventsLoadedFor?: string | null;
+  eventsLoading?: boolean;
+  eventsError?: string | null;
+  eventsNotice?: import("./adminbot/controllers/events.ts").EventsNotice | null;
+  eventsBusy?: string | null;
   adminBotLocationDrift?: LocationDrift | null;
   adminBotLocationDrifts?: LocationDrift[];
   adminBotLocationSaving?: boolean;
@@ -611,6 +627,10 @@ export type AppViewState = {
   // for the mode the tab is now in. Not `requests.length`, which would re-ask forever in a lab
   // that has no requests yet.
   adminBotLogisticsRequestsLoadedAt: number | null;
+  // The service pages the list: the total for the filter on screen and where the next page starts.
+  adminBotLogisticsPage: PagedListState;
+  // My Desk's open letters, every page of them, so its bucket counts are the whole queue's.
+  adminBotDeskLetters: DeskLettersState;
   // Which request is open, and the copy of it that carries the file bytes. The list deliberately
   // has none, so opening one is a second read and the two are held apart.
   adminBotLogisticsOpenRequestId: string | null;
@@ -649,6 +669,8 @@ export type AppViewState = {
   // Profile Overview: how far along every active member's own record is. `loadedAt` is the "ask for
   // it" signal, the same sentinel the logistics queue uses.
   adminBotProfileOverview: import("./adminbot/api/members.ts").MemberProfileOverviewRow[];
+  /** Where the held rows stand: one page of the filtered list, or My Desk's column heads. */
+  adminBotProfileOverviewPage: import("./adminbot/controllers/profile-overview.ts").ProfileOverviewPageState;
   /** Nudges raised to the head professor and still unanswered. Read with the overview beside it. */
   adminBotEscalatedNudges: import("./adminbot/api/nudges.ts").EscalatedNudgeRow[];
   adminBotPiReview: import("./adminbot/api/paper-admin.ts").PiReviewRow[];

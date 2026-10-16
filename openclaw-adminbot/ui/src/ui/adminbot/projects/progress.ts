@@ -13,6 +13,7 @@ import type {
   AdminBotPaperSaveInput,
   AdminBotPaperStep,
 } from "../controllers/admin.ts";
+import { paperSteps } from "../data/paper-steps.ts";
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import {
   PRESENTATION_FORMATS,
@@ -22,7 +23,6 @@ import {
 } from "../paper-classification.ts";
 import { completedOnLabel, completionReadiness, isPaperCompleted } from "../paper-completion.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
-import { paperSteps } from "../views/admin.ts";
 import { paperProgress, stepLabel } from "./model.ts";
 import type { PaperWorkspaceProps } from "./workspace.ts";
 

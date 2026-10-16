@@ -12,11 +12,11 @@ import {
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
+import { paperSteps } from "../data/paper-steps.ts";
 import { formatVenue, venueYears } from "../data/venue-catalog.ts";
 import { renderDateControl } from "../date-control.ts";
 import { serializeVenueTargets } from "../venue-targets.ts";
-import { paperSteps } from "../views/admin.ts";
-import { findOwnMember } from "../views/profile.ts";
+import { findOwnMember } from "../views/profile-fields.ts";
 import { CONFIDENCE_OPTIONS, defaultTarget, venueOptions } from "./venues.ts";
 import type { PaperWorkspaceProps, ProjectVenueDraft } from "./workspace.ts";
 

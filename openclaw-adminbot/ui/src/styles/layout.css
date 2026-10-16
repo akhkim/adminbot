@@ -315,7 +315,8 @@
   border: 1px solid transparent;
   border-radius: var(--radius-full);
   background: transparent;
-  color: var(--muted);
+  /* --text, like the bell beside it. --muted read as disabled on the white topbar. */
+  color: var(--text);
   cursor: pointer;
   transition:
     color var(--duration-fast) var(--ease-out),
@@ -340,8 +341,8 @@
 }
 
 .topbar-theme-mode__btn svg {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.75px;
@@ -2010,15 +2011,39 @@
   background: var(--bg-elevated);
 }
 
-/* Plot and ranked list side by side: the plot shows spread, the list shows rank, and neither alone
-   answers "where is the lab". Stacks under its own width rather than a viewport breakpoint, since
-   the card sits in a grid whose column count already varies. */
 /* The card spans every column of the dashboard grid. That grid is
    repeat(auto-fit, minmax(18rem, 1fr)), so a card taking one column gives the plot roughly 150px
-   once the list and the card padding are out â€” at which point a world map is a row of specks. A map
-   is wide by nature; this is the one card on the dashboard that has a natural aspect ratio. */
+   once the list and the card padding are out -- at which point a world map is a row of specks. A
+   map is wide by nature; this is the one card on the dashboard that has a natural aspect ratio.
+
+   The map's own palette lives here as a handful of tokens, tuned once per theme, so the plot, the
+   legend keys, the list swatches and the popover all draw from the same few colours. Land is a
+   shade off the ocean rather than an outline: at 1:110m the coastline is the only cue telling you
+   which dot is which, and a hairline of it disappears at card size. */
 .member-map {
+  --mm-ocean: color-mix(in srgb, var(--bg) 55%, var(--bg-elevated));
+  --mm-land: #24242b;
+  --mm-land-edge: #2f2f38;
+  --mm-grid: rgb(255 255 255 / 4%);
+  --mm-pin: var(--accent);
+  --mm-pin-soft: color-mix(in srgb, var(--mm-pin) 16%, transparent);
   grid-column: 1 / -1;
+}
+
+:root[data-theme="light"] .member-map {
+  --mm-ocean: #f3f5f9;
+  --mm-land: #e2e6ed;
+  --mm-land-edge: #d3d8e1;
+  --mm-grid: rgb(9 9 11 / 5%);
+}
+
+/* On Collaborate the pin wears the page's own violet, like every other accent there. */
+.lab-sharing .member-map {
+  --mm-pin: var(--ls-accent-bright);
+}
+
+:root[data-theme="light"] .lab-sharing .member-map {
+  --mm-pin: var(--ls-accent);
 }
 
 .member-map__head {
@@ -2029,54 +2054,548 @@
   width: 100%;
 }
 
+.member-map__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.member-map__expand {
+  flex-shrink: 0;
+}
+
+.member-map__updated {
+  font-weight: 400;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* --- Collaborate: a section like its neighbours, an h2 over one bordered panel --- */
+
+.member-map--section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.member-map--section .member-map__head {
+  align-items: flex-end;
+}
+
+.member-map__title {
+  margin: 0;
+  font-size: var(--control-ui-text-xl);
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.member-map--section .member-map__sub {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.member-map__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+.member-map__panel--state {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: 9rem;
+}
+
+.member-map__state {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+  text-align: center;
+}
+
+.member-map__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--mm-pin);
+  border-radius: var(--radius-full);
+  animation: member-map-spin 0.8s linear infinite;
+}
+
+@keyframes member-map-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .member-map__spinner {
+    animation: none;
+  }
+}
+
+/* --- Plot and list --- */
+
+/* Plot and city list side by side: the plot shows spread, the list shows rank, and neither alone
+   answers "where is the lab". Wraps under its own width rather than a viewport breakpoint, since
+   the card sits in a grid whose column count already varies. */
 .member-map__body {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-4);
+  gap: var(--space-5);
   align-items: flex-start;
   width: 100%;
+}
+
+.member-map--card .member-map__body {
   margin-top: var(--space-2);
+}
+
+.member-map__figure {
+  position: relative;
+  flex: 1 1 26rem;
+  min-width: 0;
+}
+
+/* The plot doubles as the button that opens the full-screen view, so it carries no button chrome --
+   the map is the affordance. */
+.member-map__plot-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  cursor: zoom-in;
+}
+
+.member-map__plot-button:focus-visible {
+  outline: 2px solid var(--mm-pin);
+  outline-offset: 2px;
 }
 
 /* 2:1, the projection's own ratio, so the plot fills its width and takes the height that implies
    rather than being squashed into a box that distorts every position on it. */
 .member-map__plot {
-  flex: 1 1 420px;
-  min-width: 0;
-  aspect-ratio: 2 / 1;
+  display: block;
+  width: 100%;
   height: auto;
+  aspect-ratio: 2 / 1;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--panel);
+  border-radius: var(--radius-md);
+  background: var(--mm-ocean);
 }
 
-/* The plot doubles as the button that opens the full-screen view, so it carries no button chrome â€”
-   the map is the affordance. */
-.member-map__plot-button {
-  flex: 1 1 420px;
+.member-map__ocean {
+  fill: var(--mm-ocean);
+}
+
+.member-map__land {
+  fill: var(--mm-land);
+  stroke: var(--mm-land-edge);
+  stroke-width: 0.4;
+  stroke-linejoin: round;
+}
+
+/* Under the land, so it reads as a reference over the ocean rather than as borders between
+   countries. */
+.member-map__grid {
+  stroke: var(--mm-grid);
+  stroke-width: 0.4;
+}
+
+/* A ring of the ocean colour behind each dot, so a city sitting on a coast is still a disc rather
+   than a shape bleeding into the landmass under it. */
+.member-map__halo {
+  fill: var(--mm-ocean);
+  fill-opacity: 0.9;
+}
+
+.member-map__dot {
+  fill: var(--mm-pin);
+  fill-opacity: 0.85;
+  transition: fill-opacity 120ms ease;
+}
+
+.member-map__place {
+  transition: opacity 120ms ease;
+}
+
+.member-map__place:hover .member-map__dot,
+.member-map__place--active .member-map__dot {
+  fill-opacity: 1;
+}
+
+/* Picking a city in the list or on the map lifts its pin and lets the rest recede. */
+.member-map__plot--focus .member-map__place:not(.member-map__place--active) {
+  opacity: 0.3;
+}
+
+.member-map__place--active .member-map__halo {
+  fill: var(--mm-pin-soft);
+  fill-opacity: 1;
+  stroke: var(--mm-pin);
+  stroke-width: 0.8;
+}
+
+/* Placed only to a country, so the dot sits on a centroid nobody lives at. Hollow and dashed reads
+   as "somewhere in here" rather than as a city, and the legend says so. */
+.member-map__place--approximate .member-map__dot {
+  fill: var(--mm-ocean);
+  fill-opacity: 1;
+  stroke: var(--mm-pin);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 1.4;
+}
+
+/* Size and halo width are set inline by the view: its collision pass places labels by them, so
+   the two must not be able to disagree. */
+.member-map__label {
+  fill: var(--text-strong);
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--mm-ocean);
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+/* No room on the plot without overlapping a neighbour: shown while its dot is picked, and named in
+   the list beside the plot either way. */
+.member-map__label--hover {
+  visibility: hidden;
+}
+
+.member-map__place:hover .member-map__label--hover,
+.member-map__place--active .member-map__label--hover {
+  visibility: visible;
+}
+
+/* The picked city's card, over the plot beside its pin. Never takes the pointer, so it cannot steal
+   the hover from the pin it describes. */
+.member-map__popover {
+  --pop-x: -50%;
+  --pop-y: calc(-100% - 14px);
+  position: absolute;
+  z-index: 1;
+  min-width: 9rem;
+  max-width: 17rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  transform: translate(var(--pop-x), var(--pop-y));
+  pointer-events: none;
+}
+
+.member-map__popover--below {
+  --pop-y: 14px;
+}
+
+.member-map__popover--start {
+  --pop-x: calc(-100% + 18px);
+}
+
+.member-map__popover--end {
+  --pop-x: -18px;
+}
+
+.member-map__popover-head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.member-map__popover-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.member-map__popover .member-map__people {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.member-map__popover-more {
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* One person per line: their name, then where and what says so ("Toronto · from profile"). */
+.member-map__people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member-map__people li {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+}
+
+.member-map__name {
+  font-size: var(--control-ui-text-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.member-map__name-detail {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* --- City list --- */
+
+.member-map__list {
+  display: flex;
+  flex: 1 1 13rem;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member-map__row {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+}
+
+.member-map__row-top {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 2rem;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.member-map__row-top:hover {
+  background: var(--bg-hover);
+}
+
+.member-map__row--active .member-map__row-top {
+  background: var(--mm-pin-soft);
+  color: var(--text-strong);
+}
+
+.member-map__row-top:focus-visible {
+  outline: 2px solid var(--mm-pin);
+  outline-offset: -2px;
+}
+
+.member-map__row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.member-map__swatch {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--mm-pin);
+}
+
+.member-map__swatch--country {
+  background: none;
+  border: 1.5px dashed var(--mm-pin);
+}
+
+.member-map__row-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-map__row-count {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.member-map__row--more {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.member-map__row .member-map__people {
+  padding: var(--space-1) var(--space-2) var(--space-2) calc(var(--space-2) + 8px + var(--space-2));
+}
+
+/* Recently-active faces per city, overlapping like an avatar stack; names live in each circle's
+   title rather than as text, so the row stays glanceable. */
+.member-map__avatars {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.member-map__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: -6px;
+  border-radius: var(--radius-full);
+  outline: 1.5px solid var(--bg-elevated);
+  object-fit: cover;
+  background: linear-gradient(160deg, var(--mm-pin-soft), var(--bg-muted));
+  color: var(--text-strong);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.member-map__avatar:first-child {
+  margin-left: 0;
+}
+
+.member-map__avatar-more {
+  margin-left: var(--space-1);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.member-map__expand-btn {
+  align-self: flex-start;
+  margin: 0 0 var(--space-1) calc(var(--space-2) + 8px + var(--space-2));
   padding: 0;
   border: 0;
   background: none;
-  cursor: zoom-in;
+  color: var(--mm-pin);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  cursor: pointer;
 }
 
-.member-map__plot-button .member-map__plot {
+.member-map__expand-btn:hover {
+  color: var(--text-strong);
+}
+
+/* --- Legend and small print --- */
+
+.member-map__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  align-items: center;
+  justify-content: space-between;
   width: 100%;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
 }
 
-.member-map__plot-button:hover .member-map__land {
-  fill: color-mix(in srgb, var(--bg-accent) 88%, var(--text));
+.member-map__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
 }
 
-.member-map__plot-button:focus-visible {
-  outline: 2px solid var(--accent, var(--text));
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
+.member-map__legend li {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
 }
 
-/* Full screen, in the top layer. A native dialog gets Escape, focus trapping and stacking for
-   free; the alternative is a fixed overlay that reimplements all three. */
+.member-map__key {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+}
+
+.member-map__key--city {
+  background: var(--mm-pin);
+}
+
+.member-map__key--country {
+  border: 1.5px dashed var(--mm-pin);
+}
+
+/* Two dots, small then large: "size is headcount" without a word of it in the key itself. */
+.member-map__key--size {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  width: auto;
+  height: auto;
+}
+
+.member-map__key--size::before,
+.member-map__key--size::after {
+  content: "";
+  border-radius: var(--radius-full);
+  background: var(--mm-pin);
+  opacity: 0.85;
+}
+
+.member-map__key--size::before {
+  width: 5px;
+  height: 5px;
+}
+
+.member-map__key--size::after {
+  width: 11px;
+  height: 11px;
+}
+
+.member-map__note {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.member-map__credit a {
+  color: inherit;
+}
+
+/* --- Full screen --- */
+
+/* In the top layer. A native dialog gets Escape, focus trapping and stacking for free; the
+   alternative is a fixed overlay that reimplements all three. */
 .member-map__dialog {
   width: 100vw;
   max-width: 100vw;
@@ -2095,10 +2614,16 @@
 .member-map__dialog-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
   width: 100%;
   height: 100%;
   padding: var(--space-5) var(--space-6);
+}
+
+.member-map__dialog-panel .member-map__sub {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
 }
 
 /* The plot takes every pixel the header and list leave it. min-height:0 is what lets a flex child
@@ -2106,9 +2631,9 @@
 .member-map__dialog-plot {
   display: flex;
   flex: 1 1 auto;
-  min-height: 0;
   align-items: center;
   justify-content: center;
+  min-height: 0;
 }
 
 .member-map__dialog-plot .member-map__plot {
@@ -2120,196 +2645,12 @@
 
 .member-map__dialog .member-map__list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(11rem, 100%), 1fr));
-  gap: 0 var(--space-4);
   flex: 0 0 auto;
+  grid-template-columns: repeat(auto-fill, minmax(min(12rem, 100%), 1fr));
+  gap: 2px var(--space-4);
   width: 100%;
-}
-
-/* Labels and dots are sized for the card; at full screen the same viewBox units are three times
-   the pixels, so they are scaled back to keep the map from looking like a diagram. */
-.member-map__dialog .member-map__label {
-  font-size: 3px;
-  stroke-width: 1;
-}
-
-.member-map__list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(11rem, 100%), 1fr));
-  gap: 0 var(--space-4);
-  width: 100%;
-}
-
-/* Land is a filled shape, not an outline: at 1:110m the coastline is the only cue telling you which
-   dot is which, and a hairline stroke of it disappears at card size. Ocean is barely separated from
-   the card so the map reads as part of the page rather than as a pasted-in graphic. */
-.member-map__ocean {
-  fill: var(--panel);
-}
-
-.member-map__land {
-  fill: var(--bg-accent);
-  stroke: var(--border-strong);
-  stroke-width: 0.3;
-  stroke-linejoin: round;
-}
-
-/* Under the dots and over the land, so it reads as a reference rather than as a border between
-   countries â€” which is what a stronger grid on top of a coastline starts to look like. */
-.member-map__grid {
-  stroke: var(--border-strong);
-  stroke-width: 0.3;
-  opacity: 0.35;
-}
-
-.member-map__grid--equator {
-  opacity: 0.6;
-}
-
-/* A ring of the ocean color behind each dot, so a city sitting on a coast is still a disc rather
-   than a shape bleeding into the landmass under it. */
-.member-map__halo {
-  fill: var(--panel);
-  fill-opacity: 0.85;
-}
-
-.member-map__dot {
-  fill: var(--accent, var(--text));
-  fill-opacity: 0.9;
-}
-
-.member-map__place:hover .member-map__dot {
-  fill-opacity: 1;
-}
-
-.member-map__label {
-  fill: var(--text);
-  font-size: 5px;
-  font-weight: 600;
-  paint-order: stroke;
-  stroke: var(--panel);
-  stroke-width: 1.6;
-  stroke-linejoin: round;
-}
-
-.member-map__list {
-  flex: 0 1 auto;
-  min-width: 120px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.member-map__row {
-  display: flex;
-  flex-direction: column;
-  padding: 1px 0;
-  font-size: var(--control-ui-text-xs);
-}
-
-.member-map__row-top {
-  display: flex;
-  gap: var(--space-3);
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.member-map__row-main {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.member-map__row-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.member-map__row-count {
-  font-family: var(--mono);
-  color: var(--muted);
-  flex-shrink: 0;
-}
-
-.member-map__row--more {
-  color: var(--muted);
-}
-
-/* Recently-active faces per city. Overlapping like a classic avatar stack; names live in each
-   circle's title tooltip rather than as visible text, so the row stays glanceable. */
-.member-map__avatars {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.member-map__avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--radius-full);
-  object-fit: cover;
-  outline: 1.5px solid var(--panel);
-  margin-left: -6px;
-  font-size: 9px;
-  font-weight: 600;
-  color: var(--text-strong);
-  background: linear-gradient(160deg, var(--accent-subtle), var(--bg-muted));
-}
-
-.member-map__avatar:first-child {
-  margin-left: 0;
-}
-
-.member-map__avatar-more {
-  margin-left: var(--space-1);
-  color: var(--muted);
-  font-size: var(--control-ui-text-xs);
-}
-
-/* Its own row below the count, not squeezed inline with the avatars -- a bigger target that
-   reads as "there's more here" rather than a stray mark next to the last face. */
-.member-map__expand-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  width: 100%;
-  border: 0;
-  border-top: 1px solid var(--border);
-  background: none;
-  color: var(--accent, var(--text));
-  font-size: var(--control-ui-text-xs);
-  font-weight: 500;
-  padding: 3px 0 0;
-  margin-top: 2px;
-  cursor: pointer;
-}
-
-.member-map__expand-btn:hover {
-  color: var(--text-strong);
-}
-
-.member-map__expand-caret {
-  font-size: 0.9em;
-}
-
-/* The readable list an expanded row shows below its avatars -- actual names, not more circles
-   someone would have to hover one at a time to read off. */
-.member-map__name-list {
-  margin: 4px 0 0;
-  padding: 0;
-  list-style: none;
-  color: var(--text);
-  font-size: var(--control-ui-text-xs);
-}
-
-.member-map__name-list li {
-  padding: 1px 0;
+  max-height: 34dvh;
+  overflow-y: auto;
 }
 
 .dashboard-summary__title {
@@ -4528,6 +4869,50 @@
   transition:
     border-color 150ms ease,
     background-color 150ms ease;
+}
+
+/*
+ * The signed-out shell's light/dark toggle. It had no rules at all, so it rendered as a native
+ * grey button with a 0x0 svg -- no moon or sun in either theme. Sized and bordered like
+ * .public-shell-back so the two chrome buttons match; the icon strokes in currentColor.
+ */
+.public-shell-theme {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-strong);
+  cursor: pointer;
+}
+
+.public-shell-theme:hover {
+  border-color: var(--text-strong);
+  background: color-mix(in srgb, var(--text-strong) 8%, transparent);
+}
+
+.public-shell-theme:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.public-shell-theme span {
+  display: inline-flex;
+}
+
+.public-shell-theme svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.75px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .public-shell-back:hover,

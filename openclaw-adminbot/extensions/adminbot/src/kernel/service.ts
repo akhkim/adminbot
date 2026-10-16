@@ -66,7 +66,6 @@ import type {
   AdminBotPasswordReset,
   AdminBotPaperRecordInput,
   AdminBotPaperStep,
-  AdminBotPaperTimeline,
   AdminBotProfilePhotoAssessment,
   AdminBotProfilePhotoPolishVariant,
   AdminBotRemovePendingRequest,
@@ -163,6 +162,7 @@ import {
   type AdminBotFeedbackEntry,
   type AdminBotFeedbackSummary,
 } from "../contracts/feedback.js";
+import type { SlidesWorkingGroupsSource } from "../contracts/google-slides.js";
 import {
   adminBotDefaultGroupMeeting,
   adminBotGroupMeetingNudgeWindowHours,
@@ -228,7 +228,6 @@ import {
   type AdminBotSocialDraftRecord,
   type AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
-import { parsePaperFeedback } from "../contracts/paper-feedback.js";
 import type { PaperAiTextCheckStore } from "../contracts/paper-integrity-checks.js";
 import {
   adminBotPaperSlotBranchPriority,
@@ -271,6 +270,10 @@ import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { memberAddresses } from "../workflows/calendar/standing-meetings.js";
+import {
+  deadlineBoardEntryId,
+  deadlineInputFromBoardEntry,
+} from "../workflows/deadlines/board-entry.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import {
   isDeadlineMilestoneId,
@@ -325,7 +328,7 @@ import {
   stampFieldProvenance,
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
-import { birthdayEventPayload, validateBirthday } from "../workflows/members/birthday.js";
+import { validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
   localEventAudience,
@@ -339,7 +342,13 @@ import {
   observationFor,
   selfReportedChange,
 } from "../workflows/members/location-history.js";
-import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
+import type { MeetupPlace } from "../workflows/members/meetups.js";
+import {
+  ADMINBOT_MAP_VISIBILITIES,
+  memberMapMemo,
+  type AdminBotMemberMap,
+} from "../workflows/members/member-map.js";
+import { summarizeLabMember } from "../workflows/members/member-summary.js";
 import {
   dormantChaseDue,
   isChaseableMember,
@@ -357,6 +366,7 @@ import {
   themeMeetings,
   type ThemeMatch,
 } from "../workflows/members/research-themes.js";
+import type { SlackDirectoryReader } from "../workflows/members/slack-roster-sync.js";
 import {
   type AdminBotThemedMeeting,
   matchMeetingsForChannel,
@@ -406,6 +416,17 @@ import {
   memberRelevanceNeedles,
   textMatchesNeedles,
 } from "../workflows/papers/openreview-matching.js";
+import {
+  memberOwnsPaper,
+  paperIdsByOwner,
+  rosterNameCounts,
+} from "../workflows/papers/paper-ownership.js";
+import { duePaperNudges } from "../workflows/papers/paper-reminder-nudges.js";
+import {
+  paperForResponse,
+  withheldArtifactWriteError,
+  withoutTimeline,
+} from "../workflows/papers/paper-response.js";
 import { planPaperBackfill } from "../workflows/papers/paper-slot-backfill.js";
 import {
   actionablePaperSlots,
@@ -456,12 +477,17 @@ import {
   venueKey,
   selectPublications,
 } from "../workflows/papers/publication-list.js";
-import { readXThreadDraft } from "../workflows/papers/x-draft.js";
+import { PaperTableSnapshot, type PaperRowReader } from "./paper-table-snapshot.js";
 import {
   enforceActiveChannels,
   isActiveChannelEligible,
   type ActiveChannelReader,
 } from "./service.active-channels.js";
+import {
+  birthdayProposalStillCurrent,
+  reconcileBirthdayEvent,
+  reconcileExecutedBirthday,
+} from "./service.birthday.js";
 import {
   calendarMembershipWriteError,
   grantLabCalendarAccess,
@@ -477,6 +503,17 @@ import {
 import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
+import { type IntroRunResult, MeetupService } from "./service.meetups.js";
+import { piReviewSlotDenial } from "./service.pi-review.js";
+import { runSlackRosterSync, type SlackRosterSyncOptions } from "./service.slack-roster-sync.js";
+import {
+  affectsWorkingGroupsSlide,
+  planSlidesWorkingGroups,
+  proposeSlidesWorkingGroups,
+  type SlidesWorkingGroupsPreview,
+  type SlidesWorkingGroupsSyncResult,
+} from "./service.slides-working-groups.js";
+import { prepareSocialDraft, socialDraftSupersedes } from "./service.social-drafts.js";
 
 // Ordinary approvals require an administrator; a recommendation is approved by its verified author.
 type AdminBotApproverRole = Extract<AdminBotPrivilegeLevel, "admin"> | "recommender";
@@ -525,7 +562,9 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveProposal(proposal: AdminBotStoredProposal): void;
   getProposal(actionId: string): AdminBotStoredProposal | undefined;
   updateProposal(proposal: AdminBotStoredProposal): void;
-  listPending(limit?: number): AdminBotStoredProposal[];
+  /** Oldest first; `offset` pages through the queue the approval panel works down. */
+  listPending(limit?: number, offset?: number): AdminBotStoredProposal[];
+  countPending(): number;
   listProposalsByType(type: AdminBotActionType): AdminBotStoredProposal[];
   saveDeadlineProposalSubmission(
     proposal: AdminBotStoredProposal,
@@ -559,12 +598,15 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
           | "last_login_country"
           | "last_login_continent"
           | "last_login_city"
+          | "last_login_region"
           | "last_login_timezone"
         >
       >,
   ): boolean;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(page?: AdminBotListPage): AdminBotLabMember[];
+  /** Changes whenever the roster may have; a store without it is re-read on every call. */
+  labMemberVersion?(): number;
   searchUnclaimedRoster(query: string, limit: number): Array<{ id: string; name: string }>;
   listLabMemberSummaries(): AdminBotLabMemberSummary[];
   countLabMembers(q?: string): number;
@@ -636,13 +678,15 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     indexedAt: string,
     model: string,
   ): void;
-  listVenuePapers(venueId: string): AdminBotVenuePaper[];
+  listVenuePapers(venueId: string): readonly AdminBotVenuePaper[];
   listVenueIndexStatuses(): Omit<AdminBotVenueIndexStatus, "label">[];
   savePaper(paper: AdminBotPaperRecord): void;
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
   listPapers(page?: AdminBotListPage & { authorMemberId?: string }): AdminBotPaperRecord[];
-  countPapers(q?: string): number;
+  countPapers(filter?: { q?: string; authorMemberId?: string }): number;
   deletePaper(paperId: string): boolean;
+  /** Changes on every paper write (api/version-etag.ts); without it /papers hashes its body. */
+  paperVersion?(): string;
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
   /** One paper's slots, or every paper's when the id is omitted. */
   listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
@@ -725,6 +769,8 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     minimumMinutes: number;
   }): AdminBotMeetingRecord[];
   deleteMeeting(meetingId: string): boolean;
+  /** Changes on every meeting write, like paperVersion. */
+  meetingVersion?(): string;
   hasAttachedMeetingArtifact(fileId: string): boolean;
   recordMeetingArtifact(record: AdminBotMeetingArtifactRecord): void;
   /**
@@ -1160,6 +1206,11 @@ export type AdminBotServiceOptions = {
    */
   arxivProbe?: AdminBotArtifactProbe;
   openReviewProbe?: AdminBotArtifactProbe;
+  /**
+   * The deck holding the working-groups slide, and a way to read it. Unset means the deployment
+   * has not shared a deck with AdminBot: the routes answer 503 and profile saves schedule nothing.
+   */
+  slidesWorkingGroups?: SlidesWorkingGroupsSource;
 };
 
 const DEFAULT_ACTION_POLICIES = {
@@ -1205,6 +1256,9 @@ const DEFAULT_ACTION_POLICIES = {
   // Raises a member's access level and grants what it brings, so an admin approves it; the
   // approving admin is also who approves each step it runs.
   "lab_member.enroll": approvalPolicy("T3", ["admin"]),
+  // A placeholder/test account the Slack roster sync wants gone. T3 so it can never ride the auto
+  // tier: the sync only proposes, and an admin approving it is the only way a record is deleted.
+  "lab_member.remove": approvalPolicy("T3", ["admin"]),
   // Auto (T1), on the same reasoning as `slack.invite_to_channel`: nothing about where this goes
   // came from a caller. The recipient is the funder's office address from settings, the
   // attachments are the forms the service just generated, and the send only happens once every
@@ -1268,6 +1322,11 @@ const DEFAULT_ACTION_POLICIES = {
   // already been superseded. The recipients are the operator-configured Slack ids, never a caller's
   // input, and the text is composed from stored scores. T1 for the same mechanical reason.
   "paper_integrity.report": autoPolicy("T1"),
+  // Auto-approved: an introduction that waited on an admin would land after the conference. Nothing
+  // comes from a caller -- the three recipients are Going attendees on the roster and the text is
+  // composed from their stored themes and the deadline dataset -- and each member is introduced at
+  // most once per conference. T1 for the mechanical reason: resolvePolicy only honors auto below T2.
+  "slack.conference_intro": autoPolicy("T1"),
   // Auto-approved on the same reasoning, and narrower than sheet.update_cells (T2): the connector
   // refuses anything but single cells in the one score column, so it can fill that column and
   // nothing else. The sheet id comes from the environment and the values from stored scores.
@@ -1310,6 +1369,10 @@ const DEFAULT_ACTION_POLICIES = {
   // Same tier as editing cells: the new row is read by the same sweeps. It cannot overwrite a row,
   // which is why it is not higher.
   "sheet.append_rows": approvalPolicy("T2", ["admin"]),
+  // Same tier as the roster sheet: a shared document several people present from, written in
+  // place. The weekly run and the profile-save trigger only ever propose; an admin signs the
+  // exact requests after looking at the before/after preview.
+  "slides.sync_working_groups": approvalPolicy("T2", ["admin"]),
 } as const satisfies Record<AdminBotActionType, AdminBotActionPolicy>;
 
 const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = {
@@ -1560,11 +1623,9 @@ export class AdminBotService {
   }
 
   private refreshStoredDeadlineMilestones(): void {
+    const deadlines = this.deadlineReadModel(DEADLINE_VENUES);
     for (const member of this.store.listLabMembers()) {
-      const milestones = reconcileDeadlineMilestones(
-        member.milestones,
-        this.deadlineReadModel(DEADLINE_VENUES),
-      );
+      const milestones = reconcileDeadlineMilestones(member.milestones, deadlines);
       if (milestones === member.milestones) {
         continue;
       }
@@ -1655,63 +1716,13 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
-  /** Reconcile calendar proposals; external writes still require approval. */
-  private reconcileBirthdayEvent(member: AdminBotLabMember, removed = false): void {
-    const eligible = !removed && isThemeMeetingEligible(member) && Boolean(member.birthday?.trim());
-    let current = false;
-    for (const proposal of this.store.listProposalsByType("calendar.create_birthday")) {
-      if (proposal.target?.member_id !== member.id) {
-        continue;
-      }
-      const cancellations = this.store
-        .listProposalsByType("calendar.cancel")
-        .filter((cancel) => cancel.target?.birthday_action_id === proposal.id);
-      if (
-        eligible &&
-        proposal.target?.birthday === member.birthday?.trim() &&
-        proposal.status !== "rejected" &&
-        !cancellations.some((cancel) => cancel.status !== "rejected")
-      ) {
-        current = true;
-        continue;
-      }
-      if (proposal.status === "pending" || proposal.status === "approved") {
-        this.removePending(proposal.id, { note: "Birthday or membership changed." });
-      }
-      const execution = this.store.getExecutionResult(proposal.id);
-      const eventId = execution?.artifacts?.event_id;
-      if (execution?.status === "executed" && eventId && cancellations.length === 0) {
-        const payload = proposal.proposed_payload as Record<string, unknown>;
-        this.createProposal({
-          type: "calendar.cancel",
-          summary: `Remove ${member.name}'s previous birthday event`,
-          target: { member_id: member.id, birthday_action_id: proposal.id },
-          proposed_payload: {
-            calendar_id: payload.calendar_id,
-            event_id: eventId,
-            ...(payload.account ? { account: payload.account } : {}),
-          },
-          rationale: "The birthday changed, was cleared, or the member is no longer eligible.",
-          idempotency_key: `birthday-remove:${proposal.id}`,
-        });
-      }
-    }
-    if (!eligible || current) {
-      return;
-    }
-    const payload = birthdayEventPayload(member, resolveLabCalendar().id, new Date());
-    if (!payload) {
-      return;
-    }
-    const name = member.preferred_name?.trim() || member.name.trim();
-    this.createProposal({
-      type: "calendar.create_birthday",
-      summary: `Add ${name}'s birthday to the lab calendar`,
-      target: { member_id: member.id, birthday: member.birthday?.trim() ?? "" },
-      proposed_payload: payload,
-      rationale: "A full or major coauthor member supplied their optional birthday.",
-      undo_plan: "Delete the recurring event from the lab calendar.",
-    });
+  /** What service.birthday.ts needs to propose or withdraw a member's birthday event. */
+  private get birthdayDeps() {
+    return {
+      store: this.store,
+      removePending: (id: string, request: { note: string }) => this.removePending(id, request),
+      createProposal: (proposal: AdminBotActionProposal) => this.createProposal(proposal),
+    };
   }
 
   /**
@@ -2136,11 +2147,14 @@ export class AdminBotService {
     }
   }
 
-  listPending(limit?: number): AdminBotServiceResponse<{ proposals: AdminBotStoredProposal[] }> {
+  listPending(
+    limit?: number,
+    offset?: number,
+  ): AdminBotServiceResponse<{ proposals: AdminBotStoredProposal[] }> {
     return {
       ok: true,
       status: 200,
-      payload: { proposals: this.store.listPending(limit) },
+      payload: { proposals: this.store.listPending(limit, offset) },
     };
   }
 
@@ -2739,16 +2753,8 @@ export class AdminBotService {
     ) {
       return serviceError(409, "proposal does not have the required approvals");
     }
-    if (proposal.type === "calendar.create_birthday") {
-      const member = this.store.getLabMember(String(proposal.target?.member_id ?? ""));
-      if (
-        !member ||
-        !isThemeMeetingEligible(member) ||
-        !member.birthday?.trim() ||
-        member.birthday.trim() !== proposal.target?.birthday
-      ) {
-        return serviceError(409, "birthday proposal no longer matches an eligible member");
-      }
+    if (!birthdayProposalStillCurrent(this.store, proposal)) {
+      return serviceError(409, "birthday proposal no longer matches an eligible member");
     }
     const now = new Date().toISOString();
     const dryRun = request.dry_run !== false;
@@ -2873,6 +2879,38 @@ export class AdminBotService {
         evidence_recorded: String(applied.payload.evidence_recorded),
       };
       handled = true;
+    } else if (proposal.type === "lab_member.remove") {
+      // In-service for the same reason as the two arms above: deleting a roster record is a write
+      // to this store, and no connector could perform it.
+      const removal = labMemberRemovalPayload(proposal);
+      if (!removal) {
+        return this.executionFailure(proposal, 400, "member removal payload is invalid");
+      }
+      const removedBy = proposal.approvals.at(-1)?.approver_id;
+      if (!removedBy) {
+        return this.executionFailure(proposal, 409, "member removal has no named approver");
+      }
+      const member = this.store.getLabMember(removal.member_id);
+      if (!member) {
+        return this.executionFailure(proposal, 404, "member not found");
+      }
+      // The record may have been relinked or renamed while the approval sat. Removing whoever now
+      // holds the id would delete somebody the admin never looked at, so a drift fails instead.
+      if ((member.slack_user_id?.trim() ?? "") !== removal.slack_user_id) {
+        return this.executionFailure(
+          proposal,
+          409,
+          "member's Slack account changed since the removal was proposed",
+        );
+      }
+      // Never forced: a credentialed account, the head professor and the approver themselves are
+      // refused here exactly as on the Members tab.
+      const deleted = this.deleteLabMember({ memberId: member.id, actorId: removedBy });
+      if (!deleted.ok) {
+        return this.executionFailure(proposal, deleted.status, deleted.error.message);
+      }
+      artifacts = { deleted_id: deleted.payload.deleted_id };
+      handled = true;
     } else {
       if (!this.options.executor) {
         return this.executionFailure(proposal, 501, "no live connector is configured");
@@ -2926,21 +2964,7 @@ export class AdminBotService {
     proposal.updated_at = now;
     this.store.updateProposal(proposal);
     this.store.saveExecutionResult(result);
-    if (proposal.type === "calendar.create_birthday") {
-      const memberId = String(proposal.target?.member_id ?? "");
-      const member = this.store.getLabMember(memberId);
-      this.reconcileBirthdayEvent(
-        member ?? {
-          id: memberId,
-          name: memberId,
-          privilege_level: "external_collaborator",
-          access: [],
-          created_at: now,
-          updated_at: now,
-        },
-        !member,
-      );
-    }
+    reconcileExecutedBirthday(this.birthdayDeps, proposal, now);
     this.recordAudit({
       type: "execution.executed",
       action_id: actionId,
@@ -3313,6 +3337,89 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
+  private slidesWorkingGroupsTimer: ReturnType<typeof setTimeout> | undefined;
+  private slidesWorkingGroupsRun:
+    | Promise<AdminBotServiceResponse<SlidesWorkingGroupsSyncResult>>
+    | undefined;
+
+  /** The plan for the working-groups slide, without proposing anything: the admin preview. */
+  async previewSlidesWorkingGroups(): Promise<AdminBotServiceResponse<SlidesWorkingGroupsPreview>> {
+    const source = this.options.slidesWorkingGroups;
+    if (!source) {
+      return serviceError(503, "the working-groups slide is not configured");
+    }
+    try {
+      return { ok: true, status: 200, payload: await planSlidesWorkingGroups(this.store, source) };
+    } catch (error) {
+      return serviceError(502, error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
+   * Plans the working-groups slide and proposes the change for an admin to approve.
+   *
+   * Overlapping callers -- the weekly cron, the profile-save trigger, an admin pressing apply --
+   * share one run, so they cannot race each other into two proposals.
+   */
+  syncSlidesWorkingGroups(
+    actor: string | undefined,
+    trigger: "manual" | "schedule" | "member_change" = "manual",
+  ): Promise<AdminBotServiceResponse<SlidesWorkingGroupsSyncResult>> {
+    const source = this.options.slidesWorkingGroups;
+    if (!source) {
+      return Promise.resolve(serviceError(503, "the working-groups slide is not configured"));
+    }
+    if (!this.slidesWorkingGroupsRun) {
+      this.slidesWorkingGroupsRun = proposeSlidesWorkingGroups(this, this.store, source, actor)
+        .then((result): AdminBotServiceResponse<SlidesWorkingGroupsSyncResult> => {
+          this.recordAudit({
+            type: "slides.working_groups_planned",
+            ...(actor ? { actor } : {}),
+            ...(result.proposal ? { action_id: result.proposal.id } : {}),
+            details: {
+              trigger,
+              changed: result.changed,
+              reused: result.reused,
+              superseded: result.superseded.length,
+              groups: result.groups.map((group) => `${group.group}:${group.status}`).join(","),
+            },
+          });
+          return { ok: true, status: 200, payload: result };
+        })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          this.recordAudit({
+            type: "slides.working_groups_failed",
+            ...(actor ? { actor } : {}),
+            details: { trigger, error: message },
+          });
+          return serviceError<SlidesWorkingGroupsSyncResult>(502, message);
+        })
+        .finally(() => {
+          this.slidesWorkingGroupsRun = undefined;
+        });
+    }
+    return this.slidesWorkingGroupsRun;
+  }
+
+  private scheduleSlidesWorkingGroupsSync(): void {
+    const source = this.options.slidesWorkingGroups;
+    if (!source) {
+      return;
+    }
+    if (this.slidesWorkingGroupsTimer) {
+      clearTimeout(this.slidesWorkingGroupsTimer);
+    }
+    this.slidesWorkingGroupsTimer = setTimeout(() => {
+      this.slidesWorkingGroupsTimer = undefined;
+      // Failures are audited inside the run; nothing here can usefully rethrow to a save that
+      // finished a minute ago.
+      void this.syncSlidesWorkingGroups(undefined, "member_change");
+    }, source.debounceMs ?? 60_000);
+    // A pending slide sync must never keep a CLI or a test process alive.
+    this.slidesWorkingGroupsTimer.unref?.();
+  }
+
   private calendarMembershipCleanup: ReturnType<typeof syncCalendarMembership> | undefined;
 
   syncLabCalendarMembership(
@@ -3344,6 +3451,31 @@ export class AdminBotService {
       });
     }
     return this.activeChannelCleanup;
+  }
+
+  private slackRosterSync: ReturnType<typeof runSlackRosterSync> | undefined;
+
+  /**
+   * The daily Slack roster sync (workflows/members/slack-roster-sync.ts). Overlapping cron and
+   * manual runs share one pass, so two of them cannot both create the same new member.
+   */
+  syncSlackRoster(read: SlackDirectoryReader, options: SlackRosterSyncOptions) {
+    if (!this.slackRosterSync) {
+      this.slackRosterSync = runSlackRosterSync(
+        {
+          listLabMembers: () => this.store.listLabMembers(),
+          listProposalsByType: (type) => this.store.listProposalsByType(type),
+          upsertLabMember: (member, origin) => this.upsertLabMember(member, origin),
+          createProposal: (proposal) => this.createProposal(proposal),
+          recordAudit: (event) => this.recordAudit(event),
+        },
+        read,
+        options,
+      ).finally(() => {
+        this.slackRosterSync = undefined;
+      });
+    }
+    return this.slackRosterSync;
   }
 
   /**
@@ -3476,7 +3608,13 @@ export class AdminBotService {
         ...(moved.timezone ? { timezone: moved.timezone } : {}),
       });
     }
-    this.reconcileBirthdayEvent(stored);
+    reconcileBirthdayEvent(this.birthdayDeps, stored);
+    // And for the working-groups slide: a new member, or one whose themes or photo changed, is a
+    // slide that no longer matches. Debounced and fire-and-forget -- a save must not wait on
+    // Google, and a roster import of 150 rows should become one plan, not 150.
+    if (affectsWorkingGroupsSlide(existing, stored)) {
+      this.scheduleSlidesWorkingGroupsSync();
+    }
     // The same hook again, for theme membership. This is what makes onboarding automatic: a new
     // member describing their research is a profile write, so the channels they belong in are
     // proposed the moment they say what they work on, rather than waiting for a sweep.
@@ -3590,30 +3728,29 @@ export class AdminBotService {
     };
   }
 
-  listLabMembers(page?: AdminBotListPage): AdminBotServiceResponse<{
-    members: AdminBotLabMemberView[];
+  listLabMembers<P extends AdminBotListPage | undefined = undefined>(
+    page?: P,
+  ): AdminBotServiceResponse<{
+    members: P extends AdminBotListPage ? AdminBotLabMemberSummary[] : AdminBotLabMemberView[];
     total?: number;
     limit?: number;
     offset?: number;
   }> {
-    const members = this.store.listLabMembers(page);
+    const rows = this.store.listLabMembers(page);
+    const members = page ? rows.map(summarizeLabMember) : rows;
     const { badgesById, assignmentsByMember } = this.rosterBadgeViews(
       page ? members.map((member) => member.id) : undefined,
     );
     const deadlines = members.some((member) => member.milestones?.length)
       ? this.deadlineReadModel(DEADLINE_VENUES)
       : undefined;
+    const assigned = (memberId: string) =>
+      this.assignedBadgesFor(memberId, assignmentsByMember.get(memberId) ?? [], badgesById);
     return {
       ok: true,
       status: 200,
       payload: {
-        members: members.map((member) =>
-          this.memberView(
-            member,
-            this.assignedBadgesFor(member.id, assignmentsByMember.get(member.id) ?? [], badgesById),
-            deadlines,
-          ),
-        ),
+        members: members.map((m) => this.memberView(m, assigned(m.id), deadlines)) as never,
         ...(page
           ? { total: this.store.countLabMembers(page.q), limit: page.limit, offset: page.offset }
           : {}),
@@ -5101,6 +5238,13 @@ export class AdminBotService {
     week_start: string;
     gaps: AdminBotWeeklyUpdateGap[];
   }> {
+    return this.withRosterSnapshot(() => this.sweepCollectWeeklyUpdateGaps(nowIso));
+  }
+
+  private sweepCollectWeeklyUpdateGaps(nowIso?: string): AdminBotServiceResponse<{
+    week_start: string;
+    gaps: AdminBotWeeklyUpdateGap[];
+  }> {
     const now = nowIso ? new Date(nowIso) : new Date();
     const weekStart = adminBotWeekStart(now);
     // The head professor is not asked for a weekly line, on any paper. She supervises nearly
@@ -5273,7 +5417,9 @@ export class AdminBotService {
       registered: number;
       unregistered: number;
     }> = [];
-    for (const member of this.store.listLabMembers()) {
+    const roster = this.store.listLabMembers();
+    const owned = paperIdsByOwner(roster, papers, rosterNameCounts(roster));
+    for (const member of roster) {
       if (member.status === "alumni" || member.status === "external") {
         continue;
       }
@@ -5289,7 +5435,8 @@ export class AdminBotService {
         excluded.push(member.id);
         continue;
       }
-      const own = papers.filter((paper) => this.memberOwnsPaper(member, paper));
+      const ownIds = new Set(owned.get(member.id));
+      const own = papers.filter((paper) => ownIds.has(paper.id));
       if (own.length === 0) {
         continue;
       }
@@ -5526,9 +5673,9 @@ export class AdminBotService {
       id: survivor.id,
       updated_at: now,
     };
-    this.reconcileBirthdayEvent(duplicate, true);
+    reconcileBirthdayEvent(this.birthdayDeps, duplicate, true);
     this.store.saveLabMember(merged);
-    this.reconcileBirthdayEvent(merged);
+    reconcileBirthdayEvent(this.birthdayDeps, merged);
     const moved = this.store.reassignMemberReferences(params.duplicateId, params.survivorId);
     this.store.revokeSessionsForMember(params.duplicateId, now);
     this.store.deleteLabMember(params.duplicateId);
@@ -5594,7 +5741,7 @@ export class AdminBotService {
     // Sessions first and through the revoke path rather than the purge, so a signed-in browser
     // stops working by the route that records that it did -- same order as the merge.
     this.store.revokeSessionsForMember(member.id, now);
-    this.reconcileBirthdayEvent(member, true);
+    reconcileBirthdayEvent(this.birthdayDeps, member, true);
     const removed = this.store.purgeMemberReferences(member.id);
     this.store.deleteLabMember(member.id);
     this.recordAudit({
@@ -6023,29 +6170,13 @@ export class AdminBotService {
   }
 
   private memberOwnsPaper(member: AdminBotLabMember, paper: AdminBotPaperRecord): boolean {
-    if (paper.submitted_by_member_id === member.id) {
-      return true;
-    }
-    if (paper.first_author_member_id === member.id) {
-      return true;
-    }
-    if (authorMemberIds(paper.author_links ?? []).includes(member.id)) {
-      return true;
-    }
-    const authors = paper.authors.map((author) => author.trim().toLocaleLowerCase());
-    const unique = [member.id, member.email]
-      .flatMap((value) => (value ? [value.toLocaleLowerCase()] : []))
-      .some((value) => authors.includes(value));
-    if (unique) {
-      return true;
-    }
-    const name = member.name.trim().toLocaleLowerCase();
-    if (!name || !authors.includes(name)) {
-      return false;
-    }
-    return (
-      this.store.listLabMembers().filter((entry) => entry.name.trim().toLocaleLowerCase() === name)
-        .length === 1
+    return memberOwnsPaper(
+      member,
+      paper,
+      (name) =>
+        this.store
+          .listLabMembers()
+          .filter((entry) => entry.name.trim().toLocaleLowerCase() === name).length,
     );
   }
 
@@ -6114,7 +6245,7 @@ export class AdminBotService {
     }
     const needles = memberRelevanceNeedles(member);
     const papers = this.store.listPapers().filter((paper) => paperMatchesNeedles(paper, needles));
-    return { ok: true, status: 200, payload: { papers: papers.map(withPaperTimeline) } };
+    return { ok: true, status: 200, payload: { papers: papers.map(paperForResponse) } };
   }
 
   /**
@@ -6134,6 +6265,11 @@ export class AdminBotService {
       return serviceError(400, validation);
     }
     const existing = this.store.getPaper(paper.id);
+    // The arXiv password lives on its slot, whose read is redacted; see paper-response.ts.
+    const refusal = withheldArtifactWriteError(paper.artifacts, existing?.artifacts);
+    if (refusal) {
+      return serviceError(400, refusal);
+    }
     const settings = this.resolveSettings();
     const now = new Date().toISOString();
     const headProfessorMemberId =
@@ -6141,8 +6277,8 @@ export class AdminBotService {
       existing?.reminder?.head_professor_member_id ??
       settings.head_professor_member_id;
     const stored: AdminBotPaperRecord = {
-      ...existing,
-      ...paper,
+      ...(existing ? withoutTimeline(existing) : {}),
+      ...withoutTimeline(paper),
       // Both name lists are trimmed and de-blanked on write rather than on read. The stage sweep
       // matches authors by name and an empty row would look like an author nobody can resolve,
       // which reads as "this paper has no lab member on it" -- the one state that stops the chase.
@@ -6248,7 +6384,7 @@ export class AdminBotService {
       });
     }
     this.syncConferenceChannel(stored);
-    return { ok: true, status: 200, payload: stored };
+    return { ok: true, status: 200, payload: paperForResponse(stored) };
   }
 
   /**
@@ -6311,7 +6447,7 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: {
-        paper,
+        paper: paperForResponse(paper),
         slots: redactPaperSlots(paperSlotRows(paperId, stored, drafts), entitled),
         drafts,
         consents: drafts.flatMap((draft) => this.store.listSocialConsents(draft.id)),
@@ -6398,20 +6534,14 @@ export class AdminBotService {
     if (!context.ok) {
       return context.error;
     }
-    if (
-      params.slot === "pi_approval" &&
-      params.memberId !== this.resolveSettings().head_professor_member_id?.trim()
-    ) {
-      return serviceError(403, "Only the head professor can approve publication.");
-    }
-    if (params.slot.startsWith("feedback_") && params.input.value_text) {
-      const feedback = parsePaperFeedback(params.input.value_text);
-      if (
-        (feedback?.reviewed || feedback?.review_note) &&
-        params.memberId !== this.resolveSettings().head_professor_member_id?.trim()
-      ) {
-        return serviceError(403, "Only the head professor can record paper feedback completion.");
-      }
+    const piDenial = piReviewSlotDenial({
+      slot: params.slot,
+      valueText: params.input.value_text,
+      memberId: params.memberId,
+      headProfessorMemberId: this.resolveSettings().head_professor_member_id,
+    });
+    if (piDenial) {
+      return serviceError(403, piDenial);
     }
     const result = applyPaperSlotWrite({
       existing: context.existing,
@@ -7147,9 +7277,13 @@ export class AdminBotService {
 
   /** The papers waiting on the head professor's yes, oldest wait first. */
   listPiReviewQueue(): AdminBotServiceResponse<{ papers: PiReviewRow[] }> {
+    return this.withPaperTables(() => this.sweepPiReviewQueue());
+  }
+
+  private sweepPiReviewQueue(): AdminBotServiceResponse<{ papers: PiReviewRow[] }> {
     const candidates = this.store
       .listPapers()
-      .map((paper) => ({ paper, slots: this.store.listPaperSlots(paper.id) }));
+      .map((paper) => ({ paper, slots: this.paperRows().listPaperSlots(paper.id) }));
     return {
       ok: true,
       status: 200,
@@ -7180,7 +7314,7 @@ export class AdminBotService {
     const link =
       stored.find((row) => row.slot === "overleaf_edit")?.url ?? paper.artifacts?.overleaf_edit_url;
     const project = link ? adminBotOverleafProjectRef(link) : undefined;
-    const [latest] = this.store.listPaperMentorRuns(paper.id);
+    const [latest] = this.paperRows().listPaperMentorRuns(paper.id);
     return {
       ...(project ? { project: { lab: project.lab, host: project.host } } : {}),
       ...(latest ? { latest } : {}),
@@ -7330,46 +7464,13 @@ export class AdminBotService {
     if (!params.privileged && !this.memberOwnsPaperId(params.memberId, paper)) {
       return serviceError(403, "members can only edit papers they authored");
     }
-    if (params.platform !== "x" && params.platform !== "linkedin") {
-      return serviceError(400, "platform must be x or linkedin");
+    const prepared = prepareSocialDraft(params);
+    if (!prepared.ok) {
+      return serviceError(400, prepared.message);
     }
-    let xThread;
-    if (params.xThread !== undefined) {
-      if (params.platform !== "x") {
-        return serviceError(400, "Only X drafts support threads.");
-      }
-      try {
-        xThread = readXThreadDraft(params.xThread);
-      } catch (error) {
-        return serviceError(400, (error as Error).message);
-      }
-    }
-    const body = xThread ? xThread.posts.map((post) => post.text).join("\n\n") : params.body.trim();
-    if (!body) {
-      return serviceError(400, "a draft needs a body");
-    }
-    const now = new Date().toISOString();
-    const draft: AdminBotSocialDraftRecord = {
-      // Random suffix, not just the clock: two saves inside the same millisecond would otherwise
-      // share an id, and the second would upsert over the first instead of superseding it --
-      // losing the very version somebody may already have consented to.
-      id: `${params.paperId}-${params.platform}-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`,
-      paper_id: params.paperId,
-      platform: params.platform,
-      body,
-      ...(xThread ? { x_thread: xThread } : {}),
-      generated_at: now,
-      generated_by_member_id: params.memberId,
-      status: "draft",
-      ...(params.model ? { model: params.model } : {}),
-    };
+    const { draft } = prepared;
     for (const existing of this.store.listSocialDrafts(params.paperId)) {
-      if (
-        existing.platform !== params.platform ||
-        existing.status === "superseded" ||
-        (params.platform === "x" &&
-          (existing.x_thread?.stage ?? "arxiv") !== (xThread?.stage ?? "arxiv"))
-      ) {
+      if (!socialDraftSupersedes(existing, draft)) {
         continue;
       }
       this.store.saveSocialDraft({
@@ -7563,7 +7664,7 @@ export class AdminBotService {
    * count on every paper in the lab and describe the acceptance form rather than the travel.
    */
   private conferenceRollCall(paper: AdminBotPaperRecord): AdminBotConferenceAttendeeRecord[] {
-    const stored = this.store.listConferenceAttendees(paper.id);
+    const stored = this.paperRows().listConferenceAttendees(paper.id);
     return isConferenceBranchOpen(paper) ? mergeConferenceAttendance(paper, stored) : stored;
   }
 
@@ -7584,13 +7685,15 @@ export class AdminBotService {
   listConferenceRosters(): AdminBotServiceResponse<{
     conferences: ConferenceAttendanceView[];
   }> {
-    const entries = this.store
-      .listPapers()
-      .filter((paper) => isConferenceBranchOpen(paper))
-      .map((paper) => ({
-        paper,
-        attendees: this.store.listConferenceAttendees(paper.id),
-      }));
+    const entries = this.withPaperTables(() =>
+      this.store
+        .listPapers()
+        .filter((paper) => isConferenceBranchOpen(paper))
+        .map((paper) => ({
+          paper,
+          attendees: this.paperRows().listConferenceAttendees(paper.id),
+        })),
+    );
     const conferences = buildConferenceAttendance(entries).map((conference) => ({
       ...conference,
       people: conference.people.map((person) => ({
@@ -7679,6 +7782,8 @@ export class AdminBotService {
     // Persist the approved proposal before yielding. Slack outages must not fail a paper save;
     // the existing action audit retains failures for retry, and execution deduplicates saves.
     void this.inviteConferenceAttendees(key).catch(() => {});
+    // Separately caught: an intro is worth sending even when the channel invite failed.
+    void this.introduceConferenceAttendees(key).catch(() => {});
   }
 
   /** Uses the existing Slack proposal/approval/execution gate. */
@@ -7747,6 +7852,87 @@ export class AdminBotService {
     }
     return { ok: true, status: 200, payload: { channel, invited, skipped, failed } };
   }
+
+  /**
+   * The three-person intro for each Going lab member who has not been introduced at this
+   * conference yet: them and the two co-attendees closest to their research (workflows/papers/
+   * conference-intros.ts says how the two are picked), with the dates, place and event page.
+   *
+   * Nothing goes out until three Going members can be reached on Slack -- a pair is a DM, not an
+   * introduction -- and then the first intro covers all three of them. Everyone named in an
+   * executed intro counts as introduced, so the second and third person of the first trio are not
+   * sent the same people again; only somebody who confirms later gets a new group DM.
+   *
+   * Same gate as the channel invite: proposal, auto policy, execute. An unexecuted earlier attempt
+   * whose recipients or text are now stale (a partner withdrew, the days-to-go moved on) is removed
+   * and proposed again; one an admin rejected stays rejected.
+   */
+  async introduceConferenceAttendees(
+    conferenceKey: string,
+  ): Promise<AdminBotServiceResponse<IntroRunResult>> {
+    return this.serializeIntros(() => this.meetups().introduceEventNow(conferenceKey));
+  }
+
+  /** The city meetup intro for everyone opted in whose recent sign-in is near `place`. */
+  async introduceCityMeetups(place: MeetupPlace): Promise<AdminBotServiceResponse<IntroRunResult>> {
+    return this.serializeIntros(() => this.meetups().introduceCityNow(place));
+  }
+
+  /**
+   * A fresh sign-in location: start the intros it makes possible (an event running in that city,
+   * the city meetup). Fire-and-forget from the auth path; failures stay in the action log.
+   */
+  async onLoginLocated(memberId: string): Promise<void> {
+    const work = this.meetups().locatedWork(memberId);
+    for (const key of work.events) {
+      await this.introduceConferenceAttendees(key).catch(() => {});
+    }
+    if (work.city) {
+      await this.introduceCityMeetups(work.city).catch(() => {});
+    }
+  }
+
+  /**
+   * Hourly: retries every intro that is due, which is how one deferred for somebody's night goes
+   * out at their 10:00. Idempotency keys and the pair history make a rerun a no-op otherwise.
+   */
+  async runMeetupSweep(): Promise<void> {
+    const work = this.meetups().sweepWork();
+    for (const key of work.events) {
+      await this.introduceConferenceAttendees(key).catch(() => {});
+    }
+    for (const place of work.cities) {
+      await this.introduceCityMeetups(place).catch(() => {});
+    }
+  }
+
+  /** Say hi from the Events tab or Nearby now: serialized with the intros, sharing pair history. */
+  async sayHi(memberId: string, input: unknown) {
+    return this.serializeIntros(() => this.meetups().sayHiNow(memberId, input));
+  }
+
+  /** The member Events tab and the intros behind it. */
+  meetups() {
+    return new MeetupService(
+      this.store,
+      this,
+      () => this.deadlineReadModel(DEADLINE_VENUES),
+      () => this.options.now?.() ?? new Date(),
+    );
+  }
+
+  /**
+   * One intro run at a time, event and city alike. Three people confirming within a second start
+   * three runs, and two that each read the history before the other's first delivery lands would
+   * send the same people twice; a city run and an event run share the pair history the same way.
+   */
+  private serializeIntros<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.introRuns.catch(() => {}).then(task);
+    this.introRuns = run;
+    return run;
+  }
+
+  private introRuns: Promise<unknown> = Promise.resolve();
 
   /**
    * One paper's conference, as a trip key.
@@ -7822,6 +8008,11 @@ export class AdminBotService {
       actor: params.memberId,
       details: { conference_key: conferenceKey, intent: trip.intent, funding: trip.funding },
     });
+    if (trip.intent === "going") {
+      // Going is what makes somebody introducible; a third person saying so is what makes a trio.
+      const groupKey = this.meetups().groupKeyFor(conferenceKey);
+      void this.introduceConferenceAttendees(groupKey).catch(() => {});
+    }
     return { ok: true, status: 200, payload: { trip } };
   }
 
@@ -8018,15 +8209,23 @@ export class AdminBotService {
   listPaperSlotOverview(nowIso?: string): AdminBotServiceResponse<{
     papers: AdminBotPaperSlotOverviewRow[];
   }> {
+    return this.withRosterSnapshot(() =>
+      this.withPaperTables(() => this.sweepListPaperSlotOverview(nowIso)),
+    );
+  }
+
+  private sweepListPaperSlotOverview(nowIso?: string): AdminBotServiceResponse<{
+    papers: AdminBotPaperSlotOverviewRow[];
+  }> {
     const now = nowIso ? new Date(nowIso) : new Date();
     const ledger = this.nudgeLedgerIndex();
     const papers = this.store.listPapers().map((paper) => {
-      const stored = this.store.listPaperSlots(paper.id);
-      const drafts = this.store.listSocialDrafts(paper.id);
+      const stored = this.paperRows().listPaperSlots(paper.id);
+      const drafts = this.paperRows().listSocialDrafts(paper.id);
       // Merged, so the header's `unknown` count is the number of authors still owing an answer
       // rather than the number of half-filled rows -- see the note on the card read above.
       const attendees = this.conferenceRollCall(paper);
-      const reimbursements = this.store.listPaperReimbursements(paper.id);
+      const reimbursements = this.paperRows().listPaperReimbursements(paper.id);
       const actionable = actionablePaperSlots(
         paper,
         stored,
@@ -8205,9 +8404,18 @@ export class AdminBotService {
     batches: AdminBotNudgeBatch[];
     papers_considered: number;
   }> {
+    return this.withRosterSnapshot(() => this.sweepCollectPaperNudgeBatches(nowIso));
+  }
+
+  private sweepCollectPaperNudgeBatches(nowIso?: string): AdminBotServiceResponse<{
+    batches: AdminBotNudgeBatch[];
+    papers_considered: number;
+  }> {
     const now = nowIso ? new Date(nowIso) : new Date();
     const gathered = this.gatherPaperNudges(now);
-    const roster = new Map(this.store.listLabMembers().map((member) => [member.id, member]));
+    const roster = new Map(
+      (this.rosterSnapshot ?? this.store.listLabMembers()).map((member) => [member.id, member]),
+    );
     const batches = [...gathered.byRecipient.entries()]
       .map(([memberId, groups]) => {
         const member = roster.get(memberId);
@@ -8253,7 +8461,11 @@ export class AdminBotService {
    * not appear at all -- the cadence protects people from a repeated manual press exactly as it
    * protected them from a doubled crontab.
    */
-  private gatherPaperNudges(now: Date): {
+  private gatherPaperNudges(now: Date): ReturnType<AdminBotService["sweepPaperNudges"]> {
+    return this.withPaperTables(() => this.sweepPaperNudges(now));
+  }
+
+  private sweepPaperNudges(now: Date): {
     byRecipient: Map<
       string,
       Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>
@@ -8290,8 +8502,8 @@ export class AdminBotService {
       if (isPaperDormant(paper, now) || isPaperClosed(paper)) {
         continue;
       }
-      const stored = this.store.listPaperSlots(paper.id);
-      const drafts = this.store.listSocialDrafts(paper.id);
+      const stored = this.paperRows().listPaperSlots(paper.id);
+      const drafts = this.paperRows().listSocialDrafts(paper.id);
 
       for (const item of actionablePaperSlots(
         paper,
@@ -8335,7 +8547,7 @@ export class AdminBotService {
       // for produces one line per author here, and keeps producing them until it is answered.
       for (const attendee of mergeConferenceAttendance(
         paper,
-        this.store.listConferenceAttendees(paper.id),
+        this.paperRows().listConferenceAttendees(paper.id),
       )) {
         if (attendee.attending !== "unknown") {
           continue;
@@ -8351,7 +8563,7 @@ export class AdminBotService {
           });
         }
       }
-      for (const row of this.store.listPaperReimbursements(paper.id)) {
+      for (const row of this.paperRows().listPaperReimbursements(paper.id)) {
         if (row.status !== "pending" && row.status !== "submitted") {
           continue;
         }
@@ -8472,16 +8684,20 @@ export class AdminBotService {
   }
 
   private gatherPaperflowStages(now: Date): { items: AdminBotPaperflowStageNudge[] } {
+    return this.withPaperTables(() => this.sweepPaperflowStages(now));
+  }
+
+  private sweepPaperflowStages(now: Date): { items: AdminBotPaperflowStageNudge[] } {
     const ledger = this.nudgeLedgerIndex();
     const roster = this.store.listLabMembers();
     const priorityMemberId = this.options.paperflowPriorityMemberId;
     const items: AdminBotPaperflowStageNudge[] = [];
 
     for (const paper of this.store.listPapers()) {
-      const evidence = this.store.listPaperflowEvidence(paper.id);
+      const evidence = this.paperRows().listPaperflowEvidence(paper.id);
       const open = openPaperflowStage({
         paper,
-        slots: this.store.listPaperSlots(paper.id),
+        slots: this.paperRows().listPaperSlots(paper.id),
         evidence,
         now,
       });
@@ -8713,7 +8929,12 @@ export class AdminBotService {
     paperflow_candidates: AdminBotEmailReviewPaperflowCandidate[];
     recent_resolutions: AdminBotResolvedEmailReviewItem[];
   }> {
-    const stageResult = this.collectPaperflowStageNudges();
+    const reviews = this.store.listEmailReviews();
+    // Candidates are only ever offered against a held message, and the walk that finds them visits
+    // every open paper. An empty queue -- the usual state -- needs neither the walk nor the list.
+    const stageResult = reviews.length
+      ? this.collectPaperflowStageNudges()
+      : ({ ok: true, status: 200, payload: { items: [] } } as const);
     if (!stageResult.ok) {
       return stageResult;
     }
@@ -8744,7 +8965,7 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: {
-        reviews: this.store.listEmailReviews(),
+        reviews,
         recent_resolutions: recentResolutions,
         paperflow_candidates: stageResult.payload.items.map((item) => ({
           paper_id: item.paper_id,
@@ -9072,6 +9293,49 @@ export class AdminBotService {
     };
   }
 
+  /** Set only while an all-paper sweep runs; see withRosterSnapshot. */
+  private rosterSnapshot: AdminBotLabMember[] | undefined;
+  /** The snapshot's name index, built once per snapshot rather than once per paper. */
+  private rosterByName: Map<string, AdminBotLabMember> | undefined;
+  /** Set only while a read-only all-paper sweep runs; see withPaperTables. */
+  private paperTables: PaperTableSnapshot | undefined;
+
+  /** Per-paper rows: from the sweep's one-read-per-table snapshot when one is running. */
+  private paperRows(): PaperRowReader {
+    return this.paperTables ?? this.store;
+  }
+
+  /** Runs a synchronous, read-only sweep against one read of each per-paper table. */
+  private withPaperTables<T>(sweep: () => T): T {
+    if (this.paperTables) {
+      return sweep();
+    }
+    this.paperTables = new PaperTableSnapshot(this.store);
+    try {
+      return sweep();
+    } finally {
+      this.paperTables = undefined;
+    }
+  }
+
+  /**
+   * Runs a synchronous, read-only sweep with one roster read shared by every per-paper owner
+   * lookup. A roster read parses every member's whole payload, so reading it per paper made the
+   * admin sweeps cost seconds and stall the synchronous store for everyone else meanwhile.
+   */
+  private withRosterSnapshot<T>(sweep: () => T): T {
+    if (this.rosterSnapshot) {
+      return sweep();
+    }
+    this.rosterSnapshot = this.store.listLabMembers();
+    try {
+      return sweep();
+    } finally {
+      this.rosterSnapshot = undefined;
+      this.rosterByName = undefined;
+    }
+  }
+
   /**
    * Who a slot's owner role resolves to on this paper.
    *
@@ -9083,10 +9347,11 @@ export class AdminBotService {
     paper: AdminBotPaperRecord,
     owner: AdminBotPaperSlotOwner,
   ): string[] {
-    const roster = this.store.listLabMembers();
-    const byName = new Map(
-      roster.map((member) => [member.name.trim().toLocaleLowerCase(), member]),
-    );
+    const roster = this.rosterSnapshot ?? this.store.listLabMembers();
+    const byName =
+      (this.rosterSnapshot && this.rosterByName) ||
+      new Map(roster.map((member) => [member.name.trim().toLocaleLowerCase(), member]));
+    this.rosterByName = this.rosterSnapshot ? byName : undefined;
     // The recorded links first, name matching only for the papers that have none. External
     // coauthors carry no roster id, so they fall out of every one of these lists by construction
     // -- which is the whole point of recording them as emails rather than as half-members.
@@ -9637,25 +9902,28 @@ export class AdminBotService {
   }
 
   /**
-   * Every meeting as one member may see it: their own attendance line and a headcount, never the
-   * roster. The redaction happens here rather than in the route so no future caller can reach the
-   * unredacted list by picking a different entry point.
+   * One meeting from the list: the whole roster when `memberId` is omitted (the admin view), that
+   * member's own line and a headcount when it is given. A meeting the list hides (under the
+   * duration floor) is a 404 here too, so this read never reaches what the list would not show.
    */
-  listMeetingsForMember(
-    memberId: string,
-  ): AdminBotServiceResponse<{ meetings: AdminBotMeetingRecord[] }> {
-    const member = this.store.getLabMember(memberId);
-    if (!member) {
+  getListedMeeting(
+    meetingId: string,
+    memberId?: string,
+  ): AdminBotServiceResponse<AdminBotMeetingRecord> {
+    if (memberId !== undefined && !this.store.getLabMember(memberId)) {
       return serviceError(404, `unknown member ${memberId}`);
+    }
+    const meeting = this.store.getMeeting(meetingId);
+    if (
+      !meeting ||
+      !meetsDurationFloor(meeting, this.resolveSettings().meeting_minimum_minutes ?? 0)
+    ) {
+      return serviceError(404, `unknown meeting ${meetingId}`);
     }
     return {
       ok: true,
       status: 200,
-      payload: {
-        meetings: this.listedMeetings(false).map((meeting) =>
-          redactMeetingForMember(meeting, memberId),
-        ),
-      },
+      payload: memberId === undefined ? meeting : redactMeetingForMember(meeting, memberId),
     };
   }
 
@@ -10092,7 +10360,7 @@ export class AdminBotService {
    * `memberId` is the whole of the access decision: pass one and the reader sees their own requests
    * and nobody else's, omit it for the admin view. It is decided here rather than in the route so
    * no future caller reaches the lab-wide list by picking a different entry point -- the same
-   * reason listMeetingsForMember exists.
+   * reason listMeetingsPageForMember exists.
    */
   listLogisticsRequests(
     memberId?: string,
@@ -10381,12 +10649,20 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: {
-        papers: this.store.listPapers(page).map(withPaperTimeline),
+        papers: this.store.listPapers(page).map(paperForResponse),
         ...(page
-          ? { total: this.store.countPapers(page.q), limit: page.limit, offset: page.offset }
+          ? { total: this.store.countPapers(page), limit: page.limit, offset: page.offset }
           : {}),
       },
     };
+  }
+
+  /** One paper, in the same projection as the list it is a row of. */
+  getPaper(paperId: string): AdminBotServiceResponse<AdminBotPaperRecord> {
+    const paper = this.store.getPaper(paperId);
+    return paper
+      ? { ok: true, status: 200, payload: paperForResponse(paper) }
+      : serviceError(404, "paper not found");
   }
 
   listConferenceAttendance(): AdminBotServiceResponse<{
@@ -10456,26 +10732,23 @@ export class AdminBotService {
       ok: true,
       status: 200,
       payload: {
-        nudges: this.store
-          .listPapers()
-          .map(withPaperTimeline)
-          .flatMap((paper) => duePaperNudges(paper, nowIso)),
+        nudges: this.store.listPapers().flatMap((paper) => duePaperNudges(paper, nowIso)),
       },
     };
   }
 
-  // Where members are, Slack first and the roster location only where Slack has nothing.
-  // Reads stamped state: refreshing from Slack is refreshMemberMap's job, not a page
-  // load's, so opening the map never waits on 144 API calls.
-  memberMap(): AdminBotServiceResponse<AdminBotMemberMap> {
-    const members = this.store.listLabMembers();
-    const slackLocations = new Map<string, string>();
-    for (const member of members) {
-      if (member.slack_user_id && member.slack_location) {
-        slackLocations.set(member.slack_user_id, member.slack_location);
-      }
-    }
-    return { ok: true, status: 200, payload: buildMemberMap(members, slackLocations) };
+  // Where members are: Slack first, then the roster location, then the last sign-in's
+  // geolocation. Reads stamped state: refreshing from Slack is refreshMemberMap's job, not a page
+  // load's, so opening the map never waits on 144 API calls. `loginCity` is the caller's
+  // entitlement to inferred cities; see BuildMemberMapOptions.
+  private readonly memberMapCache = memberMapMemo();
+
+  memberMap(options: { loginCity?: boolean } = {}): AdminBotServiceResponse<AdminBotMemberMap> {
+    return {
+      ok: true,
+      status: 200,
+      payload: this.memberMapCache(this.store, { loginCity: options.loginCity ?? false }),
+    };
   }
 
   // Re-reads every member's Slack profile and stamps what it finds. A member Slack has
@@ -11166,9 +11439,10 @@ export class AdminBotService {
     const papers = this.store.listPapers();
     const weeklyUpdates = this.store.listPaperWeeklyUpdates();
     const activity = this.memberActivityCounts();
-    const members = this.store
-      .listLabMembers()
-      .filter(isActiveRosterMember)
+    const roster = this.store.listLabMembers();
+    const active = roster.filter(isActiveRosterMember);
+    const ownedPaperIds = paperIdsByOwner(active, papers, rosterNameCounts(roster));
+    const members = active
       .map((member) => {
         const missing = missingMandatoryProfileFields(member);
         const timeline = countTimelineEntries(member);
@@ -11187,9 +11461,7 @@ export class AdminBotService {
           self_filled_field_count: selfFilledFieldCount(member, MANDATORY_PROFILE_FIELDS),
           projects: projectAdoption({
             memberId: member.id,
-            paperIds: papers
-              .filter((paper) => this.memberOwnsPaper(member, paper))
-              .map((paper) => paper.id),
+            paperIds: ownedPaperIds.get(member.id) ?? [],
             updates: weeklyUpdates,
           }),
           timeline,
@@ -14806,47 +15078,6 @@ function firstDeadlineValidationError(
   return Object.values(errors)[0] ?? "deadline proposal is invalid";
 }
 
-function deadlineBoardEntryId(value: unknown): string | undefined {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-  const row = value as Record<string, unknown>;
-  const id = row.deadline_id ?? row.id;
-  return typeof id === "string" ? id : undefined;
-}
-
-function deadlineInputFromBoardEntry(value: unknown): DeadlineProposalInput | undefined {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-  const row = value as Record<string, unknown>;
-  const deadline = typeof row.deadline_aoe === "string" ? row.deadline_aoe : "";
-  const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/u.exec(deadline);
-  if (!match || typeof row.name !== "string" || typeof row.entry_type !== "string") {
-    return undefined;
-  }
-  return {
-    name: row.name,
-    parentConference: typeof row.venue_family === "string" ? row.venue_family : "",
-    parentYear: "",
-    entryType: row.entry_type as DeadlineProposalInput["entryType"],
-    deadlineDate: match[1],
-    deadlineTime: match[2],
-    timezone: "Etc/GMT+12",
-    homepageUrl:
-      typeof row.homepage_url === "string" && row.homepage_url
-        ? row.homepage_url
-        : typeof row.source_url === "string"
-          ? row.source_url
-          : typeof row.link === "string"
-            ? row.link
-            : "",
-    cfpUrl: typeof row.cfp_url === "string" ? row.cfp_url : "",
-    openReviewUrl: typeof row.openreview_url === "string" ? row.openreview_url : "",
-    note: "",
-  };
-}
-
 const SELF_PROFILE_EDITABLE_FIELDS = [
   "name",
   "preferred_name",
@@ -14868,6 +15099,8 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "availability",
   "location",
   "current_city",
+  // "Show me on the lab map as": the member's own privacy choice, so theirs alone to make.
+  "map_visibility",
   "affiliation",
   "timezone",
   "personal_website",
@@ -14940,6 +15173,8 @@ const SELF_PROFILE_PRIVILEGED_FIELDS = [
   // The nudge allowlist. Refused loudly rather than dropped quietly: a member who could add
   // themselves would make the list something other than what the lab put on it.
   "receives_nudges",
+  // An admin's "never message this person" for meetup intros; members turn intros off instead.
+  "do_not_contact",
   "collaborator_subgroup",
   "access_overrides",
   "status",
@@ -15067,6 +15302,16 @@ function clampReportDays(days: number | undefined, fallback = 30): number {
     return fallback;
   }
   return Math.min(365, Math.max(1, Math.floor(days)));
+}
+
+function labMemberRemovalPayload(
+  proposal: AdminBotStoredProposal,
+): { member_id: string; slack_user_id: string } | undefined {
+  const payload = proposal.proposed_payload as Record<string, unknown> | undefined;
+  const memberId = typeof payload?.member_id === "string" ? payload.member_id.trim() : "";
+  const slackUserId =
+    typeof payload?.slack_user_id === "string" ? payload.slack_user_id.trim() : "";
+  return memberId ? { member_id: memberId, slack_user_id: slackUserId } : undefined;
 }
 
 function serviceError<T>(status: number, message: string): AdminBotServiceResponse<T> {
@@ -15361,11 +15606,20 @@ function validateLabMember(
   if (member.receives_nudges !== undefined && typeof member.receives_nudges !== "boolean") {
     return "member receives_nudges must be true or false";
   }
+  if (member.do_not_contact !== undefined && typeof member.do_not_contact !== "boolean") {
+    return "member do_not_contact must be true or false";
+  }
   if (
     member.intake_form_unavailable !== undefined &&
     typeof member.intake_form_unavailable !== "boolean"
   ) {
     return "application form unavailable must be true or false";
+  }
+  if (
+    member.map_visibility !== undefined &&
+    !(ADMINBOT_MAP_VISIBILITIES as readonly unknown[]).includes(member.map_visibility)
+  ) {
+    return `map visibility must be one of: ${ADMINBOT_MAP_VISIBILITIES.join(", ")}`;
   }
   if (
     member.arr_reviewer_qualified !== undefined &&
@@ -16241,219 +16495,6 @@ function mergeAccessGrants(
   );
 }
 
-type PaperTimelinePlanItem = {
-  step: AdminBotPaperStep;
-  label: string;
-  dependency_group: AdminBotPaperTimeline["items"][number]["dependency_group"];
-  duration_business_days: number;
-  color: string;
-  /**
-   * Steps that must finish first. The paper flow is not a single line: slides branch off the
-   * submission and run alongside the arXiv/announcement chain, so this is a graph rather than the
-   * plan's array order. Scheduling walks these edges; the array order only defines step identity.
-   */
-  depends_on: readonly AdminBotPaperStep[];
-};
-
-const PAPER_TIMELINE_PLAN = [
-  {
-    step: "brainstorming_docs",
-    label: "Brainstorming docs",
-    dependency_group: "ideation",
-    duration_business_days: 2,
-    color: "#64748b",
-    depends_on: [],
-  },
-  {
-    step: "overleaf_writing",
-    label: "Overleaf writing",
-    dependency_group: "writing",
-    duration_business_days: 5,
-    color: "#2563eb",
-    depends_on: ["brainstorming_docs"],
-  },
-  {
-    step: "submission",
-    label: "Submission",
-    dependency_group: "submission",
-    duration_business_days: 1,
-    color: "#7c3aed",
-    depends_on: ["overleaf_writing"],
-  },
-  {
-    step: "google_drive_pdf",
-    label: "Drive PDF",
-    dependency_group: "release",
-    duration_business_days: 1,
-    color: "#0891b2",
-    depends_on: ["submission"],
-  },
-  {
-    step: "arxiv_polish",
-    label: "arXiv polish",
-    dependency_group: "release",
-    duration_business_days: 2,
-    color: "#0f766e",
-    depends_on: ["google_drive_pdf"],
-  },
-  {
-    step: "social_posts",
-    label: "Announcements",
-    dependency_group: "outreach",
-    duration_business_days: 1,
-    color: "#db2777",
-    depends_on: ["arxiv_polish"],
-  },
-  {
-    step: "slide_making",
-    label: "Slides",
-    dependency_group: "materials",
-    duration_business_days: 2,
-    color: "#d97706",
-    depends_on: ["submission"],
-  },
-  {
-    step: "poster_making",
-    label: "Poster",
-    dependency_group: "materials",
-    duration_business_days: 2,
-    color: "#16a34a",
-    depends_on: ["slide_making"],
-  },
-] as const satisfies readonly PaperTimelinePlanItem[];
-
-function withPaperTimeline(paper: AdminBotPaperRecord): AdminBotPaperRecord {
-  return {
-    ...paper,
-    timeline: buildPaperTimeline(paper),
-  };
-}
-
-function buildPaperTimeline(
-  paper: Pick<AdminBotPaperRecord, "current_step" | "reminder">,
-): AdminBotPaperTimeline {
-  const currentStepIndex = Math.max(
-    0,
-    PAPER_TIMELINE_PLAN.findIndex((item) => item.step === paper.current_step),
-  );
-  // Work in the plan, used for progress. This is the sum of every step's estimate and is not the
-  // same as the schedule length below: parallel branches take calendar time off the schedule
-  // without taking work off the paper.
-  const totalWorkBusinessDays = PAPER_TIMELINE_PLAN.reduce(
-    (total, item) => total + item.duration_business_days,
-    0,
-  );
-  const complete = paper.reminder?.status === "complete";
-  const blocked = paper.reminder?.status === "blocked";
-
-  // Earliest start per step = latest finish among its dependencies (longest path). The plan is
-  // ordered so every step appears after its dependencies, so one forward pass is enough.
-  const finishByStep = new Map<AdminBotPaperStep, number>();
-  const items = PAPER_TIMELINE_PLAN.map((item, index) => {
-    const start = item.depends_on.reduce(
-      (latest, dependency) => Math.max(latest, finishByStep.get(dependency) ?? 0),
-      0,
-    );
-    const end = start + item.duration_business_days;
-    finishByStep.set(item.step, end);
-    return {
-      step: item.step,
-      label: item.label,
-      dependency_group: item.dependency_group,
-      depends_on: [...item.depends_on],
-      status: timelineStatus(index, currentStepIndex, complete, blocked),
-      offset_start_business_day: start,
-      offset_end_business_day: end,
-      duration_business_days: item.duration_business_days,
-      color: item.color,
-    };
-  });
-  // Schedule length is the critical path, which is what a Gantt axis spans.
-  const scheduleBusinessDays = Math.max(1, ...items.map((item) => item.offset_end_business_day));
-  const completedWorkBusinessDays = complete
-    ? totalWorkBusinessDays
-    : PAPER_TIMELINE_PLAN.slice(0, currentStepIndex).reduce(
-        (total, item) => total + item.duration_business_days,
-        0,
-      );
-  return {
-    progress_percent: Math.round((completedWorkBusinessDays / totalWorkBusinessDays) * 100),
-    current_step_index: currentStepIndex,
-    total_estimated_business_days: scheduleBusinessDays,
-    items,
-  };
-}
-
-function timelineStatus(
-  index: number,
-  currentStepIndex: number,
-  complete: boolean,
-  blocked: boolean,
-): AdminBotPaperTimeline["items"][number]["status"] {
-  if (complete || index < currentStepIndex) {
-    return "complete";
-  }
-  if (index === currentStepIndex) {
-    return blocked ? "blocked" : "current";
-  }
-  return "upcoming";
-}
-function duePaperNudges(paper: AdminBotPaperRecord, nowIso: string): AdminBotPaperNudge[] {
-  const reminder = paper.reminder;
-  if (reminder?.status !== "waiting_on_authors") {
-    return [];
-  }
-  if (reminder.last_author_dm_at && replyAfterLastDm(reminder)) {
-    return [];
-  }
-  const escalationBusinessDays = reminder.escalation_after_business_days ?? 3;
-  const elapsedBusinessDays = reminder.last_author_dm_at
-    ? countBusinessDays(reminder.last_author_dm_at, nowIso)
-    : 0;
-  if (
-    reminder.last_author_dm_at &&
-    elapsedBusinessDays >= escalationBusinessDays &&
-    reminder.head_professor_member_id
-  ) {
-    return [
-      {
-        type: "head_professor_escalation",
-        paper_id: paper.id,
-        title: paper.title,
-        step: paper.current_step,
-        recipients: [reminder.head_professor_member_id],
-        business_days_since_author_dm: elapsedBusinessDays,
-        message:
-          `Authors have not replied for ${elapsedBusinessDays} business days. ` +
-          `Ask the head professor to remind them about ${paper.current_step}.`,
-        ...(paper.timeline ? { timeline: paper.timeline } : {}),
-      },
-    ];
-  }
-  if (reminder.next_nudge_at && reminder.next_nudge_at > nowIso) {
-    return [];
-  }
-  return [
-    {
-      type: "author_nudge",
-      paper_id: paper.id,
-      title: paper.title,
-      step: paper.current_step,
-      recipients: paper.authors,
-      message: `Remind authors to complete ${paper.current_step} for "${paper.title}".`,
-      ...(paper.timeline ? { timeline: paper.timeline } : {}),
-    },
-  ];
-}
-
-function replyAfterLastDm(reminder: { last_author_dm_at?: string; last_author_reply_at?: string }) {
-  return Boolean(
-    reminder.last_author_dm_at &&
-    reminder.last_author_reply_at &&
-    reminder.last_author_reply_at > reminder.last_author_dm_at,
-  );
-}
-
 function normalizeSlackChannelName(value: string): string {
   return value
     .trim()
@@ -16523,26 +16564,6 @@ function inferSlackChannelPrefix(params: {
 function normalizeOptionalString(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
-}
-
-function countBusinessDays(startIso: string, endIso: string): number {
-  const start = new Date(startIso);
-  const end = new Date(endIso);
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
-    return 0;
-  }
-  let days = 0;
-  const oneDayMs = 24 * 60 * 60 * 1000;
-  const startDay = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
-  const endDay = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
-  for (let dayMs = startDay + oneDayMs; dayMs <= endDay; dayMs += oneDayMs) {
-    const cursor = new Date(dayMs);
-    const day = cursor.getUTCDay();
-    if (day !== 0 && day !== 6) {
-      days += 1;
-    }
-  }
-  return days;
 }
 
 function hasApproval(

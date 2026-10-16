@@ -227,8 +227,12 @@ export type AdminBotAuthServiceOptions = {
   geolocateIp?: (
     ip: string,
   ) => Promise<
-    { country?: string; continent?: string; city?: string; timezone?: string } | undefined
+    | { country?: string; continent?: string; city?: string; region?: string; timezone?: string }
+    | undefined
   >;
+  // Fired (not awaited) after a sign-in stamped a city on the member: the meetup intros read it.
+  // Gets only the member id, never the address or the place.
+  afterLoginLocated?: (memberId: string) => void;
   gatewayUrl?: string;
   sessionTtlMs?: number;
   now?: () => Date;
@@ -309,8 +313,10 @@ export class AdminBotAuthService {
   private readonly geolocateIp?: (
     ip: string,
   ) => Promise<
-    { country?: string; continent?: string; city?: string; timezone?: string } | undefined
+    | { country?: string; continent?: string; city?: string; region?: string; timezone?: string }
+    | undefined
   >;
+  private readonly afterLoginLocated?: (memberId: string) => void;
   private readonly gatewayUrl?: string;
   private readonly sessionTtlMs: number;
   private readonly now: () => Date;
@@ -333,6 +339,7 @@ export class AdminBotAuthService {
     this.sendAccountApprovedEmail = options.sendAccountApprovedEmail;
     this.sendPasswordResetEmail = options.sendPasswordResetEmail;
     this.geolocateIp = options.geolocateIp;
+    this.afterLoginLocated = options.afterLoginLocated;
     this.gatewayUrl = options.gatewayUrl?.trim() || undefined;
     this.sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
     this.now = options.now ?? (() => new Date());
@@ -576,7 +583,15 @@ export class AdminBotAuthService {
         ...(location.continent ? { last_login_continent: location.continent } : {}),
         // Written alongside the country and read only with `last_login_at`, which is what keeps a
         // stale city out of a scheduling decision. Still never touches `location`/`current_city`.
-        ...(location.city ? { last_login_city: location.city } : {}),
+        //
+        // City and region are written together, and cleared together when this sign-in located
+        // only a country: the merge patch keeps any key it is not given, so leaving them out would
+        // let last month's city ride along with today's `last_login_at` and look fresh.
+        ...(location.city
+          ? { last_login_city: location.city, last_login_region: location.region ?? "" }
+          : location.country
+            ? { last_login_city: "", last_login_region: "" }
+            : {}),
         ...(location.timezone ? { last_login_timezone: location.timezone } : {}),
         updated_at: this.now().toISOString(),
       });
@@ -584,6 +599,13 @@ export class AdminBotAuthService {
         return;
       }
       await this.audit("auth.login_location_updated", memberId, { ...location });
+      if (location.city) {
+        try {
+          this.afterLoginLocated?.(memberId);
+        } catch {
+          // A meetup hook failing must not cost the location timeline below.
+        }
+      }
       // The stamp above is where they are *now* and overwrites itself; this is the timeline, which
       // is what makes "when did they move" answerable and what the drift prompt reads. Appended
       // only when the country changed, so a member signing in twice a day adds no rows.

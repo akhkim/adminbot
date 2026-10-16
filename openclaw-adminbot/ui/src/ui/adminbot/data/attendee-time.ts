@@ -10,6 +10,7 @@
 // a fact the member stated, while "(guessed from Toronto)" is an inference the reader should be
 // able to discount.
 import { tripOnDay, type TripRow } from "./availability.ts";
+import { dateTimeFormat } from "./date-format.ts";
 import { timezoneForLocation } from "./timezone-for-location.ts";
 
 export type AttendeeZoneSource =
@@ -144,7 +145,7 @@ export function localTimeAt(zone: string, instant: string): string | undefined {
     return undefined;
   }
   try {
-    return new Intl.DateTimeFormat([], {
+    return dateTimeFormat([], {
       timeZone: zone,
       hour: "numeric",
       minute: "2-digit",
@@ -175,9 +176,7 @@ export function attendeeHourVerdict(
   let hour: number;
   try {
     hour = Number(
-      new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", hour12: false }).format(
-        parsed,
-      ),
+      dateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", hour12: false }).format(parsed),
     );
   } catch {
     return undefined;

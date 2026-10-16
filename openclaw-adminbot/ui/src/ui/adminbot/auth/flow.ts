@@ -16,8 +16,10 @@ import {
   signupMember,
   startImpersonation,
 } from "../api/auth.ts";
+import { MEETINGS_PAGE_SIZE } from "../api/meetings.ts";
 import { setOnboardingStep } from "../api/onboarding.ts";
 import { acknowledgeOnboardingStep } from "../api/profile.ts";
+import { forgetAdminQueues } from "../controllers/admin-queues.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
@@ -37,13 +39,17 @@ import {
   type SlackChannelCheck,
   type WorkshopNudgeReviewState,
 } from "../controllers/admin.ts";
+import { clearEvents, type EventsState } from "../controllers/events.ts";
 import { clearLabTravel, type LabTravelState } from "../controllers/lab-travel.ts";
 import { createEmptyAdminBotMemberRequests } from "../controllers/member-requests.ts";
 import { createEmptyAdminBotMemberNudgeState } from "../controllers/nudges.ts";
+import { EMPTY_PROFILE_OVERVIEW_PAGE } from "../controllers/profile-overview.ts";
 import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
 import { invalidateMemberMap } from "../data/member-map.ts";
 import { localTimezone } from "../data/timezones.ts";
+import { EMPTY_PAGED_LIST } from "../load-more.ts";
 import type { MilestoneDraft, TimeAvailabilityDraft } from "../views/time-availability.ts";
+import { forgetSessionReads } from "./read-cache.ts";
 // Control UI module orchestrates member auth against the app view state.
 //
 // Bridges the pure AdminBot API client (`adminbot-auth.ts`) into the running
@@ -232,6 +238,7 @@ export type MemberAuthHost = {
   memberSheetOnboardResult?: import("../api/onboarding.ts").MemberSheetOnboardResult | null;
   memberSheetAddRowResult?: import("../api/onboarding.ts").MemberSheetAddRowResult | null;
   adminBotProfileOverview?: import("../api/members.ts").MemberProfileOverviewRow[];
+  adminBotProfileOverviewPage?: import("../controllers/profile-overview.ts").ProfileOverviewPageState;
   adminBotProfileOverviewLoadedAt?: number | null;
   adminBotProfileOverviewLoading?: boolean;
   adminBotProfileOverviewError?: string | null;
@@ -259,6 +266,9 @@ export type MemberAuthHost = {
   adminBotMeetingNudgeResult?: import("../api/meetings.ts").MeetingAttendanceNudgeResult | null;
   adminBotMeetingNudgeBusy?: boolean;
   adminBotMeetingNudgeError?: string | null;
+  adminBotMeetingRosters?: import("../api/meetings.ts").MeetingRosters;
+  adminBotMemberDetails?: import("../controllers/member-detail.ts").AdminBotMemberDetails;
+  adminBotDuplicatePairs?: import("../controllers/member-detail.ts").AdminBotDuplicatePairs;
   calendarEvents?: import("../api/calendar.ts").CalendarEvent[];
   calendarEventsLoading?: boolean;
   calendarEventsError?: string | null;
@@ -299,6 +309,8 @@ export type MemberAuthHost = {
   adminBotLogisticsRequestsLoading?: boolean;
   adminBotLogisticsRequestsError?: string | null;
   adminBotLogisticsRequestsLoadedAt?: number | null;
+  adminBotLogisticsPage?: import("../load-more.ts").PagedListState;
+  adminBotDeskLetters?: import("../controllers/logistics.ts").DeskLettersState;
   adminBotLogisticsOpenRequestId?: string | null;
   adminBotLogisticsOpenRequest?: import("../api/logistics.ts").LogisticsRequest | null;
   adminBotLogisticsOpenLoading?: boolean;
@@ -365,7 +377,8 @@ export type MemberAuthHost = {
   changePasswordNotice: string | null;
   applySettings: (next: UiSettings) => void;
   connect: () => void;
-} & LabTravelState;
+} & LabTravelState &
+  EventsState;
 
 function toMemberAuthFailure(
   kind: AuthErrorKind,
@@ -545,6 +558,9 @@ async function connectAsMember(
 }
 
 function clearMemberScopedData(host: MemberAuthHost): void {
+  // Kept read bodies and shared in-flight reads are the departing member's data too.
+  forgetSessionReads();
+  forgetAdminQueues(host);
   host.adminBotRosterRequestId = (host.adminBotRosterRequestId ?? 0) + 1;
   host.adminBotRosterLoadedAt = null;
   host.adminBotRosterLoading = false;
@@ -660,6 +676,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.memberSheetOnboardResult = null;
   host.memberSheetAddRowResult = null;
   host.adminBotProfileOverview = [];
+  host.adminBotProfileOverviewPage = EMPTY_PROFILE_OVERVIEW_PAGE;
   host.adminBotProfileOverviewLoadedAt = null;
   host.adminBotProfileOverviewLoading = false;
   host.adminBotProfileOverviewError = null;
@@ -679,7 +696,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotMeetingsRequestVersion = (host.adminBotMeetingsRequestVersion ?? 0) + 1;
   host.adminBotMeetingsNextCursor = null;
   host.adminBotMeetingsLoadingMore = false;
-  host.adminBotMeetingsVisibleCount = 12;
+  host.adminBotMeetingsVisibleCount = MEETINGS_PAGE_SIZE;
   host.adminBotMeetingsLoading = false;
   host.adminBotMeetingsSaving = false;
   host.adminBotMeetingsError = null;
@@ -687,6 +704,9 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotMeetingNudgeResult = null;
   host.adminBotMeetingNudgeBusy = false;
   host.adminBotMeetingNudgeError = null;
+  host.adminBotMeetingRosters = {};
+  host.adminBotMemberDetails = {};
+  host.adminBotDuplicatePairs = undefined;
   host.calendarEvents = undefined;
   host.calendarEventsLoading = false;
   host.calendarEventsError = null;
@@ -731,6 +751,8 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotLogisticsRequestsLoading = false;
   host.adminBotLogisticsRequestsError = null;
   host.adminBotLogisticsRequestsLoadedAt = null;
+  host.adminBotLogisticsPage = EMPTY_PAGED_LIST;
+  host.adminBotDeskLetters = { requests: [], loading: false, loadedAt: null };
   host.adminBotLogisticsOpenRequestId = null;
   host.adminBotLogisticsOpenRequest = null;
   host.adminBotLogisticsOpenLoading = false;
@@ -777,6 +799,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   // Stops this browser's location watch too: the next person to sign in here must not inherit it,
   // and the opt-in they hold is read fresh for their own session.
   clearLabTravel(host);
+  clearEvents(host);
 }
 
 async function applyMemberSession(host: MemberAuthHost, session: MemberSession) {
@@ -1041,9 +1064,7 @@ export async function beginViewAs(host: MemberAuthHost, memberId: string): Promi
     }
     if (!result.ok) {
       host.memberImpersonationError =
-        result.kind === "unreachable"
-          ? t("adminbot.impersonation.unreachable")
-          : t("adminbot.impersonation.refused");
+        result.kind === "unreachable" ? t("impersonation.unreachable") : t("impersonation.refused");
       return;
     }
     await applyMemberSession(host, result.value);

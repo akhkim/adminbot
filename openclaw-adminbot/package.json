@@ -1344,6 +1344,7 @@
     "check:changed": "node scripts/check-changed.mjs",
     "check:import-cycles": "node --import tsx scripts/check-import-cycles.ts",
     "check:dir-size": "node scripts/check-dir-size.mjs",
+    "check:file-size": "node scripts/check-file-size.mjs",
     "check:layering": "node --import tsx scripts/check-layering.ts",
     "deadcode:dependencies": "pnpm --config.minimum-release-age=0 dlx --package knip@6.8.0 knip --config config/knip.config.ts --production --no-progress --reporter compact --dependencies --no-config-hints",
     "deadcode:knip": "pnpm --config.minimum-release-age=0 dlx --package knip@6.8.0 knip --config config/knip.config.ts --production --no-progress --reporter compact --files --dependencies",

@@ -5,7 +5,7 @@
 // and the X-thread drafting on the Social tab.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
-import { paperSteps } from "../views/admin.ts";
+import { paperSteps } from "../data/paper-steps.ts";
 import { drawPage, emptyCycle, makeState, overviewRow, paper } from "./projects.test-helpers.ts";
 import { resetProjectsSessionState } from "./view.ts";
 
@@ -48,8 +48,8 @@ describe("the page itself", () => {
     ]);
   });
 
-  it("carries the deadline the service has for the paper", () => {
-    const { container } = drawPage({ overview: [overviewRow({ deadline: "2026-09-24" })] });
+  it("carries the deadline the paper record has", () => {
+    const { container } = drawPage({ papers: [paper({ deadline: "2026-09-24" })] });
     expect(container.querySelector('[data-testid="project-deadline"]')?.textContent).toBe(
       "2026-09-24",
     );

@@ -60,6 +60,7 @@ describe("iconForTab", () => {
       myWork: "book",
       labSharing: "link",
       labTravel: "mapPin",
+      events: "users",
       adminbotNotificationDrafts: "send",
       adminbotOpportunities: "zap",
       chat: "messageSquare",
@@ -126,6 +127,7 @@ describe("titleForTab", () => {
       myWork: "My Projects & Papers",
       labSharing: "Collaborate",
       labTravel: "Travel",
+      events: "Events",
       adminbotNotificationDrafts: "OpenReview To Tweet",
       adminbotOpportunities: "Opportunities",
       chat: "Chat",
@@ -188,6 +190,7 @@ describe("subtitleForTab", () => {
       // expectation had not followed, leaving the suite red for a reason unrelated to it.
       labSharing: "Coming soon — share resources, ideas, and collaborate.",
       labTravel: "Conferences to RSVP for, your other trips, and lab members near you.",
+      events: "Upcoming events, who from the lab is going, and who is nearby.",
       adminbotNotificationDrafts: "Create tweet drafts and images from notification exports.",
       adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
       chat: "Gateway chat for quick interventions.",
@@ -383,6 +386,7 @@ describe("tabFromPath", () => {
     expect(tabFromPath("/lab-sharing")).toBe("labSharing");
     // The member Travel tab, kept apart from the head professor's `/travel` history.
     expect(tabFromPath("/lab-travel")).toBe("labTravel");
+    expect(tabFromPath("/events")).toBe("events");
     expect(tabFromPath("/travel")).toBe("adminbotTravel");
   });
 

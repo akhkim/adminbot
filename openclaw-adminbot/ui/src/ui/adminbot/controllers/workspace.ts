@@ -48,5 +48,5 @@ export async function saveAdminBotSettings(
     return;
   }
   host.adminBotNotice = { kind: "success", text: "Saved AdminBot settings." };
-  await loadAdminBot(host);
+  await loadAdminBot(host, undefined, undefined, true);
 }

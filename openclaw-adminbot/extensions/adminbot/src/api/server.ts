@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
-import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
+import { selectIpGeolocator } from "../connectors/ip-geolocation.js";
 import {
   createOpenReviewForumProbe,
   createOpenReviewNotesReader,
@@ -19,7 +19,6 @@ import {
   readArxivPdfBase64,
 } from "../connectors/social-draft.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
-import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import { missingMandatoryProfileFields } from "../contracts/profile-completion.js";
 import { createLlmLoadRouter, parseLlmNodes } from "../kernel/llm-router.js";
 import { ReferenceScans } from "../kernel/reference-scans.js";
@@ -37,9 +36,6 @@ import { AdminBotSqliteStore, createAdminBotSqliteService } from "../persistence
 import { createAdminBotPrivacyBroker } from "../privacy/broker.js";
 import { createLocalChat } from "../privacy/local-chat.js";
 import { createAdminBotSensitiveInfoDocument } from "../privacy/sensitive-info-doc.js";
-import { renderAdminBotWebUi } from "../web/console/index.js";
-import { renderMemberMapWebUi } from "../web/member-map/index.js";
-import { renderVenuePickerWebUi } from "../web/venue-picker/index.js";
 import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
 import { createCalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
@@ -81,22 +77,17 @@ import type {
 import type { AdminBotMockServiceOptions } from "./routes/context.js";
 import { AUTHENTICATED_ROUTES } from "./routes/index.js";
 import { memberEnrollmentContext } from "./routes/onboarding.js";
-import {
-  DEFAULT_ALLOWED_ORIGINS,
-  isForeignOrigin,
-  applyCors,
-  parseOrigins,
-  remoteIp,
-} from "./routes/origin.js";
+import { DEFAULT_ALLOWED_ORIGINS, applyCors, parseOrigins, remoteIp } from "./routes/origin.js";
 import { createOpenReviewCitationWatch, createIclrIntegrityWatch } from "./routes/reviews.js";
 import { dispatchRoute } from "./routes/router.js";
 import { resolvePrincipal } from "./routes/session.js";
-import { PayloadTooLargeError, sendHtml, sendRedirect, sendJson } from "./server.http.js";
+import { PayloadTooLargeError, sendJson } from "./server.http.js";
 import { executeMemberEnrollment } from "./server.member-onboarding.js";
 import {
   createPublicDeadlineLimiter,
   handlePublicDeadlineProposal,
 } from "./server.public-deadline-proposals.js";
+import { servePublicRoute } from "./server.public.js";
 export type { AdminBotCvDigestPublisher } from "./routes/context.js";
 export type { AdminBotMemberSheetSource } from "./routes/context.js";
 export type { DeviceTokenIssuance } from "./routes/context.js";
@@ -203,6 +194,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   const gatewayUrl = trimmedEnv(options.gatewayUrl ?? process.env.ADMINBOT_GATEWAY_WS_URL);
   const serviceToken = trimmedEnv(options.serviceToken ?? process.env.ADMINBOT_SERVICE_TOKEN);
   const ipinfoToken = trimmedEnv(options.ipinfoToken ?? process.env.IPINFO_TOKEN);
+  const geoipMmdbPath = trimmedEnv(options.geoipMmdbPath ?? process.env.ADMINBOT_GEOIP_MMDB_PATH);
+  const ipGeolocation = selectIpGeolocator({ mmdbPath: geoipMmdbPath, ipinfoToken });
   // Built here rather than injected from the launcher, like the geolocator above: both are pure
   // functions of the environment, and the composition root has nothing to add to either.
   const venuePapersReader = options.venuePapersReader ?? createOpenReviewNotesReader();
@@ -236,6 +229,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       return result.payload;
     },
     afterMemberCreated: (member) => service.afterMemberCreated(member),
+    // A sign-in that resolved to a city may make an event or city intro possible. Serialized and
+    // idempotent inside the service, so a burst of sign-ins sends nothing twice.
+    afterLoginLocated: (memberId) => void service.onLoginLocated(memberId).catch(() => {}),
     // Warned about at startup rather than left to fail per approval. See adminbotLabCalendarWarning
     // below: the runner is still installed when unconfigured, because a failure that is audited is
     // better than a side effect that is silently skipped.
@@ -244,13 +240,13 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
     sendPasswordResetEmail: options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
     ...(gatewayUrl ? { gatewayUrl } : {}),
-    // An explicitly injected geolocator wins (tests and the host inject their own);
-    // otherwise build the IPinfo Lite one when a token is configured. With neither, the
-    // option stays unset and the login path simply skips the stamp.
+    // An explicitly injected geolocator wins (tests inject their own); otherwise the local city
+    // database when ADMINBOT_GEOIP_MMDB_PATH is set, then IPinfo when IPINFO_TOKEN is. With
+    // neither, the option stays unset and the login path simply skips the stamp.
     ...(options.geolocateIp
       ? { geolocateIp: options.geolocateIp }
-      : ipinfoToken
-        ? { geolocateIp: createIpinfoGeolocator(ipinfoToken) }
+      : ipGeolocation.geolocate
+        ? { geolocateIp: ipGeolocation.geolocate }
         : {}),
   });
   // The roster the Membership grid reads. Built from configuration rather than assumed: a
@@ -428,6 +424,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.deviceTokenIssuer ? { deviceTokenIssuer: options.deviceTokenIssuer } : {}),
     ...(openReviewWorkflow ? { openReviewWorkflow } : {}),
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
+    ...(ipGeolocation.attribution ? { ipGeolocationAttribution: ipGeolocation.attribution } : {}),
     ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
     ...(options.cvDigestPublisher ? { cvDigestPublisher: options.cvDigestPublisher } : {}),
     publicationMailingRunner: options.publicationMailingRunner ?? createPublicationMailingRunner(),
@@ -448,6 +445,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       ? { readCalendarMembership: options.readCalendarMembership }
       : {}),
     ...(options.readActiveChannels ? { readActiveChannels: options.readActiveChannels } : {}),
+    ...(options.readSlackDirectory ? { readSlackDirectory: options.readSlackDirectory } : {}),
+    ...(options.slackPlaceholderUserIds
+      ? { slackPlaceholderUserIds: options.slackPlaceholderUserIds }
+      : {}),
     ...(options.fetchSlackChannelNames
       ? { fetchSlackChannelNames: options.fetchSlackChannelNames }
       : {}),
@@ -498,6 +499,16 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         }, slackChannelNamingSweepIntervalMs)
       : undefined;
   slackChannelNamingSweepTimer?.unref();
+  // Retries due meetup intros, which is how one held back for somebody's night goes out at their
+  // morning. Disabled when unset, like the naming sweep.
+  const meetupSweepIntervalMs = options.meetupSweepIntervalMs;
+  const meetupSweepTimer =
+    typeof meetupSweepIntervalMs === "number" && meetupSweepIntervalMs > 0
+      ? setInterval(() => {
+          void service.runMeetupSweep().catch(() => {});
+        }, meetupSweepIntervalMs)
+      : undefined;
+  meetupSweepTimer?.unref();
   const server = createServer(async (req, res) => {
     try {
       await routeRequest(req, res, ctx);
@@ -527,6 +538,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       if (slackChannelNamingSweepTimer) {
         clearInterval(slackChannelNamingSweepTimer);
       }
+      if (meetupSweepTimer) {
+        clearInterval(meetupSweepTimer);
+      }
       closeDurable();
     },
   };
@@ -546,6 +560,7 @@ function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOpt
       ? { polishSlackProfilePhoto: options.polishSlackProfilePhoto }
       : {}),
     ...(options.driveProbe ? { driveProbe: options.driveProbe } : {}),
+    ...(options.slidesWorkingGroups ? { slidesWorkingGroups: options.slidesWorkingGroups } : {}),
     // Defaulted here rather than injected from the launcher, like `venuePapersReader` above:
     // both are credential-free reads of a public API, so the composition root has nothing to add
     // and a deployment gets them by existing. The Drive probe is the one that needs an account,
@@ -568,43 +583,8 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     return;
   }
 
-  // Exempt public surfaces: HTML shells and the auth endpoints themselves.
-  //
-  // `/` is the address a person types, so it hands them the Control UI rather than the built-in
-  // console. The console is a thin operator surface with no sign-in and no member flows (see
-  // contracts/control-ui.ts), so landing on it from the bare hostname reads as "this is the
-  // product" when it is really the fallback. It keeps its own address at `/adminbot`, which is
-  // what makes the redirect safe: when the Control UI deployment is down, the operator surface is
-  // still reachable on this origin without touching configuration.
-  if (req.method === "GET" && url.pathname === "/") {
-    const controlUi = resolveAdminBotControlUiUrl();
-    // A Control UI configured to this same origin would redirect to itself forever and leave the
-    // service unopenable in a browser. Serving the console is the strictly better failure: the
-    // operator sees something, and the misconfiguration is visible rather than fatal.
-    if (isForeignOrigin(controlUi, req)) {
-      sendRedirect(res, `${controlUi}/`);
-      return;
-    }
-    sendHtml(res, 200, renderAdminBotWebUi());
-    return;
-  }
-  if (req.method === "GET" && url.pathname === "/adminbot") {
-    sendHtml(res, 200, renderAdminBotWebUi());
-    return;
-  }
-  if (req.method === "GET" && url.pathname === "/deadlines") {
-    sendJson(res, 200, { items: ctx.service.deadlineReadModel(DEADLINE_VENUES) });
-    return;
-  }
-  // Public and login-free by design: the deck asks for the venue guide to be reachable by anyone
-  // the guidebook or the chatbot points at it, including collaborators with no AdminBot account.
-  // Served here, above resolvePrincipal, for the same reason /deadlines is.
-  if (req.method === "GET" && url.pathname === "/venue-picker") {
-    sendHtml(res, 200, renderVenuePickerWebUi());
-    return;
-  }
-  if (req.method === "GET" && url.pathname === "/lab_stats/member_map") {
-    sendHtml(res, 200, renderMemberMapWebUi());
+  // Login-free pages, the deadline feed and photos (./server.public.ts).
+  if (servePublicRoute(req, res, url, ctx)) {
     return;
   }
   if (url.pathname.startsWith("/auth/")) {

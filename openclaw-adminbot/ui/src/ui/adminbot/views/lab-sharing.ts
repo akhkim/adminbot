@@ -32,7 +32,9 @@ import {
   postAdminBotLabSharingRequest,
   searchAdminBotLabSharingMembers,
 } from "../controllers/lab-sharing.ts";
+import { onViewSessionReset } from "../view-session-reset.ts";
 import { renderLabSharingResources } from "./lab-sharing-resources.ts";
+import { renderMemberMap } from "./member-map.ts";
 
 // ---------------------------------------------------------------------------
 // Types (shape guesses -- adjust once a real API contract exists)
@@ -306,6 +308,7 @@ export function resetLabSharingSessionState(): void {
   confirmingGeneralCall = false;
   confirmingDeleteRequestId = null;
 }
+onViewSessionReset(resetLabSharingSessionState);
 
 // ---------------------------------------------------------------------------
 // 1. Director status strip
@@ -1297,6 +1300,17 @@ export function renderLabSharing(state: AppViewState) {
       ${renderLoadNotices(state)} ${renderDirectorPanel(state)} ${renderInvitesPanel(state)}
       ${renderYourRequestsPanel(state)} ${renderSeekHelpPanel(state)}
       ${renderOpenProjectsPanel(state)} ${renderAnnouncementsPanel(state)}
+      ${
+        // The Dashboard's map, not a copy: same data, same privacy shape (names for an admin,
+        // headcounts otherwise), drawn as a Collaborate section. It sits here because "who could I
+        // work with" is partly "who is awake when I am"; app-render loads it for this tab as well
+        // as for the Dashboard, and refreshes it while either is open.
+        renderMemberMap(state.adminBotMemberMap ?? null, {
+          variant: "section",
+          now: Date.now(),
+          loading: state.adminBotMemberMapLoading,
+        })
+      }
       <lab-sharing-how-to
         .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
         .sessionToken=${session?.sessionToken ?? ""}

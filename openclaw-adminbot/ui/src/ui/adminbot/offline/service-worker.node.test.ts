@@ -73,4 +73,13 @@ describe("offline navigation boundaries", () => {
     expect(fetcher).not.toHaveBeenCalled();
     expect(cache.put).not.toHaveBeenCalled();
   });
+  it("never stores a navigation response or a cross-origin API read", async () => {
+    const { dispatch, fetcher, cache } = worker(
+      vi.fn().mockResolvedValue(new Response("<html>signed-in page</html>", { status: 200 })),
+    );
+    expect((await dispatch("https://portal.test/profile"))?.status).toBe(200);
+    expect(dispatch("http://127.0.0.1:8765/lab/members/self", "cors")).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(cache.put).not.toHaveBeenCalled();
+  });
 });

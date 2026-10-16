@@ -12,12 +12,8 @@ import {
   saveStoredMemberSession,
   type LabMember,
 } from "../auth/session.ts";
-import {
-  blankFields,
-  renderProfile,
-  resetProfileSessionState,
-  type ProfileProps,
-} from "./profile.ts";
+import { blankFields } from "./profile-fields.ts";
+import { renderProfile, resetProfileSessionState, type ProfileProps } from "./profile.ts";
 
 function createMember(overrides: Partial<LabMember> = {}): LabMember {
   return {
@@ -593,11 +589,12 @@ describe("renderProfile autosave", () => {
         expect.stringContaining("/drive/check-edit-access"),
         expect.objectContaining({ method: "POST", credentials: "omit" }),
       );
-      await vi.waitFor(() => {
+      // Reading the reply's body is stream I/O, not a microtask, so one tick is not always enough.
+      await vi.waitFor(() =>
         expect(state.profileAccountChecks.one_on_one_folder_url).toMatchObject({
           status: "warning",
-        });
-      });
+        }),
+      );
       render(renderProfile(state, { onSave: vi.fn() }), container);
       await vi.advanceTimersByTimeAsync(0);
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -682,9 +679,6 @@ describe("renderProfile onboarding pointer", () => {
     const member = createMember();
     const state = createState(member, {
       adminBotOnboarding: {
-        current_step: step("linkedin", "current"),
-        remaining: [step("gpu", "remaining")],
-        completed: [step("calendar", "complete")],
         steps: [
           step("linkedin", "current"),
           step("gpu", "remaining"),
@@ -708,8 +702,6 @@ describe("renderProfile onboarding pointer", () => {
     const onNavigateToTab = vi.fn();
     const state = createState(createMember(), {
       adminBotOnboarding: {
-        remaining: [step("gpu", "remaining")],
-        completed: [],
         steps: [step("gpu", "remaining")],
       },
     } as unknown as Partial<AppViewState>);

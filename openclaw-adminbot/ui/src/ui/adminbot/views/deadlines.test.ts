@@ -9,6 +9,7 @@ import type {
   DeadlineProposalStore,
 } from "../data/deadline-proposals.ts";
 import { DEADLINE_VENUES, type DeadlineVenue } from "../data/deadlines.ts";
+import { milestoneEndInstant } from "../data/milestone-time.ts";
 import {
   archivalLabelOf,
   buildDeadlineBoardEntries,
@@ -21,7 +22,6 @@ import {
   headlineDeadlineEntry,
   mergeArrSubmissionDuplicates,
   milestoneDateLabel,
-  milestoneEndInstant,
   nextVenueStage,
   venueSchedule,
   workshopGroupLabel,
@@ -711,6 +711,19 @@ describe("renderDeadlines", () => {
       name: "Taylor Visitor",
       email: "taylor@example.org",
     });
+  });
+
+  it("reads the proposal list once when the page opens", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const store = new TestProposalStore();
+    const list = vi.spyOn(store, "list");
+    render(
+      renderDeadlines({ role: "member", memberId: "member-1", proposalStore: store }),
+      container,
+    );
+    await settle(container);
+    expect(list).toHaveBeenCalledTimes(1);
   });
 
   it("lets a signed-in member submit a pending server-backed proposal", async () => {

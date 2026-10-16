@@ -5,6 +5,7 @@
 
 import { nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
+import { loadAdminBotMeetingRoster } from "../controllers/meetings.ts";
 import { renderAdminBotMeetings } from "../views/meetings.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
@@ -37,6 +38,18 @@ export function renderMeetingsSurface(state: AppViewState, scope: AdminBotSurfac
                 name: member.name,
               }))
             : [],
+        // An admin's rows come without rosters; each is read when its fold is about to open and
+        // kept for the session. A member's row already holds everything their fold shows.
+        ...(accessRole === "admin"
+          ? {
+              rosters: state.adminBotMeetingRosters ?? {},
+              onRosterIntent: (meetingId: string, opened: boolean) => {
+                void loadAdminBotMeetingRoster(state, meetingId, { report: opened }).finally(() =>
+                  requestHostUpdate?.(),
+                );
+              },
+            }
+          : {}),
         onToggleAttendance: (meetingId, attendee) => {
           void state.toggleMeetingAttendance?.(meetingId, attendee);
         },

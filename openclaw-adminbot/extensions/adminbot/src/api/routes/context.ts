@@ -17,6 +17,7 @@ import type { AdminBotCvScanDeps } from "../../cv-scan.js";
 import type { LlmLoadRouter } from "../../kernel/llm-router.js";
 import { ReferenceScans } from "../../kernel/reference-scans.js";
 import type { ActiveChannelReader } from "../../kernel/service.active-channels.js";
+import type { SlackDirectoryReader } from "../../workflows/members/slack-roster-sync.js";
 import { AdminBotService, type AdminBotServiceStore } from "../../kernel/service.js";
 import type { AdminBotActionExecutor, AdminBotServiceOptions } from "../../kernel/service.js";
 import type { FailedExternalRequestLedger } from "../../persistence/failed-requests.js";
@@ -67,6 +68,8 @@ export type AdminBotRouteContext = {
   fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
   cvScanDeps?: AdminBotCvScanDeps;
   cvDigestPublisher?: AdminBotCvDigestPublisher;
+  /** The IP geolocation provider's required credit, sent with the member map. Absent when off. */
+  ipGeolocationAttribution?: import("../../connectors/ip-geolocation.js").IpGeolocationAttribution;
   /** Sends the publication digest. Absent leaves /papers/mailing-list/send answering 503. */
   publicationMailingRunner?: PublicationMailingRunner;
   venuePapersReader?: import("../../connectors/openreview-notes.js").OpenReviewNotesReader;
@@ -86,6 +89,8 @@ export type AdminBotRouteContext = {
   readCalendarMembership?: CalendarMembershipReader;
   readCalendarAccess?: CalendarAccessReader;
   readActiveChannels?: ActiveChannelReader;
+  readSlackDirectory?: SlackDirectoryReader;
+  slackPlaceholderUserIds?: ReadonlySet<string>;
   fetchSlackChannelNames?: () => Promise<string[]>;
   readCalendarEvents?: import("../../workflows/calendar/events.js").CalendarEventsReader;
   draftCalendarEvent?: import("../../workflows/calendar/event-draft.js").EventDraftRunner;
@@ -201,6 +206,10 @@ export type AdminBotMockServiceOptions = {
   // record from the IP their most recent successful login came from. Falls back to
   // process.env.IPINFO_TOKEN; absent either way, login location just never gets recorded.
   ipinfoToken?: string;
+  // Path to a MaxMind-format city database (DB-IP City Lite or GeoLite2-City), preferred over
+  // IPinfo when set. Falls back to process.env.ADMINBOT_GEOIP_MMDB_PATH. See
+  // scripts/adminbot-geoip-refresh.sh and docs/tools/adminbot-geoip.md.
+  geoipMmdbPath?: string;
   // Trust X-Forwarded-For for the caller's IP (rate limiting, login-location) instead of the raw
   // socket address. Only safe when this process is only reachable through a proxy that sets that
   // header itself (Render, Fly, etc.) — falls back to process.env.ADMINBOT_TRUST_PROXY === "1".
@@ -273,6 +282,11 @@ export type AdminBotMockServiceOptions = {
    * confirms nothing rather than marking every link as broken.
    */
   driveProbe?: AdminBotDriveProbe;
+  /**
+   * The deck whose working-groups slide follows the roster. Unset means the preview and apply
+   * routes answer 503 and profile saves schedule nothing.
+   */
+  slidesWorkingGroups?: import("../../contracts/google-slides.js").SlidesWorkingGroupsSource;
   /** Asks arXiv and OpenReview about a paper's public record; unset means those slots go unchecked. */
   arxivProbe?: AdminBotArtifactProbe;
   openReviewProbe?: AdminBotArtifactProbe;
@@ -341,6 +355,10 @@ export type AdminBotMockServiceOptions = {
   readCalendarAccess?: CalendarAccessReader;
   // Complete human membership of the two active channels; unavailable reads fail closed.
   readActiveChannels?: ActiveChannelReader;
+  // The whole Slack workspace (users.list) for the daily roster sync; unset answers 503.
+  readSlackDirectory?: SlackDirectoryReader;
+  // Slack user IDs an admin has marked as placeholder/test accounts (ADMINBOT_SLACK_PLACEHOLDER_USER_IDS).
+  slackPlaceholderUserIds?: ReadonlySet<string>;
   // Every open public channel name in the workspace, for the project form's "this channel already
   // exists" check. Injected like the Slack reads above: reaching Slack is a composition-layer
   // concern, and left unset the route answers 503 so the form can say the check is unavailable
@@ -355,10 +373,13 @@ export type AdminBotMockServiceOptions = {
   geolocateIp?: (
     ip: string,
   ) => Promise<
-    { country?: string; continent?: string; city?: string; timezone?: string } | undefined
+    | { country?: string; continent?: string; city?: string; region?: string; timezone?: string }
+    | undefined
   >;
   // Periodic sweep cadence for Slack channel naming enforcement. Disabled when unset.
   slackChannelNamingSweepIntervalMs?: number;
+  // Hourly in the host: retries meetup intros held for quiet hours. Disabled when unset.
+  meetupSweepIntervalMs?: number;
   reviewSlackProfilePhoto?: NonNullable<AdminBotServiceOptions["reviewSlackProfilePhoto"]>;
   polishSlackProfilePhoto?: NonNullable<AdminBotServiceOptions["polishSlackProfilePhoto"]>;
 };

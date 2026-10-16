@@ -86,7 +86,9 @@ export async function draftXPost(
     ...(request.pdfBase64 ? { pdf_base64: request.pdfBase64 } : {}),
     ...(request.url ? { url: request.url } : {}),
   });
-  if ("unreachable" in result) return { ok: false, kind: "unreachable" };
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
   if (!result.response.ok) {
     const body = result.body as { error?: { message?: string } } | null;
     return { ok: false, kind: "draft-failed", message: body?.error?.message ?? "X draft failed" };

@@ -43,6 +43,9 @@ describe("General Tools", () => {
     expect(canAccessTab("labTravel", "admin", "admin")).toBe(true);
     expect(canAccessTab("labTravel", "member", "trial")).toBe(false);
     expect(canAccessTab("labTravel", "member", "external_collaborator")).toBe(false);
+    expect(canAccessTab("events", "member", "member")).toBe(true);
+    expect(canAccessTab("events", "member", "trial")).toBe(false);
+    expect(canAccessTab("events", "anonymous")).toBe(false);
     expect(canAccessTab("adminbotNotificationDrafts", "anonymous")).toBe(false);
   });
 });
@@ -109,8 +112,8 @@ describe("resolveAccessRole", () => {
 
 describe("visibleTabsForRole", () => {
   it("shows a visitor the shared tools, and nothing else", () => {
-    // The whole General Tools group and no more: the reachable set is the group, so a tool added
-    // to it is published and a tool added anywhere else is not.
+    // Only the anonymous-level tools of the General Tools group: the group also holds member- and
+    // admin-level tools, and the access table, not the group, decides who sees them.
     expect(visibleTabsForRole(ALL_TABS, "anonymous")).toEqual([
       "adminbotReimbursements",
       "adminbotDeadlines",
@@ -132,6 +135,7 @@ describe("visibleTabsForRole", () => {
       "adminbotTimeAvailability",
       // Conference RSVPs, your trips and opt-in location sharing.
       "labTravel",
+      "events",
       "myWork",
       "labSharing",
       // Recordings of the lab's own meetings sit with Lab Sharing, above the roster.
@@ -149,6 +153,9 @@ describe("visibleTabsForRole", () => {
       // nothing.
       "adminbotConferencePapers",
       "adminbotReferenceChecker",
+      // The ARR eligible-reviewer list is member-level: it reads the lab's own roster, like Lab
+      // Members, and changes nothing.
+      "adminbotArrReviewers",
     ]);
   });
 
