@@ -1,5 +1,9 @@
 // Recommendation-letter eligibility, drawn four ways: a badge on the admin's queue row, a panel on
-// an open letter request, a note on the member's letters form, and the admin's freeze records.
+// an open letter request (with the admin's confirm-a-criterion controls), a note on the member's
+// letters form, and the admin's freeze records.
+//
+// Only the freeze and hours decide the headline for now. Attendance is drawn for admins as "not
+// counted yet", and the member gets one muted line saying it is not tracked.
 //
 // Every one of them is advisory. Nothing here disables a button or hides a form: the lab decided
 // the policy informs a letter writer's judgment rather than replacing it, so the most this file
@@ -11,6 +15,9 @@ import { t } from "../../../i18n/index.ts";
 import {
   isRecLetterEligibility,
   type RecLetterAdminEligibility,
+  type RecLetterAttestation,
+  type RecLetterAttestationCriterion,
+  type RecLetterAttested,
   type RecLetterEligibility,
   type RecLetterEligibilityGap,
   type RecLetterEligibilityStatus,
@@ -34,6 +41,44 @@ export function formatRecLetterDay(day: string): string {
 
 function percent(rate: number | null): string {
   return rate === null ? "—" : `${Math.round(rate * 100)}%`;
+}
+
+/**
+ * YYYY-MM months as runs: "2025-01 to 2026-06, 2026-09". A member who joined years before the
+ * availability page would otherwise read a list as long as their time in the lab.
+ */
+export function formatMonthRuns(months: readonly string[]): string {
+  const next = (month: string) => {
+    const [year, mon] = month.split("-").map(Number);
+    return mon === 12 ? `${year + 1}-01` : `${year}-${String(mon + 1).padStart(2, "0")}`;
+  };
+  const runs: [string, string][] = [];
+  for (const month of [...months].toSorted()) {
+    const last = runs.at(-1);
+    if (last && next(last[1]) === month) {
+      last[1] = month;
+    } else {
+      runs.push([month, month]);
+    }
+  }
+  return runs
+    .map(([first, last]) =>
+      first === last ? first : t("logistics.eligibility.monthRun", { first, last }),
+    )
+    .join(", ");
+}
+
+/** Months the hours had no row for. Derived from the months when an older service left it off. */
+function monthsWithoutData(result: RecLetterEligibility): string[] {
+  return (
+    result.hours.months_without_data ??
+    result.hours.months.filter((month) => month.has_data === false).map((month) => month.month)
+  );
+}
+
+/** Attendance counts only when the service says so; an older body without the flag does not. */
+function attendanceCounted(result: RecLetterEligibility): boolean {
+  return result.attendance.counted === true;
 }
 
 function statusLabel(status: RecLetterEligibilityStatus): string {
@@ -80,6 +125,11 @@ function gapText(gap: RecLetterEligibilityGap, result: RecLetterEligibility): st
         count: String(gap.qualifying_months),
         required: String(gap.required_months),
       });
+    case "hours_not_enough_history":
+      return t("logistics.eligibility.gap.hours_not_enough_history", {
+        count: String(gap.qualifying_months),
+        required: String(gap.required_months),
+      });
     case "attendance_below_threshold":
       return t("logistics.eligibility.gap.attendance_below_threshold", {
         window: String(result.attendance.window_months),
@@ -90,17 +140,49 @@ function gapText(gap: RecLetterEligibilityGap, result: RecLetterEligibility): st
   }
 }
 
+function renderAttested(
+  attested: RecLetterAttested,
+  criterion: RecLetterAttestationCriterion,
+  admin: boolean,
+) {
+  return html`<p
+    class="rec-eligibility__attested"
+    data-testid="rec-eligibility-attested-${criterion}"
+  >
+    <strong>${t(`logistics.eligibility.attested.${criterion}`)}</strong>
+    <span class="muted">
+      ${t("logistics.eligibility.attested.on", {
+        date: formatRecLetterDay(attested.at.slice(0, 10)),
+      })}
+      ${admin && attested.by
+        ? t("logistics.eligibility.attested.by", { admin: attested.by })
+        : nothing}
+    </span>
+    ${admin && attested.note
+      ? html`<span class="rec-eligibility-admin__item-note">${attested.note}</span>`
+      : nothing}
+  </p>`;
+}
+
+function criterionLabel(status: RecLetterEligibility["hours"]["status"], attested: boolean) {
+  return attested
+    ? t("logistics.eligibility.criterion.attested")
+    : t(`logistics.eligibility.criterion.${status}`);
+}
+
 function renderHours(result: RecLetterEligibility) {
   const hours = result.hours;
   const qualifying = hours.months.filter((month) => month.qualifies).map((month) => month.month);
+  const unknown = monthsWithoutData(result);
   return html`
     <section class="rec-eligibility__criterion" data-testid="rec-eligibility-hours">
       <div class="rec-eligibility__criterion-head">
         <h4>${t("logistics.eligibility.hoursTitle")}</h4>
         <span class="rec-eligibility__criterion-status rec-eligibility__criterion--${hours.status}">
-          ${t(`logistics.eligibility.criterion.${hours.status}`)}
+          ${criterionLabel(hours.status, Boolean(hours.attested))}
         </span>
       </div>
+      ${hours.attested ? renderAttested(hours.attested, "hours", true) : nothing}
       <p>
         ${hours.months.length === 0
           ? t("logistics.eligibility.hoursNoData")
@@ -115,6 +197,11 @@ function renderHours(result: RecLetterEligibility) {
             ${t("logistics.eligibility.hoursMonths", { months: qualifying.join(", ") })}
           </p>`
         : nothing}
+      ${unknown.length && hours.months.length
+        ? html`<p class="muted" data-testid="rec-eligibility-hours-unknown">
+            ${t("logistics.eligibility.hoursUnknownMonths", { months: formatMonthRuns(unknown) })}
+          </p>`
+        : nothing}
     </section>
   `;
 }
@@ -122,16 +209,29 @@ function renderHours(result: RecLetterEligibility) {
 function renderAttendance(result: RecLetterEligibility) {
   const attendance = result.attendance;
   const best = attendance.best_window;
+  const counted = attendanceCounted(result);
   return html`
-    <section class="rec-eligibility__criterion" data-testid="rec-eligibility-attendance">
+    <section
+      class="rec-eligibility__criterion ${counted ? "" : "rec-eligibility__criterion--uncounted"}"
+      data-testid="rec-eligibility-attendance"
+      data-counted=${counted ? "true" : "false"}
+    >
       <div class="rec-eligibility__criterion-head">
         <h4>${t("logistics.eligibility.attendanceTitle")}</h4>
         <span
-          class="rec-eligibility__criterion-status rec-eligibility__criterion--${attendance.status}"
+          class="rec-eligibility__criterion-status rec-eligibility__criterion--${counted
+            ? attendance.status
+            : "insufficient_data"}"
         >
-          ${t(`logistics.eligibility.criterion.${attendance.status}`)}
+          ${counted
+            ? criterionLabel(attendance.status, Boolean(attendance.attested))
+            : t("logistics.eligibility.criterion.notCounted")}
         </span>
       </div>
+      ${counted
+        ? nothing
+        : html`<p class="muted">${t("logistics.eligibility.attendanceNotCounted")}</p>`}
+      ${attendance.attested ? renderAttested(attendance.attested, "attendance", true) : nothing}
       ${best
         ? html`
             <p>
@@ -163,10 +263,98 @@ function renderAttendance(result: RecLetterEligibility) {
   `;
 }
 
+/** The admin's confirm-a-criterion controls. Present only when the surface wires them. */
+export type RecLetterAttestControls = {
+  attestations: RecLetterAttestation[];
+  note: string;
+  saving: RecLetterAttestationCriterion | null;
+  removingId: string | null;
+  error: string | null;
+  onNoteChange: (note: string) => void;
+  onAttest: (criterion: RecLetterAttestationCriterion) => void;
+  onRemove: (attestationId: string) => void;
+};
+
+function renderAttestControls(controls: RecLetterAttestControls, result: RecLetterEligibility) {
+  const busy = controls.saving !== null;
+  const button = (criterion: RecLetterAttestationCriterion, attested: boolean) =>
+    html`<button
+      class="btn btn--sm"
+      type="button"
+      data-testid="rec-eligibility-attest-${criterion}"
+      ?disabled=${busy || attested}
+      @click=${() => controls.onAttest(criterion)}
+    >
+      ${controls.saving === criterion
+        ? t("logistics.eligibility.attest.saving")
+        : t(`logistics.eligibility.attest.${criterion}`)}
+    </button>`;
+  return html`
+    <section class="rec-eligibility__attest" data-testid="rec-eligibility-attest">
+      <h4>${t("logistics.eligibility.attest.title")}</h4>
+      <p class="muted">${t("logistics.eligibility.attest.sub")}</p>
+      <label class="adminbot-form__field">
+        <span>${t("logistics.eligibility.attest.note")}</span>
+        <textarea
+          rows="2"
+          maxlength="2000"
+          data-testid="rec-eligibility-attest-note"
+          .value=${live(controls.note)}
+          @input=${(event: Event) =>
+            controls.onNoteChange((event.currentTarget as HTMLTextAreaElement).value)}
+        ></textarea>
+      </label>
+      <div class="rec-eligibility-admin__actions">
+        ${button("hours", Boolean(result.hours.attested))}
+        ${attendanceCounted(result)
+          ? button("attendance", Boolean(result.attendance.attested))
+          : nothing}
+      </div>
+      ${controls.error
+        ? html`<p class="logistics-requests__error" role="alert">${controls.error}</p>`
+        : nothing}
+      ${controls.attestations.length
+        ? html`<ul class="rec-eligibility-admin__list">
+            ${controls.attestations.map(
+              (entry) => html`<li
+                class="rec-eligibility-admin__item"
+                data-testid="rec-eligibility-attestation"
+              >
+                <div class="rec-eligibility-admin__item-body">
+                  <strong>${t(`logistics.eligibility.attested.${entry.criterion}`)}</strong>
+                  <span class="muted">
+                    ${t("logistics.eligibility.attested.on", {
+                      date: formatRecLetterDay(entry.created_at.slice(0, 10)),
+                    })}
+                    ${t("logistics.eligibility.attested.by", { admin: entry.created_by })}
+                  </span>
+                  ${entry.note
+                    ? html`<span class="rec-eligibility-admin__item-note">${entry.note}</span>`
+                    : nothing}
+                </div>
+                <button
+                  class="btn btn--sm"
+                  type="button"
+                  ?disabled=${controls.removingId === entry.id}
+                  @click=${() => controls.onRemove(entry.id)}
+                >
+                  ${controls.removingId === entry.id
+                    ? t("logistics.eligibility.incidents.deleting")
+                    : t("logistics.eligibility.attest.remove")}
+                </button>
+              </li>`,
+            )}
+          </ul>`
+        : nothing}
+    </section>
+  `;
+}
+
 export type RecLetterDetailPanelProps = {
   value: RecLetterAdminEligibility | null;
   loading: boolean;
   error: string | null;
+  attest?: Omit<RecLetterAttestControls, "attestations">;
 };
 
 /** The admin's panel on an open letter request: the verdict, then the evidence behind it. */
@@ -222,6 +410,12 @@ export function renderRecLetterDetailPanel(props: RecLetterDetailPanelProps) {
       <div class="rec-eligibility__criteria">
         ${renderHours(result)} ${renderAttendance(result)}
       </div>
+      ${props.attest
+        ? renderAttestControls(
+            { ...props.attest, attestations: props.value?.attestations ?? [] },
+            result,
+          )
+        : nothing}
     </section>
   `;
 }
@@ -241,8 +435,13 @@ export type RecLetterAdvisoryProps = {
  */
 export function renderRecLetterAdvisory(props: RecLetterAdvisoryProps) {
   const result = isRecLetterEligibility(props.value) ? props.value : null;
-  const window = result?.attendance.window_months ?? 3;
-  const remaining = result ? result.missing.filter((gap) => gap.code !== "frozen") : [];
+  const counted = result ? attendanceCounted(result) : false;
+  const remaining = result
+    ? result.missing.filter(
+        (gap) => gap.code !== "frozen" && (counted || !gap.code.startsWith("attendance_")),
+      )
+    : [];
+  const unknown = result ? monthsWithoutData(result) : [];
   return html`
     <aside
       class="rec-eligibility rec-eligibility--advisory"
@@ -258,10 +457,22 @@ export function renderRecLetterAdvisory(props: RecLetterAdvisoryProps) {
         ${t("logistics.eligibility.memberNote", {
           months: String(result?.hours.required_months ?? 5),
           hours: String(result?.hours.min_weekly_hours ?? 20),
-          window: String(window),
-          rate: percent(result?.attendance.min_rate ?? 0.8),
         })}
+        ${counted && result
+          ? t("logistics.eligibility.memberNoteAttendance", {
+              window: String(result.attendance.window_months),
+              rate: percent(result.attendance.min_rate),
+            })
+          : nothing}
       </p>
+      ${counted
+        ? nothing
+        : html`<p
+            class="muted rec-eligibility__aside"
+            data-testid="rec-eligibility-attendance-note"
+          >
+            ${t("logistics.eligibility.attendanceNotTracked")}
+          </p>`}
       ${result
         ? nothing
         : props.loading
@@ -286,7 +497,20 @@ export function renderRecLetterAdvisory(props: RecLetterAdvisoryProps) {
           </p>`
         : nothing}
       ${result?.status === "insufficient_data"
-        ? html`<p class="muted">${t("logistics.eligibility.memberInsufficient")}</p>`
+        ? html`<p data-testid="rec-eligibility-insufficient">
+              ${t("logistics.eligibility.memberInsufficient")}
+            </p>
+            ${unknown.length
+              ? html`<p class="muted" data-testid="rec-eligibility-hours-unknown">
+                  ${t("logistics.eligibility.memberUnknownMonths", {
+                    months: formatMonthRuns(unknown),
+                  })}
+                </p>`
+              : nothing}`
+        : nothing}
+      ${result?.hours.attested ? renderAttested(result.hours.attested, "hours", false) : nothing}
+      ${counted && result?.attendance.attested
+        ? renderAttested(result.attendance.attested, "attendance", false)
         : nothing}
     </aside>
   `;

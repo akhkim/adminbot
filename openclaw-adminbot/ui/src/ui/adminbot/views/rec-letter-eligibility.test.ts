@@ -10,6 +10,7 @@ import type {
 } from "../api/rec-letter-eligibility.ts";
 import { EMPTY_FREEZE_FORM } from "../controllers/rec-letter-eligibility.ts";
 import {
+  formatMonthRuns,
   formatRecLetterDay,
   renderRecLetterAdvisory,
   renderRecLetterBadge,
@@ -111,6 +112,7 @@ describe("request detail panel", () => {
     member: { id: eligibility.member_id, name: "Member Alpha" },
     eligibility,
     incidents: [],
+    attestations: [],
   });
 
   it("shows loading, then an error, without a verdict", () => {
@@ -295,6 +297,7 @@ describe("partial or missing eligibility data", () => {
           member: { id: "m-alpha", name: "Member Alpha" },
           eligibility,
           incidents: [],
+          attestations: [],
         } as RecLetterAdminEligibility,
         loading: false,
         error: null,
@@ -322,5 +325,206 @@ describe("partial or missing eligibility data", () => {
     } finally {
       onLine.mockRestore();
     }
+  });
+});
+
+// The follow-up to the first release: a month with no availability row is unknown rather than 0h,
+// attendance is shown but not counted, and an admin can confirm a criterion the records miss.
+describe("data gaps, attestations and the attendance flag", () => {
+  const admin = (
+    eligibility: RecLetterEligibility,
+    attestations: RecLetterAdminEligibility["attestations"] = [],
+  ): RecLetterAdminEligibility => ({
+    member: { id: eligibility.member_id, name: "Member Alpha" },
+    eligibility,
+    incidents: [],
+    attestations,
+  });
+
+  // Joined in 2025-01; the availability page only has rows from 2026-07.
+  const thinHistory = (): RecLetterEligibility =>
+    result({
+      status: "insufficient_data",
+      hours: {
+        status: "insufficient_data",
+        qualifying_months: 1,
+        required_months: 5,
+        min_weekly_hours: 20,
+        months_with_data: 1,
+        months_without_data: ["2025-01", "2025-02", "2025-03", "2026-05", "2026-06"],
+        months: [{ month: "2026-07", average_weekly_hours: 25, qualifies: true, has_data: true }],
+      },
+      attendance: { ...result().attendance, status: "insufficient_data", counted: false },
+      missing: [
+        {
+          code: "hours_not_enough_history",
+          qualifying_months: 1,
+          required_months: 5,
+          months_without_data: ["2025-01", "2025-02", "2025-03", "2026-05", "2026-06"],
+        },
+        { code: "attendance_no_window" },
+      ],
+    });
+
+  it("compresses consecutive months into runs, across a year end", () => {
+    expect(formatMonthRuns(["2025-12", "2025-11", "2026-01", "2026-03"])).toBe(
+      "2025-11 to 2026-01, 2026-03",
+    );
+    expect(formatMonthRuns([])).toBe("");
+  });
+
+  it("calls a thin history 'Not enough data yet', never 'Not yet'", () => {
+    const value = thinHistory();
+    const badge = draw(
+      renderRecLetterBadge({ member_id: value.member_id, status: "insufficient_data" }),
+    );
+    expect(badge.textContent).toContain("Not enough data yet");
+    expect(badge.textContent).not.toMatch(/Not yet\b/);
+    const panel = draw(
+      renderRecLetterDetailPanel({ value: admin(value), loading: false, error: null }),
+    );
+    expect(byTestId(panel, "rec-eligibility-panel")?.dataset.status).toBe("insufficient_data");
+    expect(byTestId(panel, "rec-eligibility-hours-unknown")?.textContent).toContain(
+      "2025-01 to 2025-03, 2026-05 to 2026-06",
+    );
+  });
+
+  it("tells the member which months have no data, and drops the rosters gap", () => {
+    const root = draw(
+      renderRecLetterAdvisory({ value: thinHistory(), loading: false, error: null }),
+    );
+    const text = byTestId(root, "rec-eligibility-advisory")?.textContent ?? "";
+    expect(byTestId(root, "rec-eligibility-insufficient")?.textContent).toContain(
+      "Not enough history yet",
+    );
+    expect(byTestId(root, "rec-eligibility-hours-unknown")?.textContent).toContain(
+      "2025-01 to 2025-03",
+    );
+    expect(text).toContain("Time Availability");
+    expect(text).not.toContain("meeting rosters");
+    expect(byTestId(root, "rec-eligibility-attendance-note")?.textContent).toContain(
+      "Meeting attendance isn't tracked yet and isn't counted",
+    );
+  });
+
+  it("leaves attendance out of the member's 'Still to reach' while it is not counted", () => {
+    const notYet = result({
+      status: "not_yet",
+      hours: { ...result().hours, status: "not_met", qualifying_months: 2 },
+      attendance: { ...result().attendance, status: "not_met", counted: false },
+      missing: [
+        { code: "hours_short", qualifying_months: 2, required_months: 5 },
+        { code: "attendance_below_threshold" },
+      ],
+    });
+    const root = draw(renderRecLetterAdvisory({ value: notYet, loading: false, error: null }));
+    const text = byTestId(root, "rec-eligibility-advisory")?.textContent ?? "";
+    expect(text).toContain("2 of 5 months");
+    expect(text).not.toContain("attendance at");
+    expect(text).not.toContain("stretch");
+  });
+
+  it("labels attendance 'Not counted yet' for the admin and keeps the raw figures", () => {
+    const value = result({ attendance: { ...result().attendance, counted: false } });
+    const root = draw(
+      renderRecLetterDetailPanel({ value: admin(value), loading: false, error: null }),
+    );
+    const attendance = byTestId(root, "rec-eligibility-attendance");
+    expect(attendance?.dataset.counted).toBe("false");
+    expect(attendance?.textContent).toContain("Not counted yet");
+    expect(attendance?.textContent).toContain("90%");
+  });
+
+  it("labels an attested criterion, with the note for the admin and without it for the member", () => {
+    const value = result({
+      hours: {
+        ...result().hours,
+        status: "met",
+        attested: {
+          attestation_id: "rlattest_1",
+          at: "2026-10-01T12:00:00.000Z",
+          by: "admin:synthetic",
+          note: "Worked full time on the synthetic project",
+        },
+      },
+    });
+    const panel = draw(
+      renderRecLetterDetailPanel({ value: admin(value), loading: false, error: null }),
+    );
+    const hours = byTestId(panel, "rec-eligibility-hours");
+    expect(hours?.textContent).toContain("Confirmed by admin");
+    expect(byTestId(panel, "rec-eligibility-attested-hours")?.textContent).toContain(
+      "Worked full time",
+    );
+
+    const memberView = result({
+      hours: {
+        ...result().hours,
+        attested: { attestation_id: "rlattest_1", at: "2026-10-01T12:00:00.000Z" },
+      },
+    });
+    const member = draw(
+      renderRecLetterAdvisory({ value: memberView, loading: false, error: null }),
+    );
+    expect(byTestId(member, "rec-eligibility-attested-hours")?.textContent).toContain(
+      "Hours confirmed by admin",
+    );
+  });
+
+  it("records a confirmation with the note, and removes one by id", () => {
+    const onAttest = vi.fn();
+    const onRemove = vi.fn();
+    const onNoteChange = vi.fn();
+    const value = result({
+      status: "insufficient_data",
+      hours: { ...thinHistory().hours },
+      attendance: { ...result().attendance, counted: false },
+    });
+    const root = draw(
+      renderRecLetterDetailPanel({
+        value: admin(value, [
+          {
+            id: "rlattest_old",
+            member_id: "m-alpha",
+            criterion: "hours",
+            note: "Earlier confirmation",
+            created_by: "admin:synthetic",
+            created_at: "2026-09-01T12:00:00.000Z",
+          },
+        ]),
+        loading: false,
+        error: null,
+        attest: {
+          note: "",
+          saving: null,
+          removingId: null,
+          error: null,
+          onNoteChange,
+          onAttest,
+          onRemove,
+        },
+      }),
+    );
+    const textarea = root.querySelector<HTMLTextAreaElement>(
+      '[data-testid="rec-eligibility-attest-note"]',
+    );
+    textarea!.value = "Synthetic note";
+    textarea!.dispatchEvent(new Event("input"));
+    expect(onNoteChange).toHaveBeenCalledWith("Synthetic note");
+    byTestId(root, "rec-eligibility-attest-hours")?.click();
+    expect(onAttest).toHaveBeenCalledWith("hours");
+    // Attendance is not counted, so there is nothing for an admin to confirm yet.
+    expect(byTestId(root, "rec-eligibility-attest-attendance")).toBeNull();
+    const entry = byTestId(root, "rec-eligibility-attestation");
+    expect(entry?.textContent).toContain("Earlier confirmation");
+    entry?.querySelector("button")?.click();
+    expect(onRemove).toHaveBeenCalledWith("rlattest_old");
+  });
+
+  it("draws no controls when the surface does not wire them", () => {
+    const root = draw(
+      renderRecLetterDetailPanel({ value: admin(result()), loading: false, error: null }),
+    );
+    expect(byTestId(root, "rec-eligibility-attest")).toBeNull();
   });
 });

@@ -266,6 +266,7 @@ import {
   type AdminBotPaperMentorRunInput,
 } from "../contracts/papermentor.js";
 import { missingMandatoryProfileFields } from "../contracts/profile-completion.js";
+import type { RecLetterAttestationStore } from "../contracts/rec-letter-attestations.js";
 import type { RecLetterFreezeIncidentStore } from "../contracts/rec-letter-freezes.js";
 import type { ReferenceScanStore } from "../contracts/reference-scans.js";
 import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
@@ -544,12 +545,13 @@ export type AdminBotServiceResponse<T> =
 
 export type AdminBotMeetingCursor = Pick<AdminBotMeetingRecord, "started_at" | "id">;
 
-// Tables kept in their own contracts (the citation checkers', the letter freezes') so the store
-// below stays one list.
+// Tables kept in their own contracts (the citation checkers', the letter freezes and attestations)
+// so the store below stays one list.
 type AdminBotCitationCheckStores = ReferenceScanStore &
   OpenReviewCitationCheckStore &
   PaperAiTextCheckStore &
-  RecLetterFreezeIncidentStore;
+  RecLetterFreezeIncidentStore &
+  RecLetterAttestationStore;
 
 export type AdminBotMeetingArtifactRecord = {
   file_id: string;

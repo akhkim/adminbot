@@ -1901,6 +1901,7 @@ describe("letter eligibility with no or partial data", () => {
                 member: { id: "m-alpha", name: "Member Alpha" },
                 eligibility,
                 incidents: [],
+                attestations: [],
               } as RecLetterDetailPanelProps["value"]),
         loading: false,
         error: null,

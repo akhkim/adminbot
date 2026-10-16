@@ -1023,12 +1023,18 @@ criterion:
 - **Committed hours.** At least five months, not necessarily consecutive, averaging 20 or more
   committed hours a week on the availability page. Committed, not logged.
 - **Attendance.** Some three consecutive months with at least 80% of Monday meetings, and a
-  Wednesday meeting in at least 80% of the weeks that had one, read in America/Toronto. Only
-  meetings with a roster count, and a window is judged only when at least 70% of its meetings have
-  one.
+  Wednesday meeting in at least 80% of the weeks that had one, read in America/Toronto. **Not
+  counted yet**: `adminBotRecLetterAttendanceEnabled` is `false`, so attendance never affects the
+  result. Admins see the raw figures labelled "not counted yet"; members see one muted line.
 
-Members see only their own result and, while frozen, the date it ends; incident records and notes
-are admin-only. See [Recommendation-letter eligibility](/tools/adminbot-rec-letter-eligibility).
+A month with no availability row is unknown, not 0 hours: hours are `not_met` only when enough
+months have data and the gap cannot close, otherwise "Not enough data yet". Members can backfill
+past months on the Time Availability page, and an admin can confirm a criterion with a note from the
+request detail (`/logistics/eligibility-attestations`, audited); it then counts as met, labelled as
+confirmed by an admin.
+
+Members see only their own result and, while frozen, the date it ends; incident records, attestation
+notes and who confirmed are admin-only. See [Recommendation-letter eligibility](/tools/adminbot-rec-letter-eligibility).
 
 ## City channels
 

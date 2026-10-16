@@ -11,8 +11,11 @@ import {
   createRecLetterEligibilityState,
   loadRecLetterSummaries,
   readRecLetterEligibility,
+  recordRecLetterAttestation,
   recordRecLetterFreezeIncident,
+  removeRecLetterAttestation,
   removeRecLetterFreezeIncident,
+  setRecLetterAttestationNote,
   setRecLetterFreezeForm,
   type RecLetterEligibilityHost,
 } from "./rec-letter-eligibility.ts";
@@ -230,5 +233,89 @@ describe("rec-letter eligibility controller", () => {
     expect(await removeRecLetterFreezeIncident(host, "rlfreeze_9")).toBe(false);
     expect(host.adminBotRecLetter.incidents.deletingId).toBeNull();
     expect(host.adminBotRecLetter.incidents.error).toBeTruthy();
+  });
+
+  describe("attestations", () => {
+    function withOpenPanel(host: RecLetterEligibilityHost) {
+      host.adminBotRecLetter = {
+        ...host.adminBotRecLetter,
+        detail: {
+          requestId: "req-1",
+          value: {
+            member: { id: "m-alpha", name: "Member Alpha" },
+            eligibility: wholeResult,
+            incidents: [],
+            attestations: [],
+          } as never,
+          loading: false,
+          error: null,
+        },
+      };
+    }
+
+    it("posts the open member, the criterion and the trimmed note, then re-reads", async () => {
+      saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });
+      const host = createHost();
+      withOpenPanel(host);
+      setRecLetterAttestationNote(host, "  Synthetic reason  ");
+      const calls: Array<{ url: string; body: unknown }> = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        calls.push({ url: urlOf(input), body: JSON.parse(init?.body as string) });
+        return json({ id: "rlattest_1" }, 201);
+      });
+      expect(await recordRecLetterAttestation(host, "hours")).toBe(true);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].url).toBe("http://127.0.0.1:8765/logistics/eligibility-attestations");
+      expect(calls[0].body).toEqual({
+        member_id: "m-alpha",
+        criterion: "hours",
+        note: "Synthetic reason",
+      });
+      const state = host.adminBotRecLetter;
+      expect(state.attest).toEqual({ note: "", saving: null, removingId: null, error: null });
+      // The panel is dropped so the next render reads the service's new verdict.
+      expect(state.detail.requestId).toBeNull();
+    });
+
+    it("keeps the note and shows the error when the service refuses", async () => {
+      saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });
+      const host = createHost();
+      withOpenPanel(host);
+      setRecLetterAttestationNote(host, "kept");
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(json({ error: "bad criterion" }, 400));
+      expect(await recordRecLetterAttestation(host, "hours")).toBe(false);
+      expect(host.adminBotRecLetter.attest.note).toBe("kept");
+      expect(host.adminBotRecLetter.attest.saving).toBeNull();
+      expect(host.adminBotRecLetter.attest.error).toBeTruthy();
+      expect(host.adminBotRecLetter.detail.requestId).toBe("req-1");
+    });
+
+    it("does nothing without an open panel", async () => {
+      saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });
+      const host = createHost();
+      const fetchMock = vi.spyOn(globalThis, "fetch");
+      expect(await recordRecLetterAttestation(host, "hours")).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("deletes by id and re-reads", async () => {
+      saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });
+      const host = createHost();
+      withOpenPanel(host);
+      const calls: Array<{ url: string; method?: string }> = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        calls.push({ url: urlOf(input), method: init?.method });
+        return json({ ok: true });
+      });
+      expect(await removeRecLetterAttestation(host, "rlattest_9")).toBe(true);
+      expect(calls).toEqual([
+        {
+          url: "http://127.0.0.1:8765/logistics/eligibility-attestations/rlattest_9",
+          method: "DELETE",
+        },
+      ]);
+      expect(host.adminBotRecLetter.attest.removingId).toBeNull();
+      expect(host.adminBotRecLetter.detail.requestId).toBeNull();
+    });
   });
 });
