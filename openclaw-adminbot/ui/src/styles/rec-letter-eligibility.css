@@ -36,7 +36,7 @@
   color: var(--warn);
 }
 
-/* Not enough rosters to judge: no color, because it says nothing about the member. */
+/* Not enough data yet: no color, because a gap in the records says nothing about the member. */
 .rec-eligibility__pill--insufficient_data {
   color: var(--muted);
 }
@@ -134,6 +134,44 @@
 
 .rec-eligibility__criterion--insufficient_data {
   color: var(--muted);
+}
+
+/* Attendance while it is not counted: still drawn for admins, but quieter than a criterion. */
+.rec-eligibility__criterion--uncounted {
+  opacity: 0.75;
+}
+
+.rec-eligibility__attested {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  margin: var(--space-1) 0;
+  font-size: var(--control-ui-text-sm);
+}
+
+.rec-eligibility__aside {
+  font-size: var(--control-ui-text-xs);
+}
+
+/* The admin's confirm-a-criterion controls under the panel. */
+.rec-eligibility__attest {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+}
+
+.rec-eligibility__attest h4 {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+}
+
+.rec-eligibility__attest textarea {
+  resize: vertical;
+}
+
+.rec-eligibility__attest .rec-eligibility-admin__actions {
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 /* The admin's freeze records. */

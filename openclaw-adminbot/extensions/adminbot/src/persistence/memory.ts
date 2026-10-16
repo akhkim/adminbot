@@ -77,6 +77,7 @@ import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
 import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
+import type { AdminBotRecLetterAttestation } from "../contracts/rec-letter-attestations.js";
 import type { AdminBotRecLetterFreezeIncident } from "../contracts/rec-letter-freezes.js";
 import type { ReferenceScan } from "../contracts/reference-scans.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
@@ -264,6 +265,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly cvChanges = new Map<string, AdminBotCvChangeEvent>();
   private readonly logisticsRequests = new Map<string, AdminBotLogisticsRequest>();
   private readonly recLetterFreezeIncidents = new Map<string, AdminBotRecLetterFreezeIncident>();
+  private readonly recLetterAttestations = new Map<string, AdminBotRecLetterAttestation>();
   // Append-only, in insertion order. The sqlite store sorts on read; this one relies on the array
   // order being the insertion order, which is the same thing for a store that never updates a row.
   private readonly memberLocations: AdminBotMemberLocationEntry[] = [];
@@ -1430,6 +1432,24 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   deleteRecLetterFreezeIncident(incidentId: string): boolean {
     return this.recLetterFreezeIncidents.delete(incidentId);
+  }
+
+  saveRecLetterAttestation(attestation: AdminBotRecLetterAttestation): void {
+    this.recLetterAttestations.set(attestation.id, attestation);
+  }
+
+  /** Newest first, ties by id, matching the sqlite store's ORDER BY. */
+  listRecLetterAttestations(memberId?: string): AdminBotRecLetterAttestation[] {
+    return [...this.recLetterAttestations.values()]
+      .filter((attestation) => !memberId || attestation.member_id === memberId)
+      .toSorted(
+        (left, right) =>
+          right.created_at.localeCompare(left.created_at) || right.id.localeCompare(left.id),
+      );
+  }
+
+  deleteRecLetterAttestation(attestationId: string): boolean {
+    return this.recLetterAttestations.delete(attestationId);
   }
 
   getSettings(): AdminBotSettings | undefined {

@@ -317,3 +317,133 @@ describe("eligibility reads", () => {
     ).toBe(400);
   });
 });
+
+const ATTEST_NOTE = "admin-only reason for confirming the hours";
+
+describe("attestations", () => {
+  it("lets an admin confirm hours, counts them as met and audits each change", async () => {
+    const lab = await startLab();
+    const before = await call(lab, "m-admin", "/logistics/eligibility?member_id=m-alpha");
+    expect(((await before.json()) as { eligibility: { status: string } }).eligibility.status).toBe(
+      "insufficient_data",
+    );
+
+    const created = await call(lab, "m-admin", "/logistics/eligibility-attestations", {
+      method: "POST",
+      body: JSON.stringify({ member_id: "m-alpha", criterion: "hours", note: ATTEST_NOTE }),
+    });
+    expect(created.status).toBe(201);
+    const attestation = (await created.json()) as { id: string; created_by: string };
+    expect(attestation.id).toMatch(/^rlattest_/);
+    expect(attestation.created_by).toBe("m-admin");
+
+    const after = await call(lab, "m-admin", "/logistics/eligibility?member_id=m-alpha");
+    const payload = (await after.json()) as {
+      eligibility: { status: string; hours: { status: string; attested?: { note?: string } } };
+      attestations: { id: string; note?: string }[];
+    };
+    expect(payload.eligibility.status).toBe("eligible");
+    expect(payload.eligibility.hours).toMatchObject({
+      status: "met",
+      attested: { note: ATTEST_NOTE },
+    });
+    expect(payload.attestations.map((entry) => entry.id)).toEqual([attestation.id]);
+
+    // The member sees that it was confirmed, not by whom or why.
+    const own = await call(lab, "m-alpha", "/logistics/eligibility/me");
+    const ownText = await own.text();
+    const ownPayload = JSON.parse(ownText) as {
+      status: string;
+      hours: { attested?: Record<string, unknown> };
+    };
+    expect(ownPayload.status).toBe("eligible");
+    expect(Object.keys(ownPayload.hours.attested ?? {}).toSorted()).toEqual([
+      "at",
+      "attestation_id",
+    ]);
+    expect(ownText).not.toContain(ATTEST_NOTE);
+
+    const removed = await call(
+      lab,
+      "m-admin",
+      `/logistics/eligibility-attestations/${attestation.id}`,
+      { method: "DELETE" },
+    );
+    expect(removed.status).toBe(200);
+    const gone = await call(
+      lab,
+      "m-admin",
+      "/logistics/eligibility-attestations?member_id=m-alpha",
+    );
+    expect(((await gone.json()) as { attestations: unknown[] }).attestations).toEqual([]);
+
+    const audit = lab.mock.store
+      .listAuditEvents()
+      .filter((event) => event.type.startsWith("rec_letter_attestation."));
+    expect(audit.map((event) => event.type).toSorted()).toEqual([
+      "rec_letter_attestation.deleted",
+      "rec_letter_attestation.recorded",
+    ]);
+    expect(audit[0]?.details).toMatchObject({ member_id: "m-alpha", criterion: "hours" });
+    expect(JSON.stringify(audit)).not.toContain(ATTEST_NOTE);
+  });
+
+  it("refuses members and the service token, and bad input", async () => {
+    const lab = await startLab();
+    for (const who of ["m-alpha", "m-beta", "service"]) {
+      expect((await call(lab, who, "/logistics/eligibility-attestations")).status).toBe(403);
+      expect(
+        (
+          await call(lab, who, "/logistics/eligibility-attestations", {
+            method: "POST",
+            body: JSON.stringify({ member_id: who, criterion: "hours" }),
+          })
+        ).status,
+      ).toBe(403);
+      expect(
+        (await call(lab, who, "/logistics/eligibility-attestations/x", { method: "DELETE" }))
+          .status,
+      ).toBe(403);
+    }
+    const post = (payload: object) =>
+      call(lab, "m-admin", "/logistics/eligibility-attestations", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    expect((await post({ member_id: "m-nobody", criterion: "hours" })).status).toBe(404);
+    expect((await post({ member_id: "m-alpha", criterion: "freeze" })).status).toBe(400);
+    expect(
+      (await call(lab, "m-admin", "/logistics/eligibility-attestations/x", { method: "DELETE" }))
+        .status,
+    ).toBe(404);
+  });
+});
+
+describe("backfilled hours", () => {
+  it("counts past months a member adds to their own schedule", async () => {
+    const lab = await startLab();
+    const read = async () =>
+      (await (await call(lab, "m-alpha", "/logistics/eligibility/me")).json()) as {
+        status: string;
+        hours: { status: string; qualifying_months: number; months_without_data: string[] };
+      };
+    const before = await read();
+    expect(before.status).toBe("insufficient_data");
+    expect(before.hours.months_without_data).toContain("2025-02");
+
+    // Five months of 2025 committed at 25 h/week, entered after the fact.
+    const saved = await call(lab, "m-alpha", "/lab/members/m-alpha", {
+      method: "PUT",
+      body: JSON.stringify({
+        availability: [
+          { start: "2025-02-01", end: "2025-06-30", hours_per_week: 25, project: "Backfill" },
+        ],
+      }),
+    });
+    expect(saved.status).toBe(200);
+    const after = await read();
+    expect(after.hours).toMatchObject({ status: "met", qualifying_months: 5 });
+    expect(after.hours.months_without_data).not.toContain("2025-02");
+    expect(after.status).toBe("eligible");
+  });
+});

@@ -75,6 +75,7 @@ import type {
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
 import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
+import type { AdminBotRecLetterAttestation } from "../contracts/rec-letter-attestations.js";
 import type { AdminBotRecLetterFreezeIncident } from "../contracts/rec-letter-freezes.js";
 import type { ReferenceScan } from "../contracts/reference-scans.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
@@ -151,6 +152,7 @@ import {
 } from "./sqlite.member-columns.js";
 import { escalatedMemberNotificationsSql } from "./sqlite.member-notifications.js";
 import { migratePaperSlotColumns } from "./sqlite.paper-slot-migration.js";
+import { SqliteRecLetterAttestations } from "./sqlite.rec-letter-attestations.js";
 import { SqliteRecLetterFreezeIncidents } from "./sqlite.rec-letter-freezes.js";
 import {
   REGISTRATION_COLUMNS,
@@ -251,6 +253,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   private readonly versions: SqliteTableVersions;
   private readonly audit: SqliteAuditLog;
   private readonly recLetterFreezes: SqliteRecLetterFreezeIncidents;
+  private readonly recLetterAttestations: SqliteRecLetterAttestations;
 
   constructor(readonly databasePath: string) {
     ensureDatabaseDirectory(databasePath);
@@ -262,6 +265,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.versions = new SqliteTableVersions(this.db);
     this.audit = new SqliteAuditLog(this.db);
     this.recLetterFreezes = new SqliteRecLetterFreezeIncidents(this.db);
+    this.recLetterAttestations = new SqliteRecLetterAttestations(this.db);
     // SQLite's built-in lower() only handles ASCII; use the same fold as the in-memory store.
     this.db.function("adminbot_lower", { deterministic: true }, (value) =>
       String(value ?? "").toLowerCase(),
@@ -3292,6 +3296,18 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   deleteRecLetterFreezeIncident(incidentId: string): boolean {
     return this.recLetterFreezes.delete(incidentId);
+  }
+
+  saveRecLetterAttestation(attestation: AdminBotRecLetterAttestation): void {
+    this.recLetterAttestations.save(attestation);
+  }
+
+  listRecLetterAttestations(memberId?: string): AdminBotRecLetterAttestation[] {
+    return this.recLetterAttestations.list(memberId);
+  }
+
+  deleteRecLetterAttestation(attestationId: string): boolean {
+    return this.recLetterAttestations.delete(attestationId);
   }
 
   /** The queue's rows; merge and purge repoint member_id, and they move the roster generation. */

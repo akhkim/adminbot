@@ -8,13 +8,16 @@ import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import type { LogisticsRequest } from "../api/logistics.ts";
 import {
+  createRecLetterAttestation,
   createRecLetterFreezeIncident,
+  deleteRecLetterAttestation,
   deleteRecLetterFreezeIncident,
   fetchOwnRecLetterEligibility,
   fetchRecLetterEligibility,
   fetchRecLetterEligibilitySummaries,
   fetchRecLetterFreezeIncidents,
   type RecLetterAdminEligibility,
+  type RecLetterAttestationCriterion,
   type RecLetterEligibility,
   type RecLetterEligibilitySummary,
   type RecLetterFreezeIncident,
@@ -57,6 +60,20 @@ export type RecLetterEligibilityState = {
     deletingId: string | null;
     form: RecLetterFreezeForm;
   };
+  /** The admin's confirm-a-criterion controls on the open request's panel. */
+  attest: {
+    note: string;
+    saving: RecLetterAttestationCriterion | null;
+    removingId: string | null;
+    error: string | null;
+  };
+};
+
+const EMPTY_ATTEST: RecLetterEligibilityState["attest"] = {
+  note: "",
+  saving: null,
+  removingId: null,
+  error: null,
 };
 
 export const EMPTY_FREEZE_FORM: RecLetterFreezeForm = {
@@ -82,6 +99,7 @@ export function createRecLetterEligibilityState(): RecLetterEligibilityState {
       deletingId: null,
       form: EMPTY_FREEZE_FORM,
     },
+    attest: EMPTY_ATTEST,
   };
 }
 
@@ -307,6 +325,66 @@ export async function removeRecLetterFreezeIncident(
   invalidateResults(host);
   await loadRecLetterFreezeIncidents(host);
   return true;
+}
+
+/**
+ * Confirms a criterion for the member whose letter request is open, with the note typed beside it.
+ *
+ * The service records who and when, audits it, and counts the criterion as met; the panel is then
+ * re-read rather than patched, like a freeze, so the verdict shown is the service's.
+ */
+export async function recordRecLetterAttestation(
+  host: RecLetterEligibilityHost,
+  criterion: RecLetterAttestationCriterion,
+): Promise<boolean> {
+  const session = wire(host);
+  const memberId = host.adminBotRecLetter.detail.value?.member.id;
+  if (!session || !memberId) {
+    return false;
+  }
+  const note = host.adminBotRecLetter.attest.note.trim();
+  patch(host, "attest", { saving: criterion, error: null });
+  const result = await createRecLetterAttestation(
+    { member_id: memberId, criterion, ...(note ? { note } : {}) },
+    session.token,
+    session.baseUrl,
+  );
+  if (!stillSignedInAs(session.token)) {
+    return false;
+  }
+  if (!result.ok) {
+    patch(host, "attest", { saving: null, error: failureText(result) });
+    return false;
+  }
+  host.adminBotRecLetter = { ...host.adminBotRecLetter, attest: EMPTY_ATTEST };
+  invalidateResults(host);
+  return true;
+}
+
+export async function removeRecLetterAttestation(
+  host: RecLetterEligibilityHost,
+  attestationId: string,
+): Promise<boolean> {
+  const session = wire(host);
+  if (!session) {
+    return false;
+  }
+  patch(host, "attest", { removingId: attestationId, error: null });
+  const result = await deleteRecLetterAttestation(attestationId, session.token, session.baseUrl);
+  if (!stillSignedInAs(session.token)) {
+    return false;
+  }
+  if (!result.ok) {
+    patch(host, "attest", { removingId: null, error: failureText(result) });
+    return false;
+  }
+  patch(host, "attest", { removingId: null });
+  invalidateResults(host);
+  return true;
+}
+
+export function setRecLetterAttestationNote(host: RecLetterEligibilityHost, note: string): void {
+  patch(host, "attest", { note });
 }
 
 export function setRecLetterFreezeForm(

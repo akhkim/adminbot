@@ -18,9 +18,10 @@ import { readApiJson } from "./api-json.ts";
 
 /**
  * Where a member's pin came from, as the service reports it. `checkin` is the member's own answer
- * to "Are you in ...?"; `roster` is any other stated field.
+ * to "Are you in ...?"; `roster` is any other stated field; `login` is the day's IP reading;
+ * `device` is the city the browser's time zone is named for.
  */
-export type MemberMapSource = "slack" | "roster" | "login" | "checkin";
+export type MemberMapSource = "slack" | "roster" | "login" | "checkin" | "device";
 
 /** The member's Slack zone keeps a clock this far from the city they are placed in (admin only). */
 export type MemberMapTimezoneMismatch = { slack_tz: string; place_tz: string; hours: number };
@@ -41,6 +42,16 @@ export type MemberMapMember = {
   /** When the source that placed them said so: "stated 3 days ago", "sign-in 2 days ago". */
   located_at?: string;
   tz_mismatch?: MemberMapTimezoneMismatch;
+  /**
+   * Admin only: the service's own short phrase for how this person was placed and how fresh it is
+   * ("IP today", "stated 3d ago", "profile · IP ignored (VPN?)"). Shown verbatim in the admin
+   * detail and nowhere else; the card never composes its own from the fields above when this is set.
+   */
+  source_label?: string;
+  /** Admin only: the sign-in IP was not used because it looked like a VPN exit. */
+  ip_ignored?: "suspected_vpn";
+  /** When the IP reading behind a `login` placement was taken. */
+  ip_observed_at?: string;
 };
 
 /** One city the gazetteer knows, with however much of its membership the caller may see. */
@@ -202,7 +213,13 @@ type RawPlace = {
 
 // Anything else -- an older service, a typo -- is dropped, and the card says nothing about how the
 // pin was placed rather than saying something wrong.
-const SOURCES: ReadonlySet<MemberMapSource> = new Set(["slack", "roster", "login", "checkin"]);
+const SOURCES: ReadonlySet<MemberMapSource> = new Set([
+  "slack",
+  "roster",
+  "login",
+  "checkin",
+  "device",
+]);
 const PRECISIONS: ReadonlySet<MemberMapPrecision> = new Set(["city", "timezone", "country"]);
 
 function asNumber(value: unknown): number {
@@ -249,6 +266,9 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
           precision?: unknown;
           located_at?: unknown;
           tz_mismatch?: unknown;
+          source_label?: unknown;
+          ip_ignored?: unknown;
+          ip_observed_at?: unknown;
         };
         if (!isRenderableName(record?.name)) {
           return [];
@@ -264,6 +284,10 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
           : undefined;
         const locatedAt = typeof record.located_at === "string" ? record.located_at.trim() : "";
         const mismatch = toMismatch(record.tz_mismatch);
+        const sourceLabel =
+          typeof record.source_label === "string" ? record.source_label.trim().slice(0, 80) : "";
+        const ipObservedAt =
+          typeof record.ip_observed_at === "string" ? record.ip_observed_at.trim() : "";
         const member: MemberMapMember = {
           member_id: String(record.member_id ?? ""),
           name: record.name,
@@ -273,6 +297,13 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
           ...(precision ? { precision } : {}),
           ...(locatedAt && !Number.isNaN(Date.parse(locatedAt)) ? { located_at: locatedAt } : {}),
           ...(mismatch ? { tz_mismatch: mismatch } : {}),
+          ...(sourceLabel ? { source_label: sourceLabel } : {}),
+          ...(record.ip_ignored === "suspected_vpn"
+            ? { ip_ignored: "suspected_vpn" as const }
+            : {}),
+          ...(ipObservedAt && !Number.isNaN(Date.parse(ipObservedAt))
+            ? { ip_observed_at: ipObservedAt }
+            : {}),
         };
         return [member];
       })

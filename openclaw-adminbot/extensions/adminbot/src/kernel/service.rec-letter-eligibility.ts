@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { AdminBotAuditEvent, AdminBotLabMember } from "../contracts/actions.js";
+import type { AdminBotRecLetterAttestation } from "../contracts/rec-letter-attestations.js";
 import type { AdminBotRecLetterFreezeIncident } from "../contracts/rec-letter-freezes.js";
 import {
   adminBotRecLetterSummaryLimit,
+  parseRecLetterAttestationInput,
   parseRecLetterFreezeIncidentInput,
   recLetterEligibility,
   redactRecLetterEligibilityForMember,
@@ -11,8 +13,8 @@ import {
 } from "../workflows/logistics/rec-letter-eligibility.js";
 import type { AdminBotServiceResponse, AdminBotServiceStore } from "./service.js";
 
-// Recommendation-letter eligibility: the freeze incidents an admin records, and the reads that
-// turn them, the meeting rosters and the availability rows into a verdict.
+// Recommendation-letter eligibility: the freeze incidents and attestations an admin records, and
+// the reads that turn them, the meeting rosters and the availability rows into a verdict.
 //
 // Advisory: nothing here blocks a request. The admin reads the full result next to the request
 // it concerns; a member reads only their own, without the incident records behind a freeze.
@@ -41,10 +43,12 @@ export class RecLetterEligibilityService {
   private evaluate(
     member: AdminBotLabMember,
     incidents: AdminBotRecLetterFreezeIncident[],
+    attestations: AdminBotRecLetterAttestation[],
   ): RecLetterEligibility {
     return recLetterEligibility({
       member,
       incidents,
+      attestations,
       meetings: this.store.listMeetings(),
       now: this.now(),
     });
@@ -126,8 +130,78 @@ export class RecLetterEligibilityService {
     return { ok: true, status: 200, payload: { deleted: true, id: incidentId } };
   }
 
+  /** Every attestation on file, or one member's. Admin-only at the route; notes included. */
+  listAttestations(
+    memberId?: string,
+  ): AdminBotServiceResponse<{ attestations: AdminBotRecLetterAttestation[] }> {
+    return {
+      ok: true,
+      status: 200,
+      payload: { attestations: this.store.listRecLetterAttestations(memberId) },
+    };
+  }
+
   /**
-   * The admin's view of one member: the full result and the incidents behind any freeze.
+   * Records an admin's confirmation that a member meets one criterion -- for the months the
+   * availability page never saw, or the meetings nobody exported a roster for. It counts the
+   * criterion as met and is labelled as confirmed, never passed off as computed.
+   */
+  createAttestation(
+    input: unknown,
+    actor: string,
+  ): AdminBotServiceResponse<AdminBotRecLetterAttestation> {
+    const parsed = parseRecLetterAttestationInput(input);
+    if (!parsed.ok) {
+      return fail(400, parsed.error);
+    }
+    if (!this.store.getLabMember(parsed.value.member_id)) {
+      return fail(404, `unknown member ${parsed.value.member_id}`);
+    }
+    const attestation: AdminBotRecLetterAttestation = {
+      ...parsed.value,
+      id: `rlattest_${randomUUID()}`,
+      created_by: actor,
+      created_at: this.now().toISOString(),
+    };
+    this.store.saveRecLetterAttestation(attestation);
+    // As with freezes, the note stays out of the audit log, which is read more widely.
+    this.audit({
+      type: "rec_letter_attestation.recorded",
+      actor,
+      details: {
+        attestation_id: attestation.id,
+        member_id: attestation.member_id,
+        criterion: attestation.criterion,
+      },
+    });
+    return { ok: true, status: 201, payload: attestation };
+  }
+
+  deleteAttestation(
+    attestationId: string,
+    actor: string,
+  ): AdminBotServiceResponse<{ deleted: true; id: string }> {
+    const existing = this.store
+      .listRecLetterAttestations()
+      .find((attestation) => attestation.id === attestationId);
+    if (!existing || !this.store.deleteRecLetterAttestation(attestationId)) {
+      return fail(404, `unknown attestation ${attestationId}`);
+    }
+    this.audit({
+      type: "rec_letter_attestation.deleted",
+      actor,
+      details: {
+        attestation_id: existing.id,
+        member_id: existing.member_id,
+        criterion: existing.criterion,
+      },
+    });
+    return { ok: true, status: 200, payload: { deleted: true, id: attestationId } };
+  }
+
+  /**
+   * The admin's view of one member: the full result, the incidents behind any freeze and the
+   * attestations behind any confirmed criterion.
    *
    * Reached by member id, or by the id of a request that member made -- which is how the request
    * detail asks, without the UI having to know whose request it is reading.
@@ -136,6 +210,7 @@ export class RecLetterEligibilityService {
     member: { id: string; name: string };
     eligibility: RecLetterEligibility;
     incidents: AdminBotRecLetterFreezeIncident[];
+    attestations: AdminBotRecLetterAttestation[];
   }> {
     let memberId = target.member_id?.trim();
     const requestId = target.request_id?.trim();
@@ -154,13 +229,15 @@ export class RecLetterEligibilityService {
       return fail(404, `unknown member ${memberId}`);
     }
     const incidents = this.store.listRecLetterFreezeIncidents(member.id);
+    const attestations = this.store.listRecLetterAttestations(member.id);
     return {
       ok: true,
       status: 200,
       payload: {
         member: { id: member.id, name: member.name },
-        eligibility: this.evaluate(member, incidents),
+        eligibility: this.evaluate(member, incidents, attestations),
         incidents,
+        attestations,
       },
     };
   }
@@ -180,12 +257,13 @@ export class RecLetterEligibilityService {
       return fail(400, `at most ${adminBotRecLetterSummaryLimit} member ids per read`);
     }
     const incidents = this.store.listRecLetterFreezeIncidents();
+    const attestations = this.store.listRecLetterAttestations();
     const summaries = unique.flatMap((memberId): RecLetterEligibilitySummaryRow[] => {
       const member = this.store.getLabMember(memberId);
       if (!member) {
         return [];
       }
-      const result = this.evaluate(member, incidents);
+      const result = this.evaluate(member, incidents, attestations);
       return [
         {
           member_id: member.id,
@@ -208,7 +286,11 @@ export class RecLetterEligibilityService {
     if (!member) {
       return fail(404, `unknown member ${memberId}`);
     }
-    const result = this.evaluate(member, this.store.listRecLetterFreezeIncidents(member.id));
+    const result = this.evaluate(
+      member,
+      this.store.listRecLetterFreezeIncidents(member.id),
+      this.store.listRecLetterAttestations(member.id),
+    );
     return { ok: true, status: 200, payload: redactRecLetterEligibilityForMember(result) };
   }
 }

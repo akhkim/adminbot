@@ -161,6 +161,40 @@ export const logisticsRoutes: readonly Route[] = [
       );
     }),
   ),
+  // An admin's confirmation that a member meets a criterion the records cannot show. Admin
+  // sessions only, like the freezes: each entry has a named admin behind it and a note.
+  route(
+    ["GET", "POST"],
+    "/logistics/eligibility-attestations",
+    adminSessionOnly(async ({ req, res, url, ctx, principal }) => {
+      if (req.method === "GET") {
+        sendServiceResult(
+          res,
+          ctx.service
+            .recLetterEligibility()
+            .listAttestations(url.searchParams.get("member_id") ?? undefined),
+        );
+        return;
+      }
+      sendServiceResult(
+        res,
+        ctx.service
+          .recLetterEligibility()
+          .createAttestation(await readJsonOrEmpty(req), principalActor(principal)),
+      );
+    }),
+  ),
+  del(
+    /^\/logistics\/eligibility-attestations\/([^/]+)$/,
+    adminSessionOnly(({ res, ctx, principal, params }) => {
+      sendServiceResult(
+        res,
+        ctx.service
+          .recLetterEligibility()
+          .deleteAttestation(decodeURIComponent(params[1] ?? ""), principalActor(principal)),
+      );
+    }),
+  ),
   post(
     "/logistics/rec-letter-channel/run",
     privilegedOnly(async ({ res, principal, ctx }) => {

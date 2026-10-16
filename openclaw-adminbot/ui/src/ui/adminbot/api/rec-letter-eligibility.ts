@@ -1,9 +1,10 @@
-// AdminBot client: recommendation-letter eligibility and the freeze incidents behind it.
+// AdminBot client: recommendation-letter eligibility, the freeze incidents and the admin
+// attestations behind it.
 //
-// Mirrors the eligibility and freeze-incident routes in the service's api/routes/logistics.ts.
-// Advisory reads only, apart from the admin's record and delete: nothing here can hold up a
-// letter request, and the service, not this file, decides who may read what. A member's own read
-// comes back already stripped of incident ids and notes.
+// Mirrors the eligibility, freeze-incident and attestation routes in the service's
+// api/routes/logistics.ts. Advisory reads only, apart from the admin's records and deletes:
+// nothing here can hold up a letter request, and the service, not this file, decides who may read
+// what. A member's own read comes back already stripped of incident ids and admin notes.
 import { authedJson, type AuthResult, calendarFailure } from "../auth/session.ts";
 
 export type RecLetterEligibilityStatus = "eligible" | "frozen" | "not_yet" | "insufficient_data";
@@ -11,8 +12,18 @@ export type RecLetterCriterionStatus = "met" | "not_met" | "insufficient_data";
 
 export type RecLetterHoursMonth = {
   month: string;
-  average_weekly_hours: number;
+  /** False when no availability row covers the month: unknown, not zero hours. */
+  has_data?: boolean;
+  average_weekly_hours: number | null;
   qualifies: boolean;
+};
+
+/** An admin's confirmation of a criterion. A member's read carries only the id and the time. */
+export type RecLetterAttested = {
+  attestation_id: string;
+  at: string;
+  by?: string;
+  note?: string;
 };
 
 export type RecLetterAttendanceWindow = {
@@ -34,7 +45,12 @@ export type RecLetterAttendanceWindow = {
 
 export type RecLetterEligibilityGap =
   | { code: "frozen"; frozen_until: string }
-  | { code: "hours_no_data" }
+  | {
+      code: "hours_not_enough_history";
+      qualifying_months: number;
+      required_months: number;
+      months_without_data: string[];
+    }
   | { code: "hours_short"; qualifying_months: number; required_months: number }
   | { code: "attendance_no_window" }
   | { code: "attendance_below_threshold" };
@@ -57,10 +73,17 @@ export type RecLetterEligibility = {
     qualifying_months: number;
     required_months: number;
     min_weekly_hours: number;
+    months_with_data?: number;
+    /** YYYY-MM months no availability row covers. */
+    months_without_data?: string[];
     months: RecLetterHoursMonth[];
+    attested?: RecLetterAttested;
   };
   attendance: {
     status: RecLetterCriterionStatus;
+    /** Whether attendance counts toward the verdict. Off until attendance is tracked. */
+    counted?: boolean;
+    attested?: RecLetterAttested;
     min_rate: number;
     min_roster_coverage: number;
     window_months: number;
@@ -131,10 +154,22 @@ export type RecLetterFreezeIncidentInput = {
   note?: string;
 };
 
+export type RecLetterAttestationCriterion = "hours" | "attendance";
+
+export type RecLetterAttestation = {
+  id: string;
+  member_id: string;
+  criterion: RecLetterAttestationCriterion;
+  note?: string;
+  created_by: string;
+  created_at: string;
+};
+
 export type RecLetterAdminEligibility = {
   member: { id: string; name: string };
   eligibility: RecLetterEligibility;
   incidents: RecLetterFreezeIncident[];
+  attestations: RecLetterAttestation[];
 };
 
 export type RecLetterEligibilitySummary = {
@@ -200,6 +235,9 @@ export async function fetchRecLetterEligibility(
             eligibility: body.eligibility,
             incidents: Array.isArray(body.incidents)
               ? (body.incidents as RecLetterFreezeIncident[])
+              : [],
+            attestations: Array.isArray(body.attestations)
+              ? (body.attestations as RecLetterAttestation[])
               : [],
           }
         : null,
@@ -273,6 +311,30 @@ export function deleteRecLetterFreezeIncident(id: string, sessionToken: string, 
   return call<{ deleted: boolean; id: string }>(
     baseUrl,
     `/logistics/freeze-incidents/${encodeURIComponent(id)}`,
+    "DELETE",
+    sessionToken,
+  );
+}
+
+/** Admin-only: confirm that a member meets a criterion the records cannot show. */
+export function createRecLetterAttestation(
+  input: { member_id: string; criterion: RecLetterAttestationCriterion; note?: string },
+  sessionToken: string,
+  baseUrl: string,
+) {
+  return call<RecLetterAttestation>(
+    baseUrl,
+    "/logistics/eligibility-attestations",
+    "POST",
+    sessionToken,
+    input,
+  );
+}
+
+export function deleteRecLetterAttestation(id: string, sessionToken: string, baseUrl: string) {
+  return call<{ deleted: boolean; id: string }>(
+    baseUrl,
+    `/logistics/eligibility-attestations/${encodeURIComponent(id)}`,
     "DELETE",
     sessionToken,
   );
