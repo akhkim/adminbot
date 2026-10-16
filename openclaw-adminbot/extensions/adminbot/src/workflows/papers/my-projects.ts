@@ -30,6 +30,7 @@ export type AdminBotMyProjectSummary = {
   paper_id: string;
   title: string;
   alias?: string;
+  started_on?: string;
   venue?: string;
   deadline?: string;
   venue_decision?: string;
@@ -87,6 +88,7 @@ export function summarizeProject(
     paper_id: paper.id,
     title: paper.title,
     ...(paper.alias ? { alias: paper.alias } : {}),
+    ...(paper.started_on ? { started_on: paper.started_on } : {}),
     ...(paper.venue ? { venue: paper.venue } : {}),
     ...(paper.deadline ? { deadline: paper.deadline } : {}),
     ...(paper.venue_decision ? { venue_decision: paper.venue_decision } : {}),

@@ -18,6 +18,7 @@ import { renderBlockerBoard } from "./blocker-report.ts";
 import { renderDecisionBanners } from "./decisions.ts";
 import { projectsListMode, renderListMode, setProjectsListMode } from "./full-views.ts";
 import {
+  compareProjects,
   navigateToProject,
   ownPapers,
   PROJECT_LANES,
@@ -196,8 +197,13 @@ export function renderProjectsOverview(state: OverviewState, props: PaperWorkspa
   const hiddenIds = readHiddenPapers(state.memberId);
   // Read once per render: this is synchronous storage, and a thirty-paper list would otherwise
   // parse the same JSON thirty times.
-  const { visible, hidden: tucked } = partitionHiddenPapers(ownPapers(state), hiddenIds);
-  const projects = (state.myProjects ?? []).filter((project) => !hiddenIds.has(project.paper_id));
+  const { visible, hidden: tucked } = partitionHiddenPapers(
+    ownPapers(state).sort(compareProjects),
+    hiddenIds,
+  );
+  const projects = (state.myProjects ?? [])
+    .filter((project) => !hiddenIds.has(project.paper_id))
+    .sort(compareProjects);
   const activeIds = new Set((state.myProjects ?? []).map((project) => project.paper_id));
   // Only meaningful once the active list is in: before that every paper would look inactive.
   const others =

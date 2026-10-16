@@ -3,6 +3,7 @@ import { isProfileBlocked } from "./adminbot/views/profile-gate.ts";
 import { html, nothing } from "lit";
 import { t } from "../i18n/index.ts";
 import { visibleTabsForMember, type AccessRole } from "./adminbot/access.ts";
+import { navigateToProject } from "./adminbot/projects/model.ts";
 import {
   createChatSessionsLoadOverrides,
   flushChatQueueAfterIdleSessionReconciliation,
@@ -323,6 +324,10 @@ export function renderTab(state: AppViewState, tab: Tab, opts?: { collapsed?: bo
           return;
         }
         event.preventDefault();
+        if (tab === "myWork") {
+          navigateToProject(state, null);
+          return;
+        }
         if (tab === "chat") {
           if (!state.sessionKey) {
             const mainSessionKey = resolveSidebarChatSessionKey(state);

@@ -23,6 +23,32 @@ afterEach(() => {
 });
 
 describe("the card list", () => {
+  it("uses the sidebar ordering: newest start, non-accepted, then name", () => {
+    const projects = [
+      {
+        ...summaryFor(paper()),
+        paper_id: "accepted",
+        alias: "alpha",
+        started_on: "2026-10-01",
+        venue_decision: "accept",
+      },
+      { ...summaryFor(paper()), paper_id: "zebra", alias: "zebra", started_on: "2026-10-01" },
+      { ...summaryFor(paper()), paper_id: "beta", alias: "beta", started_on: "2026-10-01" },
+      { ...summaryFor(paper()), paper_id: "newest", started_on: "2026-10-02" },
+      { ...summaryFor(paper()), paper_id: "undated" },
+    ];
+    const { container } = drawOverview({ projects });
+    expect(
+      [...container.querySelectorAll(".project-card")].map((el) => el.getAttribute("data-testid")),
+    ).toEqual([
+      "project-card-newest",
+      "project-card-beta",
+      "project-card-zebra",
+      "project-card-accepted",
+      "project-card-undated",
+    ]);
+  });
+
   it("draws a card per active project and opens on the cards, not a whole-page view", () => {
     const { container } = drawOverview();
     expect(container.querySelector('[data-testid="project-card-p1"]')?.textContent).toContain(

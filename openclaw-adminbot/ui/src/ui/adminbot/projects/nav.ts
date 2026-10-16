@@ -8,6 +8,7 @@ import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { readHiddenPapers, toggleHiddenPaper } from "../hidden-papers.ts";
 import {
+  compareProjects,
   laneDotTitle,
   navigateToProject,
   openLanes,
@@ -40,6 +41,13 @@ export function renderProjectsNav(state: ProjectsNavState) {
   if (!projects || projects.length === 0 || state.settings.navCollapsed) {
     return nothing;
   }
+  return html`<details class="projects-nav-disclosure">
+    <summary class="projects-nav__toggle">Papers</summary>
+    ${renderProjectsNavItems(state, [...projects].sort(compareProjects))}
+  </details>`;
+}
+
+function renderProjectsNavItems(state: ProjectsNavState, projects: ProjectSummary[]) {
   const hidden = readHiddenPapers(state.memberId);
   const current =
     state.tab === "myWork"

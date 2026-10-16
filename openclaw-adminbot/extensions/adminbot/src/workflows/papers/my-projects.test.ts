@@ -34,6 +34,13 @@ describe("isProjectActive", () => {
 });
 
 describe("summarizeProject", () => {
+  it("includes the project start date for sidebar sorting", () => {
+    expect(summarizeProject(paper({ started_on: "2026-10-01" }), [], []).started_on).toBe(
+      "2026-10-01",
+    );
+    expect(summarizeProject(paper(), [], []).started_on).toBeUndefined();
+  });
+
   it("counts a fresh paper's open work per lane, with only the unblocked items ready", () => {
     const summary = summarizeProject(paper(), [], []);
     expect(summary.lanes.core.open).toBeGreaterThan(0);

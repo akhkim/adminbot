@@ -13,6 +13,18 @@ import { findOwnMember } from "../views/profile-fields.ts";
 
 export type { AdminBotMyProjectSummary as ProjectSummary };
 
+/** Shared ordering for the sidebar and project lists; missing start dates sort last. */
+export function compareProjects(
+  a: Pick<AdminBotMyProjectSummary, "started_on" | "venue_decision" | "alias" | "title">,
+  b: Pick<AdminBotMyProjectSummary, "started_on" | "venue_decision" | "alias" | "title">,
+): number {
+  return (
+    (b.started_on ?? "").localeCompare(a.started_on ?? "") ||
+    Number(a.venue_decision === "accept") - Number(b.venue_decision === "accept") ||
+    (a.alias || a.title).localeCompare(b.alias || b.title, undefined, { sensitivity: "base" })
+  );
+}
+
 export type ProjectLaneSegment = "writing" | "venue" | "archival" | "talk" | "social";
 
 export type ProjectLane = {
