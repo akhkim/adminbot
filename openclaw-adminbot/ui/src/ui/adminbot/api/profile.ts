@@ -106,12 +106,13 @@ export type LocationCheckin = {
   reason:
     | "no_guess"
     | "timezone_mismatch"
+    | "ip_suspected_vpn"
     | "signals_agree"
     | "answered"
     | "snoozed"
     | "declined"
     | "hidden";
-  suggestion?: { city: string; source: "login" | "slack_tz" | "stored" };
+  suggestion?: { city: string; source: "login" | "device_tz" | "slack_tz" | "stored" };
   last_answered_at?: string;
   last_answered_city?: string;
   snoozed_until?: string;

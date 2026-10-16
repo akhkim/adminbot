@@ -77,7 +77,7 @@ export function applyCors(
   res.setHeader("Vary", "Origin");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Authorization, Content-Type, Idempotency-Key, Prefer, If-None-Match",
+    "Authorization, Content-Type, Idempotency-Key, Prefer, If-None-Match, X-AdminBot-Device-TZ, X-AdminBot-Device-TZ-Offset",
   );
   // A cross-origin script cannot read ETag unless it is exposed, and without it the console has
   // nothing to revalidate with.
@@ -105,6 +105,24 @@ export function parseOrigins(value: string | undefined): string[] | undefined {
 //      Production reaches the service through a Cloudflare tunnel.
 //   2. The right-most X-Forwarded-For entry: the address the nearest proxy saw connect to it.
 // Without trusted proxy headers, both are ignored and the socket peer is used.
+/**
+ * The clock the member's browser reported: `X-AdminBot-Device-TZ` (an IANA zone name) and
+ * `X-AdminBot-Device-TZ-Offset` (minutes east of UTC). Both optional and both untrusted -- the zone
+ * is validated where it is used, and a malformed offset is dropped here.
+ */
+export function deviceClock(
+  req: IncomingMessage,
+): { tz?: string; offsetMinutes?: number } | undefined {
+  const tz = firstHeaderValue(req.headers["x-adminbot-device-tz"])?.trim().slice(0, 64);
+  const rawOffset = firstHeaderValue(req.headers["x-adminbot-device-tz-offset"])?.trim();
+  const offset = rawOffset && /^[+-]?\d{1,4}$/u.test(rawOffset) ? Number(rawOffset) : undefined;
+  const offsetMinutes = offset !== undefined && Math.abs(offset) <= 14 * 60 ? offset : undefined;
+  if (!tz && offsetMinutes === undefined) {
+    return undefined;
+  }
+  return { ...(tz ? { tz } : {}), ...(offsetMinutes !== undefined ? { offsetMinutes } : {}) };
+}
+
 export function remoteIp(req: IncomingMessage, trustProxyHeaders: boolean): string | undefined {
   if (trustProxyHeaders) {
     const cloudflare = firstHeaderValue(req.headers["cf-connecting-ip"])?.trim();

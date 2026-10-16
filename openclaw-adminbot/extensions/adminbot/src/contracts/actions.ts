@@ -977,6 +977,10 @@ export const adminBotInferredLocationMemberFields = [
   "last_login_city",
   "last_login_region",
   "last_login_timezone",
+  "last_ip_observed_at",
+  "last_ip_suspected_vpn",
+  "last_device_tz",
+  "last_device_tz_at",
 ] as const;
 
 /**
@@ -1731,6 +1735,26 @@ export type AdminBotLabMemberInput = {
    */
   slack_tz?: string;
   slack_tz_observed_at?: string;
+  /**
+   * When the account's IP was last geolocated, and whether that reading looked like a VPN.
+   *
+   * Written by the daily observation on any authenticated request (auth.ts `noteAccountUse`) and by
+   * the sign-in itself, at most once per member per UTC day for an unchanged address. A trusted
+   * reading also rewrites the `last_login_*` place fields above; a reading whose city keeps a clock
+   * more than two hours from the member's device (or Slack) zone writes only these two, so a VPN
+   * exit city never reaches anything that places the member. The map dates the IP city by this
+   * stamp ("IP today"), not by `last_login_at`, which only moves when somebody signs in.
+   */
+  last_ip_observed_at?: string;
+  last_ip_suspected_vpn?: boolean;
+  /**
+   * The IANA zone the member's browser reported (`Intl.DateTimeFormat().resolvedOptions().timeZone`),
+   * and when. A setting on the device in front of them, so it does not move when a VPN does --
+   * which is what lets it vouch for, or veto, an IP city. Only a zone name: no coordinates, no
+   * permission prompt. Written by the daily observation only, never self-editable.
+   */
+  last_device_tz?: string;
+  last_device_tz_at?: string;
   availability?: AdminBotAvailabilityRow[];
   time_off?: AdminBotTimeOffRow[];
   // Dated milestones the member is planning back from. Self-editable like the two lists above.
@@ -2664,6 +2688,7 @@ export type AdminBotAuditEvent = {
     | "profile_photo.polished"
     | "profile_photo.applied"
     | "auth.login_location_updated"
+    | "auth.login_location_suspected_vpn"
     // An admin opening, and dropping, a session that sees the lab as another member. Both halves
     // are recorded on the admin: "who looked at my account" is a question a member is entitled to
     // an answer to, and an unclosed start is itself worth being able to see.
@@ -2806,6 +2831,10 @@ export const adminBotLocationSources = [
   // compares against the latest entry *per source*, so alternating a zone and a city under one
   // name would make every write look new.
   "slack_timezone",
+  // The zone the member's browser reports, sent with their own requests. Like `slack_timezone` a
+  // zone their device sets, kept apart because it arrives on a different schedule (each day they
+  // use AdminBot) and is the signal the VPN check compares an IP city against.
+  "device_timezone",
   "admin",
 ] as const;
 
@@ -2852,6 +2881,12 @@ export type AdminBotMemberLocationEntry = {
   checkin?: AdminBotLocationCheckinOutcome;
   /** How an answer was given: picked from the city list, typed, or resolved from this device. */
   checkin_via?: AdminBotLocationCheckinVia;
+  /**
+   * Set on a `login_ip` row whose city keeps a clock more than two hours from the member's device
+   * zone (or their Slack zone, when the device sent none): most likely a VPN exit. Still logged, so
+   * the history shows what the address said, but it places nobody and drift detection skips it.
+   */
+  suspected_vpn?: boolean;
 };
 
 export type AdminBotLocationCheckinOutcome = "answered" | "snoozed" | "declined";
@@ -2866,6 +2901,8 @@ export type AdminBotLocationCheckin = {
    *   their Slack zone agrees with), and they have not answered in ADMINBOT_LOCATION_CHECKIN_DAYS.
    * - `timezone_mismatch`: the signals disagree -- the city that places them is more than two hours
    *   off the zone their Slack reports -- so the member is asked early.
+   * - `ip_suspected_vpn`: the latest IP reading was ignored because its city disagrees with the
+   *   device or Slack zone (probably a VPN), and no recent check-in says where they are.
    * Not due:
    * - `signals_agree`: a fresh sign-in city and the Slack zone agree, so there is nothing to ask.
    * - `answered` / `snoozed` / `declined` / `hidden`: the member already settled it.
@@ -2873,6 +2910,7 @@ export type AdminBotLocationCheckin = {
   reason:
     | "no_guess"
     | "timezone_mismatch"
+    | "ip_suspected_vpn"
     | "signals_agree"
     | "answered"
     | "snoozed"
@@ -2880,10 +2918,10 @@ export type AdminBotLocationCheckin = {
     | "hidden";
   /**
    * The best guess to confirm with one tap ("Are you in Toronto?"): a fresh sign-in city, then the
-   * city the Slack zone is named for, then the stored city. Absent when nothing places the member,
-   * in which case the prompt opens straight on the picker.
+   * city the device zone is named for, then the Slack zone's, then the stored city. Absent when
+   * nothing places the member, in which case the prompt opens straight on the picker.
    */
-  suggestion?: { city: string; source: "login" | "slack_tz" | "stored" };
+  suggestion?: { city: string; source: "login" | "device_tz" | "slack_tz" | "stored" };
   last_answered_at?: string;
   last_answered_city?: string;
   snoozed_until?: string;

@@ -22,7 +22,18 @@ import {
   parseAdminBotMemberRoles,
 } from "../../contracts/member-roles.js";
 import type { AdminBotServiceStore } from "../../kernel/service.js";
-import { isNewObservation, latestBySource, observationFor } from "../members/location-history.js";
+import {
+  isNewDailyObservation,
+  latestBySource,
+  observationFor,
+  utcDay,
+} from "../members/location-history.js";
+import {
+  freshSlackTz,
+  ipReadingVerdict,
+  memberMapVisibility,
+  usableDeviceZone,
+} from "../members/member-map.js";
 import { belongsOnSurface } from "../members/surface-membership.js";
 import { isTravelHistorySubject } from "../members/travel-history.js";
 import type { CalendarInviteRunner } from "../onboarding/calendar-invite.js";
@@ -233,6 +244,8 @@ export type AdminBotAuthServiceOptions = {
   // Fired (not awaited) after a sign-in stamped a city on the member: the meetup intros read it.
   // Gets only the member id, never the address or the place.
   afterLoginLocated?: (memberId: string) => void;
+  /** Where a best-effort side effect reports its failure. Never given an address. Default console. */
+  warn?: (message: string) => void;
   gatewayUrl?: string;
   sessionTtlMs?: number;
   now?: () => Date;
@@ -242,7 +255,16 @@ type LoginCredentials = {
   email: string;
   password: string;
   remoteIp?: string;
+  /** The zone the browser reported with the request, see `AdminBotDeviceClock`. */
+  device?: AdminBotDeviceClock;
 };
+
+/**
+ * What the member's browser said about its own clock, sent as request headers by the Control UI:
+ * the IANA zone name from `Intl.DateTimeFormat().resolvedOptions().timeZone` and the UTC offset in
+ * minutes east. A name only, never coordinates, and nothing the member is asked for.
+ */
+export type AdminBotDeviceClock = { tz?: string; offsetMinutes?: number };
 
 type ClaimRequest = LoginCredentials & { member_id: string };
 
@@ -317,6 +339,7 @@ export class AdminBotAuthService {
     | undefined
   >;
   private readonly afterLoginLocated?: (memberId: string) => void;
+  private readonly warn: (message: string) => void;
   private readonly gatewayUrl?: string;
   private readonly sessionTtlMs: number;
   private readonly now: () => Date;
@@ -325,11 +348,12 @@ export class AdminBotAuthService {
   private readonly failuresByKey = new Map<string, number[]>();
   private readonly inFlightByKey = new Map<string, number>();
   private readonly registrationDecisionsInFlight = new Set<string>();
-  // The last address each member's account was seen from, so noteAccountUse can skip the
-  // geolocation call for the overwhelming majority of requests that came from where the last one
-  // did. In memory on purpose: a restart costs one extra lookup per active member, which is a
-  // better trade than keeping a table of everybody's current IP on disk.
-  private readonly lastSeenIpByMember = new Map<string, string>();
+  // What noteAccountUse last looked up for each member: the UTC day, the address and the device
+  // zone. A request matching all three is skipped, so it is one lookup per member per day plus one
+  // per change of network or clock. In memory on purpose: after a restart the member record's own
+  // `last_ip_observed_at` stands in for the day (see noteAccountUse), which is a better trade than
+  // keeping a table of everybody's current IP on disk.
+  private readonly lastCheckByMember = new Map<string, { day: string; ip: string; tz: string }>();
 
   constructor(options: AdminBotAuthServiceOptions) {
     this.store = options.store;
@@ -340,6 +364,7 @@ export class AdminBotAuthService {
     this.sendPasswordResetEmail = options.sendPasswordResetEmail;
     this.geolocateIp = options.geolocateIp;
     this.afterLoginLocated = options.afterLoginLocated;
+    this.warn = options.warn ?? ((message: string) => console.warn(message));
     this.gatewayUrl = options.gatewayUrl?.trim() || undefined;
     this.sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
     this.now = options.now ?? (() => new Date());
@@ -480,7 +505,15 @@ export class AdminBotAuthService {
       if (this.geolocateIp && request.remoteIp) {
         // Not awaited: geolocation is a courtesy stamp on the member record, not part of the
         // sign-in itself, and must never make login wait on a third-party API.
-        void this.recordLoginLocation(member.id, request.remoteIp, loginEventId);
+        void this.recordLoginLocation(member.id, request.remoteIp, {
+          loginEventId,
+          ...(request.device ? { device: request.device } : {}),
+        });
+        this.lastCheckByMember.set(member.id, {
+          day: utcDay(this.now().toISOString()),
+          ip: request.remoteIp,
+          tz: request.device?.tz ?? "",
+        });
       }
       return { ok: true, status: 200, payload, sessionToken: payload.session_token };
     } finally {
@@ -532,18 +565,69 @@ export class AdminBotAuthService {
 
   // Fire-and-forget, same contract as the calendar invite and the approval email: the login has
   // already succeeded, so a slow or unreachable geolocation provider must never delay or fail it.
+  // Called at sign-in and by the daily check in noteAccountUse; the two differ only in whether
+  // there is a sign-in row to attach the place to.
   //
-  // Only the three inferred last_login_* fields are written. `location` and `slack_location` are
-  // self-reported and are deliberately never touched here -- an inferred country must not silently
-  // overwrite what a member told us about themselves.
+  // Only the inferred last_login_* / last_ip_* / last_device_* fields are written. `location` and
+  // `slack_location` are self-reported and are deliberately never touched here -- an inferred
+  // country must not silently overwrite what a member told us about themselves.
+  //
+  // Every reading is checked against the member's clock first (see `ipReadingVerdict`): an IP city
+  // whose UTC offset is more than two hours from the zone the request's browser reported (else the
+  // member's Slack zone) is almost always a VPN exit. That reading is still logged -- the timeline
+  // is a record of what was observed, flagged `suspected_vpn` -- but it does not replace the
+  // member's place, is not attached to the sign-in row, and wakes no meetup hook.
   private async recordLoginLocation(
     memberId: string,
     remoteIp: string,
-    loginEventId?: string,
+    context: { loginEventId?: string; device?: AdminBotDeviceClock } = {},
   ): Promise<void> {
+    const { loginEventId } = context;
     try {
+      const now = this.now();
+      const nowIso = now.toISOString();
+      const deviceTz = usableDeviceZone(context.device?.tz);
+      const offset = context.device?.offsetMinutes;
+      const deviceOffset =
+        typeof offset === "number" && Number.isInteger(offset) && Math.abs(offset) <= 14 * 60
+          ? offset
+          : undefined;
+      if (deviceTz) {
+        await this.recordDeviceTimezone(memberId, deviceTz, nowIso);
+      }
       const location = await this.geolocateIp?.(remoteIp);
       if (!location || (!location.country && !location.continent && !location.city)) {
+        return;
+      }
+      const member = await this.store.getLabMember(memberId);
+      if (!member) {
+        return;
+      }
+      const verdict = ipReadingVerdict({
+        location,
+        ...(deviceTz ? { deviceTz } : {}),
+        ...(deviceOffset !== undefined ? { deviceOffsetMinutes: deviceOffset } : {}),
+        ...(freshSlackTz(member, now) ? { slackTz: freshSlackTz(member, now) } : {}),
+        at: now,
+      });
+      if (verdict.suspected_vpn) {
+        // The time and the flag only: the member's place stays whatever the last trusted reading
+        // said, and the map knows today's reading was set aside rather than missing.
+        const patched = await this.store.patchLabMemberAuthFields(memberId, {
+          last_ip_observed_at: nowIso,
+          last_ip_suspected_vpn: true,
+          updated_at: nowIso,
+        });
+        if (!patched) {
+          return;
+        }
+        await this.audit("auth.login_location_suspected_vpn", memberId, {
+          ...(location.country ? { country: location.country } : {}),
+          ...(location.city ? { city: location.city } : {}),
+          hours: verdict.hours,
+          against: verdict.against,
+        });
+        await this.appendIpObservation(memberId, location, nowIso, true);
         return;
       }
       // The sign-in row first, before the member row: it is the only one of the two that is a
@@ -577,23 +661,23 @@ export class AdminBotAuthService {
       }
       // Patch only the inferred fields atomically so a concurrent profile edit survives.
       const patched = await this.store.patchLabMemberAuthFields(memberId, {
-        // `last_login_at` is not written here any more. It is a fact about signing in, not about
-        // geolocation succeeding, and recordLoginTime owns it -- one writer for one fact.
+        // `last_login_at` is not written here. It is a fact about signing in, not about
+        // geolocation succeeding, and recordLoginTime owns it -- one writer for one fact. The time
+        // of this reading is `last_ip_observed_at`, which is what the map ages the city by.
         ...(location.country ? { last_login_country: location.country } : {}),
         ...(location.continent ? { last_login_continent: location.continent } : {}),
-        // Written alongside the country and read only with `last_login_at`, which is what keeps a
-        // stale city out of a scheduling decision. Still never touches `location`/`current_city`.
-        //
-        // City and region are written together, and cleared together when this sign-in located
+        // City and region are written together, and cleared together when this reading located
         // only a country: the merge patch keeps any key it is not given, so leaving them out would
-        // let last month's city ride along with today's `last_login_at` and look fresh.
+        // let last month's city ride along with today's `last_ip_observed_at` and look fresh.
         ...(location.city
           ? { last_login_city: location.city, last_login_region: location.region ?? "" }
           : location.country
             ? { last_login_city: "", last_login_region: "" }
             : {}),
         ...(location.timezone ? { last_login_timezone: location.timezone } : {}),
-        updated_at: this.now().toISOString(),
+        last_ip_observed_at: nowIso,
+        last_ip_suspected_vpn: false,
+        updated_at: nowIso,
       });
       if (!patched) {
         return;
@@ -602,33 +686,77 @@ export class AdminBotAuthService {
       if (location.city) {
         try {
           this.afterLoginLocated?.(memberId);
-        } catch {
+        } catch (error) {
           // A meetup hook failing must not cost the location timeline below.
+          this.warn(`adminbot: meetup hook after IP location failed: ${errorText(error)}`);
         }
       }
-      // The stamp above is where they are *now* and overwrites itself; this is the timeline, which
-      // is what makes "when did they move" answerable and what the drift prompt reads. Appended
-      // only when the country changed, so a member signing in twice a day adds no rows.
-      if (location.country) {
-        const entry = observationFor({
-          memberId,
-          source: "login_ip",
-          raw: location.country,
-          observedAt: this.now().toISOString(),
-          // The zone IPinfo returned for this IP, used only to stamp the collection time in local
-          // wall-clock -- it is never written to the entry's `timezone`, which stays reserved for a
-          // stated zone. Absent on the Lite tier, which leaves `observed_at_local` unset.
-          zone: location.timezone,
-        });
-        const latest = latestBySource(await this.store.listMemberLocations(memberId, 20)).get(
-          "login_ip",
-        );
-        if (entry && isNewObservation(latest, entry)) {
-          await this.store.appendMemberLocation(entry);
-        }
-      }
-    } catch {
-      // Best-effort, per the option's own contract — nothing left to do with a failure here.
+      await this.appendIpObservation(memberId, location, nowIso, false);
+    } catch (error) {
+      // Best-effort, per the option's own contract: logged, never thrown into a request. The
+      // address is not in the message on purpose.
+      this.warn(`adminbot: IP location for member ${memberId} failed: ${errorText(error)}`);
+    }
+  }
+
+  // The stamp is where they are *now* and overwrites itself; this is the timeline, which is what
+  // makes "when did they move" answerable and what the drift prompt reads. Appended when the
+  // country or the VPN verdict changed, and otherwise once per UTC day, so the history shows the
+  // member was still there today without a row per request.
+  private async appendIpObservation(
+    memberId: string,
+    location: { country?: string; timezone?: string },
+    observedAt: string,
+    suspectedVpn: boolean,
+  ): Promise<void> {
+    if (!location.country) {
+      return;
+    }
+    const entry = observationFor({
+      memberId,
+      source: "login_ip",
+      raw: location.country,
+      observedAt,
+      // The zone the provider returned for this IP, used only to stamp the collection time in
+      // local wall-clock -- it is never written to the entry's `timezone`, which stays reserved
+      // for a stated zone.
+      zone: location.timezone,
+    });
+    if (!entry) {
+      return;
+    }
+    const candidate = suspectedVpn ? { ...entry, suspected_vpn: true } : entry;
+    const latest = latestBySource(await this.store.listMemberLocations(memberId, 20)).get(
+      "login_ip",
+    );
+    if (isNewDailyObservation(latest, candidate)) {
+      await this.store.appendMemberLocation(candidate);
+    }
+  }
+
+  // The browser's zone: stamped on the member (the map's device-zone fallback and the VPN check's
+  // witness) and appended to the timeline as its own source when it changed. Name only.
+  private async recordDeviceTimezone(memberId: string, zone: string, at: string): Promise<void> {
+    await this.store.patchLabMemberAuthFields(memberId, {
+      last_device_tz: zone,
+      last_device_tz_at: at,
+      updated_at: at,
+    });
+    const entry = observationFor({
+      memberId,
+      source: "device_timezone",
+      raw: zone,
+      observedAt: at,
+      zone,
+    });
+    if (!entry) {
+      return;
+    }
+    const latest = latestBySource(await this.store.listMemberLocations(memberId, 20)).get(
+      "device_timezone",
+    );
+    if (latest?.raw !== entry.raw) {
+      await this.store.appendMemberLocation(entry);
     }
   }
 
@@ -666,34 +794,63 @@ export class AdminBotAuthService {
   }
 
   /**
-   * Sample where an account is being used from, on session use rather than only at sign-in.
+   * Sample where an account is being used from, on any authenticated request, once a day.
    *
    * A session outlives the login that opened it -- weeks, for somebody who never signs out -- so
-   * `login()` on its own samples a member's location roughly never, which is why the roster shows
-   * 7 sign-ins across 199 people. Every authenticated request already passes through
-   * `resolveSession`, so this is the one place that can notice the account still in use from
-   * somewhere new.
+   * `login()` on its own samples a member's location roughly never, which is why the map placed 80
+   * of 90 members from their profile with the IP database switched on. Every authenticated member
+   * request passes through here (service tokens never do: they resolve to a service principal
+   * before any session is looked at), so this is the one place that can notice the account still
+   * in use, and from where.
    *
-   * Cheap by construction: the geolocation call fires only when the address differs from the last
-   * one seen for that member, because an unchanged IP cannot produce a changed location. Without
-   * that guard this would spend an API budget per request to re-learn one answer.
+   * One lookup per member per UTC day, plus one whenever the address or the browser's zone
+   * changes mid-day. The day is remembered in memory and, after a restart, read from the member's
+   * own `last_ip_observed_at`, so a restart does not cost a second lookup the same day.
    *
-   * Impersonated sessions are skipped. An admin viewing the lab as somebody else is sitting at
-   * their own desk, and writing that address into the member's timeline would record a movement
-   * that nobody involved ever made -- the same failure as letting an inference pose as a fact,
-   * arriving through a different door.
+   * Fire-and-forget: the request never waits on it and never sees its failure, which is logged.
+   *
+   * Skipped for members whose map visibility is "stated" or "hidden" -- they said not to place
+   * them by their network, so there is no reason to look it up -- and for impersonated sessions.
+   * An admin viewing the lab as somebody else is sitting at their own desk, and writing that
+   * address into the member's timeline would record a movement that nobody involved ever made.
    */
-  noteAccountUse(principal: AdminBotMemberPrincipal, remoteIp: string | undefined): void {
-    if (!this.geolocateIp || !remoteIp || principal.impersonator) {
-      return;
+  noteAccountUse(
+    principal: AdminBotMemberPrincipal,
+    remoteIp: string | undefined,
+    device?: AdminBotDeviceClock,
+  ): void {
+    try {
+      const { member } = principal;
+      if (!this.geolocateIp || !remoteIp || principal.impersonator) {
+        return;
+      }
+      if (memberMapVisibility(member) !== "auto") {
+        return;
+      }
+      const day = utcDay(this.now().toISOString());
+      const tz = device?.tz?.trim() ?? "";
+      const last = this.lastCheckByMember.get(member.id);
+      if (last) {
+        if (last.day === day && last.ip === remoteIp && last.tz === tz) {
+          return;
+        }
+      } else if (utcDay(member.last_ip_observed_at) === day) {
+        // First request since a restart, and the record says today's reading is already taken.
+        // Remember it, and look again only if the address or zone changes from here.
+        this.lastCheckByMember.set(member.id, { day, ip: remoteIp, tz });
+        return;
+      }
+      this.lastCheckByMember.set(member.id, { day, ip: remoteIp, tz });
+      // Same fire-and-forget contract as the login path. recordLoginLocation catches its own
+      // errors; the catch here is for anything that throws before it returns its promise.
+      void this.recordLoginLocation(member.id, remoteIp, device ? { device } : {}).catch(
+        (error: unknown) => {
+          this.warn(`adminbot: daily IP check failed: ${errorText(error)}`);
+        },
+      );
+    } catch (error) {
+      this.warn(`adminbot: daily IP check failed: ${errorText(error)}`);
     }
-    if (this.lastSeenIpByMember.get(principal.member.id) === remoteIp) {
-      return;
-    }
-    this.lastSeenIpByMember.set(principal.member.id, remoteIp);
-    // Same fire-and-forget contract as the login path: a slow provider must never make a member's
-    // request wait on it.
-    void this.recordLoginLocation(principal.member.id, remoteIp);
   }
 
   /**
@@ -1672,4 +1829,8 @@ function signupMemberInput(registration: AdminBotAccountRegistration): AdminBotL
     id: `mem_${randomUUID()}`,
     privilege_level: "member",
   };
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

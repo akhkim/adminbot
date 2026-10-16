@@ -191,14 +191,31 @@ function within(at: string | undefined, now: Date, days: number): boolean {
   return Number.isFinite(ms) && now.getTime() - ms <= days * DAY_MS && ms <= now.getTime() + DAY_MS;
 }
 
-/** The sign-in city, if it is recent enough to say where the member is. */
+type IpReadingFields = "last_login_at" | "last_ip_observed_at" | "last_ip_suspected_vpn";
+
+/**
+ * Whether the member's latest IP reading is recent enough and was not set aside as a likely VPN.
+ * Its time is the daily check's when there is one, else the sign-in's.
+ */
+function freshTrustedIp(
+  member: Pick<AdminBotLabMember, IpReadingFields>,
+  now: Date,
+  days: number,
+): boolean {
+  return (
+    !member.last_ip_suspected_vpn &&
+    within(member.last_ip_observed_at || member.last_login_at, now, days)
+  );
+}
+
+/** The IP reading's city, if it is recent enough to say where the member is and not a VPN exit. */
 export function signInPlace(
-  member: Pick<AdminBotLabMember, "last_login_city" | "last_login_country" | "last_login_at">,
+  member: Pick<AdminBotLabMember, "last_login_city" | "last_login_country" | IpReadingFields>,
   now: Date,
   days = LOGIN_CITY_FRESH_DAYS,
 ): MeetupPlace | undefined {
   const city = member.last_login_city?.trim();
-  if (!city || !within(member.last_login_at, now, days)) {
+  if (!city || !freshTrustedIp(member, now, days)) {
     return undefined;
   }
   return { city, ...(member.last_login_country ? { country: member.last_login_country } : {}) };
@@ -232,7 +249,7 @@ export function viewerLocation(member: AdminBotLabMember, now: Date): ViewerLoca
     return { label: travelPlace(slack).label, source: "slack", place };
   }
   const country = member.last_login_country?.trim();
-  return country && within(member.last_login_at, now, LOGIN_CITY_FRESH_DAYS)
+  return country && freshTrustedIp(member, now, LOGIN_CITY_FRESH_DAYS)
     ? { label: country, source: "sign_in" }
     : undefined;
 }
@@ -325,10 +342,10 @@ export function localHour(zone: string, now: Date): number | undefined {
 
 /** The member's clock: a fresh sign-in zone (they travelled), else the zone they set. */
 export function memberZone(
-  member: Pick<AdminBotLabMember, "last_login_timezone" | "last_login_at" | "timezone">,
+  member: Pick<AdminBotLabMember, "last_login_timezone" | "timezone" | IpReadingFields>,
   now: Date,
 ): string | undefined {
-  const fresh = within(member.last_login_at, now, LOGIN_CITY_FRESH_DAYS)
+  const fresh = freshTrustedIp(member, now, LOGIN_CITY_FRESH_DAYS)
     ? member.last_login_timezone?.trim()
     : undefined;
   for (const zone of [fresh, member.timezone?.trim()]) {

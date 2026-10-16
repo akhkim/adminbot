@@ -1260,35 +1260,35 @@ feature. Three of the fourteen wrappers had one and the rest were registered by 
 "what does AdminBot run, and when" could only be answered by reading the cron store on Aurora -- and
 a job that was never registered is silent: nobody is nudged and nothing errors.
 
-| Job                                 | Schedule             | What it does                                                                 |
-| ----------------------------------- | -------------------- | ---------------------------------------------------------------------------- |
-| `adminbot-email`                    | `5 * * * *`          | Hourly inbound email triage pass                                             |
-| `adminbot-openreview`               | `15 0,6,12,18 * * *` | Reviewing-cycle pass, four times a day                                       |
-| `adminbot-citation-checks`          | `25,55 * * * *`      | Check the citations of each new OpenReview submission version                |
-| `adminbot-iclr-integrity`           | `12 * * * *`         | Pangram AI-text score of new ICLR versions; Slack alert on AI text/citations |
-| `adminbot-meeting-artifacts`        | `20 * * * *`         | Meeting artifact drop-folder pass                                            |
-| `adminbot-member-directory`         | `40 5 * * *`         | Daily Slack timezone/directory sync                                          |
-| `adminbot-slack-directory`          | `45 5 * * *`         | Daily Slack channel directory refresh                                        |
-| `adminbot-deadline-refresh-venues`  | `50 5 * * *`         | Refresh conference/workshop deadlines from official CFPs                     |
-| `adminbot-deadline-refresh-matches` | `20 6 * * *`         | Re-map papers onto the refreshed deadlines                                   |
-| `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                     |
-| `adminbot-graduations`              | `15 8 * * 1`         | Confirm finishing months, chase alumni transitions, and arrange the ceremony |
+| Job                                 | Schedule             | What it does                                                                                |
+| ----------------------------------- | -------------------- | ------------------------------------------------------------------------------------------- |
+| `adminbot-email`                    | `5 * * * *`          | Hourly inbound email triage pass                                                            |
+| `adminbot-openreview`               | `15 0,6,12,18 * * *` | Reviewing-cycle pass, four times a day                                                      |
+| `adminbot-citation-checks`          | `25,55 * * * *`      | Check the citations of each new OpenReview submission version                               |
+| `adminbot-iclr-integrity`           | `12 * * * *`         | Pangram AI-text score of new ICLR versions; Slack alert on AI text/citations                |
+| `adminbot-meeting-artifacts`        | `20 * * * *`         | Meeting artifact drop-folder pass                                                           |
+| `adminbot-member-directory`         | `40 5 * * *`         | Daily Slack timezone/directory sync                                                         |
+| `adminbot-slack-directory`          | `45 5 * * *`         | Daily Slack channel directory refresh                                                       |
+| `adminbot-deadline-refresh-venues`  | `50 5 * * *`         | Refresh conference/workshop deadlines from official CFPs                                    |
+| `adminbot-deadline-refresh-matches` | `20 6 * * *`         | Re-map papers onto the refreshed deadlines                                                  |
+| `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                                    |
+| `adminbot-graduations`              | `15 8 * * 1`         | Confirm finishing months, chase alumni transitions, and arrange the ceremony                |
 | `adminbot-slides-working-groups`    | `20 7 * * 1`         | Propose the working-groups slide update ([details](../operations/slides-working-groups.md)) |
-| `adminbot-city-channels`            | `10 7 * * 1,4`       | Add members to their city Slack channel once a city reaches four             |
-| `adminbot-email-templates`          | `30 8 * * 1`         | Check the email-template doc against the shipped copy                        |
-| `adminbot-paperflow-nudges`         | `0 9 * * 1`          | PaperFlow venue-stage nudges, once a week                                    |
-| `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                     |
-| `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                       |
-| `adminbot-onboarding-chase`         | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months      |
-| `adminbot-thesis-milestones`        | `50 9 * * 1-5`       | Guidebook nudge before a thesis deadline, grading reminder five days after   |
-| `adminbot-paper-stages`             | `45 * * * *`         | Verify the evidence, advance each paper on it, and queue the PI's gate       |
-| `adminbot-papermentor-runs`         | `35 * * * *`         | Collect PaperMentor's cached reviews and record them against their papers    |
-| `adminbot-rec-letter-reminders`     | `25 10 * * *`        | Mail the head professor the letters due within three days                    |
-| `adminbot-meeting-attendance`       | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting                   |
-| `adminbot-weekly-updates`           | `0 10 * * 1`         | Ask authors for the week's paper updates                                     |
-| `adminbot-prereg-nudges`            | `0 14 * * 4`         | Pre-meeting pre-registration sweep                                           |
-| `adminbot-onboarding-confirm`       | `10 */2 * * *`       | Onboarding-step confirmation loop                                            |
-| `adminbot-nudge-escalation`         | `0 11 * * 1-5`       | Ask the head professor to chase what nobody answered in five days            |
+| `adminbot-city-channels`            | `10 7 * * 1,4`       | Add members to their city Slack channel once a city reaches four                            |
+| `adminbot-email-templates`          | `30 8 * * 1`         | Check the email-template doc against the shipped copy                                       |
+| `adminbot-paperflow-nudges`         | `0 9 * * 1`          | PaperFlow venue-stage nudges, once a week                                                   |
+| `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                                    |
+| `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                                      |
+| `adminbot-onboarding-chase`         | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months                     |
+| `adminbot-thesis-milestones`        | `50 9 * * 1-5`       | Guidebook nudge before a thesis deadline, grading reminder five days after                  |
+| `adminbot-paper-stages`             | `45 * * * *`         | Verify the evidence, advance each paper on it, and queue the PI's gate                      |
+| `adminbot-papermentor-runs`         | `35 * * * *`         | Collect PaperMentor's cached reviews and record them against their papers                   |
+| `adminbot-rec-letter-reminders`     | `25 10 * * *`        | Mail the head professor the letters due within three days                                   |
+| `adminbot-meeting-attendance`       | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting                                  |
+| `adminbot-weekly-updates`           | `0 10 * * 1`         | Ask authors for the week's paper updates                                                    |
+| `adminbot-prereg-nudges`            | `0 14 * * 4`         | Pre-meeting pre-registration sweep                                                          |
+| `adminbot-onboarding-confirm`       | `10 */2 * * *`       | Onboarding-step confirmation loop                                                           |
+| `adminbot-nudge-escalation`         | `0 11 * * 1-5`       | Ask the head professor to chase what nobody answered in five days                           |
 
 Times are the gateway's. The nudge passes are staggered through the morning and
 `adminbot-nudge-escalation` runs after them on purpose: it reads what those passes filed, so running
@@ -1304,13 +1304,19 @@ roster's mandatory timezone field.
 The endpoint is public, but its response shape depends on who's asking:
 
 - Signed in as **admin**: `{ mode: "full", places: [...{ ...place, members:
-[{ member_id, name, source, precision, avatar_url?, last_login_at?, located_at?,
-tz_mismatch? }] } ], unplaced, counts, ip_geolocation }` -- names included, plus
-  each member's Slack avatar and last login time where known, for the
-  recently-active faces shown per city. `source` is `login`, `checkin`,
-  `roster` or `slack`; `located_at` is when that source said so, and the map
-  prints it as an age ("from sign-in 2 days ago", "stated 3 days ago"). A roster
-  field typed at some point has no date and prints none. `tz_mismatch`
+[{ member_id, name, source, precision, avatar_url?, last_login_at?, ip_observed_at?,
+located_at?, ip_ignored?, source_label?, tz_mismatch? }] } ], unplaced, counts, ip_geolocation }`
+  -- names included, plus each member's Slack avatar and, for IP-placed members,
+  the time of the IP reading that placed them (`ip_observed_at`, also sent as
+  `last_login_at` for older clients), for the recently-active faces shown per
+  city. `source` is `login` (an IP reading), `checkin`, `roster`, `slack` or
+  `device` (the browser's time zone); `located_at` is when that source said so.
+  `source_label` is the row's wording by UTC day: "IP today", "IP 2d ago",
+  "stated yesterday", "profile", "device time zone" and so on, with " · IP
+  ignored (VPN?)" appended when `ip_ignored: "suspected_vpn"` is set (a fresh IP
+  reading existed but its city disagreed with the member's clock; see
+  [IP geolocation](adminbot-geoip.md#vpn-check)). A roster field typed at some
+  point has no date and prints none. `tz_mismatch`
   (`{ slack_tz, place_tz, hours }`) is set when the member's Slack time zone
   keeps a clock more than two hours from the city that placed them (see
   "Slack time zone" below). `ip_geolocation` is `{ active, provider,
@@ -1330,9 +1336,11 @@ call on someone else's behalf is another.
 A member is placed by the first source that answers, and a country never outranks a city, whatever
 it came from:
 
-1. **A fresh sign-in city.** Stamped from the caller's IP on each sign-in (see "Login location"
-   below) and used for 14 days (`ADMINBOT_MAP_LOGIN_FRESH_DAYS`). It is where the person most
-   recently was, so it leads for everyone. It counts toward the map that signed-in members and
+1. **A fresh, trusted IP city.** Read from the caller's IP at sign-in and once a day on any
+   authenticated request (see "Login location" below), and used for 7 days after the latest
+   reading (`ADMINBOT_MAP_LOGIN_FRESH_DAYS`). It is where the person most recently was, so it leads
+   for everyone, unless the reading was set aside as a likely VPN: its city keeps a clock more than
+   two hours from the browser's time zone, else the Slack zone. It counts toward the map that signed-in members and
    admins see. An anonymous visitor gets only what members stated, plus sign-in countries.
 2. **A recent check-in.** The member's own answer to "Are you in <city>?" (see "Location check-in"
    below), while it is younger than `ADMINBOT_LOCATION_CHECKIN_DAYS` (60).
@@ -1341,11 +1349,13 @@ it came from:
    and stamps it as `slack_location`. A member Slack no longer knows about has the stamp cleared
    rather than left stale. That only happens when the pass runs, which is why it is scheduled daily
    (`adminbot-member-map`, 06:10).
-4. **A time zone's city.** The synced Slack `tz` (`slack_tz`, while it is under 30 days old), then
+4. **A time zone's city.** The zone the member's browser reported (`last_device_tz`, under 30
+   days old), then the synced Slack `tz` (`slack_tz`, while it is under 30 days old), then
    a zone written in the Slack location field, then the roster `timezone`. `Europe/Zurich` is also
    what somebody in Basel reports, so the UI says "from Slack time zone" or "from profile time
    zone", not just the city.
-5. **A country.** A country written in any of the text fields above, then the sign-in country.
+5. **A country.** A country written in any of the text fields above, then the IP country, unless
+   that reading was set aside as a likely VPN.
    Drawn as a hollow, dashed dot on the country's centroid.
 
 Each member chooses how they appear, under Profile, "Show me on the lab map as"
@@ -1360,7 +1370,7 @@ Each member chooses how they appear, under Profile, "Show me on the lab map as"
 
 Only a city is ever shown. The map never carries an IP address, coordinates from a lookup, or a
 history of sign-ins. Each listed member says where their place came from, for example "San
-Francisco · from sign-in today" or "Toronto · from profile". The Collaborate and Dashboard tabs
+Francisco · IP today" or "Toronto · profile · IP ignored (VPN?)". The Collaborate and Dashboard tabs
 reload the map when they open and every five minutes while the page is visible, and the card says
 when it last updated.
 
@@ -1389,8 +1399,9 @@ change" opens the picker: a city field with the gazetteer as suggestions, free t
 **Use this device's location**. A small **Prefer not to say** link and a close button sit at the
 end. On phones every control is at least 40px tall and the question takes its own line.
 
-The guess is a fresh sign-in city, then the city the fresh Slack zone is named for, then the stored
-`current_city` / `location`. With no guess the strip opens on the picker.
+The guess is a fresh, trusted IP city, then the city the browser's zone is named for, then the
+city the fresh Slack zone is named for, then the stored `current_city` / `location`. With no guess
+the strip opens on the picker.
 
 **When it asks.** At most once per browser session, and never when the member already settled it:
 
@@ -1401,8 +1412,9 @@ The guess is a fresh sign-in city, then the city the fresh Slack zone is named f
 - **the signals agree**: a fresh sign-in city that the member's Slack zone does not contradict
   already says where they are, so there is nothing to ask.
 
-Otherwise it asks, either because nothing places the member (`no_guess`) or because the signals
-disagree (`timezone_mismatch`; the reason is on the question's tooltip). An answer within the 60
+Otherwise it asks: because nothing places the member (`no_guess`), because their fresh IP reading
+was set aside as a likely VPN (`ip_suspected_vpn`, guessing from the browser's or Slack's zone), or
+because the signals disagree (`timezone_mismatch`; the reason is on the question's tooltip). An answer within the 60
 days wins even over a later disagreement, so a member is asked at most once per window.
 
 **Device location.** The browser is asked for its position only when the member clicks the button.
@@ -1441,13 +1453,18 @@ A Slack zone is a laptop setting, so it is a weak signal and is used in only thr
   measured as it actually is.
 - **An early check-in.** The same disagreement makes the check-in due before its 60 days are up.
 
-It never moves a pin and never overrides a fresh sign-in city.
+It never moves a stated pin. It can set aside an IP city as a likely VPN, but only when the
+browser did not report its own zone, which is the better witness.
 
 ### Login location
 
-On every successful login AdminBot geolocates the caller's IP and stamps
-`last_login_at` / `last_login_country` / `last_login_continent`, and, when the
-provider answers with one, `last_login_city` / `last_login_region`. The
+On every successful login, and once a day on any authenticated member request,
+AdminBot geolocates the caller's IP and stamps `last_login_country` /
+`last_login_continent`, and, when the provider answers with one,
+`last_login_city` / `last_login_region`, with the reading's time in
+`last_ip_observed_at` (`last_login_at` is the sign-in itself). A reading whose
+city disagrees with the browser's time zone is logged but not stamped; see
+[IP geolocation](adminbot-geoip.md#daily-reading). The
 provider is a local DB-IP City Lite database when `ADMINBOT_GEOIP_MMDB_PATH` is
 set (city-level, no network call per sign-in), otherwise IPinfo when
 `IPINFO_TOKEN` is set (country only on the free Lite tier), otherwise none; the

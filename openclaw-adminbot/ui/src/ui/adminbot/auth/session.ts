@@ -7,6 +7,7 @@
 import { getSafeLocalStorage } from "../../../local-storage.ts";
 import type { UiSettings } from "../../storage.ts";
 import { normalizeOptionalString } from "../../string-coerce.ts";
+import { deviceClockHeaders } from "../api/device-clock.ts";
 import { parseApiJson, readApiJson } from "../data/api-json.ts";
 import type { AvailabilityRow, TimeOffRow } from "../data/availability.js";
 import { configureDraftSync } from "../offline/draft-sync.ts";
@@ -478,6 +479,8 @@ async function authedJsonOnce(
         Accept: "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(previous ? { "If-None-Match": previous.etag } : {}),
+        // Zone name and offset only; the server's daily IP check compares its city against them.
+        ...(token ? deviceClockHeaders() : {}),
       },
       // GET and DELETE carry no body; every other member-session call sends JSON. A DELETE with
       // a JSON body is legal but pointless here, and some proxies drop it.
@@ -987,7 +990,11 @@ export async function fetchMemberSession(
       method: "GET",
       signal: AbortSignal.timeout(5000),
       credentials: "omit",
-      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+        ...deviceClockHeaders(),
+      },
     });
   } catch {
     const scope = await resolveOfflineScope(baseUrl, token);

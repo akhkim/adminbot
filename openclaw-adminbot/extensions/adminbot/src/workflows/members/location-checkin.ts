@@ -13,12 +13,14 @@
 //   - Never when the signals agree: a fresh sign-in city that the member's Slack zone does not
 //     contradict already says where they are. Both are logged where they arrive (the sign-in and
 //     the Slack sync), so skipping the question loses nothing.
-//   - Otherwise it asks -- either because nothing places the member (`no_guess`) or because the
-//     signals conflict: the city that places them keeps a clock more than two hours from their
-//     Slack zone (`timezone_mismatch`, which carries a note saying so).
+//   - Otherwise it asks -- because nothing places the member (`no_guess`), because their fresh IP
+//     reading was set aside as a likely VPN (`ip_suspected_vpn`: its city keeps a clock more than
+//     two hours from their browser's zone, else their Slack zone), or because the city that places
+//     them conflicts with that zone in the same way (`timezone_mismatch`, which carries a note).
 //
-// When it asks, it offers its best guess for a one-tap "Yes" (a fresh sign-in city, then the city
-// the Slack zone is named for, then the stored city), and only "No, change" opens the picker.
+// When it asks, it offers its best guess for a one-tap "Yes" (a trusted IP city, then the city the
+// browser's zone is named for, then the Slack zone's, then the stored city), and only "No, change"
+// opens the picker. For a VPN user that is "Are you in Zürich?" from the zone their laptop keeps.
 
 import { randomUUID } from "node:crypto";
 import type {
@@ -30,8 +32,10 @@ import type {
 import { renderInZone } from "./location-history.js";
 import {
   ADMINBOT_LOCATION_CHECKIN_DAYS,
+  freshDeviceTz,
   freshLoginPlace,
   freshSlackTz,
+  ipCityState,
   isWithinDays,
   memberMapVisibility,
   resolvePlace,
@@ -97,30 +101,50 @@ export function locationCheckin(
 
   // "stated" means the member asked for sign-ins to be left out of where they are; respect it here
   // too, so a sign-in city is neither offered nor used to skip the question.
-  const login = memberMapVisibility(member) === "auto" ? freshLoginPlace(member, now) : undefined;
+  const auto = memberMapVisibility(member) === "auto";
+  const login = auto ? freshLoginPlace(member, now) : undefined;
+  const ipIgnored = auto ? ipCityState(member, now).ignored : undefined;
+  const deviceTz = freshDeviceTz(member, now);
+  const devicePlace = deviceTz ? resolvePlace(deviceTz) : undefined;
   const slackTz = freshSlackTz(member, now);
   const slackPlace = slackTz ? resolvePlace(slackTz) : undefined;
   const stored = storedPlace(member);
   const suggestion = login
     ? { city: login.label, source: "login" as const }
-    : slackPlace
-      ? { city: slackPlace.label, source: "slack_tz" as const }
-      : stored
-        ? { city: stored.text, source: "stored" as const }
-        : undefined;
+    : devicePlace
+      ? { city: devicePlace.label, source: "device_tz" as const }
+      : slackPlace
+        ? { city: slackPlace.label, source: "slack_tz" as const }
+        : stored
+          ? { city: stored.text, source: "stored" as const }
+          : undefined;
   const withSuggestion = suggestion ? { suggestion } : {};
 
-  // The city the member is placed in for the cross-check: the sign-in if fresh, else what they
-  // stated. A Slack zone city is never checked against its own zone.
+  // The IP said somewhere the member's own clock says they are not. No recent answer exists (that
+  // returned above), so the map is down to a stated city or a zone: ask, with the zone's city.
+  if (ipIgnored) {
+    return {
+      due: true,
+      reason: "ip_suspected_vpn",
+      ...withSuggestion,
+      ...settled,
+      note: "Your network address points somewhere your device's clock disagrees with, which usually means a VPN.",
+    };
+  }
+
+  // The city the member is placed in for the cross-check: the IP city if fresh and trusted, else
+  // what they stated. Checked against the browser's zone, else the Slack zone. A zone's own city
+  // is never checked against that zone.
   const placed = login ?? stored?.place;
-  const mismatch = placed ? timezoneMismatch(placed, slackTz, now) : undefined;
+  const zone = deviceTz ?? slackTz;
+  const mismatch = placed ? timezoneMismatch(placed, zone, now) : undefined;
   if (mismatch && placed) {
     return {
       due: true,
       reason: "timezone_mismatch",
       ...withSuggestion,
       ...settled,
-      note: `${placed.label} keeps a clock ${formatHours(mismatch.hours)} from your Slack time zone (${mismatch.slack_tz}).`,
+      note: `${placed.label} keeps a clock ${formatHours(mismatch.hours)} from your ${deviceTz ? "device" : "Slack"} time zone (${mismatch.slack_tz}).`,
     };
   }
   if (login) {

@@ -614,6 +614,10 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
           | "last_login_city"
           | "last_login_region"
           | "last_login_timezone"
+          | "last_ip_observed_at"
+          | "last_ip_suspected_vpn"
+          | "last_device_tz"
+          | "last_device_tz_at"
         >
       >,
   ): boolean;

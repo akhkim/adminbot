@@ -118,7 +118,7 @@ describe("buildMemberMap", () => {
     ]);
     expect(map.places[0]?.label).toBe("Switzerland");
     expect(map.places[0]?.members).toEqual([
-      { member_id: "a", name: "Ada", source: "login", precision: "country" },
+      { member_id: "a", name: "Ada", source: "login", precision: "country", source_label: "IP" },
     ]);
   });
 
@@ -141,10 +141,12 @@ describe("buildMemberMap", () => {
         precision: "country",
         avatar_url: "https://example.com/ada.png",
         last_login_at: "2026-01-05T00:00:00.000Z",
+        ip_observed_at: "2026-01-05T00:00:00.000Z",
         // The map row is dated by the observation that placed it: here, the sign-in.
         located_at: "2026-01-05T00:00:00.000Z",
+        source_label: expect.stringMatching(/^IP \d+d ago$/u),
       },
-      { member_id: "b", name: "Bo", source: "login", precision: "country" },
+      { member_id: "b", name: "Bo", source: "login", precision: "country", source_label: "IP" },
     ]);
   });
 
@@ -202,7 +204,7 @@ describe("buildMemberMap", () => {
     expect(map.places[0]?.label).toBe("Canada");
     expect(map.places[0]?.key).toBe("country:canada");
     expect(map.places[0]?.members).toEqual([
-      { member_id: "a", name: "Ada", source: "login", precision: "country" },
+      { member_id: "a", name: "Ada", source: "login", precision: "country", source_label: "IP" },
     ]);
   });
 
@@ -320,15 +322,15 @@ describe("buildMemberMap", () => {
       });
     });
 
-    it("counts a sign-in as fresh for 14 days, then falls back to what the member stated", () => {
+    it("counts an IP reading as fresh for 7 days, then falls back to what the member stated", () => {
       const at = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
       const place = (last_login_at: string) =>
         buildMemberMap([traveller({ current_city: "Toronto", last_login_at })], new Map(), {
           loginCity: true,
           now,
         }).places[0];
-      expect(place(at(13.9))?.key).toBe("lyon");
-      const stale = place(at(14.1));
+      expect(place(at(6.9))?.key).toBe("lyon");
+      const stale = place(at(7.1));
       expect(stale?.key).toBe("toronto");
       // The sign-in time is only sent when a sign-in placed the member.
       expect(stale?.members[0]).toEqual({
@@ -336,6 +338,7 @@ describe("buildMemberMap", () => {
         name: "Tess",
         source: "roster",
         precision: "city",
+        source_label: "profile",
       });
     });
 
@@ -393,15 +396,15 @@ describe("buildMemberMap", () => {
 
     const byLabel = new Map(map.places.map((place) => [place.label, place]));
     expect(byLabel.get("Zürich")?.members).toEqual([
-      { member_id: "a", name: "Ada", source: "slack", precision: "city" },
+      { member_id: "a", name: "Ada", source: "slack", precision: "city", source_label: "Slack" },
     ]);
     // Bo has a Slack id but no Slack location, so the roster is used.
     expect(byLabel.get("Toronto")?.members).toEqual([
-      { member_id: "b", name: "Bo", source: "roster", precision: "city" },
+      { member_id: "b", name: "Bo", source: "roster", precision: "city", source_label: "profile" },
     ]);
     // Where somebody is right now beats where they live.
     expect(byLabel.get("Paris")?.members).toEqual([
-      { member_id: "c", name: "Cy", source: "roster", precision: "city" },
+      { member_id: "c", name: "Cy", source: "roster", precision: "city", source_label: "profile" },
     ]);
     expect(byLabel.has("Berlin")).toBe(false);
   });
@@ -717,7 +720,18 @@ describe("member map precedence with the check-in and the Slack zone", () => {
     ).toMatchObject({ label: "Toronto", source: "roster" });
   });
 
-  it("flags a Slack zone over two hours off, and never moves a fresh sign-in city for it", () => {
+  it("flags a Slack zone over two hours off a stated city, and never moves the pin for it", () => {
+    const placed = placeOf({
+      current_city: "Toronto",
+      slack_tz: "Europe/Berlin",
+      slack_tz_observed_at: ago(1),
+    });
+    expect(placed?.label).toBe("Toronto");
+    expect(placed?.tz_mismatch).toMatchObject({ slack_tz: "Europe/Berlin", hours: 6 });
+  });
+
+  it("sets aside an IP city whose clock is over two hours off the Slack zone (a VPN exit)", () => {
+    // A reading taken before the VPN check existed: no flag on it, so the map judges it now.
     const placed = placeOf({
       last_login_city: "Toronto",
       last_login_region: "Ontario",
@@ -726,8 +740,8 @@ describe("member map precedence with the check-in and the Slack zone", () => {
       slack_tz: "Europe/Berlin",
       slack_tz_observed_at: ago(1),
     });
-    expect(placed?.label).toBe("Toronto");
-    expect(placed?.tz_mismatch).toMatchObject({ slack_tz: "Europe/Berlin", hours: 6 });
+    expect(placed).toMatchObject({ label: "Berlin", source: "slack", ip_ignored: "suspected_vpn" });
+    expect(placed?.source_label).toBe("Slack time zone · IP ignored (VPN?)");
   });
 
   it("does not flag a neighbouring zone or a country-level pin", () => {

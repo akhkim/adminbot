@@ -11,6 +11,7 @@ import {
   type MemberImpersonator,
 } from "../auth/session.ts";
 import { readApiJson } from "../data/api-json.ts";
+import { deviceClockHeaders } from "./device-clock.ts";
 
 export type MemberSession = {
   session_token: string;
@@ -51,7 +52,12 @@ async function postJson(
       method: "POST",
       // Bearer-only contract: never send cookies across the AdminBot origin.
       credentials: "omit",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      // The browser's zone rides along so the sign-in's IP city can be checked against it.
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...deviceClockHeaders(),
+      },
       body: JSON.stringify(payload),
     });
   } catch {

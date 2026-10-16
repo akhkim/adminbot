@@ -52,15 +52,71 @@ describe("locationCheckin", () => {
     expect(result.suggestion).toEqual({ city: "Toronto", source: "login" });
   });
 
-  it("asks early, with a note, when the sign-in city and the Slack zone disagree", () => {
+  it("asks early, with a note, when the stated city and the Slack zone disagree", () => {
     const result = locationCheckin(
-      member({ ...signedInFrom("Toronto", "Ontario", "CA"), ...slack("Europe/Berlin") }),
+      member({ current_city: "Toronto", ...slack("Europe/Berlin") }),
       NOW,
     );
     expect(result.due).toBe(true);
     expect(result.reason).toBe("timezone_mismatch");
     expect(result.note).toContain("Europe/Berlin");
-    // The one-tap guess is still the sign-in city.
+    expect(result.note).toContain("Slack time zone");
+  });
+
+  it("asks when the IP city disagrees with the Slack zone, offering the zone's city", () => {
+    const result = locationCheckin(
+      member({ ...signedInFrom("Toronto", "Ontario", "CA"), ...slack("Europe/Berlin") }),
+      NOW,
+    );
+    expect(result).toMatchObject({ due: true, reason: "ip_suspected_vpn" });
+    // The IP city is not offered: it is the thing in doubt.
+    expect(result.suggestion).toEqual({ city: "Berlin", source: "slack_tz" });
+  });
+
+  it("asks a member on a VPN where they are, guessing from the browser's zone", () => {
+    const result = locationCheckin(
+      member({
+        ...signedInFrom("Toronto", "Ontario", "CA"),
+        last_ip_observed_at: daysAgo(0),
+        last_ip_suspected_vpn: true,
+        last_device_tz: "Europe/Zurich",
+        last_device_tz_at: daysAgo(0),
+        ...slack("Europe/Zurich"),
+      }),
+      NOW,
+    );
+    expect(result).toMatchObject({
+      due: true,
+      reason: "ip_suspected_vpn",
+      suggestion: { city: "Zürich", source: "device_tz" },
+    });
+  });
+
+  it("does not ask the VPN question once the member answered recently", () => {
+    const result = locationCheckin(
+      member({
+        ...signedInFrom("Toronto", "Ontario", "CA"),
+        last_ip_observed_at: daysAgo(0),
+        last_ip_suspected_vpn: true,
+        location_checkin_at: daysAgo(5),
+        location_checkin_city: "Zurich",
+      }),
+      NOW,
+    );
+    expect(result).toMatchObject({ due: false, reason: "answered" });
+  });
+
+  it("trusts an IP city that agrees with the browser's zone even when Slack disagrees", () => {
+    const result = locationCheckin(
+      member({
+        ...signedInFrom("Toronto", "Ontario", "CA"),
+        last_device_tz: "America/Toronto",
+        last_device_tz_at: daysAgo(0),
+        ...slack("Europe/Berlin"),
+      }),
+      NOW,
+    );
+    expect(result).toMatchObject({ due: false, reason: "signals_agree" });
     expect(result.suggestion).toEqual({ city: "Toronto", source: "login" });
   });
 
