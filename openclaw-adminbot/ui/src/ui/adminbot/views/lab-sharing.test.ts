@@ -361,3 +361,77 @@ it("shows only the published time zone and omits it on legacy broadcasts", () =>
     legacy.container.querySelector('[data-testid="lab-sharing-director"]')?.textContent,
   ).not.toContain("Time zone:");
 });
+
+describe("renderLabSharing states", () => {
+  // Until the first read lands, "nothing posted yet" would be a claim about data that is not here.
+  it("shows a loading line instead of empty panels before the first read", () => {
+    const { container } = renderView({ labSharing: undefined, labSharingLoading: true });
+    expect(container.querySelector(".lab-sharing__loading")?.textContent).toContain("Loading");
+    expect(container.querySelector('[data-testid="lab-sharing-requests"]')).toBeNull();
+    expect(container.querySelector('[data-testid="lab-sharing-open-projects"]')).toBeNull();
+  });
+
+  it("tells a success from a failure, and lets either be dismissed", () => {
+    const ok = renderView({ labSharingNotice: "Taken down.", labSharingNoticeTone: "success" });
+    expect(ok.container.querySelector(".callout.success")?.textContent).toContain("Taken down.");
+    expect(ok.container.querySelector(".callout.danger")).toBeNull();
+
+    const failed = renderView({
+      labSharingNotice: "That did not go through.",
+      labSharingNoticeTone: "error",
+    });
+    const callout = failed.container.querySelector(".callout.danger");
+    expect(callout?.getAttribute("role")).toBe("alert");
+    click(failed.container, ".callout__dismiss");
+    expect(failed.container.querySelector('[data-testid="lab-sharing-notice"]')).toBeNull();
+  });
+
+  it("offers a retry for a read that failed", () => {
+    const { container } = renderView({ labSharingErrors: ["The service answered 503."] });
+    const retry = container.querySelector<HTMLButtonElement>(".lab-sharing__load-error .btn");
+    expect(retry?.textContent).toContain("Try again");
+  });
+
+  it("says when there is no invitation yet rather than leaving a bare heading", () => {
+    const { container } = renderView({ labSharing: snapshot({ invites: [] }) });
+    expect(text(container, "lab-sharing-invites")).toContain("You have not asked anyone yet.");
+  });
+
+  // Both routes file against a paper; with none to pick they would send an empty id.
+  it("holds back the general call when the member has no project to ask about", () => {
+    const { container } = renderView({ labSharing: snapshot({ projects: [] }) });
+    const call = container.querySelector<HTMLButtonElement>(
+      '[data-testid="lab-sharing-general-call"]',
+    );
+    expect(call?.disabled).toBe(true);
+    expect(text(container, "lab-sharing-seek-help")).toContain("You have no projects to ask about");
+  });
+
+  it("disables the writes while one is in flight", () => {
+    const { container } = renderView({ labSharingBusy: true });
+    const disabled = (selector: string) =>
+      container.querySelector<HTMLButtonElement>(selector)?.disabled;
+    expect(disabled('[data-testid="lab-sharing-general-call"]')).toBe(true);
+    expect(disabled('[data-testid="lab-sharing-offer-paper-traces"]')).toBe(true);
+    expect(disabled('[data-testid="lab-sharing-request-delete-paper-scm"]')).toBe(true);
+  });
+
+  it("gives each invitation state a toned label", () => {
+    const { container } = renderView({
+      labSharing: snapshot({
+        invites: [
+          {
+            id: "inv2",
+            status: "rejected",
+            kind: "collaboration",
+            project_title: "AdminBot",
+            recipient_name: "Sam Sample",
+          },
+        ],
+      }),
+    });
+    const pill = container.querySelector('[data-testid="lab-sharing-invite-inv2"] .pill');
+    expect(pill?.textContent).toContain("Rejected");
+    expect(pill?.classList.contains("danger")).toBe(true);
+  });
+});

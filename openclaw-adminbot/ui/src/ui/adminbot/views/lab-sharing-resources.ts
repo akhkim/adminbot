@@ -25,17 +25,20 @@ export function renderLabSharingResources(basePath: string, signedIn: boolean) {
     return nothing;
   }
   return html`<section
-    class="lab-sharing-directory"
+    class="card adminbot-card adminbot-card--wide lab-sharing-resources"
     aria-label="Collaboration resources"
   >
-    <h2 class="lab-sharing-seek__title">Collaboration resources</h2>
-    ${resources.map(
-      (resource) => html`<article class="lab-sharing-request">
-        <h3 class="lab-sharing-request__project">
-          <a href=${pathForTab(resource.tab, basePath)}>${resource.title}</a>
-        </h3>
-        <p>${resource.description}</p>
-      </article>`,
-    )}
+    <h2 class="card-title">Collaboration resources</h2>
+    <p class="card-sub">Pages that help other members find you and work with you.</p>
+    <ul class="lab-sharing-resources__grid">
+      ${resources.map(
+        (resource) => html`<li>
+          <a class="lab-sharing-resources__link" href=${pathForTab(resource.tab, basePath)}>
+            <span class="lab-sharing-resources__title">${resource.title}</span>
+            <span class="lab-sharing-resources__desc">${resource.description}</span>
+          </a>
+        </li>`,
+      )}
+    </ul>
   </section>`;
 }

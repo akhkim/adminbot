@@ -78,7 +78,9 @@ type CollabInvite = {
   fromName: string;
   projectId: string;
   note: string;
+  /** Where the invitation has got to, in words. Not a time: invitations carry no clock. */
   receivedAt: string;
+  tone: "" | "ok" | "warn" | "danger";
 };
 
 type HelpRequest = {
@@ -197,12 +199,14 @@ function membersOf(state: AppViewState): LabMemberSummary[] {
   }));
 }
 
-const INVITE_STATUS: Record<string, string> = {
-  pending: "Waiting for an admin to approve it",
-  approved: "Approved; waiting to send",
-  executed: "Sent",
-  rejected: "Rejected",
-  failed: "Could not be sent",
+// Where an invitation has got to, as a label and a pill tone. An unknown status shows as itself
+// rather than being guessed into one of these.
+const INVITE_STATUS: Record<string, { key: string; tone: "" | "ok" | "warn" | "danger" }> = {
+  pending: { key: "labSharing.invites.status.pending", tone: "warn" },
+  approved: { key: "labSharing.invites.status.approved", tone: "" },
+  executed: { key: "labSharing.invites.status.executed", tone: "ok" },
+  rejected: { key: "labSharing.invites.status.rejected", tone: "danger" },
+  failed: { key: "labSharing.invites.status.failed", tone: "danger" },
 };
 
 /**
@@ -220,7 +224,8 @@ function invitesOf(state: AppViewState): CollabInvite[] {
     fromName: invite.recipient_name,
     projectId: invite.project_title,
     note: invite.kind,
-    receivedAt: INVITE_STATUS[invite.status] ?? invite.status,
+    receivedAt: INVITE_STATUS[invite.status] ? t(INVITE_STATUS[invite.status].key) : invite.status,
+    tone: INVITE_STATUS[invite.status]?.tone ?? "",
   }));
 }
 
@@ -310,6 +315,32 @@ export function resetLabSharingSessionState(): void {
 }
 onViewSessionReset(resetLabSharingSessionState);
 
+
+// ---------------------------------------------------------------------------
+// Shared section shell
+//
+// Every panel is the same card the rest of AdminBot uses (`card adminbot-card adminbot-card--wide`
+// with a `card-title` and an optional `card-sub`), so this tab reads as one of the app's pages
+// rather than as its own site. The heading stays an <h2> for the document outline; the class gives
+// it the app's look.
+// ---------------------------------------------------------------------------
+
+function sectionHead(title: string, sub?: string, aside?: unknown) {
+  return html`
+    <div class="lab-sharing-section__head">
+      <div class="lab-sharing-section__heading">
+        <h2 class="card-title">${title}</h2>
+        ${sub ? html`<p class="card-sub">${sub}</p>` : nothing}
+      </div>
+      ${aside ?? nothing}
+    </div>
+  `;
+}
+
+function isBusy(state: AppViewState): boolean {
+  return Boolean(state.labSharingBusy);
+}
+
 // ---------------------------------------------------------------------------
 // 1. Director status strip
 // ---------------------------------------------------------------------------
@@ -322,16 +353,19 @@ function renderDirectorPanel(state: AppViewState) {
     return nothing;
   }
   return html`
-    <section class="lab-sharing-director" data-testid="lab-sharing-director">
+    <section
+      class="card adminbot-card adminbot-card--wide lab-sharing-director"
+      data-testid="lab-sharing-director"
+      aria-label=${t("labSharing.director.title")}
+    >
+      <span
+        class="lab-sharing-director__dot"
+        data-availability=${director.availability}
+        aria-hidden="true"
+      ></span>
       <div class="lab-sharing-director__identity">
-        <div class="lab-sharing-director__name-row">
-          <span
-            class="lab-sharing-director__dot"
-            data-availability=${director.availability}
-            aria-hidden="true"
-          ></span>
-          <div class="lab-sharing-director__name">${director.name}</div>
-        </div>
+        <div class="lab-sharing-director__eyebrow">${t("labSharing.director.title")}</div>
+        <div class="lab-sharing-director__name">${director.name}</div>
         <div class="lab-sharing-director__meta">
           ${availabilityLabel(director.availability)}${director.timezone
             ? html` · ${t("professor.broadcast.timezoneLabel", { timezone: director.timezone })}`
@@ -366,7 +400,7 @@ function renderTagPicker(state: AppViewState) {
         return html`
           <button
             type="button"
-            class="lab-sharing-tag ${active ? "lab-sharing-tag--active" : ""}"
+            class="chip lab-sharing-tag ${active ? "lab-sharing-tag--active" : ""}"
             aria-pressed=${active}
             @click=${() => {
               const next = new Set(selected);
@@ -388,6 +422,7 @@ function renderTagPicker(state: AppViewState) {
             <input
               type="text"
               class="lab-sharing-tag lab-sharing-tag--input"
+              aria-label=${t("labSharing.seekHelp.addTag")}
               placeholder=${t("labSharing.seekHelp.addTagPlaceholder")}
               .value=${tagDraft}
               @input=${(event: Event) => {
@@ -411,8 +446,7 @@ function renderTagPicker(state: AppViewState) {
         : html`
             <button
               type="button"
-              class="lab-sharing-tag lab-sharing-tag--add"
-              aria-label=${t("labSharing.seekHelp.addTag")}
+              class="chip lab-sharing-tag lab-sharing-tag--add"
               @click=${() => {
                 addingTag = true;
                 requestUpdate(state);
@@ -426,25 +460,28 @@ function renderTagPicker(state: AppViewState) {
 }
 
 function renderAskForm(state: AppViewState) {
-  const projectId = state.labSharingAskProjectId ?? ownedProjectsOf(state)[0]?.id ?? "";
+  const projects = ownedProjectsOf(state);
+  const projectId = state.labSharingAskProjectId ?? projects[0]?.id ?? "";
   return html`
-    <div class="lab-sharing-ask">
-      <label class="lab-sharing-ask__field">
+    <div class="adminbot-form lab-sharing-ask">
+      <label class="adminbot-form__field lab-sharing-ask__field">
         <span class="lab-sharing-ask__label">${t("labSharing.seekHelp.projectLabel")}</span>
-        <select
-          class="lab-sharing-ask__select"
-          .value=${projectId}
-          @change=${(event: Event) => {
-            state.labSharingAskProjectId = (event.target as HTMLSelectElement).value;
-          }}
-        >
-          ${ownedProjectsOf(state).map(
-            (project) => html`<option value=${project.id}>${project.title}</option>`,
-          )}
-        </select>
+        ${projects.length
+          ? html`<select
+              class="lab-sharing-ask__select"
+              .value=${projectId}
+              @change=${(event: Event) => {
+                state.labSharingAskProjectId = (event.target as HTMLSelectElement).value;
+              }}
+            >
+              ${projects.map(
+                (project) => html`<option value=${project.id}>${project.title}</option>`,
+              )}
+            </select>`
+          : html`<p class="muted lab-sharing-ask__none">${t("labSharing.seekHelp.noProjects")}</p>`}
       </label>
 
-      <label class="lab-sharing-ask__field">
+      <label class="adminbot-form__field lab-sharing-ask__field">
         <span class="lab-sharing-ask__label">${t("labSharing.seekHelp.commentLabel")}</span>
         <textarea
           class="lab-sharing-ask__textarea"
@@ -459,24 +496,26 @@ function renderAskForm(state: AppViewState) {
       </label>
 
       <div class="lab-sharing-ask__row">
-        <label class="lab-sharing-ask__field lab-sharing-ask__field--narrow">
+        <label class="adminbot-form__field lab-sharing-ask__field">
           <span class="lab-sharing-ask__label">${t("labSharing.seekHelp.membersLabel")}</span>
           <input
             class="lab-sharing-ask__input"
             type="number"
             min="1"
+            inputmode="numeric"
             .value=${String(state.labSharingAskMembers ?? 1)}
             @input=${(event: Event) => {
               state.labSharingAskMembers = Number((event.target as HTMLInputElement).value);
             }}
           />
         </label>
-        <label class="lab-sharing-ask__field lab-sharing-ask__field--narrow">
+        <label class="adminbot-form__field lab-sharing-ask__field">
           <span class="lab-sharing-ask__label">${t("labSharing.seekHelp.hoursLabel")}</span>
           <input
             class="lab-sharing-ask__input"
             type="number"
             min="0"
+            inputmode="numeric"
             .value=${String(state.labSharingAskHours ?? 1)}
             @input=${(event: Event) => {
               state.labSharingAskHours = Number((event.target as HTMLInputElement).value);
@@ -485,7 +524,7 @@ function renderAskForm(state: AppViewState) {
         </label>
       </div>
 
-      <div class="lab-sharing-ask__field">
+      <div class="adminbot-form__field lab-sharing-ask__field">
         <span class="lab-sharing-ask__label">${t("labSharing.seekHelp.tags")}</span>
         ${renderTagPicker(state)}
       </div>
@@ -493,13 +532,13 @@ function renderAskForm(state: AppViewState) {
   `;
 }
 
-function renderMemberCard(state: AppViewState, member: LabMemberSummary) {
+function renderMemberCard(state: AppViewState, member: LabMemberSummary, canAsk: boolean) {
   const invited = (state.labSharingInvitedMemberIds ?? []).includes(member.id);
   return html`
     <article class="lab-sharing-member" data-testid=${`lab-sharing-member-${member.id}`}>
       <div class="lab-sharing-member__header">
         <span class="lab-sharing-member__name">${member.name}</span>
-        <span class="lab-sharing-member__role">${member.role}</span>
+        ${member.role ? html`<span class="lab-sharing-member__role">${member.role}</span>` : nothing}
       </div>
       ${member.projects.length
         ? html`<p class="lab-sharing-member__line">
@@ -517,8 +556,8 @@ function renderMemberCard(state: AppViewState, member: LabMemberSummary) {
         : nothing}
       <button
         type="button"
-        class="btn ${invited ? "" : "primary"} lab-sharing-member__invite"
-        ?disabled=${invited}
+        class="btn btn--sm lab-sharing-member__invite"
+        ?disabled=${invited || !canAsk || isBusy(state)}
         @click=${() => {
           askingMemberId = member.id;
           askSpecialMessage = "";
@@ -536,54 +575,58 @@ function renderSeekHelpPanel(state: AppViewState) {
   const trimmed = query.trim();
   // Members stay hidden until the member actually searches -- no directory dump, just results.
   const results = trimmed ? membersOf(state) : [];
+  // Both routes below file against a paper. With none to pick, they would send an empty id and
+  // fail at the service, so they wait until there is one.
+  const canAsk = ownedProjectsOf(state).length > 0;
 
   return html`
-    <section class="lab-sharing-seek" data-testid="lab-sharing-seek-help">
-      <div class="lab-sharing-seek__header">
-        <h2 class="lab-sharing-seek__title">${t("labSharing.seekHelp.title")}</h2>
-        <p class="lab-sharing-seek__sub">${t("labSharing.seekHelp.subtitle")}</p>
-      </div>
-
+    <section
+      class="card adminbot-card adminbot-card--wide lab-sharing-seek"
+      data-testid="lab-sharing-seek-help"
+    >
+      ${sectionHead(t("labSharing.seekHelp.title"), t("labSharing.seekHelp.subtitle"))}
       ${renderAskForm(state)}
 
-      <div class="lab-sharing-seek__divider">
-        <span>${t("labSharing.seekHelp.searchHeading")}</span>
-      </div>
-
-      <div class="lab-sharing-seek__search-row">
-        <input
-          type="text"
-          class="lab-sharing-seek__search"
-          placeholder=${t("labSharing.seekHelp.searchPlaceholder")}
-          .value=${query}
-          @input=${(event: Event) => {
-            const value = (event.target as HTMLInputElement).value;
-            state.labSharingSearchQuery = value;
-            requestUpdate(state);
-            // Debounced, because this is a request per keystroke otherwise. The generation guard is
-            // the query itself: a reply for something the member has since typed past is dropped.
-            clearTimeout(memberSearchTimer);
-            if (!value.trim()) {
-              state.labSharingMembers = [];
-              return;
-            }
-            memberSearchTimer = setTimeout(() => {
-              void searchAdminBotLabSharingMembers(state, value).then(() => {
-                if ((state.labSharingSearchQuery ?? "") === value) {
-                  requestUpdate(state);
-                }
-              });
-            }, 250);
-          }}
-        />
-      </div>
-
-      <div class="lab-sharing-seek__results">
-        ${trimmed
-          ? results.length
-            ? results.map((member) => renderMemberCard(state, member))
-            : html`<p class="lab-sharing-seek__empty">${t("labSharing.seekHelp.empty")}</p>`
-          : html`<p class="lab-sharing-seek__hint">${t("labSharing.seekHelp.searchPrompt")}</p>`}
+      <div class="lab-sharing-seek__route">
+        <h3 class="lab-sharing-seek__route-title">${t("labSharing.seekHelp.searchHeading")}</h3>
+        <div class="adminbot-form">
+          <input
+            type="search"
+            class="lab-sharing-seek__search"
+            aria-label=${t("labSharing.seekHelp.searchHeading")}
+            placeholder=${t("labSharing.seekHelp.searchPlaceholder")}
+            .value=${query}
+            @input=${(event: Event) => {
+              const value = (event.target as HTMLInputElement).value;
+              state.labSharingSearchQuery = value;
+              requestUpdate(state);
+              // Debounced, because this is a request per keystroke otherwise. The generation guard
+              // is the query itself: a reply for something the member has since typed past is
+              // dropped.
+              clearTimeout(memberSearchTimer);
+              if (!value.trim()) {
+                state.labSharingMembers = [];
+                return;
+              }
+              memberSearchTimer = setTimeout(() => {
+                void searchAdminBotLabSharingMembers(state, value).then(() => {
+                  if ((state.labSharingSearchQuery ?? "") === value) {
+                    requestUpdate(state);
+                  }
+                });
+              }, 250);
+            }}
+          />
+        </div>
+        <div class="lab-sharing-seek__results" aria-live="polite">
+          ${trimmed
+            ? results.length
+              ? results.map((member) => renderMemberCard(state, member, canAsk))
+              : html`<p class="muted lab-sharing-seek__empty">${t("labSharing.seekHelp.empty")}</p>`
+            : html`<p class="muted lab-sharing-seek__hint">
+                ${t("labSharing.seekHelp.searchPrompt")}
+              </p>`}
+        </div>
       </div>
 
       ${askingMemberId
@@ -593,26 +636,50 @@ function renderSeekHelpPanel(state: AppViewState) {
           )
         : nothing}
 
-      <div class="lab-sharing-seek__or">
-        <span class="lab-sharing-seek__or-line"></span>
-        <span class="lab-sharing-seek__or-label">${t("labSharing.seekHelp.or")}</span>
-        <span class="lab-sharing-seek__or-line"></span>
+      <div class="lab-sharing-seek__route lab-sharing-seek__route--call">
+        <div class="lab-sharing-seek__call-copy">
+          <h3 class="lab-sharing-seek__route-title">${t("labSharing.seekHelp.callHeading")}</h3>
+          <p class="muted">${t("labSharing.seekHelp.callHint")}</p>
+        </div>
+        <button
+          type="button"
+          class="btn primary lab-sharing-seek__call"
+          data-testid="lab-sharing-general-call"
+          ?disabled=${!canAsk || isBusy(state)}
+          @click=${() => {
+            confirmingGeneralCall = true;
+            requestUpdate(state);
+          }}
+        >
+          ${t("labSharing.seekHelp.generalCall")}
+        </button>
       </div>
-
-      <button
-        type="button"
-        class="btn primary lab-sharing-seek__call"
-        data-testid="lab-sharing-general-call"
-        @click=${() => {
-          confirmingGeneralCall = true;
-          requestUpdate(state);
-        }}
-      >
-        ${t("labSharing.seekHelp.generalCall")}
-      </button>
 
       ${confirmingGeneralCall ? renderGeneralCallDialog(state) : nothing}
     </section>
+  `;
+}
+
+/** The request as it will be filed: members, hours and tags, shown in both confirm dialogs. */
+function renderAskSummary(state: AppViewState) {
+  const tags = state.labSharingAskTags ?? [];
+  return html`
+    ${state.labSharingAskComment
+      ? html`<p class="lab-sharing-invite-dialog__summary">${state.labSharingAskComment}</p>`
+      : nothing}
+    <dl class="lab-sharing-invite-dialog__details">
+      <div class="lab-sharing-invite-dialog__detail">
+        <dt class="lab-sharing-invite-dialog__label">${t("labSharing.seekHelp.membersLabel")}</dt>
+        <dd class="lab-sharing-invite-dialog__value">${state.labSharingAskMembers ?? 1}</dd>
+      </div>
+      <div class="lab-sharing-invite-dialog__detail">
+        <dt class="lab-sharing-invite-dialog__label">${t("labSharing.seekHelp.hoursLabel")}</dt>
+        <dd class="lab-sharing-invite-dialog__value">${state.labSharingAskHours ?? 1}</dd>
+      </div>
+    </dl>
+    ${tags.length
+      ? html`<div class="chip-row">${tags.map((tag) => html`<span class="chip">${tag}</span>`)}</div>`
+      : nothing}
   `;
 }
 
@@ -647,34 +714,7 @@ function renderGeneralCallDialog(state: AppViewState) {
           >
           <h3 class="lab-sharing-invite-dialog__title">${project?.title ?? projectId}</h3>
         </div>
-
-        ${state.labSharingAskComment
-          ? html`<p class="lab-sharing-invite-dialog__summary">${state.labSharingAskComment}</p>`
-          : nothing}
-
-        <div class="lab-sharing-invite-dialog__detail">
-          <span class="lab-sharing-invite-dialog__label"
-            >${t("labSharing.seekHelp.membersLabel")}</span
-          >
-          <span class="lab-sharing-invite-dialog__value">${state.labSharingAskMembers ?? 1}</span>
-        </div>
-        <div class="lab-sharing-invite-dialog__detail">
-          <span class="lab-sharing-invite-dialog__label"
-            >${t("labSharing.seekHelp.hoursLabel")}</span
-          >
-          <span class="lab-sharing-invite-dialog__value">${state.labSharingAskHours ?? 1}</span>
-        </div>
-
-        ${(state.labSharingAskTags ?? []).length
-          ? html`
-              <div class="lab-sharing-invite-dialog__needs">
-                ${(state.labSharingAskTags ?? []).map(
-                  (tag) => html`<span class="lab-sharing-invite-dialog__need">${tag}</span>`,
-                )}
-              </div>
-            `
-          : nothing}
-
+        ${renderAskSummary(state)}
         <div class="lab-sharing-invite-dialog__actions">
           <button
             type="button"
@@ -690,6 +730,7 @@ function renderGeneralCallDialog(state: AppViewState) {
             type="button"
             class="btn primary lab-sharing-invite-dialog__respond"
             data-testid="lab-sharing-general-call-send"
+            ?disabled=${isBusy(state)}
             @click=${() => publish()}
           >
             ${t("labSharing.seekHelp.postCall")}
@@ -719,7 +760,17 @@ function renderMemberAskDialog(state: AppViewState, member: LabMemberSummary | n
       paper_id: projectId,
       kind: "collaboration",
       note,
-    }).finally(() => requestUpdate(state));
+    })
+      .then((ok) => {
+        // Marked "Invited" straight away so the button cannot be pressed twice; a request the
+        // service refused un-marks it, or the member is left believing an ask went out that did not.
+        if (!ok) {
+          state.labSharingInvitedMemberIds = (state.labSharingInvitedMemberIds ?? []).filter(
+            (id) => id !== member.id,
+          );
+        }
+      })
+      .finally(() => requestUpdate(state));
   };
   return html`
     <div
@@ -736,38 +787,9 @@ function renderMemberAskDialog(state: AppViewState, member: LabMemberSummary | n
           >
           <h3 class="lab-sharing-invite-dialog__title">${project?.title ?? projectId}</h3>
         </div>
-
-        ${state.labSharingAskComment
-          ? html`<p class="lab-sharing-invite-dialog__summary">${state.labSharingAskComment}</p>`
-          : nothing}
-
-        <div class="lab-sharing-invite-dialog__detail">
-          <span class="lab-sharing-invite-dialog__label"
-            >${t("labSharing.seekHelp.membersLabel")}</span
-          >
-          <span class="lab-sharing-invite-dialog__value">${state.labSharingAskMembers ?? 1}</span>
-        </div>
-        <div class="lab-sharing-invite-dialog__detail">
-          <span class="lab-sharing-invite-dialog__label"
-            >${t("labSharing.seekHelp.hoursLabel")}</span
-          >
-          <span class="lab-sharing-invite-dialog__value">${state.labSharingAskHours ?? 1}</span>
-        </div>
-
-        ${(state.labSharingAskTags ?? []).length
-          ? html`
-              <div class="lab-sharing-invite-dialog__needs">
-                ${(state.labSharingAskTags ?? []).map(
-                  (tag) => html`<span class="lab-sharing-invite-dialog__need">${tag}</span>`,
-                )}
-              </div>
-            `
-          : nothing}
-
-        <div class="lab-sharing-invite-dialog__field">
-          <label class="lab-sharing-invite-dialog__label" for="lab-sharing-ask-special-message"
-            >${t("labSharing.seekHelp.specialMessageLabel", { name: member.name })}</label
-          >
+        ${renderAskSummary(state)}
+        <label class="adminbot-form adminbot-form__field lab-sharing-invite-dialog__field">
+          <span>${t("labSharing.seekHelp.specialMessageLabel", { name: member.name })}</span>
           <textarea
             id="lab-sharing-ask-special-message"
             class="lab-sharing-invite-dialog__input"
@@ -778,8 +800,7 @@ function renderMemberAskDialog(state: AppViewState, member: LabMemberSummary | n
               requestUpdate(state);
             }}
           ></textarea>
-        </div>
-
+        </label>
         <div class="lab-sharing-invite-dialog__actions">
           <button
             type="button"
@@ -795,6 +816,7 @@ function renderMemberAskDialog(state: AppViewState, member: LabMemberSummary | n
             type="button"
             class="btn primary lab-sharing-invite-dialog__respond"
             data-testid="lab-sharing-ask-send"
+            ?disabled=${isBusy(state)}
             @click=${() => send()}
           >
             ${t("labSharing.seekHelp.sendInvite")}
@@ -806,7 +828,7 @@ function renderMemberAskDialog(state: AppViewState, member: LabMemberSummary | n
 }
 
 // ---------------------------------------------------------------------------
-// 3. Your invites -- respond to the owner
+// 3. Invitations the viewer has asked for, and where each has got to
 // ---------------------------------------------------------------------------
 
 function renderInvitesPanel(state: AppViewState) {
@@ -815,37 +837,51 @@ function renderInvitesPanel(state: AppViewState) {
   const viewingInvite = invitesOf(state).find((invite) => invite.id === viewingInviteId) ?? null;
 
   return html`
-    <section class="lab-sharing-invites" data-testid="lab-sharing-invites">
-      <h2 class="lab-sharing-invites__title">${t("labSharing.invites.title")}</h2>
-      <div class="lab-sharing-invites__list">
-        ${invites.map(
-          (invite) => html`
-            <article class="lab-sharing-invite" data-testid=${`lab-sharing-invite-${invite.id}`}>
-              <div class="lab-sharing-invite__header">
-                <span class="lab-sharing-invite__from"
-                  >${t("labSharing.invites.to", { name: invite.fromName })}</span
+    <section
+      class="card adminbot-card adminbot-card--wide lab-sharing-invites"
+      data-testid="lab-sharing-invites"
+    >
+      ${sectionHead(t("labSharing.invites.title"), t("labSharing.invites.subtitle"))}
+      ${invites.length === 0
+        ? html`<p class="muted lab-sharing-invites__empty">${t("labSharing.invites.empty")}</p>`
+        : html`<div class="lab-sharing-list lab-sharing-invites__list">
+            ${invites.map(
+              (invite) => html`
+                <article
+                  class="lab-sharing-row lab-sharing-invite"
+                  data-testid=${`lab-sharing-invite-${invite.id}`}
                 >
-                <span class="lab-sharing-invite__time">${invite.receivedAt}</span>
-              </div>
-              <p class="lab-sharing-invite__project">${invite.projectId}</p>
-              <p class="lab-sharing-invite__note">${invite.note}</p>
-              <div class="lab-sharing-invite__actions">
-                <button
-                  type="button"
-                  class="btn primary lab-sharing-invite__view"
-                  @click=${() => {
-                    viewingInviteId = invite.id;
-                    requestUpdate(state);
-                  }}
-                >
-                  ${t("labSharing.invites.view")}
-                </button>
-              </div>
-            </article>
-          `,
-        )}
-      </div>
-
+                  <div class="lab-sharing-row__main">
+                    <p class="lab-sharing-row__title lab-sharing-invite__project">
+                      ${invite.projectId}
+                    </p>
+                    <p class="lab-sharing-row__meta">
+                      <span class="lab-sharing-invite__from"
+                        >${t("labSharing.invites.to", { name: invite.fromName })}</span
+                      >
+                      <span aria-hidden="true">·</span>
+                      <span class="lab-sharing-invite__note">${invite.note}</span>
+                    </p>
+                  </div>
+                  <div class="lab-sharing-row__aside">
+                    <span class="pill ${invite.tone} lab-sharing-invite__time"
+                      >${invite.receivedAt}</span
+                    >
+                    <button
+                      type="button"
+                      class="btn btn--sm lab-sharing-invite__view"
+                      @click=${() => {
+                        viewingInviteId = invite.id;
+                        requestUpdate(state);
+                      }}
+                    >
+                      ${t("labSharing.invites.view")}
+                    </button>
+                  </div>
+                </article>
+              `,
+            )}
+          </div>`}
       ${viewingInvite
         ? html`
             <div
@@ -880,12 +916,25 @@ function renderInvitesPanel(state: AppViewState) {
 function renderInviteDetails(invite: CollabInvite) {
   return html`
     <div class="lab-sharing-invite-dialog__head">
+      <span class="lab-sharing-invite-dialog__from">${t("labSharing.invites.viewTitle")}</span>
       <h3 class="lab-sharing-invite-dialog__title">${invite.projectId}</h3>
-      <span class="lab-sharing-invite-dialog__from"
-        >${t("labSharing.invites.to", { name: invite.fromName })}</span
-      >
     </div>
-    <p class="lab-sharing-invite-dialog__note">${invite.note}</p>
+    <dl class="lab-sharing-invite-dialog__details">
+      <div class="lab-sharing-invite-dialog__detail">
+        <dt class="lab-sharing-invite-dialog__label">${t("labSharing.invites.recipient")}</dt>
+        <dd class="lab-sharing-invite-dialog__value">${invite.fromName}</dd>
+      </div>
+      <div class="lab-sharing-invite-dialog__detail">
+        <dt class="lab-sharing-invite-dialog__label">${t("labSharing.invites.kind")}</dt>
+        <dd class="lab-sharing-invite-dialog__value">${invite.note}</dd>
+      </div>
+      <div class="lab-sharing-invite-dialog__detail">
+        <dt class="lab-sharing-invite-dialog__label">${t("labSharing.invites.statusLabel")}</dt>
+        <dd class="lab-sharing-invite-dialog__value">
+          <span class="pill ${invite.tone}">${invite.receivedAt}</span>
+        </dd>
+      </div>
+    </dl>
   `;
 }
 
@@ -896,45 +945,51 @@ function renderInviteDetails(invite: CollabInvite) {
 function renderYourRequestsPanel(state: AppViewState) {
   const sentRequests = sentRequestsOf(state);
   return html`
-    <section class="lab-sharing-requests" data-testid="lab-sharing-requests">
-      <h2 class="lab-sharing-requests__title">${t("labSharing.requests.title")}</h2>
+    <section
+      class="card adminbot-card adminbot-card--wide lab-sharing-requests"
+      data-testid="lab-sharing-requests"
+    >
+      ${sectionHead(t("labSharing.requests.title"))}
       ${sentRequests.length === 0
-        ? html`<p class="lab-sharing-requests__empty">${t("labSharing.requests.empty")}</p>`
+        ? html`<p class="muted lab-sharing-requests__empty">${t("labSharing.requests.empty")}</p>`
         : html`
-            <div class="lab-sharing-requests__list">
+            <div class="lab-sharing-list lab-sharing-requests__list">
               ${sentRequests.map(
                 (request) => html`
                   <article
-                    class="lab-sharing-request"
+                    class="lab-sharing-row lab-sharing-request"
                     data-testid=${`lab-sharing-request-${request.id}`}
                   >
-                    <div class="lab-sharing-request__header">
-                      <span class="lab-sharing-request__project">
+                    <div class="lab-sharing-row__main">
+                      <p class="lab-sharing-row__title lab-sharing-request__project">
                         ${ownedProjectsOf(state).find((p) => p.id === request.projectId)?.title ??
                         request.projectId}
-                      </span>
-                      <span class="lab-sharing-request__time">${request.sentAt}</span>
-                    </div>
-                    <p class="lab-sharing-request__note">${request.comment}</p>
-                    <div class="lab-sharing-request__meta">
-                      <span class="lab-sharing-request__stats">
+                      </p>
+                      ${request.comment
+                        ? html`<p class="lab-sharing-request__note">${request.comment}</p>`
+                        : nothing}
+                      <p class="lab-sharing-row__meta lab-sharing-request__stats">
                         ${t("labSharing.requests.stats", {
                           members: String(request.members),
                           hours: String(request.hours),
-                        })}
-                      </span>
-                      <div class="lab-sharing-request__needs">
-                        ${request.tags.map(
-                          (tag) => html`<span class="lab-sharing-request__need">${tag}</span>`,
-                        )}
-                      </div>
+                        })}${request.sentAt
+                          ? html` · <span class="lab-sharing-request__time">${request.sentAt}</span>`
+                          : nothing}
+                      </p>
+                      ${request.tags.length
+                        ? html`<div class="chip-row lab-sharing-request__needs">
+                            ${request.tags.map(
+                              (tag) => html`<span class="chip lab-sharing-request__need">${tag}</span>`,
+                            )}
+                          </div>`
+                        : nothing}
                     </div>
-                    <div class="lab-sharing-request__actions">
+                    <div class="lab-sharing-row__aside lab-sharing-request__actions">
                       ${confirmingDeleteRequestId === request.id
                         ? html`
                             <button
                               type="button"
-                              class="btn lab-sharing-request__cancel"
+                              class="btn btn--sm lab-sharing-request__cancel"
                               data-testid=${`lab-sharing-request-cancel-${request.id}`}
                               @click=${() => {
                                 confirmingDeleteRequestId = null;
@@ -945,8 +1000,9 @@ function renderYourRequestsPanel(state: AppViewState) {
                             </button>
                             <button
                               type="button"
-                              class="btn lab-sharing-request__delete lab-sharing-request__delete--confirm"
+                              class="btn btn--sm danger lab-sharing-request__delete lab-sharing-request__delete--confirm"
                               data-testid=${`lab-sharing-request-delete-${request.id}`}
+                              ?disabled=${isBusy(state)}
                               @click=${() => {
                                 confirmingDeleteRequestId = null;
                                 requestUpdate(state);
@@ -965,8 +1021,9 @@ function renderYourRequestsPanel(state: AppViewState) {
                         : html`
                             <button
                               type="button"
-                              class="btn lab-sharing-request__delete"
+                              class="btn btn--sm lab-sharing-request__delete"
                               data-testid=${`lab-sharing-request-delete-${request.id}`}
+                              ?disabled=${isBusy(state)}
                               @click=${() => {
                                 confirmingDeleteRequestId = request.id;
                                 requestUpdate(state);
@@ -988,6 +1045,14 @@ function renderYourRequestsPanel(state: AppViewState) {
 // ---------------------------------------------------------------------------
 // 5. Open projects deck
 // ---------------------------------------------------------------------------
+
+const CHEVRON_PREV = html`<svg viewBox="0 0 24 24" aria-hidden="true">
+  <path d="m15 18-6-6 6-6" />
+</svg>`;
+const CHEVRON_NEXT = html`<svg viewBox="0 0 24 24" aria-hidden="true">
+  <path d="m9 18 6-6-6-6" />
+</svg>`;
+
 function renderProjectCard(state: AppViewState, project: OpenProject) {
   return html`
     <article class="lab-sharing-project" data-testid=${`lab-sharing-project-${project.id}`}>
@@ -995,10 +1060,14 @@ function renderProjectCard(state: AppViewState, project: OpenProject) {
         <h3 class="lab-sharing-project__title">${project.title}</h3>
         <span class="lab-sharing-project__owner">${project.owner}</span>
       </div>
-      <p class="lab-sharing-project__summary">${project.summary}</p>
-      <div class="lab-sharing-project__needs">
-        ${project.tags.map((tag) => html`<span class="lab-sharing-project__need">${tag}</span>`)}
-      </div>
+      ${project.summary
+        ? html`<p class="lab-sharing-project__summary">${project.summary}</p>`
+        : nothing}
+      ${project.tags.length
+        ? html`<div class="chip-row lab-sharing-project__needs">
+            ${project.tags.map((tag) => html`<span class="chip lab-sharing-project__need">${tag}</span>`)}
+          </div>`
+        : nothing}
       <div class="lab-sharing-project__footer">
         <span class="lab-sharing-project__stats">
           ${t("labSharing.openProjects.stats", {
@@ -1008,8 +1077,9 @@ function renderProjectCard(state: AppViewState, project: OpenProject) {
         </span>
         <button
           type="button"
-          class="btn primary lab-sharing-project__offer"
+          class="btn btn--sm primary lab-sharing-project__offer"
           data-testid=${`lab-sharing-offer-${project.id}`}
+          ?disabled=${isBusy(state)}
           @click=${() => {
             // The hours the poster asked for, as the opening offer. The panel has no field of its
             // own for it, and asking for a number before the offer exists is a form where a click
@@ -1032,9 +1102,12 @@ function renderOpenProjectsPanel(state: AppViewState) {
   const total = projects.length;
   if (total === 0) {
     return html`
-      <section class="lab-sharing-projects" data-testid="lab-sharing-open-projects">
-        <h2 class="lab-sharing-projects__title">${t("labSharing.openProjects.title")}</h2>
-        <p class="lab-sharing-projects__empty">${t("labSharing.openProjects.empty")}</p>
+      <section
+        class="card adminbot-card adminbot-card--wide lab-sharing-projects"
+        data-testid="lab-sharing-open-projects"
+      >
+        ${sectionHead(t("labSharing.openProjects.title"), t("labSharing.openProjects.subtitle"))}
+        <p class="muted lab-sharing-projects__empty">${t("labSharing.openProjects.empty")}</p>
       </section>
     `;
   }
@@ -1042,77 +1115,50 @@ function renderOpenProjectsPanel(state: AppViewState) {
   // instead of hitting hard stops at either end.
   const index = (((state.labSharingOpenProjectIndex ?? 0) % total) + total) % total;
   const project = projects[index];
+  const step = (delta: number) => {
+    state.labSharingOpenProjectIndex = (index + delta + total) % total;
+    requestUpdate(state);
+  };
 
   return html`
-    <section class="lab-sharing-projects" data-testid="lab-sharing-open-projects">
-      <div class="lab-sharing-projects__header">
-        <h2 class="lab-sharing-projects__title">${t("labSharing.openProjects.title")}</h2>
-        <span class="lab-sharing-projects__count">${index + 1} / ${total}</span>
-      </div>
-
-      <div class="lab-sharing-projects__deck">
-        <button
-          type="button"
-          class="lab-sharing-projects__nav lab-sharing-projects__nav--prev"
-          aria-label=${t("labSharing.openProjects.previous")}
-          @click=${() => {
-            state.labSharingOpenProjectIndex = (index - 1 + total) % total;
-            requestUpdate(state);
-          }}
-        >
-          <svg
-            class="lab-sharing-projects__chevron"
-            viewBox="0 0 10 10"
-            width="10"
-            height="10"
-            aria-hidden="true"
-          >
-            <path
-              d="M6.5 2.5L3.5 5L6.5 7.5"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
-
-        ${renderProjectCard(state, project)}
-
-        <button
-          type="button"
-          class="lab-sharing-projects__nav lab-sharing-projects__nav--next"
-          aria-label=${t("labSharing.openProjects.next")}
-          @click=${() => {
-            state.labSharingOpenProjectIndex = (index + 1) % total;
-            requestUpdate(state);
-          }}
-        >
-          <svg
-            class="lab-sharing-projects__chevron"
-            viewBox="0 0 10 10"
-            width="10"
-            height="10"
-            aria-hidden="true"
-          >
-            <path
-              d="M3.5 2.5L6.5 5L3.5 7.5"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
-      </div>
+    <section
+      class="card adminbot-card adminbot-card--wide lab-sharing-projects"
+      data-testid="lab-sharing-open-projects"
+    >
+      ${sectionHead(
+        t("labSharing.openProjects.title"),
+        t("labSharing.openProjects.subtitle"),
+        total > 1
+          ? html`<div class="lab-sharing-projects__pager">
+              <button
+                type="button"
+                class="btn btn--icon lab-sharing-projects__nav lab-sharing-projects__nav--prev"
+                aria-label=${t("labSharing.openProjects.previous")}
+                @click=${() => step(-1)}
+              >
+                ${CHEVRON_PREV}
+              </button>
+              <span class="lab-sharing-projects__count" aria-live="polite"
+                >${index + 1} / ${total}</span
+              >
+              <button
+                type="button"
+                class="btn btn--icon lab-sharing-projects__nav lab-sharing-projects__nav--next"
+                aria-label=${t("labSharing.openProjects.next")}
+                @click=${() => step(1)}
+              >
+                ${CHEVRON_NEXT}
+              </button>
+            </div>`
+          : nothing,
+      )}
+      ${renderProjectCard(state, project)}
     </section>
   `;
 }
 
 // ---------------------------------------------------------------------------
-// 6. Announcements -- feed plus an in-page compose dialog
+// 6. Announcements -- feed plus an in-page compose form
 // ---------------------------------------------------------------------------
 
 /**
@@ -1124,90 +1170,74 @@ function renderOpenProjectsPanel(state: AppViewState) {
  */
 function renderAnnouncementsPanel(state: AppViewState) {
   return html`
-    <section class="lab-sharing-announcements" data-testid="lab-sharing-announcements">
-      <div class="lab-sharing-announcements__header">
-        <h2 class="lab-sharing-announcements__title">
-          ${t("labSharing.announcements.title")}
+    <section
+      class="card adminbot-card adminbot-card--wide lab-sharing-announcements"
+      data-testid="lab-sharing-announcements"
+    >
+      <div class="lab-sharing-section__head">
+        <div class="lab-sharing-section__heading">
+          <h2 class="card-title lab-sharing-announcements__title">
+            ${t("labSharing.announcements.title")}
+          </h2>
           <span class="pill warn" data-testid="lab-sharing-announcements-sample"
             >${t("labSharing.announcements.sample")}</span
           >
-        </h2>
-        <button
-          type="button"
-          class="btn lab-sharing-announcements__add"
-          data-testid="lab-sharing-announcement-add"
-          @click=${() => {
-            composingAnnouncement = true;
-            announcementDraft = "";
-            requestUpdate(state);
-            // The compose panel is at the bottom of the page; bring it into view so the member
-            // lands on the thing they just asked to write.
-            requestAnimationFrame(() => {
-              document
-                .querySelector<HTMLElement>('[data-testid="lab-sharing-announcement-compose"]')
-                ?.scrollIntoView({ behavior: "smooth", block: "center" });
-            });
-          }}
-        >
-          + ${t("labSharing.announcements.add")}
-        </button>
-      </div>
-
-      <div class="lab-sharing-announcements__list">
-        ${announcementsOf(state).length
+        </div>
+        ${composingAnnouncement
           ? nothing
-          : html`<p class="lab-sharing-announcements__empty">
-              ${t("labSharing.announcements.empty")}
-            </p>`}
-        ${announcementsOf(state).map(
-          (announcement) => html`
-            <article
-              class="lab-sharing-announcement"
-              data-testid=${`lab-sharing-announcement-${announcement.id}`}
+          : html`<button
+              type="button"
+              class="btn btn--sm lab-sharing-announcements__add"
+              data-testid="lab-sharing-announcement-add"
+              @click=${() => {
+                composingAnnouncement = true;
+                announcementDraft = "";
+                requestUpdate(state);
+                // Bring the compose form into view so the member lands on the thing they just
+                // asked to write.
+                requestAnimationFrame(() => {
+                  document
+                    .querySelector<HTMLElement>('[data-testid="lab-sharing-announcement-compose"]')
+                    ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                });
+              }}
             >
-              <div class="lab-sharing-announcement__header">
-                <span class="lab-sharing-announcement__author">${announcement.authorName}</span>
-                <span class="lab-sharing-announcement__time">${announcement.postedAt}</span>
-              </div>
-              <p class="lab-sharing-announcement__body">${announcement.body}</p>
-            </article>
-          `,
-        )}
+              ${t("labSharing.announcements.add")}
+            </button>`}
       </div>
 
       ${composingAnnouncement
         ? html`
             <div
-              class="lab-sharing-compose"
-              role="dialog"
-              aria-modal="true"
+              class="adminbot-form lab-sharing-compose"
+              role="group"
               aria-label=${t("labSharing.announcements.composeTitle")}
               data-testid="lab-sharing-announcement-compose"
             >
-              <h3 class="lab-sharing-compose__title">
-                ${t("labSharing.announcements.composeTitle")}
-              </h3>
-              <textarea
-                class="lab-sharing-compose__input"
-                rows="3"
-                placeholder=${t("labSharing.announcements.bodyPlaceholder")}
-                .value=${announcementDraft}
-                @input=${(event: Event) => {
-                  announcementDraft = (event.target as HTMLTextAreaElement).value;
-                  requestUpdate(state);
-                }}
-                @keydown=${(event: KeyboardEvent) => {
-                  if (event.key === "Escape") {
-                    composingAnnouncement = false;
-                    announcementDraft = "";
+              <label class="adminbot-form__field">
+                <span>${t("labSharing.announcements.composeTitle")}</span>
+                <textarea
+                  class="lab-sharing-compose__input"
+                  rows="3"
+                  placeholder=${t("labSharing.announcements.bodyPlaceholder")}
+                  .value=${announcementDraft}
+                  @input=${(event: Event) => {
+                    announcementDraft = (event.target as HTMLTextAreaElement).value;
                     requestUpdate(state);
-                  }
-                }}
-              ></textarea>
+                  }}
+                  @keydown=${(event: KeyboardEvent) => {
+                    if (event.key === "Escape") {
+                      composingAnnouncement = false;
+                      announcementDraft = "";
+                      requestUpdate(state);
+                    }
+                  }}
+                ></textarea>
+              </label>
               <div class="lab-sharing-compose__actions">
                 <button
                   type="button"
-                  class="btn lab-sharing-compose__cancel"
+                  class="btn btn--sm lab-sharing-compose__cancel"
                   @click=${() => {
                     composingAnnouncement = false;
                     announcementDraft = "";
@@ -1218,7 +1248,7 @@ function renderAnnouncementsPanel(state: AppViewState) {
                 </button>
                 <button
                   type="button"
-                  class="btn primary lab-sharing-compose__send"
+                  class="btn btn--sm primary lab-sharing-compose__send"
                   data-testid="lab-sharing-announcement-send"
                   ?disabled=${!announcementDraft.trim()}
                   @click=${() => {
@@ -1247,6 +1277,31 @@ function renderAnnouncementsPanel(state: AppViewState) {
             </div>
           `
         : nothing}
+
+      <div class="lab-sharing-list lab-sharing-announcements__list">
+        ${announcementsOf(state).length
+          ? nothing
+          : html`<p class="muted lab-sharing-announcements__empty">
+              ${t("labSharing.announcements.empty")}
+            </p>`}
+        ${announcementsOf(state).map(
+          (announcement) => html`
+            <article
+              class="lab-sharing-row lab-sharing-announcement"
+              data-testid=${`lab-sharing-announcement-${announcement.id}`}
+            >
+              <div class="lab-sharing-row__main">
+                <p class="lab-sharing-row__meta">
+                  <span class="lab-sharing-announcement__author">${announcement.authorName}</span>
+                  <span aria-hidden="true">·</span>
+                  <span class="lab-sharing-announcement__time">${announcement.postedAt}</span>
+                </p>
+                <p class="lab-sharing-announcement__body">${announcement.body}</p>
+              </div>
+            </article>
+          `,
+        )}
+      </div>
     </section>
   `;
 }
@@ -1256,24 +1311,61 @@ function renderAnnouncementsPanel(state: AppViewState) {
 // ---------------------------------------------------------------------------
 
 /**
- * What the tab could not load, and the one panel that has nothing behind it.
+ * What the tab could not load, and how the last write went.
  *
  * The banner this replaces said the whole tab was a preview; five of its six panels now read and
  * write the service, so a blanket warning would be false in the other direction. What survives is
- * narrower and truer: the reads that failed, named one per line, and -- on the announcements panel
- * itself -- a badge saying that one is still sample data.
+ * narrower and truer: the reads that failed, named one per line with a way to try again, and the
+ * outcome of the last action in the tone it actually had -- a success no longer wears the same
+ * warning box as a failure.
  */
 function renderLoadNotices(state: AppViewState) {
   const errors = state.labSharingErrors ?? [];
-  if (!errors.length && !state.labSharingNotice) {
+  const notice = state.labSharingNotice;
+  if (!errors.length && !notice) {
     return nothing;
   }
+  const failed = state.labSharingNoticeTone === "error";
   return html`
-    <div class="lab-sharing__coming-soon" role="status" data-testid="lab-sharing-notice">
-      <span class="lab-sharing__coming-soon-copy">
-        ${state.labSharingNotice ? html`<strong>${state.labSharingNotice}</strong>` : nothing}
-        ${errors.map((message) => html`<span>${message}</span>`)}
-      </span>
+    <div class="lab-sharing__notices" data-testid="lab-sharing-notice">
+      ${notice
+        ? html`<div
+            class="callout callout--dismissible ${failed ? "danger" : "success"}"
+            role=${failed ? "alert" : "status"}
+          >
+            <div class="callout__content">${notice}</div>
+            <button
+              type="button"
+              class="callout__dismiss"
+              aria-label=${t("labSharing.dismiss")}
+              @click=${() => {
+                state.labSharingNotice = null;
+                state.labSharingNoticeTone = null;
+                requestUpdate(state);
+              }}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+            </button>
+          </div>`
+        : nothing}
+      ${errors.length
+        ? html`<div class="callout danger lab-sharing__load-error" role="alert">
+            <div class="callout__content">
+              ${errors.map((message) => html`<p>${message}</p>`)}
+            </div>
+            <button
+              type="button"
+              class="btn btn--sm"
+              ?disabled=${Boolean(state.labSharingLoading)}
+              @click=${() => {
+                void loadAdminBotLabSharing(state).finally(() => requestUpdate(state));
+                requestUpdate(state);
+              }}
+            >
+              ${t("labSharing.retry")}
+            </button>
+          </div>`
+        : nothing}
     </div>
   `;
 }
@@ -1283,23 +1375,31 @@ function renderLoadNotices(state: AppViewState) {
  *
  * The six panels are the design from #23, in the order it put them; what sits under them now is
  * the service. The two strips that design never had -- the guidebook question box and the resource
- * shortcuts -- follow it, wearing the same section shell as the rest so the page reads as one
- * thing rather than as two eras stacked.
+ * shortcuts -- follow it, wearing the same card as the rest so the page reads as one thing rather
+ * than as two eras stacked.
  *
  * Loading is kicked off from the render rather than from a lifecycle hook because this view is a
  * function, not a component: the guard is the snapshot's own absence, so it runs once per session
- * and not once per keystroke.
+ * and not once per keystroke. Until the first read lands the data panels are replaced by a loading
+ * line; drawing them empty would show "nothing posted yet" for things that are merely not here yet.
  */
 export function renderLabSharing(state: AppViewState) {
   const session = loadStoredMemberSession();
   if (session && !state.labSharing && !state.labSharingLoading) {
     void loadAdminBotLabSharing(state).finally(() => requestUpdate(state));
   }
+  const loading = Boolean(state.labSharingLoading) && !state.labSharing;
   return html`
-    <div class="lab-sharing" data-testid="lab-sharing">
-      ${renderLoadNotices(state)} ${renderDirectorPanel(state)} ${renderInvitesPanel(state)}
-      ${renderYourRequestsPanel(state)} ${renderSeekHelpPanel(state)}
-      ${renderOpenProjectsPanel(state)} ${renderAnnouncementsPanel(state)}
+    <div class="lab-sharing" data-testid="lab-sharing" aria-busy=${loading ? "true" : "false"}>
+      ${renderLoadNotices(state)}
+      ${loading
+        ? html`<div class="muted lab-sharing__loading" role="status">
+            ${t("labSharing.loading")}
+          </div>`
+        : html`${renderDirectorPanel(state)} ${renderInvitesPanel(state)}
+          ${renderYourRequestsPanel(state)} ${renderSeekHelpPanel(state)}
+          ${renderOpenProjectsPanel(state)}`}
+      ${renderAnnouncementsPanel(state)}
       ${
         // The Dashboard's map, not a copy: same data, same privacy shape (names for an admin,
         // headcounts otherwise), drawn as a Collaborate section. It sits here because "who could I

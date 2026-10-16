@@ -11991,33 +11991,6 @@ select.input:focus {
   margin-bottom: var(--space-2);
 }
 
-/* Lab Sharing preview banner.
-   The tab renders a complete UI over mock data; the banner is what stops that from reading as a
-   working feature with wrong numbers in it. Warm rather than alarming -- nothing is broken, it is
-   just not connected yet. */
-.lab-sharing__coming-soon {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-4);
-  border: 1px solid var(--warn-muted, var(--border));
-  border-radius: var(--radius-md);
-  background: var(--warn-subtle, var(--bg-muted));
-}
-
-.lab-sharing__coming-soon-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted-strong);
-}
-
-.lab-sharing__coming-soon-copy strong {
-  color: var(--text-strong);
-}
-
 /* The tab bar for a page that holds several tabs (see TAB_PAGES in navigation.ts). It sits between
    the page heading and the panel, so it reads as "which part of this page", never as navigation
    away from it -- which is why it is flush under the header rather than inside a card. */
