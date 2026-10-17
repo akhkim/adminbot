@@ -3,7 +3,7 @@
 //
 // Built from buildMemberMap's own output rather than a second reading of the member records, so
 // the panel can never disagree with the map about why someone is where they are.
-import type { AdminBotLabMember } from "../../contracts/actions.js";
+import type { AdminBotLabMember, AdminBotLocationPermission } from "../../contracts/actions.js";
 import {
   type AdminBotCityCentroidResolver,
   type AdminBotMemberMap,
@@ -46,6 +46,16 @@ export type AdminBotMapCoverageEntry = {
   last_seen_at?: string;
 };
 
+/** A member whose browser said no to the location prompt, for the admins' "who said no" list. */
+export type AdminBotLocationRefusal = {
+  member_id: string;
+  name: string;
+  state: Exclude<AdminBotLocationPermission, "granted">;
+  /** When the browser last changed its answer. */
+  at?: string;
+  last_seen_at?: string;
+};
+
 export type AdminBotMapCoverage = {
   generated_at: string;
   active: number;
@@ -68,6 +78,14 @@ export type AdminBotMapCoverage = {
    * admins only; nothing messages them. Never-seen first, then oldest seen.
    */
   stale: AdminBotMapCoverageEntry[];
+  /**
+   * What the browsers of active, automatically placed members said to the location prompt.
+   * `not_asked` is everyone with no answer on record: not here since the prompt shipped, or a
+   * browser that never reported.
+   */
+  permission: Record<AdminBotLocationPermission | "not_asked", number>;
+  /** Who blocked it or closed it without answering, most recent answer first. */
+  refused: AdminBotLocationRefusal[];
 };
 
 const DEPARTED = new Set(["alumni"]);
@@ -142,14 +160,14 @@ export function buildMapCoverage(
         placed.source === "device" && placed.precision === "city"
           ? "device"
           : placed.source === "login" && placed.precision === "city"
-          ? "ip"
-          : placed.source === "checkin"
-            ? "checkin"
-            : placed.precision === "timezone"
-              ? "timezone"
-              : placed.precision === "country"
-                ? "country"
-                : "stored_city";
+            ? "ip"
+            : placed.source === "checkin"
+              ? "checkin"
+              : placed.precision === "timezone"
+                ? "timezone"
+                : placed.precision === "country"
+                  ? "country"
+                  : "stored_city";
       counts[bucket] += 1;
       if (bucket === "ip" || bucket === "timezone" || bucket === "country") {
         counts.approximate_only += 1;
@@ -178,9 +196,33 @@ export function buildMapCoverage(
       }),
     );
   }
+  const permission: AdminBotMapCoverage["permission"] = {
+    granted: 0,
+    denied: 0,
+    dismissed: 0,
+    not_asked: 0,
+  };
+  const refused: AdminBotLocationRefusal[] = [];
   for (const member of active) {
     if (isHiddenFromMemberMap(member) || memberMapVisibility(member) === "hidden") {
       counts.hidden += 1;
+      continue;
+    }
+    // Only automatic placement is ever asked; "stated" members are left out of the tally.
+    if (memberMapVisibility(member) !== "auto") {
+      continue;
+    }
+    const state = member.location_permission;
+    permission[state ?? "not_asked"] += 1;
+    if (state === "denied" || state === "dismissed") {
+      const lastSeen = lastSeenInAdminBot(member);
+      refused.push({
+        member_id: member.id,
+        name: member.name,
+        state,
+        ...(member.location_permission_at ? { at: member.location_permission_at } : {}),
+        ...(lastSeen ? { last_seen_at: lastSeen } : {}),
+      });
     }
   }
 
@@ -193,5 +235,11 @@ export function buildMapCoverage(
       const r = right.last_seen_at ? Date.parse(right.last_seen_at) : Number.NEGATIVE_INFINITY;
       return l - r || left.name.localeCompare(right.name);
     }),
+    permission,
+    refused: refused.toSorted(
+      (left, right) =>
+        (right.at ? Date.parse(right.at) : 0) - (left.at ? Date.parse(left.at) : 0) ||
+        left.name.localeCompare(right.name),
+    ),
   };
 }

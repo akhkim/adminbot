@@ -18,8 +18,10 @@ import {
   adminBotNormalizePaperAlias,
   adminBotPaperAliasMaxLength,
   adminBotNudgeRosterDecision,
+  adminBotLocationPermissions,
   adminBotReceivesNudges,
   isAdminBotFullMember,
+  type AdminBotLocationPermission,
   type AdminBotMandatoryProfileField,
   type AdminBotProfileReminderScope,
 } from "../contracts/actions.js";
@@ -632,6 +634,8 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
         | "device_region"
         | "device_country"
         | "device_located_at"
+        | "location_permission"
+        | "location_permission_at"
         | "last_seen_at"
       >
     >,
@@ -10946,6 +10950,39 @@ export class AdminBotService {
       });
     }
     return { ok: true, status: 200, payload: { recorded: true, ...answer, located_at: at } };
+  }
+
+  /**
+   * What the member's browser said about the location permission (POST
+   * /profile/location-permission): "granted", "denied" (blocked) or "dismissed" (closed or ignored).
+   * A state, never a position. Writes only when it changed, so the stamp says since when; the
+   * page also sends only on a change. Only for "auto" members, the only ones the page asks.
+   */
+  recordLocationPermission(
+    memberId: string,
+    input: unknown,
+  ): AdminBotServiceResponse<{ recorded: boolean; state?: AdminBotLocationPermission }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    const body = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+    const state = adminBotLocationPermissions.find((known) => known === body.state);
+    if (!state) {
+      return serviceError(400, `state must be one of ${adminBotLocationPermissions.join(", ")}`);
+    }
+    if (memberMapVisibility(member) !== "auto") {
+      return { ok: true, status: 200, payload: { recorded: false } };
+    }
+    if (member.location_permission === state) {
+      return { ok: true, status: 200, payload: { recorded: false, state } };
+    }
+    const at = (this.options.now?.() ?? new Date()).toISOString();
+    this.store.patchLabMemberAuthFields(memberId, {
+      location_permission: state,
+      location_permission_at: at,
+    });
+    return { ok: true, status: 200, payload: { recorded: true, state } };
   }
 
   // The admin coverage panel: which signal places each active member, and who is placed only by

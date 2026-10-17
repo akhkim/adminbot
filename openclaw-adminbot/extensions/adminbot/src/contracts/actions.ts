@@ -987,6 +987,21 @@ export const adminBotInferredLocationMemberFields = [
   "device_located_at",
 ] as const;
 
+/** What a browser said about the location permission. See `AdminBotLabMember.location_permission`. */
+export const adminBotLocationPermissions = ["granted", "denied", "dismissed"] as const;
+export type AdminBotLocationPermission = (typeof adminBotLocationPermissions)[number];
+
+/**
+ * Member fields that never leave the service on a member record, to anyone, the member included.
+ * The browser's answer to the location prompt is for admins, who read it only through
+ * `GET /member-map/coverage` (as `state` and `at`); a member is never shown that it was noted.
+ * Dropped by `sendJson` itself, so no route can forget to.
+ */
+export const adminBotNeverServedMemberFields: ReadonlySet<string> = new Set([
+  "location_permission",
+  "location_permission_at",
+]);
+
 /**
  * A member record with the confidential fields removed unless the viewer is entitled to them.
  *
@@ -1772,6 +1787,15 @@ export type AdminBotLabMemberInput = {
   device_region?: string;
   device_country?: string;
   device_located_at?: string;
+  /**
+   * What the member's browser last said about the location permission, and when: "granted",
+   * "denied" (blocked for the site) or "dismissed" (the prompt was closed or ignored without an
+   * answer). Reported by the page through `POST /profile/location-permission`, only when it
+   * changes; never self-editable. Absent means the browser has not been asked since this shipped.
+   * Admin-only and never on a served record: see `adminBotNeverServedMemberFields`.
+   */
+  location_permission?: AdminBotLocationPermission;
+  location_permission_at?: string;
   /**
    * The last UTC day this member used AdminBot with their own session (any authenticated request;
    * never an admin "view as"). Stamped at most once a day by auth.ts `noteAccountUse`, whatever the

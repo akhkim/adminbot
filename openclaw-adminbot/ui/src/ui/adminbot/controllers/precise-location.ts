@@ -15,8 +15,11 @@
 //     asked and never read.
 //   - The position goes to the service in a POST body and nowhere else: never stored here, never
 //     logged, never in a URL. What comes back, and what is kept, is a city.
-import type { DeviceLocationResult } from "../api/profile.ts";
-import { postDeviceLocation } from "../api/profile.ts";
+//   - The browser's answer to the prompt -- allowed, blocked, or closed without an answer -- is
+//     reported once per change per session (POST /profile/location-permission), so admins can
+//     tell "said no" from "has not been here". A state only, never a position.
+import type { DeviceLocationResult, LocationPermissionAnswer } from "../api/profile.ts";
+import { postDeviceLocation, postLocationPermission } from "../api/profile.ts";
 import {
   type AuthResult,
   loadStoredMemberSession,
@@ -56,6 +59,8 @@ export type PreciseLocationDeps = {
   permissions?: { query(descriptor: { name: "geolocation" }): Promise<{ state: string }> };
   isSecureContext: boolean;
   report(fix: { lat: number; lon: number }): Promise<AuthResult<DeviceLocationResult>>;
+  /** Tells the service what the browser answered. Fire and forget; must not throw. */
+  reportPermission?(answer: LocationPermissionAnswer): void;
   storage?: Pick<Storage, "getItem" | "setItem">;
   now?: () => number;
 };
@@ -80,6 +85,37 @@ function readPosition(
   });
 }
 
+/**
+ * A refused read: "denied" when the browser now blocks the site, otherwise "dismissed" (the prompt
+ * was closed without an answer, which Chrome reports with the same error code as a block).
+ */
+async function refusalOf(deps: PreciseLocationDeps): Promise<LocationPermissionAnswer> {
+  try {
+    const state = deps.permissions
+      ? (await deps.permissions.query({ name: "geolocation" })).state
+      : undefined;
+    return state === "denied" ? "denied" : "dismissed";
+  } catch {
+    return "dismissed";
+  }
+}
+
+/** Reads once and reports what the browser said either way. Throws what the read threw. */
+async function readAndNote(
+  deps: PreciseLocationDeps & { geolocation: Pick<Geolocation, "getCurrentPosition"> },
+): Promise<{ lat: number; lon: number }> {
+  try {
+    const fix = await readPosition(deps.geolocation);
+    deps.reportPermission?.("granted");
+    return fix;
+  } catch (error) {
+    if ((error as { code?: number } | null)?.code === 1) {
+      deps.reportPermission?.(await refusalOf(deps));
+    }
+    throw error;
+  }
+}
+
 function placeOf(result: AuthResult<DeviceLocationResult>): PreciseLocationPlace | undefined {
   if (!result.ok || !result.value.city) {
     return undefined;
@@ -100,7 +136,7 @@ export async function sharePreciseLocation(
   }
   let fix: { lat: number; lon: number };
   try {
-    fix = await readPosition(deps.geolocation);
+    fix = await readAndNote({ ...deps, geolocation: deps.geolocation });
   } catch (error) {
     const denied = (error as { code?: number } | null)?.code === 1;
     return { note: denied ? "denied" : "unavailable" };
@@ -137,7 +173,9 @@ export async function refreshPreciseLocationSilently(
     const permission = deps.permissions
       ? (await deps.permissions.query({ name: "geolocation" })).state
       : "prompt";
+    const reader = { ...deps, geolocation: deps.geolocation };
     if (permission === "denied") {
+      deps.reportPermission?.("denied");
       return undefined;
     }
     if (permission !== "granted") {
@@ -146,8 +184,10 @@ export async function refreshPreciseLocationSilently(
       }
       // Asking is not throttled: the member is shown the prompt each time they sign in or open the
       // dashboard until they answer it. Only an actual reading stamps the hourly throttle below.
-      return placeOf(await deps.report(await readPosition(deps.geolocation)));
+      return placeOf(await deps.report(await readAndNote(reader)));
     }
+    // Before the throttle, so a member who unblocks it in site settings is counted at once.
+    deps.reportPermission?.("granted");
     let last = Number.NaN;
     try {
       last = Number(deps.storage?.getItem(SILENT_REFRESH_KEY) ?? Number.NaN);
@@ -167,6 +207,9 @@ export async function refreshPreciseLocationSilently(
     return undefined;
   }
 }
+
+/** The last answer reported, per session, so an unchanged answer is not re-sent on every visit. */
+let reportedPermission: { token: string; answer: LocationPermissionAnswer } | null = null;
 
 // --- the app's side ---------------------------------------------------------------------------
 
@@ -209,6 +252,23 @@ function browserDeps(host: PreciseLocationHost, sessionToken: string): PreciseLo
       : {}),
     isSecureContext: typeof window !== "undefined" ? window.isSecureContext !== false : false,
     report: (fix) => postDeviceLocation(fix, sessionToken, resolveAdminBotBaseUrl(host.settings)),
+    reportPermission: (answer) => {
+      if (reportedPermission?.token === sessionToken && reportedPermission.answer === answer) {
+        return;
+      }
+      const previous = reportedPermission;
+      reportedPermission = { token: sessionToken, answer };
+      void postLocationPermission(answer, sessionToken, resolveAdminBotBaseUrl(host.settings))
+        .then((result) => {
+          // Not delivered (offline, a deploy): forget it, so the next pass sends it again.
+          if (!result.ok && reportedPermission?.answer === answer) {
+            reportedPermission = previous;
+          }
+        })
+        .catch(() => {
+          reportedPermission = previous;
+        });
+    },
     ...(storage ? { storage } : {}),
   };
 }

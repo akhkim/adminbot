@@ -142,3 +142,30 @@ describe("lastSeenInAdminBot", () => {
     expect(lastSeenInAdminBot(member("z"))).toBeUndefined();
   });
 });
+
+describe("answers to the location prompt", () => {
+  it("tallies allowed, blocked, closed and not asked, and lists who said no", () => {
+    const coverage = buildMapCoverage(
+      [
+        member("p", { location_permission: "granted", location_permission_at: ago(1) }),
+        member("q", {
+          location_permission: "denied",
+          location_permission_at: ago(3),
+          last_seen_at: ago(0),
+        }),
+        member("r", { location_permission: "dismissed", location_permission_at: ago(1) }),
+        member("s"),
+        // Never asked, so never tallied: hidden, stated, and departed members.
+        member("t", { map_visibility: "hidden", location_permission: "denied" }),
+        member("u", { map_visibility: "stated", location_permission: "denied" }),
+        member("v", { status: "alumni", location_permission: "denied" }),
+      ],
+      { now },
+    );
+    expect(coverage.permission).toEqual({ granted: 1, denied: 1, dismissed: 1, not_asked: 1 });
+    expect(coverage.refused).toEqual([
+      { member_id: "r", name: "Person R", state: "dismissed", at: ago(1) },
+      { member_id: "q", name: "Person Q", state: "denied", at: ago(3), last_seen_at: ago(0) },
+    ]);
+  });
+});
