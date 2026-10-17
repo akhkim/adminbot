@@ -69,6 +69,7 @@ import {
   type ProfileField,
   type ProfileFieldGroup,
 } from "../member-fields.ts";
+import { renderMonthDayControl } from "../month-day-control.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
 import { ownPapers } from "../projects/model.ts";
 import { onViewSessionReset } from "../view-session-reset.ts";
@@ -926,6 +927,8 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           .value=${currentValue}
         ></textarea>
       `;
+    case "month_day":
+      return renderMonthDayControl(field.key, currentValue);
     case "month":
       // Preserve invalid legacy text; native month inputs silently clear it.
       return html`<input

@@ -444,6 +444,7 @@ describe("renderAdminBot members panel — the edit form waits to be asked for",
   // The deferral is about when the markup is built, never about what is in it.
   it("offers the same fields it always did once opened", () => {
     const opened = renderToDiv(lazyProps());
+    expect(opened.querySelector("#adminbot-edit-member-0 adminbot-birthday-picker")).not.toBeNull();
     const names = [...opened.querySelectorAll<HTMLElement>("#adminbot-edit-member-0 [name]")].map(
       (el) => el.getAttribute("name"),
     );
