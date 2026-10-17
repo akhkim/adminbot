@@ -718,6 +718,14 @@ visibility, and never by an admin's "view as"). Never-seen members come first. T
 it to admins as the "Map coverage" card beside the map. It is built from the same memoised map as
 `GET /member-map`, so the two never disagree.
 
+The same response carries the answers to the browser's location prompt for members whose
+visibility is "auto" (hidden and "stated" members are never asked). `permission` counts
+`granted`, `denied` (Block), `dismissed` (closed the prompt without answering) and `not_asked` (no
+answer recorded yet). `refused` lists each `denied` or `dismissed` member with `at`, when that answer
+was recorded, and `last_seen_at`, newest first. The card shows these under "Answer to the browser's
+location prompt", with a collapsible list of who said no. Members who refused before this was
+recorded count as `not_asked` until their next visit.
+
 Both are also reachable without a person: `scripts/adminbot-member-directory-cron.sh`
 calls `POST /members/directory/refresh-slack` once a day as an OpenClaw cron job,
 so timezones stay current for the calendar without an admin remembering to press
@@ -1415,6 +1423,17 @@ position posted for them. Each write also adds a row to the location history wit
 `source: "device"`, holding the city, region and country and never the position, so a new city
 or the day's first reading in the same city ("still here") is logged like an IP reading. The admin
 location log labels these rows "Device".
+
+The page also reports what the browser said to `POST /profile/location-permission` with
+`{ "state": "granted" | "denied" | "dismissed" }`. It sends a state and never a position. A read
+that succeeds is `granted`. A refused read (error code 1) is `denied` if the permission now says
+"denied", and `dismissed` otherwise, because Chrome uses the same code for Block and for closing
+the prompt. An existing block or grant is reported on each visit without asking. The page sends a
+state once per session unless it changes, and the service writes `location_permission` and
+`location_permission_at` only when the state changes. Writes are refused under "view as" and ignored
+for members who are not "auto". The member is never shown that this was noted. The reply is empty, and
+the two fields are dropped from every JSON response the service sends, on any route and for any
+reader. Admins see the answers only as the map coverage counts and list (see "Map coverage").
 
 City intros never fire from an IP city alone. An IP city places a member in a city for an intro
 only when the device city, a check-in answer or the Slack location agrees with it within 30 days;

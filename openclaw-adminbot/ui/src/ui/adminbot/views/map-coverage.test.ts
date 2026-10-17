@@ -97,6 +97,43 @@ describe("<adminbot-map-coverage>", () => {
     expect(row).toContain("stored city · Zürich · IP ignored (VPN?)");
   });
 
+  it("shows who allowed, blocked or closed the location prompt", async () => {
+    const answered = {
+      ...body,
+      permission: { granted: 2, denied: 1, dismissed: 1, not_asked: 3 },
+      refused: [
+        { member_id: "m3", name: "Person Three", state: "dismissed", at: new Date().toISOString() },
+        { member_id: "m4", name: "Person Four", state: "denied" },
+        { member_id: "m5", name: "Person Five", state: "maybe" },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => answered })),
+    );
+    await import("./map-coverage.ts");
+    const el = document.createElement("adminbot-map-coverage") as AdminBotMapCoverage;
+    el.sessionToken = "synthetic-session";
+    document.body.append(el);
+    await openPanel(el);
+    await vi.waitFor(() =>
+      expect(el.querySelector('[data-testid="location-prompt"]')).not.toBeNull(),
+    );
+    expect(el.querySelector('[data-answer="denied"] dd')?.textContent).toBe("1");
+    expect(el.querySelector('[data-answer="not_asked"] dd')?.textContent).toBe("3");
+    const refused = el.querySelector('[data-testid="location-refused"]');
+    expect(refused?.querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(refused?.querySelector('[data-member="m3"]')?.textContent).toContain(
+      "Closed the prompt",
+    );
+    expect(refused?.querySelector('[data-member="m4"]')?.textContent).toContain("Blocked");
+  });
+
+  it("leaves the prompt row out for a service that does not record it", () => {
+    expect(parseMapCoverage(body)?.permission).toBeUndefined();
+    expect(parseMapCoverage(body)?.refused).toEqual([]);
+  });
+
   it("shows an error rather than zeros when the request is refused", async () => {
     vi.stubGlobal(
       "fetch",

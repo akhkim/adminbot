@@ -4898,6 +4898,45 @@ describe("POST /profile/device-location", () => {
     expect(mockFor(baseUrl).store.getLabMember("ada")?.device_city).toBeUndefined();
   });
 
+  it("records the browser's answer to the prompt, but not for nobody or under view-as", async () => {
+    const { baseUrl } = await startService();
+    const token = await signedIn(baseUrl, "ada");
+    const answer = (bearer: string | undefined, state: unknown) =>
+      fetch(`${baseUrl}/profile/location-permission`, {
+        method: "POST",
+        headers: jsonHeaders(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+        body: JSON.stringify({ state }),
+      });
+    const res = await answer(token, "denied");
+    expect(res.status).toBe(200);
+    // The member is told nothing, and never sees the answer on their own record.
+    await expect(res.json()).resolves.toEqual({});
+    expect(mockFor(baseUrl).store.getLabMember("ada")?.location_permission).toBe("denied");
+    const session = await fetch(`${baseUrl}/auth/session`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(session.status).toBe(200);
+    expect(await session.text()).not.toContain("location_permission");
+    const profile = await fetch(`${baseUrl}/lab/members/ada/detail`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(profile.status).toBe(200);
+    const own = await profile.text();
+    expect(own).toContain("ada@cs.toronto.edu");
+    expect(own).not.toContain("location_permission");
+    expect((await answer(token, "maybe")).status).toBe(400);
+    expect((await answer(undefined, "granted")).status).toBe(401);
+    const adminToken = await signedIn(baseUrl, "root", { privilege_level: "admin" });
+    const viewing = await fetch(`${baseUrl}/auth/impersonate`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({ member_id: "ada" }),
+    });
+    const viewToken = ((await viewing.json()) as { session_token: string }).session_token;
+    expect((await answer(viewToken, "granted")).status).toBe(403);
+    expect(mockFor(baseUrl).store.getLabMember("ada")?.location_permission).toBe("denied");
+  });
+
   it("says nothing was placed when the GeoNames files are not installed", async () => {
     const { baseUrl } = await startService();
     const token = await signedIn(baseUrl, "ada");

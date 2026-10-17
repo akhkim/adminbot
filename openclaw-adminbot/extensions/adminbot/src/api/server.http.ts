@@ -7,6 +7,7 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { gzipSync } from "node:zlib";
+import { adminBotNeverServedMemberFields } from "../contracts/actions.js";
 import type { AdminBotServiceResponse } from "../kernel/service.js";
 import { avatarJsonReplacer, avatarJsonReviver, type Avatar } from "./avatars.js";
 
@@ -117,7 +118,9 @@ export function sendJson(
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Vary", "Accept-Encoding");
   // Inline photos go out as /avatars/<hash> (see ./avatars.ts) rather than megabytes of base64.
-  const json = JSON.stringify(body, avatarJsonReplacer);
+  const json = JSON.stringify(body, (key, value) =>
+    adminBotNeverServedMemberFields.has(key) ? undefined : avatarJsonReplacer(key, value),
+  );
   if (status === 200 && res.req?.method === "GET") {
     // A weak validator over the exact bytes this caller was about to receive. It is computed
     // after every role projection has run, so two callers whose projections differ can never

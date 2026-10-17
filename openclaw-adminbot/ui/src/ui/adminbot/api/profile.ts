@@ -210,3 +210,24 @@ export async function postDeviceLocation(
   }
   return { ok: true, value: (result.body ?? { recorded: false }) as DeviceLocationResult };
 }
+
+/** What a browser said to the location prompt: allowed, blocked, or closed without an answer. */
+export type LocationPermissionAnswer = "granted" | "denied" | "dismissed";
+
+/** Records the browser's answer to the location prompt. A state only, never a position. */
+export async function postLocationPermission(
+  state: LocationPermissionAnswer,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<Record<string, never>>> {
+  const result = await authedJson(baseUrl, "/profile/location-permission", "POST", sessionToken, {
+    state,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: {} };
+}

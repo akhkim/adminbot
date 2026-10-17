@@ -86,3 +86,34 @@ describe("device readings in the location history", () => {
     expect(history()).toEqual([]);
   });
 });
+
+describe("the browser's answer to the location prompt", () => {
+  it("keeps the latest answer and since when, writing only when it changes", () => {
+    const { service, clock } = lab("2026-10-17T09:00:00.000Z");
+    expect(unwrap(service.recordLocationPermission("ada", { state: "dismissed" }))).toEqual({
+      recorded: true,
+      state: "dismissed",
+    });
+    clock.now = new Date("2026-10-17T10:00:00.000Z");
+    expect(unwrap(service.recordLocationPermission("ada", { state: "dismissed" })).recorded).toBe(
+      false,
+    );
+    expect(unwrap(service.memberMapCoverage()).refused).toMatchObject([
+      { name: "Ada Example", state: "dismissed", at: "2026-10-17T09:00:00.000Z" },
+    ]);
+    unwrap(service.recordLocationPermission("ada", { state: "denied" }));
+    expect(unwrap(service.memberMapCoverage()).refused).toMatchObject([
+      { name: "Ada Example", state: "denied", at: "2026-10-17T10:00:00.000Z" },
+    ]);
+  });
+
+  it("rejects anything but the three answers, and ignores members who are never asked", () => {
+    const { service } = lab("2026-10-17T09:00:00.000Z");
+    expect(service.recordLocationPermission("ada", { state: "maybe" }).ok).toBe(false);
+    unwrap(service.updateOwnProfile("ada", { map_visibility: "stated" } as never));
+    expect(unwrap(service.recordLocationPermission("ada", { state: "denied" })).recorded).toBe(
+      false,
+    );
+    expect(unwrap(service.memberMapCoverage()).refused).toEqual([]);
+  });
+});

@@ -160,6 +160,69 @@ describe("silent refresh", () => {
   });
 });
 
+describe("the browser's answer", () => {
+  function refusing(after: string) {
+    let state = "prompt";
+    return {
+      geolocation: {
+        getCurrentPosition: (_ok: PositionCallback, fail?: PositionErrorCallback | null) => {
+          state = after;
+          fail?.({ code: 1 } as GeolocationPositionError);
+        },
+      },
+      permissions: { query: async () => ({ state }) },
+    };
+  }
+
+  it("reports allowed, blocked, or closed without an answer", async () => {
+    const allowed = vi.fn();
+    await refreshPreciseLocationSilently(
+      deps({ permission: "prompt", reportPermission: allowed }),
+      "auto",
+      { ask: true },
+    );
+    expect(allowed).toHaveBeenCalledWith("granted");
+
+    // Chrome gives the same error code for Block and for closing the prompt; only Block sticks.
+    for (const [after, answer] of [
+      ["denied", "denied"],
+      ["prompt", "dismissed"],
+    ] as const) {
+      const reportPermission = vi.fn();
+      const d = deps({ ...refusing(after), reportPermission });
+      expect(await refreshPreciseLocationSilently(d, "auto", { ask: true })).toBeUndefined();
+      expect(reportPermission).toHaveBeenCalledWith(answer);
+      const pressed = vi.fn();
+      expect(
+        await sharePreciseLocation({ ...deps({ ...refusing(after) }), reportPermission: pressed }),
+      ).toEqual({ note: "denied" });
+      expect(pressed).toHaveBeenCalledWith(answer);
+    }
+  });
+
+  it("reports an existing block or grant without asking, and nothing for a hidden member", async () => {
+    const blocked = vi.fn();
+    const d = deps({ permission: "denied", reportPermission: blocked });
+    await refreshPreciseLocationSilently(d, "auto");
+    expect(blocked).toHaveBeenCalledWith("denied");
+    expect(d.getCurrentPosition).not.toHaveBeenCalled();
+
+    const granted = vi.fn();
+    const g = deps({ reportPermission: granted });
+    await refreshPreciseLocationSilently(g, "auto");
+    await refreshPreciseLocationSilently(g, "auto"); // Throttled read, still reported.
+    expect(granted).toHaveBeenCalledWith("granted");
+    expect(g.getCurrentPosition).toHaveBeenCalledTimes(1);
+
+    const hidden = vi.fn();
+    await refreshPreciseLocationSilently(
+      deps({ permission: "denied", reportPermission: hidden }),
+      "hidden",
+    );
+    expect(hidden).not.toHaveBeenCalled();
+  });
+});
+
 describe("the button", () => {
   it("reads on a press, whatever the permission says", async () => {
     const d = deps({ permission: "prompt" });

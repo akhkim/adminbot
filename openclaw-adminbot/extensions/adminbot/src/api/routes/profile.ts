@@ -50,6 +50,21 @@ export const profileRoutes: readonly Route[] = [
       sendServiceResult(res, await ctx.service.recordDeviceLocation(principal.member.id, body));
     }),
   ),
+  // What the browser said to the location prompt (allowed, blocked, or closed without an answer),
+  // so admins can tell "said no" from "has not been here". A state only, never a position.
+  post(
+    "/profile/location-permission",
+    memberOnly(async ({ req, res, ctx, principal }) => {
+      if (principal.impersonator) {
+        sendJson(res, 403, { error: { message: "not while viewing as another member" } });
+        return;
+      }
+      const body = readRecord(await readJson(req));
+      const result = ctx.service.recordLocationPermission(principal.member.id, body);
+      // An empty reply: the member's own browser is told nothing about what was noted.
+      sendServiceResult(res, result.ok ? { ...result, payload: {} } : result);
+    }),
+  ),
   post(
     "/drive/check-edit-access",
     memberOnly(async ({ req, res, ctx }) => {

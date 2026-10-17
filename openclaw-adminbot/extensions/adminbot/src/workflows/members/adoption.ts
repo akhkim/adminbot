@@ -100,6 +100,8 @@ const SKIP_FIELDS = new Set([
   "device_region",
   "device_country",
   "device_located_at",
+  "location_permission",
+  "location_permission_at",
   "slack_location",
   "slack_location_updated_at",
   "slack_messages_7d",
