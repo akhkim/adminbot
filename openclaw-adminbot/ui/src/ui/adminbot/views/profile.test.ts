@@ -1878,18 +1878,16 @@ it("validates year-month fields without hiding legacy values", () => {
   }
 });
 
-it("accepts only real month-day birthdays without collecting a birth year", () => {
-  const container = renderPage(createState(createMember()), vi.fn());
-  const input = container.querySelector<HTMLInputElement>('input[name="birthday"]')!;
-  expect(input.type).toBe("text");
-  for (const value of ["2026-03-14", "02-30", "04-31", "13-01", "3-14"]) {
-    input.value = value;
-    expect(input.checkValidity()).toBe(false);
-  }
-  for (const value of ["03-14", "02-29", "12-31", ""]) {
-    input.value = value;
-    expect(input.checkValidity()).toBe(true);
-  }
+it("edits birthdays with one year-free popup", async () => {
+  const container = renderPage(createState(createMember({ birthday: "03-14" })), vi.fn());
+  document.body.append(container);
+  const picker = container.querySelector("adminbot-birthday-picker") as HTMLElement & {
+    updateComplete: Promise<boolean>;
+  };
+  await picker.updateComplete;
+  expect(picker.querySelector("button")?.textContent).toContain("March 14");
+  expect(container.querySelector<HTMLInputElement>('input[name="birthday"]')?.value).toBe("03-14");
+  container.remove();
 });
 
 it("uses native month selectors for valid and empty year-month values", () => {

@@ -37,6 +37,7 @@ export type ProfileFieldType =
   | "multi_dropdown"
   | "date"
   | "month"
+  | "month_day"
   | "link"
   | "numeric"
   | "list"
@@ -266,7 +267,7 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
       "((01|03|05|07|08|10|12)-(0[1-9]|[12][0-9]|3[01])|(04|06|09|11)-(0[1-9]|[12][0-9]|30)|02-(0[1-9]|1[0-9]|2[0-9]))",
     labelKey: "profile.fields.birthday",
     example: "03-14",
-    type: "short_text",
+    type: "month_day",
     hintKey: "profile.hints.birthday",
     group: "identity",
   },

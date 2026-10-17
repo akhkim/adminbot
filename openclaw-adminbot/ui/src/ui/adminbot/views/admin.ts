@@ -66,6 +66,7 @@ import { noteField, parseMemberNotes } from "../data/member-notes.ts";
 import { renderDateControl } from "../date-control.ts";
 import { saveMemberInBackground, waitForMemberSave } from "../member-autosave.ts";
 import { PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
+import { renderMonthDayControl } from "../month-day-control.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
 import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
 import {
@@ -1210,6 +1211,8 @@ function renderRegistryField(
           max=${ifDefined(field.max)}
           .value=${value}
         />`;
+      case "month_day":
+        return renderMonthDayControl(field.key, value);
       case "month":
         return html`<input
           name=${field.key}
