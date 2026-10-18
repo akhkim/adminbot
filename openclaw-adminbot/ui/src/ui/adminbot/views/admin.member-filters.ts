@@ -40,3 +40,17 @@ export function memberFacets(
       .map((meeting) => meeting.id),
   };
 }
+
+// Older/imported records can contain plain text despite the typed array contract.
+export function normalizeMemberLists(member: AdminBotLabMember): AdminBotLabMember {
+  const strings = (value: unknown): string[] =>
+    (Array.isArray(value) ? value : typeof value === "string" ? [value] : [])
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  return {
+    ...member,
+    research_topics: strings(member.research_topics),
+    projects: strings(member.projects),
+  };
+}
