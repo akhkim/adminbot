@@ -78,7 +78,12 @@ import {
   type PreRegistrationVenue,
   type VenueTarget,
 } from "../venue-targets.ts";
-import { memberFacetLabels, memberFacets, memberJoinedMonth } from "./admin.member-filters.ts";
+import {
+  memberFacetLabels,
+  memberFacets,
+  memberJoinedMonth,
+  normalizeMemberLists,
+} from "./admin.member-filters.ts";
 import { renderMemberBadgeSymbols } from "./badge-symbols.ts";
 import {
   MEMBER_REQUEST_POPOVER_ID,
@@ -1682,9 +1687,11 @@ function memberRowEdit(member: AdminBotLabMember, props: AdminBotProps): MemberR
 function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMember[]) {
   const page = props.memberList;
   const papers = props.data.papers;
-  const members = allMembers.toSorted((a, b) =>
-    (memberJoinedMonth(a) || "9999").localeCompare(memberJoinedMonth(b) || "9999"),
-  );
+  const members = allMembers
+    .map(normalizeMemberLists)
+    .toSorted((a, b) =>
+      (memberJoinedMonth(a) || "9999").localeCompare(memberJoinedMonth(b) || "9999"),
+    );
   const facets = new Map(
     members.map((member) => [member.id, memberFacets(member, props.standingMeetings)]),
   );

@@ -191,6 +191,35 @@ describe("renderAdminBot full roster", () => {
     expect(container.querySelector("[data-member-result-count]")?.textContent).toBe("1 person");
   });
 
+  it("renders and filters legacy text-valued topics/projects without mutating records", () => {
+    const legacy = member({
+      id: "legacy",
+      research_topics: "Causal inference" as unknown as string[],
+      projects: "Atlas" as unknown as string[],
+    });
+    const malformed = member({
+      id: "malformed",
+      research_topics: { unexpected: true } as unknown as string[],
+      projects: [null, "Beacon", 42] as unknown as string[],
+    });
+    const container = renderToDiv(
+      baseProps({ memberList: { rows: [legacy, malformed], loading: false, error: null } }),
+      { openEditors: false },
+    );
+    expect(container.querySelector("tbody")?.textContent).toContain("Causal inference");
+    expect(container.querySelector("tbody")?.textContent).toContain("Beacon");
+    const project = container.querySelector<HTMLSelectElement>('select[name="project"]')!;
+    project.value = "Atlas";
+    project.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(
+      [...container.querySelectorAll("tbody tr:not([hidden]) td:first-child > small")].map(
+        (row) => row.textContent,
+      ),
+    ).toEqual(["legacy"]);
+    expect(legacy.research_topics).toBe("Causal inference");
+    expect(legacy.projects).toBe("Atlas");
+  });
+
   it("preserves filter values when options move and resets a removed value", async () => {
     const london = member({ id: "london", location: "London" });
     const zurich = member({ id: "zurich", location: "Zurich" });
