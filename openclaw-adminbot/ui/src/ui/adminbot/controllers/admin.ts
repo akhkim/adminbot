@@ -678,10 +678,6 @@ export type AdminBotDashboardData = {
 
 export type AdminBotMemberListState = {
   rows: AdminBotLabMember[];
-  total: number;
-  limit: number;
-  offset: number;
-  query: string;
   loading: boolean;
   error: string | null;
   loadedAt: number | null;
@@ -870,28 +866,15 @@ export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
 export function createEmptyAdminBotMemberList(): AdminBotMemberListState {
   return {
     rows: [],
-    total: 0,
-    limit: 50,
-    offset: 0,
-    query: "",
     loading: false,
     error: null,
     loadedAt: null,
   };
 }
 
-export async function loadAdminBotMemberList(
-  host: AdminBotHost,
-  query = host.adminBotMemberList?.query ?? "",
-  offset = host.adminBotMemberList?.offset ?? 0,
-): Promise<void> {
-  const previous = host.adminBotMemberList ?? createEmptyAdminBotMemberList();
-  const limit = previous.limit;
-  const pending: AdminBotMemberListState = {
-    ...previous,
-    rows: query === previous.query && offset === previous.offset ? previous.rows : [],
-    query,
-    offset,
+export async function loadAdminBotMemberList(host: AdminBotHost): Promise<void> {
+  const pending = {
+    ...(host.adminBotMemberList ?? createEmptyAdminBotMemberList()),
     loading: true,
     error: null,
   };
@@ -901,82 +884,36 @@ export async function loadAdminBotMemberList(
     host.adminBotMemberList === pending &&
     loadStoredMemberSession()?.sessionToken === session?.sessionToken;
   try {
-    if (!session) {
-      const search = query.trim().toLocaleLowerCase();
-      const matches = host.adminBotData.members.filter((member) =>
-        [
-          member.name,
-          member.email,
-          ...(member.research_topics ?? []),
-          ...(member.projects ?? []),
-        ].some((value) => value?.toLocaleLowerCase().includes(search)),
+    let members = host.adminBotData.members;
+    if (session) {
+      // Read the complete authorized roster so every local filter and sort is roster-wide.
+      const result = await fetchMemberResource(
+        "/lab/members",
+        session.sessionToken,
+        resolveAdminBotBaseUrl(host.settings),
       );
-      host.adminBotMemberList = {
-        rows: matches.slice(offset, offset + limit),
-        total: matches.length,
-        limit,
-        offset,
-        query,
-        loading: false,
-        error: null,
-        loadedAt: Date.now(),
-      };
-      return;
+      if (!isCurrent()) return;
+      if (!result.ok) {
+        throw new Error(
+          result.kind === "unreachable"
+            ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+            : result.kind === "forbidden"
+              ? "You do not have access to the lab roster."
+              : "Could not load lab members. Please try again.",
+        );
+      }
+      members = readArray<AdminBotLabMember>(readRecord(result.value), "members");
     }
-    const params = new URLSearchParams({
-      limit: String(limit),
-      offset: String(offset),
-      q: query.trim(),
-    });
-    const result = await fetchMemberResource(
-      `/lab/members?${params}`,
-      session.sessionToken,
-      resolveAdminBotBaseUrl(host.settings),
-    );
-    if (!isCurrent()) {
-      return;
-    }
-    if (!result.ok) {
-      throw new Error(
-        result.kind === "unreachable"
-          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
-          : result.kind === "forbidden"
-            ? "You do not have access to the lab roster."
-            : "Could not load lab members. Please try again.",
-      );
-    }
-    const response = readRecord(result.value);
-    const members = readArray<AdminBotLabMember>(response, "members");
-    // Older services return the complete roster. Keep the new UI usable during separate UI/API deploys.
-    const filtered =
-      typeof response.total === "number"
-        ? members
-        : members.filter((member) =>
-            [
-              member.name,
-              member.email,
-              ...(member.research_topics ?? []),
-              ...(member.projects ?? []),
-            ].some((value) =>
-              value?.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
-            ),
-          );
     host.adminBotMemberList = {
-      rows: typeof response.total === "number" ? members : filtered.slice(offset, offset + limit),
-      total: typeof response.total === "number" ? response.total : filtered.length,
-      limit,
-      offset,
-      query,
+      rows: members,
       loading: false,
       error: null,
       loadedAt: Date.now(),
     };
   } catch (error) {
-    if (!isCurrent()) {
-      return;
-    }
+    if (!isCurrent()) return;
     host.adminBotMemberList = {
-      ...host.adminBotMemberList!,
+      ...pending,
       loading: false,
       error: error instanceof Error ? error.message : String(error),
     };

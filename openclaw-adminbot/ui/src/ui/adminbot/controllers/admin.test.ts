@@ -251,30 +251,16 @@ describe("loadAdminBot over the member session", () => {
       headers: { "Content-Type": "application/json" },
     });
 
-  it("requests only the selected roster page and preserves the server's filtered total", async () => {
+  it("loads the entire roster without pagination or server search", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});
     host.adminBotMemberList = createEmptyAdminBotMemberList();
-    const fetchMock = routedFetch({
-      "/lab/members?": () =>
-        json({
-          members: [{ id: "person-51", name: "Causal Researcher" }],
-          total: 81,
-          limit: 50,
-          offset: 50,
-        }),
-    });
-
-    await loadAdminBotMemberList(host, "causal", 50);
-
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("limit=50&offset=50&q=causal");
-    expect(host.adminBotMemberList).toMatchObject({
-      rows: [{ id: "person-51" }],
-      total: 81,
-      offset: 50,
-      query: "causal",
-      loading: false,
-    });
+    const members = Array.from({ length: 125 }, (_, i) => ({ id: `person-${i}` }));
+    const fetchMock = routedFetch({ "/lab/members": () => json({ members }) });
+    await loadAdminBotMemberList(host);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/\/lab\/members$/);
+    expect(host.adminBotMemberList.rows).toEqual(members);
+    expect(host.adminBotMemberList.loading).toBe(false);
   });
 
   it("discards a roster response after the session changes", async () => {
@@ -320,7 +306,7 @@ describe("loadAdminBot over the member session", () => {
   it("keeps a failed roster page retryable with a useful error", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});
-    routedFetch({ "/lab/members?": () => json({ error: { message: "temporary" } }, 503) });
+    routedFetch({ "/lab/members": () => json({ error: { message: "temporary" } }, 503) });
 
     await loadAdminBotMemberList(host);
 

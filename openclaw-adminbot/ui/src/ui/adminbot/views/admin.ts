@@ -2,13 +2,14 @@
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
-import "./interview-invite.ts";
 import { live } from "lit/directives/live.js";
-import "./member-guide-status.ts";
+import { ref } from "lit/directives/ref.js";
+import "./interview-invite.ts";
 import {
   adminBotIsAlumniMember,
   adminBotMemberTypes,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import "./member-guide-status.ts";
 import {
   findDuplicateMembers,
   type MemberDuplicatePair,
@@ -77,6 +78,7 @@ import {
   type PreRegistrationVenue,
   type VenueTarget,
 } from "../venue-targets.ts";
+import { memberFacetLabels, memberFacets, memberJoinedMonth } from "./admin.member-filters.ts";
 import { renderMemberBadgeSymbols } from "./badge-symbols.ts";
 import {
   MEMBER_REQUEST_POPOVER_ID,
@@ -219,17 +221,13 @@ export type AdminBotProps = {
    * outside the Lab Members panel and for a visitor with no member session, who can do neither.
    */
   memberRequests?: Omit<MemberRequestsProps, "isAdmin">;
-  /** Search and page over the full roster; absent for callers with a complete local roster. */
+  /** Full roster load state; absent for callers with a complete local roster. */
   memberList?: {
     rows: AdminBotLabMember[];
-    total: number;
-    limit: number;
-    offset: number;
-    query: string;
     loading: boolean;
     error: string | null;
   };
-  onMemberListChange?: (query: string, offset: number) => void;
+  onMemberListChange?: () => void;
   rosterLoadedAt?: number | null;
   duplicatePairs?: MemberDuplicatePair<AdminBotLabMember>[] | null; // service pairs; null: reading
   rosterLoading?: boolean;
@@ -1045,22 +1043,33 @@ function signedInMember(props: AdminBotProps): AdminBotLabMember | undefined {
     : undefined;
 }
 
-function filterMemberSpreadsheet(event: Event, paged: boolean): void {
-  const form = event.currentTarget;
+const memberFilterSelections = new WeakMap<HTMLFormElement, Map<string, string>>();
+
+function filterMemberSpreadsheet(form: EventTarget | null | undefined): void {
   if (!(form instanceof HTMLFormElement)) {
     return;
   }
   const sheet = form.closest<HTMLElement>(".adminbot-member-sheet");
   if (!sheet) return;
+  memberFilterSelections.set(
+    form,
+    new Map([...form.querySelectorAll("select")].map((select) => [select.name, select.value])),
+  );
   const data = new FormData(form);
-  const search = paged ? "" : getFormValue(data, "search").toLocaleLowerCase();
+  const search = getFormValue(data, "search").trim().toLocaleLowerCase();
   const status = getFormValue(data, "status");
   const project = getFormValue(data, "project");
   const paper = getFormValue(data, "paper");
   const conference = getFormValue(data, "conference");
+  const selectedFacets = Object.keys(memberFacetLabels).map((key) => [
+    key,
+    getFormValue(data, key),
+  ]);
   let visible = 0;
   for (const row of sheet.querySelectorAll<HTMLTableRowElement>("tbody tr")) {
+    const facets = JSON.parse(row.dataset.facets ?? "{}") as Record<string, string[]>;
     const matches =
+      selectedFacets.every(([key, value]) => !value || facets[key!]?.includes(value)) &&
       (!search || (row.dataset.search ?? "").includes(search)) &&
       (!status || row.dataset.status === status) &&
       (!project || (row.dataset.projects ?? "").split("|").includes(project)) &&
@@ -1071,17 +1080,7 @@ function filterMemberSpreadsheet(event: Event, paged: boolean): void {
   }
   const count = sheet.querySelector<HTMLElement>("[data-member-result-count]");
   if (count) {
-    count.textContent = paged
-      ? `${visible} on this page`
-      : `${visible} ${visible === 1 ? "person" : "people"}`;
-  }
-}
-
-function resetMemberPageFacets(target: EventTarget | null): void {
-  if (!(target instanceof Element)) return;
-  const form = target.closest(".adminbot-member-sheet")?.querySelector(".adminbot-member-filters");
-  for (const select of form?.querySelectorAll<HTMLSelectElement>("select") ?? []) {
-    select.value = "";
+    count.textContent = `${visible} ${visible === 1 ? "person" : "people"}`;
   }
 }
 
@@ -1680,31 +1679,22 @@ function memberRowEdit(member: AdminBotLabMember, props: AdminBotProps): MemberR
   return props.signedInMemberId && member.id === props.signedInMemberId ? "self" : "none";
 }
 
-// Signed-in member's own row floats to the top; everyone else keeps the roster's fetch order
-// so the table does not silently reshuffle. No signed-in member (break-glass gateway-token
-// access) leaves the order untouched.
-function sortSignedInMemberFirst(
-  members: AdminBotLabMember[],
-  signedInMemberId: string | null | undefined,
-): AdminBotLabMember[] {
-  if (!signedInMemberId) {
-    return members;
-  }
-  const own = members.filter((member) => member.id === signedInMemberId);
-  return own.length === 0 ? members : [...own, ...members.filter((m) => m.id !== signedInMemberId)];
-}
-
 function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMember[]) {
   const page = props.memberList;
   const papers = props.data.papers;
-  const members = sortSignedInMemberFirst(allMembers, props.signedInMemberId);
+  const members = allMembers.toSorted((a, b) =>
+    (memberJoinedMonth(a) || "9999").localeCompare(memberJoinedMonth(b) || "9999"),
+  );
+  const facets = new Map(
+    members.map((member) => [member.id, memberFacets(member, props.standingMeetings)]),
+  );
   const ownMember = signedInMember(props);
   const ownMemberOutsidePage =
     props.mode === "general" &&
     page !== undefined &&
     ownMember !== undefined &&
     !members.some((member) => member.id === ownMember.id);
-  const total = page?.total ?? members.length;
+  const total = members.length;
   const statuses = [...new Set(members.map((member) => memberDisplayStatus(member)))].sort();
   const projects = [...new Set(members.flatMap((member) => member.projects ?? []))].sort();
   const paperTitles = [...new Set(papers.map((paper) => paper.title))].sort();
@@ -1739,16 +1729,23 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
       </div>
       <form
         class="adminbot-member-filters"
-        @input=${(event: Event) => filterMemberSpreadsheet(event, Boolean(page))}
-        @change=${(event: Event) => filterMemberSpreadsheet(event, Boolean(page))}
-        @submit=${(event: Event) => {
-          event.preventDefault();
-          if (page) {
-            const form = event.currentTarget as HTMLFormElement;
-            resetMemberPageFacets(form);
-            props.onMemberListChange?.(getFormValue(new FormData(form), "search").trim(), 0);
-          }
-        }}
+        ${ref((form) => {
+          // Restore selections by value after options/rows change, then reapply the filters.
+          if (form instanceof HTMLFormElement)
+            queueMicrotask(() => {
+              const selections = memberFilterSelections.get(form);
+              for (const select of form.querySelectorAll("select")) {
+                const value = selections?.get(select.name) ?? "";
+                select.value = [...select.options].some((option) => option.value === value)
+                  ? value
+                  : "";
+              }
+              filterMemberSpreadsheet(form);
+            });
+        })}
+        @input=${(event: Event) => filterMemberSpreadsheet(event.currentTarget)}
+        @change=${(event: Event) => filterMemberSpreadsheet(event.currentTarget)}
+        @submit=${(event: Event) => event.preventDefault()}
       >
         <div class="adminbot-member-filters__search">
           <label
@@ -1757,14 +1754,8 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
               name="search"
               type="search"
               placeholder="Name, topic, project…"
-              .value=${page?.query ?? ""}
               ?disabled=${page?.loading ?? false}
           /></label>
-          ${page
-            ? html`<button class="btn btn--sm" type="submit" ?disabled=${page.loading}>
-                Search
-              </button>`
-            : nothing}
         </div>
         <label
           ><span>Status</span
@@ -1794,13 +1785,36 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
             ${conferences.map((value) => html`<option value=${value}>${value}</option>`)}
           </select></label
         >
+        ${Object.entries(memberFacetLabels).map(([key, label]) => {
+          const facet = key as keyof typeof memberFacetLabels;
+          const options = [
+            ...new Set([
+              ...(facet === "membership" ? adminBotMemberTypes : []),
+              ...members.flatMap((member) => facets.get(member.id)![facet]),
+            ]),
+          ].sort();
+          const unavailable = facet === "meeting" && !props.standingMeetings?.loadedAt;
+          return html`<label
+            ><span>${label}</span
+            ><select name=${key} ?disabled=${unavailable}>
+              <option value="">
+                ${unavailable ? "Invitations unavailable" : `Any ${label.toLowerCase()}`}
+              </option>
+              ${options.map(
+                (value) =>
+                  html`<option value=${value}>
+                    ${facet === "meeting"
+                      ? props.standingMeetings?.meetings.find((meeting) => meeting.id === value)
+                          ?.title
+                      : facet === "membership"
+                        ? friendly(value)
+                        : value}
+                  </option>`,
+              )}
+            </select></label
+          >`;
+        })}
       </form>
-      ${page
-        ? html`<p class="muted">
-            Status, project, paper, and conference filters apply to this page and reset when you
-            change pages.
-          </p>`
-        : nothing}
       <div class="adminbot-member-sheet__scroll" @mousedown=${startSheetPan}>
         <table>
           <thead>
@@ -1848,6 +1862,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 .join(" ")
                 .toLocaleLowerCase();
               return html`<tr
+                data-facets=${JSON.stringify(facets.get(member.id))}
                 data-search=${search}
                 data-status=${memberDisplayStatus(member)}
                 data-projects=${(member.projects ?? []).join("|")}
@@ -1952,7 +1967,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 <td>${member.location ?? noteDraft.location ?? "—"}</td>
                 <td>${member.timezone ?? "—"}</td>
                 <td>${member.affiliation ?? "—"}</td>
-                <td>${noteDraft.joinedMonth || "—"}</td>
+                <td>${memberJoinedMonth(member) || "—"}</td>
                 <td>
                   ${noteDraft.calendarEmail
                     ? html`<span class="adminbot-contact-item"
@@ -1997,55 +2012,17 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
           </tbody>
         </table>
         ${members.length === 0 && !page?.loading && !page?.error
-          ? html`<div class="adminbot-empty adminbot-empty--compact">
-              ${page?.query ? "No matching lab members." : "No lab members yet."}
-            </div>`
+          ? html`<div class="adminbot-empty adminbot-empty--compact">No lab members yet.</div>`
           : nothing}
       </div>
-      ${page
-        ? html`<nav class="adminbot-form__actions" aria-label="Member pages">
-              <span role="status" aria-live="polite">
-                ${page.loading
-                  ? "Loading people…"
-                  : members.length === 0
-                    ? `Showing 0 of ${page.total}`
-                    : `Showing ${page.offset + 1}–${Math.min(page.offset + members.length, page.total)} of ${page.total}`}
-              </span>
-              <button
-                class="btn btn--sm"
-                type="button"
-                ?disabled=${page.loading || page.offset === 0}
-                @click=${(event: Event) => {
-                  resetMemberPageFacets(event.currentTarget);
-                  props.onMemberListChange?.(page.query, Math.max(0, page.offset - page.limit));
-                }}
-              >
-                Previous
-              </button>
-              <button
-                class="btn btn--sm"
-                type="button"
-                ?disabled=${page.loading || page.offset + page.limit >= page.total}
-                @click=${(event: Event) => {
-                  resetMemberPageFacets(event.currentTarget);
-                  props.onMemberListChange?.(page.query, page.offset + page.limit);
-                }}
-              >
-                Next
-              </button>
-            </nav>
-            ${page.error
-              ? html`<div class="callout danger" role="alert">
-                  ${page.error}
-                  <button
-                    class="btn btn--sm"
-                    type="button"
-                    @click=${() => props.onMemberListChange?.(page.query, page.offset)}
-                  >
-                    Try again
-                  </button>
-                </div>`
-              : nothing}`
+      ${page?.loading ? html`<p role="status">Loading people…</p>` : nothing}
+      ${page?.error
+        ? html`<div class="callout danger" role="alert">
+            ${page.error}
+            <button class="btn btn--sm" type="button" @click=${() => props.onMemberListChange?.()}>
+              Try again
+            </button>
+          </div>`
         : nothing}
       ${members.map((member, index) => {
         const rowEdit = memberRowEdit(member, props);
