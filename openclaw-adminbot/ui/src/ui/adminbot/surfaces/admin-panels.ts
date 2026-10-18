@@ -152,8 +152,8 @@ export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSur
           onLoadFullRoster: () => {
             void loadAdminBotRoster(state).finally(() => requestHostUpdate?.());
           },
-          onMemberListChange: (query, offset) => {
-            void loadAdminBotMemberList(state, query, offset).finally(() => requestHostUpdate?.());
+          onMemberListChange: () => {
+            void loadAdminBotMemberList(state).finally(() => requestHostUpdate?.());
           },
           busyActionId: state.adminBotBusyActionId,
           notice: state.adminBotNotice,
