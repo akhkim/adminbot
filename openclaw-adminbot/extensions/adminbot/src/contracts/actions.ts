@@ -2978,8 +2978,18 @@ export type AdminBotLocationDrift = {
 // one was processed, not what it said.
 // ---------------------------------------------------------------------------
 
-/** Where an attendance line came from. Ranked in `mergeAttendance`: manual beats every import. */
-export type AdminBotMeetingAttendanceSource = "participant_report" | "transcript" | "manual";
+/**
+ * Where an attendance line came from. Ranked in `mergeAttendance`: manual beats every import.
+ *
+ * `video_snapshot` is a name the local vision model read off a gallery-view frame of the
+ * recording. It sits above the transcript (it sees the people who never unmuted) and below the
+ * participant report (it reads a rendered label, not an account, and a tile can be mislabeled).
+ */
+export type AdminBotMeetingAttendanceSource =
+  | "participant_report"
+  | "video_snapshot"
+  | "transcript"
+  | "manual";
 
 export type AdminBotMeetingAttendee = {
   /** Set when the row resolved to someone on the roster. Absent means a guest, or an unmatched name. */
@@ -3025,6 +3035,25 @@ export type AdminBotMeetingTranscriptState = {
   duration_seconds?: number;
 };
 
+/**
+ * That a gallery-view recording was sampled for attendance, and how.
+ *
+ * Like `transcript`, this keeps the fact of processing and never the frames: a frame is every
+ * attendee's face, and it exists on disk only for the length of one model call.
+ */
+export type AdminBotMeetingSnapshotState = {
+  processed_at: string;
+  /** Offsets into the recording that were sampled, in seconds (1800, 3600, ...). */
+  checkpoints_seconds: number[];
+  /**
+   * How many of those frames showed participant tiles (a gallery grid, or a shared screen with a
+   * tile strip) and so had their names read. Zero says the file was not really a gallery view.
+   */
+  gallery_frames: number;
+  /** Which local vision model read the frames. */
+  model: string;
+};
+
 export type AdminBotMeetingRecordInput = {
   id: string;
   topic: string;
@@ -3045,6 +3074,7 @@ export type AdminBotMeetingRecordInput = {
   recording: AdminBotMeetingRecordingLinks;
   transcript?: AdminBotMeetingTranscriptState;
   summary?: AdminBotMeetingSummary;
+  snapshots?: AdminBotMeetingSnapshotState;
   attendees?: AdminBotMeetingAttendee[];
   /** How the record got here: parsed from a forwarded notice, or filed by hand in the Control UI. */
   source: "zoom_email" | "manual";

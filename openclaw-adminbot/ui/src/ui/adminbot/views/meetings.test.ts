@@ -123,6 +123,37 @@ describe("renderAdminBotMeetings", () => {
     expect(view.textContent).toContain("spoke on the transcript");
   });
 
+  it("says which names came off the gallery recording, and which model read them", () => {
+    const view = renderView({
+      viewerIsAdmin: true,
+      members: [{ id: "m-bo", name: "Bo Quiet" }],
+      meetings: [
+        {
+          ...MEETING,
+          attendees: [
+            {
+              member_id: "m-bo",
+              display_name: "Bo Quiet",
+              source: "video_snapshot",
+              present: true,
+            },
+          ],
+          snapshots: {
+            processed_at: "2026-10-19T16:20:00.000Z",
+            checkpoints_seconds: [1800, 3600, 5400],
+            gallery_frames: 2,
+            model: "Qwen/Qwen3.5-27B",
+          },
+        },
+      ],
+    });
+    expect(view.querySelector<HTMLInputElement>("input[type=checkbox]")?.checked).toBe(true);
+    expect(view.textContent).toContain("seen on the gallery recording");
+    expect(view.textContent).toContain(
+      "Attendance read from the gallery recording by Qwen/Qwen3.5-27B: 2 of 3 sampled frames showed participant tiles.",
+    );
+  });
+
   it("sends a correction for the member whose box was clicked", () => {
     const onToggleAttendance = vi.fn();
     const view = renderView({

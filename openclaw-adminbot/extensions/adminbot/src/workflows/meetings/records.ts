@@ -32,10 +32,17 @@ export function normalizedMeetingStartedAt(value: string): string | undefined {
   return /^\d{4}-/u.test(normalized) ? normalized : undefined;
 }
 
-/** Why an input cannot be filed, or undefined when it can. */
+/**
+ * Why an input cannot be filed, or undefined when it can.
+ *
+ * `existing` is the stored record an update lands on. The artifact pass sends sparse updates with
+ * an empty `recording` -- a transcript or a gallery recording knows nothing about the share link --
+ * and the link that makes the record openable is the one the notice already filed.
+ */
 export function validateMeeting(
   input: AdminBotMeetingRecordInput,
   allowUnchangedHistoricalDate = false,
+  existing?: AdminBotMeetingRecord,
 ): string | undefined {
   if (!input.id?.trim()) {
     return "id is required";
@@ -48,7 +55,9 @@ export function validateMeeting(
   }
   // A record with neither link is not a recording anyone can open, and filing one would put a dead
   // row on the tab that nothing later can repair -- the ingest keys on the share URL.
-  if (!input.recording?.share_url?.trim() && !input.recording?.drive_url?.trim()) {
+  const hasLink = (recording?: AdminBotMeetingRecordInput["recording"]) =>
+    Boolean(recording?.share_url?.trim() || recording?.drive_url?.trim());
+  if (!hasLink(input.recording) && !hasLink(existing?.recording)) {
     return "recording.share_url or recording.drive_url is required";
   }
   return undefined;

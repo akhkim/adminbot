@@ -10,6 +10,10 @@
 // an admin then corrects -- `source` is carried on every attendee for exactly that reason, so the
 // UI can show what is known versus what is inferred, and so a later CSV import can overwrite an
 // inference without overwriting a human's correction.
+//
+// Between the two sits the gallery-view recording: the local vision model reads the name labels
+// off a frame every thirty minutes. That catches the silent attendee the transcript misses, but it
+// reads a rendered label rather than an account, so a participant report still outranks it.
 import type {
   AdminBotLabMember,
   AdminBotMeetingAttendanceSource,
@@ -140,7 +144,7 @@ export function attendanceFromParticipants(
     merged.set(key, {
       display_name: existing?.display_name ?? row.name,
       ...(member ? { member_id: member.id } : {}),
-      ...(row.email ?? existing?.email ? { email: row.email ?? existing?.email } : {}),
+      ...((row.email ?? existing?.email) ? { email: row.email ?? existing?.email } : {}),
       ...(earliest(existing?.joined_at, row.joinedAt)
         ? { joined_at: earliest(existing?.joined_at, row.joinedAt) }
         : {}),
@@ -174,11 +178,52 @@ export function attendanceFromSpeakers(
 }
 
 /**
+ * Names read off gallery-view frames as attendance.
+ *
+ * `namesPerFrame` holds one list per sampled frame; a person on several frames is one line, and
+ * the same label on every frame of a two-hour meeting is still one person. Unmatched names are
+ * kept as guests, as the transcript path keeps unmatched speakers: an admin can see "iPad (2)"
+ * and decide who that was, which they cannot do with a name that was silently dropped.
+ */
+export function attendanceFromSnapshots(
+  namesPerFrame: ReadonlyArray<readonly string[]>,
+  members: readonly AdminBotLabMember[],
+): AdminBotMeetingAttendee[] {
+  const seen = new Map<string, AdminBotMeetingAttendee>();
+  for (const names of namesPerFrame) {
+    for (const name of names) {
+      const normalized = normalizeName(name);
+      if (!normalized) {
+        continue;
+      }
+      // Zoom tile labels carry suffixes the roster does not: "(he/him)", "(Host)", "(Guest)".
+      // The exact label is tried first so a member whose roster name has a parenthetical still
+      // matches as written.
+      const member =
+        matchMember({ name }, members) ??
+        matchMember({ name: name.replace(/(?:\s*\([^()]*\))+\s*$/u, "") }, members);
+      const key = member?.id ?? normalized;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.set(key, {
+        display_name: name.trim(),
+        ...(member ? { member_id: member.id } : {}),
+        source: "video_snapshot",
+        present: true,
+      });
+    }
+  }
+  return [...seen.values()];
+}
+
+/**
  * A roster with a newly imported one folded in.
  *
- * Precedence is the point: a human correction outranks anything imported, and a participant report
- * outranks a guess made from the transcript. Without that, the hourly pass re-importing a
- * transcript would quietly undo the admin who ticked the person who never unmuted.
+ * Precedence is the point: a human correction outranks anything imported, a participant report
+ * outranks what the vision model read off the recording, and both outrank a guess made from the
+ * transcript. Without that, the hourly pass re-importing a transcript would quietly undo the admin
+ * who ticked the person who never unmuted.
  */
 export function mergeAttendance(
   existing: readonly AdminBotMeetingAttendee[],
@@ -186,8 +231,9 @@ export function mergeAttendance(
 ): AdminBotMeetingAttendee[] {
   const rank: Record<AdminBotMeetingAttendanceSource, number> = {
     transcript: 0,
-    participant_report: 1,
-    manual: 2,
+    video_snapshot: 1,
+    participant_report: 2,
+    manual: 3,
   };
   const byKey = new Map<string, AdminBotMeetingAttendee>();
   for (const attendee of [...existing, ...incoming]) {

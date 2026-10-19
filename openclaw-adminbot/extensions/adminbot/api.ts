@@ -132,6 +132,15 @@ export {
   type ZoomRecordingNotice,
 } from "./src/workflows/meetings/zoom-email.js";
 export { summarizeMeeting } from "./src/workflows/meetings/summarize.js";
+export {
+  DEFAULT_SNAPSHOT_INTERVAL_SECONDS,
+  formatOffset,
+  parseFfmpegDuration,
+  readGalleryFrame,
+  snapshotOffsets,
+  snapshotUpdate,
+  type GalleryFrameReading,
+} from "./src/workflows/meetings/gallery-snapshots.js";
 export { parseVtt } from "./src/workflows/meetings/vtt.js";
 export { parseParticipantCsv } from "./src/workflows/meetings/attendance.js";
 

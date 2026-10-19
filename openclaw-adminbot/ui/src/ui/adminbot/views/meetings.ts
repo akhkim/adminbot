@@ -195,6 +195,9 @@ function attendanceSourceLabel(source: MeetingAttendee["source"]): string {
   if (source === "participant_report") {
     return t("adminbotMeetings.sourceReport");
   }
+  if (source === "video_snapshot") {
+    return t("adminbotMeetings.sourceSnapshot");
+  }
   return source === "transcript"
     ? t("adminbotMeetings.sourceTranscript")
     : t("adminbotMeetings.sourceManual");
@@ -280,7 +283,29 @@ function renderRosterEditor(props: AdminBotMeetingsProps, meeting: MeetingRecord
           })}
         </p>`
       : nothing}
+    ${renderSnapshotProvenance(meeting)}
   `;
+}
+
+/**
+ * Which machine read the recording, and how much of it.
+ *
+ * Said for the same reason the summary names its model: a misread tile label looks exactly like a
+ * correct one, and "0 of 3 frames showed tiles" is how an admin learns the dropped file was the
+ * speaker view after all.
+ */
+function renderSnapshotProvenance(meeting: MeetingRecord) {
+  const snapshots = meeting.snapshots;
+  if (!snapshots) {
+    return nothing;
+  }
+  return html`<p class="muted meetings__provenance">
+    ${t("adminbotMeetings.snapshotsReadBy", {
+      tiled: String(snapshots.gallery_frames),
+      total: String(snapshots.checkpoints_seconds.length),
+      model: snapshots.model,
+    })}
+  </p>`;
 }
 
 /** The prefetch handler, or none: a member's fold has nothing to read, so it listens for nothing. */

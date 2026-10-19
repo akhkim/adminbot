@@ -28,6 +28,20 @@ describe("validateMeeting", () => {
     expect(validateMeeting({ ...NOTICE, recording: {} })).toMatch(/share_url/u);
   });
 
+  // The artifact pass's transcript, participant and gallery updates all carry `recording: {}`.
+  // Validating them on their own link rejected every one of them with a 400.
+  it("accepts a sparse update to a stored record that already has a link", () => {
+    const stored = {
+      ...NOTICE,
+      created_at: "2026-08-12T15:00:00.000Z",
+      updated_at: "2026-08-12T15:00:00.000Z",
+    };
+    expect(validateMeeting({ ...NOTICE, recording: {} }, true, stored)).toBeUndefined();
+    expect(
+      validateMeeting({ ...NOTICE, recording: {} }, true, { ...stored, recording: {} }),
+    ).toMatch(/share_url/u);
+  });
+
   it("refuses an unparseable start time", () => {
     expect(validateMeeting({ ...NOTICE, started_at: "last tuesday" })).toMatch(/RFC3339/u);
   });
