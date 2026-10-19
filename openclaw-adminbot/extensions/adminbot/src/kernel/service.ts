@@ -9923,7 +9923,7 @@ export class AdminBotService {
     // until an explicit data repair, rather than moving old recordings during an unrelated update.
     const unchangedHistoricalDate =
       existing !== undefined && input.started_at === existing.started_at;
-    const validation = validateMeeting(input, unchangedHistoricalDate);
+    const validation = validateMeeting(input, unchangedHistoricalDate, existing);
     if (validation) {
       return serviceError(400, validation);
     }

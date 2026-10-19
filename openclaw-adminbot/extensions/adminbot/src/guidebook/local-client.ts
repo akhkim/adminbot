@@ -126,14 +126,36 @@ export async function embedLocally(params: {
   });
 }
 
+/**
+ * One part of a multimodal message, in the OpenAI shape vLLM accepts.
+ *
+ * Images travel as `data:` URLs only. A remote image URL would have the model server fetch it,
+ * which turns a loopback call into an outbound request this client never sees.
+ */
+export type LocalContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: `data:image/${string}` } };
+
 /** Runs one chat completion against the local model and returns its text. */
 export async function completeLocally(params: {
   fetchImpl: GuidebookFetch;
   baseUrl: string;
   model: string;
   apiKey?: string;
-  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+  messages: Array<{
+    role: "system" | "user" | "assistant";
+    content: string | LocalContentPart[];
+  }>;
   signal?: AbortSignal;
+  /**
+   * Send to `baseUrl` itself rather than through the shared LLM gateway's `local` pool.
+   *
+   * Only for a dedicated single-tenant model server -- the meeting vision model pinned to its own
+   * GPU. The gateway's pool round-robins across the nodes serving the main text model, none of
+   * which serve the vision model, so routing there would fail every call. The loopback assertion
+   * still applies, so this widens nothing about where content may go.
+   */
+  dedicatedServer?: boolean;
   /** Opens every error this call can raise. Defaults to the guidebook, which was the first caller. */
   purposeLabel?: string;
   /** Fail closed if the server answers with a different model. */
@@ -158,7 +180,7 @@ export async function completeLocally(params: {
   extra?: Record<string, unknown>;
 }): Promise<string> {
   const parsed = (await postJson(
-    routeLlmFetch(params.fetchImpl, "local"),
+    params.dedicatedServer ? params.fetchImpl : routeLlmFetch(params.fetchImpl, "local"),
     params.baseUrl,
     "chat/completions",
     params.apiKey,

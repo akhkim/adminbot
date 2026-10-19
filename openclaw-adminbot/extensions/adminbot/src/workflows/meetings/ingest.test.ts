@@ -65,7 +65,12 @@ describe("noticeToMeeting", () => {
 
   it("is undefined for ordinary mail", () => {
     expect(
-      noticeToMeeting({ id: "m", subject: "lunch?", body: "at noon", receivedAt: "2026-08-12T00:00:00.000Z" }),
+      noticeToMeeting({
+        id: "m",
+        subject: "lunch?",
+        body: "at noon",
+        receivedAt: "2026-08-12T00:00:00.000Z",
+      }),
     ).toBeUndefined();
   });
 });
@@ -89,7 +94,9 @@ describe("matchArtifactToMeeting", () => {
   // Attaching one meeting's transcript to another's record is worse than attaching nothing: the
   // summary would be wrong and nobody reading it would know.
   it("gives up rather than guessing between two meetings on one day", () => {
-    expect(matchArtifactToMeeting("GMT20260812-100000_Recording.vtt", [weekly, reading])).toBeUndefined();
+    expect(
+      matchArtifactToMeeting("GMT20260812-100000_Recording.vtt", [weekly, reading]),
+    ).toBeUndefined();
   });
 
   it("tolerates a day of slack, since Zoom names files in GMT", () => {
@@ -107,10 +114,22 @@ describe("matchArtifactToMeeting", () => {
 });
 
 describe("artifactKind", () => {
-  it("recognizes the two files a host drops and ignores the rest", () => {
+  it("recognizes the files a host drops and ignores the rest", () => {
     expect(artifactKind("a.VTT")).toBe("transcript");
     expect(artifactKind("participants_812.csv")).toBe("participants");
+    expect(artifactKind("GMT20260812-140000_Recording_gallery_1920x1080.mp4")).toBe(
+      "gallery_video",
+    );
+    // An active-speaker recording shows one person at a time: no evidence of who else was there.
+    expect(artifactKind("GMT20260812-140000_Recording_1920x1080.mp4")).toBeUndefined();
     expect(artifactKind("recording.mp4")).toBeUndefined();
+  });
+
+  it("files a gallery recording against its meeting by the date in Zoom's filename", () => {
+    const weekly = meeting("weekly", "Weekly Lab Meeting", "2026-08-12T14:00:00.000Z");
+    expect(
+      matchArtifactToMeeting("GMT20260812-140000_Recording_gallery_1920x1080.mp4", [weekly])?.id,
+    ).toBe("weekly");
   });
 });
 

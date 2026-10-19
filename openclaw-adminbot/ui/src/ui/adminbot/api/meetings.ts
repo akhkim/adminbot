@@ -52,7 +52,7 @@ export type MeetingAttendee = {
   member_id?: string;
   display_name: string;
   minutes?: number;
-  source: "participant_report" | "transcript" | "manual";
+  source: "participant_report" | "video_snapshot" | "transcript" | "manual";
   present: boolean;
 };
 
@@ -76,6 +76,13 @@ export type MeetingRecord = {
     decisions: string[];
     action_items: MeetingActionItem[];
     generated_at: string;
+    model: string;
+  };
+  /** That the gallery-view recording was sampled for attendance: when, at which offsets, by what. */
+  snapshots?: {
+    processed_at: string;
+    checkpoints_seconds: number[];
+    gallery_frames: number;
     model: string;
   };
   /**

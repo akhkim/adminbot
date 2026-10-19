@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import {
   attendanceFromParticipants,
+  attendanceFromSnapshots,
   attendanceFromSpeakers,
   mergeAttendance,
   parseParticipantCsv,
 } from "./attendance.js";
 
-function member(overrides: Partial<AdminBotLabMember> & { id: string; name: string }): AdminBotLabMember {
+function member(
+  overrides: Partial<AdminBotLabMember> & { id: string; name: string },
+): AdminBotLabMember {
   return {
     privilege_level: "member",
     access: [],
@@ -83,9 +86,9 @@ describe("attendanceFromParticipants", () => {
     expect(byName["ana ruiz gomez"]).toBe("m-ana");
     // A guest is recorded as present without being invented into the roster.
     expect(byName["Guest iPhone"]).toBeUndefined();
-    expect(attendance.every((entry) => entry.present && entry.source === "participant_report")).toBe(
-      true,
-    );
+    expect(
+      attendance.every((entry) => entry.present && entry.source === "participant_report"),
+    ).toBe(true);
   });
 
   // A dropped connection produces a second row for the same person; counted separately it turns a
@@ -93,8 +96,18 @@ describe("attendanceFromParticipants", () => {
   it("merges the rejoin rows one person produces", () => {
     const attendance = attendanceFromParticipants(
       [
-        { name: "Andrew Kim", email: "andrew@cs.toronto.edu", joinedAt: "2026-08-12T10:00:00Z", minutes: 20 },
-        { name: "Andrew Kim", email: "andrew@cs.toronto.edu", joinedAt: "2026-08-12T10:25:00Z", minutes: 35 },
+        {
+          name: "Andrew Kim",
+          email: "andrew@cs.toronto.edu",
+          joinedAt: "2026-08-12T10:00:00Z",
+          minutes: 20,
+        },
+        {
+          name: "Andrew Kim",
+          email: "andrew@cs.toronto.edu",
+          joinedAt: "2026-08-12T10:25:00Z",
+          minutes: 35,
+        },
       ],
       ROSTER,
     );
@@ -105,8 +118,13 @@ describe("attendanceFromParticipants", () => {
 
   // Attributing to whichever member sorted first would be a coin flip recorded as a fact.
   it("leaves an ambiguous name unmatched", () => {
-    const twins = [member({ id: "m-1", name: "Alex Chen" }), member({ id: "m-2", name: "Alex Chen" })];
-    expect(attendanceFromParticipants([{ name: "Alex Chen" }], twins)[0]?.member_id).toBeUndefined();
+    const twins = [
+      member({ id: "m-1", name: "Alex Chen" }),
+      member({ id: "m-2", name: "Alex Chen" }),
+    ];
+    expect(
+      attendanceFromParticipants([{ name: "Alex Chen" }], twins)[0]?.member_id,
+    ).toBeUndefined();
   });
 });
 
@@ -120,7 +138,73 @@ describe("attendanceFromSpeakers", () => {
   });
 });
 
+describe("attendanceFromSnapshots", () => {
+  it("lists each person once across frames and keeps unmatched labels as guests", () => {
+    const rows = attendanceFromSnapshots(
+      [
+        ["Andrew Kim", "ana ruiz gomez", "Galaxy S21"],
+        ["Andrew Kim", "Galaxy S21", "  ", "Visitor (Guest)"],
+      ],
+      ROSTER,
+    );
+    expect(rows).toEqual([
+      {
+        display_name: "Andrew Kim",
+        member_id: "m-andrew",
+        source: "video_snapshot",
+        present: true,
+      },
+      {
+        display_name: "ana ruiz gomez",
+        member_id: "m-ana",
+        source: "video_snapshot",
+        present: true,
+      },
+      { display_name: "Galaxy S21", source: "video_snapshot", present: true },
+      { display_name: "Visitor (Guest)", source: "video_snapshot", present: true },
+    ]);
+  });
+
+  it("matches a tile label through the pronoun and host suffixes Zoom appends", () => {
+    const rows = attendanceFromSnapshots(
+      [["Priya Raman (she/her) (Host)"], ["Andrew Kim (he/him)", "Andrew Kim"]],
+      ROSTER,
+    );
+    expect(rows.map((row) => [row.display_name, row.member_id])).toEqual([
+      ["Priya Raman (she/her) (Host)", "m-priya"],
+      ["Andrew Kim (he/him)", "m-andrew"],
+    ]);
+  });
+});
+
 describe("mergeAttendance", () => {
+  it("ranks a gallery snapshot above the transcript and below the participant report", () => {
+    const snapshot = {
+      member_id: "m-andrew",
+      display_name: "Andrew Kim",
+      source: "video_snapshot" as const,
+      present: true,
+    };
+    const overTranscript = mergeAttendance([{ ...snapshot, source: "transcript" }], [snapshot]);
+    expect(overTranscript[0]?.source).toBe("video_snapshot");
+    const underReport = mergeAttendance(
+      [{ ...snapshot, source: "participant_report", minutes: 55 }],
+      [snapshot],
+    );
+    expect(underReport[0]).toMatchObject({ source: "participant_report", minutes: 55 });
+  });
+
+  // An admin who unticked someone the vision model misread must not be re-ticked by the next pass.
+  it("never overrides an admin's recorded absence with a snapshot", () => {
+    const merged = mergeAttendance(
+      [{ member_id: "m-ana", display_name: "Ana Ruiz-Gómez", source: "manual", present: false }],
+      [{ member_id: "m-ana", display_name: "Ana", source: "video_snapshot", present: true }],
+    );
+    expect(merged).toEqual([
+      { member_id: "m-ana", display_name: "Ana Ruiz-Gómez", source: "manual", present: false },
+    ]);
+  });
+
   // The failure this prevents: the hourly pass re-imports a transcript and silently unticks the
   // person an admin marked present, who was there but never unmuted.
   it("keeps a manual correction over anything imported", () => {
@@ -154,7 +238,14 @@ describe("mergeAttendance", () => {
   it("adds people the earlier source never saw", () => {
     const merged = mergeAttendance(
       [{ member_id: "m-andrew", display_name: "Andrew Kim", source: "transcript", present: true }],
-      [{ member_id: "m-priya", display_name: "Priya Raman", source: "participant_report", present: true }],
+      [
+        {
+          member_id: "m-priya",
+          display_name: "Priya Raman",
+          source: "participant_report",
+          present: true,
+        },
+      ],
     );
     expect(merged.map((entry) => entry.member_id)).toEqual(["m-andrew", "m-priya"]);
   });

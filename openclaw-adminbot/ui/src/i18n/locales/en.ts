@@ -1486,7 +1486,10 @@ export const en: TranslationMap = {
     shareUrl: "Recording link",
     sourceManual: "marked by an admin",
     sourceReport: "from the participant report",
+    sourceSnapshot: "seen on the gallery recording",
     sourceTranscript: "spoke on the transcript",
+    snapshotsReadBy:
+      "Attendance read from the gallery recording by {model}: {tiled} of {total} sampled frames showed participant tiles.",
     startedAt: "Started at",
     summaryPending: "The transcript is in; the summary has not been written yet.",
     topic: "Topic",

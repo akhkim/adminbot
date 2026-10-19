@@ -51,6 +51,9 @@ must likewise use these base URLs to participate. Do not leave direct provider U
 production configuration that requires global limits.
 
 A configured gateway failure fails the call; clients never silently bypass it.
+The one explicit exception is the meeting attendance vision model
+([adminbot-meetings.md](adminbot-meetings.md)): a dedicated single-tenant vLLM on its own GPU that
+no gateway node serves. Its caller sets `dedicatedServer` and still passes the loopback check.
 Removing `LLM_GATEWAY_URL` retains legacy development mode, which is **not** shared
 admission control.
 
