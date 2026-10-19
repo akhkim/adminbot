@@ -70,10 +70,11 @@ export function listSqliteMeetingsPage(
 }
 
 /**
- * Every meeting's head: id, title, start, and the two lengths the duration floor reads.
+ * Every meeting's head: id, title, start, and the three lengths the duration floor reads.
  *
  * Extracted in SQL so the series index costs one narrow scan however large the stored rosters
- * grow -- the same reason GET /meetings stopped sending them.
+ * grow -- the same reason GET /meetings stopped sending them. Every length `meetsDurationFloor`
+ * reads has to be here, or a series would count recordings its own list hides.
  */
 export function listSqliteMeetingHeads(db: DatabaseSync): AdminBotMeetingHead[] {
   const rows = db
@@ -81,6 +82,7 @@ export function listSqliteMeetingHeads(db: DatabaseSync): AdminBotMeetingHead[] 
       `SELECT id, started_at,
          json_extract(payload_json, '$.topic') AS topic,
          json_extract(payload_json, '$.duration_minutes') AS duration_minutes,
+         json_extract(payload_json, '$.duration_seconds') AS duration_seconds,
          json_extract(payload_json, '$.transcript.duration_seconds') AS transcript_seconds
        FROM adminbot_meetings`,
     )
@@ -89,6 +91,7 @@ export function listSqliteMeetingHeads(db: DatabaseSync): AdminBotMeetingHead[] 
     started_at: string;
     topic: unknown;
     duration_minutes: unknown;
+    duration_seconds: unknown;
     transcript_seconds: unknown;
   }>;
   return rows.map((row) => ({
@@ -96,6 +99,7 @@ export function listSqliteMeetingHeads(db: DatabaseSync): AdminBotMeetingHead[] 
     started_at: row.started_at,
     topic: typeof row.topic === "string" ? row.topic : "",
     ...(typeof row.duration_minutes === "number" ? { duration_minutes: row.duration_minutes } : {}),
+    ...(typeof row.duration_seconds === "number" ? { duration_seconds: row.duration_seconds } : {}),
     ...(typeof row.transcript_seconds === "number"
       ? { transcript: { duration_seconds: row.transcript_seconds } }
       : {}),

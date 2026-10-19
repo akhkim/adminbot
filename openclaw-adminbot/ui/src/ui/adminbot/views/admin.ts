@@ -780,7 +780,7 @@ function renderSettings(
               />
             </label>
             <label class="adminbot-form__field">
-              <span>Minimum meeting minutes</span>
+              <span>List recordings longer than (minutes)</span>
               <input
                 name="meetingMinimumMinutes"
                 type="number"

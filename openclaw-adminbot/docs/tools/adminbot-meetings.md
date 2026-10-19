@@ -149,19 +149,25 @@ recordings stay in the folder and are listed under `deferred` in the job summary
 ## 4. Short recordings
 
 A test call, a room check and a meeting somebody rejoined by accident all produce a cloud
-recording and a notice. Anything shorter than **`meeting_minimum_minutes`** (default **10**) is
-filed but not listed, so the tab stays a list of real meetings.
+recording and a notice. Only recordings **longer than** **`meeting_minimum_minutes`** (default
+**10**) are listed — strictly, to the second, so a 10:00 recording is hidden and a 10:01 one is
+shown. Shorter ones are filed but not listed, so the tab stays a list of real meetings.
+
+A recording's length comes from the first of these that knows it: a hand-filed or participant-report
+meeting length, the recording length the Zoom notice states (the "Meeting assets" template gives it
+to the second), then the span of the transcript. The series counts on the tab use the same rule.
 
 Three things to know about it:
 
-- A meeting whose length nothing has reported yet is **always listed**. Zoom's notice states no
-  duration, so length is unknown until a transcript or a participant CSV lands — and the hours in
-  between are exactly when someone goes looking for the recording.
+- A meeting whose length nothing has reported is **always listed**. The older "is now available"
+  notice template states no duration, and a meeting filed by hand has no length field, so hiding
+  unknowns would hide real meetings. Such a meeting is hidden once a transcript or participant CSV
+  shows it was short.
 - Short meetings are still **stored**, not discarded. Lowering the floor brings them back; nothing
   was lost. The artifact pass also still sees them, so a transcript for a nine-minute meeting
   reaches its record.
-- The floor is admin-editable at **Admin → Settings → Minimum meeting minutes**, or over the API
-  as `meeting_minimum_minutes` on `PUT /settings`. Zero lists everything.
+- The floor is admin-editable at **Admin → Settings → List recordings longer than (minutes)**, or
+  over the API as `meeting_minimum_minutes` on `PUT /settings`. Zero lists everything.
 
 ## 5. Recovering from a missing notice
 
