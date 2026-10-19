@@ -84,7 +84,6 @@ import {
   type AdminBotLabMemberSummary,
   type AdminBotListPage,
   type AdminBotMeetingArtifactRecord,
-  type AdminBotMeetingCursor,
   type AdminBotServiceOptions,
   type AdminBotServiceStore,
   type AdminBotSlackChannelNamingRecord,
@@ -144,7 +143,7 @@ import {
 } from "./reference-scans.js";
 import { SqliteAuditLog } from "./sqlite.audit.js";
 import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
-import { listSqliteMeetingsPage } from "./sqlite.meetings.js";
+import { listSqliteMeetingHeads, listSqliteMeetingsPage } from "./sqlite.meetings.js";
 import {
   MEMBER_ATTRIBUTION_COLUMNS,
   MEMBER_OWNED_COLUMNS,
@@ -3141,12 +3140,12 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => parseJson<AdminBotMeetingRecord>(row.payload_json));
   }
 
-  listMeetingsPage(options: {
-    limit: number;
-    before?: AdminBotMeetingCursor;
-    minimumMinutes: number;
-  }): AdminBotMeetingRecord[] {
+  listMeetingsPage(options: Parameters<typeof listSqliteMeetingsPage>[1]): AdminBotMeetingRecord[] {
     return listSqliteMeetingsPage(this.db, options);
+  }
+
+  listMeetingHeads() {
+    return listSqliteMeetingHeads(this.db);
   }
 
   deleteMeeting(meetingId: string): boolean {

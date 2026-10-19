@@ -31,7 +31,9 @@ function row(id: string, count: number): MeetingRecord {
 function createHost(meetings: MeetingRecord[]) {
   return {
     settings: { adminBotUrl: "https://admin.safe.eu" } as UiSettings,
-    adminBotMeetings: meetings,
+    adminBotMeetingSeriesPages: {
+      "weekly lab meeting": { meetings, next_cursor: null, loading: false, error: null },
+    },
     adminBotMeetingsSaving: false,
     adminBotMeetingsError: null,
     requestUpdate: vi.fn(),
@@ -66,7 +68,9 @@ describe("meeting rosters", () => {
     expect(String(fetchSpy.mock.calls[0]?.[0])).toMatch(/\/meetings\/m-once$/u);
     expect(host.adminBotMeetingRosters?.["m-once"]).toEqual({ attendees: [ADA] });
     // The list row is left as it came: a headcount, no roster.
-    expect(host.adminBotMeetings?.[0]?.attendees).toBeUndefined();
+    expect(
+      host.adminBotMeetingSeriesPages?.["weekly lab meeting"]?.meetings[0]?.attendees,
+    ).toBeUndefined();
   });
 
   it("keeps a failed prefetch quiet, and lets the next intent ask again", async () => {
@@ -111,8 +115,9 @@ describe("meeting rosters", () => {
     expect(String(url)).toMatch(/\/meetings\/m-save\/attendance$/u);
     expect((init as RequestInit | undefined)?.method).toBe("PUT");
     expect(host.adminBotMeetingRosters?.["m-save"]).toEqual({ attendees: [ADA, bo] });
-    expect(host.adminBotMeetings?.map((meeting) => meeting.id)).toEqual(["m-other", "m-save"]);
-    expect(host.adminBotMeetings?.[1]?.attendee_count).toBe(2);
-    expect(host.adminBotMeetings?.[1]?.attendees).toBeUndefined();
+    const saved = host.adminBotMeetingSeriesPages?.["weekly lab meeting"]?.meetings;
+    expect(saved?.map((meeting) => meeting.id)).toEqual(["m-other", "m-save"]);
+    expect(saved?.[1]?.attendee_count).toBe(2);
+    expect(saved?.[1]?.attendees).toBeUndefined();
   });
 });

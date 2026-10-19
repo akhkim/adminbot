@@ -8,12 +8,19 @@ import type {
   MeetingAttendee,
   MeetingRecord,
   MeetingRosters,
+  MeetingSeries,
+  MeetingSeriesPages,
 } from "../api/meetings.ts";
-import { MEETINGS_PAGE_SIZE } from "../api/meetings.ts";
 // Meeting Recordings: what was recorded, who was there, and what the local model made of it.
 //
-// The tab is a catch-up surface first. Someone who missed Tuesday opens it to watch the recording
-// and read the summary, so those are what a card leads with; attendance is secondary and folded
+// Recordings are grouped by the meeting they belong to: one dropdown per recurring title ("Weekly
+// Lab Meeting", "Reading Group"), newest series first, each holding every recording of that
+// meeting newest first. A flat list made a weekly meeting's history a scroll through everyone
+// else's, and made a once-a-term meeting impossible to find at all.
+//
+// The tab is still a catch-up surface first. The newest series opens on arrival with its newest
+// recording unfolded, so somebody who missed Tuesday sees the recording and the summary without a
+// click; every other series is read only when it is opened. Attendance is secondary and folded
 // into a <details>. Two audiences share one view -- a member sees their own attendance line and a
 // headcount, an admin sees the roster and can correct it -- and the difference comes from what the
 // service returned, not from a branch here. `viewerIsAdmin` only decides whether the editing
@@ -29,11 +36,14 @@ import { renderDateControl } from "../date-control.ts";
 export type MeetingsRosterMember = { id: string; name: string };
 
 export type AdminBotMeetingsProps = {
-  meetings: MeetingRecord[];
-  visibleCount: number;
-  onShowMore: (nextCount: number) => void;
-  hasMore: boolean;
-  loadingMore: boolean;
+  /** The index of recurring meetings, newest first. */
+  series: MeetingSeries[];
+  /** Each opened series' recordings so far, by series key. */
+  seriesPages: MeetingSeriesPages;
+  /** A series' dropdown was opened: read its recordings if they have not been read. */
+  onOpenSeries: (key: string) => void;
+  /** Read the next page of a series' older recordings. */
+  onShowOlder: (key: string) => void;
   loading: boolean;
   saving: boolean;
   error: string | null;
@@ -315,30 +325,117 @@ function intent(props: AdminBotMeetingsProps, meetingId: string, opened: boolean
     : undefined;
 }
 
-function renderMeeting(props: AdminBotMeetingsProps, meeting: MeetingRecord) {
+/**
+ * One recording inside its series.
+ *
+ * The row leads with what someone scanning a meeting's history looks for -- when, how long, and
+ * the button that plays it -- and folds the summary and attendance beneath, since a dropdown of
+ * forty weeks with every summary open is a wall. `expanded` unfolds the newest recording of the
+ * newest series, the one a reader catching up came for.
+ */
+function renderRecording(props: AdminBotMeetingsProps, meeting: MeetingRecord, expanded: boolean) {
   const duration = formatDuration(meeting);
   return html`
-    <article class="card adminbot-card adminbot-card--wide meetings__card">
-      <h3 class="card-title">${meeting.topic}</h3>
-      <p class="card-sub">
-        ${formatStart(meeting.started_at)}${duration ? html` · ${duration}` : nothing}
-      </p>
-      ${renderRecordingLinks(meeting)} ${renderSummary(meeting)}
-      <details
-        class="meetings__attendance"
-        @pointerenter=${intent(props, meeting.id, false)}
-        @focusin=${intent(props, meeting.id, false)}
-        @toggle=${(event: Event) => {
-          if ((event.currentTarget as HTMLDetailsElement).open) {
-            intent(props, meeting.id, true)?.();
-          }
-        }}
-      >
-        <summary>${t("adminbotMeetings.attendance")}</summary>
-        ${props.viewerIsAdmin ? renderRosterEditor(props, meeting) : renderOwnAttendance(meeting)}
+    <li class="meetings__recording" data-testid="meetings-recording">
+      <div class="meetings__recording-head">
+        <span class="meetings__recording-when">${formatStart(meeting.started_at)}</span>
+        ${duration ? html`<span class="muted">${duration}</span>` : nothing}
+      </div>
+      ${renderRecordingLinks(meeting)}
+      <details class="meetings__recording-details" ?open=${expanded}>
+        <summary>${t("adminbotMeetings.recordingDetails")}</summary>
+        ${renderSummary(meeting)}
+        <details
+          class="meetings__attendance"
+          @pointerenter=${intent(props, meeting.id, false)}
+          @focusin=${intent(props, meeting.id, false)}
+          @toggle=${(event: Event) => {
+            if ((event.currentTarget as HTMLDetailsElement).open) {
+              intent(props, meeting.id, true)?.();
+            }
+          }}
+        >
+          <summary>${t("adminbotMeetings.attendance")}</summary>
+          ${props.viewerIsAdmin ? renderRosterEditor(props, meeting) : renderOwnAttendance(meeting)}
+        </details>
+        ${meeting.notes ? html`<p class="muted">${meeting.notes}</p>` : nothing}
       </details>
-      ${meeting.notes ? html`<p class="muted">${meeting.notes}</p>` : nothing}
-    </article>
+    </li>
+  `;
+}
+
+/** "Oct 19, 2026": the series header names a day, not a minute. */
+function formatDay(startedAt: string): string {
+  const parsed = new Date(startedAt);
+  return Number.isNaN(parsed.getTime())
+    ? startedAt
+    : parsed.toLocaleDateString([], { dateStyle: "medium" });
+}
+
+/**
+ * One recurring meeting: its title, how many recordings it has and when it last met, and -- once
+ * opened -- every recording of it, newest first.
+ *
+ * The count and date come from the index, so a closed dropdown already answers "how often does
+ * this meet, and did it meet this week" without reading a single recording.
+ *
+ * `?open` is bound to "is this the newest series" rather than to held state. lit only writes the
+ * attribute when that value changes, so a reader who closes the newest series keeps it closed
+ * across re-renders, and one who opens an older series keeps it open.
+ */
+function renderSeries(props: AdminBotMeetingsProps, series: MeetingSeries, index: number) {
+  const page = props.seriesPages[series.key];
+  const meetings = page?.meetings ?? [];
+  return html`
+    <details
+      class="card adminbot-card adminbot-card--wide meetings__series"
+      data-testid="meetings-series"
+      ?open=${index === 0}
+      @toggle=${(event: Event) => {
+        if ((event.currentTarget as HTMLDetailsElement).open) {
+          props.onOpenSeries(series.key);
+        }
+      }}
+    >
+      <summary class="meetings__series-head">
+        <span class="meetings__series-title">${series.topic}</span>
+        <span class="muted meetings__series-meta">
+          ${series.count === 1
+            ? t("adminbotMeetings.seriesCountOne")
+            : t("adminbotMeetings.seriesCount", { count: String(series.count) })}
+          · ${t("adminbotMeetings.seriesLatest", { date: formatDay(series.latest_started_at) })}
+        </span>
+      </summary>
+      ${page?.error ? html`<p class="notice notice--error">${page.error}</p>` : nothing}
+      ${!page || (page.loading && meetings.length === 0)
+        ? html`<p class="muted">${t("adminbotMeetings.seriesLoading")}</p>`
+        : nothing}
+      ${meetings.length
+        ? html`<ol class="meetings__recordings">
+            ${repeat(
+              meetings,
+              (meeting) => meeting.id,
+              (meeting, position) => renderRecording(props, meeting, index === 0 && position === 0),
+            )}
+          </ol>`
+        : nothing}
+      ${page?.next_cursor
+        ? html`<button
+            class="btn btn--sm meetings__more"
+            type="button"
+            data-testid="meetings-show-older"
+            ?disabled=${page.loading}
+            aria-busy=${page.loading ? "true" : "false"}
+            @click=${() => props.onShowOlder(series.key)}
+          >
+            ${page.loading
+              ? t("adminbotMeetings.seriesLoading")
+              : t("adminbotMeetings.showOlder", {
+                  remaining: String(Math.max(0, series.count - meetings.length)),
+                })}
+          </button>`
+        : nothing}
+    </details>
   `;
 }
 
@@ -537,50 +634,23 @@ function renderArchiveLinks() {
 }
 
 export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
-  const visibleCount = Math.min(props.meetings.length, props.visibleCount);
   return html`
     <section class="meetings">
       ${props.error ? html`<p class="notice notice--error">${props.error}</p>` : nothing}
       ${renderArchiveLinks()}
       ${props.viewerIsAdmin && props.nudge ? renderNudgePanel(props.nudge) : nothing}
       ${props.viewerIsAdmin ? renderFileForm(props) : nothing}
-      ${props.loading && props.meetings.length === 0
+      ${props.loading && props.series.length === 0
         ? html`<p class="muted">${t("adminbotMeetings.loading")}</p>`
         : nothing}
-      ${!props.loading && !props.error && props.meetings.length === 0
+      ${!props.loading && !props.error && props.series.length === 0
         ? html`<p class="muted">${t("adminbotMeetings.empty")}</p>`
         : nothing}
       ${repeat(
-        props.meetings.slice(0, visibleCount),
-        (meeting) => meeting.id,
-        (meeting) => renderMeeting(props, meeting),
+        props.series,
+        (series) => series.key,
+        (series, index) => renderSeries(props, series, index),
       )}
-      ${visibleCount < props.meetings.length || props.hasMore
-        ? html`<button
-            class="btn meetings__more"
-            type="button"
-            data-testid="meetings-show-more"
-            ?disabled=${props.loadingMore}
-            aria-busy=${props.loadingMore ? "true" : "false"}
-            @click=${() =>
-              props.onShowMore(
-                visibleCount < props.meetings.length
-                  ? Math.min(props.meetings.length, visibleCount + MEETINGS_PAGE_SIZE)
-                  : visibleCount + MEETINGS_PAGE_SIZE,
-              )}
-          >
-            ${props.loadingMore
-              ? t("adminbotMeetings.loading")
-              : t("professor.showMore", {
-                  count: String(
-                    Math.min(
-                      MEETINGS_PAGE_SIZE,
-                      props.meetings.length - visibleCount || MEETINGS_PAGE_SIZE,
-                    ),
-                  ),
-                })}
-          </button>`
-        : nothing}
     </section>
   `;
 }

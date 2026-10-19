@@ -312,3 +312,118 @@ describe("GET /meetings/:id", () => {
     expect(await admin.json()).toHaveProperty("absent");
   });
 });
+
+describe("meeting series", () => {
+  function file(lab: Lab, id: string, topic: string, startedAt: string, minutes = 60) {
+    const saved = lab.mock.service.upsertMeeting({
+      id,
+      topic,
+      started_at: startedAt,
+      duration_minutes: minutes,
+      recording: { share_url: `https://us02web.zoom.us/rec/share/${id}` },
+      attendees: roster(3),
+      source: "zoom_email",
+    });
+    if (!saved.ok) {
+      throw new Error(saved.error.message);
+    }
+  }
+
+  async function seed(): Promise<Lab> {
+    const lab = await startLab();
+    file(lab, "weekly-1", "Weekly Lab Meeting", "2026-09-07T14:00:00.000Z");
+    file(lab, "reading-1", "Reading Group", "2026-09-10T15:00:00.000Z");
+    // The same series as filed by a different host: case and spacing differ, the meeting does not.
+    file(lab, "weekly-2", "weekly  lab meeting ", "2026-09-14T14:00:00.000Z");
+    file(lab, "weekly-3", "Weekly Lab Meeting", "2026-09-21T14:00:00.000Z");
+    // Under the default ten-minute floor: hidden from the list, so it must not be counted either.
+    file(lab, "reading-check", "Reading Group", "2026-09-22T15:00:00.000Z", 2);
+    return lab;
+  }
+
+  it("indexes one row per recurring meeting, newest series first, for members too", async () => {
+    const lab = await seed();
+    expect((await fetch(`${lab.baseUrl}/meetings/series`)).status).toBe(401);
+    for (const viewer of ["ada", "zhijing"]) {
+      const response = await fetch(`${lab.baseUrl}/meetings/series`, { headers: as(lab, viewer) });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        series: [
+          {
+            key: "weekly lab meeting",
+            topic: "Weekly Lab Meeting",
+            count: 3,
+            latest_started_at: "2026-09-21T14:00:00.000Z",
+          },
+          {
+            key: "reading group",
+            topic: "Reading Group",
+            count: 1,
+            latest_started_at: "2026-09-10T15:00:00.000Z",
+          },
+        ],
+      });
+    }
+  });
+
+  it("pages one series' recordings, newest first, with the viewer's own redaction", async () => {
+    const lab = await seed();
+    const series = encodeURIComponent("weekly lab meeting");
+    const first = await fetch(`${lab.baseUrl}/meetings?series=${series}&limit=2`, {
+      headers: as(lab, "ada"),
+    });
+    const page = (await first.json()) as {
+      meetings: { id: string; attendees?: { member_id?: string }[] }[];
+      next_cursor?: { started_at: string; id: string };
+    };
+    expect(page.meetings.map((meeting) => meeting.id)).toEqual(["weekly-3", "weekly-2"]);
+    // A member's row carries their own line and nobody else's.
+    expect(page.meetings[0]?.attendees?.map((line) => line.member_id)).toEqual(["ada"]);
+    const cursor = page.next_cursor;
+    expect(cursor?.id).toBe("weekly-2");
+    const rest = await fetch(
+      `${lab.baseUrl}/meetings?series=${series}&limit=2&before_started_at=${encodeURIComponent(
+        cursor?.started_at ?? "",
+      )}&before_id=${cursor?.id}`,
+      { headers: as(lab, "zhijing") },
+    );
+    const tail = (await rest.json()) as {
+      meetings: { id: string; attendees?: unknown; attendee_count?: number }[];
+      next_cursor?: unknown;
+    };
+    expect(tail.meetings.map((meeting) => meeting.id)).toEqual(["weekly-1"]);
+    expect(tail.next_cursor).toBeUndefined();
+    // An admin's list row is a headcount; the roster stays on GET /meetings/:id.
+    expect(tail.meetings[0]?.attendees).toBeUndefined();
+    expect(tail.meetings[0]?.attendee_count).toBe(3);
+  });
+
+  it("refuses an empty or oversized series key", async () => {
+    const lab = await seed();
+    for (const series of ["", "%20%20", "x".repeat(301)]) {
+      const response = await fetch(`${lab.baseUrl}/meetings?series=${series}`, {
+        headers: as(lab, "ada"),
+      });
+      expect(response.status).toBe(400);
+    }
+  });
+
+  it("revalidates the index until a meeting is filed", async () => {
+    const lab = await seed();
+    const first = await fetch(`${lab.baseUrl}/meetings/series`, { headers: as(lab, "ada") });
+    const etag = first.headers.get("etag");
+    expect(etag).toBeTruthy();
+    const same = await fetch(`${lab.baseUrl}/meetings/series`, {
+      headers: { ...as(lab, "ada"), "If-None-Match": etag ?? "" },
+    });
+    expect(same.status).toBe(304);
+    file(lab, "journal-1", "Journal Club", "2026-10-01T16:00:00.000Z");
+    const changed = await fetch(`${lab.baseUrl}/meetings/series`, {
+      headers: { ...as(lab, "ada"), "If-None-Match": etag ?? "" },
+    });
+    expect(changed.status).toBe(200);
+    expect(((await changed.json()) as { series: { key: string }[] }).series[0]?.key).toBe(
+      "journal club",
+    );
+  });
+});

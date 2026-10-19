@@ -15,6 +15,7 @@ import {
   type AdminBotStandingMeeting,
   standingMeetings,
 } from "../../workflows/calendar/standing-meetings.js";
+import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import { groupMeetingInviteEmails } from "../../workflows/meetings/attendance-nudge.js";
 import {
   meetingListRow,
@@ -28,7 +29,6 @@ import {
   sendJson,
   sendServiceResult,
 } from "../server.http.js";
-import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import type { AdminBotRouteContext } from "./context.js";
 import {
   adminSessionOnly,
@@ -66,8 +66,12 @@ function meetingsEtag(
     url.searchParams.get("limit") ?? String(MEETINGS_PAGE_DEFAULT),
     url.searchParams.get("before_started_at"),
     url.searchParams.get("before_id"),
+    url.searchParams.get("series"),
   ]);
 }
+
+/** The longest `series` key GET /meetings accepts; a meeting title is a line, not a document. */
+const MEETING_SERIES_KEY_MAX = 300;
 
 /** GET /meetings without `limit`: the first page the Meetings tab paints. */
 export const MEETINGS_PAGE_DEFAULT = 10;
@@ -107,10 +111,14 @@ export const meetingsRoutes: readonly Route[] = [
       const limitText = url.searchParams.get("limit") ?? String(MEETINGS_PAGE_DEFAULT);
       const beforeStartedAt = url.searchParams.get("before_started_at");
       const beforeId = url.searchParams.get("before_id");
+      // One recurring meeting's recordings, for its dropdown on the tab. The key is the series
+      // index's own, so it is matched exactly rather than re-normalized here.
+      const seriesKey = url.searchParams.get("series");
       const limit = Number(limitText);
       if (
         !/^[1-9]\d*$/u.test(limitText) ||
         limit > MEETINGS_PAGE_MAX ||
+        (seriesKey !== null && (!seriesKey.trim() || seriesKey.length > MEETING_SERIES_KEY_MAX)) ||
         (beforeStartedAt === null) !== (beforeId === null) ||
         (beforeStartedAt !== null &&
           (beforeStartedAt.length > 100 || !beforeId?.trim() || beforeId.length > 512))
@@ -123,6 +131,7 @@ export const meetingsRoutes: readonly Route[] = [
         ...(beforeStartedAt !== null && beforeId !== null
           ? { before: { started_at: beforeStartedAt, id: beforeId } }
           : {}),
+        ...(seriesKey !== null ? { seriesKey } : {}),
       };
       const etag = meetingsEtag(ctx, principal, url);
       if (etag && sendNotModified(res, etag)) {
@@ -139,6 +148,32 @@ export const meetingsRoutes: readonly Route[] = [
               payload: { ...listed.payload, meetings: listed.payload.meetings.map(row) },
             }
           : listed,
+        { etag },
+      );
+    }),
+  ),
+  get(
+    "/meetings/series",
+    memberOnly(({ res, principal, ctx }) => {
+      // The tab's index: one row per recurring meeting with its count and latest date. Titles and
+      // counts name nobody, so a member gets the same rows an admin does; the per-viewer part of
+      // the tab (own attendance, the roster) stays on GET /meetings and GET /meetings/:id.
+      const isAdmin = principal.member.privilege_level === "admin";
+      const version = ctx.store.meetingVersion?.();
+      const settings = ctx.store.getSettings();
+      const etag =
+        version === undefined
+          ? undefined
+          : versionEtag("meeting-series", [
+              version,
+              settings ? (settings.meeting_minimum_minutes ?? "unset") : "default",
+            ]);
+      if (etag && sendNotModified(res, etag)) {
+        return;
+      }
+      sendServiceResult(
+        res,
+        ctx.service.listMeetingSeries(isAdmin ? undefined : principal.member.id),
         { etag },
       );
     }),

@@ -121,11 +121,12 @@ describe("Meeting Recordings entry", () => {
     expect(container.querySelector(".meetings")).toBeTruthy();
     expect(container.querySelector(".login-gate")).toBeNull();
     expect(app.adminBotLoading).toBe(false);
-    await vi.waitFor(() => expect(app.adminBotMeetings).toEqual([]));
-    // The meetings, and the sidebar's own project list -- the one read every signed-in page makes.
-    // Not the roster, the lab's papers, or the gateway.
+    await vi.waitFor(() => expect(app.adminBotMeetingSeries).toEqual([]));
+    // The meetings index, and the sidebar's own project list -- the one read every signed-in page
+    // makes. Not the roster, the lab's papers, or the gateway; and with no series there is no
+    // series to read.
     expect(fetchSpy.mock.calls.map(([url]) => String(url)).toSorted()).toEqual([
-      expect.stringContaining("/meetings"),
+      expect.stringContaining("/meetings/series"),
       expect.stringContaining("/my/projects"),
     ]);
   });

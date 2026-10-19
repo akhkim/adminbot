@@ -228,6 +228,59 @@ describe("AdminBotSqliteStore", () => {
     lab.close();
   });
 
+  it("indexes meeting series from heads and pages one series past other series' rows", () => {
+    const lab = createAdminBotSqliteService({ databasePath: tempDbPath() });
+    const file = (id: string, topic: string, startedAt: string, extra: object = {}) =>
+      unwrap(
+        lab.service.upsertMeeting({
+          id,
+          topic,
+          started_at: startedAt,
+          recording: { share_url: `https://example.test/${id}` },
+          source: "manual",
+          ...extra,
+        }),
+      );
+    file("weekly-old", "Weekly Sync", "2026-08-03T14:00:00Z", { duration_minutes: 50 });
+    // More than one 64-row read chunk of another series between the two Weekly Syncs.
+    for (let index = 0; index < 90; index++) {
+      file(
+        `journal-${index}`,
+        "Journal Club",
+        new Date(Date.UTC(2026, 8, 1, 0, index)).toISOString(),
+      );
+    }
+    // Its length is known only from the transcript, which the heads read must still see.
+    file("weekly-new", "weekly sync", "2026-09-14T14:00:00Z", {
+      transcript: {
+        processed_at: "2026-09-14T16:00:00Z",
+        speaker_names: [],
+        duration_seconds: 3000,
+      },
+    });
+    file("weekly-short", "Weekly Sync", "2026-09-15T14:00:00Z", {
+      transcript: { processed_at: "2026-09-15T16:00:00Z", speaker_names: [], duration_seconds: 60 },
+    });
+    expect(unwrap(lab.service.listMeetingSeries()).series).toEqual([
+      {
+        key: "weekly sync",
+        topic: "weekly sync",
+        count: 2,
+        latest_started_at: "2026-09-14T14:00:00.000Z",
+      },
+      {
+        key: "journal club",
+        topic: "Journal Club",
+        count: 90,
+        latest_started_at: "2026-09-01T01:29:00.000Z",
+      },
+    ]);
+    const page = unwrap(lab.service.listMeetingsPage({ limit: 5, seriesKey: "weekly sync" }));
+    expect(page.meetings.map((meeting) => meeting.id)).toEqual(["weekly-new", "weekly-old"]);
+    expect(page.next_cursor).toBeUndefined();
+    lab.close();
+  });
+
   it("pages through old rows with unparseable or blank timestamps", () => {
     const lab = createAdminBotSqliteService({ databasePath: tempDbPath() });
     const result = lab.service.upsertMeeting({

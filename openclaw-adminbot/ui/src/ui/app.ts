@@ -4,12 +4,11 @@ import { i18n, I18nController, isSupportedLocale, t } from "../i18n/index.ts";
 import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
 import type { CalendarEvent, CalendarEventDraft, LabCalendar } from "./adminbot/api/calendar.ts";
 import type { LabBroadcast } from "./adminbot/api/lab-sharing.ts";
-import {
-  MEETINGS_PAGE_SIZE,
-  type MeetingAttendanceNudgePreview,
-  type MeetingAttendanceNudgeResult,
-  type MeetingRecord,
-  type MeetingCursor,
+import type {
+  MeetingAttendanceNudgePreview,
+  MeetingAttendanceNudgeResult,
+  MeetingSeries,
+  MeetingSeriesPages,
 } from "./adminbot/api/meetings.ts";
 import type { MemberAdoptionSummary, MemberProfileOverviewRow } from "./adminbot/api/members.ts";
 import type { EscalatedNudgeRow } from "./adminbot/api/nudges.ts";
@@ -86,7 +85,7 @@ import {
   fileAdminBotMeeting,
   loadAdminBotMeetingNudges,
   loadAdminBotMeetings,
-  loadMoreAdminBotMeetings,
+  loadAdminBotMeetingSeriesPage,
   sendAdminBotMeetingNudges,
   setAdminBotMeetingAttendance,
 } from "./adminbot/controllers/meetings.ts";
@@ -423,7 +422,8 @@ export class OpenClawApp extends LitElement {
   @state() adminBotPreciseLocation?: PreciseLocationState;
   @state() adminBotLocationSaving = false;
   @state() adminBotLocationError: string | null = null;
-  @state() adminBotMeetings?: MeetingRecord[];
+  @state() adminBotMeetingSeries?: MeetingSeries[];
+  @state() adminBotMeetingSeriesPages: MeetingSeriesPages = {};
   // Attendance nudge, admin-only. Null rather than undefined once read, so "opened the panel and
   // nobody qualified" is distinguishable from "never opened it".
   @state() adminBotMeetingNudgePreview: MeetingAttendanceNudgePreview | null = null;
@@ -446,9 +446,6 @@ export class OpenClawApp extends LitElement {
   @state() adminBotNotificationsError: string | null = null;
   @state() adminBotMeetingsLoading = false;
   adminBotMeetingsRequestVersion = 0;
-  @state() adminBotMeetingsLoadingMore = false;
-  @state() adminBotMeetingsNextCursor: MeetingCursor | null = null;
-  @state() adminBotMeetingsVisibleCount = MEETINGS_PAGE_SIZE;
   @state() adminBotMeetingsSaving = false;
   @state() adminBotMeetingsError: string | null = null;
   @state() calendarEvents?: CalendarEvent[];
@@ -1898,9 +1895,11 @@ export class OpenClawApp extends LitElement {
     return loadAdminBotMeetings(this as unknown as Parameters<typeof loadAdminBotMeetings>[0]);
   }
 
-  loadMoreMeetings(): Promise<void> {
-    return loadMoreAdminBotMeetings(
-      this as unknown as Parameters<typeof loadMoreAdminBotMeetings>[0],
+  loadMeetingSeriesPage(key: string, options?: { more?: boolean }): Promise<void> {
+    return loadAdminBotMeetingSeriesPage(
+      this as unknown as Parameters<typeof loadAdminBotMeetingSeriesPage>[0],
+      key,
+      options,
     );
   }
 

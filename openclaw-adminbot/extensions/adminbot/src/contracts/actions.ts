@@ -3081,6 +3081,28 @@ export type AdminBotMeetingRecordInput = {
   notes?: string;
 };
 
+/**
+ * The few fields of a meeting that place it in a series and decide whether it is listed. What the
+ * store hands back for the series index, so building that index never parses a roster.
+ */
+export type AdminBotMeetingHead = Pick<
+  AdminBotMeetingRecordInput,
+  "id" | "topic" | "started_at" | "duration_minutes"
+> & { transcript?: { duration_seconds?: number } };
+
+/**
+ * One recurring meeting on the Meetings tab: every recording sharing a title (case and spacing
+ * ignored), counted. Names no person, so a member is sent the same index an admin is.
+ */
+export type AdminBotMeetingSeries = {
+  /** `meetingSeriesKey(topic)`; what `GET /meetings?series=` takes back. */
+  key: string;
+  /** The newest recording's title, as written. */
+  topic: string;
+  count: number;
+  latest_started_at: string;
+};
+
 export type AdminBotMeetingRecord = AdminBotMeetingRecordInput & {
   created_at: string;
   updated_at: string;

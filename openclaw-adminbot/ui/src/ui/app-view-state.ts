@@ -4,9 +4,9 @@ import type {
   MeetingAttendanceNudgePreview,
   MeetingAttendanceNudgeResult,
   MeetingAttendee,
-  MeetingRecord,
   MeetingRosters,
-  MeetingCursor,
+  MeetingSeries,
+  MeetingSeriesPages,
 } from "./adminbot/api/meetings.ts";
 import type { LocationDrift } from "./adminbot/api/profile.ts";
 import type { MemberNotification } from "./adminbot/api/workspace.ts";
@@ -171,7 +171,8 @@ export type AppViewState = {
   calendarBusy?: boolean;
   loadCalendarEvents?: () => Promise<void>;
   loadMeetings?: () => Promise<void>;
-  loadMoreMeetings?: () => Promise<void>;
+  /** One series' recordings: the first page when its dropdown opens, the next with `more`. */
+  loadMeetingSeriesPage?: (key: string, options?: { more?: boolean }) => Promise<void>;
   toggleMeetingAttendance?: (meetingId: string, attendee: MeetingAttendee) => Promise<void>;
   fileMeeting?: (draft: {
     topic: string;
@@ -519,12 +520,12 @@ export type AppViewState = {
   adminBotCollaboratorSchedulesError: string | null;
   adminBotCollaboratorSchedulesSession: string;
   adminBotTimeAvailabilityMemberId: string;
-  // Meeting Recordings tab. The list as the service returned it -- already redacted for a member,
-  // full for an admin -- plus the two flags the view needs to distinguish "still loading" from
-  // "the lab has not recorded a meeting yet".
+  // Meeting Recordings tab. The index of recurring meetings, and each opened series' recordings as
+  // the service returned them -- already redacted for a member, without rosters for an admin.
   // Undefined is the "never asked" sentinel the render pass keys its one-shot fetch on; a load
   // that genuinely finds nothing sets [], so an empty lab cannot loop.
-  adminBotMeetings?: MeetingRecord[];
+  adminBotMeetingSeries?: MeetingSeries[];
+  adminBotMeetingSeriesPages?: MeetingSeriesPages;
   // The attendance nudge, admin-only, on the Meeting Recordings tab. Null until the panel is
   // opened: resolving the audience reads the lab calendar, which is not something to do on a tab
   // most people open only to watch a recording.
@@ -601,9 +602,6 @@ export type AppViewState = {
   loadLocationDrifts?: () => Promise<void>;
   answerLocationPrompt?: (answer: { current_city?: string; timezone?: string }) => Promise<void>;
   adminBotMeetingsLoading: boolean;
-  adminBotMeetingsLoadingMore: boolean;
-  adminBotMeetingsNextCursor: MeetingCursor | null;
-  adminBotMeetingsVisibleCount: number;
   adminBotMeetingsSaving: boolean;
   adminBotMeetingsError: string | null;
   // Documents picked for a signature request, held here rather than in the view so a re-render

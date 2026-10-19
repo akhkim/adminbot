@@ -58,8 +58,10 @@ import type {
   AdminBotLocationSource,
   AdminBotMemberLocationEntry,
   AdminBotMeetingAttendee,
+  AdminBotMeetingHead,
   AdminBotMeetingRecord,
   AdminBotMeetingRecordInput,
+  AdminBotMeetingSeries,
   AdminBotMemberNotification,
   AdminBotOpenReviewCycleRecord,
   AdminBotOpenReviewMilestoneRecord,
@@ -322,6 +324,7 @@ import {
   mergeMeeting,
   normalizedMeetingStartedAt,
   redactMeetingForMember,
+  summarizeMeetingSeries,
   validateMeeting,
 } from "../workflows/meetings/records.js";
 import {
@@ -800,10 +803,14 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveMeeting(meeting: AdminBotMeetingRecord): void;
   getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
   listMeetings(): AdminBotMeetingRecord[];
+  /** Every meeting's head, unordered: the series index reads these instead of whole records. */
+  listMeetingHeads(): AdminBotMeetingHead[];
   listMeetingsPage(options: {
     limit: number;
     before?: AdminBotMeetingCursor;
     minimumMinutes: number;
+    /** Only meetings whose `meetingSeriesKey(topic)` is this. */
+    seriesKey?: string;
   }): AdminBotMeetingRecord[];
   deleteMeeting(meetingId: string): boolean;
   /** Changes on every meeting write, like paperVersion. */
@@ -9993,10 +10000,40 @@ export class AdminBotService {
     };
   }
 
-  /** A bounded archive read for the UI; the unpaged methods above still serve existing callers. */
+  /**
+   * The Meetings tab's index: one row per recurring meeting, newest first.
+   *
+   * Every listed meeting is counted, not a page of them, so a series' row says how many recordings
+   * its dropdown holds before anyone opens it. Built from heads, never rosters, and the same for
+   * every viewer: a title and a count name nobody. A member the store does not know is a 404, as
+   * on the list itself.
+   */
+  listMeetingSeries(memberId?: string): AdminBotServiceResponse<{
+    series: AdminBotMeetingSeries[];
+  }> {
+    if (memberId !== undefined && !this.store.getLabMember(memberId)) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        series: summarizeMeetingSeries(
+          this.store.listMeetingHeads(),
+          this.resolveSettings().meeting_minimum_minutes ?? 0,
+        ),
+      },
+    };
+  }
+
+  /**
+   * A bounded archive read for the UI; the unpaged methods above still serve existing callers.
+   * `seriesKey` narrows it to one recurring meeting's recordings, for that series' dropdown.
+   */
   listMeetingsPage(options: {
     limit: number;
     before?: AdminBotMeetingCursor;
+    seriesKey?: string;
   }): AdminBotServiceResponse<{
     meetings: AdminBotMeetingRecord[];
     next_cursor?: AdminBotMeetingCursor;
@@ -10006,7 +10043,7 @@ export class AdminBotService {
 
   listMeetingsPageForMember(
     memberId: string,
-    options: { limit: number; before?: AdminBotMeetingCursor },
+    options: { limit: number; before?: AdminBotMeetingCursor; seriesKey?: string },
   ): AdminBotServiceResponse<{
     meetings: AdminBotMeetingRecord[];
     next_cursor?: AdminBotMeetingCursor;
@@ -10025,10 +10062,15 @@ export class AdminBotService {
     };
   }
 
-  private listedMeetingsPage(options: { limit: number; before?: AdminBotMeetingCursor }) {
+  private listedMeetingsPage(options: {
+    limit: number;
+    before?: AdminBotMeetingCursor;
+    seriesKey?: string;
+  }) {
     const eligible = this.store.listMeetingsPage({
       limit: options.limit + 1,
       ...(options.before ? { before: options.before } : {}),
+      ...(options.seriesKey !== undefined ? { seriesKey: options.seriesKey } : {}),
       minimumMinutes: this.resolveSettings().meeting_minimum_minutes ?? 0,
     });
     const meetings = eligible.slice(0, options.limit);
