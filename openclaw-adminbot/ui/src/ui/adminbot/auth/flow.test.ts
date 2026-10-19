@@ -344,10 +344,15 @@ describe("memberPrivilegeLevel wiring", () => {
       memberPassword: "password-b",
       adminBotLocationDrift: { current_city: "A's city" } as never,
       adminBotLocationDrifts: [{ current_city: "A's city" }] as never,
-      adminBotMeetings: [{ id: "A's meeting", recording: { passcode: "private" } }] as never,
-      adminBotMeetingsVisibleCount: 20,
-      adminBotMeetingsNextCursor: { started_at: "2026-08-12T14:00:00Z", id: "A's meeting" },
-      adminBotMeetingsLoadingMore: true,
+      adminBotMeetingSeries: [{ key: "a's meeting", topic: "A's meeting", count: 1 }] as never,
+      adminBotMeetingSeriesPages: {
+        "a's meeting": {
+          meetings: [{ id: "A's meeting", recording: { passcode: "private" } }],
+          next_cursor: null,
+          loading: true,
+          error: null,
+        },
+      } as never,
       adminBotMeetingNudgePreview: { members: [{ id: "a" }] } as never,
       calendarEvents: [{ id: "A's event", summary: "private" }] as never,
       calendarMessages: [{ role: "user", content: "A's private prompt" }],
@@ -415,10 +420,8 @@ describe("memberPrivilegeLevel wiring", () => {
     expect(loadStoredMemberSession()?.sessionToken).toBe("session-b");
     expect(host.adminBotLocationDrift).toBeUndefined();
     expect(host.adminBotLocationDrifts).toBeUndefined();
-    expect(host.adminBotMeetings).toBeUndefined();
-    expect(host.adminBotMeetingsVisibleCount).toBe(10);
-    expect(host.adminBotMeetingsNextCursor).toBeNull();
-    expect(host.adminBotMeetingsLoadingMore).toBe(false);
+    expect(host.adminBotMeetingSeries).toBeUndefined();
+    expect(host.adminBotMeetingSeriesPages).toEqual({});
     expect(host.adminBotMeetingNudgePreview).toBeNull();
     expect(host.calendarEvents).toBeUndefined();
     expect(host.calendarMessages).toEqual([]);

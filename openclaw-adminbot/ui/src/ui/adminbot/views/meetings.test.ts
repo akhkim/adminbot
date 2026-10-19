@@ -2,7 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MeetingRecord } from "../api/meetings.ts";
+import type { MeetingRecord, MeetingSeries } from "../api/meetings.ts";
 import { renderAdminBotMeetings, type AdminBotMeetingsProps } from "./meetings.ts";
 
 afterEach(() => {
@@ -25,16 +25,31 @@ const MEETING: MeetingRecord = {
   source: "zoom_email",
 };
 
-function renderView(overrides: Partial<AdminBotMeetingsProps> = {}): HTMLElement {
+const WEEKLY: MeetingSeries = {
+  key: "weekly lab meeting",
+  topic: "Weekly Lab Meeting",
+  count: 1,
+  latest_started_at: MEETING.started_at,
+};
+
+/**
+ * Renders the tab. `meetings`, when given, is shorthand for one series holding exactly those
+ * recordings, already read -- what most per-recording tests need.
+ */
+function renderView(
+  overrides: Partial<AdminBotMeetingsProps> & { meetings?: MeetingRecord[] } = {},
+): HTMLElement {
+  const { meetings = [MEETING], ...props } = overrides;
   const container = document.createElement("div");
   document.body.append(container);
   render(
     renderAdminBotMeetings({
-      meetings: [MEETING],
-      visibleCount: 12,
-      onShowMore: vi.fn(),
-      hasMore: false,
-      loadingMore: false,
+      series: meetings.length ? [{ ...WEEKLY, count: meetings.length }] : [],
+      seriesPages: meetings.length
+        ? { [WEEKLY.key]: { meetings, next_cursor: null, loading: false, error: null } }
+        : {},
+      onOpenSeries: vi.fn(),
+      onShowOlder: vi.fn(),
       loading: false,
       saving: false,
       error: null,
@@ -43,7 +58,7 @@ function renderView(overrides: Partial<AdminBotMeetingsProps> = {}): HTMLElement
       members: [],
       onToggleAttendance: vi.fn(),
       onFileMeeting: vi.fn(),
-      ...overrides,
+      ...props,
     }),
     container,
   );
@@ -230,40 +245,101 @@ describe("renderAdminBotMeetings", () => {
     );
   });
 
-  it("renders recordings in bounded batches and lets the reader request the next batch", () => {
-    const meetings = Array.from({ length: 22 }, (_, index) => ({
-      ...MEETING,
-      id: `recording-${index}`,
-      topic: `Recording ${index}`,
-    }));
-    const onShowMore = vi.fn();
-    const view = renderView({ meetings, visibleCount: 10, onShowMore });
-    expect(view.querySelectorAll(".meetings__card")).toHaveLength(10);
-    const button = view.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']");
-    expect(button?.textContent).toContain("Show 10 more");
-    button?.click();
-    expect(onShowMore).toHaveBeenCalledWith(20);
-    const expanded = renderView({ meetings, visibleCount: 20, onShowMore });
-    expect(expanded.querySelectorAll(".meetings__card")).toHaveLength(20);
-    expanded.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']")?.click();
-    expect(onShowMore).toHaveBeenLastCalledWith(22);
-    expect(renderView({ meetings, visibleCount: 22 }).querySelector(".meetings__more")).toBeNull();
+  it("groups recordings into one dropdown per recurring meeting, the newest open", () => {
+    const reading: MeetingSeries = {
+      key: "reading group",
+      topic: "Reading Group",
+      count: 1,
+      latest_started_at: "2026-08-05T15:00:00.000Z",
+    };
+    const older = { ...MEETING, id: "weekly-older", started_at: "2026-08-05T14:00:00.000Z" };
+    const view = renderView({
+      series: [{ ...WEEKLY, count: 2 }, reading],
+      seriesPages: {
+        [WEEKLY.key]: {
+          meetings: [MEETING, older],
+          next_cursor: null,
+          loading: false,
+          error: null,
+        },
+      },
+    });
+    const dropdowns = view.querySelectorAll<HTMLDetailsElement>("[data-testid='meetings-series']");
+    expect(dropdowns).toHaveLength(2);
+    // The newest series opens on arrival; every other one waits for its reader.
+    expect([...dropdowns].map((dropdown) => dropdown.open)).toEqual([true, false]);
+    expect(dropdowns[0]?.querySelector("summary")?.textContent).toContain("Weekly Lab Meeting");
+    expect(dropdowns[0]?.querySelector("summary")?.textContent).toContain("2 recordings");
+    expect(dropdowns[1]?.querySelector("summary")?.textContent).toContain("1 recording");
+    // Every recording of the series, newest first, with only the newest one unfolded.
+    const recordings = dropdowns[0]?.querySelectorAll("[data-testid='meetings-recording']");
+    expect(recordings).toHaveLength(2);
+    const folds = [...(recordings ?? [])].map(
+      (recording) =>
+        recording.querySelector<HTMLDetailsElement>(".meetings__recording-details")?.open,
+    );
+    expect(folds).toEqual([true, false]);
+    // A closed, unread series says it is loading rather than claiming to be empty.
+    expect(dropdowns[1]?.textContent).toContain("Loading recordings");
   });
 
-  it("offers the next server page and disables repeated requests while it loads", () => {
-    const onShowMore = vi.fn();
-    const meetings = Array.from({ length: 10 }, (_, index) => ({
-      ...MEETING,
-      id: `recording-${index}`,
-    }));
-    const view = renderView({ meetings, visibleCount: 10, hasMore: true, onShowMore });
-    const button = view.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']");
+  it("reads a series when its dropdown is opened", () => {
+    const onOpenSeries = vi.fn();
+    const view = renderView({
+      series: [WEEKLY, { ...WEEKLY, key: "reading group", topic: "Reading Group" }],
+      seriesPages: {},
+      onOpenSeries,
+    });
+    const closed = view.querySelectorAll<HTMLDetailsElement>("[data-testid='meetings-series']")[1];
+    if (closed) {
+      closed.open = true;
+    }
+    closed?.dispatchEvent(new Event("toggle"));
+    expect(onOpenSeries).toHaveBeenLastCalledWith("reading group");
+  });
+
+  it("offers a series' older recordings and disables the button while they load", () => {
+    const onShowOlder = vi.fn();
+    const page = {
+      meetings: [MEETING],
+      next_cursor: { started_at: MEETING.started_at, id: MEETING.id },
+      loading: false,
+      error: null,
+    };
+    const view = renderView({
+      series: [{ ...WEEKLY, count: 14 }],
+      seriesPages: { [WEEKLY.key]: page },
+      onShowOlder,
+    });
+    const button = view.querySelector<HTMLButtonElement>("[data-testid='meetings-show-older']");
+    expect(button?.textContent).toContain("13 more");
     button?.click();
-    expect(onShowMore).toHaveBeenCalledWith(20);
-    const loading = renderView({ meetings, visibleCount: 10, hasMore: true, loadingMore: true });
+    expect(onShowOlder).toHaveBeenCalledWith(WEEKLY.key);
+    const loading = renderView({
+      series: [{ ...WEEKLY, count: 14 }],
+      seriesPages: { [WEEKLY.key]: { ...page, loading: true } },
+    });
     expect(
-      loading.querySelector<HTMLButtonElement>("[data-testid='meetings-show-more']")?.disabled,
+      loading.querySelector<HTMLButtonElement>("[data-testid='meetings-show-older']")?.disabled,
     ).toBe(true);
+    const complete = renderView({ meetings: [MEETING] });
+    expect(complete.querySelector("[data-testid='meetings-show-older']")).toBeNull();
+  });
+
+  it("shows a series that failed to load inside its own dropdown", () => {
+    const view = renderView({
+      series: [WEEKLY],
+      seriesPages: {
+        [WEEKLY.key]: {
+          meetings: [],
+          next_cursor: null,
+          loading: false,
+          error: "Synthetic outage",
+        },
+      },
+    });
+    const dropdown = view.querySelector("[data-testid='meetings-series']");
+    expect(dropdown?.querySelector(".notice--error")?.textContent).toContain("Synthetic outage");
   });
 
   it("shows the request error instead of claiming that no recordings exist", () => {

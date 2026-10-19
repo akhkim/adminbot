@@ -2756,14 +2756,14 @@ export function renderApp(state: AppViewState) {
     state.adminBotBroadcast = null;
     void state.loadBroadcast().finally(() => requestHostUpdate?.());
   }
-  // Same "never asked" sentinel as the calendar above: the meetings list is fetched once when the
-  // tab is opened, and a lab that has recorded nothing sets [] rather than looping.
+  // Same "never asked" sentinel as the calendar above: the index of recurring meetings is fetched
+  // once when the tab is opened, and a lab that has recorded nothing sets [] rather than looping.
   if (
     state.tab === "adminbotMeetings" &&
     hasMemberSession &&
     !state.adminBotMeetingsLoading &&
     !state.adminBotMeetingsError &&
-    state.adminBotMeetings === undefined
+    state.adminBotMeetingSeries === undefined
   ) {
     void state.loadMeetings?.().finally(() => requestHostUpdate?.());
   }

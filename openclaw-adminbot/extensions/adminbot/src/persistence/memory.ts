@@ -91,7 +91,7 @@ import type {
   AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
-import { meetsDurationFloor } from "../workflows/meetings/records.js";
+import { meetingSeriesKey, meetsDurationFloor } from "../workflows/meetings/records.js";
 import { discoverMemoryHelpRequests } from "./lab-sharing-discovery-memory.js";
 
 /** Addresses are matched case-insensitively, as they are in the SQLite store. */
@@ -1272,14 +1272,23 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return [...this.meetings.values()];
   }
 
+  listMeetingHeads(): AdminBotMeetingRecord[] {
+    return [...this.meetings.values()];
+  }
+
   listMeetingsPage(options: {
     limit: number;
     before?: AdminBotMeetingCursor;
     minimumMinutes: number;
+    seriesKey?: string;
   }): AdminBotMeetingRecord[] {
     const timestamp = (meeting: AdminBotMeetingCursor) => Date.parse(meeting.started_at) || 0;
     return [...this.meetings.values()]
       .filter((meeting) => meetsDurationFloor(meeting, options.minimumMinutes))
+      .filter(
+        (meeting) =>
+          options.seriesKey === undefined || meetingSeriesKey(meeting.topic) === options.seriesKey,
+      )
       .filter(
         (meeting) =>
           !options.before ||

@@ -16,7 +16,6 @@ import {
   signupMember,
   startImpersonation,
 } from "../api/auth.ts";
-import { MEETINGS_PAGE_SIZE } from "../api/meetings.ts";
 import { setOnboardingStep } from "../api/onboarding.ts";
 import { acknowledgeOnboardingStep } from "../api/profile.ts";
 import { forgetAdminQueues } from "../controllers/admin-queues.ts";
@@ -257,11 +256,9 @@ export type MemberAuthHost = {
   adminBotPreciseLocation?: import("../controllers/precise-location.ts").PreciseLocationState;
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
-  adminBotMeetings?: import("../api/meetings.ts").MeetingRecord[];
+  adminBotMeetingSeries?: import("../api/meetings.ts").MeetingSeries[];
+  adminBotMeetingSeriesPages?: import("../api/meetings.ts").MeetingSeriesPages;
   adminBotMeetingsRequestVersion?: number;
-  adminBotMeetingsNextCursor?: import("../api/meetings.ts").MeetingCursor | null;
-  adminBotMeetingsLoadingMore?: boolean;
-  adminBotMeetingsVisibleCount?: number;
   adminBotMeetingsLoading?: boolean;
   adminBotMeetingsSaving?: boolean;
   adminBotMeetingsError?: string | null;
@@ -698,11 +695,11 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   stopAdminBotPreciseLocationRefresh();
   host.adminBotLocationSaving = false;
   host.adminBotLocationError = null;
-  host.adminBotMeetings = undefined;
+  host.adminBotMeetingSeries = undefined;
+  // Emptied, not left for the next index to replace: a series read in flight checks for its own
+  // pending entry, so dropping it is what makes the previous member's late reply land nowhere.
+  host.adminBotMeetingSeriesPages = {};
   host.adminBotMeetingsRequestVersion = (host.adminBotMeetingsRequestVersion ?? 0) + 1;
-  host.adminBotMeetingsNextCursor = null;
-  host.adminBotMeetingsLoadingMore = false;
-  host.adminBotMeetingsVisibleCount = MEETINGS_PAGE_SIZE;
   host.adminBotMeetingsLoading = false;
   host.adminBotMeetingsSaving = false;
   host.adminBotMeetingsError = null;

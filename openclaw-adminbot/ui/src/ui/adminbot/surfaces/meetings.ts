@@ -13,17 +13,16 @@ export function renderMeetingsSurface(state: AppViewState, scope: AdminBotSurfac
   const { accessRole, requestHostUpdate } = scope;
   return state.tab === "adminbotMeetings"
     ? renderAdminBotMeetings({
-        meetings: state.adminBotMeetings ?? [],
-        visibleCount: state.adminBotMeetingsVisibleCount,
-        onShowMore: (nextCount) => {
-          if (nextCount <= (state.adminBotMeetings?.length ?? 0)) {
-            state.adminBotMeetingsVisibleCount = nextCount;
-          } else {
-            void state.loadMoreMeetings?.();
-          }
+        series: state.adminBotMeetingSeries ?? [],
+        seriesPages: state.adminBotMeetingSeriesPages ?? {},
+        onOpenSeries: (key) => {
+          void state.loadMeetingSeriesPage?.(key).finally(() => requestHostUpdate?.());
         },
-        hasMore: Boolean(state.adminBotMeetingsNextCursor),
-        loadingMore: state.adminBotMeetingsLoadingMore,
+        onShowOlder: (key) => {
+          void state
+            .loadMeetingSeriesPage?.(key, { more: true })
+            .finally(() => requestHostUpdate?.());
+        },
         loading: state.adminBotMeetingsLoading,
         saving: state.adminBotMeetingsSaving,
         error: state.adminBotMeetingsError,

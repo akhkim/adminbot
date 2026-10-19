@@ -171,6 +171,14 @@ transcript and CSV as usual.
 
 ## 6. Who sees what
 
+The tab groups recordings by meeting: one dropdown per title (case and spacing ignored, so
+"Weekly Lab Meeting" and "weekly lab meeting " are one series), newest series first, each showing
+how many recordings it holds and when it last met. Opening a dropdown lists every recording of that
+meeting, newest first, ten at a time. The newest series opens on arrival with its newest recording
+unfolded. Behind it: `GET /meetings/series` is the index (titles and counts only, the same for
+every viewer), and `GET /meetings?series=<key>` pages one series with the usual per-viewer
+redaction. A title is the only grouping key, so a meeting renamed in Zoom starts a new dropdown.
+
 The tab is member-level. A member sees the recording, the summary, their own attendance line and a
 headcount. The roster itself is admin-only, and the service enforces that
 (`listMeetingsForMember`), not the tab.

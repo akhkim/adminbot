@@ -43,7 +43,8 @@ export async function fetchStandingMeetings(
 // ---------------------------------------------------------------------------
 // Meeting recordings
 //
-// One GET for the list and two admin writes. The service decides what a member is allowed to see
+// The tab reads an index of recurring meetings, then one series' recordings when its dropdown
+// opens, plus two admin writes. The service decides what a member is allowed to see
 // (their own attendance and a headcount, never the roster), so there is nothing to redact here --
 // this is only the wire.
 // ---------------------------------------------------------------------------
@@ -122,14 +123,59 @@ export const MEETINGS_PAGE_SIZE = 10;
 
 export type MeetingPage = { meetings: MeetingRecord[]; next_cursor?: MeetingCursor };
 
+/**
+ * One recurring meeting on the tab: every recording sharing a title, counted. Mirrors
+ * `AdminBotMeetingSeries` (extensions/adminbot/src/contracts/actions.ts).
+ */
+export type MeetingSeries = {
+  /** What GET /meetings?series= takes back. Opaque here: the service owns the folding rule. */
+  key: string;
+  topic: string;
+  count: number;
+  latest_started_at: string;
+};
+
+/**
+ * The recordings read so far for each series, by key. No entry means the dropdown has never been
+ * opened; an entry with `loading` and no meetings is its first read in flight.
+ */
+export type MeetingSeriesPages = Record<
+  string,
+  {
+    meetings: MeetingRecord[];
+    next_cursor: MeetingCursor | null;
+    loading: boolean;
+    error: string | null;
+  }
+>;
+
+/** The tab's index (GET /meetings/series): one row per recurring meeting, newest first. */
+export async function fetchMeetingSeries(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MeetingSeries[]>> {
+  const result = await authedJson(baseUrl, "/meetings/series", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const series = (result.body as { series?: unknown } | null)?.series;
+  return { ok: true, value: Array.isArray(series) ? (series as MeetingSeries[]) : [] };
+}
+
 export async function fetchMeetings(
   sessionToken: string,
   baseUrl: string,
-  page?: { limit: number; before?: MeetingCursor },
+  page?: { limit: number; before?: MeetingCursor; series?: string },
 ): Promise<AuthResult<MeetingPage>> {
   const params = new URLSearchParams();
   if (page) {
     params.set("limit", String(page.limit));
+    if (page.series !== undefined) {
+      params.set("series", page.series);
+    }
     if (page.before) {
       params.set("before_started_at", page.before.started_at);
       params.set("before_id", page.before.id);

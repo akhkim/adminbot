@@ -12,8 +12,10 @@
 // meeting, their own attendance and a headcount, and never the roster.
 import type {
   AdminBotMeetingAttendee,
+  AdminBotMeetingHead,
   AdminBotMeetingRecord,
   AdminBotMeetingRecordInput,
+  AdminBotMeetingSeries,
 } from "../../contracts/actions.js";
 import { mergeAttendance } from "./attendance.js";
 
@@ -131,7 +133,7 @@ export function redactMeetingForMember(
  * hours of a meeting's life, and callers have to mean something by it rather than defaulting it
  * to zero.
  */
-export function meetingDurationMinutes(meeting: AdminBotMeetingRecord): number | undefined {
+export function meetingDurationMinutes(meeting: AdminBotMeetingHead): number | undefined {
   if (typeof meeting.duration_minutes === "number") {
     return meeting.duration_minutes;
   }
@@ -148,15 +150,69 @@ export function meetingDurationMinutes(meeting: AdminBotMeetingRecord): number |
  * meetings stay in the database either way: filing is how their length is ever learned, and a
  * threshold that only hides is one an admin can lower again without having lost anything.
  */
-export function meetsDurationFloor(
-  meeting: AdminBotMeetingRecord,
-  minimumMinutes: number,
-): boolean {
+export function meetsDurationFloor(meeting: AdminBotMeetingHead, minimumMinutes: number): boolean {
   if (minimumMinutes <= 0) {
     return true;
   }
   const minutes = meetingDurationMinutes(meeting);
   return minutes === undefined || minutes >= minimumMinutes;
+}
+
+/**
+ * Which recurring meeting a recording belongs to: its title, with case and spacing ignored.
+ *
+ * The title is the only thing that ties a week's recording to the last one -- every recording has
+ * its own share link, and Zoom reuses a meeting id across unrelated series. Case and whitespace are
+ * folded because the same series arrives as "Weekly Lab Meeting" from one host's notice and
+ * "weekly lab meeting " from a hand-filed record; anything more aggressive (dropping a date, a
+ * number) would merge series that are genuinely different, like "Reading Group 2".
+ */
+export function meetingSeriesKey(topic: string): string {
+  return topic.normalize("NFKC").toLowerCase().replace(/\s+/gu, " ").trim();
+}
+
+/**
+ * The listed meetings folded into one row per series, newest series first.
+ *
+ * Takes the lightweight head rather than the record so the tab's index never parses a roster.
+ * Meetings under the duration floor are left out, so a count here is always the number of
+ * recordings the series' own list will show. The display title is the newest recording's, as it
+ * was written.
+ */
+export function summarizeMeetingSeries(
+  heads: readonly AdminBotMeetingHead[],
+  minimumMinutes: number,
+): AdminBotMeetingSeries[] {
+  const series = new Map<string, AdminBotMeetingSeries & { latestTime: number }>();
+  for (const head of heads) {
+    if (!meetsDurationFloor(head, minimumMinutes)) {
+      continue;
+    }
+    const key = meetingSeriesKey(head.topic);
+    const time = Date.parse(head.started_at) || 0;
+    const held = series.get(key);
+    if (!held) {
+      series.set(key, {
+        key,
+        topic: head.topic,
+        count: 1,
+        latest_started_at: head.started_at,
+        latestTime: time,
+      });
+      continue;
+    }
+    held.count += 1;
+    if (time > held.latestTime) {
+      held.topic = head.topic;
+      held.latest_started_at = head.started_at;
+      held.latestTime = time;
+    }
+  }
+  return [...series.values()]
+    .toSorted(
+      (left, right) => right.latestTime - left.latestTime || left.key.localeCompare(right.key),
+    )
+    .map(({ latestTime: _latest, ...row }) => row);
 }
 
 /** Newest first: a meetings tab is read to catch up on the one just missed. */

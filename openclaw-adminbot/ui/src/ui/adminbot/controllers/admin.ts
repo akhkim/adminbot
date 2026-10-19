@@ -15,8 +15,8 @@ import {
 } from "../api/conference-papers.ts";
 import type { LabBroadcast } from "../api/lab-sharing.ts";
 import {
-  type MeetingRecord,
-  type MeetingCursor,
+  type MeetingSeries,
+  type MeetingSeriesPages,
   type MeetingRosters,
   type MeetingAttendanceNudgePreview,
   type MeetingAttendanceNudgeResult,
@@ -768,8 +768,10 @@ export type AdminBotHost = {
   calendarOpenEventId?: string | null;
   calendarMessages?: Array<{ role: "user" | "assistant"; content: string }>;
   // Meeting Recordings tab. Written by controllers/meetings.ts, which shares this host so the
-  // attendance editor can read the roster the dashboard already loaded.
-  adminBotMeetings?: MeetingRecord[];
+  // attendance editor can read the roster the dashboard already loaded. The index of recurring
+  // meetings is undefined until first read; each series' recordings are read when it is opened.
+  adminBotMeetingSeries?: MeetingSeries[];
+  adminBotMeetingSeriesPages?: MeetingSeriesPages;
   // The "have you moved?" banner. Undefined is "not asked yet", null is "nothing to ask".
   adminBotLocationDrift?: LocationDrift | null;
   // The admin-side list, keyed by member on the calendar's invite panel.
@@ -779,9 +781,6 @@ export type AdminBotHost = {
   adminBotLocationError?: string | null;
   adminBotMeetingsLoading: boolean;
   adminBotMeetingsRequestVersion?: number;
-  adminBotMeetingsLoadingMore: boolean;
-  adminBotMeetingsNextCursor: MeetingCursor | null;
-  adminBotMeetingsVisibleCount: number;
   adminBotMeetingsSaving: boolean;
   adminBotMeetingsError: string | null;
   // The attendance nudge an admin previews and sends from the Meeting Recordings tab.
