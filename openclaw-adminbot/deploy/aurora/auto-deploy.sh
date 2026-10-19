@@ -29,12 +29,15 @@ export PATH="$HOME/.local/bin:$PATH"
 ROOT="${AURORA_DEPLOY_ROOT:-}"
 SOURCE=""
 REF=""
-KEEP_RELEASES="3"
 ADMINBOT_PORT="8765"
 GATEWAY_PORT="18789"
 HEALTH_TIMEOUT_SECONDS="${AURORA_DEPLOY_HEALTH_TIMEOUT:-180}"
 HEALTH_INTERVAL_SECONDS="${AURORA_DEPLOY_HEALTH_INTERVAL:-3}"
-MIN_FREE_MB="4096"
+# Free space a deploy must find before it builds. A release reuses the live node_modules through
+# hard links, so what it really consumes is its dist plus new store packages: the 2026-10-19 deploy
+# of 366a0393 used about 1.7 GB, and that one ran on an emptied store. /w/406 is a 12 GB volume
+# shared with other accounts, so the old 4 GB floor could not be held even with two releases kept.
+MIN_FREE_MB="2048"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -348,13 +351,29 @@ new_release=""
 trap - INT TERM HUP
 
 # ---------------------------------------------------------------------------------------------
-# Prune to the newest KEEP_RELEASES releases, never touching the one now live or the one it
-# replaced (the rollback target).
+# Keep exactly two releases: the one now live and the one it replaced (the rollback target).
+#
+# /w/406 is a small shared volume, and this used to keep a KEEP_RELEASES count whose loop also
+# skipped those two, so "3" left four releases on disk and the next deploy failed its free-space
+# check. A rollback only ever goes back one release, so nothing older is worth its space.
 cd "$RELEASES"
 [[ "$PWD" == "$RELEASES" ]] || die "releases resolved to $PWD"
-kept=0
 while IFS= read -r old; do
   [[ -n "$old" && "$old" != "$new_release_name" && "$old" != "$live_name" ]] || continue
-  kept=$((kept + 1))
-  ((kept < KEEP_RELEASES)) || rm -rf -- "$old"
+  echo "Pruning release $old"
+  rm -rf -- "$old"
 done < <(ls -1t)
+
+# Releases hard-link their node_modules into the shared pnpm store, so deleting a release frees
+# only what it alone held; the packages it used stay in the store until it is pruned. Without this
+# the store grew by every release's unique packages (it had reached 2.4 GB) and swallowed what the
+# release pruning freed. The two kept releases still reference everything they need, and a file a
+# release already has hard-linked survives the store dropping its own link. A failed prune costs
+# disk, not the deploy, which has already swapped and passed its health check.
+if ! (
+  cd "$RELEASES/$new_release_name"
+  export npm_config_store_dir="$ROOT/.pnpm-store"
+  corepack pnpm store prune
+); then
+  echo "warning: pnpm store prune failed; the store keeps unreferenced packages until next time" >&2
+fi

@@ -88,8 +88,11 @@ linked to `/mfs1/u/<cs-user>/jinesis-adminbot/state`, keeping SQLite state
 outside a replaceable release. The pnpm store is pinned beside them rather than
 left to pnpm's default, which picks a location by mount point.
 
-The code and package cache need a large volume: three releases carry their own
-`node_modules`, and the pnpm store is most of a gigabyte. `/h` is routinely at
+The code and package cache need a large volume: each release carries its own
+`node_modules`, and the pnpm store is most of a gigabyte. `auto-deploy.sh` keeps exactly two
+releases (the live one and its rollback target) and runs `pnpm store prune` after every
+successful deploy; releases hard-link into the store, so without the prune a deleted release's
+packages stay on disk. `/h` is routinely at
 100%, and `/w/406` is a **2.1 GB, 80k-inode** volume that has already filled.
 `/mfs1` has room for code and caches, but its network mount is **not** a safe
 SQLite WAL destination. The current script couples `--root` and `state/`, so

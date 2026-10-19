@@ -4,6 +4,7 @@ import {
   attendedBy,
   byMostRecent,
   meetingDurationMinutes,
+  meetingDurationSeconds,
   meetsDurationFloor,
   mergeMeeting,
   normalizedMeetingStartedAt,
@@ -220,7 +221,22 @@ describe("meetingDurationMinutes", () => {
     ).toBe(9);
   });
 
-  // Zoom's notice states no duration, so this is the normal state for a fresh record.
+  // The assets template states the recording length to the second; it outranks the transcript's
+  // span, which can only be shorter.
+  it("reads the length Zoom's notice stated before the transcript's", () => {
+    expect(
+      meetingDurationSeconds({
+        ...base,
+        duration_seconds: 98,
+        transcript: { processed_at: base.started_at, speaker_names: [], duration_seconds: 60 },
+      }),
+    ).toBe(98);
+    expect(meetingDurationSeconds({ ...base, duration_minutes: 30, duration_seconds: 98 })).toBe(
+      1800,
+    );
+  });
+
+  // The older notice template states no duration, so this is still a normal state.
   it("is undefined when nothing has reported one", () => {
     expect(meetingDurationMinutes(base)).toBeUndefined();
   });
@@ -233,15 +249,26 @@ describe("meetsDurationFloor", () => {
     updated_at: NOTICE.started_at,
     ...(minutes === undefined ? {} : { duration_minutes: minutes }),
   });
+  const recorded = (seconds: number): AdminBotMeetingRecord => ({
+    ...at(),
+    duration_seconds: seconds,
+  });
 
-  it("keeps a meeting at or over the floor and drops the ones under it", () => {
-    expect(meetsDurationFloor(at(10), 10)).toBe(true);
+  it("lists only meetings strictly longer than the floor", () => {
     expect(meetsDurationFloor(at(58), 10)).toBe(true);
+    expect(meetsDurationFloor(at(10), 10)).toBe(false);
     expect(meetsDurationFloor(at(4), 10)).toBe(false);
   });
 
-  // Hiding unknown-length meetings would hide every one of them for the hours between the notice
-  // arriving and a transcript being dropped -- exactly when someone wants the recording.
+  // 29 short recordings were listed in production because only the notice knew their length.
+  it("hides a short recording whose only length is the one Zoom's notice stated", () => {
+    expect(meetsDurationFloor(recorded(98), 10)).toBe(false);
+    expect(meetsDurationFloor(recorded(600), 10)).toBe(false);
+    expect(meetsDurationFloor(recorded(601), 10)).toBe(true);
+  });
+
+  // Hiding unknown-length meetings would hide every meeting filed from the older notice template
+  // and every one filed by hand, neither of which carries a length.
   it("keeps a meeting whose length nothing has reported", () => {
     expect(meetsDurationFloor(at(), 10)).toBe(true);
   });

@@ -98,6 +98,7 @@ exit 0
   write(
     path.join(bin, "corepack"),
     `#!/usr/bin/env bash
+printf '%s\\n' "$*" >>"$HOME/corepack.log"
 [[ -z "\${FAKE_BUILD_FAILS:-}" ]] || exit 1
 if [[ "$2" == install ]]; then mkdir -p node_modules/.bin && printf '#!/bin/sh\\n' >node_modules/.bin/tsx && chmod +x node_modules/.bin/tsx; fi
 if [[ "$2" == build ]]; then mkdir -p dist && : >dist/entry.js; fi
@@ -167,6 +168,26 @@ describe("Aurora auto-deploy", () => {
     const log = fs.readFileSync(path.join(f.home, "systemctl.log"), "utf8");
     expect(log).toContain("--user stop jinesis-openclaw-gateway.service jinesis-adminbot.service");
     expect(log).toContain("--user start jinesis-adminbot.service jinesis-openclaw-gateway.service");
+  });
+
+  // /w/406 is small: a third release, or a store still holding a deleted release's packages, is
+  // what made the next deploy fail its free-space check.
+  it("keeps only the new release and the one it replaced, then prunes the package store", () => {
+    const f = fixture();
+    const releases = path.join(f.root, "releases");
+    for (const name of ["aaaaaaaaaaaa-20251201T000000Z", "bbbbbbbbbbbb-20251215T000000Z"]) {
+      write(path.join(releases, name, "app.txt"), "older\n");
+      // Older than the live release, so modification order matches the names.
+      fs.utimesSync(path.join(releases, name), new Date("2025-12-01"), new Date("2025-12-01"));
+    }
+    const result = deploy(f, f.next);
+    expect(result.status).toBe(0);
+    expect(fs.readdirSync(releases).toSorted()).toEqual(
+      [path.basename(current(f)), path.basename(f.liveRelease)].toSorted(),
+    );
+    expect(result.stdout).toContain("Pruning release aaaaaaaaaaaa-20251201T000000Z");
+    const corepack = fs.readFileSync(path.join(f.home, "corepack.log"), "utf8").trim().split("\n");
+    expect(corepack.at(-1)).toBe("pnpm store prune");
   });
 
   it("rolls back to the previous release when the new one is unhealthy", () => {

@@ -3087,7 +3087,7 @@ export type AdminBotMeetingRecordInput = {
  */
 export type AdminBotMeetingHead = Pick<
   AdminBotMeetingRecordInput,
-  "id" | "topic" | "started_at" | "duration_minutes"
+  "id" | "topic" | "started_at" | "duration_minutes" | "duration_seconds"
 > & { transcript?: { duration_seconds?: number } };
 
 /**

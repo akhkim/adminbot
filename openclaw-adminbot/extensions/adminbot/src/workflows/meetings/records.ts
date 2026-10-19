@@ -125,37 +125,51 @@ export function redactMeetingForMember(
 }
 
 /**
- * How long the meeting ran, in minutes, when that is known at all.
+ * How long the meeting ran, in seconds, when that is known at all.
  *
- * Two sources, in order of authority: the duration a participant report or a hand-filed record
- * carried, then the span of the transcript. Neither exists on a record that is only a notice --
- * Zoom's mail does not state a duration -- so "unknown" is the normal state for the first few
- * hours of a meeting's life, and callers have to mean something by it rather than defaulting it
- * to zero.
+ * Three sources, in order of authority: the duration a participant report or a hand-filed record
+ * carried, then the recording length Zoom's notice stated, then the span of the transcript. The
+ * notice length was once left out on the belief that the mail states none; the assets template
+ * does, to the second, and leaving it out listed every short test call it described as a meeting
+ * of unknown length. The older template still states nothing, so "unknown" remains a normal state
+ * and callers have to mean something by it rather than defaulting it to zero.
  */
-export function meetingDurationMinutes(meeting: AdminBotMeetingHead): number | undefined {
+export function meetingDurationSeconds(meeting: AdminBotMeetingHead): number | undefined {
   if (typeof meeting.duration_minutes === "number") {
-    return meeting.duration_minutes;
+    return meeting.duration_minutes * 60;
+  }
+  if (typeof meeting.duration_seconds === "number") {
+    return meeting.duration_seconds;
   }
   const seconds = meeting.transcript?.duration_seconds;
-  return typeof seconds === "number" ? Math.round(seconds / 60) : undefined;
+  return typeof seconds === "number" ? seconds : undefined;
+}
+
+/** The same length, rounded to minutes. */
+export function meetingDurationMinutes(meeting: AdminBotMeetingHead): number | undefined {
+  const seconds = meetingDurationSeconds(meeting);
+  return seconds === undefined ? undefined : Math.round(seconds / 60);
 }
 
 /**
- * Whether a meeting is long enough to list.
+ * Whether a meeting is long enough to list: strictly longer than `minimumMinutes`.
+ *
+ * Strictly, and in seconds: with the default of ten, a 10:00 room check is hidden and a 10:01
+ * meeting is listed. Comparing rounded minutes would have let anything from 9:30 through 10:00
+ * pass as "ten minutes".
  *
  * A meeting of unknown length is always long enough. The alternative -- hiding it until something
- * proves otherwise -- would hide every meeting for the hours between the notice arriving and a
- * transcript being dropped, which is exactly when someone goes looking for the recording. Short
- * meetings stay in the database either way: filing is how their length is ever learned, and a
- * threshold that only hides is one an admin can lower again without having lost anything.
+ * proves otherwise -- would hide every meeting filed from the older notice template, which states
+ * no length, and every meeting an admin filed by hand, which has no length field. Short meetings
+ * stay in the database either way: filing is how their length is ever learned, and a threshold
+ * that only hides is one an admin can lower again without having lost anything.
  */
 export function meetsDurationFloor(meeting: AdminBotMeetingHead, minimumMinutes: number): boolean {
   if (minimumMinutes <= 0) {
     return true;
   }
-  const minutes = meetingDurationMinutes(meeting);
-  return minutes === undefined || minutes >= minimumMinutes;
+  const seconds = meetingDurationSeconds(meeting);
+  return seconds === undefined || seconds > minimumMinutes * 60;
 }
 
 /**
