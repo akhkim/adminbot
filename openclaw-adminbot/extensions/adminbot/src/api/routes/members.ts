@@ -40,7 +40,13 @@ import {
 } from "../server.http.js";
 import { enrollNewMember } from "../server.member-onboarding.js";
 import { readRosterSheet } from "../server.member-sheet.js";
-import { applyMeetingSelection, applyMemberTypeChange } from "../server.member-type-change.js";
+import {
+  applyMeetingSelection,
+  applyMemberTypeChange,
+  backfillDcsRoster,
+  type MemberTypeChangeStep,
+  proposeDcsRosterRow,
+} from "../server.member-type-change.js";
 import type { AdminBotRouteContext } from "./context.js";
 import {
   adminSessionOnly,
@@ -439,15 +445,80 @@ export const membersRoutes: readonly Route[] = [
         sendJson(res, sheet.error.status, { error: { message: sheet.error.message } });
         return;
       }
+      const synced = service.syncMemberRoster({
+        sheet: sheet.parsed,
+        actor: principalActor(principal),
+        dryRun: syncBody.dry_run === true,
+        force,
+      });
+      if (!synced.ok) {
+        sendServiceResult(res, synced);
+        return;
+      }
+      // A type changed in the spreadsheet is a role change like one made on the Lab Members tab,
+      // so somebody it made a full member or a major coauthor is owed a DCS roster row. Filed for
+      // an admin to approve rather than approved here, whoever ran the sync: a spreadsheet edit is
+      // not an authorization, and the row asks the department for an account.
+      const dcsRoster: MemberTypeChangeStep[] = [];
+      for (const change of synced.payload.applied) {
+        const after = ctx.store.getLabMember(change.member_id);
+        if (!after) {
+          continue;
+        }
+        const step = await proposeDcsRosterRow(
+          { service, ...(ctx.dcsRoster ? { dcsRoster: ctx.dcsRoster } : {}) },
+          { ...after, member_type: change.from ?? "" },
+          after,
+        );
+        if (step) {
+          dcsRoster.push({ ...step, target: step.target ?? change.member_id });
+        }
+      }
       sendServiceResult(
         res,
-        service.syncMemberRoster({
-          sheet: sheet.parsed,
-          actor: principalActor(principal),
-          dryRun: syncBody.dry_run === true,
-          force,
-        }),
+        dcsRoster.length > 0
+          ? { ...synced, payload: { ...synced.payload, dcs_roster: dcsRoster } }
+          : synced,
       );
+    }),
+  ),
+  post(
+    "/members/dcs-roster/backfill",
+    privilegedOnly(async ({ req, res, ctx, principal }) => {
+      const body = readRecord(await readJsonOrEmpty(req));
+      // A dry run unless asked otherwise: the real run asks the department for an account per row,
+      // so the first thing anybody should see is the list.
+      const dryRun = body.dry_run !== false;
+      // Approving on the same click is for an admin who has read that list. The service token
+      // names nobody, so a cron or a script can only ever leave the cards waiting.
+      const approver = body.approve === true ? approverIdentityFor(principal) : undefined;
+      if (body.approve === true && !approver) {
+        sendJson(res, 403, {
+          error: {
+            message: "approve requires an admin session; the cards can be filed without it",
+          },
+        });
+        return;
+      }
+      const members = ctx.service.listLabMembers();
+      if (!members.ok) {
+        sendServiceResult(res, members);
+        return;
+      }
+      const result = await backfillDcsRoster(
+        {
+          service: ctx.service,
+          ...(approver ? { approver } : {}),
+          ...(ctx.dcsRoster ? { dcsRoster: ctx.dcsRoster } : {}),
+        },
+        members.payload.members,
+        { dryRun },
+      );
+      if ("error" in result) {
+        sendJson(res, ctx.dcsRoster ? 502 : 503, { error: { message: result.error } });
+        return;
+      }
+      sendJson(res, 200, result);
     }),
   ),
   post(

@@ -13,8 +13,9 @@
  *
  *   1. **The record**, with its access level implied by its Member Type (`newMemberRecord`).
  *   2. **Enrollment** (`enrollNewMember`): the access design's consequences of holding that type,
- *      applied as the move from "nobody" to it -- Slack rooms, the Monday meeting, the lab calendar
- *      and the sheet's Member Type cell -- by the same `applyMemberTypeChange` a type change runs.
+ *      applied as the move from "nobody" to it -- Slack rooms, the Monday meeting, the lab calendar,
+ *      the sheet's Member Type cell and, for full members and major coauthors, the DCS roster row
+ *      -- by the same `applyMemberTypeChange` a type change runs.
  *   3. **The guide** (`onboarding.send_guide`), for the Member Types the access design mails.
  *
  * An admin's click approves enrollment and the standard full-member guide on the spot.
@@ -41,7 +42,11 @@ import {
   type MemberSheetSource,
   approveAndExecute,
 } from "./server.member-sheet.js";
-import { applyMemberTypeChange, type MemberTypeChangeResult } from "./server.member-type-change.js";
+import {
+  applyMemberTypeChange,
+  type DcsRosterSheetSource,
+  type MemberTypeChangeResult,
+} from "./server.member-type-change.js";
 
 /** Everything enrollment needs from the route, built once per request by the caller. */
 export type NewMemberOnboardingDeps = {
@@ -50,6 +55,7 @@ export type NewMemberOnboardingDeps = {
   approver?: MemberSheetApprover;
   actor: string;
   memberSheet?: MemberSheetSource;
+  dcsRoster?: DcsRosterSheetSource;
   readGroupMeeting?: () => Promise<
     | { calendarId: string; seriesId: string; targets: string[] }
     | { error: { status: number; message: string } }

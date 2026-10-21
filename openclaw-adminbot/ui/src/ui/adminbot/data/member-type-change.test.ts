@@ -40,6 +40,18 @@ describe("describeMemberTypeChange", () => {
     expect(notice.text).toContain("Waiting for approval: lab calendar ada@lab.test");
   });
 
+  it("names the DCS roster row a new major coauthor was filed on", () => {
+    const notice = describeMemberTypeChange("minnie", {
+      from: "coauthor-minor",
+      to: "coauthor-major",
+      privilege_level: { from: "external_collaborator", to: "external_collaborator" },
+      collaborator_subgroup: { from: "coauthor_minor", to: "coauthor_major" },
+      steps: [{ step: "dcs_roster", target: "Minnie Minor", status: "done" }],
+    });
+
+    expect(notice.text).toContain("Done: DCS roster sheet Minnie Minor");
+  });
+
   it("turns red when a step failed, and names it", () => {
     const notice = describeMemberTypeChange("cora", {
       from: "coauthor-minor",

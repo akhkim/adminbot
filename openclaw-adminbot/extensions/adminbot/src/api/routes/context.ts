@@ -42,6 +42,7 @@ import type { CallSheetSource } from "../call-sheet-config.js";
 import type { createNotificationDraftHandler } from "../notification-drafts.js";
 import { createPdfReferenceCheckHandler } from "../pdf-reference-check.js";
 import type { MemberSheetSource } from "../server.member-sheet.js";
+import type { DcsRosterSheetSource } from "../server.member-type-change.js";
 import { createPublicDeadlineLimiter } from "../server.public-deadline-proposals.js";
 
 export type AdminBotPrincipal =
@@ -116,6 +117,8 @@ export type AdminBotRouteContext = {
    */
   readDrivePdfBase64?: (fileId: string) => Promise<string>;
   memberSheet?: AdminBotMemberSheetSource;
+  /** The DCS roster sheet a role change files a row on. Absent: the step reports it unconfigured. */
+  dcsRoster?: DcsRosterSheetSource;
   callSheet?: CallSheetSource;
   /** Resolved switch: does a submitted meeting request propose its own call-sheet row? */
   autoQueueMeetingRequests: boolean;
@@ -327,10 +330,18 @@ export type AdminBotMockServiceOptions = {
   // without touching a real spreadsheet). If unset, dcsRosterSheetId decides whether one gets
   // built at all.
   dcsRosterRecorder?: AdminBotOnboardingSenderOptions["addDcsRosterRow"];
-  // The spreadsheet new full members are filed on. Absent in unit/mock setups, which leaves the
-  // filing unwired (no attempt, no audit event) rather than half-working -- the same shape the
-  // retired DCS form script had, for the same reason.
+  // The spreadsheet new full members and major coauthors are filed on. Absent in unit/mock setups,
+  // which leaves the filing unwired (no attempt, no audit event) rather than half-working -- the
+  // same shape the retired DCS form script had, for the same reason.
   dcsRosterSheetId?: string;
+  /**
+   * The DCS roster sheet as the role-change step reads it and the `dcs_roster.add_row` arm writes
+   * it. Overrides the gog-backed one built from `dcsRosterSheetId`, so a test can see the row
+   * without a Google session.
+   */
+  dcsRosterSheet?: DcsRosterSheetSource & {
+    append: (spreadsheetId: string, rows: string[][]) => Promise<void>;
+  };
   llmRouter?: LlmLoadRouter;
   failedRequestLedger?: FailedExternalRequestLedger;
   // Approves a pending gateway device pairing on behalf of a signed-in member. Injected from the

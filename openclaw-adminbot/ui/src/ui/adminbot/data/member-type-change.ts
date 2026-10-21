@@ -6,6 +6,7 @@ const STEP_LABEL: Record<MemberTypeChangeSummary["steps"][number]["step"], strin
   slack: "Slack",
   group_meeting: "Monday meeting",
   lab_calendar: "lab calendar",
+  dcs_roster: "DCS roster sheet",
   guide: "onboarding email",
 };
 
