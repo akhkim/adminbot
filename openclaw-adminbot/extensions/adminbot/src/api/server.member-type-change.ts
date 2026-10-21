@@ -31,6 +31,13 @@ import {
   hasAccessConsequences,
   memberAccessDelta,
 } from "../workflows/members/member-type-access.js";
+import {
+  dcsRosterEntryValues,
+  dcsRosterRoleGained,
+  dcsRosterRowForHeader,
+  dcsRosterUsernameCandidates,
+  findDcsRosterRow,
+} from "../workflows/onboarding/dcs-roster-entry.js";
 import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
 import {
   approveAndExecute,
@@ -40,7 +47,7 @@ import {
 } from "./server.member-sheet.js";
 
 export type MemberTypeChangeStep = {
-  step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "guide" | "meeting";
+  step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "dcs_roster" | "guide" | "meeting";
   /** The channel, series or address the step was about. */
   target?: string;
   /** `queued`: filed for an admin to approve in Pending Actions, because nobody approved it here. */
@@ -57,6 +64,16 @@ export type MemberTypeChangeResult = {
   steps: MemberTypeChangeStep[];
 };
 
+/**
+ * The DCS roster sheet, as the step reads it before filing a row. Absent when the deployment has
+ * not named one (ADMINBOT_DCS_ROSTER_SHEET_ID), which the step reports rather than skips silently.
+ */
+export type DcsRosterSheetSource = {
+  spreadsheetId: string;
+  /** Reads the sheet, header row included. */
+  read: (spreadsheetId: string) => Promise<string[][]>;
+};
+
 export type MemberTypeChangeDeps = {
   service: AdminBotService;
   /**
@@ -66,6 +83,7 @@ export type MemberTypeChangeDeps = {
   approver?: MemberSheetApprover;
   actor: string;
   memberSheet?: MemberSheetSource;
+  dcsRoster?: DcsRosterSheetSource;
   /** The live Monday series, or why it could not be read. */
   readGroupMeeting?: () => Promise<
     | { calendarId: string; seriesId: string; targets: string[] }
@@ -320,7 +338,13 @@ export async function applyMemberTypeChange(
     });
   }
 
-  // 5. The one mail: the onboarding guide for the new type, when it differs from the old type's.
+  // 5. The DCS roster sheet, when this save made somebody a full member or a major coauthor.
+  const dcsRoster = await proposeDcsRosterRow(deps, before, after);
+  if (dcsRoster) {
+    steps.push(dcsRoster);
+  }
+
+  // 6. The one mail: the onboarding guide for the new type, when it differs from the old type's.
   //    The template decides, not the raw type: `full` -> `full, alumni` still onboards as a full
   //    member and is owed nothing new.
   if (guideDue) {
@@ -388,6 +412,78 @@ export async function applyMemberTypeChange(
     },
     steps,
   };
+}
+
+/**
+ * The DCS roster row, when moving `before` to `after` made somebody a full member or a major
+ * coauthor. `undefined` when it did not, so a save that changes nothing here reports nothing here.
+ *
+ * Every door onto the roster and every Member Type change reaches this: new members through
+ * `enrollNewMember` (the move from nobody), Lab Members tab saves through `applyMemberTypeChange`,
+ * and the spreadsheet's own edits through the roster-sync route. Approved by the saving admin when
+ * there is one and left in Pending Actions when there is not.
+ *
+ * The sheet is read first, and somebody already on it is skipped rather than proposed: it is one
+ * row per person, and a second row is a second account request. The executor checks again, since
+ * a queued proposal can be approved after somebody typed the row in by hand.
+ */
+export async function proposeDcsRosterRow(
+  deps: Pick<MemberTypeChangeDeps, "service" | "approver" | "dcsRoster">,
+  before: AdminBotLabMember,
+  after: AdminBotLabMember,
+  now: Date = new Date(),
+): Promise<MemberTypeChangeStep | undefined> {
+  const role = dcsRosterRoleGained(before, after);
+  if (!role) {
+    return undefined;
+  }
+  if (!deps.dcsRoster) {
+    return {
+      step: "dcs_roster",
+      status: "skipped",
+      detail: "no DCS roster sheet configured (ADMINBOT_DCS_ROSTER_SHEET_ID)",
+    };
+  }
+  const { spreadsheetId } = deps.dcsRoster;
+  const values = dcsRosterEntryValues(after, now);
+  try {
+    const rows = await deps.dcsRoster.read(spreadsheetId);
+    const existing = findDcsRosterRow(rows, after.id);
+    if (existing !== undefined) {
+      return {
+        step: "dcs_roster",
+        target: `row ${existing}`,
+        status: "skipped",
+        detail: "already on the DCS roster sheet",
+      };
+    }
+    // Refuses a sheet that is not the DCS roster now, rather than filing a card that can only fail.
+    dcsRosterRowForHeader(rows, values);
+  } catch (error) {
+    return {
+      step: "dcs_roster",
+      status: "failed",
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const candidates = dcsRosterUsernameCandidates(after);
+  return runAction(deps, "dcs_roster", after.name || after.id, {
+    type: "dcs_roster.add_row",
+    summary: `Add ${after.name || after.id} to the DCS roster sheet as ${
+      role === "full" ? "a full member" : "a major coauthor"
+    } (member type ${before.member_type?.trim() || "unset"} -> ${
+      after.member_type?.trim() || "unset"
+    })`,
+    target: { service: "google", channel: "sheets", target: spreadsheetId },
+    proposed_payload: {
+      spreadsheet_id: spreadsheetId,
+      member_id: after.id,
+      role,
+      values,
+      ...(candidates.length > 0 ? { dcs_username_candidates: candidates } : {}),
+    },
+    undo_plan: "Delete the row from the DCS roster sheet before the department acts on it.",
+  });
 }
 
 /**

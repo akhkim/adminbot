@@ -64,6 +64,7 @@ import {
   warnIfLabCalendarUnconfigured,
   type SlackConnectOnboardingInviter,
   type LabCalendarGrant,
+  type DcsRosterSheetWriter,
   executorWithOnboardingGuide,
 } from "./onboarding-provisioning.js";
 import { createPdfReferenceCheckHandler } from "./pdf-reference-check.js";
@@ -123,6 +124,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     labCalendar?: LabCalendarGrant;
     slackConnect?: SlackConnectOnboardingInviter;
     enroll?: (proposal: AdminBotStoredProposal) => Promise<AdminBotExecutorOutcome>;
+    dcsRoster?: DcsRosterSheetWriter;
   } = {};
   const withOnboarding = (executor: AdminBotActionExecutor | undefined) =>
     executorWithOnboardingGuide(
@@ -132,6 +134,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       () => onboardingArms.labCalendar,
       () => onboardingArms.slackConnect,
       () => onboardingArms.enroll,
+      () => onboardingArms.dcsRoster,
     );
   // GeoNames for the "Use my precise location" control. Built before the service, which owns the
   // only code that sees a position; the route context gets its credit for the map.
@@ -271,9 +274,48 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // and a deployment (or a route test) has to be able to say no to that.
   const autoQueueMeetingRequests =
     options.autoQueueMeetingRequests ?? process.env.ADMINBOT_CALL_SHEET_AUTO_QUEUE !== "0";
+  // The DCS roster sheet a role change files a row on: whenever somebody becomes a full member or
+  // a major coauthor (`dcs_roster.add_row`). Unset leaves it unconfigured, which every such save
+  // reports; there is no default, because the arm appends through gog and a dev box or a test run
+  // must not reach the department's real sheet by omission.
+  const dcsRosterSheetId = (
+    options.dcsRosterSheet?.spreadsheetId ??
+    options.dcsRosterSheetId ??
+    process.env.ADMINBOT_DCS_ROSTER_SHEET_ID ??
+    ""
+  ).trim();
+  const dcsRosterSheet = dcsRosterSheetId
+    ? (options.dcsRosterSheet ?? {
+        spreadsheetId: dcsRosterSheetId,
+        read: (spreadsheetId: string) => readGogSheetRows(spreadsheetId),
+        append: (spreadsheetId: string, rows: string[][]) =>
+          appendGogSheetRows(spreadsheetId, rows),
+      })
+    : undefined;
+  if (dcsRosterSheet) {
+    onboardingArms.dcsRoster = {
+      read: dcsRosterSheet.read,
+      append: dcsRosterSheet.append,
+      rosterUsernames: () => {
+        const roster = service.listLabMembers();
+        return roster.ok
+          ? roster.payload.members
+              .map((entry) => entry.dcs_username?.trim())
+              .filter((entry): entry is string => Boolean(entry))
+          : [];
+      },
+      recordAudit: (event) =>
+        store.recordAudit({
+          id: `aud_${randomUUID()}`,
+          timestamp: new Date().toISOString(),
+          ...event,
+        }),
+    };
+  }
   // Files a new full member's row on the sheet the department's sysadmin acts on, and hands back
-  // the credentials it wrote so the sender can mail them. Undefined when no spreadsheet is
-  // configured, which the sender reports rather than silently skipping.
+  // the credentials it wrote so the sender can mail them -- now only when a send asks for it with
+  // `add_dcs_roster_row: true`; the role-change row above is the default filing. Undefined when no
+  // spreadsheet is configured, which the sender reports rather than silently skipping.
   //
   // The roster lookup is wired here rather than inside the workflow for the same reason
   // portalLoginEmail is: the extension owns no store, and the row needs the member's id, career
@@ -419,6 +461,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     readArxivPdfBase64: options.readArxivPdfBase64 ?? readArxivPdfBase64,
     ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
     ...(memberSheet ? { memberSheet } : {}),
+    ...(dcsRosterSheet
+      ? { dcsRoster: { spreadsheetId: dcsRosterSheet.spreadsheetId, read: dcsRosterSheet.read } }
+      : {}),
     ...(callSheet ? { callSheet } : {}),
     autoQueueMeetingRequests,
     ...(runEmailAutomation ? { runEmailAutomation } : {}),

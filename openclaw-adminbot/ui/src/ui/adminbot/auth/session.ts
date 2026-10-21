@@ -173,7 +173,7 @@ export type MemberTypeChangeSummary = {
   privilege_level: { from: string; to: string };
   collaborator_subgroup: { from?: string; to?: string };
   steps: Array<{
-    step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "guide" | "meeting";
+    step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "dcs_roster" | "guide" | "meeting";
     target?: string;
     /** `queued`: filed in Pending Actions because nobody approved it on the spot. */
     status: "done" | "queued" | "skipped" | "failed";

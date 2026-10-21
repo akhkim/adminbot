@@ -555,6 +555,7 @@ export function memberEnrollmentContext(
   return {
     service: ctx.service,
     ...(ctx.memberSheet ? { memberSheet: ctx.memberSheet } : {}),
+    ...(ctx.dcsRoster ? { dcsRoster: ctx.dcsRoster } : {}),
     readGroupMeeting: () => readGroupMeetingSeries(ctx, ctx.labCalendar.id),
     recordAudit: (event) =>
       ctx.store.recordAudit({

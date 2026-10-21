@@ -558,8 +558,9 @@ their onboarding**, puts the new member through onboarding in the same press. Th
 over `PUT /lab/members/{id}`; the onboarding leg is `POST /lab/members/{id}/onboarding/guide`, which
 composes nothing and sends nothing -- it files an `onboarding.send_guide` proposal for approval,
 exactly as the Onboarding section's sheet selection and the weekly sweep do. Approving it is what
-mints the Slack Connect invite, provisions the Drive folder, files the DCS account request and
-sends the mail.
+mints the Slack Connect invite, provisions the Drive folder and sends the mail. The DCS account
+request is filed by the save itself for a new full member or major coauthor (see
+[The DCS roster sheet](#the-dcs-roster-sheet)).
 
 Which guide somebody gets is decided by **Member type** on the form, through the same
 most-committed-role rule the sheet rows use: `full, coauthor-major` gets the full-member mail. Five
@@ -580,7 +581,7 @@ sent it offers **Resend onboarding email**, for a mail that went to spam or was 
 ask for confirmation in the panel and call the same `POST /lab/members/{id}/onboarding/guide`, a
 resend with `{"resend": true}`. A resend lifts only the "already sent" refusal: a copy still
 waiting for an approver is refused either way, and the resend is filed with
-`add_dcs_roster_row: false` so DCS is not asked for a second account. It needs an admin member
+`add_dcs_roster_row: false` so DCS is never asked for a second account. It needs an admin member
 session; the service token is refused.
 
 ### Changing a Member Type
@@ -606,6 +607,8 @@ genuine admin session and only when the type actually changes (compared token-wi
   `slack.remove_from_channel`). Becoming `full` never removes anyone from the lab's rooms.
 - **The Monday group meeting** gains or loses them on every live series (`calendar.add_attendees` /
   `calendar.remove_attendees`, both `--send-updates none`).
+- **The DCS roster sheet** gets a row when the change makes them a full member or a major coauthor
+  (`dcs_roster.add_row`; see [The DCS roster sheet](#the-dcs-roster-sheet)).
 - **Lab calendar** read access is granted silently when they gain it
   (`calendar.grant_lab_calendar`, recorded as `auth.calendar_invite_sent` like the backfill). No
   action revokes a calendar share, so a loss is reported in the notice for someone to handle by
@@ -651,6 +654,9 @@ What it does with what it finds is the whole design:
   External Collab Access Design matrix, and where that row names a standing Slack room the sync
   files a `slack.remove_from_channel` proposal. Nothing here executes: `slack.remove_from_channel`
   is T3/admin, and somebody losing a conversation they were part of is not a cron job's call.
+- **A type that makes somebody a full member or a major coauthor files their DCS roster row** as a
+  `dcs_roster.add_row` card left in Pending Actions, returned under `dcs_roster`. Never approved
+  here, for the same reason: it asks the department for an account.
 - **Joiners and leavers are reported, not acted on.** A sheet row matching no member is far more
   often somebody mid-onboarding than a member to create -- and creating one is an access grant, which
   a sync must never make on its own. Use the Membership tab's Onboarding section for that. A member
@@ -1096,23 +1102,85 @@ how a directory fills with them.
 
 ## The DCS roster sheet
 
-Sending the full-member onboarding guide (template `member`) files one row on the sheet the
-department's sysadmin acts on, and mails that member the credentials the row carries. It replaces
-the Microsoft-Forms automation that used to drive a headless browser through
+Whenever somebody **becomes a full member or a major coauthor**, AdminBot files one row for them on
+the sheet the department's sysadmin works from (the lab's "DCS Members" sheet). It replaces the
+Microsoft-Forms automation that used to drive a headless browser through
 `https://forms.office.com/r/TgGWBGWLZa`: the form carried only First/Last/Email, its selectors
 could be relaid out by Microsoft without notice, and it handed back no receipt, so "submitted" only
 ever meant "the click did not throw".
 
-Point it at a spreadsheet with:
+"Becomes" is a change of role, read from Member Type token-wise (`dcsRosterRoleGained` in
+`extensions/adminbot/src/workflows/onboarding/dcs-roster-entry.ts`):
+
+- `full` wins over `coauthor-major` when somebody is both, so `coauthor-major` -> `full` files a
+  row and `full` -> `full, coauthor-major` does not.
+- Alumni are never filed, whatever their type still says -- `full, alumni` is somebody who left.
+- Giving a role up (`full` -> `alumni`, `coauthor-major` -> `coauthor-minor`) files nothing. Nothing
+  here removes a row.
+
+Every way a role changes reaches it, as a typed `dcs_roster.add_row` action (T3, admin):
+
+| Where the role changed                                     | Approved by                         |
+| ---------------------------------------------------------- | ----------------------------------- |
+| Lab Members tab: a Member Type save, or Add member         | the admin who saved                 |
+| Onboarding tab: Add row, onboard selected rows             | the admin who clicked               |
+| Approving a weekly-sweep joiner's `lab_member.enroll` card | the admin who approved it           |
+| Approving a member request or a portal sign-up             | the approving admin                 |
+| The spreadsheet itself, applied by the 06:10 roster sync   | nobody yet: left in Pending Actions |
+
+The roster sync never approves its own card, whoever ran it: a spreadsheet edit is not an
+authorization, and the row asks the department for an account. `POST /members/roster-sync` returns
+the cards it filed under `dcs_roster`. On the save paths the step is reported as `dcs_roster` in
+the save notice (done, queued, skipped or failed), and like the other steps it never undoes the save.
+
+Point it at the spreadsheet with:
 
 | Variable                       | What it names                                    |
 | ------------------------------ | ------------------------------------------------ |
 | `ADMINBOT_DCS_ROSTER_SHEET_ID` | The spreadsheet id alone. Unset disables filing. |
 
-Unset is not an error and not a silent skip: the send reports `dcs_roster_row.added: false` with
-"the DCS roster sheet is not configured", the same shape the retired form used for "not wired up".
+There is deliberately no default: the row is appended through gog, and a dev box or a test run must
+not reach the department's sheet by omission (the test setup also clears the variable). Unset is
+not an error and not a silent skip: each role change reports the `dcs_roster` step as skipped with
+"no DCS roster sheet configured".
 
-The sheet's columns, which `DCS_ROSTER_SHEET_COLUMNS` in
+The row is laid out against the sheet's **own header, by column name**, when it is written -- not
+when it is proposed, since a card the roster sync files may be approved days later. A column the
+sheet gains is left blank, one it loses is not written, and a sheet with no `full_name` or
+`adminbot_internal_id` column is refused as not being the DCS roster. The values, by column:
+
+| Column                    | Value                                                                      |
+| ------------------------- | -------------------------------------------------------------------------- |
+| `full_name`               | The roster name                                                            |
+| `adminbot_internal_id`    | The member id                                                              |
+| `dcs_username`            | The stored account name, else the first free candidate (below), else blank |
+| `non_dcs_email`           | The first address on file that is not `@cs.toronto.edu`                    |
+| `career_stage`            | The Member Type                                                            |
+| `at_uoft_or_not`          | `yes` / `no`, or blank when the roster does not know                       |
+| `permission`              | The DCS access already granted, else `UofT-slack-only`                     |
+| `date_of_this_row_change` | The filing date                                                            |
+| anything else (`UTORid`)  | Left blank for the sysadmin                                                |
+
+The sheet is one row per person. Somebody already on it (matched on `adminbot_internal_id`) is
+skipped rather than filed -- at proposal time, and again at execution, because a row typed in by
+hand while a card waited must win over the card. Either outcome is audited as
+`auth.dcs_roster_row_added` / `auth.dcs_roster_row_failed`, with the account name and nothing
+resembling a credential; the access audit grades its DCS baseline row on those.
+
+No password is written. The sheet dropped its `dcs_password` column, and if one comes back the role
+change still leaves it empty: where an initial credential goes is a decision for whoever adds the
+column, not a side effect of a role change.
+
+### The guide's own filing (opt-in)
+
+Sending the full-member onboarding guide used to file this row itself, positionally and with a
+generated password it then mailed to the member. It now does that only when a send asks for it
+with `add_dcs_roster_row: true` -- the role change above already reaches everyone the guide reached,
+and both defaulting on would ask the department for every new full member twice. Against the sheet
+as it is now, that path refuses on its header check (there is no `dcs_password` column); it stays
+for a sheet that has one. The rest of this section describes it.
+
+Its columns, which `DCS_ROSTER_SHEET_COLUMNS` in
 `extensions/adminbot/src/workflows/onboarding/dcs-roster-sheet.ts` declares and checks against the
 live header before every write:
 

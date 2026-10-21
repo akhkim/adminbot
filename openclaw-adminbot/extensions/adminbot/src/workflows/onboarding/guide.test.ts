@@ -416,10 +416,10 @@ describe("onboarding sender", () => {
     expect(sendEmail.mock.calls[0]?.[0]?.body_html).toBe(result.payload.body_html);
   });
 
-  // The full-member guide is what starts someone's CS account, and its own copy tells them an
-  // account request is coming -- so sending it files the request. This used to happen on
-  // registration approval, which is too late: by then they have the address the request produces.
-  it("files the DCS roster row when the full-member guide is sent", async () => {
+  // The role change files the DCS row now (`dcs_roster.add_row`), for full members and major
+  // coauthors alike. A guide that also filed by default would ask the department for every new
+  // full member twice, so the guide files only when a send asks it to.
+  it("files the DCS roster row only when the send asks for it", async () => {
     const candidates = ["ada", "lovelace", "alovelace"];
     const addDcsRosterRow = vi.fn().mockResolvedValue({
       username: "ada",
@@ -429,10 +429,22 @@ describe("onboarding sender", () => {
     const sendEmail = vi.fn().mockResolvedValue(undefined);
     const send = createAdminBotOnboardingSender({ env: ENV, addDcsRosterRow, sendEmail });
 
+    const unasked = await send({
+      template_id: "member",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+    });
+    expect(unasked.ok).toBe(true);
+    expect(addDcsRosterRow).not.toHaveBeenCalled();
+    if (unasked.ok) {
+      expect(unasked.payload.dcs_roster_row).toBeUndefined();
+    }
+
     const result = await send({
       template_id: "member",
       name: "Ada Lovelace",
       email: "ada@example.com",
+      add_dcs_roster_row: true,
     });
     expect(result.ok).toBe(true);
     expect(addDcsRosterRow).toHaveBeenCalledWith({
@@ -466,6 +478,7 @@ describe("onboarding sender", () => {
       name: "Ada Lovelace",
       email: "ada@example.com",
       cc: ["lead@example.com"],
+      add_dcs_roster_row: true,
     });
     expect(result.ok).toBe(true);
     // Two messages: the guide (cc'd) and the credentials (not).
@@ -564,6 +577,7 @@ describe("onboarding sender", () => {
       template_id: "member",
       name: "Ada Lovelace",
       email: "ada@example.com",
+      add_dcs_roster_row: true,
     });
     expect(result.ok).toBe(true);
     if (result.ok) {

@@ -16,6 +16,13 @@ import {
   type CalendarInviteRunner,
 } from "../workflows/onboarding/calendar-invite.js";
 import {
+  type DcsRosterEntryValues,
+  dcsRosterRowForHeader,
+  dcsRosterSheetUsernames,
+  findDcsRosterRow,
+  resolveDcsRosterUsername,
+} from "../workflows/onboarding/dcs-roster-entry.js";
+import {
   createSlackConnectOnboardingInviter,
   type AdminBotOnboardingSender,
 } from "../workflows/onboarding/guide-sender.js";
@@ -74,6 +81,7 @@ export function executorWithOnboardingGuide(
   enroll: () =>
     | ((proposal: AdminBotStoredProposal) => Promise<AdminBotExecutorOutcome>)
     | undefined,
+  dcsRoster: () => DcsRosterSheetWriter | undefined,
 ): AdminBotActionExecutor {
   return {
     async execute(proposal) {
@@ -84,6 +92,9 @@ export function executorWithOnboardingGuide(
       }
       if (proposal.type === "calendar.grant_lab_calendar") {
         return grantLabCalendar(proposal, labCalendar());
+      }
+      if (proposal.type === "dcs_roster.add_row") {
+        return addDcsRosterRow(proposal, dcsRoster());
       }
       if (proposal.type === "slack.connect_invite") {
         const invite = slackConnect();
@@ -185,6 +196,109 @@ export function executorWithOnboardingGuide(
         artifacts: { template_id: result.payload.template_id, subject: result.payload.subject },
       };
     },
+  };
+}
+
+/** What the `dcs_roster.add_row` arm needs, resolved at execute time. */
+export type DcsRosterSheetWriter = {
+  /** Reads the sheet, header row included. */
+  read: (spreadsheetId: string) => Promise<string[][]>;
+  append: (spreadsheetId: string, rows: string[][]) => Promise<void>;
+  /** Account names the roster holds that the sheet may not carry yet. */
+  rosterUsernames: () => Iterable<string>;
+  recordAudit: (event: Pick<AdminBotAuditEvent, "type" | "actor" | "details">) => void;
+};
+
+function stringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+      key,
+      typeof entry === "string" ? entry : "",
+    ]),
+  );
+}
+
+/**
+ * One member's row on the DCS roster sheet, as an approved action.
+ *
+ * Everything that depends on the sheet is decided here rather than when the proposal was filed,
+ * because the roster sync's proposals wait for an admin: the header the row is laid out under,
+ * whether the person is already on the sheet, and which candidate account name is still free.
+ * A person already on it is a refusal, not a success -- nothing was written, and a second row
+ * would be a second account request.
+ *
+ * Audited as `auth.dcs_roster_row_added` / `_failed`, the rows the access audit grades the DCS
+ * baseline on, with the account name and never anything resembling a credential.
+ */
+export async function addDcsRosterRow(
+  proposal: AdminBotStoredProposal,
+  writer: DcsRosterSheetWriter | undefined,
+): Promise<AdminBotExecutorOutcome> {
+  if (!writer) {
+    return { handled: false, reason: "no DCS roster sheet is configured" };
+  }
+  const payload = (proposal.proposed_payload ?? {}) as Record<string, unknown>;
+  const spreadsheetId =
+    typeof payload.spreadsheet_id === "string" ? payload.spreadsheet_id.trim() : "";
+  const memberId = typeof payload.member_id === "string" ? payload.member_id.trim() : "";
+  const values = stringRecord(payload.values) as DcsRosterEntryValues;
+  if (!spreadsheetId || !memberId || values.adminbot_internal_id !== memberId) {
+    return {
+      handled: false,
+      reason: "spreadsheet_id, member_id and values for that member are required",
+    };
+  }
+  const candidates = Array.isArray(payload.dcs_username_candidates)
+    ? payload.dcs_username_candidates.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  const actor = proposal.approvals.at(-1)?.approver_id ?? "adminbot";
+  const failed = (message: string): AdminBotExecutorOutcome => {
+    writer.recordAudit({
+      type: "auth.dcs_roster_row_failed",
+      actor,
+      details: { member_id: memberId, spreadsheet_id: spreadsheetId, error: message },
+    });
+    return { handled: true, delivered: false, reason: message };
+  };
+  let row: string[];
+  let username: string;
+  try {
+    const rows = await writer.read(spreadsheetId);
+    const existing = findDcsRosterRow(rows, memberId);
+    if (existing !== undefined) {
+      return failed(
+        `${memberId} is already on the DCS roster sheet (row ${existing}); nothing was appended`,
+      );
+    }
+    username = resolveDcsRosterUsername(values, candidates, [
+      ...dcsRosterSheetUsernames(rows),
+      ...writer.rosterUsernames(),
+    ]);
+    row = dcsRosterRowForHeader(rows, { ...values, dcs_username: username });
+  } catch (error) {
+    return failed(error instanceof Error ? error.message : String(error));
+  }
+  try {
+    await writer.append(spreadsheetId, [row]);
+  } catch (error) {
+    return failed(error instanceof Error ? error.message : String(error));
+  }
+  writer.recordAudit({
+    type: "auth.dcs_roster_row_added",
+    actor,
+    details: {
+      member_id: memberId,
+      spreadsheet_id: spreadsheetId,
+      ...(username ? { dcs_username: username } : {}),
+    },
+  });
+  return {
+    handled: true,
+    delivered: true,
+    artifacts: { member_id: memberId, ...(username ? { dcs_username: username } : {}) },
   };
 }
 

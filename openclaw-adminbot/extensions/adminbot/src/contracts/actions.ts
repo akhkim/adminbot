@@ -54,6 +54,14 @@ export const adminBotActionTypes = [
   // them runs unattended, and a spreadsheet row is not an authorization: the member is created at
   // the least-privileged level and an admin approving this is what raises it.
   "lab_member.enroll",
+  // One person's row on the DCS roster sheet the department's sysadmin works from, filed when they
+  // become a full member or a major coauthor (workflows/onboarding/dcs-roster-entry.ts). Its own
+  // type rather than `sheet.append_rows` because the row is laid out against the sheet's header
+  // when it is written, not when it is proposed: a proposal the unattended roster sync files may
+  // be approved days later, and a column moved in between must not shift a person's address into
+  // somebody's permission cell. The payload carries the values by column name, so the approval
+  // card is the row.
+  "dcs_roster.add_row",
   // Removes one roster record that the Slack roster sync judged a placeholder or test account
   // ("Test User", an @example address -- never a do-not-contact opt-out). Its own type so the sync
   // never deletes anything itself: it files this, an admin approves it, and the delete runs through

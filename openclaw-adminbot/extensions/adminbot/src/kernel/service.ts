@@ -1311,6 +1311,10 @@ const DEFAULT_ACTION_POLICIES = {
   // Raises a member's access level and grants what it brings, so an admin approves it; the
   // approving admin is also who approves each step it runs.
   "lab_member.enroll": approvalPolicy("T3", ["admin"]),
+  // Same tier as the guide that used to file this row: the sysadmin reading it creates a CS
+  // account, which is not something to undo. The admin-driven paths approve it on the click that
+  // changed the role; the roster sync and the weekly sweep leave it in Pending Actions.
+  "dcs_roster.add_row": approvalPolicy("T3", ["admin"]),
   // A placeholder/test account the Slack roster sync wants gone. T3 so it can never ride the auto
   // tier: the sync only proposes, and an admin approving it is the only way a record is deleted.
   "lab_member.remove": approvalPolicy("T3", ["admin"]),
