@@ -19,7 +19,7 @@ import {
   type DcsRosterEntryValues,
   dcsRosterRowForHeader,
   dcsRosterSheetUsernames,
-  findDcsRosterRow,
+  findDcsRosterRowForPerson,
   resolveDcsRosterUsername,
 } from "../workflows/onboarding/dcs-roster-entry.js";
 import {
@@ -267,7 +267,11 @@ export async function addDcsRosterRow(
   let username: string;
   try {
     const rows = await writer.read(spreadsheetId);
-    const existing = findDcsRosterRow(rows, memberId);
+    const existing = findDcsRosterRowForPerson(rows, {
+      id: memberId,
+      name: values.full_name,
+      emails: [values.non_dcs_email],
+    });
     if (existing !== undefined) {
       return failed(
         `${memberId} is already on the DCS roster sheet (row ${existing}); nothing was appended`,

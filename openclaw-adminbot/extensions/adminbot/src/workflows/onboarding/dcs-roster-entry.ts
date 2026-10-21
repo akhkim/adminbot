@@ -176,6 +176,54 @@ export function findDcsRosterRow(
   return index < 0 ? undefined : index + 1;
 }
 
+function nameKey(name: string): string {
+  return name
+    .normalize("NFD")
+    .replaceAll(/\p{M}+/gu, "")
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/gu, "");
+}
+
+/**
+ * The sheet row (1-based) this person already has, matched on id, any address, or name.
+ *
+ * Wider than `findDcsRosterRow` because the sheet predates the id column being reliable: rows were
+ * typed in by hand under generated `mem_…` ids and with the person's address in `non_dcs_email`,
+ * sometimes two to a cell. Filing on an id miss alone would ask the department for a second account
+ * for somebody it already has. A name match counts too -- a duplicate request costs the sysadmin
+ * more than a person left for an admin to add by hand.
+ */
+export function findDcsRosterRowForPerson(
+  rows: readonly (readonly string[])[],
+  person: { id: string; name?: string; emails: readonly (string | undefined)[] },
+): number | undefined {
+  const byId = findDcsRosterRow(rows, person.id);
+  if (byId !== undefined) {
+    return byId;
+  }
+  const header = headerOf(rows);
+  const emailAt = header.indexOf("non_dcs_email");
+  const nameAt = header.indexOf("full_name");
+  const emails = new Set(
+    person.emails.map((entry) => entry?.trim().toLowerCase() ?? "").filter(Boolean),
+  );
+  const name = nameKey(person.name ?? "");
+  const index = rows.findIndex((row, rowIndex) => {
+    if (rowIndex === 0) {
+      return false;
+    }
+    const cellEmails = (emailAt < 0 ? "" : (row[emailAt] ?? ""))
+      .split(/[\s,;/]+/u)
+      .map((entry) => entry.toLowerCase())
+      .filter(Boolean);
+    return (
+      cellEmails.some((entry) => emails.has(entry)) ||
+      (name !== "" && nameAt >= 0 && nameKey(row[nameAt] ?? "") === name)
+    );
+  });
+  return index < 0 ? undefined : index + 1;
+}
+
 /** Every account name already on the sheet, for the "is this one taken?" check. */
 export function dcsRosterSheetUsernames(rows: readonly (readonly string[])[]): string[] {
   const at = headerOf(rows).indexOf("dcs_username");

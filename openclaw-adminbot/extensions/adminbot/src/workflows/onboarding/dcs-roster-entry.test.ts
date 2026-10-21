@@ -8,6 +8,7 @@ import {
   dcsRosterSheetUsernames,
   dcsRosterUsernameCandidates,
   findDcsRosterRow,
+  findDcsRosterRowForPerson,
   resolveDcsRosterUsername,
 } from "./dcs-roster-entry.js";
 
@@ -195,6 +196,20 @@ describe("reading the sheet back", () => {
     expect(findDcsRosterRow(rows, "ada-lovelace")).toBe(3);
     expect(findDcsRosterRow(rows, "alan-turing")).toBeUndefined();
     expect(findDcsRosterRow([["Name"], ["ada-lovelace"]], "ada-lovelace")).toBeUndefined();
+  });
+
+  it("matches a hand-typed row by any address in the cell, or by name, when the id misses", () => {
+    const legacy = [
+      HEADER,
+      ["Yves B", "mem_9", "", "yves@icloud.example, bickery@ethz.example"],
+      ["Emilia Wiśnios", "mem_10", "", ""],
+    ];
+    const find = (id: string, name: string, emails: string[]) =>
+      findDcsRosterRowForPerson(legacy, { id, name, emails });
+    expect(find("yves-bicker", "Yves Bicker", ["BICKERY@ethz.example"])).toBe(2);
+    // Accents and spacing do not make a different person.
+    expect(find("emilia-wisnios", "Emilia Wisnios", [])).toBe(3);
+    expect(find("someone-else", "Someone Else", ["else@example.test"])).toBeUndefined();
   });
 
   it("picks the first candidate nobody on the sheet or the roster holds", () => {

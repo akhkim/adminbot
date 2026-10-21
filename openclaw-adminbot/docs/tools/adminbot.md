@@ -1161,9 +1161,21 @@ sheet gains is left blank, one it loses is not written, and a sheet with no `ful
 | `date_of_this_row_change` | The filing date                                                            |
 | anything else (`UTORid`)  | Left blank for the sysadmin                                                |
 
-The sheet is one row per person. Somebody already on it (matched on `adminbot_internal_id`) is
-skipped rather than filed -- at proposal time, and again at execution, because a row typed in by
-hand while a card waited must win over the card. Either outcome is audited as
+The sheet is one row per person. Somebody already on it is skipped rather than filed -- at proposal
+time, and again at execution, because a row typed in by hand while a card waited must win over the
+card. "On it" is matched widely, since older rows were typed by hand under generated `mem_…` ids:
+the `adminbot_internal_id`, any address in the `non_dcs_email` cell, or the name (ignoring accents,
+case and spacing). A member with a card already waiting in Pending Actions is skipped too.
+
+### Catching up members who predate this
+
+`POST /members/dcs-roster/backfill` files a card for every full member and major coauthor (alumni
+excluded) the sheet does not have yet. It is a **dry run unless the body says `"dry_run": false`**:
+the dry run returns `owed`, `already_on_sheet` (with the matched row) and `missing`, and files
+nothing. A real run leaves the cards in Pending Actions; an admin session that has read the list may
+add `"approve": true` to approve them on the same click (the service token gets a `403` for that).
+Re-running is safe -- anyone with a waiting card is skipped. It reads the live sheet once and answers
+`503` when no sheet is configured. Either outcome is audited as
 `auth.dcs_roster_row_added` / `auth.dcs_roster_row_failed`, with the account name and nothing
 resembling a credential; the access audit grades its DCS baseline row on those.
 

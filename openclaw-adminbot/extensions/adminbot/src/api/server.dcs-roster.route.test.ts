@@ -453,6 +453,90 @@ describe("a type changed in the spreadsheet", () => {
   });
 });
 
+describe("the catch-up for members who predate role-change filing", () => {
+  // Rows typed in by hand before ids were reliable: Cora under a generated id with her address,
+  // Fern under a generated id with her exact name. Neither may be asked for twice.
+  const LEGACY_ROWS = [
+    ["C. Coauthor", "mem_0001", "", "cora@lab.test", "coauthor-major"],
+    ["Fern Fullmember", "mem_0002", "fern", "", "full"],
+  ];
+
+  const backfill = (
+    baseUrl: string,
+    body: Record<string, unknown>,
+    authorization = `Bearer ${SERVICE_TOKEN}`,
+  ) =>
+    fetch(`${baseUrl}/members/dcs-roster/backfill`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: authorization },
+      body: JSON.stringify(body),
+    });
+
+  type BackfillBody = {
+    dry_run: boolean;
+    owed: number;
+    already_on_sheet: Array<{ member_id: string; sheet_row: number }>;
+    missing: Array<{ member_id: string; role: string }>;
+    steps: Step[];
+  };
+
+  it("lists who is missing on a dry run, matching hand-typed rows by address and name", async () => {
+    const { baseUrl, mock, appended } = await startService({ dcsRows: LEGACY_ROWS });
+
+    const response = await backfill(baseUrl, {});
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as BackfillBody;
+
+    expect(body.dry_run).toBe(true);
+    // Admin and Fern are full, Cora a major coauthor; Minnie is a minor coauthor and owed nothing.
+    expect(body.owed).toBe(3);
+    expect(body.already_on_sheet).toEqual([
+      { member_id: "cora", sheet_row: 2 },
+      { member_id: "fern", sheet_row: 3 },
+    ]);
+    expect(body.missing).toEqual([{ member_id: "admin", name: "Admin", role: "full" }]);
+    expect(body.steps).toEqual([]);
+    expect(dcsProposals(mock)).toEqual([]);
+    expect(appended).toEqual([]);
+  });
+
+  it("files waiting cards on a real run, and a second run files no duplicates", async () => {
+    const { baseUrl, mock, appended } = await startService({ dcsRows: LEGACY_ROWS });
+
+    const first = (await (await backfill(baseUrl, { dry_run: false })).json()) as BackfillBody;
+    expect(first.steps).toEqual([
+      expect.objectContaining({ step: "dcs_roster", status: "queued", target: "Admin" }),
+    ]);
+    const second = (await (await backfill(baseUrl, { dry_run: false })).json()) as BackfillBody;
+    expect(second.steps).toEqual([
+      expect.objectContaining({ status: "skipped", proposal_id: first.steps[0]?.proposal_id }),
+    ]);
+
+    expect(dcsProposals(mock)).toHaveLength(1);
+    expect(dcsProposals(mock)[0]?.status).toBe("pending");
+    expect(appended).toEqual([]);
+  });
+
+  it("lets only an admin session approve on the same click", async () => {
+    const { baseUrl, mock, appended } = await startService({ dcsRows: LEGACY_ROWS });
+
+    const refused = await backfill(baseUrl, { dry_run: false, approve: true });
+    expect(refused.status).toBe(403);
+    expect(dcsProposals(mock)).toEqual([]);
+
+    const token = await adminToken(mock, baseUrl);
+    const approved = await backfill(baseUrl, { dry_run: false, approve: true }, `Bearer ${token}`);
+    expect(approved.status).toBe(200);
+    expect(((await approved.json()) as BackfillBody).steps[0]?.status).toBe("done");
+    expect(appended.map((row) => row.slice(0, 2))).toEqual([["Admin", "admin"]]);
+  });
+
+  it("answers 503 when the deployment names no DCS sheet", async () => {
+    const { baseUrl } = await startService();
+    expect((await backfill(baseUrl, {})).status).toBe(503);
+  });
+});
+
 describe("the gate in front of the sheet", () => {
   async function queuedCard() {
     const started = await startService({
