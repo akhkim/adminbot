@@ -1,8 +1,8 @@
 // The Events tab: upcoming lab-relevant events, who from the lab is going, and who is nearby.
 //
-// A renderer over props, like Travel: surfaces/events.ts wires the controller in and the tests draw
-// it with plain objects. Places arrive already coarsened by the service (a city or metro label,
-// never coordinates); the only inferred place here is the viewer's own, shown back to them.
+// A renderer over props, like Time Availability: surfaces/events.ts wires the controller in and the
+// tests draw it with plain objects. Places arrive already coarsened by the service (a city or metro
+// label, never coordinates); the only inferred place here is the viewer's own, shown back to them.
 import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
@@ -29,6 +29,11 @@ export type EventsProps = {
     patch: Partial<{ events: boolean; city: boolean; snoozed_until: string | null }>,
   ) => void;
   onSayHi: (target: SayHiTarget) => void;
+  /**
+   * The "Find lab members nearby" card (views/lab-travel.nearby.ts), drawn under the lists. A slot
+   * rather than props of its own because it reads /travel, not /events, and has its own surface.
+   */
+  nearby?: TemplateResult;
 };
 
 type Nearby = Extract<NonNullable<EventsOverview["also_nearby"]>, { locked: false }>;
@@ -402,6 +407,7 @@ export function renderEvents(props: EventsProps) {
                   </details>`
                 : nothing}
             </section>
+            ${props.nearby ?? nothing}
             ${renderSettings(props, overview.today, overview.preferences)}
           `}
     </div>

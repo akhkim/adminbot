@@ -1,9 +1,8 @@
 import { html, nothing } from "lit";
 import type { WhereBin } from "../data/availability.ts";
 // The where-strip under the Time Availability chart: one cell per period, saying where the member
-// is. The trip editor that fed it used to live here too; it moved to the Travel tab
-// (views/lab-travel.plans.ts), which is where members now say where they are going. The rows are
-// the same schedule `trips` field either way, so this strip reads them exactly as before.
+// is. The trip editor that feeds it is views/time-availability.trip-editor.ts, the page's "Trip
+// Away" tab; both read and write the schedule's `trips` field.
 
 /**
  * A date range as a person reads it: "Sep 1 – Sep 30", or a single day as itself.

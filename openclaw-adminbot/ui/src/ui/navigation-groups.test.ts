@@ -58,10 +58,8 @@ describe("TAB_GROUPS", () => {
       "gettingStarted",
       "profile",
       "adminbotTimeAvailability",
-      // Where you are going, beside when you are free: its trips are the schedule rows Time
-      // Availability draws.
-      "labTravel",
-      // Upcoming events and who is nearby, beside the trips that get you there.
+      // Where you are going and who is nearby, beside when you are free. Travel used to sit
+      // here too; Events took it over.
       "events",
       "myWork",
     ]);

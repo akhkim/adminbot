@@ -21,18 +21,12 @@ export const TAB_GROUPS = [
   // sections of My Profile, which put a checklist somebody walks once at the bottom of a page they
   // edit every week.
   //
-  // Travel follows Time Availability: where the viewer is going sits next to when they are free,
-  // and the trips it logs are the same schedule rows that page's where-strip draws.
+  // Events follows Time Availability: where the viewer is going sits next to when they are free.
+  // There used to be a Travel tab between them; Events took over its conferences and nearby
+  // lab-mates, and the trip editor went back to Time Availability beside the where-strip it feeds.
   {
     label: "myInfo",
-    tabs: [
-      "gettingStarted",
-      "profile",
-      "adminbotTimeAvailability",
-      "labTravel",
-      "events",
-      "myWork",
-    ],
+    tabs: ["gettingStarted", "profile", "adminbotTimeAvailability", "events", "myWork"],
   },
   // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
   // which is what someone browsing the lab's shared surface came to look at.
@@ -214,7 +208,6 @@ export type Tab =
   | "gettingStarted"
   | "myWork"
   | "labSharing"
-  | "labTravel"
   | "events"
   | "activity"
   | "adminbot"
@@ -308,8 +301,6 @@ const TAB_PATHS: Record<Tab, string> = {
   gettingStarted: "/getting-started",
   myWork: "/my-work",
   labSharing: "/lab-sharing",
-  // Not `/travel`, which has been the head professor's travel history since before this tab.
-  labTravel: "/lab-travel",
   events: "/events",
   activity: "/activity",
   adminbot: "/pending-actions",
@@ -368,6 +359,8 @@ const TAB_PATHS: Record<Tab, string> = {
 // here rather than left to 404. These are permanent, not a migration window.
 const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/logistics": "adminbotSignatures",
+  // The member Travel tab, folded into Events. Its RSVP links went out in paper cards and Slack.
+  "/lab-travel": "events",
   "/adminbot": "adminbot",
   "/adminbot/announcements": "adminbotAnnouncements",
   "/adminbot/calendar": "adminbotCalendar",
@@ -560,8 +553,6 @@ export function iconForTab(tab: Tab): IconName {
       return "book";
     case "labSharing":
       return "link";
-    case "labTravel":
-      return "mapPin";
     case "events":
       return "users";
     case "chat":

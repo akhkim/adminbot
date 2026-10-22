@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { render } from "lit";
+import { html, render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EventCard, EventsOverview } from "../data/events.ts";
 import {
@@ -220,6 +220,20 @@ describe("renderEvents", () => {
     expect(props.onPreferences).toHaveBeenCalledWith({ city: true });
     document.querySelector<HTMLButtonElement>(".events__snooze button")?.click();
     expect(props.onPreferences).toHaveBeenCalledWith({ snoozed_until: "2026-10-29" });
+  });
+
+  // The Travel tab's "Find lab members nearby" card lives here now, under the lists it extends
+  // and above the intro settings.
+  it("draws the nearby card between the event lists and the meetup settings", () => {
+    draw({ nearby: html`<section data-testid="lab-travel-nearby">Nearby</section>` });
+    const nearby = document.querySelector('[data-testid="lab-travel-nearby"]')!;
+    const settings = document.querySelector(".events__settings")!;
+    const lists = document.querySelector(".events__list, .events__empty")!;
+    expect(nearby).not.toBeNull();
+    expect(lists.compareDocumentPosition(nearby) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      nearby.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
 

@@ -2,34 +2,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearStoredMemberSession, saveStoredMemberSession } from "../auth/session.ts";
-import type { TravelConference } from "../data/lab-travel.ts";
 import {
   clearLabTravel,
   disableSharing,
-  editRsvpDraft,
   enableSharing,
-  rsvpDraftError,
-  rsvpDraftFrom,
-  savePlans,
   stopLocationTracking,
   syncLocationTracking,
   type LabTravelHost,
 } from "./lab-travel.ts";
-
-const SITE: TravelConference = {
-  key: "emnlp:2026",
-  group_key: "emnlp:2026",
-  label: "EMNLP 2026",
-  conference_label: "EMNLP 2026",
-  family: "EMNLP",
-  year: 2026,
-  multi_site: false,
-  starts: "2026-10-24",
-  ends: "2026-10-29",
-  going: [],
-  undecided_count: 0,
-  airbnb_count: 0,
-};
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -77,40 +57,6 @@ const settle = () =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, 0);
   });
-
-describe("RSVP drafts", () => {
-  it("start blank for a new conference and prefill from an earlier answer", () => {
-    expect(rsvpDraftFrom(SITE).intent).toBe("");
-    expect(rsvpDraftError(rsvpDraftFrom(SITE))).toMatch(/Going or Maybe/u);
-    const answered = rsvpDraftFrom({
-      ...SITE,
-      unsited_rsvp: {
-        conference_key: "emnlp:2026",
-        member_id: "ada",
-        intent: "going",
-        funding: "flight_only",
-        needs_lodging: true,
-        needs_visa_letter: true,
-        updated_at: "x",
-      },
-    });
-    expect(answered).toMatchObject({ intent: "going", airbnb: true, funding: "flight_only" });
-  });
-
-  it("fill the Airbnb nights from the conference days, never over an edited night", () => {
-    const h = host();
-    editRsvpDraft(h, SITE, { intent: "going" });
-    editRsvpDraft(h, SITE, { airbnb: true });
-    expect(h.labTravelRsvpDrafts?.[SITE.key]).toMatchObject({
-      arrival_on: "2026-10-24",
-      departure_on: "2026-10-29",
-    });
-    editRsvpDraft(h, SITE, { airbnb: false });
-    editRsvpDraft(h, SITE, { arrival_on: "2026-10-22" });
-    editRsvpDraft(h, SITE, { airbnb: true });
-    expect(h.labTravelRsvpDrafts?.[SITE.key]?.arrival_on).toBe("2026-10-22");
-  });
-});
 
 describe("location tracking across the session", () => {
   it("reads the opt-in once, then watches for a sharing member whose browser allows it", async () => {
@@ -204,30 +150,5 @@ describe("location tracking across the session", () => {
     expect(geolocation.clearWatch).toHaveBeenCalled();
     expect(h.labTravelSharing).toBeNull();
     expect(h.labTravelSharingCheckedFor).toBeNull();
-  });
-});
-
-describe("saving plans", () => {
-  it("writes the schedule's trips and keeps the roster copy in step", async () => {
-    const trips = [{ start: "2026-11-01", end: "2026-11-05", city: "Berlin" }];
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/lab/members/ada") && init?.method === "PUT") {
-        return json(200, { id: "ada", name: "Ada", trips });
-      }
-      return json(200, {
-        today: "2026-10-13",
-        conferences: [],
-        sharing: { enabled: false },
-        plans: trips,
-        matches: [],
-      });
-    });
-    const h = host({ adminBotData: { members: [{ id: "ada", trips: [] }, { id: "bob" }] } });
-    expect(await savePlans(h, trips)).toBe(true);
-    const put = fetchMock.mock.calls.find(([, init]) => init?.method === "PUT")!;
-    expect(JSON.parse(String(put[1]!.body))).toEqual({ trips });
-    expect(h.adminBotData?.members[0]?.trips).toEqual(trips);
-    expect(h.labTravel?.plans).toEqual(trips);
   });
 });

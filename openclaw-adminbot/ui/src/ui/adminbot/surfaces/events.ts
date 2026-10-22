@@ -12,6 +12,7 @@ import {
   updateMeetupPreferences,
 } from "../controllers/events.ts";
 import { renderEvents, renderMeetupToggle, renderNearbyNow } from "../views/events.ts";
+import { renderTravelNearbySurface } from "./lab-travel.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
 /** Tabs that draw part of the overview: Events, Collaborate's Nearby now, the profile toggle. */
@@ -46,6 +47,7 @@ export function renderEventsSurface(state: AppViewState, scope: AdminBotSurfaceS
     onToggleGoing: (card, going) => settle(toggleGoing(state, card, going)),
     onPreferences: (patch) => settle(updateMeetupPreferences(state, patch)),
     onSayHi: (target) => settle(sayHi(state, target)),
+    nearby: renderTravelNearbySurface(state, scope),
   });
 }
 

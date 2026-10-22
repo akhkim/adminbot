@@ -15,6 +15,7 @@ import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
 } from "../views/time-availability.drafts.ts";
+import { EMPTY_TRIP_DRAFT } from "../views/time-availability.trip-editor.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
 // The page's view loads on first visit rather than in the first bundle.
@@ -102,6 +103,10 @@ export function renderTimeAvailabilitySurface(state: AppViewState, scope: AdminB
           onMilestoneDraftChange: (draft) => {
             state.adminBotMilestoneDraft = draft;
           },
+          tripDraft: state.adminBotTripDraft,
+          onTripDraftChange: (draft) => {
+            state.adminBotTripDraft = draft;
+          },
           notesDraft: state.adminBotAvailabilityNotesDraft,
           onNotesDraftChange: (draft) => {
             state.adminBotAvailabilityNotesDraft = draft;
@@ -122,6 +127,8 @@ export function renderTimeAvailabilitySurface(state: AppViewState, scope: AdminB
                 if (patch.availability_notes !== undefined) {
                   // Back to following the stored value, which the reload has just refreshed.
                   state.adminBotAvailabilityNotesDraft = null;
+                } else if (patch.trips) {
+                  state.adminBotTripDraft = EMPTY_TRIP_DRAFT;
                 } else if (patch.milestones) {
                   state.adminBotMilestoneDraft = {
                     ...EMPTY_MILESTONE_DRAFT,
