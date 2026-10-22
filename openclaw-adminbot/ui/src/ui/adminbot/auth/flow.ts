@@ -49,6 +49,7 @@ import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
 import { invalidateMemberMap } from "../data/member-map.ts";
 import { localTimezone } from "../data/timezones.ts";
 import { EMPTY_PAGED_LIST } from "../load-more.ts";
+import { EMPTY_TRIP_DRAFT } from "../views/time-availability.trip-editor.ts";
 import type { MilestoneDraft, TimeAvailabilityDraft } from "../views/time-availability.ts";
 import { forgetSessionReads } from "./read-cache.ts";
 // Control UI module orchestrates member auth against the app view state.
@@ -172,6 +173,7 @@ export type MemberAuthHost = {
   adminBotTimeAwayDraft?: TimeAvailabilityDraft;
   adminBotTimeAvailabilityDraft?: TimeAvailabilityDraft;
   adminBotMilestoneDraft?: MilestoneDraft;
+  adminBotTripDraft?: import("../views/time-availability.trip-editor.ts").TripDraft;
   adminBotAvailabilityNotesDraft?: string | null;
   adminBotActiveCommitmentType?: string | null;
   adminBotTimeAvailabilitySaving?: boolean;
@@ -612,6 +614,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
     time: "",
     timezone: localTimezone(),
   };
+  host.adminBotTripDraft = EMPTY_TRIP_DRAFT;
   host.adminBotAvailabilityNotesDraft = null;
   host.adminBotActiveCommitmentType = null;
   host.adminBotTimeAvailabilitySaving = false;

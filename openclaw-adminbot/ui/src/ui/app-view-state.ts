@@ -29,8 +29,8 @@ import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { PagedListState } from "./adminbot/load-more.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
-import type { TripDraft } from "./adminbot/views/lab-travel.plans.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
+import type { TripDraft } from "./adminbot/views/time-availability.trip-editor.ts";
 import type {
   MilestoneDraft,
   TimeAvailabilityDraft,
@@ -567,17 +567,14 @@ export type AppViewState = {
     } | null,
   ) => Promise<void>;
   adminBotNotificationsError?: string | null;
-  // The Travel tab: what the service said, what is being typed, and this browser's side of
-  // location sharing. See controllers/lab-travel.ts, which owns every one of these.
+  // The /travel overview behind Events' nearby card: what the service said, what is being typed,
+  // and this browser's side of location sharing. See controllers/lab-travel.ts, which owns these.
   labTravel?: import("./adminbot/data/lab-travel.ts").TravelOverview;
   labTravelLoadedFor?: string | null;
   labTravelLoading?: boolean;
   labTravelError?: string | null;
   labTravelNotice?: import("./adminbot/controllers/lab-travel.ts").LabTravelNotice | null;
   labTravelBusy?: string | null;
-  labTravelRsvpOpen?: string | null;
-  labTravelRsvpDrafts?: Record<string, import("./adminbot/controllers/lab-travel.ts").RsvpDraft>;
-  labTravelPlanDraft?: TripDraft;
   labTravelLookupDraft?: import("./adminbot/controllers/lab-travel.ts").LookupDraft;
   labTravelLookup?: import("./adminbot/data/lab-travel.ts").TravelLookup | null;
   labTravelLookupError?: string | null;
@@ -727,6 +724,7 @@ export type AppViewState = {
   adminBotTimeAvailabilityDraft: TimeAvailabilityDraft;
   adminBotTimeAwayDraft: TimeAvailabilityDraft;
   adminBotMilestoneDraft: MilestoneDraft;
+  adminBotTripDraft: TripDraft;
   adminBotAvailabilityNotesDraft: string | null;
   adminBotActiveCommitmentType: string | null;
   adminBotTimeAvailabilitySaving: boolean;

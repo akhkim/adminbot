@@ -62,9 +62,9 @@ export function paperWorkspaceProps(
     onSaveSlot: (paperId, slot, input) => {
       void saveAdminBotPaperSlot(state, paperId, slot, input).finally(done);
     },
-    // An accepted paper reads back the reader's RSVP for its conference and sends them to Travel
+    // An accepted paper reads back the reader's RSVP for its conference and sends them to Events
     // to give or change it: one RSVP covers every paper at a venue, so it is not a card's form.
-    onOpenTravel: () => state.setTab("labTravel"),
+    onOpenTravel: () => state.setTab("events"),
     memberId: state.memberId ?? null,
     memberName: (memberId: string) =>
       (state.adminBotData?.members ?? []).find((member) => member.id === memberId)?.name ??

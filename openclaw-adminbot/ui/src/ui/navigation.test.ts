@@ -59,7 +59,6 @@ describe("iconForTab", () => {
       gettingStarted: "check",
       myWork: "book",
       labSharing: "link",
-      labTravel: "mapPin",
       events: "users",
       adminbotNotificationDrafts: "send",
       adminbotOpportunities: "zap",
@@ -126,7 +125,6 @@ describe("titleForTab", () => {
       gettingStarted: "Getting Started",
       myWork: "My Projects & Papers",
       labSharing: "Collaborate",
-      labTravel: "Travel",
       events: "Events",
       adminbotNotificationDrafts: "OpenReview To Tweet",
       adminbotOpportunities: "Opportunities",
@@ -189,7 +187,6 @@ describe("subtitleForTab", () => {
       // Corrected to the shipped string: the tab has said "Coming soon" for a while and this
       // expectation had not followed, leaving the suite red for a reason unrelated to it.
       labSharing: "Coming soon — share resources, ideas, and collaborate.",
-      labTravel: "Conferences to RSVP for, your other trips, and lab members near you.",
       events: "Upcoming events, who from the lab is going, and who is nearby.",
       adminbotNotificationDrafts: "Create tweet drafts and images from notification exports.",
       adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
@@ -384,8 +381,9 @@ describe("tabFromPath", () => {
 
   it("routes the Lab Sharing placeholder", () => {
     expect(tabFromPath("/lab-sharing")).toBe("labSharing");
-    // The member Travel tab, kept apart from the head professor's `/travel` history.
-    expect(tabFromPath("/lab-travel")).toBe("labTravel");
+    // The member Travel tab became part of Events; its old links, in paper cards and Slack, land
+    // there. Kept apart from the head professor's `/travel` history.
+    expect(tabFromPath("/lab-travel")).toBe("events");
     expect(tabFromPath("/events")).toBe("events");
     expect(tabFromPath("/travel")).toBe("adminbotTravel");
   });

@@ -1,18 +1,50 @@
 import { html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { t } from "../../../i18n/index.ts";
-import type { TravelMatch, TravelMatchGroup, TravelOverview } from "../data/lab-travel.ts";
+import type { LabTravelNotice, LookupDraft } from "../controllers/lab-travel.ts";
+import type { LocationTrackerSnapshot } from "../controllers/location-tracker.ts";
+import type {
+  TravelLookup,
+  TravelMatch,
+  TravelMatchGroup,
+  TravelOverview,
+  TravelSharing,
+} from "../data/lab-travel.ts";
 import { renderDateControl } from "../date-control.ts";
-import type { LabTravelProps } from "./lab-travel.ts";
 import { formatRange } from "./time-availability.trips.ts";
-// The Travel tab's third card: the location opt-in, this browser's side of it, and who else from
-// the lab is (or will be) where the member is.
+// Events' "Find lab members nearby" card: the location opt-in, this browser's side of it, who else
+// from the lab is (or will be) where the member is, and the "Who's in…" lookup by place and dates.
+// It was the third card of the Travel tab until Events took that tab over.
 //
 // Off is the resting state and the card says, before anything is shared, exactly what turning it
 // on shares and with whom -- the opt-in is only meaningful if it is informed. On, it says where the
 // member was last placed and how this browser is keeping that current, and offers the two ways
 // out: stop sharing (which deletes the location), or type a city instead of granting the browser
-// permission at all.
+// permission at all. The lookup only appears while sharing is on, because the service answers it
+// only for a member who shares too.
+
+export type TravelNearbyProps = {
+  overview: TravelOverview | null;
+  loading: boolean;
+  error: string | null;
+  notice: LabTravelNotice | null;
+  /** Which action is in flight; see LabTravelHost.labTravelBusy. */
+  busy: string | null;
+  onRetry: () => void;
+  sharing: TravelSharing | null;
+  device: LocationTrackerSnapshot;
+  onEnableSharing: () => void;
+  onDisableSharing: () => void;
+  onShareFromDevice: () => void;
+  cityDraft: string;
+  onCityDraftChange: (value: string) => void;
+  onShareCity: () => void;
+  lookupDraft: LookupDraft;
+  onLookupDraftChange: (draft: LookupDraft) => void;
+  onLookup: () => void;
+  lookup: TravelLookup | null;
+  lookupError: string | null;
+};
 
 /** "5 minutes ago", in the reader's own language. */
 function relativeTime(iso: string, now = Date.now()): string {
@@ -80,7 +112,7 @@ function renderGroup(group: TravelMatchGroup) {
   `;
 }
 
-function renderDevice(props: LabTravelProps) {
+function renderDevice(props: TravelNearbyProps) {
   const device = props.device;
   const busy = props.busy !== null;
   const button = (label: string, testid: string) =>
@@ -131,7 +163,7 @@ function renderDevice(props: LabTravelProps) {
   }
 }
 
-function renderLookup(props: LabTravelProps) {
+function renderLookup(props: TravelNearbyProps) {
   const draft = props.lookupDraft;
   const patch = (change: Partial<typeof draft>) =>
     props.onLookupDraftChange({ ...draft, ...change });
@@ -213,85 +245,112 @@ function renderLookup(props: LabTravelProps) {
   `;
 }
 
-export function renderTravelNearby(props: LabTravelProps, overview: TravelOverview) {
-  const sharing = props.sharing ?? overview.sharing;
-  const busy = props.busy !== null;
+export function renderTravelNearby(props: TravelNearbyProps) {
+  const overview = props.overview;
   return html`
     <section
       class="card adminbot-card adminbot-card--wide lab-travel__card"
       data-testid="lab-travel-nearby"
     >
       <div class="card-title">${t("labTravel.nearby.title")}</div>
-      ${!sharing.enabled
-        ? html`
-            <p class="card-sub" data-testid="lab-travel-sharing-off">
-              ${t("labTravel.nearby.offHint")}
+      ${props.notice
+        ? html`<div
+            class="callout ${props.notice.kind === "error" ? "danger" : "success"}"
+            role=${props.notice.kind === "error" ? "alert" : "status"}
+          >
+            ${props.notice.text}
+          </div>`
+        : nothing}
+      ${props.error
+        ? html`<div class="callout danger" role="alert">
+            ${props.error}
+            <button type="button" class="btn btn--sm" @click=${props.onRetry}>
+              ${t("labTravel.retry")}
+            </button>
+          </div>`
+        : nothing}
+      ${overview
+        ? renderSharing(props, overview)
+        : props.loading
+          ? html`<p class="muted">${t("labTravel.loading")}</p>`
+          : nothing}
+    </section>
+  `;
+}
+
+function renderSharing(props: TravelNearbyProps, overview: TravelOverview) {
+  const sharing = props.sharing ?? overview.sharing;
+  const busy = props.busy !== null;
+  return html`
+    ${!sharing.enabled
+      ? html`
+          <p class="card-sub" data-testid="lab-travel-sharing-off">
+            ${t("labTravel.nearby.offHint")}
+          </p>
+          <button
+            type="button"
+            class="btn primary"
+            data-testid="lab-travel-enable-sharing"
+            ?disabled=${busy}
+            @click=${props.onEnableSharing}
+          >
+            ${t("labTravel.nearby.enable")}
+          </button>
+        `
+      : html`
+          <div class="lab-travel__sharing" data-testid="lab-travel-sharing-on">
+            <p>
+              <strong>${t("labTravel.nearby.on")}</strong>
+              ${sharing.location
+                ? t("labTravel.nearby.lastLocation", {
+                    place: placeText(sharing.location),
+                    when: relativeTime(sharing.location.reported_at),
+                  })
+                : t("labTravel.nearby.noFix")}
             </p>
+            ${renderDevice(props)}
+            <form
+              class="lab-travel__city"
+              data-testid="lab-travel-city"
+              @submit=${(event: Event) => {
+                event.preventDefault();
+                props.onShareCity();
+              }}
+            >
+              <label class="adminbot-form__field">
+                <span>${t("labTravel.nearby.cityLabel")}</span>
+                <input
+                  type="text"
+                  data-testid="lab-travel-city-input"
+                  .value=${props.cityDraft}
+                  @input=${(event: Event) =>
+                    props.onCityDraftChange((event.currentTarget as HTMLInputElement).value)}
+                />
+              </label>
+              <button
+                type="submit"
+                class="btn btn--sm"
+                ?disabled=${busy || !props.cityDraft.trim()}
+              >
+                ${t("labTravel.nearby.citySubmit")}
+              </button>
+            </form>
             <button
               type="button"
-              class="btn primary"
-              data-testid="lab-travel-enable-sharing"
+              class="btn btn--sm danger"
+              data-testid="lab-travel-disable-sharing"
               ?disabled=${busy}
-              @click=${props.onEnableSharing}
+              @click=${props.onDisableSharing}
             >
-              ${t("labTravel.nearby.enable")}
+              ${t("labTravel.nearby.disable")}
             </button>
-          `
-        : html`
-            <div class="lab-travel__sharing" data-testid="lab-travel-sharing-on">
-              <p>
-                <strong>${t("labTravel.nearby.on")}</strong>
-                ${sharing.location
-                  ? t("labTravel.nearby.lastLocation", {
-                      place: placeText(sharing.location),
-                      when: relativeTime(sharing.location.reported_at),
-                    })
-                  : t("labTravel.nearby.noFix")}
-              </p>
-              ${renderDevice(props)}
-              <form
-                class="lab-travel__city"
-                data-testid="lab-travel-city"
-                @submit=${(event: Event) => {
-                  event.preventDefault();
-                  props.onShareCity();
-                }}
-              >
-                <label class="adminbot-form__field">
-                  <span>${t("labTravel.nearby.cityLabel")}</span>
-                  <input
-                    type="text"
-                    data-testid="lab-travel-city-input"
-                    .value=${props.cityDraft}
-                    @input=${(event: Event) =>
-                      props.onCityDraftChange((event.currentTarget as HTMLInputElement).value)}
-                  />
-                </label>
-                <button
-                  type="submit"
-                  class="btn btn--sm"
-                  ?disabled=${busy || !props.cityDraft.trim()}
-                >
-                  ${t("labTravel.nearby.citySubmit")}
-                </button>
-              </form>
-              <button
-                type="button"
-                class="btn btn--sm danger"
-                data-testid="lab-travel-disable-sharing"
-                ?disabled=${busy}
-                @click=${props.onDisableSharing}
-              >
-                ${t("labTravel.nearby.disable")}
-              </button>
-            </div>
-            <div class="lab-travel__groups">
-              ${overview.matches.length
-                ? overview.matches.map((group) => renderGroup(group))
-                : html`<p class="muted">${t("labTravel.nearby.groupsEmpty")}</p>`}
-            </div>
-            ${renderLookup(props)}
-          `}
-    </section>
+          </div>
+          <div class="lab-travel__groups">
+            ${overview.matches.length
+              ? overview.matches.map((group) => renderGroup(group))
+              : html`<p class="muted">${t("labTravel.nearby.groupsEmpty")}</p>`}
+          </div>
+          ${renderLookup(props)}
+        `}
   `;
 }

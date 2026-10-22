@@ -72,7 +72,7 @@ import {
   saveAdminBotCalendarEvent,
 } from "./adminbot/controllers/calendar.ts";
 import type { EventsNotice } from "./adminbot/controllers/events.ts";
-import type { LabTravelNotice, LookupDraft, RsvpDraft } from "./adminbot/controllers/lab-travel.ts";
+import type { LabTravelNotice, LookupDraft } from "./adminbot/controllers/lab-travel.ts";
 import {
   answerAdminBotLocationPrompt,
   loadAdminBotLocationDrifts,
@@ -146,7 +146,6 @@ import type {
 import { resetViewSessions } from "./adminbot/view-session-reset.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
 import type { ConferencePapersTab } from "./adminbot/views/conference-papers.ts";
-import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/lab-travel.plans.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
@@ -162,6 +161,10 @@ import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
 } from "./adminbot/views/time-availability.drafts.ts";
+import {
+  EMPTY_TRIP_DRAFT,
+  type TripDraft,
+} from "./adminbot/views/time-availability.trip-editor.ts";
 import type {
   MilestoneDraft,
   TimeAvailabilityDraft,
@@ -392,17 +395,15 @@ export class OpenClawApp extends LitElement {
   // not re-render. The view tests could not catch it because they render with a plain object.
   // Declared here for the same reason as the calendar block above: a controller writing a plain
   // class field would change nothing on screen.
-  // The Travel tab (controllers/lab-travel.ts). Declared as state for the same reason: its
-  // controller writes after awaits, and a plain field would change nothing on screen.
+  // The /travel overview behind Events' nearby card, and location sharing
+  // (controllers/lab-travel.ts). Declared as state for the same reason: its controller writes after
+  // awaits, and a plain field would change nothing on screen.
   @state() labTravel?: TravelOverview;
   @state() labTravelLoadedFor: string | null = null;
   @state() labTravelLoading = false;
   @state() labTravelError: string | null = null;
   @state() labTravelNotice: LabTravelNotice | null = null;
   @state() labTravelBusy: string | null = null;
-  @state() labTravelRsvpOpen: string | null = null;
-  @state() labTravelRsvpDrafts: Record<string, RsvpDraft> = {};
-  @state() labTravelPlanDraft: TripDraft = EMPTY_TRIP_DRAFT;
   @state() labTravelLookupDraft: LookupDraft = { place: "", from: "", to: "" };
   @state() labTravelLookup: TravelLookup | null = null;
   @state() labTravelLookupError: string | null = null;
@@ -859,6 +860,7 @@ export class OpenClawApp extends LitElement {
     ...EMPTY_TIME_AVAILABILITY_DRAFT,
   };
   @state() adminBotMilestoneDraft: MilestoneDraft = { ...EMPTY_MILESTONE_DRAFT };
+  @state() adminBotTripDraft: TripDraft = EMPTY_TRIP_DRAFT;
   // The overall availability note while it is being edited. `null` means "not touched since the
   // last load", which is what makes the textarea show the stored note again after a save or after
   // switching members, rather than holding onto a copy of someone else's text.

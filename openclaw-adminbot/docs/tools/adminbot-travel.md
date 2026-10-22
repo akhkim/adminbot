@@ -1,5 +1,5 @@
 ---
-summary: "The member Travel tab: conference RSVPs per site, the lab Airbnb, travel plans, and opt-in location sharing"
+summary: "Member travel: conference Going answers on Events, trips on Time Availability, and opt-in location sharing behind Events' nearby card"
 read_when:
   - Changing conference RSVPs, travel plans or location sharing
   - Answering what a member's location sharing exposes and to whom
@@ -8,47 +8,47 @@ title: "Travel"
 
 # Travel
 
-**My Info → Travel** (`/lab-travel`) is where a full member says where they are going and finds
-other lab members in the same place. It has three cards.
+There used to be a **My Info → Travel** tab (`/lab-travel`) with three cards. It overlapped with
+**Events**, so it was removed and its parts now live here:
+
+| Part                                | Where it is now                                                             |
+| ----------------------------------- | --------------------------------------------------------------------------- |
+| Upcoming conferences and RSVPs      | **Events**: each event's _Going_ / _Not going_ toggle                       |
+| Your other travel plans             | **Time Availability → Add commitment → Trip Away**                          |
+| Find lab members nearby (opt-in)    | **Events**, as the "Find lab members nearby" card under the event lists     |
+
+`/lab-travel` still resolves and opens Events, so old links in paper cards and Slack keep working.
+The `/travel` service routes below are unchanged; Events and Time Availability call them.
+
+The detailed RSVP form (lab Airbnb nights, funding, visa letter, notes) went with the tab. Answers
+already stored keep their fields, and paper cards still read them back ("staying in the lab
+Airbnb"), but members can no longer enter them in the UI.
 
 The head professor's sign-in travel history is a different surface, **My Desk → Travel History**
-(`/travel`), and is unchanged.
+(`/travel` in the Control UI), and is unchanged.
 
-## Who can open it
+## Who can use it
 
 Full members and admins (`privilege_level` `member` or `admin`). Trial members and external
-collaborators do not see the tab, and every `/travel` route refuses them (403). Every route also
+collaborators do not see Events, and every `/travel` route refuses them (403). Every route also
 requires a member session: the service token — which is what the agent uses — is refused (403), so
-nothing on this page is readable by the model.
+none of this is readable by the model.
 
-## Upcoming conferences
+Trips on Time Availability are saved through the member's own schedule, so every member who can
+open Time Availability can log them.
 
-Read from the deadline dataset (`conference_location` and the `conference` schedule milestones), so
-it updates with the Deadlines board. A conference that meets in several places is listed **once per
-site** — NeurIPS 2026 appears as Sydney, Paris and Atlanta, each with its own days, RSVP and Airbnb.
-Workshops, ARR cycles and past conferences are left out.
+## Conference RSVPs
 
-An RSVP is _Going_ or _Maybe_; _I'm not going_ deletes it. Going asks:
+RSVPs are the existing `adminbot_conference_trips` rows: a single-site conference uses the same key
+an accepted paper uses (`emnlp:2026`), a multi-site one a per-site key (`neuripsparis:2026`). Events
+writes _Going_ through `PUT /travel/conferences/:key/rsvp` and _Not going_ through the matching
+`DELETE`. Accepted papers on **My Projects & Papers** read back the member's RSVP and link to
+Events.
 
-- **Stay in the lab Airbnb** — the bed count admins book against. The nights default to the
-  conference days at that site.
-- What the lab should cover, whether a visa invitation letter is needed, and free-text notes.
+## Travel plans
 
-Every full member sees **who is going** to each site and whether they are in the Airbnb. Funding,
-visa letter and notes are visible only to the member and admins. RSVPs are the existing
-`adminbot_conference_trips` rows: a single-site conference uses the same key an accepted paper
-uses (`emnlp:2026`), a multi-site one a per-site key (`neuripsparis:2026`). An answer given on a
-paper card before a conference was split into sites is shown as "pick a site" and replaced by the
-first site RSVP. The admins' conference travel export names site rows by site.
-
-Accepted papers on **My Projects & Papers** no longer carry the trip form; they read back the
-member's RSVP and link here.
-
-## Your other travel plans
-
-Trips that are not a listed conference. These are the schedule's `trips` rows — the same field the
-Time Availability where-strip and the calendar read — so Time Availability no longer has its own
-trip editor. Admins can read them as before.
+Trips that are not a listed conference: the schedule's `trips` rows, which the Time Availability
+where-strip, the calendar and the nearby matches all read. Admins can read them as before.
 
 ## Find lab members nearby (opt-in)
 
@@ -61,8 +61,8 @@ Off by default. Turning it on shares, **with other members who have also turned 
 - the city and dates of their travel plans (never the notes or links).
 
 Sharing is reciprocal: a member who has not opted in sees nobody's whereabouts and cannot use the
-"Who's in…" lookup. Conference _Going_ answers are matched for everyone, since they are already
-visible on the conference list.
+"Who's in…" lookup (the card only shows it while sharing is on). Conference _Going_ answers are
+matched for everyone, since they are already visible on Events.
 
 While sharing is on, the page keeps the location current on **any** tab: it watches the browser's
 position and sends a fix after moving 1 km or every 20 minutes, re-checks every 30 minutes and when
@@ -92,4 +92,6 @@ reverse-geocoding service.
 | `DELETE /travel/conferences/:key/rsvp` | Withdraw                                            |
 
 Plans are saved through the existing self-service schedule write, `PUT /lab/members/:id` with
-`{ "trips": [...] }`.
+`{ "trips": [...] }`. The `conferences` and `plans` fields of `GET /travel` are no longer drawn by
+the Control UI; Events reads conferences from `/events`, and Time Availability reads trips from the
+member's own record.

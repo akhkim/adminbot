@@ -9,7 +9,7 @@ import {
   tripDraftError,
   type TravelPlansProps,
   type TripDraft,
-} from "./lab-travel.plans.ts";
+} from "./time-availability.trip-editor.ts";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -156,7 +156,7 @@ describe("editing a logged trip", () => {
 });
 
 describe("renderTravelPlans", () => {
-  it("renders as a Travel card with its add form", () => {
+  it("renders as a card with its add form", () => {
     const view = renderView();
     expect(view.querySelector('[data-testid="lab-travel-plans"]')).not.toBeNull();
     expect(view.querySelector("button.primary")?.textContent).toContain("Add trip");

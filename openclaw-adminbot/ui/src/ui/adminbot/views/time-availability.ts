@@ -62,6 +62,7 @@ import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
 import { renderDateControl } from "../date-control.ts";
 import { renderLocationLog } from "./location-log.ts";
 import { renderMemberSelect } from "./member-select.ts";
+import { renderTravelPlans, type TripDraft } from "./time-availability.trip-editor.ts";
 import { renderWhereStrip } from "./time-availability.trips.ts";
 import {
   CHART_COLORS,
@@ -275,6 +276,9 @@ export type AdminBotTimeAvailabilityProps = {
   onAwayDraftChange: (draft: TimeAvailabilityDraft) => void;
   milestoneDraft: MilestoneDraft;
   onMilestoneDraftChange: (draft: MilestoneDraft) => void;
+  /** The trip editor's draft, kept out here so a re-render cannot wipe half-typed input. */
+  tripDraft: TripDraft;
+  onTripDraftChange: (draft: TripDraft) => void;
   /** The overall note while it is being edited; null means "showing what is stored". */
   notesDraft: string | null;
   onNotesDraftChange: (draft: string | null) => void;
@@ -2138,8 +2142,8 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                   : html`<div class="adminbot-time-availability__empty">
                         ${t("adminbotTimeAvailability.noAllocations")}
                       </div>
-                      <!-- Trips are logged on the Travel tab now, and this strip is the only place
-                           this page shows them -- so it stays even with no commitments to chart. -->
+                      <!-- Trips are worth showing with no commitments to chart: where somebody
+                           will be is often what this page is looked up for. -->
                       ${renderWhereStrip(whereStrip)}`}
                 ${visibleTasks.length
                   ? renderJinesisTable(visibleTasks, storedAvailability, props, editable)
@@ -2164,8 +2168,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
               ${t("adminbotTimeAvailability.empty")}
             </div>
           `}
-      <!-- The editor stack, self only. Trips are not edited here any more: they are logged on the
-           Travel tab, and the where-strip under the chart is how this page shows them. -->
+      <!-- The editor stack, self only. -->
       ${editable
         ? html`<div class="adminbot-time-availability__editors">
             ${props.activeCommitmentType
@@ -2202,6 +2205,16 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                       >
                         Big Deadline
                       </button>
+                      <button
+                        type="button"
+                        class="adminbot-time-availability__commitment-tab ${props.activeCommitmentType ===
+                        "trip"
+                          ? "adminbot-time-availability__commitment-tab--active"
+                          : ""}"
+                        @click=${() => props.onActiveCommitmentChange("trip")}
+                      >
+                        Trip Away
+                      </button>
                     </div>
                     <div class="adminbot-time-availability__commitment-form">
                       ${props.activeCommitmentType === "jinesis"
@@ -2216,7 +2229,17 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                             })
                           : props.activeCommitmentType === "milestone"
                             ? renderMilestoneEditor(props, [...storedMilestones])
-                            : nothing}
+                            : props.activeCommitmentType === "trip" && selectedMember
+                              ? renderTravelPlans({
+                                  trips: storedTrips,
+                                  homeLocation: selectedMember.location ?? null,
+                                  draft: props.tripDraft,
+                                  onDraftChange: props.onTripDraftChange,
+                                  saving: props.saving,
+                                  onSave: (trips) =>
+                                    props.onSaveSchedule(selectedMember.id, { trips }),
+                                })
+                              : nothing}
                     </div>
                     <div class="adminbot-time-availability__commitment-actions">
                       <button

@@ -2,6 +2,7 @@ import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
 import { allUpcomingVenues, aoeInstantMs, upcomingMajorDeadlines } from "../data/deadline-time.ts";
+import { EMPTY_TRIP_DRAFT } from "./time-availability.trip-editor.ts";
 import {
   allocationBins,
   rangeBins,
@@ -52,6 +53,8 @@ function props(overrides: Partial<AdminBotTimeAvailabilityProps> = {}) {
     onAwayDraftChange: () => {},
     milestoneDraft: { ...EMPTY_MILESTONE_DRAFT },
     onMilestoneDraftChange: () => {},
+    tripDraft: EMPTY_TRIP_DRAFT,
+    onTripDraftChange: () => {},
     // The default fixture is a plain member reading their own schedule, which is the only page a
     // non-admin can reach at all.
     viewerIsAdmin: false,
@@ -1444,9 +1447,9 @@ describe("the trips editor's place on the tab", () => {
     expect(jinesisView.querySelector('[data-testid="time-availability-editor"]')).not.toBeNull();
   });
 
-  // Trips are logged on the Travel tab. This page keeps showing them -- on the where-strip, which
-  // is where an admin planning around somebody looks -- but offers no second way to log one.
-  it("shows someone's trips on the where-strip, with no trip editor anywhere", () => {
+  // An admin planning around somebody reads their trips on the where-strip; the editor is the
+  // member's own, so it is not offered on anyone else's schedule.
+  it("shows someone's trips on the where-strip, with no trip editor for an admin reader", () => {
     const today = new Date();
     const iso = (offset: number) =>
       new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset).toLocaleDateString(
@@ -1464,13 +1467,15 @@ describe("the trips editor's place on the tab", () => {
     expect(view.querySelector(".adminbot-time-availability__add-commitment")).toBeNull();
   });
 
-  it("offers no Trip Away commitment type to the member either", () => {
+  // Trip Away came back when the Travel tab was folded into Events.
+  it("offers Trip Away as the last commitment type to the member", () => {
     const view = renderView({ activeCommitmentType: "jinesis" });
     const tabs = [...view.querySelectorAll(".adminbot-time-availability__commitment-tab")];
     expect(tabs.map((tab) => tab.textContent?.trim())).toEqual([
       "Jinesis Commitment",
       "Non-Jinesis Commitment",
       "Big Deadline",
+      "Trip Away",
     ]);
   });
 
@@ -1855,5 +1860,68 @@ describe("commitment entry point", () => {
     expect(hours.placeholder).toBe("20");
     expect(hours.value).toBe("");
     expect(onSaveSchedule).not.toHaveBeenCalled();
+  });
+});
+
+// Trips came back to this page when the Travel tab was folded into Events: the editor sits with
+// the other three, and writes the same schedule `trips` field the where-strip draws.
+describe("the Trip Away editor", () => {
+  const traveller = () =>
+    member({
+      trips: [{ start: "2026-11-01", end: "2026-11-05", city: "Berlin" }],
+    } as Partial<AdminBotLabMember>);
+
+  it("is a fourth commitment tab that lists the member's trips", () => {
+    const onActiveCommitmentChange = vi.fn();
+    const picker = renderView({
+      members: [traveller()],
+      activeCommitmentType: "jinesis",
+      onActiveCommitmentChange,
+    });
+    const tab = [
+      ...picker.querySelectorAll<HTMLButtonElement>(".adminbot-time-availability__commitment-tab"),
+    ].find((button) => button.textContent?.trim() === "Trip Away");
+    tab?.click();
+    expect(onActiveCommitmentChange).toHaveBeenCalledWith("trip");
+
+    const editor = renderView({ members: [traveller()], activeCommitmentType: "trip" });
+    const plans = editor.querySelector('[data-testid="lab-travel-plans"]');
+    expect(editor.querySelector(".adminbot-time-availability__editors")?.contains(plans)).toBe(
+      true,
+    );
+    expect(editor.querySelector('[data-testid="lab-travel-plan-list"]')?.textContent).toContain(
+      "Berlin",
+    );
+  });
+
+  it("saves the member's own trips through the schedule", () => {
+    const onSaveSchedule = vi.fn();
+    const container = renderView({
+      members: [traveller()],
+      activeCommitmentType: "trip",
+      tripDraft: {
+        ...EMPTY_TRIP_DRAFT,
+        city: "Lisbon",
+        start: "2026-12-01",
+        end: "2026-12-04",
+      },
+      onSaveSchedule,
+    });
+    container
+      .querySelector<HTMLFormElement>('[data-testid="lab-travel-plan-form"]')!
+      .dispatchEvent(new Event("submit", { cancelable: true }));
+    expect(onSaveSchedule).toHaveBeenCalledOnce();
+    const [memberId, patch] = onSaveSchedule.mock.calls[0]!;
+    expect(memberId).toBe("m1");
+    expect(patch.trips.map((row: { city: string }) => row.city)).toEqual(["Berlin", "Lisbon"]);
+  });
+
+  it("is not offered on somebody else's schedule", () => {
+    const container = renderView({
+      members: [traveller()],
+      viewerMemberId: "someone-else",
+      activeCommitmentType: "trip",
+    });
+    expect(container.querySelector('[data-testid="lab-travel-plans"]')).toBeNull();
   });
 });

@@ -6,13 +6,12 @@ import { timezoneForLocation } from "../data/timezone-for-location.ts";
 import { localTimezone, timezoneOptions } from "../data/timezones.ts";
 import { renderDateControl } from "../date-control.ts";
 import { formatRange } from "./time-availability.trips.ts";
-// The trip editor: where the member is going that is not a conference on the list.
+// The trip editor: where the member is going that is not a conference on the Events list.
 //
-// It used to be the fourth editor on Time Availability. It moved here because it is the same act
-// as an RSVP -- saying where you will be -- and because a trip is what the Travel tab matches
-// against: whoever else from the lab will be in Berlin that week. The rows are the schedule's
-// `trips` field, unchanged, so Time Availability's where-strip and the calendar keep reading them
-// exactly as before; only the form moved.
+// Time Availability's "Trip Away" editor. It spent a while on the Travel tab, beside the
+// conference RSVPs; when Events took those over and Travel was removed, it came back here, next to
+// the where-strip it feeds. The rows are the schedule's `trips` field, which the where-strip, the
+// calendar and Events' nearby matches all read.
 //
 // The strings keep their `adminbotTimeAvailability.trips.*` keys so the shipped translations come
 // with the form rather than falling back to English.

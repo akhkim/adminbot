@@ -1,41 +1,23 @@
-// The Travel tab's reads and writes, and the one location tracker per page.
+// The /travel reads and writes behind Events' nearby card, and the one location tracker per page.
 //
 // The view decides what to show and this decides what to fetch, as with the other AdminBot
-// controllers. Every write re-reads the overview afterwards rather than patching it: an RSVP
-// changes the conference card, the "who else is going" list and the match groups at once, and a
-// hand-patched snapshot is how two of those come to disagree.
+// controllers. Every write re-reads the overview afterwards rather than patching it: a sharing
+// change moves the viewer's place and the match groups at once, and a hand-patched snapshot is how
+// the two come to disagree.
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
-import { updateOwnSchedule, type MemberTripRow } from "../api/members.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
   fetchTravelOverview,
   fetchTravelSharing,
   lookupTravellers,
   reportTravelLocation,
-  saveTravelRsvp,
   setTravelSharing,
-  withdrawTravelRsvp,
-  type TravelConference,
-  type TravelFunding,
   type TravelLookup,
   type TravelOverview,
-  type TravelRsvpIntent,
   type TravelSharing,
 } from "../data/lab-travel.ts";
-import { EMPTY_TRIP_DRAFT, type TripDraft } from "../views/lab-travel.plans.ts";
 import { LocationTracker, type LocationTrackerSnapshot } from "./location-tracker.ts";
-
-/** One conference's RSVP form, as typed. `intent` is blank until the member picks one. */
-export type RsvpDraft = {
-  intent: TravelRsvpIntent | "";
-  airbnb: boolean;
-  arrival_on: string;
-  departure_on: string;
-  funding: TravelFunding;
-  needs_visa_letter: boolean;
-  notes: string;
-};
 
 export type LookupDraft = { place: string; from: string; to: string };
 
@@ -45,18 +27,14 @@ export type LabTravelHost = {
   settings: UiSettings;
   memberId?: string | null;
   memberPrivilegeLevel?: string | null;
-  adminBotData?: { members: Array<{ id: string; trips?: unknown }> };
   labTravel?: TravelOverview;
   /** The session token the overview was read with, so a different member never sees it. */
   labTravelLoadedFor?: string | null;
   labTravelLoading?: boolean;
   labTravelError?: string | null;
   labTravelNotice?: LabTravelNotice | null;
-  /** Which action is in flight: "sharing", "city", "plans", "lookup" or "rsvp:<key>". */
+  /** Which action is in flight: "sharing", "city" or "lookup". */
   labTravelBusy?: string | null;
-  labTravelRsvpOpen?: string | null;
-  labTravelRsvpDrafts?: Record<string, RsvpDraft>;
-  labTravelPlanDraft?: TripDraft;
   labTravelLookupDraft?: LookupDraft;
   labTravelLookup?: TravelLookup | null;
   labTravelLookupError?: string | null;
@@ -68,52 +46,9 @@ export type LabTravelHost = {
   labTravelDevice?: LocationTrackerSnapshot;
 };
 
-const RSVP_FALLBACK: RsvpDraft = {
-  intent: "",
-  airbnb: false,
-  arrival_on: "",
-  departure_on: "",
-  funding: "none",
-  needs_visa_letter: false,
-  notes: "",
-};
-
-/** Whether this viewer may use the tab at all. The service checks the same thing. */
+/** Whether this viewer may read /travel at all. The service checks the same thing. */
 export function isTravelViewer(privilegeLevel: string | null | undefined): boolean {
   return privilegeLevel === "member" || privilegeLevel === "admin";
-}
-
-/** The form's starting point: the member's own answer, else an earlier whole-conference one. */
-export function rsvpDraftFrom(site: TravelConference): RsvpDraft {
-  const answer = site.my_rsvp ?? site.unsited_rsvp;
-  if (!answer) {
-    return { ...RSVP_FALLBACK };
-  }
-  return {
-    intent: answer.intent,
-    airbnb: answer.needs_lodging,
-    arrival_on: answer.arrival_on ?? "",
-    departure_on: answer.departure_on ?? "",
-    funding: answer.funding,
-    needs_visa_letter: answer.needs_visa_letter,
-    notes: answer.notes ?? "",
-  };
-}
-
-/** Why this RSVP cannot be saved yet, or null. */
-export function rsvpDraftError(draft: RsvpDraft): string | null {
-  if (!draft.intent) {
-    return t("labTravel.rsvp.errorIntent");
-  }
-  if (
-    draft.airbnb &&
-    draft.arrival_on &&
-    draft.departure_on &&
-    draft.departure_on < draft.arrival_on
-  ) {
-    return t("labTravel.rsvp.errorNights");
-  }
-  return null;
 }
 
 function baseUrlOf(host: LabTravelHost): string {
@@ -183,114 +118,6 @@ async function act(
   } finally {
     host.labTravelBusy = null;
   }
-}
-
-export function editRsvpDraft(
-  host: LabTravelHost,
-  site: TravelConference,
-  patch: Partial<RsvpDraft>,
-) {
-  const current = host.labTravelRsvpDrafts?.[site.key] ?? rsvpDraftFrom(site);
-  const next = { ...current, ...patch };
-  // Choosing the Airbnb fills in the conference's own days, which is what most people need and
-  // what the service would assume anyway; an edited night is never overwritten.
-  if (patch.airbnb && !current.airbnb) {
-    next.arrival_on ||= site.starts ?? "";
-    next.departure_on ||= site.ends ?? "";
-  }
-  host.labTravelRsvpDrafts = { ...host.labTravelRsvpDrafts, [site.key]: next };
-}
-
-export function openRsvp(host: LabTravelHost, key: string | null): void {
-  host.labTravelRsvpOpen = key;
-}
-
-export async function saveRsvp(host: LabTravelHost, site: TravelConference): Promise<boolean> {
-  const draft = host.labTravelRsvpDrafts?.[site.key] ?? rsvpDraftFrom(site);
-  const error = rsvpDraftError(draft);
-  if (error || !draft.intent) {
-    host.labTravelNotice = { kind: "error", text: error ?? t("labTravel.rsvp.errorIntent") };
-    return false;
-  }
-  const intent = draft.intent;
-  const saved = await act(
-    host,
-    `rsvp:${site.key}`,
-    async (baseUrl) => {
-      const result = await saveTravelRsvp(baseUrl, site.key, {
-        intent,
-        funding: draft.funding,
-        needs_lodging: draft.airbnb,
-        needs_visa_letter: draft.needs_visa_letter,
-        ...(draft.airbnb && draft.arrival_on ? { arrival_on: draft.arrival_on } : {}),
-        ...(draft.airbnb && draft.departure_on ? { departure_on: draft.departure_on } : {}),
-        ...(draft.notes.trim() ? { notes: draft.notes.trim() } : {}),
-      });
-      return result.ok ? { ok: true } : result;
-    },
-    t("labTravel.notice.rsvpSaved", { conference: site.label }),
-  );
-  if (saved) {
-    const drafts = { ...host.labTravelRsvpDrafts };
-    delete drafts[site.key];
-    host.labTravelRsvpDrafts = drafts;
-    host.labTravelRsvpOpen = null;
-  }
-  return saved;
-}
-
-export async function withdrawRsvp(host: LabTravelHost, site: TravelConference): Promise<boolean> {
-  // The key the answer is stored under: the site's own, or the whole conference's for an answer
-  // given before it was split.
-  const key = site.my_rsvp ? site.key : site.unsited_rsvp ? site.group_key : site.key;
-  const done = await act(
-    host,
-    `rsvp:${site.key}`,
-    async (baseUrl) => {
-      const result = await withdrawTravelRsvp(baseUrl, key);
-      return result.ok ? { ok: true } : result;
-    },
-    t("labTravel.notice.rsvpWithdrawn", { conference: site.label }),
-  );
-  if (done) {
-    const drafts = { ...host.labTravelRsvpDrafts };
-    delete drafts[site.key];
-    host.labTravelRsvpDrafts = drafts;
-    host.labTravelRsvpOpen = null;
-  }
-  return done;
-}
-
-/** Save the member's own trips. Same write Time Availability's chart reads back. */
-export async function savePlans(host: LabTravelHost, trips: MemberTripRow[]): Promise<boolean> {
-  const memberId = host.memberId;
-  const token = sessionToken();
-  if (!memberId || !token) {
-    host.labTravelNotice = { kind: "error", text: t("labTravel.notice.signIn") };
-    return false;
-  }
-  return act(
-    host,
-    "plans",
-    async (baseUrl) => {
-      const result = await updateOwnSchedule(memberId, { trips }, token, baseUrl);
-      if (!result.ok) {
-        return { ok: false, error: result.message ?? t("labTravel.notice.plansFailed") };
-      }
-      // Keep the roster copy current too: the Time Availability chart draws its where-strip from
-      // it, and it would otherwise show the old trips until the roster next reloads.
-      if (host.adminBotData) {
-        host.adminBotData = {
-          ...host.adminBotData,
-          members: host.adminBotData.members.map((member) =>
-            member.id === memberId ? { ...member, trips: result.value.trips ?? trips } : member,
-          ),
-        };
-      }
-      return { ok: true };
-    },
-    t("labTravel.notice.plansSaved"),
-  );
 }
 
 export async function lookup(host: LabTravelHost): Promise<void> {
@@ -515,10 +342,7 @@ export async function shareTypedCity(host: LabTravelHost): Promise<boolean> {
 }
 
 /** The fields this tab owns on the host, without the ones it only reads. */
-export type LabTravelState = Omit<
-  LabTravelHost,
-  "settings" | "memberId" | "memberPrivilegeLevel" | "adminBotData"
->;
+export type LabTravelState = Omit<LabTravelHost, "settings" | "memberId" | "memberPrivilegeLevel">;
 
 /** Forget everything this tab holds. Signing out, or becoming somebody else. */
 export function clearLabTravel(host: LabTravelState): void {
@@ -529,9 +353,6 @@ export function clearLabTravel(host: LabTravelState): void {
   host.labTravelError = null;
   host.labTravelNotice = null;
   host.labTravelBusy = null;
-  host.labTravelRsvpOpen = null;
-  host.labTravelRsvpDrafts = {};
-  host.labTravelPlanDraft = EMPTY_TRIP_DRAFT;
   host.labTravelLookupDraft = { place: "", from: "", to: "" };
   host.labTravelLookup = null;
   host.labTravelLookupError = null;
