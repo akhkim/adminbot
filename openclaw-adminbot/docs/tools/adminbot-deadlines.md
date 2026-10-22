@@ -290,7 +290,7 @@ and title-only papers. It requires the configured local model
 
 ## Member deadline recommendations
 
-Signed-in members can recommend a deadline to another active member from the board. The form searches members in pages and loads linked papers only after choosing the recipient. Several papers may be included in one recommendation. Search and member selection share a row; paper choices and long message previews scroll inside the form.
+Signed-in members can recommend a deadline to another active member from the board. The form searches members in pages and loads linked papers only after choosing the recipient. Several papers may be included in one recommendation. Search and member selection share a row; paper choices and long message previews scroll inside the form. A recommendation points at a published deadline, so a newly proposed one can be recommended only after an administrator publishes it; the notice shown after a member submits a new deadline says so and names the **Recommend** button.
 
 Preview creates a proposal without sending. Only its author can approve and send that exact preview to the Slack conversation containing AdminBot, the recommender, and the recipient. Changed deadlines or linked Slack identities require a new preview. Duplicate sends share an execution key across restarts. A failed send retains the preview for retry.
 

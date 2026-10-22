@@ -1257,6 +1257,11 @@ class AdminbotDeadlinesView extends LitElement {
   private proposalErrors: Partial<Record<keyof DeadlineProposalInput, string>> = {};
   private proposalNotice = "";
   private proposalFailure = "";
+  // What the person has entered in the date and time boxes. The board redraws every second for its
+  // countdowns, and live() writes the template's value back whenever a box differs from it, so a
+  // value kept only in the DOM reverted to "" within a second of being picked.
+  private proposalDraftDate?: string;
+  private proposalDraftTime?: string;
 
   protected override createRenderRoot(): HTMLElement {
     return this;
@@ -1351,7 +1356,13 @@ class AdminbotDeadlinesView extends LitElement {
     this.proposalFormOpen = false;
     this.proposalReviewOpen = false;
     this.editingProposalId = "";
+    this.clearProposalDraft();
     this.requestUpdate();
+  }
+
+  private clearProposalDraft(): void {
+    this.proposalDraftDate = undefined;
+    this.proposalDraftTime = undefined;
   }
 
   private selectGroup(group: string): void {
@@ -1450,6 +1461,7 @@ class AdminbotDeadlinesView extends LitElement {
     this.proposalStageKind = "submission";
     this.proposalErrors = {};
     this.proposalSubmissionKey = "";
+    this.clearProposalDraft();
     this.proposalFormOpen = true;
     this.proposalReviewOpen = false;
     this.editingProposalId = "";
@@ -1545,9 +1557,15 @@ class AdminbotDeadlinesView extends LitElement {
       this.proposalFormOpen = false;
       this.proposalNotice = this.editingProposalId
         ? "A revised deadline is ready for administrator approval."
-        : "Proposal submitted for administrator review. It is not public until approved.";
+        : "Proposal submitted for administrator review. It is not public until approved." +
+          // Members are told to "add members" to a new deadline, but recommendations need a
+          // published deadline to point at, so the button cannot appear on the form itself.
+          (this.memberId && this.accessRole !== "anonymous" && !this.correctionTarget
+            ? " Once it is published, open it on the board and choose Recommend to let lab members know."
+            : "");
       this.editingProposalId = "";
       this.proposalSubmissionKey = "";
+      this.clearProposalDraft();
       if (this.memberId && this.accessRole !== "anonymous") {
         await this.loadProposals();
       }
@@ -1592,6 +1610,7 @@ class AdminbotDeadlinesView extends LitElement {
     this.correctionContext = undefined;
     this.correctionChoice = "primary";
     this.proposalVenue = undefined;
+    this.clearProposalDraft();
     this.editingProposalId = proposal.id;
     this.proposalFormOpen = true;
     this.proposalReviewOpen = false;
@@ -1646,6 +1665,8 @@ class AdminbotDeadlinesView extends LitElement {
       : [];
     const parentConferences = parentConferenceOptions(this.venues);
     const parentConference = value?.parentConference ?? "";
+    const deadlineDate = this.proposalDraftDate ?? value?.deadlineDate ?? "";
+    const deadlineTime = this.proposalDraftTime ?? value?.deadlineTime ?? "";
     return html`
       <section
         class="deadline-proposal deadline-proposal--drawer"
@@ -1717,6 +1738,8 @@ class AdminbotDeadlinesView extends LitElement {
                     this.correctionContext = correctionContext;
                     this.correctionTarget = stage?.abstractVenue ?? correctionContext;
                     this.correctionStage = stage?.abstractVenue ? undefined : stage;
+                    // Another stage shows its own published date, not the one typed for the last.
+                    this.clearProposalDraft();
                     this.proposalSubmissionKey = "";
                     this.proposalErrors = {};
                     this.proposalFailure = "";
@@ -1818,10 +1841,13 @@ class AdminbotDeadlinesView extends LitElement {
                   ?autofocus=${Boolean(target)}
                   type="date"
                   required
-                  .value=${live(value?.deadlineDate ?? "")}
+                  .value=${live(deadlineDate)}
                   aria-invalid=${String(Boolean(this.proposalErrors.deadlineDate))}
+                  @input=${(event: Event) => {
+                    this.proposalDraftDate = (event.target as HTMLInputElement).value;
+                  }}
                 />`,
-                value?.deadlineDate ?? "",
+                deadlineDate,
               )}
               ${this.renderProposalFieldError("deadlineDate")}
             </label>
@@ -1830,8 +1856,11 @@ class AdminbotDeadlinesView extends LitElement {
               <input
                 name="deadlineTime"
                 type="time"
-                .value=${live(value?.deadlineTime ?? "")}
+                .value=${live(deadlineTime)}
                 aria-invalid=${String(Boolean(this.proposalErrors.deadlineTime))}
+                @input=${(event: Event) => {
+                  this.proposalDraftTime = (event.target as HTMLInputElement).value;
+                }}
               />
               ${this.renderProposalFieldError("deadlineTime")}
             </label>
