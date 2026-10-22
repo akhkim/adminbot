@@ -681,7 +681,57 @@ describe("renderDeadlines", () => {
     );
     expect(list).not.toHaveBeenCalled();
     expect(container.textContent).toContain("It is not public until approved.");
+    expect(container.textContent).not.toContain("choose Recommend");
     expect(container.querySelector('[data-testid="deadline-proposal-form-panel"]')).toBeNull();
+  });
+
+  it("keeps a picked date and time through the countdown's once-a-second redraws", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const store = new TestProposalStore();
+    const submit = vi.spyOn(store, "submit");
+    render(
+      renderDeadlines({ role: "member", memberId: "member-1", proposalStore: store }),
+      container,
+    );
+    await settle(container);
+    buttonNamed(container, "Propose a new deadline").click();
+    await settle(container);
+    const form = container.querySelector<HTMLFormElement>(".deadline-proposal__form")!;
+    const date = form.elements.namedItem("deadlineDate") as HTMLInputElement;
+    const time = form.elements.namedItem("deadlineTime") as HTMLInputElement;
+    date.value = "2026-11-20";
+    date.dispatchEvent(new Event("input", { bubbles: true }));
+    time.value = "23:59";
+    time.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(3_000);
+    await settle(container);
+    expect(date.value).toBe("2026-11-20");
+    expect(time.value).toBe("23:59");
+    expect(form.querySelector("output")?.value).toBe("2026-11-20");
+
+    for (const [name, value] of Object.entries(proposalInput())) {
+      if (name !== "deadlineDate" && name !== "deadlineTime") {
+        (form.elements.namedItem(name) as HTMLInputElement).value = value;
+      }
+    }
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle(container);
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ deadlineDate: "2026-11-20", deadlineTime: "23:59" }),
+      expect.any(String),
+      undefined,
+    );
+
+    buttonNamed(container, "Propose a new deadline").click();
+    await settle(container);
+    expect(
+      (
+        container
+          .querySelector<HTMLFormElement>(".deadline-proposal__form")!
+          .elements.namedItem("deadlineDate") as HTMLInputElement
+      ).value,
+    ).toBe("");
   });
 
   it("forwards optional visitor contact details and does not render a spam field", async () => {
@@ -786,6 +836,9 @@ describe("renderDeadlines", () => {
       deadline: { name: "Example Workshop", parentConference: "New Conference" },
     });
     expect(container.textContent).toContain("It is not public until approved.");
+    expect(container.textContent).toContain(
+      "Once it is published, open it on the board and choose Recommend to let lab members know.",
+    );
     expect(container.querySelector('[data-testid="deadline-proposal-form-panel"]')).toBeNull();
     expect(
       container.querySelector<HTMLDialogElement>('[data-testid="deadline-proposal-drawer"]')?.open,
