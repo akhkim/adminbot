@@ -430,9 +430,9 @@ describe("the closing line", () => {
   });
 });
 
-describe("the way to the Travel tab", () => {
-  // The trip form itself moved to the Travel tab, which lists every conference by site. The card
-  // keeps the reader's answer, read back, and a button to go and give or change it.
+describe("the way to the Events tab", () => {
+  // The Travel tab is gone; RSVPs live on Events. The card keeps the reader's answer, read back,
+  // and a button to go and give or change it.
   it("is absent on a paper whose conference is not settled", () => {
     const { container } = draw({ conferenceOpen: false, onOpenTravel: () => {} });
     expect(container.querySelector('[data-testid="paper-travel-p1"]')).toBeNull();
@@ -445,14 +445,14 @@ describe("the way to the Travel tab", () => {
     expect(container.querySelector('[data-testid="paper-trip-intent-p1"]')).toBeNull();
   });
 
-  it("asks for an RSVP when there is none, and opens Travel", () => {
+  it("asks for an RSVP when there is none, and opens Events", () => {
     const opened: number[] = [];
     const { container } = draw({
       conferenceOpen: true,
       myTrip: null,
       onOpenTravel: () => opened.push(1),
     });
-    expect(container.textContent).toContain("RSVP on the Travel tab");
+    expect(container.textContent).toContain("RSVP on Events");
     container.querySelector<HTMLButtonElement>('[data-testid="paper-travel-open-p1"]')?.click();
     expect(opened).toEqual([1]);
   });
@@ -472,7 +472,7 @@ describe("the way to the Travel tab", () => {
     });
     expect(container.textContent).toContain("staying in the lab Airbnb");
     expect(container.querySelector('[data-testid="paper-travel-open-p1"]')?.textContent).toContain(
-      "Change on Travel",
+      "Change on Events",
     );
   });
 });

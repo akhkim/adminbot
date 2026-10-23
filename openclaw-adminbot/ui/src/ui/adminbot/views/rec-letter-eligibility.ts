@@ -572,7 +572,6 @@ export function renderRecLetterAdvisory(props: RecLetterAdvisoryProps) {
               ${renderReadinessItem("met", t("logistics.eligibility.readiness.noFreeze"))}
               ${hoursItem} ${attendanceItem}
             </ul>`}
-      <p class="rec-readiness__foot">${t("logistics.eligibility.readiness.foot")}</p>
     </aside>
   `;
 }

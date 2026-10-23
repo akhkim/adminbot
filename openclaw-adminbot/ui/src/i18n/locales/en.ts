@@ -2184,7 +2184,7 @@ export const en: TranslationMap = {
         "Attendance isn't counted toward eligibility yet. The figures below are for reference only.",
       attendanceNotTracked: "Meeting attendance isn't tracked yet and isn't counted.",
       memberNote:
-        "The lab looks for no hallucinated-citation desk rejection in the past year and at least {months} months averaging {hours}+ committed hours a week. This is a guide, not a gate — you can still submit.",
+        "The lab looks for no hallucinated-citation desk rejection in the past year and at least {months} months averaging {hours}+ committed hours a week.",
       readiness: {
         title: {
           eligible: "You're set",
@@ -2207,9 +2207,7 @@ export const en: TranslationMap = {
         workedMore: "Worked more?",
         blankMonths: "{months} are blank.",
         addMonths: "Add past months →",
-        frozenExplain:
-          "Paused until {date} after a hallucinated-citation desk rejection. Your hours keep counting.",
-        foot: "A guide, not a gate. You can still submit.",
+        frozenExplain: "Paused until {date} after a hallucinated-citation desk rejection.",
       },
       memberNoteAttendance:
         "It also looks for a {window}-month stretch with {rate} attendance at Monday and Wednesday meetings.",

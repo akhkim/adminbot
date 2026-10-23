@@ -204,12 +204,6 @@
   color: var(--muted);
 }
 
-.rec-readiness__foot {
-  border-top: 1px solid var(--border);
-  padding-top: var(--space-2);
-  color: var(--muted);
-}
-
 .rec-eligibility__frozen {
   border-left: 2px solid var(--danger-muted);
   padding-left: var(--space-2);
