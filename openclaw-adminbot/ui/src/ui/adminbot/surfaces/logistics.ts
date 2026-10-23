@@ -435,6 +435,7 @@ export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfa
               value: recLetter.own.value,
               loading: recLetter.own.loading,
               error: recLetter.own.error,
+              basePath: state.basePath,
             }
           : undefined,
       },

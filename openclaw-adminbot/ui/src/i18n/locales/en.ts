@@ -2185,6 +2185,32 @@ export const en: TranslationMap = {
       attendanceNotTracked: "Meeting attendance isn't tracked yet and isn't counted.",
       memberNote:
         "The lab looks for no hallucinated-citation desk rejection in the past year and at least {months} months averaging {hours}+ committed hours a week. This is a guide, not a gate — you can still submit.",
+      readiness: {
+        title: {
+          eligible: "You're set",
+          not_yet: "Almost there",
+          insufficient_data: "We can't tell yet",
+          frozen: "Letter requests paused",
+        },
+        chip: {
+          eligible: "Meets the guidelines",
+          not_yet: "Not yet",
+          insufficient_data: "Missing records",
+          frozen: "Paused",
+        },
+        chipMonthLeft: "{count} month to go",
+        chipMonthsLeft: "{count} months to go",
+        chipFrozen: "Until {date}",
+        chipDaysLeft: "{count} days left",
+        noFreeze: "No citation freeze",
+        hours: "{count} of {required} months at {hours}+ h/week",
+        workedMore: "Worked more?",
+        blankMonths: "{months} are blank.",
+        addMonths: "Add past months →",
+        frozenExplain:
+          "Paused until {date} after a hallucinated-citation desk rejection. Your hours keep counting.",
+        foot: "A guide, not a gate. You can still submit.",
+      },
       memberNoteAttendance:
         "It also looks for a {window}-month stretch with {rate} attendance at Monday and Wednesday meetings.",
       memberNotYet: "Still to reach: {items}.",
