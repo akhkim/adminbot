@@ -83,7 +83,7 @@ export function applyCors(
   // A cross-origin script cannot read ETag unless it is exposed, and without it the console has
   // nothing to revalidate with.
   res.setHeader("Access-Control-Expose-Headers", "ETag");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   return true;
 }
 
