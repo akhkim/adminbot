@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import type { AdminBotLabMember, AdminBotStoredProposal } from "../contracts/actions.js";
+import type {
+  AdminBotExecutionResult,
+  AdminBotLabMember,
+  AdminBotStoredProposal,
+} from "../contracts/actions.js";
 import {
   EMU_PER_INCH,
   type AdminBotSlidesWorkingGroupsPayload,
@@ -29,6 +33,8 @@ export type SlidesWorkingGroupsSyncResult = {
   /** Older pending proposals this run replaced, so only one plan for the slide is ever open. */
   superseded: string[];
   groups: AdminBotSlidesWorkingGroupsPayload["groups"];
+  /** Set when auto-apply approved and wrote the plan in the same run. */
+  applied?: AdminBotExecutionResult;
 };
 
 const IDEMPOTENCY_PREFIX = "slides-working-groups:";
@@ -118,7 +124,8 @@ export async function proposeSlidesWorkingGroups(
     return { changed: false, reused: false, superseded, groups: payload.groups };
   }
   if (same) {
-    return { changed: true, proposal: same, reused: true, superseded, groups: payload.groups };
+    const applied = await autoApply(service, source, same, payload);
+    return { changed: true, proposal: same, reused: true, superseded, groups: payload.groups, ...applied };
   }
   const created = service.createProposal({
     type: "slides.sync_working_groups",
@@ -149,7 +156,41 @@ export async function proposeSlidesWorkingGroups(
     reused: false,
     superseded,
     groups: payload.groups,
+    ...(await autoApply(service, source, created.payload, payload)),
   };
+}
+
+export const SLIDES_AUTO_APPROVER = "adminbot:slides-auto-apply";
+
+/**
+ * With auto-apply on, approve and write an append-only plan straight away. A plan that deletes
+ * anything is left pending for an admin. A failed write throws, so the run is audited as failed and
+ * the weekly job exits non-zero; the approved proposal stays open, and the next run re-plans
+ * against the slide as it then is (the executor re-reads the deck before every write).
+ */
+async function autoApply(
+  service: AdminBotService,
+  source: SlidesWorkingGroupsSource,
+  proposal: AdminBotStoredProposal,
+  payload: AdminBotSlidesWorkingGroupsPayload,
+): Promise<{ applied?: AdminBotExecutionResult }> {
+  if (!source.autoApply || payload.requests.some((request) => "deleteObject" in request)) {
+    return {};
+  }
+  const approved = service.approve(proposal.id, {
+    payload_hash: proposal.payload_hash,
+    approver_role: "admin",
+    approver_id: SLIDES_AUTO_APPROVER,
+    note: "Append-only working-groups plan, applied automatically (ADMINBOT_SLIDES_AUTO_APPLY=1)",
+  });
+  if (!approved.ok) {
+    throw new Error(`auto-apply could not approve ${proposal.id}: ${approved.error.message}`);
+  }
+  const executed = await service.execute(proposal.id, { dry_run: false });
+  if (!executed.ok) {
+    throw new Error(`auto-apply could not write ${proposal.id}: ${executed.error.message}`);
+  }
+  return { applied: executed.payload };
 }
 
 /**

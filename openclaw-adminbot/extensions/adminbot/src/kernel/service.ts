@@ -3475,6 +3475,7 @@ export class AdminBotService {
               changed: result.changed,
               reused: result.reused,
               superseded: result.superseded.length,
+              applied: Boolean(result.applied),
               groups: result.groups.map((group) => `${group.group}:${group.status}`).join(","),
             },
           });

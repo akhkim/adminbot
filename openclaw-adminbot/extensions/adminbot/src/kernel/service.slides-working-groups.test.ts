@@ -7,16 +7,22 @@ import {
   legacyFace,
   syntheticDeck,
   syntheticMember,
+  taggedFace,
 } from "../workflows/slides/face-layout.test-helpers.js";
 import { AdminBotService } from "./service.js";
 import { affectsWorkingGroupsSlide } from "./service.slides-working-groups.js";
 
 const TITLE = "Scaling to 50-100 Technical Members";
 
-function lab(options: { debounceMs?: number } = {}) {
+function lab(
+  options: { debounceMs?: number; autoApply?: boolean; allowRemovals?: boolean; departed?: AdminBotLabMember } = {},
+) {
   const founders = Array.from({ length: 5 }, (_, index) => syntheticMember(`mi${index}`, "multiagent"));
   let deck: SlidesPresentation = syntheticDeck({
-    multiagent: founders.map((member, index) => legacyFace(member, index)),
+    multiagent: [
+      ...founders.map((member, index) => legacyFace(member, index)),
+      ...(options.departed ? [taggedFace("multiagent", options.departed)] : []),
+    ],
   });
   const client: GoogleSlidesClient = {
     getPresentation: vi.fn(async () => deck),
@@ -42,6 +48,8 @@ function lab(options: { debounceMs?: number } = {}) {
       slideTitle: TITLE,
       client,
       debounceMs: options.debounceMs ?? 60_000,
+      ...(options.autoApply ? { autoApply: true } : {}),
+      ...(options.allowRemovals ? { allowRemovals: true } : {}),
     },
   });
   for (const member of founders) {
@@ -133,6 +141,51 @@ describe("slides working-groups sync", () => {
     expect(client.getPresentation).toHaveBeenCalledTimes(1);
     const planned = service.listAuditEvents().find((event) => event.type === "slides.working_groups_planned")!;
     expect(planned.details).toMatchObject({ trigger: "member_change", changed: true });
+  });
+
+  it("auto-apply approves and writes an append-only plan in the same run", async () => {
+    const { service, client, deck } = lab({ autoApply: true });
+    add(service, syntheticMember("mi9", "multiagent"));
+    const run = await service.syncSlidesWorkingGroups(undefined, "schedule");
+    if (!run.ok) {
+      throw new Error(run.error.message);
+    }
+    expect(run.payload.applied).toMatchObject({ status: "executed", dry_run: false });
+    expect(client.batchUpdate).toHaveBeenCalledTimes(1);
+    expect(
+      deck().slides![1]!.pageElements!.filter((element) => element.objectId.startsWith("adminbot_face_multiagent_")),
+    ).toHaveLength(1);
+    expect(service.listPending()).toMatchObject({ payload: { proposals: [] } });
+    const approval = service.listAuditEvents().find((event) => event.type === "approval.recorded");
+    expect(approval?.actor).toBe("adminbot:slides-auto-apply");
+    expect(
+      service.listAuditEvents().find((event) => event.type === "slides.working_groups_planned")?.details,
+    ).toMatchObject({ trigger: "schedule", applied: true });
+
+    // Idempotent: the slide now matches, so the next weekly run writes nothing.
+    const settled = await service.syncSlidesWorkingGroups(undefined, "schedule");
+    expect(settled.ok && settled.payload).toMatchObject({ changed: false });
+    expect(client.batchUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("auto-apply leaves a plan that deletes a face for an admin", async () => {
+    const departed = syntheticMember("gone", "multiagent", { name: "Gone Member" });
+    const { service, client } = lab({ autoApply: true, allowRemovals: true, departed });
+    const run = await service.syncSlidesWorkingGroups(undefined, "schedule");
+    if (!run.ok) {
+      throw new Error(run.error.message);
+    }
+    expect(run.payload.applied).toBeUndefined();
+    expect(run.payload.proposal).toMatchObject({ status: "pending" });
+    expect(client.batchUpdate).not.toHaveBeenCalled();
+  });
+
+  it("auto-apply reports a failed write as a failed run", async () => {
+    const { service, client } = lab({ autoApply: true });
+    vi.mocked(client.batchUpdate).mockRejectedValueOnce(new Error("Google Slides request failed (500)"));
+    add(service, syntheticMember("mi9", "multiagent"));
+    expect(await service.syncSlidesWorkingGroups(undefined, "schedule")).toMatchObject({ ok: false, status: 502 });
+    expect(service.listAuditEvents().some((event) => event.type === "slides.working_groups_failed")).toBe(true);
   });
 
   it("audits a failed read instead of throwing at the caller", async () => {

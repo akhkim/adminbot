@@ -2,9 +2,15 @@
 # Weekly check of the working-groups slide, shaped for an OpenClaw cron `command` job.
 #
 # Reads the deck, measures each group's box, and plans the faces against the roster. When the
-# slide is out of date it leaves one `slides.sync_working_groups` proposal for an admin to approve;
-# when it already matches, it closes any stale one. Nothing is written to the deck from here --
-# only an approved proposal, with ADMINBOT_SLIDES_WRITE=1, does that.
+# slide is out of date it leaves one `slides.sync_working_groups` proposal; when it already
+# matches, it closes any stale one. With ADMINBOT_SLIDES_AUTO_APPLY=1 the service approves and
+# writes an append-only plan in the same run, so nobody has to watch the queue; a plan that would
+# delete a face still waits for an admin.
+#
+# Any failure exits non-zero, so the cron run is marked failed and the automation health check
+# raises it. A deck that is not configured is a failure too -- it used to exit 0, which hid for
+# weeks that the sync had never run -- unless ADMINBOT_SLIDES_WORKING_GROUPS_DISABLED=1 says the
+# feature is off on purpose.
 #
 # Profile saves trigger the same plan on their own (debounced); this weekly run catches what they
 # cannot, such as a box someone resized by hand. See docs/operations/slides-working-groups.md.
@@ -37,11 +43,14 @@ response="$(
 status="${response##*$'\n'}"
 body="${response%$'\n'*}"
 
-# 503 means no deck is configured on this deployment: report it, but do not fail every week for a
-# feature that was never turned on.
+# 503 means no deck is configured on this deployment.
 if [[ "$status" == "503" ]]; then
-  printf 'working-groups slide: not configured (%s)\n' "$body"
-  exit 0
+  if [[ "${ADMINBOT_SLIDES_WORKING_GROUPS_DISABLED:-}" == "1" ]]; then
+    printf 'working-groups slide: disabled on purpose (ADMINBOT_SLIDES_WORKING_GROUPS_DISABLED=1)\n'
+    exit 0
+  fi
+  printf 'working-groups slide: not configured (%s); set ADMINBOT_SLIDES_WORKING_GROUPS_PRESENTATION_ID, or ADMINBOT_SLIDES_WORKING_GROUPS_DISABLED=1 to turn the weekly job off\n' "$body" >&2
+  exit 1
 fi
 if [[ "$status" != "200" ]]; then
   printf 'working-groups slide: HTTP %s\n%s\n' "$status" "$body" >&2
@@ -60,6 +69,8 @@ except json.JSONDecodeError:
 proposal = result.get("proposal") or {}
 if not result.get("changed"):
     print("working-groups slide: already matches the roster")
+elif result.get("applied"):
+    print(f"working-groups slide: applied {proposal.get('id')} automatically")
 elif result.get("reused"):
     print(f"working-groups slide: plan {proposal.get('id')} is still awaiting approval")
 else:
