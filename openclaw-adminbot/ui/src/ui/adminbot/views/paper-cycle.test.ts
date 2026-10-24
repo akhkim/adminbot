@@ -431,8 +431,8 @@ describe("the closing line", () => {
 });
 
 describe("the way to the Events tab", () => {
-  // The Travel tab is gone; RSVPs live on Events. The card keeps the reader's answer, read back,
-  // and a button to go and give or change it.
+  // The trip form itself moved to the Events tab, which lists every conference by site. The card
+  // keeps the reader's answer, read back, and a button to go and give or change it.
   it("is absent on a paper whose conference is not settled", () => {
     const { container } = draw({ conferenceOpen: false, onOpenTravel: () => {} });
     expect(container.querySelector('[data-testid="paper-travel-p1"]')).toBeNull();
@@ -452,7 +452,7 @@ describe("the way to the Events tab", () => {
       myTrip: null,
       onOpenTravel: () => opened.push(1),
     });
-    expect(container.textContent).toContain("RSVP on Events");
+    expect(container.textContent).toContain("Say so on the Events tab");
     container.querySelector<HTMLButtonElement>('[data-testid="paper-travel-open-p1"]')?.click();
     expect(opened).toEqual([1]);
   });
