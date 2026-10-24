@@ -44,7 +44,7 @@ PEOPLE_SECTION_COLOURS = {
     'Location & availability': {'red': .55, 'green': .35, 'blue': .13}, 'Search': {'red': .40, 'green': .45, 'blue': .51},
     exporter.PEOPLE_RECORDS_SECTION: {'red': .45, 'green': .49, 'blue': .54}}
 PEOPLE_EMAILS = ('email', 'calendar_email', 'correspondence_email')
-PEOPLE_URLS = ('one_on_one_folder_url', 'personal_website', 'linkedin_url', 'twitter_url', 'github_url', 'scholar_url',
+PEOPLE_URLS = ('personal_website', 'linkedin_url', 'twitter_url', 'github_url', 'scholar_url',
                'acl_anthology_url', 'lesswrong_url', 'cv_url', 'intake_form_url', 'availability_doc_url')
 
 

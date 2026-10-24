@@ -259,7 +259,7 @@ next_position personal_circumstances slack_messages_7d slack_activity_checked_at
 privilege_level collaborator_subgroup access_overrides notes role status research_branch
 research_topics elevator_pitch projects hours_per_week location current_city
 city_channel_invited_at city_channels_invited affiliation timezone personal_website
-openreview_id cv_url intake_form_url intake_form_unavailable one_on_one_folder_url
+openreview_id cv_url intake_form_url intake_form_unavailable
 linkedin_url linkedin_urn twitter_url github_url scholar_url reviewer_exempt joined_month
 graduated_month birthday whatsapp correspondence_email dcs_username at_uoft compute_access
 vector_role lesswrong_url other_socials avatar_url slack_channels slack_location
@@ -288,7 +288,7 @@ twitter_followers search'''.split())
 # Each section gets its own header colour; columns no section lists sit behind one collapsed [+] group.
 PEOPLE_SECTIONS = (
     ('Contact', ('name', 'preferred_name', 'calendar_email', 'whatsapp', 'email', 'correspondence_email',
-                 'one_on_one_folder_url', 'birthday', 'timezone', 'current_city')),
+                 'birthday', 'timezone', 'current_city')),
     ('Lab', ('status', 'member_type', 'role', 'collaborator_subgroup', 'privilege_level', 'join_date',
              'affiliation', 'at_uoft', 'hours_per_week', 'slack_active', 'membership_review', 'receives_nudges',
              'compute_access', 'calendar_group', 'next_position', 'graduated_month')),
@@ -306,7 +306,7 @@ PEOPLE_RECORDS_SECTION = 'AdminBot records'
 # Header text people read; any field not listed gets its name with underscores turned into spaces.
 PEOPLE_LABELS = {
     'name': 'Name', 'preferred_name': 'Preferred name', 'calendar_email': 'Calendar email', 'whatsapp': 'WhatsApp',
-    'email': 'Email', 'correspondence_email': 'Correspondence email', 'one_on_one_folder_url': '1:1 folder',
+    'email': 'Email', 'correspondence_email': 'Correspondence email',
     'timezone': 'Time zone', 'current_city': 'City', 'member_type': 'Membership', 'collaborator_subgroup': 'Subgroup',
     'privilege_level': 'Access level', 'join_date': 'Joined', 'at_uoft': 'At UofT', 'hours_per_week': 'Hours / week',
     'slack_active': 'In #jinesis-active', 'receives_nudges': 'Gets nudges', 'compute_access': 'Compute',

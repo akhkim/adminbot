@@ -140,6 +140,8 @@ columns = direct['data'][0]['values'][0]
 rows = [dict(zip(columns, row)) for row in direct['data'][0]['values'][1:]]
 new = next(row for row in rows if row['id'] == 'new')
 assert len(columns) == len(set(columns)) == len(exporter.PEOPLE_COLUMNS)
+# 1:1 folders are private Drive links; the link-shared sheet must never carry them.
+assert not any("one_on_one" in c for c in columns)
 assert columns[:len(exporter.PEOPLE_PRIORITY)] == list(exporter.PEOPLE_PRIORITY)
 assert len(rows) == 2
 assert new['join_date'] == '2026-09' and new['join_date_basis'] == 'joined_month'
