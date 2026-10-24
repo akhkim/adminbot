@@ -34,7 +34,37 @@ PAPER_DROPDOWNS = ('Stage', 'Paper state', 'Conference', 'Year', 'Track', 'Prese
 ATTENTION_STATUSES = ('Needs PI review', 'Blocked: link access', 'Other')
 
 
-PEOPLE_WIDTHS = {'name': 170, 'id': 150, 'search': 220, 'research_topics': 260, 'affiliation': 200}
+PEOPLE_WIDTHS = {'name': 190, 'search': 220, 'research_topics': 260, 'elevator_pitch': 260, 'projects': 220,
+                 'papers_authored': 300, 'affiliation': 200, 'availability_notes': 240, 'time_off': 200,
+                 'email': 210, 'calendar_email': 210, 'correspondence_email': 210, 'location': 180, 'role': 160}
+# Header colour per PeopleList section, so the eye finds Contact or Links without reading every header.
+PEOPLE_SECTION_COLOURS = {
+    'Contact': {'red': .13, 'green': .37, 'blue': .45}, 'Lab': {'red': .18, 'green': .29, 'blue': .40},
+    'Research': {'red': .35, 'green': .26, 'blue': .49}, 'Links & socials': {'red': .16, 'green': .42, 'blue': .30},
+    'Location & availability': {'red': .55, 'green': .35, 'blue': .13}, 'Search': {'red': .40, 'green': .45, 'blue': .51},
+    exporter.PEOPLE_RECORDS_SECTION: {'red': .45, 'green': .49, 'blue': .54}}
+PEOPLE_EMAILS = ('email', 'calendar_email', 'correspondence_email')
+PEOPLE_URLS = ('one_on_one_folder_url', 'personal_website', 'linkedin_url', 'twitter_url', 'github_url', 'scholar_url',
+               'acl_anthology_url', 'lesswrong_url', 'cv_url', 'intake_form_url', 'availability_doc_url')
+
+
+def people_link(field, text):
+    """Where a PeopleList cell should open, or None. Only a cell that is one address becomes a link."""
+    text = text.strip()
+    if not text or any(c.isspace() for c in text):
+        return None
+    if field in PEOPLE_URLS and text.startswith(('https://', 'http://')):
+        return text
+    if field in PEOPLE_EMAILS and '@' in text and text.count('@') == 1:
+        return 'mailto:' + text
+    if field == 'openreview_id' and text.startswith('~'):
+        return 'https://openreview.net/profile?id=' + text
+    return None
+
+
+def whatsapp_link(text):
+    digits = ''.join(c for c in text if c.isdigit())
+    return 'https://wa.me/' + digits if text.strip().startswith('+') and 8 <= len(digits) <= 15 else None
 
 
 def column_group_requests(properties, start, end):
@@ -58,34 +88,63 @@ def column_group_requests(properties, start, end):
     ]
 
 
-def people_style_requests(properties, values):
-    """Readable core columns, a clipped search column, and everything else behind one [+] group."""
+def people_style_requests(properties, values, fields):
+    """Sectioned, readable PeopleList: coloured section headers, clickable contacts, one [+] group for the rest.
+
+    values carries the header labels; fields is the same columns as database field names.
+    """
     sid = properties['sheetId']
-    headers = values[0]
-    core = len([field for field in exporter.PEOPLE_PRIORITY if field in headers])
-    area = {'sheetId': sid, 'startRowIndex': 0, 'endRowIndex': len(values), 'startColumnIndex': 0,
-            'endColumnIndex': len(headers)}
+    row_count = len(values)
+    core = len([field for field in exporter.PEOPLE_PRIORITY if field in fields])
+    area = {'sheetId': sid, 'startRowIndex': 0, 'endRowIndex': row_count, 'startColumnIndex': 0,
+            'endColumnIndex': len(fields)}
+    muted = {'red': .42, 'green': .47, 'blue': .53}
     requests = [
-        {'repeatCell': {'range': {**area, 'endRowIndex': 1}, 'cell': {'userEnteredFormat': {
-            'textFormat': {'bold': True}, 'verticalAlignment': 'MIDDLE'}},
-            'fields': 'userEnteredFormat.textFormat.bold,userEnteredFormat.verticalAlignment'}},
+        {'repeatCell': {'range': {**area, 'startRowIndex': 1}, 'cell': {'userEnteredFormat': {
+            'textFormat': {'fontFamily': 'Arial', 'fontSize': 10, 'bold': False,
+                           'foregroundColor': {'red': .15, 'green': .19, 'blue': .24}},
+            'verticalAlignment': 'MIDDLE', 'wrapStrategy': 'CLIP'}},
+            'fields': 'userEnteredFormat.textFormat,userEnteredFormat.verticalAlignment,userEnteredFormat.wrapStrategy'}},
         {'repeatCell': {'range': {**area, 'startRowIndex': 1, 'endColumnIndex': 1}, 'cell': {'userEnteredFormat': {
-            'textFormat': {'bold': True}, 'wrapStrategy': 'WRAP'}},
-            'fields': 'userEnteredFormat.textFormat.bold,userEnteredFormat.wrapStrategy'}},
+            'textFormat': {'bold': True}}}, 'fields': 'userEnteredFormat.textFormat.bold'}},
+        {'updateDimensionProperties': {'range': {'sheetId': sid, 'dimension': 'ROWS', 'startIndex': 0, 'endIndex': 1},
+            'properties': {'pixelSize': 40}, 'fields': 'pixelSize'}},
+        {'updateDimensionProperties': {'range': {'sheetId': sid, 'dimension': 'ROWS', 'startIndex': 1, 'endIndex': row_count},
+            'properties': {'pixelSize': 26}, 'fields': 'pixelSize'}},
+        {'updateSheetProperties': {'properties': {'sheetId': sid, 'gridProperties': {'hideGridlines': True}},
+            'fields': 'gridProperties.hideGridlines'}},
+        {'updateCells': {'range': {**area, 'endRowIndex': 1}, 'rows': [{'values': [
+            {'userEnteredFormat': {'backgroundColor': PEOPLE_SECTION_COLOURS[exporter.people_section(field)],
+                                   'textFormat': {'fontFamily': 'Arial', 'fontSize': 10, 'bold': True,
+                                                  'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}},
+                                   'verticalAlignment': 'MIDDLE', 'wrapStrategy': 'WRAP'},
+             'note': exporter.people_section(field) + (f' · {field}' if exporter.people_label(field) != field else '')}
+            for field in fields]}],
+            'fields': 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat,'
+                      'userEnteredFormat.verticalAlignment,userEnteredFormat.wrapStrategy,note'}},
     ]
-    if 'search' in headers:
-        index = headers.index('search')
+    if 'search' in fields:
+        index = fields.index('search')
         requests.append({'repeatCell': {'range': {**area, 'startRowIndex': 1, 'startColumnIndex': index,
                                                   'endColumnIndex': index + 1},
-            'cell': {'userEnteredFormat': {'wrapStrategy': 'CLIP', 'textFormat': {
-                'fontSize': 9, 'foregroundColor': {'red': .42, 'green': .47, 'blue': .53}}}},
-            'fields': 'userEnteredFormat.wrapStrategy,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.foregroundColor'}})
-    for index, name in enumerate(headers[:core]):
+            'cell': {'userEnteredFormat': {'textFormat': {'fontSize': 9, 'foregroundColor': muted}}},
+            'fields': 'userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.foregroundColor'}})
+    link_style = {'underline': True, 'foregroundColor': {'red': .12, 'green': .34, 'blue': .67}}
+    for index, field in enumerate(fields):
         requests.append({'updateDimensionProperties': {'range': {'sheetId': sid, 'dimension': 'COLUMNS',
-            'startIndex': index, 'endIndex': index + 1}, 'properties': {'pixelSize': PEOPLE_WIDTHS.get(name, 130)},
+            'startIndex': index, 'endIndex': index + 1}, 'properties': {'pixelSize': PEOPLE_WIDTHS.get(field, 140)},
             'fields': 'pixelSize'}})
-    if core < len(headers):
-        requests += column_group_requests(properties, core, len(headers))
+        if field in PEOPLE_URLS + PEOPLE_EMAILS + ('openreview_id', 'whatsapp'):
+            # Every row is rewritten, so a link never stays on a cell after its person moved rows.
+            targets = [whatsapp_link(str(row[index])) if field == 'whatsapp' else people_link(field, str(row[index]))
+                       for row in values[1:]]
+            requests.append({'updateCells': {'range': {**area, 'startRowIndex': 1, 'startColumnIndex': index,
+                                                       'endColumnIndex': index + 1},
+                'rows': [{'values': [{'textFormatRuns': [{'startIndex': 0, 'format': {**link_style, 'link': {'uri': url}}}]
+                                      if url else []}]} for url in targets],
+                'fields': 'textFormatRuns'}})
+    if core < len(fields):
+        requests += column_group_requests(properties, core, len(fields))
     return requests
 
 
@@ -199,6 +258,13 @@ def write_link_problems(path, problems, timestamp):
     temporary.replace(path)
 
 
+def sheet_values(title, values):
+    """The cells as written: PeopleList shows header labels in place of database field names."""
+    if title != 'PeopleList':
+        return values
+    return [[exporter.people_label(field) for field in values[0]], *values[1:]]
+
+
 def refresh_requests(batch, properties):
     requests = []
     expected = [exporter.ordered_people_columns(exporter.PEOPLE_COLUMNS), list(exporter.PAPERS)]
@@ -213,6 +279,10 @@ def refresh_requests(batch, properties):
         ids = [row[id_column] for row in values[1:]]
         if not all(ids) or len(ids) != len(set(ids)):
             raise ValueError('Missing or duplicate record IDs')
+        field_names = headers
+        values = sheet_values(title, values)
+        headers = values[0]
+        label = exporter.people_label if title == 'PeopleList' else str
         p = properties[title]
         sid = p['sheetId']
         grid = p['gridProperties']
@@ -239,7 +309,7 @@ def refresh_requests(batch, properties):
         columns = [{'columnIndex': i, 'columnName': name, 'columnType': 'TEXT'}
                    for i, name in enumerate(headers)]
         for name in PAPER_DROPDOWNS if title == 'PaperList' else ('status',):
-            index = headers.index(name)
+            index = headers.index(label(name))
             options = sorted({row[index] for row in values[1:] if row[index]})
             if options:
                 columns[index].update(columnType='DROPDOWN', dataValidationRule={'condition': {
@@ -282,12 +352,12 @@ def refresh_requests(batch, properties):
             specification = {'tableId': tables[0]['tableId']} if tables else {'range': table_range}
             fields = 'range,namedRangeId,tableId' if tables else 'range'
             if sort_column:
-                specification['sortSpecs'] = [{'dimensionIndex': headers.index(column), 'sortOrder': 'ASCENDING'}
+                specification['sortSpecs'] = [{'dimensionIndex': headers.index(label(column)), 'sortOrder': 'ASCENDING'}
                                               for column in [sort_column, 'Paper' if title == 'PaperList' else 'name']]
                 fields += ',sortSpecs'
             if criterion:
                 kind = criterion[2] if len(criterion) > 2 else 'TEXT_EQ'
-                specification['criteria'] = {str(headers.index(criterion[0])): {'condition': {
+                specification['criteria'] = {str(headers.index(label(criterion[0]))): {'condition': {
                     'type': kind, 'values': [{'userEnteredValue': criterion[1]}]} if criterion[1] else {
                     'type': 'NOT_BLANK'}}}
                 fields += ',criteria'
@@ -297,7 +367,7 @@ def refresh_requests(batch, properties):
             else:
                 requests.append({'addFilterView': {'filter': {**specification, 'title': view_title}}})
         if title == 'PeopleList':
-            requests.extend(people_style_requests(p, values))
+            requests.extend(people_style_requests(p, values, field_names))
         if title == 'PaperList':
             requests.extend(paper_style_requests(p, values, batch['paperLinks'], batch.get('statusCounts')))
     return requests
@@ -432,7 +502,7 @@ def main():
     counts = []
     for item in batch['data']:
         title = item['range'].split("'")[1]
-        values = item['values']
+        values = sheet_values(title, item['values'])
         width = len(values[0])
         end = ''
         while width:

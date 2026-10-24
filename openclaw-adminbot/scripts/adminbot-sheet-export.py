@@ -283,15 +283,52 @@ arr_reviewer_qualified arr_review_capacity map_visibility location_permission li
 twitter_followers search'''.split())
 
 
-# Name first and frozen: it is what the PI scans and searches for, on a phone as much as on a laptop.
-# Contact details follow, outside the collapsed group: they are what people open the sheet to find.
-PEOPLE_PRIORITY = (
-    'name', 'id', 'calendar_email', 'whatsapp', 'one_on_one_folder_url', 'join_date', 'status', 'member_type', 'slack_active', 'membership_review', 'privilege_level',
-    'collaborator_subgroup', 'role', 'location', 'current_city', 'timezone',
-    'slack_messages_7d', 'receives_nudges', 'hours_per_week', 'affiliation',
-    'calendar_group', 'last_login_at', 'compute_access', 'availability',
-    'papers_authored_count', 'search',
+# PeopleList, left to right. Name is frozen first: it is what people scan and search for, on a phone
+# as much as on a laptop. Contact details follow, since they are what most people open the sheet for.
+# Each section gets its own header colour; columns no section lists sit behind one collapsed [+] group.
+PEOPLE_SECTIONS = (
+    ('Contact', ('name', 'preferred_name', 'calendar_email', 'whatsapp', 'email', 'correspondence_email',
+                 'one_on_one_folder_url', 'birthday', 'timezone', 'current_city')),
+    ('Lab', ('status', 'member_type', 'role', 'collaborator_subgroup', 'privilege_level', 'join_date',
+             'affiliation', 'at_uoft', 'hours_per_week', 'slack_active', 'membership_review', 'receives_nudges',
+             'compute_access', 'calendar_group', 'next_position', 'graduated_month')),
+    ('Research', ('research_branch', 'research_topics', 'elevator_pitch', 'projects', 'papers_authored_count',
+                  'papers_authored', 'arr_reviewer_qualified', 'arr_review_capacity')),
+    ('Links & socials', ('personal_website', 'linkedin_url', 'twitter_url', 'github_url', 'scholar_url',
+                         'openreview_id', 'acl_anthology_url', 'lesswrong_url', 'other_socials', 'cv_url',
+                         'linkedin_followers', 'twitter_followers')),
+    ('Location & availability', ('location', 'map_visibility', 'availability', 'availability_notes', 'time_off',
+                                 'trips', 'milestones', 'last_login_at', 'slack_messages_7d')),
+    ('Search', ('search',)),
 )
+PEOPLE_PRIORITY = tuple(field for _, fields in PEOPLE_SECTIONS for field in fields)
+PEOPLE_RECORDS_SECTION = 'AdminBot records'
+# Header text people read; any field not listed gets its name with underscores turned into spaces.
+PEOPLE_LABELS = {
+    'name': 'Name', 'preferred_name': 'Preferred name', 'calendar_email': 'Calendar email', 'whatsapp': 'WhatsApp',
+    'email': 'Email', 'correspondence_email': 'Correspondence email', 'one_on_one_folder_url': '1:1 folder',
+    'timezone': 'Time zone', 'current_city': 'City', 'member_type': 'Membership', 'collaborator_subgroup': 'Subgroup',
+    'privilege_level': 'Access level', 'join_date': 'Joined', 'at_uoft': 'At UofT', 'hours_per_week': 'Hours / week',
+    'slack_active': 'In #jinesis-active', 'receives_nudges': 'Gets nudges', 'compute_access': 'Compute',
+    'calendar_group': 'Calendar group', 'graduated_month': 'Graduated', 'research_topics': 'Research topics',
+    'papers_authored_count': 'Papers', 'papers_authored': 'Paper titles', 'arr_reviewer_qualified': 'ARR reviewer',
+    'arr_review_capacity': 'ARR capacity', 'personal_website': 'Website', 'linkedin_url': 'LinkedIn',
+    'twitter_url': 'Twitter / X', 'github_url': 'GitHub', 'scholar_url': 'Google Scholar', 'openreview_id': 'OpenReview',
+    'acl_anthology_url': 'ACL Anthology', 'lesswrong_url': 'LessWrong', 'cv_url': 'CV',
+    'linkedin_followers': 'LinkedIn followers', 'twitter_followers': 'X followers', 'last_login_at': 'Last login',
+    'slack_messages_7d': 'Slack messages (7 days)', 'search': 'Search (all fields)', 'id': 'AdminBot ID',
+    'slack_user_id': 'Slack user ID', 'dcs_username': 'DCS username', 'avatar_url': 'Avatar', 'intake_form_url': 'Intake form',
+}
+
+
+def people_label(field):
+    return PEOPLE_LABELS.get(field) or field.replace('_', ' ').capitalize()
+
+
+def people_section(field):
+    return next((title for title, fields in PEOPLE_SECTIONS if field in fields), PEOPLE_RECORDS_SECTION)
+
+
 # Text the 'search' column joins, so one filter or Ctrl-F hit finds a person by any of them.
 PEOPLE_SEARCH_FIELDS = ('name', 'preferred_name', 'id', 'email', 'correspondence_email', 'member_type', 'role',
                         'affiliation', 'current_city', 'location', 'research_branch', 'research_topics', 'projects')
