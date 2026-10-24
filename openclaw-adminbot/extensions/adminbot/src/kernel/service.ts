@@ -517,6 +517,8 @@ import {
   isActiveChannelEligible,
   type ActiveChannelReader,
 } from "./service.active-channels.js";
+import { inviteLocalLunches } from "./service.local-lunches.js";
+import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import {
   automationHealthIssues,
   slackInviteBlockFor,
@@ -3717,6 +3719,17 @@ export class AdminBotService {
       });
     }
     return this.calendarMembershipCleanup;
+  }
+
+  private localLunchInvites: ReturnType<typeof inviteLocalLunches> | undefined;
+
+  syncLocalLunchInvites(calendarId: string, read: CalendarEventsReader) {
+    if (!this.localLunchInvites) {
+      this.localLunchInvites = inviteLocalLunches(this, this.store, calendarId, read).finally(() => {
+        this.localLunchInvites = undefined;
+      });
+    }
+    return this.localLunchInvites;
   }
 
   private activeChannelCleanup: ReturnType<typeof enforceActiveChannels> | undefined;

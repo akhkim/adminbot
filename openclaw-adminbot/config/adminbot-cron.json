@@ -443,17 +443,11 @@
     },
     {
       "name": "adminbot-local-event-audience",
-      "description": "Check both Zurich lunch series daily and propose missing location-matched invitations",
+      "description": "Automatically invite local members to all upcoming lab lunches, without removing guests",
       "cron": "40 7 * * *",
       "argv": [
         "bash",
-        "scripts/adminbot-local-event-audience-cron.sh",
-        "--calendar-id",
-        "jinesis.lab@gmail.com",
-        "--event-id",
-        "aoovdbpiios5lakot40h68l92p_R20261019T100000",
-        "--event-id",
-        "1hbn0n69qq8h3e3ln48frh3313_R20261001T103000"
+        "scripts/adminbot-local-event-audience-cron.sh"
       ],
       "timeoutSeconds": 900
     },
