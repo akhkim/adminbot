@@ -284,8 +284,9 @@ twitter_followers search'''.split())
 
 
 # Name first and frozen: it is what the PI scans and searches for, on a phone as much as on a laptop.
+# Contact details follow, outside the collapsed group: they are what people open the sheet to find.
 PEOPLE_PRIORITY = (
-    'name', 'id', 'join_date', 'status', 'member_type', 'slack_active', 'membership_review', 'privilege_level',
+    'name', 'id', 'calendar_email', 'whatsapp', 'one_on_one_folder_url', 'join_date', 'status', 'member_type', 'slack_active', 'membership_review', 'privilege_level',
     'collaborator_subgroup', 'role', 'location', 'current_city', 'timezone',
     'slack_messages_7d', 'receives_nudges', 'hours_per_week', 'affiliation',
     'calendar_group', 'last_login_at', 'compute_access', 'availability',
