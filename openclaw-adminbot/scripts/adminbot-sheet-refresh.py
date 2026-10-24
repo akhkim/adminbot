@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Operator-approved daily database export to exactly two protected sheet tabs."""
+"""Operator-approved six-hourly (Toronto time) database export to exactly two protected sheet tabs."""
 import argparse
 import datetime
 import importlib.util
@@ -16,14 +16,40 @@ exporter = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(exporter)
 
 
-def paper_style_requests(properties, values):
+URGENCY_COLOURS = {'⛔': {'red': .96, 'green': .73, 'blue': .73}, '🔴': {'red': .99, 'green': .87, 'blue': .87}, '🟠': {'red': 1, 'green': .92, 'blue': .82},
+                   '🟡': {'red': 1, 'green': .97, 'blue': .80}, '🟢': {'red': .89, 'green': .96, 'blue': .89}}
+# What the PI reads first; always visible even when empty.
+PAPER_CORE = exporter.PAPERS[:exporter.PAPERS.index('Blocker / next step') + 1]
+PAPER_WIDTHS = {'Paper': 380, 'Urgency': 190, 'PI review': 150, 'Review for': 170, 'Review link': 280,
+                'Due (Toronto)': 170, 'Requested by': 150, 'Requested on': 130, 'Request note': 320,
+                'Venue deadline (Toronto)': 260, 'OpenReview': 300, 'Stage': 170, 'Lead': 150,
+                'Blocker / next step': 280, 'Link problems': 240, 'Still missing': 260, 'Authors': 360,
+                'All artifact statuses': 300, 'Venue (as entered)': 220, 'Venue': 230, 'Checks': 240, exporter.PAPER_ID: 160}
+
+
+def column_range(area, name, start_row=1):
+    index = exporter.PAPERS.index(name)
+    return {**area, 'startRowIndex': start_row, 'startColumnIndex': index, 'endColumnIndex': index + 1}
+
+
+def link_runs(pairs, style):
+    """One clickable run per label in 'A · B · C'; separators stay plain. Indexes match the cell text exactly."""
+    runs, position = [], 0
+    for number, (label, url) in enumerate(pairs):
+        if number:
+            runs.append({'startIndex': position, 'format': {}})
+            position += len(exporter.LINK_SEPARATOR.encode('utf-16-le')) // 2
+        runs.append({'startIndex': position, 'format': {**style, 'link': {'uri': url}}})
+        position += len(label.encode('utf-16-le')) // 2
+    return runs
+
+
+def paper_style_requests(properties, values, links):
     sid = properties['sheetId']
     row_count = len(values)
-    stage = exporter.PAPERS.index('current_step')
-    link_start = exporter.PAPERS.index('draft_link')
-    link_end = exporter.PAPERS.index('linkedin_post_link') + 1
+    headers = list(exporter.PAPERS)
     area = {'sheetId': sid, 'startRowIndex': 0, 'endRowIndex': row_count,
-            'startColumnIndex': 0, 'endColumnIndex': len(exporter.PAPERS)}
+            'startColumnIndex': 0, 'endColumnIndex': len(headers)}
     requests = [
         {'repeatCell': {'range': area, 'cell': {'userEnteredFormat': {
             'textFormat': {'fontFamily': 'Arial', 'fontSize': 10, 'bold': False,
@@ -35,41 +61,45 @@ def paper_style_requests(properties, values):
                            'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}},
             'verticalAlignment': 'MIDDLE'}},
             'fields': 'userEnteredFormat.textFormat,userEnteredFormat.verticalAlignment'}},
-        {'repeatCell': {'range': {**area, 'startRowIndex': 1, 'endColumnIndex': 1},
-            'cell': {'userEnteredFormat': {'wrapStrategy': 'CLIP', 'textFormat': {
-                'fontSize': 9, 'foregroundColor': {'red': .42, 'green': .47, 'blue': .53}}}},
-            'fields': 'userEnteredFormat.wrapStrategy,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.foregroundColor'}},
-        {'repeatCell': {'range': {**area, 'startRowIndex': 1, 'startColumnIndex': stage, 'endColumnIndex': stage + 1},
-            'cell': {'userEnteredFormat': {'textFormat': {'bold': True}}},
+        {'repeatCell': {'range': column_range(area, 'Paper'), 'cell': {'userEnteredFormat': {'textFormat': {'bold': True}}},
             'fields': 'userEnteredFormat.textFormat.bold'}},
+        {'repeatCell': {'range': column_range(area, exporter.PAPER_ID), 'cell': {'userEnteredFormat': {
+            'wrapStrategy': 'CLIP', 'textFormat': {'fontSize': 9, 'foregroundColor': {'red': .42, 'green': .47, 'blue': .53}}}},
+            'fields': 'userEnteredFormat.wrapStrategy,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.foregroundColor'}},
         {'updateDimensionProperties': {'range': {'sheetId': sid, 'dimension': 'ROWS', 'startIndex': 0, 'endIndex': 1},
             'properties': {'pixelSize': 36}, 'fields': 'pixelSize'}},
-        # Long author lists remain in the cell; a bounded row height keeps the PI's overview scannable.
+        # Long notes remain in the cell; a bounded row height keeps the PI's overview scannable.
         {'updateDimensionProperties': {'range': {'sheetId': sid, 'dimension': 'ROWS', 'startIndex': 1, 'endIndex': row_count},
-            'properties': {'pixelSize': 72}, 'fields': 'pixelSize'}},
+            'properties': {'pixelSize': 60}, 'fields': 'pixelSize'}},
         {'updateSheetProperties': {'properties': {'sheetId': sid, 'gridProperties': {'hideGridlines': True}},
             'fields': 'gridProperties.hideGridlines'}},
     ]
-    widths = [({'id': 160, 'title': 460, 'authors': 400, 'blocker': 280, 'next_action': 280,
-                'missing_recorded_artifacts': 320, 'invalid_recorded_artifacts': 320,
-                'artifact_statuses': 320}).get(name, 180) for name in exporter.PAPERS]
-    for index, width in enumerate(widths):
+    for index, name in enumerate(headers):
         requests.append({'updateDimensionProperties': {'range': {'sheetId': sid, 'dimension': 'COLUMNS',
             'startIndex': index, 'endIndex': index + 1}, 'properties': {
-                'pixelSize': width,
-                'hiddenByUser': not any(str(row[index]).strip() for row in values[1:])},
+                'pixelSize': PAPER_WIDTHS.get(name, 120 if name in exporter.LINK_COLUMNS else 160),
+                'hiddenByUser': name not in PAPER_CORE and not any(str(row[index]).strip() for row in values[1:])},
             'fields': 'pixelSize,hiddenByUser'}})
-    for link_start, link_end in [(link_start, link_end), (exporter.PAPERS.index("overleaf_edit_link"), exporter.PAPERS.index("overleaf_edit_link") + 1), (exporter.PAPERS.index("feedback_manuscript_link"), exporter.PAPERS.index("feedback_manuscript_link") + 1)]:
-        requests.extend([
-            {'repeatCell': {'range': {**area, 'startRowIndex': 1, 'startColumnIndex': link_start, 'endColumnIndex': link_end},
-                'cell': {'userEnteredFormat': {'wrapStrategy': 'CLIP', 'textFormat': {
-                    'underline': True, 'foregroundColor': {'red': .12, 'green': .34, 'blue': .67}}}},
-                'fields': 'userEnteredFormat.wrapStrategy,userEnteredFormat.textFormat.underline,userEnteredFormat.textFormat.foregroundColor'}},
-            {'updateCells': {'range': {**area, 'startRowIndex': 1, 'startColumnIndex': link_start, 'endColumnIndex': link_end},
-                'rows': [{'values': [{'userEnteredFormat': {'textFormat': {
-                    'link': {'uri': value}}}} if value else {} for value in row[link_start:link_end]]} for row in values[1:]],
-                'fields': 'userEnteredFormat.textFormat.link'}},
-        ])
+    # Columns left over from the previous, wider layout.
+    if properties['gridProperties']['columnCount'] > len(headers):
+        requests.append({'updateDimensionProperties': {'range': {'sheetId': sid, 'dimension': 'COLUMNS',
+            'startIndex': len(headers), 'endIndex': properties['gridProperties']['columnCount']},
+            'properties': {'hiddenByUser': True}, 'fields': 'hiddenByUser'}})
+    link_colour = {'underline': True, 'foregroundColor': {'red': .12, 'green': .34, 'blue': .67}}
+    for name in exporter.LINK_COLUMNS:
+        index = headers.index(name)
+        requests.append({'updateCells': {'range': column_range(area, name),
+            'rows': [{'values': [{'textFormatRuns': link_runs(row[index], link_colour)}]} for row in links[1:]],
+            'fields': 'textFormatRuns'}})
+    urgency, review = headers.index('Urgency'), headers.index('PI review')
+    requests.append({'updateCells': {'range': {**area, 'startRowIndex': 1, 'startColumnIndex': urgency,
+                                               'endColumnIndex': review + 1},
+        'rows': [{'values': [
+            {'userEnteredFormat': {'backgroundColor': URGENCY_COLOURS[row[urgency][:1]], 'textFormat': {'bold': True}}}
+            if row[urgency][:1] in URGENCY_COLOURS else {},
+            {'userEnteredFormat': {'textFormat': {'bold': True, 'foregroundColor': {'red': .70, 'green': .11, 'blue': .11}}}}
+            if row[review] == 'Needs PI review' else {}]} for row in values[1:]],
+        'fields': 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.foregroundColor'}})
     return requests
 
 
@@ -83,7 +113,8 @@ def refresh_requests(batch, properties):
             raise ValueError('Unexpected headers or empty export; previous snapshot retained')
         if any(len(row) != len(headers) or any(len(str(value)) > 50000 for value in row) for row in values):
             raise ValueError('Invalid export dimensions or oversized cell')
-        ids = [row[0] for row in values[1:]]
+        id_column = headers.index(exporter.PAPER_ID if title == 'PaperList' else 'id')
+        ids = [row[id_column] for row in values[1:]]
         if not all(ids) or len(ids) != len(set(ids)):
             raise ValueError('Missing or duplicate record IDs')
         p = properties[title]
@@ -96,7 +127,9 @@ def refresh_requests(batch, properties):
                 'frozenRowCount': 1, 'frozenColumnCount': 1}},
                 'fields': 'gridProperties.rowCount,gridProperties.columnCount,gridProperties.frozenRowCount,gridProperties.frozenColumnCount'}},
             # Clear and write are in one atomic batch: deleted records cannot linger.
-            {'repeatCell': {'range': {'sheetId': sid, 'startRowIndex': 1}, 'cell': {}, 'fields': 'userEnteredValue'}},
+            # PaperList also drops old formats so hyperlinks from a previous layout cannot sit on new data.
+            {'repeatCell': {'range': {'sheetId': sid, 'startRowIndex': 0 if title == 'PaperList' else 1}, 'cell': {},
+                'fields': 'userEnteredValue,userEnteredFormat' if title == 'PaperList' else 'userEnteredValue'}},
             {'updateCells': {'range': {'sheetId': sid, 'startRowIndex': 0, 'endRowIndex': len(values),
                 'startColumnIndex': 0, 'endColumnIndex': len(headers)},
                 'rows': [{'values': [{'userEnteredValue': {'stringValue': str(value)}} for value in row]} for row in values],
@@ -109,7 +142,7 @@ def refresh_requests(batch, properties):
             raise ValueError('Unexpected export table identity')
         columns = [{'columnIndex': i, 'columnName': name, 'columnType': 'TEXT'}
                    for i, name in enumerate(headers)]
-        stage = headers.index('current_step' if title == 'PaperList' else 'status')
+        stage = headers.index('Stage' if title == 'PaperList' else 'status')
         options = sorted({row[stage] for row in values[1:] if row[stage]})
         if options:
             columns[stage].update(columnType='DROPDOWN', dataValidationRule={'condition': {
@@ -127,12 +160,19 @@ def refresh_requests(batch, properties):
             requests.extend({'deleteBanding': {'bandedRangeId': band['bandedRangeId']}}
                             for band in p.get('bandedRanges', []))
             requests.append({'addTable': {'table': table}})
-        views = [(title + ' sort and filter', None)]
+        views = [(title + ' sort and filter', None, None)]
         if title == 'PaperList':
-            views += [('Awaiting PI feedback', 'feedback_requested_date'), ('Awaiting PI approval', 'review_ready_date'), ('By PI approval', 'pi_review_status'), ('By stage', 'current_step'), ('By venue', 'venue'), ('By review category', 'review_category')]
+            for obsolete in ('Awaiting PI approval', 'By PI approval', 'By review category'):
+                requests.extend({'deleteFilterView': {'filterId': v['filterViewId']}}
+                                for v in p.get('filterViews', []) if v['title'] == obsolete)
+            # The export is already ordered by urgency, so the queue view only filters.
+            views += [('PI review queue', None, ('PI review', 'Needs PI review')), ('By review type', 'Review for', None),
+                      ('By venue', 'Venue', None), ('By stage', 'Stage', None)]
         else:
-            views += [('By joined date', 'join_date'), ('Review inactive members', 'membership_review'), ('By membership type', 'member_type'), ('By Slack active channel', 'slack_active')]
-        for view_title, sort_column in views:
+            views += [('By joined date', 'join_date', None),
+                      ('Review inactive members', 'membership_review', ('membership_review', 'Review inactive')),
+                      ('By membership type', 'member_type', None), ('By Slack active channel', 'slack_active', None)]
+        for view_title, sort_column, criterion in views:
             view = next((v for v in p.get('filterViews', []) if v['title'] == view_title), None)
             if view and tables and view.get('tableId') != tables[0]['tableId']:
                 # Sheets does not convert a range-backed view into a table view in place.
@@ -142,24 +182,19 @@ def refresh_requests(batch, properties):
             fields = 'range,namedRangeId,tableId' if tables else 'range'
             if sort_column:
                 specification['sortSpecs'] = [{'dimensionIndex': headers.index(column), 'sortOrder': 'ASCENDING'}
-                                              for column in [sort_column, 'title' if title == 'PaperList' else 'name']]
+                                              for column in [sort_column, 'Paper' if title == 'PaperList' else 'name']]
                 fields += ',sortSpecs'
-                if view_title == 'Awaiting PI feedback':
-                    specification['criteria'] = {str(headers.index('feedback_review_status')): {'condition': {'type': 'TEXT_EQ', 'values': [{'userEnteredValue': 'awaiting PI feedback'}]}}}
-                    fields += ',criteria'
-                if view_title == 'Awaiting PI approval':
-                    specification['criteria'] = {str(headers.index('pi_review_status')): {'condition': {'type': 'TEXT_EQ', 'values': [{'userEnteredValue': 'awaiting PI approval'}]}}}
-                    fields += ',criteria'
-                if view_title == 'Review inactive members':
-                    specification['criteria'] = {str(headers.index('membership_review')): {'condition': {'type': 'TEXT_EQ', 'values': [{'userEnteredValue': 'Review inactive'}]}}}
-                    fields += ',criteria'
+            if criterion:
+                specification['criteria'] = {str(headers.index(criterion[0])): {'condition': {
+                    'type': 'TEXT_EQ', 'values': [{'userEnteredValue': criterion[1]}]}}}
+                fields += ',criteria'
             if view:
                 requests.append({'updateFilterView': {'filter': {**specification, 'filterViewId': view['filterViewId']},
                     'fields': fields}})
             else:
                 requests.append({'addFilterView': {'filter': {**specification, 'title': view_title}}})
         if title == 'PaperList':
-            requests.extend(paper_style_requests(p, values))
+            requests.extend(paper_style_requests(p, values, batch['paperLinks']))
     return requests
 
 
@@ -198,6 +233,8 @@ def main():
     ownership = gog(['--readonly', 'api', 'call', 'drive', 'v3', 'drive.files.get',
         '--params', json.dumps({'fileId': spreadsheet, 'fields': 'owners(emailAddress)'})])
     allowed_editors = {writer} | {owner['emailAddress'].lower() for owner in ownership['owners']}
+    # Named people the operator approved as protected-tab editors; anyone else still stops the export.
+    allowed_editors |= {email.lower() for email in config.get('extra_protection_editors', [])}
     metadata = gog(['--readonly', 'api', 'call', 'sheets', 'v4', 'sheets.spreadsheets.get',
         '--params', json.dumps({'spreadsheetId': spreadsheet, 'fields': 'sheets(properties,protectedRanges,filterViews,bandedRanges,tables)'})])
     properties = {}
@@ -218,7 +255,18 @@ def main():
     timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
     with sqlite3.connect(Path(args.database).resolve().as_uri() + '?mode=ro', uri=True, timeout=15) as connection:
         connection.execute('PRAGMA query_only=ON')
-        batch = exporter.snapshot(connection, timestamp, full_people=True)
+        urls = exporter.overleaf_urls(connection)
+    # Logged-out Overleaf check of read links, cached for a day next to the status file; failures report nothing.
+    try:
+        access = exporter.overleaf_access(urls, Path(args.status).with_name('adminbot-overleaf-access-cache.json'),
+                                          exporter.parse_time(timestamp))
+    except OSError:
+        access = {}
+    with sqlite3.connect(Path(args.database).resolve().as_uri() + '?mode=ro', uri=True, timeout=15) as connection:
+        connection.execute('PRAGMA query_only=ON')
+        # Written by the OpenReview results job under the account that holds the login; absent is fine.
+        openreview = exporter.load_openreview_results(Path(args.database).with_name('openreview-author-results.json'))
+        batch = exporter.snapshot(connection, timestamp, full_people=True, link_access=access, openreview=openreview)
     requests = refresh_requests(batch, properties)
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as body:
         json.dump({'requests': requests}, body)

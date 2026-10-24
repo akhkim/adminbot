@@ -8,35 +8,217 @@ import sqlite3
 from collections import Counter, defaultdict
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qsl
-
-FEEDBACK_SLOTS = {'feedback_arr': 'ARR', 'feedback_arxiv': 'arXiv', 'feedback_camera_ready': 'Camera-ready'}
+from zoneinfo import ZoneInfo
 
 PEOPLE = ('id', 'name', 'member_type', 'status', 'affiliation', 'research_topics')
+TORONTO = ZoneInfo('America/Toronto')
+# Review-link label -> (payload artifact keys, slot names), in the order the PI should open them.
+# First usable URL per label wins; slots before artifacts; a URL already shown is not repeated.
 PAPER_LINKS = {
-    'overleaf_link': ('overleaf_edit_url', 'overleaf_edit'),
-    'pdf_link': ('google_drive_pdf_url', 'drive_pdf_arxiv'),
-    'submission_link': ('submission_url', 'submission'),
-    'arxiv_link': ('arxiv_url', 'arxiv'),
-    'project_folder_link': (None, 'project_folder'),
-    'brainstorming_link': ('brainstorming_doc_url', None),
-    'github_link': ('github_url', None),
-    'slides_link': ('google_slides_url', 'slides'),
-    'poster_link': ('poster_url', 'poster'),
-    'talk_video_link': (None, 'talk_video'),
-    'rebuttal_link': (None, 'rebuttal_doc'),
-    'twitter_draft_link': ('twitter_draft_url', None),
-    'linkedin_draft_link': ('linkedin_draft_url', None),
-    'twitter_post_link': (None, 'x_post'),
-    'linkedin_post_link': (None, 'linkedin_post'),
+    'Overleaf edit': (('overleaf_edit_url',), ('overleaf_edit',)),
+    'Overleaf share': (('overleaf_share_url',), ('overleaf_share',)),
+    'Overleaf view': (('overleaf_view_url',), ('overleaf_view',)),
+    'PDF': (('google_drive_pdf_url',), ('drive_pdf_arxiv',)),
+    'arXiv': (('arxiv_url',), ('arxiv',)),
+    'Submission': (('submission_url',), ('submission',)),
+    'Project folder': ((), ('project_folder',)),
+    'Slides': (('google_slides_url',), ('slides',)),
+    'Poster': (('poster_url',), ('poster',)),
+    'GitHub': (('github_url',), ()),
+    'Rebuttal': ((), ('rebuttal_doc',)),
+    'Talk video': ((), ('talk_video',)),
+    'Brainstorming doc': (('brainstorming_doc_url',), ()),
+    'X draft': (('twitter_draft_url',), ()),
+    'LinkedIn draft': (('linkedin_draft_url',), ()),
+    'X post': ((), ('x_post',)),
+    'LinkedIn post': ((), ('linkedin_post',)),
 }
-PAPERS = ('id', 'title', 'pi_review_status', 'review_category', 'accepted_year', 'accepted_venue',
-          'acceptance_notification_date', 'overleaf_edit_link', 'started_on', 'going_attendees',
-          'missing_recorded_artifacts', 'invalid_recorded_artifacts', 'current_step', 'venue',
-          'venue_decision', 'lead_owner', 'deadline', 'blocker', 'next_action', 'last_updated',
-          'draft_link', *PAPER_LINKS, 'review_ready_date', 'papermentor_review_status',
-          'coauthor_feedback_status', 'affiliation_checked', 'github_link_checked',
-          'paper_mentor_checked', 'feedback_givers', 'artifact_statuses', 'authors',
-          'feedback_review_status', 'pending_feedback_types', 'feedback_requested_date', 'feedback_manuscript_link')
+LINK_SLOTS = sorted({slot for _, slots in PAPER_LINKS.values() for slot in slots})
+LINK_OF_SLOT = {slot: label for label, (_, slots) in PAPER_LINKS.items() for slot in slots}
+PAPER_ID = 'ID'
+# Sheet-only venue notes for papers with no venue in AdminBot. A real AdminBot venue always wins.
+VENUE_NOTES = {
+    'subliminal-learning-through-useful-math': 'Not ARR (per PI, Oct 11 2026)',
+    'uka-clinical-post-training': 'Not ARR (per PI, Oct 11 2026)',
+}
+# Plain-language layout: what the PI acts on first, links next, record-keeping detail last.
+PAPERS = ('Paper', 'Urgency', 'PI review', 'Review for', 'Review link', 'Due (Toronto)', 'Authors',
+          'Requested by', 'Requested on', 'Request note', 'Venue', 'Venue deadline (Toronto)',
+          'OpenReview', 'Stage', 'Lead', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
+          'Going to conference', 'Started', 'Last updated', 'Feedback givers', 'Checks',
+          'Venue (as entered)', 'All artifact statuses', PAPER_ID)
+LINK_COLUMNS = ('Review link',)
+LINK_SEPARATOR = ' · '
+# When nothing sets a due date, more deadline-bound review types come first.
+REVIEW_PRIORITY = ('ARR feedback', 'Camera-ready feedback', 'Publication approval', 'Other feedback', 'arXiv feedback')
+STAGES = {'brainstorming_docs': '1 · Brainstorming', 'overleaf_writing': '2 · Writing (Overleaf)',
+          'submission': '3 · Submission', 'google_drive_pdf': '4 · PDF on Drive',
+          'arxiv_polish': '5 · arXiv polish', 'slide_making': '6 · Slides',
+          'poster_making': '7 · Poster', 'social_posts': '8 · Social posts'}
+PRE_SUBMISSION = {'brainstorming_docs', 'overleaf_writing', 'submission'}
+# Venues whose papers go through ACL Rolling Review.
+ARR_FAMILY = ('ACL', 'EMNLP', 'NAACL', 'EACL', 'AACL', 'IJCNLP', 'COLING', 'ARR')
+SLOT_LABELS = {'drive_pdf_arxiv': 'PDF', 'overleaf_edit': 'Overleaf edit', 'overleaf_view': 'Overleaf view',
+               'overleaf_share': 'Overleaf share', 'authors_ack': 'Authors sign-off',
+               'pi_approval': 'PI approval', 'coauthor_feedback': 'Co-author feedback',
+               'papermentor_review': 'Mentor review', 'project_folder': 'Project folder'}
+
+
+def slot_label(slot):
+    return SLOT_LABELS.get(slot, slot.replace('_', ' ').capitalize())
+
+
+def review_type(slot):
+    """feedback_arr -> 'ARR feedback'; the PI sees what the review is for, never a conference."""
+    kind = slot.removeprefix('feedback_')
+    return {'arr': 'ARR feedback', 'arxiv': 'arXiv feedback', 'camera_ready': 'Camera-ready feedback',
+            'other': 'Other feedback'}.get(kind, kind.replace('_', ' ').capitalize() + ' feedback')
+
+
+def parse_time(value):
+    try:
+        moment = datetime.datetime.fromisoformat(str(value).strip().replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=datetime.timezone.utc)
+
+
+def toronto(moment, with_time=True):
+    if not moment:
+        return ''
+    local = moment.astimezone(TORONTO)
+    text = local.strftime('%a %b %-d, %Y')
+    return text + local.strftime(', %-I:%M %p') if with_time else text
+
+
+# ACL Rolling Review calendar (aclrollingreview.org/dates, checked 2026-10-11). Deadlines are 23:59 AoE.
+# Each venue lists the LAST cycle that can commit to it. Published ARR deadlines in the database extend this.
+ARR_CYCLES = {'Mar 2026': '2026-03-16', 'May 2026': '2026-05-25', 'Aug 2026': '2026-08-03',
+              'Oct 2026': '2026-10-12', 'Jan 2027': '2027-01-04'}
+ARR_LAST_CYCLE = {('EMNLP', '2026'): 'May 2026', ('AACL', '2026'): 'May 2026', ('EACL', '2027'): 'Aug 2026',
+                  ('NAACL', '2027'): 'Oct 2026', ('COLING', '2027'): 'Oct 2026', ('ACL', '2027'): 'Jan 2027'}
+CANONICAL_VENUES = {v.upper(): v for v in (*ARR_FAMILY, 'ICLR', 'ICML', 'NeurIPS', 'AAAI', 'COLM', 'IJCAI',
+                                           'CVPR', 'KDD', 'TMLR', 'JMLR', 'FAccT', 'AIES', 'CHI', 'IUI')}
+# A missed hard venue deadline stays visible this long; an arXiv feedback request gets this many days for review.
+OVERDUE_DAYS = 14
+ARXIV_REVIEW_DAYS = 7
+MONTHS = ('jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec')
+
+
+def aoe(date):
+    return datetime.datetime.fromisoformat(date + 'T23:59').replace(tzinfo=ZoneInfo('Etc/GMT+12'))
+
+
+def arr_calendar(deadlines):
+    """(cycles: label -> deadline, last cycle per (venue, year)), merged with published ARR deadlines."""
+    cycles = {label: aoe(date) for label, date in ARR_CYCLES.items()}
+    last = dict(ARR_LAST_CYCLE)
+    for d in deadlines:
+        if d['type'] == 'arr_direct_submission':
+            label = d['at'].astimezone(ZoneInfo('Etc/GMT+12')).strftime('%b %Y')
+            cycles.setdefault(label, d['at'])
+            key = (d['conference'].upper(), d['year'])
+            if key not in last or cycles[label] > cycles[last[key]]:
+                last[key] = label
+    return dict(sorted(cycles.items(), key=lambda item: item[1])), last
+
+
+def venue_info(record, slots, deadlines, now):
+    """Uniform venue text plus the deadline that matters for it.
+
+    ARR route: 'ARR · Oct 2026', and '→ NAACL 2027 Findings' only once committed. Others: 'ICLR 2027'.
+    """
+    artifacts = record.get('artifacts') or {}
+    raw = ' '.join(str(record.get('venue') or artifacts.get('conference') or '').split())
+    accepted = record.get('venue_decision') == 'accept' and record.get('accepted_venue')
+    source = str(record.get('accepted_venue')) if accepted else raw
+    if not source:
+        return '', None
+    committed_to = re.search(r'committed to ([^,;]+)', source, re.I)
+    name = committed_to.group(1) if committed_to else source
+    name = re.sub(r'^(to be |findings of )', '', name, flags=re.I)
+    name = re.sub(r'\s*\((main|findings)\)|\bfindings\b', '', name, flags=re.I).strip(' ,')
+    base = re.split(r'[\s(@-]', name)[0].upper()
+    if base in CANONICAL_VENUES:  # 'iclr 2027' -> 'ICLR 2027'
+        name = CANONICAL_VENUES[base] + name[len(base):]
+    year = re.search(r'\b20\d{2}\b', name) or re.search(r'\b20\d{2}\b', raw)
+    year = year.group(0) if year else str(record.get('accepted_year') or '') if accepted else ''
+    if year and year not in name:
+        name += ' ' + year
+    is_arr = base in ARR_FAMILY or bool(re.search(r'\barr\b', raw, re.I))
+    pre_submission = record.get('current_step') in PRE_SUBMISSION and not record.get('under_review')
+    camera_ready = venue_deadline(base, year, deadlines, now, camera_ready=True) if accepted else None
+    if not is_arr:
+        deadline = venue_deadline(base, year, deadlines, now) if pre_submission else camera_ready
+        return name, deadline
+    cycles, last = arr_calendar(deadlines)
+    committed = bool(accepted or committed_to or re.search(r'\bacceptance\b', raw, re.I))
+    cycle = None
+    month = re.search(r'\b(' + '|'.join(MONTHS) + r')[a-z]*\.?\s*(20\d{2})?', raw, re.I)
+    if month and re.search(r'\barr\b', raw, re.I):  # 'ARR October 2026' names the cycle outright
+        wanted = month.group(1).capitalize()
+        options = [label for label in cycles if label.startswith(wanted)
+                   and (not month.group(2) or label.endswith(month.group(2)))]
+        cycle = min(options, key=lambda label: abs(cycles[label] - now), default=None)
+    elif pre_submission and not committed:
+        cycle = next((label for label, at in cycles.items() if at >= now), None)
+    else:
+        submitted = parse_time(next((s.get('provided_at') for s in slots
+                                     if s['slot'] == 'submission' and s['status'] == 'provided'), '') or '')
+        cycle = next((label for label, at in reversed(cycles.items())
+                      if submitted and at <= submitted + datetime.timedelta(days=1)), None)
+        # A guessed cycle must be one the committed venue could take ('Aug 2026 → ACL 2026' is impossible).
+        if cycle and committed and ((base, year) not in last or cycles[cycle] > cycles.get(last[(base, year)], now)):
+            cycle = None
+    text = 'ARR · ' + cycle if cycle else 'ARR'
+    if committed and base != 'ARR':
+        track = 'Findings' if ('findings' in source.lower() or artifacts.get('publication_track') == 'findings') else ''
+        text += ' → ' + ' '.join(x for x in (name, track) if x)
+    elif not cycle:
+        text += ' · cycle not recorded'
+    deadline = None
+    if cycle and pre_submission and not committed and cycles[cycle] >= now:
+        deadline = {'name': 'ARR ' + cycle, 'at': cycles[cycle]}
+    return text, deadline or camera_ready
+
+
+def deadline_kind(d):
+    """'hard' (submission, full paper, camera-ready), 'soft' (abstract, registration, early) or None (not an author deadline)."""
+    text = f"{d.get('milestone', '')} {d.get('label', '')}".lower().replace('_', ' ')
+    if any(word in text for word in ('notification', 'notify', 'conference date', 'event')):
+        return None
+    if any(word in text for word in ('abstract', 'registration', 'early', 'intent')):
+        return 'soft'
+    return 'hard'
+
+
+def venue_deadline(base, year, deadlines, now, camera_ready=False):
+    """Next hard deadline for the venue, with any earlier soft one (an abstract) attached as 'soft'.
+
+    A hard deadline that passed in the last OVERDUE_DAYS is still returned, so a paper stuck before
+    submission shows as overdue instead of silently losing its deadline.
+    """
+    def wanted(d):
+        if not base or not (d['conference'].upper() == base or d['name'].upper().startswith(base)):
+            return False
+        if year and d['year'] not in ('', year) or d['type'] == 'arr_direct_submission':
+            return False
+        return ('camera' in (d.get('milestone', '') + d.get('label', '')).lower()) == camera_ready
+    mine = sorted((d for d in deadlines if wanted(d) and deadline_kind(d)), key=lambda d: d['at'])
+    hard = [d for d in mine if deadline_kind(d) == 'hard' and d['at'] >= now - datetime.timedelta(days=OVERDUE_DAYS)]
+    upcoming = [d for d in hard if d['at'] >= now]
+    chosen = upcoming[0] if upcoming else (hard[-1] if hard else None)
+    soft = next((d for d in mine if deadline_kind(d) == 'soft' and d['at'] >= now
+                 and (not chosen or d['at'] <= chosen['at'])), None)
+    if not chosen:
+        return dict(soft, soft_only=True) if soft else None
+    return dict(chosen, soft=soft) if soft else chosen
+
+
+def deadline_name(d):
+    label = d.get('label', '')
+    return d['name'] + (f' ({label})' if label and label.lower() != 'paper submission' else '')
+
 
 PEOPLE_COLUMNS = tuple('''id join_date join_date_basis slack_active membership_review preferred_name member_type
 test_onboard_batch receives_nudges email calendar_email slack_user_id merch_requests
@@ -116,147 +298,526 @@ def cell(value):
     return str(value)
 
 
-def paper_review_fields(record, members, slots=()):
-    """Recorded review fields only; no ownership, deadline or task inference."""
-    artifacts = record.get('artifacts') or {}
-
-    def link(value):
-        if not isinstance(value, str):
+def safe_link(value):
+    """https only; no embedded credentials or token-bearing query parameters."""
+    if not isinstance(value, str) or not value.strip():
+        return ''
+    value = value.strip()
+    try:
+        url = urlsplit(value)
+        if url.hostname in ('www.google.com', 'google.com') and url.path == '/url':
+            return safe_link(dict(parse_qsl(url.query)).get('q', ''))
+        if url.scheme != 'https' or not url.hostname or url.username or url.password:
             return ''
-        try:
-            url = urlsplit(value)
-            if url.scheme != 'https' or not url.hostname or url.username or url.password:
-                return ''
-            if any(key.lower() in {'token', 'key', 'secret', 'password', 'auth', 'signature',
-                                  'access_token', 'id_token', 'api_key', 'apikey', 'resourcekey'}
-                   or key.lower().startswith(('x-amz-', 'x-goog-'))
-                   for key, _ in parse_qsl(url.query)):
-                return ''
-            # Overleaf read/share URLs carry access tokens; project URLs require existing access.
-            if url.hostname.endswith('overleaf.com') and not url.path.startswith('/project/'):
-                return ''
-        except ValueError:
+        if any(key.lower() in {'token', 'key', 'secret', 'password', 'auth', 'signature',
+                              'access_token', 'id_token', 'api_key', 'apikey', 'resourcekey'}
+               or key.lower().startswith(('x-amz-', 'x-goog-'))
+               for key, _ in parse_qsl(url.query)):
             return ''
-        return value
+    except ValueError:
+        return ''
+    # Overleaf share/read links are exported by operator decision (2026-10-11).
+    return value
 
+
+def overleaf_kind(url):
+    """'project' (opens only for invited collaborators), 'read' (anyone with the link can view), 'edit' (share token)."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    if parts.hostname not in ('www.overleaf.com', 'overleaf.com'):
+        return None
+    path = parts.path.strip('/')
+    if path.startswith('project/'):
+        return 'project'
+    if re.fullmatch(r'read/[a-z0-9]+', path):
+        return 'read'
+    if re.fullmatch(r'\d+[a-z0-9]+', path):
+        return 'edit'
+    return None
+
+
+def probe_overleaf_read(url, timeout=10):
+    """Asks Overleaf, logged out, whether a read link opens: 'open', 'restricted', 'busy' (rate limited) or None.
+
+    A plain GET always returns the same page; only the token-grant call shows whether link sharing is on.
+    """
+    import http.cookiejar
+    import urllib.error
+    import urllib.request
+    path = '/' + urlsplit(url).path.strip('/')
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    headers = {'User-Agent': 'adminbot-sheet-export link check'}
+    try:
+        with opener.open(urllib.request.Request('https://www.overleaf.com' + path, headers=headers), timeout=timeout) as page:
+            csrf = re.search(r'name="ol-csrfToken" content="([^"]+)"', page.read(500_000).decode('utf-8', 'replace'))
+        if not csrf:
+            return None
+        grant = urllib.request.Request('https://www.overleaf.com' + path + '/grant', method='POST',
+                                       data=json.dumps({'_csrf': csrf.group(1), 'confirmedByUser': False}).encode(),
+                                       headers={**headers, 'Content-Type': 'application/json', 'Accept': 'application/json',
+                                                'X-Csrf-Token': csrf.group(1)})
+        with opener.open(grant, timeout=timeout) as response:
+            answer = json.loads(response.read(65_536))
+    except urllib.error.HTTPError as error:
+        return 'busy' if error.code == 429 else None
+    except (OSError, ValueError):
+        return None
+    if answer.get('grantAnonymousAccess') or str(answer.get('redirect', '')).startswith('/project/'):
+        return 'open'
+    if (answer.get('v1Import') or {}).get('status') == 'mustLogin' or answer.get('redirect') == '/restricted':
+        return 'restricted'
+    return None
+
+
+def overleaf_access(urls, cache_path, now, probe=probe_overleaf_read, max_probes=8, budget_seconds=90):
+    """{url: 'open' | 'restricted'} for Overleaf read links, cached on host by URL hash (never the token itself).
+
+    Links that could not be checked are left out, so a network failure never reports a link as broken.
+    Overleaf rate-limits after about ten logged-out checks, so each run checks a few of the stalest links
+    and stops at the first refusal; open links are rechecked every three days, restricted ones daily.
+    """
+    import hashlib
+    import time
+    cache_path = Path(cache_path)
+    try:
+        cache = json.loads(cache_path.read_text())
+    except (OSError, ValueError):
+        cache = {}
+    result, probes, stop = {}, 0, time.monotonic() + budget_seconds
+    keyed = {url: hashlib.sha256(('/' + urlsplit(url).path.strip('/')).encode()).hexdigest()
+             for url in set(urls) if overleaf_kind(url) == 'read'}
+    for url in sorted(keyed, key=lambda u: ((cache.get(keyed[u]) or {}).get('checked_at', ''), u)):
+        key = keyed[url]
+        cached = cache.get(key) or {}
+        checked = parse_time(cached.get('checked_at') or '')
+        fresh = checked and now - checked < datetime.timedelta(days=3 if cached.get('status') == 'open' else 1)
+        if not fresh and probes < max_probes and time.monotonic() < stop:
+            if probes:
+                time.sleep(3)
+            probes += 1
+            status = probe(url)
+            if status == 'busy':
+                stop = 0
+            elif status:
+                cached = cache[key] = {'status': status, 'checked_at': now.isoformat()}
+        if cached.get('status'):
+            result[url] = cached['status']
+    temporary = cache_path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(cache, sort_keys=True))
+    temporary.replace(cache_path)
+    return result
+
+
+def overleaf_urls(connection):
+    """Every Overleaf link the export may show, read before the export snapshot so probing never holds it open."""
+    urls = []
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE name='adminbot_paper_slots'").fetchone():
+        urls += [u for (u,) in connection.execute(
+            "SELECT url FROM adminbot_paper_slots WHERE slot LIKE 'overleaf%' AND status IN ('provided','invalid')")]
+        urls += [request_payload({'value_text': text}).get('url') for (text,) in connection.execute(
+            "SELECT value_text FROM adminbot_paper_slots WHERE slot LIKE 'feedback\\_%' ESCAPE '\\' AND status='provided'")]
+    for (raw,) in connection.execute('SELECT payload_json FROM adminbot_papers'):
+        artifacts = json.loads(raw).get('artifacts') or {}
+        urls += [artifacts.get(k) for k in ('overleaf_edit_url', 'overleaf_share_url', 'overleaf_view_url')]
+    return sorted({safe_link(u) for u in urls if isinstance(u, str) and safe_link(u)})
+
+
+def request_payload(row):
+    try:
+        payload = json.loads(row.get('value_text') or '{}')
+    except ValueError:
+        payload = {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def pi_requests(slots, links):
+    """Every way a PI review gets requested, as one list; done once PI approval is recorded after it."""
     by_slot = {row['slot']: row for row in slots}
-    pending_feedback = []
+    approval = by_slot.get('pi_approval', {})
+    approved_at = parse_time(approval.get('provided_at')) if approval.get('status') == 'provided' else None
+    requests = []
     for row in slots:
-        if row['slot'] not in FEEDBACK_SLOTS or row.get('status') != 'provided':
-            continue
-        try:
-            request = json.loads(row.get('value_text') or '')
-            if not isinstance(request, dict) or not isinstance(request.get('reason'), str) or not request['reason'].strip() or len(request['reason']) > 2000:
-                continue
-            url = request.get('url')
-            if not isinstance(url, str) or urlsplit(url).scheme != 'https' or not urlsplit(url).netloc or ('reviewed' in request and not isinstance(request['reviewed'], bool)):
-                continue
-            if 'review_note' in request and (not isinstance(request['review_note'], str) or len(request['review_note']) > 4000):
-                continue
-            dates = {}
-            for field in ('soft_deadline', 'hard_deadline'):
-                if field in request:
-                    value = request[field]
-                    if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})', value):
-                        raise ValueError('Invalid feedback deadline')
-                    dates[field] = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
-            if dates.get('soft_deadline') and dates.get('hard_deadline') and dates['soft_deadline'] > dates['hard_deadline']:
-                continue
-            if not request.get('reviewed', False):
-                pending_feedback.append((row, request))
-        except (ValueError, TypeError):
-            continue
-    pending_feedback.sort(key=lambda pair: (pair[0].get('provided_at') or '9999', pair[0]['slot']))
-    links = {}
-    for field, (artifact, slot) in PAPER_LINKS.items():
-        evidence = by_slot.get(slot, {})
-        links[field] = (link(evidence.get('url')) if evidence.get('status') == 'provided' else '')
-        if not links[field] and evidence.get('status') != 'invalid':
-            links[field] = link(artifacts.get(artifact))
-    overleaf_edit_link = links['overleaf_link']
-    view = by_slot.get('overleaf_view', {})
-    if not links['overleaf_link'] and by_slot.get('overleaf_edit', {}).get('status') != 'invalid':
-        links['overleaf_link'] = (link(view.get('url')) if view.get('status') == 'provided' else '')
-        if not links['overleaf_link'] and view.get('status') != 'invalid':
-            links['overleaf_link'] = link(artifacts.get('overleaf_view_url'))
-    categories = [label for slot, label in [('feedback_arr', 'ARR'), ('feedback_arxiv', 'arXiv'), ('feedback_camera_ready', 'Camera-ready')]
-                  if by_slot.get(slot, {}).get('status') == 'provided']
-    aliases = {'arr': 'ARR', 'arr acceptance': 'ARR', 'arxiv': 'arXiv',
-               'camera ready': 'Camera-ready', 'neurips': 'NeurIPS', 'nips': 'NeurIPS',
-               'icml': 'ICML', 'iclr': 'ICLR', 'emnlp': 'EMNLP', 'acl': 'ACL',
-               'naacl': 'NAACL', 'aaai': 'AAAI', 'aistats': 'AISTATS', 'colt': 'COLT'}
-    for category in str(record.get('venue') or artifacts.get('conference') or '').split(','):
-        category = ' '.join(category.split())
-        key = re.sub(r'\b(?:19|20)\d{2}\b', '', category).strip().lower()
-        key = re.sub(r'^(?:committed to|accepted at)\s+', '', key)
-        key = re.sub(r'\s*\(main\)$', '', key).strip()
-        key = key.replace('-', ' ')
-        if category:
-            categories.append(aliases.get(key, category))
-    owner_id = record.get('lead_owner_member_id')
-    owner = members.get(owner_id, {}).get('name', owner_id or '')
-    return {
-        'feedback_review_status': 'awaiting PI feedback' if pending_feedback else '',
-        'pending_feedback_types': ', '.join(FEEDBACK_SLOTS[row['slot']] for row, _ in pending_feedback),
-        'feedback_requested_date': pending_feedback[0][0].get('provided_at') or '' if pending_feedback else '',
-        'feedback_manuscript_link': link(pending_feedback[0][1]['url']) if pending_feedback else '',
-        'review_category': ', '.join(dict.fromkeys(categories)) or 'Not recorded',
-        'venue': record.get('venue') or artifacts.get('conference', ''),
-        'lead_owner': record.get('lead_owner') or owner,
-        'deadline': record.get('deadline', ''),
-        'blocker': '\n'.join(str(artifacts[key]) for key in ['blocker_title', 'blocker_note'] if artifacts.get(key)),
-        'next_action': record.get('next_action', ''),
-        'last_updated': record.get('updated_at', ''),
-        'draft_link': links['overleaf_link'] or links['pdf_link'],
-        'overleaf_edit_link': overleaf_edit_link,
-        **links,
-    }
+        if row['slot'].startswith('feedback_') and row['status'] == 'provided':
+            payload = request_payload(row)
+            requests.append({'type': review_type(row['slot']), 'at': parse_time(row.get('provided_at')),
+                             'by': row.get('provided_by_member_id'), 'url': safe_link(payload.get('url')),
+                             'note': str(payload.get('reason') or '').strip(),
+                             'hard': parse_time(payload.get('hard_deadline') or ''),
+                             'soft': parse_time(payload.get('soft_deadline') or '')})
+    ack = by_slot.get('authors_ack', {})
+    if ack.get('status') == 'provided':
+        missing = [label for label, column in (('PDF', 'PDF'),) if not links[column]]
+        requests.append({'type': 'Publication approval', 'at': parse_time(ack.get('provided_at')),
+                         'by': ack.get('provided_by_member_id'), 'url': '', 'hard': None, 'soft': None,
+                         'note': 'Authors signed off; ready for PI approval.' + (
+                             ' PDF link missing or invalid.' if missing else ''),
+                         'settled': approval.get('status') in ('provided', 'waived')})
+    for request in requests:
+        request['pending'] = not (request.get('settled') or (
+            approved_at and request['at'] and approved_at >= request['at']))
+    return requests, approved_at
 
 
+def countdown(days):
+    return ('overdue by %d day%s' % (-days, '' if days == -1 else 's') if days < 0 else
+            'today' if days == 0 else 'tomorrow' if days == 1 else 'in %d days' % days)
 
-def paper_evidence_fields(record, slots):
+
+def days_until(moment, now):
+    return (moment.astimezone(TORONTO).date() - now.astimezone(TORONTO).date()).days
+
+
+def urgency(hard, soft, waiting_since, now, prefix='Due', soft_name='soft target', window=None):
+    """Returns (label, sort rank); rank 0 is most urgent.
+
+    Only a hard deadline is coloured and can turn red; a missed one is ⛔. A soft target is drawn thin
+    (◌), ranks one step lower and never escalates on its own; ahead of a hard deadline it is a trailing note.
+    window: review days given before a dateless request counts as waiting (arXiv feedback).
+    """
+    note, soft_rank = '', 9
+    if soft and not (hard and (soft >= hard or hard < now)):
+        days = days_until(soft, now)
+        passed = 'passed %d day%s ago' % (-days, '' if days == -1 else 's') if days < 0 else None
+        note = f"{soft_name} {passed or countdown(days)}"
+        soft_rank = 2 if days < 0 else (1 if days <= 3 else 2 if days <= 7 else 3)
+    if hard:
+        days = days_until(hard, now)
+        icon, rank = (('⛔', 0) if days < 0 else ('🔴', 0) if days <= 3 else ('🟠', 1) if days <= 7 else
+                      ('🟡', 2) if days <= 21 else ('🟢', 3))
+        when = countdown(days)
+        label = f'{icon} {prefix} {when}' if days >= 0 else f'{icon} {prefix.replace("Due", "Hard deadline")} {when}'
+        return label + (f' · {note}' if note else ''), min(rank, soft_rank)
+    if note:
+        return '◌ ' + note[0].upper() + note[1:], soft_rank
+    if waiting_since:
+        days = (now - waiting_since).days
+        if window and days < window:
+            return '◌ In %d-day review window: day %d' % (window, days + 1), 3
+        return ('🟠' if days >= 7 else '🟡') + (' Waiting %d days' % days if days > 1 else ' New request'), (1 if days >= 7 else 2)
+    return '', 9
+
+
+def due_text(request):
+    hard, soft = request.get('hard'), request.get('soft')
+    if hard and soft and soft < hard:
+        return f'{toronto(hard)} (soft target {toronto(soft)})'
+    return toronto(hard) if hard else ('Soft target ' + toronto(soft)) if soft else ''
+
+
+# --------------------------------------------------------------------------
+# OpenReview outcome per paper
+# --------------------------------------------------------------------------
+FORUM_ID_RE = re.compile(r'openreview\.net/(?:forum|pdf)\?(?:[^#]*&)?id=([A-Za-z0-9_-]+)')
+OVERALL_KEYS = ('overall_assessment', 'rating', 'recommendation', 'overall_recommendation')
+STATUS_TEXT = {'accepted': '✅ Accepted', 'under_review': '⏳ Under review', 'rejected': '❌ Rejected',
+               'desk_rejected': '❌ Desk rejected', 'withdrawn': '↩️ Withdrawn'}
+
+
+def normalized_title(title):
+    return re.sub(r'[^a-z0-9]', '', str(title or '').lower())
+
+
+def venue_from_id(venue_id):
+    """'aclweb.org/ACL/ARR/2026/October/Submission' -> 'ARR October 2026'."""
+    parts = [p for p in str(venue_id or '').split('/') if p]
+    if 'ARR' in parts and len(parts) >= parts.index('ARR') + 3:
+        year, month = parts[parts.index('ARR') + 1:parts.index('ARR') + 3]
+        return f'ARR {month} {year}'
+    # 'ICLR.cc/2027/Conference/Submission' -> 'ICLR 2027'; workshops keep their name after the year.
+    year = next((i for i, p in enumerate(parts) if p.isdigit() and len(p) == 4), None)
+    if not parts or year is None:
+        return str(venue_id or '')
+    rest = [p.replace('_', ' ') for p in parts[year + 1:] if p != 'Conference' and not p.endswith('Submission')]
+    return ' '.join([parts[0].split('.')[0], parts[year], *rest])
+
+
+def cycle_key(entry):
+    """(year, month) of a submission's venue, so a resubmission beats the cycle before it."""
+    words = str(entry.get('venue_id') or '').replace('/', ' ').lower().split()
+    year = next((int(w) for w in words if w.isdigit() and len(w) == 4), 0)
+    names = [datetime.date(2000, m, 1).strftime('%B').lower() for m in range(1, 13)]
+    month = next((names.index(w) + 1 for w in words if w in names), 0)
+    return year, month
+
+
+def citation_check_results(connection):
+    """Submissions the citation checker already saw, as a fallback when the results snapshot is missing.
+
+    These rows say only which venue a submission sits in, so they yield nothing but "under review",
+    "rejected" or "withdrawn"; decisions, presentation and scores need the snapshot.
+    """
+    if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='adminbot_openreview_citation_checks'").fetchone():
+        return []
+    entries = {}
+    for submission_id, title, venue_id in connection.execute(
+            'SELECT submission_id,title,venue_id FROM adminbot_openreview_citation_checks'):
+        lowered = str(venue_id or '').lower()
+        status = ('withdrawn' if 'withdraw' in lowered else 'desk_rejected' if 'desk_reject' in lowered
+                  else 'rejected' if 'reject' in lowered else 'under_review' if lowered.endswith('/submission') else None)
+        if status:
+            entries[submission_id] = {'id': submission_id, 'forum': submission_id, 'title': title,
+                                      'venue': venue_from_id(venue_id), 'venue_id': venue_id, 'status': status}
+    return list(entries.values())
+
+
+def openreview_match(record, slots, results):
+    """The submission a paper refers to: a forum id in any of its links first, else the same title."""
+    urls = [row.get('url') for row in slots] + list((record.get('artifacts') or {}).values())
+    forums = {m.group(1) for u in urls if isinstance(u, str) for m in [FORUM_ID_RE.search(u)] if m}
+    by_forum = [e for e in results if forums & {e.get('id'), e.get('forum'), e.get('review_forum')}]
+    title = normalized_title(record.get('title'))
+    candidates = by_forum or [e for e in results if title and normalized_title(e.get('title')) == title]
+    # Results snapshot entries come before citation-check fallbacks, so ties keep the richer one.
+    return max(candidates, key=cycle_key, default=None)
+
+
+def arr_cycle_deadline(entry, cycles):
+    """Deadline of the ARR cycle an OpenReview submission went to ('.../ARR/2026/October/...'), else None."""
+    parts = str((entry or {}).get('venue_id') or '').split('/')
+    if 'ARR' not in parts or len(parts) < parts.index('ARR') + 3:
+        return None
+    year, month = parts[parts.index('ARR') + 1:parts.index('ARR') + 3]
+    return cycles.get(f'{month[:3].capitalize()} {year}')
+
+
+def as_on_openreview(record, review):
+    """The paper's venue and decision as the PI's OpenReview has them.
+
+    OpenReview is the ground truth for what came of a submission: an acceptance there sets the
+    venue, year and track; a rejection or withdrawal there clears an acceptance the record claims;
+    a submission under review there names the venue and means the paper is past submitting. The
+    record keeps its own venue after a rejection (that is the next plan) and its own acceptance
+    when it is from a later year than the OpenReview submission (accepted somewhere off OpenReview).
+    """
+    if not review or not review.get('status'):
+        return record
+    venue = venue_from_id(review.get('venue_id')) or review.get('venue') or ''
+    year = (re.search(r'\b20\d{2}\b', venue) or [''])[0]
+    if record.get('venue_decision') == 'accept' and str(record.get('accepted_year') or '') > year:
+        return record
+    record = dict(record, artifacts=dict(record.get('artifacts') or {}))
+    if review['status'] == 'accepted':
+        record.update(venue_decision='accept', accepted_venue=venue, accepted_year=year)
+        if review.get('track'):
+            record['artifacts']['publication_track'] = review['track']
+    elif review['status'] == 'under_review':
+        record.update(venue=venue, venue_decision=None, accepted_venue=None, accepted_year=None, under_review=True)
+    else:
+        record.update(venue_decision='reject', accepted_venue=None, accepted_year=None)
+    return record
+
+
+def accepted_text(record, review):
+    """'EMNLP 2026 · Findings · Poster' for an accepted paper, else ''."""
+    if record.get('venue_decision') != 'accept' and not record.get('accepted_venue'):
+        return ''
+    name, year = str(record.get('accepted_venue') or ''), str(record.get('accepted_year') or '')
+    parts = [name + (' ' + year if year and year not in name else '')]
+    if (record.get('artifacts') or {}).get('publication_track') == 'findings' and 'findings' not in name.lower():
+        parts.append('Findings')
+    if review and review.get('status') == 'accepted' and review.get('presentation') and (
+            review['presentation'] not in name.lower()):
+        parts.append(review['presentation'].capitalize())
+    return ' · '.join(p for p in parts if p.strip())
+
+
+def overall(scores):
+    return next((scores[k] for k in OVERALL_KEYS if k in (scores or {})), None)
+
+
+def number(value):
+    return f'{value:g}'
+
+
+def openreview_text(entry):
+    """'✅ Accepted · Findings · Poster · EMNLP 2026 · reviews 3 · 3.5 · 4 (avg 3.5) · meta 3.5'."""
+    if not entry:
+        return ''
+    status = entry.get('status') or 'under_review'
+    parts = [STATUS_TEXT.get(status, status)]
+    if entry.get('track') == 'findings':
+        parts.append('Findings')
+    elif entry.get('track') == 'main' and status == 'accepted':
+        parts.append('Main')
+    if entry.get('presentation'):
+        parts.append({'oral': '🎤 Oral', 'spotlight': '✨ Spotlight'}.get(entry['presentation'], 'Poster'))
+    venue = entry.get('venue') or venue_from_id(entry.get('venue_id'))
+    if venue and not venue.lower().startswith('submitted to'):
+        parts.append(venue)
+    elif venue:
+        parts.append(venue[len('submitted to'):].strip())
+    scores = [s for s in (overall(r) for r in entry.get('reviews') or []) if s is not None]
+    if scores:
+        parts.append('reviews ' + ' · '.join(number(s) for s in scores) +
+                     f' (avg {number(round(sum(scores) / len(scores), 2))})')
+    meta = overall(entry.get('meta_review'))
+    if meta is not None:
+        parts.append(f'meta {number(meta)}')
+    if entry.get('error'):
+        parts.append("(reviews couldn't be read)")
+    return ' · '.join(parts)
+
+
+def load_openreview_results(path):
+    """Submissions from the OpenReview results snapshot; [] when it is absent or unreadable."""
+    try:
+        return [e for e in json.loads(Path(path).read_text()).get('submissions', []) if isinstance(e, dict)]
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
+def paper_row(record, members, slots, deadlines, now, access=None, openreview=()):
+    artifacts = record.get('artifacts') or {}
     by_slot = {row['slot']: row for row in slots}
-    def status(name):
-        return by_slot.get(name, {}).get('status', 'not recorded')
-    settled = lambda name: status(name) in ('provided', 'waived')
-    ready = record.get('venue_decision') != 'reject' and settled('authors_ack') and settled('drive_pdf_arxiv') and not settled('pi_approval')
-    checks = record.get('checks') or {}
-    return {
-        'review_ready_date': by_slot.get('authors_ack', {}).get('provided_at', '') if ready else '',
-        'pi_review_status': 'awaiting PI approval' if ready else {
-            'provided': 'Approved', 'waived': 'Approval waived',
-            'missing': 'Not ready for PI approval', 'invalid': 'Invalid approval evidence',
-            'not recorded': 'Not recorded',
-        }.get(status('pi_approval'), 'Not recorded'),
-        'papermentor_review_status': status('papermentor_review'),
-        'coauthor_feedback_status': status('coauthor_feedback'),
-        'missing_recorded_artifacts': ', '.join(sorted(row['slot'] for row in slots if row['status'] == 'missing')),
-        'invalid_recorded_artifacts': ', '.join(sorted(row['slot'] for row in slots if row['status'] == 'invalid')),
-        'artifact_statuses': '\n'.join(sorted(row['slot'] + ': ' + row['status'] for row in slots)) or 'not recorded',
-        **{key: checks.get(key, '') for key in ('affiliation_checked', 'github_link_checked', 'paper_mentor_checked')},
+    links = {}
+    for column, (artifact_keys, slot_names) in PAPER_LINKS.items():
+        # Invalid slots still count for Overleaf: they were rejected only for being share/read links.
+        candidates = [by_slot[s].get('url') for s in slot_names if s in by_slot and (
+            by_slot[s]['status'] == 'provided' or (by_slot[s]['status'] == 'invalid' and s.startswith('overleaf')))]
+        candidates += [artifacts.get(key) for key in artifact_keys]
+        links[column] = next((safe_link(u) for u in candidates if safe_link(u)), '')
+    # Overleaf links the PI cannot open: project URLs need an invitation; read links fail once sharing is off.
+    access = access or {}
+    locked = {column: ('project link opens only for people invited to the project' if overleaf_kind(url) == 'project'
+                       else 'read link does not open (link sharing is off or the link was reset)')
+              for column, url in links.items() if url and (overleaf_kind(url) == 'project' or access.get(url) == 'restricted')}
+    requests, approved_at = pi_requests(slots, links)
+    review = openreview_match(record, slots, openreview)
+    stage = record.get('current_step')
+    record = as_on_openreview(record, review)
+    venue, deadline = venue_info(record, slots, deadlines, now)
+    venue = venue or VENUE_NOTES.get(record['id'], '')
+    cycles = arr_calendar(deadlines)[0]
+    submitted_cycle = arr_cycle_deadline(review, cycles)
+    for request in requests:
+        # The paper sits on the PI's OpenReview in an ARR cycle that closed after this request: she
+        # already saw it before it went in, so the request is done.
+        if request['pending'] and request['type'] == 'ARR feedback' and submitted_cycle and request['at'] and (
+                submitted_cycle >= request['at'] - datetime.timedelta(days=1)):
+            request['pending'], request['submitted'] = False, True
+        # ARR / camera-ready feedback without its own dates is due by the paper's ARR cycle or camera-ready deadline.
+        inherited = deadline and not deadline.get('soft_only') and not (request['hard'] or request['soft']) and (
+            request['type'] == 'ARR feedback' and 'camera' not in deadline_name(deadline).lower()
+            or request['type'] == 'Camera-ready feedback' and 'camera' in deadline_name(deadline).lower())
+        if inherited:
+            request['hard'] = deadline['at']
+        # Sort by the next date that still lies ahead: an upcoming soft target before its hard deadline comes first.
+        upcoming_soft = request['soft'] and request['soft'] >= now and not (request['hard'] and request['soft'] >= request['hard'])
+        request['effective_due'] = request['soft'] if upcoming_soft else request['hard'] or request['soft']
+        request['label'], request['rank'] = urgency(
+            request['hard'], request['soft'], request['at'], now,
+            'ARR deadline' if inherited and request['type'] == 'ARR feedback' else 'Camera-ready' if inherited else 'Due',
+            window=ARXIV_REVIEW_DAYS if request['type'] == 'arXiv feedback' else None)
+        # ARR feedback whose deadline went by (its own date, else an ARR cycle that closed since it
+        # was asked) can no longer change that submission: still listed, but below live work.
+        due = max((d for d in (request['hard'], request['soft']) if d), default=None)
+        closed = due if due and due < now else None if due else max(
+            (at for at in cycles.values() if request['at'] and request['at'] <= at < now), default=None)
+        if request['type'] == 'ARR feedback' and closed:
+            request['label'], request['rank'] = f"⌛ ARR deadline passed {toronto(closed, False)}", 50
+    far = datetime.datetime.max.replace(tzinfo=datetime.timezone.utc)
+    priority = lambda r: REVIEW_PRIORITY.index(r['type']) if r['type'] in REVIEW_PRIORITY else len(REVIEW_PRIORITY)
+    pending = sorted((r for r in requests if r['pending']),
+                     key=lambda r: (r['rank'], r['effective_due'] or far, priority(r), r['at'] or now))
+    top = pending[0] if pending else None
+    if top and top['rank'] == 50:
+        label, rank, status = top['label'], top['rank'], 'Past ARR deadline'
+    elif top:
+        label, rank, status = top['label'], top['rank'], 'Needs PI review'
+    else:
+        deadline = deadline or {}
+        soft = deadline if deadline.get('soft_only') else deadline.get('soft')
+        label, rank = urgency(None if deadline.get('soft_only') else deadline.get('at'), soft and soft['at'], None, now,
+                              'Camera-ready' if 'camera' in (deadline.get('label') or '').lower() else 'Venue deadline',
+                              (soft or {}).get('label', '').lower() or 'early deadline')
+        deadline = deadline or None
+        rank = 10 + rank if label and rank <= 2 else 99
+        label = label if rank < 99 else ''
+        status = ('Approved ' + toronto(approved_at, False)) if approved_at else (
+            'Submitted on OpenReview' if any(r.get('submitted') for r in requests) else '')
+    # Every link in one cell, most useful first, each under its real name. The request's own link
+    # leads as 'Sent for review' only when it is not already one of the paper's links.
+    review_links = []
+    for column, url in links.items():
+        if url and url not in {u for _, u in review_links}:
+            review_links.append((column, url))
+    if top and top['url'] and top['url'] not in {u for _, u in review_links}:
+        review_links.insert(0, ('Sent for review', top['url']))
+        if overleaf_kind(top['url']) == 'project' or access.get(top['url']) == 'restricted':
+            locked['Sent for review'] = locked.get('Sent for review') or (
+                'project link opens only for people invited to the project' if overleaf_kind(top['url']) == 'project'
+                else 'read link does not open (link sharing is off or the link was reset)')
+    review_links = [(label + ' 🔒' if label in locked else label, url) for label, url in review_links]
+    # An invite-only project link is a problem only when no Overleaf link the PI can open sits beside it.
+    can_open = any(overleaf_kind(url) and label not in locked for label, url in links.items() if url)
+    link_problems = [f"{slot_label(r['slot'])}: {r.get('invalid_reason') or 'invalid'}" for r in slots
+                     if r['status'] == 'invalid' and not links.get(LINK_OF_SLOT.get(r['slot']))]
+    link_problems += [f'{label}: {problem}' for label, problem in locked.items()
+                      if not (can_open and problem.startswith('project'))]
+    owner_id = record.get('lead_owner_member_id')
+    name = lambda member_id: members.get(member_id, {}).get('name', member_id or '')
+    row = {
+        'Paper': record.get('title', ''),
+        'Urgency': label,
+        'PI review': status,
+        'Review for': ', '.join(dict.fromkeys(r['type'] for r in pending)) if pending else (
+            ', '.join(dict.fromkeys(r['type'] for r in requests)) if requests else ''),
+        'Review link': review_links,
+        'Due (Toronto)': due_text(top) if top else '',
+        'Requested by': name(top['by']) if top else '',
+        'Requested on': toronto(top['at'], False) if top else '',
+        'Request note': '\n\n'.join(f"[{r['type']}] {r['note']}" for r in pending if r['note']),
+        'Venue': venue,
+        'Venue deadline (Toronto)': '\n'.join(f"{deadline_name(d)}: {toronto(d['at'])}" for d in (
+            deadline.get('soft'), deadline) if d) if deadline else '',
+        'Venue (as entered)': ' '.join(str(record.get('venue') or artifacts.get('conference') or '').split()),
+        'OpenReview': openreview_text(review),
+        'Stage': STAGES.get(stage, stage or ''),
+        'Lead': record.get('lead_owner') or name(owner_id),
+        'Blocker / next step': '\n'.join(str(x) for x in [artifacts.get('blocker_title'), artifacts.get('blocker_note'),
+                                                         record.get('next_action')] if x),
+        'Link problems': '\n'.join(link_problems),
+        'Still missing': ', '.join(sorted(slot_label(r['slot']) for r in slots if r['status'] == 'missing')),
+        'Mentor review': by_slot.get('papermentor_review', {}).get('status', ''),
+        'Co-author feedback': by_slot.get('coauthor_feedback', {}).get('status', ''),
+        'Accepted': accepted_text(record, review),
+        'Going to conference': record.get('going_attendees', ''),
+        'Started': record.get('started_on', ''),
+        'Last updated': toronto(parse_time(record.get('updated_at') or ''), False),
+        'Feedback givers': record.get('feedback_givers', ''),
+        'Checks': ', '.join(f'{k}: {v}' for k, v in sorted((record.get('checks') or {}).items())),
+        'Authors': record.get('authors', ''),
+        'All artifact statuses': '\n'.join(sorted(f"{r['slot']}: {r['status']}" for r in slots)),
+        PAPER_ID: record['id'],
     }
+    updated = parse_time(record.get('updated_at') or '')
+    row['_sort'] = (0 if top and rank < 50 else 1, rank, (top or {}).get('effective_due') or (deadline or {}).get('at') or far,
+                    priority(top) if top else 0, (top or {}).get('at') or now, -(updated.timestamp() if updated else 0), row['Paper'], record['id'])
+    return row
 
 
-def paper_sort_key(record):
-    def date_key(value, descending=False):
+def published_deadlines(connection):
+    if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='adminbot_published_deadlines'").fetchone():
+        return []
+    latest = {}
+    for deadline_id, revision, raw in connection.execute(
+            'SELECT deadline_id, revision, payload_json FROM adminbot_published_deadlines'):
+        if deadline_id not in latest or revision > latest[deadline_id][0]:
+            latest[deadline_id] = (revision, json.loads(raw).get('deadline') or {})
+    result = []
+    for _, d in latest.values():
         try:
-            date = datetime.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
-            if date.tzinfo is None:
-                date = date.replace(tzinfo=datetime.timezone.utc)
-            timestamp = date.timestamp()
-            return (0, -timestamp if descending else timestamp)
-        except ValueError:
-            return (1, 0)
-    year = record.get('accepted_year')
-    waits = [record.get(field) for field, active in (
-        ('review_ready_date', record.get('pi_review_status') == 'awaiting PI approval'),
-        ('feedback_requested_date', record.get('feedback_review_status') == 'awaiting PI feedback'),
-    ) if active]
-    return ((0, min(date_key(value) for value in waits)) if waits else (1, (1, 0)),
-            (0, -int(year)) if str(year).isdigit() else (1, 0),
-            date_key(record.get('acceptance_notification_date'), True),
-            date_key(record.get('review_ready_date')), date_key(record.get('started_on')),
-            record.get('title', ''), record['id'])
+            local = datetime.datetime.fromisoformat(f"{d['deadlineDate']}T{d.get('deadlineTime') or '23:59'}")
+            at = local.replace(tzinfo=ZoneInfo(d.get('timezone') or 'Etc/GMT+12'))
+        except (KeyError, ValueError):
+            continue
+        stage = d.get('stage') if isinstance(d.get('stage'), dict) else {}
+        result.append({'name': d.get('name', ''), 'conference': d.get('parentConference') or d.get('name', '').split()[0],
+                       'year': str(d.get('parentYear') or ''), 'type': d.get('entryType', ''), 'at': at,
+                       'milestone': str(stage.get('milestone') or ''), 'label': str(stage.get('label') or '')})
+    return result
 
 
 def normalized_join_date(value):
@@ -426,7 +987,7 @@ def order_people_values(values):
     ]]
 
 
-def snapshot(connection, timestamp, people_values=None, full_people=False):
+def snapshot(connection, timestamp, people_values=None, full_people=False, link_access=None, openreview=None):
     """Read both tables in one snapshot; never infer active status from missing data."""
     data = []
     records = {}
@@ -439,12 +1000,20 @@ def snapshot(connection, timestamp, people_values=None, full_people=False):
                 going_by_paper[paper_id][member_id or attendee_key] = name
         slots_by_paper = defaultdict(list)
         if connection.execute("SELECT 1 FROM sqlite_master WHERE name='adminbot_paper_slots'").fetchone():
-            link_slots = [slot for _, slot in PAPER_LINKS.values() if slot] + ['overleaf_view']
-            placeholders = ','.join('?' for _ in link_slots)
-            feedback_placeholders = ','.join('?' for _ in FEEDBACK_SLOTS)
-            for paper_id, slot, status, provided_at, url, feedback in connection.execute(
-                    f'SELECT paper_id,slot,status,provided_at,CASE WHEN slot IN ({placeholders}) THEN url ELSE NULL END,CASE WHEN slot IN ({feedback_placeholders}) THEN value_text ELSE NULL END FROM adminbot_paper_slots', [*link_slots, *FEEDBACK_SLOTS]):
-                slots_by_paper[paper_id].append({'slot': slot, 'status': status, 'provided_at': provided_at, 'url': url, 'value_text': feedback})
+            placeholders = ','.join('?' for _ in LINK_SLOTS)
+            # url only for link slots; value_text only for feedback requests (never e.g. arxiv_paper_password).
+            for paper_id, slot, status, provided_at, by, reason, url, text in connection.execute(
+                    f"""SELECT paper_id,slot,status,provided_at,provided_by_member_id,invalid_reason,
+                               CASE WHEN slot IN ({placeholders}) THEN url ELSE NULL END,
+                               CASE WHEN slot LIKE 'feedback\\_%' ESCAPE '\\' THEN value_text ELSE NULL END
+                        FROM adminbot_paper_slots""", LINK_SLOTS):
+                slots_by_paper[paper_id].append({'slot': slot, 'status': status, 'provided_at': provided_at,
+                                                 'provided_by_member_id': by, 'invalid_reason': reason,
+                                                 'url': url, 'value_text': text})
+        deadlines = published_deadlines(connection)
+        openreview = list(openreview or []) + citation_check_results(connection)
+        now = parse_time(timestamp) or datetime.datetime.now(datetime.timezone.utc)
+        paper_links = None
         for table, tab, fields in (
             ('adminbot_lab_members', 'PeopleList', ordered_people_columns(PEOPLE)),
             ('adminbot_papers', 'PaperList', PAPERS),
@@ -458,12 +1027,16 @@ def snapshot(connection, timestamp, people_values=None, full_people=False):
                 if tab == 'PaperList':
                     record['going_attendees'] = '\n'.join(sorted(
                         going_by_paper[record['id']].values(), key=str.casefold))
-                    record.update(paper_review_fields(record, member_index, slots_by_paper[record['id']]))
-                    record.update(paper_evidence_fields(record, slots_by_paper[record['id']]))
-                rows.append([cell(record.get(field)) for field in fields])
+                    rows.append(paper_row(record, member_index, slots_by_paper[record['id']], deadlines, now, link_access, openreview))
+                else:
+                    rows.append([cell(record.get(field)) for field in fields])
             if tab == 'PaperList':
-                rows = [[cell(record.get(field)) for field in fields]
-                        for record in sorted(records[tab], key=paper_sort_key)]
+                rows.sort(key=lambda row: row.pop('_sort'))
+                # Cells show labels; (label, url) pairs travel separately and become per-label hyperlinks.
+                paper_links = [[[] for _ in fields], *[
+                    [[list(pair) for pair in row[f]] if f in LINK_COLUMNS else [] for f in fields] for row in rows]]
+                rows = [[LINK_SEPARATOR.join(label for label, _ in row[f]) if f in LINK_COLUMNS else cell(row[f])
+                         for f in fields] for row in rows]
             data.append({'range': f"'{tab}'!A1", 'values': [
                 list(fields), *rows,
             ]})
@@ -474,7 +1047,7 @@ def snapshot(connection, timestamp, people_values=None, full_people=False):
     finally:
         connection.rollback()
     # RAW is mandatory: a name/title beginning with '=' must remain text, not a formula.
-    return {'valueInputOption': 'RAW', 'data': data}
+    return {'valueInputOption': 'RAW', 'data': data, 'paperLinks': paper_links}
 
 
 def main():
@@ -495,6 +1068,7 @@ def main():
         if args.people_export and args.full_people:
             parser.error('--people-export and --full-people are mutually exclusive')
         payload = snapshot(connection, datetime.datetime.now(datetime.timezone.utc).isoformat(), people_values, args.full_people)
+        payload.pop('paperLinks')
     # Keep freeze requests separate from the values API payload.
     if args.people_sheet_id is not None or args.papers_sheet_id is not None:
         payload = {'valuesBatch': payload, 'layoutRequests': [
