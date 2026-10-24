@@ -187,6 +187,8 @@ assert refresh.sheet_values('PeopleList', direct['data'][0]['values'])[0] == wri
 assert direct['data'][0]['values'][0] == people_headers  # the batch keeps field names
 assert refresh.whatsapp_link('+1 (416) 555-0100') == 'https://wa.me/14165550100'
 assert refresh.whatsapp_link('ask me') is None and refresh.whatsapp_link('4165550100') is None
+assert refresh.people_link('email', 'a@b.org.') is None and refresh.people_link('personal_website', 'https://x.org/a b') is None
+assert refresh.people_link('personal_website', 'https://x.org/p?q=1') == 'https://x.org/p?q=1'
 assert refresh.people_link('email', 'a@b.org') == 'mailto:a@b.org'
 assert refresh.people_link('linkedin_url', 'https://linkedin.com/in/x') == 'https://linkedin.com/in/x'
 assert refresh.people_link('linkedin_url', 'see https://x y') is None and refresh.people_link('notes', 'https://x') is None

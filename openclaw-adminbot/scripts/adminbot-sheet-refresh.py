@@ -4,6 +4,7 @@ import argparse
 import datetime
 import importlib.util
 import json
+import re
 import os
 import shlex
 import sqlite3
@@ -48,14 +49,19 @@ PEOPLE_URLS = ('personal_website', 'linkedin_url', 'twitter_url', 'github_url', 
                'acl_anthology_url', 'lesswrong_url', 'cv_url', 'intake_form_url', 'availability_doc_url')
 
 
+LINK_URL = re.compile(r"https?://[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+(:\d+)?([/?#][A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*)?")
+LINK_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+")
+
+
 def people_link(field, text):
     """Where a PeopleList cell should open, or None. Only a cell that is one address becomes a link."""
     text = text.strip()
     if not text or any(c.isspace() for c in text):
         return None
-    if field in PEOPLE_URLS and text.startswith(('https://', 'http://')):
+    # Google rejects the whole batch for one malformed link, so anything unusual stays plain text.
+    if field in PEOPLE_URLS and LINK_URL.fullmatch(text):
         return text
-    if field in PEOPLE_EMAILS and '@' in text and text.count('@') == 1:
+    if field in PEOPLE_EMAILS and LINK_EMAIL.fullmatch(text):
         return 'mailto:' + text
     if field == 'openreview_id' and text.startswith('~'):
         return 'https://openreview.net/profile?id=' + text
