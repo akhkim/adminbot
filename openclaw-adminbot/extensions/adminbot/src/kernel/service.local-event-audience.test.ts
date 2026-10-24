@@ -77,6 +77,16 @@ describe("refreshing the Zurich lunch guest list", () => {
     expect(store.listProposalsByType("calendar.add_attendees")).toHaveLength(1);
   });
 
+  it("reuses a pending invitation on repeated daily checks", () => {
+    const service = labWith([{ id: "local", place: "Zurich" }]);
+    const first = unwrap(sweep(service, ["room@lab.co"]));
+    const second = unwrap(sweep(service, ["room@lab.co"]));
+    expect(second.proposals).toEqual(first.proposals);
+    const store = (service as never as { store: { listProposalsByType: (t: string) => unknown[] } })
+      .store;
+    expect(store.listProposalsByType("calendar.add_attendees")).toHaveLength(1);
+  });
+
   // The guard the connector documents: an empty `remaining_attendees` is what a failed read looks
   // like, and rewriting the list to nothing would uninvite the whole lab.
   it("refuses a removal that would empty the guest list", () => {
@@ -130,9 +140,9 @@ describe("refreshing the Zurich lunch guest list", () => {
     expect(out.add.map((r) => r.member_id)).toEqual(["quiet"]);
   });
 
-  it("leaves alumni out of the audience entirely", () => {
+  it("includes local alumni in social lunch invitations", () => {
     const service = labWith([{ id: "gone", place: "Zurich", alumni: true }]);
     const out = unwrap(sweep(service, ["someone@lab.co"]));
-    expect(out.add).toEqual([]);
+    expect(out.add.map((row) => row.member_id)).toEqual(["gone"]);
   });
 });

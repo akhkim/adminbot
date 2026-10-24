@@ -8,8 +8,8 @@
   "jobs": [
     {
       "name": "adminbot-active-channels",
-      "description": "Remove ineligible accounts from active Slack channels, the Monday meeting, and lab calendar subscriptions",
-      "cron": "0 8 * * 0",
+      "description": "Daily: remove ineligible accounts from active Slack channels, the Monday meeting, and lab calendar subscriptions",
+      "cron": "0 8 * * *",
       "argv": ["bash", "scripts/adminbot-active-channels-cron.sh"],
       "timeoutSeconds": 1800
     },
@@ -443,8 +443,8 @@
     },
     {
       "name": "adminbot-local-event-audience",
-      "description": "Reconcile the Zurich lunch guest list with where members are",
-      "cron": "40 7 * * 1",
+      "description": "Automatically invite local members to all upcoming lab lunches, without removing guests",
+      "cron": "40 7 * * *",
       "argv": [
         "bash",
         "scripts/adminbot-local-event-audience-cron.sh"

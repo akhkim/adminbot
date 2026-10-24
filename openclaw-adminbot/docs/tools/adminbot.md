@@ -654,9 +654,9 @@ What it does with what it finds is the whole design:
   External Collab Access Design matrix, and where that row names a standing Slack room the sync
   files a `slack.remove_from_channel` proposal. Nothing here executes: `slack.remove_from_channel`
   is T3/admin, and somebody losing a conversation they were part of is not a cron job's call.
-- **A type that makes somebody a full member or a major coauthor files their DCS roster row** as a
-  `dcs_roster.add_row` card left in Pending Actions, returned under `dcs_roster`. Never approved
-  here, for the same reason: it asks the department for an account.
+- **A type that makes somebody a full member or a major coauthor writes their DCS roster row**
+  directly (`dcs_roster.add_row`, auto-approved), returned under `dcs_roster`. The DCS sheet is a
+  derivative of this one; the Member Type it follows is the decision.
 - **Joiners and leavers are reported, not acted on.** A sheet row matching no member is far more
   often somebody mid-onboarding than a member to create -- and creating one is an access grant, which
   a sync must never make on its own. Use the Membership tab's Onboarding section for that. A member
@@ -1118,20 +1118,26 @@ ever meant "the click did not throw".
 - Giving a role up (`full` -> `alumni`, `coauthor-major` -> `coauthor-minor`) files nothing. Nothing
   here removes a row.
 
-Every way a role changes reaches it, as a typed `dcs_roster.add_row` action (T3, admin):
+Every way a role changes reaches it, as a typed `dcs_roster.add_row` action that is **written
+directly**: its policy is `autoPolicy("T1")`, so it is created approved and executed on the spot,
+with the usual `proposal.created`, `proposal.auto_approved` and execution audit rows. Nothing waits
+in Pending Actions.
 
-| Where the role changed                                     | Approved by                         |
-| ---------------------------------------------------------- | ----------------------------------- |
-| Lab Members tab: a Member Type save, or Add member         | the admin who saved                 |
-| Onboarding tab: Add row, onboard selected rows             | the admin who clicked               |
-| Approving a weekly-sweep joiner's `lab_member.enroll` card | the admin who approved it           |
-| Approving a member request or a portal sign-up             | the approving admin                 |
-| The spreadsheet itself, applied by the 06:10 roster sync   | nobody yet: left in Pending Actions |
+| Where the role changed                                     |
+| ---------------------------------------------------------- |
+| Lab Members tab: a Member Type save, or Add member         |
+| Onboarding tab: Add row, onboard selected rows             |
+| Approving a weekly-sweep joiner's `lab_member.enroll` card |
+| Approving a member request or a portal sign-up             |
+| The spreadsheet itself, applied by the 06:10 roster sync   |
+| `POST /members/dcs-roster/backfill` with `dry_run: false`  |
 
-The roster sync never approves its own card, whoever ran it: a spreadsheet edit is not an
-authorization, and the row asks the department for an account. `POST /members/roster-sync` returns
-the cards it filed under `dcs_roster`. On the save paths the step is reported as `dcs_roster` in
-the save notice (done, queued, skipped or failed), and like the other steps it never undoes the save.
+The DCS sheet is a derivative of the lab roster: the decision is the Member Type, which the roster
+already gates. The cost is that a wrong Member Type in the spreadsheet reaches the sysadmin without
+a second look -- fix the type, then delete the row before the department acts on it.
+`POST /members/roster-sync` returns what it wrote under `dcs_roster`. On the save paths the step is
+reported as `dcs_roster` in the save notice (done, skipped or failed), and like the other steps it
+never undoes the save.
 
 Point it at the spreadsheet with:
 
@@ -2038,28 +2044,34 @@ reads/invites, `auth.test`, and email lookup, plus the existing Slack Connect an
 Missing permissions stop execution; preview and queueing never provision a channel. This needs
 an Aurora backend release as well as the frontend release.
 
-### Weekly active Slack channel cleanup
+### Daily active Slack channel cleanup
 
-`adminbot-active-channels` runs Sunday at 08:00 in the gateway's configured timezone
-(`0 8 * * 0` in `config/adminbot-cron.json`). After deployment, register/update it using
-`scripts/adminbot-cron-sync.sh`, as with the other scheduled jobs.
+`adminbot-active-channels` runs daily at 08:00 in the gateway's configured timezone
+(`0 8 * * *` in `config/adminbot-cron.json`). After deployment, register/update it using
+`scripts/adminbot-cron-sync.sh`, as with the other scheduled jobs -- a deploy alone does not
+change the registered schedule.
 
 The job calls `POST /members/active-channels/sync` with the service token. The route also
 accepts admin sessions; ordinary members cannot run it and callers cannot supply targets.
-It reads the complete live membership of `jinesis-active` and `random-active`, then removes
-human accounts with no matching eligible SQLite member. Eligibility uses the same resolved
-member classification as active-channel invitations: full or coauthor-major. Alumni with
-one of these classifications remain eligible. Unmatched accounts and missing membership
-types are removed, not queued for manual review. Bots/app accounts are excluded. There is
-no separate exemption for human admins. The Slack pass leaves other channels untouched;
-the calendar pass is described below.
+It reads the complete live membership of `jinesis-active` and `random-active`, including
+Slack Connect members from other organizations (`users.list` omits them, so each is looked up
+with `users.info`; a failed lookup aborts the read). Eligibility uses the same resolved member
+classification as active-channel invitations: full or coauthor-major. Alumni with one of these
+classifications remain eligible. Bots/app accounts are excluded. There is no separate exemption
+for human admins. The Slack pass leaves other channels untouched; the calendar pass is described
+below.
+
+Only an account whose SQLite member row names a non-eligible Member Type is removed. An account
+no member row claims (`no_roster_row`) and one whose row has a blank Member Type
+(`blank_member_type`) are returned in `needs_review` and left in the channel: the roster not
+knowing somebody is a gap in the roster, not a decision about them.
 
 This is a standing automatic policy: each removal is a normal T3 `slack.remove_from_channel`
-proposal, approved against its exact payload hash by `system:weekly-active-channel-policy`,
+proposal, approved against its exact payload hash by `system:daily-active-channel-policy`,
 then executed and audited. Other removal proposals still require their existing approvals.
-Repeat runs deduplicate removals within the UTC Sunday week; a later week can remove an
-account that was re-added. Failed executions are reported and can be retried. Concurrent
-requests share the same pass.
+Repeat runs deduplicate removals within the UTC day; the next day can remove an account that
+was re-added. Failed executions are reported and can be retried. Concurrent requests share the
+same pass.
 
 Slack requires the existing `SLACK_BOT_TOKEN` (directory/channel reads) and
 `SLACK_USER_TOKEN` (channel removals), with the corresponding Slack permissions.
@@ -2067,9 +2079,9 @@ An empty SQLite member roster, failed/incomplete Slack read, or unavailable conn
 closed. Run only against the intended production member database. Local tests use synthetic
 Slack responses and never contact Slack or remove live users.
 
-### Sunday lab calendar event membership
+### Daily lab calendar event membership
 
-The same Sunday 08:00 `adminbot-active-channels` job also calls
+The same daily 08:00 `adminbot-active-channels` job also calls
 `POST /members/calendar-membership/sync`. Both passes run even when one fails; any
 failure makes the combined job fail. Re-sync the cron manifest after deployment to
 apply its increased 30-minute timeout. No additional cron job is needed.

@@ -4,6 +4,9 @@ src/gateway/server-methods/CLAUDE.md -text
 ui/src/i18n/.i18n/* linguist-generated
 ui/src/i18n/locales/*.ts linguist-generated
 ui/src/i18n/locales/en.ts -linguist-generated
+# Written by `pnpm adminbot:api:generate`; collapsed in review, still diffable.
+extensions/adminbot/cli/openapi.generated.json linguist-generated
+extensions/adminbot/cli/openapi.generated.d.ts linguist-generated
 
 # What the Aurora deploy ships.
 #

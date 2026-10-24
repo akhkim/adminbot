@@ -72,3 +72,34 @@ Review categories normalize known venue spellings, remove years from known categ
 The early review_ready_date position is now overleaf_edit_link (edit evidence only, existing URL safety applies). review_ready_date remains later in the export for oldest-wait approval sorting. View-only links remain in overleaf_link and are not mislabeled as edit links.
 
 Pending feedback has separate feedback_review_status, pending_feedback_types, feedback_requested_date and feedback_manuscript_link columns. Awaiting PI feedback shows valid unreviewed ARR, arXiv and camera-ready requests, including revisions after a venue rejection; reviewed requests disappear from this view. Both pending queues sort oldest wait first. A rejection still prevents publication readiness. Only a safe URL from the oldest pending request is exported as a native hyperlink; credential-bearing links remain blank without hiding the pending status. Request prose and passwords are never exported.
+
+## Paper state, conference, year and track from OpenReview (October 24, 2026)
+
+PaperList gives each paper one `Paper state` value from `PAPER_STATE_RULES` in
+`scripts/adminbot-sheet-export.py`: Accepted, Camera-ready due, Resubmitted after rejection,
+Under review (no PI review), Under review, Desk rejected, Rejected, Withdrawn, Needs PI review,
+On arXiv, arXiv planned, Not started, Writing, Unknown. `PI review` is still a separate column:
+it says whether the PI owes a review. `Paper state` says where the paper stands.
+
+`Conference`, `Year`, `Track` (Main, Findings, Workshop, Demo, Industry, Tutorial, Journal) and
+`Presentation` (Oral, Spotlight, Poster) come from the PI's OpenReview whenever it knows the
+paper, and from AdminBot only otherwise. A workshop at a named conference is filed under that
+conference with Track Workshop, so the `Conference` filter shows all of that conference's papers.
+`Source` says where those values came from, and flags an AdminBot venue that OpenReview
+contradicts. `Submission history` lists every venue the paper went to
+(`❌ ICLR 2026 → ⏳ ARR May 2026 → ✅ EMNLP 2026`).
+
+Every OpenReview submission of a paper counts: a forum link, the same title, a title cut
+short, a title with the same subtitle, or a renamed title that keeps all of its content words.
+Renamed matches only apply to submissions no other paper claims by exact title. The latest
+cycle decides the current state, and a conference acceptance outranks a later workshop run. A
+rejection at the venue AdminBot calls accepted clears that acceptance. When OpenReview still
+shows a submission under review but AdminBot records an acceptance at that same venue (demo and
+workshop decisions are often mailed only to the submitter), the paper reads as accepted with
+`(decision from AdminBot)`.
+
+Overleaf `project/<id>/share#<token>` links are share links that anyone with the link can open.
+They are not treated as invite-only project links.
+
+Views `Blocked`, `By paper state`, `By year` and `By track` are added. Blocked reviews sort
+first within their deadline or conference group.

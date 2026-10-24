@@ -1,0 +1,47 @@
+{
+  "name": "@adminbot/cli",
+  "version": "0.1.0",
+  "description": "AdminBot CLI for people and LLM agents",
+  "type": "module",
+  "bin": {
+    "adminbot": "./adminbot.mjs"
+  },
+  "files": [
+    "adminbot.mjs",
+    "arguments.mjs",
+    "aliases.mjs",
+    "auth.mjs",
+    "client.mjs",
+    "client.d.mts",
+    "openapi.generated.json",
+    "openapi.generated.d.ts",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "test": "node --test *.test.mjs",
+    "generate": "node generate-client.mjs",
+    "check:generated": "node generate-client.mjs --check",
+    "check:types": "tsc --noEmit --skipLibCheck --strict --module NodeNext --moduleResolution NodeNext --target ES2023 sdk-types.fixture.ts"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "openapi-fetch": "0.17.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  },
+  "exports": {
+    "./client": {
+      "types": "./client.d.mts",
+      "import": "./client.mjs"
+    },
+    "./openapi": "./openapi.generated.json"
+  }
+}

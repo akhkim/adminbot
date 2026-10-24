@@ -113,6 +113,12 @@ export function parseCalendarEvent(value: unknown): AdminBotCalendarEvent | unde
     return undefined;
   }
   const raw = value as Record<string, unknown>;
+  if (raw.status === "cancelled") {
+    return undefined;
+  }
+  if (raw.attendeesOmitted === true) {
+    throw new Error("Calendar attendee list was omitted; refusing an incomplete read");
+  }
   const id = asString(raw.id);
   const start = readEdge(raw.start);
   const startAt = start.at ?? asString(raw.start);

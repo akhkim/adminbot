@@ -6,6 +6,7 @@ import type {
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
+  adminBotActionTypes,
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
   adminBotHasBeenOnboardEmailed,
   adminBotIsAlumniType,
@@ -517,6 +518,8 @@ import {
   isActiveChannelEligible,
   type ActiveChannelReader,
 } from "./service.active-channels.js";
+import { inviteLocalLunches } from "./service.local-lunches.js";
+import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import {
   automationHealthIssues,
   slackInviteBlockFor,
@@ -1334,10 +1337,13 @@ const DEFAULT_ACTION_POLICIES = {
   // Raises a member's access level and grants what it brings, so an admin approves it; the
   // approving admin is also who approves each step it runs.
   "lab_member.enroll": approvalPolicy("T3", ["admin"]),
-  // Same tier as the guide that used to file this row: the sysadmin reading it creates a CS
-  // account, which is not something to undo. The admin-driven paths approve it on the click that
-  // changed the role; the roster sync and the weekly sweep leave it in Pending Actions.
-  "dcs_roster.add_row": approvalPolicy("T3", ["admin"]),
+  // The DCS roster is a derivative of the lab roster: a row is owed the moment somebody becomes a
+  // full member or a major coauthor, and the decision that matters was the Member Type, which the
+  // roster already gates. So the row is written directly -- by the admin save, the roster sync and
+  // the backfill alike -- and keeps its proposal, auto-approval and audit rows as the record. The
+  // cost is that a wrong Member Type reaches the sysadmin without a second look; the fix is the
+  // roster, then deleting the row before the department acts on it (the undo plan says so).
+  "dcs_roster.add_row": autoPolicy("T1"),
   // A placeholder/test account the Slack roster sync wants gone. T3 so it can never ride the auto
   // tier: the sync only proposes, and an admin approving it is the only way a record is deleted.
   "lab_member.remove": approvalPolicy("T3", ["admin"]),
@@ -1815,7 +1821,12 @@ export class AdminBotService {
   createProposal(
     proposal: AdminBotActionProposal,
   ): AdminBotServiceResponse<AdminBotStoredProposal> {
-    if (!proposal.summary.trim()) {
+    // Checked before anything reads the policy table: an unknown type has no policy, and failing
+    // here is a 400 that names the problem rather than a 500 from a missing table entry.
+    if (!(adminBotActionTypes as readonly string[]).includes(proposal.type)) {
+      return serviceError(400, "unsupported action type");
+    }
+    if (typeof proposal.summary !== "string" || !proposal.summary.trim()) {
       return serviceError(400, "summary is required");
     }
     const blocked = this.slackInviteBlock(proposal);
@@ -2007,16 +2018,30 @@ export class AdminBotService {
     }
     const day = (params.day || new Date().toISOString()).slice(0, 10);
     const audience = localEventAudience({
-      members: this.store.listLabMembers().filter((member) => !adminBotIsAlumniMember(member)),
+      // Local lunches include alumni and acquaintances, unlike mandatory lab meetings.
+      members: this.store.listLabMembers(),
       historyFor: (memberId) => this.locationSignalsFor(memberId),
       city: params.city,
       zone: params.zone,
       attendees: params.attendees,
       day,
     });
+    // An invitation awaiting approval must not become a fresh card every morning.
+    const proposeOnce = (proposal: AdminBotActionProposal) => {
+      const previous = this.store
+        .listProposalsByType(proposal.type)
+        .find(
+          (stored) =>
+            (stored.status === "pending" || stored.status === "approved") &&
+            payloadHash(stored.proposed_payload) === payloadHash(proposal.proposed_payload),
+        );
+      return previous
+        ? { ok: true as const, status: 200, payload: previous }
+        : this.createProposal(proposal);
+    };
     const proposals: string[] = [];
     if (audience.add.length > 0) {
-      const created = this.createProposal({
+      const created = proposeOnce({
         type: "calendar.add_attendees",
         summary: `Add ${audience.add.length} to the ${params.city} event: ${audience.add
           .map((row) => row.name)
@@ -2044,7 +2069,7 @@ export class AdminBotService {
           "refusing to propose a removal that would empty the guest list -- check the attendee list passed in",
         );
       }
-      const created = this.createProposal({
+      const created = proposeOnce({
         type: "calendar.remove_attendees",
         summary: `Remove ${audience.remove.length} from the ${params.city} event: ${audience.remove
           .map((row) => `${row.name} (${row.reason})`)
@@ -3703,6 +3728,17 @@ export class AdminBotService {
       });
     }
     return this.calendarMembershipCleanup;
+  }
+
+  private localLunchInvites: ReturnType<typeof inviteLocalLunches> | undefined;
+
+  syncLocalLunchInvites(calendarId: string, read: CalendarEventsReader) {
+    if (!this.localLunchInvites) {
+      this.localLunchInvites = inviteLocalLunches(this, this.store, calendarId, read).finally(() => {
+        this.localLunchInvites = undefined;
+      });
+    }
+    return this.localLunchInvites;
   }
 
   private activeChannelCleanup: ReturnType<typeof enforceActiveChannels> | undefined;

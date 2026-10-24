@@ -2116,6 +2116,8 @@ export const adminBotPaperSteps = [
 
 export type AdminBotPaperStep = (typeof adminBotPaperSteps)[number];
 
+export type AdminBotPaperProgressUpdate = { current_step: AdminBotPaperStep };
+
 export type AdminBotPaperArtifactLinks = {
   /** Human confirmation that the paper has been presented; blank reopens it. */
   completed_at?: string;
