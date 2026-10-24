@@ -1,8 +1,11 @@
 // Run with: node --import tsx extensions/adminbot/tooling/generate-openapi.ts [--check]
 // The existing router and its TypeScript contracts are the source of truth. This
 // generator projects them into OpenAPI; no per-operation route/schema table lives here.
-import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+//
+// The output is deliberately a function of the API alone: no source line numbers and no hash of
+// the source tree. A comment or an unrelated refactor leaves it byte-identical, so `--check` fails
+// only when a route, a parameter or a request/response type actually changed.
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
@@ -19,11 +22,22 @@ const visit = (node: ts.Node, fn: (child: ts.Node) => void) => {
 const isRead = (node: ts.Node) =>
   ts.isCallExpression(node) && ["readJson", "readJsonOrEmpty"].includes(node.expression.getText());
 
+/** The one contract file. The CLI package ships it and the service serves it. */
+export const OPENAPI_OUTPUT = join(extensionRoot, "cli/openapi.generated.json");
+
 export function buildOpenApi(root = extensionRoot) {
-  const files = readdirSync(join(root, "src/api"))
-    .filter((file) => /^server(?:\.[\w-]+)?\.ts$/u.test(file) && !file.endsWith(".test.ts"))
-    .toSorted()
-    .map((file) => join(root, "src/api", file));
+  const apiRoot = join(root, "src/api");
+  const routeDir = join(apiRoot, "routes");
+  const files = [
+    ...readdirSync(apiRoot)
+      .filter((file) => /^server(?:\.[\w-]+)?\.ts$/u.test(file) && !file.endsWith(".test.ts"))
+      .map((file) => join(apiRoot, file)),
+    ...(existsSync(routeDir)
+      ? readdirSync(routeDir)
+          .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
+          .map((file) => join(routeDir, file))
+      : []),
+  ].toSorted();
   const configFile = ts.readConfigFile(join(workspaceRoot, "tsconfig.json"), (file) =>
     ts.sys.readFile(file),
   );
@@ -32,7 +46,7 @@ export function buildOpenApi(root = extensionRoot) {
   const checker = program.getTypeChecker();
   const emitter = new SchemaEmitter(checker);
   const sources = files.map((file) => program.getSourceFile(file)!);
-  const routes = discoverRoutes(checker, sources);
+  const routes = discoverRoutes(checker, sources, apiRoot);
   const paths: Record<string, Record<string, unknown>> = {};
   const operationIds = new Set<string>();
   const anonymousRoutes = new Set<string>();
@@ -51,7 +65,6 @@ export function buildOpenApi(root = extensionRoot) {
       }
     });
   }
-  const sourceFiles = new Set<ts.SourceFile>(sources);
 
   function nodesFor(route: Route): ts.Node[] {
     const nodes: ts.Node[] = [];
@@ -365,7 +378,7 @@ export function buildOpenApi(root = extensionRoot) {
       operationId,
       summary: `${route.method} ${route.path}`,
       tags: [route.path.split("/")[1] || "service"],
-      "x-source": `${relative(root, route.source.fileName)}:${route.source.getLineAndCharacterOfPosition(route.node.getStart()).line + 1}`,
+      "x-source": relative(root, route.source.fileName),
       ...(parameters.length ? { parameters } : {}),
       ...(hasBody
         ? {
@@ -384,17 +397,6 @@ export function buildOpenApi(root = extensionRoot) {
     };
     (paths[route.path] ??= {})[route.method.toLowerCase()] = operation;
   }
-  // Hash the actual local source closure, not timestamps. --check catches contract,
-  // handler and schema changes even when the new code still parses the same routes.
-  for (const source of program.getSourceFiles()) {
-    if (source.fileName.startsWith(join(root, "src"))) {
-      sourceFiles.add(source);
-    }
-  }
-  const hash = createHash("sha256");
-  [...sourceFiles]
-    .toSorted((a, b) => a.fileName.localeCompare(b.fileName))
-    .forEach((source) => hash.update(relative(root, source.fileName)).update(source.text));
   return {
     openapi: "3.1.1",
     info: {
@@ -411,24 +413,20 @@ export function buildOpenApi(root = extensionRoot) {
       schemas: emitter.components,
     },
     "x-generated-by": "extensions/adminbot/tooling/generate-openapi.ts",
-    "x-source-sha256": hash.digest("hex"),
   };
 }
 
 export function generate(check = false) {
   const spec = buildOpenApi();
   const output = json(spec);
-  for (const file of [
-    join(extensionRoot, "openapi.generated.json"),
-    join(extensionRoot, "cli/openapi.generated.json"),
-  ]) {
-    if (check) {
-      if (readFileSync(file, "utf8") !== output) {
-        throw new Error(`OpenAPI drift: regenerate ${relative(workspaceRoot, file)}`);
-      }
-    } else {
-      writeFileSync(file, output);
+  if (check) {
+    if (!existsSync(OPENAPI_OUTPUT) || readFileSync(OPENAPI_OUTPUT, "utf8") !== output) {
+      throw new Error(
+        `OpenAPI drift: run \`pnpm adminbot:api:generate\` and commit ${relative(workspaceRoot, OPENAPI_OUTPUT)}`,
+      );
     }
+  } else {
+    writeFileSync(OPENAPI_OUTPUT, output);
   }
   const count = Object.values(spec.paths).reduce((sum, path) => sum + Object.keys(path).length, 0);
   console.log(

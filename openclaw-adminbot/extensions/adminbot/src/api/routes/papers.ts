@@ -17,7 +17,8 @@ import {
   privilegedOnly,
 } from "./guards.js";
 import { readListPage, limitParam } from "./query-params.js";
-import { del, get, post, put, type Route, type RouteHandler } from "./router.js";
+import { handlePaperProgress } from "../server.paper-progress.js";
+import { del, get, patch, post, put, type Route, type RouteHandler } from "./router.js";
 import { principalRole, sendNotModified, versionEtag } from "./version-etag.js";
 
 // 20 MB of PDF, plus base64's third and the JSON around it. Matches the Control UI's own check.
@@ -348,6 +349,8 @@ export const papersRoutes: readonly Route[] = [
   // One paper, readable by whoever can read GET /papers, in the same projection. After every literal
   // `/papers/<name>` GET (here and in paper-admin.ts, which is mounted first), which it would
   // otherwise swallow.
+  // Moves one paper's stage without a client-side read-modify-write of the whole record.
+  patch(/^\/papers\/([^/]+)\/progress$/u, memberOnly(handlePaperProgress)),
   get(/^\/papers\/([^/]+)$/u, ({ res, params, ctx }) => {
     sendServiceResult(res, ctx.service.getPaper(decodeURIComponent(params[1])));
   }),
