@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Snapshot of decisions, review scores and meta-reviews on the PI's own OpenReview submissions,
-# for the paper sheet export to read.
+# Snapshot of decisions, presentation, titles, review scores and meta-reviews on the PI's own
+# OpenReview submissions, every six hours, for the paper OpenReview sync and the paper sheet export
+# to read. Needs OPENREVIEW_USERNAME / OPENREVIEW_PASSWORD (the PI's login) in the env file.
 #
 # The export runs as a different Unix user that has no OpenReview login, so it never calls
 # OpenReview itself: this job, which already holds the credentials, writes one JSON file next to

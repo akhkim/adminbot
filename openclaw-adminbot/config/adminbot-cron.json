@@ -8,8 +8,8 @@
   "jobs": [
     {
       "name": "adminbot-active-channels",
-      "description": "Remove ineligible accounts from active Slack channels, the Monday meeting, and lab calendar subscriptions",
-      "cron": "0 8 * * 0",
+      "description": "Daily: remove ineligible accounts from active Slack channels, the Monday meeting, and lab calendar subscriptions",
+      "cron": "0 8 * * *",
       "argv": ["bash", "scripts/adminbot-active-channels-cron.sh"],
       "timeoutSeconds": 1800
     },
@@ -353,8 +353,8 @@
     },
     {
       "name": "adminbot-openreview-results",
-      "description": "Snapshot decisions on the PI's own OpenReview submissions, daily",
-      "cron": "35 7 * * *",
+      "description": "Snapshot decisions, presentation, titles and scores on the PI's own OpenReview submissions, every six hours",
+      "cron": "35 1,7,13,19 * * *",
       "argv": [
         "bash",
         "scripts/adminbot-openreview-results-cron.sh"
@@ -363,8 +363,8 @@
     },
     {
       "name": "adminbot-paper-openreview-sync",
-      "description": "Update paper submissions and decisions from OpenReview (snapshot and the PI's notification export), daily",
-      "cron": "55 8 * * *",
+      "description": "Update paper submissions and decisions from the OpenReview snapshot, every six hours",
+      "cron": "55 2,8,14,20 * * *",
       "argv": [
         "bash",
         "scripts/adminbot-paper-openreview-sync-cron.sh"

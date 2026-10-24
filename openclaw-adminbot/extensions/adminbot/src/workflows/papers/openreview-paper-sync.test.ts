@@ -6,7 +6,6 @@ import {
   cycleKey,
   evidenceFromAuthorResults,
   evidenceFromCitationChecks,
-  evidenceFromNotifications,
   isLaterPlan,
   matchPaperEvidence,
   planOpenReviewSync,
@@ -30,7 +29,7 @@ function paper(overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecor
 
 function evidence(overrides: Partial<OpenReviewEvidence> = {}): OpenReviewEvidence {
   return {
-    source: "notifications",
+    source: "author_results",
     status: "under_review",
     title: "Causal Garden Planning",
     submission_id: "Abc123xyz",
@@ -91,39 +90,53 @@ describe("reading the sources", () => {
     const items = evidenceFromCitationChecks([
       { submission_id: "s1", title: "A", venue_id: "ICLR.cc/2027/Conference/Submission" },
       { submission_id: "s2", title: "B", venue_id: "ICLR.cc/2027/Conference/Withdrawn_Submission" },
-      { submission_id: "s3", title: "C", venue_id: "ICLR.cc/2027/Conference/Desk_Rejected_Submission" },
+      {
+        submission_id: "s3",
+        title: "C",
+        venue_id: "ICLR.cc/2027/Conference/Desk_Rejected_Submission",
+      },
       { submission_id: "s4", title: "D", venue_id: "ICLR.cc/2027/Conference" },
     ]);
-    expect(items.map((item) => item.status)).toEqual(["under_review", "withdrawn", "desk_rejected"]);
+    expect(items.map((item) => item.status)).toEqual([
+      "under_review",
+      "withdrawn",
+      "desk_rejected",
+    ]);
   });
 
-  it("reads the decisions script's output", () => {
-    const items = evidenceFromNotifications({
-      ok: true,
-      evidence: [
+  it("reads every title, the submission time and the ARR cycle a commitment came from", () => {
+    const [item] = evidenceFromAuthorResults({
+      fetched_at: "2026-10-24T07:35:00+00:00",
+      submissions: [
         {
-          notification_id: "n1",
-          observed_at: "2026-10-10T12:00:00+00:00",
+          id: "Emn111",
+          forum: "Emn111",
+          review_forum: "Arr111",
+          title: "Camera Ready Name",
+          titles: ["Camera Ready Name", "Submitted Name", ""],
+          submitted_at: "2026-06-20T10:00:00+00:00",
+          arr_venue_id: "aclweb.org/ACL/ARR/2026/May/Submission",
           status: "accepted",
-          title: "Causal Garden Planning",
-          forum: "Abc123xyz",
-          venue_id: "ICLR.cc/2027/Conference",
-          presentation: "oral",
-          track: "",
+          venue_id: "EMNLP/2026/Conference",
         },
-        { notification_id: "n2", status: "rejected", title: "", forum: "" },
       ],
     });
-    expect(items).toEqual([
-      expect.objectContaining({ reference: "n1", presentation: "oral", forums: ["Abc123xyz"] }),
-    ]);
-    expect(items[0].track).toBeUndefined();
+    expect(item).toMatchObject({
+      titles: ["Camera Ready Name", "Submitted Name"],
+      forums: ["Emn111", "Arr111"],
+      submitted_at: "2026-06-20T10:00:00+00:00",
+      arr_venue_id: "aclweb.org/ACL/ARR/2026/May/Submission",
+    });
   });
 });
 
 describe("matching a paper", () => {
   it("prefers a forum id the paper already holds over a title match", () => {
-    const byTitle = evidence({ submission_id: "Other999", forums: ["Other999"], status: "rejected" });
+    const byTitle = evidence({
+      submission_id: "Other999",
+      forums: ["Other999"],
+      status: "rejected",
+    });
     const byForum = evidence({ title: "Renamed Since", venue_id: "ICLR.cc/2025/Conference" });
     const slots = [slot({ slot: "submission", url: "https://openreview.net/forum?id=Abc123xyz" })];
     expect(matchPaperEvidence(paper(), slots, [byTitle, byForum])).toBe(byForum);
@@ -135,16 +148,41 @@ describe("matching a paper", () => {
     expect(matchPaperEvidence(paper({ title: "Something Else" }), [], [item])).toBeUndefined();
   });
 
+  it("matches a retitled paper by any title the submission has carried", () => {
+    const item = evidence({
+      title: "Gardens, Causally",
+      titles: ["Gardens, Causally", "Causal Garden Planning"],
+    });
+    expect(matchPaperEvidence(paper(), [], [item])).toBe(item);
+    expect(matchPaperEvidence(paper({ title: "Gardens causally" }), [], [item])).toBe(item);
+  });
+
   it("lets the latest cycle win, then the newest report inside a cycle", () => {
     const iclr = evidence({ status: "rejected", venue_id: "ICLR.cc/2026/Conference" });
     const arr = evidence({ status: "under_review" });
     expect(matchPaperEvidence(paper(), [], [arr, iclr])).toBe(arr);
 
-    const snapshot = evidence({ source: "author_results", observed_at: "2026-10-20T07:35:00Z" });
+    const snapshot = evidence({ observed_at: "2026-10-20T07:35:00Z" });
     const decision = evidence({ status: "accepted", observed_at: "2026-10-22T09:00:00Z" });
     expect(matchPaperEvidence(paper(), [], [decision, snapshot])).toBe(decision);
     const laterSnapshot = { ...snapshot, observed_at: "2026-10-23T07:35:00Z" };
     expect(matchPaperEvidence(paper(), [], [decision, laterSnapshot])).toBe(laterSnapshot);
+  });
+
+  it("lets the later submission win inside one cycle", () => {
+    // Committed to ACL, rejected, then committed to EMNLP the same year: both years read 2026.
+    const acl = evidence({
+      status: "rejected",
+      venue_id: "aclweb.org/ACL/2026/Conference",
+      submitted_at: "2026-02-20T00:00:00Z",
+    });
+    const emnlp = evidence({
+      status: "accepted",
+      venue_id: "EMNLP/2026/Conference",
+      submitted_at: "2026-06-20T00:00:00Z",
+    });
+    expect(matchPaperEvidence(paper(), [], [emnlp, acl])).toBe(emnlp);
+    expect(matchPaperEvidence(paper(), [], [acl, emnlp])).toBe(emnlp);
   });
 
   it("hears the citation-watch table only when nothing else speaks, as the sheet does", () => {
@@ -153,8 +191,8 @@ describe("matching a paper", () => {
       venue_id: "aclweb.org/ACL/ARR/2027/February/Submission",
       observed_at: "2026-10-24T00:00:00Z",
     });
-    const mail = evidence({ status: "accepted", venue_id: "EMNLP/2026/Conference" });
-    expect(matchPaperEvidence(paper(), [], [stale, mail])).toBe(mail);
+    const snapshot = evidence({ status: "accepted", venue_id: "EMNLP/2026/Conference" });
+    expect(matchPaperEvidence(paper(), [], [stale, snapshot])).toBe(snapshot);
     expect(matchPaperEvidence(paper(), [], [stale])).toBe(stale);
   });
 });
@@ -208,6 +246,27 @@ describe("planning the change", () => {
       reviewed: true,
       review_note: "Submitted to ARR October 2026 (per OpenReview).",
     });
+  });
+
+  it("judges a commitment's feedback requests by the ARR cycle it came from", () => {
+    const request = (provided_at: string) =>
+      slot({
+        slot: "feedback_arr",
+        value_text: JSON.stringify({ reason: "Before ARR", url: "https://example.com/draft" }),
+        provided_at,
+      });
+    const commitment = evidence({
+      venue_id: "EMNLP/2026/Conference/Submission",
+      arr_venue_id: "aclweb.org/ACL/ARR/2026/May/Submission",
+    });
+    expect(
+      planOpenReviewSync(paper(), [request("2026-05-10T00:00:00Z")], commitment, NOW)
+        .feedbackClosures,
+    ).toHaveLength(1);
+    expect(
+      planOpenReviewSync(paper(), [request("2026-09-01T00:00:00Z")], commitment, NOW)
+        .feedbackClosures,
+    ).toEqual([]);
   });
 
   it("leaves a feedback request filed after the cycle open: it is about a revision", () => {

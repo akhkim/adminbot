@@ -1,0 +1,79 @@
+# Weekly removal of old PR screenshots from docs/pr-evidence.
+#
+# Each PR that changes the UI commits a folder of screenshots there, so the checkout grows by a few
+# megabytes a week (20 MB by October 2026) for pictures nobody opens after the PR merges. This job
+# deletes every evidence folder whose last commit is older than the retention window.
+#
+# Deleting from main does not break old PRs: PR bodies link evidence either by commit SHA, which
+# keeps serving the file from that commit, or by the PR's branch name, which already stops working
+# once the merged branch is auto-deleted. The pictures also stay in git history, so this keeps the
+# checkout small, not the clone.
+#
+# Safety notes:
+#
+#   - The commit goes straight to main, and is refused unless every staged change is a deletion under
+#     docs/pr-evidence. It is pushed with GITHUB_TOKEN, whose pushes start no other workflow, so a
+#     prune does not set off CI or an Aurora deploy.
+#   - `contents: write` is the only permission, and only this job has it.
+#   - Run it by hand with dry_run (the default for manual runs) to see what would go first.
+name: Prune PR evidence
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List what would be deleted without committing
+        type: boolean
+        default: true
+      keep_days:
+        description: Keep folders committed to within this many days
+        default: '14'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prune-pr-evidence
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: Prune
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          # Folder ages come from `git log`, which needs the history.
+          fetch-depth: 0
+      - name: Delete folders past the retention window
+        env:
+          KEEP_DAYS: ${{ inputs.keep_days || '14' }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          root=openclaw-adminbot/docs/pr-evidence
+          [ -d "$root" ] || { echo "no $root"; exit 0; }
+          cutoff=$(date -u -d "-${KEEP_DAYS} days" +%s)
+          for dir in "$root"/*/; do
+            dir=${dir%/}
+            last=$(git log -1 --format=%ct -- "$dir")
+            [ -n "$last" ] && [ "$last" -lt "$cutoff" ] || continue
+            echo "delete $dir (last changed $(date -u -d "@$last" +%F), $(du -sh "$dir" | cut -f1))"
+            git rm -rq -- "$dir"
+          done
+          if git diff --cached --quiet; then echo "nothing older than ${KEEP_DAYS} days"; exit 0; fi
+          if git diff --cached --name-status | grep -v -E "^D	${root}/"; then
+            echo "refusing: staged changes other than deletions under $root" >&2; exit 1
+          fi
+          git diff --cached --shortstat
+          if [ "$DRY_RUN" = "true" ]; then echo "dry run: not committing"; exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -q -m "chore: prune PR evidence older than ${KEEP_DAYS} days"
+          git push origin HEAD:main

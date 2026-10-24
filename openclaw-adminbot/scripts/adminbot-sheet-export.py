@@ -5,7 +5,6 @@ import datetime
 import json
 import re
 import sqlite3
-import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qsl
@@ -43,9 +42,9 @@ VENUE_NOTES = {
     'uka-clinical-post-training': 'Not ARR (per PI, Oct 11 2026)',
 }
 # Plain-language layout: what the PI acts on first, links next, record-keeping detail last.
-PAPERS = ('Paper', 'Urgency', 'PI review', 'Review for', 'Review link', 'Due (Toronto)', 'Authors',
-          'Requested by', 'Requested on', 'Request note', 'Conference', 'Venue', 'Venue deadline (Toronto)',
-          'OpenReview', 'Stage', 'Lead', 'Incomplete', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
+PAPERS = ('Paper', 'Urgency', 'PI review', 'Paper state', 'Review for', 'Review link', 'Due (Toronto)', 'Authors',
+          'Requested by', 'Requested on', 'Request note', 'Conference', 'Year', 'Track', 'Presentation', 'Venue',
+          'Venue deadline (Toronto)', 'OpenReview', 'Submission history', 'Source', 'Stage', 'Lead', 'Incomplete', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
           'Going to conference', 'Started', 'Last updated', 'Feedback givers', 'Checks',
           'Venue (as entered)', 'All artifact statuses', PAPER_ID)
 LINK_COLUMNS = ('Review link',)
@@ -103,13 +102,18 @@ def stamp(moment, with_time=True):
 
 # One standard conference name per paper, so the sheet filters and sorts by conference however the
 # venue was typed. Checked in order: a paper going through ARR is filed under the conference it
-# commits to when one is named. Anything unmatched is 'Other' and should get a rule here.
-CONFERENCES = (('Workshop', r'workshop|\bAI4GOOD\b'), ('EMNLP', r'\bEMNLP\b'), ('NAACL', r'\bNAACL\b'),
+# commits to when one is named, and a workshop at a named conference is filed under that conference
+# (its Track says Workshop). Anything unmatched is 'Other' and should get a rule here.
+CONFERENCES = (('EMNLP', r'\bEMNLP\b'), ('NAACL', r'\bNAACL\b'),
                ('EACL', r'\bEACL\b'), ('AACL', r'\bAACL\b'), ('ACL', r'\bACL\b'), ('ICLR', r'\bICLR\b'),
                ('NeurIPS', r'\bNeurIPS\b'), ('ICML', r'\bICML\b'), ('COLM', r'\bCOLM\b'), ('AAAI', r'\bAAAI\b'),
                ('KDD', r'\bKDD\b'), ('AISTATS', r'\bAISTATS\b'), ('CogSci', r'\bCogSci\b'), ('IASEAI', r'\bIASEAI\b'), ('CLeaR', r'\bCLeaR\b'), ('ICSSI', r'\bICSSI\b'), ('DevAI', r'\bDevAI\b'),
-               ('Journal', r'\bJMLR\b|\bTMLR\b|journal'), ('ARR (conference not set)', r'\bARR\b'),
+               ('Workshop', r'workshop|\bAI4GOOD\b'), ('Journal', r'\bJMLR\b|\bTMLR\b|journal'), ('ARR (conference not set)', r'\bARR\b'),
                ('Preprint', r'preprint|arxiv'))
+
+
+# Not one conference: OpenReview naming only these leaves the typed venue to decide.
+UNNAMED_CONFERENCES = ('Not set', 'Other', 'ARR (conference not set)', 'Preprint')
 
 
 def conference(*venues):
@@ -363,6 +367,9 @@ def overleaf_kind(url):
     if parts.hostname not in ('www.overleaf.com', 'overleaf.com'):
         return None
     path = parts.path.strip('/')
+    # 'project/<id>/share#<token>' is a share link: the token in the fragment lets anyone holding it join.
+    if re.fullmatch(r'project/[0-9a-f]+/share', path) and re.fullmatch(r'[0-9a-f]{20,}', parts.fragment):
+        return 'edit'
     if path.startswith('project/'):
         return 'project'
     if re.fullmatch(r'read/[a-z0-9]+', path):
@@ -613,6 +620,7 @@ FORUM_ID_RE = re.compile(r'openreview\.net/(?:forum|pdf)\?(?:[^#]*&)?id=([A-Za-z
 OVERALL_KEYS = ('overall_assessment', 'rating', 'recommendation', 'overall_recommendation')
 STATUS_TEXT = {'accepted': '✅ Accepted', 'under_review': '⏳ Under review', 'rejected': '❌ Rejected',
                'desk_rejected': '❌ Desk rejected', 'withdrawn': '↩️ Withdrawn'}
+TRACK_NAMES = {'main': 'Main', 'findings': 'Findings', 'demo': 'Demo', 'workshop': 'Workshop'}
 
 
 def normalized_title(title):
@@ -633,6 +641,11 @@ def venue_from_id(venue_id):
     # 'aclweb.org/ACL/2026' and 'eacl.org/EACL/2027' name the venue just before the year.
     name = parts[year - 1] if year > 1 and '.' not in parts[year - 1] else parts[0].split('.')[0]
     return ' '.join([name, parts[year], *rest])
+
+
+def review_venue(entry):
+    """'EMNLP 2026 System Demonstration' for an OpenReview entry, from its venue id else its label."""
+    return venue_from_id(entry.get('venue_id')) or entry.get('venue') or ''
 
 
 def cycle_key(entry):
@@ -665,21 +678,112 @@ def citation_check_results(connection):
     return list(entries.values())
 
 
-def openreview_match(record, slots, results):
-    """The submission a paper refers to: a forum id in any of its links first, else the same title."""
+TITLE_STOP_WORDS = frozenset('a an and are by do does for from how in is of on the to via what with'.split())
+
+
+def title_words(title):
+    """Content words, singular: 'Fluid Reasoning Representations' -> ['fluid', 'reasoning', 'representation']."""
+    words = re.findall(r'[a-z0-9]+', str(title or '').lower())
+    return [w[:-1] if w.endswith('s') and len(w) > 3 else w for w in words if w not in TITLE_STOP_WORDS]
+
+
+def same_title(a, b):
+    """Whether two titles name the same paper: equal, one cut short, or renamed keeping its subtitle or every word.
+
+    'Do LLMs Rewrite History? Detecting Historical Revisionism in LLMs' and 'Preserving Historical
+    Truth: Detecting Historical Revisionism in LLMs' share the subtitle; 'Fluid Reasoning
+    Representations' keeps every word of 'Fluid Representations in Reasoning Models' it uses.
+    """
+    na, nb = normalized_title(a), normalized_title(b)
+    if not na or not nb:
+        return False
+    short, long = sorted((na, nb), key=len)
+    if short == long or len(short) >= 30 and long.startswith(short):
+        return True
+    subtitles = {normalized_title(re.split(r'[:?]', str(t), maxsplit=1)[1]) for t in (a, b) if re.search(r'[:?]\s*\w', str(t))}
+    if len(subtitles) == 1 and all(re.search(r'[:?]\s*\w', str(t)) for t in (a, b)) and len(next(iter(subtitles))) >= 30:
+        return True
+    few, many = sorted((title_words(a), title_words(b)), key=len)
+    return len(few) >= 3 and few[0] == many[0] and set(few) <= set(many)
+
+
+def openreview_history(record, slots, results):
+    """Every OpenReview submission of this paper, oldest cycle first.
+
+    A forum id in any of its links, the same title, or the title its id was made from count as
+    exact; a renamed or shortened title (same_title) counts only for submissions no other paper
+    claims by exact title, so two papers with similar names never swap outcomes.
+    """
     urls = [row.get('url') for row in slots] + list((record.get('artifacts') or {}).values())
     forums = {m.group(1) for u in urls if isinstance(u, str) for m in [FORUM_ID_RE.search(u)] if m}
-    by_forum = [e for e in results if forums & {e.get('id'), e.get('forum'), e.get('review_forum')}]
-    title = normalized_title(record.get('title'))
-    candidates = by_forum or [e for e in results if title and normalized_title(e.get('title')) == title]
-    # Citation checks are a stale fallback; among the rest the latest cycle wins, and ties keep the
-    # earlier (richer) entry: the results snapshot comes before the notification outcomes.
-    return max(candidates, key=lambda e: (e.get('source') != 'citation_check', cycle_key(e)), default=None)
+    titles = {normalized_title(record.get('title')), normalized_title(record.get('id'))} - {''}
+    history = {}
+    for e in results:
+        # The API sync lists every title a submission carried ('titles'), so a paper retitled at
+        # camera-ready still matches by the title it was submitted under.
+        carried = {normalized_title(t) for t in [e.get('title'), *(e.get('titles') or [])]}
+        exact = forums & {e.get('id'), e.get('forum'), e.get('review_forum')} or titles & carried
+        renamed = not exact and not (e.get('papers') or set()) - {record.get('id')} and any(
+            same_title(record.get(field), e.get('title')) for field in ('title', 'alias') if record.get(field))
+        if exact or renamed:
+            history.setdefault(e.get('id') or id(e), e)
+    return sorted(history.values(), key=submitted_when)
+
+
+def submitted_when(entry):
+    """When a submission happened, in ms: its notification date, else its cycle (a conference id names
+    only its year, so it counts as that December)."""
+    if entry.get('date'):
+        return entry['date']
+    # The API sync stamps when the submission was made; the notification path stamped 'date'.
+    if entry.get('submitted_at'):
+        try:
+            return datetime.datetime.fromisoformat(str(entry['submitted_at']).replace('Z', '+00:00')).timestamp() * 1000
+        except ValueError:
+            pass
+    year, month = cycle_key(entry)
+    return datetime.datetime(year or 1970, month or 12, 1, tzinfo=datetime.timezone.utc).timestamp() * 1000
+
+
+def openreview_best(history):
+    """The submission that says where the paper stands now.
+
+    An acceptance at a conference (not a workshop) is where the paper ended up; otherwise the
+    latest cycle wins (a rejection followed by a resubmission reads as under review), and within a
+    cycle a decision or notification beats a stale citation-check row.
+    """
+    return max(history, key=lambda e: (e.get('status') == 'accepted' and 'workshop' not in str(e.get('venue') or '').lower(),
+                                       cycle_key(e), e.get('source') != 'citation_check', e.get('date') or 0,
+                                       e.get('submitted_at') or ''), default=None)
+
+
+def openreview_match(record, slots, results):
+    """The submission a paper refers to now (see openreview_history and openreview_best)."""
+    return openreview_best(openreview_history(record, slots, results))
+
+
+def history_text(history, best):
+    """'❌ ICML 2026 → ⏳ ARR May 2026 → ✅ EMNLP 2026' when a paper went to more than one venue, else ''."""
+    venues = {}
+    for e in history:
+        venue = e.get('venue') or venue_from_id(e.get('venue_id'))
+        if venue.lower() == 'openreview.net archive':
+            continue
+        kept = venues.get(venue)
+        if not kept or kept.get('source') == 'citation_check' or e is best:
+            venues[venue] = e
+    if len(venues) < 2:
+        return ''
+    marks = {'accepted': '✅', 'under_review': '⏳', 'rejected': '❌', 'desk_rejected': '❌ desk', 'withdrawn': '↩️'}
+    return ' → '.join(f"{marks.get(e.get('status'), '?')} {venue}" for venue, e in venues.items())
 
 
 def arr_cycle_deadline(entry, cycles):
-    """Deadline of the ARR cycle an OpenReview submission went to ('.../ARR/2026/October/...'), else None."""
-    parts = str((entry or {}).get('venue_id') or '').split('/')
+    """Deadline of the ARR cycle an OpenReview submission went to ('.../ARR/2026/October/...'), else None.
+
+    A venue commitment counts as the ARR cycle it was committed from.
+    """
+    parts = str((entry or {}).get('arr_venue_id') or (entry or {}).get('venue_id') or '').split('/')
     if 'ARR' not in parts or len(parts) < parts.index('ARR') + 3:
         return None
     year, month = parts[parts.index('ARR') + 1:parts.index('ARR') + 3]
@@ -695,7 +799,7 @@ def same_venue(record, venue):
     return bool(series) and venue.lower().startswith(series[0]) and (not year or not venue_year or year == venue_year)
 
 
-def as_on_openreview(record, review):
+def as_on_openreview(record, review, history=()):
     """The paper's venue and decision as the PI's OpenReview has them.
 
     OpenReview is the ground truth for what came of a submission: an acceptance there sets the
@@ -704,10 +808,15 @@ def as_on_openreview(record, review):
     the paper is past submitting. An acceptance elsewhere stands (a workshop paper resubmitted to
     a conference, or accepted at a venue not on OpenReview), and so does one from a later year than
     the OpenReview submission. The record keeps its own venue after a rejection: that is the next plan.
+    A rejection anywhere in the paper's history at the venue the record calls accepted also clears it
+    (desk-rejected at EMNLP, then resubmitted to ARR, is not an EMNLP paper).
     """
     if not review or not review.get('status'):
         return record
-    venue = venue_from_id(review.get('venue_id')) or review.get('venue') or ''
+    if review['status'] != 'accepted' and any(e.get('status') in ('rejected', 'desk_rejected', 'withdrawn')
+                                              and same_venue(record, review_venue(e)) for e in history):
+        record = dict(record, venue_decision='reject', accepted_venue=None, accepted_year=None)
+    venue = review_venue(review)
     year = (re.search(r'\b20\d{2}\b', venue) or [''])[0]
     accepted = record.get('venue_decision') == 'accept' or (
         bool(record.get('accepted_venue')) and record.get('venue_decision') != 'reject')
@@ -727,6 +836,16 @@ def as_on_openreview(record, review):
     return record
 
 
+def with_adminbot_decision(record, review):
+    """An AdminBot acceptance at the venue OpenReview still lists as under review: the decision mail went
+    to another author (demo and workshop tracks often mail only the submitter), so the paper is accepted."""
+    if not review or review.get('status') != 'under_review' or record.get('venue_decision') != 'accept' or (
+            not same_venue(record, review_venue(review))):
+        return review
+    track = review.get('track') or (record.get('artifacts') or {}).get('publication_track') or None
+    return dict(review, status='accepted', track=track, decided_by='AdminBot')
+
+
 def accepted_text(record, review):
     """'EMNLP 2026 · Findings · Poster' for an accepted paper, else ''."""
     if record.get('venue_decision') != 'accept' and not record.get('accepted_venue'):
@@ -739,6 +858,104 @@ def accepted_text(record, review):
             review['presentation'] not in name.lower()):
         parts.append(review['presentation'].capitalize())
     return ' · '.join(p for p in parts if p.strip())
+
+
+# What the paper is, one value each so the sheet filters the same way for every conference.
+TRACKS = ('Main', 'Findings', 'Workshop', 'Demo', 'Industry', 'Tutorial', 'Journal')
+PRESENTATIONS = ('oral', 'spotlight', 'poster')
+
+
+def track_of(record, review, *texts):
+    """'Workshop' / 'Demo' when the venue says so, else the track OpenReview or AdminBot gives; an accepted
+    paper with nothing else known is Main."""
+    text = ' '.join(str(t or '') for t in texts).lower()
+    if 'workshop' in text:
+        return 'Workshop'
+    if re.search(r'\bdemo|system[ _]demonstration', text):
+        return 'Demo'
+    # AdminBot's track describes an acceptance; once OpenReview clears that, it no longer applies.
+    accepted = (review or {}).get('status') == 'accepted' or record.get('venue_decision') == 'accept'
+    track = (review or {}).get('track') or (accepted and (record.get('artifacts') or {}).get('publication_track'))
+    if track in TRACK_NAMES:
+        return TRACK_NAMES[track]
+    named = next((t for t in ('Findings', 'Industry', 'Tutorial', 'Journal') if t.lower() in text), '')
+    return named or ('Main' if accepted else '')
+
+
+def presentation_of(record, review):
+    """'Oral' / 'Spotlight' / 'Poster' for an accepted paper: OpenReview's decision, else AdminBot's record."""
+    if (review or {}).get('status', 'accepted') != 'accepted' or record.get('venue_decision') != 'accept':
+        return ''
+    for value in ((review or {}).get('presentation'), record.get('presentation_type')):
+        if str(value or '').lower() in PRESENTATIONS:
+            return str(value).capitalize()
+    return ''
+
+
+def year_of(record, *texts):
+    """The paper's conference year: the first 20xx in the accepted, OpenReview or typed venue, else AdminBot's."""
+    found = next((m.group(0) for t in texts for m in [re.search(r'\b20\d{2}\b', str(t or ''))] if m), '')
+    return found or str(record.get('accepted_year') or '')
+
+
+def source_of(review, typed, matched):
+    """Where Conference and the decision come from, flagging a typed venue OpenReview contradicts."""
+    if not review:
+        return 'AdminBot' if typed != 'Not set' else ''
+    source = 'OpenReview + AdminBot decision' if review.get('decided_by') else 'OpenReview'
+    if typed not in UNNAMED_CONFERENCES and matched not in UNNAMED_CONFERENCES and typed != matched:
+        source += f' (AdminBot venue says {typed})'
+    return source
+
+
+# The closed set of 'Paper state' values, first match wins: where the paper stands, separate from
+# whether the PI owes a review. OpenReview decides every outcome; AdminBot fills in before submission.
+PAPER_STATE_RULES = (
+    ('Camera-ready due', 'Accepted and a camera-ready deadline is still ahead'),
+    ('Accepted', 'Accepted on OpenReview, or per AdminBot at a venue OpenReview does not show'),
+    ('Resubmitted after rejection', 'Under review on OpenReview after a rejection, desk rejection or withdrawal'),
+    ('Under review (no PI review)', 'Under review on OpenReview and nothing was ever sent to the PI'),
+    ('Under review', 'Under review on OpenReview, or AdminBot says it was submitted'),
+    ('Desk rejected', 'OpenReview: desk rejected, not resubmitted since'),
+    ('Rejected', 'OpenReview: rejected, not resubmitted since'),
+    ('Withdrawn', 'OpenReview: withdrawn, not resubmitted since'),
+    ('Needs PI review', 'Not yet submitted and a PI review is pending or blocked'),
+    ('On arXiv', 'Not submitted anywhere, with an arXiv link'),
+    ('arXiv planned', 'In arXiv polish'),
+    ('Not started', 'No stage yet, or brainstorming'),
+    ('Writing', 'Writing in Overleaf or preparing the submission'),
+    ('Unknown', 'Past submission with no venue outcome anywhere: ask the lead'),
+)
+PAPER_STATE_VALUES = tuple(value for value, _ in PAPER_STATE_RULES)
+
+
+def paper_state(record, review, history, requests, status, stage, deadline, links, now):
+    """One value from PAPER_STATE_RULES for a paper."""
+    outcome = (review or {}).get('status')
+    accepted = outcome == 'accepted' or record.get('venue_decision') == 'accept' or bool(record.get('accepted_venue'))
+    if accepted:
+        camera = deadline and 'camera' in deadline_name(deadline).lower() and deadline['at'] >= now
+        return 'Camera-ready due' if camera else 'Accepted'
+    if outcome == 'under_review':
+        if any(e.get('status') in ('rejected', 'desk_rejected', 'withdrawn') and cycle_key(e) <= cycle_key(review)
+               for e in history if e is not review):
+            return 'Resubmitted after rejection'
+        return 'Under review' if requests else 'Under review (no PI review)'
+    if outcome in ('desk_rejected', 'rejected', 'withdrawn'):
+        return {'desk_rejected': 'Desk rejected', 'rejected': 'Rejected', 'withdrawn': 'Withdrawn'}[outcome]
+    if record.get('under_review'):
+        return 'Under review'
+    if status_kind(status) in ('Needs PI review', 'Blocked: link access'):
+        return 'Needs PI review'
+    if links.get('arXiv'):
+        return 'On arXiv'
+    if stage == 'arxiv_polish':
+        return 'arXiv planned'
+    if not stage or stage == 'brainstorming_docs':
+        return 'Not started'
+    if stage in PRE_SUBMISSION:
+        return 'Writing'
+    return 'Unknown'
 
 
 def overall(scores):
@@ -755,8 +972,8 @@ def openreview_text(entry):
         return ''
     status = entry.get('status') or 'under_review'
     parts = [STATUS_TEXT.get(status, status)]
-    if entry.get('track') == 'findings':
-        parts.append('Findings')
+    if entry.get('track') in ('findings', 'demo', 'workshop'):
+        parts.append(TRACK_NAMES[entry['track']])
     elif entry.get('track') == 'main' and status == 'accepted':
         parts.append('Main')
     if entry.get('presentation'):
@@ -775,6 +992,8 @@ def openreview_text(entry):
         parts.append(f'meta {number(meta)}')
     if entry.get('error'):
         parts.append("(reviews couldn't be read)")
+    if entry.get('decided_by'):
+        parts.append(f"(decision from {entry['decided_by']}; not in the PI's OpenReview mail)")
     return ' · '.join(parts)
 
 
@@ -783,106 +1002,6 @@ def load_openreview_results(path):
     try:
         return [e for e in json.loads(Path(path).read_text()).get('submissions', []) if isinstance(e, dict)]
     except (OSError, ValueError, AttributeError):
-        return []
-
-
-NOTIFICATIONS_DIR = Path(__file__).with_name('openreview-notifications')
-
-
-def use_notifications_parser():
-    """The notification parsers ship beside this script (scripts/openreview-notifications)."""
-    if str(NOTIFICATIONS_DIR) not in sys.path:
-        sys.path.insert(0, str(NOTIFICATIONS_DIR))
-
-
-RECEIVED_RE = re.compile(r'has received (?:your submission|a new revision of your submission) titled', re.I)
-ENDED_RE = re.compile(r'paper #?\d+ (withdrawn|desk-rejected) by', re.I)
-
-
-def notification_results(records):
-    """The PI's own submissions and their outcomes, from her OpenReview notification emails.
-
-    OpenReview mails her when a submission or revision of hers is posted, when it is withdrawn or
-    desk-rejected, and with each decision; this is the daily Drive export of that mailbox, so it
-    needs no OpenReview login. Every submission keeps the event that settles it (a decision or an ending
-    beats a later camera-ready revision), and a title keeps its latest settled venue, so a paper
-    rejected at ICLR and resubmitted to ARR reads as under review again and an ARR paper later
-    accepted at EMNLP reads as accepted (and stays so through a later workshop run). Messages to her as a reviewer or chair are ignored:
-    endings count only for forums she submitted, and decisions only when they say "your submission".
-    """
-    use_notifications_parser()
-    from openreview_notifications.acceptance import classify_acceptance
-    from openreview_notifications.messages import extract_links, paper_title, unquoted_body
-    from openreview_notifications.tweets import venue_details
-
-    def forum_of(record):
-        forums = set(extract_links(unquoted_body(record['content'].get('text', '')))[1])
-        return forums.pop() if len(forums) == 1 else None
-
-    def title_of(record):
-        try:
-            return paper_title(record)
-        except ValueError:
-            return None
-
-    events, mine = [], {}
-    for record in sorted(records, key=lambda r: r.get('cdate') or 0):
-        subject = record['content'].get('subject', '')
-        forum, ended = forum_of(record), ENDED_RE.search(subject)
-        if RECEIVED_RE.search(subject):
-            title = title_of(record)
-            if forum and title:
-                mine.setdefault(forum, title)
-                events.append((record, forum, title, 'under_review', None))
-        elif ended:
-            events.append((record, forum, None, 'withdrawn' if ended.group(1).lower() == 'withdrawn' else 'desk_rejected', None))
-        else:
-            decision = classify_acceptance(record)
-            if decision.status in ('accepted', 'rejected'):
-                events.append((record, forum, title_of(record), decision.status, decision))
-    forums = {}
-    for record, forum, title, status, decision in events:
-        if status in ('withdrawn', 'desk_rejected') and forum not in mine:
-            continue
-        title = title or mine.get(forum)
-        if not title:
-            continue
-        # Decision mails often carry no forum link, so a submission is its title at one venue.
-        domain = record.get('domain', '')
-        key = (normalized_title(title), domain)
-        settled = forums.get(key)
-        forum = forum or (settled or {}).get('forum')
-        if settled and settled['status'] != 'under_review' and status == 'under_review':
-            continue
-        if settled and settled['status'] == status:
-            continue
-        track = None
-        if status == 'accepted':
-            try:
-                track = {'Findings': 'findings', 'Main conference': 'main'}.get(venue_details(record)[1])
-            except ValueError:
-                pass
-        forums[key] = {'id': forum or ':'.join(key), 'forum': forum, 'title': title, 'venue': venue_from_id(domain),
-                       'venue_id': domain, 'status': status, 'track': track, 'presentation': None,
-                       'date': record.get('cdate') or 0, 'source': 'notifications'}
-    # A main-conference acceptance is where a paper ends up; a later workshop run does not replace it.
-    def rank(entry):
-        return entry['status'] == 'accepted' and 'workshop' not in entry['venue'].lower(), entry['date']
-    latest = {}
-    for entry in forums.values():
-        title = normalized_title(entry['title'])
-        if title not in latest or rank(entry) >= rank(latest[title]):
-            latest[title] = entry
-    return list(latest.values())
-
-
-def load_notification_results(path):
-    """Outcomes from the notifications CSV at path; [] when it is absent or unreadable."""
-    use_notifications_parser()
-    try:
-        from adminbot_csv import parse_notifications_csv
-        return notification_results(parse_notifications_csv(Path(path).read_text()))
-    except (OSError, ValueError, ImportError):
         return []
 
 
@@ -902,9 +1021,13 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
                        else 'read link does not open (link sharing is off or the link was reset)')
               for column, url in links.items() if url and (overleaf_kind(url) == 'project' or access.get(url) == 'restricted')}
     requests, approved_at = pi_requests(slots, links)
-    review = openreview_match(record, slots, openreview)
+    history = openreview_history(record, slots, openreview)
+    review = openreview_best(history)
     stage = record.get('current_step')
-    record = as_on_openreview(record, review)
+    record = as_on_openreview(record, review, history)
+    if with_adminbot_decision(record, review) is not review:
+        review = with_adminbot_decision(record, review)
+        record = as_on_openreview(record, review, history)
     venue, deadline = venue_info(record, slots, deadlines, now)
     venue = venue or VENUE_NOTES.get(record['id'], '')
     cycles = arr_calendar(deadlines)[0]
@@ -988,12 +1111,16 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         incomplete.append(f'Stuck: no update for {(now - updated).days} days in {STAGES[stage]}')
     if status_kind(status) == 'Other':
         incomplete.append('Status unclassified: ' + status.partition(': ')[2])
+    typed_conference = conference(venue, record.get('venue') or artifacts.get('conference') or '')
+    matched_conference = conference(review_venue(review)) if review else 'Not set'
+    accepted = accepted_text(record, review)
     owner_id = record.get('lead_owner_member_id')
     name = lambda member_id: members.get(member_id, {}).get('name', member_id or '')
     row = {
         'Paper': record.get('title', ''),
         'Urgency': label,
         'PI review': status,
+        'Paper state': paper_state(record, review, history, requests, status, stage, deadline, links, now),
         'Review for': ', '.join(dict.fromkeys(r['type'] for r in pending)) if pending else (
             ', '.join(dict.fromkeys(r['type'] for r in requests)) if requests else ''),
         'Review link': review_links,
@@ -1002,11 +1129,18 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         'Requested on': stamp(top['at'], False) if top else '',
         'Request note': '\n\n'.join(f"[{r['type']}] {r['note']}" for r in pending if r['note']),
         'Venue': venue,
-        'Conference': conference(venue, record.get('venue') or artifacts.get('conference') or ''),
+        # OpenReview names the conference whenever it knows the paper; the typed venue fills the rest.
+        'Conference': typed_conference if matched_conference in UNNAMED_CONFERENCES else matched_conference,
+        'Year': year_of(record, accepted, review_venue(review) if review else '', venue, record.get('venue')),
+        'Track': track_of(record, review, accepted, review_venue(review) if review else '',
+                          '' if review else venue),
+        'Presentation': presentation_of(record, review),
         'Venue deadline (Toronto)': '\n'.join(f"{stamp(d['at'])} · {deadline_name(d)}" for d in (
             deadline.get('soft'), deadline) if d) if deadline else '',
         'Venue (as entered)': ' '.join(str(record.get('venue') or artifacts.get('conference') or '').split()),
         'OpenReview': openreview_text(review),
+        'Submission history': history_text(history, review),
+        'Source': source_of(review, typed_conference, matched_conference),
         'Stage': STAGES.get(stage, stage or ''),
         'Lead': record.get('lead_owner') or name(owner_id),
         'Incomplete': '\n'.join(incomplete),
@@ -1016,7 +1150,7 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         'Still missing': ', '.join(sorted(slot_label(r['slot']) for r in slots if r['status'] == 'missing')),
         'Mentor review': by_slot.get('papermentor_review', {}).get('status', ''),
         'Co-author feedback': by_slot.get('coauthor_feedback', {}).get('status', ''),
-        'Accepted': accepted_text(record, review),
+        'Accepted': accepted,
         'Going to conference': record.get('going_attendees', ''),
         'Started': record.get('started_on', ''),
         'Last updated': stamp(parse_time(record.get('updated_at') or ''), False),
@@ -1029,7 +1163,9 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
     row['_link_problems'] = link_problems
     upcoming = [d['at'] for d in ((deadline or {}).get('soft'), deadline) if d and d['at'] >= now]
     approaching = bool(upcoming) and min(upcoming) <= now + datetime.timedelta(days=APPROACHING_DAYS)
+    # Blocked reviews float to the top of their group: the PI cannot act until someone fixes the link.
     row['_sort'] = (0 if approaching else 1, deadline['at'] if approaching else now, row['Conference'] if approaching else '',
+                    0 if status.startswith('Blocked:') else 1,
                     0 if top and rank < 50 else 1, rank, (top or {}).get('effective_due') or (deadline or {}).get('at') or far,
                     priority(top) if top else 0, (top or {}).get('at') or now, -(updated.timestamp() if updated else 0), row['Paper'], record['id'])
     return row
@@ -1263,6 +1399,12 @@ def snapshot(connection, timestamp, people_values=None, full_people=False, link_
                                                  'url': url, 'value_text': text})
         deadlines = published_deadlines(connection)
         openreview = list(openreview or []) + citation_check_results(connection)
+        claims = defaultdict(set)
+        for (raw,) in connection.execute('SELECT payload_json FROM adminbot_papers'):
+            paper = json.loads(raw)
+            for key in {normalized_title(paper.get('title')), normalized_title(paper.get('id'))} - {''}:
+                claims[key].add(paper['id'])
+        openreview = [dict(e, papers=claims.get(normalized_title(e.get('title')), set())) for e in openreview]
         now = parse_time(timestamp) or datetime.datetime.now(datetime.timezone.utc)
         paper_links = None
         link_problems, status_counts = {}, Counter()

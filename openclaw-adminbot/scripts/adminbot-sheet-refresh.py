@@ -15,9 +15,6 @@ spec = importlib.util.spec_from_file_location('exporter', Path(__file__).with_na
 exporter = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(exporter)
 
-# openreview-notifications.csv on the AdminBot Drive (the same export notification drafts read).
-NOTIFICATIONS_FILE_ID = '1M88hLvN6WvWIthUPTnHilWbsmOz2DZg7'
-
 URGENCY_COLOURS = {'⛔': {'red': .96, 'green': .73, 'blue': .73}, '🔴': {'red': .99, 'green': .87, 'blue': .87}, '🟠': {'red': 1, 'green': .92, 'blue': .82},
                    '🟡': {'red': 1, 'green': .97, 'blue': .80}, '🟢': {'red': .89, 'green': .96, 'blue': .89}}
 # What the PI reads first; always visible even when empty.
@@ -27,7 +24,10 @@ PAPER_WIDTHS = {'Paper': 260, 'Urgency': 190, 'PI review': 150, 'Review for': 17
                 'Due (Toronto)': 170, 'Requested by': 150, 'Requested on': 130, 'Request note': 320,
                 'Venue deadline (Toronto)': 260, 'OpenReview': 300, 'Stage': 170, 'Lead': 150,
                 'Incomplete': 260, 'Blocker / next step': 280, 'Link problems': 240, 'Still missing': 260, 'Authors': 360,
-                'All artifact statuses': 300, 'Venue (as entered)': 220, 'Venue': 230, 'Conference': 150, 'Checks': 240, exporter.PAPER_ID: 160}
+                'All artifact statuses': 300, 'Venue (as entered)': 220, 'Venue': 230, 'Conference': 150, 'Checks': 240, exporter.PAPER_ID: 160,
+                'Paper state': 190, 'Year': 70, 'Track': 100, 'Presentation': 110, 'Submission history': 280, 'Source': 200}
+# Columns with a closed set of values get a dropdown of the values in use, so each filters by picking one.
+PAPER_DROPDOWNS = ('Stage', 'Paper state', 'Conference', 'Year', 'Track', 'Presentation', 'Source')
 
 
 # PI review values drawn in bold red: the PI acts, or somebody must fix the link or the category.
@@ -238,11 +238,12 @@ def refresh_requests(batch, properties):
             raise ValueError('Unexpected export table identity')
         columns = [{'columnIndex': i, 'columnName': name, 'columnType': 'TEXT'}
                    for i, name in enumerate(headers)]
-        stage = headers.index('Stage' if title == 'PaperList' else 'status')
-        options = sorted({row[stage] for row in values[1:] if row[stage]})
-        if options:
-            columns[stage].update(columnType='DROPDOWN', dataValidationRule={'condition': {
-                'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': value} for value in options]}})
+        for name in PAPER_DROPDOWNS if title == 'PaperList' else ('status',):
+            index = headers.index(name)
+            options = sorted({row[index] for row in values[1:] if row[index]})
+            if options:
+                columns[index].update(columnType='DROPDOWN', dataValidationRule={'condition': {
+                    'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': value} for value in options]}})
         table = {'name': title, 'range': table_range, 'columnProperties': columns,
                  'rowsProperties': {
                      'headerColorStyle': {'rgbColor': {'red': .18, 'green': .29, 'blue': .40}},
@@ -264,7 +265,9 @@ def refresh_requests(batch, properties):
             # The export is already ordered by urgency, so the queue view only filters.
             views += [('PI review queue', None, ('PI review', 'Needs PI review')), ('Incomplete', None, ('Incomplete', None)),
                       ('By PI review status', 'PI review', None), ('By review type', 'Review for', None),
-                      ('By conference', 'Conference', None), ('By venue', 'Venue', None), ('By stage', 'Stage', None)]
+                      ('By conference', 'Conference', None), ('By venue', 'Venue', None), ('By stage', 'Stage', None),
+                      ('Blocked', None, ('PI review', 'Blocked: link access')), ('By paper state', 'Paper state', None),
+                      ('By year', 'Year', None), ('By track', 'Track', None)]
         else:
             views += [('Full members', None, ('member_type', 'full', 'TEXT_CONTAINS')),
                       ('By joined date', 'join_date', None),
@@ -413,22 +416,12 @@ def main():
                                           exporter.parse_time(timestamp))
     except OSError:
         access = {}
-    # The PI's OpenReview notification emails, exported to Drive daily. A failed download keeps the
-    # previous copy, so a Drive hiccup leaves yesterday's outcomes rather than none.
-    notifications = Path(args.status).with_name('openreview-notifications.csv')
-    try:
-        partial = notifications.with_suffix('.partial')
-        gog(['--readonly', 'drive', 'download', config.get('notifications_file_id', NOTIFICATIONS_FILE_ID),
-             '--out', str(partial), '--overwrite'], timeout=180)
-        partial.replace(notifications)
-    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired):
-        pass
     with sqlite3.connect(Path(args.database).resolve().as_uri() + '?mode=ro', uri=True, timeout=15) as connection:
         connection.execute('PRAGMA query_only=ON')
-        # Written by the OpenReview results job under the account that holds the login; absent is fine.
-        # Its entries carry scores, so they come first and win ties with the notification outcomes.
+        # Written every six hours by the OpenReview results job under the account that holds the login;
+        # absent is fine (the citation-check table is the fallback). The PI's notification e-mails are
+        # not read: they froze each paper at the title and status they were sent with.
         openreview = exporter.load_openreview_results(Path(args.database).with_name('openreview-author-results.json'))
-        openreview += exporter.load_notification_results(notifications)
         batch = exporter.snapshot(connection, timestamp, full_people=True, link_access=access, openreview=openreview)
     requests = refresh_requests(batch, properties)
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as body:

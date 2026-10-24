@@ -1337,10 +1337,13 @@ const DEFAULT_ACTION_POLICIES = {
   // Raises a member's access level and grants what it brings, so an admin approves it; the
   // approving admin is also who approves each step it runs.
   "lab_member.enroll": approvalPolicy("T3", ["admin"]),
-  // Same tier as the guide that used to file this row: the sysadmin reading it creates a CS
-  // account, which is not something to undo. The admin-driven paths approve it on the click that
-  // changed the role; the roster sync and the weekly sweep leave it in Pending Actions.
-  "dcs_roster.add_row": approvalPolicy("T3", ["admin"]),
+  // The DCS roster is a derivative of the lab roster: a row is owed the moment somebody becomes a
+  // full member or a major coauthor, and the decision that matters was the Member Type, which the
+  // roster already gates. So the row is written directly -- by the admin save, the roster sync and
+  // the backfill alike -- and keeps its proposal, auto-approval and audit rows as the record. The
+  // cost is that a wrong Member Type reaches the sysadmin without a second look; the fix is the
+  // roster, then deleting the row before the department acts on it (the undo plan says so).
+  "dcs_roster.add_row": autoPolicy("T1"),
   // A placeholder/test account the Slack roster sync wants gone. T3 so it can never ride the auto
   // tier: the sync only proposes, and an admin approving it is the only way a record is deleted.
   "lab_member.remove": approvalPolicy("T3", ["admin"]),
@@ -7138,7 +7141,7 @@ export class AdminBotService {
     nowIso?: string;
   }): AdminBotServiceResponse<OpenReviewPaperSyncReport> {
     const nowIso = options.nowIso ?? new Date().toISOString();
-    // The citation-watch table is the fallback: the snapshot and the e-mails speak first, and
+    // The citation-watch table is the fallback: the snapshot speaks first, and
     // match() prefers the newer report anyway.
     const evidence = [
       ...options.evidence,

@@ -1,5 +1,5 @@
-/** Weekly active-channel enforcement; every removal retains its T3 approval and audit trail. */
-import type { AdminBotLabMember } from "../contracts/actions.js";
+/** Daily active-channel enforcement; every removal retains its T3 approval and audit trail. */
+import { adminBotMemberTypeTokens, type AdminBotLabMember } from "../contracts/actions.js";
 import { ADMINBOT_ACTIVE_CHANNELS } from "../workflows/members/access-audit.js";
 import { memberTypeAccessProfile } from "../workflows/members/member-type-access.js";
 import type { AdminBotService, AdminBotServiceStore } from "./service.js";
@@ -7,9 +7,47 @@ import type { AdminBotService, AdminBotServiceStore } from "./service.js";
 export type ActiveChannelSnapshot = { channel: string; userIds: string[] };
 export type ActiveChannelReader = () => Promise<ActiveChannelSnapshot[]>;
 
+/** A channel member the roster cannot judge, reported for a person instead of removed. */
+export type ActiveChannelReview = {
+  channel: string;
+  user_id: string;
+  reason: "no_roster_row" | "blank_member_type";
+};
+
 export function isActiveChannelEligible(member: AdminBotLabMember): boolean {
   const access = memberTypeAccessProfile(member);
   return access.subgroup_source === "full_member" || access.subgroup === "coauthor_major";
+}
+
+/**
+ * Keep, remove, or ask a person.
+ *
+ * Only a roster row that positively names a non-eligible Member Type is a removal. A Slack account
+ * no row claims is usually a gap in the roster -- many rows carry no Slack id, Slack Connect
+ * collaborators among them -- and a blank Member Type is a question nobody has
+ * answered yet. Removing either on a daily timer would take the room away from people the lab never
+ * decided about, with no undo but a re-invite.
+ */
+function channelVerdict(
+  members: readonly AdminBotLabMember[],
+  userId: string,
+): "keep" | "remove" | ActiveChannelReview["reason"] {
+  const matched = members.filter((member) => member.slack_user_id?.trim() === userId);
+  if (matched.some(isActiveChannelEligible)) {
+    return "keep";
+  }
+  if (matched.length === 0) {
+    return "no_roster_row";
+  }
+  // The tokenizer returns `[""]` for a blank column, so "has a type" means a non-empty token.
+  if (
+    matched.some(
+      (member) => !adminBotMemberTypeTokens(member.member_type).some((token) => token.length > 0),
+    )
+  ) {
+    return "blank_member_type";
+  }
+  return "remove";
 }
 
 export async function enforceActiveChannels(
@@ -37,22 +75,23 @@ export async function enforceActiveChannels(
   ) {
     throw new Error("Incomplete or invalid active-channel snapshot");
   }
-  const week = new Date(now);
-  week.setUTCDate(week.getUTCDate() - week.getUTCDay());
-  const weekKey = week.toISOString().slice(0, 10);
+  // One pass per UTC day: a re-run the same day is a no-op, and the next day checks again.
+  const dayKey = now.toISOString().slice(0, 10);
   const removed: Array<{ channel: string; user_id: string; proposal_id: string }> = [];
   const failed: Array<{ channel: string; user_id: string; reason: string }> = [];
+  const needs_review: ActiveChannelReview[] = [];
   for (const { channel, userIds } of snapshot) {
     for (const userId of new Set(userIds)) {
       // Re-read after each asynchronous execution; a promotion during a sweep must be honored.
-      if (
-        members().some(
-          (member) => member.slack_user_id?.trim() === userId && isActiveChannelEligible(member),
-        )
-      ) {
+      const verdict = channelVerdict(members(), userId);
+      if (verdict === "keep") {
         continue;
       }
-      const key = `active-channel-cleanup:${weekKey}:${channel}:${userId}`;
+      if (verdict !== "remove") {
+        needs_review.push({ channel, user_id: userId, reason: verdict });
+        continue;
+      }
+      const key = `active-channel-cleanup:${dayKey}:${channel}:${userId}`;
       const previous = store
         .listProposalsByType("slack.remove_from_channel")
         .find((p) => p.idempotency_key === key);
@@ -89,8 +128,8 @@ export async function enforceActiveChannels(
       const approved = service.approve(proposed.payload.id, {
         payload_hash: proposed.payload.payload_hash,
         approver_role: "admin",
-        approver_id: "system:weekly-active-channel-policy",
-        note: "Standing policy: only full and coauthor-major accounts remain in active channels, including alumni. Unmatched accounts are removed.",
+        approver_id: "system:daily-active-channel-policy",
+        note: "Standing policy: only full and coauthor-major accounts remain in active channels, including alumni. Accounts with no roster row or a blank Member Type are reported, not removed.",
       });
       const result = approved.ok
         ? await service.execute(proposed.payload.id, { dry_run: false, idempotency_key: key })
@@ -104,5 +143,5 @@ export async function enforceActiveChannels(
       }
     }
   }
-  return { removed, failed };
+  return { removed, failed, needs_review };
 }

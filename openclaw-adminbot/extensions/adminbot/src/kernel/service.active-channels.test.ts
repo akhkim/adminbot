@@ -12,12 +12,13 @@ function lab() {
     ["UMAJOR", "coauthor-major"],
     ["UMINOR", "coauthor-minor"],
     ["UOWN", "own-pace-advisee"],
+    ["UBLANK", ""],
   ]) {
     const result = service.upsertLabMember({
       id,
       name: id,
       email: `${id.toLowerCase()}@example.org`,
-      member_type: type,
+      ...(type ? { member_type: type } : {}),
       privilege_level: "member",
       slack_user_id: id,
       slack_channels: ["jinesis-active", "random-active"],
@@ -29,32 +30,27 @@ function lab() {
   const read = vi.fn(async () => [
     {
       channel: "jinesis-active",
-      userIds: ["UFULL", "UALUM", "UMAJOR", "UMINOR", "UOWN", "UUNKNOWN"],
+      userIds: ["UFULL", "UALUM", "UMAJOR", "UMINOR", "UOWN", "UBLANK", "UUNKNOWN"],
     },
     { channel: "random-active", userIds: ["UFULL", "UUNKNOWN"] },
   ]);
   return { store, service, execute, read };
 }
 
-describe("weekly active-channel policy", () => {
-  it("removes ineligible and unmatched accounts with audited T3 approvals, preserving eligible alumni", async () => {
+describe("daily active-channel policy", () => {
+  it("removes roster-matched ineligible accounts with audited T3 approvals, preserving eligible alumni", async () => {
     const { store, service, execute, read } = lab();
     const result = await service.syncActiveChannels(read);
     expect(result.failed).toEqual([]);
-    expect(result.removed.map((p) => p.user_id)).toEqual([
-      "UMINOR",
-      "UOWN",
-      "UUNKNOWN",
-      "UUNKNOWN",
-    ]);
-    expect(execute).toHaveBeenCalledTimes(4);
+    expect(result.removed.map((p) => p.user_id)).toEqual(["UMINOR", "UOWN"]);
+    expect(execute).toHaveBeenCalledTimes(2);
     for (const proposal of store.listProposalsByType("slack.remove_from_channel")) {
       expect(proposal).toMatchObject({
         status: "executed",
         risk_tier: "T3",
         approvals: [
           {
-            approver_id: "system:weekly-active-channel-policy",
+            approver_id: "system:daily-active-channel-policy",
             payload_hash: proposal.payload_hash,
           },
         ],
@@ -62,15 +58,40 @@ describe("weekly active-channel policy", () => {
     }
     expect(service.listAuditEvents().some((e) => e.type === "approval.recorded")).toBe(true);
   });
-  it("does not duplicate removals on repeat or concurrent calls; a subsequent week checks again", async () => {
+  it("reports accounts the roster cannot judge instead of removing them", async () => {
+    const { store, service, execute, read } = lab();
+    const result = await service.syncActiveChannels(read);
+    expect(result.needs_review).toEqual([
+      { channel: "jinesis-active", user_id: "UBLANK", reason: "blank_member_type" },
+      { channel: "jinesis-active", user_id: "UUNKNOWN", reason: "no_roster_row" },
+      { channel: "random-active", user_id: "UUNKNOWN", reason: "no_roster_row" },
+    ]);
+    const targets = store
+      .listProposalsByType("slack.remove_from_channel")
+      .map((p) => (p.proposed_payload as { user_id: string }).user_id);
+    expect(targets).not.toContain("UBLANK");
+    expect(targets).not.toContain("UUNKNOWN");
+    // Still not removed on a later day: an unanswered roster question does not expire into a no.
+    await enforceActiveChannels(service, store, read, new Date("2030-01-07T08:00:00Z"));
+    expect(execute).toHaveBeenCalledTimes(4);
+    expect(
+      store
+        .listProposalsByType("slack.remove_from_channel")
+        .map((p) => (p.proposed_payload as { user_id: string }).user_id),
+    ).not.toContain("UUNKNOWN");
+  });
+  it("does not duplicate removals on repeat or concurrent calls; the next day checks again", async () => {
     const { store, service, execute, read } = lab();
     await Promise.all([service.syncActiveChannels(read), service.syncActiveChannels(read)]);
     await service.syncActiveChannels(read);
     expect(read).toHaveBeenCalledTimes(2);
-    expect(execute).toHaveBeenCalledTimes(4);
-    expect(store.listProposalsByType("slack.remove_from_channel")).toHaveLength(4);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(store.listProposalsByType("slack.remove_from_channel")).toHaveLength(2);
     await enforceActiveChannels(service, store, read, new Date("2030-01-06T08:00:00Z"));
-    expect(execute).toHaveBeenCalledTimes(8);
+    await enforceActiveChannels(service, store, read, new Date("2030-01-06T20:00:00Z"));
+    expect(execute).toHaveBeenCalledTimes(4);
+    await enforceActiveChannels(service, store, read, new Date("2030-01-07T08:00:00Z"));
+    expect(execute).toHaveBeenCalledTimes(6);
   });
   it("does not remove anything after a read failure or incomplete snapshot", async () => {
     const { service, execute } = lab();
@@ -94,7 +115,7 @@ describe("weekly active-channel policy", () => {
     execute.mockRejectedValue(new Error("missing user token"));
     const result = await service.syncActiveChannels(read);
     expect(result.removed).toEqual([]);
-    expect(result.failed).toHaveLength(4);
+    expect(result.failed).toHaveLength(2);
     expect(
       store.listProposalsByType("slack.remove_from_channel").every((p) => p.status !== "executed"),
     ).toBe(true);
@@ -113,7 +134,7 @@ describe("weekly active-channel policy", () => {
     expect(result.failed).toEqual([
       { channel: "jinesis-active", user_id: "UMINOR", reason: "Conflicting cleanup proposal" },
     ]);
-    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledTimes(1);
     if (!proposal.ok) {
       throw new Error(proposal.error.message);
     }
